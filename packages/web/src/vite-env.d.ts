@@ -9,8 +9,8 @@
 // the anonymous /leads + /store-click POSTs are routed through. Optional: empty
 // on dev stages, where the marketing calls fall back to VITE_CORE_API_URL.
 // `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` (FOUNDING-OFFER): the public
-// Supabase project URL + anon key, used ONLY by the internal /admin sign-in
-// (magic link via GoTrue REST). Unset → /admin/login shows "not configured".
+// Supabase project URL + anon key, used by admin and customer redemption auth
+// through separate session stores. Unset → sign-in shows "not configured".
 // `VITE_STORE_OFFER_IOS_URL` / `VITE_STORE_OFFER_ANDROID_URL`
 // (MARKETING-PLANS): the App Store / Play offer-code redemption URLs for the
 // founders' rate. Public values — they are what an ad links to. Unset in a

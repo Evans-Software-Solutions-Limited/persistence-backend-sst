@@ -186,6 +186,27 @@ export async function lockUserSubscriptionMutation(
 export class SubscriptionRepository {
   static readonly key = "SubscriptionRepository";
 
+  /** Release the active-row index slot only after prepaid voucher access lapses. */
+  async expireLapsedBusinessVouchers(userId: string): Promise<void> {
+    // Match voucher redemption's lock order before updating subscription rows:
+    // their role-sync trigger also locks the profile row.
+    await this.withUserSubscriptionLock(userId, async (transaction) => {
+      await transaction
+        .update(userSubscriptions)
+        .set({ paymentStatus: "expired", updatedAt: new Date() })
+        .where(
+          and(
+            eq(userSubscriptions.userId, userId),
+            sql`${userSubscriptions.metadata}->>'source' = 'business_voucher'`,
+            inArray(userSubscriptions.paymentStatus, [
+              ...LIVE_SUBSCRIPTION_STATUSES,
+            ]),
+            sql`${userSubscriptions.expiresAt} <= NOW()`,
+          ),
+        );
+    });
+  }
+
   async withUserSubscriptionLock<T>(
     userId: string,
     operation: (transaction: DatabaseTransaction) => Promise<T>,

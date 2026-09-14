@@ -1,5 +1,57 @@
 # Project memory · persistence-backend-sst
 
+### 2026-09-14 — Individual and B2B grants across supported memberships
+
+Expanded both individual complimentary grants and single-use vouchers to the
+six paid memberships supported by the existing app, from a shared catalogue.
+Founding offers/pools remain separate. Both grant forms show duration controls for 1–120 months;
+switching tiers preserves a custom duration. Individual grants activate by exact
+recipient email; all voucher tiers including coaches use `/redeem`, now linked
+from admin. Coach role/caps use existing production DB triggers. Organisation
+marketing plans (Studio/Studio Pro/Enterprise) are not implemented app products;
+asked Brad whether to expand those separately, continuing supported plans now.
+Forward migration: 20260914161842_grant_all_membership_tiers.sql. No native edits
+or builds. Browser preview checked individual Coach Pro for 18 months, changed to
+Coach retaining 18 months; B2B Start Up Coach+ for 24 months; 390px layout no overflow.
+
+### 2026-09-14 — PR #452 lapsed voucher blocks Stripe purchase
+
+Inspector finding4006862459 confirmed: expired vouchers retained an active
+payment status and occupied the partial unique index. Subscription creation
+now conditionally retires only this user’s expired business-voucher rows before
+reading existing subscriptions. Live vouchers retain their unique-index race
+protection; immutable voucher redemption history is untouched. Real PGlite
+regressions cover later Stripe insertion, user/source/expiry boundaries and
+permanent consumption; the HTTP regression checks cleanup precedes lookup.
+
+### 2026-09-14 — PR #452 CI coverage runner contention
+
+The first CI run failed one redemption UI test at its 5-second timeout
+(1,325 other web tests passed); no coverage threshold failure was reported.
+Turbo ran workspace coverage suites concurrently, with simple web tests taking
+seconds under load. CI now uses `bun run test:unit --concurrency=1`, retaining
+each runner’s internal parallelism, assertions and coverage gates. Local
+package-only results did not reproduce the CI workload; confirm the new CI run.
+
+### 2026-09-14 — Business membership vouchers and complete admin redesign
+
+Single isolated review branch `codex/business-vouchers-admin`, based on main
+`10792f1b`, worktree `/private/tmp/persistence-business-vouchers`. Implements
+bulk single-use business vouchers with optional domain/exact employee email
+restrictions, separately verified eligibility/destination identities, web
+signup/sign-in/redemption, atomic prepaid entitlement and permanent audit.
+Admin batch/CSV/assignment/revocation tools and all admin surfaces use current
+Persistence dark/cyan/Geist styling and the actual logo, including dialogs.
+No native changes/builds or deployment. Server hashes codes; pending issuance
+CSV receipts have temporary same-admin/tab recovery. Existing mobile and admin
+callbacks remain unchanged; add separate HTTPS `/redeem/callback` at rollout.
+Scope, API and release/device-smoke checklist:
+`specs/milestones/BUSINESS-VOUCHERS/`. Local browser previews used labelled
+synthetic data and were removed. Full core suite4799 passed before the final
+cleanup fix;40 database integration cases verify cleanup and permanent audit.
+Live email delivery and existing-app access must still be verified on staging.
+
+
 ### 2026-09-11 — PR: fix ATT startup permission sequencing
 
 Isolated fix for build 50 review: notifications and ATT share an iOS queue,

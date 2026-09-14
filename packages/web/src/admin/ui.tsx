@@ -11,11 +11,9 @@ export function PageHeader({
   children?: ReactNode;
 }) {
   return (
-    <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-      <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
-      {children ? (
-        <div className="flex items-center gap-2">{children}</div>
-      ) : null}
+    <div className="admin-page-header">
+      <h1 className="admin-page-title">{title}</h1>
+      {children ? <div className="admin-page-actions">{children}</div> : null}
     </div>
   );
 }
@@ -30,14 +28,8 @@ export function Panel({
   className?: string;
 }) {
   return (
-    <section
-      className={`rounded-xl border border-border bg-card p-4 ${className}`}
-    >
-      {title ? (
-        <h2 className="mb-3 text-sm font-medium text-muted-foreground">
-          {title}
-        </h2>
-      ) : null}
+    <section className={`admin-panel ${className}`}>
+      {title ? <h2 className="admin-panel-title">{title}</h2> : null}
       {children}
     </section>
   );
@@ -53,11 +45,11 @@ export function Stat({
   hint?: ReactNode;
 }) {
   return (
-    <div className="rounded-xl border border-border bg-card p-4">
+    <div className="admin-stat">
       <div className="text-xs uppercase tracking-wide text-muted-foreground">
         {label}
       </div>
-      <div className="mt-1 text-2xl font-semibold tabular-nums">{value}</div>
+      <div className="admin-stat-value">{value}</div>
       {hint ? (
         <div className="mt-1 text-xs text-muted-foreground">{hint}</div>
       ) : null}
@@ -98,9 +90,7 @@ export function StatusBadge({ status }: { status: string }) {
 }
 
 export function EmptyState({ children }: { children: ReactNode }) {
-  return (
-    <p className="py-8 text-center text-sm text-muted-foreground">{children}</p>
-  );
+  return <p className="admin-empty">{children}</p>;
 }
 
 export function ErrorState({ error }: { error: unknown }) {
@@ -124,12 +114,17 @@ export function Table({
   children: ReactNode;
 }) {
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
+    <div
+      className="admin-table-scroll"
+      role="region"
+      aria-label={head.join(", ")}
+      tabIndex={0}
+    >
+      <table className="admin-table">
         <thead>
           <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
             {head.map((h) => (
-              <th key={h} className="px-2 py-2 font-medium">
+              <th scope="col" key={h} className="px-2 py-2 font-medium">
                 {h}
               </th>
             ))}

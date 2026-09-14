@@ -1,3 +1,4 @@
+import { GRANTABLE_TIERS } from "@persistence/subscription-catalog";
 import { describe, expect, it } from "vitest";
 import {
   buildFoundingInviteEmail,
@@ -158,3 +159,20 @@ describe("transactional email templates", () => {
     }
   });
 });
+
+it.each(GRANTABLE_TIERS)(
+  "uses the shared $name label in complimentary invitations",
+  (tier) => {
+    const result = buildFoundingInviteEmail({
+      ...base,
+      tierName: tier.id,
+      grantKind: "complimentary",
+      months: 9,
+      amountMinor: 0,
+      purchaseSource: "admin_grant",
+    });
+    expect(result.subject).toContain(tier.name);
+    expect(result.text).toContain(`Plan: ${tier.name}`);
+    expect(result.text).toContain("9 months");
+  },
+);

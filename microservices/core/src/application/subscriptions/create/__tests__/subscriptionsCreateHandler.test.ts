@@ -5,6 +5,7 @@ import type Stripe from "stripe";
 // ─── Module-level mocks (must be hoisted before importing the handler) ─
 
 const subscriptionRepositoryMocks = {
+  expireLapsedBusinessVouchers: vi.fn().mockResolvedValue(undefined),
   findMostRecentForUser: vi.fn(),
   insert: vi.fn(),
   updateById: vi.fn(),
@@ -3000,4 +3001,50 @@ describe("subscriptionsCreateHandler — no-payment-method change-path (M10)", (
     const body = (await res.json()) as any;
     expect(body.change_type).toBe("upgrade");
   });
+});
+
+it("blocks a second purchase while prepaid voucher access is live", async () => {
+  mockPriceLookup({
+    priceMonthly: "price_premium",
+    currency: "GBP",
+    isTrainerTier: false,
+  });
+  subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValue({
+    id: "voucher-sub",
+    metadata: { source: "business_voucher" },
+    paymentStatus: "active",
+    expiresAt: new Date(Date.now() + 86400000),
+  });
+  const response = await postCreate(validBody);
+  expect(response.status).toBe(409);
+  expect(stripeMock.subscriptions.create).not.toHaveBeenCalled();
+  expect(stripeMock.paymentMethods.attach).not.toHaveBeenCalled();
+});
+
+it("retires lapsed voucher rows before creating a new Stripe subscription", async () => {
+  mockPriceLookup({
+    priceMonthly: "price_premium",
+    currency: "GBP",
+    isTrainerTier: false,
+  });
+  subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValue({
+    id: "voucher-sub",
+    metadata: { source: "business_voucher" },
+    paymentStatus: "expired",
+    expiresAt: new Date(Date.now() - 86400000),
+  });
+  const response = await postCreate(validBody);
+  expect(response.status).toBe(200);
+  expect(
+    subscriptionRepositoryMocks.expireLapsedBusinessVouchers,
+  ).toHaveBeenCalledWith("user-1");
+  expect(
+    subscriptionRepositoryMocks.expireLapsedBusinessVouchers.mock
+      .invocationCallOrder[0],
+  ).toBeLessThan(
+    subscriptionRepositoryMocks.findMostRecentForUser.mock
+      .invocationCallOrder[0],
+  );
+  expect(stripeMock.subscriptions.create).toHaveBeenCalledTimes(1);
+  expect(subscriptionRepositoryMocks.insert).toHaveBeenCalledTimes(1);
 });

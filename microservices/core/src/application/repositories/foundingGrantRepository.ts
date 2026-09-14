@@ -1,3 +1,8 @@
+import {
+  catalogTier,
+  isGrantableTier,
+  type GrantableTierId,
+} from "@persistence/subscription-catalog";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   foundingGrants,
@@ -15,7 +20,6 @@ import {
   tiersInPool,
   type FoundingPaymentMethod,
   type FoundingPool,
-  type FoundingTierName,
 } from "../founding/foundingOffer";
 import {
   LIVE_SUBSCRIPTION_STATUSES,
@@ -67,7 +71,7 @@ export interface CreateGrantInput {
   id: string;
   userId: string | null;
   email: string;
-  tierName: FoundingTierName;
+  tierName: GrantableTierId;
   months: number;
   grantKind?: "founding" | "complimentary";
   amountMinor: number;
@@ -78,6 +82,7 @@ export interface CreateGrantInput {
   referralCodeId: string | null;
   grantedBy: string;
   notes: string | null;
+  allowRoleChange?: boolean;
 }
 
 export type CreateGrantOutcome =
@@ -95,7 +100,10 @@ export type CreateGrantOutcome =
       kind: "active_store_subscription";
       subscription: { tierName: string; expiresAt: Date | null };
     }
-  | { kind: "duplicate" };
+  | { kind: "duplicate" }
+  | { kind: "account_pending_deletion" }
+  | { kind: "coach_demotion" }
+  | { kind: "protected_account" };
 
 type Db = ReturnType<typeof getDb>;
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -221,7 +229,8 @@ export class FoundingGrantRepository {
         and(
           eq(userSubscriptions.userId, userId),
           liveSubscriptionFilter(),
-          sql`left(${userSubscriptions.externalSubscriptionId}, 3) = 'rc_'`,
+          // Business vouchers are prepaid and must not be displaced by grants.
+          sql`(left(${userSubscriptions.externalSubscriptionId}, 3) = 'rc_' OR left(${userSubscriptions.externalSubscriptionId}, 4) = 'sub_' OR ${userSubscriptions.metadata}->>'source' = 'business_voucher')`,
         ),
       )
       .orderBy(desc(userSubscriptions.createdAt))
@@ -346,7 +355,7 @@ export class FoundingGrantRepository {
     input: {
       grantId: string;
       userId: string;
-      tierName: FoundingTierName;
+      tierName: GrantableTierId;
       months: number;
       paidAt: Date | null;
       paymentMethod: string | null;
@@ -418,6 +427,24 @@ export class FoundingGrantRepository {
 
       if (input.userId) {
         await lockUserSubscriptionMutation(tx, input.userId);
+        const [profile] = await tx
+          .select({ role: profiles.role, deletedAt: profiles.deletedAt })
+          .from(profiles)
+          .where(eq(profiles.id, input.userId))
+          .for("update");
+        if (!profile || profile.deletedAt)
+          return { kind: "account_pending_deletion" } as const;
+        if (profile.role === "admin")
+          return { kind: "protected_account" } as const;
+        if (
+          isGrantableTier(input.tierName) &&
+          catalogTier(input.tierName).audience === "consumer" &&
+          ["personal_trainer", "physiotherapist"].includes(
+            profile.role ?? "",
+          ) &&
+          !input.allowRoleChange
+        )
+          return { kind: "coach_demotion" } as const;
         const storeSubscription = await this.findLiveStoreSubscriptionIn(
           tx,
           input.userId,
@@ -590,6 +617,25 @@ export class FoundingGrantRepository {
         };
       }
 
+      const [profile] = await tx
+        .select({ role: profiles.role, deletedAt: profiles.deletedAt })
+        .from(profiles)
+        .where(eq(profiles.id, userId))
+        .for("update");
+      const [candidate] = await tx
+        .select({ tierName: foundingGrants.tierName })
+        .from(foundingGrants)
+        .where(eq(foundingGrants.id, grantId));
+      if (
+        !profile ||
+        profile.deletedAt ||
+        profile.role === "admin" ||
+        !candidate ||
+        !isGrantableTier(candidate.tierName) ||
+        (catalogTier(candidate.tierName).audience === "consumer" &&
+          ["personal_trainer", "physiotherapist"].includes(profile.role ?? ""))
+      )
+        return { applied: false, expiresAt: null, tierName: null };
       const claimed = await tx
         .update(foundingGrants)
         .set({ userId, appliedAt: new Date() })
@@ -608,7 +654,7 @@ export class FoundingGrantRepository {
       const sub = await this.writeSubscriptionRow(tx, {
         grantId: grant.id,
         userId,
-        tierName: grant.tierName as FoundingTierName,
+        tierName: grant.tierName as GrantableTierId,
         months: grant.months,
         paidAt: grant.paidAt,
         paymentMethod: grant.paymentMethod,

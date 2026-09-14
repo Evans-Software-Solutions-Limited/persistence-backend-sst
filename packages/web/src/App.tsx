@@ -11,6 +11,8 @@ import DeleteAccount from "./pages/DeleteAccount";
 import OrganisationAdmin from "./pages/OrganisationAdmin";
 import Founding from "./pages/Founding";
 import FoundingThanks from "./pages/FoundingThanks";
+import RedeemPage from "./redemption/RedeemPage";
+import { RedemptionBoundary } from "./redemption/RedemptionBoundary";
 import {
   AdminAudit,
   AdminCallback,
@@ -23,6 +25,8 @@ import {
   AdminMarketing,
   AdminMarketingPlan,
   RequireAdmin,
+  AdminVouchers,
+  AdminVoucherBatch,
 } from "./admin";
 import { CAMPAIGN_LANDING_SLUGS } from "./marketing/campaign";
 import { ThemeProvider } from "./components/theme-provider";
@@ -69,6 +73,16 @@ function PageViewTracker() {
 }
 
 function App() {
+  const location = useLocation();
+  // Sensitive redemption pages never mount marketing analytics or consent
+  // subscribers, even when advertising consent was previously granted.
+  if (/^\/redeem(?:\/|$)/.test(location.pathname)) {
+    return (
+      <RedemptionBoundary>
+        <RedeemPage />
+      </RedemptionBoundary>
+    );
+  }
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider defaultTheme="dark">
@@ -139,6 +153,8 @@ function App() {
             <Route index element={<AdminDashboard />} />
             <Route path="grants" element={<AdminGrants />} />
             <Route path="codes" element={<AdminCodes />} />
+            <Route path="vouchers" element={<AdminVouchers />} />
+            <Route path="vouchers/:batchId" element={<AdminVoucherBatch />} />
             <Route path="marketing" element={<AdminMarketing />} />
             <Route path="marketing/:id" element={<AdminMarketingPlan />} />
             <Route path="lookup" element={<AdminLookup />} />

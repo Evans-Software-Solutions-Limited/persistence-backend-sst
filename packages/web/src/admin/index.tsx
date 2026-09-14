@@ -9,3 +9,6 @@ export { AdminMarketing } from "./pages/AdminMarketing";
 export { AdminMarketingPlan } from "./pages/AdminMarketingPlan";
 export { AdminLookup } from "./pages/AdminLookup";
 export { AdminAudit } from "./pages/AdminAudit";
+
+export { AdminVouchers } from "./pages/AdminVouchers";
+export { AdminVoucherBatch } from "./pages/AdminVoucherBatch";

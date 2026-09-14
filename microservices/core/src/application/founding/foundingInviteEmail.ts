@@ -1,4 +1,7 @@
-import { FOUNDING_OFFERS, type FoundingTierName } from "./foundingOffer";
+import {
+  catalogTier,
+  type GrantableTierId,
+} from "@persistence/subscription-catalog";
 import {
   EMAIL_SUPPORT,
   emailButton,
@@ -11,7 +14,7 @@ import {
 /** One existing grant/invite email, with active and pending variants. Purchase
  * source is required: native-store offers must never inherit fixed-term copy. */
 export interface InviteEmailInput {
-  tierName: FoundingTierName;
+  tierName: GrantableTierId;
   grantKind: "founding" | "complimentary";
   months: number;
   expiresAt: Date | null;
@@ -50,7 +53,7 @@ export function buildFoundingInviteEmail(input: InviteEmailInput): {
     !/^[A-Z]{3}$/.test(input.currency)
   )
     throw new Error("Valid actual payment amount and currency are required");
-  const tier = FOUNDING_OFFERS[input.tierName].label;
+  const tier = catalogTier(input.tierName).name;
   const downloadUrl = `${input.webOrigin.replace(/\/$/, "")}/qr/founding`;
   const founding = input.grantKind === "founding";
   const subject = founding

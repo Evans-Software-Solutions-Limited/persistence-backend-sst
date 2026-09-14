@@ -1,3 +1,4 @@
+import { useAdminDialogs } from "../useAdminDialogs";
 import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router";
@@ -14,6 +15,7 @@ import {
 } from "../ui";
 
 export function AdminLookup() {
+  const { prompt } = useAdminDialogs();
   const qc = useQueryClient();
   const [input, setInput] = useState("");
   const [email, setEmail] = useState("");
@@ -105,12 +107,12 @@ export function AdminLookup() {
                     variant="ghost"
                     className="ml-2"
                     disabled={attribute.isPending}
-                    onClick={() => {
-                      const code = window.prompt(
+                    onClick={async () => {
+                      const code = await prompt(
                         "Referral code to attribute this user to:",
                       );
                       if (!code) return;
-                      const reason = window.prompt(
+                      const reason = await prompt(
                         "Reason (goes in the audit log):",
                       );
                       if (reason && reason.trim().length >= 3)

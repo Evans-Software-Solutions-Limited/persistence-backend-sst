@@ -120,6 +120,14 @@ export const subscriptionsCancelHandler = new Elysia()
         return { error: "Subscription not found" };
       }
 
+      if (subscription.metadata?.source === "business_voucher") {
+        ctx.set.status = 409;
+        return {
+          error:
+            "This prepaid business membership does not renew. Contact support to change access.",
+        };
+      }
+
       // Match both UK + US spellings — local rows can carry either,
       // depending on whether they were written by handler code (UK) vs.
       // an inbound Stripe event with US-spelled status passed through

@@ -135,4 +135,7 @@ jobs:
         uses: ./.github/actions/setup
 
       - name: Unit tests with coverage
-        run: bun run test:unit
+        # Each workspace runner already parallelises its own tests. Running
+        # web, core and mobile coverage together oversubscribes this runner
+        # and can exhaust the web tests' 5-second timeout during DOM queries.
+        run: bun run test:unit --concurrency=1

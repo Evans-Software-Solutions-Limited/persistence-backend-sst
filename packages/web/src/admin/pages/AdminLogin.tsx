@@ -1,4 +1,7 @@
 import { useState, type FormEvent } from "react";
+import { IconArrowRight, IconMail, IconShieldLock } from "@tabler/icons-react";
+import { AdminBrand } from "../AdminBrand";
+import "../admin.css";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -29,15 +32,36 @@ export function AdminLogin() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-background p-6 text-foreground">
-      <form
-        onSubmit={onSubmit}
-        className="w-full max-w-sm space-y-4 rounded-xl border border-border bg-card p-6"
-      >
+    <main className="persistence-admin admin-login">
+      <div className="admin-login-intro">
+        <AdminBrand />
+        <div className="admin-login-heading">
+          <span className="admin-eyebrow">Behind every stronger day</span>
+          <h1>
+            Your community.
+            <br />
+            <span>Moving forward.</span>
+          </h1>
+          <p>
+            One workspace to manage member access, referrals and the growth of
+            Persistence.
+          </p>
+        </div>
+        <span className="admin-login-signature">
+          Built for consistency. Managed with care.
+        </span>
+      </div>
+      <form onSubmit={onSubmit} className="admin-login-form">
         <div>
-          <h1 className="text-lg font-semibold">Persistence admin</h1>
+          <IconShieldLock
+            className="admin-login-icon"
+            size={26}
+            stroke={1.5}
+            aria-hidden="true"
+          />
+          <h2>Welcome back</h2>
           <p className="text-sm text-muted-foreground">
-            Sign in with a magic link.
+            Sign in to your admin workspace with a secure email link.
           </p>
         </div>
         {!configured ? (
@@ -47,17 +71,19 @@ export function AdminLogin() {
           </p>
         ) : null}
         {state === "sent" ? (
-          <p className="text-sm">
+          <p className="admin-login-sent" role="status">
+            <IconMail size={24} aria-hidden="true" />
             Check <strong>{email}</strong> for a sign-in link. Open it on this
             device.
           </p>
         ) : (
           <>
             <div className="space-y-1.5">
-              <Label htmlFor="admin-email">Email</Label>
+              <Label htmlFor="admin-email">Admin email</Label>
               <Input
                 id="admin-email"
                 type="email"
+                placeholder="you@company.com"
                 autoComplete="email"
                 required
                 value={email}
@@ -76,9 +102,13 @@ export function AdminLogin() {
               disabled={!configured || state === "sending"}
             >
               {state === "sending" ? "Sending…" : "Send sign-in link"}
+              <IconArrowRight size={18} aria-hidden="true" />
             </Button>
           </>
         )}
+        <p className="admin-login-note">
+          For authorised Persistence administrators.
+        </p>
       </form>
     </main>
   );

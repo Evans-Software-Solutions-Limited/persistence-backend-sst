@@ -213,6 +213,26 @@ export const SUBSCRIPTION_CATALOG = [
   },
 ] as const satisfies readonly CatalogTier[];
 
+/** Plans supported by direct administrative access and business vouchers.
+ * Free is the default account state and never consumes a paid voucher.
+ * Marketing-only organisation plans are excluded until provisioning is supported.
+ */
+export type GrantableTierId = Exclude<
+  Extract<(typeof SUBSCRIPTION_CATALOG)[number], { rail: "iap" }>["id"],
+  "free"
+>;
+export const GRANTABLE_TIERS = SUBSCRIPTION_CATALOG.filter(
+  (
+    tier,
+  ): tier is Extract<
+    (typeof SUBSCRIPTION_CATALOG)[number],
+    { id: GrantableTierId }
+  > => tier.id !== "free" && tier.rail === "iap",
+);
+export function isGrantableTier(value: string): value is GrantableTierId {
+  return GRANTABLE_TIERS.some((tier) => tier.id === value);
+}
+
 export function catalogTier(id: CatalogTierId): CatalogTier {
   const tier = SUBSCRIPTION_CATALOG.find((candidate) => candidate.id === id);
   if (!tier) throw new Error(`Unknown subscription tier: ${id}`);

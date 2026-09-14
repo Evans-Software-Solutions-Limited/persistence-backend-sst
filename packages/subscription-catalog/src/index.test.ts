@@ -1,4 +1,6 @@
 import {
+  GRANTABLE_TIERS,
+  isGrantableTier,
   annualSaving,
   catalogTier,
   ctaFor,
@@ -55,4 +57,20 @@ describe("subscription catalog", () => {
       ),
     ).toBe(true);
   });
+});
+
+it("limits grants to supported paid app catalogue tiers, excluding marketing-only plans", () => {
+  expect(GRANTABLE_TIERS.map((t) => t.id)).toEqual([
+    "premium",
+    "premium_plus",
+    "individual_trainer",
+    "start_up_coach_plus",
+    "coach",
+    "coach_pro",
+  ]);
+  for (const tier of SUBSCRIPTION_CATALOG)
+    expect(isGrantableTier(tier.id)).toBe(
+      tier.id !== "free" && tier.rail === "iap",
+    );
+  expect(isGrantableTier("retired_tier")).toBe(false);
 });

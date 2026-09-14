@@ -1,3 +1,8 @@
+import {
+  GRANTABLE_TIERS,
+  type GrantableTierId,
+} from "@persistence/subscription-catalog";
+import { membershipTierLabel, isCoachMembership } from "@/lib/membershipTier";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -9,7 +14,6 @@ import {
   formatDate,
   formatMinor,
   todayIsoDay,
-  type FoundingTierName,
   type GrantResult,
   type NewGrantInput,
   type PaymentMethod,
@@ -23,7 +27,7 @@ const METHOD_LABEL: Record<PaymentMethod, string> = {
   other: "Other",
 };
 const COACH_ROLES = new Set(["personal_trainer", "physiotherapist"]);
-const CONSUMER_TIERS = new Set<FoundingTierName>(["premium", "premium_plus"]);
+const CONSUMER_TIERS = new Set<GrantableTierId>(["premium", "premium_plus"]);
 
 function useDebounced<T>(value: T, ms: number): T {
   const [debounced, setDebounced] = useState(value);
@@ -45,9 +49,9 @@ export function NewGrantForm({
     queryFn: adminApi.catalogue,
   });
   const [email, setEmail] = useState("");
-  const [tierName, setTierName] = useState<FoundingTierName>("premium");
+  const [tierName, setTierName] = useState<GrantableTierId>("premium");
   const [grantKind, setGrantKind] = useState<"founding" | "complimentary">(
-    "founding",
+    "complimentary",
   );
   const [months, setMonths] = useState(6);
   const [hasContribution, setHasContribution] = useState(false);
@@ -62,6 +66,20 @@ export function NewGrantForm({
   const [allowRoleChange, setAllowRoleChange] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [result, setResult] = useState<GrantResult | null>(null);
+  const availableTiers =
+    grantKind === "founding"
+      ? Object.entries(catalogue.data?.offers ?? {}).map(
+          ([tierName, offer]) => ({
+            tierName: tierName as GrantableTierId,
+            label: offer.label,
+          }),
+        )
+      : (catalogue.data?.grantableTiers ??
+        GRANTABLE_TIERS.map((tier) => ({
+          tierName: tier.id,
+          label: tier.name,
+        })));
+  const tierAllowed = availableTiers.some((tier) => tier.tierName === tierName);
 
   const debouncedEmail = useDebounced(email.trim().toLowerCase(), 400);
   const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(debouncedEmail);
@@ -144,9 +162,7 @@ export function NewGrantForm({
               : "Complimentary"}
           </dd>
           <dt className="text-muted-foreground">Tier</dt>
-          <dd>
-            {catalogue.data?.offers[result.tierName]?.label ?? result.tierName}
-          </dd>
+          <dd>{membershipTierLabel(result.tierName)}</dd>
           <dt className="text-muted-foreground">Duration</dt>
           <dd>{result.months} months</dd>
           <dt className="text-muted-foreground">Access until</dt>
@@ -164,6 +180,13 @@ export function NewGrantForm({
             </>
           ) : null}
         </dl>
+        <p className="admin-field-hint">
+          The recipient signs in or signs up with {result.email}. No voucher
+          code is needed for this individual grant.
+          {isCoachMembership(result.tierName)
+            ? " Coaching capabilities activate automatically on that account."
+            : ""}
+        </p>
         <Button onClick={() => setResult(null)}>Next person</Button>
       </div>
     );
@@ -216,7 +239,13 @@ export function NewGrantForm({
                 type="radio"
                 name="kind"
                 checked={grantKind === "founding"}
-                onChange={() => setGrantKind("founding")}
+                onChange={() => {
+                  setGrantKind("founding");
+                  if (!(tierName in (catalogue.data?.offers ?? {})))
+                    setTierName("premium");
+                  setConfirming(false);
+                  setAllowRoleChange(false);
+                }}
               />{" "}
               <strong>Founding place</strong>
               <span className="block text-muted-foreground">
@@ -228,11 +257,14 @@ export function NewGrantForm({
                 type="radio"
                 name="kind"
                 checked={grantKind === "complimentary"}
-                onChange={() => setGrantKind("complimentary")}
+                onChange={() => {
+                  setGrantKind("complimentary");
+                  setConfirming(false);
+                }}
               />{" "}
-              <strong>Complimentary</strong>
+              <strong>Complimentary / individual access</strong>
               <span className="block text-muted-foreground">
-                Free access; no founding place used.
+                Any supported paid plan; no founding place used.
               </span>
             </label>
           </div>
@@ -245,16 +277,14 @@ export function NewGrantForm({
             className={selectClass}
             value={tierName}
             onChange={(e) => {
-              const tier = e.target.value as FoundingTierName;
-              setTierName(tier);
-              setMonths(catalogue.data?.offers[tier]?.months ?? 6);
+              setTierName(e.target.value as GrantableTierId);
+              setConfirming(false);
+              setAllowRoleChange(false);
             }}
           >
-            {(
-              Object.keys(catalogue.data?.offers ?? {}) as FoundingTierName[]
-            ).map((tier) => (
-              <option key={tier} value={tier}>
-                {catalogue.data!.offers[tier].label}
+            {availableTiers.map((tier) => (
+              <option key={tier.tierName} value={tier.tierName}>
+                {tier.label}
               </option>
             ))}
           </select>
@@ -268,10 +298,20 @@ export function NewGrantForm({
             max="120"
             required
             value={months}
-            onChange={(e) => setMonths(Number(e.target.value))}
+            onChange={(e) => {
+              setMonths(Number(e.target.value));
+              setConfirming(false);
+            }}
           />
         </div>
 
+        <p className="admin-field-hint sm:col-span-2">
+          Choose 1–120 months. Existing accounts activate immediately; new
+          accounts activate on first sign-in with this exact email.
+          {isCoachMembership(tierName)
+            ? " This coach plan automatically enables coaching capabilities."
+            : ""}
+        </p>
         {demotionRisk ? (
           <label className="sm:col-span-2 text-xs">
             <input
@@ -394,6 +434,7 @@ export function NewGrantForm({
           disabled={
             create.isPending ||
             !catalogue.data ||
+            !tierAllowed ||
             alreadyHasGrant ||
             !Number.isInteger(months) ||
             months < 1 ||
@@ -405,7 +446,7 @@ export function NewGrantForm({
           {create.isPending
             ? "Granting…"
             : confirming
-              ? `Confirm ${grantKind} ${catalogue.data?.offers[tierName]?.label ?? tierName} for ${months} months`
+              ? `Confirm ${grantKind} ${membershipTierLabel(tierName)} for ${months} months`
               : "Grant access"}
         </Button>
         {confirming ? (

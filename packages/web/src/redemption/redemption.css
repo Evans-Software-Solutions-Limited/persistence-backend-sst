@@ -1,0 +1,250 @@
+@import "@fontsource-variable/geist";
+.redemption-page {
+  --background: #0a0b12;
+  --foreground: #f4f4f8;
+  --primary: #22d3ee;
+  --primary-foreground: #042f39;
+  --primary-gradient: linear-gradient(#22d3ee, #22d3ee);
+  --muted: #1a1d29;
+  --muted-foreground: #a0a0af;
+  --input: #353949;
+  --border: #2b2e3c;
+  --ring: #22d3ee;
+  --accent: #1a1d29;
+  --accent-foreground: #f4f4f8;
+  min-height: 100dvh;
+  background: #0a0b12;
+  color: #f4f4f8;
+  color-scheme: dark;
+  font-family: "Geist Variable", sans-serif;
+  padding: 36px clamp(20px, 6vw, 100px) 64px;
+  line-height: 1.6;
+}
+.redemption-page :focus-visible {
+  outline: 2px solid #22d3ee;
+  outline-offset: 4px;
+}
+.redeem-brand a {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  font-weight: 750;
+  font-size: 20px;
+}
+.redeem-brand img {
+  border-radius: 12px;
+}
+.redeem-brand small {
+  display: block;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1.4px;
+  color: #a0a0af;
+  font-weight: 500;
+}
+.redeem-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 500px);
+  gap: clamp(32px, 7vw, 100px);
+  max-width: 1250px;
+  margin: 64px auto 0;
+  align-items: center;
+}
+.redeem-eyebrow {
+  font-size: 11px;
+  letter-spacing: 2px;
+  color: #67e8f9;
+  font-weight: 650;
+}
+.redeem-intro h1 {
+  font-weight: 750;
+  font-size: clamp(36px, 4vw, 58px);
+  line-height: 1.08;
+  letter-spacing: -2px;
+  margin: 24px 0;
+}
+.redeem-intro em {
+  font-style: normal;
+  color: #22d3ee;
+}
+.redeem-intro p {
+  max-width: 420px;
+  color: #c2c2ce;
+}
+.redeem-trust {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-top: 40px;
+  font-size: 13px;
+  color: #a0a0af;
+}
+.redeem-trust svg,
+.redeem-accent {
+  color: #22d3ee;
+}
+.redeem-card {
+  min-width: 0;
+  border: 1px solid #2b2e3c;
+  border-radius: 20px;
+  background: #12141d;
+  padding: clamp(22px, 3vw, 38px);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.redeem-card h2 {
+  font-size: 26px;
+  letter-spacing: -0.8px;
+  line-height: 1.2;
+  font-weight: 700;
+}
+.redeem-card p {
+  font-size: 14px;
+  color: #c2c2ce;
+}
+.redeem-card form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.redeem-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.redeem-card input {
+  background: #0a0b12;
+  min-height: 44px;
+  border-radius: 10px;
+}
+.redeem-card [data-slot="button"] {
+  min-height: 44px;
+  border-radius: 10px;
+  font-weight: 650;
+}
+.redeem-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13px;
+  color: #c2c2ce;
+}
+.redeem-check input {
+  min-height: 0;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  accent-color: #22d3ee;
+  margin-top: 2px;
+}
+.redeem-check a,
+.redeem-text-link,
+.redeem-footer a {
+  color: #67e8f9;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.redeem-text-link {
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.redeem-text-link:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+.redeem-card .redeem-small {
+  font-size: 12px;
+  color: #a0a0af;
+}
+.redeem-email {
+  overflow-wrap: anywhere;
+}
+.redeem-card .redeem-error {
+  background: #f8717110;
+  border: 1px solid #f8717140;
+  padding: 12px;
+  border-radius: 8px;
+  color: #fca5a5;
+}
+.redeem-card .redeem-notice {
+  background: #22d3ee10;
+  border: 1px solid #22d3ee35;
+  padding: 12px;
+  border-radius: 8px;
+  color: #a5f3fc;
+}
+.redeem-segments {
+  display: flex;
+  padding: 4px;
+  background: #0a0b12;
+  border: 1px solid #2b2e3c;
+  border-radius: 10px;
+  gap: 4px;
+}
+.redeem-segments button {
+  flex: 1;
+  padding: 9px;
+  font-size: 13px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.redeem-segments button[aria-pressed="true"] {
+  background: #1a1d29;
+  color: #67e8f9;
+}
+.redeem-summary {
+  display: grid;
+  gap: 5px;
+  background: #0a0b12;
+  border: 1px solid #2b2e3c;
+  border-radius: 12px;
+  padding: 20px;
+}
+.redeem-summary dt {
+  font-size: 11px;
+  color: #a0a0af;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+.redeem-summary dd {
+  font-size: 14px;
+  overflow-wrap: anywhere;
+  margin-bottom: 10px;
+}
+.redeem-success {
+  width: 48px;
+  height: 48px;
+  background: #22d3ee18;
+  color: #67e8f9;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+}
+.redeem-footer {
+  border-top: 1px solid #2b2e3c;
+  padding-top: 18px;
+  font-size: 12px;
+  color: #a0a0af;
+}
+@media (max-width: 800px) {
+  .redemption-page {
+    padding-top: 24px;
+  }
+  .redeem-grid {
+    grid-template-columns: 1fr;
+    gap: 32px;
+    margin-top: 40px;
+    max-width: 540px;
+  }
+  .redeem-intro h1 {
+    font-size: 38px;
+  }
+  .redeem-trust {
+    display: none;
+  }
+  .redeem-intro p {
+    font-size: 14px;
+  }
+}

@@ -1,3 +1,4 @@
+import { GRANTABLE_TIERS } from "@persistence/subscription-catalog";
 import Elysia, { t } from "elysia";
 import { adminGuard } from "../_adminGuard";
 import { getUser } from "@persistence/api-utils/auth/supabaseAuth";
@@ -23,7 +24,10 @@ function grantErrorResponse(error: GrantError): {
     case "invalid_tier":
       return {
         status: 400,
-        body: { message: "That tier isn't part of the founding offer" },
+        body: {
+          message:
+            "Choose a supported paid tier; founding grants are limited to founding offers",
+        },
       };
     case "tier_missing":
       return {
@@ -65,6 +69,14 @@ function grantErrorResponse(error: GrantError): {
       };
     case "user_not_found":
       return { status: 404, body: { message: "No account with that id" } };
+    case "protected_account":
+      return {
+        status: 409,
+        body: {
+          message: "Administrator accounts cannot receive membership grants.",
+          code: "protected_account",
+        },
+      };
     case "coach_demotion":
       return {
         status: 409,
@@ -79,7 +91,7 @@ function grantErrorResponse(error: GrantError): {
         status: 409,
         body: {
           message:
-            "This account has a live App Store or Play Store subscription. Grant access after the store subscription expires.",
+            "This account has a live paid or prepaid membership. Grant access after it expires.",
           code: "active_store_subscription",
           subscription: error.subscription,
         },
@@ -128,6 +140,12 @@ export const adminFoundingGrantsHandler = new Elysia()
     return {
       data: {
         offers: catalogueOffers,
+        grantableTiers: GRANTABLE_TIERS.map((tier) => ({
+          tierName: tier.id,
+          label: tier.name,
+          isTrainerTier: tier.audience !== "consumer",
+          months: 6,
+        })),
         caps: { consumer: consumer.cap, coach: coach.cap },
         contributionMethods: FOUNDING_PAYMENT_METHODS,
       },

@@ -1,6 +1,7 @@
+import { useAdminDialogs } from "../useAdminDialogs";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useSearchParams } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { Button } from "@/components/ui/button";
 import { adminApi, formatDate, formatMinor } from "../adminApi";
 import {
@@ -14,6 +15,7 @@ import {
 import { NewGrantForm } from "./NewGrantForm";
 
 export function AdminGrants() {
+  const { prompt } = useAdminDialogs();
   const [params, setParams] = useSearchParams();
   const showNew = params.get("new") === "1";
   const [showRevoked, setShowRevoked] = useState(false);
@@ -64,6 +66,24 @@ export function AdminGrants() {
         </Button>
       </PageHeader>
 
+      <p className="admin-page-description">
+        Individual grants activate when the recipient signs in or signs up with
+        the exact email assigned here. Coach grants activate coaching
+        capabilities automatically. For single-use membership codes, use{" "}
+        <Link to="/admin/vouchers" className="underline">
+          Business vouchers
+        </Link>{" "}
+        and the{" "}
+        <Link
+          to="/redeem"
+          target="_blank"
+          rel="noreferrer"
+          className="underline"
+        >
+          employee redemption page
+        </Link>
+        .
+      </p>
       {showNew ? (
         <div className="mb-6">
           <NewGrantForm />
@@ -153,8 +173,8 @@ export function AdminGrants() {
                         size="xs"
                         variant="ghost"
                         disabled={extend.isPending}
-                        onClick={() => {
-                          const rawMonths = window.prompt(
+                        onClick={async () => {
+                          const rawMonths = await prompt(
                             "How many extra months?",
                             "1",
                           );
@@ -166,7 +186,7 @@ export function AdminGrants() {
                             months > 120
                           )
                             return;
-                          const reason = window.prompt(
+                          const reason = await prompt(
                             `Why extend ${g.email}'s access?`,
                           );
                           if (reason && reason.trim().length >= 3)
@@ -191,8 +211,8 @@ export function AdminGrants() {
                         size="xs"
                         variant="destructive"
                         disabled={revoke.isPending}
-                        onClick={() => {
-                          const reason = window.prompt(
+                        onClick={async () => {
+                          const reason = await prompt(
                             `Revoke ${g.email}'s ${g.tierLabel ?? g.tierName}? Reason:`,
                           );
                           if (reason && reason.trim().length >= 3)

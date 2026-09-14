@@ -3188,3 +3188,102 @@ export const marketingPlanMetrics = pgTable(
 
 export type MarketingPlanMetric = typeof marketingPlanMetrics.$inferSelect;
 export type NewMarketingPlanMetric = typeof marketingPlanMetrics.$inferInsert;
+
+// BUSINESS-VOUCHERS: private API-managed records; immutable redemption audit
+// intentionally survives deletion of profiles and user_subscriptions.
+export const businessVoucherBatches = pgTable(
+  "business_voucher_batches",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    businessName: text("business_name").notNull(),
+    reference: text("reference"),
+    tierName: text("tier_name")
+      .notNull()
+      .references(() => subscriptionTiers.tierName),
+    months: integer("months").notNull(),
+    allowedDomains: text("allowed_domains").array().notNull().default([]),
+    redeemBy: timestamp("redeem_by", { withTimezone: true }),
+    createdBy: uuid("created_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    check(
+      "business_voucher_batches_months_check",
+      sql`${t.months} BETWEEN 1 AND 120`,
+    ),
+    check(
+      "business_voucher_batches_tier_name_check",
+      sql`${t.tierName} <> 'free'`,
+    ),
+  ],
+);
+export const businessVouchers = pgTable(
+  "business_vouchers",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    batchId: uuid("batch_id")
+      .notNull()
+      .references(() => businessVoucherBatches.id),
+    codeHash: text("code_hash").notNull().unique(),
+    codeHint: text("code_hint").notNull(),
+    employeeEmail: text("employee_email"),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    redeemedAt: timestamp("redeemed_at", { withTimezone: true }),
+    accountId: uuid("account_id"),
+    accountEmail: text("account_email"),
+    eligibilityEmail: text("eligibility_email"),
+    subscriptionId: uuid("subscription_id"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index("business_vouchers_batch_idx").on(t.batchId),
+    uniqueIndex("business_vouchers_employee_uq")
+      .on(t.batchId, t.employeeEmail)
+      .where(sql`${t.employeeEmail} IS NOT NULL`),
+    index("business_vouchers_account_idx")
+      .on(t.accountId)
+      .where(sql`${t.accountId} IS NOT NULL`),
+  ],
+);
+export const businessVoucherChallenges = pgTable(
+  "business_voucher_challenges",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    voucherId: uuid("voucher_id")
+      .notNull()
+      .references(() => businessVouchers.id),
+    accountId: uuid("account_id").notNull(),
+    accountEmail: text("account_email").notNull(),
+    eligibilityEmail: text("eligibility_email").notNull(),
+    otpHash: text("otp_hash"),
+    verifiedAt: timestamp("verified_at", { withTimezone: true }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index("business_voucher_challenges_expiry_idx")
+      .on(t.expiresAt)
+      .where(sql`${t.completedAt} IS NULL`),
+    index("business_voucher_challenges_completed_idx")
+      .on(t.completedAt)
+      .where(sql`${t.completedAt} IS NOT NULL`),
+  ],
+);
+export const businessVoucherRateLimits = pgTable(
+  "business_voucher_rate_limits",
+  {
+    key: text("key").primaryKey(),
+    attempts: integer("attempts").notNull(),
+    resetsAt: timestamp("resets_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [index("business_voucher_rate_limits_expiry_idx").on(t.resetsAt)],
+);
