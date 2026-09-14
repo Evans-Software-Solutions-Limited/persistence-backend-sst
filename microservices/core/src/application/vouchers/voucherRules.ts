@@ -1,3 +1,4 @@
+import type { GrantableTierId } from "@persistence/subscription-catalog";
 import { createHash, randomBytes } from "node:crypto";
 export class VoucherError extends Error {
   readonly code: string;
@@ -57,7 +58,7 @@ export interface BatchInput {
   businessName: string;
   reference?: string;
   quantity: number;
-  tierName: "premium" | "premium_plus";
+  tierName: GrantableTierId;
   months: number;
   allowedDomains: string[];
   redeemBy: string | null;

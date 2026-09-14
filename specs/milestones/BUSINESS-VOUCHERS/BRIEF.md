@@ -44,7 +44,7 @@ The exact-email restriction proves who may redeem, while the destination account
 
 ## Existing subscription behavior
 
-Reuse the existing server-managed entitlement behavior, but add explicit business-voucher provenance rather than labelling purchases as complimentary or consuming founding-offer pools. Preserve protection against replacing live Apple/Google subscriptions. Initially reject incompatible active subscriptions before consuming a voucher and explain how to obtain support; do not promise deferred activation until implemented. Reject duplicate live grants and coach-role changes unless a defined, separately authorized rule allows them.
+Reuse the existing server-managed entitlement behavior, but add explicit business-voucher provenance rather than labelling purchases as complimentary or consuming founding-offer pools. Preserve protection against replacing live Apple/Google subscriptions. Initially reject incompatible active subscriptions before consuming a voucher and explain how to obtain support; do not promise deferred activation until implemented. Reject duplicate live grants. Coach vouchers may promote a regular user to a coach through the existing subscription trigger; consumer vouchers cannot silently demote an existing coach. Individual admin grants retain explicit role-change confirmation.
 
 ## Persistence admin visual criteria
 
@@ -59,3 +59,11 @@ Reuse the existing server-managed entitlement behavior, but add explicit busines
 Database migration/schema, repository/service/routes, admin batch tools, public redemption/auth pages, transactional verification email, and focused regression/integration tests are required for the full feature. Test race/replay, proof expiry, different emails, both restrictions together, empty domains, exact domain boundaries, wrong-mailbox proofs, subscription conflicts, revocation, account deletion and CSV handling. Verify actual released-app account creation/sign-in/access refresh on staging without initiating a native build.
 
 Deployment requires additive staging/production URL allowlist entries and verified email delivery. A frontend-only mock does not constitute voucher support. Record which deliverables are specification, implemented, tested and deployed separately.
+
+## Expanded membership scope
+
+Duration is selectable from 1 through 120 months, starting when access activates. Both individual complimentary grants and business vouchers support all six memberships recognised by the released app: Premium, Premium+, Start Up Coach, Start Up Coach+, Coach and Coach Pro. A voucher batch may contain one code for an individual or many codes for a business. Founding campaign grants retain their specific offers and seat pools; the broader individual-grant form is not constrained by those offers.
+
+Individual grants attach to the recipient email and activate on sign-in/signup; there is no additional membership code to redeem. Voucher codes for every supported tier use the same website `/redeem` flow, including coach vouchers. Referral codes remain attribution-only. The admin provides a visible redemption-page link.
+
+Studio, Studio Pro and Enterprise are website organisation-plan entries, not implemented app membership products. Their seats, multiple locations and SSO are a separate expansion; this grant change must not label consumer/coach access as those unimplemented capabilities.

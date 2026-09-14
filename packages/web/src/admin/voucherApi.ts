@@ -1,3 +1,4 @@
+import type { GrantableTierId } from "@persistence/subscription-catalog";
 import { adminFetch } from "./adminApi";
 
 export type VoucherStatus = "unused" | "redeemed" | "expired" | "revoked";
@@ -5,7 +6,7 @@ export interface VoucherBatch {
   id: string;
   businessName: string;
   reference: string | null;
-  tierName: "premium" | "premium_plus";
+  tierName: GrantableTierId;
   months: number;
   allowedDomains: string[];
   redeemBy: string | null;

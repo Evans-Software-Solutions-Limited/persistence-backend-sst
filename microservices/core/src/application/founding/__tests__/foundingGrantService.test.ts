@@ -1027,3 +1027,137 @@ describe("FoundingGrantService.extend", () => {
     });
   });
 });
+
+describe("administrative grant validation and transactional refusals", () => {
+  it.each([0, 121, 1.5])(
+    "rejects invalid grant duration %s",
+    async (months) => {
+      const { svc, grants } = makeRepos();
+      expect(
+        await svc.grant(
+          { tierName: "premium", email: "a@b.co", months },
+          "admin",
+        ),
+      ).toMatchObject({ ok: false, error: { code: "invalid_months" } });
+      expect(grants.create).not.toHaveBeenCalled();
+    },
+  );
+  it.each([
+    { contributionAmountMinor: -1 },
+    { contributionAmountMinor: 1.5 },
+    { contributionAmountMinor: 0, contributedAt: new Date() },
+    { contributionAmountMinor: 1, contributionMethod: null },
+  ])("rejects inconsistent payment metadata %j", async (over) => {
+    const { svc, grants } = makeRepos();
+    expect(
+      await svc.grant(
+        { tierName: "premium", email: "a@b.co", ...over },
+        "admin",
+      ),
+    ).toMatchObject({ ok: false, error: { code: "invalid_contribution" } });
+    expect(grants.create).not.toHaveBeenCalled();
+  });
+  it("refuses missing recipients and unavailable profiles", async () => {
+    const { svc, grants } = makeRepos();
+    expect(await svc.grant({ tierName: "premium" }, "admin")).toMatchObject({
+      ok: false,
+      error: { code: "invalid_email" },
+    });
+    grants.findProfileById.mockResolvedValueOnce(null as any);
+    expect(
+      await svc.grant({ tierName: "premium", userId: "missing" }, "admin"),
+    ).toMatchObject({ ok: false, error: { code: "user_not_found" } });
+  });
+  it.each(["coach_demotion", "account_pending_deletion", "protected_account"])(
+    "surfaces transactional %s without sending an invitation",
+    async (kind) => {
+      const { svc, grants, mailer } = makeRepos();
+      grants.create.mockResolvedValueOnce({ kind });
+      expect(
+        await svc.grant({ tierName: "premium", email: "a@b.co" }, "admin"),
+      ).toMatchObject({ ok: false, error: { code: kind } });
+      expect(mailer).not.toHaveBeenCalled();
+    },
+  );
+  it("rejects invalid referrals before reserving access", async () => {
+    const { svc, grants, referrals } = makeRepos();
+    expect(
+      await svc.grant(
+        { tierName: "premium", email: "a@b.co", referralCode: "!" },
+        "admin",
+      ),
+    ).toMatchObject({ ok: false, error: { code: "invalid_referral_code" } });
+    referrals.findCodeByCanonical.mockResolvedValueOnce({
+      id: "r1",
+      displayCode: "REFER",
+      label: "Refer",
+    } as any);
+    referrals.hasLockedOtherCode.mockResolvedValueOnce(true);
+    expect(
+      await svc.grant(
+        { tierName: "premium", userId: "u1", referralCode: "REFER" },
+        "admin",
+      ),
+    ).toMatchObject({
+      ok: false,
+      error: { code: "referral_locked_elsewhere" },
+    });
+    expect(grants.create).not.toHaveBeenCalled();
+  });
+  it.each(["invalid", "locked"])(
+    "rolls back when transactional referral claim becomes %s",
+    async (kind) => {
+      const { svc, grants, referrals } = makeRepos();
+      referrals.findCodeByCanonical.mockResolvedValueOnce({
+        id: "r1",
+        displayCode: "REFER",
+        label: "Refer",
+      } as any);
+      referrals.claim.mockResolvedValueOnce({
+        kind,
+        applied: { codeId: "other" },
+      } as any);
+      mockGrantCreated(grants);
+      expect(
+        await svc.grant(
+          { tierName: "premium", userId: "u1", referralCode: "REFER" },
+          "admin",
+        ),
+      ).toMatchObject({
+        ok: false,
+        error: {
+          code:
+            kind === "invalid"
+              ? "invalid_referral_code"
+              : "referral_locked_elsewhere",
+        },
+      });
+    },
+  );
+  it("does not hide unexpected repository failures", async () => {
+    const { svc, grants } = makeRepos();
+    grants.create.mockRejectedValueOnce(new Error("connection lost"));
+    await expect(
+      svc.grant({ tierName: "premium", email: "a@b.co" }, "admin"),
+    ).rejects.toThrow("connection lost");
+  });
+  it("handles missing/revoked invitation and concurrent revoke results", async () => {
+    const { svc, grants } = makeRepos();
+    grants.findById.mockResolvedValueOnce(null);
+    expect(await svc.resendInvite("missing", "admin")).toEqual({
+      ok: false,
+      error: "not_found",
+    });
+    grants.findById.mockResolvedValueOnce({ revokedAt: new Date() });
+    expect(await svc.resendInvite("revoked", "admin")).toEqual({
+      ok: false,
+      error: "revoked",
+    });
+    grants.findById.mockResolvedValueOnce({ revokedAt: null });
+    grants.revoke.mockResolvedValueOnce(null);
+    expect(await svc.revoke("g1", "reason", "admin")).toEqual({
+      ok: false,
+      error: "already_revoked",
+    });
+  });
+});

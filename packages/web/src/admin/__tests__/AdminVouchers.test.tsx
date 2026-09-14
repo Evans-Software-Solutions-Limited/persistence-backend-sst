@@ -1,3 +1,4 @@
+import { GRANTABLE_TIERS } from "@persistence/subscription-catalog";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { renderPage } from "@/test-utils";
@@ -13,9 +14,12 @@ const issued = {
   codes: [{ id: "v1", code: "SECRET-ONCE", employeeEmail: null }],
 };
 function change(label: string, value: string) {
-  fireEvent.change(screen.getByLabelText(label, { exact: false }), {
-    target: { value },
-  });
+  fireEvent.change(
+    screen.getByLabelText(label, { exact: label === "Membership" }),
+    {
+      target: { value },
+    },
+  );
 }
 function submit() {
   fireEvent.submit(
@@ -341,4 +345,32 @@ describe("business voucher administration", () => {
       ).toContain("SECOND-SECRET");
     },
   );
+  it.each(GRANTABLE_TIERS)(
+    "creates a $name voucher batch with a custom duration",
+    async (tier) => {
+      const onCreated = vi.fn();
+      renderPage(<NewVoucherBatch onCreated={onCreated} />);
+      change("Business name", "Coach partnership");
+      change("Months of access", "19");
+      change("Membership", tier.id);
+      submit();
+      await waitFor(() => expect(onCreated).toHaveBeenCalled());
+      expect(voucherApi.create).toHaveBeenCalledWith(
+        expect.objectContaining({ tierName: tier.id, months: 19 }),
+      );
+    },
+  );
+  it("links visibly to coach/employee redemption and lists the actual coach plan", async () => {
+    vi.mocked(voucherApi.batches).mockResolvedValue([
+      { ...batch, tierName: "coach_pro", months: 24 },
+    ]);
+    renderPage(<AdminVouchers />);
+    expect(await screen.findByText("Coach Pro")).toBeTruthy();
+    expect(screen.getByText("24 months")).toBeTruthy();
+    expect(
+      screen
+        .getByRole("link", { name: "employee redemption page" })
+        .getAttribute("href"),
+    ).toBe("/redeem");
+  });
 });

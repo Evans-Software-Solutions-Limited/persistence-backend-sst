@@ -1,3 +1,4 @@
+import { GRANTABLE_TIERS } from "@persistence/subscription-catalog";
 import {
   fireEvent,
   render,
@@ -273,3 +274,48 @@ it("withholds grant activation when a verification response is not verified", as
     screen.queryByRole("button", { name: "Activate membership" }),
   ).toBeNull();
 });
+
+it.each(GRANTABLE_TIERS)(
+  "confirms and redeems the exact $name plan",
+  async (tier) => {
+    vi.mocked(voucherApi.prepare).mockResolvedValue({
+      ...challenge,
+      verified: true,
+      eligibilityEmail: account.email,
+      tierName: tier.id,
+      months: 17,
+    });
+    vi.mocked(voucherApi.redeem).mockResolvedValue({
+      ...challenge,
+      voucherId: "v",
+      tierName: tier.id,
+      months: 17,
+      expiresAt: "2028-01-01T00:00:00Z",
+    });
+    await ready();
+    fill();
+    await screen.findByRole("heading", { name: "Make it yours" });
+    expect(screen.getByText(`${tier.name} · 17 months`)).toBeTruthy();
+    if (tier.audience === "coach")
+      expect(
+        screen.getByText(
+          /This coach membership activates coaching capabilities/,
+        ),
+      ).toBeTruthy();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Activate membership" }),
+    );
+    await screen.findByRole("heading", { name: "You're ready to train" });
+    expect(
+      screen.getByText((content) =>
+        content.startsWith(`${tier.name} is active for`),
+      ),
+    ).toBeTruthy();
+    if (tier.audience === "coach")
+      expect(
+        screen.getByText(
+          /Your coach membership and coaching capabilities are ready/,
+        ),
+      ).toBeTruthy();
+  },
+);

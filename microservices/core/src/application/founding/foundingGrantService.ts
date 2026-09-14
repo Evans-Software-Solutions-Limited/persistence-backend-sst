@@ -1,3 +1,8 @@
+import {
+  isGrantableTier,
+  catalogTier,
+  type GrantableTierId,
+} from "@persistence/subscription-catalog";
 import { randomUUID } from "node:crypto";
 import { webOrigin as sharedWebOrigin } from "../../shared/webOrigin";
 import { AdminAuditRepository } from "../repositories/adminAuditRepository";
@@ -21,7 +26,6 @@ import {
   FOUNDING_OFFERS,
   isFoundingTier,
   type FoundingPaymentMethod,
-  type FoundingTierName,
 } from "./foundingOffer";
 
 /**
@@ -52,6 +56,7 @@ export type GrantError =
   | { code: "user_not_found" }
   | { code: "account_pending_deletion" }
   | { code: "coach_demotion" }
+  | { code: "protected_account" }
   | {
       code: "active_store_subscription";
       subscription: { tierName: string; expiresAt: Date | null };
@@ -83,7 +88,7 @@ export interface GrantResult {
   status: "active" | "pending";
   email: string;
   userId: string | null;
-  tierName: FoundingTierName;
+  tierName: GrantableTierId;
   grantKind: "founding" | "complimentary";
   months: number;
   expiresAt: Date | null;
@@ -93,10 +98,6 @@ export interface GrantResult {
   referral: { code: string; label: string } | null;
 }
 
-const CONSUMER_TIERS: ReadonlySet<string> = new Set([
-  "premium",
-  "premium_plus",
-]);
 const COACH_ROLES: ReadonlySet<string> = new Set([
   "personal_trainer",
   "physiotherapist",
@@ -156,12 +157,15 @@ export class FoundingGrantService {
   ): Promise<
     { ok: true; result: GrantResult } | { ok: false; error: GrantError }
   > {
-    if (!isFoundingTier(req.tierName))
-      return { ok: false, error: { code: "invalid_tier" } };
-    const tierName: FoundingTierName = req.tierName;
-    const offer = FOUNDING_OFFERS[tierName];
     const grantKind = req.grantKind ?? "founding";
-    const months = req.months ?? offer.months;
+    if (
+      !isGrantableTier(req.tierName) ||
+      (grantKind === "founding" && !isFoundingTier(req.tierName))
+    )
+      return { ok: false, error: { code: "invalid_tier" } };
+    const tierName: GrantableTierId = req.tierName;
+    const offer = isFoundingTier(tierName) ? FOUNDING_OFFERS[tierName] : null;
+    const months = req.months ?? offer?.months ?? 6;
     if (!Number.isInteger(months) || (months ?? 0) < 1 || (months ?? 0) > 120) {
       return { ok: false, error: { code: "invalid_months" } };
     }
@@ -213,6 +217,8 @@ export class FoundingGrantService {
       return { ok: false, error: { code: "invalid_email" } };
     if (!profile) profile = await this.grants.findProfileByEmail(email);
 
+    if (profile?.role === "admin")
+      return { ok: false, error: { code: "protected_account" } };
     if (profile?.deletedAt) {
       return { ok: false, error: { code: "account_pending_deletion" } };
     }
@@ -238,7 +244,7 @@ export class FoundingGrantService {
     // profiles.role to 'user' via update_subscription_limits_trigger.
     if (
       profile &&
-      CONSUMER_TIERS.has(tierName) &&
+      catalogTier(tierName).audience === "consumer" &&
       COACH_ROLES.has(profile.role ?? "") &&
       !req.allowRoleChange
     ) {
@@ -286,8 +292,9 @@ export class FoundingGrantService {
           referralCodeId,
           grantedBy: actorId,
           notes: req.notes ?? null,
+          allowRoleChange: req.allowRoleChange,
         },
-        offer.pool,
+        offer?.pool ?? "coach",
         async ({ transaction, grant }) => {
           if (referralCodeId) {
             if (profile) {
@@ -370,6 +377,12 @@ export class FoundingGrantService {
         },
       };
     }
+    if (
+      outcome.kind === "account_pending_deletion" ||
+      outcome.kind === "coach_demotion" ||
+      outcome.kind === "protected_account"
+    )
+      return { ok: false, error: { code: outcome.kind } };
     if (outcome.kind === "duplicate")
       return { ok: false, error: { code: "duplicate" } };
 
@@ -435,7 +448,7 @@ export class FoundingGrantService {
       {
         grantId,
         email: grant.email,
-        tierName: grant.tierName as FoundingTierName,
+        tierName: grant.tierName as GrantableTierId,
         grantKind: grant.grantKind as "founding" | "complimentary",
         months: grant.months,
         amountMinor: grant.amountMinor,
@@ -485,7 +498,7 @@ export class FoundingGrantService {
     input: {
       grantId: string;
       email: string;
-      tierName: FoundingTierName;
+      tierName: GrantableTierId;
       grantKind: "founding" | "complimentary";
       months: number;
       amountMinor: number;

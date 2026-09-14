@@ -1,3 +1,4 @@
+import { membershipTierLabel, isCoachMembership } from "@/lib/membershipTier";
 import { useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router";
@@ -164,8 +165,8 @@ export function AdminVoucherBatch() {
             <dl className="admin-definition-grid">
               <dt>Membership</dt>
               <dd>
-                {batch.tierName === "premium_plus" ? "Premium+" : "Premium"} ·{" "}
-                {batch.months} months from redemption
+                {membershipTierLabel(batch.tierName)} · {batch.months} months
+                from redemption
               </dd>
               <dt>Reference</dt>
               <dd>{batch.reference ?? "Not set"}</dd>
@@ -186,6 +187,21 @@ export function AdminVoucherBatch() {
               Restrictions apply to the verified eligibility email. The
               membership account email may be different. Redeemed codes are
               permanently used.
+            </p>
+            <p className="admin-field-hint mt-3">
+              Redeem any code in this batch on the{" "}
+              <Link
+                to="/redeem"
+                target="_blank"
+                rel="noreferrer"
+                className="underline"
+              >
+                employee redemption page
+              </Link>
+              .
+              {isCoachMembership(batch.tierName)
+                ? " Coach access is provisioned automatically for the verified membership account."
+                : " Sign in to the membership account you want to receive access."}
             </p>
           </Panel>
           <div className="admin-stats-grid admin-stats-five">

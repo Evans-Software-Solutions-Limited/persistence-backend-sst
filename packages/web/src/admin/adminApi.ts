@@ -1,3 +1,4 @@
+import type { GrantableTierId } from "@persistence/subscription-catalog";
 import { getAccessToken, saveSession } from "./adminAuth";
 
 /**
@@ -65,6 +66,12 @@ export type PaymentMethod =
   | "other";
 
 export interface Catalogue {
+  grantableTiers?: {
+    tierName: GrantableTierId;
+    label: string;
+    isTrainerTier: boolean;
+    months: number;
+  }[];
   offers: Record<
     FoundingTierName,
     { months: number; pool: string; label: string }
@@ -118,7 +125,7 @@ export interface GrantResult {
   status: "active" | "pending";
   email: string;
   userId: string | null;
-  tierName: FoundingTierName;
+  tierName: GrantableTierId;
   grantKind: "founding" | "complimentary";
   months: number;
   expiresAt: string | null;
@@ -130,7 +137,7 @@ export interface GrantResult {
 
 export interface NewGrantInput {
   email: string;
-  tierName: FoundingTierName;
+  tierName: GrantableTierId;
   grantKind: "founding" | "complimentary";
   months: number;
   contributionAmountMinor?: number;

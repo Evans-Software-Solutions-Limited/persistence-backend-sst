@@ -1,7 +1,7 @@
 import { useAdminDialogs } from "../useAdminDialogs";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useSearchParams } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { Button } from "@/components/ui/button";
 import { adminApi, formatDate, formatMinor } from "../adminApi";
 import {
@@ -66,6 +66,24 @@ export function AdminGrants() {
         </Button>
       </PageHeader>
 
+      <p className="admin-page-description">
+        Individual grants activate when the recipient signs in or signs up with
+        the exact email assigned here. Coach grants activate coaching
+        capabilities automatically. For single-use membership codes, use{" "}
+        <Link to="/admin/vouchers" className="underline">
+          Business vouchers
+        </Link>{" "}
+        and the{" "}
+        <Link
+          to="/redeem"
+          target="_blank"
+          rel="noreferrer"
+          className="underline"
+        >
+          employee redemption page
+        </Link>
+        .
+      </p>
       {showNew ? (
         <div className="mb-6">
           <NewGrantForm />

@@ -3215,7 +3215,7 @@ export const businessVoucherBatches = pgTable(
     ),
     check(
       "business_voucher_batches_tier_name_check",
-      sql`${t.tierName} IN ('premium','premium_plus')`,
+      sql`${t.tierName} <> 'free'`,
     ),
   ],
 );

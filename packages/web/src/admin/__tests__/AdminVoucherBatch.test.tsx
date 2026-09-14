@@ -273,4 +273,20 @@ describe("voucher batch detail", () => {
       screen.getByLabelText("Eligible employee email", { exact: false }),
     ).toHaveProperty("value", "a@else.com");
   });
+  it("shows a coach batch plan, duration and redemption guidance", async () => {
+    vi.mocked(voucherApi.detail).mockResolvedValue({
+      batch: { ...batch, tierName: "individual_trainer", months: 21 },
+      vouchers: [unused],
+    });
+    await ready();
+    expect(screen.getByText(/Start Up Coach · 21 months/)).toBeTruthy();
+    expect(
+      screen.getByText(/Coach access is provisioned automatically/),
+    ).toBeTruthy();
+    expect(
+      screen
+        .getByRole("link", { name: "employee redemption page" })
+        .getAttribute("href"),
+    ).toBe("/redeem");
+  });
 });

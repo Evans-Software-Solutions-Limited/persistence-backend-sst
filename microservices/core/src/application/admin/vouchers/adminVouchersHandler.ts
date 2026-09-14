@@ -1,3 +1,4 @@
+import { GRANTABLE_TIERS } from "@persistence/subscription-catalog";
 import Elysia, { t } from "elysia";
 import { getUser } from "@persistence/api-utils/auth/supabaseAuth";
 import { adminGuard } from "../_adminGuard";
@@ -32,7 +33,7 @@ export const adminVouchersHandler = new Elysia()
         businessName: t.String({ minLength: 1, maxLength: 200 }),
         reference: t.Optional(t.String({ maxLength: 200 })),
         quantity: t.Integer({ minimum: 1, maximum: 500 }),
-        tierName: t.Union([t.Literal("premium"), t.Literal("premium_plus")]),
+        tierName: t.Union(GRANTABLE_TIERS.map((tier) => t.Literal(tier.id))),
         months: t.Integer({ minimum: 1, maximum: 120 }),
         allowedDomains: t.Array(t.String({ maxLength: 253 }), { maxItems: 50 }),
         redeemBy: t.Nullable(t.String({ maxLength: 40 })),

@@ -1,3 +1,4 @@
+import { membershipTierLabel, isCoachMembership } from "@/lib/membershipTier";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,8 +28,6 @@ function Field({
     </div>
   );
 }
-const tierLabel = (tier: string) =>
-  tier === "premium_plus" ? "Premium+" : "Premium";
 
 function AccountForm({
   email,
@@ -371,8 +370,8 @@ export default function RedeemPage() {
                 <dd>{flow.challenge.businessName}</dd>
                 <dt>Membership</dt>
                 <dd>
-                  {tierLabel(flow.challenge.tierName)} · {flow.challenge.months}{" "}
-                  months
+                  {membershipTierLabel(flow.challenge.tierName)} ·{" "}
+                  {flow.challenge.months} months
                 </dd>
                 <dt>Eligibility email</dt>
                 <dd>{flow.challenge.eligibilityEmail}</dd>
@@ -383,6 +382,13 @@ export default function RedeemPage() {
                 Access starts now and does not auto-renew. This code can only be
                 used once.
               </p>
+              {isCoachMembership(flow.challenge.tierName) ? (
+                <p className="redeem-small">
+                  This coach membership activates coaching capabilities on the
+                  verified membership account shown above. Use that account when
+                  signing in to Persistence.
+                </p>
+              ) : null}
               <Button
                 type="button"
                 disabled={flow.busy}
@@ -399,7 +405,7 @@ export default function RedeemPage() {
                 <IconCheck size={28} />
               </div>
               <p>
-                {tierLabel(flow.result.tierName)} is active for{" "}
+                {membershipTierLabel(flow.result.tierName)} is active for{" "}
                 <strong className="redeem-email">
                   {flow.result.accountEmail}
                 </strong>
@@ -414,6 +420,12 @@ export default function RedeemPage() {
                 })}
                 .
               </p>
+              {isCoachMembership(flow.result.tierName) ? (
+                <p className="redeem-small">
+                  Your coach membership and coaching capabilities are ready.
+                  Sign in to the account above in Persistence to continue.
+                </p>
+              ) : null}
               <Button asChild>
                 <a href="persistencemobile://">
                   Open Persistence

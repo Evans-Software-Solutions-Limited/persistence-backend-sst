@@ -194,6 +194,15 @@ describe("adminFoundingGrantsHandler", () => {
     expect((await post(valid)).status).toBe(409);
     grantMock.mockResolvedValueOnce({
       ok: false,
+      error: { code: "protected_account" },
+    });
+    const protectedAccount = await post(valid);
+    expect(protectedAccount.status).toBe(409);
+    expect(((await protectedAccount.json()) as any).code).toBe(
+      "protected_account",
+    );
+    grantMock.mockResolvedValueOnce({
+      ok: false,
       error: { code: "coach_demotion" },
     });
     const demote = await post(valid);
@@ -210,7 +219,7 @@ describe("adminFoundingGrantsHandler", () => {
     expect(store.status).toBe(409);
     expect(await store.json()).toEqual({
       message:
-        "This account has a live App Store or Play Store subscription. Grant access after the store subscription expires.",
+        "This account has a live paid or prepaid membership. Grant access after it expires.",
       code: "active_store_subscription",
       subscription: { tierName: "premium", expiresAt: null },
     });

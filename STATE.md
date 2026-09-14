@@ -1,5 +1,19 @@
 # Project memory · persistence-backend-sst
 
+### 2026-09-14 — Individual and B2B grants across supported memberships
+
+Expanded both individual complimentary grants and single-use vouchers to the
+six paid memberships supported by the existing app, from a shared catalogue.
+Founding offers/pools remain separate. Both grant forms show duration controls for 1–120 months;
+switching tiers preserves a custom duration. Individual grants activate by exact
+recipient email; all voucher tiers including coaches use `/redeem`, now linked
+from admin. Coach role/caps use existing production DB triggers. Organisation
+marketing plans (Studio/Studio Pro/Enterprise) are not implemented app products;
+asked Brad whether to expand those separately, continuing supported plans now.
+Forward migration: 20260914161842_grant_all_membership_tiers.sql. No native edits
+or builds. Browser preview checked individual Coach Pro for 18 months, changed to
+Coach retaining 18 months; B2B Start Up Coach+ for 24 months; 390px layout no overflow.
+
 ### 2026-09-14 — PR #452 lapsed voucher blocks Stripe purchase
 
 Inspector finding4006862459 confirmed: expired vouchers retained an active

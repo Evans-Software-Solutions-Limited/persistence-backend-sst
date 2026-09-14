@@ -1,3 +1,7 @@
+import {
+  isGrantableTier,
+  catalogTier,
+} from "@persistence/subscription-catalog";
 import { randomUUID } from "node:crypto";
 import { and, eq, inArray, isNull, sql, desc, ilike, or } from "drizzle-orm";
 import { getDb } from "@persistence/db/client";
@@ -176,7 +180,7 @@ export class VoucherRepository {
       !Number.isInteger(input.months) ||
       input.months < 1 ||
       input.months > 120 ||
-      !["premium", "premium_plus"].includes(input.tierName)
+      !isGrantableTier(input.tierName)
     )
       throw new VoucherError("invalid_batch");
     const deadline = input.redeemBy ? new Date(input.redeemBy) : null;
@@ -525,11 +529,20 @@ export class VoucherRepository {
         !eligible(c.eligibilityEmail, b.allowedDomains, v.employeeEmail)
       )
         throw new VoucherError();
-      if (profile.role !== "user")
+      if (!isGrantableTier(b.tierName)) throw new VoucherError("invalid_tier");
+      const trainerTier = catalogTier(b.tierName).audience !== "consumer";
+      if (
+        profile.role === "admin" ||
+        (profile.role !== "user" &&
+          !(
+            trainerTier &&
+            ["personal_trainer", "physiotherapist"].includes(profile.role ?? "")
+          ))
+      )
         throw new VoucherError(
           "account_conflict",
           409,
-          "This account cannot receive a consumer membership. Contact support.",
+          "This membership would change an incompatible account role. Contact support.",
         );
       const live = await tx
         .select({ id: userSubscriptions.id })

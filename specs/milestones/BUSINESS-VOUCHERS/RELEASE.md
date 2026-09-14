@@ -4,7 +4,7 @@ Implemented on `codex/business-vouchers-admin`. Database/backend/web release onl
 
 ## Operations
 
-Create a batch under Admin → Business vouchers. Choose business/reference, quantity, Premium or Premium+, months, optional claim deadline, optional exact domains and optional employee email assignments. Blank domain policy allows open domains. An exact email assignment is independent; where both are set, both must match.
+Create a batch under Admin → Business vouchers. Choose business/reference, quantity, any of the six supported app memberships, 1–120 months, optional claim deadline, optional exact domains and optional employee email assignments. Blank domain policy allows open domains. An exact email assignment is independent; where both are set, both must match.
 
 Download the distribution CSV immediately after issuance and confirm it is saved. The server stores hashes and cannot regenerate plaintext codes. Pending receipts are temporarily recoverable in the same browser tab for the same admin for up to 24 hours, then expire; explicit saved acknowledgement removes that receipt. Use the business reference for invoice attribution. Subsequent audit exports contain identifiers, restrictions, both redeemed emails and status, not voucher secrets. CSV assignments validate the entire import before applying it.
 
@@ -14,7 +14,7 @@ A used code remains used permanently, including after account deletion or member
 
 ## Release sequence
 
-1. Apply `supabase/migrations/20260914143040_business_vouchers.sql` through the normal migration workflow. Private RLS tables, constraints, indexes and the redeemed-record immutability trigger must be present before backend rollout.
+1. Apply `supabase/migrations/20260914143040_business_vouchers.sql` and `supabase/migrations/20260914161842_grant_all_membership_tiers.sql` through the normal migration workflow. Private RLS tables, constraints, indexes and the redeemed-record immutability trigger must be present before backend rollout.
 2. Deploy core and web using the existing environment configuration. Core uses the existing transactional Resend configuration. Web requires `VITE_CORE_API_URL`, `VITE_SUPABASE_URL` and the public `VITE_SUPABASE_ANON_KEY` for the matching environment.
 3. Add the exact HTTPS `<web-origin>/redeem/callback` to that environment's Supabase Auth redirect allowlist. Keep the mobile Site URL and `persistencemobile://auth/callback`, and existing `/admin/callback`, unchanged. Keep account email confirmation enabled.
 4. On staging, issue a small test batch and verify real email delivery, signup confirmation, existing-account password/email-link sign-in, same-email redemption, restricted work email to personal account, conflict/replay handling and CSV distribution.
@@ -26,3 +26,9 @@ Live email delivery and physical-device verification were not performed in this 
 ## Rollback
 
 Rollback application versions if necessary, but retain voucher tables, immutable redeemed rows and existing subscriptions after any issuance/redemption. Do not drop or reset voucher history: doing so could lose paid access attribution or enable reuse. Stop distributing unused codes while a backend rollback is in effect.
+
+## Individual and coach access
+
+Use Admin → Access grants → Individual grant for any supported app tier. Select the recipient’s app email and duration. Existing accounts receive access immediately; new recipients sign up and sign in with the assigned email. The founding campaign is a separate option with its existing offer/pool limits.
+
+For single-use codes, create a voucher batch with quantity one or more, choose the membership and duration, then distribute each code with `/redeem`. Coach voucher redemption verifies the destination account and provisions its coach role through the existing subscription mechanism. An existing coach cannot redeem a consumer voucher to silently lose their coach role. Check coach navigation and client limits on the released app during staging verification.

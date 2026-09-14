@@ -25,6 +25,7 @@
         "@elysiajs/openapi": "^1.4.14",
         "@persistence/api-utils": "workspace:*",
         "@persistence/db": "workspace:*",
+        "@persistence/subscription-catalog": "workspace:*",
         "@sentry/aws-serverless": "^10.65.0",
         "date-fns": "^4.4.0",
         "drizzle-orm": "^0.44.2",

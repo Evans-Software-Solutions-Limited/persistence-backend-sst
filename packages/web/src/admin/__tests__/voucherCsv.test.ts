@@ -161,4 +161,14 @@ describe("voucher CSV and restrictions", () => {
       ),
     ).toEqual([{ voucherId: "v1", employeeEmail: "+employee@acme.com" }]);
   });
+  it("exports exact coach plan IDs, human labels and custom duration", () => {
+    const rows = parseCsv(
+      distributionCsv({ ...batch, tierName: "coach_pro", months: 23 }, [
+        { id: "v1", code: "CODE", employeeEmail: null },
+      ]),
+    );
+    expect(rows[1][rows[0].indexOf("tier")]).toBe("coach_pro");
+    expect(rows[1][rows[0].indexOf("membership")]).toBe("Coach Pro");
+    expect(rows[1][rows[0].indexOf("months")]).toBe("23");
+  });
 });

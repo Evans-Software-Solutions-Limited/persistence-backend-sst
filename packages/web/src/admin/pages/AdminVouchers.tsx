@@ -1,3 +1,5 @@
+import { GRANTABLE_TIERS } from "@persistence/subscription-catalog";
+import { membershipTierLabel } from "@/lib/membershipTier";
 import { useEffect, useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router";
@@ -134,8 +136,11 @@ export function NewVoucherBatch({
         <label>
           Membership
           <select name="tierName" className={selectClass}>
-            <option value="premium">Premium</option>
-            <option value="premium_plus">Premium+</option>
+            {GRANTABLE_TIERS.map((tier) => (
+              <option key={tier.id} value={tier.id}>
+                {tier.name}
+              </option>
+            ))}
           </select>
         </label>
         <label>
@@ -355,6 +360,20 @@ export function AdminVouchers() {
         Prepaid memberships for teams. Issue once, verify the employee, and
         track every redemption.
       </p>
+      <div className="admin-notice mb-6">
+        Employees and coaches redeem these codes on the{" "}
+        <Link
+          to="/redeem"
+          target="_blank"
+          rel="noreferrer"
+          className="underline"
+        >
+          employee redemption page
+        </Link>
+        . Coach plans activate coaching capabilities on the verified membership
+        account. Individual access grants use the recipient's account email
+        directly and do not require a voucher code.
+      </div>
       <div className="space-y-6">
         {issued ? (
           <IssuedBatch
@@ -444,7 +463,7 @@ export function AdminVouchers() {
                     </span>
                   </td>
                   <td>
-                    {b.tierName === "premium_plus" ? "Premium+" : "Premium"}
+                    {membershipTierLabel(b.tierName)}
                     <span className="admin-cell-note">{b.months} months</span>
                   </td>
                   <td>{b.counts.issued}</td>

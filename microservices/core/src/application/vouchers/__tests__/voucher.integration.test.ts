@@ -1,3 +1,5 @@
+import { GRANTABLE_TIERS } from "@persistence/subscription-catalog";
+import { FoundingGrantService } from "../../founding/foundingGrantService";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
@@ -82,6 +84,7 @@ beforeEach(async () => {
   await pg.exec(migration("20260904120000_founding_offer_referrals.sql"));
   await pg.exec(migration("20260904214114_generalise_founding_grants.sql"));
   await pg.exec(migration("20260914143040_business_vouchers.sql"));
+  await pg.exec(migration("20260914161842_grant_all_membership_tiers.sql"));
   await pg.query(
     "INSERT INTO profiles(id,email,role) VALUES($1,'other@example.test','user')",
     [OTHER],
@@ -713,4 +716,455 @@ it("request paths purge expired ephemeral state and cap replay at 30 days", asyn
     status: "redeemed",
     accountId: USER,
   });
+});
+
+async function installProductionSubscriptionFunctions() {
+  await pg.exec(`
+ CREATE TYPE user_role AS ENUM ('user','personal_trainer','physiotherapist','admin');
+ ALTER TABLE profiles ADD COLUMN subscription_id uuid;
+ ALTER TABLE subscription_tiers
+ ADD COLUMN features jsonb DEFAULT '{}', ADD COLUMN workout_limit integer,
+ ADD COLUMN ai_access boolean DEFAULT true, ADD COLUMN ai_workout_limit integer DEFAULT 30,
+ ADD COLUMN gym_buddy_access boolean DEFAULT true, ADD COLUMN gym_buddy_can_create_workouts boolean DEFAULT true,
+ ADD COLUMN gym_buddy_can_suggest_workouts boolean DEFAULT true, ADD COLUMN trainer_client_limit integer,
+ ADD COLUMN is_trainer_tier boolean DEFAULT false, ADD COLUMN analytics_access boolean DEFAULT false,
+ ADD COLUMN export_access boolean DEFAULT false;
+ CREATE TABLE subscription_limits (user_id uuid,limit_type text,limit_value integer,current_count integer DEFAULT 0,reset_date timestamptz,updated_at timestamptz,PRIMARY KEY(user_id,limit_type));
+ `);
+  for (const tier of GRANTABLE_TIERS)
+    await pg.query(
+      `INSERT INTO subscription_tiers(tier_name,display_name,is_trainer_tier,trainer_client_limit)
+ VALUES($1,$2,$3,$4) ON CONFLICT(tier_name) DO UPDATE SET display_name=EXCLUDED.display_name,is_trainer_tier=EXCLUDED.is_trainer_tier,trainer_client_limit=EXCLUDED.trainer_client_limit`,
+      [tier.id, tier.name, tier.audience === "coach", tier.clients],
+    );
+  // Execute the actual production functions and trigger, not a test reimplementation.
+  const coreFunctions = migration("002_functions_and_triggers.sql");
+  const subscriptions = migration("004_subscriptions_and_roles.sql");
+  const extract = (source: string, name: string) => {
+    const start = source.indexOf(`CREATE OR REPLACE FUNCTION ${name}(`);
+    const end = source.indexOf("$$ LANGUAGE plpgsql", start);
+    return source.slice(start, source.indexOf(";", end) + 1);
+  };
+  await pg.exec(extract(coreFunctions, "get_user_subscription"));
+  await pg.exec(extract(subscriptions, "update_subscription_limits"));
+  await pg.exec(extract(subscriptions, "trigger_update_subscription_limits"));
+  await pg.exec(
+    "CREATE TRIGGER update_subscription_limits_trigger AFTER INSERT OR UPDATE ON user_subscriptions FOR EACH ROW EXECUTE FUNCTION trigger_update_subscription_limits()",
+  );
+}
+it.each(GRANTABLE_TIERS)(
+  "redeems $name voucher with production role and limit propagation",
+  async (tier) => {
+    await installProductionSubscriptionFunctions();
+    const issued = await issue({ tierName: tier.id, months: 3 });
+    const c = await service.prepare(
+      USER,
+      issued.codes[0].code,
+      "user@example.test",
+    );
+    const result = await service.redeem(USER, c.challengeId);
+    expect(result.tierName).toBe(tier.id);
+    expect(
+      (
+        await pg.query<{ role: string }>(
+          "SELECT role FROM profiles WHERE id=$1",
+          [USER],
+        )
+      ).rows[0].role,
+    ).toBe(tier.audience === "coach" ? "personal_trainer" : "user");
+    expect(
+      (
+        await pg.query<{ trainer_client_limit: number | null }>(
+          "SELECT trainer_client_limit FROM get_user_subscription($1)",
+          [USER],
+        )
+      ).rows[0].trainer_client_limit,
+    ).toBe(tier.clients);
+    const sub = (
+      await pg.query<{ starts_at: Date; expires_at: Date }>(
+        "SELECT starts_at,expires_at FROM user_subscriptions WHERE user_id=$1",
+        [USER],
+      )
+    ).rows[0];
+    expect(sub.expires_at.getUTCMonth()).toBe(
+      (sub.starts_at.getUTCMonth() + 3) % 12,
+    );
+    expect((await pg.query("SELECT * FROM founding_grants")).rows).toHaveLength(
+      0,
+    );
+  },
+);
+it.each(GRANTABLE_TIERS)(
+  "grants individual complimentary $name with configurable duration",
+  async (tier) => {
+    await installProductionSubscriptionFunctions();
+    const grantService = new FoundingGrantService();
+    const result = await grantService.grant(
+      {
+        email: "user@example.test",
+        tierName: tier.id,
+        grantKind: "complimentary",
+        months: 18,
+        sendInvite: false,
+      },
+      ADMIN,
+    );
+    expect(result).toMatchObject({
+      ok: true,
+      result: { tierName: tier.id, months: 18, seats: null },
+    });
+    expect(
+      (
+        await pg.query<{ role: string }>(
+          "SELECT role FROM profiles WHERE id=$1",
+          [USER],
+        )
+      ).rows[0].role,
+    ).toBe(tier.audience === "coach" ? "personal_trainer" : "user");
+    expect(
+      (
+        await pg.query<{ trainer_client_limit: number | null }>(
+          "SELECT trainer_client_limit FROM get_user_subscription($1)",
+          [USER],
+        )
+      ).rows[0].trainer_client_limit,
+    ).toBe(tier.clients);
+  },
+);
+it("applies pending coach access through normal verified signup", async () => {
+  await installProductionSubscriptionFunctions();
+  await pg.query("DELETE FROM profiles WHERE id=$1", [OTHER]);
+  const grantService = new FoundingGrantService(
+    undefined,
+    undefined,
+    undefined,
+    mailer,
+    "https://example.test",
+    identity,
+  );
+  expect(
+    await grantService.grant(
+      {
+        email: "other@example.test",
+        tierName: "coach_pro",
+        grantKind: "complimentary",
+        months: 24,
+        sendInvite: false,
+      },
+      ADMIN,
+    ),
+  ).toMatchObject({ ok: true, result: { status: "pending" } });
+  await pg.query(
+    "INSERT INTO profiles(id,email,role) VALUES($1,'other@example.test','user')",
+    [OTHER],
+  );
+  expect(
+    await grantService.applyPendingForUser(OTHER, "other@example.test"),
+  ).toBe(true);
+  expect(
+    (
+      await pg.query<{ role: string }>(
+        "SELECT role FROM profiles WHERE id=$1",
+        [OTHER],
+      )
+    ).rows[0].role,
+  ).toBe("personal_trainer");
+});
+it("permits existing coach vouchers but refuses silent consumer demotion and admin reassignment", async () => {
+  await installProductionSubscriptionFunctions();
+  await pg.query("UPDATE profiles SET role='personal_trainer' WHERE id=$1", [
+    USER,
+  ]);
+  const coach = await issue({ tierName: "coach" });
+  const c = await service.prepare(
+    USER,
+    coach.codes[0].code,
+    "user@example.test",
+  );
+  expect(await service.redeem(USER, c.challengeId)).toMatchObject({
+    tierName: "coach",
+  });
+  const grantService = new FoundingGrantService();
+  expect(
+    await grantService.grant(
+      {
+        email: "admin@example.test",
+        tierName: "coach",
+        grantKind: "complimentary",
+        sendInvite: false,
+      },
+      ADMIN,
+    ),
+  ).toMatchObject({ ok: false, error: { code: "protected_account" } });
+});
+it.each([
+  "free",
+  "studio",
+  "studio_pro",
+  "enterprise",
+  "small_business",
+  "unknown",
+])("rejects unsupported grant/voucher tier %s", async (tierName) => {
+  await expect(
+    issue({ tierName: tierName as BatchInput["tierName"] }),
+  ).rejects.toThrow();
+  expect(
+    await new FoundingGrantService().grant(
+      {
+        email: "user@example.test",
+        tierName,
+        grantKind: "complimentary",
+        sendInvite: false,
+      },
+      ADMIN,
+    ),
+  ).toMatchObject({ ok: false, error: { code: "invalid_tier" } });
+});
+
+function directGrantInput() {
+  return {
+    id: randomUUID(),
+    userId: USER,
+    email: "user@example.test",
+    tierName: "premium" as const,
+    months: 12,
+    grantKind: "complimentary" as const,
+    amountMinor: 0,
+    currency: "GBP",
+    paymentMethod: null,
+    paidAt: null,
+    paymentReference: null,
+    referralCodeId: null,
+    grantedBy: ADMIN,
+    notes: null,
+  };
+}
+it.each([
+  { role: "admin", deleted: false, kind: "protected_account" },
+  { role: "personal_trainer", deleted: false, kind: "coach_demotion" },
+  { role: "user", deleted: true, kind: "account_pending_deletion" },
+])(
+  "rechecks individual grant $kind policy inside its transaction",
+  async ({ role, deleted, kind }) => {
+    await pg.query("UPDATE profiles SET role=$1,deleted_at=$2 WHERE id=$3", [
+      role,
+      deleted ? new Date() : null,
+      USER,
+    ]);
+    expect(
+      await new FoundingGrantRepository().create(
+        directGrantInput(),
+        "consumer",
+      ),
+    ).toMatchObject({ kind });
+    expect((await pg.query("SELECT * FROM founding_grants")).rows).toHaveLength(
+      0,
+    );
+  },
+);
+it("preserves explicit administrator consent for consumer role changes", async () => {
+  await installProductionSubscriptionFunctions();
+  await pg.query("UPDATE profiles SET role='personal_trainer' WHERE id=$1", [
+    USER,
+  ]);
+  expect(
+    await new FoundingGrantRepository().create(
+      { ...directGrantInput(), allowRoleChange: true },
+      "consumer",
+    ),
+  ).toMatchObject({ kind: "created" });
+  expect(
+    (
+      await pg.query<{ role: string }>(
+        "SELECT role FROM profiles WHERE id=$1",
+        [USER],
+      )
+    ).rows[0].role,
+  ).toBe("user");
+});
+it("does not apply a pending consumer grant after the recipient becomes a coach", async () => {
+  const grants = new FoundingGrantRepository();
+  const created = await grants.create(
+    { ...directGrantInput(), userId: null },
+    "consumer",
+  );
+  expect(created.kind).toBe("created");
+  if (created.kind !== "created") throw new Error("Fixture failed");
+  await pg.query("UPDATE profiles SET role='personal_trainer' WHERE id=$1", [
+    USER,
+  ]);
+  expect(await grants.applyPending(created.grant.id, USER)).toMatchObject({
+    applied: false,
+  });
+  expect(
+    (
+      await pg.query<{ applied_at: Date | null }>(
+        "SELECT applied_at FROM founding_grants",
+      )
+    ).rows[0].applied_at,
+  ).toBeNull();
+});
+it("does not replace a live direct Stripe subscription with an individual grant", async () => {
+  await pg.query(
+    "INSERT INTO user_subscriptions(user_id,tier_name,payment_status,expires_at,external_subscription_id) VALUES($1,'premium','active',now()+interval '1 month','sub_paid')",
+    [USER],
+  );
+  expect(
+    await new FoundingGrantRepository().create(directGrantInput(), "consumer"),
+  ).toMatchObject({ kind: "active_store_subscription" });
+});
+
+it("reports individual grant lifecycle, account lookup and aggregate summaries", async () => {
+  const grants = new FoundingGrantRepository();
+  const input = directGrantInput();
+  const result = await grants.create(input, "consumer");
+  expect(result.kind).toBe("created");
+  expect(await grants.findById(input.id)).toMatchObject({ id: input.id });
+  expect(await grants.findById(randomUUID())).toBeNull();
+  expect(await grants.findProfileById(randomUUID())).toBeNull();
+  expect(await grants.findProfileByEmail("missing@example.test")).toBeNull();
+  expect(await grants.tierExists("missing")).toBe(false);
+  expect(await grants.hasLiveOrPendingGrantForEmail("USER@EXAMPLE.TEST")).toBe(
+    true,
+  );
+  expect(await grants.hasLiveOrPendingGrantForEmail("missing@test.com")).toBe(
+    false,
+  );
+  expect((await grants.listForUser(USER))[0].status).toBe("active");
+  expect(await grants.listForUser(OTHER)).toEqual([]);
+  expect(
+    await grants.create({ ...input, id: randomUUID() }, "consumer"),
+  ).toMatchObject({ kind: "duplicate" });
+  await pg.query(
+    "UPDATE user_subscriptions SET expires_at=now()-interval '1 day'",
+  );
+  expect((await grants.list({ revoked: false }))[0].status).toBe("expired");
+  expect(await grants.extend(input.id, 2)).toMatchObject({ kind: "extended" });
+  await grants.markInvited(input.id);
+  expect((await grants.findById(input.id))?.invitedAt).toBeInstanceOf(Date);
+  const pending = await grants.create(
+    { ...directGrantInput(), userId: null, email: "pending@test.com" },
+    "consumer",
+  );
+  expect(pending.kind).toBe("created");
+  expect((await grants.list({})).some((g) => g.status === "pending")).toBe(
+    true,
+  );
+  expect(await grants.summary()).toMatchObject({
+    pending: 1,
+    contributionMinor: 0,
+    byTier: [{ tierName: "premium", count: 2, contributionMinor: 0 }],
+  });
+  await pg.query("UPDATE founding_grants SET user_id=NULL WHERE id=$1", [
+    input.id,
+  ]);
+  expect((await grants.list({})).find((g) => g.id === input.id)?.status).toBe(
+    "account_deleted",
+  );
+  expect(await grants.extend(input.id, 1)).toEqual({ kind: "account_deleted" });
+  expect(await grants.revoke(input.id, "Support correction")).toMatchObject({
+    revokeReason: "Support correction",
+  });
+  expect(await grants.revoke(input.id, "Again")).toBeNull();
+  expect(await grants.extend(input.id, 1)).toEqual({ kind: "revoked" });
+  expect((await grants.list({ revoked: true }))[0].status).toBe("revoked");
+  expect(await grants.extend(randomUUID(), 1)).toEqual({ kind: "not_found" });
+});
+it("extends pending grants and defers broken or paid subscription extensions safely", async () => {
+  const grants = new FoundingGrantRepository();
+  const pendingInput = { ...directGrantInput(), userId: null };
+  await grants.create(pendingInput, "consumer");
+  expect(await grants.extend(pendingInput.id, 3)).toMatchObject({
+    kind: "extended",
+    expiresAt: null,
+    grant: { months: 15 },
+  });
+  await pg.query("UPDATE founding_grants SET user_id=$1 WHERE id=$2", [
+    USER,
+    pendingInput.id,
+  ]);
+  expect(await grants.extend(pendingInput.id, 1)).toEqual({
+    kind: "account_deleted",
+  });
+  await pg.query(
+    "UPDATE founding_grants SET subscription_id=NULL,user_id=NULL WHERE id=$1",
+    [pendingInput.id],
+  );
+  await grants.revoke(pendingInput.id, "unused");
+  const active = directGrantInput();
+  await grants.create(active, "consumer");
+  await pg.query(
+    "UPDATE user_subscriptions SET external_subscription_id='sub_live'",
+  );
+  expect(await grants.extend(active.id, 1)).toMatchObject({
+    kind: "active_store_subscription",
+  });
+  await pg.query("UPDATE user_subscriptions SET external_subscription_id=NULL");
+  await pg.query("DELETE FROM user_subscriptions");
+  expect(await grants.extend(active.id, 1)).toEqual({
+    kind: "account_deleted",
+  });
+});
+it("handles exhausted or missing founding pools without creating access", async () => {
+  const grants = new FoundingGrantRepository();
+  await pg.exec("UPDATE founding_pool_limits SET cap=0 WHERE pool='consumer'");
+  expect(
+    await grants.create(
+      { ...directGrantInput(), grantKind: "founding" },
+      "consumer",
+    ),
+  ).toMatchObject({ kind: "pool_full" });
+  expect(
+    await grants.reserveSeatUnderPoolLock("consumer", async () => "refused"),
+  ).toBe("refused");
+  expect(
+    await grants.reserveSeatUnderPoolLock("consumer", async () => ({
+      held: 0,
+      reserve: async () => "unexpected",
+    })),
+  ).toBe("pool_full");
+  expect(
+    await grants.freeSeatsWithHolds("consumer", async () => 2),
+  ).toMatchObject({ free: 0, held: 2 });
+  await pg.exec("DELETE FROM founding_pool_limits WHERE pool='consumer'");
+  await expect(grants.seatsForPool("consumer")).rejects.toThrow(
+    "Missing founding pool",
+  );
+  await expect(
+    grants.freeSeatsWithHolds("consumer", async () => 0),
+  ).rejects.toThrow("Missing founding pool");
+  await expect(
+    grants.reserveSeatUnderPoolLock("consumer", async () => ({
+      held: 0,
+      reserve: async () => 1,
+    })),
+  ).rejects.toThrow("Missing founding pool");
+  await expect(
+    grants.create({ ...directGrantInput(), grantKind: "founding" }, "consumer"),
+  ).rejects.toThrow("Missing founding pool");
+  expect(
+    (await pg.query("SELECT * FROM user_subscriptions")).rows,
+  ).toHaveLength(0);
+});
+it("pending application is idempotent and ignores nonexistent grants and protected recipients", async () => {
+  const grants = new FoundingGrantRepository();
+  expect(await grants.applyPending(randomUUID(), USER)).toMatchObject({
+    applied: false,
+  });
+  const pending = { ...directGrantInput(), userId: null };
+  await grants.create(pending, "consumer");
+  await pg.query("UPDATE profiles SET role='admin' WHERE id=$1", [USER]);
+  expect(await grants.applyPending(pending.id, USER)).toMatchObject({
+    applied: false,
+  });
+  await pg.query("UPDATE profiles SET role='user' WHERE id=$1", [USER]);
+  expect(await grants.applyPending(pending.id, USER)).toMatchObject({
+    applied: true,
+  });
+  expect(await grants.applyPending(pending.id, USER)).toMatchObject({
+    applied: false,
+  });
+  expect(
+    (await pg.query("SELECT * FROM user_subscriptions")).rows,
+  ).toHaveLength(1);
 });

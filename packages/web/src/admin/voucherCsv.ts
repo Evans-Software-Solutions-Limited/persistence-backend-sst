@@ -1,3 +1,4 @@
+import { membershipTierLabel } from "@/lib/membershipTier";
 import type {
   Assignment,
   IssuedCode,
@@ -21,6 +22,7 @@ export function distributionCsv(batch: VoucherBatch, codes: IssuedCode[]) {
       "employeeEmail",
       "business",
       "tier",
+      "membership",
       "months",
       "allowedDomains",
       "redeemBy",
@@ -32,6 +34,7 @@ export function distributionCsv(batch: VoucherBatch, codes: IssuedCode[]) {
       code.employeeEmail,
       batch.businessName,
       batch.tierName,
+      membershipTierLabel(batch.tierName),
       batch.months,
       batch.allowedDomains.join(";"),
       batch.redeemBy,

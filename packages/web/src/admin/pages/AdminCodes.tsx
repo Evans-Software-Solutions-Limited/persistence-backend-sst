@@ -206,6 +206,10 @@ export function AdminCodes() {
   return (
     <>
       <PageHeader title="Referral codes" />
+      <p className="admin-page-description">
+        Referral codes record attribution. They do not grant membership access;
+        use Business vouchers for prepaid memberships.
+      </p>
       <div className="space-y-6">
         <Panel title="New code">
           <CreateCodeForm
