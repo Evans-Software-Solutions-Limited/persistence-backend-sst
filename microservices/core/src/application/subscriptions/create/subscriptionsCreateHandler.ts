@@ -1314,6 +1314,7 @@ export const subscriptionsCreateHandler = new Elysia()
       }
 
       const subRepo = new SubscriptionRepository();
+      await subRepo.expireLapsedBusinessVouchers(userId);
       const existing = await subRepo.findMostRecentForUser(userId);
       if (
         existing?.metadata?.source === "business_voucher" &&

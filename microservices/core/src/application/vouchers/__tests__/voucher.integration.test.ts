@@ -14,6 +14,7 @@ vi.mock("../../revenuecat/revenueCatClient", () => ({
 }));
 import { syncRevenueCatCustomer } from "../../revenuecat/revenueCatSync";
 import { FoundingGrantRepository } from "../../repositories/foundingGrantRepository";
+import { SubscriptionRepository } from "../../repositories/subscriptionRepository";
 const ADMIN = "00000000-0000-4000-8000-000000000001";
 const USER = "00000000-0000-4000-8000-000000000002";
 const OTHER = "00000000-0000-4000-8000-000000000003";
@@ -513,6 +514,60 @@ it("RevenueCat empty snapshot preserves voucher entitlement on app refresh", asy
       )
     ).rows[0].payment_status,
   ).toBe("active");
+});
+it("releases a lapsed voucher's unique slot for Stripe without freeing its code", async () => {
+  const { challenge } = await ready();
+  await service.redeem(USER, challenge.challengeId);
+  const subscriptions = new SubscriptionRepository();
+  await subscriptions.expireLapsedBusinessVouchers(USER);
+  expect(
+    (await pg.query("SELECT payment_status FROM user_subscriptions")).rows,
+  ).toEqual([{ payment_status: "active" }]);
+  await pg.query(
+    "UPDATE user_subscriptions SET expires_at=now()-interval '1 day' WHERE user_id=$1",
+    [USER],
+  );
+  await subscriptions.expireLapsedBusinessVouchers(OTHER);
+  expect(
+    (await pg.query("SELECT payment_status FROM user_subscriptions")).rows,
+  ).toEqual([{ payment_status: "active" }]);
+  await subscriptions.expireLapsedBusinessVouchers(USER);
+  await subscriptions.insert({
+    userId: USER,
+    tierName: "premium",
+    paymentStatus: "active",
+    externalSubscriptionId: "sub_after_voucher",
+    metadata: { stripe_subscription_id: "sub_after_voucher" },
+  });
+  expect(
+    (
+      await pg.query(
+        "SELECT payment_status FROM user_subscriptions ORDER BY created_at",
+      )
+    ).rows,
+  ).toEqual([{ payment_status: "expired" }, { payment_status: "active" }]);
+  expect(
+    (await service.redeem(USER, challenge.challengeId)).voucherId,
+  ).toBeTruthy();
+  expect(
+    (
+      await pg.query(
+        "SELECT * FROM business_vouchers WHERE redeemed_at IS NOT NULL",
+      )
+    ).rows,
+  ).toHaveLength(1);
+});
+it("does not retire expired Stripe rows or vouchers without an expiry", async () => {
+  await pg.query(
+    "INSERT INTO user_subscriptions(user_id,tier_name,payment_status,expires_at,metadata) VALUES($1,'premium','active',now()-interval '1 day','{\"source\":\"stripe\"}'),($2,'premium','active',NULL,'{\"source\":\"business_voucher\"}')",
+    [USER, OTHER],
+  );
+  const subscriptions = new SubscriptionRepository();
+  await subscriptions.expireLapsedBusinessVouchers(USER);
+  await subscriptions.expireLapsedBusinessVouchers(OTHER);
+  expect(
+    (await pg.query("SELECT payment_status FROM user_subscriptions")).rows,
+  ).toEqual([{ payment_status: "active" }, { payment_status: "active" }]);
 });
 it("allows historical expired grants but blocks pending grants", async () => {
   const { challenge } = await ready();

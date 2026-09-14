@@ -1089,3 +1089,25 @@ describe("findStripeSubscriptionIdsForUser", () => {
     expect(ids).toEqual(["sub_a"]);
   });
 });
+
+it("takes the shared user lock before retiring expired voucher rows", async () => {
+  const where = vi.fn().mockResolvedValue(undefined);
+  const update = vi
+    .fn()
+    .mockReturnValue({ set: vi.fn().mockReturnValue({ where }) });
+  const execute = vi.fn().mockResolvedValue(undefined);
+  const transaction = { execute, update };
+  vi.mocked(getDb).mockReturnValue({
+    transaction: async (run: (tx: unknown) => Promise<void>) =>
+      run(transaction),
+  } as any);
+  const { SubscriptionRepository } = await import("../subscriptionRepository");
+  await new SubscriptionRepository().expireLapsedBusinessVouchers("user-1");
+  const lock = new PgDialect().sqlToQuery(execute.mock.calls[0][0]);
+  expect(lock.sql).toContain("pg_advisory_xact_lock");
+  expect(lock.params).toEqual(["subscription_user_user-1"]);
+  expect(execute.mock.invocationCallOrder[0]).toBeLessThan(
+    update.mock.invocationCallOrder[0],
+  );
+  expect(where).toHaveBeenCalledTimes(1);
+});

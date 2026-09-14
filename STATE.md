@@ -1,5 +1,15 @@
 # Project memory · persistence-backend-sst
 
+### 2026-09-14 — PR #452 lapsed voucher blocks Stripe purchase
+
+Inspector finding4006862459 confirmed: expired vouchers retained an active
+payment status and occupied the partial unique index. Subscription creation
+now conditionally retires only this user’s expired business-voucher rows before
+reading existing subscriptions. Live vouchers retain their unique-index race
+protection; immutable voucher redemption history is untouched. Real PGlite
+regressions cover later Stripe insertion, user/source/expiry boundaries and
+permanent consumption; the HTTP regression checks cleanup precedes lookup.
+
 ### 2026-09-14 — PR #452 CI coverage runner contention
 
 The first CI run failed one redemption UI test at its 5-second timeout

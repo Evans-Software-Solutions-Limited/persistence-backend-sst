@@ -9,6 +9,7 @@ import {
 // ─── Module-level mocks (mirror subscriptionsCreateHandler.test.ts) ────
 
 const subscriptionRepositoryMocks = {
+  expireLapsedBusinessVouchers: vi.fn().mockResolvedValue(undefined),
   findMostRecentForUser: vi.fn(),
   findByExternalId: vi.fn(),
   insert: vi.fn(),
