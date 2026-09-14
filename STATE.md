@@ -1,5 +1,14 @@
 # Project memory · persistence-backend-sst
 
+### 2026-09-14 — PR #452 CI coverage runner contention
+
+The first CI run failed one redemption UI test at its 5-second timeout
+(1,325 other web tests passed); no coverage threshold failure was reported.
+Turbo ran workspace coverage suites concurrently, with simple web tests taking
+seconds under load. CI now uses `bun run test:unit --concurrency=1`, retaining
+each runner’s internal parallelism, assertions and coverage gates. Local
+package-only results did not reproduce the CI workload; confirm the new CI run.
+
 ### 2026-09-14 — Business membership vouchers and complete admin redesign
 
 Single isolated review branch `codex/business-vouchers-admin`, based on main
