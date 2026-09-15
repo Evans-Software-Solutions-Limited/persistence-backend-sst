@@ -290,3 +290,46 @@ describe("voucher batch detail", () => {
     ).toBe("/redeem");
   });
 });
+
+it("splits assignment templates into importable sets after topping up beyond 500 codes", async () => {
+  const many = Array.from({ length: 501 }, (_, i) => ({
+    ...unused,
+    id: `voucher-${i}`,
+  }));
+  vi.spyOn(voucherApi, "detail").mockResolvedValue({
+    batch: { ...batch, counts: { ...batch.counts, issued: 501, unused: 501 } },
+    vouchers: many,
+  });
+  const download = vi.spyOn(csv, "downloadCsv").mockImplementation(() => {});
+  try {
+    await ready();
+    fireEvent.click(screen.getByText("Import employee assignments"));
+    expect(screen.getByText(/Import each file separately/)).toBeTruthy();
+    fireEvent.click(
+      screen.getByText("Download assignment template 1 (500 codes)"),
+    );
+    fireEvent.click(
+      screen.getByText("Download assignment template 2 (1 code)"),
+    );
+    const [first, second] = download.mock.calls;
+    const parsedFirst = csv.parseAssignments(
+      first[0],
+      many,
+      batch.allowedDomains,
+    );
+    const parsedSecond = csv.parseAssignments(
+      second[0],
+      many,
+      batch.allowedDomains,
+    );
+    expect(parsedFirst).toHaveLength(500);
+    expect(parsedSecond).toHaveLength(1);
+    expect(
+      new Set([...parsedFirst, ...parsedSecond].map((v) => v.voucherId)).size,
+    ).toBe(501);
+    expect(first[1]).toContain("part-1");
+    expect(second[1]).toContain("part-2");
+  } finally {
+    vi.restoreAllMocks();
+  }
+});

@@ -1342,3 +1342,142 @@ it("does not let invalid-code probes exhaust another IP's employee email quota",
   expect(identity).not.toHaveBeenCalled();
   expect(mailer).not.toHaveBeenCalled();
 });
+
+describe("issuing additional codes into an existing batch", () => {
+  it("inherits terms, returns only new secrets and audits hash-only issuance", async () => {
+    const original = await issue({
+      allowedDomains: ["example.test"],
+      months: 6,
+    });
+    const added = await repo.issue(
+      original.batch.id,
+      { quantity: 2, employeeEmails: [" OTHER@EXAMPLE.TEST ", ""] },
+      ADMIN,
+    );
+    expect(added.batch).toMatchObject({
+      id: original.batch.id,
+      months: 6,
+      tierName: "premium",
+      allowedDomains: ["example.test"],
+      counts: { issued: 3, unused: 3 },
+    });
+    expect(added.codes).toHaveLength(2);
+    expect(added.codes[0].employeeEmail).toBe("other@example.test");
+    expect(added.codes[1].employeeEmail).toBeNull();
+    expect(
+      added.codes.every(
+        (c) =>
+          c.id !== original.codes[0].id && c.code !== original.codes[0].code,
+      ),
+    ).toBe(true);
+    const stored = await pg.query<{ code_hash: string }>(
+      "SELECT * FROM business_vouchers",
+    );
+    for (const code of added.codes) {
+      expect(
+        stored.rows.some((v) => v.code_hash === hashSecret(code.code)),
+      ).toBe(true);
+      expect(JSON.stringify(stored.rows)).not.toContain(code.code);
+    }
+    const audits = await pg.query(
+      "SELECT * FROM admin_audit_log WHERE action='business_voucher.issue'",
+    );
+    expect(audits.rows).toHaveLength(1);
+    expect(JSON.stringify(audits.rows)).toContain(added.codes[0].id);
+    expect(JSON.stringify(audits.rows)).not.toContain(added.codes[0].code);
+    expect(
+      (await pg.query("SELECT * FROM business_voucher_batches")).rows,
+    ).toHaveLength(1);
+  });
+  it("rejects invalid counts, duplicate/existing assignments and ineligible domains atomically", async () => {
+    const original = await issue({
+      allowedDomains: ["example.test"],
+      employeeEmails: ["user@example.test"],
+    });
+    for (const quantity of [0, 501, 1.5])
+      await expect(
+        repo.issue(original.batch.id, { quantity }, ADMIN),
+      ).rejects.toMatchObject({ code: "invalid_quantity" });
+    for (const employeeEmails of [
+      ["user@example.test"],
+      ["a@other.test"],
+      ["malformed"],
+      [],
+    ])
+      await expect(
+        repo.issue(original.batch.id, { quantity: 1, employeeEmails }, ADMIN),
+      ).rejects.toThrow();
+    await expect(
+      repo.issue(
+        original.batch.id,
+        {
+          quantity: 2,
+          employeeEmails: ["other@example.test", " OTHER@example.test "],
+        },
+        ADMIN,
+      ),
+    ).rejects.toMatchObject({ code: "invalid_assignments" });
+    expect((await repo.detail(original.batch.id)).batch.counts.issued).toBe(1);
+    expect(
+      (
+        await pg.query(
+          "SELECT * FROM admin_audit_log WHERE action='business_voucher.issue'",
+        )
+      ).rows,
+    ).toHaveLength(0);
+  });
+  it("rejects missing, expired and unsupported-tier batches", async () => {
+    await expect(
+      repo.issue(randomUUID(), { quantity: 1 }, ADMIN),
+    ).rejects.toMatchObject({ code: "not_found" });
+    const original = await issue();
+    await pg.query(
+      "UPDATE business_voucher_batches SET redeem_by=NOW()-INTERVAL '1 minute' WHERE id=$1",
+      [original.batch.id],
+    );
+    await expect(
+      repo.issue(original.batch.id, { quantity: 1 }, ADMIN),
+    ).rejects.toMatchObject({ code: "invalid_deadline" });
+    await pg.exec(
+      "INSERT INTO subscription_tiers(tier_name,display_name) VALUES('studio','Studio')",
+    );
+    await pg.query(
+      "UPDATE business_voucher_batches SET redeem_by=NULL,tier_name='studio' WHERE id=$1",
+      [original.batch.id],
+    );
+    await expect(
+      repo.issue(original.batch.id, { quantity: 1 }, ADMIN),
+    ).rejects.toMatchObject({ code: "invalid_tier" });
+  });
+  it("keeps employee reuse protection for added codes and permits another employee's redemption", async () => {
+    const original = await issue();
+    const prepared = await service.prepare(
+      USER,
+      original.codes[0].code,
+      "user@example.test",
+    );
+    await service.redeem(USER, prepared.challengeId);
+    await expect(
+      repo.issue(
+        original.batch.id,
+        { quantity: 1, employeeEmails: ["user@example.test"] },
+        ADMIN,
+      ),
+    ).rejects.toMatchObject({ code: "invalid_assignments" });
+    const added = await repo.issue(original.batch.id, { quantity: 1 }, ADMIN);
+    await expect(
+      service.check(added.codes[0].code, "user@example.test"),
+    ).rejects.toMatchObject({ code: "used_email" });
+    const next = await service.prepare(
+      OTHER,
+      added.codes[0].code,
+      "other@example.test",
+    );
+    expect(await service.redeem(OTHER, next.challengeId)).toMatchObject({
+      voucherId: added.codes[0].id,
+    });
+    expect((await repo.detail(original.batch.id)).batch.counts.redeemed).toBe(
+      2,
+    );
+  });
+});

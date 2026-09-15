@@ -265,6 +265,83 @@ export class VoucherRepository {
       return { batch: presentBatch(b, vs), codes };
     });
   }
+  async issue(
+    id: string,
+    input: { quantity: number; employeeEmails?: string[] },
+    actorId: string,
+  ) {
+    if (
+      !Number.isInteger(input.quantity) ||
+      input.quantity < 1 ||
+      input.quantity > 500
+    )
+      throw new VoucherError("invalid_quantity");
+    if (input.employeeEmails && input.employeeEmails.length !== input.quantity)
+      throw new VoucherError("invalid_assignments");
+    const emails = Array.from({ length: input.quantity }, (_, i) =>
+      input.employeeEmails?.[i]?.trim()
+        ? normalizeEmail(input.employeeEmails[i])
+        : null,
+    );
+    const assigned = emails.filter((email): email is string => !!email);
+    if (new Set(assigned).size !== assigned.length)
+      throw new VoucherError("invalid_assignments");
+    return getDb().transaction(async (tx) => {
+      // Match assign/revoke's parent-first ordering and serialize batch issuance.
+      const [b] = await tx
+        .select()
+        .from(batches)
+        .where(eq(batches.id, id))
+        .for("update");
+      if (!b) throw new VoucherError("not_found", 404);
+      if (b.redeemBy && b.redeemBy <= new Date())
+        throw new VoucherError("invalid_deadline");
+      if (!isGrantableTier(b.tierName)) throw new VoucherError("invalid_tier");
+      const existing = await tx
+        .select()
+        .from(vouchers)
+        .where(eq(vouchers.batchId, id))
+        .orderBy(vouchers.id)
+        .for("update");
+      const reserved = new Set(
+        existing
+          .flatMap((v) => [
+            v.employeeEmail,
+            ...(v.redeemedAt ? [v.eligibilityEmail] : []),
+          ])
+          .filter(Boolean),
+      );
+      if (
+        assigned.some(
+          (email) =>
+            reserved.has(email) || !eligible(email, b.allowedDomains, null),
+        )
+      )
+        throw new VoucherError("invalid_assignments", 409);
+      const codes = emails.map((employeeEmail) => ({
+        id: randomUUID(),
+        code: generateCode(),
+        employeeEmail,
+      }));
+      const added = await tx
+        .insert(vouchers)
+        .values(
+          codes.map((c) => ({
+            id: c.id,
+            batchId: id,
+            codeHash: hashSecret(c.code),
+            codeHint: c.code.slice(-6),
+            employeeEmail: c.employeeEmail,
+          })),
+        )
+        .returning();
+      await audit(tx, actorId, "issue", id, {
+        quantity: input.quantity,
+        voucherIds: added.map((v) => v.id),
+      });
+      return { batch: presentBatch(b, [...existing, ...added]), codes };
+    });
+  }
   async assign(
     id: string,
     assignments: { voucherId: string; employeeEmail: string | null }[],

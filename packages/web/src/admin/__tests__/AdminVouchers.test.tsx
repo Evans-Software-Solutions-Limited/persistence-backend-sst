@@ -63,7 +63,7 @@ describe("business voucher administration", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create batch" }));
     change("Business name", "Acme");
     submit();
-    expect(await screen.findByText(/Your batch is ready/)).toBeTruthy();
+    expect(await screen.findByText(/Your new codes are ready/)).toBeTruthy();
     expect(voucherApi.create).toHaveBeenCalledWith(
       expect.objectContaining({
         allowedDomains: [],
@@ -88,7 +88,7 @@ describe("business voucher administration", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "I have saved the codes" }),
     );
-    expect(screen.queryByText(/Your batch is ready/)).toBeNull();
+    expect(screen.queryByText(/Your new codes are ready/)).toBeNull();
   });
   it("preserves issued codes and offers retry if export audit fails", async () => {
     vi.mocked(voucherApi.exportAudit).mockRejectedValue(
@@ -191,7 +191,7 @@ describe("business voucher administration", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create batch" }));
     change("Business name", "Acme");
     submit();
-    await screen.findByText(/Your batch is ready/);
+    await screen.findByText(/Your new codes are ready/);
     first.unmount();
     saveSession(null);
     expect(loadIssuedVouchers()).toBeNull();
@@ -203,7 +203,7 @@ describe("business voucher administration", () => {
       isAdmin: true,
     });
     renderPage(<AdminVouchers />);
-    expect(screen.getByText(/Your batch is ready/)).toBeTruthy();
+    expect(screen.getByText(/Your new codes are ready/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Download codes CSV" }));
     fireEvent.click(
       await screen.findByRole("button", { name: "I have saved the codes" }),
@@ -269,11 +269,11 @@ describe("business voucher administration", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create batch" }));
     change("Business name", "Acme");
     submit();
-    await screen.findByText(/Your batch is ready/);
+    await screen.findByText(/Your new codes are ready/);
     fireEvent.click(screen.getByRole("button", { name: "Leave by button" }));
     expect(screen.getByText("Other page")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "History back" }));
-    expect(screen.getByText(/Your batch is ready/)).toBeTruthy();
+    expect(screen.getByText(/Your new codes are ready/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "History forward" }));
     expect(screen.getByText("Other page")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "History back" }));

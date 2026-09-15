@@ -71,3 +71,7 @@ Studio, Studio Pro and Enterprise are website organisation-plan entries, not imp
 ## Redemption preflight
 
 Validate code availability and email eligibility before offering membership sign-in/sign-up. Show a specific used-code error and a neutral invalid/unavailable error for unknown, revoked, expired, or ineligible codes. An employee eligibility email can redeem only one code per batch; other employees on the same domain and the same employee in future batches remain eligible. Recheck at preparation and atomic completion; anonymous checks never reserve or consume codes and do not replace mailbox proof.
+
+## Additional issuance
+
+Admins can issue 1–500 additional fresh one-off codes inside an existing batch, inheriting the same membership tier, duration, domain restrictions and redemption deadline. Batch totals include the new codes; employee reuse remains scoped to the original batch. Optional exact employee emails cannot duplicate assignments or previously redeemed eligibility emails within that batch. Expired batches cannot issue more codes. Plaintext codes are returned only for the new issuance; existing code secrets remain unrecoverable, with no encrypted code storage or new entitlement batch.

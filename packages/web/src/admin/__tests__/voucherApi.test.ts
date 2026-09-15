@@ -23,6 +23,16 @@ describe("voucher API contract", () => {
   it.each([
     [() => voucherApi.batches(), "GET", "?q=", undefined],
     [() => voucherApi.batches("a & b"), "GET", "?q=a%20%26%20b", undefined],
+    [
+      () =>
+        voucherApi.issue("b/1", {
+          quantity: 3,
+          employeeEmails: ["a@acme.com", "", "b@acme.com"],
+        }),
+      "POST",
+      "/b%2F1/issue",
+      { quantity: 3, employeeEmails: ["a@acme.com", "", "b@acme.com"] },
+    ],
     [() => voucherApi.detail("b/1"), "GET", "/b%2F1", undefined],
     [
       () =>

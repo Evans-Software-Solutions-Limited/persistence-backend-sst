@@ -1,5 +1,29 @@
 # Project memory · persistence-backend-sst
 
+### 2026-09-15 — Add fresh codes to existing business batches
+
+Admin batch detail now leads with issued/unused/redeemed/expired/revoked totals,
+then offers fresh issuance (1–500 codes) under the same parent batch and terms.
+Only the newly generated set is downloadable; server still stores hashes only.
+Expired batches cannot issue more. Optional assignments must satisfy domains,
+be unique and not already assigned/redeemed in this batch. Same employee's
+one-redemption-per-batch rule continues across all added codes.
+Pending browser recovery is keyed per issuance rather than per batch, so
+concurrent fresh sets cannot overwrite each other. Acknowledgement deletes only
+that set, handles legacy receipts, and never brings back old exported codes.
+Full core: 4,873 tests pass, repository 100% lines/functions, 97.21% branches.
+Full web: 1,396 tests pass; admin coverage suite with download-failure
+regressions: 311 tests pass. Changed frontend files exceed 90% coverage.
+Inspector caught assignment templates exceeding the 500-row import limit after
+top-ups; templates now split into labelled parts with a 501-row round-trip test.
+Local Inspector rerun clean. The large-fixture test originally exceeded 5s due
+to repeated whole-table accessible-name scans; direct text queries retain the
+assertions and run the 15-test file in 2.61s without increasing timeouts.
+Core typecheck/lint and web build/lint pass (existing lint warnings only).
+Local browser preview with mock data: issuing 10 changes totals 50/18/32 to
+60/28/32 (issued/unused/redeemed), fresh download panel appears directly below.
+Temporary visual fixture removed; no migration, deployment or mobile build.
+
 ### 2026-09-15 — Validate vouchers before authentication
 
 Redemption checks code availability and eligibility before showing the account

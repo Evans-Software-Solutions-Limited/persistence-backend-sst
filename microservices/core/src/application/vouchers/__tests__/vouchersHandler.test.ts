@@ -36,6 +36,7 @@ const verify = vi.fn();
 const redeem = vi.fn();
 const list = vi.fn();
 const create = vi.fn();
+const issue = vi.fn();
 const detail = vi.fn();
 const assign = vi.fn();
 const revoke = vi.fn();
@@ -52,6 +53,7 @@ vi.mock("../../repositories/voucherRepository", () => ({
   VoucherRepository: class {
     list = list;
     create = create;
+    issue = issue;
     detail = detail;
     assign = assign;
     revoke = revoke;
@@ -91,6 +93,7 @@ beforeEach(() => {
   verify.mockResolvedValue({ challengeId: id, verified: true });
   redeem.mockResolvedValue({ voucherId: id });
   list.mockResolvedValue([]);
+  issue.mockResolvedValue({ batch: { id }, codes: [{ id, code: "fresh" }] });
   create.mockResolvedValue({ batch: { id }, codes: [] });
   detail.mockResolvedValue({ batch: { id }, vouchers: [{ id }] });
   assign.mockResolvedValue({ updated: 1 });
@@ -321,4 +324,30 @@ it("supports native bearer calls without Origin and leaves unrelated failures al
   expect(
     (await app.handle(new Request("http://localhost/unrelated"))).status,
   ).toBe(404);
+});
+
+it("allows only admins to issue additional codes and validates issuance input", async () => {
+  const path = `/admin/voucher-batches/${id}/issue`;
+  expect((await request(path, { quantity: 1 }, "")).status).toBe(401);
+  expect((await request(path, { quantity: 1 })).status).toBe(403);
+  for (const quantity of [0, 501, 1.5])
+    expect((await request(path, { quantity }, "Bearer admin")).status).toBe(
+      422,
+    );
+  expect(issue).not.toHaveBeenCalled();
+  const response = await request(
+    path,
+    { quantity: 1, employeeEmails: ["user@example.test"] },
+    "Bearer admin",
+  );
+  expect(response.status).toBe(201);
+  expect(response.headers.get("cache-control")).toBe("no-store");
+  expect(await response.json()).toEqual({
+    data: { batch: { id }, codes: [{ id, code: "fresh" }] },
+  });
+  expect(issue).toHaveBeenCalledWith(
+    id,
+    { quantity: 1, employeeEmails: ["user@example.test"] },
+    id,
+  );
 });
