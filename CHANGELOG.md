@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.23.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.22.1...persistence-v1.23.0) (2026-09-15)
+
+
+### Features
+
+* business membership vouchers and Persistence admin redesign ([#452](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/452)) ([b87bb7c](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/b87bb7cfa42eb41967258f23d45b30f35f98a816))
+* improve voucher issuance and redemption flows ([#454](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/454)) ([c014de8](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/c014de87aa72d44e5be2a7d12887e4dcf07373b2))
+
 ## [1.22.1](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.22.0...persistence-v1.22.1) (2026-09-11)
 
 
