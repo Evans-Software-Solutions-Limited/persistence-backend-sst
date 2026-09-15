@@ -1168,3 +1168,177 @@ it("pending application is idempotent and ignores nonexistent grants and protect
     (await pg.query("SELECT * FROM user_subscriptions")).rows,
   ).toHaveLength(1);
 });
+
+describe("anonymous voucher preflight", () => {
+  it("accepts normalized eligible input without identity, mail, or redemption side effects", async () => {
+    const issued = await issue({
+      allowedDomains: ["example.test"],
+      employeeEmails: ["user@example.test"],
+    });
+    expect(
+      await service.check(
+        ` ${issued.codes[0].code.toLowerCase()} `,
+        " USER@EXAMPLE.TEST ",
+      ),
+    ).toEqual({ valid: true });
+    expect(identity).not.toHaveBeenCalled();
+    expect(mailer).not.toHaveBeenCalled();
+    expect(
+      (await pg.query("SELECT * FROM business_voucher_challenges")).rows,
+    ).toEqual([]);
+    expect((await pg.query("SELECT * FROM user_subscriptions")).rows).toEqual(
+      [],
+    );
+    expect((await repo.detail(issued.batch.id)).batch.counts.unused).toBe(1);
+  });
+  it("keeps unknown, expired, revoked, wrong-domain and wrong-employee codes neutral", async () => {
+    const issued = await issue({
+      quantity: 3,
+      allowedDomains: ["example.test"],
+      employeeEmails: ["user@example.test", "", ""],
+    });
+    const invalid = {
+      code: "invalid_voucher",
+      message: "This code is invalid or no longer available.",
+    };
+    await expect(
+      service.check("unknown", "user@example.test"),
+    ).rejects.toMatchObject(invalid);
+    await expect(
+      service.check(issued.codes[0].code, "other@example.test"),
+    ).rejects.toMatchObject(invalid);
+    await expect(
+      service.check(issued.codes[1].code, "user@other.test"),
+    ).rejects.toMatchObject(invalid);
+    await repo.revoke(issued.batch.id, issued.codes[1].id, "Lost", ADMIN);
+    await expect(
+      service.check(issued.codes[1].code, "user@example.test"),
+    ).rejects.toMatchObject(invalid);
+    await pg.query(
+      "UPDATE business_voucher_batches SET redeem_by=NOW()-INTERVAL '1 minute' WHERE id=$1",
+      [issued.batch.id],
+    );
+    await expect(
+      service.check(issued.codes[2].code, "user@example.test"),
+    ).rejects.toMatchObject(invalid);
+    expect(identity).not.toHaveBeenCalled();
+    expect(mailer).not.toHaveBeenCalled();
+  });
+  it("reports previously consumed codes as used and rechecks changes after preflight", async () => {
+    const { issued, challenge } = await ready();
+    expect(
+      await service.check(issued.codes[0].code, "user@example.test"),
+    ).toEqual({ valid: true });
+    await service.redeem(USER, challenge.challengeId);
+    await expect(
+      service.check(issued.codes[0].code, "user@example.test"),
+    ).rejects.toMatchObject({
+      code: "used_voucher",
+      message: "This code has already been used.",
+    });
+    const next = await issue();
+    await service.check(next.codes[0].code, "user@example.test");
+    await repo.revoke(next.batch.id, next.codes[0].id, "Lost", ADMIN);
+    await expect(
+      service.prepare(USER, next.codes[0].code, "user@example.test"),
+    ).rejects.toMatchObject({ code: "invalid_voucher" });
+  });
+  it("retains anonymous rate limits across service instances and input rotation", async () => {
+    const issued = await issue();
+    await service.check(issued.codes[0].code, "user@example.test");
+    await pg.query(
+      "UPDATE business_voucher_rate_limits SET attempts=20 WHERE key=$1",
+      [hashSecret("check-email:unknown:user@example.test")],
+    );
+    const another = new VoucherService(
+      new VoucherRepository(),
+      identity,
+      mailer,
+    );
+    await expect(
+      another.check("different", " USER@EXAMPLE.TEST "),
+    ).rejects.toMatchObject({ code: "rate_limited" });
+    await pg.query(
+      "UPDATE business_voucher_rate_limits SET attempts=30 WHERE key=$1",
+      [hashSecret(`check-voucher:${issued.codes[0].code}`)],
+    );
+    await expect(
+      another.check(issued.codes[0].code.toLowerCase(), "other@example.test"),
+    ).rejects.toMatchObject({ code: "rate_limited" });
+    await pg.query(
+      "UPDATE business_voucher_rate_limits SET attempts=2000 WHERE key=$1",
+      [hashSecret("check-ip:unknown")],
+    );
+    await expect(
+      another.check("new-code", "new@example.test"),
+    ).rejects.toMatchObject({ code: "rate_limited" });
+    expect(identity).not.toHaveBeenCalled();
+    expect(mailer).not.toHaveBeenCalled();
+  });
+});
+
+it("blocks another code for the same employee in a batch, including challenges prepared before redemption", async () => {
+  const issued = await issue({ quantity: 3 });
+  const first = await service.prepare(
+    USER,
+    issued.codes[0].code,
+    "user@example.test",
+  );
+  const second = await repo.prepare(
+    { id: OTHER, email: "other@example.test" },
+    issued.codes[1].code,
+    "user@example.test",
+    null,
+    randomUUID(),
+  );
+  await pg.query(
+    "UPDATE business_voucher_challenges SET verified_at=NOW() WHERE id=$1",
+    [second.challengeId],
+  );
+  await service.redeem(USER, first.challengeId);
+  const used = { code: "used_email" };
+  await expect(
+    service.check(issued.codes[1].code, " USER@EXAMPLE.TEST "),
+  ).rejects.toMatchObject(used);
+  await expect(
+    service.prepare(OTHER, issued.codes[1].code, "user@example.test"),
+  ).rejects.toMatchObject(used);
+  await expect(service.redeem(OTHER, second.challengeId)).rejects.toMatchObject(
+    used,
+  );
+  // Completed requests remain idempotent, while other employees and future batches work.
+  expect(await service.redeem(USER, first.challengeId)).toMatchObject({
+    voucherId: issued.codes[0].id,
+  });
+  expect(
+    await service.check(issued.codes[2].code, "other@example.test"),
+  ).toEqual({ valid: true });
+  const nextBatch = await issue();
+  expect(
+    await service.check(nextBatch.codes[0].code, "user@example.test"),
+  ).toEqual({ valid: true });
+  expect(
+    (await pg.query("SELECT * FROM user_subscriptions")).rows,
+  ).toHaveLength(1);
+});
+
+it("does not let invalid-code probes exhaust another IP's employee email quota", async () => {
+  const issued = await issue();
+  for (let attempt = 0; attempt < 20; attempt++) {
+    await expect(
+      service.check(`invalid-${attempt}`, "user@example.test", "203.0.113.1"),
+    ).rejects.toMatchObject({ code: "invalid_voucher" });
+  }
+  await expect(
+    service.check(issued.codes[0].code, "user@example.test", "203.0.113.1"),
+  ).rejects.toMatchObject({ code: "rate_limited" });
+  expect(
+    await service.check(
+      issued.codes[0].code,
+      " USER@EXAMPLE.TEST ",
+      "203.0.113.2",
+    ),
+  ).toEqual({ valid: true });
+  expect(identity).not.toHaveBeenCalled();
+  expect(mailer).not.toHaveBeenCalled();
+});

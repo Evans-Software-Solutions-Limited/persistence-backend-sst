@@ -1,5 +1,25 @@
 # Project memory · persistence-backend-sst
 
+### 2026-09-15 — Validate vouchers before authentication
+
+Redemption checks code availability and eligibility before showing the account
+form, and rechecks before password signup/sign-in or emailing a sign-in link.
+Failures retain editable details and display the server message. Public checks
+send no account token and issue no proof, email, membership or code reservation.
+Repeat employee eligibility email is limited to one redemption per batch;
+other employees sharing the domain and later batches remain eligible. This is
+the stated default pending Brad's optional clarification (per batch vs global).
+Final server checks remain authoritative and serialize same-batch email claims.
+Web: 1,376 tests pass; changed flow/API coverage 100% lines/functions and 97.87%
+branches. Four new regression cases fail against the old flow. Local browser
+preview with a mocked used-code response shows the error on the details form;
+no signup controls appear. Preview fixture removed after verification.
+Full core suite: 4,867 tests pass; voucher repository 100% lines/functions,
+96.70% branches, service and trusted source-header helper 100%. Web build,
+core typecheck/build-equivalent, formatting and lint pass (existing warnings).
+Inspector caught anonymous email-quota griefing; quota now includes trusted IP.
+Fresh database regression and typecheck pass; local Inspector rerun clean.
+
 ### 2026-09-15 — Redemption success uses browser-safe app destinations
 
 Replaced the unsupported bare mobile-scheme success link with the existing

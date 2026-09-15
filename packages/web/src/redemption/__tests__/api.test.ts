@@ -56,3 +56,35 @@ it("clears customer session on 401 and handles API errors without false success"
   vi.stubEnv("VITE_CORE_API_URL", "");
   await expect(voucherApi.redeem("c")).rejects.toThrow("not configured");
 });
+
+it("checks a voucher without a session or refreshing authentication", async () => {
+  sessionStorage.clear();
+  fetcher.mockResolvedValueOnce(
+    new Response(JSON.stringify({ data: { valid: true } })),
+  );
+  await expect(voucherApi.check("CODE", "employee@acme.com")).resolves.toEqual({
+    valid: true,
+  });
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  expect(fetcher.mock.calls[0][0]).toBe(
+    "https://api.example.com/vouchers/check",
+  );
+  expect(fetcher.mock.calls[0][1].headers).toEqual({
+    "Content-Type": "application/json",
+  });
+  expect(JSON.parse(fetcher.mock.calls[0][1].body)).toEqual({
+    code: "CODE",
+    eligibilityEmail: "employee@acme.com",
+  });
+});
+
+it("does not send or clear an existing account session for public checks", async () => {
+  fetcher.mockResolvedValueOnce(
+    new Response(JSON.stringify({ message: "Invalid code" }), { status: 401 }),
+  );
+  await expect(voucherApi.check("CODE", "employee@acme.com")).rejects.toThrow(
+    "Invalid code",
+  );
+  expect(loadSession()?.accessToken).toBe("access");
+  expect(fetcher.mock.calls[0][1].headers.Authorization).toBeUndefined();
+});

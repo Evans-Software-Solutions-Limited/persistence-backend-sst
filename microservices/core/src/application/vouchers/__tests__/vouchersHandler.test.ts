@@ -30,6 +30,7 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
     }
   },
 }));
+const check = vi.fn();
 const prepare = vi.fn();
 const verify = vi.fn();
 const redeem = vi.fn();
@@ -41,6 +42,7 @@ const revoke = vi.fn();
 const exportAudit = vi.fn();
 vi.mock("../voucherService", () => ({
   VoucherService: class {
+    check = check;
     prepare = prepare;
     verify = verify;
     redeem = redeem;
@@ -84,6 +86,7 @@ function request(
 beforeEach(() => {
   vi.clearAllMocks();
   process.env.WEB_ORIGIN = "https://persistence.evans-software-solutions.com";
+  check.mockResolvedValue({ valid: true });
   prepare.mockResolvedValue({ challengeId: id, verified: true });
   verify.mockResolvedValue({ challengeId: id, verified: true });
   redeem.mockResolvedValue({ voucherId: id });
@@ -95,6 +98,56 @@ beforeEach(() => {
   exportAudit.mockResolvedValue({ recorded: true });
 });
 describe("voucher API boundary", () => {
+  it("checks codes without auth and exposes only availability", async () => {
+    const response = await request(
+      "/vouchers/check",
+      { code: "test", eligibilityEmail: "a@test.com" },
+      "",
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ data: { valid: true } });
+    expect(check).toHaveBeenCalledWith("test", "a@test.com", "unknown");
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("access-control-allow-origin")).toBe(
+      process.env.WEB_ORIGIN,
+    );
+    expect(prepare).not.toHaveBeenCalled();
+    for (const path of ["verify", "redeem"]) {
+      expect(
+        (
+          await request(
+            `/vouchers/${path}`,
+            { challengeId: id, otp: "123456" },
+            "",
+          )
+        ).status,
+      ).toBe(401);
+    }
+  });
+  it("returns used-code errors before auth and validates anonymous inputs", async () => {
+    check.mockRejectedValueOnce(
+      new VoucherError("used_voucher", 409, "This code has already been used."),
+    );
+    const response = await request(
+      "/vouchers/check",
+      { code: "used", eligibilityEmail: "a@test.com" },
+      "",
+    );
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      code: "used_voucher",
+      message: "This code has already been used.",
+    });
+    expect(
+      (
+        await request(
+          "/vouchers/check",
+          { code: "", eligibilityEmail: "a@test.com" },
+          "",
+        )
+      ).status,
+    ).toBe(422);
+  });
   it("requires customer auth and admin authorization independently", async () => {
     expect(
       (

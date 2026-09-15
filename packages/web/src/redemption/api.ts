@@ -20,8 +20,12 @@ export interface Redemption {
   expiresAt: string;
 }
 
-async function post<T>(path: string, body: unknown): Promise<T> {
-  const session = await activeSession();
+async function post<T>(
+  path: string,
+  body: unknown,
+  authenticated = true,
+): Promise<T> {
+  const session = authenticated ? await activeSession() : null;
   const base = import.meta.env.VITE_CORE_API_URL?.replace(/\/$/, "");
   if (!base)
     throw new Error(
@@ -31,13 +35,13 @@ async function post<T>(path: string, body: unknown): Promise<T> {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${session.accessToken}`,
+      ...(session ? { Authorization: `Bearer ${session.accessToken}` } : {}),
     },
     body: JSON.stringify(body),
   });
   const result = await res.json().catch(() => ({}));
   if (!res.ok) {
-    if (res.status === 401) {
+    if (authenticated && res.status === 401) {
       signOut();
       throw new Error(
         "Your sign-in has expired. Change account below and sign in again.",
@@ -56,6 +60,8 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   return result.data as T;
 }
 export const voucherApi = {
+  check: (code: string, eligibilityEmail: string) =>
+    post<{ valid: true }>("check", { code, eligibilityEmail }, false),
   prepare: (code: string, eligibilityEmail: string) =>
     post<Challenge>("prepare", { code, eligibilityEmail }),
   verify: (challengeId: string, otp: string) =>
