@@ -1,5 +1,13 @@
 # Project memory · persistence-backend-sst
 
+### 2026-09-15 — Redemption success uses browser-safe app destinations
+
+Replaced the unsupported bare mobile-scheme success link with the existing
+site platform detection and configured store destinations: iOS→App Store,
+Android→Google Play, desktop/bots/unavailable store→homepage. Labels describe
+the destination. No voucher/email/token data or tracking is added to these URLs.
+Web 1,366 tests, production web build/typecheck and scoped lint pass.
+
 ### 2026-09-14 — Individual and B2B grants across supported memberships
 
 Expanded both individual complimentary grants and single-use vouchers to the

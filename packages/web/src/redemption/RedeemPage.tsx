@@ -1,4 +1,5 @@
 import { membershipTierLabel, isCoachMembership } from "@/lib/membershipTier";
+import { appDestination } from "@/lib/appDestination";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -150,6 +151,7 @@ function AccountForm({
 
 export default function RedeemPage() {
   const flow = useRedemption();
+  const destination = appDestination();
   const [otp, setOtp] = useState("");
   useEffect(() => {
     const previous = document.title;
@@ -427,8 +429,8 @@ export default function RedeemPage() {
                 </p>
               ) : null}
               <Button asChild>
-                <a href="persistencemobile://">
-                  Open Persistence
+                <a href={destination.href}>
+                  {destination.label}
                   <IconArrowRight size={18} />
                 </a>
               </Button>
