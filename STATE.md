@@ -1,5 +1,15 @@
 # Project memory · persistence-backend-sst
 
+### 2026-09-15 — Founding launch availability copy
+
+Founding page shows actual capacity as memberships available before any uptake,
+then actual remaining memberships after uptake, independently for consumer and
+coach pools. Removes the zero-of-capacity/taken wording without altering any
+counts or checkout guards. Unavailable API data stays explicitly unavailable.
+Focused founding tests and production web build pass; browser preview verified
+200 founding / 20 coach memberships available with mocked zero-purchase data.
+Full web: 1,399 tests pass; lint and local Inspector pass.
+
 ### 2026-09-15 — Add fresh codes to existing business batches
 
 Admin batch detail now leads with issued/unused/redeemed/expired/revoked totals,

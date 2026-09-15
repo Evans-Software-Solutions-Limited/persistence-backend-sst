@@ -33,8 +33,15 @@ function AvailabilityLine({
 }) {
   return (
     <span>
-      <strong>{value ? `${value.used} of ${value.cap}` : "Live count"}</strong>{" "}
-      {label} {value ? "taken" : "temporarily unavailable"}
+      <strong>
+        {value ? Math.max(0, value.cap - value.used) : "Live count"}
+      </strong>{" "}
+      {label}{" "}
+      {value
+        ? value.used === 0 && value.cap > 0
+          ? "available"
+          : "remaining"
+        : "temporarily unavailable"}
     </span>
   );
 }
@@ -102,10 +109,13 @@ export function Founding() {
               <FoundingPlans soldOut={soldOut} />
 
               <p className="founding-counter" aria-live="polite">
-                <AvailabilityLine label="founding places" value={consumer} />
+                <AvailabilityLine
+                  label="founding memberships"
+                  value={consumer}
+                />
                 {" · "}
                 <AvailabilityLine
-                  label="coach places"
+                  label="coach memberships"
                   value={availability.data?.coach}
                 />
               </p>
