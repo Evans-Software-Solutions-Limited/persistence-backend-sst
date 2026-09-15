@@ -36,6 +36,29 @@ type Batch = typeof batches.$inferSelect;
 type Voucher = typeof vouchers.$inferSelect;
 type Challenge = typeof challenges.$inferSelect;
 export type VerifiedAccount = { id: string; email: string };
+async function assertEmployeeUnused(
+  db: ReturnType<typeof getDb> | Tx,
+  batchId: string,
+  email: string,
+) {
+  const [used] = await db
+    .select({ id: vouchers.id })
+    .from(vouchers)
+    .where(
+      and(
+        eq(vouchers.batchId, batchId),
+        eq(vouchers.eligibilityEmail, email),
+        sql`${vouchers.redeemedAt} IS NOT NULL`,
+      ),
+    )
+    .limit(1);
+  if (used)
+    throw new VoucherError(
+      "used_email",
+      409,
+      "This employee email has already redeemed a code from this batch.",
+    );
+}
 function status(v: Voucher, b: Batch) {
   return v.redeemedAt
     ? "redeemed"
@@ -242,6 +265,83 @@ export class VoucherRepository {
       return { batch: presentBatch(b, vs), codes };
     });
   }
+  async issue(
+    id: string,
+    input: { quantity: number; employeeEmails?: string[] },
+    actorId: string,
+  ) {
+    if (
+      !Number.isInteger(input.quantity) ||
+      input.quantity < 1 ||
+      input.quantity > 500
+    )
+      throw new VoucherError("invalid_quantity");
+    if (input.employeeEmails && input.employeeEmails.length !== input.quantity)
+      throw new VoucherError("invalid_assignments");
+    const emails = Array.from({ length: input.quantity }, (_, i) =>
+      input.employeeEmails?.[i]?.trim()
+        ? normalizeEmail(input.employeeEmails[i])
+        : null,
+    );
+    const assigned = emails.filter((email): email is string => !!email);
+    if (new Set(assigned).size !== assigned.length)
+      throw new VoucherError("invalid_assignments");
+    return getDb().transaction(async (tx) => {
+      // Match assign/revoke's parent-first ordering and serialize batch issuance.
+      const [b] = await tx
+        .select()
+        .from(batches)
+        .where(eq(batches.id, id))
+        .for("update");
+      if (!b) throw new VoucherError("not_found", 404);
+      if (b.redeemBy && b.redeemBy <= new Date())
+        throw new VoucherError("invalid_deadline");
+      if (!isGrantableTier(b.tierName)) throw new VoucherError("invalid_tier");
+      const existing = await tx
+        .select()
+        .from(vouchers)
+        .where(eq(vouchers.batchId, id))
+        .orderBy(vouchers.id)
+        .for("update");
+      const reserved = new Set(
+        existing
+          .flatMap((v) => [
+            v.employeeEmail,
+            ...(v.redeemedAt ? [v.eligibilityEmail] : []),
+          ])
+          .filter(Boolean),
+      );
+      if (
+        assigned.some(
+          (email) =>
+            reserved.has(email) || !eligible(email, b.allowedDomains, null),
+        )
+      )
+        throw new VoucherError("invalid_assignments", 409);
+      const codes = emails.map((employeeEmail) => ({
+        id: randomUUID(),
+        code: generateCode(),
+        employeeEmail,
+      }));
+      const added = await tx
+        .insert(vouchers)
+        .values(
+          codes.map((c) => ({
+            id: c.id,
+            batchId: id,
+            codeHash: hashSecret(c.code),
+            codeHint: c.code.slice(-6),
+            employeeEmail: c.employeeEmail,
+          })),
+        )
+        .returning();
+      await audit(tx, actorId, "issue", id, {
+        quantity: input.quantity,
+        voucherIds: added.map((v) => v.id),
+      });
+      return { batch: presentBatch(b, [...existing, ...added]), codes };
+    });
+  }
   async assign(
     id: string,
     assignments: { voucherId: string; employeeEmail: string | null }[],
@@ -402,6 +502,32 @@ export class VoucherRepository {
         );
     }
   }
+  /** Advisory pre-auth check. prepare/redeem must still recheck under their locks. */
+  async check(code: string, email: string) {
+    const [row] = await getDb()
+      .select({ voucher: vouchers, batch: batches })
+      .from(vouchers)
+      .innerJoin(batches, eq(batches.id, vouchers.batchId))
+      .where(eq(vouchers.codeHash, hashSecret(canonicalCode(code))));
+    if (row && status(row.voucher, row.batch) === "redeemed")
+      throw new VoucherError(
+        "used_voucher",
+        409,
+        "This code has already been used.",
+      );
+    if (
+      !row ||
+      status(row.voucher, row.batch) !== "unused" ||
+      !eligible(email, row.batch.allowedDomains, row.voucher.employeeEmail)
+    )
+      throw new VoucherError(
+        "invalid_voucher",
+        400,
+        "This code is invalid or no longer available.",
+      );
+    await assertEmployeeUnused(getDb(), row.batch.id, email);
+    return { valid: true as const };
+  }
   async prepare(
     account: VerifiedAccount,
     code: string,
@@ -425,6 +551,7 @@ export class VoucherRepository {
         !eligible(email, b.allowedDomains, v.employeeEmail)
       )
         throw new VoucherError();
+      await assertEmployeeUnused(tx, b.id, email);
       const [c] = await tx
         .insert(challenges)
         .values({
@@ -507,6 +634,16 @@ export class VoucherRepository {
         .for("update");
       if (!c || c.accountId !== account.id || c.accountEmail !== account.email)
         throw new VoucherError();
+      // Serialize employee claims across different vouchers/accounts in this batch.
+      // Acquire before the voucher row lock, with the same order for every redeem.
+      const [candidate] = await tx
+        .select({ batchId: vouchers.batchId })
+        .from(vouchers)
+        .where(eq(vouchers.id, c.voucherId));
+      if (!candidate) throw new VoucherError();
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtextextended(${`voucher-employee:${candidate.batchId}:${c.eligibilityEmail}`}, 0))`,
+      );
       const [v] = await tx
         .select()
         .from(vouchers)
@@ -529,6 +666,7 @@ export class VoucherRepository {
         !eligible(c.eligibilityEmail, b.allowedDomains, v.employeeEmail)
       )
         throw new VoucherError();
+      await assertEmployeeUnused(tx, b.id, c.eligibilityEmail);
       if (!isGrantableTier(b.tierName)) throw new VoucherError("invalid_tier");
       const trainerTier = catalogTier(b.tierName).audience !== "consumer";
       if (

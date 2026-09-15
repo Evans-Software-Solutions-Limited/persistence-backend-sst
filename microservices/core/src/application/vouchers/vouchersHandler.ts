@@ -32,6 +32,23 @@ export const vouchersHandler = new Elysia()
       return { message: error.message, code: error.code };
     }
   })
+  // Public preflight only: membership creation and proof issuance remain authenticated.
+  .post(
+    "/vouchers/check",
+    async ({ body, headers }) => ({
+      data: await new VoucherService().check(
+        body.code,
+        body.eligibilityEmail,
+        headers["x-persistence-source-ip"] ?? "unknown",
+      ),
+    }),
+    {
+      body: t.Object({
+        code: t.String({ minLength: 1, maxLength: 128 }),
+        eligibilityEmail: t.String({ minLength: 3, maxLength: 254 }),
+      }),
+    },
+  )
   .derive(async ({ headers }) => ({
     user: await getAuthUser(headers.authorization),
   }))

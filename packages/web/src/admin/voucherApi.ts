@@ -63,6 +63,11 @@ export const voucherApi = {
   batches: (q = "") => request<VoucherBatch[]>(`?q=${encodeURIComponent(q)}`),
   create: (input: CreateVoucherBatch) =>
     request<{ batch: VoucherBatch; codes: IssuedCode[] }>("", input),
+  issue: (id: string, input: { quantity: number; employeeEmails?: string[] }) =>
+    request<{ batch: VoucherBatch; codes: IssuedCode[] }>(
+      `${idPath(id)}/issue`,
+      input,
+    ),
   detail: (id: string) =>
     request<{ batch: VoucherBatch; vouchers: Voucher[] }>(idPath(id)),
   assign: (batchId: string, voucherId: string, employeeEmail: string | null) =>

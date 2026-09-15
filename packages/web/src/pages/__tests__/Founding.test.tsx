@@ -66,9 +66,72 @@ describe("Founding", () => {
 
   it("renders live availability", async () => {
     renderPage(<Founding />, { route: "/founding" });
-    expect(await screen.findByText(/37 of 200/)).toBeDefined();
-    expect(screen.getByText(/4 of 20/)).toBeDefined();
+    expect(
+      await screen.findByText(
+        (_, element) =>
+          element?.tagName === "SPAN" &&
+          element.textContent === "163 founding memberships remaining",
+      ),
+    ).toBeDefined();
+    expect(
+      screen.getByText(
+        (_, element) =>
+          element?.tagName === "SPAN" &&
+          element.textContent === "16 coach memberships remaining",
+      ),
+    ).toBeDefined();
   });
+
+  it("shows actual capacity without a zero-sales counter before the first purchase", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              data: {
+                consumer: { used: 0, cap: 200 },
+                coach: { used: 0, cap: 20 },
+              },
+            }),
+          ),
+      ),
+    );
+    renderPage(<Founding />, { route: "/founding" });
+    expect(
+      await screen.findByText(
+        (_, e) =>
+          e?.tagName === "SPAN" &&
+          e.textContent === "200 founding memberships available",
+      ),
+    ).toBeDefined();
+    expect(
+      screen.getByText(
+        (_, e) =>
+          e?.tagName === "SPAN" &&
+          e.textContent === "20 coach memberships available",
+      ),
+    ).toBeDefined();
+    expect(screen.queryByText(/0 of|taken/)).toBeNull();
+  });
+
+  it.each([
+    { used: 1, cap: 150, remaining: 149 },
+    { used: 201, cap: 200, remaining: 0 },
+  ])(
+    "shows the true remaining capacity for $used of $cap",
+    async ({ used, cap, remaining }) => {
+      vi.stubGlobal("fetch", availability({ used, cap }));
+      renderPage(<Founding />, { route: "/founding" });
+      expect(
+        await screen.findByText(
+          (_, e) =>
+            e?.tagName === "SPAN" &&
+            e.textContent === `${remaining} founding memberships remaining`,
+        ),
+      ).toBeDefined();
+    },
+  );
 
   it("does not invent a count when availability fails", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 503 }));

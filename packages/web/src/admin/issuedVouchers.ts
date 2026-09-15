@@ -17,8 +17,11 @@ export function voucherIssuanceOwner(): string {
   return owner;
 }
 const ownerPrefix = (owner: string) => PREFIX + encodeURIComponent(owner) + ":";
-const key = (owner: string, batchId: string) =>
-  ownerPrefix(owner) + encodeURIComponent(batchId);
+const key = (owner: string, batchId: string, issuanceId: string) =>
+  ownerPrefix(owner) +
+  encodeURIComponent(batchId) +
+  ":" +
+  encodeURIComponent(issuanceId);
 export const ISSUED_VOUCHERS_CHANGED = "persistence:pending-vouchers-changed";
 /** Ensure private per-tab recovery is available before issuing unrecoverable codes. */
 export function prepareIssuedStorage(): string {
@@ -36,7 +39,7 @@ export function prepareIssuedStorage(): string {
 }
 export function saveIssuedVouchers(owner: string, issued: IssuedVouchers) {
   sessionStorage.setItem(
-    key(owner, issued.batch.id),
+    key(owner, issued.batch.id, issued.codes[0].id),
     JSON.stringify({
       version: 1,
       savedAt: Date.now(),
@@ -47,7 +50,7 @@ export function saveIssuedVouchers(owner: string, issued: IssuedVouchers) {
   window.dispatchEvent(new Event(ISSUED_VOUCHERS_CHANGED));
 }
 /** Only the same signed-in administrator can resume this tab's pending downloads. */
-export function loadIssuedVouchers(): IssuedVouchers | null {
+export function loadIssuedVouchers(batchId?: string): IssuedVouchers | null {
   try {
     const prefix = ownerPrefix(voucherIssuanceOwner());
     const keys = Object.keys(sessionStorage).filter((k) =>
@@ -73,7 +76,7 @@ export function loadIssuedVouchers(): IssuedVouchers | null {
           sessionStorage.removeItem(storageKey);
           continue;
         }
-        receipts.push(parsed);
+        if (!batchId || parsed.batch.id === batchId) receipts.push(parsed);
       } catch {
         sessionStorage.removeItem(storageKey);
       }
@@ -85,6 +88,23 @@ export function loadIssuedVouchers(): IssuedVouchers | null {
     return null;
   }
 }
-export function clearIssuedVouchers(batchId: string) {
-  sessionStorage.removeItem(key(voucherIssuanceOwner(), batchId));
+/** Clear only the acknowledged issuance, including receipts from the older key format. */
+export function clearIssuedVouchers(batchId: string, issuanceId: string) {
+  const prefix = ownerPrefix(voucherIssuanceOwner());
+  for (const storageKey of Object.keys(sessionStorage).filter((k) =>
+    k.startsWith(prefix),
+  )) {
+    let receipt;
+    try {
+      receipt = JSON.parse(sessionStorage.getItem(storageKey) ?? "null");
+    } catch {
+      continue;
+    }
+    if (
+      receipt?.batch?.id === batchId &&
+      receipt?.codes?.[0]?.id === issuanceId
+    )
+      sessionStorage.removeItem(storageKey);
+  }
+  window.dispatchEvent(new Event(ISSUED_VOUCHERS_CHANGED));
 }

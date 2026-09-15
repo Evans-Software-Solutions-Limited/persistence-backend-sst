@@ -1,5 +1,67 @@
 # Project memory · persistence-backend-sst
 
+### 2026-09-15 — Founding launch availability copy
+
+Founding page shows actual capacity as memberships available before any uptake,
+then actual remaining memberships after uptake, independently for consumer and
+coach pools. Removes the zero-of-capacity/taken wording without altering any
+counts or checkout guards. Unavailable API data stays explicitly unavailable.
+Focused founding tests and production web build pass; browser preview verified
+200 founding / 20 coach memberships available with mocked zero-purchase data.
+Full web: 1,399 tests pass; lint and local Inspector pass.
+
+### 2026-09-15 — Add fresh codes to existing business batches
+
+Admin batch detail now leads with issued/unused/redeemed/expired/revoked totals,
+then offers fresh issuance (1–500 codes) under the same parent batch and terms.
+Only the newly generated set is downloadable; server still stores hashes only.
+Expired batches cannot issue more. Optional assignments must satisfy domains,
+be unique and not already assigned/redeemed in this batch. Same employee's
+one-redemption-per-batch rule continues across all added codes.
+Pending browser recovery is keyed per issuance rather than per batch, so
+concurrent fresh sets cannot overwrite each other. Acknowledgement deletes only
+that set, handles legacy receipts, and never brings back old exported codes.
+Full core: 4,873 tests pass, repository 100% lines/functions, 97.21% branches.
+Full web: 1,396 tests pass; admin coverage suite with download-failure
+regressions: 311 tests pass. Changed frontend files exceed 90% coverage.
+Inspector caught assignment templates exceeding the 500-row import limit after
+top-ups; templates now split into labelled parts with a 501-row round-trip test.
+Local Inspector rerun clean. The large-fixture test originally exceeded 5s due
+to repeated whole-table accessible-name scans; direct text queries retain the
+assertions and run the 15-test file in 2.61s without increasing timeouts.
+Core typecheck/lint and web build/lint pass (existing lint warnings only).
+Local browser preview with mock data: issuing 10 changes totals 50/18/32 to
+60/28/32 (issued/unused/redeemed), fresh download panel appears directly below.
+Temporary visual fixture removed; no migration, deployment or mobile build.
+
+### 2026-09-15 — Validate vouchers before authentication
+
+Redemption checks code availability and eligibility before showing the account
+form, and rechecks before password signup/sign-in or emailing a sign-in link.
+Failures retain editable details and display the server message. Public checks
+send no account token and issue no proof, email, membership or code reservation.
+Repeat employee eligibility email is limited to one redemption per batch;
+other employees sharing the domain and later batches remain eligible. This is
+the stated default pending Brad's optional clarification (per batch vs global).
+Final server checks remain authoritative and serialize same-batch email claims.
+Web: 1,376 tests pass; changed flow/API coverage 100% lines/functions and 97.87%
+branches. Four new regression cases fail against the old flow. Local browser
+preview with a mocked used-code response shows the error on the details form;
+no signup controls appear. Preview fixture removed after verification.
+Full core suite: 4,867 tests pass; voucher repository 100% lines/functions,
+96.70% branches, service and trusted source-header helper 100%. Web build,
+core typecheck/build-equivalent, formatting and lint pass (existing warnings).
+Inspector caught anonymous email-quota griefing; quota now includes trusted IP.
+Fresh database regression and typecheck pass; local Inspector rerun clean.
+
+### 2026-09-15 — Redemption success uses browser-safe app destinations
+
+Replaced the unsupported bare mobile-scheme success link with the existing
+site platform detection and configured store destinations: iOS→App Store,
+Android→Google Play, desktop/bots/unavailable store→homepage. Labels describe
+the destination. No voucher/email/token data or tracking is added to these URLs.
+Web 1,366 tests, production web build/typecheck and scoped lint pass.
+
 ### 2026-09-14 — Individual and B2B grants across supported memberships
 
 Expanded both individual complimentary grants and single-use vouchers to the

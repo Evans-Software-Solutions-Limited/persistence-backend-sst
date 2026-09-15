@@ -35,6 +35,17 @@ export class VoucherService {
       );
     return { id, email: normalizeEmail(identity.email) };
   }
+  async check(code: string, email: string, sourceIp: string = "unknown") {
+    // Source IP is overwritten from the Lambda request context at the API boundary.
+    // A workplace NAT can represent all 500 employees in a batch plus retries.
+    await this.repo.rateLimit([{ key: `check-ip:${sourceIp}`, limit: 2000 }]);
+    const eligibility = normalizeEmail(email);
+    await this.repo.rateLimit([
+      { key: `check-email:${sourceIp}:${eligibility}`, limit: 20 },
+      { key: `check-voucher:${canonicalCode(code)}`, limit: 30 },
+    ]);
+    return this.repo.check(code, eligibility);
+  }
   async prepare(id: string, code: string, email: string) {
     await this.repo.rateLimit([{ key: `prepare-account:${id}`, limit: 20 }]);
     const account = await this.account(id);

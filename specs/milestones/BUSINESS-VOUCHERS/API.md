@@ -1,11 +1,12 @@
 # Implementation contract
 
-All responses use `{ data: ... }`; failures `{ message, code? }`. Admin calls use existing admin bearer auth. Redemption calls require a verified Supabase destination-account bearer token. The UI first collects voucher/eligibility details, then authenticates the membership account, then prepares/verifies/redeems. Account authentication is separate from employee eligibility proof; no anonymous account creation by the API.
+All responses use `{ data: ... }`; failures `{ message, code? }`. Admin calls use existing admin bearer auth. Redemption mutations require a verified Supabase destination-account bearer token. The UI first collects and checks voucher/eligibility details anonymously, then authenticates the membership account, then prepares/verifies/redeems. Account authentication is separate from employee eligibility proof; no anonymous account creation by the API.
 
 ## Admin
 
 - `GET /admin/voucher-batches?q=` → `data: Batch[]`
-- `POST /admin/voucher-batches` body `{ businessName, reference?, quantity, tierName: GrantableTierId, months, allowedDomains: string[], redeemBy: ISO|null, employeeEmails?: string[] }` → `data: { batch: Batch, codes: IssuedCode[] }`. Employee-email list is optional; when supplied length equals quantity (empty entries mean unassigned). Hash-only voucher storage: plaintext random codes are returned once, with an explicit download-now UX. Maximum 500 per batch.
+- `POST /admin/voucher-batches` body `{ businessName, reference?, quantity, tierName: GrantableTierId, months, allowedDomains: string[], redeemBy: ISO|null, employeeEmails?: string[] }` → `data: { batch: Batch, codes: IssuedCode[] }`. Employee-email list is optional; when supplied length equals quantity (empty entries mean unassigned). Hash-only voucher storage: plaintext random codes are returned once, with an explicit download-now UX. Maximum 500 per issuance; later issuances may extend the batch.
+- `POST /admin/voucher-batches/:id/issue` body `{ quantity: 1..500, employeeEmails?: string[] }` → `data: { batch: Batch, codes: IssuedCode[] }` (201, no-store). Append fresh hash-only codes to the existing batch and inherit its tier, months, domains, and deadline. Reject expired/unsupported batches, duplicate or existing assignments, previously redeemed employee emails, and ineligible domains. Optional email list must match quantity; empty entries are unassigned. Parent-batch and voucher-row locks serialize issuance with assignment/revocation and redemption; audit records only quantity and new voucher IDs. Return only the newly issued plaintext codes, never previous secrets.
 - `GET /admin/voucher-batches/:id` → `data: { batch: Batch, vouchers: Voucher[] }`
 - `PATCH /admin/voucher-batches/:id/vouchers/:voucherId` body `{ employeeEmail: string|null }` → `data: Voucher`. Only unused code assignments may change.
 - `POST /admin/voucher-batches/:id/assignments` body `{ assignments: { voucherId, employeeEmail: string|null }[] }` → `data: { updated: number }`. Atomic CSV assignment with duplicate/conflict validation.
@@ -20,6 +21,8 @@ All responses use `{ data: ... }`; failures `{ message, code? }`. Admin calls us
 `IssuedCode`: `{ id, code, employeeEmail: string|null }`.
 
 ## Employee redemption
+
+- `POST /vouchers/check` (public) body `{ code, eligibilityEmail }` → `data: { valid: true }`. Advisory only; no identity lookup, account creation, email, proof or consumption. Used codes return `used_voucher` (409); unknown/expired/revoked/ineligible codes return neutral `invalid_voucher` (400). An employee email already redeemed in the same batch returns `used_email` (409). Persistent hourly limits: 2,000 per trusted Lambda source IP (shared workplace NAT), 20 per trusted IP plus normalized email, 30 per canonical code. Raw forwarding headers are not trusted. These checks run before offering account authentication.
 
 - `POST /vouchers/prepare` body `{ code, eligibilityEmail }` → `data: Challenge`. Hash lookup validates code/status/deadline/restrictions, verified destination account and persistent rate limits. If verified account email matches eligibility email, set `verified: true`; otherwise send a one-time numeric verification code to the eligibility mailbox. Delivery failure is a retryable error, never a fake success. No voucher is consumed.
 - `POST /vouchers/verify` body `{ challengeId, otp }` → `data: Challenge`. Rate/attempt limited server-side, challenge bound to account ID, voucher and eligibility email, one-time proof. Invalid responses neutral.
@@ -36,3 +39,5 @@ Completed redemption challenge retries return the original result for 30 days. P
 `GrantableTierId` is one of `premium`, `premium_plus`, `individual_trainer`, `start_up_coach_plus`, `coach`, `coach_pro`. Grant/voucher duration is an integer from 1 to 120 months. Shared membership catalogue exports define this set; unsupported organisation plans and Free are not grant products.
 
 `GET /admin/founding-grants/catalogue` retains `offers` for the founding campaign and adds `grantableTiers: [{tierName,label,isTrainerTier,months}]` for individual complimentary grants. Founding requests remain restricted to the campaign offers; complimentary requests accept all six supported tiers. Existing role-change confirmation still applies to individual grants.
+
+An eligibility email may redeem only once per batch; a different employee at the same domain or the same employee in a new batch remains eligible. This restriction is rechecked in prepare and final redemption, with final transactions serialized by batch plus normalized email before taking a voucher row lock. Historical redeemed rows remain authoritative, including after account deletion; completed replay remains idempotent.

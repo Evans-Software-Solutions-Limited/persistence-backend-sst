@@ -43,6 +43,28 @@ export const adminVouchersHandler = new Elysia()
       }),
     },
   )
+  .post(
+    "/admin/voucher-batches/:id/issue",
+    async (ctx) => {
+      const data = await repo().issue(
+        ctx.params.id,
+        ctx.body,
+        getUser(ctx).sub,
+      );
+      ctx.set.status = 201;
+      ctx.set.headers["cache-control"] = "no-store";
+      return { data };
+    },
+    {
+      params: t.Object({ id }),
+      body: t.Object({
+        quantity: t.Integer({ minimum: 1, maximum: 500 }),
+        employeeEmails: t.Optional(
+          t.Array(t.String({ maxLength: 254 }), { maxItems: 500 }),
+        ),
+      }),
+    },
+  )
   .get(
     "/admin/voucher-batches/:id",
     async ({ params }) => ({ data: await repo().detail(params.id) }),

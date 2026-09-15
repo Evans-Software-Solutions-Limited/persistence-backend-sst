@@ -1,3 +1,4 @@
+import { trustedSourceHeaders } from "./shared/trustedSourceHeaders";
 import Elysia from "elysia";
 import { Hono } from "hono";
 import { handle } from "hono/aws-lambda";
@@ -302,7 +303,7 @@ const honoHandler = handle(honoApp);
  */
 const baseHandler: typeof honoHandler = async (event, context) => {
   try {
-    return await honoHandler(event, context);
+    return await honoHandler(trustedSourceHeaders(event), context);
   } catch (err) {
     const requestId =
       typeof context === "object" &&

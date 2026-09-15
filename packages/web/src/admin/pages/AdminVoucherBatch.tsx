@@ -1,3 +1,4 @@
+import { BatchIssuance } from "../BatchIssuance";
 import { membershipTierLabel, isCoachMembership } from "@/lib/membershipTier";
 import { useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -48,6 +49,11 @@ export function AdminVoucherBatch() {
   const [notice, setNotice] = useState("");
   const batch = detail.data?.batch;
   const vouchers = detail.data?.vouchers ?? [];
+  const unassignedTemplateRows = vouchers.filter((v) => v.status === "unused");
+  const assignmentChunks = Array.from(
+    { length: Math.ceil(unassignedTemplateRows.length / 500) },
+    (_, index) => unassignedTemplateRows.slice(index * 500, (index + 1) * 500),
+  );
   function open(next: Action) {
     setAction(next);
     setError(null);
@@ -161,6 +167,30 @@ export function AdminVoucherBatch() {
       {detail.isError ? <ErrorState error={detail.error} /> : null}
       {batch ? (
         <div className="space-y-6">
+          <div className="admin-stats-grid admin-stats-five">
+            {(
+              ["issued", "unused", "redeemed", "expired", "revoked"] as const
+            ).map((s) => (
+              <Stat key={s} label={s} value={batch.counts[s]} />
+            ))}
+          </div>
+          <BatchIssuance
+            key={batch.id}
+            batch={batch}
+            onIssued={(updated) => {
+              qc.setQueryData(
+                ["admin", "voucher-batch", batchId],
+                (current: typeof detail.data) =>
+                  current ? { ...current, batch: updated } : current,
+              );
+              void qc.invalidateQueries({
+                queryKey: ["admin", "voucher-batch", batchId],
+              });
+              void qc.invalidateQueries({
+                queryKey: ["admin", "voucher-batches"],
+              });
+            }}
+          />
           <Panel title="Batch details">
             <dl className="admin-definition-grid">
               <dt>Membership</dt>
@@ -204,13 +234,7 @@ export function AdminVoucherBatch() {
                 : " Sign in to the membership account you want to receive access."}
             </p>
           </Panel>
-          <div className="admin-stats-grid admin-stats-five">
-            {(
-              ["issued", "unused", "redeemed", "expired", "revoked"] as const
-            ).map((s) => (
-              <Stat key={s} label={s} value={batch.counts[s]} />
-            ))}
-          </div>
+
           <div className="admin-actions">
             <Button
               variant="outline"
@@ -339,22 +363,35 @@ export function AdminVoucherBatch() {
                   assignment. All rows are validated and applied together; any
                   conflict rejects the entire import.
                 </p>
-                <Button
-                  variant="outline"
-                  onClick={() =>
-                    downloadCsv(
-                      toCsv([
-                        ["voucherId", "employeeEmail"],
-                        ...vouchers
-                          .filter((v) => v.status === "unused")
-                          .map((v) => [v.id, v.employeeEmail]),
-                      ]),
-                      `persistence-assignments-${batchId}.csv`,
-                    )
-                  }
-                >
-                  Download assignment template
-                </Button>
+                {assignmentChunks.length > 1 ? (
+                  <p className="admin-field-hint">
+                    This batch has {unassignedTemplateRows.length} unused codes.
+                    Templates are split into sets of up to 500. Import each file
+                    separately; validation and changes apply to one file at a
+                    time.
+                  </p>
+                ) : null}
+                <div className="admin-actions">
+                  {assignmentChunks.map((rows, index) => (
+                    <Button
+                      key={index}
+                      variant="outline"
+                      onClick={() =>
+                        downloadCsv(
+                          toCsv([
+                            ["voucherId", "employeeEmail"],
+                            ...rows.map((v) => [v.id, v.employeeEmail]),
+                          ]),
+                          `persistence-assignments-${batchId}${assignmentChunks.length > 1 ? `-part-${index + 1}` : ""}.csv`,
+                        )
+                      }
+                    >
+                      {assignmentChunks.length > 1
+                        ? `Download assignment template ${index + 1} (${rows.length} ${rows.length === 1 ? "code" : "codes"})`
+                        : "Download assignment template"}
+                    </Button>
+                  ))}
+                </div>
                 <label className="admin-field">
                   CSV file
                   <Input

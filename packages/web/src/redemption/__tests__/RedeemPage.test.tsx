@@ -20,7 +20,12 @@ vi.mock("../auth", () => ({
   signOut: vi.fn(),
 }));
 vi.mock("../api", () => ({
-  voucherApi: { prepare: vi.fn(), verify: vi.fn(), redeem: vi.fn() },
+  voucherApi: {
+    check: vi.fn(),
+    prepare: vi.fn(),
+    verify: vi.fn(),
+    redeem: vi.fn(),
+  },
 }));
 const account = { id: "user-1", email: "personal@example.com" };
 const challenge = {
@@ -41,6 +46,7 @@ beforeEach(() => {
   vi.mocked(auth.signIn).mockResolvedValue(account);
   vi.mocked(auth.signUp).mockResolvedValue(null);
   vi.mocked(auth.sendSignInLink).mockResolvedValue();
+  vi.mocked(voucherApi.check).mockResolvedValue({ valid: true });
   vi.mocked(voucherApi.prepare).mockResolvedValue(challenge);
   vi.mocked(voucherApi.verify).mockResolvedValue({
     ...challenge,
@@ -106,8 +112,10 @@ it("verifies the work mailbox separately and only redeems after explicit confirm
   expect(voucherApi.redeem).toHaveBeenCalledWith("c");
   expect(sessionStorage.getItem("persistence.redemption.draft")).toBeNull();
   expect(
-    screen.getByRole("link", { name: "Open Persistence" }).getAttribute("href"),
-  ).toBe("persistencemobile://");
+    screen
+      .getByRole("link", { name: "Go to Persistence" })
+      .getAttribute("href"),
+  ).toBe("/");
 });
 it("reuses verified same-email proof without asking for an OTP", async () => {
   vi.mocked(voucherApi.prepare).mockResolvedValue({
@@ -317,5 +325,99 @@ it.each(GRANTABLE_TIERS)(
           /Your coach membership and coaching capabilities are ready/,
         ),
       ).toBeTruthy();
+  },
+);
+
+it.each([
+  "This code is invalid or no longer available.",
+  "This code has already been used.",
+  "This email is not eligible for this code.",
+  "This employee email has already redeemed a code from this batch.",
+])(
+  "blocks before authentication when the server reports: %s",
+  async (message) => {
+    vi.mocked(auth.currentAccount).mockResolvedValue(null);
+    vi.mocked(voucherApi.check).mockRejectedValueOnce(new Error(message));
+    await ready();
+    fill("employee@acme.com", true);
+    await screen.findByText(message);
+    expect(
+      screen.getByRole("heading", { name: "Redeem your membership" }),
+    ).toBeTruthy();
+    expect(screen.queryByLabelText("Password")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Create account" })).toBeNull();
+    expect(auth.signIn).not.toHaveBeenCalled();
+    expect(auth.signUp).not.toHaveBeenCalled();
+    expect(auth.sendSignInLink).not.toHaveBeenCalled();
+    expect(voucherApi.prepare).not.toHaveBeenCalled();
+    expect(voucherApi.check).toHaveBeenCalledWith(
+      "VOUCHER-CODE",
+      "employee@acme.com",
+    );
+    // Correcting details rechecks the server and can proceed without reloading.
+    fireEvent.change(screen.getByLabelText("Membership code"), {
+      target: { value: "NEW-CODE" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await screen.findByRole("heading", { name: "Your membership account" });
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(voucherApi.check).toHaveBeenLastCalledWith(
+      "NEW-CODE",
+      "employee@acme.com",
+    );
+  },
+);
+
+it("waits for the code check before offering authentication", async () => {
+  vi.mocked(auth.currentAccount).mockResolvedValue(null);
+  let finish!: (result: { valid: true }) => void;
+  vi.mocked(voucherApi.check).mockReturnValueOnce(
+    new Promise((resolve) => {
+      finish = resolve;
+    }),
+  );
+  await ready();
+  fill();
+  expect(screen.queryByLabelText("Password")).toBeNull();
+  expect(
+    (screen.getByRole("button", { name: "Please wait…" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+  finish({ valid: true });
+  await screen.findByRole("heading", { name: "Your membership account" });
+});
+
+it.each(["signin", "signup", "email"])(
+  "rechecks before %s if a code was used while the account form was open",
+  async (mode) => {
+    vi.mocked(auth.currentAccount).mockResolvedValue(null);
+    await ready();
+    fill();
+    await screen.findByRole("heading", { name: "Your membership account" });
+    vi.mocked(voucherApi.check).mockRejectedValueOnce(
+      new Error("This code has already been used."),
+    );
+    if (mode === "email") {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Email me a sign-in link" }),
+      );
+    } else {
+      if (mode === "signup") {
+        fireEvent.click(screen.getByRole("button", { name: "Create account" }));
+        fireEvent.click(screen.getByRole("checkbox"));
+      }
+      const password = screen.getByLabelText(
+        mode === "signup" ? "Create a password" : "Password",
+      );
+      fireEvent.change(password, { target: { value: "my-password" } });
+      fireEvent.submit(password.closest("form")!);
+    }
+    await screen.findByRole("heading", { name: "Redeem your membership" });
+    expect(screen.getByRole("alert").textContent).toBe(
+      "This code has already been used.",
+    );
+    expect(auth.signIn).not.toHaveBeenCalled();
+    expect(auth.signUp).not.toHaveBeenCalled();
+    expect(auth.sendSignInLink).not.toHaveBeenCalled();
   },
 );

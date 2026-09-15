@@ -30,17 +30,20 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
     }
   },
 }));
+const check = vi.fn();
 const prepare = vi.fn();
 const verify = vi.fn();
 const redeem = vi.fn();
 const list = vi.fn();
 const create = vi.fn();
+const issue = vi.fn();
 const detail = vi.fn();
 const assign = vi.fn();
 const revoke = vi.fn();
 const exportAudit = vi.fn();
 vi.mock("../voucherService", () => ({
   VoucherService: class {
+    check = check;
     prepare = prepare;
     verify = verify;
     redeem = redeem;
@@ -50,6 +53,7 @@ vi.mock("../../repositories/voucherRepository", () => ({
   VoucherRepository: class {
     list = list;
     create = create;
+    issue = issue;
     detail = detail;
     assign = assign;
     revoke = revoke;
@@ -84,10 +88,12 @@ function request(
 beforeEach(() => {
   vi.clearAllMocks();
   process.env.WEB_ORIGIN = "https://persistence.evans-software-solutions.com";
+  check.mockResolvedValue({ valid: true });
   prepare.mockResolvedValue({ challengeId: id, verified: true });
   verify.mockResolvedValue({ challengeId: id, verified: true });
   redeem.mockResolvedValue({ voucherId: id });
   list.mockResolvedValue([]);
+  issue.mockResolvedValue({ batch: { id }, codes: [{ id, code: "fresh" }] });
   create.mockResolvedValue({ batch: { id }, codes: [] });
   detail.mockResolvedValue({ batch: { id }, vouchers: [{ id }] });
   assign.mockResolvedValue({ updated: 1 });
@@ -95,6 +101,56 @@ beforeEach(() => {
   exportAudit.mockResolvedValue({ recorded: true });
 });
 describe("voucher API boundary", () => {
+  it("checks codes without auth and exposes only availability", async () => {
+    const response = await request(
+      "/vouchers/check",
+      { code: "test", eligibilityEmail: "a@test.com" },
+      "",
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ data: { valid: true } });
+    expect(check).toHaveBeenCalledWith("test", "a@test.com", "unknown");
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("access-control-allow-origin")).toBe(
+      process.env.WEB_ORIGIN,
+    );
+    expect(prepare).not.toHaveBeenCalled();
+    for (const path of ["verify", "redeem"]) {
+      expect(
+        (
+          await request(
+            `/vouchers/${path}`,
+            { challengeId: id, otp: "123456" },
+            "",
+          )
+        ).status,
+      ).toBe(401);
+    }
+  });
+  it("returns used-code errors before auth and validates anonymous inputs", async () => {
+    check.mockRejectedValueOnce(
+      new VoucherError("used_voucher", 409, "This code has already been used."),
+    );
+    const response = await request(
+      "/vouchers/check",
+      { code: "used", eligibilityEmail: "a@test.com" },
+      "",
+    );
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      code: "used_voucher",
+      message: "This code has already been used.",
+    });
+    expect(
+      (
+        await request(
+          "/vouchers/check",
+          { code: "", eligibilityEmail: "a@test.com" },
+          "",
+        )
+      ).status,
+    ).toBe(422);
+  });
   it("requires customer auth and admin authorization independently", async () => {
     expect(
       (
@@ -268,4 +324,30 @@ it("supports native bearer calls without Origin and leaves unrelated failures al
   expect(
     (await app.handle(new Request("http://localhost/unrelated"))).status,
   ).toBe(404);
+});
+
+it("allows only admins to issue additional codes and validates issuance input", async () => {
+  const path = `/admin/voucher-batches/${id}/issue`;
+  expect((await request(path, { quantity: 1 }, "")).status).toBe(401);
+  expect((await request(path, { quantity: 1 })).status).toBe(403);
+  for (const quantity of [0, 501, 1.5])
+    expect((await request(path, { quantity }, "Bearer admin")).status).toBe(
+      422,
+    );
+  expect(issue).not.toHaveBeenCalled();
+  const response = await request(
+    path,
+    { quantity: 1, employeeEmails: ["user@example.test"] },
+    "Bearer admin",
+  );
+  expect(response.status).toBe(201);
+  expect(response.headers.get("cache-control")).toBe("no-store");
+  expect(await response.json()).toEqual({
+    data: { batch: { id }, codes: [{ id, code: "fresh" }] },
+  });
+  expect(issue).toHaveBeenCalledWith(
+    id,
+    { quantity: 1, employeeEmails: ["user@example.test"] },
+    id,
+  );
 });

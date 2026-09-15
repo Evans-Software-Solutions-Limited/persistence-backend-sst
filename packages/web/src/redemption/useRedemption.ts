@@ -92,6 +92,7 @@ export function useRedemption() {
           .trim()
           .toLowerCase(),
       };
+      await voucherApi.check(next.code, next.eligibilityEmail);
       saveDraft(next);
       setDraft(next);
       setChallenge(null);
@@ -100,8 +101,18 @@ export function useRedemption() {
       else setStage("account");
     });
 
+  async function recheckBeforeAuth() {
+    try {
+      await voucherApi.check(draft.code, draft.eligibilityEmail);
+    } catch (e) {
+      setStage("details");
+      throw e;
+    }
+  }
+
   const authenticate = (mode: "signin" | "signup", password: string) =>
     run(async () => {
+      await recheckBeforeAuth();
       const a =
         mode === "signup"
           ? await auth.signUp(draft.accountEmail, password)
@@ -120,6 +131,7 @@ export function useRedemption() {
 
   const emailLink = () =>
     run(async () => {
+      await recheckBeforeAuth();
       await auth.sendSignInLink(draft.accountEmail);
       setNotice(
         "If an account exists for this email, a sign-in link is on its way. Open it to continue. New to Persistence? Choose Create account.",

@@ -39,7 +39,7 @@ describe("pending issuance recovery", () => {
     expect(loadIssuedVouchers()).toBeNull();
     saveSession(session);
     expect(loadIssuedVouchers()).toEqual(issued);
-    clearIssuedVouchers(issued.batch.id);
+    clearIssuedVouchers(issued.batch.id, issued.codes[0].id);
     expect(loadIssuedVouchers()).toBeNull();
   });
   it("uses immutable JWT subject when available", () => {
@@ -56,7 +56,7 @@ describe("pending issuance recovery", () => {
     expect(loadIssuedVouchers()).toBeNull();
     expect(
       sessionStorage.getItem(
-        "persistence.admin.pending-vouchers.admin%40example.com:b1",
+        "persistence.admin.pending-vouchers.admin%40example.com:b1:v1",
       ),
     ).toBeNull();
   });
@@ -89,7 +89,7 @@ describe("pending issuance recovery", () => {
       for (const receipt of reverse ? [other, issued] : [issued, other])
         saveIssuedVouchers(owner, receipt);
       const first = loadIssuedVouchers()!;
-      clearIssuedVouchers(first.batch.id);
+      clearIssuedVouchers(first.batch.id, first.codes[0].id);
       const second = loadIssuedVouchers()!;
       expect(new Set([first.batch.id, second.batch.id])).toEqual(
         new Set(["b1", "b2"]),
@@ -99,4 +99,41 @@ describe("pending issuance recovery", () => {
       );
     },
   );
+});
+
+it("keeps same-batch issuances separate and clears only the acknowledged set", () => {
+  sessionStorage.clear();
+  saveSession(session);
+  const owner = prepareIssuedStorage();
+  const second = {
+    ...issued,
+    codes: [{ id: "v3", code: "FRESH-CODE", employeeEmail: null }],
+  };
+  saveIssuedVouchers(owner, issued);
+  saveIssuedVouchers(owner, second);
+  expect(loadIssuedVouchers("b1")).toEqual(issued);
+  clearIssuedVouchers("b1", "v1");
+  expect(loadIssuedVouchers("b1")).toEqual(second);
+  expect(loadIssuedVouchers("b2")).toBeNull();
+  clearIssuedVouchers("b1", "v3");
+  expect(loadIssuedVouchers()).toBeNull();
+  sessionStorage.clear();
+});
+
+it("can acknowledge a legacy receipt without removing a fresh set in the same batch", () => {
+  sessionStorage.clear();
+  saveSession(session);
+  const owner = prepareIssuedStorage();
+  sessionStorage.setItem(
+    `persistence.admin.pending-vouchers.${encodeURIComponent(owner)}:b1`,
+    JSON.stringify({ version: 1, savedAt: Date.now(), ...issued }),
+  );
+  const second = {
+    ...issued,
+    codes: [{ id: "v3", code: "FRESH-CODE", employeeEmail: null }],
+  };
+  saveIssuedVouchers(owner, second);
+  clearIssuedVouchers("b1", "v1");
+  expect(loadIssuedVouchers()).toEqual(second);
+  sessionStorage.clear();
 });
