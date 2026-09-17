@@ -10,7 +10,7 @@ Own new `microservices/core/src/application/coach-directory/` handlers, its serv
 
 Implement the exact D5 routes, validation, version checks, authenticated projections, transactional receipts, deduplication and rate limits. Reuse centralized coach eligibility. Implement RLS and transaction authorization together; expiry/hiding/blocking must defeat stale cached details and concurrent contact.
 
-Extract the existing invite-code relationship service only as needed for directory consented connection; retain existing handler behavior and tests. Integrate subsequent coach response with the directory-origin checks and existing seat lock. Accepted enquiries never activate relationships. Reuse shared blocks/reports/place resolution contracts from Train Together; use fixtures until integrated, not a competing implementation.
+Extract the existing invite-code relationship service only as needed for directory consented connection; retain existing handler behavior and tests. Integrate subsequent coach response with the directory-origin checks and existing seat lock. Accepted enquiries never activate relationships. Test existing pending relationships in both directions: client-origin remains pending for coach response; trainer-origin is accepted by the athlete through the existing shared acceptance service with fresh consent and active-seat lock. Preserve initiatedBy, handle full-seat rejection without grants, and verify retries do not duplicate grants/notifications. Reuse shared blocks/reports/place resolution contracts from Train Together; use fixtures until integrated, not a competing implementation.
 
 ## Required evidence
 
