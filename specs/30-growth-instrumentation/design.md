@@ -270,3 +270,41 @@ NULL AND event_name IN (<mapped set>) ORDER BY occurred_at LIMIT N`, maps each
   optional `META_TEST_EVENT_CODE`; build-time `VITE_META_PIXEL_ID` for web.
 - Migrations are prod-applied manually (flagged in each migration + STATE.md).
 - Verify in Meta Events Manager → Test Events before driving traffic.
+
+## WS5 — Conversion diagnosis (15 September 2026 discussion amendment)
+
+### D5.1 Existing gap and sources
+
+The current `microservices/core/src/application/admin/marketing/adminMarketingHandler.ts` reads store clicks by channel, code attribution and registrations in the reporting window. Registrations are deliberately all-sources because the server event lacks campaign context. `packages/web/src/admin/pages/AdminMarketingPlan.tsx` renders that boundary and explains that spend/impressions/clicks/landing views/redemptions are manually entered. This is useful reporting, not a connected person-level journey. User lists cannot recover anonymous departures.
+
+Reuse existing analytics and store/provider reporting. Audit live event receipt and counting semantics before adding emitters. RevenueCat is the store-subscription source; founding confirmed payments come from the authoritative checkout/payment path; first workout derives from the successful server session record (offline workouts appear after sync). Native attribution currently described in `docs/mobile-meta-attribution.md` is activation-only. No proposed diagnostic stage implicitly expands that advertising boundary.
+
+### D5.2 Report contract and presentation
+
+Proposed admin report accepts a bounded UTC interval, display time zone, journey and optional supported campaign filter. Return stages with count/null, unit (events/people/platform downloads), source, coverage state, observation window, refresh time and linkage type (deterministic/aggregate/unavailable). Return transitions only when a valid cohort join exists; otherwise return null plus reason. Existing all-source registrations remain explicitly all-source. An aggregate proxy, if offered, must say it is not a user-conversion rate.
+
+UI: two journey tabs, source/status beside every count, a link to supporting evidence and a short “what we can conclude” panel. First draw missing steps as unknown. Do not make a smooth narrowing funnel whose area implies invented counts. No total drop-off percentage across incompatible sources.
+
+### D5.3 Linkage and missing instrumentation
+
+Authenticated first-party registration-to-workout and account-to-entitlement transitions can use stable internal IDs within authorized reporting. Web checkout stages can use the existing checkout/event identifiers where retained and valid. External video views and store aggregates cannot be joined to those users by assumption; UTM tags alone do not survive every install/account path. Do not retrofit attribution by matching email, device fingerprinting or proximity in time.
+
+Reconciling checkout starts to confirmed payments requires a consistent checkout cohort and delayed outcomes; same-day totals alone can misstate abandonment. For each absent screen-view/emitter, first document event semantics, lawful consent/retention treatment, duplicate behavior and runtime implications, then seek design agreement. Prefer the smallest first-party instrumentation needed to locate the loss. New native modules require a separate owner-authorized build; backend/web reporting alone does not.
+
+### D5.4 Acceptance evidence and experiment
+
+Tests must exercise zero versus unavailable, missing channel linkage, repeat events, different time zones, test accounts, late payment/sync and non-linear paths (purchase before workout). Use clearly synthetic data for UI layout only. Validate a normal live journey under authorized test conditions before describing measurement as operational. Compare actual checkout wording with creative; preserve different offer rails rather than silently overwriting historical terms. Record webinar recommendations as hypotheses and change one variable per interpretable experiment. No budget increase, publication or outreach is authorized by this design.
+
+### D5.5 Selected execution contract (17 September 2026)
+
+This amendment authorizes an implementation brief, not advertising changes. First deliver truthful read-only reporting from existing sources; missing emitters remain a separately designed follow-up. Earlier WS1–WS4 proposals are historical context, not implicit authorization to expand Meta forwarding.
+
+Add `GET /admin/marketing/plans/:id/funnel` under the existing admin guard and plan lookup. Query: required `from`/`to` ISO UTC timestamps, half-open interval `[from,to)` with `from < to` and maximum 90 days; `journey=app|founding`; optional existing plan `channelId`; `timeZone` a valid IANA zone (default Europe/London). Time zone changes labels only, not interval membership. Invalid query returns 400, unauthenticated 401, non-admin 403, absent plan 404. Unsupported attribution filters return unavailable stages with reasons, never an invented filtered count. Do not add user identifiers to this aggregate response.
+
+Response: `{planId,journey,from,to,timeZone,generatedAt,stages,transitions,limitations}`. Each stage: `{id,label,count:number|null,unit:'events'|'people'|'downloads'|'payments',source:string|null,status:'measured'|'manual'|'unavailable',coverage:'complete'|'partial'|'unknown',observedFrom:string|null,observedTo:string|null,refreshedAt:string|null,linkage:'deterministic'|'aggregate'|'unavailable',reason:string|null}`. A measured zero requires a working authoritative source covering the requested interval; unavailable always has null count and a reason. A manual aggregate must retain its original interval, cannot be prorated, and never becomes deterministic linkage. Existing manual campaign totals covering another interval stay contextual, not a selected-window stage count. No external provider calls on this endpoint's request path.
+
+App stage IDs: `video_views`, `destination_visits`, `store_clicks`, `store_downloads`, `registrations`, `first_workout`, `paid_activation`. Founding IDs: `video_views`, `destination_visits`, `checkout_starts`, `confirmed_payments`, `access_activated`. These are diagnostic milestones, not mandatory ordering: purchase can precede workout. Missing sources appear as unavailable. All-source registrations cannot be labeled TikTok conversions. Test-account exclusion is based only on existing explicit markers; where absent report unknown coverage, never guess from email addresses.
+
+A transition is `{fromStage,toStage,denominator:number|null,numerator:number|null,rate:number|null,cohortFrom:string|null,cohortTo:string|null,outcomeCutoff:string|null,reason:string|null}`. Populate only after proving stable first-party linkage, deduplication and consistent cohort membership. Denominator is distinct eligible entrants in the source interval; numerator is the subset with the outcome by the explicit cutoff, including late outcomes and excluding earlier nonqualifying outcomes. Zero denominator yields null rate. If those semantics cannot be computed from retained data, all numeric fields remain null with a reason. Default first delivery may legitimately expose no calculable transitions. Do not subtract unrelated stage counts to infer loss.
+
+Repositories own bounded aggregation. Source failure yields unavailable for that source and a limitation, without losing other stages; authentication/database plan-lookup failure remains an ordinary API failure. Do not introduce persistent personal-data exports or caches. No source freshness SLA is invented: report available receipt timestamps, otherwise unknown. AC5.1–AC5.8 remain authoritative; tests prove these semantics before claiming the funnel is operational.

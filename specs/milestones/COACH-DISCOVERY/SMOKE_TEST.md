@@ -1,0 +1,14 @@
+# Coach discovery — integrated smoke
+
+Run against `bun run dev` with disposable accounts/data and the existing development mobile runtime. If native location support is absent, record GPS steps blocked pending Brad's build; manual flow can proceed. Never run a build implicitly. Record actual results, commit IDs and screenshots, not unchecked assumptions.
+
+1. Sign out: search/detail denied. Sign in as free athlete: browse works. Eligible coach publishes without surcharge; expired coach cannot publish. (AC1,7)
+2. New coach listing starts hidden. Publish online, then hybrid with selected public town/venue. Toggle accepting-clients off: remains visible, contact disabled. Hide: new detail/search requests cannot expose it. Existing active clients remain connected. (AC1,2,8)
+3. Search via manual place; deny GPS then retry manually. Check 1/100 km boundaries, invalid radius/limit, multi-page stable ordering, expired/mismatched cursors, approximate distance and empty state. Inspect payloads for forbidden location/private fields. (AC3,9,11)
+4. Submit the same enquiry concurrently/retry same key: one enquiry and notification. Reuse key with changed message: 409. Exceed limits: 429. Other accounts cannot read/respond. Withdraw/decline and verify terminal transitions/cooldown. (AC4,8)
+5. Accept enquiry: no relationship access. Connect without consent: rejected. Fresh current-version consent creates pending client request; retry creates no extra consent/relationship. Coach accepts through existing response and gains only existing consented access. (AC5,10)
+6. Race hide, expiry, block, availability-off and withdrawal against contact/connect; no forbidden relationship/access. Race two coach acceptances for final seat: at most one activation. A directory-origin pending acceptance rechecks safety/eligibility. (AC8,10)
+7. Open stale detail offline: mark stale and disable contact. Restore network, refresh conflicts; no automatic consent/contact replay. Verify listing, search/detail and enquiries visually on supported screen sizes. (AC11)
+8. Analytics distinguish enquiry acceptance from actual active connection, count duplicates once and contain no messages/health/coordinates. Compare existing invite-code and established-client behavior for regressions. (AC5,6)
+
+Release evidence includes both agents' tests and integrated results. Pilot coaching response/connection success requires real opted-in participants; do not claim pilot completion from test accounts.

@@ -27,6 +27,10 @@ Structured feature specifications for the Persistence V2 build (mobile + backend
 | 22   | [Program import & adaptation](./22-program-import-and-adaptation/) | Triplet authored 2026-08-05; eval-gated (Phase 0), no code yet               | post-launch (GTM)   |
 | 26   | [Mealprint meal planning](./26-mealprint-meal-planning/)           | Triplet authored 2026-07-24; Phase 0/1 + Phase 2 backend shipped             | post-launch (GTM)   |
 
+## September 2026 social and growth package
+
+Start with [the agent handoff](./milestones/SOCIAL-GROWTH-HANDOFF.md). Parent specs: [34 Together](./34-train-together/requirements.md), [35 coach discovery](./35-coach-discovery/requirements.md), and [30 growth WS5](./30-growth-instrumentation/requirements.md). [Meta AI guide](./milestones/MARKETING-PLANS/META-AI-AND-CREATOR-TOOLS.md) and executable research brief are linked there. These are scoped specifications, not shipped features.
+
 ## How to use these specs
 
 - **Feature specs (`specs/NN-<feature>/`)** are the authoritative description of what a feature must do, how it's architected, and what tasks it breaks into. Each has three files — `requirements.md` (user-facing ACs), `design.md` (architecture + endpoints + domain model + UI structure), `tasks.md` (actionable checklist). Don't rewrite them — append current-state notes and mark checkboxes as work lands.

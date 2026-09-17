@@ -1,5 +1,9 @@
 # Project memory · persistence-backend-sst
 
+### 2026-09-17 — Social and growth specification handoff
+
+Agent assignments: `specs/milestones/SOCIAL-GROWTH-HANDOFF.md`. Together, coach discovery, conversion diagnosis and Meta research have linked requirements/design/tasks and execution briefs. Documentation only: no runtime changes, native build, completed pilot or campaign launch. Selected defaults and external release gates are explicit.
+
 ### 2026-09-15 — Founding launch availability copy
 
 Founding page shows actual capacity as memberships available before any uptake,
