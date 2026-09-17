@@ -179,3 +179,16 @@ spend starts (the playbook gates Meta spend to month 3+).
 - **AC-6** ≥90% coverage on changed backend files; all gates green; Inspector
   Brad (local) clean before each PR.
 - **AC-7** STATE.md updated per row shipped.
+
+## Workstream 5 — Conversion diagnosis (15 September 2026 discussion amendment)
+
+Status: proposed requirements, not implementation authorization. Preserve the earlier historical scope; this amendment defines a first-party/admin diagnostic extension. It does not authorize sending additional mobile/health events to ad platforms or changing consent behavior. Brad confirms no offer uptake; approximately 1,500 TikTok views are user-reported. Actual intervening counts remain unknown.
+
+- **R5.1 / AC5.1 — Two journeys:** show an install/activation journey and a founding-web-purchase journey separately. Registration, first saved workout, store subscription and fixed-term founding purchase have distinct labels and denominators. A first workout is not a mandatory prerequisite for buying.
+- **R5.2 / AC5.2 — Evidence status:** every stage shows observed count or “not measured”, source, date window, counting unit, last refresh and attribution coverage. Zero is reserved for a functioning observed source returning zero; a failed query or absent integration is not zero.
+- **R5.3 / AC5.3 — Valid rates:** compute person-level conversion only for linked, time-ordered stages within the same defined cohort/window. Unlinked platform totals are shown side by side, not rendered as one proven funnel. Never attribute all registrations to TikTok because TikTok generated views.
+- **R5.4 / AC5.4 — Diagnostic stages:** support post/profile/link evidence; offer/landing visits; store clicks and store-reported first-time downloads; registrations; first successful saved workout; offer/checkout views, checkout starts, confirmed payments and access activation. Label stages whose emitters are absent as instrumentation tasks. Confirm source availability before promising historical data.
+- **R5.5 / AC5.5 — Reporting integrity:** distinguish event counts from unique people and include repeat/test/admin activity treatment. Record ingestion lag, time zone, consent-related gaps and overlapping attribution windows. Report fixed-term receipts separately from recurring subscriptions; never infer causality from temporal correlation.
+- **R5.6 / AC5.6 — Actionable diagnosis:** show the earliest measurable loss in each linked journey, the evidence supporting it, and a proposed next inspection/experiment. Unknown stages take priority for measurement, not automatic conclusions about pricing or creative.
+- **R5.7 / AC5.7 — Operational safety:** analytics remain best-effort, admin-only and subject to existing retention/consent policies. Workout contents, location, health data and raw profile data are excluded from advertising payloads. No session replay or additional advertising SDK is assumed.
+- **R5.8 / AC5.8 — Experiment record:** each experiment has one primary question/metric, asset and destination, actual offer terms, budget ceiling if paid, date range and outcome. Small organic tests are labeled directional; webinar case studies are not forecast returns.

@@ -65,3 +65,15 @@ Client-side event emitter (`POST /analytics/events` → `emitEvent`), Meta/FB SD
 MMP, SKAdNetwork/AEM, ATT prompt, share card, referral codes. Note: no
 install-level SKAN attribution until the SDK ships — server signals suffice
 until paid spend starts (playbook gates Meta spend to month 3+).
+
+## Row 5 — Conversion diagnosis (discussion draft, 15 September 2026)
+
+All implementation tasks remain unchecked. Requirements/design agreement precedes code.
+
+- [ ] **T5.1** Inventory live reporting sources, count semantics and missing emitters; obtain TikTok destination/date window and reconcile actual offer terms. Trace: AC5.1–AC5.5; D5.1, D5.3.
+- [ ] **T5.2** Agree journey/cohort definitions, valid transitions, privacy boundaries and unknown-state presentation with Brad. Trace: AC5.1–AC5.3, AC5.7; D5.2–D5.3.
+- [ ] **T5.3** Prepare backend/frontend execution briefs and smoke walkthrough after design decisions; audit existing interfaces before naming new endpoint contracts. Trace: AC5.1–AC5.7; D5.1–D5.4.
+- [ ] **T5.4** Implement only the agreed first-party aggregation and missing measurement, preserving all-source attribution boundaries and best-effort behavior. Trace: AC5.2–AC5.5, AC5.7; D5.1–D5.3.
+- [ ] **T5.5** Implement admin journey/status display and evidence-backed diagnostic summary. Trace: AC5.1–AC5.3, AC5.6; D5.2.
+- [ ] **T5.6** Verify synthetic edge cases, UI and a real authorized journey; document deployment and historical-data limitations. Trace: AC5.1–AC5.7; D5.4.
+- [ ] **T5.7** Agree and run a bounded creative/offer-path experiment; record evidence and conclusion. No campaign changes until separately authorized. Trace: AC5.8; D5.4.
