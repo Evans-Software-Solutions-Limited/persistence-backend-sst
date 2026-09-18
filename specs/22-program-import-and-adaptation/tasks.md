@@ -84,3 +84,20 @@ requirements/design section (Kiro discipline).
 - Cross-user shared/curated library with visibility + verification + IP model
   (design § 9). Its own future spec.
 - Recipe-import adoption of `extraction_cache` (spec-16/26 owns the decision).
+
+## September 2026 revised sequence — MI requirements / design §10
+
+This sequence supersedes earlier import task assumptions (transaction prohibition, silent clamps, public shared caching and URL-first release order). Existing adaptation tasks remain separate. All work below is pending.
+
+- [ ] **MI-T0 Research/eval:** source corpus and manual baselines; establish per-type field/mapping accuracy, transcription correctness, cost, latency and retry budget. Agree final launch bars from measured results. Trace MI-2–5,7–8.
+- [ ] **MI-T1 Shared model:** spec 36 explicit schedule/prescription round-trip and self-authoring/ownership capability; no flattening into existing cycle. Trace MI-1,3,6.
+- [ ] **MI-T2 Backend:** private source/draft storage, bounded secure readers, real async worker registration, entitlement matrix, metering/reservations, revisions, cancellation and atomic idempotent accept. Trace MI-1–7.
+- [ ] **MI-T3 Resolution:** per-owner exercise mapping, source evidence, ambiguity and explicit custom creation; integrate spec 37 aliases. Trace MI-3–4.
+- [ ] **MI-T4 Frontends:** web import review and mobile capture/file/voice adapters; preserve source/edits across interruptions; capability-driven disabled states. Trace MI-2–6.
+- [ ] **MI-T5 Verification:** held-out modality gates; tenant isolation, source attack, duplicate worker, cancellation/accept race, expiry/tier downgrade, response-loss retry and rollback tests; handwritten/voice correction walkthrough. Trace MI-1–8.
+- [ ] **MI-T6 Release:** privacy/retention/provider review, owner-built native runtime where needed, staged capability enablement and pilot correction-time/logging evidence. Do not mark provider evaluation or pilot completed from synthetic tests.
+
+Execution brief: [Programme and voice import](../milestones/COACHING-WORKSPACE-IMPORT/IMPORT_BRIEF.md). Generation from a discussion beyond dictated instructions is a distinct follow-on mode with its own coaching-rule and correctness evaluation; do not implement it by filling gaps in faithful import.
+
+- [ ] **GD-T1** Define and evaluate explicit design-conversation intent, coaching-method profile and proposed-field schema. Trace GD-1–4; §10.6.
+- [ ] **GD-T2** Implement reviewable conversation changes only after shared draft/validation foundations and the generation eval pass; reuse acceptance, never assign through model output. Trace GD-2–4; §10.6.

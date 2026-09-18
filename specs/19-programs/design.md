@@ -315,3 +315,7 @@ Commands: `create-program.command.ts`, `update-program.command.ts`,
 | Deleting a programme with history                                          | 409 while live assignments exist; terminal assignments cascade via FK when the coach truly deletes                           |
 | Mode-switch mid-programme-editor (coach → athlete)                         | `(app)/programs/*` gated like `(app)/clients/*`: `mode !== 'coach'` → redirect to tabs index                                 |
 | Offline-queued assign for a client whose relationship was since terminated | Server re-validates the relationship at flush time → 403 → sync-queue failed-mutation surfacing (existing)                   |
+
+## 18 September 2026 — Proposed explicit schedules and self-managed programmes
+
+[Spec 36 design](../36-coaching-workspace-and-athlete-review/design.md) scopes an additive cycle/explicit schedule extension, versioned prescriptions and owner/self authoring for Premium Plus and coaches. Existing repeating-cycle behaviour remains authoritative until this extension is implemented. Full-fidelity spec-22 imports depend on it. Historical empty-table assumptions in the original design are not migration permission today; preserve populated programmes and old clients.

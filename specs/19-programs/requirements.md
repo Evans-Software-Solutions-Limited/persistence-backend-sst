@@ -190,3 +190,7 @@ approved by Brad as a minimal card reusing the `ProgrammeCard` pattern.
 - Retro-regeneration of materialised occurrences after programme edits.
 - Per-day-of-week scheduling UI (occurrences are spread algorithmically;
   a "train on Mon/Wed/Fri" picker is a follow-up).
+
+## 18 September 2026 — Proposed explicit schedules and self-managed programmes
+
+[Spec 36 requirements](../36-coaching-workspace-and-athlete-review/requirements.md) scopes an additive cycle/explicit schedule extension, versioned prescriptions and owner/self authoring for Premium Plus and coaches. Existing repeating-cycle behaviour remains authoritative until this extension is implemented. Full-fidelity spec-22 imports depend on it. Historical empty-table assumptions in the original design are not migration permission today; preserve populated programmes and old clients.

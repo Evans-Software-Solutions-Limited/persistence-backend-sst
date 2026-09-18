@@ -53,3 +53,7 @@ Copied from the approved V2 migration plan:
 - No skipping e2e smoke tests
 - No milestone begins without its parent spec being marked-up / created
 - No nav redesign until M11 (trainer/nutrition both need to land to see the real pressure)
+
+## September 2026 coaching workspace and import research
+
+[Scope handoff and Relay comparison](./milestones/COACHING-WORKSPACE-IMPORT/BRIEF.md). Extends [22 programme/voice import](./22-program-import-and-adaptation/requirements.md), proposes [36 web workspace and athlete review](./36-coaching-workspace-and-athlete-review/requirements.md) and [37 exercise-library import](./37-exercise-library-import/requirements.md). Discussion/evaluation scope; no implementation or pilot result is implied.

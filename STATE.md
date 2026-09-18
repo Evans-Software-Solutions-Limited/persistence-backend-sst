@@ -1,5 +1,9 @@
 # Project memory · persistence-backend-sst
 
+### 2026-09-18 — Relay / import / workspace scope
+
+Research and briefs: `specs/milestones/COACHING-WORKSPACE-IMPORT/BRIEF.md`. Public Relay documentation checked; current main `162ba03a` audited. Spec22 import is not implemented; current cycle scheduling cannot faithfully retain arbitrary multiweek prescriptions, owner/self programme APIs are missing, and coach/private review cannot be returned directly to athletes. Added superseding spec22 amendments, explicit schedule/self/shared-review spec36 and exercise-import spec37. Coached-client access is a proposed default pending reply. No runtime changes, provider calls, customer outreach or native builds. Validation: documentation formatting/local links only; feature evaluations and runtime tests not run.
+
 ### 2026-09-17 — Social and growth specification handoff
 
 Agent assignments: `specs/milestones/SOCIAL-GROWTH-HANDOFF.md`. Together, coach discovery, conversion diagnosis and Meta research have linked requirements/design/tasks and execution briefs. Documentation only: no runtime changes, native build, completed pilot or campaign launch. Selected defaults and external release gates are explicit.

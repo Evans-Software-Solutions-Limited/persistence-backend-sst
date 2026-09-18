@@ -321,3 +321,57 @@ the FRAMING, then the numbers:
 **What I need:** confirm the framing (bar = "editing beats retyping"; per-failure-mode;
 auto-match precision is the strict one) and whether the starting thresholds are right
 or where you would move them. The Phase-0 eval then validates against whatever we set.
+
+## 10. September 2026 implementation direction (supersedes conflicting import details)
+
+Status: proposed design for MI-1–MI-8, not implemented. Reuse current AI adapters, jobs, exercise catalogue, repositories and secure fetch helpers. Programme scheduling/self-authoring dependencies are in [spec 36](../36-coaching-workspace-and-athlete-review/design.md); catalogue migration is [spec 37](../37-exercise-library-import/design.md).
+
+### 10.1 One pipeline and shared draft
+
+`capture → private source → extract/transcribe → normalize → resolve exercises → review → atomic accept → explicitly schedule/assign`.
+
+Keep extraction and resolution separate; the model returns source labels, never trusted database IDs. `ImportDraft` contains owner, target (`workout|program`), intent, source ID/hash, schema/model/prompt versions, revision, expiry, status, transcript if applicable, schedule mode and normalized workouts/prescriptions. A field carries `{value,sourceRef,origin:'source'|'user',status:'extracted'|'unresolved'|'confirmed'}`. Source references identify page/box, URL text span or audio timestamp; they are evidence links, not executable instructions. Draft questions enumerate conflicting values and unsupported constructs. After user edits, re-resolve affected rows and invalidate stale acceptance revisions.
+
+Use immutable private source objects and owner-scoped draft/job records. Candidate source limits for the evaluation: image JPEG/PNG up to 10 MiB each, 10 pages and 25 MiB aggregate; PDF up to 25 MiB/30 pages; voice up to 10 minutes/50 MiB; pasted text 50,000 characters. These are proposed ceilings to test, not provider guarantees. All types need server byte/page/duration validation; reject oversized sources before inference. Capability discovery returns enabled types/limits, so disabled modalities never look like broken upload buttons.
+
+### 10.2 Proposed API contract
+
+All routes authenticated; schema validation and owner scope precede source access. Exact generated runtime types are a backend-first deliverable.
+
+| Route                             | Purpose                                                                                                                                                             |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /imports/capabilities`       | Actual feature eligibility, enabled source types, limits, remaining quota if known; no role escalation.                                                             |
+| `POST /imports/sources`           | `{type,filename?,mimeType?,size?,url?,text?}`; server generates owner-bound ID and short-lived upload URL where required. URL/text sources need no file upload.     |
+| `POST /imports/drafts`            | `{sourceId,target,intent:'import'}` + idempotency key → 202 `{draftId,jobId,status}` after verifying source complete. Extraction runs in a registered async worker. |
+| `GET /imports/drafts/:id`         | Private draft/job state and reviewable evidence; signed evidence URLs generated only after current authorization.                                                   |
+| `PATCH /imports/drafts/:id`       | `{expectedRevision,changes,resolutions}` → new revision; strict bounded patch schema, no arbitrary JSON-path write into ownership/state fields.                     |
+| `POST /imports/drafts/:id/accept` | `{expectedRevision}` + idempotency key → stable `{workoutId?,programId?,receiptId}`; no implicit schedule/assignment.                                               |
+| `DELETE /imports/drafts/:id`      | Cancel and expire associated unaccepted draft/source; do not delete already accepted programmes/history.                                                            |
+
+Use 401 unauthenticated, 403 ineligible, 404 non-owned/missing, 409 stale/conflicting state or key reused with different payload, 413 limit, 422 unresolved/unsupported input, 429 exhausted quota, and retryable worker failure metadata. Idempotency identity includes actor+operation+key and a request hash. Revalidate owner, tier, selected exercise visibility, source status and revision at acceptance; receipt lookup after authorization makes retry stable without a second mutation. Post-accept edits require a new draft or ordinary programme edit. Cancellation/acceptance serialize; cancellation winning prevents publication, acceptance winning returns the receipt and preserves the accepted asset. A dead worker cannot revive a cancelled draft.
+
+### 10.3 Durable writes and scheduling
+
+The existing `programRepository.ts` uses `db.transaction`; disregard §3's obsolete pooler prohibition. Perform model/network work outside the transaction. In a bounded transaction, validate the exact reviewed revision, create accepted custom exercises/workouts/programme structure and receipt, then mark the draft accepted. Test rollback midway and retry after response loss. For sources too large for bounded atomic create, reject at the supported limit until a staged commit protocol is designed; never expose a half-programme as successful.
+
+Current cycle schema has no week/weekday/prescription version. Use spec 36's backward-compatible `cycle` versus `explicit` schedule model. Preserve source weeks and prescribe per-occurrence workout revisions; identical workouts may share a version only when their prescription is identical. Do not deduplicate by title or exercise name. A 12-week plan with changing loads may have 48 distinct prescriptions; the older “always four workouts” example is not universally true. Review and exports must round-trip the accepted structure before modality launch.
+
+### 10.4 Fetch, processing and retention
+
+Reuse `recipes/services/url-fetch.ts` private-address/DNS/redirect protections, with programme-specific bounded content policies. Revalidate every redirect and pin resolved addresses; no credentials, private networks, paywall bypass or browser-session cookies. Fetch only the supplied document, not a crawl. Public URL isn't proof of permission to redistribute it. Never log signed URLs, full transcripts or athlete information. Strip metadata where feasible. Validate MIME/signature, safely decode image/page limits, sandbox PDF parsing and treat all source text as untrusted data with no tools/side effects. Keep OCR/text/vision fallback outcomes visible; never report unreadable text as confidently extracted.
+
+Proposed lifecycle: source/transcript and abandoned draft expire after seven days; acceptance deletes raw source/audio within 24 hours while retaining the reviewed programme, minimum provenance and acceptance receipt. Source-derived temporary caches expire with the source. Users can delete sooner; worker cleanup must be retryable, and backup/provider retention must be documented before release. Cache key is tenant/owner+source hash+input type+schema/model/prompt version; no global hash primary key. Private medical/client facts must not enter analytics or advertising events.
+
+Transcription adapter first evaluates regional batch speech-to-text against gym terminology; structured extraction consumes the reviewed transcript. Current jobs registry is empty: add a real import job kind/worker, cancellation fencing and metering rather than assuming the spine already processes imports. Atomically reserve budget before dispatch, settle actual inference/transcription costs, release failed reservations and charge cache hits no inference fee. Bound retry count and protect against duplicate workers.
+
+### 10.5 Frontend and evaluation
+
+Mobile: Train → Library → Import; coach Programs hub → Import. Web: Workspace → Library → Import. Shared domain schema and network contract; platform-specific upload/record adapters. Source preview stays visible during mapping. Show “Saved to library” distinctly from “Assigned”. Web audio uses explicit browser permission; integrated mobile audio and document picker are absent today and require runtime changes/Brad's build. Existing image picker/camera can be reused after checking permission text. OS dictation into text is supported as text input, not misrepresented as full voice transcription.
+
+Prepare at least 20 labelled examples per source type (100 across five), split evaluation/tuning and held-out cases, plus cross-tenant/cancel/race/security fixtures. Include handwritten sources, scans, URLs without accessible content, pounds/kilos, percentages, changing weekly reps and spoken corrections. Report missing/unreadable ground truth separately from accuracy on readable fields. Measure end-to-end edit time and false confident matches, not only JSON validity. No real client recordings or paid provider calls without appropriate authorization/access. Synthetic harness design can start now; report results only after execution.
+
+### 10.6 Explicit design conversations
+
+For GD-1–4, extend the draft protocol with separately entitled `intent=generate` only after its capability/eval gate. Add `origin=proposed` to that versioned schema; do not smuggle generated values into `origin=source`. Persist an owner-scoped design conversation and versioned coaching-method profile. Each turn is idempotent, targets one authorized draft/athlete context and yields validated draft changes/questions, not database tool calls. Profile defaults are context, not permission to expose private client data. The user selects any previous plan to use, and server reauthorizes it before retrieval.
+
+Use the same catalogue resolver, prescription/schedule validator and atomic acceptance as import. Contradictions survive as questions; no assignment until resolved. Show generated assumptions and changes before accept. Store conversation/transcript with the same bounded sensitive-source lifecycle; preserve only approved preferences when the user explicitly saves them. Separate evaluation measures constraint violations, exercise mapping, programme consistency, edit burden, cost and suggestion usefulness. Model/provider selection follows the existing approved-region architecture. A future MCP integration may call these draft services under revocable scoped authorization; direct writes or external-chat access are not part of this first implementation.

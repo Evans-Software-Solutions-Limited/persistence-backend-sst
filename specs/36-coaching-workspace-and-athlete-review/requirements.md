@@ -1,0 +1,33 @@
+# 36 — Coaching workspace and athlete review: requirements
+
+18 September 2026. Research/discussion scope; no implementation. Extends specs 19/24 rather than replacing their existing mobile behaviour. [Research](../milestones/COACHING-WORKSPACE-IMPORT/RESEARCH-2026-09-18.md).
+
+## Outcome and access
+
+A coach can build/review training efficiently on the web. A Premium Plus athlete can plan and understand their own training with equivalent personal tools, without becoming a coach. A coached athlete sees the same shared progress facts as their coach and can respond quickly.
+
+| Capability                                          | Free/Premium self-managed | Premium Plus      | Paid coach                                   | Coached athlete of any tier (proposed)                           |
+| --------------------------------------------------- | ------------------------- | ----------------- | -------------------------------------------- | ---------------------------------------------------------------- |
+| Existing logging/history                            | Preserve current access   | Preserve          | Preserve                                     | Preserve                                                         |
+| New self-managed workspace/programme builder/import | No new entitlement        | Own data          | Own data                                     | Only with own eligible tier                                      |
+| Client roster, assignment and private coach notes   | No                        | No                | Existing role, tier, consent and seat checks | No                                                               |
+| View assigned plan and shared client review         | When actively coached     | Yes when coached  | Authorized clients                           | Yes, no additional athlete upgrade                               |
+| Generate personal AI training summary               | No new entitlement        | Yes within budget | Yes within budget                            | View shared summary; new generation governed by coaching benefit |
+
+Last-column access is the recommended answer to the pending product clarification, not recorded as Brad's confirmation. Import eligibility across paid coach tiers is explicit in spec 22; do not copy Loadout's narrower rules. Existing unrelated subscription benefits are unchanged.
+
+## Acceptance criteria
+
+- **WS-1 Workspace.** Responsive authenticated web workspace with Today/Overview, Library (programmes/workouts/exercises), Imports and My progress; Clients appears only for actual eligible coaches. Mobile retains current Train/Programs navigation, adding import and My training review in context. No coach-mode toggle or trainer role is granted to Premium Plus.
+- **WS-2 Authoring.** Own programme/workout create/edit/duplicate, exercise search, library reuse and self-scheduling work on web and mobile. Coach client assignment remains separate and consent/relationship guarded. Desktop offers keyboard entry, copy/paste, multi-select editing, reorder, visible save state and recoverable drafts; edits from another device produce a visible version conflict.
+- **WS-3 Faithful schedules.** Support existing repeating cycles and finite explicit schedules with week/day offsets, named phases/rest days and per-occurrence prescriptions. Preserve prescribed weekdays and week-specific loads/reps, including irregular or changing session frequency. Model %1RM, absolute load, RPE/RIR, tempo, rest, duration/distance and set-level variations where present. Unsupported training constructs must be flagged instead of disappearing. Never infer an athlete max or turn an unknown percentage load into a made-up weight.
+- **WS-4 Versioned publication.** Save, schedule and client assignment are distinct actions. Review which future occurrences a programme revision will change, including individualized athlete overrides. Completed/in-progress workouts and logged results never change retroactively. Notify affected clients via existing preferences only after a committed assignment update. Old mobile runtimes must not render unsupported prescriptions as if complete.
+- **WS-5 Shared measures.** Athlete and coach see identical named plan-adherence results for the same scope, period and data revision. Show completed/expected count, formula, excluded/cancelled items, lateness, as-of time and unavailable data. No AI-derived opaque rating. Gym-habit attainment and personal activity remain separate measures; private personal training is not automatically shared with every coach.
+- **WS-6 Summaries.** Self and shared AI summaries use only authorized evidence and name the reporting interval/limitations. Shared summaries contain no coach-private notes or private AI drafts, and no diagnosis or unsupported assertions. Missing data yields an insufficient-data state. Show AI label and source metrics. A shared summary is the same record for athlete and coach, not two inconsistent independent generations.
+- **WS-7 Feedback and visibility.** Shared progress facts and athlete-safe summaries are available without a separate coach publish action. Shared comments support a short athlete response and coach follow-up. Private coach notes stay explicitly private; converting a private note to a shared comment requires a deliberate action. Existing private records are never retroactively published. Each coach relationship has its own shared scope; one coach cannot see another's private work.
+- **WS-8 Lifecycle.** Current authorization applies on every read/write/job completion, not only when opening a screen. Revoked consent/offboarding removes coach access and stops background inference; purge coach-side cached client projections. Athlete retains their own history and previously shared records according to existing retention/offboarding policy. Downgrades remove creation/AI benefits, not historical data ownership.
+- **WS-9 Proof.** Acceptance includes role/ownership matrices, assignment isolation, rate arithmetic, old-client compatibility and real web/mobile walkthroughs. Pilot success measures time to produce/assign a usable plan and time to understand/respond to a review, not number of AI calls.
+
+## Not in this release
+
+A team/club hierarchy, marketplace, own-brand store listing, wearable/force-plate integration, arbitrary coach-defined medical questionnaires, automatic plan generation/adaptation without review and external AI account connectors require separate scopes. Reusable coaching-method rules and explicit generative drafting are the next layer after faithful import and authoring, not hidden source repair.
