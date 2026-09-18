@@ -108,3 +108,7 @@
       unassign prunes future only.
 - [ ] **T-19.5.3** Spec-10 back-pointers (STORY-010 / design § programs /
       tasks 10.4/10.12 marked superseded by this spec) — done in the spec PR.
+
+## 18 September 2026 — Proposed explicit schedules and self-managed programmes
+
+[Spec 36 tasks](../36-coaching-workspace-and-athlete-review/tasks.md) scopes an additive cycle/explicit schedule extension, versioned prescriptions and owner/self authoring for Premium Plus and coaches. Existing repeating-cycle behaviour remains authoritative until this extension is implemented. Full-fidelity spec-22 imports depend on it. Historical empty-table assumptions in the original design are not migration permission today; preserve populated programmes and old clients.
