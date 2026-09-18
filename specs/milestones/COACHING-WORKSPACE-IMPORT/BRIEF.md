@@ -8,6 +8,14 @@ Build one connected path: **bring or describe a plan → review it → schedule/
 
 Read [Relay comparison and code findings](RESEARCH-2026-09-18.md). The comparison covers public claims, not a hands-on Relay benchmark. Persistence evidence is current source, not a fresh production audit.
 
+## Biggest technical prerequisite: faithful scheduling and prescriptions
+
+**Dependency FND-01 — implement before full programme-import acceptance.** Persistence currently repeats an ordered workout cycle with evenly spaced dates. It cannot faithfully retain arbitrary weekdays, irregular weeks, changing weekly loads/reps or deload prescriptions. An importer must not flatten those differences into the existing cycle.
+
+Scope: additive explicit schedules, versioned per-occurrence prescriptions, owner/self authoring and compatible assignment/session-start behaviour. Preserve existing cycles, populated data, completed/in-progress workouts and older clients. Backend scheduling owner leads this; importer, desktop editor and personal planning consume the agreed contract.
+
+Proof needed: round-trip a six-week programme with fixed weekdays, changing loads, a deload and two sessions on one day; then assign, start and log it without losing prescriptions. Concurrent updates must not rewrite an active/completed session. Since current workout starts are local, the spike must also prove cached/offline-start and delayed-sync behaviour; a server-only version check is insufficient. See spec 36 W1/W2 and design D2. Research, corpus preparation, wireframes and shared metric work can proceed independently while this dependency is resolved.
+
 ## Work packages
 
 | Brief                                                  | Authority                      | Main ownership / dependencies                                                                                          |
