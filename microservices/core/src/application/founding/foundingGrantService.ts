@@ -1,3 +1,5 @@
+import type { FoundingGrant } from "@persistence/db";
+import type { DatabaseTransaction } from "../repositories/referralRepository";
 import {
   isGrantableTier,
   catalogTier,
@@ -599,66 +601,7 @@ export class FoundingGrantService {
           );
           continue;
         }
-        const res = await this.grants.applyPending(
-          grant.id,
-          userId,
-          async ({ transaction, expiresAt }) => {
-            let referralApplication:
-              | "none"
-              | "applied"
-              | "unchanged"
-              | "already_locked"
-              | "locked_conflict"
-              | "unavailable" = "none";
-            if (grant.referralCodeId) {
-              const code = await this.referrals.findCodeByIdIn(
-                transaction,
-                grant.referralCodeId,
-              );
-              if (!code) {
-                // FK integrity normally makes this impossible. Access still
-                // belongs to the buyer; expose the inconsistency for repair.
-                referralApplication = "unavailable";
-              } else {
-                const claim = await this.referrals.claim(
-                  {
-                    userId,
-                    canonicalCode: code.code,
-                    source: "admin",
-                    createdBy: grant.grantedBy,
-                    reservedCodeId: grant.referralCodeId,
-                  },
-                  transaction,
-                );
-                if (claim.kind === "invalid") {
-                  referralApplication = "unavailable";
-                } else if (claim.kind === "locked") {
-                  referralApplication =
-                    claim.applied.codeId === grant.referralCodeId
-                      ? "already_locked"
-                      : "locked_conflict";
-                } else {
-                  referralApplication = claim.kind;
-                }
-              }
-            }
-            await this.audit.record(
-              {
-                actorId: grant.grantedBy,
-                action: "founding_grant.apply_pending",
-                entityType: "founding_grant",
-                entityId: grant.id,
-                after: {
-                  userId,
-                  tierName: grant.tierName,
-                  expiresAt: expiresAt.toISOString(),
-                  referralApplication,
-                },
-              },
-              transaction,
-            );
-          },
-        );
+        const res = await this.applyPendingGrant(grant, userId);
         if (res.storeSubscription) {
           await this.audit.recordOnce({
             actorId: grant.grantedBy,
@@ -683,6 +626,75 @@ export class FoundingGrantService {
       );
       return false;
     }
+  }
+
+  /** Shared activation, including referral attribution, inside an optional proof transaction. */
+  async applyPendingGrant(
+    grant: FoundingGrant,
+    userId: string,
+    transaction?: DatabaseTransaction,
+  ) {
+    return this.grants.applyPending(
+      grant.id,
+      userId,
+      async ({ transaction, expiresAt, grant }) => {
+        let referralApplication:
+          | "none"
+          | "applied"
+          | "unchanged"
+          | "already_locked"
+          | "locked_conflict"
+          | "unavailable" = "none";
+        if (grant.referralCodeId) {
+          const code = await this.referrals.findCodeByIdIn(
+            transaction,
+            grant.referralCodeId,
+          );
+          if (!code) {
+            // FK integrity normally makes this impossible. Access still
+            // belongs to the buyer; expose the inconsistency for repair.
+            referralApplication = "unavailable";
+          } else {
+            const claim = await this.referrals.claim(
+              {
+                userId,
+                canonicalCode: code.code,
+                source: "admin",
+                createdBy: grant.grantedBy,
+                reservedCodeId: grant.referralCodeId,
+              },
+              transaction,
+            );
+            if (claim.kind === "invalid") {
+              referralApplication = "unavailable";
+            } else if (claim.kind === "locked") {
+              referralApplication =
+                claim.applied.codeId === grant.referralCodeId
+                  ? "already_locked"
+                  : "locked_conflict";
+            } else {
+              referralApplication = claim.kind;
+            }
+          }
+        }
+        await this.audit.record(
+          {
+            actorId: grant.grantedBy,
+            action: "founding_grant.apply_pending",
+            entityType: "founding_grant",
+            entityId: grant.id,
+            after: {
+              userId,
+              tierName: grant.tierName,
+              expiresAt: expiresAt.toISOString(),
+              referralApplication,
+            },
+          },
+          transaction,
+        );
+      },
+      transaction,
+    );
   }
 
   async revoke(

@@ -12,6 +12,7 @@ import { adminFoundingGrantsHandler } from "./admin/founding-grants/adminFoundin
 import { adminAuditLogHandler } from "./admin/audit/adminAuditLogHandler";
 import { adminMarketingHandler } from "./admin/marketing/adminMarketingHandler";
 import { adminVouchersHandler } from "./admin/vouchers/adminVouchersHandler";
+import { adminFoundingActionsHandler } from "./admin/founding-grants/adminFoundingActionsHandler";
 import { adminCors } from "./admin/adminCors";
 
 export const adminRoutes = new Elysia()
@@ -24,6 +25,7 @@ export const adminRoutes = new Elysia()
   .use(adminReferralCodesHandler)
   .use(adminAttributionsHandler)
   .use(adminFoundingGrantsHandler)
+  .use(adminFoundingActionsHandler)
   .use(adminAuditLogHandler)
   .use(adminMarketingHandler)
   .use(adminVouchersHandler);

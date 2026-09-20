@@ -2933,3 +2933,67 @@ describe("SSTApiAdapter Mealprint (spec-26 Phase 0/1)", () => {
     expect(sawSignal).toBe(true);
   });
 });
+
+describe("SSTApiAdapter founding claims", () => {
+  it("posts the original email and verifies the authenticated challenge", async () => {
+    const challengeId = "11111111-1111-4111-8111-111111111111";
+    const claimed = {
+      claimed: true,
+      tierName: "premium_plus",
+      expiresAt: null,
+    };
+    const mock = installFetchMock(
+      async (url) =>
+        new Response(
+          JSON.stringify({
+            data: String(url).endsWith("/request") ? { challengeId } : claimed,
+          }),
+          { status: 200 },
+        ),
+    );
+    const adapter = new SSTApiAdapter();
+    expect(await adapter.requestFoundingClaim("original@example.com")).toEqual({
+      ok: true,
+      value: { challengeId },
+    });
+    expect(
+      await adapter.verifyFoundingClaim({ challengeId, code: "012345" }),
+    ).toEqual({ ok: true, value: claimed });
+    expect(mock.mock.calls[0]).toEqual([
+      "http://test.local/founding/claims/request",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ email: "original@example.com" }),
+      }),
+    ]);
+    expect(mock.mock.calls[1]).toEqual([
+      "http://test.local/founding/claims/verify",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ challengeId, code: "012345" }),
+      }),
+    ]);
+  });
+
+  it("preserves verification errors for the claim form", async () => {
+    installFetchMock(
+      async () =>
+        new Response(
+          JSON.stringify({
+            message: "Code expired. Request another code.",
+            code: "claim_expired",
+          }),
+          { status: 400 },
+        ),
+    );
+    expect(
+      await new SSTApiAdapter().verifyFoundingClaim({
+        challengeId: "challenge",
+        code: "123456",
+      }),
+    ).toMatchObject({
+      ok: false,
+      error: { status: 400, message: "Code expired. Request another code." },
+    });
+  });
+});

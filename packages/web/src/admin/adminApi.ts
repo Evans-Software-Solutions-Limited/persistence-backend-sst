@@ -120,6 +120,20 @@ export interface GrantRow {
   status: "pending" | "active" | "expired" | "revoked" | "account_deleted";
 }
 
+export interface GrantRefund {
+  status: string;
+  refundId: string | null;
+  reason: string;
+}
+
+export interface GrantRefundPreview {
+  amountMinor: number;
+  currency: string;
+  refundedAmountMinor: number;
+  remainingAmountMinor: number;
+  refund: GrantRefund | null;
+}
+
 export interface GrantResult {
   grantId: string;
   status: "active" | "pending";
@@ -383,6 +397,32 @@ export const adminApi = {
       }>(`/admin/founding-grants/${id}/extend`, {
         method: "POST",
         body: JSON.stringify({ additionalMonths, reason }),
+      }),
+    ),
+  changeGrantTier: (id: string, tierName: GrantableTierId, reason: string) =>
+    data(
+      adminFetch<{
+        data: {
+          id: string;
+          tierName: GrantableTierId;
+          expiresAt: string | null;
+        };
+      }>(`/admin/founding-grants/${id}/change-tier`, {
+        method: "POST",
+        body: JSON.stringify({ tierName, reason }),
+      }),
+    ),
+  grantRefund: (id: string) =>
+    data(
+      adminFetch<{ data: GrantRefundPreview }>(
+        `/admin/founding-grants/${id}/refund`,
+      ),
+    ),
+  refundGrant: (id: string, reason: string) =>
+    data(
+      adminFetch<{ data: GrantRefund }>(`/admin/founding-grants/${id}/refund`, {
+        method: "POST",
+        body: JSON.stringify({ reason }),
       }),
     ),
   codes: (q?: string, status?: string) => {

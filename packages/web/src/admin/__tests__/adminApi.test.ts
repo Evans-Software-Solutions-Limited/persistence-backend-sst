@@ -178,6 +178,52 @@ describe("adminFetch", () => {
     });
   });
 
+  it("posts tier changes and refund reasons, and reads the authoritative refund amount", async () => {
+    saveSession(sessionFromTokens(jwt({ exp: farFuture }), "rt"));
+    const response = {
+      status: "pending",
+      refundId: "re_1",
+      reason: "Customer request",
+    };
+    const fetchMock = vi.fn(
+      async () => new Response(JSON.stringify({ data: response })),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      await adminApi.changeGrantTier("g1", "premium_plus", "Goodwill upgrade");
+      expect(fetchMock).toHaveBeenLastCalledWith(
+        expect.stringContaining("/admin/founding-grants/g1/change-tier"),
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            tierName: "premium_plus",
+            reason: "Goodwill upgrade",
+          }),
+        }),
+      );
+      await expect(
+        adminApi.refundGrant("g1", "Customer request"),
+      ).resolves.toEqual(response);
+      expect(fetchMock).toHaveBeenLastCalledWith(
+        expect.stringContaining("/admin/founding-grants/g1/refund"),
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ reason: "Customer request" }),
+        }),
+      );
+      await adminApi.grantRefund("g1");
+      const [url, init] = fetchMock.mock.calls.at(-1) as unknown as [
+        string,
+        RequestInit,
+      ];
+      expect(url).toContain("/admin/founding-grants/g1/refund");
+      expect(init.method).toBeUndefined();
+      expect(init.body).toBeUndefined();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("posts an audited grant extension", async () => {
     saveSession(
       sessionFromTokens(

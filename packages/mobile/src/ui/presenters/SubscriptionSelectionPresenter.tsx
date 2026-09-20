@@ -87,6 +87,7 @@ export interface SubscriptionSelectionPresenterProps {
   onCancelSubscription: () => void;
   onboardingRecommendation?: OnboardingRecommendationMode;
   referralCodeEntry?: React.ReactNode;
+  foundingClaimEntry?: React.ReactNode;
 }
 
 export function SubscriptionSelectionPresenter(
@@ -118,6 +119,7 @@ export function SubscriptionSelectionPresenter(
     onCancelSubscription,
     onboardingRecommendation,
     referralCodeEntry,
+    foundingClaimEntry,
   } = props;
 
   // User-tier cards: catalog-driven, not a hardcoded "premium" lookup —
@@ -360,6 +362,7 @@ export function SubscriptionSelectionPresenter(
           style={styles.scrollView}
           showsVerticalScrollIndicator={false}
         >
+          {foundingClaimEntry}
           {onboardingRecommendation && (
             <View style={styles.onboardingRecommendationIntro}>
               <Text style={styles.onboardingEyebrow}>

@@ -5310,3 +5310,22 @@ PR not yet raised. NO product code — script + dataset + verdict + spec updates
   and migration `20260901120000_onboarding_states.sql` did apply successfully.
   Backend hotfix PR #427 standardises the internal parameter name to `:id`
   without changing the public URL shape and adds a composed-router regression.
+### 2026-09-20 — Founding admin actions and cross-email claims
+
+- Added complimentary founding tier changes preserving payment, expiry and
+  founding place, plus admin full-remaining Stripe refunds with automatic
+  access revocation, durable retry tracking and webhook reconciliation.
+- Added signed-in purchase-email verification so Apple private-relay accounts
+  can claim their original pending founding grant without changing accounts.
+  Codes are account-bound, time-limited and rate-limited; activation and proof
+  consumption share one transaction.
+- Local Inspector Brad final sweep: clean. Full checks passed: formatting,
+  typecheck, lint, non-mobile build and unit tests (core 4,984; web 1,415;
+  mobile 6,840). Fixed an existing mobile readiness timeout exposed under full
+  suite load. Desktop and narrow-screen UI previews checked using synthetic
+  data; screenshots retained in the workspace founding-access-review folder.
+- Apply migrations 20260920120000 and 20260920121000 through the normal release
+  pipeline before using these features. No deployment, native app build,
+  live refund or live account change was performed. Apple relay sender
+  configuration was not inspected. Required slack-progress-updates skill was
+  unavailable, so no external completion notification was sent.

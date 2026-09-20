@@ -86,6 +86,7 @@ export interface IOSPurchaseFlowPresenterProps {
   onManageInAppStore: () => void;
   onboardingRecommendation?: OnboardingRecommendationMode;
   referralCodeEntry?: React.ReactNode;
+  foundingClaimEntry?: React.ReactNode;
 }
 
 /** The only mobile component allowed to print a resolved subscription price. */
@@ -196,12 +197,14 @@ function PersonaChooser({
   onRestore,
   restoreDisabled,
   isRestoring,
+  foundingClaimEntry,
 }: {
   onSelect: (role: Role) => void;
   onBack: () => void;
   onRestore: () => void;
   restoreDisabled: boolean;
   isRestoring: boolean;
+  foundingClaimEntry?: React.ReactNode;
 }) {
   const choices = [
     {
@@ -232,6 +235,7 @@ function PersonaChooser({
       <StatusBar barStyle="light-content" backgroundColor={color.$bg} />
       <Header title="Welcome" onBack={onBack} />
       <ScrollView contentContainerStyle={styles.personaContent}>
+        {foundingClaimEntry}
         <Text style={styles.eyebrow}>WELCOME TO PERSISTENCE</Text>
         <Text style={styles.personaTitle}>How will you use Persistence?</Text>
         <Text style={styles.personaSubtitle}>
@@ -629,6 +633,7 @@ function PlansScreen(props: IOSPurchaseFlowPresenterProps) {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
+        {props.foundingClaimEntry}
         {props.isUnavailable && (
           <View style={styles.noticeCard} testID="ios-purchase-unavailable">
             <Text style={styles.noticeText}>
@@ -839,6 +844,7 @@ function ManageScreen(props: IOSPurchaseFlowPresenterProps) {
       <StatusBar barStyle="light-content" backgroundColor={color.$bg} />
       <Header title="Subscription" onBack={props.onBack} />
       <ScrollView contentContainerStyle={styles.manageContent}>
+        {props.foundingClaimEntry}
         <View style={styles.manageHero}>
           <View style={styles.manageHeroTop}>
             <Text style={styles.eyebrow}>YOUR PLAN</Text>
@@ -999,6 +1005,7 @@ export function IOSPurchaseFlowPresenter(props: IOSPurchaseFlowPresenterProps) {
         onRestore={props.onRestore}
         restoreDisabled={props.isProcessing || props.isRestoring}
         isRestoring={props.isRestoring}
+        foundingClaimEntry={props.foundingClaimEntry}
       />
     );
   } else {

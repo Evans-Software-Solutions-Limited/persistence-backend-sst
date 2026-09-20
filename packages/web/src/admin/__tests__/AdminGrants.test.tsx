@@ -65,6 +65,29 @@ describe("AdminGrants", () => {
     });
   });
 
+  it("offers refunds for Stripe checkout grants even when revoked or account-deleted", async () => {
+    api.grants.mockResolvedValue([
+      {
+        ...baseGrant,
+        contributionMethod: "stripe_checkout",
+        status: "revoked",
+        revokedAt: "2026-09-20",
+      },
+      {
+        ...baseGrant,
+        id: "deleted",
+        contributionMethod: "stripe_checkout",
+        status: "account_deleted",
+      },
+      { ...baseGrant, id: "expired", status: "expired" },
+    ]);
+    renderPage(<AdminGrants />);
+    expect(
+      await screen.findAllByRole("button", { name: "Refund" }),
+    ).toHaveLength(2);
+    expect(screen.queryByRole("button", { name: "Change tier" })).toBeNull();
+  });
+
   it("labels the contribution reference column", async () => {
     api.grants.mockResolvedValue([baseGrant]);
     renderPage(<AdminGrants />);

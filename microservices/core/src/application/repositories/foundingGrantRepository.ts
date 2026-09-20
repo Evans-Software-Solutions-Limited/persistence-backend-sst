@@ -554,6 +554,7 @@ export class FoundingGrantRepository {
    */
   async findLiveByPaymentReference(
     reference: string,
+    includeRevoked = false,
   ): Promise<FoundingGrant | null> {
     const db = getDb();
     const rows = await db
@@ -563,7 +564,7 @@ export class FoundingGrantRepository {
         and(
           eq(foundingGrants.paymentReference, reference),
           eq(foundingGrants.paymentMethod, "stripe_checkout"),
-          isNull(foundingGrants.revokedAt),
+          includeRevoked ? undefined : isNull(foundingGrants.revokedAt),
         ),
       )
       .limit(1);
@@ -595,6 +596,7 @@ export class FoundingGrantRepository {
     grantId: string,
     userId: string,
     finalize?: (context: PendingGrantTransactionContext) => Promise<void>,
+    transaction?: DatabaseTransaction,
   ): Promise<{
     applied: boolean;
     expiresAt: Date | null;
@@ -602,7 +604,7 @@ export class FoundingGrantRepository {
     storeSubscription?: { tierName: string; expiresAt: Date | null };
   }> {
     const db = getDb();
-    return db.transaction(async (tx) => {
+    const apply = async (tx: Tx) => {
       await lockUserSubscriptionMutation(tx, userId);
       const storeSubscription = await this.findLiveStoreSubscriptionIn(
         tx,
@@ -677,7 +679,8 @@ export class FoundingGrantRepository {
         expiresAt: sub.expiresAt,
         tierName: grant.tierName,
       };
-    });
+    };
+    return transaction ? apply(transaction) : db.transaction(apply);
   }
 
   async markInvited(

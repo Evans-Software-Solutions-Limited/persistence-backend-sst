@@ -1,3 +1,4 @@
+import { FoundingClaimContainer } from "@/ui/containers/FoundingClaimContainer";
 import React, {
   useCallback,
   useEffect,
@@ -100,6 +101,7 @@ export function skipOnboardingWithReferralCancellation(
 type SubscriptionCatalogueContainerProps =
   SubscriptionSelectionContainerProps & {
     referralCodeEntry: React.ReactNode;
+    foundingClaimEntry: React.ReactNode;
   };
 
 export function SubscriptionSelectionContainer({
@@ -128,11 +130,13 @@ export function SubscriptionSelectionContainer({
       onboarding={onboardingRecommendation !== undefined}
     />
   );
+  const foundingClaimEntry = <FoundingClaimContainer />;
   if (purchases !== null) {
     return (
       <IOSPurchaseFlowContainer
         onboardingRecommendation={recommendationWithCancellableSkip}
         referralCodeEntry={referralCodeEntry}
+        foundingClaimEntry={foundingClaimEntry}
       />
     );
   }
@@ -140,6 +144,7 @@ export function SubscriptionSelectionContainer({
     <SubscriptionCatalogueContainer
       onboardingRecommendation={recommendationWithCancellableSkip}
       referralCodeEntry={referralCodeEntry}
+      foundingClaimEntry={foundingClaimEntry}
     />
   );
 }
@@ -151,6 +156,7 @@ export function SubscriptionSelectionContainer({
 function SubscriptionCatalogueContainer({
   onboardingRecommendation,
   referralCodeEntry,
+  foundingClaimEntry,
 }: SubscriptionCatalogueContainerProps) {
   const router = useRouter();
   const isOnline = useOnlineStatus();
@@ -386,6 +392,7 @@ function SubscriptionCatalogueContainer({
         isSlowLoading={isSlowLoading}
         onboardingRecommendation={onboardingRecommendation}
         referralCodeEntry={referralCodeEntry}
+        foundingClaimEntry={foundingClaimEntry}
         onBillingCycleChange={setBillingCycle}
         onTierSelect={handleTierSelect}
         onRoleChange={setSelectedRole}

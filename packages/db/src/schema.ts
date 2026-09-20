@@ -2925,6 +2925,59 @@ export type FoundingCheckoutSession =
 export type NewFoundingCheckoutSession =
   typeof foundingCheckoutSessions.$inferInsert;
 
+/** Durable refund intent: committed before Stripe, one full-refund operation per grant. */
+export const foundingRefunds = pgTable(
+  "founding_refunds",
+  {
+    grantId: uuid("grant_id")
+      .primaryKey()
+      .references(() => foundingGrants.id),
+    refundId: text("refund_id").unique(),
+    status: text("status").notNull().default("requested"),
+    reason: text("reason").notNull(),
+    actorId: uuid("actor_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    check(
+      "founding_refunds_status_ck",
+      sql`${t.status} IN ('requested', 'pending', 'requires_action', 'succeeded', 'failed', 'canceled')`,
+    ),
+  ],
+);
+export type FoundingRefund = typeof foundingRefunds.$inferSelect;
+
+/** One-time purchase-email proof, bound to an existing authenticated account. */
+export const foundingClaimChallenges = pgTable(
+  "founding_claim_challenges",
+  {
+    id: uuid("id").primaryKey(),
+    grantId: uuid("grant_id").references(() => foundingGrants.id, {
+      onDelete: "set null",
+    }),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    accountEmail: text("account_email").notNull(),
+    purchaseEmail: text("purchase_email").notNull(),
+    otpHash: text("otp_hash"),
+    attempts: integer("attempts").notNull().default(0),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("founding_claim_challenges_expiry_idx").on(t.expiresAt),
+    index("founding_claim_challenges_account_idx").on(t.accountId),
+  ],
+);
+export type FoundingClaimChallenge =
+  typeof foundingClaimChallenges.$inferSelect;
+
 // ─── MARKETING-PLANS · admin marketing plans, channels, codes, metrics ───────
 // specs/milestones/MARKETING-PLANS/BRIEF.md § WP4. Mirrors
 // 20260907120000_marketing_plans.sql. Admin-only: RLS is enabled with no

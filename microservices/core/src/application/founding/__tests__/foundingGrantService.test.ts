@@ -603,7 +603,12 @@ describe("FoundingGrantService.applyPendingForUser", () => {
   it("applies each pending grant, attaches + locks the referral, audits", async () => {
     const { svc, grants, referrals, audit } = makeRepos();
     grants.findPendingByEmail.mockResolvedValue([
-      { id: "g9", referralCodeId: "code1", grantedBy: "admin-1" },
+      {
+        id: "g9",
+        tierName: "premium",
+        referralCodeId: "code1",
+        grantedBy: "admin-1",
+      },
     ] as any);
     grants.applyPending.mockImplementation(
       async (_grantId, _userId, finalize) => {
@@ -611,7 +616,8 @@ describe("FoundingGrantService.applyPendingForUser", () => {
           transaction: { kind: "test-transaction" },
           grant: {
             id: "g9",
-            tierName: "premium",
+            tierName: "premium_plus",
+            grantedBy: "admin-1",
             referralCodeId: "code1",
           },
           expiresAt: new Date("2027-01-01T00:00:00Z"),
@@ -633,6 +639,7 @@ describe("FoundingGrantService.applyPendingForUser", () => {
       "g9",
       "u9",
       expect.any(Function),
+      undefined,
     );
     expect(referrals.claim).toHaveBeenCalledWith(
       expect.objectContaining({ userId: "u9", canonicalCode: "UONFRESHERS" }),
@@ -643,7 +650,10 @@ describe("FoundingGrantService.applyPendingForUser", () => {
       expect.objectContaining({
         action: "founding_grant.apply_pending",
         entityId: "g9",
-        after: expect.objectContaining({ referralApplication: "applied" }),
+        after: expect.objectContaining({
+          referralApplication: "applied",
+          tierName: "premium_plus",
+        }),
       }),
       expect.objectContaining({ kind: "test-transaction" }),
     );

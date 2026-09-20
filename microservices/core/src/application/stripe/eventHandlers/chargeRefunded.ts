@@ -53,6 +53,7 @@ export async function handleChargeRefunded(event: Stripe.Event): Promise<void> {
 
   const grant = await new FoundingGrantRepository().findLiveByPaymentReference(
     paymentIntentId,
+    true,
   );
   if (!grant) return;
 
@@ -71,13 +72,13 @@ export async function handleChargeRefunded(event: Stripe.Event): Promise<void> {
     `refund ${charge.id}`,
     FOUNDING_WEB_ACTOR_ID,
   );
-  if (!revoked.ok) {
+  if (!revoked.ok && revoked.error !== "already_revoked") {
     emitStripeAlert("founding_checkout.revoke_failed", "critical", {
       chargeId: charge.id,
       grantId: grant.id,
       reason: revoked.error,
     });
-    return;
+    throw new Error(`Founding refund revocation failed: ${revoked.error}`);
   }
 
   const checkouts = new FoundingCheckoutRepository();

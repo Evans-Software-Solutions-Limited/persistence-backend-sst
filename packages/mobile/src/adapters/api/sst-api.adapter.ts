@@ -1,3 +1,7 @@
+import type {
+  FoundingClaimChallenge,
+  FoundingClaimResult,
+} from "@/domain/models/foundingClaim";
 import Constants from "expo-constants";
 import type { DashboardPayload } from "@/domain/models/dashboard";
 import type { AppliedReferral } from "@/domain/models/referral";
@@ -1226,6 +1230,26 @@ export class SSTApiAdapter implements ApiPort {
     return this.requestEnvelope<{ removed: boolean }>("/referrals/me", {
       method: "DELETE",
     });
+  }
+
+  async requestFoundingClaim(email: string) {
+    return this.requestEnvelope<FoundingClaimChallenge>(
+      "/founding/claims/request",
+      {
+        method: "POST",
+        body: { email },
+      },
+    );
+  }
+
+  async verifyFoundingClaim(input: { challengeId: string; code: string }) {
+    return this.requestEnvelope<FoundingClaimResult>(
+      "/founding/claims/verify",
+      {
+        method: "POST",
+        body: input,
+      },
+    );
   }
 
   async syncSubscription() {

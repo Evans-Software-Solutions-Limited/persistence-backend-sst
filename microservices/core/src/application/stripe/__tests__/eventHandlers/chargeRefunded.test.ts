@@ -148,6 +148,7 @@ describe("handleChargeRefunded", () => {
       );
       expect(grantRepoMocks.findLiveByPaymentReference).toHaveBeenCalledWith(
         "pi_expanded",
+        true,
       );
       const lines = (
         console.error as unknown as { mock: { calls: unknown[][] } }
@@ -162,16 +163,29 @@ describe("handleChargeRefunded", () => {
       expect(grantRepoMocks.findLiveByPaymentReference).not.toHaveBeenCalled();
     });
 
-    it("alerts loudly when the revoke itself fails", async () => {
+    it("finishes reconciliation when access was already revoked", async () => {
       grantRepoMocks.findLiveByPaymentReference.mockResolvedValue({
         id: "grant-1",
       });
       revokeMock.mockResolvedValue({ ok: false, error: "already_revoked" });
+      checkoutRepoMocks.findCompletedByGrantId.mockResolvedValue({
+        id: "checkout-1",
+      });
       await handleChargeRefunded(event(FOUNDING_CHARGE));
       const lines = (
         console.error as unknown as { mock: { calls: unknown[][] } }
       ).mock.calls.map((c) => String(c[0]));
-      expect(lines.some((l) => l.includes("revoke_failed"))).toBe(true);
+      expect(lines.some((l) => l.includes("revoke_failed"))).toBe(false);
+      expect(checkoutRepoMocks.markRefunded).toHaveBeenCalledWith("checkout-1");
+    });
+    it("throws on revocation failure so Stripe retries the event", async () => {
+      grantRepoMocks.findLiveByPaymentReference.mockResolvedValue({
+        id: "grant-1",
+      });
+      revokeMock.mockResolvedValue({ ok: false, error: "not_found" });
+      await expect(
+        handleChargeRefunded(event(FOUNDING_CHARGE)),
+      ).rejects.toThrow("Founding refund revocation failed");
       expect(checkoutRepoMocks.markRefunded).not.toHaveBeenCalled();
     });
   });
