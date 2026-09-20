@@ -16,6 +16,8 @@ interface CheckoutStatus {
   months: number;
   emailMasked: string;
   eventId: string | null;
+  /** Confirmed active grant and live subscription, not merely a paid checkout. */
+  accessReady?: boolean;
   amountMinor: number;
   currency: string;
   /** When this checkout's seat hold lapses — the point polling gives up. */
@@ -63,6 +65,7 @@ export function FoundingThanks() {
   // third party a key to the buyer's tier, amount and masked address.
   const [sessionId] = useState(() => params.get("session_id") ?? "");
   const fired = useRef(false);
+  const [openedAt] = useState(Date.now);
 
   // `useLayoutEffect`, not `useEffect`: `PageViewTracker` is declared above
   // `<Routes>` in App.tsx, so its effect flushes BEFORE this route's. Stripping
@@ -87,6 +90,10 @@ export function FoundingThanks() {
     // for an abandoned checkout issues 30 requests a minute indefinitely.
     refetchInterval: (query) => {
       const data = query.state.data;
+      if (data?.status === "completed")
+        return !data.accessReady && Date.now() - openedAt < 30_000
+          ? 2_000
+          : false;
       if (data?.status !== "open") return false;
       return Date.parse(data.holdExpiresAt) > Date.now() ? 2_000 : false;
     },
@@ -129,7 +136,9 @@ export function FoundingThanks() {
 
   const body =
     data?.status === "completed"
-      ? FOUNDING_COPY.thanks.paidBody
+      ? data.accessReady
+        ? "Your founding access is active. Open Persistence using the same account and sign-in method you used before paying. Your receipt email can be different."
+        : "Your payment is recorded. Access may take a moment to appear while we finish checking it. If you bought before account sign-in was available, activate your earlier purchase below. If access does not appear, contact support; do not pay again."
       : data === undefined || data.status === "open"
         ? FOUNDING_COPY.thanks.pendingBody
         : FOUNDING_COPY.thanks.unfinishedBody;
@@ -164,7 +173,14 @@ export function FoundingThanks() {
                 : body}
           </p>
           {!noSession && !unreachable && data?.status === "completed" ? (
-            <p className="founding-counter">{data.emailMasked}</p>
+            <>
+              <p className="founding-counter">{data.emailMasked}</p>
+              <p>
+                <a className="btn btn-fill" href="/founding/access">
+                  Activate an earlier purchase
+                </a>
+              </p>
+            </>
           ) : null}
           <p className="founding-terms">
             <Link to="/founding">{FOUNDING_COPY.thanks.backCta}</Link>

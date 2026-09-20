@@ -47,6 +47,16 @@ jobs:
       - name: Setup
         uses: ./.github/actions/setup
 
+      # Validate before migrations or any remote configuration changes.
+      - name: Validate web authentication settings
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+          APPLE_SERVICES_ID: ${{ vars.APPLE_SERVICES_ID }}
+          APPLE_CLIENT_SECRET: ${{ secrets.APPLE_CLIENT_SECRET }}
+        run: bun scripts/configure-apple-auth.ts staging --check
+
       - name: Typecheck
         run: bun run typecheck
 
@@ -209,6 +219,17 @@ jobs:
           bunx sst secret set ResendApiKey "$RESEND_API_KEY" --stage staging
           bunx sst secret set ResendAthletesAudienceId "$RESEND_ATHLETES_AUDIENCE_ID" --stage staging
           bunx sst secret set ResendCoachesAudienceId "$RESEND_COACHES_AUDIENCE_ID" --stage staging
+
+      # Apple credentials go only to Supabase Auth, never to Vite or SST.
+      # Retains native audiences and existing redirect allowlist entries.
+      - name: Configure Apple web authentication
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+          APPLE_SERVICES_ID: ${{ vars.APPLE_SERVICES_ID }}
+          APPLE_CLIENT_SECRET: ${{ secrets.APPLE_CLIENT_SECRET }}
+        run: bun scripts/configure-apple-auth.ts staging
 
       - name: Deploy
         # VITE_* are PUBLIC, build-time web vars (client-exposed by design), read

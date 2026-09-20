@@ -16,6 +16,7 @@ import { referralsHandler } from "./referrals/referralsHandler";
 // root `.use()` in api.ts tipped the root chain into TS2589 (measured
 // 2026-09-03); nesting one level down keeps the depth cost off the root.
 import { vouchersHandler } from "./vouchers/vouchersHandler";
+import { foundingClaimsHandler } from "./founding/foundingClaimsHandler";
 import { adminRoutes } from "./adminRoutes";
 
 export const subscriptionsRoutes = new Elysia()
@@ -26,4 +27,5 @@ export const subscriptionsRoutes = new Elysia()
   .use(subscriptionsCancelHandler)
   .use(referralsHandler)
   .use(adminRoutes)
-  .use(vouchersHandler);
+  .use(vouchersHandler)
+  .use(foundingClaimsHandler);

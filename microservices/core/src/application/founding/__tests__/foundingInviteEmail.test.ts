@@ -24,6 +24,25 @@ const base: InviteEmailInput = {
 };
 
 describe("transactional email templates", () => {
+  it("directs pending purchases to web verification without requiring matching account emails", () => {
+    const mail = buildFoundingInviteEmail(base);
+    expect(mail.text).toContain(
+      "Activate access: https://example.test/founding/access",
+    );
+    expect(mail.html).toContain('href="https://example.test/founding/access"');
+    expect(mail.text).toContain("Apple Hide My Email is supported");
+    expect(mail.text).toContain("buyer@example.com");
+    expect(mail.text).not.toContain("sign up with this email");
+  });
+
+  it("tells active buyers to use the same sign-in method rather than the receipt email", () => {
+    const mail = buildFoundingInviteEmail({ ...base, hasAccount: true });
+    expect(mail.text).toContain("same account and sign-in method");
+    expect(mail.text).not.toContain(
+      "sign in with the email address that received",
+    );
+    expect(mail.html).toContain('href="https://example.test/qr/founding"');
+  });
   it.each([-1, 1.5, Number.MAX_SAFE_INTEGER + 1])(
     "rejects an invalid paid amount %s",
     (amountMinor) => {

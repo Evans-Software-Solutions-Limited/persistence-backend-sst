@@ -1,9 +1,11 @@
 import { buildInternalEmail } from "../../email/emailShell";
 import type Stripe from "stripe";
+import type { FoundingCheckoutSession } from "@persistence/db";
 import { emitStripeAlert } from "../alerts";
 import { emitEvent } from "../../analytics/emitEvent";
 import { AdminAuditRepository } from "../../repositories/adminAuditRepository";
 import { FoundingCheckoutRepository } from "../../repositories/foundingCheckoutRepository";
+import { FoundingGrantRepository } from "../../repositories/foundingGrantRepository";
 import { FoundingGrantService } from "../../founding/foundingGrantService";
 import { FOUNDING_WEB_ACTOR_ID } from "../../founding/foundingOffer";
 import { RESEND_NOTIFICATION_TO, sendEmail } from "../../leads/resendClient";
@@ -21,12 +23,10 @@ import { RESEND_NOTIFICATION_TO, sendEmail } from "../../leads/resendClient";
  *
  * ─── Idempotency ───
  *
- * Webhook delivery is at-least-once and two deliveries can be in flight at the
- * same moment, so this does NOT read-then-write. `claimForCompletion` flips the
- * row `open → completed` in one conditional UPDATE and only the caller it
- * returns a row to goes on to grant. A redelivery finds nothing to claim and
- * returns quietly, which is also what makes it safe to replay this event by
- * hand.
+ * Legacy sessions are claimed once. Account-bound sessions may retry until a
+ * grant is attached: the immutable reservation UUID is also the grant UUID,
+ * and the grant transaction detects replays under the pool lock. A lost
+ * response or attach failure can therefore recover without granting twice.
  *
  * ─── The one case a webhook must not decide ───
  *
@@ -48,7 +48,43 @@ export async function handleCheckoutSessionCompleted(
   if (session.payment_status !== "paid") return;
 
   const checkouts = new FoundingCheckoutRepository();
-  const claimed = await checkouts.claimForCompletion(session.id);
+  let claimed = await checkouts.claimForCompletion(session.id);
+  const reservationId = session.metadata?.founding_reservation_id;
+  if (
+    !claimed &&
+    reservationId &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      reservationId,
+    ) &&
+    session.amount_total !== null &&
+    session.currency
+  ) {
+    claimed = await checkouts.recoverPaidReservation({
+      reservationId,
+      stripeSessionId: session.id,
+      amountMinor: session.amount_total,
+      currency: session.currency.toUpperCase(),
+    });
+    if (!claimed) {
+      const recorded = await checkouts.findByStripeSessionId(session.id);
+      if (!recorded) {
+        await flagForReview(
+          reservationId,
+          session.id,
+          session.customer_email ?? "unknown",
+          "reservation_recovery_failed",
+        );
+      } else if (
+        recorded.accountId &&
+        recorded.status === "completed" &&
+        recorded.grantId
+      ) {
+        // A process can exit after attaching access but before instrumentation.
+        // The stable event ID makes replaying this outbox insert harmless.
+        await emitPurchase(recorded, recorded.amountMinor, recorded.currency);
+      }
+    }
+  }
   // Either not one of ours (the account handles other Checkout flows) or
   // already processed. Both are no-ops.
   if (!claimed) return;
@@ -57,17 +93,51 @@ export async function handleCheckoutSessionCompleted(
     typeof session.payment_intent === "string"
       ? session.payment_intent
       : (session.payment_intent?.id ?? null);
+  if (
+    claimed.accountId &&
+    (!paymentIntentId ||
+      session.amount_total !== claimed.amountMinor ||
+      session.currency?.toUpperCase() !== claimed.currency)
+  ) {
+    await flagForReview(
+      claimed.id,
+      session.id,
+      claimed.email,
+      "payment_details_mismatch",
+    );
+    return;
+  }
+  if (claimed.accountId) {
+    const existing = await new FoundingGrantRepository().findById(claimed.id);
+    if (existing) {
+      if (existing.paymentReference !== paymentIntentId) {
+        await flagForReview(
+          claimed.id,
+          session.id,
+          claimed.email,
+          "payment_reference_mismatch",
+        );
+        return;
+      }
+      await checkouts.attachGrant(claimed.id, existing.id);
+      await emitPurchase(
+        claimed,
+        session.amount_total ?? claimed.amountMinor,
+        (session.currency ?? claimed.currency).toUpperCase(),
+      );
+      return;
+    }
+  }
   const amountMinor = session.amount_total ?? claimed.amountMinor;
   const currency = (session.currency ?? claimed.currency).toUpperCase();
 
-  // The claim above has already flipped the row to `completed`, so a THROW
-  // from here on would be unrecoverable: the retry's claim finds nothing open,
-  // returns null, and the handler exits quietly — payment taken, no grant, no
-  // audit row, nothing watching. A connection blip or a lock timeout is enough
-  // to trigger it. So a throw is turned into the same visible needs-review
-  // state a refusal produces, and only then rethrown so Stripe still retries.
+  // Record failures for support even though account-bound grants can retry
+  // safely. Legacy anonymous rows retain their original once-only behavior.
   const grantRequest = {
     email: claimed.email,
+    ...(claimed.accountId
+      ? { userId: claimed.accountId, checkoutId: claimed.id }
+      : {}),
     tierName: claimed.tierName,
     grantKind: "founding" as const,
     months: claimed.months,
@@ -166,6 +236,7 @@ export async function handleCheckoutSessionCompleted(
       stripeSessionId: session.id,
       error: err instanceof Error ? err.message : String(err),
     });
+    if (claimed.accountId) throw err;
   }
 
   // A card session always carries one. Without it the grant has no payment
@@ -179,12 +250,21 @@ export async function handleCheckoutSessionCompleted(
     });
   }
 
+  await emitPurchase(claimed, amountMinor, currency, droppedReferral !== null);
+}
+
+async function emitPurchase(
+  claimed: FoundingCheckoutSession,
+  amountMinor: number,
+  currency: string,
+  droppedReferral = false,
+): Promise<void> {
   // The conversion. `purchase` maps to Meta's `Purchase`; the browser fires the
   // same event id from the thanks page so the two dedupe.
   await emitEvent({
     name: "purchase",
     source: "web",
-    eventId: claimed.eventId ?? undefined,
+    eventId: claimed.eventId ?? `founding-purchase:${claimed.id}`,
     properties: {
       marketing_consent: claimed.marketingConsent,
       value: amountMinor / 100,
@@ -194,7 +274,7 @@ export async function handleCheckoutSessionCompleted(
       ...(claimed.fbc ? { fbc: claimed.fbc } : {}),
       ...(claimed.fbp ? { fbp: claimed.fbp } : {}),
       ...(claimed.campaignSlug ? { campaign: claimed.campaignSlug } : {}),
-      ...(claimed.referralCode && droppedReferral === null
+      ...(claimed.referralCode && !droppedReferral
         ? { ref: claimed.referralCode }
         : {}),
     },

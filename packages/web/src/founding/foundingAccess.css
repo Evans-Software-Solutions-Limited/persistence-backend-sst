@@ -1,0 +1,85 @@
+.founding-access .redeem-card > [data-slot="button"] {
+  width: 100%;
+  margin-bottom: 0.75rem;
+}
+.founding-access form > input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--border, #ccc);
+  border-radius: 0.5rem;
+  padding: 0.8rem;
+  background: transparent;
+  color: inherit;
+}
+.founding-access form > label:not(.redeem-check) {
+  display: block;
+  font-weight: 600;
+}
+.founding-access .redeem-card [data-slot="button"] {
+  white-space: normal;
+  text-align: center;
+}
+.founding-access button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.founding-access .redeem-card > p {
+  overflow-wrap: anywhere;
+}
+.founding-access .redeem-intro > p + p {
+  margin-top: 1rem;
+}
+
+.founding-access .lead-hp {
+  position: absolute;
+  left: -10000px;
+  top: auto;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+.founding-access [data-variant="link"] {
+  background: transparent;
+  color: var(--primary);
+}
+
+.founding-access .founding-apple {
+  background: #000;
+  color: #fff;
+  border: 1px solid #777;
+}
+
+.founding-account .redeem-grid {
+  grid-template-columns: minmax(0, 560px);
+  justify-content: center;
+  margin-top: 32px;
+}
+.founding-account-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 16px;
+  padding-bottom: 20px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--border);
+}
+.founding-account-header > div {
+  display: contents;
+}
+.founding-account-header h1 {
+  font-size: 24px;
+  font-weight: 650;
+  margin: 0;
+}
+.founding-account-header p {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  margin: 4px 0 0;
+  font-size: 14px;
+  color: var(--muted-foreground);
+  overflow-wrap: anywhere;
+}
+.founding-account-header button {
+  grid-column: 2;
+  grid-row: 1;
+}

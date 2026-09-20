@@ -55,6 +55,7 @@ export function buildFoundingInviteEmail(input: InviteEmailInput): {
     throw new Error("Valid actual payment amount and currency are required");
   const tier = catalogTier(input.tierName).name;
   const downloadUrl = `${input.webOrigin.replace(/\/$/, "")}/qr/founding`;
+  const claimUrl = `${input.webOrigin.replace(/\/$/, "")}/founding/access`;
   const founding = input.grantKind === "founding";
   const subject = founding
     ? `You're a Persistence founding member — ${tier} for ${input.months} months`
@@ -88,27 +89,28 @@ export function buildFoundingInviteEmail(input: InviteEmailInput): {
   ];
   const access = input.hasAccount
     ? `Your ${tier} access is already on. Open the app and you'll see it under You → Subscription.`
-    : `Download Persistence and sign up with this email address (${input.email}). ${tier} switches on automatically the first time the app loads after you sign in — nothing to enter, no code.`;
+    : `Activate your ${tier} access on our website. Sign in using the same method you use for Persistence, then verify this purchase email (${input.email}). Apple Hide My Email is supported; you do not need a second account.`;
   const steps = input.hasAccount
     ? [
-        "Open Persistence and sign in with the email address that received this message.",
-        "If asked, confirm your email using the separate verification email.",
+        "Open Persistence and sign in using the same account and sign-in method you used on the website.",
+        "If you use Sign in with Apple, continue with the same Apple account, including Hide My Email.",
         "Open You → Subscription to see your access.",
       ]
     : [
-        "Get the app and sign up with the email address that received this invite.",
-        "Confirm your email using the link in the separate verification email. That email states when its link expires.",
-        "Sign in and open the app. Your access activates on the first app load; find it under You → Subscription.",
+        "Open the activation website and sign in to your Persistence account. If you already use Apple or Google, choose that same sign-in method.",
+        "Enter the email that received this invite and verify the code sent there. Confirm the account that will receive access.",
+        "Open the app with that same account. Find your access under You → Subscription.",
       ];
   const fixedTerm =
     "This access was granted directly and does not auto-renew — when it ends you choose whether to continue.";
-  const support = `If you used a different email in the app, reply to this message and we'll move it across. You can also email ${EMAIL_SUPPORT}.`;
+  const support = `Your purchase email can differ from your account email. If you need help accessing the correct account, email ${EMAIL_SUPPORT}.`;
   const text = [
     title,
     introduction,
     rows.map(([label, value]) => `${label}: ${value}`).join("\n"),
     fixedTerm,
     access,
+    ...(!input.hasAccount ? [`Activate access: ${claimUrl}`] : []),
     `Get the app: ${downloadUrl}`,
     `What happens next\n${steps.map((step, i) => `${i + 1}. ${step}`).join("\n")}`,
     support,
@@ -118,7 +120,7 @@ export function buildFoundingInviteEmail(input: InviteEmailInput): {
   const html = renderEmailShell({
     title: subject,
     webOrigin: input.webOrigin,
-    bodyHtml: `${founding ? '<img src="https://persistence.evans-software-solutions.com/email/founding-welcome.gif" width="160" height="96" alt="You’re a founding member" style="display:block;border:0;margin:0 0 20px;">' : ""}<h1 style="font-size:36px;line-height:42px;margin:0 0 16px;">${title}</h1>${emailParagraph(introduction)}${emailSummary(rows)}${emailParagraph(fixedTerm)}${emailButton(input.hasAccount ? "Open the app" : "Get the app", downloadUrl)}${emailParagraph(access)}<h2 style="font-size:21px;line-height:28px;margin:8px 0 16px;">What happens next</h2>${steps.map((step, i) => emailParagraph(`${i + 1}. ${step}`)).join("")}${emailParagraph(support)}${emailParagraph("Brad\nPersistence")}`,
+    bodyHtml: `${founding ? '<img src="https://persistence.evans-software-solutions.com/email/founding-welcome.gif" width="160" height="96" alt="You’re a founding member" style="display:block;border:0;margin:0 0 20px;">' : ""}<h1 style="font-size:36px;line-height:42px;margin:0 0 16px;">${title}</h1>${emailParagraph(introduction)}${emailSummary(rows)}${emailParagraph(fixedTerm)}${emailButton(input.hasAccount ? "Open the app" : "Activate access on the website", input.hasAccount ? downloadUrl : claimUrl)}${emailParagraph(access)}<h2 style="font-size:21px;line-height:28px;margin:8px 0 16px;">What happens next</h2>${steps.map((step, i) => emailParagraph(`${i + 1}. ${step}`)).join("")}${emailParagraph(support)}${emailParagraph("Brad\nPersistence")}`,
   });
   return { subject, text, html };
 }

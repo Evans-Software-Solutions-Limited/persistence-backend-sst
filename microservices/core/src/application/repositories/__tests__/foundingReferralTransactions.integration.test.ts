@@ -133,6 +133,15 @@ describe("founding/referral repository transaction invariants", () => {
     `);
     await pg.exec(ORIGINAL_MIGRATION);
     await pg.exec(GENERALISED_GRANT_MIGRATION);
+    await pg.exec(
+      readFileSync(
+        new URL(
+          "../../../../../../supabase/migrations/20260905140000_founding_checkout_sessions.sql",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+    );
   });
 
   afterEach(async () => {
@@ -153,6 +162,86 @@ describe("founding/referral repository transaction invariants", () => {
       createdBy: ADMIN,
     });
   }
+
+  it("replays an account-bound checkout without duplicate entitlement or audit writes", async () => {
+    const repo = new FoundingGrantRepository();
+    const id = "00000000-0000-4000-8000-000000000077";
+    const input = {
+      id,
+      checkoutId: id,
+      userId: USER,
+      email: "receipt@example.test",
+      tierName: "premium" as const,
+      months: 6,
+      amountMinor: 3000,
+      currency: "GBP",
+      paymentMethod: "stripe_checkout" as const,
+      paymentReference: "pi_account",
+      paidAt: new Date(),
+      referralCodeId: null,
+      grantedBy: ADMIN,
+      notes: null,
+    };
+    const finalize = vi.fn(async () => {});
+    const first = await repo.create(input, "consumer", finalize);
+    const replay = await repo.create(input, "consumer", finalize);
+    expect(first.kind).toBe("created");
+    expect(replay).toMatchObject({
+      kind: "created",
+      replayed: true,
+      grant: { id, userId: USER, email: "receipt@example.test" },
+    });
+    expect(finalize).toHaveBeenCalledTimes(1);
+    const subs = await pg.query(
+      "SELECT id FROM user_subscriptions WHERE user_id = $1",
+      [USER],
+    );
+    expect(subs.rows).toHaveLength(1);
+    if (first.kind === "created" && replay.kind === "created")
+      expect(replay.subscriptionExpiresAt).toEqual(first.subscriptionExpiresAt);
+    expect(
+      (
+        await repo.create(
+          { ...input, paymentReference: "pi_other" },
+          "consumer",
+        )
+      ).kind,
+    ).toBe("duplicate");
+  });
+
+  it("does not replace any paid subscription that appeared after checkout started", async () => {
+    const id = "00000000-0000-4000-8000-000000000077";
+    await pg.query(
+      "INSERT INTO user_subscriptions(user_id, tier_name, payment_status, expires_at, external_subscription_id) VALUES ($1, 'premium', 'active', now() + interval '1 day', 'manual_other')",
+      [USER],
+    );
+    const result = await new FoundingGrantRepository().create(
+      {
+        id,
+        checkoutId: id,
+        userId: USER,
+        email: "receipt@example.test",
+        tierName: "premium",
+        months: 6,
+        amountMinor: 3000,
+        currency: "GBP",
+        paymentMethod: "stripe_checkout",
+        paymentReference: "pi_account",
+        paidAt: new Date(),
+        referralCodeId: null,
+        grantedBy: ADMIN,
+        notes: null,
+      },
+      "consumer",
+    );
+    expect(result.kind).toBe("active_store_subscription");
+    expect(
+      (await pg.query("SELECT id FROM founding_grants")).rows,
+    ).toHaveLength(0);
+    expect(
+      (await pg.query("SELECT payment_status FROM user_subscriptions")).rows,
+    ).toEqual([{ payment_status: "active" }]);
+  });
 
   it("keeps a same-code retry unchanged when that user filled the cap", async () => {
     const repo = new ReferralRepository();

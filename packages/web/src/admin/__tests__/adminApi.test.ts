@@ -178,6 +178,52 @@ describe("adminFetch", () => {
     });
   });
 
+  it("posts tier changes and refund reasons, and reads the authoritative refund amount", async () => {
+    saveSession(sessionFromTokens(jwt({ exp: farFuture }), "rt"));
+    const response = {
+      status: "pending",
+      refundId: "re_1",
+      reason: "Customer request",
+    };
+    const fetchMock = vi.fn(
+      async () => new Response(JSON.stringify({ data: response })),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      await adminApi.changeGrantTier("g1", "premium_plus", "Goodwill upgrade");
+      expect(fetchMock).toHaveBeenLastCalledWith(
+        expect.stringContaining("/admin/founding-grants/g1/change-tier"),
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            tierName: "premium_plus",
+            reason: "Goodwill upgrade",
+          }),
+        }),
+      );
+      await expect(
+        adminApi.refundGrant("g1", "Customer request"),
+      ).resolves.toEqual(response);
+      expect(fetchMock).toHaveBeenLastCalledWith(
+        expect.stringContaining("/admin/founding-grants/g1/refund"),
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ reason: "Customer request" }),
+        }),
+      );
+      await adminApi.grantRefund("g1");
+      const [url, init] = fetchMock.mock.calls.at(-1) as unknown as [
+        string,
+        RequestInit,
+      ];
+      expect(url).toContain("/admin/founding-grants/g1/refund");
+      expect(init.method).toBeUndefined();
+      expect(init.body).toBeUndefined();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("posts an audited grant extension", async () => {
     saveSession(
       sessionFromTokens(
@@ -208,5 +254,162 @@ describe("adminFetch", () => {
       }),
     );
     vi.unstubAllGlobals();
+  });
+});
+
+describe("admin grant and referral request contracts", () => {
+  afterEach(() => {
+    saveSession(null);
+    vi.unstubAllGlobals();
+  });
+  const grant = {
+    email: "buyer@example.com",
+    tierName: "premium" as const,
+    grantKind: "founding" as const,
+    months: 6,
+    contributionAmountMinor: 3000,
+    contributionCurrency: "GBP",
+    contributionMethod: "bank_transfer" as const,
+    contributionReference: "BANK-1",
+  };
+  const code = { code: "TEAM", label: "Team", kind: "campaign" as const };
+  const cases: Array<
+    [string, () => Promise<unknown>, string, string | undefined, unknown?]
+  > = [
+    ["summary", () => adminApi.summary(), "/admin/summary", undefined],
+    [
+      "catalogue",
+      () => adminApi.catalogue(),
+      "/admin/founding-grants/catalogue",
+      undefined,
+    ],
+    [
+      "email lookup encoding",
+      () => adminApi.lookupUser("buyer+apple@example.com"),
+      "/admin/users?email=buyer%2Bapple%40example.com",
+      undefined,
+    ],
+    [
+      "all grants",
+      () => adminApi.grants(),
+      "/admin/founding-grants",
+      undefined,
+    ],
+    [
+      "live grants",
+      () => adminApi.grants(false),
+      "/admin/founding-grants?revoked=false",
+      undefined,
+    ],
+    [
+      "create grant",
+      () => adminApi.createGrant(grant),
+      "/admin/founding-grants",
+      "POST",
+      grant,
+    ],
+    [
+      "revoke with audit reason",
+      () => adminApi.revokeGrant("grant", "Customer request"),
+      "/admin/founding-grants/grant/revoke",
+      "POST",
+      { reason: "Customer request" },
+    ],
+    [
+      "resend invite",
+      () => adminApi.resendInvite("grant"),
+      "/admin/founding-grants/grant/resend-invite",
+      "POST",
+    ],
+    [
+      "all referral codes",
+      () => adminApi.codes(),
+      "/admin/referral-codes",
+      undefined,
+    ],
+    [
+      "filtered referral codes",
+      () => adminApi.codes("team +", "active"),
+      "/admin/referral-codes?q=team+%2B&status=active",
+      undefined,
+    ],
+    [
+      "create referral code",
+      () => adminApi.createCode(code),
+      "/admin/referral-codes",
+      "POST",
+      code,
+    ],
+    [
+      "update referral code",
+      () =>
+        adminApi.updateCode("code", { status: "paused", label: "Paused team" }),
+      "/admin/referral-codes/code",
+      "PATCH",
+      { status: "paused", label: "Paused team" },
+    ],
+    [
+      "redemptions",
+      () => adminApi.redemptions("code"),
+      "/admin/referral-codes/code/redemptions",
+      undefined,
+    ],
+    [
+      "attribution audit",
+      () => adminApi.setAttribution("user", "TEAM", "Verified referral"),
+      "/admin/referral-attributions",
+      "POST",
+      { userId: "user", code: "TEAM", reason: "Verified referral" },
+    ],
+    [
+      "all audit entries",
+      () => adminApi.audit(),
+      "/admin/audit-log",
+      undefined,
+    ],
+    [
+      "filtered audit entries",
+      () => adminApi.audit("founding grant", "id/1"),
+      "/admin/audit-log?entityType=founding+grant&entityId=id%2F1",
+      undefined,
+    ],
+  ];
+  it.each(cases)(
+    "sends %s with the authenticated endpoint and intended payload",
+    async (_label, request, path, method, body) => {
+      saveSession(
+        sessionFromTokens(
+          jwt({ exp: farFuture, app_metadata: { admin: true } }),
+          "refresh",
+        ),
+      );
+      const fetcher = vi.fn(
+        async () => new Response(JSON.stringify({ data: { accepted: true } })),
+      );
+      vi.stubGlobal("fetch", fetcher);
+      await request();
+      const [url, init] = fetcher.mock.calls[0] as unknown as [
+        string,
+        RequestInit,
+      ];
+      expect(url.endsWith(path)).toBe(true);
+      expect(init.method).toBe(method);
+      expect(init.headers).toMatchObject({
+        Authorization: expect.stringMatching(/^Bearer /),
+      });
+      expect(init.body).toBe(
+        body === undefined ? undefined : JSON.stringify(body),
+      );
+    },
+  );
+  it("reports a non-JSON gateway error without exposing HTML", async () => {
+    saveSession(sessionFromTokens(jwt({ exp: farFuture }), "refresh"));
+    const fetcher = vi.fn(
+      async () =>
+        new Response("<html>upstream internal error</html>", { status: 502 }),
+    );
+    await expect(
+      adminFetch("/admin/summary", {}, fetcher),
+    ).rejects.toMatchObject({ message: "Request failed (502)", body: null });
   });
 });

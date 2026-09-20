@@ -2,6 +2,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type Stripe from "stripe";
 
 const checkoutMocks = vi.hoisted(() => ({
+  findByStripeSessionId: vi.fn<(...args: unknown[]) => Promise<unknown>>(
+    async () => null,
+  ),
+  recoverPaidReservation: vi.fn<(...args: unknown[]) => Promise<unknown>>(
+    async () => null,
+  ),
   claimForCompletion: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
   attachGrant: vi.fn<(...args: unknown[]) => Promise<void>>(async () => {}),
   markExpired: vi.fn<(...args: unknown[]) => Promise<boolean>>(
@@ -11,10 +17,21 @@ const checkoutMocks = vi.hoisted(() => ({
 }));
 vi.mock("../../../repositories/foundingCheckoutRepository", () => ({
   FoundingCheckoutRepository: class {
+    findByStripeSessionId = checkoutMocks.findByStripeSessionId;
+    recoverPaidReservation = checkoutMocks.recoverPaidReservation;
     claimForCompletion = checkoutMocks.claimForCompletion;
     attachGrant = checkoutMocks.attachGrant;
     clearReferral = checkoutMocks.clearReferral;
     markExpired = checkoutMocks.markExpired;
+  },
+}));
+
+const priorGrant = vi.hoisted(() =>
+  vi.fn<(...args: unknown[]) => Promise<unknown>>(async () => null),
+);
+vi.mock("../../../repositories/foundingGrantRepository", () => ({
+  FoundingGrantRepository: class {
+    findById = priorGrant;
   },
 }));
 
@@ -90,6 +107,9 @@ const CLAIMED = {
 describe("handleCheckoutSessionCompleted", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    priorGrant.mockResolvedValue(null);
+    checkoutMocks.recoverPaidReservation.mockResolvedValue(null);
+    checkoutMocks.findByStripeSessionId.mockResolvedValue(null);
     checkoutMocks.claimForCompletion.mockResolvedValue(CLAIMED);
     checkoutMocks.attachGrant.mockResolvedValue(undefined);
     checkoutMocks.clearReferral.mockResolvedValue(undefined);
@@ -97,6 +117,262 @@ describe("handleCheckoutSessionCompleted", () => {
       ok: true,
       result: { grantId: "grant-1", status: "pending" },
     });
+  });
+
+  it("records an unmatched paid reservation for review rather than losing it silently", async () => {
+    checkoutMocks.claimForCompletion.mockResolvedValue(null);
+    await handleCheckoutSessionCompleted(
+      event("checkout.session.completed", {
+        metadata: {
+          founding_reservation_id: "00000000-0000-4000-8000-000000000077",
+        },
+      }),
+    );
+    expect(auditMock).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: "reservation_recovery_failed" }),
+    );
+    expect(grantMock).not.toHaveBeenCalled();
+  });
+
+  it("does not flag already-completed bound sessions as failed recovery", async () => {
+    checkoutMocks.claimForCompletion.mockResolvedValue(null);
+    checkoutMocks.findByStripeSessionId.mockResolvedValue({
+      ...CLAIMED,
+      grantId: "existing",
+    });
+    await handleCheckoutSessionCompleted(
+      event("checkout.session.completed", {
+        metadata: {
+          founding_reservation_id: "00000000-0000-4000-8000-000000000077",
+        },
+      }),
+    );
+    expect(auditMock).not.toHaveBeenCalled();
+  });
+
+  it("recovers purchase analytics after grant attachment committed before process exit", async () => {
+    checkoutMocks.claimForCompletion.mockResolvedValue(null);
+    checkoutMocks.findByStripeSessionId.mockResolvedValue({
+      ...CLAIMED,
+      accountId: "apple-user",
+      grantId: CLAIMED.id,
+      status: "completed",
+    });
+    await handleCheckoutSessionCompleted(
+      event("checkout.session.completed", {
+        metadata: {
+          founding_reservation_id: "00000000-0000-4000-8000-000000000077",
+        },
+      }),
+    );
+    expect(emitEventMock).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "purchase", eventId: CLAIMED.eventId }),
+    );
+    expect(grantMock).not.toHaveBeenCalled();
+    expect(checkoutMocks.attachGrant).not.toHaveBeenCalled();
+  });
+
+  it("refuses to attach an existing deterministic grant with a different payment reference", async () => {
+    checkoutMocks.claimForCompletion.mockResolvedValue({
+      ...CLAIMED,
+      accountId: "apple-user",
+    });
+    priorGrant.mockResolvedValue({
+      id: CLAIMED.id,
+      paymentReference: "pi_different",
+    });
+    await handleCheckoutSessionCompleted(
+      event("checkout.session.completed", {}),
+    );
+    expect(checkoutMocks.attachGrant).not.toHaveBeenCalled();
+    expect(grantMock).not.toHaveBeenCalled();
+    expect(emitEventMock).not.toHaveBeenCalled();
+    expect(auditMock).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: "payment_reference_mismatch" }),
+    );
+  });
+
+  it.each([new Error("db unavailable"), "db unavailable"])(
+    "still grants access without false referral attribution when clearing the referral fails: %s",
+    async (failure) => {
+      grantMock
+        .mockResolvedValueOnce({
+          ok: false,
+          error: { code: "invalid_referral_code" },
+        })
+        .mockResolvedValueOnce({ ok: true, result: { grantId: "grant-1" } });
+      checkoutMocks.clearReferral.mockRejectedValueOnce(failure);
+      await handleCheckoutSessionCompleted(
+        event("checkout.session.completed", {}),
+      );
+      expect(grantMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ referralCode: null }),
+        expect.any(String),
+      );
+      expect(checkoutMocks.attachGrant).toHaveBeenCalledWith(
+        CLAIMED.id,
+        "grant-1",
+      );
+      expect(emitEventMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: "purchase",
+          properties: expect.not.objectContaining({
+            ref: CLAIMED.referralCode,
+          }),
+        }),
+      );
+    },
+  );
+
+  it("recovers an unattached paid session by its server-created reservation metadata", async () => {
+    checkoutMocks.claimForCompletion.mockResolvedValue(null);
+    const id = "00000000-0000-4000-8000-000000000077";
+    checkoutMocks.recoverPaidReservation.mockResolvedValue({
+      ...CLAIMED,
+      id,
+      accountId: "apple-user",
+    });
+    await handleCheckoutSessionCompleted(
+      event("checkout.session.completed", {
+        metadata: { founding_reservation_id: id, userId: "attacker" },
+      }),
+    );
+    expect(checkoutMocks.recoverPaidReservation).toHaveBeenCalledWith({
+      reservationId: id,
+      stripeSessionId: "cs_test_1",
+      amountMinor: 3000,
+      currency: "GBP",
+    });
+    expect(grantMock).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "apple-user", checkoutId: id }),
+      expect.any(String),
+    );
+  });
+
+  it("activates the immutable account binding even when Stripe metadata names somebody else", async () => {
+    checkoutMocks.claimForCompletion.mockResolvedValue({
+      ...CLAIMED,
+      accountId: "apple-user",
+    });
+    await handleCheckoutSessionCompleted(
+      event("checkout.session.completed", {
+        metadata: { userId: "attacker", email: "wrong@example.com" },
+      }),
+    );
+    expect(grantMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: "apple-user",
+        checkoutId: CLAIMED.id,
+        email: CLAIMED.email,
+      }),
+      expect.any(String),
+    );
+  });
+
+  it("recovers a committed grant after a lost attach response without extending access", async () => {
+    checkoutMocks.claimForCompletion.mockResolvedValue({
+      ...CLAIMED,
+      accountId: "apple-user",
+    });
+    priorGrant.mockResolvedValue({
+      id: CLAIMED.id,
+      paymentReference: "pi_1",
+      userId: "apple-user",
+    });
+    await handleCheckoutSessionCompleted(
+      event("checkout.session.completed", {}),
+    );
+    expect(checkoutMocks.attachGrant).toHaveBeenCalledWith(
+      CLAIMED.id,
+      CLAIMED.id,
+    );
+    expect(grantMock).not.toHaveBeenCalled();
+    expect(emitEventMock).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "purchase", eventId: CLAIMED.eventId }),
+    );
+  });
+
+  it("uses one stable purchase event ID when an older bound checkout had no browser ID", async () => {
+    checkoutMocks.claimForCompletion.mockResolvedValue({
+      ...CLAIMED,
+      accountId: "apple-user",
+      eventId: null,
+    });
+    priorGrant.mockResolvedValue({ id: CLAIMED.id, paymentReference: "pi_1" });
+    await handleCheckoutSessionCompleted(
+      event("checkout.session.completed", {}),
+    );
+    await handleCheckoutSessionCompleted(
+      event("checkout.session.completed", {}),
+    );
+    expect(emitEventMock).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        name: "purchase",
+        eventId: `founding-purchase:${CLAIMED.id}`,
+      }),
+    );
+    expect(emitEventMock).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        name: "purchase",
+        eventId: `founding-purchase:${CLAIMED.id}`,
+      }),
+    );
+    expect(grantMock).not.toHaveBeenCalled();
+  });
+
+  it("does not activate a deleted account using its purchase email instead", async () => {
+    checkoutMocks.claimForCompletion.mockResolvedValue({
+      ...CLAIMED,
+      accountId: "deleted-user",
+    });
+    grantMock.mockResolvedValue({
+      ok: false,
+      error: { code: "user_not_found" },
+    });
+    await handleCheckoutSessionCompleted(
+      event("checkout.session.completed", {}),
+    );
+    expect(grantMock).toHaveBeenCalledTimes(1);
+    expect(grantMock).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "deleted-user" }),
+      expect.any(String),
+    );
+    expect(auditMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "founding_checkout.needs_review",
+        reason: "user_not_found",
+      }),
+    );
+  });
+
+  it.each([{ payment_intent: null }, { amount_total: 1 }, { currency: "usd" }])(
+    "keeps mismatched payment details in review: %j",
+    async (detail) => {
+      checkoutMocks.claimForCompletion.mockResolvedValue({
+        ...CLAIMED,
+        accountId: "apple-user",
+      });
+      await handleCheckoutSessionCompleted(
+        event("checkout.session.completed", detail),
+      );
+      expect(grantMock).not.toHaveBeenCalled();
+      expect(auditMock).toHaveBeenCalledWith(
+        expect.objectContaining({ reason: "payment_details_mismatch" }),
+      );
+    },
+  );
+
+  it("retries a bound checkout when attaching its grant fails", async () => {
+    checkoutMocks.claimForCompletion.mockResolvedValue({
+      ...CLAIMED,
+      accountId: "apple-user",
+    });
+    checkoutMocks.attachGrant.mockRejectedValueOnce(new Error("db offline"));
+    await expect(
+      handleCheckoutSessionCompleted(event("checkout.session.completed", {})),
+    ).rejects.toThrow("db offline");
   });
 
   it("turns a paid session into a founding grant with the payment recorded", async () => {
@@ -215,7 +491,7 @@ describe("handleCheckoutSessionCompleted", () => {
     expect(emitEventMock).toHaveBeenCalledWith({
       name: "purchase",
       source: "web",
-      eventId: undefined,
+      eventId: `founding-purchase:${CLAIMED.id}`,
       properties: {
         marketing_consent: false,
         value: 30,

@@ -3,7 +3,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router";
 import { Button } from "@/components/ui/button";
-import { adminApi, formatDate, formatMinor } from "../adminApi";
+import { adminApi, formatDate, formatMinor, type GrantRow } from "../adminApi";
 import {
   EmptyState,
   ErrorState,
@@ -13,12 +13,17 @@ import {
   Table,
 } from "../ui";
 import { NewGrantForm } from "./NewGrantForm";
+import { ChangeGrantTierForm, RefundGrantForm } from "./GrantActionForms";
 
 export function AdminGrants() {
   const { prompt } = useAdminDialogs();
   const [params, setParams] = useSearchParams();
   const showNew = params.get("new") === "1";
   const [showRevoked, setShowRevoked] = useState(false);
+  const [action, setAction] = useState<{
+    kind: "tier" | "refund";
+    grant: GrantRow;
+  } | null>(null);
   const qc = useQueryClient();
   const grants = useQuery({
     queryKey: ["admin", "grants", showRevoked],
@@ -88,6 +93,21 @@ export function AdminGrants() {
         <div className="mb-6">
           <NewGrantForm />
         </div>
+      ) : null}
+
+      {action?.kind === "tier" ? (
+        <ChangeGrantTierForm
+          key={action.grant.id}
+          grant={action.grant}
+          onClose={() => setAction(null)}
+        />
+      ) : null}
+      {action?.kind === "refund" ? (
+        <RefundGrantForm
+          key={action.grant.id}
+          grant={action.grant}
+          onClose={() => setAction(null)}
+        />
       ) : null}
 
       {revoke.isError ? <ErrorState error={revoke.error} /> : null}
@@ -163,73 +183,101 @@ export function AdminGrants() {
                   {g.invitedAt ? formatDate(g.invitedAt) : "not sent"}
                 </td>
                 <td className="whitespace-nowrap">
-                  {g.status === "account_deleted" ? (
-                    <span className="text-xs text-muted-foreground">
-                      no actions
-                    </span>
-                  ) : !g.revokedAt ? (
-                    <div className="flex gap-1">
+                  <div className="flex flex-wrap items-center gap-1">
+                    {!g.revokedAt &&
+                    (g.status === "active" || g.status === "pending") ? (
                       <Button
                         size="xs"
-                        variant="ghost"
-                        disabled={extend.isPending}
-                        onClick={async () => {
-                          const rawMonths = await prompt(
-                            "How many extra months?",
-                            "1",
-                          );
-                          if (!rawMonths) return;
-                          const months = Number(rawMonths);
-                          if (
-                            !Number.isInteger(months) ||
-                            months < 1 ||
-                            months > 120
-                          )
-                            return;
-                          const reason = await prompt(
-                            `Why extend ${g.email}'s access?`,
-                          );
-                          if (reason && reason.trim().length >= 3)
-                            extend.mutate({
-                              id: g.id,
-                              months,
-                              reason: reason.trim(),
-                            });
-                        }}
+                        variant="outline"
+                        disabled={!!action}
+                        onClick={() => setAction({ kind: "tier", grant: g })}
                       >
-                        Extend
+                        Change tier
                       </Button>
+                    ) : null}
+                    {g.contributionMethod === "stripe_checkout" ? (
                       <Button
                         size="xs"
-                        variant="ghost"
-                        disabled={resend.isPending}
-                        onClick={() => resend.mutate(g.id)}
+                        variant="outline"
+                        disabled={!!action}
+                        onClick={() => setAction({ kind: "refund", grant: g })}
                       >
-                        Resend email
+                        Refund
                       </Button>
-                      <Button
-                        size="xs"
-                        variant="destructive"
-                        disabled={revoke.isPending}
-                        onClick={async () => {
-                          const reason = await prompt(
-                            `Revoke ${g.email}'s ${g.tierLabel ?? g.tierName}? Reason:`,
-                          );
-                          if (reason && reason.trim().length >= 3)
-                            revoke.mutate({ id: g.id, reason: reason.trim() });
-                        }}
+                    ) : null}
+                    {g.status === "account_deleted" ? (
+                      <span className="text-xs text-muted-foreground">
+                        {g.contributionMethod === "stripe_checkout"
+                          ? "account deleted"
+                          : "no actions"}
+                      </span>
+                    ) : !g.revokedAt ? (
+                      <div className="flex gap-1">
+                        <Button
+                          size="xs"
+                          variant="ghost"
+                          disabled={extend.isPending || !!action}
+                          onClick={async () => {
+                            const rawMonths = await prompt(
+                              "How many extra months?",
+                              "1",
+                            );
+                            if (!rawMonths) return;
+                            const months = Number(rawMonths);
+                            if (
+                              !Number.isInteger(months) ||
+                              months < 1 ||
+                              months > 120
+                            )
+                              return;
+                            const reason = await prompt(
+                              `Why extend ${g.email}'s access?`,
+                            );
+                            if (reason && reason.trim().length >= 3)
+                              extend.mutate({
+                                id: g.id,
+                                months,
+                                reason: reason.trim(),
+                              });
+                          }}
+                        >
+                          Extend
+                        </Button>
+                        <Button
+                          size="xs"
+                          variant="ghost"
+                          disabled={resend.isPending || !!action}
+                          onClick={() => resend.mutate(g.id)}
+                        >
+                          Resend email
+                        </Button>
+                        <Button
+                          size="xs"
+                          variant="destructive"
+                          disabled={revoke.isPending || !!action}
+                          onClick={async () => {
+                            const reason = await prompt(
+                              `Revoke ${g.email}'s ${g.tierLabel ?? g.tierName}? Reason:`,
+                            );
+                            if (reason && reason.trim().length >= 3)
+                              revoke.mutate({
+                                id: g.id,
+                                reason: reason.trim(),
+                              });
+                          }}
+                        >
+                          Revoke
+                        </Button>
+                      </div>
+                    ) : (
+                      <span
+                        className="text-xs text-muted-foreground"
+                        title={g.revokeReason ?? ""}
                       >
-                        Revoke
-                      </Button>
-                    </div>
-                  ) : (
-                    <span
-                      className="text-xs text-muted-foreground"
-                      title={g.revokeReason ?? ""}
-                    >
-                      revoked {formatDate(g.revokedAt)}
-                    </span>
-                  )}
+                        revoked {formatDate(g.revokedAt)}
+                      </span>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}

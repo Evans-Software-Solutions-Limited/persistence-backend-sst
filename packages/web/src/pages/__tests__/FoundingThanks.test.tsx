@@ -5,6 +5,7 @@ import * as metaPixel from "@/lib/metaPixel";
 
 const COMPLETED = {
   status: "completed",
+  accessReady: true,
   holdExpiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
   tier: "premium",
   months: 6,
@@ -39,7 +40,20 @@ describe("FoundingThanks", () => {
     stubStatus(COMPLETED);
     render();
     expect(await screen.findByText(/payment received/i)).toBeDefined();
-    expect(screen.getByText(/install Persistence/i)).toBeDefined();
+    expect(screen.getByText(/same account and sign-in method/i)).toBeDefined();
+  });
+
+  it("does not claim active access merely because payment completed", async () => {
+    stubStatus({ ...COMPLETED, accessReady: false });
+    render();
+    expect(await screen.findByText(/payment received/i)).toBeDefined();
+    expect(screen.getByText(/Access may take a moment/)).toBeDefined();
+    expect(screen.queryByText(/Your founding access is active/)).toBeNull();
+    expect(
+      screen
+        .getByRole("link", { name: "Activate an earlier purchase" })
+        .getAttribute("href"),
+    ).toBe("/founding/access");
   });
 
   it("shows only the masked address it was given", async () => {

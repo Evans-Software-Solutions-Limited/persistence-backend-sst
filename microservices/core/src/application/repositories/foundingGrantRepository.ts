@@ -83,11 +83,13 @@ export interface CreateGrantInput {
   grantedBy: string;
   notes: string | null;
   allowRoleChange?: boolean;
+  checkoutId?: string;
 }
 
 export type CreateGrantOutcome =
   | {
       kind: "created";
+      replayed?: boolean;
       grant: FoundingGrant;
       subscriptionExpiresAt: Date | null;
       seats: { pool: FoundingPool; used: number; cap: number } | null;
@@ -425,6 +427,36 @@ export class FoundingGrantRepository {
         );
       }
 
+      if (input.checkoutId) {
+        // The reservation UUID is the grant UUID. Replayed/concurrent webhook
+        // deliveries recover the original transaction without extending access.
+        const [prior] = await tx
+          .select()
+          .from(foundingGrants)
+          .where(eq(foundingGrants.id, input.checkoutId))
+          .limit(1);
+        if (prior) {
+          if (
+            prior.paymentReference !== input.paymentReference ||
+            prior.userId !== input.userId
+          )
+            return { kind: "duplicate" } as const;
+          const [sub] = prior.subscriptionId
+            ? await tx
+                .select({ expiresAt: userSubscriptions.expiresAt })
+                .from(userSubscriptions)
+                .where(eq(userSubscriptions.id, prior.subscriptionId))
+                .limit(1)
+            : [];
+          return {
+            kind: "created",
+            grant: prior,
+            subscriptionExpiresAt: sub?.expiresAt ?? null,
+            seats: null,
+            replayed: true,
+          } as const;
+        }
+      }
       if (input.userId) {
         await lockUserSubscriptionMutation(tx, input.userId);
         const [profile] = await tx
@@ -445,10 +477,25 @@ export class FoundingGrantRepository {
           !input.allowRoleChange
         )
           return { kind: "coach_demotion" } as const;
-        const storeSubscription = await this.findLiveStoreSubscriptionIn(
-          tx,
-          input.userId,
-        );
+        const [paidSubscription] = input.checkoutId
+          ? await tx
+              .select({
+                tierName: userSubscriptions.tierName,
+                expiresAt: userSubscriptions.expiresAt,
+              })
+              .from(userSubscriptions)
+              .where(
+                and(
+                  eq(userSubscriptions.userId, input.userId),
+                  liveSubscriptionFilter(),
+                  sql`${userSubscriptions.tierName} <> 'free'`,
+                ),
+              )
+              .limit(1)
+          : [];
+        const storeSubscription =
+          paidSubscription ??
+          (await this.findLiveStoreSubscriptionIn(tx, input.userId));
         if (storeSubscription) {
           return {
             kind: "active_store_subscription",
@@ -554,6 +601,7 @@ export class FoundingGrantRepository {
    */
   async findLiveByPaymentReference(
     reference: string,
+    includeRevoked = false,
   ): Promise<FoundingGrant | null> {
     const db = getDb();
     const rows = await db
@@ -563,7 +611,7 @@ export class FoundingGrantRepository {
         and(
           eq(foundingGrants.paymentReference, reference),
           eq(foundingGrants.paymentMethod, "stripe_checkout"),
-          isNull(foundingGrants.revokedAt),
+          includeRevoked ? undefined : isNull(foundingGrants.revokedAt),
         ),
       )
       .limit(1);
@@ -595,6 +643,7 @@ export class FoundingGrantRepository {
     grantId: string,
     userId: string,
     finalize?: (context: PendingGrantTransactionContext) => Promise<void>,
+    transaction?: DatabaseTransaction,
   ): Promise<{
     applied: boolean;
     expiresAt: Date | null;
@@ -602,7 +651,7 @@ export class FoundingGrantRepository {
     storeSubscription?: { tierName: string; expiresAt: Date | null };
   }> {
     const db = getDb();
-    return db.transaction(async (tx) => {
+    const apply = async (tx: Tx) => {
       await lockUserSubscriptionMutation(tx, userId);
       const storeSubscription = await this.findLiveStoreSubscriptionIn(
         tx,
@@ -677,7 +726,8 @@ export class FoundingGrantRepository {
         expiresAt: sub.expiresAt,
         tierName: grant.tierName,
       };
-    });
+    };
+    return transaction ? apply(transaction) : db.transaction(apply);
   }
 
   async markInvited(

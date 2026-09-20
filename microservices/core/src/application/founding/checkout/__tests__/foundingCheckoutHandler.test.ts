@@ -1,5 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const authMocks = vi.hoisted(() => ({
+  user: vi.fn(async () => ({ sub: "00000000-0000-4000-8000-000000000012" })),
+  identity: vi.fn(async () => ({
+    id: "00000000-0000-4000-8000-000000000012",
+    email: "private@privaterelay.appleid.com",
+    emailConfirmedAt: "2026-09-01",
+  })),
+}));
+vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
+  getAuthUser: authMocks.user,
+}));
+vi.mock("../../../account/supabaseAdminClient", () => ({
+  getAuthUserIdentity: authMocks.identity,
+}));
 const stripeMocks = vi.hoisted(() => ({
   create: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
   retrieve: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
@@ -47,6 +61,14 @@ const turnstileMock = vi.hoisted(() =>
 vi.mock("../../../leads/turnstile", () => ({ verifyTurnstile: turnstileMock }));
 
 const repoMocks = vi.hoisted(() => ({
+  hasActiveGrant: vi.fn(async () => false),
+  eligibility: vi.fn<(...args: unknown[]) => Promise<string | null>>(
+    async () => null,
+  ),
+  eligibilityIn: vi.fn<(...args: unknown[]) => Promise<string | null>>(
+    async () => null,
+  ),
+  lockAccount: vi.fn(async () => {}),
   reserveSeatUnderPoolLock: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
   hasLiveOrPendingGrantForEmail: vi.fn<
     (...args: unknown[]) => Promise<boolean>
@@ -54,7 +76,7 @@ const repoMocks = vi.hoisted(() => ({
   countHeldInPool: vi.fn<(...args: unknown[]) => Promise<number>>(
     async () => 0,
   ),
-  countOpenHoldsForEmail: vi.fn<(...args: unknown[]) => Promise<number>>(
+  countOpenHoldsForAccount: vi.fn<(...args: unknown[]) => Promise<number>>(
     async () => 0,
   ),
   reserveIn: vi.fn<(...args: unknown[]) => Promise<unknown>>(async () => ({
@@ -66,7 +88,7 @@ const repoMocks = vi.hoisted(() => ({
   releaseReservation: vi.fn<(...args: unknown[]) => Promise<void>>(
     async () => {},
   ),
-  findOpenHoldForEmail: vi.fn<(...args: unknown[]) => Promise<unknown>>(
+  findOpenHoldForAccount: vi.fn<(...args: unknown[]) => Promise<unknown>>(
     async () => null,
   ),
   findByStripeSessionId: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
@@ -79,12 +101,16 @@ vi.mock("../../../repositories/foundingGrantRepository", () => ({
 }));
 vi.mock("../../../repositories/foundingCheckoutRepository", () => ({
   FoundingCheckoutRepository: class {
+    hasActiveGrant = repoMocks.hasActiveGrant;
+    eligibility = repoMocks.eligibility;
+    eligibilityIn = repoMocks.eligibilityIn;
+    lockAccount = repoMocks.lockAccount;
     countHeldInPool = repoMocks.countHeldInPool;
-    countOpenHoldsForEmail = repoMocks.countOpenHoldsForEmail;
+    countOpenHoldsForAccount = repoMocks.countOpenHoldsForAccount;
     reserveIn = repoMocks.reserveIn;
     attachStripeSession = repoMocks.attachStripeSession;
     releaseReservation = repoMocks.releaseReservation;
-    findOpenHoldForEmail = repoMocks.findOpenHoldForEmail;
+    findOpenHoldForAccount = repoMocks.findOpenHoldForAccount;
     findByStripeSessionId = repoMocks.findByStripeSessionId;
   },
 }));
@@ -133,6 +159,16 @@ function status(sessionId: string, ip = "203.0.113.6"): Promise<Response> {
 describe("POST /founding/checkout", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    authMocks.user.mockResolvedValue({
+      sub: "00000000-0000-4000-8000-000000000012",
+    });
+    authMocks.identity.mockResolvedValue({
+      id: "00000000-0000-4000-8000-000000000012",
+      email: "private@privaterelay.appleid.com",
+      emailConfirmedAt: "2026-09-01",
+    });
+    repoMocks.eligibility.mockResolvedValue(null);
+    repoMocks.eligibilityIn.mockResolvedValue(null);
     resetRateLimits();
     vi.useRealTimers();
     vi.stubEnv("WEB_ORIGIN", "https://example.test");
@@ -142,11 +178,11 @@ describe("POST /founding/checkout", () => {
     // implementation, and `clearAllMocks` only clears CALLS.
     repoMocks.hasLiveOrPendingGrantForEmail.mockResolvedValue(false);
     repoMocks.countHeldInPool.mockResolvedValue(0);
-    repoMocks.countOpenHoldsForEmail.mockResolvedValue(0);
+    repoMocks.countOpenHoldsForAccount.mockResolvedValue(0);
     repoMocks.reserveIn.mockResolvedValue({ id: "reservation-1" });
     repoMocks.attachStripeSession.mockResolvedValue(undefined);
     repoMocks.releaseReservation.mockResolvedValue(undefined);
-    repoMocks.findOpenHoldForEmail.mockResolvedValue(null);
+    repoMocks.findOpenHoldForAccount.mockResolvedValue(null);
     stripeMocks.expire.mockResolvedValue({});
     referralMocks.findCodeByCanonical.mockResolvedValue({ id: "code-1" });
     priceMocks.resolveFoundingPrice.mockImplementation(
@@ -177,6 +213,63 @@ describe("POST /founding/checkout", () => {
       expires_at: Math.floor(Date.now() / 1000) + 1860,
     });
   });
+
+  it("requires a verified sign-in before creating or reserving anything", async () => {
+    authMocks.user.mockResolvedValueOnce(null as never);
+    expect((await post(VALID)).status).toBe(401);
+    expect(repoMocks.reserveIn).not.toHaveBeenCalled();
+    expect(stripeMocks.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects an unconfirmed auth identity even with a valid token", async () => {
+    authMocks.identity.mockResolvedValueOnce({
+      id: "user",
+      email: "test@example.com",
+      emailConfirmedAt: null,
+    } as never);
+    expect((await post(VALID)).status).toBe(403);
+    expect(stripeMocks.create).not.toHaveBeenCalled();
+  });
+
+  it("fails closed on authoritative identity lookup outage", async () => {
+    authMocks.identity.mockRejectedValueOnce(new Error("offline"));
+    expect((await post(VALID)).status).toBe(503);
+    expect(stripeMocks.create).not.toHaveBeenCalled();
+  });
+
+  it("binds the verified subject independently of receipt email and ignores supplied identity", async () => {
+    expect(
+      (await post({ ...VALID, userId: "attacker", accountId: "attacker" }))
+        .status,
+    ).toBe(200);
+    expect(repoMocks.reserveIn).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        accountId: "00000000-0000-4000-8000-000000000012",
+        email: "buyer@example.test",
+      }),
+    );
+    expect(repoMocks.findOpenHoldForAccount).toHaveBeenCalledWith(
+      "00000000-0000-4000-8000-000000000012",
+      expect.any(Date),
+    );
+    expect(stripeMocks.create.mock.calls[0]?.[1]).toEqual({
+      idempotencyKey: "founding-checkout:reservation-1",
+    });
+  });
+
+  it.each(["account_ineligible", "already_granted", "active_subscription"])(
+    "rejects %s before charging and rechecks under lock",
+    async (refusal) => {
+      repoMocks.eligibilityIn.mockResolvedValueOnce(refusal);
+      expect((await post(VALID)).status).toBe(
+        refusal === "account_ineligible" ? 403 : 409,
+      );
+      expect(repoMocks.lockAccount).toHaveBeenCalled();
+      expect(repoMocks.reserveIn).not.toHaveBeenCalled();
+      expect(stripeMocks.create).not.toHaveBeenCalled();
+    },
+  );
 
   it("returns the Stripe url and records the checkout", async () => {
     const res = await post(VALID);
@@ -254,6 +347,7 @@ describe("POST /founding/checkout", () => {
       email: "buyer@example.test",
       referral_code: "METAFOUND",
       campaign_slug: "meta",
+      founding_reservation_id: "reservation-1",
     });
   });
 
@@ -361,7 +455,8 @@ describe("POST /founding/checkout", () => {
       // survives. Refusing would lock a buyer out for half an hour for
       // changing their mind — a mainstream checkout path turned into a lost
       // sale.
-      repoMocks.findOpenHoldForEmail.mockResolvedValue({
+      repoMocks.findOpenHoldForAccount.mockResolvedValue({
+        email: "buyer@example.test",
         id: "reservation-old",
         stripeSessionId: "cs_old",
         tierName: "premium",
@@ -383,7 +478,8 @@ describe("POST /founding/checkout", () => {
     });
 
     it("starts fresh only once Stripe says the old session is dead", async () => {
-      repoMocks.findOpenHoldForEmail.mockResolvedValue({
+      repoMocks.findOpenHoldForAccount.mockResolvedValue({
+        email: "buyer@example.test",
         id: "reservation-old",
         stripeSessionId: "cs_old",
         tierName: "premium",
@@ -403,7 +499,8 @@ describe("POST /founding/checkout", () => {
       // would free a seat whose Stripe page is still payable, and a payment on
       // it would then find no open row to claim — money taken, no grant, no
       // alert.
-      repoMocks.findOpenHoldForEmail.mockResolvedValue({
+      repoMocks.findOpenHoldForAccount.mockResolvedValue({
+        email: "buyer@example.test",
         id: "reservation-old",
         stripeSessionId: "cs_old",
         tierName: "premium",
@@ -419,7 +516,8 @@ describe("POST /founding/checkout", () => {
     it("sends a buyer whose payment is already through to the thanks page", async () => {
       // Paid, webhook not yet landed. Releasing the seat would orphan that
       // payment.
-      repoMocks.findOpenHoldForEmail.mockResolvedValue({
+      repoMocks.findOpenHoldForAccount.mockResolvedValue({
+        email: "buyer@example.test",
         id: "reservation-old",
         stripeSessionId: "cs_old",
         tierName: "premium",
@@ -437,7 +535,8 @@ describe("POST /founding/checkout", () => {
     it("expires the old session at Stripe before selling a different term", async () => {
       // Sending them back to a live Session for the plan they abandoned would
       // grant the wrong tier; releasing without killing it leaves it payable.
-      repoMocks.findOpenHoldForEmail.mockResolvedValue({
+      repoMocks.findOpenHoldForAccount.mockResolvedValue({
+        email: "buyer@example.test",
         id: "reservation-old",
         stripeSessionId: "cs_old",
         tierName: "premium",
@@ -457,7 +556,8 @@ describe("POST /founding/checkout", () => {
     });
 
     it("keeps the seat when the old session cannot be expired", async () => {
-      repoMocks.findOpenHoldForEmail.mockResolvedValue({
+      repoMocks.findOpenHoldForAccount.mockResolvedValue({
+        email: "buyer@example.test",
         id: "reservation-old",
         stripeSessionId: "cs_old",
         tierName: "premium",
@@ -473,28 +573,40 @@ describe("POST /founding/checkout", () => {
       expect(repoMocks.releaseReservation).not.toHaveBeenCalled();
     });
 
-    it("clears a reservation whose Stripe call never completed", async () => {
-      // The Lambda died between reserving and creating the Session. There is
-      // nothing to orphan, and leaving it locks the address out for half an
-      // hour over a seat holding nothing.
-      repoMocks.findOpenHoldForEmail.mockResolvedValue({
+    it("expires the old session before changing the same account's receipt email", async () => {
+      repoMocks.findOpenHoldForAccount.mockResolvedValue({
+        id: "old",
+        stripeSessionId: "cs_old",
+        tierName: "premium",
+        months: 6,
+        email: "previous@example.test",
+      });
+      stripeMocks.retrieve.mockResolvedValue({
+        status: "open",
+        url: "https://stripe.example/old",
+      });
+      expect((await post(VALID)).status).toBe(200);
+      expect(stripeMocks.expire).toHaveBeenCalledWith("cs_old");
+      expect(repoMocks.releaseReservation).toHaveBeenCalledWith("old");
+      expect(stripeMocks.create).toHaveBeenCalledTimes(1);
+    });
+
+    it("retains a placeholder after an ambiguous Stripe response rather than opening another payment", async () => {
+      repoMocks.findOpenHoldForAccount.mockResolvedValue({
+        email: "buyer@example.test",
         id: "reservation-orphan",
         stripeSessionId: "reserved_abc",
         tierName: "premium",
         months: 6,
       });
-      const res = await post(VALID);
-      expect(res.status).toBe(200);
-      expect(stripeMocks.retrieve).not.toHaveBeenCalled();
-      expect(repoMocks.releaseReservation).toHaveBeenCalledWith(
-        "reservation-orphan",
-      );
-      expect(stripeMocks.create).toHaveBeenCalledTimes(1);
+      expect((await post(VALID)).status).toBe(429);
+      expect(repoMocks.releaseReservation).not.toHaveBeenCalled();
+      expect(stripeMocks.create).not.toHaveBeenCalled();
     });
 
     it("refuses a second concurrent hold from the same address", async () => {
       // A hold costs nothing and takes a pool place for half an hour.
-      repoMocks.countOpenHoldsForEmail.mockResolvedValue(1);
+      repoMocks.countOpenHoldsForAccount.mockResolvedValue(1);
       const res = await post(VALID);
       expect(res.status).toBe(429);
       expect(await res.json()).toEqual({ ok: false, error: "too_many_holds" });
@@ -504,7 +616,7 @@ describe("POST /founding/checkout", () => {
     it("refuses somebody who already holds a place, before they pay", async () => {
       // The grant service would refuse the duplicate AFTER the money was
       // taken, leaving a manual refund.
-      repoMocks.hasLiveOrPendingGrantForEmail.mockResolvedValue(true);
+      repoMocks.eligibility.mockResolvedValue("already_granted");
       const res = await post(VALID);
       expect(res.status).toBe(409);
       expect(await res.json()).toEqual({ ok: false, error: "already_granted" });
@@ -558,16 +670,11 @@ describe("POST /founding/checkout", () => {
       expect(stripeMocks.create).not.toHaveBeenCalled();
     });
 
-    it("503s and stores nothing when Stripe itself fails", async () => {
-      stripeMocks.create.mockRejectedValue(new Error("Stripe down"));
+    it("retains the reservation when Stripe creation fails ambiguously", async () => {
+      stripeMocks.create.mockRejectedValue(new Error("response lost"));
       vi.spyOn(console, "error").mockImplementation(() => {});
-      const res = await post(VALID);
-      expect(res.status).toBe(503);
-      // The seat goes straight back rather than making the next buyer wait
-      // half an hour for a hold nobody is using.
-      expect(repoMocks.releaseReservation).toHaveBeenCalledWith(
-        "reservation-1",
-      );
+      expect((await post(VALID)).status).toBe(503);
+      expect(repoMocks.releaseReservation).not.toHaveBeenCalled();
       expect(repoMocks.attachStripeSession).not.toHaveBeenCalled();
     });
 
@@ -823,6 +930,32 @@ describe("GET /founding/checkout/:id/status", () => {
       currency: "GBP",
       holdExpiresAt: new Date("2026-09-10T10:30:00Z"),
     });
+  });
+
+  it("only reports access ready after the linked grant is actually active", async () => {
+    repoMocks.hasActiveGrant.mockResolvedValueOnce(true);
+    repoMocks.findByStripeSessionId.mockResolvedValueOnce({
+      id: "row",
+      status: "completed",
+      grantId: "grant",
+      tierName: "premium",
+      months: 6,
+      email: "buyer@example.test",
+      eventId: null,
+      amountMinor: 3000,
+      currency: "GBP",
+      holdExpiresAt: new Date(),
+    });
+    const ready = (await (await status("cs_ready")).json()) as {
+      data: { accessReady: boolean; eventId: string };
+    };
+    expect(ready.data.accessReady).toBe(true);
+    expect(ready.data.eventId).toBe("founding-purchase:row");
+    expect(repoMocks.hasActiveGrant).toHaveBeenCalledWith("grant");
+    const pending = (await (await status("cs_pending")).json()) as {
+      data: { accessReady: boolean };
+    };
+    expect(pending.data.accessReady).toBe(false);
   });
 
   it("never returns the whole address", async () => {

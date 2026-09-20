@@ -1,5 +1,65 @@
 # Project memory · persistence-backend-sst
 
+### 2026-09-20 — Deploy-managed Apple web configuration
+
+Production and staging deploy workflows now validate GitHub auth inputs before
+mutations and sync Apple OAuth configuration into Supabase before web deployment.
+The public Supabase key stays in Vite; Apple credentials stay in the isolated
+management step. Existing native audiences and redirect entries are preserved.
+Runbook lists the exact GitHub variable/secret names, project refs and Apple
+callback URLs. Read-only GitHub name inventory confirmed the public-key variable
+and existing Supabase secrets in both environments; Apple Services ID and client
+secret are the new values Brad must supply. No secret contents were retrieved,
+GitHub values changed, live auth configuration applied, or deployment triggered.
+Validation: actionlint clean, 66 focused tests (98.8% lines/statements,
+97.93% branches, 100% functions), root tests 21/21, typecheck 9/9, lint 6/6,
+non-mobile build 12/12 and formatting pass. CLI missing-input smoke exits safely
+without network calls.
+
+### 2026-09-20 — Lightweight founding account page
+
+Signed-in customers now see one compact account card with their address and an
+explicit Log out button, above the purchase/claim action. Logout clears pending
+claim proof and account state; the marketing introduction only appears before
+sign-in. Synthetic browser claim success and logout verified at 390px with no
+overflow. Screenshot: `../founding-access-review/lightweight-account-success-mobile.png`.
+Focused founding tests: 6 files / 74 tests pass. Website/mobile share Supabase
+identity configuration; Apple browser OAuth still requires its linked Services
+ID and OAuth secret documented in the release runbook.
+
+### 2026-09-20 — Founding web account linking (PR #457 follow-up)
+
+- Brad approved keeping Stripe and moving all purchase/claim identity handling
+  to the website. Earlier native claim UI/client changes are removed entirely
+  from the PR. Existing admin tier upgrades and refund cancellation remain.
+- New website purchases sign in first and explicitly confirm the destination
+  account. Apple/Google/email authentication, PKCE callback handling and legacy
+  purchase-email verification run on isolated pages without marketing pixels.
+  Same-account/sign-in-method warnings explain Apple Hide My Email and separate
+  receipt email from membership identity. Email callbacks support new tabs in
+  the same browser; no app redemption codes or account merging are added.
+- Checkout stores an immutable authenticated account UUID. Payment activation
+  uses that UUID, with account-scoped holds, duplicate guards, auditable failure
+  recovery and no receipt-email fallback. Existing anonymous paid sessions are
+  still processed. Transactional invitation copy now explains website claims.
+- Read-only production Apple OAuth probe returned HTTP 400 `Unsupported
+  provider: missing OAuth secret`. Browser Apple configuration and a real
+  browser/native same-user-UUID test remain release requirements, documented in
+  `specs/milestones/FOUNDING-OFFER/WEB-IDENTITY-RELEASE.md`. Code merging alone
+  does not complete those settings. No deployment or native build initiated.
+- Synthetic desktop/390px visual QA passed, including legacy claim success;
+  independent visual review: MATCH. Images saved in the workspace's
+  `founding-access-review` folder (`web-purchase-account-desktop.png`,
+  `web-apple-sign-in-mobile.png`, `web-claim-success-mobile.png`). Temporary
+  preview code and servers removed. Final quality gates recorded below.
+- Local Inspector Brad: clean after checkout recovery analytics fix; independent
+  review exercised 229 focused tests. Final follow-up changes are test-only.
+- Validation: root typecheck 9/9, lint 6/6 (existing warnings), non-mobile build
+  12/12. Authenticated web flow focused coverage exceeds 90% in each metric;
+  admin transport/actions 100% lines/functions, 98.56% statements and 97.18%
+  branches. Checkout webhook coverage: 100% lines/statements/functions and
+  91.35% branches. Full suite and formatting results are recorded in PR #457.
+
 ### 2026-09-18 — Relay / import / workspace scope
 
 Research and briefs: `specs/milestones/COACHING-WORKSPACE-IMPORT/BRIEF.md`. Public Relay documentation checked; current main `162ba03a` audited. Spec22 import is not implemented; current cycle scheduling cannot faithfully retain arbitrary multiweek prescriptions, owner/self programme APIs are missing, and coach/private review cannot be returned directly to athletes. Added superseding spec22 amendments, explicit schedule/self/shared-review spec36 and exercise-import spec37. Coached-client access is a proposed default pending reply. No runtime changes, provider calls, customer outreach or native builds. Validation: documentation formatting/local links only; feature evaluations and runtime tests not run.
@@ -5310,3 +5370,22 @@ PR not yet raised. NO product code — script + dataset + verdict + spec updates
   and migration `20260901120000_onboarding_states.sql` did apply successfully.
   Backend hotfix PR #427 standardises the internal parameter name to `:id`
   without changing the public URL shape and adds a composed-router regression.
+### 2026-09-20 — Founding admin actions and cross-email claims
+
+- Added complimentary founding tier changes preserving payment, expiry and
+  founding place, plus admin full-remaining Stripe refunds with automatic
+  access revocation, durable retry tracking and webhook reconciliation.
+- Added signed-in purchase-email verification so Apple private-relay accounts
+  can claim their original pending founding grant without changing accounts.
+  Codes are account-bound, time-limited and rate-limited; activation and proof
+  consumption share one transaction.
+- Local Inspector Brad final sweep: clean. Full checks passed: formatting,
+  typecheck, lint, non-mobile build and unit tests (core 4,984; web 1,415;
+  mobile 6,840). Fixed an existing mobile readiness timeout exposed under full
+  suite load. Desktop and narrow-screen UI previews checked using synthetic
+  data; screenshots retained in the workspace founding-access-review folder.
+- Apply migrations 20260920120000 and 20260920121000 through the normal release
+  pipeline before using these features. No deployment, native app build,
+  live refund or live account change was performed. Apple relay sender
+  configuration was not inspected. Required slack-progress-updates skill was
+  unavailable, so no external completion notification was sent.

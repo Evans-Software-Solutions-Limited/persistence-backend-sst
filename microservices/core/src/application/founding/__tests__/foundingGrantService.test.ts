@@ -99,6 +99,51 @@ function mockGrantCreated(
 describe("FoundingGrantService.grant", () => {
   beforeEach(() => vi.clearAllMocks());
 
+  it("keeps the receipt email while targeting the stored Apple account UUID", async () => {
+    const { svc, grants } = makeRepos();
+    mockGrantCreated(grants);
+    const result = await svc.grant(
+      {
+        email: "receipt@example.test",
+        userId: "apple-id",
+        checkoutId: "reservation-id",
+        tierName: "premium",
+        sendInvite: false,
+      },
+      "admin",
+    );
+    expect(result.ok).toBe(true);
+    expect(grants.findProfileByEmail).not.toHaveBeenCalled();
+    expect(grants.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "reservation-id",
+        userId: "apple-id",
+        email: "receipt@example.test",
+        checkoutId: "reservation-id",
+      }),
+      "consumer",
+      expect.any(Function),
+    );
+  });
+
+  it("never falls back to the purchase email when its bound account no longer exists", async () => {
+    const { svc, grants } = makeRepos();
+    grants.findProfileById.mockResolvedValueOnce(null as never);
+    expect(
+      await svc.grant(
+        {
+          email: "receipt@example.test",
+          userId: "deleted-id",
+          checkoutId: "reservation-id",
+          tierName: "premium",
+        },
+        "admin",
+      ),
+    ).toEqual({ ok: false, error: { code: "user_not_found" } });
+    expect(grants.findProfileByEmail).not.toHaveBeenCalled();
+    expect(grants.create).not.toHaveBeenCalled();
+  });
+
   it("carries a web checkout's actual payment into the pending confirmation", async () => {
     const { svc, grants, mailer } = makeRepos();
     mockGrantCreated(grants, created());
@@ -243,7 +288,7 @@ describe("FoundingGrantService.grant", () => {
     );
     expect(referrals.lock).not.toHaveBeenCalled();
     expect((mailer.mock.calls[0] as any)[0].text).toMatch(
-      /sign up with this email/,
+      /Activate your .* access on our website/,
     );
     expect((mailer.mock.calls[0] as any)[0].text).not.toMatch(
       /payment|paid in full|90 days/,
@@ -603,7 +648,12 @@ describe("FoundingGrantService.applyPendingForUser", () => {
   it("applies each pending grant, attaches + locks the referral, audits", async () => {
     const { svc, grants, referrals, audit } = makeRepos();
     grants.findPendingByEmail.mockResolvedValue([
-      { id: "g9", referralCodeId: "code1", grantedBy: "admin-1" },
+      {
+        id: "g9",
+        tierName: "premium",
+        referralCodeId: "code1",
+        grantedBy: "admin-1",
+      },
     ] as any);
     grants.applyPending.mockImplementation(
       async (_grantId, _userId, finalize) => {
@@ -611,7 +661,8 @@ describe("FoundingGrantService.applyPendingForUser", () => {
           transaction: { kind: "test-transaction" },
           grant: {
             id: "g9",
-            tierName: "premium",
+            tierName: "premium_plus",
+            grantedBy: "admin-1",
             referralCodeId: "code1",
           },
           expiresAt: new Date("2027-01-01T00:00:00Z"),
@@ -633,6 +684,7 @@ describe("FoundingGrantService.applyPendingForUser", () => {
       "g9",
       "u9",
       expect.any(Function),
+      undefined,
     );
     expect(referrals.claim).toHaveBeenCalledWith(
       expect.objectContaining({ userId: "u9", canonicalCode: "UONFRESHERS" }),
@@ -643,7 +695,10 @@ describe("FoundingGrantService.applyPendingForUser", () => {
       expect.objectContaining({
         action: "founding_grant.apply_pending",
         entityId: "g9",
-        after: expect.objectContaining({ referralApplication: "applied" }),
+        after: expect.objectContaining({
+          referralApplication: "applied",
+          tierName: "premium_plus",
+        }),
       }),
       expect.objectContaining({ kind: "test-transaction" }),
     );
