@@ -38,30 +38,89 @@ For each environment:
 2. Configure the Services ID's website domain and return URL. The Apple return
    URL is the relevant Supabase project's `/auth/v1/callback`, not the website's
    final callback. Production project: `opcvjypsoivaxerahbal`.
-3. Configure the Apple signing key/secret in Supabase Auth. Put the web Services
-   ID first in the configured client IDs, retaining the existing native IDs.
-   Supabase uses the first ID for OAuth and accepts listed native audiences.
-   Keep private keys and generated secrets out of source control, browser
-   configuration, logs and screenshots.
-4. Add a narrowly scoped Supabase redirect allowlist entry for the actual
-   website origin and `/founding/access/callback?flow=*`. The random `flow`
-   query is part of our callback URL: allowing only the path can cause Supabase
-   to reject it and fall back to SiteURL when the origins differ. Do not allow
-   arbitrary hosts or all website paths. Keep existing app, voucher and admin
-   callback URLs intact; verify the actual nonce-bearing callback is accepted.
-   Confirm Google's existing provider also permits the new Supabase-to-website
-   callback; the provider's own callback remains the Supabase callback.
-5. Confirm the website deploy has its existing public Supabase URL and anon key
-   for the same project used by that environment's native app.
-6. Record the Apple OAuth secret expiry and arrange rotation before expiry
-   (Apple secrets last at most six months). Browser OAuth requires this even
-   though native ID-token sign-in does not.
+3. Populate the GitHub environment settings below. The deployment workflow
+   validates them before mutations, then applies the Apple provider settings
+   through Supabase's Management API before deploying the website. It puts the
+   web Services ID first, preserves existing native IDs, and retains the
+   required native ID for that environment.
+4. The same step adds the exact website callback
+   `/founding/access/callback?flow=*` to Supabase's redirect allowlist, preserving
+   existing app, voucher and admin callbacks. The random `flow` query is part of
+   the URL. Google's existing provider can use this same Supabase-to-website
+   callback; its upstream provider callback remains the Supabase callback.
+5. The website uses the existing public Supabase key and stage-derived URL for
+   the same project as the native app. Never put an Apple secret or Supabase
+   service-role key into a `VITE_*` variable.
+6. Record the Apple OAuth secret expiry and replace the GitHub secret, then
+   redeploy before expiry (Apple client secrets last at most six months).
+   Browser OAuth requires this even though native ID-token sign-in does not.
 7. Register the actual transactional/auth sending domains with Apple's private
    email relay, including any subdomains, and verify SPF/DKIM. This is necessary
    for messages addressed to relay accounts; it does not expose personal email.
 
-These are dashboard settings, not accomplished by merging this PR. Do not
-describe the feature as event-ready until the real account test below passes.
+Apple Developer setup and GitHub values must be supplied before deploying.
+Merging does not create the Apple Services ID or key. Deployment fails rather
+than silently shipping unconfigured sign-in when required values are missing.
+Populate `staging` before merging (main automatically deploys staging), and
+`Production` before publishing the release.
+Do not describe the feature as event-ready until the real account test below passes.
+
+## GitHub environment values
+
+In repository **Settings → Environments**, configure both `Production` (capital
+P) and `staging`. Do not paste secret values into PRs or chat.
+
+A read-only name check on 20 September 2026 found `VITE_SUPABASE_ANON_KEY`
+already present as a variable in both environments, alongside the existing
+Supabase secrets below. Only `APPLE_SERVICES_ID` and `APPLE_CLIENT_SECRET` are
+new names. Production also has a same-named public-key secret; the workflow
+uses the **variable**, so changing only that duplicate secret has no effect.
+Secret contents were not read or validated in this check.
+
+| Kind              | Name                     | Production value                                                                                      | staging value                                                                   |
+| ----------------- | ------------------------ | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| Variable          | `VITE_SUPABASE_ANON_KEY` | Production project's **anon** JWT or **publishable** API key                                          | Staging project's **anon** JWT or **publishable** API key                       |
+| Variable          | `APPLE_SERVICES_ID`      | Actual web Services ID created in Apple Developer, associated with `com.bradleyevans96.persistence`   | Actual web Services ID associated with `com.bradleyevans96.persistence.staging` |
+| Secret            | `APPLE_CLIENT_SECRET`    | Apple-generated/signed client-secret JWT whose subject is the production Services ID                  | Separate JWT whose subject is the staging Services ID                           |
+| Secret (existing) | `SUPABASE_ACCESS_TOKEN`  | Supabase management access token with permission to read and update this project's Auth configuration | Token authorized for staging Auth configuration                                 |
+| Secret (existing) | `SUPABASE_PROJECT_REF`   | `opcvjypsoivaxerahbal`                                                                                | `nxkhlrvjxotyjulodxzk`                                                          |
+
+The public API key is the same client key used by the corresponding mobile app,
+available in Supabase **Project Settings → API Keys**. Never use `service_role`
+or an `sb_secret_…` key. A publishable key is public, despite containing “key”.
+`SUPABASE_ACCESS_TOKEN` is a management token, not an anon or service-role key;
+its existing database deployment permissions must also remain intact. For
+fine-grained tokens, add `auth_config_read`, `auth_config_write` and `project_admin_write` permissions.
+Keep the existing database password, service-role key and other deployment
+secrets unchanged.
+
+Suggested **new** Services IDs, if available, are
+`com.bradleyevans96.persistence.web` and
+`com.bradleyevans96.persistence.staging.web`. These are proposed names, not IDs
+already provisioned. Set the variable to the exact ID you actually register.
+Generate each client-secret JWT using that Services ID, your Apple Team ID,
+Sign in with Apple Key ID and `.p8` private key. Supabase's Apple setup guide
+links a browser-local generator. Store only the resulting JWT as
+`APPLE_CLIENT_SECRET`; this workflow does not need the `.p8`, Team ID or Key ID
+in GitHub. Existing `ASC_API_KEY`/`ASC_API_KEY_ID` values are App Store Connect
+credentials; they are not the Sign in with Apple client secret. Generation/expiry
+validation is not proof Apple will accept the key:
+complete the real login smoke test.
+
+| Apple web setup | Production                                                  | staging                                                     |
+| --------------- | ----------------------------------------------------------- | ----------------------------------------------------------- |
+| Website domain  | `persistence.evans-software-solutions.com`                  | `staging.persistence.evans-software-solutions.com`          |
+| Return URL      | `https://opcvjypsoivaxerahbal.supabase.co/auth/v1/callback` | `https://nxkhlrvjxotyjulodxzk.supabase.co/auth/v1/callback` |
+
+No GitHub `VITE_SUPABASE_URL`, Apple private-key variable, or `VITE_APPLE_*`
+secret is needed. The website URL and callback allowlist are derived from the
+same checked-in stage configuration as the backend.
+
+The workflow performs local validation with `--check`, then GET/PATCH/GET of
+Supabase Auth configuration during deployment. It logs only success or sanitized
+errors, never the provider response or secret. No configuration has been applied
+by the PR itself. A deploy reapplies GitHub's Apple settings; update the GitHub
+secret before deploying if it was rotated manually in Supabase.
 
 ## Release evidence
 

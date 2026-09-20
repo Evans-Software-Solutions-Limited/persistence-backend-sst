@@ -1,5 +1,21 @@
 # Project memory · persistence-backend-sst
 
+### 2026-09-20 — Deploy-managed Apple web configuration
+
+Production and staging deploy workflows now validate GitHub auth inputs before
+mutations and sync Apple OAuth configuration into Supabase before web deployment.
+The public Supabase key stays in Vite; Apple credentials stay in the isolated
+management step. Existing native audiences and redirect entries are preserved.
+Runbook lists the exact GitHub variable/secret names, project refs and Apple
+callback URLs. Read-only GitHub name inventory confirmed the public-key variable
+and existing Supabase secrets in both environments; Apple Services ID and client
+secret are the new values Brad must supply. No secret contents were retrieved,
+GitHub values changed, live auth configuration applied, or deployment triggered.
+Validation: actionlint clean, 66 focused tests (98.8% lines/statements,
+97.93% branches, 100% functions), root tests 21/21, typecheck 9/9, lint 6/6,
+non-mobile build 12/12 and formatting pass. CLI missing-input smoke exits safely
+without network calls.
+
 ### 2026-09-20 — Lightweight founding account page
 
 Signed-in customers now see one compact account card with their address and an
