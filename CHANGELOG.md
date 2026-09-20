@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.23.1](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.23.0...persistence-v1.23.1) (2026-09-20)
+
+
+### Bug Fixes
+
+* correct founding account linking and add admin upgrades and refunds ([357ffaa](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/357ffaab7c1ee6831cd89d20e8e095c202f47fa8))
+
 ## [1.23.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.22.1...persistence-v1.23.0) (2026-09-15)
 
 
