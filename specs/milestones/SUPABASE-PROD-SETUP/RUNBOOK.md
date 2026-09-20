@@ -271,11 +271,15 @@ per project** (staging + prod separately).
    Native id-token verification checks the token audience against these Client IDs.
    Omitting the staging App ID produces
    `Unacceptable audience in id_token: [com.bradleyevans96.persistence.staging]`.
-   **No Services ID / secret key is required** because the app uses native Apple
-   authentication rather than the web Apple OAuth flow.
+   This native-only setup does not require a Services ID or OAuth secret.
+   **The founding website now also needs browser Apple sign-in**, which does
+   require both. Follow [the founding identity release checklist](../FOUNDING-OFFER/WEB-IDENTITY-RELEASE.md)
+   before releasing the account-bound website checkout. Retain native client
+   IDs while adding the associated web Services ID; verify both reach the same
+   Supabase user UUID.
 
-Providers are Auth-dashboard settings — **not MCP-addressable**, and prod is outside
-the MCP's org, so all of Phase 5 is manual dashboard work.
+Providers are Auth-dashboard settings and are not changed by the database
+migrations. Configure them separately from application deployment.
 
 ---
 

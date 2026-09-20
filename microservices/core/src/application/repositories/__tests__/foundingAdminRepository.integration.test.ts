@@ -75,6 +75,9 @@ describe("founding admin transaction invariants", () => {
       `CREATE ROLE anon; CREATE ROLE authenticated; INSERT INTO subscription_tiers VALUES ('premium_plus','Premium+'), ('coach','Coach'), ('start_up_coach_plus','Start Up Coach+');`,
     );
     await pg.exec(migration("20260905140000_founding_checkout_sessions.sql"));
+    await pg.exec(
+      migration("20260920193204_founding_checkout_account_binding.sql"),
+    );
     await pg.exec(migration("20260920120000_founding_refunds.sql"));
   });
   afterEach(async () => {

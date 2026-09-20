@@ -11,6 +11,7 @@ import DeleteAccount from "./pages/DeleteAccount";
 import OrganisationAdmin from "./pages/OrganisationAdmin";
 import Founding from "./pages/Founding";
 import FoundingThanks from "./pages/FoundingThanks";
+import FoundingAccess from "./founding/FoundingAccess";
 import RedeemPage from "./redemption/RedeemPage";
 import { RedemptionBoundary } from "./redemption/RedemptionBoundary";
 import {
@@ -76,6 +77,13 @@ function App() {
   const location = useLocation();
   // Sensitive redemption pages never mount marketing analytics or consent
   // subscribers, even when advertising consent was previously granted.
+  if (/^\/founding\/access(?:\/|$)/.test(location.pathname)) {
+    return (
+      <RedemptionBoundary>
+        <FoundingAccess />
+      </RedemptionBoundary>
+    );
+  }
   if (/^\/redeem(?:\/|$)/.test(location.pathname)) {
     return (
       <RedemptionBoundary>

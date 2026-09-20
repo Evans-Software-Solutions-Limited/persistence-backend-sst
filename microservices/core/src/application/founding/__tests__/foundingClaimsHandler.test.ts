@@ -42,6 +42,7 @@ vi.mock("../foundingClaimService", () => ({
   },
 }));
 import { foundingClaimsHandler } from "../foundingClaimsHandler";
+import { subscriptionsRoutes } from "../../subscriptionsRoutes";
 import { FoundingClaimError } from "../../repositories/foundingClaimRepository";
 import { VoucherError } from "../../vouchers/voucherRules";
 const id = "00000000-0000-4000-8000-000000000044";
@@ -108,5 +109,55 @@ describe("founding claim routes", () => {
     const res = await req("request", { email: "buyer@example.test" });
     expect(res.status).toBe(503);
     expect(await res.text()).not.toContain("secret");
+  });
+});
+
+describe("claim routes mounted in subscriptionsRoutes", () => {
+  it("retains authentication on both mounted claim endpoints", async () => {
+    for (const [path, body] of [
+      ["request", { email: "buyer@example.test" }],
+      ["verify", { challengeId: id, code: "123456" }],
+    ] as const) {
+      const response = await subscriptionsRoutes.handle(
+        new Request(`http://localhost/founding/claims/${path}`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        }),
+      );
+      expect(response.status).toBe(401);
+    }
+    expect(mocks.request).not.toHaveBeenCalled();
+    expect(mocks.verify).not.toHaveBeenCalled();
+  });
+
+  it("reaches both real mounted handlers using the authenticated customer identity", async () => {
+    const request = (path: string, body: unknown) =>
+      subscriptionsRoutes.handle(
+        new Request(`http://localhost/founding/claims/${path}`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: "Bearer user",
+          },
+          body: JSON.stringify(body),
+        }),
+      );
+    const challenge = await request("request", {
+      email: "buyer@example.test",
+      userId: "spoof",
+    });
+    expect(challenge.status).toBe(200);
+    expect(await challenge.json()).toEqual({ data: { challengeId: id } });
+    const verified = await request("verify", {
+      challengeId: id,
+      code: "123456",
+    });
+    expect(verified.status).toBe(200);
+    expect(await verified.json()).toMatchObject({
+      data: { claimed: true, tierName: "premium" },
+    });
+    expect(mocks.request).toHaveBeenCalledWith("user-1", "buyer@example.test");
+    expect(mocks.verify).toHaveBeenCalledWith("user-1", id, "123456");
   });
 });

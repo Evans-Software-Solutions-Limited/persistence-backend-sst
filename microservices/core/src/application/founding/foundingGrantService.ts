@@ -83,6 +83,8 @@ export interface GrantRequest {
   notes?: string | null;
   allowRoleChange?: boolean;
   sendInvite?: boolean;
+  /** Trusted server-only checkout reservation ID, never accepted by admin input. */
+  checkoutId?: string;
 }
 
 export interface GrantResult {
@@ -159,6 +161,8 @@ export class FoundingGrantService {
   ): Promise<
     { ok: true; result: GrantResult } | { ok: false; error: GrantError }
   > {
+    if (req.checkoutId && !req.userId)
+      return { ok: false, error: { code: "user_not_found" } };
     const grantKind = req.grantKind ?? "founding";
     if (
       !isGrantableTier(req.tierName) ||
@@ -214,7 +218,11 @@ export class FoundingGrantService {
       profile = await this.grants.findProfileById(req.userId);
       if (!profile) return { ok: false, error: { code: "user_not_found" } };
     }
-    const email = (profile?.email ?? req.email ?? "").trim().toLowerCase();
+    const email = (
+      req.checkoutId ? (req.email ?? "") : (profile?.email ?? req.email ?? "")
+    )
+      .trim()
+      .toLowerCase();
     if (!EMAIL_RE.test(email))
       return { ok: false, error: { code: "invalid_email" } };
     if (!profile) profile = await this.grants.findProfileByEmail(email);
@@ -275,7 +283,7 @@ export class FoundingGrantService {
       referralOut = { code: code.displayCode, label: code.label };
     }
 
-    const grantId = randomUUID();
+    const grantId = req.checkoutId ?? randomUUID();
     let outcome: CreateGrantOutcome;
     try {
       outcome = await this.grants.create(
@@ -295,6 +303,7 @@ export class FoundingGrantService {
           grantedBy: actorId,
           notes: req.notes ?? null,
           allowRoleChange: req.allowRoleChange,
+          checkoutId: req.checkoutId,
         },
         offer?.pool ?? "coach",
         async ({ transaction, grant }) => {
@@ -390,7 +399,7 @@ export class FoundingGrantService {
 
     let invited = false;
     let inviteError: string | null = null;
-    if (req.sendInvite !== false) {
+    if (req.sendInvite !== false && !outcome.replayed) {
       const sent = await this.sendInvite({
         grantId,
         email,

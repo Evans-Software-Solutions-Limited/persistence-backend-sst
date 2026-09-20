@@ -2,6 +2,9 @@ import { randomUUID } from "node:crypto";
 import { and, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
 import {
   foundingCheckoutSessions,
+  foundingGrants,
+  profiles,
+  userSubscriptions,
   type FoundingCheckoutSession,
 } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
@@ -9,7 +12,13 @@ import {
   RESERVATION_PREFIX,
   tiersInPool,
   type FoundingPool,
+  type FoundingWebTier,
 } from "../founding/foundingOffer";
+import {
+  liveSubscriptionFilter,
+  lockUserSubscriptionMutation,
+} from "./subscriptionRepository";
+import { catalogTier } from "@persistence/subscription-catalog";
 import type { DatabaseTransaction } from "./referralRepository";
 
 /**
@@ -44,6 +53,8 @@ const SETTLING_WINDOW_MS = 10 * 60 * 1000;
 
 export interface ReserveCheckoutInput {
   email: string;
+  accountId?: string;
+  amountMinor?: number;
   tierName: string;
   months: number;
   referralCode: string | null;
@@ -56,6 +67,148 @@ export interface ReserveCheckoutInput {
 }
 
 export class FoundingCheckoutRepository {
+  /** Checked under the same user lock as subscription activation, before charging. */
+  async eligibilityIn(
+    tx: Reader,
+    accountId: string,
+    tierName: FoundingWebTier,
+    email: string,
+  ): Promise<
+    "account_ineligible" | "active_subscription" | "already_granted" | null
+  > {
+    const [profile] = await tx
+      .select({
+        email: profiles.email,
+        role: profiles.role,
+        deletedAt: profiles.deletedAt,
+      })
+      .from(profiles)
+      .where(eq(profiles.id, accountId))
+      .limit(1);
+    const coach = ["personal_trainer", "physiotherapist"].includes(
+      profile?.role ?? "",
+    );
+    if (
+      !profile ||
+      profile.deletedAt ||
+      profile.role === "admin" ||
+      (catalogTier(tierName).audience === "consumer" && coach)
+    )
+      return "account_ineligible";
+    const [grant] = await tx
+      .select({ id: foundingGrants.id })
+      .from(foundingGrants)
+      .where(
+        and(
+          isNull(foundingGrants.revokedAt),
+          or(
+            eq(foundingGrants.userId, accountId),
+            eq(foundingGrants.email, email),
+            sql`(lower(${foundingGrants.email}) = ${profile.email?.toLowerCase() ?? ""} AND ${foundingGrants.appliedAt} IS NULL)`,
+          ),
+        ),
+      )
+      .limit(1);
+    if (grant) return "already_granted";
+    const [sub] = await tx
+      .select({ id: userSubscriptions.id })
+      .from(userSubscriptions)
+      .where(
+        and(
+          eq(userSubscriptions.userId, accountId),
+          liveSubscriptionFilter(),
+          sql`${userSubscriptions.tierName} <> 'free'`,
+        ),
+      )
+      .limit(1);
+    return sub ? "active_subscription" : null;
+  }
+
+  async hasActiveGrant(grantId: string): Promise<boolean> {
+    const [row] = await getDb()
+      .select({ id: foundingGrants.id })
+      .from(foundingGrants)
+      .innerJoin(
+        userSubscriptions,
+        eq(userSubscriptions.id, foundingGrants.subscriptionId),
+      )
+      .where(
+        and(
+          eq(foundingGrants.id, grantId),
+          isNull(foundingGrants.revokedAt),
+          sql`${foundingGrants.appliedAt} IS NOT NULL`,
+          sql`${foundingGrants.userId} IS NOT NULL`,
+          liveSubscriptionFilter(),
+        ),
+      )
+      .limit(1);
+    return Boolean(row);
+  }
+
+  async eligibility(
+    accountId: string,
+    tierName: FoundingWebTier,
+    email: string,
+  ) {
+    return this.eligibilityIn(getDb(), accountId, tierName, email);
+  }
+
+  async lockAccount(tx: Tx, accountId: string): Promise<void> {
+    await lockUserSubscriptionMutation(tx, accountId);
+  }
+
+  async countOpenHoldsForAccount(
+    db: Reader,
+    accountId: string,
+    now: Date,
+  ): Promise<number> {
+    const [row] = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(foundingCheckoutSessions)
+      .where(
+        and(
+          eq(foundingCheckoutSessions.accountId, accountId),
+          or(
+            and(
+              eq(foundingCheckoutSessions.status, "open"),
+              gt(foundingCheckoutSessions.holdExpiresAt, now),
+            ),
+            and(
+              eq(foundingCheckoutSessions.status, "completed"),
+              isNull(foundingCheckoutSessions.grantId),
+            ),
+          ),
+        ),
+      );
+    return Number(row?.n ?? 0);
+  }
+
+  async findOpenHoldForAccount(
+    accountId: string,
+    now: Date,
+  ): Promise<FoundingCheckoutSession | null> {
+    const [row] = await getDb()
+      .select()
+      .from(foundingCheckoutSessions)
+      .where(
+        and(
+          eq(foundingCheckoutSessions.accountId, accountId),
+          or(
+            and(
+              eq(foundingCheckoutSessions.status, "open"),
+              gt(foundingCheckoutSessions.holdExpiresAt, now),
+            ),
+            and(
+              eq(foundingCheckoutSessions.status, "completed"),
+              isNull(foundingCheckoutSessions.grantId),
+            ),
+          ),
+        ),
+      )
+      .limit(1);
+    return row ?? null;
+  }
+
   /**
    * How many pool places are currently held by checkouts in flight.
    *
@@ -154,11 +307,12 @@ export class FoundingCheckoutRepository {
       .values({
         stripeSessionId: `${RESERVATION_PREFIX}${randomUUID()}`,
         email: input.email,
+        accountId: input.accountId,
         tierName: input.tierName,
         months: input.months,
-        // Not yet known — Stripe's Price decides it, and the Session that
-        // reports it has not been created. Filled in by `attachStripeSession`.
-        amountMinor: 0,
+        // Expected amount is verified against Stripe before reservation;
+        // retaining it permits safe recovery if the create response is lost.
+        amountMinor: input.amountMinor ?? 0,
         currency: "GBP",
         referralCode: input.referralCode,
         campaignSlug: input.campaignSlug,
@@ -259,14 +413,43 @@ export class FoundingCheckoutRepository {
     return rows[0] ?? null;
   }
 
+  /** Recover a paid session whose create/attach response was lost. The UUID
+   * comes from server-written metadata on the signature-verified Stripe event.
+   * Amount/currency and an unbound placeholder must also match; identity is
+   * always read from the immutable reservation, never from event metadata. */
+  async recoverPaidReservation(input: {
+    reservationId: string;
+    stripeSessionId: string;
+    amountMinor: number;
+    currency: string;
+  }): Promise<FoundingCheckoutSession | null> {
+    const [row] = await getDb()
+      .update(foundingCheckoutSessions)
+      .set({
+        stripeSessionId: input.stripeSessionId,
+        status: "completed",
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(foundingCheckoutSessions.id, input.reservationId),
+          sql`${foundingCheckoutSessions.accountId} IS NOT NULL`,
+          sql`${foundingCheckoutSessions.stripeSessionId} LIKE 'reserved_%'`,
+          eq(foundingCheckoutSessions.status, "open"),
+          eq(foundingCheckoutSessions.amountMinor, input.amountMinor),
+          eq(foundingCheckoutSessions.currency, input.currency),
+        ),
+      )
+      .returning();
+    return row ?? null;
+  }
+
   /**
    * Claim an open session for completion, atomically.
    *
-   * The `status = 'open'` predicate is the idempotency guard, not a
-   * convenience: webhook delivery is at-least-once and two deliveries can be
-   * in flight together, so "read the row, see it is open, then write" would let
-   * both callers create a grant. Only the caller whose UPDATE returns a row may
-   * go on to grant.
+   * Legacy rows keep the original once-only transition. Account-bound rows
+   * without an attached grant can be retried: deterministic grant UUIDs make
+   * activation idempotent, including concurrent webhook deliveries.
    */
   async claimForCompletion(
     stripeSessionId: string,
@@ -278,7 +461,14 @@ export class FoundingCheckoutRepository {
       .where(
         and(
           eq(foundingCheckoutSessions.stripeSessionId, stripeSessionId),
-          eq(foundingCheckoutSessions.status, "open"),
+          or(
+            eq(foundingCheckoutSessions.status, "open"),
+            and(
+              eq(foundingCheckoutSessions.status, "completed"),
+              isNull(foundingCheckoutSessions.grantId),
+              sql`${foundingCheckoutSessions.accountId} IS NOT NULL`,
+            ),
+          ),
         ),
       )
       .returning();

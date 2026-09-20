@@ -110,7 +110,8 @@ beforeEach(() => {
 describe("ChangeGrantTierForm", () => {
   it("limits founding options to its pool, reviews and posts a free audited tier change", async () => {
     renderPage(<ChangeGrantTierForm grant={grant} onClose={vi.fn()} />);
-    await screen.findByRole("option", { name: "Premium+" });
+    // Allow the asynchronous catalogue query to settle under full-suite load.
+    await screen.findByRole("option", { name: "Premium+" }, { timeout: 5000 });
     expect(
       screen.queryByRole("option", { name: "Start Up Coach +" }),
     ).toBeNull();

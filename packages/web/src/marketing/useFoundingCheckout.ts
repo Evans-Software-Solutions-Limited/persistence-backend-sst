@@ -1,3 +1,4 @@
+import { accountSession } from "@/founding/auth";
 import { useCallback, useState } from "react";
 import { hasConsent } from "@/lib/consent";
 import { marketingApiBase } from "@/lib/marketingApiBase";
@@ -30,6 +31,7 @@ import type { FoundingMonths, FoundingTier } from "./foundingOffer";
 export type CheckoutStatus = "idle" | "submitting" | "error" | "closed";
 
 export interface CheckoutRequest {
+  accountId: string;
   tier: FoundingTier;
   months: FoundingMonths;
   email: string;
@@ -56,9 +58,13 @@ export function useFoundingCheckout() {
     const fbc = getFbc();
     const fbp = getFbp();
     try {
+      const session = await accountSession(request.accountId);
       const response = await fetch(`${marketingApiBase()}/founding/checkout`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.accessToken}`,
+        },
         body: JSON.stringify({
           tier: request.tier,
           months: request.months,
@@ -125,8 +131,16 @@ function errorMessage(code: string | undefined): string {
   switch (code) {
     case "pool_full":
       return "The last founding place has just gone.";
+    case "auth_required":
+      return "Please change account and sign in again before paying.";
+    case "email_not_verified":
+      return "Confirm your account email before continuing.";
+    case "account_ineligible":
+      return "This account cannot receive this plan. Please contact support.";
+    case "active_subscription":
+      return "This account already has paid access. Please contact support before purchasing.";
     case "already_granted":
-      return "That address already has a founding place — check your email for the invite.";
+      return "You already have a founding place — use the access link in your invite or contact support.";
     case "too_many_holds":
       // Should be rare: an abandoned checkout is resumed rather than refused.
       // Reachable when the earlier session cannot be recovered from Stripe.

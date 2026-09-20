@@ -70,7 +70,7 @@ export class FoundingClaimService {
     // Same email and HTTP response whether a pending grant exists or not. The
     // recipient learns only after proving ownership, never through enumeration.
     try {
-      const text = `Your Persistence access verification code is ${otp}. It expires in 10 minutes. Enter it only in the Persistence app where you requested it. This will attach any unclaimed access for this email to the signed-in account ${account.email}. If that is not your account or you did not request this code, do not share it and ignore this email.`;
+      const text = `Your Persistence access verification code is ${otp}. It expires in 10 minutes. Enter it only on the Persistence website where you requested it. This will attach any unclaimed access for this email to the signed-in account ${account.email}. If that is not your account or you did not request this code, do not share it and ignore this email.`;
       await this.mailer({
         to: purchaseEmail,
         subject: "Your Persistence access verification code",

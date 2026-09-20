@@ -107,29 +107,22 @@ function renderWith(adapters: Adapters) {
   );
 }
 
-// Auth and query bootstrapping compete with other suites in the full run.
-// Wait for the actual rail (not a timer or retry), within the 20s test limit.
 describe("SubscriptionSelectionContainer — rail dispatch", () => {
   it("renders the RevenueCat iOS flow (with a restore CTA, no Stripe path) when a purchases adapter is present", async () => {
     renderWith(makeAdapters(true));
-    await waitFor(
-      () => expect(screen.getByTestId("ios-purchase-restore")).toBeTruthy(),
-      { timeout: 10_000 },
+    await waitFor(() =>
+      expect(screen.getByTestId("ios-purchase-restore")).toBeTruthy(),
     );
-    expect(screen.getByTestId("founding-claim-toggle")).toBeTruthy();
     // The Stripe Apple-Pay path is not reachable on the iOS rail (§3.1.1).
     expect(screen.queryByTestId("cancel-subscription-button")).toBeNull();
   });
 
   it("falls back to the Stripe flow when no purchases adapter is present", async () => {
     renderWith(makeAdapters(false));
-    await waitFor(
-      () =>
-        expect(screen.getByTestId("subscription-card-premium")).toBeTruthy(),
-      { timeout: 10_000 },
+    await waitFor(() =>
+      expect(screen.getByTestId("subscription-card-premium")).toBeTruthy(),
     );
     expect(screen.queryByTestId("ios-purchase-restore")).toBeNull();
-    expect(screen.getByTestId("founding-claim-toggle")).toBeTruthy();
   });
 
   it("renders the same native RevenueCat rail on Android", async () => {
@@ -137,9 +130,8 @@ describe("SubscriptionSelectionContainer — rail dispatch", () => {
     Platform.OS = "android";
     try {
       renderWith(makeAdapters(true));
-      await waitFor(
-        () => expect(screen.getByTestId("ios-purchase-restore")).toBeTruthy(),
-        { timeout: 10_000 },
+      await waitFor(() =>
+        expect(screen.getByTestId("ios-purchase-restore")).toBeTruthy(),
       );
     } finally {
       Platform.OS = originalOS;

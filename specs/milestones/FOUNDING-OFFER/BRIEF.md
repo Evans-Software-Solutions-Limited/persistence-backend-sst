@@ -1,5 +1,11 @@
 # Milestone FOUNDING-OFFER — founding-member offer, internal admin, referral attribution
 
+**20 September 2026 amendment:** [Admin actions and website identity](ADMIN-ACTIONS.md)
+supersedes the email-matching purchase/redemption journey below. New Stripe
+purchases bind to a signed-in account; legacy claims run on the website, with
+no in-app claiming. [Apple web configuration and release proof](WEB-IDENTITY-RELEASE.md)
+are required before releasing that journey.
+
 Status: **APPROVED for implementation (Brad, 2026-09-03)** — thin slice of
 `specs/32-partner-code-and-commission-platform/BRIEF.md` (Slices B + C, plus a
 founding-grant tool). Commission ledger, partner portal and store-offer

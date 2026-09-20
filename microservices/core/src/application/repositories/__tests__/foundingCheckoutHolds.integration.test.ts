@@ -48,7 +48,7 @@ describe("founding pool seats, with checkouts in flight", () => {
     await pg.exec(`
       CREATE TABLE profiles (id uuid PRIMARY KEY, email text, role text, deleted_at timestamptz);
       CREATE TABLE subscription_tiers (tier_name text PRIMARY KEY, display_name text);
-      CREATE TABLE user_subscriptions (id uuid PRIMARY KEY DEFAULT gen_random_uuid());
+      CREATE TABLE user_subscriptions (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), user_id uuid, tier_name text, payment_status text, expires_at timestamptz);
       INSERT INTO profiles (id, email) VALUES ('${ADMIN}', 'admin@example.test');
       INSERT INTO subscription_tiers (tier_name, display_name) VALUES
         ('premium', 'Premium'), ('premium_plus', 'Premium+'),
@@ -57,6 +57,9 @@ describe("founding pool seats, with checkouts in flight", () => {
     await pg.exec(FOUNDING_MIGRATION);
     await pg.exec(GENERALISE_MIGRATION);
     await pg.exec(CHECKOUT_MIGRATION);
+    await pg.exec(
+      migrationSql("20260920193204_founding_checkout_account_binding.sql"),
+    );
     // Small caps make the arithmetic readable.
     await pg.query(
       `UPDATE founding_pool_limits SET cap = 3 WHERE pool = 'consumer'`,
@@ -81,6 +84,7 @@ describe("founding pool seats, with checkouts in flight", () => {
     holdMinutes: number,
     sessionId = `cs_${Math.random().toString(36).slice(2)}`,
     email = `${sessionId}@example.test`,
+    accountId?: string,
   ) {
     const row = await grants.reserveSeatUnderPoolLock(
       tierName === "start_up_coach_plus" ? "coach" : "consumer",
@@ -93,6 +97,7 @@ describe("founding pool seats, with checkouts in flight", () => {
         reserve: () =>
           checkouts.reserveIn(tx, {
             email,
+            accountId,
             tierName,
             months: 6,
             referralCode: null,
@@ -134,6 +139,232 @@ describe("founding pool seats, with checkouts in flight", () => {
     grants.freeSeatsWithHolds("consumer", (tx) =>
       checkouts.countHeldInPool(tx, "consumer", new Date()),
     );
+
+  it("only reports access ready for a surviving applied grant with live subscription", async () => {
+    const subscriptionId = "00000000-0000-4000-8000-000000000088";
+    const grantId = "00000000-0000-4000-8000-000000000089";
+    await pg.query(
+      "INSERT INTO user_subscriptions(id, user_id, tier_name, payment_status, expires_at) VALUES ($1, $2, 'premium', 'active', now() + interval '1 day')",
+      [subscriptionId, ADMIN],
+    );
+    await pg.query(
+      "INSERT INTO founding_grants(id, email, user_id, subscription_id, applied_at, tier_name, months, granted_by) VALUES ($1, 'receipt@example.test', $2, $3, now(), 'premium', 6, $2)",
+      [grantId, ADMIN, subscriptionId],
+    );
+    expect(await checkouts.hasActiveGrant(grantId)).toBe(true);
+    await pg.query(
+      "UPDATE user_subscriptions SET expires_at = now() - interval '1 day'",
+    );
+    expect(await checkouts.hasActiveGrant(grantId)).toBe(false);
+    await pg.query(
+      "UPDATE user_subscriptions SET expires_at = now() + interval '1 day'",
+    );
+    await pg.query(
+      "UPDATE founding_grants SET revoked_at = now(), revoke_reason = 'refund' WHERE id = $1",
+      [grantId],
+    );
+    expect(await checkouts.hasActiveGrant(grantId)).toBe(false);
+  });
+
+  it("replays the additive account binding migration safely", async () => {
+    await pg.exec(
+      migrationSql("20260920193204_founding_checkout_account_binding.sql"),
+    );
+    const row = await openCheckout(
+      "premium",
+      30,
+      "cs_replay_migration",
+      "receipt@example.test",
+      ADMIN,
+    );
+    expect(
+      (await checkouts.findByStripeSessionId("cs_replay_migration"))?.accountId,
+    ).toBe(ADMIN);
+    await expect(
+      pg.query(
+        "UPDATE founding_checkout_sessions SET account_id = NULL WHERE id = $1",
+        [row.id],
+      ),
+    ).rejects.toThrow("immutable");
+  });
+
+  it("recovers a paid placeholder only when its stored amount and currency match", async () => {
+    const row = await grants.reserveSeatUnderPoolLock(
+      "consumer",
+      async (tx) => ({
+        held: 0,
+        reserve: () =>
+          checkouts.reserveIn(tx, {
+            accountId: ADMIN,
+            email: "receipt@example.test",
+            amountMinor: 3000,
+            tierName: "premium",
+            months: 6,
+            referralCode: null,
+            campaignSlug: null,
+            holdExpiresAt: new Date(Date.now() + 60000),
+            eventId: null,
+            fbc: null,
+            fbp: null,
+            marketingConsent: false,
+          }),
+      }),
+    );
+    if (typeof row === "string") throw new Error(row);
+    expect(
+      await checkouts.recoverPaidReservation({
+        reservationId: row.id,
+        stripeSessionId: "cs_recover",
+        amountMinor: 1,
+        currency: "GBP",
+      }),
+    ).toBeNull();
+    expect(
+      await checkouts.recoverPaidReservation({
+        reservationId: row.id,
+        stripeSessionId: "cs_recover",
+        amountMinor: 3000,
+        currency: "USD",
+      }),
+    ).toBeNull();
+    expect(
+      await checkouts.recoverPaidReservation({
+        reservationId: row.id,
+        stripeSessionId: "cs_recover",
+        amountMinor: 3000,
+        currency: "GBP",
+      }),
+    ).toMatchObject({
+      accountId: ADMIN,
+      status: "completed",
+      stripeSessionId: "cs_recover",
+    });
+    expect(
+      await checkouts.recoverPaidReservation({
+        reservationId: row.id,
+        stripeSessionId: "cs_other",
+        amountMinor: 3000,
+        currency: "GBP",
+      }),
+    ).toBeNull();
+  });
+
+  it("scopes checkout resume to the account, never another account's receipt email", async () => {
+    const row = await openCheckout(
+      "premium",
+      30,
+      "cs_account",
+      "receipt@example.test",
+      ADMIN,
+    );
+    expect(
+      (await checkouts.findOpenHoldForAccount(ADMIN, new Date()))?.id,
+    ).toBe(row.id);
+    expect(
+      await checkouts.findOpenHoldForAccount(
+        "00000000-0000-4000-8000-000000000099",
+        new Date(),
+      ),
+    ).toBeNull();
+    await grants.reserveSeatUnderPoolLock("consumer", async (tx) => {
+      await checkouts.lockAccount(tx, ADMIN);
+      expect(
+        await checkouts.countOpenHoldsForAccount(tx, ADMIN, new Date()),
+      ).toBe(1);
+      return "checked";
+    });
+  });
+
+  it("retains the immutable account binding after deletion and rejects reassignment", async () => {
+    const row = await openCheckout(
+      "premium",
+      30,
+      "cs_deleted",
+      "receipt@example.test",
+      ADMIN,
+    );
+    await expect(
+      pg.query(
+        "UPDATE founding_checkout_sessions SET account_id = NULL WHERE id = $1",
+        [row.id],
+      ),
+    ).rejects.toThrow("immutable");
+    await pg.query("DELETE FROM profiles WHERE id = $1", [ADMIN]);
+    expect(
+      (await checkouts.findByStripeSessionId("cs_deleted"))?.accountId,
+    ).toBe(ADMIN);
+    expect(
+      await checkouts.eligibility(ADMIN, "premium", "receipt@example.test"),
+    ).toBe("account_ineligible");
+  });
+
+  it("keeps an ungranted paid checkout resumable and retryable after its hold expires", async () => {
+    await openCheckout("premium", -1, "cs_paid", "receipt@example.test", ADMIN);
+    expect((await checkouts.claimForCompletion("cs_paid"))?.accountId).toBe(
+      ADMIN,
+    );
+    expect((await checkouts.claimForCompletion("cs_paid"))?.accountId).toBe(
+      ADMIN,
+    );
+    expect(
+      (await checkouts.findOpenHoldForAccount(ADMIN, new Date()))
+        ?.stripeSessionId,
+    ).toBe("cs_paid");
+  });
+
+  it("allows an eligible account with a different receipt email", async () => {
+    expect(
+      await checkouts.eligibility(ADMIN, "premium", "receipt@example.test"),
+    ).toBeNull();
+  });
+
+  it.each(["admin", "personal_trainer", "physiotherapist"])(
+    "refuses protected or incompatible %s profiles",
+    async (role) => {
+      await pg.query("UPDATE profiles SET role = $1 WHERE id = $2", [
+        role,
+        ADMIN,
+      ]);
+      expect(
+        await checkouts.eligibility(ADMIN, "premium", "receipt@example.test"),
+      ).toBe("account_ineligible");
+    },
+  );
+
+  it("refuses a pending deletion", async () => {
+    await pg.query("UPDATE profiles SET deleted_at = now() WHERE id = $1", [
+      ADMIN,
+    ]);
+    expect(
+      await checkouts.eligibility(ADMIN, "premium", "receipt@example.test"),
+    ).toBe("account_ineligible");
+  });
+
+  it("refuses a pending grant under the account email despite a different receipt email", async () => {
+    await pg.query(
+      "INSERT INTO founding_grants(email, tier_name, months, granted_by) VALUES ('admin@example.test', 'premium', 6, $1)",
+      [ADMIN],
+    );
+    expect(
+      await checkouts.eligibility(ADMIN, "premium", "receipt@example.test"),
+    ).toBe("already_granted");
+  });
+
+  it("refuses every live paid subscription, including cancelled access still in term", async () => {
+    await pg.query(
+      "INSERT INTO user_subscriptions(user_id, tier_name, payment_status, expires_at) VALUES ($1, 'premium', 'cancelled', now() + interval '1 day')",
+      [ADMIN],
+    );
+    expect(
+      await checkouts.eligibility(ADMIN, "premium", "receipt@example.test"),
+    ).toBe("active_subscription");
+    await pg.query(
+      "UPDATE user_subscriptions SET expires_at = now() - interval '1 day'",
+    );
+    expect(
+      await checkouts.eligibility(ADMIN, "premium", "receipt@example.test"),
+    ).toBeNull();
+  });
 
   it("counts zero when no checkout has ever been started", async () => {
     // The aggregate always returns a row, but the `?? 0` guard is what keeps a

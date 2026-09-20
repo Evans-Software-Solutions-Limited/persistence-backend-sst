@@ -1,4 +1,3 @@
-import type { FoundingClaimResult } from "@/domain/models/foundingClaim";
 import type { DashboardPayload } from "@/domain/models/dashboard";
 import type { AppliedReferral } from "@/domain/models/referral";
 import type {
@@ -1029,27 +1028,6 @@ export class InMemoryApiAdapter implements ApiPort {
    * (RevenueCat REST unreachable) from `POST /subscriptions/sync`.
    */
   public nextSyncSubscriptionError: ApiError | null = null;
-
-  public foundingClaimRequests: string[] = [];
-  public foundingClaimVerifications: { challengeId: string; code: string }[] =
-    [];
-  public foundingClaimResult: FoundingClaimResult = {
-    claimed: true,
-    tierName: "premium_plus",
-    expiresAt: null,
-  };
-
-  async requestFoundingClaim(email: string) {
-    this.foundingClaimRequests.push(email);
-    return this.mayFail({
-      challengeId: "11111111-1111-4111-8111-111111111111",
-    });
-  }
-
-  async verifyFoundingClaim(input: { challengeId: string; code: string }) {
-    this.foundingClaimVerifications.push(input);
-    return this.mayFail(this.foundingClaimResult);
-  }
 
   async syncSubscription(): Promise<Result<MySubscription, ApiError>> {
     this.syncSubscriptionCalls += 1;

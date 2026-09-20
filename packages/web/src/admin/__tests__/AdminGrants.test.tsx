@@ -14,6 +14,8 @@ async function answer(value: string) {
 
 const api = vi.hoisted(() => ({
   grants: vi.fn(),
+  catalogue: vi.fn(),
+  grantRefund: vi.fn(),
   revokeGrant: vi.fn(),
   resendInvite: vi.fn(),
   extendGrant: vi.fn(),
@@ -64,6 +66,39 @@ describe("AdminGrants", () => {
       expiresAt: "2027-05-01",
     });
   });
+
+  it.each(["Change tier", "Refund"])(
+    "opens and closes the %s action for the selected grant",
+    async (action) => {
+      api.grants.mockResolvedValue([
+        { ...baseGrant, contributionMethod: "stripe_checkout" },
+      ]);
+      api.catalogue.mockResolvedValue({ offers: {} });
+      api.grantRefund.mockResolvedValue({
+        amountMinor: 3000,
+        currency: "GBP",
+        refundedAmountMinor: 0,
+        remainingAmountMinor: 3000,
+        refund: null,
+      });
+      renderPage(<AdminGrants />);
+      fireEvent.click(await screen.findByRole("button", { name: action }));
+      const formName =
+        action === "Refund" ? "Refund grant" : "Change grant tier";
+      expect(await screen.findByRole("form", { name: formName })).toBeTruthy();
+      expect(
+        (screen.getByRole("button", { name: action }) as HTMLButtonElement)
+          .disabled,
+      ).toBe(true);
+      if (action === "Refund") await screen.findByText("Remaining refund");
+      fireEvent.click(screen.getByRole("button", { name: "Close" }));
+      expect(screen.queryByRole("form", { name: formName })).toBeNull();
+      expect(
+        (screen.getByRole("button", { name: action }) as HTMLButtonElement)
+          .disabled,
+      ).toBe(false);
+    },
+  );
 
   it("offers refunds for Stripe checkout grants even when revoked or account-deleted", async () => {
     api.grants.mockResolvedValue([

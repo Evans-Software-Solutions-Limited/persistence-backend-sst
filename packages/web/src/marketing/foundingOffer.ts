@@ -160,17 +160,17 @@ export const FOUNDING_COPY = {
   plansLabel: "Founding prices",
   plansHeading: "Pick your access. Pay once.",
   plansCaption:
-    "Prices in GBP, paid once. No renewal, no card stored. You'll sign up in the app with the email you pay with.",
+    "Prices in GBP, paid once. No renewal. Sign in with your Persistence account before paying; your receipt email can be different.",
 
   // § 5.6 — before checkout
   emailStepBody:
-    "Use the address you'll sign in with in the app. Your access is linked to it.",
+    "Access belongs to the signed-in Persistence account. Use any email you own for the receipt.",
   emailLabel: "Email address",
   submitCta: "Continue to payment",
   submittingCta: "Opening secure payment…",
   backCta: "Change plan",
   termsNote:
-    "By continuing you agree to the terms and conditions and ask us to start your access as soon as you sign up in the app. You keep a 14-day right to cancel for a full refund, unless you've started using the app in that time.",
+    "By continuing you agree to the terms and conditions and ask us to start your access once your payment is confirmed. You keep a 14-day right to cancel for a full refund, unless you've started using the app in that time.",
   soldOutNote:
     "That plan has just sold out — pick another or check back after 30 September.",
   // Shown when the bot check has not produced a token. The checkout route
@@ -201,7 +201,7 @@ export const FOUNDING_COPY = {
   thanks: {
     paidHeading: "Payment received — you're in.",
     paidBody:
-      "Thanks. We've emailed you an invite with your access details. Next: install Persistence, sign up with that exact email address, confirm it, and your access is on the first time you open the app. Nothing else to do.",
+      "Thanks. Your payment is recorded and your access details are on their way by email. Open Persistence using the same account and sign-in method you used before paying. If an earlier purchase used a different email, activate it securely on this website.",
     pendingHeading: "Finishing up…",
     pendingBody:
       "Your payment is being confirmed. This usually takes a few seconds.",

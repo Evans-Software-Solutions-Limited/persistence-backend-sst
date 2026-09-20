@@ -45,6 +45,8 @@ describe("purchase-email verification", () => {
     const email = mailer.mock.calls[0][0];
     expect(email.to).toBe("buyer@example.test");
     expect(email.text).toContain("relay@privaterelay.appleid.com");
+    expect(email.text).toContain("only on the Persistence website");
+    expect(email.text).not.toContain("in the Persistence app");
     const code = /code is (\d{6})/.exec(email.text)![1];
     expect(repo.prepare).toHaveBeenCalledWith(
       { id: "user", email: "relay@privaterelay.appleid.com" },

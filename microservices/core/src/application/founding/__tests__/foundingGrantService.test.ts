@@ -99,6 +99,51 @@ function mockGrantCreated(
 describe("FoundingGrantService.grant", () => {
   beforeEach(() => vi.clearAllMocks());
 
+  it("keeps the receipt email while targeting the stored Apple account UUID", async () => {
+    const { svc, grants } = makeRepos();
+    mockGrantCreated(grants);
+    const result = await svc.grant(
+      {
+        email: "receipt@example.test",
+        userId: "apple-id",
+        checkoutId: "reservation-id",
+        tierName: "premium",
+        sendInvite: false,
+      },
+      "admin",
+    );
+    expect(result.ok).toBe(true);
+    expect(grants.findProfileByEmail).not.toHaveBeenCalled();
+    expect(grants.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "reservation-id",
+        userId: "apple-id",
+        email: "receipt@example.test",
+        checkoutId: "reservation-id",
+      }),
+      "consumer",
+      expect.any(Function),
+    );
+  });
+
+  it("never falls back to the purchase email when its bound account no longer exists", async () => {
+    const { svc, grants } = makeRepos();
+    grants.findProfileById.mockResolvedValueOnce(null as never);
+    expect(
+      await svc.grant(
+        {
+          email: "receipt@example.test",
+          userId: "deleted-id",
+          checkoutId: "reservation-id",
+          tierName: "premium",
+        },
+        "admin",
+      ),
+    ).toEqual({ ok: false, error: { code: "user_not_found" } });
+    expect(grants.findProfileByEmail).not.toHaveBeenCalled();
+    expect(grants.create).not.toHaveBeenCalled();
+  });
+
   it("carries a web checkout's actual payment into the pending confirmation", async () => {
     const { svc, grants, mailer } = makeRepos();
     mockGrantCreated(grants, created());
@@ -243,7 +288,7 @@ describe("FoundingGrantService.grant", () => {
     );
     expect(referrals.lock).not.toHaveBeenCalled();
     expect((mailer.mock.calls[0] as any)[0].text).toMatch(
-      /sign up with this email/,
+      /Activate your .* access on our website/,
     );
     expect((mailer.mock.calls[0] as any)[0].text).not.toMatch(
       /payment|paid in full|90 days/,

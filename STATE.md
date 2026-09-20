@@ -1,5 +1,38 @@
 # Project memory · persistence-backend-sst
 
+### 2026-09-20 — Founding web account linking (PR #457 follow-up)
+
+- Brad approved keeping Stripe and moving all purchase/claim identity handling
+  to the website. Earlier native claim UI/client changes are removed entirely
+  from the PR. Existing admin tier upgrades and refund cancellation remain.
+- New website purchases sign in first and explicitly confirm the destination
+  account. Apple/Google/email authentication, PKCE callback handling and legacy
+  purchase-email verification run on isolated pages without marketing pixels.
+  Same-account/sign-in-method warnings explain Apple Hide My Email and separate
+  receipt email from membership identity. Email callbacks support new tabs in
+  the same browser; no app redemption codes or account merging are added.
+- Checkout stores an immutable authenticated account UUID. Payment activation
+  uses that UUID, with account-scoped holds, duplicate guards, auditable failure
+  recovery and no receipt-email fallback. Existing anonymous paid sessions are
+  still processed. Transactional invitation copy now explains website claims.
+- Read-only production Apple OAuth probe returned HTTP 400 `Unsupported
+  provider: missing OAuth secret`. Browser Apple configuration and a real
+  browser/native same-user-UUID test remain release requirements, documented in
+  `specs/milestones/FOUNDING-OFFER/WEB-IDENTITY-RELEASE.md`. Code merging alone
+  does not complete those settings. No deployment or native build initiated.
+- Synthetic desktop/390px visual QA passed, including legacy claim success;
+  independent visual review: MATCH. Images saved in the workspace's
+  `founding-access-review` folder (`web-purchase-account-desktop.png`,
+  `web-apple-sign-in-mobile.png`, `web-claim-success-mobile.png`). Temporary
+  preview code and servers removed. Final quality gates recorded below.
+- Local Inspector Brad: clean after checkout recovery analytics fix; independent
+  review exercised 229 focused tests. Final follow-up changes are test-only.
+- Validation: root typecheck 9/9, lint 6/6 (existing warnings), non-mobile build
+  12/12. Authenticated web flow focused coverage exceeds 90% in each metric;
+  admin transport/actions 100% lines/functions, 98.56% statements and 97.18%
+  branches. Checkout webhook coverage: 100% lines/statements/functions and
+  91.35% branches. Full suite and formatting results are recorded in PR #457.
+
 ### 2026-09-18 — Relay / import / workspace scope
 
 Research and briefs: `specs/milestones/COACHING-WORKSPACE-IMPORT/BRIEF.md`. Public Relay documentation checked; current main `162ba03a` audited. Spec22 import is not implemented; current cycle scheduling cannot faithfully retain arbitrary multiweek prescriptions, owner/self programme APIs are missing, and coach/private review cannot be returned directly to athletes. Added superseding spec22 amendments, explicit schedule/self/shared-review spec36 and exercise-import spec37. Coached-client access is a proposed default pending reply. No runtime changes, provider calls, customer outreach or native builds. Validation: documentation formatting/local links only; feature evaluations and runtime tests not run.

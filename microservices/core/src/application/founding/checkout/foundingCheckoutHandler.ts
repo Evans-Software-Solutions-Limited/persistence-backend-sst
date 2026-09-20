@@ -1,4 +1,6 @@
 import Elysia, { t } from "elysia";
+import { getAuthUser } from "@persistence/api-utils/auth/supabaseAuth";
+import { getAuthUserIdentity } from "../../account/supabaseAdminClient";
 import { getStripe } from "../../stripe/stripeClient";
 import { emitEvent } from "../../analytics/emitEvent";
 import { verifyTurnstile } from "../../leads/turnstile";
@@ -14,6 +16,7 @@ import { webOrigin } from "../../../shared/webOrigin";
 import { FoundingGrantRepository } from "../../repositories/foundingGrantRepository";
 import {
   FOUNDING_CHECKOUT_TTL_MS,
+  FOUNDING_PRICE_LOOKUP_KEYS,
   FOUNDING_OFFERS,
   RESERVATION_PREFIX,
   foundingOfferIsOpen,
@@ -26,8 +29,7 @@ import {
 /**
  * The founding web checkout (FOUNDING-OFFER BRIEF § 2, 2026-09-05 amendment).
  *
- * PUBLIC and anonymous, like the lead routes it sits beside, and hardened the
- * same way: permissive CORS (the marketing site is a different origin), the
+ * Authenticated and account-bound, with the existing abuse protection: permissive CORS (the marketing site is a different origin), the
  * shared `leads` per-IP backstop, a honeypot and Turnstile. It is a heavier
  * abuse target than those, because each accepted request creates a Stripe
  * object AND takes a seat out of a capped pool — so the gates are not optional
@@ -55,16 +57,16 @@ const RATE_WINDOW_MS = 60_000;
 const CHECKOUT_RATE_LIMIT = 10;
 
 /**
- * Concurrent unpaid holds one address may have. One: a buyer needs a single
+ * Concurrent unpaid holds one account may have. One: a buyer needs a single
  * checkout at a time, and a hold takes a place out of a capped pool for half
  * an hour for free.
  */
-const MAX_OPEN_HOLDS_PER_EMAIL = 1;
+const MAX_OPEN_HOLDS_PER_ACCOUNT = 1;
 
 const CORS_HEADERS: Record<string, string> = {
   "access-control-allow-origin": "*",
   "access-control-allow-methods": "GET, POST, OPTIONS",
-  "access-control-allow-headers": "content-type",
+  "access-control-allow-headers": "content-type, authorization",
   "access-control-max-age": "86400",
 };
 
@@ -147,9 +149,11 @@ async function resolveExistingSession(
     stripeSessionId: string;
     tierName: string;
     months: number;
+    email: string;
   },
   tier: FoundingWebTier,
   months: FoundingWebMonths,
+  email: string,
 ): Promise<
   { kind: "resume"; url: string } | { kind: "release" } | { kind: "refuse" }
 > {
@@ -160,7 +164,8 @@ async function resolveExistingSession(
   if (existing === null) return { kind: "refuse" };
 
   if (existing.status === "open") {
-    const sameChoice = hold.tierName === tier && hold.months === months;
+    const sameChoice =
+      hold.tierName === tier && hold.months === months && hold.email === email;
     if (sameChoice && existing.url)
       return { kind: "resume", url: existing.url };
     // A live Session for a plan they no longer want. Kill it at Stripe before
@@ -199,6 +204,23 @@ export const foundingCheckoutHandler = new Elysia()
       ) {
         ctx.set.status = 429;
         return { ok: false as const, error: "rate_limited" as const };
+      }
+
+      const user = await getAuthUser(ctx.headers.authorization);
+      if (!user) {
+        ctx.set.status = 401;
+        return { ok: false as const, error: "auth_required" as const };
+      }
+      let identity;
+      try {
+        identity = await getAuthUserIdentity(user.sub);
+      } catch {
+        ctx.set.status = 503;
+        return { ok: false as const, error: "unavailable" as const };
+      }
+      if (!identity.email || !identity.emailConfirmedAt) {
+        ctx.set.status = 403;
+        return { ok: false as const, error: "email_not_verified" as const };
       }
 
       // A filled honeypot is answered like a success and does nothing, so a bot
@@ -291,12 +313,10 @@ export const foundingCheckoutHandler = new Elysia()
       const checkouts = new FoundingCheckoutRepository();
       const grants = new FoundingGrantRepository();
 
-      // Somebody who already holds a place cannot buy a second one: the grant
-      // service would refuse the duplicate AFTER the money was taken, leaving
-      // Brad to refund by hand. Cheaper to say so before they pay.
-      if (await grants.hasLiveOrPendingGrantForEmail(email)) {
-        ctx.set.status = 409;
-        return { ok: false as const, error: "already_granted" as const };
+      const refusal = await checkouts.eligibility(user.sub, tier, email);
+      if (refusal) {
+        ctx.set.status = refusal === "account_ineligible" ? 403 : 409;
+        return { ok: false as const, error: refusal };
       }
 
       const now = new Date();
@@ -310,16 +330,20 @@ export const foundingCheckoutHandler = new Elysia()
       // nothing to claim and the webhook returns quietly: money taken, no
       // grant, no audit row, no alert. The seat is therefore only ever handed
       // back when Stripe has POSITIVELY said the Session is dead.
-      const resumable = await checkouts.findOpenHoldForEmail(email, now);
+      const resumable = await checkouts.findOpenHoldForAccount(user.sub, now);
       if (resumable) {
         if (resumable.stripeSessionId.startsWith(RESERVATION_PREFIX)) {
-          // A reservation whose Stripe call never completed — the Lambda died
-          // between the two. There is no Session to orphan, and leaving it
-          // would lock this address out for half an hour over a seat holding
-          // nothing.
-          await checkouts.releaseReservation(resumable.id);
+          // The create response may have been lost; a placeholder is not
+          // evidence that Stripe created nothing. Keep the seat until expiry.
+          ctx.set.status = 429;
+          return { ok: false as const, error: "too_many_holds" as const };
         } else {
-          const outcome = await resolveExistingSession(resumable, tier, months);
+          const outcome = await resolveExistingSession(
+            resumable,
+            tier,
+            months,
+            email,
+          );
           if (outcome.kind === "resume") {
             return { ok: true as const, url: outcome.url };
           }
@@ -339,15 +363,30 @@ export const foundingCheckoutHandler = new Elysia()
       const reservation = await grants.reserveSeatUnderPoolLock(
         pool,
         async (tx) => {
+          await checkouts.lockAccount(tx, user.sub);
+          const refusal = await checkouts.eligibilityIn(
+            tx,
+            user.sub,
+            tier,
+            email,
+          );
+          if (refusal) return refusal;
           const held = await checkouts.countHeldInPool(tx, pool, now);
-          const mine = await checkouts.countOpenHoldsForEmail(tx, email, now);
-          if (mine >= MAX_OPEN_HOLDS_PER_EMAIL)
+          const mine = await checkouts.countOpenHoldsForAccount(
+            tx,
+            user.sub,
+            now,
+          );
+          if (mine >= MAX_OPEN_HOLDS_PER_ACCOUNT)
             return "too_many_holds" as const;
           return {
             held,
             reserve: () =>
               checkouts.reserveIn(tx, {
                 email,
+                accountId: user.sub,
+                amountMinor:
+                  FOUNDING_PRICE_LOOKUP_KEYS[tier][months].amountMinor,
                 tierName: tier,
                 months,
                 referralCode,
@@ -365,6 +404,14 @@ export const foundingCheckoutHandler = new Elysia()
         ctx.set.status = 429;
         return { ok: false as const, error: "too_many_holds" as const };
       }
+      if (
+        reservation === "account_ineligible" ||
+        reservation === "active_subscription" ||
+        reservation === "already_granted"
+      ) {
+        ctx.set.status = reservation === "account_ineligible" ? 403 : 409;
+        return { ok: false as const, error: reservation };
+      }
       if (reservation === "pool_full") {
         ctx.set.status = 409;
         return { ok: false as const, error: "pool_full" as const };
@@ -372,51 +419,52 @@ export const foundingCheckoutHandler = new Elysia()
 
       let session;
       try {
-        session = await getStripe().checkout.sessions.create({
-          mode: "payment",
-          // Pinned, as the other Stripe call sites in this repo are. Automatic
-          // payment methods would let the dashboard enable a delayed method
-          // (Bacs, Klarna, bank transfer) whose completion arrives `unpaid`
-          // and settles later — a different event, a different lifecycle, and
-          // nothing here is built for it.
-          payment_method_types: ["card"],
-          // Fixed server-side, never editable on Stripe's page: the address is
-          // what the grant and its invite are keyed on, and it is the address
-          // whose seat we just reserved.
-          customer_email: email,
-          line_items: [{ price: priceId, quantity: 1 }],
-          success_url: `${webOrigin()}/founding/thanks?session_id={CHECKOUT_SESSION_ID}`,
-          cancel_url: `${webOrigin()}/founding?cancelled=1`,
-          // Computed at SEND time, rounded UP, with a minute of headroom.
-          // Stripe's minimum is 30 minutes from when IT evaluates the request,
-          // which is later than any timestamp we chose before the pool
-          // transaction ran — a stamp fixed earlier and floored is routinely a
-          // second or two short and the whole call is rejected.
-          expires_at:
-            Math.ceil((Date.now() + FOUNDING_CHECKOUT_TTL_MS) / 1000) + 60,
-          consent_collection: { terms_of_service: "required" },
-          custom_text: {
-            terms_of_service_acceptance: {
-              message: CHECKOUT_TERMS,
+        session = await getStripe().checkout.sessions.create(
+          {
+            mode: "payment",
+            // Pinned, as the other Stripe call sites in this repo are. Automatic
+            // payment methods would let the dashboard enable a delayed method
+            // (Bacs, Klarna, bank transfer) whose completion arrives `unpaid`
+            // and settles later — a different event, a different lifecycle, and
+            // nothing here is built for it.
+            payment_method_types: ["card"],
+            // Receipt/contact address only. Access belongs to reservation.accountId.
+            customer_email: email,
+            line_items: [{ price: priceId, quantity: 1 }],
+            success_url: `${webOrigin()}/founding/thanks?session_id={CHECKOUT_SESSION_ID}`,
+            cancel_url: `${webOrigin()}/founding?cancelled=1`,
+            // Computed at SEND time, rounded UP, with a minute of headroom.
+            // Stripe's minimum is 30 minutes from when IT evaluates the request,
+            // which is later than any timestamp we chose before the pool
+            // transaction ran — a stamp fixed earlier and floored is routinely a
+            // second or two short and the whole call is rejected.
+            expires_at:
+              Math.ceil((Date.now() + FOUNDING_CHECKOUT_TTL_MS) / 1000) + 60,
+            consent_collection: { terms_of_service: "required" },
+            custom_text: {
+              terms_of_service_acceptance: {
+                message: CHECKOUT_TERMS,
+              },
+            },
+            metadata: {
+              tier,
+              months: String(months),
+              email,
+              referral_code: referralCode ?? "",
+              campaign_slug: campaignSlug ?? "",
+              founding_reservation_id: reservation.id,
             },
           },
-          metadata: {
-            tier,
-            months: String(months),
-            email,
-            referral_code: referralCode ?? "",
-            campaign_slug: campaignSlug ?? "",
-          },
-        });
+          { idempotencyKey: `founding-checkout:${reservation.id}` },
+        );
       } catch (err) {
         console.error(
           `[founding:checkout] Stripe session create failed: ${
             err instanceof Error ? err.message : String(err)
           }`,
         );
-        // Hand the seat straight back rather than making the next buyer wait
-        // half an hour for a hold nobody is using.
-        await checkouts.releaseReservation(reservation.id);
+        // A timeout can happen after Stripe created the session. Retain the
+        // reservation; an ambiguous response must never create a second session.
         ctx.set.status = 503;
         return { ok: false as const, error: "unavailable" as const };
       }
@@ -483,7 +531,7 @@ export const foundingCheckoutHandler = new Elysia()
       }),
       detail: {
         description:
-          "Public — start a founding-access purchase and return the Stripe Checkout url.",
+          "Authenticated — buy founding access for the signed-in account.",
         tags: ["Founding"],
       },
     },
@@ -515,6 +563,12 @@ export const foundingCheckoutHandler = new Elysia()
         ok: true as const,
         data: {
           status: row.status,
+          accessReady:
+            row.status === "completed" &&
+            Boolean(row.grantId) &&
+            (await new FoundingCheckoutRepository().hasActiveGrant(
+              row.grantId!,
+            )),
           tier: row.tierName,
           months: row.months,
           // Masked, never whole: this endpoint is keyed by an id that lives in
@@ -522,7 +576,7 @@ export const foundingCheckoutHandler = new Elysia()
           emailMasked: maskEmail(row.email),
           // Returned so the thanks page can fire the browser `Purchase` with
           // the SAME id the server used, and the two dedupe at Meta.
-          eventId: row.eventId,
+          eventId: row.eventId ?? `founding-purchase:${row.id}`,
           amountMinor: row.amountMinor,
           currency: row.currency,
           // So a client polling an `open` session knows when to give up.

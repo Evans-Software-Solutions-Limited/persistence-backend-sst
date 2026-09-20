@@ -1,7 +1,3 @@
-import type {
-  FoundingClaimChallenge,
-  FoundingClaimResult,
-} from "@/domain/models/foundingClaim";
 import type { DashboardPayload } from "@/domain/models/dashboard";
 import type {
   CreateExerciseInput,
@@ -499,14 +495,6 @@ export interface ApiPort extends ReferralsPort {
    * unreachable; 500/404 otherwise — all surface as a generic `ApiError`
    * via `mapHttpErrorToApiError`.
    */
-  requestFoundingClaim(
-    email: string,
-  ): Promise<Result<FoundingClaimChallenge, ApiError>>;
-  verifyFoundingClaim(input: {
-    challengeId: string;
-    code: string;
-  }): Promise<Result<FoundingClaimResult, ApiError>>;
-
   syncSubscription(): Promise<Result<MySubscription, ApiError>>;
 
   /**

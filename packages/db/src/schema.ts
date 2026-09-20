@@ -2871,6 +2871,8 @@ export const foundingCheckoutSessions = pgTable(
       .defaultNow(),
     stripeSessionId: text("stripe_session_id").notNull().unique(),
     email: text("email").notNull(),
+    /** Immutable checkout owner; deliberately survives account deletion for audit. */
+    accountId: uuid("account_id"),
     tierName: text("tier_name")
       .notNull()
       .references(() => subscriptionTiers.tierName),
@@ -2899,6 +2901,11 @@ export const foundingCheckoutSessions = pgTable(
       t.tierName,
     ),
     index("founding_checkout_sessions_email_idx").on(t.email),
+    index("founding_checkout_sessions_account_idx").on(
+      t.accountId,
+      t.status,
+      t.holdExpiresAt,
+    ),
     check(
       "founding_checkout_sessions_email_lower_ck",
       sql`${t.email} = lower(${t.email})`,
