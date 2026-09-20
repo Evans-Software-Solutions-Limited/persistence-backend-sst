@@ -43,7 +43,9 @@ export function FoundingAccessPresenter({
   emailLink,
 }: ReturnType<typeof useFoundingAccess>) {
   return (
-    <main className="redemption-page founding-access">
+    <main
+      className={`redemption-page founding-access${account ? " founding-account" : ""}`}
+    >
       <header className="redeem-brand">
         <a href="/">
           <img
@@ -58,33 +60,51 @@ export function FoundingAccessPresenter({
         </a>
       </header>
       <div className="redeem-grid">
-        <section className="redeem-intro">
-          <span className="redeem-eyebrow">YOUR FOUNDING PLACE</span>
-          <h1>
-            Your training.
-            <br />
-            <em>Your account.</em>
-          </h1>
-          <p>
-            {plan
-              ? "Secure your founding membership with the account you use in Persistence."
-              : "Already purchased? Connect your founding access to your Persistence account securely."}
-          </p>
-          <p>
-            Use the same sign-in method as the app. If you use Apple, choose
-            Continue with Apple here. Hide My Email is supported; you do not
-            need to know your private relay address.
-          </p>
-          <p className="redeem-small">
-            Do not create another account with your purchase email if you
-            already use Apple or Google in the app.
-          </p>
-        </section>
+        {!account && (
+          <section className="redeem-intro">
+            <span className="redeem-eyebrow">YOUR FOUNDING PLACE</span>
+            <h1>
+              Your training.
+              <br />
+              <em>Your account.</em>
+            </h1>
+            <p>
+              {plan
+                ? "Secure your founding membership with the account you use in Persistence."
+                : "Already purchased? Connect your founding access to your Persistence account securely."}
+            </p>
+            <p>
+              Use the same sign-in method as the app. If you use Apple, choose
+              Continue with Apple here. Hide My Email is supported; you do not
+              need to know your private relay address.
+            </p>
+            <p className="redeem-small">
+              Do not create another account with your purchase email if you
+              already use Apple or Google in the app.
+            </p>
+          </section>
+        )}
         <section
           className="redeem-card"
           aria-label="Founding access"
           aria-busy={busy}
         >
+          {account && (
+            <header className="founding-account-header">
+              <div>
+                <h1>Your account</h1>
+                <p className="redeem-email">{account.email}</p>
+              </div>
+              <Button
+                variant="outline"
+                type="button"
+                disabled={busy}
+                onClick={changeAccount}
+              >
+                Log out
+              </Button>
+            </header>
+          )}
           <h2>
             {result
               ? "Your access is ready"
@@ -216,8 +236,7 @@ export function FoundingAccessPresenter({
           ) : result ? (
             <>
               <p>
-                {membershipTierLabel(result.tierName)} is active for{" "}
-                <strong className="redeem-email">{account.email}</strong> until{" "}
+                {membershipTierLabel(result.tierName)} is active until{" "}
                 {new Date(result.expiresAt).toLocaleDateString("en-GB")}.
               </p>
               <p>
@@ -230,13 +249,10 @@ export function FoundingAccessPresenter({
             </>
           ) : (
             <>
-              <p>
-                Access will belong to{" "}
-                <strong className="redeem-email">{account.email}</strong>.
-              </p>
               <p className="redeem-small">
-                An Apple private relay address is normal. Check this is the same
-                account you use in the app.
+                Use the same account as the app. An Apple private relay address
+                is normal. Wrong account? Log out and sign in with the same
+                method you use in Persistence.
               </p>
               <form onSubmit={submit}>
                 <label className="redeem-check">
@@ -365,17 +381,6 @@ export function FoundingAccessPresenter({
                 <p role="alert">The founding offer has closed.</p>
               )}
             </>
-          )}
-          {account && (
-            <Button
-              className="redeem-text-link"
-              variant="link"
-              type="button"
-              disabled={busy}
-              onClick={changeAccount}
-            >
-              Change account
-            </Button>
           )}
           {plan && (
             <a className="redeem-text-link" href="/founding">

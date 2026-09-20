@@ -48,3 +48,38 @@
   color: #fff;
   border: 1px solid #777;
 }
+
+.founding-account .redeem-grid {
+  grid-template-columns: minmax(0, 560px);
+  justify-content: center;
+  margin-top: 32px;
+}
+.founding-account-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 16px;
+  padding-bottom: 20px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--border);
+}
+.founding-account-header > div {
+  display: contents;
+}
+.founding-account-header h1 {
+  font-size: 24px;
+  font-weight: 650;
+  margin: 0;
+}
+.founding-account-header p {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  margin: 4px 0 0;
+  font-size: 14px;
+  color: var(--muted-foreground);
+  overflow-wrap: anywhere;
+}
+.founding-account-header button {
+  grid-column: 2;
+  grid-row: 1;
+}

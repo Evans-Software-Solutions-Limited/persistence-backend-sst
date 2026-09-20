@@ -1,5 +1,16 @@
 # Project memory · persistence-backend-sst
 
+### 2026-09-20 — Lightweight founding account page
+
+Signed-in customers now see one compact account card with their address and an
+explicit Log out button, above the purchase/claim action. Logout clears pending
+claim proof and account state; the marketing introduction only appears before
+sign-in. Synthetic browser claim success and logout verified at 390px with no
+overflow. Screenshot: `../founding-access-review/lightweight-account-success-mobile.png`.
+Focused founding tests: 6 files / 74 tests pass. Website/mobile share Supabase
+identity configuration; Apple browser OAuth still requires its linked Services
+ID and OAuth secret documented in the release runbook.
+
 ### 2026-09-20 — Founding web account linking (PR #457 follow-up)
 
 - Brad approved keeping Stripe and moving all purchase/claim identity handling

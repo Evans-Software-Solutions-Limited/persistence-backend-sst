@@ -84,7 +84,7 @@ it("requires destination confirmation then claims a different purchase email", a
   );
   expect(screen.queryByLabelText("Verification code")).toBeNull();
 });
-it("clears the old proof and destination on account switch", async () => {
+it("logs out and clears the old proof and destination", async () => {
   render(<FoundingAccess />);
   await confirm();
   await purchaseEmail();
@@ -92,7 +92,7 @@ it("clears the old proof and destination on account switch", async () => {
     screen.getByRole("button", { name: "Send verification code" }),
   );
   await screen.findByLabelText("Verification code");
-  fireEvent.click(screen.getByRole("button", { name: "Change account" }));
+  fireEvent.click(screen.getByRole("button", { name: "Log out" }));
   expect(auth.signOut).toHaveBeenCalled();
   expect(screen.queryByLabelText("Verification code")).toBeNull();
   expect(screen.queryByText(account.email)).toBeNull();
