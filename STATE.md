@@ -5431,3 +5431,13 @@ PR not yet raised. NO product code — script + dataset + verdict + spec updates
   and all four dates on one line, visually checked at 375px. Onboarding still
   opens every required profile drawer and preserves the target draft; 73 tests
   passed across onboarding targets and weigh-in. Local Inspector clean.
+
+- Recipe import follow-up: reproduced Pip Coaching's plain-HTML page and added
+  metadata → labelled HTML → bounded AI fallback. Real public page now extracts
+  17 ingredients,3servings and published macros without AI. AI uses complete
+  source-line ingredients, no tools, guarded fetch, entitlement and atomic
+  per-user daily reservations; review screen identifies its extraction method.
+- Added explicit Paste URL with clipboard validation. Full backend:5,140 tests;
+  final focused backend:177; mobile import/review:105. Typecheck,lint,format and
+  non-mobile build passed; local Inspector clean. No deployment/native build or
+  paid AI invocation. Browser fixtures checked phone-width paste/review UI.

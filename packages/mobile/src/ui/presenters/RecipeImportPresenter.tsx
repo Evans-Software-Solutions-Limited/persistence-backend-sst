@@ -27,6 +27,9 @@ export type RecipeImportPresenterProps = {
   stage: ImportStage;
   url: string;
   onUrlChange: (url: string) => void;
+  onPasteUrl: () => void;
+  pasteError: string | null;
+  isPasting: boolean;
   onImport: () => void;
   onCreateManually: () => void;
   onRetry: () => void;
@@ -46,6 +49,9 @@ export function RecipeImportPresenter({
   stage,
   url,
   onUrlChange,
+  onPasteUrl,
+  pasteError,
+  isPasting,
   onImport,
   onCreateManually,
   onRetry,
@@ -118,6 +124,27 @@ export function RecipeImportPresenter({
                 }}
                 testID="recipe-import-url-input"
               />
+              <Btn
+                full
+                variant="ghost"
+                onPress={onPasteUrl}
+                disabled={isPasting}
+                testID="recipe-import-paste-url"
+              >
+                {isPasting ? "Pasting…" : "Paste URL"}
+              </Btn>
+              {pasteError ? (
+                <Text
+                  fontFamily="$body"
+                  fontSize={12}
+                  color="$text2"
+                  accessibilityRole="alert"
+                  accessibilityLiveRegion="polite"
+                  testID="recipe-import-paste-error"
+                >
+                  {pasteError}
+                </Text>
+              ) : null}
             </Card>
 
             <Card pad={14} radius={12}>

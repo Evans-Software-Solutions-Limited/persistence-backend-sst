@@ -10,6 +10,9 @@ function render(over: Partial<RecipeImportPresenterProps> = {}) {
     stage: "input",
     url: "",
     onUrlChange: jest.fn(),
+    onPasteUrl: jest.fn(),
+    pasteError: null,
+    isPasting: false,
     onImport: jest.fn(),
     onCreateManually: jest.fn(),
     onRetry: jest.fn(),
@@ -32,6 +35,23 @@ describe("RecipeImportPresenter — input stage", () => {
     const { getByTestId, props } = render({ url: "" });
     fireEvent.press(getByTestId("recipe-import-submit"));
     expect(props.onImport).not.toHaveBeenCalled();
+  });
+
+  it("pastes only when requested and shows clipboard feedback", () => {
+    const { getByTestId, getByText, props } = render({
+      pasteError: "Your clipboard is empty. Copy a recipe URL first.",
+    });
+    fireEvent.press(getByTestId("recipe-import-paste-url"));
+    expect(props.onPasteUrl).toHaveBeenCalledTimes(1);
+    expect(
+      getByText("Your clipboard is empty. Copy a recipe URL first."),
+    ).toBeTruthy();
+  });
+
+  it("disables paste while reading the clipboard", () => {
+    const { getByTestId, props } = render({ isPasting: true });
+    fireEvent.press(getByTestId("recipe-import-paste-url"));
+    expect(props.onPasteUrl).not.toHaveBeenCalled();
   });
 
   it("fires onUrlChange while typing", () => {

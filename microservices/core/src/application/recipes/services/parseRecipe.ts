@@ -1,9 +1,11 @@
+import { parseNutritionValue } from "./parseNutritionValue";
+import { parseVisibleRecipe } from "./parseVisibleRecipe";
+
 /**
  * Deterministic Schema.org Recipe extractor (M9 — no AI). Parses
  * `application/ld+json` blocks from the fetched HTML and pulls out the first
- * node typed `Recipe`. Returns null when no Recipe microdata is present — the
- * handler maps that to 422 `no_recipe_microdata` (the LLM-fallback extraction
- * is deferred to M9.5 per Conflict C3).
+ * node typed `Recipe`. Falls back to labelled, readable HTML recipe sections when metadata is absent.
+ * Returns null for ambiguous/unreadable pages; no AI-generated recipe content.
  */
 
 /**
@@ -21,6 +23,7 @@ export type ParsedNutrition = {
 };
 
 export type ParsedRecipe = {
+  extractionMethod?: "structured" | "page" | "ai";
   name: string;
   servings: number | null;
   instructions: string | null;
@@ -111,19 +114,6 @@ function toStringArray(v: any): string[] {
  * point and becomes `.` (`"11,5 g"` → 11.5). Ambiguous `"1,500"` resolves to
  * 1500 (thousands wins on a 3-digit group).
  */
-function parseNutritionValue(v: any): number | null {
-  if (typeof v === "number") {
-    return Number.isFinite(v) && v >= 0 ? v : null;
-  }
-  if (typeof v !== "string") return null;
-  const cleaned = v
-    .replace(/(\d),(?=\d{3}(\D|$))/g, "$1") // thousands separator → strip
-    .replace(/(\d),(\d{1,2})(?!\d)/, "$1.$2"); // European decimal → point
-  const m = cleaned.match(/^\s*(\d+(?:\.\d+)?)/);
-  if (!m) return null;
-  const n = Number(m[1]);
-  return Number.isFinite(n) && n >= 0 ? n : null;
-}
 
 /**
  * Read a Schema.org `NutritionInformation` node into per-serving macros.
@@ -194,5 +184,5 @@ export function parseRecipeFromHtml(html: string): ParsedRecipe | null {
       nutrition: parseNutrition(recipe.nutrition),
     };
   }
-  return null;
+  return parseVisibleRecipe(html);
 }
