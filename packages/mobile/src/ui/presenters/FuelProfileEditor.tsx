@@ -1,6 +1,8 @@
-import { TextInput } from "react-native";
+import { BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import { Text, View } from "@tamagui/core";
-import { Btn, Card } from "@/ui/components/foundation";
+import { BottomSheet, Btn } from "@/ui/components/foundation";
+import { DatePickerField } from "@/ui/components/DatePickerField";
+import { localDayISO } from "@/shared/utils";
 import { color } from "@/ui/theme/tokens";
 import type { FuelProfileEditorState } from "@/ui/hooks/useFuelProfileEditor";
 import type { HeightUnit, WeightUnit } from "@/shared/utils";
@@ -14,7 +16,7 @@ export type FuelProfileEditorProps = {
   onCancel: () => void;
 };
 
-/** An in-place form keeps the calculator and onboarding drafts mounted. */
+/** Shared quick-fill drawer preserves the calculator and onboarding drafts. */
 export function FuelProfileEditor({
   state,
   heightUnit,
@@ -23,10 +25,12 @@ export function FuelProfileEditor({
   onSave,
   onCancel,
 }: FuelProfileEditorProps) {
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
   const imperialHeight = state.field === "height" && heightUnit === "ftin";
   const label =
     state.field === "age"
-      ? "Date of birth (YYYY-MM-DD)"
+      ? "Date of birth"
       : state.field === "gender"
         ? "Sex for calculation"
         : state.field === "height"
@@ -43,12 +47,45 @@ export function FuelProfileEditor({
     backgroundColor: color.$bg,
   };
   return (
-    <Card pad={14} radius={12} testID="fuel-profile-editor">
+    <BottomSheet
+      visible
+      onClose={onCancel}
+      title={label}
+      eyebrow="PROFILE DETAILS"
+      accent="primary"
+      height="peek"
+      testID="fuel-profile-editor"
+      footer={
+        <View flexDirection="row" gap={8}>
+          <Btn
+            variant="outline"
+            onPress={onCancel}
+            testID="fuel-profile-cancel"
+          >
+            Cancel
+          </Btn>
+          <Btn
+            variant="filled"
+            tone="primary"
+            onPress={onSave}
+            testID="fuel-profile-save"
+          >
+            Save details
+          </Btn>
+        </View>
+      }
+    >
       <View gap={12}>
-        <Text fontFamily="$body" fontWeight="600" color="$text">
-          {label}
-        </Text>
-        {state.field === "gender" ? (
+        {state.field === "age" ? (
+          <DatePickerField
+            label="Date of birth"
+            value={state.value}
+            onChange={onChange}
+            maximumDate={localDayISO(yesterday)}
+            allowClear={false}
+            testID="fuel-profile-dob"
+          />
+        ) : state.field === "gender" ? (
           <View flexDirection="row" flexWrap="wrap" gap={8}>
             {(["male", "female", "other"] as const).map((sex) => (
               <Btn
@@ -68,23 +105,19 @@ export function FuelProfileEditor({
           </View>
         ) : (
           <View flexDirection="row" gap={8}>
-            <TextInput
+            <BottomSheetTextInput
               autoFocus
               value={state.value}
               onChangeText={onChange}
               accessibilityLabel={label}
-              placeholder={state.field === "age" ? "YYYY-MM-DD" : "0"}
+              placeholder="0"
               placeholderTextColor={color.$text3}
-              keyboardType={
-                state.field === "age"
-                  ? "numbers-and-punctuation"
-                  : "decimal-pad"
-              }
+              keyboardType="decimal-pad"
               style={inputStyle}
               testID="fuel-profile-value"
             />
             {imperialHeight ? (
-              <TextInput
+              <BottomSheetTextInput
                 value={state.inches}
                 onChangeText={(value) => onChange(value, true)}
                 accessibilityLabel="Height (inches)"
@@ -113,24 +146,7 @@ export function FuelProfileEditor({
             {state.error}
           </Text>
         ) : null}
-        <View flexDirection="row" gap={8}>
-          <Btn
-            variant="outline"
-            onPress={onCancel}
-            testID="fuel-profile-cancel"
-          >
-            Cancel
-          </Btn>
-          <Btn
-            variant="filled"
-            tone="primary"
-            onPress={onSave}
-            testID="fuel-profile-save"
-          >
-            Save details
-          </Btn>
-        </View>
       </View>
-    </Card>
+    </BottomSheet>
   );
 }

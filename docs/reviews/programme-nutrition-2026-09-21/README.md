@@ -10,12 +10,7 @@
 
 Actual React Native presenters rendered through react-native-web with the application theme and bundled Geist fonts, synthetic data and fixture callbacks. The native slider was substituted with an HTML range and the unused logo loader omitted. This checks layout and interactions, not native keyboard behaviour or authenticated API integration.
 
-- [Required profile tiles, 390 × 844](nutrition-required-phone.png)
-- [Quick entry, 390 × 844](nutrition-editor-phone.png)
-- [Quick entry, 768 × 1024](nutrition-editor-tablet.png)
-- [Recipe paste recovery, 390 × 844](recipe-paste-phone.png)
-
-Visual inspection found and fixed a collapsed profile tile row. All four required labels and the entry form are visible at phone width. Tap persistence is enabled on the nutrition scroll view; real-device keyboard verification remains a release check. No native or EAS build was initiated.
+Screenshots are local review artifacts and are not committed to the PR. The original inline editor has been replaced by the shared quick-fill drawer and date picker. No native or EAS build was initiated.
 
 ## Verification
 
@@ -25,6 +20,8 @@ Visual inspection found and fixed a collapsed profile tile row. All four require
 - Initial unbounded root test run saturated local workers and reported unrelated mobile timeouts; simultaneous coverage writes also interrupted core coverage output. Bounded package runs replace that unsuccessful attempt.
 - Final formatting, typecheck and lint passed (existing lint warnings only). The non-native workspace build passed earlier; no buildable production code outside mobile changed afterwards.
 - Final local Inspector Brad full-diff review: clean. Review fixes cover writes made during a GET and writes already pending/in flight when it starts, including acknowledgement before the stale response arrives. Four timing regressions verify persistence after offline remount; final focused run passed 94 tests.
-- Final full mobile suite: 534 suites / 6,894 tests passed with coverage (two workers).
+- Final full mobile suite: 534 suites / 6,895 tests passed with coverage (two workers).
 
 Brad’s failing recipe URL was not supplied, so that exact page has not been reproduced. The paste fallback does not require a supported recipe site.
+
+Drawer correction: 102 focused tests and the full mobile suite passed. The actual shared BottomSheet and web date picker were inspected at phone width; the native date selector is covered by component tests, not a native build. Screenshots remain local only.

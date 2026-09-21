@@ -21,10 +21,13 @@ function props(
 it("edits DOB and forwards save/cancel", () => {
   const p = props();
   const screen = renderWithTheme(<FuelProfileEditor {...p} />);
-  fireEvent.changeText(
-    screen.getByLabelText("Date of birth (YYYY-MM-DD)"),
-    "1990-01-01",
-  );
+  expect(screen.queryByTestId("fuel-profile-value")).toBeNull();
+  fireEvent.press(screen.getByTestId("fuel-profile-dob"));
+  fireEvent(screen.getByTestId("fuel-profile-dob-drawer-native"), "change", {
+    nativeEvent: { timestamp: new Date(1990, 0, 1, 12).getTime() },
+  });
+  expect(p.onChange).not.toHaveBeenCalled();
+  fireEvent.press(screen.getByTestId("fuel-profile-dob-drawer-confirm"));
   fireEvent.press(screen.getByTestId("fuel-profile-save"));
   fireEvent.press(screen.getByTestId("fuel-profile-cancel"));
   expect(p.onChange).toHaveBeenCalledWith("1990-01-01");
@@ -71,4 +74,12 @@ it("explains weight saves to progress and uses pounds", () => {
   const screen = renderWithTheme(<FuelProfileEditor {...p} />);
   expect(screen.getByLabelText("Weight (lb)")).toBeTruthy();
   expect(screen.getByText(/today's weigh-in/)).toBeTruthy();
+});
+
+it("dismisses the quick-fill drawer without saving", () => {
+  const p = props();
+  const screen = renderWithTheme(<FuelProfileEditor {...p} />);
+  fireEvent(screen.getByTestId("gorhom-bottom-sheet"), "onClose");
+  expect(p.onCancel).toHaveBeenCalledTimes(1);
+  expect(p.onSave).not.toHaveBeenCalled();
 });

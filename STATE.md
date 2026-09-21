@@ -5392,7 +5392,7 @@ PR not yet raised. NO product code — script + dataset + verdict + spec updates
 
 ### 2026-09-21 — Programme foundations and nutrition recovery
 
-- Nutrition targets now expose required, tappable profile fields with inline DOB,
+- Nutrition targets now expose required, tappable profile fields with drawer-based DOB,
   calculation sex, height and weight entry through existing offline commands.
 - Recipe import accepts nested structured recipes and grouped instructions, with
   a source-preserving paste/manual recovery flow for unreadable pages.
@@ -5406,3 +5406,9 @@ PR not yet raised. NO product code — script + dataset + verdict + spec updates
   workspace test tasks passed. Formatting, typecheck, lint and non-native
   workspace build passed. Local Inspector Brad full-diff sweep: clean,
   after fixing delayed-response overwrites of pending and acknowledged edits.
+
+- Review correction: quick-fill uses the shared BottomSheet and DatePickerField,
+  with pinned Save/Cancel actions and keyboard-aware numeric fields. Keep visual
+  evidence outside the PR; screenshots removed from the diff.
+- Drawer correction validation: 6,895 mobile tests passed; typecheck, lint and
+  formatting passed; local Inspector Brad correction sweep clean.

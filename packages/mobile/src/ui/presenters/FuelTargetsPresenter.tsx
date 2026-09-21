@@ -325,7 +325,6 @@ export function FuelTargetsPresenter({
               onOpenProfile={onOpenProfile}
               onEditProfileField={onEditProfileField}
             />
-            {profileEditor}
 
             <ActivityChips value={activityId} onChange={onActivityChange} />
 
@@ -363,6 +362,7 @@ export function FuelTargetsPresenter({
           />
         ) : null}
       </ScrollView>
+      {profileEditor}
     </View>
   );
 }
