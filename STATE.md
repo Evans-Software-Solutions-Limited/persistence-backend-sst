@@ -5441,3 +5441,12 @@ PR not yet raised. NO product code — script + dataset + verdict + spec updates
   final focused backend:177; mobile import/review:105. Typecheck,lint,format and
   non-mobile build passed; local Inspector clean. No deployment/native build or
   paid AI invocation. Browser fixtures checked phone-width paste/review UI.
+
+### 2026-09-21 — RevenueCat CI expiry fixture
+
+- Staging run 35626969128 failed because the ends_at fallback test used a fixed
+  timestamp that expired at 14:13:20 UTC today, entering the existing billing
+  retry path. Reproduced the exact CI assertion locally before changing it.
+- Reused the existing future PERIOD_END_MS fixture in both input and expectation.
+  No production subscription/access logic changed. All 91 RevenueCat tests
+  passed; formatting and diff checks passed.
