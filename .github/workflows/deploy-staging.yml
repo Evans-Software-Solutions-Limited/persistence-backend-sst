@@ -78,7 +78,9 @@ jobs:
         # the same code. The remaining vitest suites (core/web/db/…) run in
         # ~1-2 min, so no heap bump is needed either. This is the sustainable
         # replacement for the --max-old-space-size bump added in #394.
-        run: bunx turbo run test:unit --cache-dir .turbo --filter='!@persistence/mobile'
+        # Match PR checks: each runner already parallelises internally. Keep
+        # workspace coverage suites sequential to avoid starving DOM tests.
+        run: bunx turbo run test:unit --cache-dir .turbo --filter='!@persistence/mobile' --concurrency=1
 
       - name: Install Supabase CLI
         uses: supabase/setup-cli@v1
