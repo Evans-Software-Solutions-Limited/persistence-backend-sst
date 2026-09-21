@@ -7,6 +7,7 @@ import DateTimePicker, {
 import { Text, View } from "@tamagui/core";
 
 import {
+  IconCalendar,
   IconChevronD,
   IconChevronL,
   IconChevronR,
@@ -614,6 +615,8 @@ function NativeDateSheet({
 }
 
 export type DatePickerFieldProps = {
+  /** Compact calendar trigger for date rows that already display their selection. */
+  variant?: "field" | "icon";
   label: string;
   value: string;
   onChange: (value: string) => void;
@@ -627,6 +630,7 @@ export type DatePickerFieldProps = {
 };
 
 export function DatePickerField({
+  variant = "field",
   label,
   value,
   onChange,
@@ -685,26 +689,39 @@ export function DatePickerField({
           opacity: disabled ? 0.5 : pressed ? 0.8 : 1,
         })}
       >
-        <View
-          minHeight={48}
-          paddingHorizontal={14}
-          borderRadius={12}
-          borderWidth={1}
-          borderColor="$border"
-          backgroundColor="$surface2"
-          flexDirection="row"
-          alignItems="center"
-          justifyContent="space-between"
-        >
-          <Text
-            fontFamily="$body"
-            fontSize={15}
-            color={value ? "$text" : "$text3"}
+        {variant === "icon" ? (
+          <View
+            width={44}
+            height={44}
+            borderRadius={11}
+            backgroundColor="$surface3"
+            alignItems="center"
+            justifyContent="center"
           >
-            {display}
-          </Text>
-          <IconChevronD size={18} color={NEUTRAL_HEX.text3} />
-        </View>
+            <IconCalendar size={19} color={toneHex("primary").base} />
+          </View>
+        ) : (
+          <View
+            minHeight={48}
+            paddingHorizontal={14}
+            borderRadius={12}
+            borderWidth={1}
+            borderColor="$border"
+            backgroundColor="$surface2"
+            flexDirection="row"
+            alignItems="center"
+            justifyContent="space-between"
+          >
+            <Text
+              fontFamily="$body"
+              fontSize={15}
+              color={value ? "$text" : "$text3"}
+            >
+              {display}
+            </Text>
+            <IconChevronD size={18} color={NEUTRAL_HEX.text3} />
+          </View>
+        )}
       </Pressable>
       {helperText ? (
         <Text fontFamily="$body" fontSize={11} color="$text3" marginTop={4}>

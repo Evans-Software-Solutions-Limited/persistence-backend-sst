@@ -5421,3 +5421,8 @@ PR not yet raised. NO product code — script + dataset + verdict + spec updates
   fields, contained the body-fat percentage, and rounded displayed/saved weights
   to one decimal including Health prefill. Final mobile suite: 6,953 tests passed;
   formatting, typecheck, lint and non-mobile build passed; local Inspector clean.
+
+- Calendar follow-up: the weigh-in date icon opens the shared DatePickerField
+  (iOS subdrawer, Android native picker, web calendar), bounded to today. Older
+  dates stay absolute across midnight; recent-day shortcuts remain current.
+  55 focused tests passed, with mobile typecheck and targeted lint; Inspector clean.

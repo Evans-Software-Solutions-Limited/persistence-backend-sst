@@ -10,13 +10,9 @@ import Svg, {
 import { Text, View } from "@tamagui/core";
 import { BottomSheet, Card, Btn } from "@/ui/components/foundation";
 import { toneHex } from "@/ui/components/foundation/tones";
-import {
-  IconMinus,
-  IconPlus,
-  IconCalendar,
-  IconCheck,
-} from "@/ui/components/icons";
+import { IconMinus, IconPlus, IconCheck } from "@/ui/components/icons";
 import { KG_PER_LB, localDayISO } from "@/shared/utils";
+import { DatePickerField } from "@/ui/components/DatePickerField";
 import { computePath } from "./charts";
 
 /**
@@ -146,6 +142,8 @@ export function WeighInSheetPresenter({
   );
   const [bodyFat, setBodyFat] = useState<number | null>(defaultBodyFat);
   const [dayOffset, setDayOffset] = useState<number>(0);
+  const todayISO = localDayISO(today);
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
 
   // The sheet stays mounted (visibility is a prop). Reset the chosen day AND
   // the per-field "user has edited" sentinels on each open. The sentinels gate
@@ -158,6 +156,7 @@ export function WeighInSheetPresenter({
   useEffect(() => {
     if (visible && !wasVisible.current) {
       setDayOffset(0);
+      setSelectedDay(null);
       editedWeight.current = false;
       editedBodyFat.current = false;
     }
@@ -266,14 +265,23 @@ export function WeighInSheetPresenter({
     if (nextKg !== null) setKg(nextKg);
   };
 
-  const todayISO = localDayISO(today);
-  const day = addDaysISO(todayISO, dayOffset);
+  const day = selectedDay ?? addDaysISO(todayISO, dayOffset);
+  const displayOffset = Math.round(
+    (Date.parse(`${day}T00:00:00Z`) - Date.parse(`${todayISO}T00:00:00Z`)) /
+      86400000,
+  );
   const dateLabel =
-    dayOffset === 0
+    displayOffset === 0
       ? "Today"
-      : dayOffset === -1
+      : displayOffset === -1
         ? "Yesterday"
-        : `${-dayOffset}d ago`;
+        : displayOffset >= -3
+          ? `${-displayOffset}d ago`
+          : new Date(`${day}T12:00:00`).toLocaleDateString("en-GB", {
+              day: "numeric",
+              month: "short",
+              year: "numeric",
+            });
 
   // Sparkline over history + the live value.
   const series = [...history.slice(0, -1), kg];
@@ -509,19 +517,28 @@ export function WeighInSheetPresenter({
             DATE
           </Text>
           <View flexDirection="row" alignItems="center" gap={10}>
-            <View
-              width={42}
-              height={42}
-              borderRadius={11}
-              backgroundColor="$surface3"
-              alignItems="center"
-              justifyContent="center"
-            >
-              <IconCalendar size={19} color={toneHex("primary").base} />
-            </View>
-            <View flexDirection="row" gap={6} flex={1}>
+            {visible ? (
+              <DatePickerField
+                variant="icon"
+                label="Log date"
+                value={day}
+                maximumDate={todayISO}
+                allowClear={false}
+                disabled={saving}
+                onChange={(selected) => {
+                  const offset =
+                    (Date.parse(`${selected}T00:00:00Z`) -
+                      Date.parse(`${todayISO}T00:00:00Z`)) /
+                    86400000;
+                  if (Number.isInteger(offset) && offset <= 0)
+                    setSelectedDay(selected);
+                }}
+                testID="weigh-in-date"
+              />
+            ) : null}
+            <View flexDirection="row" flexWrap="wrap" gap={6} flex={1}>
               {[0, -1, -2, -3].map((off) => {
-                const on = dayOffset === off;
+                const on = day === addDaysISO(todayISO, off);
                 const lbl =
                   off === 0
                     ? "Today"
@@ -537,7 +554,10 @@ export function WeighInSheetPresenter({
                     borderWidth={1}
                     backgroundColor={on ? "$primaryDim" : "$surface2"}
                     borderColor={on ? toneHex("primary").base : "$border"}
-                    onPress={() => setDayOffset(off)}
+                    onPress={() => {
+                      setSelectedDay(null);
+                      setDayOffset(off);
+                    }}
                     accessibilityLabel={lbl}
                   >
                     <Text

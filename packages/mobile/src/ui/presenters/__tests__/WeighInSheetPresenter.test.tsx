@@ -407,3 +407,88 @@ it("formats a precise edit to one decimal when leaving the field", () => {
   fireEvent(getByTestId("weigh-in-input"), "blur");
   expect(getByTestId("weigh-in-input").props.value).toBe("80.1");
 });
+
+describe("weigh-in date picker", () => {
+  it("opens the shared drawer and saves a confirmed older date", () => {
+    const { getByTestId, getByText, onSave } = render();
+    fireEvent.press(getByTestId("weigh-in-date"));
+    expect(getByTestId("weigh-in-date-drawer-wheels")).toBeTruthy();
+    fireEvent(getByTestId("weigh-in-date-drawer-native"), "change", {
+      nativeEvent: { timestamp: new Date(2026, 4, 15, 12).getTime() },
+    });
+    fireEvent.press(getByTestId("weigh-in-date-drawer-confirm"));
+    expect(getByText("Log 79.8 kg · 15 May 2026")).toBeTruthy();
+    fireEvent.press(getByTestId("weigh-in-save"));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ day: "2026-05-15", weightKg: 79.8 }),
+    );
+  });
+
+  it("keeps today when an unconfirmed date drawer is dismissed", () => {
+    const { getByTestId, onSave } = render();
+    fireEvent.press(getByTestId("weigh-in-date"));
+    fireEvent(getByTestId("weigh-in-date-drawer-native"), "change", {
+      nativeEvent: { timestamp: new Date(2026, 4, 15, 12).getTime() },
+    });
+    fireEvent(getByTestId("weigh-in-date-drawer"), "close");
+    fireEvent.press(getByTestId("weigh-in-save"));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ day: "2026-06-10" }),
+    );
+  });
+
+  it("rejects future dates and permits returning to a recent-day shortcut", () => {
+    const { getByTestId, getByLabelText, onSave } = render();
+    fireEvent.press(getByTestId("weigh-in-date"));
+    fireEvent(getByTestId("weigh-in-date-drawer-native"), "change", {
+      nativeEvent: { timestamp: new Date(2026, 5, 11, 12).getTime() },
+    });
+    fireEvent.press(getByTestId("weigh-in-date-drawer-confirm"));
+    fireEvent.press(getByTestId("weigh-in-save"));
+    expect(onSave).toHaveBeenLastCalledWith(
+      expect.objectContaining({ day: "2026-06-10" }),
+    );
+    fireEvent.press(getByLabelText("Yesterday"));
+    fireEvent.press(getByTestId("weigh-in-save"));
+    expect(onSave).toHaveBeenLastCalledWith(
+      expect.objectContaining({ day: "2026-06-09" }),
+    );
+  });
+});
+
+it("preserves a selected date across midnight and resets on the next open", () => {
+  const onSave = jest.fn();
+  const props = {
+    visible: true,
+    onSave,
+    onClose: jest.fn(),
+    defaultWeightKg: 80,
+  };
+  const screen = renderWithTheme(
+    <WeighInSheetPresenter {...props} today={TODAY} />,
+  );
+  fireEvent.press(screen.getByTestId("weigh-in-date"));
+  fireEvent(screen.getByTestId("weigh-in-date-drawer-native"), "change", {
+    nativeEvent: { timestamp: new Date(2026, 4, 15, 12).getTime() },
+  });
+  fireEvent.press(screen.getByTestId("weigh-in-date-drawer-confirm"));
+  const tomorrow = new Date("2026-06-11T12:00:00Z");
+  screen.rerender(<WeighInSheetPresenter {...props} today={tomorrow} />);
+  fireEvent.press(screen.getByTestId("weigh-in-save"));
+  expect(onSave).toHaveBeenLastCalledWith(
+    expect.objectContaining({ day: "2026-05-15" }),
+  );
+  fireEvent.press(screen.getByLabelText("Today"));
+  fireEvent.press(screen.getByTestId("weigh-in-save"));
+  expect(onSave).toHaveBeenLastCalledWith(
+    expect.objectContaining({ day: "2026-06-11" }),
+  );
+  screen.rerender(
+    <WeighInSheetPresenter {...props} visible={false} today={tomorrow} />,
+  );
+  screen.rerender(<WeighInSheetPresenter {...props} today={tomorrow} />);
+  fireEvent.press(screen.getByTestId("weigh-in-save"));
+  expect(onSave).toHaveBeenLastCalledWith(
+    expect.objectContaining({ day: "2026-06-11" }),
+  );
+});
