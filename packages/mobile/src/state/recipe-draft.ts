@@ -20,6 +20,7 @@ export type RecipeDraftIngredientSeed = {
 };
 
 export type RecipeDraftSeed = {
+  extractionMethod?: "structured" | "page" | "ai";
   title: string;
   servings: number | null;
   instructions: string | null;

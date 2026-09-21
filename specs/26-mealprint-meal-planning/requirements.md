@@ -240,3 +240,7 @@ ships in P3.)_
    async-job execution model is therefore in-scope for this spec's v1 build
    (coordinate the shared design with spec-20 at build time, per design § 1
    Sizing).
+
+### 21 September 2026 — coach nutrition scope extension
+
+Brad has now requested coach-authored meals/plans and imported recipe sharing. [Spec 38](../38-coach-nutrition/requirements.md) supersedes the earlier deferral as the implementation direction. Existing personal Mealprint access remains unchanged; no runtime coach-sharing implementation is implied by this amendment.

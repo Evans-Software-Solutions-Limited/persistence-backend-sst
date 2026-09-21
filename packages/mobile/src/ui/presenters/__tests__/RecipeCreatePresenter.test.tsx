@@ -339,3 +339,20 @@ describe("RecipeCreatePresenter", () => {
     expect(getByTestId("recipe-create-estimate-recipe-message")).toBeTruthy();
   });
 });
+
+it("identifies AI extraction and asks for source review", () => {
+  const screen = render({ extractionMethod: "ai" });
+  expect(screen.getByText(/AI-extracted from the page/)).toBeTruthy();
+});
+it("identifies plain-page extraction without calling it AI", () => {
+  const screen = render({ extractionMethod: "page" });
+  expect(screen.getByText(/Extracted from the page text/)).toBeTruthy();
+  expect(screen.queryByText(/AI-extracted/)).toBeNull();
+});
+it("does not show a fallback note for ordinary structured imports", () => {
+  expect(
+    render({ extractionMethod: "structured" }).queryByTestId(
+      "recipe-extraction-note",
+    ),
+  ).toBeNull();
+});

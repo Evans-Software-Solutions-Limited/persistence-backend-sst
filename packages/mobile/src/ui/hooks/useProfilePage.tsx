@@ -137,6 +137,13 @@ export function useProfilePage(enabled = true): ProfilePageState {
     const work = (async () => {
       try {
         if (latestUserIdRef.current !== userId) return;
+        const cachedAtRequestStart = JSON.stringify(
+          storage.getCachedProfilePage(userId)?.payload ?? null,
+        );
+        const queuedAtRequestStart = storage.getQueuedEntriesForEntity(
+          "profile",
+          userId,
+        );
         const result = await api.getProfilePage();
         if (!result.ok) {
           lastFetchOkRef.current = false;
@@ -148,6 +155,8 @@ export function useProfilePage(enabled = true): ProfilePageState {
           storage,
           userId,
           result.value,
+          cachedAtRequestStart,
+          queuedAtRequestStart,
         );
         storage.cacheProfilePage(userId, reconciled);
         setPayload(reconciled);

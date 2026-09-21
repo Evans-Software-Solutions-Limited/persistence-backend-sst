@@ -308,7 +308,7 @@ jest.mock("@gorhom/bottom-sheet", () => {
     BottomSheetView: passthrough(),
     BottomSheetScrollView: passthrough(),
     BottomSheetBackdrop: passthrough("gorhom-backdrop"),
-    BottomSheetTextInput: passthrough(),
+    BottomSheetTextInput: require("react-native").TextInput,
     BottomSheetHandle: passthrough(),
     useBottomSheet: () => ({ expand: jest.fn(), close: jest.fn() }),
     useBottomSheetModal: () => ({ dismiss: jest.fn() }),

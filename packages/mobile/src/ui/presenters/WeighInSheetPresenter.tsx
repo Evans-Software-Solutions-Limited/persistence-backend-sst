@@ -10,18 +10,14 @@ import Svg, {
 import { Text, View } from "@tamagui/core";
 import { BottomSheet, Card, Btn } from "@/ui/components/foundation";
 import { toneHex } from "@/ui/components/foundation/tones";
-import {
-  IconMinus,
-  IconPlus,
-  IconCalendar,
-  IconCheck,
-} from "@/ui/components/icons";
+import { IconMinus, IconPlus, IconCheck } from "@/ui/components/icons";
 import { KG_PER_LB, localDayISO } from "@/shared/utils";
+import { DatePickerField } from "@/ui/components/DatePickerField";
 import { computePath } from "./charts";
 
 /**
  * <WeighInSheetPresenter> — body-weight log sheet (06-progress-goals,
- * STORY-005; weigh-in-sheet.jsx). Mono weight input + kg/lb toggle + day
+ * STORY-005; weigh-in-sheet.jsx). Mono weight input + unit formats + day
  * chips + a live body-trend sparkline preview. Holds local form state; `onSave`
  * hands the canonical-kg value + day to the container (which mutates offline-
  * first via useLogMeasurement).
@@ -34,18 +30,45 @@ const W = 320;
 const H = 64;
 const PRIMARY = toneHex("primary").base;
 
-// Stepper bounds mirror logMeasurementCommand, which rejects `<= 0 || > 999`.
-// Flooring the +/- stepper stops minus-spam from parking the sheet on a
-// non-positive weight that Save silently rejects (a dead-end). Typed input is
-// left unclamped on purpose: a deliberate out-of-range entry still flows to the
-// command, which rejects it and keeps the sheet open to correct (the existing
-// gate since PR #117). The prototype has no command, hence no floor — V2 guard.
+// Match logMeasurementCommand's canonical kg bounds. Typed invalid values stay
+// editable but cannot be submitted; steppers clamp at the same upper limit.
 const MIN_KG = 1;
 const MAX_KG = 999;
 
 const clampKg = (kg: number) => Math.min(MAX_KG, Math.max(MIN_KG, kg));
 
 export type WeighInUnit = "kg" | "lb";
+type WeightFormat = WeighInUnit | "st+lb";
+
+const weightParts = (kg: number, format: WeightFormat): [string, string] => {
+  const pounds = kg / KG_PER_LB;
+  if (format === "st+lb") {
+    const total = Math.round(pounds * 10) / 10;
+    return [String(Math.floor(total / 14)), (total % 14).toFixed(1)];
+  }
+  return [(format === "kg" ? kg : pounds).toFixed(1), ""];
+};
+
+const parseWeight = (
+  first: string,
+  second: string,
+  format: WeightFormat,
+): number | null => {
+  const decimal = /^(?:\d+(?:\.\d*)?|\.\d+)$/;
+  const primary = first.trim().replace(",", ".");
+  const secondary = second.trim().replace(",", ".");
+  if (!decimal.test(primary)) return null;
+  const value = Number(primary);
+  let pounds = value;
+  if (format === "st+lb") {
+    if (!Number.isInteger(value) || !decimal.test(secondary)) return null;
+    const remainder = Number(secondary);
+    if (remainder >= 14) return null;
+    pounds = value * 14 + remainder;
+  }
+  const kg = format === "kg" ? value : pounds * KG_PER_LB;
+  return Number.isFinite(kg) && kg > 0 && kg <= MAX_KG ? kg : null;
+};
 
 export type WeighInSaveInput = {
   /** Omitted when the body-fat history launched a body-fat-only log. */
@@ -98,19 +121,12 @@ export function WeighInSheetPresenter({
   const toDisplay = (kgValue: number, u: WeighInUnit) =>
     u === "kg" ? kgValue : kgValue / KG_PER_LB;
 
-  const [unit, setUnit] = useState<WeighInUnit>(defaultUnit ?? "kg");
+  const [unit, setUnit] = useState<WeightFormat>(defaultUnit ?? "kg");
   const [kg, setKg] = useState<number>(
     defaultWeightKg ?? history[history.length - 1] ?? 80,
   );
-  // Raw text backing the weight TextInput, tracked separately from the
-  // canonical numeric `kg`. Deriving `value` straight from a *parsed* number
-  // (the old approach: `value={fmt(kg)}`) means deleting all the digits
-  // makes `parseFloat("")` NaN, the onChangeText handler bails without
-  // updating state, and the controlled input snaps right back to the last
-  // valid formatted number — the field can never be cleared to type a new
-  // value. Tracking raw text lets the field hold "", "12.", etc. mid-edit;
-  // `kg` only updates once the text parses to a real number (mirrors
-  // `onTypeBodyFat`'s empty-string handling below).
+  // Preserve raw text while editing; invalid or empty input cannot submit the
+  // previous canonical value. Unit switches retain canonical precision.
   const [weightText, setWeightText] = useState<string>(() =>
     fmt(
       toDisplay(
@@ -119,8 +135,15 @@ export function WeighInSheetPresenter({
       ),
     ),
   );
+  const [remainderText, setRemainderText] = useState("");
+  // Validity follows edits, not rounded display conversions at the kg bounds.
+  const [validWeight, setValidWeight] = useState(
+    () => Number.isFinite(kg) && kg > 0 && kg <= MAX_KG,
+  );
   const [bodyFat, setBodyFat] = useState<number | null>(defaultBodyFat);
   const [dayOffset, setDayOffset] = useState<number>(0);
+  const todayISO = localDayISO(today);
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
 
   // The sheet stays mounted (visibility is a prop). Reset the chosen day AND
   // the per-field "user has edited" sentinels on each open. The sentinels gate
@@ -133,6 +156,7 @@ export function WeighInSheetPresenter({
   useEffect(() => {
     if (visible && !wasVisible.current) {
       setDayOffset(0);
+      setSelectedDay(null);
       editedWeight.current = false;
       editedBodyFat.current = false;
     }
@@ -162,9 +186,16 @@ export function WeighInSheetPresenter({
     if (!editedWeight.current) {
       const prefillKg = defaultWeightKg ?? history[history.length - 1] ?? 80;
       setKg(prefillKg);
-      setWeightText(fmt(toDisplay(prefillKg, resolvedUnit)));
+      setValidWeight(
+        Number.isFinite(prefillKg) && prefillKg > 0 && prefillKg <= MAX_KG,
+      );
+      const parts = weightParts(prefillKg, resolvedUnit);
+      setWeightText(parts[0]);
+      setRemainderText(parts[1]);
     } else if (shouldSeedUnit) {
-      setWeightText(fmt(toDisplay(kg, resolvedUnit)));
+      const parts = weightParts(kg, resolvedUnit);
+      setWeightText(parts[0]);
+      setRemainderText(parts[1]);
     }
     if (!editedBodyFat.current) setBodyFat(defaultBodyFat);
     // `unit`/`kg` deliberately omitted — a mid-session unit toggle reformats
@@ -185,43 +216,72 @@ export function WeighInSheetPresenter({
     setBodyFat(Math.min(100, Math.max(0, v)));
   };
 
-  const display = toDisplay(kg, unit);
-  const step = unit === "kg" ? 0.1 : 0.2;
-
+  const payloadUnit: WeighInUnit = unit === "kg" ? "kg" : "lb";
+  const display = toDisplay(kg, payloadUnit);
+  const composite = unit === "st+lb";
+  const primaryLabel = composite ? "st" : unit;
+  const secondaryLabel = "lb";
+  const roundedParts = weightParts(kg, unit);
+  const roundedKg = parseWeight(roundedParts[0], roundedParts[1], unit);
+  const canSaveWeight = validWeight && roundedKg !== null;
+  const displayLabel = composite
+    ? `${roundedParts[0]} st ${roundedParts[1]} lb`
+    : `${roundedParts[0]} ${unit}`;
+  const setParts = (value: number, format: WeightFormat) => {
+    const parts = weightParts(value, format);
+    setWeightText(parts[0]);
+    setRemainderText(parts[1]);
+  };
   const adjust = (dir: number) => {
+    if (!validWeight) return;
     editedWeight.current = true;
-    const next = display + dir * step;
-    const nextKg =
-      unit === "kg" ? +next.toFixed(2) : +(next * KG_PER_LB).toFixed(3);
-    const clamped = clampKg(nextKg);
-    setKg(clamped);
-    setWeightText(fmt(toDisplay(clamped, unit)));
+    unitHydratedRef.current = true;
+    const stepKg = unit === "kg" ? 0.1 : 0.2 * KG_PER_LB;
+    const nextKg = clampKg(kg + dir * stepKg);
+    setKg(nextKg);
+    setParts(nextKg, unit);
   };
-  const onChangeUnit = (nextUnit: WeighInUnit) => {
+  const onChangeUnit = (nextUnit: WeightFormat) => {
+    unitHydratedRef.current = true;
+    editedWeight.current = true;
     setUnit(nextUnit);
-    setWeightText(fmt(toDisplay(kg, nextUnit)));
+    if (validWeight) setParts(kg, nextUnit);
+    else {
+      setWeightText("");
+      setRemainderText("");
+    }
   };
-  const onType = (text: string) => {
-    // Always commit the raw text so the field can be cleared/retyped — see
-    // the `weightText` state comment above. `kg` (the canonical value used
-    // by +/-, unit toggle, and Save) only updates once the text parses.
+  const onType = (text: string, secondary = false) => {
     editedWeight.current = true;
-    setWeightText(text);
-    const v = parseFloat(text);
-    if (Number.isNaN(v)) return;
-    // Not clamped: an out-of-range typed value flows to logMeasurementCommand,
-    // which rejects it and leaves the sheet open to correct (see MIN/MAX above).
-    setKg(unit === "kg" ? v : +(v * KG_PER_LB).toFixed(3));
+    unitHydratedRef.current = true;
+    if (secondary) setRemainderText(text);
+    else setWeightText(text);
+    const nextKg = parseWeight(
+      secondary ? weightText : text,
+      secondary ? text : remainderText,
+      unit,
+    );
+    setValidWeight(nextKg !== null);
+    if (nextKg !== null) setKg(nextKg);
   };
 
-  const todayISO = localDayISO(today);
-  const day = addDaysISO(todayISO, dayOffset);
+  const day = selectedDay ?? addDaysISO(todayISO, dayOffset);
+  const displayOffset = Math.round(
+    (Date.parse(`${day}T00:00:00Z`) - Date.parse(`${todayISO}T00:00:00Z`)) /
+      86400000,
+  );
   const dateLabel =
-    dayOffset === 0
+    displayOffset === 0
       ? "Today"
-      : dayOffset === -1
+      : displayOffset === -1
         ? "Yesterday"
-        : `${-dayOffset}d ago`;
+        : displayOffset >= -3
+          ? `${-displayOffset}d ago`
+          : new Date(`${day}T12:00:00`).toLocaleDateString("en-GB", {
+              day: "numeric",
+              month: "short",
+              year: "numeric",
+            });
 
   // Sparkline over history + the live value.
   const series = [...history.slice(0, -1), kg];
@@ -247,6 +307,7 @@ export function WeighInSheetPresenter({
         {context === "weight" && (
           <Card pad={20} radius={18} accent="primary">
             <Text
+              fontFamily="$body"
               fontSize={10.5}
               fontWeight="600"
               letterSpacing={1.5}
@@ -260,11 +321,11 @@ export function WeighInSheetPresenter({
               flexDirection="row"
               alignItems="center"
               justifyContent="center"
-              gap={14}
+              gap={8}
             >
               <View
-                width={46}
-                height={46}
+                width={44}
+                height={44}
                 borderRadius={14}
                 backgroundColor="$surface3"
                 alignItems="center"
@@ -278,33 +339,65 @@ export function WeighInSheetPresenter({
                 flexDirection="row"
                 alignItems="baseline"
                 gap={6}
-                minWidth={168}
+                flex={1}
+                minWidth={0}
                 justifyContent="center"
               >
                 <TextInput
                   value={weightText}
-                  onChangeText={onType}
+                  onChangeText={(text) => onType(text)}
+                  onBlur={() => {
+                    if (validWeight) setParts(kg, unit);
+                  }}
                   inputMode="decimal"
                   accessibilityLabel="Weight value"
                   testID="weigh-in-input"
                   style={{
-                    width: 132,
-                    textAlign: "right",
+                    flex: 1,
+                    minWidth: 0,
+                    textAlign: "center",
                     color: "#F4F4F8",
-                    fontFamily: "Geist Mono",
+                    fontFamily: "Geist",
                     fontWeight: "600",
-                    fontSize: 52,
-                    letterSpacing: -2,
+                    fontSize: composite ? 28 : 40,
+                    letterSpacing: -0.5,
                     padding: 0,
                   }}
                 />
-                <Text fontFamily="$mono" color="$text3" fontSize={16}>
-                  {unit}
+                <Text fontFamily="$body" color="$text3" fontSize={16}>
+                  {primaryLabel}
                 </Text>
+                {composite && (
+                  <>
+                    <TextInput
+                      value={remainderText}
+                      onChangeText={(text) => onType(text, true)}
+                      onBlur={() => {
+                        if (validWeight) setParts(kg, unit);
+                      }}
+                      inputMode="decimal"
+                      accessibilityLabel={`Weight ${secondaryLabel}`}
+                      testID="weigh-in-remainder-input"
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                        textAlign: "center",
+                        color: "#F4F4F8",
+                        fontFamily: "Geist",
+                        fontWeight: "600",
+                        fontSize: 28,
+                        padding: 0,
+                      }}
+                    />
+                    <Text fontFamily="$body" color="$text3" fontSize={16}>
+                      {secondaryLabel}
+                    </Text>
+                  </>
+                )}
               </View>
               <View
-                width={46}
-                height={46}
+                width={44}
+                height={44}
                 borderRadius={14}
                 backgroundColor="$surface3"
                 alignItems="center"
@@ -321,12 +414,12 @@ export function WeighInSheetPresenter({
               gap={4}
               alignSelf="center"
               marginTop={16}
-              width={132}
+              width="100%"
               backgroundColor="$surface3"
               borderRadius={999}
               padding={3}
             >
-              {(["kg", "lb"] as const).map((u) => {
+              {(["kg", "lb", "st+lb"] as const).map((u) => {
                 const on = unit === u;
                 return (
                   <View
@@ -340,6 +433,7 @@ export function WeighInSheetPresenter({
                     accessibilityLabel={`Use ${u}`}
                   >
                     <Text
+                      fontFamily="$body"
                       fontWeight="700"
                       fontSize={12}
                       color={on ? "$primaryInk" : "$text3"}
@@ -350,6 +444,18 @@ export function WeighInSheetPresenter({
                 );
               })}
             </View>
+            {!validWeight && (
+              <Text
+                fontFamily="$body"
+                color="$ember"
+                fontSize={12}
+                marginTop={12}
+                accessibilityRole="alert"
+              >
+                Enter a valid weight
+                {unit === "st+lb" ? " with pounds below 14" : ""}.
+              </Text>
+            )}
           </Card>
         )}
 
@@ -362,6 +468,7 @@ export function WeighInSheetPresenter({
             justifyContent="space-between"
           >
             <Text
+              fontFamily="$body"
               fontSize={10.5}
               fontWeight="600"
               letterSpacing={1.5}
@@ -380,16 +487,17 @@ export function WeighInSheetPresenter({
                 testID="weigh-in-bodyfat-input"
                 style={{
                   minWidth: 56,
+                  width: 56,
                   textAlign: "right",
                   color: "#F4F4F8",
-                  fontFamily: "Geist Mono",
+                  fontFamily: "Geist",
                   fontWeight: "600",
                   fontSize: 22,
                   letterSpacing: -0.5,
                   padding: 0,
                 }}
               />
-              <Text fontFamily="$mono" color="$text3" fontSize={14}>
+              <Text fontFamily="$body" color="$text3" fontSize={14}>
                 %
               </Text>
             </View>
@@ -399,6 +507,7 @@ export function WeighInSheetPresenter({
         {/* Date chips */}
         <View>
           <Text
+            fontFamily="$body"
             fontSize={10.5}
             fontWeight="600"
             letterSpacing={1.5}
@@ -407,20 +516,29 @@ export function WeighInSheetPresenter({
           >
             DATE
           </Text>
-          <View flexDirection="row" alignItems="center" gap={10}>
-            <View
-              width={42}
-              height={42}
-              borderRadius={11}
-              backgroundColor="$surface3"
-              alignItems="center"
-              justifyContent="center"
-            >
-              <IconCalendar size={19} color={toneHex("primary").base} />
-            </View>
-            <View flexDirection="row" gap={6} flex={1}>
+          <View flexDirection="row" alignItems="center" gap={6}>
+            {visible ? (
+              <DatePickerField
+                variant="icon"
+                label="Log date"
+                value={day}
+                maximumDate={todayISO}
+                allowClear={false}
+                disabled={saving}
+                onChange={(selected) => {
+                  const offset =
+                    (Date.parse(`${selected}T00:00:00Z`) -
+                      Date.parse(`${todayISO}T00:00:00Z`)) /
+                    86400000;
+                  if (Number.isInteger(offset) && offset <= 0)
+                    setSelectedDay(selected);
+                }}
+                testID="weigh-in-date"
+              />
+            ) : null}
+            <View flexDirection="row" gap={4} flex={1} minWidth={0}>
               {[0, -1, -2, -3].map((off) => {
-                const on = dayOffset === off;
+                const on = day === addDaysISO(todayISO, off);
                 const lbl =
                   off === 0
                     ? "Today"
@@ -431,17 +549,27 @@ export function WeighInSheetPresenter({
                   <View
                     key={off}
                     paddingVertical={8}
-                    paddingHorizontal={14}
+                    paddingHorizontal={4}
+                    minHeight={44}
+                    flex={off === -1 ? 1.5 : 1}
+                    minWidth={0}
+                    alignItems="center"
+                    justifyContent="center"
                     borderRadius={10}
                     borderWidth={1}
                     backgroundColor={on ? "$primaryDim" : "$surface2"}
                     borderColor={on ? toneHex("primary").base : "$border"}
-                    onPress={() => setDayOffset(off)}
+                    onPress={() => {
+                      setSelectedDay(null);
+                      setDayOffset(off);
+                    }}
                     accessibilityLabel={lbl}
                   >
                     <Text
+                      fontFamily="$body"
                       fontWeight="600"
-                      fontSize={12.5}
+                      fontSize={12}
+                      numberOfLines={1}
                       color={on ? "$primary" : "$text2"}
                     >
                       {lbl}
@@ -463,6 +591,7 @@ export function WeighInSheetPresenter({
             >
               <View>
                 <Text
+                  fontFamily="$body"
                   fontSize={10.5}
                   fontWeight="600"
                   letterSpacing={1.5}
@@ -471,21 +600,22 @@ export function WeighInSheetPresenter({
                   TREND · LAST {series.length}
                 </Text>
                 <Text
-                  fontFamily="$mono"
+                  fontFamily="$body"
                   fontSize={19}
                   color="$text"
                   marginTop={4}
                 >
-                  {fmt(display)} {unit}
+                  {fmt(display)} {payloadUnit}
                 </Text>
               </View>
               <Text
-                fontFamily="$mono"
+                fontFamily="$body"
                 fontSize={13}
                 fontWeight="600"
                 color={down ? "$success" : "$ember"}
               >
-                {down ? "▼" : "▲"} {Math.abs(deltaDisplay).toFixed(1)} {unit}
+                {down ? "▼" : "▲"} {Math.abs(deltaDisplay).toFixed(1)}{" "}
+                {payloadUnit}
               </Text>
             </View>
             <Svg
@@ -518,16 +648,20 @@ export function WeighInSheetPresenter({
           variant="filled"
           tone="primary"
           size="lg"
-          disabled={saving || (context === "bodyFat" && bodyFat == null)}
+          disabled={
+            saving || (context === "bodyFat" ? bodyFat == null : !canSaveWeight)
+          }
           icon={<IconCheck size={16} color={toneHex("primary").ink} />}
-          onPress={() =>
+          onPress={() => {
+            if (saving || (context === "weight" && !canSaveWeight)) return;
+            if (context === "weight") setParts(kg, unit);
             onSave({
-              weightKg: context === "weight" ? kg : undefined,
+              weightKg: context === "weight" ? roundedKg! : undefined,
               bodyFatPercentage: bodyFat,
               day,
-              unit,
-            })
-          }
+              unit: payloadUnit,
+            });
+          }}
         >
           {saving
             ? "Logged ✓"
@@ -535,7 +669,9 @@ export function WeighInSheetPresenter({
               ? bodyFat == null
                 ? "Enter body fat to log"
                 : `Log ${bodyFat}% · ${dateLabel}`
-              : `Log ${fmt(display)} ${unit} · ${dateLabel}`}
+              : canSaveWeight
+                ? `Log ${displayLabel} · ${dateLabel}`
+                : "Enter weight to log"}
         </Btn>
       </View>
     </BottomSheet>

@@ -43,6 +43,7 @@ export type IngredientRowVM = {
 };
 
 export type RecipeCreatePresenterProps = {
+  extractionMethod?: "structured" | "page" | "ai";
   name: string;
   onNameChange: (v: string) => void;
   servings: number | null;
@@ -326,6 +327,7 @@ function IngredientRow({
 
 export function RecipeCreatePresenter(props: RecipeCreatePresenterProps) {
   const {
+    extractionMethod,
     name,
     onNameChange,
     servings,
@@ -422,6 +424,18 @@ export function RecipeCreatePresenter(props: RecipeCreatePresenterProps) {
         keyboardShouldPersistTaps="handled"
         testID="recipe-create-scroll"
       >
+        {extractionMethod === "ai" || extractionMethod === "page" ? (
+          <Text
+            fontFamily="$body"
+            fontSize={12}
+            color="$text2"
+            testID="recipe-extraction-note"
+          >
+            {extractionMethod === "ai"
+              ? "AI-extracted from the page. Check ingredients, quantities and instructions against the source before saving. Nutrition is not inferred."
+              : "Extracted from the page text. Check ingredients, quantities and instructions before saving."}
+          </Text>
+        ) : null}
         <View>
           <FieldLabel>NAME</FieldLabel>
           <TextInput

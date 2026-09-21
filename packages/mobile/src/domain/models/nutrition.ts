@@ -158,11 +158,12 @@ export type FuelToday = {
 };
 
 /**
- * Deterministic Schema.org pre-fill returned by `POST /recipes/import`
- * (Tier-A scrape — no AI, Conflict C3). Ingredients are free-text lines the
+ * Reviewed pre-fill returned by `POST /recipes/import`, with extraction provenance.
+ * Ingredients are free-text lines the
  * user maps to foods in the manual-create form.
  */
 export type ImportedRecipe = {
+  extractionMethod?: "structured" | "page" | "ai";
   name: string;
   servings: number | null;
   instructions: string | null;

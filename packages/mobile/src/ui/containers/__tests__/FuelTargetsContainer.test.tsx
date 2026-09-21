@@ -8,6 +8,8 @@ import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import { useFuelSheets } from "@/state/fuel-sheets";
 import type { FuelTargetsPresenterProps } from "@/ui/presenters/FuelTargetsPresenter";
+import { logMeasurementCommand } from "@/application/commands/log-measurement.command";
+import { WeighInSheetContainer } from "../WeighInSheetContainer";
 import { FuelTargetsContainer } from "../FuelTargetsContainer";
 
 const mockProbe: { last: FuelTargetsPresenterProps | null } = { last: null };
@@ -694,4 +696,88 @@ describe("FuelTargetsContainer", () => {
       preset: "high_protein",
     });
   });
+});
+
+it("completes missing calculator inputs in onboarding without losing the target draft", async () => {
+  const { adapters, storage } = makeAdapters();
+  storage.cacheProfilePage(
+    "user-1",
+    makeProfilePagePayload({
+      dateOfBirth: null,
+      gender: null,
+      heightCm: null,
+      weightKg: null,
+    }),
+  );
+  render(
+    <AdapterProvider adapters={adapters}>
+      <FuelTargetsContainer onboarding />
+    </AdapterProvider>,
+  );
+  await waitFor(() => expect(mockProbe.last?.isLoadingInitial).toBe(false));
+  expect(mockProbe.last?.kcal).toBeNull();
+  act(() => mockProbe.last?.onGoalChange(-10));
+  act(() => mockProbe.last?.onWaterCupsChange(12));
+  for (const [field, value] of [
+    ["age", "1990-01-01"],
+    ["gender", "female"],
+    ["height", "170"],
+  ] as const) {
+    act(() => mockProbe.last?.onEditProfileField?.(field));
+    const editor = () =>
+      (
+        mockProbe.last?.profileEditor as React.ReactElement<
+          import("@/ui/presenters/FuelProfileEditor").FuelProfileEditorProps
+        >
+      ).props;
+    act(() => editor().onChange(value));
+    await act(async () => editor().onSave());
+    expect(mockProbe.last?.profileEditor).toBeUndefined();
+  }
+  act(() => mockProbe.last?.onEditProfileField?.("weight"));
+  const sheet = mockProbe.last?.profileEditor as React.ReactElement<
+    import("../WeighInSheetContainer").WeighInSheetContainerProps
+  >;
+  expect(sheet.type).toBe(WeighInSheetContainer);
+  expect(sheet.props.visible).toBe(true);
+  act(() => {
+    expect(
+      logMeasurementCommand(
+        { storage, userId: "user-1", day: "2026-09-21" },
+        { weightKg: 70 },
+      ).ok,
+    ).toBe(true);
+    sheet.props.onSaved?.();
+    sheet.props.onClose?.();
+  });
+  expect(mockProbe.last?.profileEditor).toBeUndefined();
+  expect(mockProbe.last?.kcal).not.toBeNull();
+  expect(mockProbe.last?.goal).toBe(-10);
+  expect(mockProbe.last?.waterCups).toBe(12);
+  expect(mockProbe.last?.weightKg).toBe(70);
+  expect(mockPush).not.toHaveBeenCalled();
+});
+
+it("updates the visible height unit immediately after quick-fill saves", async () => {
+  const { adapters, storage } = makeAdapters();
+  storage.cacheProfilePage("user-1", makeProfilePagePayload());
+  render(
+    <AdapterProvider adapters={adapters}>
+      <FuelTargetsContainer />
+    </AdapterProvider>,
+  );
+  await waitFor(() => expect(mockProbe.last?.isLoadingInitial).toBe(false));
+  act(() => mockProbe.last?.onEditProfileField?.("height"));
+  const editor = () =>
+    (
+      mockProbe.last?.profileEditor as React.ReactElement<
+        import("@/ui/presenters/FuelProfileEditor").FuelProfileEditorProps
+      >
+    ).props;
+  act(() => editor().onHeightFormatChange?.("ftin"));
+  act(() => editor().onChange("5"));
+  act(() => editor().onChange("10", true));
+  await act(async () => editor().onSave());
+  expect(mockProbe.last?.heightUnit).toBe("ftin");
+  expect(mockProbe.last?.heightCm).toBeCloseTo(177.8);
 });

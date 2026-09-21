@@ -10,10 +10,21 @@ function render(over: Partial<RecipeImportPresenterProps> = {}) {
     stage: "input",
     url: "",
     onUrlChange: jest.fn(),
+    onPasteUrl: jest.fn(),
+    pasteError: null,
+    isPasting: false,
     onImport: jest.fn(),
     onCreateManually: jest.fn(),
     onRetry: jest.fn(),
     onBack: jest.fn(),
+    onPasteRecipe: jest.fn(),
+    pastedTitle: "",
+    pastedIngredients: "",
+    pastedInstructions: "",
+    onPastedTitleChange: jest.fn(),
+    onPastedIngredientsChange: jest.fn(),
+    onPastedInstructionsChange: jest.fn(),
+    onReviewPasted: jest.fn(),
     ...over,
   };
   return { ...renderWithTheme(<RecipeImportPresenter {...props} />), props };
@@ -24,6 +35,23 @@ describe("RecipeImportPresenter — input stage", () => {
     const { getByTestId, props } = render({ url: "" });
     fireEvent.press(getByTestId("recipe-import-submit"));
     expect(props.onImport).not.toHaveBeenCalled();
+  });
+
+  it("pastes only when requested and shows clipboard feedback", () => {
+    const { getByTestId, getByText, props } = render({
+      pasteError: "Your clipboard is empty. Copy a recipe URL first.",
+    });
+    fireEvent.press(getByTestId("recipe-import-paste-url"));
+    expect(props.onPasteUrl).toHaveBeenCalledTimes(1);
+    expect(
+      getByText("Your clipboard is empty. Copy a recipe URL first."),
+    ).toBeTruthy();
+  });
+
+  it("disables paste while reading the clipboard", () => {
+    const { getByTestId, props } = render({ isPasting: true });
+    fireEvent.press(getByTestId("recipe-import-paste-url"));
+    expect(props.onPasteUrl).not.toHaveBeenCalled();
   });
 
   it("fires onUrlChange while typing", () => {
@@ -70,5 +98,42 @@ describe("RecipeImportPresenter — error stage", () => {
     expect(getByTestId("recipe-import-error")).toBeTruthy();
     fireEvent.press(getByTestId("recipe-import-retry"));
     expect(props.onRetry).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("RecipeImportPresenter — paste recovery", () => {
+  it.each(["input", "error", "no-microdata"] as const)(
+    "offers paste from %s",
+    (stage) => {
+      const { getByTestId, queryByText, props } = render({ stage });
+      fireEvent.press(getByTestId("recipe-import-paste"));
+      expect(props.onPasteRecipe).toHaveBeenCalledTimes(1);
+      expect(queryByText("VERIFIED")).toBeNull();
+    },
+  );
+  it("edits all fields and reviews a complete draft", () => {
+    const { getByTestId, getByText, props } = render({
+      stage: "paste",
+      pastedTitle: "Soup",
+      pastedIngredients: "Water",
+    });
+    fireEvent.changeText(getByTestId("recipe-paste-title"), "Toast");
+    fireEvent.changeText(getByTestId("recipe-paste-ingredients"), "Bread");
+    fireEvent.changeText(getByTestId("recipe-paste-instructions"), "Toast it");
+    expect(props.onPastedTitleChange).toHaveBeenCalledWith("Toast");
+    expect(props.onPastedIngredientsChange).toHaveBeenCalledWith("Bread");
+    expect(props.onPastedInstructionsChange).toHaveBeenCalledWith("Toast it");
+    fireEvent.press(getByTestId("recipe-paste-review"));
+    expect(props.onReviewPasted).toHaveBeenCalledTimes(1);
+    fireEvent.press(getByText("Back to URL"));
+    expect(props.onRetry).toHaveBeenCalled();
+  });
+  it.each([
+    { pastedTitle: "", pastedIngredients: "Rice" },
+    { pastedTitle: "Rice", pastedIngredients: "  " },
+  ])("requires name and ingredients", (fields) => {
+    const { getByTestId, props } = render({ stage: "paste", ...fields });
+    fireEvent.press(getByTestId("recipe-paste-review"));
+    expect(props.onReviewPasted).not.toHaveBeenCalled();
   });
 });

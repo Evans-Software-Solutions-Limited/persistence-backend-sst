@@ -15,7 +15,7 @@ import {
   isProfilePageStale,
 } from "@/domain/models/profilePage";
 import type { ApiPort } from "@/domain/ports/api.port";
-import type { StoragePort } from "@/domain/ports/storage.port";
+import type { StoragePort, SyncQueueEntry } from "@/domain/ports/storage.port";
 import { isAutoResolvableSyncEntry } from "@/domain/ports/sync.types";
 import { ok, type Result, type ApiError } from "@/shared/errors";
 
@@ -27,33 +27,91 @@ export type ProfilePageQueryResult = {
   cached: CachedProfilePage | null;
 };
 
-/** Keep an explicit local template preference on top of older server truth. */
+/** Merge eligible offline profile intent over a possibly older GET response.
+ * Apply in queue order so newer patches win independently for each field.
+ */
 export function reconcilePendingProfilePreferences(
   storage: StoragePort,
   userId: string,
   payload: ProfilePageData,
+  cachedAtRequestStart?: string,
+  queuedAtRequestStart: SyncQueueEntry[] = [],
 ): ProfilePageData {
-  const queued = storage.getQueuedEntriesForEntity("profile", userId);
-  for (let index = queued.length - 1; index >= 0; index -= 1) {
-    if (!isAutoResolvableSyncEntry(queued[index])) continue;
+  // A quick edit can already be acknowledged/pruned while an older GET is
+  // outstanding. Compare content, not millisecond timestamps, so that GET
+  // cannot roll back accepted intent once it has left the pending queue.
+  const cached = storage.getCachedProfilePage(userId)?.payload;
+  const cacheChanged =
+    cachedAtRequestStart !== undefined &&
+    cached &&
+    JSON.stringify(cached) !== cachedAtRequestStart;
+  if (cacheChanged) payload = cached;
+  // A mutation already queued before the GET may be acknowledged during it,
+  // without changing the optimistic cache. Preserve that request-start intent
+  // too. Newer cache content wins; terminally rejected rows never shadow GETs.
+  const acknowledged = cacheChanged
+    ? []
+    : queuedAtRequestStart.filter((entry) => {
+        const current = storage.getMutationById(entry.id);
+        return (
+          isAutoResolvableSyncEntry(entry) &&
+          (!current || current.status === "completed")
+        );
+      });
+  const profile = { ...payload.profile };
+  for (const entry of [
+    ...acknowledged,
+    ...storage.getQueuedEntriesForEntity("profile", userId),
+  ]) {
+    if (
+      entry.endpoint !== "/profile" ||
+      entry.method !== "PATCH" ||
+      !isAutoResolvableSyncEntry(entry)
+    )
+      continue;
     try {
-      const update = JSON.parse(queued[index].payload) as {
-        showTemplateWorkouts?: unknown;
-      };
-      if (typeof update.showTemplateWorkouts === "boolean") {
-        return {
-          ...payload,
-          profile: {
-            ...payload.profile,
-            showTemplateWorkouts: update.showTemplateWorkouts,
-          },
-        };
-      }
+      const update: unknown = JSON.parse(entry.payload);
+      if (!update || typeof update !== "object" || Array.isArray(update))
+        continue;
+      const patch = update as Record<string, unknown>;
+      if (typeof patch.showTemplateWorkouts === "boolean")
+        profile.showTemplateWorkouts = patch.showTemplateWorkouts;
+      if (typeof patch.fullName === "string" || patch.fullName === null)
+        profile.fullName = patch.fullName;
+      if (typeof patch.dateOfBirth === "string" || patch.dateOfBirth === null)
+        profile.dateOfBirth = patch.dateOfBirth;
+      if (
+        patch.gender === "male" ||
+        patch.gender === "female" ||
+        patch.gender === "other" ||
+        patch.gender === null
+      )
+        profile.gender = patch.gender;
+      if (
+        (typeof patch.heightCm === "number" &&
+          Number.isFinite(patch.heightCm)) ||
+        patch.heightCm === null
+      )
+        profile.heightCm = patch.heightCm;
+      if (patch.weightUnit === "kg" || patch.weightUnit === "lb")
+        profile.weightUnit = patch.weightUnit;
+      if (patch.heightUnit === "cm" || patch.heightUnit === "ftin")
+        profile.heightUnit = patch.heightUnit;
+      if (typeof patch.isProfilePublic === "boolean")
+        profile.isProfilePublic = patch.isProfilePublic;
+      if (
+        patch.fitnessLevel === "beginner" ||
+        patch.fitnessLevel === "intermediate" ||
+        patch.fitnessLevel === "advanced" ||
+        patch.fitnessLevel === "elite" ||
+        patch.fitnessLevel === null
+      )
+        profile.fitnessLevel = patch.fitnessLevel;
     } catch {
-      // Ignore an unrelated malformed entry; sync owns surfacing its failure.
+      // Sync owns surfacing malformed/terminal entries; they are not authority.
     }
   }
-  return payload;
+  return { ...payload, profile };
 }
 
 /**
@@ -70,7 +128,9 @@ export function getProfilePageQuery(
 ): ProfilePageQueryResult {
   const cached = storage.getCachedProfilePage(userId);
   return {
-    payload: cached?.payload ?? null,
+    payload: cached
+      ? reconcilePendingProfilePreferences(storage, userId, cached.payload)
+      : null,
     isStale: isProfilePageStale(cached, now()),
     cached,
   };
@@ -93,12 +153,21 @@ export async function refreshProfilePage(
   storage: StoragePort,
   userId: string,
 ): Promise<Result<ProfilePageData, ApiError>> {
+  const cachedAtRequestStart = JSON.stringify(
+    storage.getCachedProfilePage(userId)?.payload ?? null,
+  );
+  const queuedAtRequestStart = storage.getQueuedEntriesForEntity(
+    "profile",
+    userId,
+  );
   const result = await api.getProfilePage();
   if (!result.ok) return result;
   const payload = reconcilePendingProfilePreferences(
     storage,
     userId,
     result.value,
+    cachedAtRequestStart,
+    queuedAtRequestStart,
   );
   storage.cacheProfilePage(userId, payload);
   return ok(payload);

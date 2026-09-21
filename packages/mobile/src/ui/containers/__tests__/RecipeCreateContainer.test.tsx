@@ -161,6 +161,7 @@ describe("RecipeCreateContainer", () => {
         { name: "Jasmine rice", quantity: 200, unit: "g" },
       ],
       source: "import",
+      extractionMethod: "ai",
     });
     const { adapters } = makeAdapters();
     render(
@@ -168,6 +169,7 @@ describe("RecipeCreateContainer", () => {
         <RecipeCreateContainer />
       </Wrapper>,
     );
+    expect(mockProbe.last?.extractionMethod).toBe("ai");
     expect(mockProbe.last?.name).toBe("Chicken & rice bowl");
     expect(mockProbe.last?.servings).toBe(2);
     expect(mockProbe.last?.instructions).toBe("Cook it.");

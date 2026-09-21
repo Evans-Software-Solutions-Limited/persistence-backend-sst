@@ -168,3 +168,66 @@ describe("parseRecipeFromHtml", () => {
     });
   });
 });
+
+describe("nested recipe formats", () => {
+  it("reads WebPage.mainEntity and sectioned instructions in source order", () => {
+    const html = `<script TYPE = 'application/ld+json; charset=utf-8'>${JSON.stringify(
+      {
+        "@type": "WebPage",
+        mainEntity: {
+          "@type": "https://schema.org/Recipe",
+          name: "Pie",
+          recipeYield: ["6 portions"],
+          recipeIngredient: [{ text: " 300g flour " }, null, 7, ""],
+          recipeInstructions: [
+            {
+              "@type": "HowToSection",
+              name: "Pastry",
+              itemListElement: [
+                { "@type": "HowToStep", text: "Mix flour" },
+                "Roll out",
+              ],
+            },
+            {
+              "@type": "HowToSection",
+              name: "Bake",
+              itemListElement: [
+                { text: "Bake for 30 minutes" },
+                {},
+                null,
+                5,
+                " ",
+              ],
+            },
+          ],
+        },
+      },
+    )}</script>`;
+    expect(parseRecipeFromHtml(html)).toEqual({
+      name: "Pie",
+      servings: 6,
+      ingredients: ["300g flour"],
+      instructions: "Pastry\nMix flour\nRoll out\nBake\nBake for 30 minutes",
+      nutrition: null,
+    });
+  });
+  it("handles nameless sections, missing recipe fields and non-object JSON", () => {
+    const html =
+      wrap("null") +
+      wrap("123") +
+      wrap(
+        JSON.stringify({
+          "@type": "Recipe",
+          recipeYield: "unknown",
+          recipeInstructions: { itemListElement: " Cook " },
+        }),
+      );
+    expect(parseRecipeFromHtml(html)).toEqual({
+      name: "Imported recipe",
+      servings: null,
+      ingredients: [],
+      instructions: "Cook",
+      nutrition: null,
+    });
+  });
+});

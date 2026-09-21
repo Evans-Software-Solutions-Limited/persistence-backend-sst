@@ -48,6 +48,9 @@ import {
   type MacroPresetMode,
   type MacroSplit,
 } from "@/domain/services/nutrition.service";
+import { useFuelProfileEditor } from "@/ui/hooks/useFuelProfileEditor";
+import { FuelProfileEditor } from "@/ui/presenters/FuelProfileEditor";
+import { WeighInSheetContainer } from "./WeighInSheetContainer";
 import { FuelTargetsPresenter } from "@/ui/presenters/FuelTargetsPresenter";
 
 const DEFAULT_WATER_CUPS = 8;
@@ -130,9 +133,6 @@ export function FuelTargetsContainer({
   }, []);
 
   const profile = profilePage.payload?.profile ?? null;
-  const age = computeAge(profile?.dateOfBirth ?? null);
-  const gender = profile?.gender ?? null;
-  const heightCm = profile?.heightCm ?? null;
   // `profile.weightKg` is a static snapshot that nothing in the app ever
   // writes — weight is logged via the weigh-in flow into `cached_body_trend`,
   // never back onto the profile row. Sourcing from the latest body
@@ -146,7 +146,14 @@ export function FuelTargetsContainer({
     }
     return null;
   }, [body.data]);
-  const weightKg = latestWeightKg ?? profile?.weightKg ?? null;
+  const quickProfile = useFuelProfileEditor(
+    profile,
+    latestWeightKg ?? profile?.weightKg ?? null,
+  );
+  const age = computeAge(quickProfile.profile?.dateOfBirth ?? null);
+  const gender = quickProfile.profile?.gender ?? null;
+  const heightCm = quickProfile.profile?.heightCm ?? null;
+  const weightKg = quickProfile.weightKg;
 
   const manualKcal = useMemo(() => {
     const parsed = parseFloat(manualKcalText);
@@ -293,8 +300,28 @@ export function FuelTargetsContainer({
       heightCm={heightCm}
       weightKg={weightKg}
       weightUnit={profile?.weightUnit ?? "kg"}
-      heightUnit={profile?.heightUnit ?? "cm"}
+      heightUnit={quickProfile.profile?.heightUnit ?? "cm"}
       onOpenProfile={onboarding ? undefined : onOpenProfile}
+      onEditProfileField={quickProfile.open}
+      profileEditor={
+        quickProfile.editor?.field === "weight" ? (
+          <WeighInSheetContainer
+            visible
+            onClose={quickProfile.close}
+            onSaved={body.reload}
+          />
+        ) : quickProfile.editor ? (
+          <FuelProfileEditor
+            state={quickProfile.editor}
+            heightUnit={quickProfile.profile?.heightUnit ?? "cm"}
+            weightUnit={profile?.weightUnit ?? "kg"}
+            onChange={quickProfile.change}
+            onHeightFormatChange={quickProfile.changeHeightFormat}
+            onSave={quickProfile.save}
+            onCancel={quickProfile.close}
+          />
+        ) : undefined
+      }
       calorieMode={calorieMode}
       onCalorieModeChange={onCalorieModeChange}
       manualKcalText={manualKcalText}

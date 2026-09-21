@@ -1,13 +1,7 @@
-import { TextInput } from "react-native";
+import { ScrollView, TextInput } from "react-native";
 import { Text, View } from "@tamagui/core";
 import { SafeAreaView } from "react-native-safe-area-context";
-import {
-  Btn,
-  Card,
-  HeaderBar,
-  IconBtn,
-  Pill,
-} from "@/ui/components/foundation";
+import { Btn, Card, HeaderBar, IconBtn } from "@/ui/components/foundation";
 import { IconArrowR, IconBack, IconInfo } from "@/ui/components/icons";
 import { color } from "@/ui/theme/tokens";
 
@@ -22,24 +16,32 @@ import { color } from "@/ui/theme/tokens";
  * Implements: specs/milestones (Recipes AI PR3 brief) § E. Import-from-URL
  */
 
-export type ImportStage = "input" | "importing" | "no-microdata" | "error";
-
-const SUPPORTED_SITES = [
-  "BBC Good Food",
-  "Serious Eats",
-  "AllRecipes",
-  "NYT Cooking",
-  "Bon Appétit",
-];
+export type ImportStage =
+  | "input"
+  | "importing"
+  | "no-microdata"
+  | "error"
+  | "paste";
 
 export type RecipeImportPresenterProps = {
   stage: ImportStage;
   url: string;
   onUrlChange: (url: string) => void;
+  onPasteUrl: () => void;
+  pasteError: string | null;
+  isPasting: boolean;
   onImport: () => void;
   onCreateManually: () => void;
   onRetry: () => void;
   onBack: () => void;
+  onPasteRecipe: () => void;
+  pastedTitle: string;
+  pastedIngredients: string;
+  pastedInstructions: string;
+  onPastedTitleChange: (value: string) => void;
+  onPastedIngredientsChange: (value: string) => void;
+  onPastedInstructionsChange: (value: string) => void;
+  onReviewPasted: () => void;
   testID?: string;
 };
 
@@ -47,10 +49,21 @@ export function RecipeImportPresenter({
   stage,
   url,
   onUrlChange,
+  onPasteUrl,
+  pasteError,
+  isPasting,
   onImport,
   onCreateManually,
   onRetry,
   onBack,
+  onPasteRecipe,
+  pastedTitle,
+  pastedIngredients,
+  pastedInstructions,
+  onPastedTitleChange,
+  onPastedIngredientsChange,
+  onPastedInstructionsChange,
+  onReviewPasted,
   testID = "recipe-import-screen",
 }: RecipeImportPresenterProps) {
   return (
@@ -73,7 +86,10 @@ export function RecipeImportPresenter({
         }
       />
 
-      <View flex={1} padding={16} gap={14}>
+      <ScrollView
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{ padding: 16, gap: 14, flexGrow: 1 }}
+      >
         {stage === "input" ? (
           <>
             <Card pad={14} radius={14}>
@@ -108,56 +124,41 @@ export function RecipeImportPresenter({
                 }}
                 testID="recipe-import-url-input"
               />
+              <Btn
+                full
+                variant="ghost"
+                onPress={onPasteUrl}
+                disabled={isPasting}
+                testID="recipe-import-paste-url"
+              >
+                {isPasting ? "Pasting…" : "Paste URL"}
+              </Btn>
+              {pasteError ? (
+                <Text
+                  fontFamily="$body"
+                  fontSize={12}
+                  color="$text2"
+                  accessibilityRole="alert"
+                  accessibilityLiveRegion="polite"
+                  testID="recipe-import-paste-error"
+                >
+                  {pasteError}
+                </Text>
+              ) : null}
             </Card>
 
-            <View>
+            <Card pad={14} radius={12}>
               <Text
-                fontFamily="$display"
-                fontSize={10.5}
-                fontWeight="600"
-                letterSpacing={1.7}
-                textTransform="uppercase"
-                color="$text3"
-                marginBottom={8}
+                fontFamily="$body"
+                fontSize={13}
+                color="$text2"
+                lineHeight={19}
               >
-                SUPPORTED SITES
+                Try any public recipe page. Some sites block imports or don’t
+                provide a readable recipe. You can paste the ingredients and
+                method instead.
               </Text>
-              <Card pad={0} radius={12}>
-                {SUPPORTED_SITES.map((site, i) => (
-                  <View
-                    key={site}
-                    flexDirection="row"
-                    alignItems="center"
-                    gap={10}
-                    padding={12}
-                    borderTopWidth={i ? 1 : 0}
-                    borderColor="$border"
-                  >
-                    <Text
-                      flex={1}
-                      fontFamily="$body"
-                      fontSize={13}
-                      color="$text2"
-                    >
-                      {site}
-                    </Text>
-                    <Pill tone="success" size="xs">
-                      VERIFIED
-                    </Pill>
-                  </View>
-                ))}
-                <View
-                  flexDirection="row"
-                  padding={12}
-                  borderTopWidth={1}
-                  borderColor="$border"
-                >
-                  <Text fontFamily="$body" fontSize={13} color="$text3">
-                    + 200 more
-                  </Text>
-                </View>
-              </Card>
-            </View>
+            </Card>
 
             <View
               flexDirection="row"
@@ -193,7 +194,87 @@ export function RecipeImportPresenter({
             >
               {url.trim().length > 0 ? "Extract recipe" : "Paste a URL above"}
             </Btn>
+            <Btn
+              full
+              variant="ghost"
+              onPress={onPasteRecipe}
+              testID="recipe-import-paste"
+            >
+              Paste recipe text instead
+            </Btn>
           </>
+        ) : stage === "paste" ? (
+          <View gap={14} testID="recipe-import-paste-form">
+            <Text
+              fontFamily="$body"
+              fontSize={13}
+              color="$text2"
+              lineHeight={19}
+            >
+              Copy the ingredients and method from your recipe. Review portions
+              and nutrition on the next screen before saving.
+            </Text>
+            {[
+              {
+                label: "Recipe name",
+                value: pastedTitle,
+                change: onPastedTitleChange,
+                id: "title",
+                max: 200,
+              },
+              {
+                label: "Ingredients — one per line",
+                value: pastedIngredients,
+                change: onPastedIngredientsChange,
+                id: "ingredients",
+                max: 16000,
+              },
+              {
+                label: "Method (optional)",
+                value: pastedInstructions,
+                change: onPastedInstructionsChange,
+                id: "instructions",
+                max: 20000,
+              },
+            ].map((field) => (
+              <View key={field.id} gap={8}>
+                <Text fontFamily="$body" fontSize={13} color="$text2">
+                  {field.label}
+                </Text>
+                <TextInput
+                  accessibilityLabel={field.label}
+                  value={field.value}
+                  onChangeText={field.change}
+                  multiline={field.id !== "title"}
+                  maxLength={field.max}
+                  textAlignVertical="top"
+                  style={{
+                    color: color.$text,
+                    backgroundColor: color.$surface2,
+                    borderColor: color.$border2,
+                    borderWidth: 1,
+                    borderRadius: 10,
+                    padding: 14,
+                    minHeight: field.id === "title" ? 48 : 120,
+                  }}
+                  testID={`recipe-paste-${field.id}`}
+                />
+              </View>
+            ))}
+            <Btn
+              full
+              variant="filled"
+              tone="primary"
+              onPress={onReviewPasted}
+              disabled={!pastedTitle.trim() || !pastedIngredients.trim()}
+              testID="recipe-paste-review"
+            >
+              Review recipe
+            </Btn>
+            <Btn full variant="ghost" onPress={onRetry}>
+              Back to URL
+            </Btn>
+          </View>
         ) : stage === "importing" ? (
           <View flex={1} alignItems="center" justifyContent="center" gap={12}>
             <Text
@@ -218,13 +299,30 @@ export function RecipeImportPresenter({
                 color="$text2"
                 lineHeight={19}
               >
-                Couldn&rsquo;t read a recipe from that page — enter it manually.
+                We couldn’t read a recipe from that page. Paste its ingredients
+                and method, or add it manually.
               </Text>
             </Card>
             <Btn
               full
               variant="filled"
               tone="primary"
+              onPress={onPasteRecipe}
+              testID="recipe-import-paste"
+            >
+              Paste recipe text
+            </Btn>
+            <Btn
+              full
+              variant="ghost"
+              onPress={onRetry}
+              testID="recipe-import-retry"
+            >
+              Try another URL
+            </Btn>
+            <Btn
+              full
+              variant="ghost"
               size="lg"
               onPress={onCreateManually}
               testID="recipe-import-create-manually"
@@ -241,7 +339,8 @@ export function RecipeImportPresenter({
                 color="$text2"
                 lineHeight={19}
               >
-                Something went wrong importing that recipe.
+                We couldn’t access that recipe. Try again, or paste the recipe
+                text to continue.
               </Text>
             </Card>
             <Btn
@@ -254,9 +353,25 @@ export function RecipeImportPresenter({
             >
               Retry
             </Btn>
+            <Btn
+              full
+              variant="ghost"
+              onPress={onPasteRecipe}
+              testID="recipe-import-paste"
+            >
+              Paste recipe text
+            </Btn>
+            <Btn
+              full
+              variant="ghost"
+              onPress={onCreateManually}
+              testID="recipe-import-create-manually"
+            >
+              Create manually
+            </Btn>
           </View>
         )}
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }

@@ -184,19 +184,12 @@ describe("WeighInSheetPresenter", () => {
     expect(getByTestId("weigh-in-input").props.value).toBe("1.0");
   });
 
-  it("leaves a typed out-of-range weight unclamped (the command gates it on save)", () => {
-    // §3: only the stepper is floored. A deliberately-typed bad value still
-    // flows through so logMeasurementCommand can reject it and the container
-    // can keep the sheet open to correct (gate covered by WeighInSheetContainer).
-    // The field shows the raw typed text verbatim (not reformatted) — see the
-    // "can be cleared" test below for why.
+  it("keeps invalid text visible without saving a previous value", () => {
     const { getByTestId, onSave } = render();
     fireEvent.changeText(getByTestId("weigh-in-input"), "-50");
     expect(getByTestId("weigh-in-input").props.value).toBe("-50");
     fireEvent.press(getByTestId("weigh-in-save"));
-    expect(onSave).toHaveBeenCalledWith(
-      expect.objectContaining({ weightKg: -50 }),
-    );
+    expect(onSave).not.toHaveBeenCalled();
   });
 
   it("can be cleared to an empty string and retyped, unlike the old parse-and-reformat input", () => {
@@ -213,13 +206,11 @@ describe("WeighInSheetPresenter", () => {
     expect(getByTestId("weigh-in-input").props.value).toBe("65");
   });
 
-  it("reformats the field from the last valid value when the unit toggles mid-edit", () => {
+  it("keeps a cleared entry empty when switching units", () => {
     const { getByTestId, getByLabelText } = render();
     fireEvent.changeText(getByTestId("weigh-in-input"), "");
     fireEvent.press(getByLabelText("Use lb"));
-    // Unit toggle reformats from the canonical (still 79.8kg) — the cleared
-    // raw text doesn't leave the field stuck empty.
-    expect(getByTestId("weigh-in-input").props.value).toBe("175.9");
+    expect(getByTestId("weigh-in-input").props.value).toBe("");
   });
 
   it("picks a past day via the date chips", () => {
@@ -233,4 +224,271 @@ describe("WeighInSheetPresenter", () => {
       unit: "kg",
     });
   });
+});
+
+describe("weight entry formats", () => {
+  it.each([["st+lb", "10", "7", 147]])(
+    "converts %s to canonical kg and retains pound preference",
+    (format, first, second, pounds) => {
+      const { getByLabelText, getByTestId, onSave } = render();
+      fireEvent.press(getByLabelText(`Use ${format}`));
+      fireEvent.changeText(getByTestId("weigh-in-input"), first);
+      if (second !== null)
+        fireEvent.changeText(getByTestId("weigh-in-remainder-input"), second);
+      fireEvent.press(getByTestId("weigh-in-save"));
+      expect(onSave.mock.calls[0][0].weightKg).toBeCloseTo(
+        Number(pounds) * 0.45359237,
+        7,
+      );
+      expect(onSave.mock.calls[0][0].unit).toBe("lb");
+    },
+  );
+
+  it("switches formats without drift and rounds once when saving", () => {
+    const { getByLabelText, getByTestId, onSave } = render({
+      defaultWeightKg: 73.123456,
+    });
+    for (const format of ["lb", "st+lb", "kg"])
+      fireEvent.press(getByLabelText(`Use ${format}`));
+    fireEvent.press(getByTestId("weigh-in-save"));
+    expect(onSave.mock.calls[0][0].weightKg).toBe(73.1);
+  });
+
+  it.each(["", "Infinity", "NaN", "12abc", "-1", "0", "1000"])(
+    "does not save invalid entry %s",
+    (text) => {
+      const { getByTestId, onSave } = render();
+      fireEvent.changeText(getByTestId("weigh-in-input"), text);
+      fireEvent.press(getByTestId("weigh-in-save"));
+      expect(onSave).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ["st+lb", "14"],
+    ["st+lb", ""],
+  ])("rejects invalid %s remainder %s", (format, remainder) => {
+    const { getByLabelText, getByTestId, onSave } = render();
+    fireEvent.press(getByLabelText(`Use ${format}`));
+    fireEvent.changeText(getByTestId("weigh-in-remainder-input"), remainder);
+    fireEvent.press(getByTestId("weigh-in-save"));
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it("preserves a manually selected format when preferences arrive late", () => {
+    const { getByLabelText, getByTestId, rerender } = render();
+    fireEvent.press(getByLabelText("Use st+lb"));
+    fireEvent.changeText(getByTestId("weigh-in-input"), "10");
+    fireEvent.changeText(getByTestId("weigh-in-remainder-input"), "7");
+    rerender(
+      <WeighInSheetPresenter
+        visible
+        onSave={jest.fn()}
+        onClose={jest.fn()}
+        defaultUnit="kg"
+        defaultWeightKg={90}
+      />,
+    );
+    expect(getByTestId("weigh-in-input").props.value).toBe("10");
+    expect(getByTestId("weigh-in-remainder-input").props.value).toBe("7");
+  });
+});
+
+describe("weight format boundaries", () => {
+  it.each([["st+lb", 153.99, "11", "0.0"]])(
+    "normalizes rounded %s remainders",
+    (format, pounds, primary, remainder) => {
+      const { getByLabelText, getByTestId, onSave } = render({
+        defaultWeightKg: Number(pounds) * 0.45359237,
+      });
+      fireEvent.press(getByLabelText(`Use ${format}`));
+      expect(getByTestId("weigh-in-input").props.value).toBe(primary);
+      expect(getByTestId("weigh-in-remainder-input").props.value).toBe(
+        remainder,
+      );
+      fireEvent.press(getByTestId("weigh-in-save"));
+      expect(onSave.mock.calls[0][0].weightKg).toBe(154 * 0.45359237);
+    },
+  );
+  it("never resurrects an invalid value through a unit change or stepper", () => {
+    const { getByLabelText, getByTestId, onSave } = render();
+    fireEvent.changeText(getByTestId("weigh-in-input"), "-50");
+    fireEvent.press(getByLabelText("Increase weight"));
+    fireEvent.press(getByLabelText("Use st+lb"));
+    fireEvent.press(getByTestId("weigh-in-save"));
+    expect(onSave).not.toHaveBeenCalled();
+    expect(getByTestId("weigh-in-input").props.value).toBe("");
+  });
+});
+
+it("retains valid boundary measurements when changing display formats", () => {
+  const { getByLabelText, getByTestId, onSave } = render({
+    defaultWeightKg: 999,
+  });
+  for (const format of ["lb", "st+lb"]) {
+    fireEvent.press(getByLabelText(`Use ${format}`));
+    fireEvent.press(getByTestId("weigh-in-save"));
+    expect(onSave).toHaveBeenLastCalledWith(
+      expect.objectContaining({ weightKg: 2202.4 * 0.45359237 }),
+    );
+  }
+});
+
+describe("localized weight input", () => {
+  it("accepts a decimal comma in kilograms", () => {
+    const { getByTestId, onSave } = render();
+    fireEvent.changeText(getByTestId("weigh-in-input"), "80,5");
+    fireEvent.press(getByTestId("weigh-in-save"));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ weightKg: 80.5 }),
+    );
+  });
+  it("accepts a decimal comma in the pounds remainder", () => {
+    const { getByTestId, getByLabelText, onSave } = render();
+    fireEvent.press(getByLabelText("Use st+lb"));
+    fireEvent.changeText(getByTestId("weigh-in-input"), "11");
+    fireEvent.changeText(getByTestId("weigh-in-remainder-input"), "2,5");
+    fireEvent.press(getByTestId("weigh-in-save"));
+    expect(onSave.mock.calls[0][0].weightKg).toBeCloseTo(156.5 * 0.45359237, 8);
+  });
+  it.each(["80,5.2", "80.5,2", "80,,5", "80,5,2"])(
+    "rejects malformed separators in %s",
+    (text) => {
+      const { getByTestId, onSave } = render();
+      fireEvent.changeText(getByTestId("weigh-in-input"), text);
+      fireEvent.press(getByTestId("weigh-in-save"));
+      expect(onSave).not.toHaveBeenCalled();
+    },
+  );
+  it.each(["2,5.2", "2,5,2"])(
+    "rejects malformed remainder separators in %s",
+    (text) => {
+      const { getByTestId, getByLabelText, onSave } = render();
+      fireEvent.press(getByLabelText("Use st+lb"));
+      fireEvent.changeText(getByTestId("weigh-in-remainder-input"), text);
+      fireEvent.press(getByTestId("weigh-in-save"));
+      expect(onSave).not.toHaveBeenCalled();
+    },
+  );
+});
+
+it("logs the displayed one-decimal Health-prefilled measurement", () => {
+  const { getByTestId, onSave } = render({ defaultWeightKg: 80.123456 });
+  expect(getByTestId("weigh-in-input").props.value).toBe("80.1");
+  fireEvent.press(getByTestId("weigh-in-save"));
+  expect(onSave).toHaveBeenCalledWith(
+    expect.objectContaining({ weightKg: 80.1 }),
+  );
+});
+it("normalizes typed precision to the logged value", () => {
+  const { getByTestId, onSave } = render();
+  fireEvent.changeText(getByTestId("weigh-in-input"), "80.12345");
+  fireEvent.press(getByTestId("weigh-in-save"));
+  expect(getByTestId("weigh-in-input").props.value).toBe("80.1");
+  expect(onSave).toHaveBeenCalledWith(
+    expect.objectContaining({ weightKg: 80.1 }),
+  );
+});
+it("does not log a tiny value rounded to zero", () => {
+  const { getByTestId, onSave } = render();
+  fireEvent.changeText(getByTestId("weigh-in-input"), "0.01");
+  fireEvent.press(getByTestId("weigh-in-save"));
+  expect(onSave).not.toHaveBeenCalled();
+});
+it("offers only kilograms, pounds and stone with pounds", () => {
+  const { queryByLabelText } = render();
+  expect(queryByLabelText("Use oz")).toBeNull();
+  expect(queryByLabelText("Use lb+oz")).toBeNull();
+});
+
+it("formats a precise edit to one decimal when leaving the field", () => {
+  const { getByTestId } = render();
+  fireEvent.changeText(getByTestId("weigh-in-input"), "80.126");
+  fireEvent(getByTestId("weigh-in-input"), "blur");
+  expect(getByTestId("weigh-in-input").props.value).toBe("80.1");
+});
+
+describe("weigh-in date picker", () => {
+  it("opens the shared drawer and saves a confirmed older date", () => {
+    const { getByTestId, getByText, onSave } = render();
+    fireEvent.press(getByTestId("weigh-in-date"));
+    expect(getByTestId("weigh-in-date-drawer-wheels")).toBeTruthy();
+    fireEvent(getByTestId("weigh-in-date-drawer-native"), "change", {
+      nativeEvent: { timestamp: new Date(2026, 4, 15, 12).getTime() },
+    });
+    fireEvent.press(getByTestId("weigh-in-date-drawer-confirm"));
+    expect(getByText("Log 79.8 kg · 15 May 2026")).toBeTruthy();
+    fireEvent.press(getByTestId("weigh-in-save"));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ day: "2026-05-15", weightKg: 79.8 }),
+    );
+  });
+
+  it("keeps today when an unconfirmed date drawer is dismissed", () => {
+    const { getByTestId, onSave } = render();
+    fireEvent.press(getByTestId("weigh-in-date"));
+    fireEvent(getByTestId("weigh-in-date-drawer-native"), "change", {
+      nativeEvent: { timestamp: new Date(2026, 4, 15, 12).getTime() },
+    });
+    fireEvent(getByTestId("weigh-in-date-drawer"), "close");
+    fireEvent.press(getByTestId("weigh-in-save"));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ day: "2026-06-10" }),
+    );
+  });
+
+  it("rejects future dates and permits returning to a recent-day shortcut", () => {
+    const { getByTestId, getByLabelText, onSave } = render();
+    fireEvent.press(getByTestId("weigh-in-date"));
+    fireEvent(getByTestId("weigh-in-date-drawer-native"), "change", {
+      nativeEvent: { timestamp: new Date(2026, 5, 11, 12).getTime() },
+    });
+    fireEvent.press(getByTestId("weigh-in-date-drawer-confirm"));
+    fireEvent.press(getByTestId("weigh-in-save"));
+    expect(onSave).toHaveBeenLastCalledWith(
+      expect.objectContaining({ day: "2026-06-10" }),
+    );
+    fireEvent.press(getByLabelText("Yesterday"));
+    fireEvent.press(getByTestId("weigh-in-save"));
+    expect(onSave).toHaveBeenLastCalledWith(
+      expect.objectContaining({ day: "2026-06-09" }),
+    );
+  });
+});
+
+it("preserves a selected date across midnight and resets on the next open", () => {
+  const onSave = jest.fn();
+  const props = {
+    visible: true,
+    onSave,
+    onClose: jest.fn(),
+    defaultWeightKg: 80,
+  };
+  const screen = renderWithTheme(
+    <WeighInSheetPresenter {...props} today={TODAY} />,
+  );
+  fireEvent.press(screen.getByTestId("weigh-in-date"));
+  fireEvent(screen.getByTestId("weigh-in-date-drawer-native"), "change", {
+    nativeEvent: { timestamp: new Date(2026, 4, 15, 12).getTime() },
+  });
+  fireEvent.press(screen.getByTestId("weigh-in-date-drawer-confirm"));
+  const tomorrow = new Date("2026-06-11T12:00:00Z");
+  screen.rerender(<WeighInSheetPresenter {...props} today={tomorrow} />);
+  fireEvent.press(screen.getByTestId("weigh-in-save"));
+  expect(onSave).toHaveBeenLastCalledWith(
+    expect.objectContaining({ day: "2026-05-15" }),
+  );
+  fireEvent.press(screen.getByLabelText("Today"));
+  fireEvent.press(screen.getByTestId("weigh-in-save"));
+  expect(onSave).toHaveBeenLastCalledWith(
+    expect.objectContaining({ day: "2026-06-11" }),
+  );
+  screen.rerender(
+    <WeighInSheetPresenter {...props} visible={false} today={tomorrow} />,
+  );
+  screen.rerender(<WeighInSheetPresenter {...props} today={tomorrow} />);
+  fireEvent.press(screen.getByTestId("weigh-in-save"));
+  expect(onSave).toHaveBeenLastCalledWith(
+    expect.objectContaining({ day: "2026-06-11" }),
+  );
 });

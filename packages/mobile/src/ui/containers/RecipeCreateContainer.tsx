@@ -121,10 +121,16 @@ export function RecipeCreateContainer() {
   });
   const [source] = useState<NonNullable<CreateRecipeInput["source"]>>(() => {
     const seedSource = useRecipeDraft.getState().seed?.source;
-    if (seedSource === "import") return "url_import";
+    if (seedSource === "import")
+      return useRecipeDraft.getState().seed?.extractionMethod === "ai"
+        ? "ai_extracted"
+        : "url_import";
     if (seedSource === "snap") return "ai_extracted";
     return "manual";
   });
+  const [extractionMethod] = useState(
+    () => useRecipeDraft.getState().seed?.extractionMethod,
+  );
   const [sourceUrl] = useState<string | undefined>(
     () => useRecipeDraft.getState().seed?.sourceUrl ?? undefined,
   );
@@ -434,6 +440,7 @@ export function RecipeCreateContainer() {
 
   return (
     <RecipeCreatePresenter
+      extractionMethod={extractionMethod}
       name={name}
       onNameChange={setName}
       servings={servings}

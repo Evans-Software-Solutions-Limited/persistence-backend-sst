@@ -1,9 +1,11 @@
+import { parseNutritionValue } from "./parseNutritionValue";
+import { parseVisibleRecipe } from "./parseVisibleRecipe";
+
 /**
  * Deterministic Schema.org Recipe extractor (M9 — no AI). Parses
  * `application/ld+json` blocks from the fetched HTML and pulls out the first
- * node typed `Recipe`. Returns null when no Recipe microdata is present — the
- * handler maps that to 422 `no_recipe_microdata` (the LLM-fallback extraction
- * is deferred to M9.5 per Conflict C3).
+ * node typed `Recipe`. Falls back to labelled, readable HTML recipe sections when metadata is absent.
+ * Returns null for ambiguous/unreadable pages; no AI-generated recipe content.
  */
 
 /**
@@ -21,6 +23,7 @@ export type ParsedNutrition = {
 };
 
 export type ParsedRecipe = {
+  extractionMethod?: "structured" | "page" | "ai";
   name: string;
   servings: number | null;
   instructions: string | null;
@@ -32,20 +35,56 @@ export type ParsedRecipe = {
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 function hasRecipeType(node: any): boolean {
-  const t = node?.["@type"];
-  if (!t) return false;
-  return Array.isArray(t) ? t.includes("Recipe") : t === "Recipe";
+  const types = Array.isArray(node?.["@type"])
+    ? node["@type"]
+    : [node?.["@type"]];
+  return types.some((type: unknown) =>
+    [
+      "Recipe",
+      "https://schema.org/Recipe",
+      "http://schema.org/Recipe",
+    ].includes(type as string),
+  );
 }
 
+/** Iterative traversal also handles WebPage.mainEntity without stack overflow. */
 function collectNodes(parsed: any): any[] {
-  if (Array.isArray(parsed)) return parsed.flatMap(collectNodes);
-  if (parsed && typeof parsed === "object") {
-    if (Array.isArray(parsed["@graph"])) {
-      return [parsed, ...parsed["@graph"].flatMap(collectNodes)];
+  const pending = [parsed];
+  const nodes: any[] = [];
+  while (pending.length > 0) {
+    const node = pending.pop();
+    if (!node || typeof node !== "object") continue;
+    if (!Array.isArray(node)) nodes.push(node);
+    const children = Array.isArray(node) ? node : Object.values(node);
+    for (let i = children.length - 1; i >= 0; i--) {
+      if (children[i] && typeof children[i] === "object")
+        pending.push(children[i]);
     }
-    return [parsed];
   }
-  return [];
+  return nodes;
+}
+
+/** Preserve section headings and ordered steps rather than silently dropping sections. */
+function instructionLines(value: any): string[] {
+  const pending = [value];
+  const lines: string[] = [];
+  while (pending.length > 0) {
+    const node = pending.pop();
+    if (typeof node === "string") {
+      if (node.trim()) lines.push(node.trim());
+    } else if (Array.isArray(node)) {
+      for (let i = node.length - 1; i >= 0; i--) pending.push(node[i]);
+    } else if (node && typeof node === "object") {
+      if (node.itemListElement) {
+        if (typeof node.name === "string" && node.name.trim())
+          lines.push(node.name.trim());
+        pending.push(node.itemListElement);
+      } else if (typeof node.text === "string") {
+        pending.push(node.text);
+      }
+    }
+  }
+  return lines;
 }
 
 function toStringArray(v: any): string[] {
@@ -75,19 +114,6 @@ function toStringArray(v: any): string[] {
  * point and becomes `.` (`"11,5 g"` → 11.5). Ambiguous `"1,500"` resolves to
  * 1500 (thousands wins on a 3-digit group).
  */
-function parseNutritionValue(v: any): number | null {
-  if (typeof v === "number") {
-    return Number.isFinite(v) && v >= 0 ? v : null;
-  }
-  if (typeof v !== "string") return null;
-  const cleaned = v
-    .replace(/(\d),(?=\d{3}(\D|$))/g, "$1") // thousands separator → strip
-    .replace(/(\d),(\d{1,2})(?!\d)/, "$1.$2"); // European decimal → point
-  const m = cleaned.match(/^\s*(\d+(?:\.\d+)?)/);
-  if (!m) return null;
-  const n = Number(m[1]);
-  return Number.isFinite(n) && n >= 0 ? n : null;
-}
 
 /**
  * Read a Schema.org `NutritionInformation` node into per-serving macros.
@@ -128,7 +154,7 @@ function parseServings(v: any): number | null {
 }
 
 const LD_JSON_RE =
-  /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+  /<script\b[^>]*\btype\s*=\s*["']application\/ld\+json(?:\s*;[^"']*)?["'][^>]*>([\s\S]*?)<\/script>/gi;
 
 export function parseRecipeFromHtml(html: string): ParsedRecipe | null {
   const blocks: string[] = [];
@@ -146,7 +172,7 @@ export function parseRecipeFromHtml(html: string): ParsedRecipe | null {
     const recipe = collectNodes(parsed).find(hasRecipeType);
     if (!recipe) continue;
 
-    const instructions = toStringArray(recipe.recipeInstructions);
+    const instructions = instructionLines(recipe.recipeInstructions);
     return {
       name:
         typeof recipe.name === "string"
@@ -158,5 +184,5 @@ export function parseRecipeFromHtml(html: string): ParsedRecipe | null {
       nutrition: parseNutrition(recipe.nutrition),
     };
   }
-  return null;
+  return parseVisibleRecipe(html);
 }

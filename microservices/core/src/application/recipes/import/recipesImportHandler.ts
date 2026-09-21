@@ -1,31 +1,39 @@
 import Elysia, { t } from "elysia";
 import { safeRecipeFetch, RecipeFetchError } from "../services/url-fetch";
 import { parseRecipeFromHtml } from "../services/parseRecipe";
+import { readableRecipeText } from "../services/parseVisibleRecipe";
+import {
+  extractRecipeFromText,
+  prepareRecipeAiText,
+  RECIPE_TEXT_LIMIT,
+} from "../services/aiRecipeFromText";
+import { assertEntitlement } from "../../entitlement/assertEntitlement";
+import { AiUsageLogService } from "../../repositories/aiUsageLogService";
+
+const parsedLimit = Number(process.env.AI_RECIPE_DAILY_LIMIT);
+const DAILY_LIMIT =
+  Number.isFinite(parsedLimit) && parsedLimit > 0
+    ? Math.floor(parsedLimit)
+    : 12;
 import {
   getAuthUser,
   requireAuth,
   getUser,
 } from "@persistence/api-utils/auth/supabaseAuth";
 
-/**
- * POST /recipes/import — scrape a Schema.org recipe from a user-supplied URL
- * and return a pre-fill payload for the manual-create form (the user reviews +
- * saves via POST /recipes). M9 is deterministic ld+json scraping only — no AI
- * fallback (Conflict C3). The URL is fetched through `safeRecipeFetch`, which
- * is SSRF-hardened (every guard re-checked per redirect hop).
- *
- * - SSRF / fetch guard failure → 400 with the guard reason.
- * - Page has no Recipe microdata → 422 no_recipe_microdata.
- */
+/** Authenticated URL import: guarded fetch → structured/readable parsing →
+ * entitled, quota-reserved text-only AI fallback. All unreadable/unavailable
+ * fallback paths retain manual recovery; model output never triggers a fetch. */
 export const recipesImportHandler = new Elysia()
   .derive(async ({ headers }) => ({
     user: await getAuthUser(headers.authorization),
   }))
   .onBeforeHandle(requireAuth)
+  .use(AiUsageLogService)
   .post(
     "/recipes/import",
     async (ctx) => {
-      getUser(ctx); // assert authed
+      const { sub: userId } = getUser(ctx);
 
       let html: string;
       let finalUrl: string;
@@ -39,15 +47,45 @@ export const recipesImportHandler = new Elysia()
         throw e;
       }
 
-      const parsed = parseRecipeFromHtml(html);
+      let parsed = parseRecipeFromHtml(html);
+      if (!parsed) {
+        const text = prepareRecipeAiText(
+          readableRecipeText(html, RECIPE_TEXT_LIMIT + 1),
+        );
+        if (text) {
+          try {
+            const verdict = await assertEntitlement(userId, "ai_access");
+            if (
+              verdict.allowed &&
+              (await ctx.AiUsageLogRepository.reserveForUserToday({
+                userId,
+                endpoint: "/recipes/import",
+                limit: DAILY_LIMIT,
+                requestSizeBytes: Buffer.byteLength(text),
+              }))
+            ) {
+              parsed = await extractRecipeFromText(text);
+            }
+          } catch {
+            // Fail closed if entitlement, quota storage or inference is unavailable.
+            // Never log page content, signed source URLs or provider payloads.
+          }
+        }
+      }
       if (!parsed) {
         ctx.set.status = 422;
         return { error: "no_recipe_microdata" };
       }
 
-      return { data: { ...parsed, sourceUrl: finalUrl } };
+      return {
+        data: {
+          ...parsed,
+          extractionMethod: parsed.extractionMethod ?? "structured",
+          sourceUrl: finalUrl,
+        },
+      };
     },
     {
-      body: t.Object({ url: t.String({ minLength: 1 }) }),
+      body: t.Object({ url: t.String({ minLength: 1, maxLength: 8192 }) }),
     },
   );
