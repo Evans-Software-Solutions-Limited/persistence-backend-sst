@@ -516,7 +516,7 @@ export function WeighInSheetPresenter({
           >
             DATE
           </Text>
-          <View flexDirection="row" alignItems="center" gap={10}>
+          <View flexDirection="row" alignItems="center" gap={6}>
             {visible ? (
               <DatePickerField
                 variant="icon"
@@ -536,7 +536,7 @@ export function WeighInSheetPresenter({
                 testID="weigh-in-date"
               />
             ) : null}
-            <View flexDirection="row" flexWrap="wrap" gap={6} flex={1}>
+            <View flexDirection="row" gap={4} flex={1} minWidth={0}>
               {[0, -1, -2, -3].map((off) => {
                 const on = day === addDaysISO(todayISO, off);
                 const lbl =
@@ -549,7 +549,12 @@ export function WeighInSheetPresenter({
                   <View
                     key={off}
                     paddingVertical={8}
-                    paddingHorizontal={14}
+                    paddingHorizontal={4}
+                    minHeight={44}
+                    flex={off === -1 ? 1.5 : 1}
+                    minWidth={0}
+                    alignItems="center"
+                    justifyContent="center"
                     borderRadius={10}
                     borderWidth={1}
                     backgroundColor={on ? "$primaryDim" : "$surface2"}
@@ -563,7 +568,8 @@ export function WeighInSheetPresenter({
                     <Text
                       fontFamily="$body"
                       fontWeight="600"
-                      fontSize={12.5}
+                      fontSize={12}
+                      numberOfLines={1}
                       color={on ? "$primary" : "$text2"}
                     >
                       {lbl}

@@ -5426,3 +5426,8 @@ PR not yet raised. NO product code — script + dataset + verdict + spec updates
   (iOS subdrawer, Android native picker, web calendar), bounded to today. Older
   dates stay absolute across midnight; recent-day shortcuts remain current.
   55 focused tests passed, with mobile typecheck and targeted lint; Inspector clean.
+
+- Date-row layout correction: compact proportional shortcuts keep the calendar
+  and all four dates on one line, visually checked at 375px. Onboarding still
+  opens every required profile drawer and preserves the target draft; 73 tests
+  passed across onboarding targets and weigh-in. Local Inspector clean.
