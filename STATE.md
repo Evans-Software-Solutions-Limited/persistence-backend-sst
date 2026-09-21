@@ -5450,3 +5450,19 @@ PR not yet raised. NO product code — script + dataset + verdict + spec updates
 - Reused the existing future PERIOD_END_MS fixture in both input and expectation.
   No production subscription/access logic changed. All 91 RevenueCat tests
   passed; formatting and diff checks passed.
+
+### 2026-09-21 — Deploy coverage scheduling parity
+
+- Staging run 35630909480 timed out the voucher page's 501-code CSV template
+  test while backend and web coverage ran concurrently. PR checks already
+  serialized workspace suites to prevent runner contention; deploy workflows
+  had missed that fix.
+- Added the same Turbo --concurrency=1 setting to staging and production test
+  steps. Preserve runner-internal parallelism, coverage, failure gating and
+  the existing mobile exclusion. No retries, timeout increases or test changes.
+- Two uncached runs of the complete deploy test command passed: 18 tasks and
+  6,855 tests each (5,143 core; 1,483 web; 229 shared/scripts). The failing
+  voucher test completed in 1.267s and 1.636s against its existing 5s timeout.
+- actionlint, workflow formatting and diff checks passed; local Inspector Brad
+  found no actionable issues. Keep test scheduling aligned across PR, staging
+  and production workflows when changing CI resource controls.
