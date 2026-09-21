@@ -247,10 +247,11 @@ describe("normalizeSubscription", () => {
       normalizeSubscription(
         realSubscriptionItem({
           current_period_ends_at: undefined,
-          ends_at: 1790000000000,
+          // Keep this fallback case in the future; expired access has separate tests.
+          ends_at: PERIOD_END_MS,
         }),
       )?.expiresAt,
-    ).toEqual(new Date(1790000000000));
+    ).toEqual(new Date(PERIOD_END_MS));
     expect(
       normalizeSubscription(
         realSubscriptionItem({
