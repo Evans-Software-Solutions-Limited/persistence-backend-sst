@@ -1,6 +1,7 @@
 import Elysia from "elysia";
 import { EntitlementError } from "../application/entitlement/assertEntitlement";
 import { captureServerError } from "./sentry";
+import { TogetherError } from "../application/together/shared";
 
 /**
  * Global error-logging + response-shape plugin for the core Elysia app.
@@ -69,6 +70,21 @@ export const coreErrorHandler = new Elysia({
   // routes of its own.
   { as: "global" },
   ({ code, error, set, request }) => {
+    // Solo sync can encounter a draft already promoted to Together. Preserve
+    // the permanent conflict instead of turning it into a retryable 500.
+    if (error instanceof TogetherError) {
+      set.status = error.status;
+      if (error.status === 429) set.headers["Retry-After"] = "60";
+      return {
+        error: {
+          code: error.code,
+          message: error.message,
+          ...(error.currentRevision === undefined
+            ? {}
+            : { currentRevision: error.currentRevision }),
+        },
+      };
+    }
     // EntitlementError is a domain-level deny from the assertEntitlement
     // helper (see microservices/core/src/application/entitlement/
     // assertEntitlement.ts). It carries a structured deny verdict that

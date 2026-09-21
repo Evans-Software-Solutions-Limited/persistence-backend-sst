@@ -1,8 +1,8 @@
 # Train Together — design
 
-## PER-20 transport/recovery amendment — 21 September 2026
+## Backend implementation amendment — 21 September 2026
 
-The authorized E1 slice is the isolated local contract/recovery proof described in
+PR #462 now covers E1–3/server E7 across PER-20/PER-21/backend PER-22, as described in
 [TRANSPORT-ADR](../milestones/TRAIN-TOGETHER/TRANSPORT-ADR.md), with
 [wire examples](../milestones/TRAIN-TOGETHER/WIRE-EXAMPLES.json) and
 [evidence/gates](../milestones/TRAIN-TOGETHER/RECOVERY-PROOF.md).
@@ -21,8 +21,17 @@ completion status/history after validating the unchanged request hash. A worker
 completion advances the session revision and emits a durable completion event;
 repeated worker execution does neither again. Dispatch passes session routing
 metadata to the server adapter, never in the content-free client frame.
-Private sessions do not depend on a place provider. Hosted place-provider setup,
-production adapters, physical phones and E2–E7 remain gated.
+Private sessions do not depend on a place provider. Production HTTP adapters,
+schema, finalization and conditional infrastructure are implemented behind default-off
+flags. Provider activation, real multi-connection PostgreSQL and physical phones
+remain unverified. Account deletion may return `hostId:null`; surviving athletes
+retain own recovery. Five active sockets per athlete/session are allowed;
+`CONNECTION_LIMIT` is a 409 without consuming the ticket. Observed entitlement
+loss permanently severs collaboration even if the denied operation rolls back.
+See the ADR for setup, retention and compatibility-safe rollback. Exercise
+selection must satisfy existing visibility for every recipient. Minimal durable
+exercise definitions and stable private recipient copies preserve saved results
+when a custom exercise or its creator is deleted; see the ADR for copy semantics.
 
 > Current execution contract: the 17 September amendment below supersedes conflicting draft decisions/statuses. Earlier text is retained as scope history. Brad authorized finalizing and merging briefs; individual defaults below are our selected working decisions, not claims of separate product approval. This documentation task does not implement the feature.
 

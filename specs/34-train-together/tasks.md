@@ -1,23 +1,23 @@
 # Train Together — tasks
 
-## PER-20 scoped execution — 21 September 2026
+## Backend execution — 21 September 2026
 
-Brad authorized E1's transport/contract and local recovery proof. See
-[ADR](../milestones/TRAIN-TOGETHER/TRANSPORT-ADR.md) and
-[evidence](../milestones/TRAIN-TOGETHER/RECOVERY-PROOF.md). This supersedes the
-historical “no implementation authorized” wording for that slice only.
+Brad explicitly expanded PR #462 to all Together backend work, covering PER-20,
+PER-21 and the server portion of PER-22. The earlier proof-only restriction is
+superseded. See [ADR](../milestones/TRAIN-TOGETHER/TRANSPORT-ADR.md) and
+[evidence](../milestones/TRAIN-TOGETHER/RECOVERY-PROOF.md).
 
-- [x] Record HTTP + content-free AWS WebSocket transport decision and private
-      authorization, replay, outbox and independent finalization contract.
-- [x] Publish synthetic D8/D9 wire examples with implementation scope labels.
-- [x] Execute and review the local transactional recovery proof: 17 focused tests,
-      100% reported projection coverage and clean local Inspector re-sweep;
-      results and limitations in RECOVERY-PROOF.md.
-- [ ] Validate production provider setup, effective-entitlement/recording adapters,
-      multi-connection Postgres concurrency and two-phone latency/fault behaviour.
+- [x] HTTP-authoritative transport and executable durable recovery proof.
+- [x] Production session authorization, independent editing/results, real recording
+      integration, durable effects, replay and conditional AWS infrastructure.
+- [x] Social/place/block/report primitives and independent sanitized template copies.
+- [x] Default-off rollout configuration, migration/rollback and provider requirements.
+- [ ] Real multi-connection PostgreSQL and deployed AWS/provider evidence.
+- [ ] Mobile journal/UI integration, owner-built runtime, two-phone faults/latency,
+      moderation ownership and product pilot/release evidence.
 
-E1 remains open until its external/device evidence exists. PER-21 social/place
-primitives and PER-22 product/mobile integration are not implemented by this slice.
+E1/E7 retain external evidence gates; PER-22 remains incomplete until mobile and
+integrated acceptance criteria pass. Historical draft tasks below are retained.
 
 > Current execution contract: the 17 September amendment below supersedes conflicting draft decisions/statuses. Earlier text is retained as scope history. Brad authorized finalizing and merging briefs; individual defaults below are our selected working decisions, not claims of separate product approval. This documentation task does not implement the feature.
 
@@ -42,8 +42,8 @@ Discussion only. No implementation task is authorized or complete.
 Earlier T0–T7 items remain historical and unchecked; use this superseding checklist. No implementation is complete.
 
 - [ ] **E1** Protocol/transport/place-provider ADR, wire fixtures and recovery spike (AC1–4,12–14; D8–10).
-- [ ] **E2** Backend persistence, transactional command authorization/outbox, promotion and independent finalization (AC1–4,12–14; D8).
-- [ ] **E3** Shared place/social/report primitives; discovery, consent and template copy (AC5–8,11,13; D9).
+- [x] **E2** Backend persistence, transactional command authorization/outbox, promotion and independent finalization (AC1–4,12–14; D8). Backend code/local proof in PR #462; live concurrency gate remains.
+- [x] **E3** Shared place/social/report primitives; discovery, consent and template copy (AC5–8,11,13; D9). Backend code/local proof in PR #462; provider/moderation activation gates remain.
 - [ ] **E4** Mobile ports, durable command journal, promotion/recovery UI and own/partner logging (AC2–4,9,12,14; D8–10).
 - [ ] **E5** Friends/nearby/reuse, optional foreground permissions and manual fallback (AC5–8,11,13–14; D9).
 - [ ] **E6** Research protocol/prototype and authorized recruitment; record actual evidence and limitations (AC9–10; D7).

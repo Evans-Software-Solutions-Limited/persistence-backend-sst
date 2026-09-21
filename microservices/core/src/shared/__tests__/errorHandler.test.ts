@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { coreErrorHandler } from "../errorHandler";
 import { EntitlementError } from "../../application/entitlement/assertEntitlement";
 import { captureServerError } from "../sentry";
+import { TogetherError } from "../../application/together/shared";
 
 vi.mock("../sentry", () => ({ captureServerError: vi.fn() }));
 
@@ -27,6 +28,41 @@ describe("coreErrorHandler", () => {
   async function jsonBody(response: Response) {
     return (await response.json()) as Record<string, unknown>;
   }
+
+  it("preserves permanent promotion conflicts through the real legacy error boundary", async () => {
+    const app = new Elysia()
+      .use(coreErrorHandler)
+      .post("/sessions/record", () => {
+        throw new TogetherError("DRAFT_PROMOTED", 409);
+      });
+    const response = await app.handle(
+      new Request("http://localhost/sessions/record", { method: "POST" }),
+    );
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({
+      error: { code: "DRAFT_PROMOTED" },
+    });
+    expect(captureServerError).not.toHaveBeenCalled();
+  });
+
+  it("retains Together retry and version metadata when crossing a legacy boundary", async () => {
+    const app = new Elysia()
+      .use(coreErrorHandler)
+      .get("/limited", () => {
+        throw new TogetherError("RATE_LIMITED", 429);
+      })
+      .get("/stale", () => {
+        throw new TogetherError("VERSION_CONFLICT", 409, "Conflict", 3);
+      });
+    const limited = await app.handle(new Request("http://localhost/limited"));
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get("Retry-After")).toBe("60");
+    const stale = await app.handle(new Request("http://localhost/stale"));
+    expect(stale.status).toBe(409);
+    expect(await stale.json()).toMatchObject({
+      error: { code: "VERSION_CONFLICT", currentRevision: 3 },
+    });
+  });
 
   it("returns structured 500 body with stack outside production", async () => {
     delete process.env.SST_STAGE;

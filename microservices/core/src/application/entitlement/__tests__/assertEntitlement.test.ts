@@ -158,7 +158,7 @@ describe("assertEntitlement — stub features", () => {
 
   // `trainer_clients` is no longer a stub (enforced — see trainerSeats.test.ts
   // for its verdict matrix). The remaining accept-all stubs:
-  it.each(["ai_workout", "gym_buddy", "unlimited_exercise_library"] as const)(
+  it.each(["ai_workout", "unlimited_exercise_library"] as const)(
     "returns allowed for stub feature %s",
     async (feature) => {
       // Stubs short-circuit before any DB read — no getDb stub needed.

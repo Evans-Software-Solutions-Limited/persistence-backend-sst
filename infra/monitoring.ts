@@ -9,6 +9,12 @@ import {
   volumeCron,
 } from "./api";
 import { aiJobDlq, aiJobWorker } from "./jobs";
+import {
+  togetherDlq,
+  togetherQueue,
+  togetherWorker,
+  togetherRecoveryCron,
+} from "./together";
 
 /**
  * Production alerting. Provisioned for named stages only (production /
@@ -517,3 +523,59 @@ export const aiJobWorkerErrorsAlarm = alarm("ai-job-worker-errors", {
  * and a silent DNS/TLS failure during a review pass would produce a rejection
  * with every alarm in this file green.
  */
+
+// Together stays absent until the explicit stage rollout flag is enabled.
+export const togetherDlqAlarm =
+  togetherDlq &&
+  alarm("together-recovery-dlq", {
+    alarmDescription:
+      "Together recovery exhausted retries; inspect durable jobs and outbox before redrive.",
+    namespace: "AWS/SQS",
+    metricName: "ApproximateNumberOfMessagesVisible",
+    dimensions: { QueueName: togetherDlq.nodes.queue.name },
+    statistic: "Maximum",
+    period: 300,
+    evaluationPeriods: 1,
+    threshold: 1,
+    comparisonOperator: "GreaterThanOrEqualToThreshold",
+  });
+export const togetherQueueAgeAlarm =
+  togetherQueue &&
+  alarm("together-recovery-age", {
+    alarmDescription:
+      "Together recovery wakeups are delayed; inspect worker and database health.",
+    namespace: "AWS/SQS",
+    metricName: "ApproximateAgeOfOldestMessage",
+    dimensions: { QueueName: togetherQueue.nodes.queue.name },
+    statistic: "Maximum",
+    period: 300,
+    evaluationPeriods: 1,
+    threshold: 120,
+    comparisonOperator: "GreaterThanThreshold",
+  });
+export const togetherWorkerErrorsAlarm =
+  togetherWorker &&
+  alarm("together-worker-errors", {
+    namespace: "AWS/Lambda",
+    metricName: "Errors",
+    dimensions: {
+      FunctionName: togetherWorker.apply((sub) => sub.nodes.function.name),
+    },
+    statistic: "Sum",
+    period: 300,
+    evaluationPeriods: 1,
+    threshold: 3,
+    comparisonOperator: "GreaterThanOrEqualToThreshold",
+  });
+export const togetherSweepErrorsAlarm =
+  togetherRecoveryCron &&
+  alarm("together-sweep-errors", {
+    namespace: "AWS/Lambda",
+    metricName: "Errors",
+    dimensions: { FunctionName: togetherRecoveryCron.nodes.function.name },
+    statistic: "Sum",
+    period: 300,
+    evaluationPeriods: 1,
+    threshold: 3,
+    comparisonOperator: "GreaterThanOrEqualToThreshold",
+  });

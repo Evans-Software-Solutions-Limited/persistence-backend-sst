@@ -1,99 +1,73 @@
-# PER-20 recovery proof and remaining gates
+# Together backend — executable evidence and release gates
 
-Scope: E1's local protocol proof, not the shipped Together feature. Base main
-`ca4ca9c1` includes PR #460; PR #459 did not implement Together. The normal checkout
-was clean before the fast-forward and creation of
-`codex/per-20-together-recovery-proof`.
+PR #462 covers PER-20, PER-21 and backend PER-22 under Brad's expanded backend
+instruction. This record supersedes the original proof-only evidence. The
+original `recoveryProof.ts` remains an isolated contract projection; production
+code uses separate repositories, authenticated routes and real recording services.
 
-## Executable boundary
+## Executable coverage
 
-Code lives under
-`microservices/core/src/application/together/`. It is deliberately unmounted:
-no HTTP route, mobile UI, deployed table, provider resource or production
-entitlement behaviour changes. It reuses existing Drizzle/Vitest/PGlite tooling.
-The actor and effective policy inputs are trusted fixture boundaries, not a
-substitute for production JWT/catalog authorization.
+| Boundary            | Local executable evidence                                                                                                                                           |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Private admission   | Hashed expiring invites; consent/host approval; two-seat and one-unfinished-session constraints; revocation before cached receipts                                  |
+| Concurrent actions  | Independent athlete versions, stale same-target rejection, delegation generations, plan identity tombstones and first-set interleavings                             |
+| Durable recovery    | Atomic command receipts/outbox, disconnect/send failures, duplicate/out-of-order retries, bounded ordered replay, persisted projection restart                      |
+| Real finalization   | Actual SessionRepository, PR, streak and volume adapters; transaction rollback at completion mapping; durable post-record effect retry without duplicate histories  |
+| Socket delivery     | One-use tickets, connection bounds, current authorization, revoked/expired/Gone cleanup, content-free hints, retryable batch errors and cron fallback               |
+| Social safety       | Opt-in search, legacy and new blocks, actor-bound signed pagination, soft-deleted account exclusion, private reports/admin queue and pair-scoped friend removal     |
+| Places              | Geoapify search/nearby/resolve adapter contract tests, explicit unavailable errors, manual fallback, ephemeral coordinates and Sentry credential/location redaction |
+| Template privacy    | Mutually authorized exercises, sanitized plans, atomic independent copies, duplicate receipts and revoked-access rejection                                          |
+| Existing app safety | Default-off Hono feature isolation, legacy solo promotion conflict mapping, effective paid gate, existing solo recording regressions                                |
+| Migration           | Actual forward migration applied twice locally; all 18 tables have RLS/no direct app-role grants; rollback preserves legacy tables                                  |
 
-The immutable-plan projection exercises private admission and separate athlete
-sets. Full plan replacement, substitutions, rest/skip/removal, social features,
-place lookup, promotion and the mobile journal are not silently implemented.
-The broader [wire examples](./WIRE-EXAMPLES.json) specify D8/D9-shaped requests and
-responses for follow-up adapters; their labels distinguish examples from executed
-behaviour. An example is not proof that its route exists.
+Tests use real PostgreSQL semantics through Drizzle/PGlite for persistence and
+controlled seams for AWS/Geoapify delivery. They do not connect to production or
+assert that mocked provider responses establish deployed behavior.
 
-The database-backed fixture recording sink stores independent history/effect
-markers. It demonstrates idempotent retry and crash recovery, not production
-statistics calculations. Production must reuse `SessionRepository.recordSession`
-and existing PR/statistics services, with durable handling of post-commit effects.
-The [ADR](./TRANSPORT-ADR.md) records the concrete reuse seams and constraints.
-
-## Reproduction and results
-
-From the repository root:
+Validation commands (run from repository root):
 
 ```sh
-bun run --cwd microservices/core test:unit src/application/together/recoveryProof.test.ts --coverage.include='src/application/together/recoveryProof.ts'
-bun run prettier:check
 bun run typecheck
 bun run lint
 bun run build --filter='!@persistence/mobile'
 bun run test:unit --concurrency=1
 ```
 
-Final focused run (21 September): **17/17 tests, 1/1 files**, 11.33 seconds.
-V8 reports **100% statements, branches, functions and lines** for
-`recoveryProof.ts`, with real non-empty counters; no coverage exclusion added.
-This is coverage of the bounded projection, not exhaustive production validation.
+Focused tests live under `application/together/__tests__`,
+`application/social/__tests__`, existing `shared/__tests__` and the original
+`application/together/recoveryProof.test.ts`. Provider/boundary tests assert real
+outcomes, not snapshots of implementation text. Final results: full tests **21/21 tasks**, including **5,241 core tests in 387
+files**; typecheck **9/9**, lint **6/6** (existing warnings), non-mobile build
+**12/12**, changed-file formatting and deploy workflow actionlint pass. Core
+coverage is **97.81% statements/lines, 93.91% branches, 97.62% functions**.
+Changed-infrastructure TypeScript check passes; an optional full SST-config check
+still encounters the pre-existing `infra/web.ts:208` Pulumi Input typing error.
+Exact reviewed commit is recorded in the PR body.
 
-| Executed scenario                      | Observed assertion                                                                                                                                      |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Invitation/consent/privacy             | Only host approval admits; token alone cannot read; plaintext secret absent from tables/receipts/events                                                 |
-| Competing approvals                    | Exactly two seats; stale approvals, expired/revoked invitations and unpaid applicants rejected                                                          |
-| Independent concurrent sets            | Both athlete writes survive; versions/results remain separate; stale same-target request rejected                                                       |
-| Lost acknowledgement/duplicate command | Same key or command ID produces one effect; changed body fails; a new retry key is also bound to its hash                                               |
-| Delegation, block and expiry           | Current authorization precedes cached receipts; old generations fail; restored paid grants do not silently restore severed access; own recovery remains |
-| Transaction failure                    | Injected pre-commit failure leaves execution, receipt and outbox unchanged; retry commits once                                                          |
-| Disconnect/replay                      | Failed wakeup remains pending; authorized replay is ordered and bounded; expired cursor rejected                                                        |
-| Separate finalization                  | Own revision frozen; partner can continue; record/mapping fault rolls back; retry yields one history/effect marker; empty work yields no history        |
-| Process restart                        | Close/reopen on-disk PGlite preserves pending outbox, receipt deduplication and frozen completion jobs                                                  |
-| Completion notification                | Completion revision/event/outbox are atomic; duplicate worker calls do not emit again; revoked replay is denied                                         |
-| Two-session dispatch                   | Server routes each wakeup to its session; failed delivery remains retryable and is not consumed for another session                                     |
+## Independent local review
 
-Repository validation: typecheck **9/9**, lint **6/6** (existing warnings),
-non-mobile build **12/12**, formatting pass, full suite **21/21 tasks** including
-379 core test files, 75 web files and 535 mobile suites. Turbo reused unchanged
-workspace caches. The final Inspector fixes passed both the 17-test focused run
-and the repeated full suite (**5,160 core tests**, 1,483 web tests, 6,968 mobile
-unit tests), plus the final non-mobile build. Mobile tests are unit tests, not a
-native build or phone check.
+The expanded backend passed a fresh local Inspector re-sweep over the full branch
+diff after all 11 findings were fixed. Fixes include pair-scoped invitation revocation, deleted-profile/exercise
+privacy, durable custom-exercise recovery, storage-safe set bounds, substitution
+metadata, canonical replay targets, host admission wakeups, pagination and legacy
+promotion conflict responses. The final privacy-only delta also received a clean
+follow-up. The CI Inspector bot was not triggered.
 
-Local Inspector initially reproduced missing completion replay and missing
-session dispatch routing. Both were fixed with regression tests; the re-sweep
-returned `INSPECTOR_VERDICT: CLEAN`, no outstanding findings. No CI review bot was
-triggered.
+## Remaining gates
 
-## Evidence still required
+| Gate                         | Required evidence                                                                                                                                                 | Status                                                           |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| Real PostgreSQL contention   | Independent connections racing admission, block/delegation, first sets, promotion versus solo save, finish and multiple workers; inspect lock/constraint outcomes | Not run; PGlite serializes a connection                          |
+| Deployed AWS transport       | Approved stage/region, IAM, ticket socket handshake, queue/cron recovery, alarms/SNS, quota and latency                                                           | IaC prepared; not provisioned                                    |
+| Place provider               | Approved Geoapify account/license/attribution/budget/quotas; real search/nearby/resolve and failure checks                                                        | Adapter tested locally; no provider activated                    |
+| Entitlement event timing     | Staging cancellation/grace/downgrade/renewal transitions; prove revocation observation during offline periods                                                     | Request-time policy tested; webhook-to-session timing unverified |
+| Mobile implementation        | SQLite promotion/command journal, UI, adapter integration, cache purge, explicit conflict recovery, permission/manual-place UX                                    | PER-22 remains open                                              |
+| Compatible binary            | Brad-owned build with required native permission/runtime dependencies                                                                                             | No native/EAS build initiated                                    |
+| Two physical phones          | SMOKE_TEST with dropped responses, airplane mode, restart, block/expiry, independent finish and actual history inspection                                         | Not run                                                          |
+| Foreground latency           | ≥100 accepted commands; record platforms/network/sample count; p95 ≤2 seconds and zero acknowledged loss                                                          | Not measured                                                     |
+| Moderation and product pilot | Named report triage owner, operations process and authorized pair research                                                                                        | Open before discovery/public release                             |
 
-| Gate                                     | Owner / required proof                                                                                                                                                        | Status                             |
-| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
-| Production PostgreSQL transactions       | PER-22 backend: independent connections race admission, revocation, same-target writes, first-set identity locks and finish; assert constraints after failures                | Unverified                         |
-| Real recording/effects adapter           | PER-22 backend: stable per-user client ID, atomic completion mapping/PRs, durably retried streak/volume stages, no duplicate history/effects after each crash boundary        | Unverified                         |
-| Authentication and effective paid access | PER-22 backend: verified JWT only; grants, scheduled downgrades, cancellation grace, blocks, rate limits and active-session uniqueness                                        | Unverified outside fixture policy  |
-| WebSocket deployment                     | Backend + Brad: approved region/stage, one-use tickets, connection registry, current authorization, disconnect cleanup, IAM, recovery workers, alarms and quota/cost approval | Not provisioned                    |
-| Mobile durable journal/promotion         | PER-22 mobile: SQLite restart and acknowledgement reconciliation; no duplicate solo completion; preserve/reveal local-only unsent work on logout/device change                | Unverified                         |
-| Two physical phones                      | Brad supplies compatible builds; run SMOKE_TEST with dropped responses, airplane mode, app restart, expiry/block, independent finish and real history inspection              | Not run; no native build initiated |
-| Foreground latency                       | ≥100 accepted commands; record platform/runtime/network, sample count, p95 ≤2 seconds and zero acknowledged loss                                                              | Not measured                       |
-| Place provider and social safety         | PER-21: approved provider/license/quotas, manual fallback, optional foreground permission checks and named moderation owner                                                   | Open; no paid activation           |
-| Integrated product/pilot                 | PER-21/PER-22/E7: full editing contract, invitation UX, reuse/privacy, solo regression and actual research/pair evidence                                                      | Open                               |
-
-PGlite executes actual PostgreSQL semantics locally but serializes one connection;
-Promise races establish application ordering here, not deployed contention or
-multi-process worker behaviour. Disk reopen tests establish persisted local
-recovery, not a phone's SQLite lifecycle. Provider and device gates do not prevent
-reviewing this bounded proof; E1/E7 remain open for their external evidence.
-
-## Review hygiene
-
-The PR contains no screenshots. Do not deploy, merge, trigger the CI Inspector,
-or initiate native/EAS/mobile builds as part of this slice. Local Inspector and
-repository validation evidence belong in the final PR body and this record.
+Backend code alone needs no native build or App Store release. Shipping the
+complete Together experience requires mobile work and Brad's release decision.
+All new infrastructure and endpoints remain default-off; no deploy, merge or
+paid-provider activation was performed. Screenshots stay out of the PR.

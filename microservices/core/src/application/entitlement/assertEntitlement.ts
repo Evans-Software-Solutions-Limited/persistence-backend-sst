@@ -74,7 +74,7 @@ import { getDb } from "@persistence/db/client";
  *     (`start_up_coach_plus`/`coach`/`coach_pro`), NOT the entry rung
  *     `individual_trainer`. See the file header (§ `PREMIUM_PLUS_FEATURES`) for
  *     why the two features now share one upsell path.
- *   - everything else (`ai_workout`, `gym_buddy`,
+ *   - everything else (`ai_workout`,
  *     `unlimited_exercise_library`): STUB — returns `{ allowed: true }`
  *     today, wired into the read path so the helper signature stabilises
  *     before the consuming feature ships. Switching a stub on is a
@@ -283,7 +283,7 @@ export class EntitlementError extends Error {
  *     without AI (it doesn't today).
  *
  * `trainer_clients` routes to `assertTrainerClients` (real cap check). The
- * remaining stub features (`ai_workout`, `gym_buddy`,
+ * remaining stub features (`ai_workout`,
  * `unlimited_exercise_library`) always return `{ allowed: true }` today —
  * the read path is wired but the verdict short-circuits (see AC 9.5).
  */
@@ -291,6 +291,19 @@ export async function assertEntitlement(
   userId: string,
   feature: EntitlementFeature,
 ): Promise<EntitlementVerdict> {
+  if (feature === "gym_buddy") {
+    const { evaluateTogetherEligibility } =
+      await import("./togetherEligibility");
+    return (await evaluateTogetherEligibility(getDb(), userId))
+      ? { allowed: true }
+      : {
+          allowed: false,
+          reason: "tier",
+          currentTier: "free",
+          upgradeTo: "premium",
+          upgradePriceMonthly: null,
+        };
+  }
   if (feature === "ai_access") {
     return assertAiAccess(userId);
   }
@@ -323,7 +336,7 @@ export async function assertEntitlement(
     return assertMealprint(userId);
   }
 
-  // Remaining stub features (`ai_workout`, `gym_buddy`,
+  // Remaining stub features (`ai_workout`,
   // `unlimited_exercise_library`) are accept-all today (AC 9.5). The contract
   // is in place so consumers can call `assertEntitlement(uid, 'ai_workout')`
   // already; flipping a stub off when its endpoint ships is a one-line change.

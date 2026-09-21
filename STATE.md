@@ -1,37 +1,57 @@
 # Project memory · persistence-backend-sst
 
-### 2026-09-21 — PER-20 Together transport/recovery proof
+### 2026-09-21 — Together backend across PER-20/PER-21/backend PER-22
 
-Normal backend checkout was clean; main fast-forwarded to `ca4ca9c1`, with PR
-#460 confirmed merged at 17:16 UTC. Work is on
-`codex/per-20-together-recovery-proof`. PR #459 did not implement Together.
+PR #462 on `codex/per-20-together-recovery-proof` now includes all Together backend
+work requested by Brad. The initial clean checkout/main update was preserved;
+PR #460 was already merged. PR #459 did not implement Together. The original
+17-test isolated recovery projection remains as contract evidence, alongside the
+production implementation rather than mounted as a service.
 
-E1 now has an HTTP-authoritative transport ADR, content-free AWS WebSocket wakeup
-framing, D8/D9 wire examples and an unmounted Drizzle/PGlite recovery proof under
-`microservices/core/src/application/together/`. Tests exercise private admission,
-revocation before deduplication, independent athlete sets/versions, transactional
-receipts/outbox, replay/disconnect, persisted restart and per-athlete frozen
-completion jobs. Fixture history/effect markers demonstrate transaction recovery;
-they do not prove the production recording/statistics adapter. Existing PR writes
-are transactional, but streak/volume postprocessing is currently best-effort and
-must gain durable recovery before Together integration.
+Implemented authenticated private admission, invitations/revocation, independent
+athlete commands/results, explicit delegated logging, identity tombstones,
+durable receipts/outbox/replay, one-use socket tickets, real per-user recording
+and atomic PR/completion mapping with durable streak/volume retries. The server
+rejects duplicate solo recording after promotion. Durable exercise definitions and
+stable private recipient copies survive original exercise/creator deletion.
 
-Scope and remaining evidence:
-`specs/milestones/TRAIN-TOGETHER/{TRANSPORT-ADR,RECOVERY-PROOF}.md`.
-No production route/schema/mobile feature or provider activation is included.
-PER-21 social/place/moderation and PER-22 complete editing/mobile integration remain
-gated. Production PostgreSQL multi-connection races, effective entitlement adapter,
-real recording effects, provider setup and two-phone p95/fault checks remain
-unverified. No deployment, merge, native/EAS build or CI Inspector trigger.
+Also implemented opt-in people/friends, blocking/reporting/admin report queue,
+Geoapify places/manual search, audience discovery/expiry and independent sanitized
+template copies. Existing exercise visibility is enforced for every recipient.
+Schema migration has 18 server-only RLS tables; forward/reapply/rollback checks
+execute locally. SST defines default-off sockets, queue/DLQ, workers, recovery
+cron and alarms. Deploy workflows expose explicit stage flags/secrets; no stage
+was changed or deployed. Existing core API types remain separate from exported
+TogetherApi to avoid TypeScript depth limits.
 
-Validation: focused 17 tests pass with 100% reported projection coverage in all
-four metrics; root typecheck 9/9, lint 6/6 (existing warnings), non-mobile build
-12/12, formatting and full unit suite 21/21 tasks pass. Local Inspector reproduced
-two defects (completion lacked a replay event; dispatch lacked session routing),
-both fixed and regression-tested; final re-sweep is clean. Full tests/build also
-pass after those final fixes (5,160 core tests). The requested
-slack-progress-updates skill was not found in available skill locations, so
-completion notifications cannot currently be sent through it.
+Local Inspector re-sweep is clean after fixing all 11 findings, including
+cross-pair revocation, exercise visibility/deletion safety, numeric bounds,
+substitution metadata, pagination, deleted-profile privacy, solo conflict status,
+canonical replay targets and admission wakeups. The final Sentry privacy change
+also received a clean follow-up. CI Inspector was not triggered.
+
+Validation evidence is recorded in PR #462 and
+`specs/milestones/TRAIN-TOGETHER/RECOVERY-PROOF.md`. Focused production suite:
+32 integration/HTTP tests; recording/materialization 100% coverage, session runtime
+99.2% lines/97.03% branches/100% functions. Social/provider/privacy suite passes;
+new transport/flag isolation and shared eligibility/receipts tests pass. Final repository checks pass: full tests 21/21 tasks (5,241 core tests in 387
+files), typecheck 9/9, lint 6/6 (existing warnings), non-mobile build 12/12 and
+changed-file formatting. Core coverage: 97.81% statements/lines, 93.91% branches,
+97.62% functions. Dedicated changed-infrastructure TypeScript check and deploy
+workflow actionlint pass. A broader optional SST-config check encounters the
+pre-existing `infra/web.ts:208` Pulumi Input typing error; no changed infra error.
+
+Open gates: real independent-connection PostgreSQL contention, deployed AWS/IAM/
+quota/alarms, approved Geoapify terms/key/budget, named moderation owner, mobile
+journal/UI integration, Brad-owned compatible binary, physical two-phone fault/
+p95 tests and authorized pilot. Observed entitlement loss is sticky; historical
+unobserved lapse/renewal timing needs staging subscription-event evidence.
+Backend code does not require an App Store release. PER-22 is not complete.
+No native/EAS build, deploy, merge, paid-provider activation or screenshots in PR.
+
+The requested slack-progress-updates skill remains unavailable; no notification
+was sent through it. Setup/rollback details live in TRANSPORT-ADR.md; retain
+recovery-capable code and data for active athletes during rollback.
 
 ### 2026-09-20 — Deploy-managed Apple web configuration
 

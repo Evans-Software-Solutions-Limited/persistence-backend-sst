@@ -148,6 +148,8 @@ jobs:
           # empty value is valid (initSentry() no-ops on an empty DSN). A DSN is
           # public-safe but flows through the secret pattern for per-stage wiring.
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          TOGETHER_TOKEN_SECRET: ${{ secrets.TOGETHER_TOKEN_SECRET }}
+          GEOAPIFY_API_KEY: ${{ secrets.GEOAPIFY_API_KEY }}
           # Meta Conversions API + Turnstile (spec-30 growth instrumentation).
           # ALL OPTIONAL + NOT fail-fast (like EXPO_ACCESS_TOKEN/SENTRY_DSN): an
           # empty value is valid — the CAPI drainer + Turnstile verification
@@ -210,6 +212,9 @@ jobs:
           bunx sst secret set ExpoAccessToken "$EXPO_ACCESS_TOKEN" --stage staging
           # Optional — safe to set empty; initSentry() no-ops on an empty DSN.
           bunx sst secret set SentryDsn "$SENTRY_DSN" --stage staging
+          # Optional until Together rollout; remain server-only.
+          bunx sst secret set TogetherTokenSecret "$TOGETHER_TOKEN_SECRET" --stage staging
+          bunx sst secret set GeoapifyApiKey "$GEOAPIFY_API_KEY" --stage staging
           # Optional (spec-30) — safe to set empty; the CAPI drainer + Turnstile
           # verification no-op until these carry real values.
           bunx sst secret set MetaDatasetId "$META_DATASET_ID" --stage staging
@@ -239,6 +244,8 @@ jobs:
         # and Turnstile widget no-op. Founding values are public environment
         # variables; pixel/Turnstile identifiers remain GitHub env secrets.
         env:
+          TOGETHER_ENABLED: ${{ vars.TOGETHER_ENABLED }}
+          TOGETHER_DISCOVERY_ENABLED: ${{ vars.TOGETHER_DISCOVERY_ENABLED }}
           VITE_META_PIXEL_ID: ${{ secrets.VITE_META_PIXEL_ID }}
           VITE_TURNSTILE_SITE_KEY: ${{ secrets.VITE_TURNSTILE_SITE_KEY }}
           VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}

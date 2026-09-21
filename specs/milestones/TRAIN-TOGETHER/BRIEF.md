@@ -1,6 +1,6 @@
 # Persistence Together — execution brief
 
-17 September 2026. This replaces the discussion brief; historical decisions remain in the parent specification. Brad authorized preparation/merge of these briefs. Defaults were selected for execution planning, not individually ratified product choices. Feature implementation is work for subsequent agents.
+17 September 2026. This replaces the discussion brief; historical decisions remain in the parent specification. Brad authorized preparation/merge of these briefs. Defaults were selected for execution planning, not individually ratified product choices. The 21 September update authorizes PR #462 to deliver all Together backend work across PER-20, PER-21 and backend PER-22. Mobile and integrated rollout gates remain.
 
 ## Spec alignment
 

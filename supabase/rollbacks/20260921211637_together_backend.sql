@@ -1,0 +1,3 @@
+-- Use only before rollout/data creation. After rollout, retain data and use compatible recovery-capable code; drain active work before disabling.
+-- Intentionally no CASCADE: refuse if later migrations added external dependencies.
+DROP TABLE IF EXISTS "social_blocks", "social_profiles", "social_reports", "social_request_decisions", "together_actors", "together_commands", "together_connections", "together_events", "together_invites", "together_jobs", "together_join_requests", "together_participants", "together_rate_limits", "together_receipts", "together_sessions", "together_template_copies", "together_template_shares", "together_tickets";
