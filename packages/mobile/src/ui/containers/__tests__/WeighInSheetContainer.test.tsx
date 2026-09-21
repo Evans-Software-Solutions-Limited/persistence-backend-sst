@@ -296,3 +296,31 @@ describe("WeighInSheetContainer", () => {
     });
   });
 });
+
+it("uses the same measurement and Health path when controlled by nutrition", async () => {
+  const { adapters, storage } = makeAdapters();
+  const onSaved = jest.fn(),
+    onClose = jest.fn();
+  const writeBodyWeight = jest.fn(async () => ok(undefined));
+  Object.assign(adapters.health, { writeBodyWeight });
+  useHomeSheets.setState({
+    sheet: null,
+    measurementContext: "bodyFat",
+    measurementOrigin: "history",
+  });
+  const screen = renderWithTheme(
+    <AdapterProvider adapters={adapters}>
+      <WeighInSheetContainer visible onSaved={onSaved} onClose={onClose} />
+    </AdapterProvider>,
+  );
+  await waitFor(() =>
+    expect(screen.getByTestId("weigh-in-input")).toBeTruthy(),
+  );
+  fireEvent.changeText(screen.getByTestId("weigh-in-input"), "70");
+  fireEvent.press(screen.getByTestId("weigh-in-save"));
+  await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+  expect(onClose).toHaveBeenCalledTimes(1);
+  expect(writeBodyWeight).toHaveBeenCalledWith(70, expect.any(Date));
+  expect(storage.getCachedBodyTrend(USER).at(-1)?.weightKg).toBe(70);
+  expect(useHomeSheets.getState().sheet).toBeNull();
+});

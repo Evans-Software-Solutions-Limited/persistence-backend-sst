@@ -18,10 +18,14 @@ Screenshots are local review artifacts and are not committed to the PR. The orig
 - Other workspace test tasks: 17 successful (16 cached).
 - Focused profile/cache regression suite: 9 suites / 183 tests passed before final broad run. Includes delayed GET completion after edits, then offline remount.
 - Initial unbounded root test run saturated local workers and reported unrelated mobile timeouts; simultaneous coverage writes also interrupted core coverage output. Bounded package runs replace that unsuccessful attempt.
-- Final formatting, typecheck and lint passed (existing lint warnings only). The non-native workspace build passed earlier; no buildable production code outside mobile changed afterwards.
+- Final formatting, typecheck and lint passed (existing lint warnings only). The explicit non-mobile workspace build and mobile TypeScript check also passed after the measurement changes.
 - Final local Inspector Brad full-diff review: clean. Review fixes cover writes made during a GET and writes already pending/in flight when it starts, including acknowledgement before the stale response arrives. Four timing regressions verify persistence after offline remount; final focused run passed 94 tests.
-- Final full mobile suite: 534 suites / 6,895 tests passed with coverage (two workers).
+- Final full mobile suite: 535 suites / 6,953 tests passed with coverage (two workers).
 
 Brad’s failing recipe URL was not supplied, so that exact page has not been reproduced. The paste fallback does not require a supported recipe site.
 
 Drawer correction: 102 focused tests and the full mobile suite passed. The actual shared BottomSheet and web date picker were inspected at phone width; the native date selector is covered by component tests, not a native build. Screenshots remain local only.
+
+Measurement formats: phone preview checked shared weight view in kg and stone/pounds, including a typed precise weight rounding to one decimal on blur and body-fat percentage containment. Explicit Geist fonts replace implicit/fallback typography. Height m+cm and ft+in split fields fit within the drawer. All new visual artifacts remain outside the repository.
+
+Measurement validation: all 6,953 mobile tests passed with coverage; formatting, typecheck, lint and the non-mobile build passed. Local Inspector Brad reviewed the final measurement changes with no actionable findings. Weight formats are kg, lb and stone/pounds only; displayed and saved entries round to one decimal, including Health-prefilled values.

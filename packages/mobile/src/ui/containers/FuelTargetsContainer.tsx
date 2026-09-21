@@ -50,6 +50,7 @@ import {
 } from "@/domain/services/nutrition.service";
 import { useFuelProfileEditor } from "@/ui/hooks/useFuelProfileEditor";
 import { FuelProfileEditor } from "@/ui/presenters/FuelProfileEditor";
+import { WeighInSheetContainer } from "./WeighInSheetContainer";
 import { FuelTargetsPresenter } from "@/ui/presenters/FuelTargetsPresenter";
 
 const DEFAULT_WATER_CUPS = 8;
@@ -299,16 +300,23 @@ export function FuelTargetsContainer({
       heightCm={heightCm}
       weightKg={weightKg}
       weightUnit={profile?.weightUnit ?? "kg"}
-      heightUnit={profile?.heightUnit ?? "cm"}
+      heightUnit={quickProfile.profile?.heightUnit ?? "cm"}
       onOpenProfile={onboarding ? undefined : onOpenProfile}
       onEditProfileField={quickProfile.open}
       profileEditor={
-        quickProfile.editor ? (
+        quickProfile.editor?.field === "weight" ? (
+          <WeighInSheetContainer
+            visible
+            onClose={quickProfile.close}
+            onSaved={body.reload}
+          />
+        ) : quickProfile.editor ? (
           <FuelProfileEditor
             state={quickProfile.editor}
-            heightUnit={profile?.heightUnit ?? "cm"}
+            heightUnit={quickProfile.profile?.heightUnit ?? "cm"}
             weightUnit={profile?.weightUnit ?? "kg"}
             onChange={quickProfile.change}
+            onHeightFormatChange={quickProfile.changeHeightFormat}
             onSave={quickProfile.save}
             onCancel={quickProfile.close}
           />

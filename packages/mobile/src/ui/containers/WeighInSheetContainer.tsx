@@ -22,14 +22,26 @@ import { useHomeSheets } from "@/state/home-sheets";
  * independent of `heightUnit` (Edit Profile), since users routinely mix
  * units (e.g. kg for weight, ft/in for height).
  */
-export function WeighInSheetContainer() {
+export type WeighInSheetContainerProps = {
+  /** Controlled use for flows outside the app layout, including onboarding. */
+  visible?: boolean;
+  onClose?: () => void;
+  onSaved?: () => void;
+};
+export function WeighInSheetContainer(props: WeighInSheetContainerProps = {}) {
   // Root-mounted (sibling of the tab Stack), so open-state comes from the
   // shared store rather than props — same as the Fuel sheets and the drawer.
-  const visible = useHomeSheets((s) => s.sheet === "weighIn");
-  const measurementContext = useHomeSheets((s) => s.measurementContext);
-  const measurementOrigin = useHomeSheets((s) => s.measurementOrigin);
+  const rootVisible = useHomeSheets((s) => s.sheet === "weighIn");
+  const visible = props.visible ?? rootVisible;
+  const rootContext = useHomeSheets((s) => s.measurementContext);
+  const measurementContext =
+    props.visible === undefined ? rootContext : "weight";
+  const rootOrigin = useHomeSheets((s) => s.measurementOrigin);
+  const measurementOrigin = props.visible === undefined ? rootOrigin : "home";
   const measurementLogged = useHomeSheets((s) => s.measurementLogged);
-  const onClose = useHomeSheets((s) => s.close);
+  const rootClose = useHomeSheets((s) => s.close);
+  const onClose = props.onClose ?? rootClose;
+  const onSaved = props.onSaved;
   const { health, api } = useAdapters();
   const log = useLogMeasurement();
   // Root-mounted (feedback_sheets_mount_at_root), so gate both reads on
@@ -110,6 +122,7 @@ export function WeighInSheetContainer() {
         void health.writeBodyFat(input.bodyFatPercentage, when);
       }
       measurementLogged();
+      onSaved?.();
       if (measurementOrigin === "history") {
         void api.trackAnalyticsEvent({
           name: "measurement_logged_from_history",
@@ -122,6 +135,7 @@ export function WeighInSheetContainer() {
       log,
       health,
       measurementLogged,
+      onSaved,
       measurementOrigin,
       api,
       measurementContext,

@@ -5,6 +5,7 @@ import { DatePickerField } from "@/ui/components/DatePickerField";
 import { localDayISO } from "@/shared/utils";
 import { color } from "@/ui/theme/tokens";
 import type { FuelProfileEditorState } from "@/ui/hooks/useFuelProfileEditor";
+import type { HeightInputFormat } from "@/shared/utils/height-input";
 import type { HeightUnit, WeightUnit } from "@/shared/utils";
 
 export type FuelProfileEditorProps = {
@@ -12,6 +13,7 @@ export type FuelProfileEditorProps = {
   heightUnit: HeightUnit;
   weightUnit: WeightUnit;
   onChange: (value: string, inches?: boolean) => void;
+  onHeightFormatChange?: (format: HeightInputFormat) => void;
   onSave: () => void;
   onCancel: () => void;
 };
@@ -22,22 +24,36 @@ export function FuelProfileEditor({
   heightUnit,
   weightUnit,
   onChange,
+  onHeightFormatChange,
   onSave,
   onCancel,
 }: FuelProfileEditorProps) {
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
-  const imperialHeight = state.field === "height" && heightUnit === "ftin";
+  const heightFormat = state.heightFormat ?? heightUnit;
+  const splitHeight =
+    state.field === "height" &&
+    (heightFormat === "ftin" || heightFormat === "mcm");
+  const heightLabel =
+    heightFormat === "ftin"
+      ? "feet"
+      : heightFormat === "mcm"
+        ? "metres"
+        : heightFormat === "in"
+          ? "inches"
+          : "cm";
   const label =
     state.field === "age"
       ? "Date of birth"
       : state.field === "gender"
         ? "Sex for calculation"
         : state.field === "height"
-          ? `Height (${imperialHeight ? "feet" : "cm"})`
+          ? `Height (${heightLabel})`
           : `Weight (${weightUnit})`;
   const inputStyle = {
     flex: 1,
+    minWidth: 0,
+    width: 0,
     borderWidth: 1,
     borderColor: color.$border2,
     borderRadius: 10,
@@ -76,6 +92,28 @@ export function FuelProfileEditor({
       }
     >
       <View gap={12}>
+        {state.field === "height" && onHeightFormatChange ? (
+          <View flexDirection="row" flexWrap="wrap" gap={8}>
+            {(
+              [
+                ["cm", "cm"],
+                ["mcm", "m + cm"],
+                ["in", "inches"],
+                ["ftin", "ft + in"],
+              ] as const
+            ).map(([format, text]) => (
+              <Btn
+                key={format}
+                size="sm"
+                variant={format === heightFormat ? "filled" : "outline"}
+                onPress={() => onHeightFormatChange(format)}
+                testID={`fuel-height-format-${format}`}
+              >
+                {text}
+              </Btn>
+            ))}
+          </View>
+        ) : null}
         {state.field === "age" ? (
           <DatePickerField
             label="Date of birth"
@@ -104,7 +142,7 @@ export function FuelProfileEditor({
             ))}
           </View>
         ) : (
-          <View flexDirection="row" gap={8}>
+          <View flexDirection="row" gap={8} alignItems="center">
             <BottomSheetTextInput
               autoFocus
               value={state.value}
@@ -116,17 +154,37 @@ export function FuelProfileEditor({
               style={inputStyle}
               testID="fuel-profile-value"
             />
-            {imperialHeight ? (
-              <BottomSheetTextInput
-                value={state.inches}
-                onChangeText={(value) => onChange(value, true)}
-                accessibilityLabel="Height (inches)"
-                placeholder="Inches"
-                placeholderTextColor={color.$text3}
-                keyboardType="decimal-pad"
-                style={inputStyle}
-                testID="fuel-profile-inches"
-              />
+            {state.field === "height" ? (
+              <Text color="$text3">
+                {heightFormat === "mcm"
+                  ? "m"
+                  : heightFormat === "ftin"
+                    ? "ft"
+                    : heightFormat === "in"
+                      ? "in"
+                      : "cm"}
+              </Text>
+            ) : null}
+            {splitHeight ? (
+              <>
+                <BottomSheetTextInput
+                  value={state.inches}
+                  onChangeText={(value) => onChange(value, true)}
+                  accessibilityLabel={
+                    heightFormat === "mcm"
+                      ? "Height (remaining centimetres)"
+                      : "Height (inches)"
+                  }
+                  placeholder={heightFormat === "mcm" ? "cm" : "Inches"}
+                  placeholderTextColor={color.$text3}
+                  keyboardType="decimal-pad"
+                  style={inputStyle}
+                  testID="fuel-profile-inches"
+                />
+                <Text color="$text3">
+                  {heightFormat === "mcm" ? "cm" : "in"}
+                </Text>
+              </>
             ) : null}
           </View>
         )}

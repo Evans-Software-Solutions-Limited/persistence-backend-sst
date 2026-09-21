@@ -4,12 +4,12 @@ import { updateProfileCommand } from "@/application/commands/update-profile.comm
 import { logMeasurementCommand } from "@/application/commands/log-measurement.command";
 import { processSyncQueue } from "@/application/commands/sync.command";
 import type { ProfilePageProfile } from "@/domain/models/profilePage";
+import { KG_PER_LB, localDayISO, weightInUnit } from "@/shared/utils";
 import {
-  cmToFeetInches,
-  KG_PER_LB,
-  localDayISO,
-  weightInUnit,
-} from "@/shared/utils";
+  formatHeightInput,
+  parseHeightInput,
+  type HeightInputFormat,
+} from "@/shared/utils/height-input";
 import { isIsoDateString } from "@/shared/utils/date";
 import { useAdapters } from "./useAdapters";
 import { useAuth } from "./useAuth";
@@ -24,6 +24,8 @@ export type FuelProfileEditorState = {
   value: string;
   inches: string;
   error: string | null;
+  heightFormat?: HeightInputFormat;
+  heightCm?: number | null;
 };
 
 /** Keep accepted edits visible while their offline mutations await sync. */
@@ -44,7 +46,8 @@ export function useFuelProfileEditor(
   const [editor, setEditor] = useState<FuelProfileEditorState | null>(null);
 
   const open = (field: FuelProfileField) => {
-    const feet = current?.heightCm ? cmToFeetInches(current.heightCm) : null;
+    const heightFormat = current?.heightUnit ?? "cm";
+    const height = formatHeightInput(current?.heightCm ?? null, heightFormat);
     const value =
       field === "age"
         ? (current?.dateOfBirth ?? "")
@@ -54,22 +57,50 @@ export function useFuelProfileEditor(
             ? weight === null
               ? ""
               : String(weightInUnit(weight, current?.weightUnit ?? "kg"))
-            : current?.heightCm == null
-              ? ""
-              : current.heightUnit === "ftin"
-                ? String(feet?.feet ?? "")
-                : String(current.heightCm);
+            : height.value;
     setEditor({
       field,
       value,
-      inches: feet ? String(feet.inches) : "",
+      inches: height.inches,
+      heightFormat,
+      heightCm: current?.heightCm ?? null,
       error: null,
     });
   };
   const change = (value: string, inches = false) =>
     setEditor((old) =>
-      old ? { ...old, [inches ? "inches" : "value"]: value, error: null } : old,
+      old
+        ? {
+            ...old,
+            [inches ? "inches" : "value"]: value,
+            heightCm: undefined,
+            error: null,
+          }
+        : old,
     );
+  const changeHeightFormat = (heightFormat: HeightInputFormat) =>
+    setEditor((old) => {
+      if (!old || old.field !== "height") return old;
+      const cm =
+        old.heightCm !== undefined
+          ? old.heightCm
+          : parseHeightInput(
+              old,
+              old.heightFormat ?? current?.heightUnit ?? "cm",
+            );
+      if (cm === null && (old.value.trim() || old.inches.trim()))
+        return {
+          ...old,
+          error: "Enter a valid height before switching units.",
+        };
+      return {
+        ...old,
+        ...formatHeightInput(cm, heightFormat),
+        heightFormat,
+        heightCm: cm,
+        error: null,
+      };
+    });
   const close = () => setEditor(null);
   const save = () => {
     if (!editor) return;
@@ -90,27 +121,24 @@ export function useFuelProfileEditor(
           "Choose a sex for the calculation, or use manual calories.",
         );
       patch.gender = value;
+    } else if (editor.field === "height") {
+      const format = editor.heightFormat ?? current.heightUnit;
+      const cm =
+        editor.heightCm !== undefined
+          ? editor.heightCm
+          : parseHeightInput(editor, format);
+      if (cm === null)
+        return reject(
+          "Enter a valid height. Use centimetres below 100 or inches below 12 in split fields.",
+        );
+      patch.heightCm = cm;
+      const heightUnit = format === "in" || format === "ftin" ? "ftin" : "cm";
+      if (heightUnit !== current.heightUnit) patch.heightUnit = heightUnit;
     } else {
       const number = Number(value);
       if (!value || !Number.isFinite(number) || number <= 0)
         return reject("Enter a valid positive number.");
-      if (editor.field === "height") {
-        if (current.heightUnit === "ftin") {
-          const inches = Number(editor.inches);
-          if (
-            !editor.inches.trim() ||
-            !Number.isInteger(number) ||
-            !Number.isFinite(inches) ||
-            inches < 0 ||
-            inches >= 12
-          )
-            return reject(
-              "Enter whole feet and inches from 0 to less than 12.",
-            );
-          patch.heightCm = (number * 12 + inches) * 2.54;
-        } else patch.heightCm = number;
-      } else
-        nextWeight = current.weightUnit === "lb" ? number * KG_PER_LB : number;
+      nextWeight = current.weightUnit === "lb" ? number * KG_PER_LB : number;
     }
     try {
       const result =
@@ -140,6 +168,7 @@ export function useFuelProfileEditor(
     editor,
     open,
     change,
+    changeHeightFormat,
     close,
     save,
   };

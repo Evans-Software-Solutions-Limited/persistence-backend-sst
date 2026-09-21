@@ -113,7 +113,10 @@ it.each(["", "NaN", "Infinity", "0", "-1", "40", "300"])(
 it("converts feet/inches to centimetres and pre-fills in profile units", async () => {
   const { result } = init({ heightUnit: "ftin" });
   act(() => result.current.open("height"));
-  expect(result.current.editor).toMatchObject({ value: "5", inches: "10" });
+  expect(result.current.editor).toMatchObject({
+    value: "5",
+    inches: "10.08",
+  });
   act(() => result.current.change("6"));
   act(() => result.current.change("1", true));
   await act(async () => result.current.save());
@@ -132,7 +135,7 @@ it.each([
   act(() => result.current.change(feet));
   act(() => result.current.change(inches, true));
   act(() => result.current.save());
-  expect(result.current.editor?.error).toMatch(/whole feet/);
+  expect(result.current.editor?.error).toMatch(/valid height/);
   expect(mockStorage.getUncompletedMutations()).toHaveLength(0);
 });
 
@@ -215,4 +218,46 @@ it("does not apply one account's accepted edits to another", async () => {
   act(() => result.current.change("unused"));
   act(() => result.current.save());
   expect(result.current.editor).toBeNull();
+});
+
+it.each([
+  ["cm", "180", "", 180],
+  ["in", "70", "", 177.8],
+  ["mcm", "1", "80", 180],
+  ["ftin", "5", "10", 177.8],
+] as const)(
+  "saves %s entry in canonical centimetres",
+  async (format, value, secondary, cm) => {
+    const { result } = init();
+    act(() => result.current.open("height"));
+    act(() => result.current.changeHeightFormat(format));
+    act(() => result.current.change(value));
+    if (secondary) act(() => result.current.change(secondary, true));
+    await act(async () => result.current.save());
+    expect(result.current.profile?.heightCm).toBeCloseTo(cm, 8);
+    expect(
+      JSON.parse(mockStorage.getUncompletedMutations()[0].payload).heightCm,
+    ).toBeCloseTo(cm, 8);
+  },
+);
+it("switches formats repeatedly without rounding the stored height", async () => {
+  const { result } = init({ heightCm: 178.123456 });
+  act(() => result.current.open("height"));
+  for (let i = 0; i < 5; i++)
+    for (const mode of ["ftin", "mcm", "in", "cm"] as const)
+      act(() => result.current.changeHeightFormat(mode));
+  await act(async () => result.current.save());
+  expect(result.current.profile?.heightCm).toBe(178.123456);
+});
+it("keeps an invalid draft editable rather than switching to an old height", () => {
+  const { result } = init();
+  act(() => result.current.open("height"));
+  act(() => result.current.change("bad"));
+  act(() => result.current.changeHeightFormat("in"));
+  expect(result.current.editor).toMatchObject({
+    value: "bad",
+    heightFormat: "cm",
+  });
+  expect(result.current.editor?.error).toMatch(/valid height/);
+  expect(mockStorage.getUncompletedMutations()).toHaveLength(0);
 });

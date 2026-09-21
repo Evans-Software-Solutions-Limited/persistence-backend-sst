@@ -5412,3 +5412,12 @@ PR not yet raised. NO product code — script + dataset + verdict + spec updates
   evidence outside the PR; screenshots removed from the diff.
 - Drawer correction validation: 6,895 mobile tests passed; typecheck, lint and
   formatting passed; local Inspector Brad correction sweep clean.
+
+- Measurement follow-up: quick-fill height supports cm, m+cm, inches and ft+in;
+  nutrition weight reuses the shared weigh-in view, now supporting kg, lb,
+  and st+lb. Inputs convert to existing cm/kg storage, accept decimal
+  commas, and preserve target drafts during onboarding.
+- Weight follow-up: removed ounces, unified Geist typography and centred split
+  fields, contained the body-fat percentage, and rounded displayed/saved weights
+  to one decimal including Health prefill. Final mobile suite: 6,953 tests passed;
+  formatting, typecheck, lint and non-mobile build passed; local Inspector clean.

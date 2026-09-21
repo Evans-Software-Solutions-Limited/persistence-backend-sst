@@ -83,3 +83,32 @@ it("dismisses the quick-fill drawer without saving", () => {
   expect(p.onCancel).toHaveBeenCalledTimes(1);
   expect(p.onSave).not.toHaveBeenCalled();
 });
+
+it("offers all height entry formats and separate metre/centimetre fields", () => {
+  const onHeightFormatChange = jest.fn();
+  const p = props({
+    state: {
+      field: "height",
+      value: "1",
+      inches: "78",
+      error: null,
+      heightFormat: "mcm",
+    },
+    onHeightFormatChange,
+  });
+  const screen = renderWithTheme(<FuelProfileEditor {...p} />);
+  expect(screen.getByLabelText("Height (metres)").props.value).toBe("1");
+  fireEvent.changeText(
+    screen.getByLabelText("Height (remaining centimetres)"),
+    "80",
+  );
+  expect(p.onChange).toHaveBeenCalledWith("80", true);
+  for (const format of ["cm", "in", "mcm", "ftin"])
+    fireEvent.press(screen.getByTestId(`fuel-height-format-${format}`));
+  expect(onHeightFormatChange.mock.calls.map((call) => call[0])).toEqual([
+    "cm",
+    "in",
+    "mcm",
+    "ftin",
+  ]);
+});

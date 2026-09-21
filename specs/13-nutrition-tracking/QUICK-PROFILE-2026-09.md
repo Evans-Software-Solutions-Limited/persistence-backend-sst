@@ -17,3 +17,10 @@ settings-only profile completion flow.
 - Tests cover tile actions, missing signals, persistence/queue payloads, unit
   conversion, validation, cancellation, manual mode and onboarding. Visual QA
   checks narrow layouts and the expanded editor with the existing Fuel styling.
+
+## Measurement formats
+
+- Height entry switches between cm, metres + centimetres, inches, and feet + inches. Switching converts the draft without rounding the stored centimetres; saved metric/imperial display preference updates immediately.
+- Weight quick-fill opens the existing shared weight-log view, including during onboarding, retaining its date, history, optional body-fat and Health integration. Accepted logs refresh the calculator without losing target drafts.
+- The shared weight-log view accepts kg, lb, and stone + pounds. The pounds remainder must be below 14. Decimal commas are accepted. Existing profile/API unit values remain compatible; measurements are stored in kg.
+- Blank/invalid entries cannot submit a previous value. Unit switches preserve the measurement; conversion tests cover compound boundaries. On save, body weight is rounded to one decimal place in the selected entry format, including Health-prefilled values.
