@@ -204,7 +204,7 @@ describe("RecipeImportContainer", () => {
     expect(mockRouterReplace).not.toHaveBeenCalled();
   });
 
-  it("Create manually navigates to recipe-create with no seed", () => {
+  it("Create manually navigates with a fresh draft", () => {
     const { adapters } = makeAdapters();
     render(
       <Wrapper adapters={adapters}>
@@ -213,7 +213,11 @@ describe("RecipeImportContainer", () => {
     );
     act(() => mockProbe.last!.onCreateManually());
     expect(mockRouterReplace).toHaveBeenCalledWith("/(app)/fuel/recipe-create");
-    expect(useRecipeDraft.getState().seed).toBeNull();
+    expect(useRecipeDraft.getState().seed).toMatchObject({
+      source: "manual",
+      title: "",
+      sourceUrl: null,
+    });
   });
 
   it("on other failures: shows the error stage, and Retry resets to input", async () => {
@@ -243,5 +247,64 @@ describe("RecipeImportContainer", () => {
     );
     act(() => mockProbe.last!.onBack());
     expect(mockRouterBack).toHaveBeenCalledTimes(1);
+  });
+  it("pasted recovery retains the source and exact lines for review without inventing macros", () => {
+    const { adapters } = makeAdapters();
+    render(
+      <Wrapper adapters={adapters}>
+        <RecipeImportContainer />
+      </Wrapper>,
+    );
+    act(() => {
+      mockProbe.last!.onUrlChange(" https://recipes.example/soup ");
+      mockProbe.last!.onPasteRecipe();
+    });
+    expect(mockProbe.last!.stage).toBe("paste");
+    act(() => mockProbe.last!.onReviewPasted());
+    expect(mockRouterReplace).not.toHaveBeenCalled();
+    act(() => {
+      mockProbe.last!.onPastedTitleChange(" Soup ");
+      mockProbe.last!.onPastedIngredientsChange(" 200g lentils\r\n\n1 onion ");
+      mockProbe.last!.onPastedInstructionsChange(" Simmer for 20 minutes ");
+    });
+    act(() => mockProbe.last!.onReviewPasted());
+    expect(useRecipeDraft.getState().seed).toEqual({
+      title: "Soup",
+      servings: null,
+      source: "manual",
+      sourceUrl: "https://recipes.example/soup",
+      instructions: "Simmer for 20 minutes",
+      ingredients: [
+        { name: "200g lentils", quantity: null, unit: null },
+        { name: "1 onion", quantity: null, unit: null },
+      ],
+    });
+    expect(mockRouterReplace).toHaveBeenCalledWith("/(app)/fuel/recipe-create");
+  });
+  it("keeps source in manual recovery and rejects non-web source schemes", () => {
+    const { adapters } = makeAdapters();
+    render(
+      <Wrapper adapters={adapters}>
+        <RecipeImportContainer />
+      </Wrapper>,
+    );
+    act(() => mockProbe.last!.onUrlChange("https://recipes.example/soup"));
+    act(() => mockProbe.last!.onCreateManually());
+    expect(useRecipeDraft.getState().seed?.sourceUrl).toBe(
+      "https://recipes.example/soup",
+    );
+    act(() => mockProbe.last!.onUrlChange("javascript:alert(1)"));
+    act(() => mockProbe.last!.onCreateManually());
+    expect(useRecipeDraft.getState().seed?.sourceUrl).toBeNull();
+    act(() => {
+      mockProbe.last!.onPastedTitleChange("Soup");
+      mockProbe.last!.onPastedIngredientsChange("\n  ");
+    });
+    mockRouterReplace.mockClear();
+    act(() => mockProbe.last!.onReviewPasted());
+    expect(mockRouterReplace).not.toHaveBeenCalled();
+    act(() => mockProbe.last!.onPastedIngredientsChange("Rice"));
+    act(() => mockProbe.last!.onReviewPasted());
+    expect(useRecipeDraft.getState().seed?.instructions).toBeNull();
   });
 });

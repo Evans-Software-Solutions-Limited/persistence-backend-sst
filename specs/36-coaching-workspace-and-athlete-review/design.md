@@ -2,6 +2,8 @@
 
 Proposed 18 September 2026. Requirements WS-1–9; implementation unchecked. Existing behaviour remains until a compatible migration and clients ship.
 
+21 September update: W1 now has an isolated executable [schedule/prescription spike and populated migration/offline contract](W1-MODEL-SPIKE.md). It traces the existing mobile start and record interfaces and names W2 integration gates. Runtime APIs/schema are unchanged; the spike is not production compatibility proof.
+
 ## D1. Reuse boundaries backed by current code
 
 - `microservices/core/src/api.ts:230`: mounted coach programme APIs; athlete read at 240. `application/trainers/programs/trainersProgramsCreateHandler.ts:25` is coach-only; `application/programs/programGetHandler.ts:10` reads assigned programmes. Add owner/self operations; do not bypass trainer guards.

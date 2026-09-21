@@ -57,3 +57,7 @@ Copied from the approved V2 migration plan:
 ## September 2026 coaching workspace and import research
 
 [Scope handoff and Relay comparison](./milestones/COACHING-WORKSPACE-IMPORT/BRIEF.md). Extends [22 programme/voice import](./22-program-import-and-adaptation/requirements.md), proposes [36 web workspace and athlete review](./36-coaching-workspace-and-athlete-review/requirements.md) and [37 exercise-library import](./37-exercise-library-import/requirements.md). Discussion/evaluation scope; no implementation or pilot result is implied.
+
+## Coach nutrition and recipe import recovery
+
+[38 — Coach nutrition](./38-coach-nutrition/requirements.md) extends Mealprint with coach-authored plans and athlete-owned recipe sharing. Initial delivery includes calculator quick fill and resilient recipe import; coach sharing remains an explicit implementation track. See [design](./38-coach-nutrition/design.md) and [tasks](./38-coach-nutrition/tasks.md).

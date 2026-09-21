@@ -1,0 +1,30 @@
+# Programme and nutrition review — 21 September 2026
+
+## Implemented scope
+
+- Nutrition target profile tiles open quick entry for DOB, calculation sex, height and weight. Missing inputs are marked required; successful edits update the profile/body measurement commands and calculation. Existing manual calorie entry remains available.
+- Recipe URL extraction handles nested JSON-LD and grouped instructions. Unreadable pages offer source-preserving paste or manual entry into the existing review flow; ingredient quantities, nutrition and allergens are not invented.
+- PER-5/W1 has an isolated executable programme revision/schedule/offline-reconciliation model. It is not connected to production routes. Coach recipe/meal-plan sharing is specified in Spec 38, not enabled.
+
+## Visual evidence
+
+Actual React Native presenters rendered through react-native-web with the application theme and bundled Geist fonts, synthetic data and fixture callbacks. The native slider was substituted with an HTML range and the unused logo loader omitted. This checks layout and interactions, not native keyboard behaviour or authenticated API integration.
+
+- [Required profile tiles, 390 × 844](nutrition-required-phone.png)
+- [Quick entry, 390 × 844](nutrition-editor-phone.png)
+- [Quick entry, 768 × 1024](nutrition-editor-tablet.png)
+- [Recipe paste recovery, 390 × 844](recipe-paste-phone.png)
+
+Visual inspection found and fixed a collapsed profile tile row. All four required labels and the entry form are visible at phone width. Tap persistence is enabled on the nutrition scroll view; real-device keyboard verification remains a release check. No native or EAS build was initiated.
+
+## Verification
+
+- Full core suite: 376 files / 5,047 tests passed, with coverage (two workers).
+- Other workspace test tasks: 17 successful (16 cached).
+- Focused profile/cache regression suite: 9 suites / 183 tests passed before final broad run. Includes delayed GET completion after edits, then offline remount.
+- Initial unbounded root test run saturated local workers and reported unrelated mobile timeouts; simultaneous coverage writes also interrupted core coverage output. Bounded package runs replace that unsuccessful attempt.
+- Final formatting, typecheck and lint passed (existing lint warnings only). The non-native workspace build passed earlier; no buildable production code outside mobile changed afterwards.
+- Final local Inspector Brad full-diff review: clean. Review fixes cover writes made during a GET and writes already pending/in flight when it starts, including acknowledgement before the stale response arrives. Four timing regressions verify persistence after offline remount; final focused run passed 94 tests.
+- Final full mobile suite: 534 suites / 6,894 tests passed with coverage (two workers).
+
+Brad’s failing recipe URL was not supplied, so that exact page has not been reproduced. The paste fallback does not require a supported recipe site.

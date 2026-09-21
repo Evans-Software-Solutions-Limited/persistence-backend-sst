@@ -1,3 +1,5 @@
+import { isAutoResolvableSyncEntry } from "@/domain/ports/sync.types";
+import { reconcilePendingBodyMeasurements } from "@/application/queries/pending-body-measurements";
 import type { BodyTrendPoint } from "@/domain/models/progress";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ApiError } from "@/shared/errors";
@@ -23,11 +25,27 @@ export function useGetBodyMeasurements(
 ): CachedResourceState<BodyTrendPoint[]> {
   return useCachedResource<BodyTrendPoint[]>({
     read: (storage, userId) => ({
-      value: storage.getCachedBodyTrend(userId),
+      value: reconcilePendingBodyMeasurements(
+        storage,
+        storage.getCachedBodyTrend(userId),
+      ),
       isStale: true,
     }),
     fetcher: (api) => api.getBodyTrend(`${windowDays}d`),
     write: (storage, userId, value) => storage.cacheBodyTrend(userId, value),
+    reconcile: (storage, _userId, value) =>
+      reconcilePendingBodyMeasurements(storage, value),
+    preserveConcurrentCacheWrites: true,
+    pendingWrites: (storage) =>
+      storage
+        .getUncompletedMutations()
+        .filter(
+          (entry) =>
+            entry.entityType === "measurement" &&
+            entry.endpoint === "/measurements" &&
+            entry.method === "POST" &&
+            isAutoResolvableSyncEntry(entry),
+        ),
     enabled,
   });
 }

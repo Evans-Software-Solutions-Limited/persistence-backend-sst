@@ -1,9 +1,12 @@
 # 36 — Tasks and acceptance evidence
 
-All pending; discussion scope. Read [requirements](requirements.md) and [design](design.md) before implementation.
+W1 executable design implemented for review on 21 September 2026; remaining runtime work pending. Read [requirements](requirements.md) and [design](design.md) before implementation.
 
 - [ ] **W0 Product/contract:** settle coached-client access recommendation, define capability matrix including entry coach tier, agree shared/private content and adherence examples. Trace WS-1,5–8; D2–4.
 - [ ] **W1 Model spike:** faithful round-trip of fixed weekdays, irregular weeks, changing set prescriptions, deload and %1RM with absent max; backward-compatible cycle/explicit and populated migration design. Trace WS-3–4; D2. Required before full programme import.
+  - [x] Isolated six-week model/fixtures and 16 executable tests; 100% model coverage. Existing finite/indefinite scheduler exercised unchanged.
+  - [x] [Concrete migration, delivery and offline contract](W1-MODEL-SPIKE.md), including exact current code seams and historical provenance limits.
+  - [ ] PR review acceptance of the contract. Actual populated database migration, SQLite rehydration, guarded API delivery and concurrent database publish/start/record proof remain W2 gates, not claims of this spike.
 - [ ] **W2 Backend authoring:** owner/self routes and explicit schedule/prescription revisions; guarded client assignment, atomic publish/update, idempotency and old-client response. Trace WS-1–4,8; D2.
 - [ ] **W3 Web workspace:** authenticated non-admin route shell, capability-aware navigation, responsive keyboard authoring and import review integration. Trace WS-1–4; D1,D5.
 - [ ] **W4 Shared review:** server metric service and scoped safe projection, denominator tests, historical changes/late sync and refresh/version semantics. Trace WS-5,8; D3.

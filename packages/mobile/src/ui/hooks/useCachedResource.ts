@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getApiBaseUrl } from "@/adapters/api";
 import { processSyncQueue } from "@/application/commands/sync.command";
 import type { Result, ApiError } from "@/shared/errors";
-import type { StoragePort } from "@/domain/ports/storage.port";
+import type { StoragePort, SyncQueueEntry } from "@/domain/ports/storage.port";
 import type { ApiPort } from "@/domain/ports/api.port";
 import { useAdapters } from "./useAdapters";
 import { useAuth } from "./useAuth";
@@ -61,6 +61,12 @@ export type CachedResourceConfig<T> = {
   ) => { value: T | null; isStale: boolean };
   fetcher: (api: ApiPort) => Promise<Result<T, ApiError>>;
   write: (storage: StoragePort, userId: string, value: T) => void;
+  /** Overlay queued intent at response time, before cache and UI updates. */
+  reconcile?: (storage: StoragePort, userId: string, value: T) => T;
+  /** Do not overwrite edits accepted while a GET was outstanding, even if
+   * their queued writes were acknowledged/pruned before that GET returned. */
+  preserveConcurrentCacheWrites?: boolean;
+  pendingWrites?: (storage: StoragePort, userId: string) => SyncQueueEntry[];
   /**
    * Local tables this resource reads from. When supplied, a write to any of them
    * triggers an automatic cache re-read (see the `storage.subscribe` effect
@@ -190,13 +196,33 @@ export function useCachedResource<T>(
       console.error("[useCachedResource] queue flush failed:", err);
     }
     if (userId == null || latestUserRef.current !== userId) return null;
+    const cachedAtRequestStart = config.preserveConcurrentCacheWrites
+      ? JSON.stringify(read(storage, userId).value)
+      : undefined;
+    const queuedAtRequestStart = config.pendingWrites?.(storage, userId) ?? [];
     const result = await fetcher(api);
     if (!result.ok) {
       return latestUserRef.current === userId ? result.error : null;
     }
     if (latestUserRef.current !== userId) return null;
-    write(storage, userId, result.value);
-    setData(result.value);
+    const current = config.preserveConcurrentCacheWrites
+      ? read(storage, userId).value
+      : null;
+    const acknowledgedDuringRequest = queuedAtRequestStart.some((entry) => {
+      const currentEntry = storage.getMutationById(entry.id);
+      return !currentEntry || currentEntry.status === "completed";
+    });
+    const response =
+      current !== null &&
+      (JSON.stringify(current) !== cachedAtRequestStart ||
+        acknowledgedDuringRequest)
+        ? current
+        : result.value;
+    const value = config.reconcile
+      ? config.reconcile(storage, userId, response)
+      : response;
+    write(storage, userId, value);
+    setData(value);
     setIsStale(false);
     setCacheVersion((v) => v + 1);
     return null;

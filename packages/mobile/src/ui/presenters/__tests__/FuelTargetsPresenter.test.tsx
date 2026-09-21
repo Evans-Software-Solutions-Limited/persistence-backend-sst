@@ -450,3 +450,37 @@ describe("FuelTargetsPresenter", () => {
     expect(queryByTestId("fuel-targets-manual-kcal-warning")).toBeNull();
   });
 });
+
+it("makes every demographic tile actionable and marks missing calculation inputs", () => {
+  const onEditProfileField = jest.fn();
+  const screen = renderWithTheme(
+    <FuelTargetsPresenter
+      {...makeProps({
+        age: null,
+        gender: null,
+        heightCm: null,
+        weightKg: null,
+        onEditProfileField,
+      })}
+    />,
+  );
+  for (const [tile, field] of [
+    ["age", "age"],
+    ["sex", "gender"],
+    ["height", "height"],
+    ["weight", "weight"],
+  ]) {
+    fireEvent.press(screen.getByTestId(`fuel-targets-edit-${tile}`));
+    expect(onEditProfileField).toHaveBeenCalledWith(field);
+  }
+  expect(screen.getAllByText("Required")).toHaveLength(4);
+  expect(screen.getByText(/Required for calculation:/)).toBeTruthy();
+});
+
+it("shows Other as a supplied sex rather than a missing input", () => {
+  const screen = renderWithTheme(
+    <FuelTargetsPresenter {...makeProps({ gender: "other" })} />,
+  );
+  expect(screen.getByText("Other")).toBeTruthy();
+  expect(screen.queryByText("Required")).toBeNull();
+});

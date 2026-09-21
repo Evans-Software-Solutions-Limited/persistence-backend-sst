@@ -5389,3 +5389,20 @@ PR not yet raised. NO product code — script + dataset + verdict + spec updates
   live refund or live account change was performed. Apple relay sender
   configuration was not inspected. Required slack-progress-updates skill was
   unavailable, so no external completion notification was sent.
+
+### 2026-09-21 — Programme foundations and nutrition recovery
+
+- Nutrition targets now expose required, tappable profile fields with inline DOB,
+  calculation sex, height and weight entry through existing offline commands.
+- Recipe import accepts nested structured recipes and grouped instructions, with
+  a source-preserving paste/manual recovery flow for unreadable pages.
+- PER-5/W1 now has an executable isolated explicit-schedule/revision model and
+  integration contract. It is not wired to production routes. Spec 38 defines
+  coach-authored meal plans and recipient-owned recipe sharing for the next stage.
+- Review screenshots and validation context: docs/reviews/programme-nutrition-2026-09-21.
+  No native app build or deployment initiated. Exact failing recipe URL is still
+  needed to reproduce Brad's reported source.
+- Final validation: core 5,047 tests; mobile 6,894 tests; all remaining
+  workspace test tasks passed. Formatting, typecheck, lint and non-native
+  workspace build passed. Local Inspector Brad full-diff sweep: clean,
+  after fixing delayed-response overwrites of pending and acknowledged edits.

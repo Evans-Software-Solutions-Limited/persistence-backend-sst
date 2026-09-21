@@ -695,3 +695,47 @@ describe("FuelTargetsContainer", () => {
     });
   });
 });
+
+it("completes missing calculator inputs in onboarding without losing the target draft", async () => {
+  const { adapters, storage } = makeAdapters();
+  storage.cacheProfilePage(
+    "user-1",
+    makeProfilePagePayload({
+      dateOfBirth: null,
+      gender: null,
+      heightCm: null,
+      weightKg: null,
+    }),
+  );
+  render(
+    <AdapterProvider adapters={adapters}>
+      <FuelTargetsContainer onboarding />
+    </AdapterProvider>,
+  );
+  await waitFor(() => expect(mockProbe.last?.isLoadingInitial).toBe(false));
+  expect(mockProbe.last?.kcal).toBeNull();
+  act(() => mockProbe.last?.onGoalChange(-10));
+  act(() => mockProbe.last?.onWaterCupsChange(12));
+  for (const [field, value] of [
+    ["age", "1990-01-01"],
+    ["gender", "female"],
+    ["height", "170"],
+    ["weight", "70"],
+  ] as const) {
+    act(() => mockProbe.last?.onEditProfileField?.(field));
+    const editor = () =>
+      (
+        mockProbe.last?.profileEditor as React.ReactElement<
+          import("@/ui/presenters/FuelProfileEditor").FuelProfileEditorProps
+        >
+      ).props;
+    act(() => editor().onChange(value));
+    await act(async () => editor().onSave());
+    expect(mockProbe.last?.profileEditor).toBeUndefined();
+  }
+  expect(mockProbe.last?.kcal).not.toBeNull();
+  expect(mockProbe.last?.goal).toBe(-10);
+  expect(mockProbe.last?.waterCups).toBe(12);
+  expect(mockProbe.last?.weightKg).toBe(70);
+  expect(mockPush).not.toHaveBeenCalled();
+});

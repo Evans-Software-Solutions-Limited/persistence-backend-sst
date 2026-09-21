@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+import type { FuelProfileField } from "@/ui/hooks/useFuelProfileEditor";
 /**
  * <FuelTargetsPresenter> — the Fuel → Targets TDEE calculator (M9 PR3).
  * Ports `~/Downloads/handoff/design-source/screens/fuel-targets.jsx`: a
@@ -97,6 +99,8 @@ export type FuelTargetsPresenterProps = {
   /** Display-unit preference for the profile-strip height tile. Defaults to "cm". */
   heightUnit?: HeightUnit;
   onOpenProfile?: () => void;
+  onEditProfileField?: (field: FuelProfileField) => void;
+  profileEditor?: ReactNode;
 
   /** Calculator vs direct kcal entry — manual swaps the profile/activity/
    * goal sections for a single kcal input; macros work identically. */
@@ -160,6 +164,8 @@ export function FuelTargetsPresenter({
   weightUnit = "kg",
   heightUnit = "cm",
   onOpenProfile,
+  onEditProfileField,
+  profileEditor,
   calorieMode,
   onCalorieModeChange,
   manualKcalText,
@@ -260,6 +266,7 @@ export function FuelTargetsPresenter({
       />
 
       <ScrollView
+        keyboardShouldPersistTaps="handled"
         style={{ flex: 1 }}
         contentContainerStyle={{
           paddingHorizontal: 16,
@@ -316,7 +323,9 @@ export function FuelTargetsPresenter({
               weightUnit={weightUnit}
               heightUnit={heightUnit}
               onOpenProfile={onOpenProfile}
+              onEditProfileField={onEditProfileField}
             />
+            {profileEditor}
 
             <ActivityChips value={activityId} onChange={onActivityChange} />
 
@@ -568,6 +577,7 @@ function ProfileStrip({
   weightUnit,
   heightUnit,
   onOpenProfile,
+  onEditProfileField,
 }: {
   age: number | null;
   gender: ProfileGender | null;
@@ -576,6 +586,7 @@ function ProfileStrip({
   weightUnit: WeightUnit;
   heightUnit: HeightUnit;
   onOpenProfile?: () => void;
+  onEditProfileField?: (field: FuelProfileField) => void;
 }) {
   const genderLabel =
     gender === "male"
@@ -583,7 +594,7 @@ function ProfileStrip({
       : gender === "female"
         ? "F"
         : gender === "other"
-          ? "—"
+          ? "Other"
           : "—";
 
   return (
@@ -624,9 +635,32 @@ function ProfileStrip({
       </View>
       <Card pad={0} radius={12} style={{ overflow: "hidden" }}>
         <View flexDirection="row">
-          <StripField label="AGE" value={age === null ? "—" : String(age)} />
-          <StripField label="SEX" value={genderLabel} border />
           <StripField
+            label="AGE"
+            value={age === null ? "—" : String(age)}
+            required={age === null}
+            onPress={
+              onEditProfileField ? () => onEditProfileField("age") : undefined
+            }
+          />
+          <StripField
+            label="SEX"
+            value={genderLabel}
+            border
+            required={gender === null}
+            onPress={
+              onEditProfileField
+                ? () => onEditProfileField("gender")
+                : undefined
+            }
+          />
+          <StripField
+            required={heightCm === null}
+            onPress={
+              onEditProfileField
+                ? () => onEditProfileField("height")
+                : undefined
+            }
             label="HEIGHT"
             value={
               heightCm === null
@@ -639,6 +673,12 @@ function ProfileStrip({
             border
           />
           <StripField
+            required={weightKg === null}
+            onPress={
+              onEditProfileField
+                ? () => onEditProfileField("weight")
+                : undefined
+            }
             label="WEIGHT"
             value={
               weightKg === null
@@ -650,6 +690,14 @@ function ProfileStrip({
           />
         </View>
       </Card>
+      <Text fontFamily="$body" fontSize={12} color="$text3" marginTop={8}>
+        {age === null ||
+        gender === null ||
+        heightCm === null ||
+        weightKg === null
+          ? "Required for calculation: tap the missing details to add them, or choose manual calories."
+          : "Tap a tile to update your details."}
+      </Text>
     </View>
   );
 }
@@ -659,48 +707,63 @@ function StripField({
   value,
   unit,
   border,
+  required,
+  onPress,
 }: {
   label: string;
   value: string;
   unit?: string;
   border?: boolean;
+  required?: boolean;
+  onPress?: () => void;
 }) {
   return (
-    <View
-      flex={1}
-      paddingVertical={10}
-      paddingHorizontal={8}
-      borderLeftWidth={border ? 1 : 0}
-      borderLeftColor="$border"
+    <Pressable
+      onPress={onPress}
+      disabled={!onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`${required ? "Add" : "Edit"} ${label.toLowerCase()}${required ? ", required for calculation" : ""}`}
+      testID={`fuel-targets-edit-${label.toLowerCase()}`}
+      style={{ flex: 1 }}
     >
-      <Text
-        fontFamily="$display"
-        fontSize={9}
-        fontWeight="600"
-        letterSpacing={0.5}
-        textTransform="uppercase"
-        color="$text3"
-        marginBottom={3}
+      <View
+        paddingVertical={10}
+        paddingHorizontal={8}
+        borderLeftWidth={border ? 1 : 0}
+        borderLeftColor="$border"
       >
-        {label}
-      </Text>
-      <View flexDirection="row" alignItems="baseline" gap={2}>
         <Text
-          fontFamily="$body"
-          fontSize={16}
+          fontFamily="$display"
+          fontSize={9}
           fontWeight="600"
-          letterSpacing={-0.4}
-          color="$text"
+          letterSpacing={0.5}
+          textTransform="uppercase"
+          color="$text3"
+          marginBottom={3}
         >
-          {value}
+          {label}
         </Text>
-        {unit ? (
-          <Text fontFamily="$body" fontSize={10} color="$text3">
-            {unit}
+        <View flexDirection="row" alignItems="baseline" gap={2}>
+          <Text
+            fontFamily="$body"
+            fontSize={16}
+            fontWeight="600"
+            letterSpacing={-0.4}
+            color="$text"
+          >
+            {value}
           </Text>
-        ) : null}
+          {unit ? (
+            <Text fontFamily="$body" fontSize={10} color="$text3">
+              {unit}
+            </Text>
+          ) : null}
+        </View>
+        <Text fontFamily="$body" fontSize={10} color="$text3" marginTop={4}>
+          {required ? "Required" : "Edit"}
+        </Text>
       </View>
-    </View>
+    </Pressable>
   );
 }
 

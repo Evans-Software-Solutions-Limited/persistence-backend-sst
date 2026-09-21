@@ -159,3 +159,135 @@ describe("profile-page.query", () => {
     });
   });
 });
+
+describe("offline profile intent reconciliation", () => {
+  it.each([
+    {
+      fullName: "Updated",
+      dateOfBirth: "1990-01-01",
+      gender: "male",
+      heightCm: 180,
+      weightUnit: "lb",
+      heightUnit: "ftin",
+      fitnessLevel: "beginner",
+      isProfilePublic: true,
+      showTemplateWorkouts: false,
+    },
+    {
+      fullName: null,
+      dateOfBirth: null,
+      gender: null,
+      heightCm: null,
+      weightUnit: "kg",
+      heightUnit: "cm",
+      fitnessLevel: null,
+    },
+    { gender: "female", fitnessLevel: "intermediate" },
+    { gender: "other", fitnessLevel: "advanced" },
+    { fitnessLevel: "elite" },
+  ])(
+    "overlays all accepted fields without changing server identity",
+    async (patch) => {
+      const storage = new InMemoryStorageAdapter();
+      const api = new InMemoryApiAdapter();
+      api.profilePage = PROFILE_PAGE_FIXTURE;
+      storage.enqueueMutation({
+        entityType: "profile",
+        entityId: "user-1",
+        operation: "update",
+        endpoint: "/profile",
+        method: "PATCH",
+        payload: { ...patch, id: "another-user" },
+      });
+      const result = await refreshProfilePage(api, storage, "user-1");
+      expect(result.ok && result.value.profile).toMatchObject(patch);
+      expect(result.ok && result.value.profile.id).toBe(
+        PROFILE_PAGE_FIXTURE.profile.id,
+      );
+    },
+  );
+
+  it("merges independent in-flight and later fields with last-write-wins including clears", async () => {
+    const storage = new InMemoryStorageAdapter();
+    const api = new InMemoryApiAdapter();
+    api.profilePage = PROFILE_PAGE_FIXTURE;
+    storage.enqueueMutation({
+      entityType: "profile",
+      entityId: "user-1",
+      operation: "update",
+      endpoint: "/profile",
+      method: "PATCH",
+      payload: { heightCm: 180, gender: "female" },
+    });
+    storage.patchQueueEntryForTest(storage.getUncompletedMutations()[0].id, {
+      status: "in_flight",
+    });
+    storage.enqueueMutation({
+      entityType: "profile",
+      entityId: "user-1",
+      operation: "update",
+      endpoint: "/profile",
+      method: "PATCH",
+      payload: { gender: null },
+    });
+    const result = await refreshProfilePage(api, storage, "user-1");
+    expect(result.ok && result.value.profile).toMatchObject({
+      heightCm: 180,
+      gender: null,
+    });
+    // Even a cache populated by an older reader must recover outstanding intent.
+    storage.cacheProfilePage("user-1", PROFILE_PAGE_FIXTURE);
+    expect(
+      getProfilePageQuery(storage, "user-1").payload?.profile,
+    ).toMatchObject({ heightCm: 180, gender: null });
+  });
+
+  it("ignores malformed, wrong-route and invalid typed fields", async () => {
+    const storage = new InMemoryStorageAdapter();
+    const api = new InMemoryApiAdapter();
+    api.profilePage = PROFILE_PAGE_FIXTURE;
+    for (const payload of [
+      null,
+      [],
+      "bad",
+      {
+        gender: "bad",
+        heightCm: "bad",
+        fitnessLevel: "bad",
+        fullName: 3,
+        dateOfBirth: 2,
+        weightUnit: "bad",
+        heightUnit: "bad",
+      },
+    ]) {
+      storage.enqueueMutation({
+        entityType: "profile",
+        entityId: "user-1",
+        operation: "update",
+        endpoint: "/profile",
+        method: "PATCH",
+        payload,
+      });
+    }
+    for (const override of [
+      { payload: "bad json" },
+      { endpoint: "/other" },
+      { method: "POST" as const },
+    ]) {
+      storage.enqueueMutation({
+        entityType: "profile",
+        entityId: "user-1",
+        operation: "update",
+        endpoint: "/profile",
+        method: "PATCH",
+        payload: { heightCm: 200 },
+      });
+      storage.patchQueueEntryForTest(
+        storage.getUncompletedMutations().at(-1)!.id,
+        override,
+      );
+    }
+    const result = await refreshProfilePage(api, storage, "user-1");
+    expect(result.ok && result.value).toEqual(PROFILE_PAGE_FIXTURE);
+  });
+});
