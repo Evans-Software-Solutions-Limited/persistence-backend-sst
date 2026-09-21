@@ -1,0 +1,1124 @@
+{
+  "contractVersion": "together-v1",
+  "status": "D8/D9 proposed examples; not deployed or fully runtime-validated. Local executable proof is the documented subset. Synthetic IDs only.",
+  "operationDiscriminator": "type",
+  "routes": [
+    {
+      "method": "POST",
+      "path": "/together/sessions",
+      "headers": {
+        "Authorization": "Bearer <verified-user-jwt>",
+        "Idempotency-Key": "00000000-0000-4000-8000-000000000100"
+      },
+      "request": {
+        "clientDraftId": "00000000-0000-4000-8000-000000000010",
+        "plan": {
+          "name": "Private pair proof",
+          "exercises": [
+            {
+              "planExerciseId": "00000000-0000-4000-8000-000000000004",
+              "exerciseId": "00000000-0000-4000-8000-000000000005",
+              "order": 0,
+              "targetSets": 3,
+              "targetReps": 8
+            }
+          ]
+        },
+        "ownExecution": {
+          "exercises": [
+            {
+              "planExerciseId": "00000000-0000-4000-8000-000000000004",
+              "substituteExerciseId": null,
+              "skipped": false,
+              "sets": [
+                {
+                  "setId": "00000000-0000-4000-8000-000000000009",
+                  "reps": 8,
+                  "weightKg": 80,
+                  "completed": true
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "response": {
+        "data": {
+          "sessionId": "00000000-0000-4000-8000-000000000003",
+          "revision": 1,
+          "snapshot": {
+            "state": "active",
+            "hostId": "00000000-0000-4000-8000-000000000001",
+            "revision": 1,
+            "planVersion": 0,
+            "plan": {
+              "name": "Private pair proof",
+              "exercises": [
+                {
+                  "planExerciseId": "00000000-0000-4000-8000-000000000004",
+                  "exerciseId": "00000000-0000-4000-8000-000000000005",
+                  "order": 0,
+                  "targetSets": 3,
+                  "targetReps": 8
+                }
+              ]
+            },
+            "participants": [
+              {
+                "userId": "00000000-0000-4000-8000-000000000001",
+                "status": "active",
+                "ownRevision": 1,
+                "delegationGeneration": 0,
+                "execution": {
+                  "exercises": [
+                    {
+                      "planExerciseId": "00000000-0000-4000-8000-000000000004",
+                      "substituteExerciseId": null,
+                      "skipped": false,
+                      "sets": [
+                        {
+                          "setId": "00000000-0000-4000-8000-000000000009",
+                          "reps": 8,
+                          "weightKg": 80,
+                          "completed": true
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            ],
+            "completion": null
+          }
+        }
+      },
+      "implementationStatus": "PER-20 contract; production route not mounted"
+    },
+    {
+      "method": "GET",
+      "path": "/together/sessions/active",
+      "headers": {
+        "Authorization": "Bearer <verified-user-jwt>"
+      },
+      "request": null,
+      "response": {
+        "data": [
+          {
+            "sessionId": "00000000-0000-4000-8000-000000000003",
+            "status": "active"
+          }
+        ]
+      },
+      "implementationStatus": "PER-20 contract; production route not mounted"
+    },
+    {
+      "method": "GET",
+      "path": "/together/sessions/00000000-0000-4000-8000-000000000003",
+      "headers": {
+        "Authorization": "Bearer <verified-user-jwt>"
+      },
+      "request": null,
+      "response": {
+        "data": {
+          "state": "active",
+          "hostId": "00000000-0000-4000-8000-000000000001",
+          "revision": 4,
+          "planVersion": 0,
+          "plan": {
+            "name": "Private pair proof",
+            "exercises": [
+              {
+                "planExerciseId": "00000000-0000-4000-8000-000000000004",
+                "exerciseId": "00000000-0000-4000-8000-000000000005",
+                "order": 0,
+                "targetSets": 3,
+                "targetReps": 8
+              }
+            ]
+          },
+          "participants": [
+            {
+              "userId": "00000000-0000-4000-8000-000000000001",
+              "status": "active",
+              "ownRevision": 1,
+              "delegationGeneration": 0,
+              "execution": {
+                "exercises": [
+                  {
+                    "planExerciseId": "00000000-0000-4000-8000-000000000004",
+                    "substituteExerciseId": null,
+                    "skipped": false,
+                    "sets": [
+                      {
+                        "setId": "00000000-0000-4000-8000-000000000009",
+                        "reps": 8,
+                        "weightKg": 80,
+                        "completed": true
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "userId": "00000000-0000-4000-8000-000000000002",
+              "status": "active",
+              "ownRevision": 0,
+              "delegationGeneration": 0,
+              "execution": {
+                "exercises": []
+              }
+            }
+          ],
+          "completion": null
+        }
+      },
+      "implementationStatus": "PER-20 contract; production route not mounted"
+    },
+    {
+      "method": "POST",
+      "path": "/together/sessions/00000000-0000-4000-8000-000000000003/invites",
+      "headers": {
+        "Authorization": "Bearer <verified-user-jwt>",
+        "Idempotency-Key": "00000000-0000-4000-8000-000000000103"
+      },
+      "request": {
+        "expiresInMinutes": 15
+      },
+      "response": {
+        "data": {
+          "tokenId": "00000000-0000-4000-8000-000000000011",
+          "token": "<opaque-secret>",
+          "expiresAt": "2026-09-21T18:15:00.000Z"
+        }
+      },
+      "implementationStatus": "PER-20 contract; production route not mounted"
+    },
+    {
+      "method": "DELETE",
+      "path": "/together/sessions/00000000-0000-4000-8000-000000000003/invites/00000000-0000-4000-8000-000000000011",
+      "headers": {
+        "Authorization": "Bearer <verified-user-jwt>",
+        "Idempotency-Key": "00000000-0000-4000-8000-000000000104"
+      },
+      "request": {},
+      "response": {
+        "data": {
+          "revoked": true
+        }
+      },
+      "implementationStatus": "PER-20 contract; production route not mounted"
+    },
+    {
+      "method": "POST",
+      "path": "/together/join-requests",
+      "headers": {
+        "Authorization": "Bearer <verified-user-jwt>",
+        "Idempotency-Key": "00000000-0000-4000-8000-000000000105"
+      },
+      "request": {
+        "inviteToken": "<opaque-secret>",
+        "consentVersion": "together-v1",
+        "consentAccepted": true
+      },
+      "response": {
+        "data": {
+          "requestId": "00000000-0000-4000-8000-000000000012",
+          "status": "pending"
+        }
+      },
+      "implementationStatus": "PER-20 contract; production route not mounted"
+    },
+    {
+      "method": "GET",
+      "path": "/together/sessions/00000000-0000-4000-8000-000000000003/join-requests",
+      "headers": {
+        "Authorization": "Bearer <verified-user-jwt>"
+      },
+      "request": null,
+      "response": {
+        "data": [
+          {
+            "requestId": "00000000-0000-4000-8000-000000000012",
+            "userId": "00000000-0000-4000-8000-000000000002",
+            "displayName": "Athlete B",
+            "status": "pending"
+          }
+        ],
+        "nextCursor": null
+      },
+      "implementationStatus": "PER-20 contract; production route not mounted"
+    },
+    {
+      "method": "POST",
+      "path": "/together/sessions/00000000-0000-4000-8000-000000000003/join-requests/00000000-0000-4000-8000-000000000012/decision",
+      "headers": {
+        "Authorization": "Bearer <verified-user-jwt>",
+        "Idempotency-Key": "00000000-0000-4000-8000-000000000107"
+      },
+      "request": {
+        "decision": "approve",
+        "expectedRevision": 2
+      },
+      "response": {
+        "data": {
+          "state": "active",
+          "hostId": "00000000-0000-4000-8000-000000000001",
+          "revision": 4,
+          "planVersion": 0,
+          "plan": {
+            "name": "Private pair proof",
+            "exercises": [
+              {
+                "planExerciseId": "00000000-0000-4000-8000-000000000004",
+                "exerciseId": "00000000-0000-4000-8000-000000000005",
+                "order": 0,
+                "targetSets": 3,
+                "targetReps": 8
+              }
+            ]
+          },
+          "participants": [
+            {
+              "userId": "00000000-0000-4000-8000-000000000001",
+              "status": "active",
+              "ownRevision": 1,
+              "delegationGeneration": 0,
+              "execution": {
+                "exercises": [
+                  {
+                    "planExerciseId": "00000000-0000-4000-8000-000000000004",
+                    "substituteExerciseId": null,
+                    "skipped": false,
+                    "sets": [
+                      {
+                        "setId": "00000000-0000-4000-8000-000000000009",
+                        "reps": 8,
+                        "weightKg": 80,
+                        "completed": true
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "userId": "00000000-0000-4000-8000-000000000002",
+              "status": "active",
+              "ownRevision": 0,
+              "delegationGeneration": 0,
+              "execution": {
+                "exercises": []
+              }
+            }
+          ],
+          "completion": null
+        }
+      },
+      "implementationStatus": "PER-20 contract; production route not mounted"
+    },
+    {
+      "method": "POST",
+      "path": "/together/sessions/00000000-0000-4000-8000-000000000003/commands",
+      "headers": {
+        "Authorization": "Bearer <verified-user-jwt>",
+        "Idempotency-Key": "00000000-0000-4000-8000-000000000108"
+      },
+      "request": {
+        "commandId": "00000000-0000-4000-8000-000000000006",
+        "expectedVersion": 0,
+        "target": {
+          "kind": "execution",
+          "athleteId": "00000000-0000-4000-8000-000000000001"
+        },
+        "operation": {
+          "type": "upsertSet",
+          "planExerciseId": "00000000-0000-4000-8000-000000000004",
+          "set": {
+            "setId": "00000000-0000-4000-8000-000000000009",
+            "reps": 8,
+            "weightKg": 80,
+            "completed": true
+          }
+        }
+      },
+      "response": {
+        "data": {
+          "commandId": "00000000-0000-4000-8000-000000000006",
+          "revision": 4,
+          "event": {
+            "revision": 4,
+            "commandId": "00000000-0000-4000-8000-000000000006",
+            "target": {
+              "kind": "execution",
+              "athleteId": "00000000-0000-4000-8000-000000000001"
+            },
+            "newVersion": 1,
+            "operation": {
+              "type": "upsertSet",
+              "planExerciseId": "00000000-0000-4000-8000-000000000004",
+              "set": {
+                "setId": "00000000-0000-4000-8000-000000000009",
+                "reps": 8,
+                "weightKg": 80,
+                "completed": true
+              }
+            }
+          }
+        }
+      },
+      "implementationStatus": "PER-20 contract; production route not mounted"
+    },
+    {
+      "method": "PUT",
+      "path": "/together/sessions/00000000-0000-4000-8000-000000000003/delegation",
+      "headers": {
+        "Authorization": "Bearer <verified-user-jwt>",
+        "Idempotency-Key": "00000000-0000-4000-8000-000000000109"
+      },
+      "request": {
+        "allowPartnerLogging": false
+      },
+      "response": {
+        "data": {
+          "generation": 2,
+          "allowed": false
+        }
+      },
+      "implementationStatus": "PER-20 contract; production route not mounted"
+    },
+    {
+      "method": "PUT",
+      "path": "/together/sessions/00000000-0000-4000-8000-000000000003/visibility",
+      "headers": {
+        "Authorization": "Bearer <verified-user-jwt>",
+        "Idempotency-Key": "00000000-0000-4000-8000-000000000110"
+      },
+      "request": {
+        "audience": "private",
+        "expiresAt": "2026-09-21T20:00:00.000Z"
+      },
+      "response": {
+        "data": {
+          "revision": 5
+        }
+      },
+      "implementationStatus": "PER-21/PER-22 contract only"
+    },
+    {
+      "method": "GET",
+      "path": "/together/discovery?audience=nearby&placeId=fixture-town&limit=20",
+      "headers": {
+        "Authorization": "Bearer <verified-user-jwt>"
+      },
+      "request": null,
+      "response": {
+        "data": [
+          {
+            "sessionId": "00000000-0000-4000-8000-000000000003",
+            "host": {
+              "userId": "00000000-0000-4000-8000-000000000001",
+              "displayName": "Athlete A"
+            },
+            "placeLabel": "Fixture town",
+            "expiresAt": "2026-09-21T20:00:00.000Z",
+            "occupancy": 1
+          }
+        ],
+        "nextCursor": null
+      },
+      "implementationStatus": "PER-21 contract only"
+    },
+    {
+      "method": "GET",
+      "path": "/together/sessions/00000000-0000-4000-8000-000000000003/events?afterRevision=3",
+      "headers": {
+        "Authorization": "Bearer <verified-user-jwt>"
+      },
+      "request": null,
+      "response": {
+        "data": [
+          {
+            "revision": 4,
+            "commandId": "00000000-0000-4000-8000-000000000006",
+            "target": {
+              "kind": "execution",
+              "athleteId": "00000000-0000-4000-8000-000000000001"
+            },
+            "newVersion": 1,
+            "operation": {
+              "type": "upsertSet",
+              "planExerciseId": "00000000-0000-4000-8000-000000000004",
+              "set": {
+                "setId": "00000000-0000-4000-8000-000000000009",
+                "reps": 8,
+                "weightKg": 80,
+                "completed": true
+              }
+            }
+          }
+        ],
+        "nextCursor": null
+      },
+      "implementationStatus": "PER-20 contract; production route not mounted"
+    },
+    {
+      "method": "POST",
+      "path": "/together/sessions/00000000-0000-4000-8000-000000000003/realtime-ticket",
+      "headers": {
+        "Authorization": "Bearer <verified-user-jwt>",
+        "Idempotency-Key": "00000000-0000-4000-8000-000000000113"
+      },
+      "request": {},
+      "response": {
+        "data": {
+          "ticket": "<one-use-ticket>",
+          "expiresAt": "2026-09-21T18:01:00.000Z",
+          "endpoint": "wss://provider-stage.example.invalid/together"
+        }
+      },
+      "implementationStatus": "PER-20 contract; production route not mounted"
+    },
+    {
+      "method": "POST",
+      "path": "/together/sessions/00000000-0000-4000-8000-000000000003/finish",
+      "headers": {
+        "Authorization": "Bearer <verified-user-jwt>",
+        "Idempotency-Key": "00000000-0000-4000-8000-000000000114"
+      },
+      "request": {
+        "expectedOwnRevision": 1
+      },
+      "response": {
+        "data": {
+          "status": "pending"
+        }
+      },
+      "implementationStatus": "PER-20 contract; production route not mounted"
+    },
+    {
+      "method": "POST",
+      "path": "/together/sessions/00000000-0000-4000-8000-000000000003/leave",
+      "headers": {
+        "Authorization": "Bearer <verified-user-jwt>",
+        "Idempotency-Key": "00000000-0000-4000-8000-000000000115"
+      },
+      "request": {
+        "expectedOwnRevision": 1
+      },
+      "response": {
+        "data": {
+          "status": "saved",
+          "historyId": "00000000-0000-4000-8000-000000000007"
+        }
+      },
+      "implementationStatus": "PER-20 contract; production route not mounted"
+    },
+    {
+      "method": "GET",
+      "path": "/places/search?q=Fixture&limit=20",
+      "headers": {
+        "Authorization": "Bearer <verified-user-jwt>"
+      },
+      "request": null,
+      "response": {
+        "data": [
+          {
+            "placeId": "fixture-town",
+            "label": "Fixture town",
+            "center": {
+              "latitude": 51.5,
+              "longitude": -0.1
+            }
+          }
+        ],
+        "nextCursor": null
+      },
+      "implementationStatus": "PER-21 synthetic contract only"
+    },
+    {
+      "method": "GET",
+      "path": "/places/nearby?latitude=51.5&longitude=-0.1&limit=20",
+      "headers": {
+        "Authorization": "Bearer <verified-user-jwt>"
+      },
+      "request": null,
+      "response": {
+        "data": [
+          {
+            "placeId": "fixture-town",
+            "label": "Fixture town",
+            "center": {
+              "latitude": 51.5,
+              "longitude": -0.1
+            }
+          }
+        ],
+        "nextCursor": null
+      },
+      "implementationStatus": "PER-21 synthetic contract only"
+    },
+    {
+      "method": "PUT",
+      "path": "/social/profile",
+      "headers": {
+        "Authorization": "Bearer <verified-user-jwt>",
+        "Idempotency-Key": "00000000-0000-4000-8000-000000000118"
+      },
+      "request": {
+        "discoverable": true
+      },
+      "response": {
+        "data": {
+          "discoverable": true
+        }
+      },
+      "implementationStatus": "PER-21 contract only"
+    },
+    {
+      "method": "GET",
+      "path": "/social/people?q=Athlete&limit=20",
+      "headers": {
+        "Authorization": "Bearer <verified-user-jwt>"
+      },
+      "request": null,
+      "response": {
+        "data": [
+          {
+            "userId": "00000000-0000-4000-8000-000000000002",
+            "displayName": "Athlete B"
+          }
+        ],
+        "nextCursor": null
+      },
+      "implementationStatus": "PER-21 contract only"
+    },
+    {
+      "method": "GET",
+      "path": "/social/friends",
+      "headers": {
+        "Authorization": "Bearer <verified-user-jwt>"
+      },
+      "request": null,
+      "response": {
+        "data": [
+          {
+            "userId": "00000000-0000-4000-8000-000000000002",
+            "displayName": "Athlete B"
+          }
+        ],
+        "nextCursor": null
+      },
+      "implementationStatus": "PER-21 contract only"
+    },
+    {
+      "method": "GET",
+      "path": "/social/requests",
+      "headers": {
+        "Authorization": "Bearer <verified-user-jwt>"
+      },
+      "request": null,
+      "response": {
+        "data": [
+          {
+            "requestId": "00000000-0000-4000-8000-000000000013",
+            "userId": "00000000-0000-4000-8000-000000000002",
+            "status": "pending"
+          }
+        ],
+        "nextCursor": null
+      },
+      "implementationStatus": "PER-21 contract only"
+    },
+    {
+      "method": "POST",
+      "path": "/social/requests",
+      "headers": {
+        "Authorization": "Bearer <verified-user-jwt>",
+        "Idempotency-Key": "00000000-0000-4000-8000-000000000122"
+      },
+      "request": {
+        "userId": "00000000-0000-4000-8000-000000000002"
+      },
+      "response": {
+        "data": {
+          "requestId": "00000000-0000-4000-8000-000000000013",
+          "status": "pending"
+        }
+      },
+      "implementationStatus": "PER-21 contract only"
+    },
+    {
+      "method": "POST",
+      "path": "/social/requests/00000000-0000-4000-8000-000000000013/decision",
+      "headers": {
+        "Authorization": "Bearer <verified-user-jwt>",
+        "Idempotency-Key": "00000000-0000-4000-8000-000000000123"
+      },
+      "request": {
+        "decision": "accept"
+      },
+      "response": {
+        "data": {
+          "requestId": "00000000-0000-4000-8000-000000000013",
+          "status": "accepted"
+        }
+      },
+      "implementationStatus": "PER-21 contract only"
+    },
+    {
+      "method": "DELETE",
+      "path": "/social/friends/00000000-0000-4000-8000-000000000002",
+      "headers": {
+        "Authorization": "Bearer <verified-user-jwt>",
+        "Idempotency-Key": "00000000-0000-4000-8000-000000000124"
+      },
+      "request": {},
+      "response": {
+        "data": {
+          "removed": true
+        }
+      },
+      "implementationStatus": "PER-21 contract only"
+    },
+    {
+      "method": "PUT",
+      "path": "/social/blocks/00000000-0000-4000-8000-000000000002",
+      "headers": {
+        "Authorization": "Bearer <verified-user-jwt>",
+        "Idempotency-Key": "00000000-0000-4000-8000-000000000125"
+      },
+      "request": {},
+      "response": {
+        "data": {
+          "blocked": true
+        }
+      },
+      "implementationStatus": "PER-21 contract only"
+    },
+    {
+      "method": "DELETE",
+      "path": "/social/blocks/00000000-0000-4000-8000-000000000002",
+      "headers": {
+        "Authorization": "Bearer <verified-user-jwt>",
+        "Idempotency-Key": "00000000-0000-4000-8000-000000000126"
+      },
+      "request": {},
+      "response": {
+        "data": {
+          "blocked": false
+        }
+      },
+      "implementationStatus": "PER-21 contract only"
+    },
+    {
+      "method": "POST",
+      "path": "/social/reports",
+      "headers": {
+        "Authorization": "Bearer <verified-user-jwt>",
+        "Idempotency-Key": "00000000-0000-4000-8000-000000000127"
+      },
+      "request": {
+        "subjectUserId": "00000000-0000-4000-8000-000000000002",
+        "context": "together",
+        "resourceId": "00000000-0000-4000-8000-000000000003",
+        "reason": "other",
+        "details": "Synthetic fixture"
+      },
+      "response": {
+        "data": {
+          "reportId": "00000000-0000-4000-8000-000000000014"
+        }
+      },
+      "implementationStatus": "PER-21 contract only"
+    },
+    {
+      "method": "POST",
+      "path": "/together/templates",
+      "headers": {
+        "Authorization": "Bearer <verified-user-jwt>",
+        "Idempotency-Key": "00000000-0000-4000-8000-000000000128"
+      },
+      "request": {
+        "recipientUserId": "00000000-0000-4000-8000-000000000002",
+        "plan": {
+          "name": "Private pair proof",
+          "exercises": [
+            {
+              "planExerciseId": "00000000-0000-4000-8000-000000000004",
+              "exerciseId": "00000000-0000-4000-8000-000000000005",
+              "order": 0,
+              "targetSets": 3,
+              "targetReps": 8
+            }
+          ]
+        }
+      },
+      "response": {
+        "data": {
+          "shareId": "00000000-0000-4000-8000-000000000015"
+        }
+      },
+      "implementationStatus": "PER-22 contract only"
+    },
+    {
+      "method": "GET",
+      "path": "/together/templates?limit=20",
+      "headers": {
+        "Authorization": "Bearer <verified-user-jwt>"
+      },
+      "request": null,
+      "response": {
+        "data": [
+          {
+            "shareId": "00000000-0000-4000-8000-000000000015",
+            "senderUserId": "00000000-0000-4000-8000-000000000001",
+            "recipientUserId": "00000000-0000-4000-8000-000000000002",
+            "plan": {
+              "name": "Private pair proof",
+              "exercises": [
+                {
+                  "planExerciseId": "00000000-0000-4000-8000-000000000004",
+                  "exerciseId": "00000000-0000-4000-8000-000000000005",
+                  "order": 0,
+                  "targetSets": 3,
+                  "targetReps": 8
+                }
+              ]
+            }
+          }
+        ],
+        "nextCursor": null
+      },
+      "implementationStatus": "PER-22 contract only"
+    },
+    {
+      "method": "GET",
+      "path": "/together/templates/00000000-0000-4000-8000-000000000015",
+      "headers": {
+        "Authorization": "Bearer <verified-user-jwt>"
+      },
+      "request": null,
+      "response": {
+        "data": {
+          "shareId": "00000000-0000-4000-8000-000000000015",
+          "senderUserId": "00000000-0000-4000-8000-000000000001",
+          "recipientUserId": "00000000-0000-4000-8000-000000000002",
+          "plan": {
+            "name": "Private pair proof",
+            "exercises": [
+              {
+                "planExerciseId": "00000000-0000-4000-8000-000000000004",
+                "exerciseId": "00000000-0000-4000-8000-000000000005",
+                "order": 0,
+                "targetSets": 3,
+                "targetReps": 8
+              }
+            ]
+          }
+        }
+      },
+      "implementationStatus": "PER-22 contract only"
+    },
+    {
+      "method": "POST",
+      "path": "/together/templates/00000000-0000-4000-8000-000000000015/copy",
+      "headers": {
+        "Authorization": "Bearer <verified-user-jwt>",
+        "Idempotency-Key": "00000000-0000-4000-8000-000000000131"
+      },
+      "request": {},
+      "response": {
+        "data": {
+          "workoutId": "00000000-0000-4000-8000-000000000016"
+        }
+      },
+      "implementationStatus": "PER-22 contract only"
+    },
+    {
+      "method": "DELETE",
+      "path": "/together/templates/00000000-0000-4000-8000-000000000015",
+      "headers": {
+        "Authorization": "Bearer <verified-user-jwt>",
+        "Idempotency-Key": "00000000-0000-4000-8000-000000000132"
+      },
+      "request": {},
+      "response": {
+        "data": {
+          "revoked": true
+        }
+      },
+      "implementationStatus": "PER-22 contract only"
+    }
+  ],
+  "operationExamples": [
+    {
+      "type": "upsertSet",
+      "planExerciseId": "00000000-0000-4000-8000-000000000004",
+      "set": {
+        "setId": "00000000-0000-4000-8000-000000000009",
+        "reps": 8,
+        "weightKg": 80,
+        "completed": true
+      }
+    },
+    {
+      "type": "replacePlan",
+      "plan": {
+        "name": "Private pair proof",
+        "exercises": [
+          {
+            "planExerciseId": "00000000-0000-4000-8000-000000000004",
+            "exerciseId": "00000000-0000-4000-8000-000000000005",
+            "order": 0,
+            "targetSets": 3,
+            "targetReps": 8
+          }
+        ]
+      }
+    },
+    {
+      "type": "removeSet",
+      "planExerciseId": "00000000-0000-4000-8000-000000000004",
+      "setId": "00000000-0000-4000-8000-000000000009"
+    },
+    {
+      "type": "substitute",
+      "planExerciseId": "00000000-0000-4000-8000-000000000004",
+      "exerciseId": null
+    },
+    {
+      "type": "skip",
+      "planExerciseId": "00000000-0000-4000-8000-000000000004",
+      "skipped": true
+    },
+    {
+      "type": "rest",
+      "endsAt": "2026-09-21T18:02:00.000Z"
+    }
+  ],
+  "partnerCommand": {
+    "commandId": "00000000-0000-4000-8000-000000000006",
+    "expectedVersion": 0,
+    "target": {
+      "kind": "execution",
+      "athleteId": "00000000-0000-4000-8000-000000000002"
+    },
+    "operation": {
+      "type": "upsertSet",
+      "planExerciseId": "00000000-0000-4000-8000-000000000004",
+      "set": {
+        "setId": "00000000-0000-4000-8000-000000000009",
+        "reps": 8,
+        "weightKg": 80,
+        "completed": true
+      }
+    },
+    "delegationGeneration": 2
+  },
+  "completionResponses": [
+    {
+      "data": {
+        "status": "pending"
+      }
+    },
+    {
+      "data": {
+        "status": "saved",
+        "historyId": "00000000-0000-4000-8000-000000000007"
+      }
+    },
+    {
+      "data": {
+        "status": "finished_empty"
+      }
+    }
+  ],
+  "recoverySnapshot": {
+    "state": "active",
+    "hostId": "00000000-0000-4000-8000-000000000001",
+    "revision": 4,
+    "planVersion": 0,
+    "plan": {
+      "name": "Private pair proof",
+      "exercises": [
+        {
+          "planExerciseId": "00000000-0000-4000-8000-000000000004",
+          "exerciseId": "00000000-0000-4000-8000-000000000005",
+          "order": 0,
+          "targetSets": 3,
+          "targetReps": 8
+        }
+      ]
+    },
+    "participants": [
+      {
+        "userId": "00000000-0000-4000-8000-000000000001",
+        "status": "active",
+        "ownRevision": 1,
+        "delegationGeneration": 0,
+        "execution": {
+          "exercises": [
+            {
+              "planExerciseId": "00000000-0000-4000-8000-000000000004",
+              "substituteExerciseId": null,
+              "skipped": false,
+              "sets": [
+                {
+                  "setId": "00000000-0000-4000-8000-000000000009",
+                  "reps": 8,
+                  "weightKg": 80,
+                  "completed": true
+                }
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "completion": null
+  },
+  "webSocketFrame": {
+    "type": "sync_required"
+  },
+  "errors": [
+    {
+      "status": 400,
+      "body": {
+        "error": {
+          "code": "INVALID_SCHEMA",
+          "message": "Request cannot be completed"
+        }
+      }
+    },
+    {
+      "status": 401,
+      "body": {
+        "error": {
+          "code": "UNAUTHENTICATED",
+          "message": "Request cannot be completed"
+        }
+      }
+    },
+    {
+      "status": 403,
+      "body": {
+        "error": {
+          "code": "FORBIDDEN",
+          "message": "Request cannot be completed"
+        }
+      }
+    },
+    {
+      "status": 403,
+      "body": {
+        "error": {
+          "code": "PAID_REQUIRED",
+          "message": "Request cannot be completed"
+        }
+      }
+    },
+    {
+      "status": 403,
+      "body": {
+        "error": {
+          "code": "DELEGATION_REVOKED",
+          "message": "Request cannot be completed"
+        }
+      }
+    },
+    {
+      "status": 404,
+      "body": {
+        "error": {
+          "code": "NOT_FOUND",
+          "message": "Request cannot be completed"
+        }
+      }
+    },
+    {
+      "status": 409,
+      "body": {
+        "error": {
+          "code": "IDEMPOTENCY_MISMATCH",
+          "message": "Request cannot be completed"
+        }
+      }
+    },
+    {
+      "status": 409,
+      "body": {
+        "error": {
+          "code": "VERSION_CONFLICT",
+          "message": "Request cannot be completed",
+          "currentRevision": 2
+        }
+      }
+    },
+    {
+      "status": 409,
+      "body": {
+        "error": {
+          "code": "SESSION_FULL",
+          "message": "Request cannot be completed"
+        }
+      }
+    },
+    {
+      "status": 409,
+      "body": {
+        "error": {
+          "code": "INVALID_STATE",
+          "message": "Request cannot be completed"
+        }
+      }
+    },
+    {
+      "status": 409,
+      "body": {
+        "error": {
+          "code": "ACTIVE_SESSION_EXISTS",
+          "message": "Request cannot be completed"
+        }
+      }
+    },
+    {
+      "status": 410,
+      "body": {
+        "error": {
+          "code": "INVITE_EXPIRED",
+          "message": "Request cannot be completed"
+        }
+      }
+    },
+    {
+      "status": 410,
+      "body": {
+        "error": {
+          "code": "CURSOR_EXPIRED",
+          "message": "Request cannot be completed"
+        }
+      }
+    },
+    {
+      "status": 429,
+      "body": {
+        "error": {
+          "code": "RATE_LIMITED",
+          "message": "Request cannot be completed"
+        }
+      },
+      "headers": {
+        "Retry-After": "30"
+      }
+    }
+  ],
+  "completionEvent": {
+    "revision": 5,
+    "type": "completion",
+    "athleteId": "00000000-0000-4000-8000-000000000001",
+    "status": "saved",
+    "historyId": "00000000-0000-4000-8000-000000000007"
+  },
+  "replayEventUnion": "D8 command event or completionEvent; completion is server-created, never accepted as a client command."
+}

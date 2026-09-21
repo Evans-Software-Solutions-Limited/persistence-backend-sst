@@ -1,5 +1,12 @@
 # Train Together — requirements
 
+PER-20 execution note (21 September 2026): the authorized contract/recovery spike
+is tracked in [RECOVERY-PROOF](../milestones/TRAIN-TOGETHER/RECOVERY-PROOF.md).
+Local transactional tests may establish protocol behaviour; they do not close
+AC4's physical two-phone latency target, AC10 research, or integrated release
+criteria. This authorization is limited to E1 and supersedes the historical
+discussion-only status for that slice. PER-21/PER-22 remain separate work.
+
 > Current execution contract: the 17 September amendment below supersedes conflicting draft decisions/statuses. Earlier text is retained as scope history. Brad authorized finalizing and merging briefs; individual defaults below are our selected working decisions, not claims of separate product approval. This documentation task does not implement the feature.
 
 15 September 2026 · Discussion draft; not signed off or authorized for implementation.

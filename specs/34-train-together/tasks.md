@@ -1,5 +1,24 @@
 # Train Together — tasks
 
+## PER-20 scoped execution — 21 September 2026
+
+Brad authorized E1's transport/contract and local recovery proof. See
+[ADR](../milestones/TRAIN-TOGETHER/TRANSPORT-ADR.md) and
+[evidence](../milestones/TRAIN-TOGETHER/RECOVERY-PROOF.md). This supersedes the
+historical “no implementation authorized” wording for that slice only.
+
+- [x] Record HTTP + content-free AWS WebSocket transport decision and private
+      authorization, replay, outbox and independent finalization contract.
+- [x] Publish synthetic D8/D9 wire examples with implementation scope labels.
+- [x] Execute and review the local transactional recovery proof: 17 focused tests,
+      100% reported projection coverage and clean local Inspector re-sweep;
+      results and limitations in RECOVERY-PROOF.md.
+- [ ] Validate production provider setup, effective-entitlement/recording adapters,
+      multi-connection Postgres concurrency and two-phone latency/fault behaviour.
+
+E1 remains open until its external/device evidence exists. PER-21 social/place
+primitives and PER-22 product/mobile integration are not implemented by this slice.
+
 > Current execution contract: the 17 September amendment below supersedes conflicting draft decisions/statuses. Earlier text is retained as scope history. Brad authorized finalizing and merging briefs; individual defaults below are our selected working decisions, not claims of separate product approval. This documentation task does not implement the feature.
 
 Discussion only. No implementation task is authorized or complete.

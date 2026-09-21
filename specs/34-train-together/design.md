@@ -1,5 +1,29 @@
 # Train Together — design
 
+## PER-20 transport/recovery amendment — 21 September 2026
+
+The authorized E1 slice is the isolated local contract/recovery proof described in
+[TRANSPORT-ADR](../milestones/TRAIN-TOGETHER/TRANSPORT-ADR.md), with
+[wire examples](../milestones/TRAIN-TOGETHER/WIRE-EXAMPLES.json) and
+[evidence/gates](../milestones/TRAIN-TOGETHER/RECOVERY-PROOF.md).
+HTTP remains authoritative; selected WebSocket frames are content-free
+`{type:"sync_required"}` wakeups. Durable D8 event bodies are returned only by
+currently authorized HTTP replay. This refines the earlier “broadcast revisions”
+wording to avoid a payload leak across a revocation/send race. Commands committed
+before revocation stand; previously authorized in-flight responses cannot be
+recalled. No Together routes or provider infrastructure are activated by E1.
+
+Wire operation discriminators use `type`; explicit `finished_empty` is valid for
+finish/leave as already required by D8's lifecycle prose. The local executable
+projection and broader static D8/D9 examples have separate evidence labels.
+Finish/leave retries retain their original effect identity but return current own
+completion status/history after validating the unchanged request hash. A worker
+completion advances the session revision and emits a durable completion event;
+repeated worker execution does neither again. Dispatch passes session routing
+metadata to the server adapter, never in the content-free client frame.
+Private sessions do not depend on a place provider. Hosted place-provider setup,
+production adapters, physical phones and E2–E7 remain gated.
+
 > Current execution contract: the 17 September amendment below supersedes conflicting draft decisions/statuses. Earlier text is retained as scope history. Brad authorized finalizing and merging briefs; individual defaults below are our selected working decisions, not claims of separate product approval. This documentation task does not implement the feature.
 
 Discussion draft; authority for architecture after sign-off.

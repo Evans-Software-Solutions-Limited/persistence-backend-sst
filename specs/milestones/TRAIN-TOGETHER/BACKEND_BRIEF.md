@@ -1,5 +1,25 @@
 # Persistence Together — backend agent
 
+## PER-20 execution cut — 21 September 2026
+
+Brad authorized E1's transport decision, executable private-pair recovery proof,
+wire fixtures and evidence. The broader E2/E3 implementation below remains gated
+for PER-21/PER-22. PR #459 did not implement Together. PR #460 merged before this
+work; the proof starts from main `ca4ca9c1`.
+
+Build an isolated, unmounted proof under `application/together/`, using existing
+Vitest/PGlite tooling for real transactional persistence, rollback and restart
+tests. Exercise private invitations/consent/approval, current authorization and
+revocation, independent executions, command deduplication and target versions,
+durable outbox/replay, and independent idempotent completion jobs. Record the
+production recording adapter boundary honestly: a fixture sink proves recovery
+mechanics, not deployed history/statistics/PR integration. No production tables,
+routes, mobile UI, provider resources or social/discovery features ship here.
+
+The ADR must specify production adapters, provider/setup gates, revocation races,
+cost assumptions and the two-phone latency/fault checks still unverified. Keep
+E1's physical-device gate open until real evidence exists.
+
 ## Spec alignment
 
 Implement [design](../../34-train-together/design.md) D8–10, satisfy [requirements](../../34-train-together/requirements.md) AC1–8,11–14 and close [tasks](../../34-train-together/tasks.md) E1–3/server E7. Read all parent files and repository instructions first. Do not implement draft single-logger assumptions superseded by D8.

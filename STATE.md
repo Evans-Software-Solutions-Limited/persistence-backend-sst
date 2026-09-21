@@ -1,5 +1,38 @@
 # Project memory · persistence-backend-sst
 
+### 2026-09-21 — PER-20 Together transport/recovery proof
+
+Normal backend checkout was clean; main fast-forwarded to `ca4ca9c1`, with PR
+#460 confirmed merged at 17:16 UTC. Work is on
+`codex/per-20-together-recovery-proof`. PR #459 did not implement Together.
+
+E1 now has an HTTP-authoritative transport ADR, content-free AWS WebSocket wakeup
+framing, D8/D9 wire examples and an unmounted Drizzle/PGlite recovery proof under
+`microservices/core/src/application/together/`. Tests exercise private admission,
+revocation before deduplication, independent athlete sets/versions, transactional
+receipts/outbox, replay/disconnect, persisted restart and per-athlete frozen
+completion jobs. Fixture history/effect markers demonstrate transaction recovery;
+they do not prove the production recording/statistics adapter. Existing PR writes
+are transactional, but streak/volume postprocessing is currently best-effort and
+must gain durable recovery before Together integration.
+
+Scope and remaining evidence:
+`specs/milestones/TRAIN-TOGETHER/{TRANSPORT-ADR,RECOVERY-PROOF}.md`.
+No production route/schema/mobile feature or provider activation is included.
+PER-21 social/place/moderation and PER-22 complete editing/mobile integration remain
+gated. Production PostgreSQL multi-connection races, effective entitlement adapter,
+real recording effects, provider setup and two-phone p95/fault checks remain
+unverified. No deployment, merge, native/EAS build or CI Inspector trigger.
+
+Validation: focused 17 tests pass with 100% reported projection coverage in all
+four metrics; root typecheck 9/9, lint 6/6 (existing warnings), non-mobile build
+12/12, formatting and full unit suite 21/21 tasks pass. Local Inspector reproduced
+two defects (completion lacked a replay event; dispatch lacked session routing),
+both fixed and regression-tested; final re-sweep is clean. Full tests/build also
+pass after those final fixes (5,160 core tests). The requested
+slack-progress-updates skill was not found in available skill locations, so
+completion notifications cannot currently be sent through it.
+
 ### 2026-09-20 — Deploy-managed Apple web configuration
 
 Production and staging deploy workflows now validate GitHub auth inputs before
