@@ -1,5 +1,6 @@
 import { trustedSourceHeaders } from "./shared/trustedSourceHeaders";
 import Elysia from "elysia";
+import { togetherFeatureRoutes } from "./application/together/featureRoutes";
 import { Hono } from "hono";
 import { handle } from "hono/aws-lambda";
 import openapi from "@elysiajs/openapi";
@@ -276,6 +277,11 @@ honoApp.post("/stripe/webhook", (c) => handleStripeWebhook(c.req.raw));
 // entitlement source of truth across both rails (Apple IAP + Stripe); this
 // keeps user_subscriptions in sync (M12).
 honoApp.post("/revenuecat/webhook", (c) => handleRevenueCatWebhook(c.req.raw));
+// Keep Together's separately exported typed contract out of the existing Eden
+// API type's instantiation limit. Preserve full paths for its Elysia handlers.
+for (const prefix of ["/together/*", "/social/*", "/places/*"]) {
+  honoApp.all(prefix, (c) => togetherFeatureRoutes.fetch(c.req.raw));
+}
 honoApp.mount("/", app.fetch);
 const honoHandler = handle(honoApp);
 

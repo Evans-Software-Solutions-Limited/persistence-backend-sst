@@ -149,3 +149,8 @@ export const metaTestEventCode = new sst.Secret("MetaTestEventCode", "");
 // Set per-stage from CI via `bunx sst secret set TurnstileSecret "<value>" --stage <stage>`.
 // Never file-commit values — the repo is public.
 export const turnstileSecret = new sst.Secret("TurnstileSecret", "");
+
+// Together remains default-off. Configure a stable >=32-character token key before rollout.
+export const togetherTokenSecret = new sst.Secret("TogetherTokenSecret", "");
+// Optional server-only place provider; missing key returns explicit provider unavailable.
+export const geoapifyApiKey = new sst.Secret("GeoapifyApiKey", "");

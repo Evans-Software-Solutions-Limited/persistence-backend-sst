@@ -419,3 +419,65 @@ describe("wrapLambda", () => {
     expect(wrapped).toBe(handler); // mock passes the handler through
   });
 });
+it("drops foreground place coordinates and Geoapify secrets from error, span and breadcrumb telemetry", async () => {
+  const { scrubEvent, scrubTransaction, scrubBreadcrumb, redactString } =
+    await import("../sentry");
+  const url =
+    "https://api.example.com/places/nearby?latitude=51.54321&longitude=-0.12345";
+  const provider =
+    "https://api.geoapify.com/v2/places?apiKey=provider-secret&filter=circle%3A-0.12345%2C51.54321%2C5000";
+  const event = scrubEvent({
+    request: {
+      url,
+      query_string: [
+        ["latitude", "51.54321"],
+        ["longitude", "-0.12345"],
+      ],
+    },
+    extra: {
+      latitude: 51.54321,
+      longitude: -0.12345,
+      apiKey: "provider-secret",
+    },
+    breadcrumbs: [{ data: { url: provider } }],
+  } as never);
+  const serialized = JSON.stringify(event);
+  for (const value of ["51.54321", "-0.12345", "provider-secret"])
+    expect(serialized).not.toContain(value);
+  const tx = scrubTransaction({
+    spans: [{ description: provider, data: { "http.url": url } }],
+  } as never);
+  expect(JSON.stringify(tx)).not.toContain("51.54321");
+  expect(JSON.stringify(tx)).not.toContain("provider-secret");
+  expect(
+    JSON.stringify(scrubBreadcrumb({ message: provider, data: { url } })),
+  ).not.toContain("51.54321");
+  expect(
+    redactString("latitude=51.54321&longitude=-0.12345&apiKey=provider-secret"),
+  ).toBe("latitude=[redacted]&longitude=[redacted]&apiKey=[redacted]");
+  const providerEvent = scrubEvent({
+    request: { url: provider, query_string: "apiKey=provider-secret" },
+  } as never);
+  expect(JSON.stringify(providerEvent)).not.toContain("provider-secret");
+});
+
+it("redacts opaque Together invitation and socket tickets from telemetry", async () => {
+  const { scrubEvent, redactString } = await import("../sentry");
+  const event = scrubEvent({
+    request: {
+      url: "https://socket.example.com/?ticket=opaque-ticket",
+      query_string: [["ticket", "opaque-ticket"]],
+    },
+    extra: {
+      queryStringParameters: { ticket: "opaque-ticket" },
+      inviteToken: "opaque-invite",
+      TOGETHER_TOKEN_SECRET: "private-secret",
+    },
+  } as never);
+  const serialized = JSON.stringify(event);
+  for (const value of ["opaque-ticket", "opaque-invite", "private-secret"])
+    expect(serialized).not.toContain(value);
+  expect(redactString("ticket=opaque-ticket&inviteToken=opaque-invite")).toBe(
+    "ticket=[redacted]&inviteToken=[redacted]",
+  );
+});

@@ -105,6 +105,9 @@ export interface RecordSessionInput {
  * both fields.
  */
 export interface RecordSessionOptions {
+  /** Together completes history and durable completion mapping in one transaction. */
+  transaction?: DbTransaction;
+  togetherFinalization?: boolean;
   /**
    * Stamp `logged_by_user_id` on the `workout_sessions` row — the acting coach
    * when a session is recorded ON BEHALF of a client. Omitted for self records
@@ -488,7 +491,27 @@ export class SessionRepository {
   ): Promise<RecordedSession> {
     const db = getDb();
 
-    return db.transaction(async (tx) => {
+    const record = async (tx: DbTransaction) => {
+      if (
+        process.env.TOGETHER_ENABLED === "true" &&
+        !options?.togetherFinalization &&
+        payload.clientSessionId
+      ) {
+        const { lockActors, TogetherError } =
+          await import("../together/shared");
+        const { togetherSessions } = await import("@persistence/db");
+        await lockActors(tx, [userId]);
+        const [promoted] = await tx
+          .select({ id: togetherSessions.id })
+          .from(togetherSessions)
+          .where(
+            and(
+              eq(togetherSessions.hostId, userId),
+              eq(togetherSessions.clientDraftId, payload.clientSessionId),
+            ),
+          );
+        if (promoted) throw new TogetherError("DRAFT_PROMOTED", 409);
+      }
       // M13 dedup: find an already-recorded session for this stable client id.
       // Returns undefined when no clientSessionId was supplied (legacy caller)
       // or none exists yet. Reused by the sequential short-circuit (step 0) and
@@ -725,7 +748,10 @@ export class SessionRepository {
         personalRecordsForResponse,
         false,
       );
-    });
+    };
+    return options?.transaction
+      ? record(options.transaction)
+      : db.transaction(record);
   }
 
   /**

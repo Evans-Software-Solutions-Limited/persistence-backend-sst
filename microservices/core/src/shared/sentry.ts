@@ -47,10 +47,22 @@ const REDACTED = "[redacted]";
 
 /** Redact emails, JWTs, and auth values from a free-text string. */
 export function redactString(value: string): string {
-  return value
-    .replace(JWT_RE, `${REDACTED}-token`)
-    .replace(AUTH_VALUE_RE, (_m, scheme: string) => `${scheme} ${REDACTED}`)
-    .replace(EMAIL_RE, `${REDACTED}-email`);
+  return (
+    value
+      // Foreground location and provider credentials must never enter telemetry.
+      .replace(
+        /(https?:\/\/api\.geoapify\.com\/[^\s?"']+)\?[^\s"']*/gi,
+        `$1?${REDACTED}`,
+      )
+      .replace(/(\/places\/nearby)\?[^\s"']*/gi, `$1?${REDACTED}`)
+      .replace(
+        /(^|[?&])((?:latitude|longitude|apiKey|ticket|inviteToken)=)[^&\s]*/gi,
+        `$1$2${REDACTED}`,
+      )
+      .replace(JWT_RE, `${REDACTED}-token`)
+      .replace(AUTH_VALUE_RE, (_m, scheme: string) => `${scheme} ${REDACTED}`)
+      .replace(EMAIL_RE, `${REDACTED}-email`)
+  );
 }
 
 // Drizzle serializes a failed query as `Failed query: <sql>\nparams: <values…>`.
@@ -102,7 +114,12 @@ function redactDeep(value: unknown, depth = 0): unknown {
   }
   const obj = value as Record<string, unknown>;
   for (const key of Object.keys(obj)) {
-    obj[key] = redactDeep(obj[key], depth + 1);
+    obj[key] =
+      /^(latitude|longitude|apikey|ticket|inviteToken|TOGETHER_TOKEN_SECRET)$/i.test(
+        key,
+      )
+        ? REDACTED
+        : redactDeep(obj[key], depth + 1);
   }
   return obj;
 }
@@ -128,6 +145,16 @@ function scrubSharedFields(event: ErrorEvent | TransactionEvent): void {
   if (event.request) {
     delete event.request.data;
     delete event.request.cookies;
+    if (
+      event.request.url?.includes("/places/nearby") ||
+      event.request.url?.includes("api.geoapify.com/") ||
+      (Array.isArray(event.request.query_string) &&
+        event.request.query_string.some(([key]) =>
+          /^(ticket|inviteToken|latitude|longitude|apiKey)$/i.test(key),
+        ))
+    ) {
+      delete event.request.query_string;
+    }
     if (typeof event.request.query_string === "string") {
       event.request.query_string = redactString(event.request.query_string);
     }

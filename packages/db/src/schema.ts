@@ -3347,3 +3347,8 @@ export const businessVoucherRateLimits = pgTable(
   },
   (t) => [index("business_voucher_rate_limits_expiry_idx").on(t.resetsAt)],
 );
+
+// Together backend tables; references retain the existing profile/workout identity.
+export * from "./togetherSharedSchema";
+export * from "./togetherSchema";
+export * from "./socialSchema";

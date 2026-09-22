@@ -1,5 +1,45 @@
 # Persistence Together — backend agent
 
+## Expanded PR #462 scope — 21 September 2026
+
+Brad explicitly requested all remaining Together backend implementation in this
+PR, bundling the backend portions of PER-20, PER-21 and PER-22. This supersedes the
+proof-only execution cut below. Implement D8/D9 production persistence, authenticated
+routes, paid gates, social/place/safety and sanitized sharing, durable recording
+and effects, realtime ticket/dispatch/recovery infrastructure, migrations and
+tests. Preserve the proof as evidence and update its historical scope labels.
+Mobile UI/journal/native changes, provider activation, deployment and merging
+remain outside this authorization. Provider credentials, physical-device checks,
+moderation ownership and pilot evidence must remain explicit release gates.
+
+Concurrency implementation: acquire actor guard rows in stable UUID order before
+mutating shared membership, commands, finalization or pair safety state. Session
+rows serialize revisions; per-athlete target versions avoid false conflicts.
+All production access must use the same database-backed policy and mutation
+receipts, not the fixture actor/paid inputs. Private and recovery APIs remain
+available when discovery rollout is disabled. Route mounting is controlled by a
+default-off Together rollout flag until migrations/setup are deliberately enabled.
+
+## Historical PER-20 execution cut — superseded by expanded scope
+
+Brad authorized E1's transport decision, executable private-pair recovery proof,
+wire fixtures and evidence. The broader E2/E3 implementation below remains gated
+for PER-21/PER-22. PR #459 did not implement Together. PR #460 merged before this
+work; the proof starts from main `ca4ca9c1`.
+
+Build an isolated, unmounted proof under `application/together/`, using existing
+Vitest/PGlite tooling for real transactional persistence, rollback and restart
+tests. Exercise private invitations/consent/approval, current authorization and
+revocation, independent executions, command deduplication and target versions,
+durable outbox/replay, and independent idempotent completion jobs. Record the
+production recording adapter boundary honestly: a fixture sink proves recovery
+mechanics, not deployed history/statistics/PR integration. No production tables,
+routes, mobile UI, provider resources or social/discovery features ship here.
+
+The ADR must specify production adapters, provider/setup gates, revocation races,
+cost assumptions and the two-phone latency/fault checks still unverified. Keep
+E1's physical-device gate open until real evidence exists.
+
 ## Spec alignment
 
 Implement [design](../../34-train-together/design.md) D8–10, satisfy [requirements](../../34-train-together/requirements.md) AC1–8,11–14 and close [tasks](../../34-train-together/tasks.md) E1–3/server E7. Read all parent files and repository instructions first. Do not implement draft single-logger assumptions superseded by D8.

@@ -1,5 +1,12 @@
 # Train Together — requirements
 
+21 September 2026 execution update: Brad expanded PR #462 to include all Together
+backend work across PER-20, PER-21 and the server portion of PER-22. E1–3/server
+E7 implementation and local evidence are recorded in
+[RECOVERY-PROOF](../milestones/TRAIN-TOGETHER/RECOVERY-PROOF.md). This supersedes
+the earlier proof-only and discussion-only scope. No mobile implementation,
+provider activation, two-phone latency proof or integrated release is implied.
+
 > Current execution contract: the 17 September amendment below supersedes conflicting draft decisions/statuses. Earlier text is retained as scope history. Brad authorized finalizing and merging briefs; individual defaults below are our selected working decisions, not claims of separate product approval. This documentation task does not implement the feature.
 
 15 September 2026 · Discussion draft; not signed off or authorized for implementation.

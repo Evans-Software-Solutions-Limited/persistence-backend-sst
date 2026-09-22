@@ -1,5 +1,13 @@
 # Persistence Together — frontend agent
 
+Backend handoff (21 September 2026): PR #462 supplies the server contracts behind
+default-off flags. Consume its runtime wire examples and `TogetherApi`; do not
+mount the historical recovery projection. `hostId:null` means the host account
+was deleted: offer own recovery, not host controls. Canonical replay identifies
+the target athlete. `DRAFT_PROMOTED` is a permanent 409 for solo queue recovery.
+Private recovery copies may have a different catalog ID from the original; use
+the server's returned mapping/definitions for recovered history.
+
 ## Spec alignment
 
 Implement [design](../../34-train-together/design.md) D8–10, satisfy [requirements](../../34-train-together/requirements.md) AC1–14 and close [tasks](../../34-train-together/tasks.md) E4–5/mobile E7. Parent spec wins over this execution cut.

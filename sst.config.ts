@@ -29,7 +29,9 @@ export default $config({
     // CloudWatch alarms + the SNS topic they publish to. Self-guards on the
     // stage name, so dev / personal stages provision nothing.
     const { alertsTopic } = await import("./infra/monitoring");
+    const { togetherSocket } = await import("./infra/together");
     return {
+      ...(togetherSocket ? { togetherWebSocketUrl: togetherSocket.url } : {}),
       api: api.coreAPI.url,
       web: $dev ? "http://localhost:5173" : web.frontend.url,
       // Subscribe an address to this once per stage — see infra/monitoring.ts.

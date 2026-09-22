@@ -19,6 +19,7 @@ import {
 import { coreApiDomain, hostedZoneId, supabaseUrl, webDomain } from "./domains";
 import { avatarsBucket } from "./storage";
 import { aiJobQueue } from "./jobs";
+import { togetherEnvironment, togetherQueue } from "./together";
 
 // Custom domain only on stable named stages (production / staging). Personal
 // dev stages fall back to the auto-generated API Gateway URL — the mobile
@@ -76,7 +77,7 @@ export const coreAPI = new sst.aws.ApiGatewayV2("api-core", {
     allowOrigins: ["*"],
     allowMethods: ["GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH", "DELETE"],
     // `authorization` is the whole point — see (1) above.
-    allowHeaders: ["authorization", "content-type"],
+    allowHeaders: ["authorization", "content-type", "idempotency-key"],
     maxAge: "1 day",
   },
   domain:
@@ -114,7 +115,7 @@ export const coreRoute = coreAPI.route("$default", {
   // `Resource.AiJobQueue.url`, which `application/jobs/jobQueue.ts` reads. The
   // API route never CONSUMES the queue; that is `aiJobWorker`, wired in
   // `infra/jobs.ts`.
-  link: [avatarsBucket, aiJobQueue],
+  link: [avatarsBucket, aiJobQueue, ...(togetherQueue ? [togetherQueue] : [])],
   // ⚠ EXPLICIT, and load-bearing for every AI endpoint. SST defaults a Lambda to
   // **20 seconds** (`.sst/platform/src/components/aws/function.ts` —
   // `timeout ?? "20 seconds"`), NOT the 30 s API Gateway integration ceiling that
@@ -158,6 +159,7 @@ export const coreRoute = coreAPI.route("$default", {
     },
   ],
   environment: {
+    ...togetherEnvironment,
     DATABASE_URL: databaseUrl.value,
     SUPABASE_URL: supabaseUrl,
     // Supabase service-role key — server-side only. Used exclusively by

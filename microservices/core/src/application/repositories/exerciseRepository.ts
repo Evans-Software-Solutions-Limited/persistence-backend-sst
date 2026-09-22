@@ -373,7 +373,8 @@ export class ExerciseRepository {
    *
    * Spec: specs/24-coach-authoring design.md § A.2; supersedes 03 AC 7.8.
    */
-  private buildVisibilityCondition(userId: string | null): SQL {
+  /** Public SQL policy for transactional consumers; never duplicate exercise visibility rules. */
+  buildVisibilityCondition(userId: string | null): SQL {
     const systemClause = or(
       eq(exercises.createdBy, SYSTEM_USER_ID),
       isNull(exercises.createdBy),
