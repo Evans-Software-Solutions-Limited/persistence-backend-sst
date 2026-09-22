@@ -119,7 +119,6 @@ export function useFoundingAccess() {
 
   useEffect(() => {
     let alive = true;
-    setAccess({ status: "loading" });
     if (account) {
       foundingApi
         .access(account.id)
@@ -268,7 +267,10 @@ export function useFoundingAccess() {
     plan,
     account,
     access,
-    retryAccess: () => setAccessAttempt((attempt) => attempt + 1),
+    retryAccess: () => {
+      setAccess({ status: "loading" });
+      setAccessAttempt((attempt) => attempt + 1);
+    },
     retryableSignIn,
     retrySignIn,
     busy,

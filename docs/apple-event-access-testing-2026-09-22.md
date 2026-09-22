@@ -12,7 +12,7 @@
 
 Nine isolated PGlite tests exercise actual profile migration definitions, including collision rollback and migration reapplication. Added grant lifecycle cases cover grants issued before account creation for Premium and Start Up Coach+, transient identity lookup failure and idempotent activation. These fixtures do not implement Supabase OAuth itself.
 
-Repository typecheck passed. The broad test/build attempt exited 137 during mobile tests and web build under concurrent load; it is not a clean full-suite result. Targeted checks and final lint results are recorded in the PR.
+Repository typecheck passed. The broad test/build attempt exited 137 during mobile tests and web build under concurrent load; it is not a clean full-suite result. The sequential rerun passed web lint, all 116 focused web tests and the production web build. Targeted backend results are recorded in the PR.
 
 Desktop and 390px mobile access screenshots were inspected and independently reviewed. Local mocked authentication also displayed the retry action after a service failure.
 
