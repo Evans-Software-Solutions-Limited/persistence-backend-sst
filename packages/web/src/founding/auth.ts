@@ -9,6 +9,12 @@ export interface MembershipAccount {
   email: string;
 }
 const KEY = "persistence.founding.session";
+const PENDING_KEY = "persistence.founding.pending-session";
+let generation = 0;
+class RetryableAuthError extends Error {}
+export function isRetryableAuthError(error: unknown): boolean {
+  return error instanceof RetryableAuthError;
+}
 
 export function authConfig() {
   const url = import.meta.env.VITE_SUPABASE_URL?.replace(/\/$/, "");
@@ -16,9 +22,9 @@ export function authConfig() {
   return url && key ? { url, key } : null;
 }
 
-export function loadSession(): FoundingSession | null {
+function readSession(key: string): FoundingSession | null {
   try {
-    const value = JSON.parse(sessionStorage.getItem(KEY) ?? "null");
+    const value = JSON.parse(sessionStorage.getItem(key) ?? "null");
     return value &&
       typeof value.accessToken === "string" &&
       typeof value.refreshToken === "string" &&
@@ -28,6 +34,46 @@ export function loadSession(): FoundingSession | null {
   } catch {
     return null;
   }
+}
+
+export function loadSession(): FoundingSession | null {
+  return readSession(KEY);
+}
+
+function beginAuthentication() {
+  generation += 1;
+  saveSession(null);
+  sessionStorage.removeItem(PENDING_KEY);
+  return generation;
+}
+
+// Keep exchanged tokens separate until the authoritative identity read passes.
+// A reload can retry that read without replaying Apple's single-use code.
+async function finishPending(session: FoundingSession, attempt: number) {
+  try {
+    if (session.expiresAt <= Date.now() / 1000)
+      throw new Error("Your sign-in expired. Please sign in again.");
+    const account = await verifiedAccount(session);
+    if (
+      generation !== attempt ||
+      readSession(PENDING_KEY)?.accessToken !== session.accessToken
+    )
+      throw new Error("Your account changed. Please sign in again.");
+    saveSession(session);
+    sessionStorage.removeItem(PENDING_KEY);
+    return account;
+  } catch (error) {
+    if (!isRetryableAuthError(error) && generation === attempt)
+      sessionStorage.removeItem(PENDING_KEY);
+    throw error;
+  }
+}
+
+async function acceptTokens(session: FoundingSession, attempt: number) {
+  if (generation !== attempt)
+    throw new Error("Your account changed. Please sign in again.");
+  sessionStorage.setItem(PENDING_KEY, JSON.stringify(session));
+  return finishPending(session, attempt);
 }
 
 export function saveSession(session: FoundingSession | null) {
@@ -41,25 +87,53 @@ async function authRequest(path: string, body?: unknown, accessToken?: string) {
     throw new Error(
       "Founding access is not configured. Please contact Persistence support.",
     );
-  const response = await fetch(`${cfg.url}/auth/v1${path}`, {
-    method: body === undefined ? "GET" : "POST",
-    headers: {
-      apikey: cfg.key,
-      "Content-Type": "application/json",
-      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-    },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    if (response.status === 429)
-      throw new Error("Too many attempts. Please wait before trying again.");
-    // Do not display provider payloads that may disclose account information.
-    throw new Error(
-      "We couldn't complete sign-in. Check your details or request an email sign-in link.",
-    );
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  const canRetry =
+    path === "/user" || path === "/token?grant_type=refresh_token";
+  const transientError = (message: string) =>
+    canRetry ? new RetryableAuthError(message) : new Error(message);
+  try {
+    let response: Response;
+    let data: Record<string, unknown>;
+    try {
+      response = await fetch(`${cfg.url}/auth/v1${path}`, {
+        method: body === undefined ? "GET" : "POST",
+        headers: {
+          apikey: cfg.key,
+          "Content-Type": "application/json",
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        },
+        signal: controller.signal,
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      });
+      data = await response.json().catch((error: unknown) => {
+        if (response.ok) throw error;
+        return {};
+      });
+    } catch {
+      throw transientError(
+        "We couldn't reach sign-in services. Check your connection and try again.",
+      );
+    }
+    if (!response.ok) {
+      if (response.status === 429)
+        throw transientError(
+          "Too many attempts. Please wait before trying again.",
+        );
+      if (response.status >= 500)
+        throw transientError(
+          "Sign-in services are temporarily unavailable. Please try again.",
+        );
+      // Do not display provider payloads that may disclose account information.
+      throw new Error(
+        "We couldn't complete sign-in. Check your details or request an email sign-in link.",
+      );
+    }
+    return data;
+  } finally {
+    clearTimeout(timeout);
   }
-  return data;
 }
 
 function tokenSession(data: Record<string, unknown>): FoundingSession {
@@ -120,20 +194,29 @@ export async function activeSession(): Promise<FoundingSession> {
 }
 
 export async function currentAccount(): Promise<MembershipAccount | null> {
+  const pending = readSession(PENDING_KEY);
+  if (pending) return finishPending(pending, generation);
   if (!loadSession()) return null;
-  return verifiedAccount(await activeSession());
+  const attempt = generation;
+  const session = await activeSession();
+  const account = await verifiedAccount(session);
+  if (
+    attempt !== generation ||
+    loadSession()?.accessToken !== session.accessToken
+  )
+    throw new Error("Your account changed. Please sign in again.");
+  return account;
 }
 
 export async function signIn(
   email: string,
   password: string,
 ): Promise<MembershipAccount> {
+  const attempt = beginAuthentication();
   const session = tokenSession(
     await authRequest("/token?grant_type=password", { email, password }),
   );
-  const account = await verifiedAccount(session);
-  saveSession(session);
-  return account;
+  return acceptTokens(session, attempt);
 }
 
 const PROOF_KEY = "persistence.founding.auth-proof.";
@@ -209,6 +292,7 @@ export async function signUp(
   email: string,
   password: string,
 ): Promise<MembershipAccount | null> {
+  const attempt = beginAuthentication();
   const { proof, challenge } = await prepareProof();
   const data = await authRequest(
     `/signup?redirect_to=${encodeURIComponent(callbackUrl(proof.state))}`,
@@ -221,10 +305,8 @@ export async function signUp(
   );
   if (!data.access_token) return null;
   const session = tokenSession(data);
-  const account = await verifiedAccount(session);
-  saveSession(session);
   discardCurrentProof();
-  return account;
+  return acceptTokens(session, attempt);
 }
 export async function sendSignInLink(email: string): Promise<void> {
   const { proof, challenge } = await prepareProof();
@@ -278,15 +360,14 @@ export async function completeCallback(
       "This sign-in link could not be verified. Start sign-in again and open the link in this same browser.",
     );
   }
+  const attempt = beginAuthentication();
   const session = tokenSession(
     await authRequest("/token?grant_type=pkce", {
       auth_code: params.get("code"),
       code_verifier: proof.verifier,
     }),
   );
-  const account = await verifiedAccount(session);
-  saveSession(session);
-  return account;
+  return acceptTokens(session, attempt);
 }
 export async function accountSession(
   expectedAccountId: string,
@@ -314,7 +395,7 @@ export function callbackPlan(search: string): string | null {
   }
 }
 export function signOut() {
-  saveSession(null);
+  beginAuthentication();
   discardCurrentProof();
 }
 

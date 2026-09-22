@@ -8,6 +8,10 @@ import { membershipTierLabel } from "@/lib/membershipTier";
 export function FoundingAccessPresenter({
   plan,
   account,
+  access,
+  retryAccess,
+  retryableSignIn,
+  retrySignIn,
   busy,
   error,
   notice,
@@ -106,13 +110,19 @@ export function FoundingAccessPresenter({
             </header>
           )}
           <h2>
-            {result
+            {result || (account && access.status === "active")
               ? "Your access is ready"
               : !account
                 ? "Sign in to Persistence"
-                : plan
-                  ? "Confirm your membership"
-                  : "Activate your purchase"}
+                : access.status === "loading"
+                  ? "Checking your access"
+                  : access.status === "error"
+                    ? "We couldn’t check your access"
+                    : access.status === "pending"
+                      ? "Your payment is pending"
+                      : plan
+                        ? "Confirm your membership"
+                        : "Activate your purchase"}
           </h2>
           {error && (
             <p role="alert" className="redeem-error">
@@ -123,6 +133,15 @@ export function FoundingAccessPresenter({
             <p role="status" className="redeem-notice">
               {notice}
             </p>
+          )}
+          {retryableSignIn && !account && (
+            <Button
+              type="button"
+              disabled={busy}
+              onClick={() => void retrySignIn()}
+            >
+              Retry sign-in
+            </Button>
           )}
           {!account ? (
             <>
@@ -233,11 +252,45 @@ export function FoundingAccessPresenter({
                   : "New to Persistence? Create an email account"}
               </Button>
             </>
-          ) : result ? (
+          ) : !result && access.status === "loading" ? (
+            <p role="status">Please wait while we check your membership.</p>
+          ) : !result && access.status === "error" ? (
+            <>
+              <p role="alert">
+                Your account is signed in, but access could not be checked.
+                Please try again.
+              </p>
+              <Button type="button" onClick={retryAccess}>
+                Retry access check
+              </Button>
+            </>
+          ) : !result && access.status === "pending" ? (
             <>
               <p>
-                {membershipTierLabel(result.tierName)} is active until{" "}
-                {new Date(result.expiresAt).toLocaleDateString("en-GB")}.
+                We are waiting for payment confirmation for{" "}
+                {membershipTierLabel(access.data!.tierName)}. Please check again
+                before making another purchase.
+              </p>
+              <Button type="button" onClick={retryAccess}>
+                Retry access check
+              </Button>
+              <p>
+                Once payment is confirmed, open Persistence using the same
+                sign-in method.
+              </p>
+              <Button asChild>
+                <a href={destination.href}>{destination.label}</a>
+              </Button>
+            </>
+          ) : result || access.status === "active" ? (
+            <>
+              <p>
+                {membershipTierLabel((result ?? access.data!).tierName)} is
+                active
+                {(result ?? access.data!).expiresAt
+                  ? ` until ${new Date((result ?? access.data!).expiresAt!).toLocaleDateString("en-GB")}`
+                  : ""}
+                .
               </p>
               <p>
                 Open Persistence and use the same sign-in method. If access has
@@ -382,7 +435,7 @@ export function FoundingAccessPresenter({
               )}
             </>
           )}
-          {plan && (
+          {plan && !result && (!account || access.status === "none") && (
             <a className="redeem-text-link" href="/founding">
               Choose a different plan
             </a>

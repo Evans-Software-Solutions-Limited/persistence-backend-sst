@@ -1,7 +1,7 @@
 import { CAMPAIGN_LANDING_SLUGS } from "@/marketing/campaign";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import * as auth from "./auth";
-import { foundingApi, type ClaimResult } from "./api";
+import { foundingApi, type AccountAccess, type ClaimResult } from "./api";
 import { FOUNDING_PLANS, type FoundingPlan } from "@/marketing/foundingOffer";
 import { useFoundingCheckout } from "@/marketing/useFoundingCheckout";
 import { type TurnstileHandle } from "@/marketing/LeadForms";
@@ -41,6 +41,12 @@ export function useFoundingAccess() {
   );
   const startup = useRef<Promise<auth.MembershipAccount | null> | null>(null);
   const [account, setAccount] = useState<auth.MembershipAccount | null>(null);
+  const [access, setAccess] = useState<{
+    status: "loading" | "error" | "none" | "active" | "pending";
+    data?: AccountAccess;
+  }>({ status: "loading" });
+  const [accessAttempt, setAccessAttempt] = useState(0);
+  const [retryableSignIn, setRetryableSignIn] = useState(false);
   const [busy, setBusy] = useState(true);
   const running = useRef(false);
   const [error, setError] = useState("");
@@ -93,7 +99,9 @@ export function useFoundingAccess() {
       })
       .catch((e) => {
         if (alive) {
-          auth.signOut();
+          const retryable = auth.isRetryableAuthError(e);
+          setRetryableSignIn(retryable);
+          if (!retryable) auth.signOut();
           setError(
             e instanceof Error
               ? e.message
@@ -108,6 +116,38 @@ export function useFoundingAccess() {
       alive = false;
     };
   }, [callback, plan, campaign]);
+
+  useEffect(() => {
+    let alive = true;
+    if (account) {
+      foundingApi
+        .access(account.id)
+        .then((data) => {
+          if (!alive) return;
+          const unexpired =
+            data.expiresAt === null || Date.parse(data.expiresAt) > Date.now();
+          const paid = data.tierName !== "free" && unexpired;
+          const active =
+            paid &&
+            (["active", "trialing", "past_due"].includes(data.paymentStatus) ||
+              (data.paymentStatus === "cancelled" && data.expiresAt !== null));
+          setAccess({
+            status: active
+              ? "active"
+              : paid && data.paymentStatus === "pending"
+                ? "pending"
+                : "none",
+            data,
+          });
+        })
+        .catch(() => {
+          if (alive) setAccess({ status: "error" });
+        });
+    }
+    return () => {
+      alive = false;
+    };
+  }, [account, accessAttempt]);
 
   async function run(action: () => Promise<void>) {
     if (busy || running.current) return;
@@ -127,6 +167,8 @@ export function useFoundingAccess() {
   function changeAccount() {
     auth.signOut();
     setAccount(null);
+    setAccess({ status: "loading" });
+    setRetryableSignIn(false);
     setConfirmed(false);
     setChallenge(null);
     setCode("");
@@ -141,7 +183,7 @@ export function useFoundingAccess() {
   function submit(e: FormEvent) {
     e.preventDefault();
     void run(async () => {
-      if (!account || !confirmed) return;
+      if (!account || !confirmed || access.status !== "none") return;
       if (plan) {
         if (turnstileConfigured() && !turnstile) {
           setError("Please complete the security check before paying.");
@@ -182,9 +224,16 @@ export function useFoundingAccess() {
   const authenticate = () =>
     run(async () => {
       if (signup && !terms) return;
-      const a = signup
-        ? await auth.signUp(email.trim(), password)
-        : await auth.signIn(email.trim(), password);
+      let a: auth.MembershipAccount | null;
+      try {
+        a = signup
+          ? await auth.signUp(email.trim(), password)
+          : await auth.signIn(email.trim(), password);
+      } catch (e) {
+        setRetryableSignIn(auth.isRetryableAuthError(e));
+        throw e;
+      }
+      setRetryableSignIn(false);
       setPassword("");
       if (a) {
         setAccount(a);
@@ -193,6 +242,19 @@ export function useFoundingAccess() {
         setNotice(
           "Check your email to confirm your account. Open the link in this same browser, or return here to sign in after confirming.",
         );
+    });
+  const retrySignIn = () =>
+    run(async () => {
+      try {
+        const restored = await auth.currentAccount();
+        setAccount(restored);
+        setRetryableSignIn(false);
+      } catch (e) {
+        const retryable = auth.isRetryableAuthError(e);
+        setRetryableSignIn(retryable);
+        if (!retryable) auth.signOut();
+        throw e;
+      }
     });
   const emailLink = () =>
     run(async () => {
@@ -204,6 +266,13 @@ export function useFoundingAccess() {
   return {
     plan,
     account,
+    access,
+    retryAccess: () => {
+      setAccess({ status: "loading" });
+      setAccessAttempt((attempt) => attempt + 1);
+    },
+    retryableSignIn,
+    retrySignIn,
     busy,
     error,
     notice,
