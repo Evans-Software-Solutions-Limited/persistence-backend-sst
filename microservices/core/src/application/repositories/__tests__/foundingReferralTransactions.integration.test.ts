@@ -163,6 +163,92 @@ describe("founding/referral repository transaction invariants", () => {
     });
   }
 
+  it.each(["premium", "start_up_coach_plus"] as const)(
+    "activates a pre-signup %s grant once after the new profile and verified identity exist",
+    async (tierName) => {
+      const newUser = "00000000-0000-4000-8000-000000000088";
+      const email = "new-attendee@example.test";
+      await pg.query(
+        "INSERT INTO subscription_tiers (tier_name, display_name) VALUES ('start_up_coach_plus', 'Start Up Coach+')",
+      );
+      const grants = new FoundingGrantRepository();
+      const identity = vi.fn(async () => ({
+        id: newUser,
+        email,
+        emailConfirmedAt: "2026-09-22T08:00:00.000Z",
+      }));
+      const service = new FoundingGrantService(
+        grants,
+        new ReferralRepository(),
+        new AdminAuditRepository(),
+        async () => undefined,
+        "https://example.test",
+        identity,
+      );
+      const issued = await service.grant(
+        { email, tierName, months: 3, sendInvite: false },
+        ADMIN,
+      );
+      expect(issued).toMatchObject({
+        ok: true,
+        result: { status: "pending", userId: null, expiresAt: null },
+      });
+      if (!issued.ok) throw new Error("Expected pending grant");
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      expect(await service.applyPendingForUser(newUser, email)).toBe(false);
+      expect(identity).not.toHaveBeenCalled();
+      expect(
+        (await pg.query("SELECT id FROM user_subscriptions")).rows,
+      ).toEqual([]);
+
+      await pg.query(
+        "INSERT INTO profiles (id, email, role) VALUES ($1, $2, 'user')",
+        [newUser, email],
+      );
+      identity.mockRejectedValueOnce(new Error("temporary auth outage"));
+      const error = vi.spyOn(console, "error").mockImplementation(() => {});
+      expect(await service.applyPendingForUser(newUser, email)).toBe(false);
+      expect(await grants.findById(issued.result.grantId)).toMatchObject({
+        userId: null,
+        appliedAt: null,
+      });
+      expect(await service.applyPendingForUser(newUser, email)).toBe(true);
+      const first = await pg.query<{ id: string }>(
+        "SELECT id, user_id, tier_name, payment_status, expires_at FROM user_subscriptions",
+      );
+      expect(first.rows).toEqual([
+        expect.objectContaining({
+          user_id: newUser,
+          tier_name: tierName,
+          payment_status: "active",
+          expires_at: expect.any(Date),
+        }),
+      ]);
+      expect(await grants.findById(issued.result.grantId)).toMatchObject({
+        userId: newUser,
+        appliedAt: expect.any(Date),
+        subscriptionId: first.rows[0].id,
+      });
+      expect(await service.applyPendingForUser(newUser, email)).toBe(false);
+      expect(
+        (
+          await pg.query(
+            "SELECT id, user_id, tier_name, payment_status, expires_at FROM user_subscriptions",
+          )
+        ).rows,
+      ).toEqual(first.rows);
+      expect(
+        (
+          await new AdminAuditRepository().list({
+            entityId: issued.result.grantId,
+          })
+        ).filter((entry) => entry.action === "founding_grant.apply_pending"),
+      ).toHaveLength(1);
+      warn.mockRestore();
+      error.mockRestore();
+    },
+  );
+
   it("replays an account-bound checkout without duplicate entitlement or audit writes", async () => {
     const repo = new FoundingGrantRepository();
     const id = "00000000-0000-4000-8000-000000000077";
