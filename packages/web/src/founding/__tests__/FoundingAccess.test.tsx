@@ -5,6 +5,7 @@ import * as auth from "../auth";
 import { foundingApi } from "../api";
 import { FOUNDING_COPY } from "@/marketing/foundingOffer";
 vi.mock("../auth", () => ({
+  isRetryableAuthError: vi.fn(() => false),
   currentAccount: vi.fn(),
   completeCallback: vi.fn(),
   callbackCampaign: vi.fn(() => null),
@@ -17,12 +18,19 @@ vi.mock("../auth", () => ({
   accountSession: vi.fn(),
 }));
 vi.mock("../api", () => ({
-  foundingApi: { request: vi.fn(), verify: vi.fn() },
+  foundingApi: { access: vi.fn(), request: vi.fn(), verify: vi.fn() },
 }));
 const account = { id: "apple-user", email: "private@privaterelay.appleid.com" };
 const assign = vi.fn();
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(auth.isRetryableAuthError).mockReturnValue(false);
+  vi.mocked(auth.callbackPlan).mockReturnValue(null);
+  vi.mocked(foundingApi.access).mockResolvedValue({
+    tierName: "free",
+    paymentStatus: "active",
+    expiresAt: null,
+  });
   sessionStorage.clear();
   localStorage.clear();
   window.history.replaceState(null, "", "/founding/access");
@@ -236,7 +244,7 @@ it("signs into an existing account and asks for explicit confirmation", async ()
   });
   fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
   expect(await screen.findByText(account.email)).toBeDefined();
-  expect(screen.getByRole("checkbox")).toHaveProperty("checked", false);
+  expect(await screen.findByRole("checkbox")).toHaveProperty("checked", false);
 });
 it("starts Apple and Google authentication without using the purchase email", async () => {
   vi.mocked(auth.currentAccount).mockResolvedValue(null);
@@ -421,3 +429,176 @@ it("shows safe fallback messages for unknown errors", async () => {
     "Please try again.",
   );
 });
+
+it.each(["active", "trialing", "past_due", "cancelled"])(
+  "shows existing %s access without duplicate purchase or claim",
+  async (paymentStatus) => {
+    window.history.replaceState(
+      null,
+      "",
+      "/founding/access?tier=premium&months=6",
+    );
+    vi.mocked(foundingApi.access).mockResolvedValue({
+      tierName: "premium_plus",
+      paymentStatus,
+      expiresAt: "2099-01-01",
+    });
+    render(<FoundingAccess />);
+    await screen.findByText("Your access is ready");
+    expect(screen.queryByRole("checkbox")).toBeNull();
+    expect(screen.queryByText("Choose a different plan")).toBeNull();
+  },
+);
+it.each([null, "2099-01-01"])(
+  "shows access with expiry %s",
+  async (expiresAt) => {
+    vi.mocked(foundingApi.access).mockResolvedValue({
+      tierName: "premium",
+      paymentStatus: "active",
+      expiresAt,
+    });
+    render(<FoundingAccess />);
+    await screen.findByText("Your access is ready");
+  },
+);
+it.each([
+  ["free", "active", null],
+  ["premium", "active", "2000-01-01"],
+  ["premium", "incomplete", null],
+  ["premium", "cancelled", null],
+])(
+  "retains purchase flow for %s %s %s",
+  async (tierName, paymentStatus, expiresAt) => {
+    window.history.replaceState(
+      null,
+      "",
+      "/founding/access?tier=premium&months=6",
+    );
+    vi.mocked(foundingApi.access).mockResolvedValue({
+      tierName: tierName!,
+      paymentStatus: paymentStatus!,
+      expiresAt,
+    });
+    render(<FoundingAccess />);
+    await screen.findByText("Confirm your membership");
+    expect(screen.getByText(/Premium · Six months/)).toBeDefined();
+  },
+);
+it("keeps pending payments separate and rechecks", async () => {
+  vi.mocked(foundingApi.access)
+    .mockResolvedValueOnce({
+      tierName: "premium",
+      paymentStatus: "pending",
+      expiresAt: null,
+    })
+    .mockResolvedValueOnce({
+      tierName: "premium",
+      paymentStatus: "active",
+      expiresAt: null,
+    });
+  render(<FoundingAccess />);
+  await screen.findByText("Your payment is pending");
+  expect(screen.queryByText("Your access is ready")).toBeNull();
+  expect(screen.queryByRole("checkbox")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Retry access check" }));
+  await screen.findByText("Your access is ready");
+});
+it("retains login on access failure and ignores response after logout", async () => {
+  let resolve!: (value: {
+    tierName: string;
+    paymentStatus: string;
+    expiresAt: null;
+  }) => void;
+  vi.mocked(foundingApi.access)
+    .mockRejectedValueOnce(new Error("network"))
+    .mockImplementationOnce(
+      () =>
+        new Promise((r) => {
+          resolve = r;
+        }),
+    );
+  render(<FoundingAccess />);
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Retry access check" }),
+  );
+  await waitFor(() => expect(foundingApi.access).toHaveBeenCalledTimes(2));
+  expect(auth.signOut).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Log out" }));
+  resolve({ tierName: "premium", paymentStatus: "active", expiresAt: null });
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: "Continue with Apple" }),
+    ).toBeDefined(),
+  );
+  expect(screen.queryByText("Your access is ready")).toBeNull();
+});
+it("resumes transient callback using currentAccount", async () => {
+  window.history.replaceState(
+    null,
+    "",
+    "/founding/access/callback?flow=f&code=used",
+  );
+  vi.mocked(auth.completeCallback).mockRejectedValue(new Error("network"));
+  vi.mocked(auth.isRetryableAuthError).mockReturnValue(true);
+  render(<FoundingAccess />);
+  fireEvent.click(await screen.findByRole("button", { name: "Retry sign-in" }));
+  await screen.findByText("Activate your purchase");
+  expect(auth.completeCallback).toHaveBeenCalledTimes(1);
+  expect(auth.currentAccount).toHaveBeenCalledTimes(1);
+  expect(auth.signOut).not.toHaveBeenCalled();
+});
+it("clears credentials after definitive retry failure", async () => {
+  vi.mocked(auth.currentAccount)
+    .mockRejectedValueOnce(new Error("network"))
+    .mockRejectedValueOnce(new Error("expired"));
+  vi.mocked(auth.isRetryableAuthError)
+    .mockReturnValueOnce(true)
+    .mockReturnValueOnce(false);
+  render(<FoundingAccess />);
+  fireEvent.click(await screen.findByRole("button", { name: "Retry sign-in" }));
+  await waitFor(() => expect(auth.signOut).toHaveBeenCalledTimes(1));
+  expect(screen.queryByRole("button", { name: "Retry sign-in" })).toBeNull();
+});
+it.each([false, true])(
+  "offers retry after transient email authentication (signup=%s)",
+  async (signup) => {
+    vi.mocked(auth.currentAccount)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(account);
+    vi.mocked(auth.isRetryableAuthError).mockReturnValue(true);
+    vi.mocked(auth.signIn).mockRejectedValue(new Error("network"));
+    vi.mocked(auth.signUp).mockRejectedValue(new Error("network"));
+    render(<FoundingAccess />);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Sign in" })).toHaveProperty(
+        "disabled",
+        false,
+      ),
+    );
+    if (signup)
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: "New to Persistence? Create an email account",
+        }),
+      );
+    fireEvent.change(screen.getByLabelText("Account email"), {
+      target: { value: "test@example.com" },
+    });
+    fireEvent.change(
+      screen.getByLabelText(signup ? "Create a password" : "Password"),
+      { target: { value: "password123" } },
+    );
+    if (signup)
+      fireEvent.click(screen.getByRole("checkbox", { name: /I agree/ }));
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: signup ? "Create account" : "Sign in",
+      }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Retry sign-in" }),
+    );
+    await screen.findByText("Activate your purchase");
+    expect(auth.signOut).not.toHaveBeenCalled();
+  },
+);

@@ -106,3 +106,57 @@ it("handles unavailable config and malformed provider body", async () => {
     foundingApi.request("email@example.com", "user"),
   ).rejects.toThrow("could not be confirmed");
 });
+
+it("reads authenticated subscription status", async () => {
+  const data = {
+    tierName: "premium",
+    paymentStatus: "active",
+    expiresAt: null,
+  };
+  const fetcher = vi
+    .fn()
+    .mockResolvedValue(new Response(JSON.stringify({ data })));
+  vi.stubGlobal("fetch", fetcher);
+  expect(await foundingApi.access("apple-user")).toEqual(data);
+  expect(accountSession).toHaveBeenCalledWith("apple-user");
+  expect(fetcher).toHaveBeenCalledWith(
+    "https://core.example.com/subscriptions/me",
+    expect.objectContaining({
+      headers: { Authorization: "Bearer account-token" },
+      signal: expect.any(AbortSignal),
+    }),
+  );
+});
+it.each([
+  "not json",
+  "{}",
+  JSON.stringify({
+    data: {
+      tierName: "premium",
+      paymentStatus: "active",
+      expiresAt: "invalid",
+    },
+  }),
+  JSON.stringify({ data: { tierName: "premium", expiresAt: null } }),
+])("rejects malformed access %s", async (body) => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body)));
+  await expect(foundingApi.access("apple-user")).rejects.toThrow();
+  expect(signOut).not.toHaveBeenCalled();
+});
+it("times out a stalled response body without signing out", async () => {
+  vi.useFakeTimers();
+  const fetcher = vi
+    .fn()
+    .mockResolvedValue({ ok: true, json: () => new Promise(() => {}) });
+  vi.stubGlobal("fetch", fetcher);
+  try {
+    const result = foundingApi.access("apple-user");
+    const rejection = expect(result).rejects.toThrow("timed out");
+    await vi.advanceTimersByTimeAsync(15_000);
+    await rejection;
+    expect(fetcher.mock.calls[0]![1].signal.aborted).toBe(true);
+    expect(signOut).not.toHaveBeenCalled();
+  } finally {
+    vi.useRealTimers();
+  }
+});
