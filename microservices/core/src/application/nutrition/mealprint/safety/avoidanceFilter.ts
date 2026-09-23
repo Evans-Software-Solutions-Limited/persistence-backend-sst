@@ -47,7 +47,9 @@
 import {
   ALLERGEN_OFF_TAGS,
   DIETARY_PATTERN_RULES,
+  DISLIKE_CATEGORY_RULES,
   HARD_TO_FIND_PREFIX,
+  NAME_AXES,
   isAllergenKey,
   isDietaryPattern,
   isTokenNegatedInName,
@@ -97,6 +99,8 @@ export type AvoidanceRule =
   | "pattern_tag"
   /** A dietary pattern is violated by a name token (tags unavailable). */
   | "pattern_name"
+  /** A category dislike matches an allergen or category tag. */
+  | "dislike_tag"
   /** A free-text dislike matches the row's name. */
   | "dislike_name";
 
@@ -395,6 +399,68 @@ function matchesAxisNames(
 }
 
 /**
+ * Bounded grammar for category dislikes, not a general natural-language parser.
+ * Unknown exception/context prose never cancels the category exclusion.
+ */
+function parseCategoryDislike(tokens: readonly string[]): {
+  key: string;
+  tunaException: "any" | "sandwich" | null;
+} | null {
+  const match = /^(?:all )?(fish|seafood|shellfish)(?: except (.+))?$/u.exec(
+    tokens.join(" "),
+  );
+  if (!match) return null;
+  const exception = /^(?:tinned|canned) tuna(?: (?:for|in) (sandwich))?$/u.exec(
+    match[2] ?? "",
+  );
+  return {
+    key: match[1],
+    tunaException: exception ? (exception[1] ? "sandwich" : "any") : null,
+  };
+}
+
+function matchesTunaException(
+  subject: AvoidanceSubject,
+  scope: "any" | "sandwich" | null,
+): boolean {
+  if (scope === null) return false;
+  const words = tokeniseFoodName(subject.name);
+  const tokens = new Set(words);
+  if (!/(?:^| )(?:tinned|canned) tuna(?: |$)/u.test(words.join(" ")))
+    return false;
+  if (
+    tokens.has("fresh") ||
+    (scope === "sandwich" &&
+      !/^(?:tinned|canned) tuna sandwich$/u.test(words.join(" ")))
+  )
+    return false;
+  // A mixed-seafood product cannot borrow the tuna exception. Generic fish
+  // category tags are expected on tuna; specific other species are not.
+  const seafoodTokens = [
+    ...NAME_AXES.seafood.tokens,
+    ...NAME_AXES.shellfish.tokens,
+  ]
+    .flatMap(tokeniseFoodName)
+    .filter((token) => token !== "tuna");
+  if (seafoodTokens.some((token) => tokens.has(token))) return false;
+  const categories = new Set(
+    (subject.categoryTags ?? []).flatMap(tokeniseFoodName),
+  );
+  if (
+    seafoodTokens.some(
+      (token) =>
+        token !== "fish" && token !== "seafood" && categories.has(token),
+    )
+  )
+    return false;
+  return !(subject.allergenTags ?? []).some((tag) =>
+    [...ALLERGEN_OFF_TAGS.crustaceans, ...ALLERGEN_OFF_TAGS.molluscs].includes(
+      tag,
+    ),
+  );
+}
+
+/**
  * Judge ONE candidate against ONE user's preferences.
  *
  * Evaluation order is deliberate — most-severe rule first — so that when a row
@@ -577,7 +643,7 @@ export function assessAvoidance(
     }
   }
 
-  // ── 3. Dislikes — name only, no safety claim ──────────────────────────────
+  // ── 3. Dislikes — category expansion and names, no safety claim ──────────────────────────────
   for (const dislike of preferences.avoidFoods) {
     // ⚠ Strip the `hardtofind:` provenance prefix before tokenising. Without
     // this, STORY-007's "hard to find near me" affordance was a PERMANENT NO-OP:
@@ -591,6 +657,59 @@ export function assessAvoidance(
       : dislike;
     const dislikeTokens = tokeniseFoodName(body);
     if (dislikeTokens.length === 0) continue;
+    const categoryDislike = parseCategoryDislike(dislikeTokens);
+    const categoryKey = categoryDislike?.key ?? dislikeTokens.join(" ");
+    const categoryRule = Object.hasOwn(DISLIKE_CATEGORY_RULES, categoryKey)
+      ? DISLIKE_CATEGORY_RULES[categoryKey]
+      : undefined;
+    if (categoryRule !== undefined) {
+      // Pool rows have no eventual meal context. A sandwich-scoped exception
+      // therefore requires a named tinned/canned tuna sandwich; a plain tin of
+      // tuna remains excluded, even if the composer might put it in bread.
+      // Only the exact sandwich name qualifies: "sandwich filling" is an
+      // ingredient, not proof that the eventual composed meal is a sandwich.
+      if (matchesTunaException(subject, categoryDislike?.tunaException ?? null))
+        continue;
+      // Positive tags exclude, but missing tags never turn a dislike into an
+      // allergy constraint. Names and categories still run for partial tags.
+      const allergenHit = allergenTags?.find((tag) =>
+        categoryRule.allergenTags.includes(tag),
+      );
+      const categoryHit = matchesAxisCategories(
+        subject.name,
+        subjectTokens,
+        compactName,
+        categoryTags,
+        categoryRule.nameAxes,
+      );
+      if (allergenHit !== undefined || categoryHit !== null) {
+        return {
+          allowed: false,
+          rule: "dislike_tag",
+          cause: dislike,
+          evidence: allergenHit ?? categoryHit!.evidence,
+        };
+      }
+      const nameHit = matchesAxisNames(
+        subject.name,
+        orderedTokens,
+        subjectTokens,
+        compactName,
+        categoryTags,
+        categoryRule.nameAxes,
+      );
+      if (nameHit !== null) {
+        return {
+          allowed: false,
+          rule: "dislike_name",
+          cause: dislike,
+          evidence: nameHit.evidence,
+        };
+      }
+      // Category rules already honour free-from/plant-based markers; literal
+      // fallback would incorrectly reject "Vegan Fish Fingers" again.
+      continue;
+    }
     // ALL tokens must be present, so the multi-word dislike "chicken thigh"
     // matches "Chicken Thighs" but not every chicken product. Single-word
     // dislikes behave as you would expect.
@@ -618,6 +737,21 @@ export function assessAvoidance(
     unverified: !tagsUsable,
     partialEnforcementOnly,
   };
+}
+
+/** A generated title is preference text, never evidence of allergen safety. */
+export function assessMealTitleAvoidance(
+  name: string,
+  preferences: AvoidancePreferences,
+): AvoidanceVerdict {
+  return assessAvoidance(
+    { id: "generated-title", name, allergenTags: null, categoryTags: null },
+    {
+      dietaryPatterns: [],
+      avoidAllergens: [],
+      avoidFoods: preferences.avoidFoods,
+    },
+  );
 }
 
 export interface AvoidancePartition<T extends AvoidanceSubject> {

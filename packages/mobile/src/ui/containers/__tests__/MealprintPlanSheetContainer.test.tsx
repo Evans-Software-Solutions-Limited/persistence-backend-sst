@@ -105,7 +105,7 @@ async function mount(
   seed?.(api, storage);
   const subSpy = jest.spyOn(api, "getMySubscription");
   const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
+    defaultOptions: { queries: { retry: false, gcTime: Infinity } },
   });
   const utils = render(
     <QueryClientProvider client={queryClient}>
@@ -556,10 +556,24 @@ describe("MealprintPlanSheetContainer", () => {
       probe().onSwapMeal(localId);
       await Promise.resolve();
     });
+    expect(api.swapPlanMealCalls).toHaveLength(0);
+    act(() => probe().swapFeedback!.onChange("Try chicken"));
+    act(() => probe().swapFeedback!.onCancel());
+    expect(probe().swapFeedback).toBeUndefined();
+    expect(api.swapPlanMealCalls).toHaveLength(0);
+    act(() => probe().onSwapMeal(localId));
+    expect(probe().swapFeedback!.value).toBe("");
+    act(() => probe().swapFeedback!.onChange("  Quicker to make  "));
+    await act(async () => {
+      probe().swapFeedback!.onGenerate();
+      await Promise.resolve();
+    });
     await waitFor(() =>
       expect(probe().draft!.meals[0]!.meal.name).toBe("Salmon & greens"),
     );
     expect(api.swapPlanMealCalls).toHaveLength(1);
+    expect(api.swapPlanMealCalls[0]!.steer).toBe("Quicker to make");
+    expect(probe().swapFeedback).toBeUndefined();
     expect(probe().swappingId).toBeNull();
   });
 
@@ -616,7 +630,7 @@ describe("MealprintPlanSheetContainer", () => {
     jest.spyOn(api, "getMySubscription").mockReturnValue(new Promise(() => {}));
     const genSpy = jest.spyOn(api, "generatePlan");
     const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
+      defaultOptions: { queries: { retry: false, gcTime: Infinity } },
     });
     const { unmount } = render(
       <QueryClientProvider client={queryClient}>
@@ -702,7 +716,7 @@ describe("MealprintPlanSheetContainer", () => {
   });
 
   it("a swap that fails leaves the meal un-swapped and clears swappingId", async () => {
-    const { probe } = await mount((seedApi) => {
+    const { api, probe } = await mount((seedApi) => {
       seedApi.planGenerateResult = {
         meals: [
           {
@@ -739,9 +753,19 @@ describe("MealprintPlanSheetContainer", () => {
       probe().onSwapMeal(localId);
       await Promise.resolve();
     });
+    expect(api.swapPlanMealCalls).toHaveLength(0);
+    act(() => probe().swapFeedback!.onChange("  Quicker to make  "));
+    await act(async () => {
+      probe().swapFeedback!.onGenerate();
+      await Promise.resolve();
+    });
     await waitFor(() => expect(probe().swappingId).toBeNull());
-    // Unchanged — the swap never landed.
+    expect(probe().swapFeedback!.value).toBe("  Quicker to make  ");
+    expect(probe().swapFeedback!.error).not.toBeNull();
     expect(probe().draft!.meals[0]!.meal.name).toBe("Original");
+    act(() => probe().onRemoveMeal(localId));
+    expect(probe().swapFeedback).toBeUndefined();
+    expect(probe().draft!.meals).toHaveLength(0);
   });
 
   describe("onAcceptRecovery", () => {
@@ -930,4 +954,78 @@ describe("MealprintPlanSheetContainer", () => {
       expect(probe().draft).toBeNull();
     });
   });
+});
+
+async function mountFeedbackDraft() {
+  const harness = await mount();
+  open();
+  await waitFor(() => expect(harness.probe().visible).toBe(true));
+  act(() =>
+    usePlanFlow.getState().draftReady({
+      meals: ["Dinner", "Lunch"].map((name) => ({
+        name,
+        reason: "Fits your day",
+        logSlot: "dinner",
+        items: [],
+        kcal: 500,
+        proteinG: 35,
+        carbsG: 50,
+        fatG: 15,
+        containsUnverified: false,
+        flaggedUnsafe: false,
+      })),
+      emptyReason: null,
+      target: { kcal: 2000, proteinG: 140, carbsG: 200, fatG: 60 },
+      totals: { kcal: 1000, proteinG: 70, carbsG: 100, fatG: 30 },
+      withinTolerance: false,
+      labelCheckRequired: true,
+    }),
+  );
+  return harness;
+}
+
+it("holds draft feedback during a pending swap and keeps it when no replacement matches", async () => {
+  const { api, probe } = await mountFeedbackDraft();
+  const [first, second] = probe().draft!.meals;
+  act(() => probe().onSwapMeal(first!.localId));
+  act(() => probe().swapFeedback!.onChange("Less rice"));
+  act(() => probe().onSwapMeal(second!.localId));
+  expect(probe().swapFeedback!.value).toBe("");
+  let settle!: (value: Awaited<ReturnType<typeof api.swapPlanMeal>>) => void;
+  const spy = jest.spyOn(api, "swapPlanMeal").mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        settle = resolve;
+      }),
+  );
+  const acceptSpy = jest.spyOn(api, "acceptPlan");
+  act(() => probe().swapFeedback!.onChange("   "));
+  act(() => probe().swapFeedback!.onGenerate());
+  expect(probe().swapFeedback!.busy).toBe(true);
+  act(() => {
+    probe().swapFeedback!.onGenerate();
+    probe().swapFeedback!.onCancel();
+    probe().onSwapMeal(first!.localId);
+    probe().onAccept();
+  });
+  expect(spy).toHaveBeenCalledTimes(1);
+  expect(spy.mock.calls[0]![0].steer).toBeUndefined();
+  expect(acceptSpy).not.toHaveBeenCalled();
+  expect(probe().swapFeedback!.mealId).toBe(second!.localId);
+  await act(async () => {
+    settle(ok(api.planSwapResult));
+  });
+  expect(probe().swapFeedback!.busy).toBe(false);
+  expect(probe().swapFeedback!.value).toBe("   ");
+  expect(probe().swapFeedback!.error).toMatch(/No replacement matched/);
+  expect(probe().draft!.meals[1]!.meal.name).toBe("Lunch");
+});
+
+it("clears unfinished draft feedback when the sheet closes", async () => {
+  const { api, probe } = await mountFeedbackDraft();
+  act(() => probe().onSwapMeal(probe().draft!.meals[0]!.localId));
+  act(() => probe().swapFeedback!.onChange("More protein"));
+  act(() => probe().onClose());
+  expect(probe().swapFeedback).toBeUndefined();
+  expect(api.swapPlanMealCalls).toHaveLength(0);
 });

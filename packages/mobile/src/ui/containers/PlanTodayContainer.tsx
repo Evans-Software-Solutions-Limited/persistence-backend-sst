@@ -80,8 +80,28 @@ export function PlanTodayContainer() {
 
   const [loggingMealId, setLoggingMealId] = useState<string | null>(null);
   const [swappingMealId, setSwappingMealId] = useState<string | null>(null);
+  const [feedbackId, setFeedbackId] = useState<string | null>(null);
+  const [swapSteer, setSwapSteer] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [actionFailure, setActionFailure] = useState<string | null>(null);
+
+  useEffect(() => {
+    setFeedbackId(null);
+    setSwapSteer("");
+    setActionFailure(null);
+  }, [activePlan.data?.id]);
+
+  useEffect(() => {
+    if (
+      feedbackId !== null &&
+      !activePlan.data?.meals.some(
+        (meal) => meal.id === feedbackId && meal.state !== "logged",
+      )
+    ) {
+      setFeedbackId(null);
+      setSwapSteer("");
+    }
+  }, [feedbackId, activePlan.data]);
 
   const onBack = useCallback(() => {
     router.back();
@@ -113,10 +133,10 @@ export function PlanTodayContainer() {
   );
 
   const { run: runSwap, reset: resetSwap } = swap;
-  const onSwapMeal = useCallback(
+  const onGenerateSwap = useCallback(
     (meal: PlanMeal) => {
       const plan = activePlan.data;
-      if (!plan) return;
+      if (!plan || swappingMealId !== null || meal.state === "logged") return;
       setActionFailure(null);
       setSwappingMealId(meal.id);
       const held = plan.meals
@@ -140,9 +160,25 @@ export function PlanTodayContainer() {
         heldTotals: held,
         logSlot: meal.logSlot,
         mealsPerDay: plan.mealsPerDay,
+        steer: swapSteer.trim() || undefined,
       });
     },
-    [activePlan, runSwap],
+    [activePlan, runSwap, swappingMealId, swapSteer],
+  );
+
+  const onSwapMeal = useCallback(
+    (meal: PlanMeal) => {
+      if (
+        !activePlan.data ||
+        swappingMealId !== null ||
+        meal.state === "logged"
+      )
+        return;
+      setFeedbackId(meal.id);
+      setSwapSteer("");
+      setActionFailure(null);
+    },
+    [activePlan.data, swappingMealId],
   );
 
   // Mirror a swap failure (429 ceiling, 402 entitlement, 422/503/generic —
@@ -176,10 +212,15 @@ export function PlanTodayContainer() {
         mealId,
         planAcceptMealInputFromGenerated(swap.result.meal),
       ).then((updated) => {
-        if (updated) activePlan.reload();
+        if (updated) {
+          activePlan.reload();
+          setFeedbackId(null);
+        }
         setSwappingMealId(null);
       });
     } else {
+      if (swap.stage === "ready")
+        setActionFailure("No replacement matched. Try different feedback.");
       setSwappingMealId(null);
     }
     resetSwap();
@@ -220,6 +261,30 @@ export function PlanTodayContainer() {
       loggingMealId={loggingMealId}
       onSwapMeal={onSwapMeal}
       swappingMealId={swappingMealId}
+      swapFeedback={
+        feedbackId === null
+          ? undefined
+          : {
+              mealId: feedbackId,
+              value: swapSteer,
+              onChange: setSwapSteer,
+              onGenerate: () => {
+                const meal = activePlan.data?.meals.find(
+                  (item) => item.id === feedbackId,
+                );
+                if (meal) onGenerateSwap(meal);
+              },
+              onCancel: () => {
+                if (swappingMealId === null) {
+                  setFeedbackId(null);
+                  setSwapSteer("");
+                  setActionFailure(null);
+                }
+              },
+              busy: swappingMealId !== null,
+              error: actionFailure,
+            }
+      }
       actionFailure={actionFailure}
       onDeletePlan={() => void onDeletePlan()}
       deleting={deleting}

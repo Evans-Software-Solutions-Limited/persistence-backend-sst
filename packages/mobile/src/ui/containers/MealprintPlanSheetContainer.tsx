@@ -93,6 +93,20 @@ export function MealprintPlanSheetContainer() {
   const [mealsPerDay, setMealsPerDay] = useState(MEALS_PER_DAY_DEFAULT);
   const [effortLevel, setEffortLevel] = useState<EffortLevel>(EFFORT_DEFAULT);
   const [steer, setSteer] = useState("");
+  const [feedbackId, setFeedbackId] = useState<string | null>(null);
+  const [swapSteer, setSwapSteer] = useState("");
+  const [swapError, setSwapError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (
+      feedbackId !== null &&
+      (!visible || !draft?.meals.some((meal) => meal.localId === feedbackId))
+    ) {
+      setFeedbackId(null);
+      setSwapSteer("");
+      setSwapError(null);
+    }
+  }, [feedbackId, visible, draft]);
 
   const onSheetClose = useCallback(() => {
     if (visible) close();
@@ -112,6 +126,9 @@ export function MealprintPlanSheetContainer() {
     setMealsPerDay(preferences.data?.mealsPerDay ?? MEALS_PER_DAY_DEFAULT);
     setEffortLevel(preferences.data?.effortLevel ?? EFFORT_DEFAULT);
     setSteer("");
+    setFeedbackId(null);
+    setSwapSteer("");
+    setSwapError(null);
     // Only the OPEN transition should reseed — re-running on every preferences
     // refresh would blow away whatever the user has already typed into the
     // config form.
@@ -167,8 +184,10 @@ export function MealprintPlanSheetContainer() {
   }, [generate.stage, generate.result]);
 
   const { run: runSwap, reset: resetSwapCall } = swap;
-  const onSwapMeal = useCallback(
+  const onGenerateSwap = useCallback(
     (localId: string) => {
+      if (!online || swappingId !== null || accept.accepting) return;
+      setSwapError(null);
       if (draft === null) return;
       const targetMeal = draft.meals.find((m) => m.localId === localId);
       if (targetMeal === undefined) return;
@@ -178,9 +197,33 @@ export function MealprintPlanSheetContainer() {
         heldTotals: heldTotalsExcluding(draft, localId),
         logSlot: targetMeal.meal.logSlot,
         mealsPerDay: draft.mealsPerDay,
+        steer: swapSteer.trim() || undefined,
       });
     },
-    [draft, flowBeginSwap, runSwap],
+    [
+      draft,
+      flowBeginSwap,
+      runSwap,
+      swapSteer,
+      online,
+      swappingId,
+      accept.accepting,
+    ],
+  );
+
+  const onSwapMeal = useCallback(
+    (localId: string) => {
+      if (
+        swappingId !== null ||
+        accept.accepting ||
+        !draft?.meals.some((meal) => meal.localId === localId)
+      )
+        return;
+      setFeedbackId(localId);
+      setSwapSteer("");
+      setSwapError(null);
+    },
+    [draft, swappingId, accept.accepting],
   );
 
   useEffect(() => {
@@ -188,10 +231,15 @@ export function MealprintPlanSheetContainer() {
     if (swappingId === null) return;
     if (swap.stage === "ready" && swap.result?.meal) {
       flowSwapApplied(swappingId, swap.result.meal);
+      setFeedbackId(null);
     } else {
       // Either a genuine failure, or an `ok` empty result (budget_exhausted /
       // no_candidates) — both leave the meal un-swapped; the user can retry.
       flowSwapAbandoned();
+      setSwapError(
+        swap.failure?.message ??
+          "No replacement matched. Try different feedback.",
+      );
     }
     resetSwapCall();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -210,13 +258,13 @@ export function MealprintPlanSheetContainer() {
 
   const { accept: runAccept, reset: resetAcceptCall } = accept;
   const onAccept = useCallback(async () => {
-    if (draft === null || flaggedIds.size > 0) return;
+    if (draft === null || flaggedIds.size > 0 || swappingId !== null) return;
     const result = await runAccept(planDraftToAcceptInput(draft));
     if (result) {
       flowAccepted(result);
       notifyMutated();
     }
-  }, [draft, flaggedIds, runAccept, flowAccepted, notifyMutated]);
+  }, [draft, flaggedIds, swappingId, runAccept, flowAccepted, notifyMutated]);
 
   // Side effect of an `unresolvable_items` accept failure: flag the affected
   // draft meal(s) so the user sees exactly which one needs a swap. A fresh
@@ -356,12 +404,34 @@ export function MealprintPlanSheetContainer() {
       flaggedIds={flaggedIds}
       swappingId={swappingId}
       onSwapMeal={onSwapMeal}
+      swapFeedback={
+        feedbackId === null
+          ? undefined
+          : {
+              mealId: feedbackId,
+              value: swapSteer,
+              onChange: setSwapSteer,
+              onGenerate: () => onGenerateSwap(feedbackId),
+              onCancel: () => {
+                if (swappingId === null) {
+                  setFeedbackId(null);
+                  setSwapSteer("");
+                }
+              },
+              busy: swappingId !== null,
+              disabled: !online || accept.accepting,
+              error: swapError,
+            }
+      }
       onRemoveMeal={onRemoveMeal}
       onItemServingsChange={onItemServingsChange}
       draftTotals={draftTotals}
       accepting={accept.accepting}
       acceptBlocked={
-        draft === null || draft.meals.length === 0 || flaggedIds.size > 0
+        draft === null ||
+        draft.meals.length === 0 ||
+        flaggedIds.size > 0 ||
+        swappingId !== null
       }
       onAccept={() => void onAccept()}
       acceptErrorMessage={acceptErrorMessage}

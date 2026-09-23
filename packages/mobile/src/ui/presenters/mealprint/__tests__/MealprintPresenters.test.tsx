@@ -1037,7 +1037,7 @@ describe("MealprintSuggestSheetPresenter", () => {
     expect(onSelectSuggestion).toHaveBeenCalledWith(1);
   });
 
-  it("⚠ explains each emptyReason specifically, and no_candidates points at loosening a chip", () => {
+  it("explains empty results without asking users to relax avoidances", () => {
     // no_candidates is the EXPECTED state until the Open Food Facts re-seed lands,
     // so its copy has to be actionable rather than reading as a bug.
     const noCandidates = renderWithTheme(
@@ -1049,7 +1049,7 @@ describe("MealprintSuggestSheetPresenter", () => {
       noCandidates.getByTestId("mealprint-empty-no_candidates"),
     ).toBeTruthy();
     expect(
-      noCandidates.queryByText(/removing an allergen or a dislike/i),
+      noCandidates.queryByText(/Your saved avoidances still apply/i),
     ).toBeTruthy();
 
     const noTargets = renderWithTheme(

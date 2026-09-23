@@ -27,6 +27,7 @@ import {
   forbiddenPatternAllergenTags,
   hasAllergenConstraint,
   assessAvoidance,
+  assessMealTitleAvoidance,
 } from "../../safety/avoidanceFilter";
 import { isSupportedLocale } from "../../preferences/vocabulary";
 import type { MealprintCandidate } from "../../../../repositories/mealprintCandidateRepository";
@@ -306,6 +307,9 @@ export const nutritionAiPlanGenerateHandler = new Elysia()
         );
 
         const verifiedMeals: VerifiedPlanMeal[] = result.meals.map((meal) => {
+          if (!assessMealTitleAvoidance(meal.name, preferences).allowed) {
+            throw new AiUnreadableError("ai_avoidance_violation: meal title");
+          }
           let kcal = 0;
           let proteinG = 0;
           let carbsG = 0;

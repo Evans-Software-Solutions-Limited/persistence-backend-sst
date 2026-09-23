@@ -1,3 +1,8 @@
+import {
+  matchesRequiredGuidance,
+  permitsGuidance,
+  type MealGuidance,
+} from "../ai/mealGuidance";
 /**
  * Mealprint (spec-26 design § 1 stage 1) — the pure half of candidate assembly.
  *
@@ -53,6 +58,7 @@ function emptyRuleCounts(): Record<AvoidanceRule, number> {
     pattern_tag: 0,
     pattern_name: 0,
     dislike_name: 0,
+    dislike_tag: 0,
   };
 }
 
@@ -196,6 +202,7 @@ export function assembleCandidates(
   fetched: readonly MealprintCandidate[],
   preferences: AvoidancePreferences & { likedFoods?: readonly string[] },
   cap: number = CANDIDATE_CAP,
+  guidance?: MealGuidance,
 ): AssemblyResult {
   const { kept, rejected } = partitionByAvoidance(fetched, preferences);
 
@@ -206,6 +213,7 @@ export function assembleCandidates(
   const unique: MealprintCandidate[] = [];
   let deduped = 0;
   for (const candidate of kept) {
+    if (guidance && !permitsGuidance(candidate, guidance)) continue;
     const key = dedupeKey(candidate);
     if (seen.has(key)) {
       deduped += 1;
@@ -216,6 +224,27 @@ export function assembleCandidates(
   }
 
   const ranked = rankCandidates(unique, preferences.likedFoods ?? []);
+  // Keep requested proteins ahead of own/liked rows before the bounded cap.
+  if (guidance) {
+    // Reserve an example of EACH requested group before filling with variants;
+    // hundreds of chicken rows must not crowd out tofu in "chicken and tofu".
+    const representatives = new Set(
+      guidance.required.map((group) =>
+        ranked.find((candidate) =>
+          matchesRequiredGuidance(candidate, {
+            ...guidance,
+            required: [group],
+          }),
+        ),
+      ),
+    );
+    ranked.sort(
+      (a, b) =>
+        Number(representatives.has(b)) - Number(representatives.has(a)) ||
+        Number(matchesRequiredGuidance(b, guidance)) -
+          Number(matchesRequiredGuidance(a, guidance)),
+    );
+  }
   const capped = capWithCuratedFloor(ranked, cap);
 
   return {

@@ -243,3 +243,41 @@ describe("describeAssembly", () => {
     expect(line).not.toContain("sensitive");
   });
 });
+
+it("removes disliked fish before it reaches the model pool", () => {
+  const result = assembleCandidates(
+    [
+      candidate({ id: "bass", name: "Sea Bass Fillet", isOwn: true }),
+      candidate({ id: "salmon", name: "Salmon", allergenTags: null }),
+      candidate({ id: "prawns", name: "King Prawns", allergenTags: null }),
+      candidate({ id: "chicken", name: "Chicken Breast" }),
+    ],
+    { ...NO_PREFS, avoidFoods: ["fish"], likedFoods: ["sea bass"] },
+  );
+  expect(result.candidates.map((row) => row.id)).toEqual(["chicken"]);
+  expect(result.stats.rejectedByRule.dislike_name).toBe(3);
+});
+
+it("filters the recorded natural-language fish dislike before composition", () => {
+  const result = assembleCandidates(
+    [
+      candidate({ id: "bass", name: "Sea Bass Fillet" }),
+      candidate({ id: "prawns", name: "King Prawns" }),
+      candidate({ id: "tin", name: "Tinned Tuna" }),
+      candidate({
+        id: "sandwich",
+        name: "Tinned Tuna Sandwich",
+        allergenTags: ["en:fish"],
+      }),
+      candidate({ id: "chicken", name: "Chicken Breast" }),
+    ],
+    {
+      ...NO_PREFS,
+      avoidFoods: ["cheese", "all fish except tinned tuna for sandwiches"],
+    },
+  );
+  expect(result.candidates.map((row) => row.id)).toEqual([
+    "sandwich",
+    "chicken",
+  ]);
+});

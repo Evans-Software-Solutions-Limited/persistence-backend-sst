@@ -1379,3 +1379,227 @@ describe("assessAvoidance — qualifier DIRECTION comes from the entry", () => {
     ).toBe(true);
   });
 });
+
+describe("assessAvoidance — fish category dislikes", () => {
+  it.each([
+    "Sea Bass Fillet",
+    "Seabass",
+    "Salmon",
+    "Tuna",
+    "Cod",
+    "Sardines",
+    "King Prawns",
+    "Crab",
+    "Mussels",
+    "Shellfish Platter",
+    "Scampi",
+  ])("excludes %s without relying on allergen tags", (name) => {
+    expect(
+      assessAvoidance(subject({ name, allergenTags: null }), {
+        ...NO_PREFS,
+        avoidFoods: ["fish"],
+      }),
+    ).toMatchObject({ allowed: false, cause: "fish" });
+  });
+
+  it.each([
+    { allergenTags: ["en:fish"], categoryTags: [] },
+    { allergenTags: ["en:crustaceans"], categoryTags: [] },
+    { allergenTags: ["en:molluscs"], categoryTags: [] },
+    { allergenTags: null, categoryTags: ["en:shellfish"] },
+    { allergenTags: null, categoryTags: ["en:crustacean-products"] },
+    { allergenTags: null, categoryTags: ["en:mollusc-products"] },
+    { allergenTags: ["en:milk"], categoryTags: ["en:fish-preparations"] },
+  ])("uses positive tags even with an opaque name: %j", (tags) => {
+    expect(
+      assessAvoidance(subject({ name: "Ocean Supper", ...tags }), {
+        ...NO_PREFS,
+        avoidFoods: ["fish"],
+      }),
+    ).toMatchObject({ allowed: false, rule: "dislike_tag", cause: "fish" });
+  });
+
+  it.each([
+    "Vegan Fish Fingers",
+    "Fish-free Sea Bass Alternative",
+    "Mushroom Caviar",
+    "Vegan Prawns",
+    "Plant-based Crab Cakes",
+    "Chicken Breast",
+  ])("keeps %s for a fish dislike", (name) => {
+    expect(
+      assessAvoidance(subject({ name, allergenTags: null }), {
+        ...NO_PREFS,
+        avoidFoods: ["fish"],
+      }).allowed,
+    ).toBe(true);
+  });
+
+  it("does not clear confirmed fish tags with a vegan name", () => {
+    expect(
+      assessAvoidance(
+        subject({ name: "Vegan Fish Fingers", allergenTags: ["en:fish"] }),
+        {
+          ...NO_PREFS,
+          avoidFoods: ["fish"],
+        },
+      ).allowed,
+    ).toBe(false);
+  });
+
+  it("keeps a specific species dislike specific", () => {
+    expect(
+      assessAvoidance(
+        subject({ name: "Sea Bass Fillet", allergenTags: ["en:fish"] }),
+        {
+          ...NO_PREFS,
+          avoidFoods: ["salmon"],
+        },
+      ).allowed,
+    ).toBe(true);
+  });
+
+  it.each(["fish", "FISH", "hardtofind:fish"])(
+    "normalises category %s",
+    (dislike) => {
+      expect(
+        assessAvoidance(subject({ name: "Sea Bass Fillet" }), {
+          ...NO_PREFS,
+          avoidFoods: [dislike],
+        }).allowed,
+      ).toBe(false);
+    },
+  );
+
+  it.each(["seafood", "shellfish"])("expands %s to prawns", (dislike) => {
+    expect(
+      assessAvoidance(subject({ name: "King Prawns" }), {
+        ...NO_PREFS,
+        avoidFoods: [dislike],
+      }).allowed,
+    ).toBe(false);
+  });
+
+  it("keeps fish when only shellfish is disliked", () => {
+    expect(
+      assessAvoidance(
+        subject({ name: "Sea Bass Fillet", categoryTags: ["en:fish"] }),
+        {
+          ...NO_PREFS,
+          avoidFoods: ["shellfish"],
+        },
+      ).allowed,
+    ).toBe(true);
+  });
+});
+
+describe("natural-language fish dislike with a scoped tuna exception", () => {
+  const preferences = {
+    ...NO_PREFS,
+    avoidFoods: ["cheese", "all fish except tinned tuna for sandwiches"],
+  };
+
+  it.each([
+    "Sea Bass Fillet",
+    "King Prawns",
+    "Crab",
+    "Mussels",
+    "Fresh Tuna Steak",
+    "Tinned Tuna",
+    "Tuna Sandwich",
+    "Tinned Tuna Pasta",
+    "Tinned Tuna Sandwich Filling",
+    "Tinned Tuna Sandwich and Pasta",
+    "Tinned Tuna and Prawn Sandwich",
+    "Fresh and Tinned Tuna Sandwich",
+    "Tinned Tuna and Cheese Sandwich",
+  ])("blocks %s", (name) => {
+    expect(
+      assessAvoidance(subject({ name, allergenTags: null }), preferences)
+        .allowed,
+    ).toBe(false);
+  });
+
+  it.each(["Tinned Tuna Sandwich", "Canned Tuna Sandwiches"])(
+    "allows the explicitly supported exception %s",
+    (name) => {
+      expect(
+        assessAvoidance(
+          subject({
+            name,
+            allergenTags: ["en:fish"],
+            categoryTags: ["en:fish", "en:sandwiches"],
+          }),
+          preferences,
+        ).allowed,
+      ).toBe(true);
+    },
+  );
+
+  it("does not let the tuna exception override conflicting seafood tags", () => {
+    expect(
+      assessAvoidance(
+        subject({
+          name: "Tinned Tuna Sandwich",
+          allergenTags: ["en:crustaceans"],
+        }),
+        preferences,
+      ).allowed,
+    ).toBe(false);
+    expect(
+      assessAvoidance(
+        subject({ name: "Tinned Tuna Sandwich", categoryTags: ["en:salmon"] }),
+        preferences,
+      ).allowed,
+    ).toBe(false);
+  });
+
+  it("never lets a dislike exception override a fish allergy", () => {
+    expect(
+      assessAvoidance(
+        subject({ name: "Tinned Tuna Sandwich", allergenTags: ["en:fish"] }),
+        { ...preferences, avoidAllergens: ["fish"] },
+      ),
+    ).toMatchObject({ allowed: false, rule: "allergen_tag" });
+  });
+
+  it.each([
+    "all fish",
+    "all fish except something unusual",
+    "all fish except tinned tuna on Fridays",
+    "hardtofind:all fish except tinned tuna for sandwiches",
+  ])("keeps the category excluded for %s", (dislike) => {
+    expect(
+      assessAvoidance(subject({ name: "Sea Bass Fillet" }), {
+        ...NO_PREFS,
+        avoidFoods: [dislike],
+      }).allowed,
+    ).toBe(false);
+  });
+
+  it("keeps unqualified tinned tuna excluded when the exception's context is unsupported", () => {
+    expect(
+      assessAvoidance(subject({ name: "Tinned Tuna" }), {
+        ...NO_PREFS,
+        avoidFoods: ["all fish except tinned tuna on Fridays"],
+      }).allowed,
+    ).toBe(false);
+  });
+
+  it("does not turn an unscoped tinned tuna exception into an exception for fresh tuna", () => {
+    const prefs = { ...NO_PREFS, avoidFoods: ["fish except tinned tuna"] };
+    expect(
+      assessAvoidance(subject({ name: "Tinned Tuna" }), prefs).allowed,
+    ).toBe(true);
+    expect(
+      assessAvoidance(subject({ name: "Fresh Tuna" }), prefs).allowed,
+    ).toBe(false);
+  });
+
+  it("keeps non-seafood foods available", () => {
+    expect(
+      assessAvoidance(subject({ name: "Chicken Sandwich" }), preferences)
+        .allowed,
+    ).toBe(true);
+  });
+});

@@ -436,3 +436,21 @@ describe("POST /nutrition/ai/plan-generate", () => {
     expect(parsed.data.meals[0].flaggedPortion).toBe(true);
   });
 });
+
+it("rejects a fish title even when the model selected allowed ingredients", async () => {
+  prefMocks.get.mockResolvedValue({ ...PREFS, avoidFoods: ["fish"] });
+  composeDayPlanMock.mockResolvedValue({
+    meals: [
+      {
+        name: "Sea bass dinner",
+        reason: "r",
+        logSlot: "dinner",
+        items: [{ candidateId: "c1", servings: 1 }],
+      },
+    ],
+    usage: { modelId: "m", latencyMs: 1, inputTokens: 1, outputTokens: 1 },
+  });
+  const res = await app.handle(post());
+  expect(res.status).toBe(422);
+  expect(JSON.stringify(await body(res))).not.toContain("Sea bass dinner");
+});

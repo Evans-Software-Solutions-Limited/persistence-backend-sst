@@ -1,3 +1,9 @@
+import {
+  parseMealGuidance,
+  guidanceSearchTerms,
+  canMeetGuidance,
+  compositionMeetsGuidance,
+} from "../mealGuidance";
 import Elysia, { t } from "elysia";
 import {
   getAuthUser,
@@ -27,6 +33,7 @@ import {
   forbiddenPatternAllergenTags,
   hasAllergenConstraint,
   assessAvoidance,
+  assessMealTitleAvoidance,
 } from "../../safety/avoidanceFilter";
 import { isSupportedLocale } from "../../preferences/vocabulary";
 import type { MealprintCandidate } from "../../../../repositories/mealprintCandidateRepository";
@@ -147,6 +154,7 @@ export const nutritionAiPlanMealSwapHandler = new Elysia()
         const locale = isSupportedLocale(preferences.locale)
           ? preferences.locale
           : "en-GB";
+        const guidance = parseMealGuidance(steer);
         const requireKnownAllergens = hasAllergenConstraint(preferences);
         const forbidden = [
           ...new Set([
@@ -162,6 +170,7 @@ export const nutritionAiPlanMealSwapHandler = new Elysia()
             maxServingKcal,
             forbiddenAllergenTags: forbidden,
             requireKnownAllergens,
+            preferredFoodTerms: guidanceSearchTerms(guidance),
           }),
           ctx.MealprintCandidateRepository.listOwnFoodCandidates(
             userId,
@@ -180,6 +189,8 @@ export const nutritionAiPlanMealSwapHandler = new Elysia()
         const assembly = assembleCandidates(
           [...ownFoods, ...ownRecipes, ...ownMeals, ...curated],
           preferences,
+          undefined,
+          guidance,
         );
 
         console.info(
@@ -190,6 +201,13 @@ export const nutritionAiPlanMealSwapHandler = new Elysia()
           return respondEmpty(
             "no_candidates",
             describeAssembly(assembly.stats),
+          );
+        }
+
+        if (!canMeetGuidance(assembly.candidates, guidance)) {
+          return respondEmpty(
+            "no_candidates",
+            "requested ingredients unavailable after filtering",
           );
         }
 
@@ -241,10 +259,19 @@ export const nutritionAiPlanMealSwapHandler = new Elysia()
           throw new AiUnreadableError("ai_no_meal: swap produced no meal");
         }
 
+        if (!assessMealTitleAvoidance(chosen.name, preferences).allowed) {
+          throw new AiUnreadableError("ai_avoidance_violation: meal title");
+        }
+
         // Recompute from DB rows + avoidance re-run (defence in depth).
         const byId = new Map<string, MealprintCandidate>(
           assembly.candidates.map((candidate) => [candidate.id, candidate]),
         );
+        if (!compositionMeetsGuidance(chosen.items, byId, guidance)) {
+          throw new AiUnreadableError(
+            "ai_guidance_violation: requested ingredients not met",
+          );
+        }
         const portionFailure = assessCompositionPortion({
           items: chosen.items,
           candidates: byId,
@@ -267,8 +294,10 @@ export const nutritionAiPlanMealSwapHandler = new Elysia()
           carbsG += candidate.carbsG * item.servings;
           fatG += candidate.fatG * item.servings;
           const avoidance = assessAvoidance(candidate, preferences);
-          if (avoidance.allowed && avoidance.unverified)
-            containsUnverified = true;
+          if (!avoidance.allowed) {
+            throw new AiUnreadableError("ai_avoidance_violation: meal item");
+          }
+          if (avoidance.unverified) containsUnverified = true;
           return {
             candidateId: item.candidateId,
             kind: candidate.kind,

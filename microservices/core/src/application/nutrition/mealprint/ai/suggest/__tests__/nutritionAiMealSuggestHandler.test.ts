@@ -173,6 +173,66 @@ describe("nutritionAiMealSuggestHandler", () => {
     });
   });
 
+  it("does not return prawns for the reported quick chicken request", async () => {
+    candidateMocks.listCuratedCandidates.mockResolvedValue([
+      { ...CANDIDATE, id: "chicken", name: "Chicken breast" },
+      { ...CANDIDATE, id: "yog", name: "Grilled prawns and mushrooms" },
+    ]);
+    const h = await handler();
+    const response = await h.handle(
+      post({
+        shape: "meal",
+        date: "2026-08-03",
+        steer: "something quick and chicken based",
+      }),
+    );
+    expect(response.status).toBe(422);
+    expect(await response.json()).toEqual({ error: "ai_unreadable" });
+    expect(usageMocks.record).toHaveBeenCalledOnce();
+    expect(candidateMocks.listCuratedCandidates).toHaveBeenCalledWith(
+      expect.objectContaining({ preferredFoodTerms: ["chicken"] }),
+    );
+  });
+
+  it.each([false, true])(
+    "does not spend an inference when requested chicken is unavailable or excluded (%s)",
+    async (excluded) => {
+      candidateMocks.listCuratedCandidates.mockResolvedValue(
+        excluded ? [{ ...CANDIDATE, name: "Chicken breast" }] : [CANDIDATE],
+      );
+      prefMocks.get.mockResolvedValue({
+        ...PREFS,
+        avoidFoods: excluded ? ["chicken"] : [],
+      });
+      const h = await handler();
+      const response = await h.handle(
+        post({ shape: "meal", date: "2026-08-03", steer: "chicken based" }),
+      );
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({
+        data: { emptyReason: "no_candidates" },
+      });
+      expect(composeSuggestionsMock).not.toHaveBeenCalled();
+      expect(usageMocks.record).not.toHaveBeenCalled();
+    },
+  );
+
+  it("keeps eating-out chicken restaurant names out of ingredient requirements", async () => {
+    const h = await handler();
+    const response = await h.handle(
+      post({
+        shape: "meal",
+        date: "2026-08-03",
+        occasion: "eating_out",
+        steer: "Chicken Cottage",
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(candidateMocks.listCuratedCandidates).toHaveBeenCalledWith(
+      expect.objectContaining({ preferredFoodTerms: [] }),
+    );
+  });
+
   it("requires auth", async () => {
     const h = await handler();
     expect((await h.handle(post(undefined, false))).status).toBe(401);

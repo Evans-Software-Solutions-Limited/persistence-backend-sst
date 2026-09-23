@@ -287,3 +287,68 @@ describe("POST /nutrition/ai/plan-meal-swap", () => {
     expect(res.status).toBe(422);
   });
 });
+
+it("rejects a fish title even when the model selected allowed ingredients", async () => {
+  prefMocks.get.mockResolvedValue({ ...PREFS, avoidFoods: ["fish"] });
+  composeDayPlanMock.mockResolvedValue({
+    meals: [
+      {
+        name: "Sea bass dinner",
+        reason: "r",
+        logSlot: "dinner",
+        items: [{ candidateId: "c1", servings: 1 }],
+      },
+    ],
+    usage: { modelId: "m", latencyMs: 1, inputTokens: 1, outputTokens: 1 },
+  });
+  const res = await app.handle(post());
+  expect(res.status).toBe(422);
+  expect(JSON.stringify(await body(res))).not.toContain("Sea bass dinner");
+});
+
+it("rejects a swap item if the post-model avoidance check fails", async () => {
+  prefMocks.get.mockResolvedValue({ ...PREFS, avoidFoods: ["fish"] });
+  const row = candidate("c1");
+  candidateMocks.listCuratedCandidates.mockResolvedValue([row]);
+  composeDayPlanMock.mockImplementationOnce(async () => {
+    // Simulate pool/post-model divergence without bypassing the actual filter.
+    row.name = "Sea Bass Fillet";
+    return {
+      meals: [
+        {
+          name: "Dinner",
+          reason: "r",
+          logSlot: "dinner",
+          items: [{ candidateId: "c1", servings: 1 }],
+        },
+      ],
+      usage: { modelId: "m", latencyMs: 1, inputTokens: 1, outputTokens: 1 },
+    };
+  });
+  const res = await app.handle(post());
+  expect(res.status).toBe(422);
+  expect(JSON.stringify(await body(res))).not.toContain("Sea Bass Fillet");
+});
+
+it("rejects a seafood swap when guidance explicitly requires chicken", async () => {
+  candidateMocks.listCuratedCandidates.mockResolvedValue([
+    candidate("c1", { name: "Prawns" }),
+    candidate("chicken", { name: "Chicken breast" }),
+  ]);
+  const response = await app.handle(
+    post({ steer: "something quick and chicken based" }),
+  );
+  expect(response.status).toBe(422);
+  expect(await body(response)).toEqual({ error: "ai_unreadable" });
+});
+
+it("does not spend a swap inference on unavailable requested chicken", async () => {
+  candidateMocks.listCuratedCandidates.mockResolvedValue([
+    candidate("c1", { name: "Prawns" }),
+  ]);
+  const response = await app.handle(post({ steer: "chicken based" }));
+  expect(response.status).toBe(200);
+  expect((await body(response)).data.emptyReason).toBe("no_candidates");
+  expect(composeDayPlanMock).not.toHaveBeenCalled();
+  expect(usageMocks.record).not.toHaveBeenCalled();
+});

@@ -47,6 +47,8 @@ export interface MealprintCandidate {
   kind: "food" | "recipe" | "meal";
   id: string;
   name: string;
+  /** Original food name, before adding a brand for display; ingredient checks use this. */
+  unbrandedName?: string;
   /**
    * Macros for ONE SERVING of this candidate — already scaled out of the
    * per-100g basis for foods. The model multiplies by a servings count; the
@@ -91,6 +93,8 @@ export interface CuratedQueryInput {
   /** When true, rows with UNKNOWN (`NULL`) allergen tags are excluded in SQL. */
   requireKnownAllergens: boolean;
   limit?: number;
+  /** Culinary terms from the bounded guidance vocabulary; ranking only. */
+  preferredFoodTerms?: string[];
 }
 
 /**
@@ -210,6 +214,29 @@ export class MealprintCandidateRepository {
     input: CuratedQueryInput,
   ): Promise<MealprintCandidate[]> {
     const db = getDb();
+    const preferredTerms = [
+      ...new Set(
+        (input.preferredFoodTerms ?? [])
+          .map((term) => term.replace(/[^a-z ]/g, ""))
+          .filter(Boolean),
+      ),
+    ];
+    // Reserve a representative for each requested term before the SQL cap.
+    // Otherwise 600 chicken rows can crowd tofu out of "chicken and tofu".
+    const preferredCategory = sql`CASE ${sql.join(
+      preferredTerms.map(
+        (term) => sql`WHEN ${foods.name} ~* ${`\\m${term}\\M`} THEN ${term}`,
+      ),
+      sql` `,
+    )} ELSE NULL END`;
+    const priority = preferredTerms.length
+      ? sql`CASE
+      WHEN ${preferredCategory} IS NULL THEN 2
+      WHEN ROW_NUMBER() OVER (
+        PARTITION BY ${preferredCategory}
+        ORDER BY ${foods.proteinG} / NULLIF(${foods.kcal}, 0) DESC, ${foods.id} ASC
+      ) = 1 THEN 0 ELSE 1 END`
+      : null;
     const rows = await db
       .select({
         id: foods.id,
@@ -228,6 +255,7 @@ export class MealprintCandidateRepository {
       .from(foods)
       .where(this.buildCuratedWhere(input))
       .orderBy(
+        ...(priority ? [priority] : []),
         sql`${foods.proteinG} / NULLIF(${foods.kcal}, 0) DESC`,
         sql`${foods.id} ASC`,
       )
@@ -624,6 +652,7 @@ function toFoodCandidate(
     // Yogurt" alone is not something a user can find in a shop, and it is also
     // what makes near-duplicate rows distinguishable in the prompt.
     name: row.brand ? `${row.name} (${row.brand})` : row.name,
+    unbrandedName: row.name,
     kcal: Number(row.kcal) * scale,
     proteinG: Number(row.proteinG) * scale,
     carbsG: Number(row.carbsG) * scale,
