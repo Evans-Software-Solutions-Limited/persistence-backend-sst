@@ -173,66 +173,83 @@ describe("nutritionAiMealSuggestHandler", () => {
     });
   });
 
-  it("does not return prawns for the reported quick chicken request", async () => {
-    candidateMocks.listCuratedCandidates.mockResolvedValue([
-      { ...CANDIDATE, id: "chicken", name: "Chicken breast" },
-      { ...CANDIDATE, id: "yog", name: "Grilled prawns and mushrooms" },
-    ]);
-    const h = await handler();
-    const response = await h.handle(
-      post({
-        shape: "meal",
-        date: "2026-08-03",
-        steer: "something quick and chicken based",
-      }),
-    );
-    expect(response.status).toBe(422);
-    expect(await response.json()).toEqual({ error: "ai_unreadable" });
-    expect(usageMocks.record).toHaveBeenCalledOnce();
-    expect(candidateMocks.listCuratedCandidates).toHaveBeenCalledWith(
-      expect.objectContaining({ preferredFoodTerms: ["chicken"] }),
-    );
-  });
-
-  it.each([false, true])(
-    "does not spend an inference when requested chicken is unavailable or excluded (%s)",
-    async (excluded) => {
-      candidateMocks.listCuratedCandidates.mockResolvedValue(
-        excluded ? [{ ...CANDIDATE, name: "Chicken breast" }] : [CANDIDATE],
-      );
-      prefMocks.get.mockResolvedValue({
+  it.each(["chicken free-range", "chicken free of hormones"])(
+    "forwards full saved context and request verbatim: %s",
+    async (steer) => {
+      const preferences = {
         ...PREFS,
-        avoidFoods: excluded ? ["chicken"] : [],
-      });
+        dietaryPatterns: ["halal"],
+        avoidAllergens: ["peanuts"],
+        avoidFoods: [
+          "all fish except tinned tuna for sandwiches",
+          "chicken free-range",
+          "chicken free of hormones",
+        ],
+        likedFoods: ["yogurt with berries"],
+      };
+      prefMocks.get.mockResolvedValue(preferences);
+      const notWantedMeals = [
+        {
+          name: "Grilled prawns and mushrooms",
+          ingredients: ["Prawns", "Mushrooms"],
+        },
+      ];
       const h = await handler();
       const response = await h.handle(
-        post({ shape: "meal", date: "2026-08-03", steer: "chicken based" }),
+        post({ shape: "meal", date: "2026-08-03", steer, notWantedMeals }),
       );
       expect(response.status).toBe(200);
-      expect(await response.json()).toMatchObject({
-        data: { emptyReason: "no_candidates" },
-      });
-      expect(composeSuggestionsMock).not.toHaveBeenCalled();
-      expect(usageMocks.record).not.toHaveBeenCalled();
+      expect(composeSuggestionsMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          dietaryPatterns: preferences.dietaryPatterns,
+          avoidAllergens: preferences.avoidAllergens,
+          avoidFoods: preferences.avoidFoods,
+          likedFoods: preferences.likedFoods,
+          effortLevel: preferences.effortLevel,
+          steer,
+          notWantedMeals,
+        }),
+        expect.anything(),
+      );
     },
   );
-
-  it("keeps eating-out chicken restaurant names out of ingredient requirements", async () => {
+  it.each(
+    [
+      Array.from({ length: 21 }, () => ({
+        name: "Rejected meal",
+        ingredients: [],
+      })),
+      [{ name: "x".repeat(121), ingredients: [] }],
+      [{ name: "Meal", ingredients: Array(13).fill("food") }],
+      [{ name: "Meal", ingredients: ["x".repeat(121)] }],
+    ].map((notWantedMeals) => ({ notWantedMeals })),
+  )(
+    "rejects oversized session context before inference",
+    async ({ notWantedMeals }) => {
+      const steer = "quick meal";
+      const h = await handler();
+      const response = await h.handle(
+        post({ shape: "meal", date: "2026-08-03", steer, notWantedMeals }),
+      );
+      expect(response.status).toBe(422);
+      expect(composeSuggestionsMock).not.toHaveBeenCalled();
+    },
+  );
+  it("preserves the entire bounded rejection history", async () => {
+    const steer = "quick meal";
+    const notWantedMeals = Array.from({ length: 20 }, (_, i) => ({
+      name: `Rejected meal ${i}`,
+      ingredients: Array.from({ length: 12 }, (_, j) => `Ingredient ${j}`),
+    }));
     const h = await handler();
     const response = await h.handle(
-      post({
-        shape: "meal",
-        date: "2026-08-03",
-        occasion: "eating_out",
-        steer: "Chicken Cottage",
-      }),
+      post({ shape: "meal", date: "2026-08-03", steer, notWantedMeals }),
     );
     expect(response.status).toBe(200);
-    expect(candidateMocks.listCuratedCandidates).toHaveBeenCalledWith(
-      expect.objectContaining({ preferredFoodTerms: [] }),
+    expect(composeSuggestionsMock.mock.calls[0][0].notWantedMeals).toEqual(
+      notWantedMeals,
     );
   });
-
   it("requires auth", async () => {
     const h = await handler();
     expect((await h.handle(post(undefined, false))).status).toBe(401);

@@ -56,7 +56,7 @@ describe("dedupeKey", () => {
 });
 
 describe("rankCandidates", () => {
-  it("promotes own rows and liked foods without dropping anything", () => {
+  it("promotes own rows while preserving diversified catalogue order", () => {
     // ⚠ Likes are a BIAS, never a filter (locked decision 1). A user who likes
     // three things must still see the rest of the pool.
     const pool = [
@@ -65,8 +65,8 @@ describe("rankCandidates", () => {
       candidate({ id: "own", isOwn: true, name: "My Shake" }),
       candidate({ id: "both", isOwn: true, name: "My Chicken Bowl" }),
     ];
-    const ranked = rankCandidates(pool, ["chicken"]);
-    expect(ranked.map((c) => c.id)).toEqual(["both", "liked", "own", "plain"]);
+    const ranked = rankCandidates(pool);
+    expect(ranked.map((c) => c.id)).toEqual(["own", "both", "plain", "liked"]);
     expect(ranked).toHaveLength(pool.length);
   });
 
@@ -77,12 +77,12 @@ describe("rankCandidates", () => {
       candidate({ id: "b" }),
       candidate({ id: "c" }),
     ];
-    expect(rankCandidates(pool, []).map((c) => c.id)).toEqual(["a", "b", "c"]);
+    expect(rankCandidates(pool).map((c) => c.id)).toEqual(["a", "b", "c"]);
   });
 
   it("does not treat an empty like list as matching everything", () => {
     const pool = [candidate({ id: "a" }), candidate({ id: "b", isOwn: true })];
-    expect(rankCandidates(pool, []).map((c) => c.id)).toEqual(["b", "a"]);
+    expect(rankCandidates(pool).map((c) => c.id)).toEqual(["b", "a"]);
   });
 });
 
@@ -244,40 +244,18 @@ describe("describeAssembly", () => {
   });
 });
 
-it("removes disliked fish before it reaches the model pool", () => {
-  const result = assembleCandidates(
-    [
-      candidate({ id: "bass", name: "Sea Bass Fillet", isOwn: true }),
-      candidate({ id: "salmon", name: "Salmon", allergenTags: null }),
-      candidate({ id: "prawns", name: "King Prawns", allergenTags: null }),
-      candidate({ id: "chicken", name: "Chicken Breast" }),
-    ],
-    { ...NO_PREFS, avoidFoods: ["fish"], likedFoods: ["sea bass"] },
-  );
-  expect(result.candidates.map((row) => row.id)).toEqual(["chicken"]);
-  expect(result.stats.rejectedByRule.dislike_name).toBe(3);
-});
-
-it("filters the recorded natural-language fish dislike before composition", () => {
-  const result = assembleCandidates(
-    [
-      candidate({ id: "bass", name: "Sea Bass Fillet" }),
-      candidate({ id: "prawns", name: "King Prawns" }),
-      candidate({ id: "tin", name: "Tinned Tuna" }),
-      candidate({
-        id: "sandwich",
-        name: "Tinned Tuna Sandwich",
-        allergenTags: ["en:fish"],
-      }),
-      candidate({ id: "chicken", name: "Chicken Breast" }),
-    ],
-    {
+it("retains free-text preference candidates for AI interpretation, including scoped exceptions", () => {
+  const pool = [
+    candidate({ id: "tuna", name: "Tinned Tuna", allergenTags: ["en:fish"] }),
+    candidate({ id: "chicken", name: "Chicken breast" }),
+  ];
+  expect(
+    assembleCandidates(pool, {
       ...NO_PREFS,
-      avoidFoods: ["cheese", "all fish except tinned tuna for sandwiches"],
-    },
-  );
-  expect(result.candidates.map((row) => row.id)).toEqual([
-    "sandwich",
-    "chicken",
-  ]);
+      avoidFoods: [
+        "all fish except tinned tuna for sandwiches",
+        "chicken free-range",
+      ],
+    }).candidates,
+  ).toEqual(pool);
 });

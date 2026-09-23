@@ -1,8 +1,5 @@
-import {
-  parseMealGuidance,
-  guidanceSearchTerms,
-  canMeetGuidance,
-} from "../mealGuidance";
+import { notWantedMealsSchema } from "../mealContext";
+
 import Elysia, { t } from "elysia";
 import {
   getAuthUser,
@@ -259,9 +256,7 @@ export const nutritionAiMealSuggestHandler = new Elysia()
         const locale = isSupportedLocale(preferences.locale)
           ? preferences.locale
           : "en-GB";
-        const guidance = parseMealGuidance(
-          occasion === "eating_out" ? null : steer,
-        );
+
         const requireKnownAllergens = hasAllergenConstraint(preferences);
         const forbidden = [
           ...new Set([
@@ -290,7 +285,6 @@ export const nutritionAiMealSuggestHandler = new Elysia()
             maxServingKcal: candidateKcalCeiling,
             forbiddenAllergenTags: forbidden,
             requireKnownAllergens,
-            preferredFoodTerms: guidanceSearchTerms(guidance),
           }),
           ctx.MealprintCandidateRepository.listOwnFoodCandidates(
             userId,
@@ -313,8 +307,6 @@ export const nutritionAiMealSuggestHandler = new Elysia()
         const assembly = assembleCandidates(
           [...ownFoods, ...ownRecipes, ...ownMeals, ...curated],
           preferences,
-          undefined,
-          guidance,
         );
 
         // ⚠ Always logged, not only on failure. A thin-but-nonempty pool is the
@@ -329,13 +321,6 @@ export const nutritionAiMealSuggestHandler = new Elysia()
           return respondEmpty(
             "no_candidates",
             describeAssembly(assembly.stats),
-          );
-        }
-
-        if (!canMeetGuidance(assembly.candidates, guidance)) {
-          return respondEmpty(
-            "no_candidates",
-            "requested ingredients unavailable after filtering",
           );
         }
 
@@ -389,7 +374,12 @@ export const nutritionAiMealSuggestHandler = new Elysia()
             maxCheatMealKcal: cheatMealKcalCeiling,
             steer: steer ?? null,
             candidates: assembly.candidates,
+            dietaryPatterns: preferences.dietaryPatterns,
+            avoidAllergens: preferences.avoidAllergens,
+            avoidFoods: preferences.avoidFoods,
+            notWantedMeals: ctx.body.notWantedMeals ?? [],
             likedFoods: preferences.likedFoods,
+            savedEffortLevel: preferences.effortLevel,
             effortLevel: preferences.effortLevel,
             locale,
           },
@@ -399,7 +389,6 @@ export const nutritionAiMealSuggestHandler = new Elysia()
         // Stage 3 — every macro recomputed from DB rows, avoidance re-run.
         const verified = verifySuggestions({
           suggestions: result.suggestions,
-          guidance,
           // The EXACT list handed to the model. A wider pool here would let a
           // filtered-out food back in through the model's selection.
           candidates: assembly.candidates,
@@ -414,15 +403,6 @@ export const nutritionAiMealSuggestHandler = new Elysia()
         );
 
         if (verified.suggestions.length === 0) {
-          if (
-            verified.rejected.some(
-              (entry) => entry.failure === "guidance_violation",
-            )
-          ) {
-            throw new AiUnreadableError(
-              "ai_guidance_violation: requested ingredients not met",
-            );
-          }
           // The model answered and every suggestion failed verification. A 422 is
           // right here (unlike steps 4/5): an inference happened, the daily
           // ceiling IS consumed, and retrying is the sensible client action.
@@ -534,6 +514,7 @@ export const nutritionAiMealSuggestHandler = new Elysia()
         // user controls. For `eating_out`, this is repurposed as the restaurant
         // name (amendment § A.1 table) — same field, same bound.
         steer: t.Optional(t.String({ maxLength: 200 })),
+        notWantedMeals: notWantedMealsSchema,
       }),
     },
   );

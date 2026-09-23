@@ -32,7 +32,6 @@ import {
   AVOID_ALLERGENS,
   DIETARY_PATTERNS,
   DIETARY_PATTERN_RULES,
-  HARD_TO_FIND_PREFIX,
   isTokenNegatedInName,
   normaliseFoodText,
   singularise,
@@ -719,19 +718,6 @@ describe("assessAvoidance — known false-positive traps", () => {
     expect(isTokenNegatedInName("No Added Sugar Milk", "milk")).toBe(false);
   });
 
-  it("applies a hardtofind: exclusion by its food name", () => {
-    // STORY-007's affordance was a PERMANENT NO-OP: the repository preserves the
-    // prefix, so the dislike tokenised to ["hardtofind","mushroom"] and the
-    // every-token-present rule looked for the literal word "hardtofind" in the
-    // food name. The entry stored, round-tripped, and filtered nothing.
-    const v = assessAvoidance(subject({ name: "Mushroom Soup" }), {
-      ...NO_PREFS,
-      avoidFoods: [`${HARD_TO_FIND_PREFIX}mushrooms`],
-    });
-    expect(v.allowed).toBe(false);
-    if (!v.allowed) expect(v.rule).toBe("dislike_name");
-  });
-
   it("a negator AFTER the token does not clear it", () => {
     // "Roast Chicken, no bones" is still chicken.
     expect(
@@ -763,81 +749,33 @@ describe("assessAvoidance — known false-positive traps", () => {
 
 // ── Dislikes ────────────────────────────────────────────────────────────────
 
-describe("assessAvoidance — dislikes", () => {
-  it("matches a single-word dislike regardless of case and plurality", () => {
-    for (const name of ["Mushroom Soup", "MUSHROOMS", "mushrooms, dried"]) {
-      const v = assessAvoidance(subject({ name }), {
-        ...NO_PREFS,
-        avoidFoods: ["mushroom"],
-      });
-      expect(v.allowed, name).toBe(false);
-    }
-  });
-
-  it("matches a plural dislike against a singular name", () => {
+describe("free-text dislikes are AI context, not safety rules", () => {
+  it.each([
+    "fish",
+    "all fish except tinned tuna for sandwiches",
+    "chicken free-range",
+    "chicken free of hormones",
+  ])("does not reinterpret %s in the deterministic safety layer", (dislike) => {
     expect(
-      assessAvoidance(subject({ name: "Green Olive" }), {
-        ...NO_PREFS,
-        avoidFoods: ["olives"],
-      }).allowed,
-    ).toBe(false);
-  });
-
-  it("strips accents on both sides", () => {
-    expect(
-      assessAvoidance(subject({ name: "Jalapeño Poppers" }), {
-        ...NO_PREFS,
-        avoidFoods: ["jalapeno"],
-      }).allowed,
-    ).toBe(false);
-    expect(
-      assessAvoidance(subject({ name: "Jalapeno Poppers" }), {
-        ...NO_PREFS,
-        avoidFoods: ["jalapeño"],
-      }).allowed,
-    ).toBe(false);
-  });
-
-  it("requires EVERY token of a multi-word dislike", () => {
-    const prefs = { ...NO_PREFS, avoidFoods: ["chicken thigh"] };
-    expect(
-      assessAvoidance(subject({ name: "Chicken Thighs, skin on" }), prefs)
-        .allowed,
-    ).toBe(false);
-    // Not every chicken product — only the disliked cut.
-    expect(
-      assessAvoidance(subject({ name: "Chicken Breast" }), prefs).allowed,
+      assessAvoidance(
+        subject({ name: "Chicken and tuna", allergenTags: ["en:fish"] }),
+        { ...NO_PREFS, avoidFoods: [dislike] },
+      ).allowed,
     ).toBe(true);
   });
-
-  it("ignores a blank or punctuation-only dislike rather than excluding everything", () => {
-    // A dislike that tokenises to nothing would make `every()` vacuously true
-    // and reject the entire catalogue.
-    for (const junk of ["", "   ", "---", "!!!"]) {
-      expect(
-        assessAvoidance(subject({ name: "Plain Rice" }), {
-          ...NO_PREFS,
-          avoidFoods: [junk],
-        }).allowed,
-        JSON.stringify(junk),
-      ).toBe(true);
-    }
-  });
-
-  it("honours a hardtofind: prefixed exclusion by its food token", () => {
-    // STORY-007 appends with a prefix kept out of UI copy. The prefix tokenises
-    // alongside the name, so the stored value still has to match — assert the
-    // shape the repository writes actually works.
+  it("still rejects allergens even when dislike prose permits an exception", () => {
     expect(
-      assessAvoidance(subject({ name: "Liquid Egg Whites" }), {
-        ...NO_PREFS,
-        avoidFoods: ["liquid egg whites"],
-      }).allowed,
+      assessAvoidance(
+        subject({ name: "Tinned Tuna Sandwich", allergenTags: ["en:fish"] }),
+        {
+          ...NO_PREFS,
+          avoidAllergens: ["fish"],
+          avoidFoods: ["all fish except tinned tuna for sandwiches"],
+        },
+      ).allowed,
     ).toBe(false);
   });
 });
-
-// ── Partition + helpers ─────────────────────────────────────────────────────
 
 describe("partitionByAvoidance", () => {
   it("returns rejections with their reasons rather than dropping them", () => {
@@ -852,10 +790,9 @@ describe("partitionByAvoidance", () => {
       avoidFoods: ["mushroom"],
     });
 
-    expect(kept.map((r) => r.id)).toEqual(["a"]);
+    expect(kept.map((r) => r.id)).toEqual(["a", "c"]);
     expect(rejected.map((r) => [r.subject.id, r.verdict.rule])).toEqual([
       ["b", "allergen_tag"],
-      ["c", "dislike_name"],
     ]);
   });
 
@@ -1376,230 +1313,6 @@ describe("assessAvoidance — qualifier DIRECTION comes from the entry", () => {
         ...NO_PREFS,
         dietaryPatterns: ["dairy_free"],
       }).allowed,
-    ).toBe(true);
-  });
-});
-
-describe("assessAvoidance — fish category dislikes", () => {
-  it.each([
-    "Sea Bass Fillet",
-    "Seabass",
-    "Salmon",
-    "Tuna",
-    "Cod",
-    "Sardines",
-    "King Prawns",
-    "Crab",
-    "Mussels",
-    "Shellfish Platter",
-    "Scampi",
-  ])("excludes %s without relying on allergen tags", (name) => {
-    expect(
-      assessAvoidance(subject({ name, allergenTags: null }), {
-        ...NO_PREFS,
-        avoidFoods: ["fish"],
-      }),
-    ).toMatchObject({ allowed: false, cause: "fish" });
-  });
-
-  it.each([
-    { allergenTags: ["en:fish"], categoryTags: [] },
-    { allergenTags: ["en:crustaceans"], categoryTags: [] },
-    { allergenTags: ["en:molluscs"], categoryTags: [] },
-    { allergenTags: null, categoryTags: ["en:shellfish"] },
-    { allergenTags: null, categoryTags: ["en:crustacean-products"] },
-    { allergenTags: null, categoryTags: ["en:mollusc-products"] },
-    { allergenTags: ["en:milk"], categoryTags: ["en:fish-preparations"] },
-  ])("uses positive tags even with an opaque name: %j", (tags) => {
-    expect(
-      assessAvoidance(subject({ name: "Ocean Supper", ...tags }), {
-        ...NO_PREFS,
-        avoidFoods: ["fish"],
-      }),
-    ).toMatchObject({ allowed: false, rule: "dislike_tag", cause: "fish" });
-  });
-
-  it.each([
-    "Vegan Fish Fingers",
-    "Fish-free Sea Bass Alternative",
-    "Mushroom Caviar",
-    "Vegan Prawns",
-    "Plant-based Crab Cakes",
-    "Chicken Breast",
-  ])("keeps %s for a fish dislike", (name) => {
-    expect(
-      assessAvoidance(subject({ name, allergenTags: null }), {
-        ...NO_PREFS,
-        avoidFoods: ["fish"],
-      }).allowed,
-    ).toBe(true);
-  });
-
-  it("does not clear confirmed fish tags with a vegan name", () => {
-    expect(
-      assessAvoidance(
-        subject({ name: "Vegan Fish Fingers", allergenTags: ["en:fish"] }),
-        {
-          ...NO_PREFS,
-          avoidFoods: ["fish"],
-        },
-      ).allowed,
-    ).toBe(false);
-  });
-
-  it("keeps a specific species dislike specific", () => {
-    expect(
-      assessAvoidance(
-        subject({ name: "Sea Bass Fillet", allergenTags: ["en:fish"] }),
-        {
-          ...NO_PREFS,
-          avoidFoods: ["salmon"],
-        },
-      ).allowed,
-    ).toBe(true);
-  });
-
-  it.each(["fish", "FISH", "hardtofind:fish"])(
-    "normalises category %s",
-    (dislike) => {
-      expect(
-        assessAvoidance(subject({ name: "Sea Bass Fillet" }), {
-          ...NO_PREFS,
-          avoidFoods: [dislike],
-        }).allowed,
-      ).toBe(false);
-    },
-  );
-
-  it.each(["seafood", "shellfish"])("expands %s to prawns", (dislike) => {
-    expect(
-      assessAvoidance(subject({ name: "King Prawns" }), {
-        ...NO_PREFS,
-        avoidFoods: [dislike],
-      }).allowed,
-    ).toBe(false);
-  });
-
-  it("keeps fish when only shellfish is disliked", () => {
-    expect(
-      assessAvoidance(
-        subject({ name: "Sea Bass Fillet", categoryTags: ["en:fish"] }),
-        {
-          ...NO_PREFS,
-          avoidFoods: ["shellfish"],
-        },
-      ).allowed,
-    ).toBe(true);
-  });
-});
-
-describe("natural-language fish dislike with a scoped tuna exception", () => {
-  const preferences = {
-    ...NO_PREFS,
-    avoidFoods: ["cheese", "all fish except tinned tuna for sandwiches"],
-  };
-
-  it.each([
-    "Sea Bass Fillet",
-    "King Prawns",
-    "Crab",
-    "Mussels",
-    "Fresh Tuna Steak",
-    "Tinned Tuna",
-    "Tuna Sandwich",
-    "Tinned Tuna Pasta",
-    "Tinned Tuna Sandwich Filling",
-    "Tinned Tuna Sandwich and Pasta",
-    "Tinned Tuna and Prawn Sandwich",
-    "Fresh and Tinned Tuna Sandwich",
-    "Tinned Tuna and Cheese Sandwich",
-  ])("blocks %s", (name) => {
-    expect(
-      assessAvoidance(subject({ name, allergenTags: null }), preferences)
-        .allowed,
-    ).toBe(false);
-  });
-
-  it.each(["Tinned Tuna Sandwich", "Canned Tuna Sandwiches"])(
-    "allows the explicitly supported exception %s",
-    (name) => {
-      expect(
-        assessAvoidance(
-          subject({
-            name,
-            allergenTags: ["en:fish"],
-            categoryTags: ["en:fish", "en:sandwiches"],
-          }),
-          preferences,
-        ).allowed,
-      ).toBe(true);
-    },
-  );
-
-  it("does not let the tuna exception override conflicting seafood tags", () => {
-    expect(
-      assessAvoidance(
-        subject({
-          name: "Tinned Tuna Sandwich",
-          allergenTags: ["en:crustaceans"],
-        }),
-        preferences,
-      ).allowed,
-    ).toBe(false);
-    expect(
-      assessAvoidance(
-        subject({ name: "Tinned Tuna Sandwich", categoryTags: ["en:salmon"] }),
-        preferences,
-      ).allowed,
-    ).toBe(false);
-  });
-
-  it("never lets a dislike exception override a fish allergy", () => {
-    expect(
-      assessAvoidance(
-        subject({ name: "Tinned Tuna Sandwich", allergenTags: ["en:fish"] }),
-        { ...preferences, avoidAllergens: ["fish"] },
-      ),
-    ).toMatchObject({ allowed: false, rule: "allergen_tag" });
-  });
-
-  it.each([
-    "all fish",
-    "all fish except something unusual",
-    "all fish except tinned tuna on Fridays",
-    "hardtofind:all fish except tinned tuna for sandwiches",
-  ])("keeps the category excluded for %s", (dislike) => {
-    expect(
-      assessAvoidance(subject({ name: "Sea Bass Fillet" }), {
-        ...NO_PREFS,
-        avoidFoods: [dislike],
-      }).allowed,
-    ).toBe(false);
-  });
-
-  it("keeps unqualified tinned tuna excluded when the exception's context is unsupported", () => {
-    expect(
-      assessAvoidance(subject({ name: "Tinned Tuna" }), {
-        ...NO_PREFS,
-        avoidFoods: ["all fish except tinned tuna on Fridays"],
-      }).allowed,
-    ).toBe(false);
-  });
-
-  it("does not turn an unscoped tinned tuna exception into an exception for fresh tuna", () => {
-    const prefs = { ...NO_PREFS, avoidFoods: ["fish except tinned tuna"] };
-    expect(
-      assessAvoidance(subject({ name: "Tinned Tuna" }), prefs).allowed,
-    ).toBe(true);
-    expect(
-      assessAvoidance(subject({ name: "Fresh Tuna" }), prefs).allowed,
-    ).toBe(false);
-  });
-
-  it("keeps non-seafood foods available", () => {
-    expect(
-      assessAvoidance(subject({ name: "Chicken Sandwich" }), preferences)
-        .allowed,
     ).toBe(true);
   });
 });

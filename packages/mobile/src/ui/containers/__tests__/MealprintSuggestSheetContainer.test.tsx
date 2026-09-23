@@ -178,7 +178,7 @@ async function mount(
   seed?.(api, storage);
   const subSpy = jest.spyOn(api, "getMySubscription");
   const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
+    defaultOptions: { queries: { retry: false, gcTime: Infinity } },
   });
   const utils = render(
     <QueryClientProvider client={queryClient}>
@@ -266,6 +266,7 @@ describe("MealprintSuggestSheetContainer", () => {
     });
     await waitFor(() => expect(api.suggestMealsCalls).toHaveLength(1));
     expect(api.suggestMealsCalls[0]).toEqual({
+      notWantedMeals: [],
       shape: "snack",
       date: "2026-08-03",
       steer: "something sweet",
@@ -548,7 +549,7 @@ describe("MealprintSuggestSheetContainer", () => {
     // Never settles — the first-fetch window, held open.
     jest.spyOn(api, "getMySubscription").mockReturnValue(new Promise(() => {}));
     const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
+      defaultOptions: { queries: { retry: false, gcTime: Infinity } },
     });
     render(
       <QueryClientProvider client={queryClient}>
@@ -797,4 +798,44 @@ describe("MealprintSuggestSheetContainer — a confirm that fails PART-WAY (Insp
     // And the button is usable again rather than stuck spinning.
     expect(probe().confirming).toBe(false);
   });
+});
+
+it("remembers rejected suggestions on regenerate and resets on reopen", async () => {
+  const { api, probe } = await mount((a) => {
+    a.mealSuggestResult = {
+      ...a.mealSuggestResult,
+      suggestions: [suggestion()],
+      emptyReason: null,
+    };
+  });
+  open();
+  await waitFor(() => expect(probe().visible).toBe(true));
+  act(() => probe().onGenerate());
+  await waitFor(() => expect(probe().stage).toBe("results"));
+  expect(api.suggestMealsCalls[0]!.notWantedMeals).toEqual([]);
+  api.mealSuggestResult = {
+    ...api.mealSuggestResult,
+    suggestions: [suggestion({ name: "Chicken bowl" })],
+  };
+  act(() => probe().onRetry());
+  await waitFor(() => expect(api.suggestMealsCalls).toHaveLength(2));
+  await waitFor(() => expect(probe().stage).toBe("results"));
+  expect(api.suggestMealsCalls[1]!.notWantedMeals).toEqual([
+    {
+      name: "Greek yoghurt & berries",
+      ingredients: ["Greek yoghurt 0%", "Berry compote"],
+    },
+  ]);
+  act(() => probe().onRetry());
+  await waitFor(() => expect(api.suggestMealsCalls).toHaveLength(3));
+  await waitFor(() => expect(probe().stage).toBe("results"));
+  expect(
+    api.suggestMealsCalls[2]!.notWantedMeals!.map((meal) => meal.name),
+  ).toEqual(["Greek yoghurt & berries", "Chicken bowl"]);
+  act(() => probe().onClose());
+  open();
+  await waitFor(() => expect(probe().stage).toBe("setup"));
+  act(() => probe().onGenerate());
+  await waitFor(() => expect(api.suggestMealsCalls).toHaveLength(4));
+  expect(api.suggestMealsCalls[3]!.notWantedMeals).toEqual([]);
 });

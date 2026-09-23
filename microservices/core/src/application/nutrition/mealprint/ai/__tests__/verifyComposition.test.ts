@@ -583,75 +583,22 @@ describe("verifySuggestions — carries cheat/isOrder/tag onto the verified sugg
   });
 });
 
-it("rejects fish in composed suggestions even if the supplied pool was stale", () => {
-  const result = verifySuggestions({
-    suggestions: [suggestion([{ candidateId: "bass", servings: 1 }])],
-    candidates: [candidate({ id: "bass", name: "Sea Bass Fillet" })],
-    remaining: REMAINING,
-    preferences: { ...NO_PREFS, avoidFoods: ["fish"] },
-  });
-  expect(result.suggestions).toEqual([]);
-  expect(result.rejected[0]).toMatchObject({
-    failure: "avoidance_violation",
-    detail: "dislike_name:fish",
-  });
-});
-
-it("rejects a disliked fish title even when resolved items are allowed", () => {
+it("does not reinterpret scoped dislikes when recomputing a model composition", () => {
   const result = verifySuggestions({
     suggestions: [
-      suggestion([{ candidateId: "yog", servings: 1 }], "Sea bass dinner"),
-    ],
-    candidates: [candidate()],
-    remaining: REMAINING,
-    preferences: { ...NO_PREFS, avoidFoods: ["fish"] },
-  });
-  expect(result.suggestions).toEqual([]);
-  expect(result.rejected[0]).toMatchObject({ failure: "avoidance_violation" });
-});
-
-it("does not treat a title as unknown allergen data or filter explanatory prose", () => {
-  const meal = suggestion([{ candidateId: "yog", servings: 1 }], "Yogurt bowl");
-  meal.reason = "A choice instead of fish";
-  const result = verifySuggestions({
-    suggestions: [meal],
-    candidates: [candidate()],
-    remaining: REMAINING,
-    preferences: {
-      ...NO_PREFS,
-      avoidAllergens: ["fish"],
-      avoidFoods: ["fish"],
-    },
-  });
-  expect(result.suggestions).toHaveLength(1);
-});
-
-it("enforces the natural-language exclusion in a stale pool and model titles", () => {
-  const result = verifySuggestions({
-    suggestions: [
-      suggestion([{ candidateId: "bass", servings: 1 }], "Dinner"),
-      suggestion([{ candidateId: "yog", servings: 1 }], "Sea bass dinner"),
       suggestion(
-        [{ candidateId: "sandwich", servings: 1 }],
+        [{ candidateId: "tuna", servings: 1 }],
         "Tinned tuna sandwich",
       ),
     ],
     candidates: [
-      candidate({ id: "bass", name: "Sea Bass Fillet" }),
-      candidate(),
-      candidate({ id: "sandwich", name: "Tinned Tuna Sandwich" }),
+      candidate({ id: "tuna", name: "Tinned Tuna", allergenTags: ["en:fish"] }),
     ],
     remaining: REMAINING,
     preferences: {
       ...NO_PREFS,
-      avoidFoods: ["cheese", "all fish except tinned tuna for sandwiches"],
+      avoidFoods: ["all fish except tinned tuna for sandwiches"],
     },
   });
-  expect(result.suggestions.map((meal) => meal.name)).toEqual([
-    "Tinned tuna sandwich",
-  ]);
-  expect(result.rejected).toHaveLength(2);
-  expect(
-    result.rejected.every((meal) => meal.failure === "avoidance_violation"),
-  ).toBe(true);
+  expect(result.suggestions).toHaveLength(1);
 });

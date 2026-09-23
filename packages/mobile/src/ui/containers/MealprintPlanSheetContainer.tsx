@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { router, type Href } from "expo-router";
 import { useFuelSheets } from "@/state/fuel-sheets";
 import { usePlanFlow } from "@/state/plan-flow";
@@ -13,6 +13,9 @@ import { usePlanAccept } from "@/ui/hooks/usePlanAccept";
 import { useOnlineStatus } from "@/ui/hooks/useOnlineStatus";
 import {
   DEFAULT_MEALPRINT_PREFERENCES,
+  addNotWantedMeals,
+  MEAL_SEARCH_FULL_MESSAGE,
+  type NotWantedMeal,
   heldTotalsExcluding,
   planDraftToAcceptInput,
   summarisePreferences,
@@ -95,6 +98,8 @@ export function MealprintPlanSheetContainer() {
   const [steer, setSteer] = useState("");
   const [feedbackId, setFeedbackId] = useState<string | null>(null);
   const [swapSteer, setSwapSteer] = useState("");
+  const notWantedRef = useRef<NotWantedMeal[]>([]);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const [swapError, setSwapError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -120,6 +125,8 @@ export function MealprintPlanSheetContainer() {
   useEffect(() => {
     if (!visible) return;
     flowOpen(activeDate);
+    notWantedRef.current = [];
+    setSearchError(null);
     resetGenerate();
     resetSwap();
     resetAccept();
@@ -133,7 +140,15 @@ export function MealprintPlanSheetContainer() {
     // refresh would blow away whatever the user has already typed into the
     // config form.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, activeDate, flowOpen, resetGenerate, resetSwap, resetAccept]);
+  }, [
+    visible,
+    activeDate,
+    userId,
+    flowOpen,
+    resetGenerate,
+    resetSwap,
+    resetAccept,
+  ]);
 
   const { run: runGenerate, retry: retryGenerate } = generate;
   const onGenerate = useCallback(() => {
@@ -143,8 +158,22 @@ export function MealprintPlanSheetContainer() {
       gate.onUpgrade();
       return;
     }
+    const history = addNotWantedMeals(
+      notWantedRef.current,
+      draft?.meals.map(({ meal }) => ({
+        name: meal.name,
+        ingredients: meal.items.map((item) => item.name),
+      })) ?? [],
+    );
+    if (!history) {
+      setSearchError(MEAL_SEARCH_FULL_MESSAGE);
+      return;
+    }
+    notWantedRef.current = history;
+    setSearchError(null);
     flowGenerating();
     void runGenerate({
+      notWantedMeals: history,
       planDate: activeDate,
       mealsPerDay,
       effortLevel,
@@ -159,6 +188,7 @@ export function MealprintPlanSheetContainer() {
     mealsPerDay,
     effortLevel,
     steer,
+    draft,
   ]);
 
   const onRetryGenerate = useCallback(() => {
@@ -191,8 +221,21 @@ export function MealprintPlanSheetContainer() {
       if (draft === null) return;
       const targetMeal = draft.meals.find((m) => m.localId === localId);
       if (targetMeal === undefined) return;
+      const history = addNotWantedMeals(notWantedRef.current, [
+        {
+          name: targetMeal.meal.name,
+          ingredients: targetMeal.meal.items.map((item) => item.name),
+        },
+      ]);
+      if (!history) {
+        setSwapError(MEAL_SEARCH_FULL_MESSAGE);
+        return;
+      }
+      notWantedRef.current = history;
       flowBeginSwap(localId);
       void runSwap({
+        notWantedMeals: history,
+        originalRequest: steer.trim() || undefined,
         dayTarget: draft.target,
         heldTotals: heldTotalsExcluding(draft, localId),
         logSlot: targetMeal.meal.logSlot,
@@ -205,6 +248,7 @@ export function MealprintPlanSheetContainer() {
       flowBeginSwap,
       runSwap,
       swapSteer,
+      steer,
       online,
       swappingId,
       accept.accepting,
@@ -246,8 +290,25 @@ export function MealprintPlanSheetContainer() {
   }, [swap.stage, swap.result]);
 
   const onRemoveMeal = useCallback(
-    (localId: string) => flowRemoveMeal(localId),
-    [flowRemoveMeal],
+    (localId: string) => {
+      const removed = draft?.meals.find(
+        (meal) => meal.localId === localId,
+      )?.meal;
+      if (!removed || swappingId !== null || accept.accepting) return;
+      const history = addNotWantedMeals(notWantedRef.current, [
+        {
+          name: removed.name,
+          ingredients: removed.items.map((item) => item.name),
+        },
+      ]);
+      if (!history) {
+        setSearchError(MEAL_SEARCH_FULL_MESSAGE);
+        return;
+      }
+      notWantedRef.current = history;
+      flowRemoveMeal(localId);
+    },
+    [draft, flowRemoveMeal, swappingId, accept.accepting],
   );
 
   const onItemServingsChange = useCallback(
@@ -331,8 +392,9 @@ export function MealprintPlanSheetContainer() {
     router.push("/(app)/fuel/preferences?mode=editor" as Href);
   }, [close]);
 
-  const stage: MealprintPlanSheetStage =
-    step === "saved"
+  const stage: MealprintPlanSheetStage = searchError
+    ? "error"
+    : step === "saved"
       ? "saved"
       : step === "draft"
         ? "draft"
@@ -439,8 +501,8 @@ export function MealprintPlanSheetContainer() {
       onAcceptRecovery={() => void onAcceptRecovery()}
       labelCheckRequired={generate.result?.labelCheckRequired ?? true}
       onViewToday={onViewToday}
-      errorMessage={generate.failure?.message ?? null}
-      errorRetryable={generate.failure?.retryable ?? false}
+      errorMessage={searchError ?? generate.failure?.message ?? null}
+      errorRetryable={!searchError && (generate.failure?.retryable ?? false)}
       errorIsEntitlement={generate.failure?.entitlementDenied ?? false}
       onRetryGenerate={onRetryGenerate}
       onUpgrade={gate.onUpgrade}

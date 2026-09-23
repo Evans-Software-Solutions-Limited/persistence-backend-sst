@@ -437,20 +437,71 @@ describe("POST /nutrition/ai/plan-generate", () => {
   });
 });
 
-it("rejects a fish title even when the model selected allowed ingredients", async () => {
-  prefMocks.get.mockResolvedValue({ ...PREFS, avoidFoods: ["fish"] });
-  composeDayPlanMock.mockResolvedValue({
-    meals: [
+it.each(["chicken free-range", "chicken free of hormones"])(
+  "forwards full saved context and request verbatim: %s",
+  async (steer) => {
+    const preferences = {
+      ...PREFS,
+      dietaryPatterns: ["halal"],
+      avoidAllergens: ["peanuts"],
+      avoidFoods: [
+        "all fish except tinned tuna for sandwiches",
+        "chicken free-range",
+        "chicken free of hormones",
+      ],
+      likedFoods: ["yogurt with berries"],
+    };
+    prefMocks.get.mockResolvedValue(preferences);
+    const notWantedMeals = [
       {
-        name: "Sea bass dinner",
-        reason: "r",
-        logSlot: "dinner",
-        items: [{ candidateId: "c1", servings: 1 }],
+        name: "Grilled prawns and mushrooms",
+        ingredients: ["Prawns", "Mushrooms"],
       },
-    ],
-    usage: { modelId: "m", latencyMs: 1, inputTokens: 1, outputTokens: 1 },
-  });
-  const res = await app.handle(post());
-  expect(res.status).toBe(422);
-  expect(JSON.stringify(await body(res))).not.toContain("Sea bass dinner");
+    ];
+    const response = await app.handle(post({ steer, notWantedMeals }));
+    expect(response.status).toBe(200);
+    expect(composeDayPlanMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dietaryPatterns: preferences.dietaryPatterns,
+        avoidAllergens: preferences.avoidAllergens,
+        avoidFoods: preferences.avoidFoods,
+        likedFoods: preferences.likedFoods,
+        effortLevel: preferences.effortLevel,
+        steer,
+        notWantedMeals,
+      }),
+      expect.anything(),
+    );
+  },
+);
+it.each(
+  [
+    Array.from({ length: 21 }, () => ({
+      name: "Rejected meal",
+      ingredients: [],
+    })),
+    [{ name: "x".repeat(121), ingredients: [] }],
+    [{ name: "Meal", ingredients: Array(13).fill("food") }],
+    [{ name: "Meal", ingredients: ["x".repeat(121)] }],
+  ].map((notWantedMeals) => ({ notWantedMeals })),
+)(
+  "rejects oversized session context before inference",
+  async ({ notWantedMeals }) => {
+    const steer = "quick meal";
+    const response = await app.handle(post({ steer, notWantedMeals }));
+    expect(response.status).toBe(422);
+    expect(composeDayPlanMock).not.toHaveBeenCalled();
+  },
+);
+it("preserves the entire bounded rejection history", async () => {
+  const steer = "quick meal";
+  const notWantedMeals = Array.from({ length: 20 }, (_, i) => ({
+    name: `Rejected meal ${i}`,
+    ingredients: Array.from({ length: 12 }, (_, j) => `Ingredient ${j}`),
+  }));
+  const response = await app.handle(post({ steer, notWantedMeals }));
+  expect(response.status).toBe(200);
+  expect(composeDayPlanMock.mock.calls[0][0].notWantedMeals).toEqual(
+    notWantedMeals,
+  );
 });

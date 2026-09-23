@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { router } from "expo-router";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
@@ -12,6 +12,9 @@ import {
 import { localDayISO } from "@/shared/utils";
 import {
   computePlanAdherence,
+  addNotWantedMeals,
+  MEAL_SEARCH_FULL_MESSAGE,
+  type NotWantedMeal,
   planAcceptMealInputFromGenerated,
   type PlanMeal,
 } from "@/domain/models/mealprint";
@@ -78,6 +81,8 @@ export function PlanTodayContainer() {
   const swap = usePlanSwap();
   const replace = useReplacePlanMeal();
 
+  const notWantedRef = useRef<NotWantedMeal[]>([]);
+  const generatedMealsRef = useRef(new Map<string, NotWantedMeal>());
   const [loggingMealId, setLoggingMealId] = useState<string | null>(null);
   const [swappingMealId, setSwappingMealId] = useState<string | null>(null);
   const [feedbackId, setFeedbackId] = useState<string | null>(null);
@@ -86,10 +91,12 @@ export function PlanTodayContainer() {
   const [actionFailure, setActionFailure] = useState<string | null>(null);
 
   useEffect(() => {
+    notWantedRef.current = [];
+    generatedMealsRef.current.clear();
     setFeedbackId(null);
     setSwapSteer("");
     setActionFailure(null);
-  }, [activePlan.data?.id]);
+  }, [activePlan.data?.id, userId, today]);
 
   useEffect(() => {
     if (
@@ -137,6 +144,22 @@ export function PlanTodayContainer() {
     (meal: PlanMeal) => {
       const plan = activePlan.data;
       if (!plan || swappingMealId !== null || meal.state === "logged") return;
+      const generated = generatedMealsRef.current.get(meal.id);
+      const rejected =
+        generated?.name === meal.label
+          ? generated
+          : {
+              name: meal.label,
+              ingredients: (meal.items ?? [])
+                .map((item) => storage.getCachedFoodById(item.foodId)?.name)
+                .filter((name): name is string => !!name),
+            };
+      const history = addNotWantedMeals(notWantedRef.current, [rejected]);
+      if (!history) {
+        setActionFailure(MEAL_SEARCH_FULL_MESSAGE);
+        return;
+      }
+      notWantedRef.current = history;
       setActionFailure(null);
       setSwappingMealId(meal.id);
       const held = plan.meals
@@ -151,6 +174,7 @@ export function PlanTodayContainer() {
           { kcal: 0, proteinG: 0, carbsG: 0, fatG: 0 },
         );
       void runSwap({
+        notWantedMeals: history,
         dayTarget: {
           kcal: plan.targetKcal,
           proteinG: plan.targetProteinG,
@@ -163,7 +187,7 @@ export function PlanTodayContainer() {
         steer: swapSteer.trim() || undefined,
       });
     },
-    [activePlan, runSwap, swappingMealId, swapSteer],
+    [activePlan, storage, runSwap, swappingMealId, swapSteer],
   );
 
   const onSwapMeal = useCallback(
@@ -207,12 +231,17 @@ export function PlanTodayContainer() {
     const mealId = swappingMealId;
     if (!plan || !mealId) return;
     if (swap.stage === "ready" && swap.result?.meal) {
+      const generated = {
+        name: swap.result.meal.name,
+        ingredients: swap.result.meal.items.map((item) => item.name),
+      };
       void runReplace(
         plan.id,
         mealId,
         planAcceptMealInputFromGenerated(swap.result.meal),
       ).then((updated) => {
         if (updated) {
+          generatedMealsRef.current.set(mealId, generated);
           activePlan.reload();
           setFeedbackId(null);
         }

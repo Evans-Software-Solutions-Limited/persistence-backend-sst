@@ -1,3 +1,4 @@
+import { notWantedMealsSchema } from "../mealContext";
 import Elysia, { t } from "elysia";
 import {
   getAuthUser,
@@ -27,7 +28,6 @@ import {
   forbiddenPatternAllergenTags,
   hasAllergenConstraint,
   assessAvoidance,
-  assessMealTitleAvoidance,
 } from "../../safety/avoidanceFilter";
 import { isSupportedLocale } from "../../preferences/vocabulary";
 import type { MealprintCandidate } from "../../../../repositories/mealprintCandidateRepository";
@@ -291,7 +291,12 @@ export const nutritionAiPlanGenerateHandler = new Elysia()
             maxSnackKcal: snackKcalCeiling,
             steer,
             candidates: assembly.candidates,
+            dietaryPatterns: preferences.dietaryPatterns,
+            avoidAllergens: preferences.avoidAllergens,
+            avoidFoods: preferences.avoidFoods,
+            notWantedMeals: ctx.body.notWantedMeals ?? [],
             likedFoods: preferences.likedFoods,
+            savedEffortLevel: preferences.effortLevel,
             effortLevel,
             locale,
           },
@@ -307,9 +312,6 @@ export const nutritionAiPlanGenerateHandler = new Elysia()
         );
 
         const verifiedMeals: VerifiedPlanMeal[] = result.meals.map((meal) => {
-          if (!assessMealTitleAvoidance(meal.name, preferences).allowed) {
-            throw new AiUnreadableError("ai_avoidance_violation: meal title");
-          }
           let kcal = 0;
           let proteinG = 0;
           let carbsG = 0;
@@ -473,6 +475,7 @@ export const nutritionAiPlanGenerateHandler = new Elysia()
           ]),
         ),
         steer: t.Optional(t.String({ maxLength: 200 })),
+        notWantedMeals: notWantedMealsSchema,
       }),
     },
   );

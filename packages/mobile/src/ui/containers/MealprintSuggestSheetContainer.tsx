@@ -1,8 +1,14 @@
+import {
+  addNotWantedMeals,
+  MEAL_SEARCH_FULL_MESSAGE,
+  type NotWantedMeal,
+} from "@/domain/models/mealprint";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as Haptics from "expo-haptics";
 import { localDayISO, loggedAtNoonUtc } from "@/shared/utils";
 import { useFuelSheets } from "@/state/fuel-sheets";
 import { useLogEntry } from "@/ui/hooks/useLogEntry";
+import { useAuth } from "@/ui/hooks/useAuth";
 import { useMealSuggest } from "@/ui/hooks/useMealSuggest";
 import { useMealprintGate } from "@/ui/hooks/useMealprintGate";
 import { useMealprintPreferences } from "@/ui/hooks/useMealprintPreferences";
@@ -72,6 +78,10 @@ export function MealprintSuggestSheetContainer() {
   const slotFromStore = useFuelSheets((s) => s.slot);
   const visible = sheet === "mealprintSuggest";
 
+  const { session } = useAuth();
+  const userId = session?.userId ?? null;
+  const notWantedRef = useRef<NotWantedMeal[]>([]);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const online = useOnlineStatus();
   const gate = useMealprintGate();
   // Gated on `visible` — see the docstring. Read for the dietary patterns, which
@@ -122,6 +132,8 @@ export function MealprintSuggestSheetContainer() {
     // Reset on OPEN rather than on close: the close animation is still running
     // when `visible` flips false, and blanking the body mid-slide-down is visible.
     clearDismissTimer();
+    notWantedRef.current = [];
+    setSearchError(null);
     reset();
     setOccasion("on_plan");
     setShape("either");
@@ -130,7 +142,7 @@ export function MealprintSuggestSheetContainer() {
     setConfirming(false);
     setAdded(false);
     setConfirmError(false);
-  }, [visible, reset, clearDismissTimer]);
+  }, [visible, activeDate, userId, reset, clearDismissTimer]);
 
   const { run, retry } = suggest;
   const onGenerate = useCallback(() => {
@@ -151,20 +163,49 @@ export function MealprintSuggestSheetContainer() {
       gate.onUpgrade();
       return;
     }
+    if (suggest.stage === "generating") return;
+    const history = addNotWantedMeals(
+      notWantedRef.current,
+      (suggest.result?.suggestions ?? []).map((meal) => ({
+        name: meal.name,
+        ingredients: meal.items.map((item) => item.name),
+      })),
+    );
+    if (!history) {
+      setSearchError(MEAL_SEARCH_FULL_MESSAGE);
+      return;
+    }
+    notWantedRef.current = history;
+    setSearchError(null);
     setDraft(null);
     void run({
+      notWantedMeals: history,
       shape,
       date: activeDate,
       steer: steer.trim() === "" ? undefined : steer.trim(),
       occasion,
     });
-  }, [online, gate, run, shape, activeDate, steer, occasion]);
+  }, [
+    online,
+    gate,
+    run,
+    shape,
+    activeDate,
+    steer,
+    occasion,
+    suggest.stage,
+    suggest.result,
+  ]);
 
   const onRetry = useCallback(() => {
     if (!online) return;
+    if (suggest.stage === "ready") {
+      onGenerate();
+      return;
+    }
     setDraft(null);
     void retry();
-  }, [online, retry]);
+  }, [online, retry, suggest.stage, onGenerate]);
 
   // Memoised so the `??` fallback does not mint a fresh empty array each render
   // and re-identify `onSelectSuggestion` (and through it the presenter) every time.
@@ -282,19 +323,20 @@ export function MealprintSuggestSheetContainer() {
 
   // ⚠ `confirmError` outranks `added`: a part-way failure must never render the
   // success stage, whose 900 ms timer would then dismiss the sheet and hide it.
-  const stage: MealprintSuggestStage = confirmError
-    ? "error"
-    : added
-      ? "added"
-      : draft !== null
-        ? "draft"
-        : suggest.stage === "generating"
-          ? "generating"
-          : suggest.stage === "error"
-            ? "error"
-            : suggest.stage === "ready"
-              ? "results"
-              : "setup";
+  const stage: MealprintSuggestStage =
+    confirmError || searchError
+      ? "error"
+      : added
+        ? "added"
+        : draft !== null
+          ? "draft"
+          : suggest.stage === "generating"
+            ? "generating"
+            : suggest.stage === "error"
+              ? "error"
+              : suggest.stage === "ready"
+                ? "results"
+                : "setup";
 
   return (
     <MealprintSuggestSheetPresenter
@@ -359,12 +401,14 @@ export function MealprintSuggestSheetContainer() {
       errorMessage={
         confirmError
           ? "Some items may not have been added. Close this and check your meal log before trying again."
-          : (suggest.failure?.message ?? null)
+          : (searchError ?? suggest.failure?.message ?? null)
       }
       // ⚠ Deliberately NOT retryable on a confirm failure: the loop logs one item
       // at a time, so a retry re-logs everything that already landed.
       errorRetryable={
-        confirmError ? false : (suggest.failure?.retryable ?? false)
+        confirmError || searchError
+          ? false
+          : (suggest.failure?.retryable ?? false)
       }
       // A 402 here means the client verdict and the server disagreed (the entry
       // card gates on the same verdict, so this is rare) — the honest recovery is

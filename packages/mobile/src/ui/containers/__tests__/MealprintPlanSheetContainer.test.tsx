@@ -1029,3 +1029,69 @@ it("clears unfinished draft feedback when the sheet closes", async () => {
   expect(probe().swapFeedback).toBeUndefined();
   expect(api.swapPlanMealCalls).toHaveLength(0);
 });
+
+it("keeps rejected draft meals and retries, but not cancelled feedback", async () => {
+  const { api, probe } = await mountFeedbackDraft();
+  const first = probe().draft!.meals[0]!;
+  const second = probe().draft!.meals[1]!;
+  act(() => probe().onSwapMeal(first.localId));
+  act(() => probe().swapFeedback!.onCancel());
+  act(() => probe().onSwapMeal(second.localId));
+  act(() => probe().swapFeedback!.onGenerate());
+  await waitFor(() => expect(probe().swappingId).toBeNull());
+  expect(api.swapPlanMealCalls[0]!.notWantedMeals).toEqual([
+    { name: "Lunch", ingredients: [] },
+  ]);
+  act(() => probe().swapFeedback!.onGenerate());
+  await waitFor(() => expect(api.swapPlanMealCalls).toHaveLength(2));
+  await waitFor(() => expect(probe().swappingId).toBeNull());
+  expect(api.swapPlanMealCalls[1]!.notWantedMeals).toEqual([
+    { name: "Lunch", ingredients: [] },
+  ]);
+  act(() => probe().onSwapMeal(first.localId));
+  act(() => probe().swapFeedback!.onGenerate());
+  await waitFor(() => expect(api.swapPlanMealCalls).toHaveLength(3));
+  expect(api.swapPlanMealCalls[2]!.notWantedMeals).toEqual([
+    { name: "Lunch", ingredients: [] },
+    { name: "Dinner", ingredients: [] },
+  ]);
+});
+
+it("a second replacement excludes both the original and the previous replacement", async () => {
+  const { api, probe } = await mountFeedbackDraft();
+  const first = probe().draft!.meals[0]!;
+  act(() => probe().onSteerChange("vegetarian dinner"));
+  api.planSwapResult = {
+    meal: { ...first.meal, name: "Tofu curry" },
+    emptyReason: null,
+    labelCheckRequired: true,
+  };
+  act(() => probe().onSwapMeal(first.localId));
+  act(() => probe().swapFeedback!.onGenerate());
+  await waitFor(() =>
+    expect(probe().draft!.meals[0]!.meal.name).toBe("Tofu curry"),
+  );
+  act(() => probe().onSwapMeal(first.localId));
+  act(() => probe().swapFeedback!.onGenerate());
+  await waitFor(() => expect(api.swapPlanMealCalls).toHaveLength(2));
+  expect(api.swapPlanMealCalls[1]!.originalRequest).toBe("vegetarian dinner");
+  expect(api.swapPlanMealCalls[1]!.notWantedMeals).toEqual([
+    { name: "Dinner", ingredients: [] },
+    { name: "Tofu curry", ingredients: [] },
+  ]);
+  await waitFor(() => expect(probe().swappingId).toBeNull());
+});
+
+it("remembers removed draft meals before requesting another swap", async () => {
+  const { api, probe } = await mountFeedbackDraft();
+  const [removed, kept] = probe().draft!.meals;
+  act(() => probe().onRemoveMeal(removed!.localId));
+  act(() => probe().onSwapMeal(kept!.localId));
+  act(() => probe().swapFeedback!.onGenerate());
+  await waitFor(() => expect(api.swapPlanMealCalls).toHaveLength(1));
+  expect(api.swapPlanMealCalls[0]!.notWantedMeals).toEqual([
+    { name: "Dinner", ingredients: [] },
+    { name: "Lunch", ingredients: [] },
+  ]);
+  await waitFor(() => expect(probe().swappingId).toBeNull());
+});

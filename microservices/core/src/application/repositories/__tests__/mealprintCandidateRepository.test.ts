@@ -205,7 +205,7 @@ describe("MealprintCandidateRepository.buildCuratedWhere", () => {
 describe("MealprintCandidateRepository queries", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("orders curated candidates deterministically by protein density", async () => {
+  it("orders curated candidates deterministically across products and metadata groups", async () => {
     // Determinism is a prerequisite for evaluating the model stage above this
     // one: the same request twice must see the same pool. Protein density alone
     // ties on plenty of rows, hence the id tiebreak.
@@ -221,12 +221,12 @@ describe("MealprintCandidateRepository queries", () => {
       requireKnownAllergens: false,
     });
 
-    expect(capture.orderBy).toHaveLength(2);
+    expect(capture.orderBy).toHaveLength(4);
     const first = render(capture.orderBy?.[0]).sql;
-    expect(first).toContain("NULLIF");
-    expect(first).toContain("DESC");
+    expect(first).toContain("ROW_NUMBER");
+    expect(first).toContain("PARTITION BY");
     const second = render(capture.orderBy?.[1]).sql;
-    expect(second).toContain("ASC");
+    expect(second).toContain("untagged:protein");
   });
 
   it("over-fetches relative to the model's cap", async () => {
@@ -710,15 +710,14 @@ describe("MealprintCandidateRepository.resolveByIds", () => {
   });
 });
 
-// Execute the request-ranking SQL in Postgres, including its bound regex, so an
-// escaped word boundary cannot silently leave prawns ahead of requested chicken.
-it("retrieves chicken ahead of 600 higher-protein seafood rows for a chicken request", async () => {
+it("diversifies tagged and untagged catalogue rows before the fetch cap without parsing requests", async () => {
   const { PGlite } = await import("@electric-sql/pglite");
+  const { sql } = await import("drizzle-orm");
   const db = new PGlite();
   try {
-    await db.exec(`CREATE TABLE foods (id integer, name text, protein_g numeric, kcal numeric);
-      INSERT INTO foods SELECT n, 'Grilled prawns', 30, 100 FROM generate_series(1, 600) n;
-      INSERT INTO foods VALUES (601, 'Chicken breast', 20, 150), (602, 'Chickenish', 40, 100);`);
+    await db.exec(`CREATE TABLE foods (id integer,name text,protein_g numeric,carbs_g numeric,fat_g numeric,kcal numeric,category_tags text[]);
+      INSERT INTO foods SELECT n,'Grilled Prawns',30,0,1,130,NULL FROM generate_series(1,650) n;
+      INSERT INTO foods VALUES (651,'Chicken breast',20,0,5,150,NULL), (652,'Rice',3,30,1,140,NULL), (653,'Avocado',2,5,15,170,NULL), (654,'Tofu',10,5,5,105,ARRAY['en:tofu']);`);
     const capture: { orderBy?: unknown[] } = {};
     (getDb as any).mockReturnValue({
       select: vi.fn().mockReturnValue(makeChain(capture)),
@@ -728,48 +727,19 @@ it("retrieves chicken ahead of 600 higher-protein seafood rows for a chicken req
       maxServingKcal: 600,
       forbiddenAllergenTags: [],
       requireKnownAllergens: false,
-      preferredFoodTerms: ["chicken"],
     });
-    const priority = render(capture.orderBy?.[0]);
-    const query = await db.query<{ name: string }>(
-      `SELECT name FROM foods ORDER BY ${priority.sql}, protein_g / kcal DESC, id ASC LIMIT 600`,
-      priority.params,
+    const order = render(sql.join(capture.orderBy as any[], sql`, `));
+    const result = await db.query<{ name: string }>(
+      `SELECT name FROM foods ORDER BY ${order.sql} LIMIT 600`,
+      order.params,
     );
-    expect(query.rows[0].name).toBe("Chicken breast");
-    expect(query.rows).toHaveLength(600);
-  } finally {
-    await db.close();
-  }
-});
-
-it("reserves tofu before the SQL cap for a chicken and tofu request", async () => {
-  const { PGlite } = await import("@electric-sql/pglite");
-  const db = new PGlite();
-  try {
-    await db.exec(`CREATE TABLE foods (id integer, name text, protein_g numeric, kcal numeric);
-      INSERT INTO foods SELECT n, 'Chicken breast', 30, 100 FROM generate_series(1, 600) n;
-      INSERT INTO foods VALUES (601, 'Tofu', 12, 150);`);
-    const capture: { orderBy?: unknown[] } = {};
-    (getDb as any).mockReturnValue({
-      select: vi.fn().mockReturnValue(makeChain(capture)),
-    });
-    await new MealprintCandidateRepository().listCuratedCandidates({
-      locale: "en-GB",
-      maxServingKcal: 600,
-      forbiddenAllergenTags: [],
-      requireKnownAllergens: false,
-      preferredFoodTerms: ["chicken", "tofu"],
-    });
-    const priority = render(capture.orderBy?.[0]);
-    const query = await db.query<{ name: string }>(
-      `SELECT name FROM foods ORDER BY ${priority.sql}, protein_g / kcal DESC, id ASC LIMIT 600`,
-      priority.params,
-    );
-    expect(query.rows.slice(0, 2).map((row) => row.name)).toEqual([
-      "Chicken breast",
-      "Tofu",
-    ]);
-    expect(query.rows).toHaveLength(600);
+    expect(
+      result.rows
+        .slice(0, 5)
+        .map((row) => row.name)
+        .sort(),
+    ).toEqual(["Avocado", "Chicken breast", "Grilled Prawns", "Rice", "Tofu"]);
+    expect(result.rows).toHaveLength(600);
   } finally {
     await db.close();
   }

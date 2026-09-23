@@ -1,4 +1,3 @@
-import { compositionMeetsGuidance, type MealGuidance } from "./mealGuidance";
 /**
  * Mealprint (spec-26 design § 1 stage 3) — VERIFICATION.
  *
@@ -23,7 +22,6 @@ import { compositionMeetsGuidance, type MealGuidance } from "./mealGuidance";
 
 import {
   assessAvoidance,
-  assessMealTitleAvoidance,
   hasPartialEnforcementPattern,
   type AvoidancePreferences,
 } from "../safety/avoidanceFilter";
@@ -57,7 +55,6 @@ export const MIN_USEFUL_REMAINING_KCAL = 100;
 export type VerificationFailure =
   /** An id the model returned is not in the candidate list. */
   | "non_member_candidate"
-  | "guidance_violation"
   /** A resolved item violates an avoidance — the model composed something unsafe. */
   | "avoidance_violation"
   /** The recomputed total exceeds the remaining calories beyond tolerance. */
@@ -134,7 +131,6 @@ export function verifySuggestions(input: {
   preferences: AvoidancePreferences;
   maxMealKcal?: number;
   maxCheatMealKcal?: number;
-  guidance?: MealGuidance;
 }): VerificationResult {
   const byId = new Map(
     input.candidates.map((candidate) => [candidate.id, candidate]),
@@ -157,18 +153,6 @@ export function verifySuggestions(input: {
   );
 
   for (const suggestion of input.suggestions) {
-    const titleVerdict = assessMealTitleAvoidance(
-      suggestion.name,
-      input.preferences,
-    );
-    if (!titleVerdict.allowed) {
-      rejected.push({
-        name: suggestion.name,
-        failure: "avoidance_violation",
-        detail: `${titleVerdict.rule}:${titleVerdict.cause}`,
-      });
-      continue;
-    }
     const items: VerifiedItem[] = [];
     let failure: { failure: VerificationFailure; detail: string } | null = null;
 
@@ -236,17 +220,6 @@ export function verifySuggestions(input: {
       continue;
     }
 
-    if (
-      input.guidance &&
-      !compositionMeetsGuidance(suggestion.items, byId, input.guidance)
-    ) {
-      rejected.push({
-        name: suggestion.name,
-        failure: "guidance_violation",
-        detail: "requested ingredients not met",
-      });
-      continue;
-    }
     const portionFailure = assessCompositionPortion({
       items: suggestion.items,
       candidates: byId,

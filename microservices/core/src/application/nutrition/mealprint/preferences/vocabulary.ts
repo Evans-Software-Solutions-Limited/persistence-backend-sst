@@ -705,34 +705,6 @@ export const NAME_AXES: Readonly<Record<string, NameAxis>> = {
   },
 } as const;
 
-/** Only explicit category dislikes expand; a species dislike stays specific. */
-const SEAFOOD_DISLIKE_RULE = {
-  allergenTags: [
-    ...ALLERGEN_OFF_TAGS.fish,
-    ...ALLERGEN_OFF_TAGS.crustaceans,
-    ...ALLERGEN_OFF_TAGS.molluscs,
-  ],
-  nameAxes: [NAME_AXES.seafood, NAME_AXES.shellfish],
-};
-
-export const DISLIKE_CATEGORY_RULES: Readonly<
-  Record<
-    string,
-    { allergenTags: readonly string[]; nameAxes: readonly NameAxis[] }
-  >
-> = {
-  // A broad "fish" dislike includes shellfish; explicit species stay literal.
-  fish: SEAFOOD_DISLIKE_RULE,
-  seafood: SEAFOOD_DISLIKE_RULE,
-  shellfish: {
-    allergenTags: [
-      ...ALLERGEN_OFF_TAGS.crustaceans,
-      ...ALLERGEN_OFF_TAGS.molluscs,
-    ],
-    nameAxes: [NAME_AXES.shellfish],
-  },
-};
-
 // ── Pattern rules ───────────────────────────────────────────────────────────
 
 export interface DietaryPatternRule {

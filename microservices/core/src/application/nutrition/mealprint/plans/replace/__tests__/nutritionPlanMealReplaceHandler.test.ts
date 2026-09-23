@@ -419,3 +419,16 @@ describe("POST /nutrition/plans/:id/meals/:mealId/replace", () => {
     expect((await body(res)).error).toBe("meal_not_found");
   });
 });
+
+it("keeps replacement acceptance consistent with AI interpretation of scoped dislikes", async () => {
+  prefMocks.get.mockResolvedValue({
+    ...PREFS,
+    avoidFoods: ["all fish except tinned tuna for sandwiches"],
+  });
+  candidateMocks.resolveByIds.mockResolvedValue([
+    food(FOOD_A, { name: "Tinned Tuna", allergenTags: ["en:fish"] }),
+  ]);
+  const response = await app.handle(post(replaceBody()));
+  expect(response.status).toBe(200);
+  expect(planMocks.replaceMeal).toHaveBeenCalledOnce();
+});

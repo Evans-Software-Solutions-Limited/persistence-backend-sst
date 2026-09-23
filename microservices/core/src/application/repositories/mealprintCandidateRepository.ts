@@ -93,8 +93,6 @@ export interface CuratedQueryInput {
   /** When true, rows with UNKNOWN (`NULL`) allergen tags are excluded in SQL. */
   requireKnownAllergens: boolean;
   limit?: number;
-  /** Culinary terms from the bounded guidance vocabulary; ranking only. */
-  preferredFoodTerms?: string[];
 }
 
 /**
@@ -194,49 +192,27 @@ export class MealprintCandidateRepository {
   }
 
   /**
-   * Curated candidates, ordered by PROTEIN DENSITY descending.
-   *
-   * ⚠ This ordering is a product judgement and should be read as one. The
-   * catalogue is ~144k rows and cannot be fetched whole, so something has to
-   * choose which 600 the model sees. Protein-per-kcal is that choice because the
-   * requirement this feature exists for is stated in those terms — "hitting
-   * protein with the calories left after dinner is a puzzle" (requirements §
-   * Overview) — and because in a lifting app protein is nearly always the binding
-   * macro. It is NOT claimed to be optimal for every run: a user who asked for
-   * "something sweet" is served by the model's selection over this pool, not by
-   * the retrieval. If suggestion quality disappoints, this ordering is the first
-   * thing to measure, and it should be measured rather than argued about.
-   *
-   * Ordering is deterministic (protein density, then id) so the same request
-   * twice sees the same pool — a prerequisite for any eval of the stage above it.
+   * Bounded, diversified catalogue sample. Round-robin products and metadata
+   * groups rather than filling the pool with the highest protein-density foods.
+   * This is request-independent; the composer interprets culinary preferences.
    */
   async listCuratedCandidates(
     input: CuratedQueryInput,
   ): Promise<MealprintCandidate[]> {
     const db = getDb();
-    const preferredTerms = [
-      ...new Set(
-        (input.preferredFoodTerms ?? [])
-          .map((term) => term.replace(/[^a-z ]/g, ""))
-          .filter(Boolean),
-      ),
-    ];
-    // Reserve a representative for each requested term before the SQL cap.
-    // Otherwise 600 chicken rows can crowd tofu out of "chicken and tofu".
-    const preferredCategory = sql`CASE ${sql.join(
-      preferredTerms.map(
-        (term) => sql`WHEN ${foods.name} ~* ${`\\m${term}\\M`} THEN ${term}`,
-      ),
-      sql` `,
-    )} ELSE NULL END`;
-    const priority = preferredTerms.length
-      ? sql`CASE
-      WHEN ${preferredCategory} IS NULL THEN 2
-      WHEN ROW_NUMBER() OVER (
-        PARTITION BY ${preferredCategory}
-        ORDER BY ${foods.proteinG} / NULLIF(${foods.kcal}, 0) DESC, ${foods.id} ASC
-      ) = 1 THEN 0 ELSE 1 END`
-      : null;
+    // Round-robin existing catalogue category sets. Untagged foods use their
+    // dominant macro energy, so missing metadata does not restore a seafood-
+    // heavy protein-density pool. Product-name hashing is only stable sampling,
+    // never interpretation of the user's request or ingredient semantics.
+    const productName = sql`LOWER(${foods.name})`;
+    const group = sql`COALESCE(NULLIF((SELECT string_agg(tag, '|' ORDER BY tag)
+      FROM unnest(${foods.categoryTags}) AS tag), ''),
+      CASE WHEN ${foods.proteinG} * 4 >= GREATEST(${foods.carbsG} * 4, ${foods.fatG} * 9)
+        THEN 'untagged:protein'
+        WHEN ${foods.carbsG} * 4 >= ${foods.fatG} * 9 THEN 'untagged:carbs'
+        ELSE 'untagged:fat' END)`;
+    const productRound = sql`ROW_NUMBER() OVER (PARTITION BY ${productName} ORDER BY ${foods.id} ASC)`;
+    const categoryRound = sql`ROW_NUMBER() OVER (PARTITION BY ${group} ORDER BY md5(${productName}), ${foods.id} ASC)`;
     const rows = await db
       .select({
         id: foods.id,
@@ -255,8 +231,9 @@ export class MealprintCandidateRepository {
       .from(foods)
       .where(this.buildCuratedWhere(input))
       .orderBy(
-        ...(priority ? [priority] : []),
-        sql`${foods.proteinG} / NULLIF(${foods.kcal}, 0) DESC`,
+        productRound,
+        categoryRound,
+        sql`md5(${productName})`,
         sql`${foods.id} ASC`,
       )
       .limit(input.limit ?? CURATED_FETCH_LIMIT);

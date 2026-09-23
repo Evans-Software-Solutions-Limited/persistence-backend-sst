@@ -126,12 +126,51 @@ export type PlanTarget = {
   readonly fatG: number;
 };
 
+/** Rejected only within the current search; never persisted as a food dislike. */
+export type NotWantedMeal = {
+  readonly name: string;
+  readonly ingredients: readonly string[];
+};
+
+export const MAX_NOT_WANTED_MEALS = 20;
+export const MEAL_SEARCH_FULL_MESSAGE =
+  "This search has reached its replacement limit. Close it and start a new search.";
+
+/** Keep every rejection; stop at the request limit instead of forgetting older meals. */
+export function addNotWantedMeals(
+  previous: readonly NotWantedMeal[],
+  meals: readonly NotWantedMeal[],
+): NotWantedMeal[] | null {
+  const result = [...previous];
+  const key = (meal: NotWantedMeal) =>
+    JSON.stringify([
+      meal.name.toLowerCase(),
+      [...meal.ingredients].map((name) => name.toLowerCase()).sort(),
+    ]);
+  const seen = new Set(result.map(key));
+  for (const meal of meals) {
+    const bounded = {
+      name: meal.name.trim().slice(0, 120),
+      ingredients: meal.ingredients
+        .slice(0, 12)
+        .map((name) => name.trim().slice(0, 120)),
+    };
+    const identity = key(bounded);
+    if (seen.has(identity)) continue;
+    if (result.length === MAX_NOT_WANTED_MEALS) return null;
+    seen.add(identity);
+    result.push(bounded);
+  }
+  return result;
+}
+
 /** `POST /nutrition/ai/plan-generate` body — AC 4.1/4.2. */
 export type PlanGenerateInput = {
   readonly planDate: string;
   readonly mealsPerDay?: number;
   readonly effortLevel?: EffortLevel;
   readonly steer?: string;
+  readonly notWantedMeals?: readonly NotWantedMeal[];
 };
 
 export type PlanGeneratedItem = {
@@ -233,6 +272,8 @@ export type PlanSwapInput = {
   readonly logSlot: LogSlot;
   readonly mealsPerDay: number;
   readonly steer?: string;
+  readonly notWantedMeals?: readonly NotWantedMeal[];
+  readonly originalRequest?: string;
 };
 
 export type PlanSwapMeal = {
@@ -942,6 +983,7 @@ export type MealSuggestInput = {
   readonly date: string;
   readonly steer?: string;
   readonly occasion?: SuggestOccasion;
+  readonly notWantedMeals?: readonly NotWantedMeal[];
 };
 
 /**

@@ -1,8 +1,3 @@
-import {
-  matchesRequiredGuidance,
-  permitsGuidance,
-  type MealGuidance,
-} from "../ai/mealGuidance";
 /**
  * Mealprint (spec-26 design § 1 stage 1) — the pure half of candidate assembly.
  *
@@ -57,8 +52,6 @@ function emptyRuleCounts(): Record<AvoidanceRule, number> {
     allergen_uninterpretable: 0,
     pattern_tag: 0,
     pattern_name: 0,
-    dislike_name: 0,
-    dislike_tag: 0,
   };
 }
 
@@ -89,42 +82,13 @@ export function dedupeKey(candidate: MealprintCandidate): string {
   ].join("|");
 }
 
-/**
- * Rank a filtered pool. Own rows and liked foods first, then the repository's
- * protein-density order (which arrives already applied, so this is a STABLE
- * partition rather than a re-sort).
- *
- * ⚠ Likes are a BIAS, never a constraint (locked decision 1 / design § 1
- * stage 1). Promoting them cannot empty a pool the way filtering on them would,
- * and a user who likes three things still sees the rest of the pool.
- *
- * ⚠ The `isOwn` tier is NOT equally harmless, because own rows can fill the cap
- * outright — see {@link capWithCuratedFloor}, which is what stops this ranking
- * from becoming a partition.
- */
+/** Preserve diversified catalogue order while preferring the user's own foods. */
 export function rankCandidates(
   candidates: readonly MealprintCandidate[],
-  likedFoods: readonly string[],
 ): MealprintCandidate[] {
-  const likedTokens = new Set(
-    likedFoods.flatMap((food) => tokeniseFoodName(food)),
-  );
-
-  const tier = (candidate: MealprintCandidate): number => {
-    const nameTokens = tokeniseFoodName(candidate.name);
-    const isLiked =
-      likedTokens.size > 0 &&
-      nameTokens.some((token) => likedTokens.has(token));
-    if (candidate.isOwn && isLiked) return 0;
-    if (isLiked) return 1;
-    if (candidate.isOwn) return 2;
-    return 3;
-  };
-
-  // `Array.prototype.sort` is stable in every engine we target, so equal tiers
-  // keep the repository's deterministic ordering. That determinism is a
-  // prerequisite for evaluating the stage above this one.
-  return [...candidates].sort((a, b) => tier(a) - tier(b));
+  // Saved likes are sent to the model verbatim. Preserve diversified catalogue
+  // order inside each ownership tier rather than reinterpreting user prose.
+  return [...candidates].sort((a, b) => Number(b.isOwn) - Number(a.isOwn));
 }
 
 /**
@@ -202,7 +166,6 @@ export function assembleCandidates(
   fetched: readonly MealprintCandidate[],
   preferences: AvoidancePreferences & { likedFoods?: readonly string[] },
   cap: number = CANDIDATE_CAP,
-  guidance?: MealGuidance,
 ): AssemblyResult {
   const { kept, rejected } = partitionByAvoidance(fetched, preferences);
 
@@ -213,7 +176,6 @@ export function assembleCandidates(
   const unique: MealprintCandidate[] = [];
   let deduped = 0;
   for (const candidate of kept) {
-    if (guidance && !permitsGuidance(candidate, guidance)) continue;
     const key = dedupeKey(candidate);
     if (seen.has(key)) {
       deduped += 1;
@@ -223,28 +185,7 @@ export function assembleCandidates(
     unique.push(candidate);
   }
 
-  const ranked = rankCandidates(unique, preferences.likedFoods ?? []);
-  // Keep requested proteins ahead of own/liked rows before the bounded cap.
-  if (guidance) {
-    // Reserve an example of EACH requested group before filling with variants;
-    // hundreds of chicken rows must not crowd out tofu in "chicken and tofu".
-    const representatives = new Set(
-      guidance.required.map((group) =>
-        ranked.find((candidate) =>
-          matchesRequiredGuidance(candidate, {
-            ...guidance,
-            required: [group],
-          }),
-        ),
-      ),
-    );
-    ranked.sort(
-      (a, b) =>
-        Number(representatives.has(b)) - Number(representatives.has(a)) ||
-        Number(matchesRequiredGuidance(b, guidance)) -
-          Number(matchesRequiredGuidance(a, guidance)),
-    );
-  }
+  const ranked = rankCandidates(unique);
   const capped = capWithCuratedFloor(ranked, cap);
 
   return {

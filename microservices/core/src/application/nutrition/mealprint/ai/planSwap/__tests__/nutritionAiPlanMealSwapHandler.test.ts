@@ -288,31 +288,12 @@ describe("POST /nutrition/ai/plan-meal-swap", () => {
   });
 });
 
-it("rejects a fish title even when the model selected allowed ingredients", async () => {
-  prefMocks.get.mockResolvedValue({ ...PREFS, avoidFoods: ["fish"] });
-  composeDayPlanMock.mockResolvedValue({
-    meals: [
-      {
-        name: "Sea bass dinner",
-        reason: "r",
-        logSlot: "dinner",
-        items: [{ candidateId: "c1", servings: 1 }],
-      },
-    ],
-    usage: { modelId: "m", latencyMs: 1, inputTokens: 1, outputTokens: 1 },
-  });
-  const res = await app.handle(post());
-  expect(res.status).toBe(422);
-  expect(JSON.stringify(await body(res))).not.toContain("Sea bass dinner");
-});
-
-it("rejects a swap item if the post-model avoidance check fails", async () => {
-  prefMocks.get.mockResolvedValue({ ...PREFS, avoidFoods: ["fish"] });
+it("rejects a swap item when an allergen tag changes after assembly", async () => {
+  prefMocks.get.mockResolvedValue({ ...PREFS, avoidAllergens: ["fish"] });
   const row = candidate("c1");
   candidateMocks.listCuratedCandidates.mockResolvedValue([row]);
   composeDayPlanMock.mockImplementationOnce(async () => {
-    // Simulate pool/post-model divergence without bypassing the actual filter.
-    row.name = "Sea Bass Fillet";
+    row.allergenTags = ["en:fish"];
     return {
       meals: [
         {
@@ -325,30 +306,98 @@ it("rejects a swap item if the post-model avoidance check fails", async () => {
       usage: { modelId: "m", latencyMs: 1, inputTokens: 1, outputTokens: 1 },
     };
   });
-  const res = await app.handle(post());
-  expect(res.status).toBe(422);
-  expect(JSON.stringify(await body(res))).not.toContain("Sea Bass Fillet");
+  expect((await app.handle(post())).status).toBe(422);
 });
 
-it("rejects a seafood swap when guidance explicitly requires chicken", async () => {
-  candidateMocks.listCuratedCandidates.mockResolvedValue([
-    candidate("c1", { name: "Prawns" }),
-    candidate("chicken", { name: "Chicken breast" }),
-  ]);
-  const response = await app.handle(
-    post({ steer: "something quick and chicken based" }),
-  );
-  expect(response.status).toBe(422);
-  expect(await body(response)).toEqual({ error: "ai_unreadable" });
-});
-
-it("does not spend a swap inference on unavailable requested chicken", async () => {
-  candidateMocks.listCuratedCandidates.mockResolvedValue([
-    candidate("c1", { name: "Prawns" }),
-  ]);
-  const response = await app.handle(post({ steer: "chicken based" }));
+it.each(["chicken free-range", "chicken free of hormones"])(
+  "forwards full saved context and request verbatim: %s",
+  async (steer) => {
+    const preferences = {
+      ...PREFS,
+      dietaryPatterns: ["halal"],
+      avoidAllergens: ["peanuts"],
+      avoidFoods: [
+        "all fish except tinned tuna for sandwiches",
+        "chicken free-range",
+        "chicken free of hormones",
+      ],
+      likedFoods: ["yogurt with berries"],
+    };
+    prefMocks.get.mockResolvedValue(preferences);
+    const notWantedMeals = [
+      {
+        name: "Grilled prawns and mushrooms",
+        ingredients: ["Prawns", "Mushrooms"],
+      },
+    ];
+    const response = await app.handle(post({ steer, notWantedMeals }));
+    expect(response.status).toBe(200);
+    expect(composeDayPlanMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dietaryPatterns: preferences.dietaryPatterns,
+        avoidAllergens: preferences.avoidAllergens,
+        avoidFoods: preferences.avoidFoods,
+        likedFoods: preferences.likedFoods,
+        effortLevel: preferences.effortLevel,
+        steer,
+        notWantedMeals,
+      }),
+      expect.anything(),
+    );
+  },
+);
+it.each(
+  [
+    Array.from({ length: 21 }, () => ({
+      name: "Rejected meal",
+      ingredients: [],
+    })),
+    [{ name: "x".repeat(121), ingredients: [] }],
+    [{ name: "Meal", ingredients: Array(13).fill("food") }],
+    [{ name: "Meal", ingredients: ["x".repeat(121)] }],
+  ].map((notWantedMeals) => ({ notWantedMeals })),
+)(
+  "rejects oversized session context before inference",
+  async ({ notWantedMeals }) => {
+    const steer = "quick meal";
+    const response = await app.handle(post({ steer, notWantedMeals }));
+    expect(response.status).toBe(422);
+    expect(composeDayPlanMock).not.toHaveBeenCalled();
+  },
+);
+it("preserves the entire bounded rejection history", async () => {
+  const steer = "quick meal";
+  const notWantedMeals = Array.from({ length: 20 }, (_, i) => ({
+    name: `Rejected meal ${i}`,
+    ingredients: Array.from({ length: 12 }, (_, j) => `Ingredient ${j}`),
+  }));
+  const response = await app.handle(post({ steer, notWantedMeals }));
   expect(response.status).toBe(200);
-  expect((await body(response)).data.emptyReason).toBe("no_candidates");
+  expect(composeDayPlanMock.mock.calls[0][0].notWantedMeals).toEqual(
+    notWantedMeals,
+  );
+});
+
+it("retains the original day request alongside swap feedback", async () => {
+  const response = await app.handle(
+    post({
+      originalRequest: "Eggs for breakfast and chicken free-range for dinner",
+      steer: "Make it quick",
+      notWantedMeals: [
+        { name: "Chicken stew", ingredients: ["Chicken", "Potatoes"] },
+      ],
+    }),
+  );
+  expect(response.status).toBe(200);
+  expect(composeDayPlanMock.mock.calls[0][0]).toMatchObject({
+    originalRequest: "Eggs for breakfast and chicken free-range for dinner",
+    steer: "Make it quick",
+    targetLogSlot: "dinner",
+  });
+});
+it("bounds the original request before inference", async () => {
+  expect(
+    (await app.handle(post({ originalRequest: "x".repeat(201) }))).status,
+  ).toBe(422);
   expect(composeDayPlanMock).not.toHaveBeenCalled();
-  expect(usageMocks.record).not.toHaveBeenCalled();
 });

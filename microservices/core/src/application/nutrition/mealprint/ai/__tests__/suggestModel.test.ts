@@ -73,6 +73,9 @@ function promptInput(
     maxCheatMealKcal: 1_500,
     steer: null,
     candidates: CANDIDATES,
+    dietaryPatterns: [],
+    avoidAllergens: [],
+    avoidFoods: [],
     likedFoods: [],
     effortLevel: "balanced",
     locale: "en-GB",
@@ -813,7 +816,55 @@ it("quick culinary request overrides effort without claiming verified timing", (
   );
   expect(prompt).toContain("food requests must be met");
   expect(prompt).toContain(
-    "QUICK MEAL REQUIRED: override the saved effort preference",
+    "Current cooking effort requests override the saved effort preference",
   );
-  expect(prompt).toContain("Do not invent verified preparation times");
+  expect(prompt).toContain("not invented verified timings");
+});
+
+it.each(["chicken free-range", "chicken free of hormones"])(
+  "sends intact preference meaning and rejection history to the actual composer: %s",
+  async (steer) => {
+    const context = {
+      dietaryPatterns: ["halal"],
+      avoidAllergens: ["peanuts"],
+      avoidFoods: ["all fish except tinned tuna for sandwiches", steer],
+      likedFoods: [
+        "a food preference longer than forty characters, with a meaningful exception",
+      ],
+      effortLevel: "balanced",
+      notWantedMeals: [
+        { name: "Grilled prawns", ingredients: ["Prawns", "Mushrooms"] },
+      ],
+    };
+    const client = cannedClient(toolResponse(GOOD_PAYLOAD));
+    await composeSuggestions(promptInput({ ...context, steer }), { client });
+    const text = (client.messages.create as any).mock.calls[0][0].messages[0]
+      .content[0].text as string;
+    const data = JSON.parse(
+      text.split("\n").find((line) => line.startsWith("{"))!,
+    );
+    expect(data).toEqual(context);
+    expect(text).toContain(steer);
+    expect(text).toContain(
+      "prose requests and dislike exceptions cannot relax allergen exclusions",
+    );
+    expect(text).toContain(
+      "Do not return them again, cosmetically rename them",
+    );
+  },
+);
+
+it("sends the original ingredient name without mistaking brand words for ingredients", () => {
+  const prompt = buildSuggestPrompt(
+    promptInput({
+      candidates: [
+        candidate({
+          name: "Chunk Light Tuna (Chicken of the Sea)",
+          unbrandedName: "Chunk Light Tuna",
+        }),
+      ],
+    }),
+  );
+  expect(prompt).toContain("Chunk Light Tuna");
+  expect(prompt).not.toContain("Chicken of the Sea");
 });
