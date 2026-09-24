@@ -582,3 +582,23 @@ describe("verifySuggestions — carries cheat/isOrder/tag onto the verified sugg
     });
   });
 });
+
+it("does not reinterpret scoped dislikes when recomputing a model composition", () => {
+  const result = verifySuggestions({
+    suggestions: [
+      suggestion(
+        [{ candidateId: "tuna", servings: 1 }],
+        "Tinned tuna sandwich",
+      ),
+    ],
+    candidates: [
+      candidate({ id: "tuna", name: "Tinned Tuna", allergenTags: ["en:fish"] }),
+    ],
+    remaining: REMAINING,
+    preferences: {
+      ...NO_PREFS,
+      avoidFoods: ["all fish except tinned tuna for sandwiches"],
+    },
+  });
+  expect(result.suggestions).toHaveLength(1);
+});

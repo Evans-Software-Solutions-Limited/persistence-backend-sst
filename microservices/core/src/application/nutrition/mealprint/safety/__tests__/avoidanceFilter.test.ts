@@ -32,7 +32,6 @@ import {
   AVOID_ALLERGENS,
   DIETARY_PATTERNS,
   DIETARY_PATTERN_RULES,
-  HARD_TO_FIND_PREFIX,
   isTokenNegatedInName,
   normaliseFoodText,
   singularise,
@@ -719,19 +718,6 @@ describe("assessAvoidance — known false-positive traps", () => {
     expect(isTokenNegatedInName("No Added Sugar Milk", "milk")).toBe(false);
   });
 
-  it("applies a hardtofind: exclusion by its food name", () => {
-    // STORY-007's affordance was a PERMANENT NO-OP: the repository preserves the
-    // prefix, so the dislike tokenised to ["hardtofind","mushroom"] and the
-    // every-token-present rule looked for the literal word "hardtofind" in the
-    // food name. The entry stored, round-tripped, and filtered nothing.
-    const v = assessAvoidance(subject({ name: "Mushroom Soup" }), {
-      ...NO_PREFS,
-      avoidFoods: [`${HARD_TO_FIND_PREFIX}mushrooms`],
-    });
-    expect(v.allowed).toBe(false);
-    if (!v.allowed) expect(v.rule).toBe("dislike_name");
-  });
-
   it("a negator AFTER the token does not clear it", () => {
     // "Roast Chicken, no bones" is still chicken.
     expect(
@@ -763,81 +749,33 @@ describe("assessAvoidance — known false-positive traps", () => {
 
 // ── Dislikes ────────────────────────────────────────────────────────────────
 
-describe("assessAvoidance — dislikes", () => {
-  it("matches a single-word dislike regardless of case and plurality", () => {
-    for (const name of ["Mushroom Soup", "MUSHROOMS", "mushrooms, dried"]) {
-      const v = assessAvoidance(subject({ name }), {
-        ...NO_PREFS,
-        avoidFoods: ["mushroom"],
-      });
-      expect(v.allowed, name).toBe(false);
-    }
-  });
-
-  it("matches a plural dislike against a singular name", () => {
+describe("free-text dislikes are AI context, not safety rules", () => {
+  it.each([
+    "fish",
+    "all fish except tinned tuna for sandwiches",
+    "chicken free-range",
+    "chicken free of hormones",
+  ])("does not reinterpret %s in the deterministic safety layer", (dislike) => {
     expect(
-      assessAvoidance(subject({ name: "Green Olive" }), {
-        ...NO_PREFS,
-        avoidFoods: ["olives"],
-      }).allowed,
-    ).toBe(false);
-  });
-
-  it("strips accents on both sides", () => {
-    expect(
-      assessAvoidance(subject({ name: "Jalapeño Poppers" }), {
-        ...NO_PREFS,
-        avoidFoods: ["jalapeno"],
-      }).allowed,
-    ).toBe(false);
-    expect(
-      assessAvoidance(subject({ name: "Jalapeno Poppers" }), {
-        ...NO_PREFS,
-        avoidFoods: ["jalapeño"],
-      }).allowed,
-    ).toBe(false);
-  });
-
-  it("requires EVERY token of a multi-word dislike", () => {
-    const prefs = { ...NO_PREFS, avoidFoods: ["chicken thigh"] };
-    expect(
-      assessAvoidance(subject({ name: "Chicken Thighs, skin on" }), prefs)
-        .allowed,
-    ).toBe(false);
-    // Not every chicken product — only the disliked cut.
-    expect(
-      assessAvoidance(subject({ name: "Chicken Breast" }), prefs).allowed,
+      assessAvoidance(
+        subject({ name: "Chicken and tuna", allergenTags: ["en:fish"] }),
+        { ...NO_PREFS, avoidFoods: [dislike] },
+      ).allowed,
     ).toBe(true);
   });
-
-  it("ignores a blank or punctuation-only dislike rather than excluding everything", () => {
-    // A dislike that tokenises to nothing would make `every()` vacuously true
-    // and reject the entire catalogue.
-    for (const junk of ["", "   ", "---", "!!!"]) {
-      expect(
-        assessAvoidance(subject({ name: "Plain Rice" }), {
-          ...NO_PREFS,
-          avoidFoods: [junk],
-        }).allowed,
-        JSON.stringify(junk),
-      ).toBe(true);
-    }
-  });
-
-  it("honours a hardtofind: prefixed exclusion by its food token", () => {
-    // STORY-007 appends with a prefix kept out of UI copy. The prefix tokenises
-    // alongside the name, so the stored value still has to match — assert the
-    // shape the repository writes actually works.
+  it("still rejects allergens even when dislike prose permits an exception", () => {
     expect(
-      assessAvoidance(subject({ name: "Liquid Egg Whites" }), {
-        ...NO_PREFS,
-        avoidFoods: ["liquid egg whites"],
-      }).allowed,
+      assessAvoidance(
+        subject({ name: "Tinned Tuna Sandwich", allergenTags: ["en:fish"] }),
+        {
+          ...NO_PREFS,
+          avoidAllergens: ["fish"],
+          avoidFoods: ["all fish except tinned tuna for sandwiches"],
+        },
+      ).allowed,
     ).toBe(false);
   });
 });
-
-// ── Partition + helpers ─────────────────────────────────────────────────────
 
 describe("partitionByAvoidance", () => {
   it("returns rejections with their reasons rather than dropping them", () => {
@@ -852,10 +790,9 @@ describe("partitionByAvoidance", () => {
       avoidFoods: ["mushroom"],
     });
 
-    expect(kept.map((r) => r.id)).toEqual(["a"]);
+    expect(kept.map((r) => r.id)).toEqual(["a", "c"]);
     expect(rejected.map((r) => [r.subject.id, r.verdict.rule])).toEqual([
       ["b", "allergen_tag"],
-      ["c", "dislike_name"],
     ]);
   });
 

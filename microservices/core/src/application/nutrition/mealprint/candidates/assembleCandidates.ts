@@ -52,7 +52,6 @@ function emptyRuleCounts(): Record<AvoidanceRule, number> {
     allergen_uninterpretable: 0,
     pattern_tag: 0,
     pattern_name: 0,
-    dislike_name: 0,
   };
 }
 
@@ -83,42 +82,13 @@ export function dedupeKey(candidate: MealprintCandidate): string {
   ].join("|");
 }
 
-/**
- * Rank a filtered pool. Own rows and liked foods first, then the repository's
- * protein-density order (which arrives already applied, so this is a STABLE
- * partition rather than a re-sort).
- *
- * ⚠ Likes are a BIAS, never a constraint (locked decision 1 / design § 1
- * stage 1). Promoting them cannot empty a pool the way filtering on them would,
- * and a user who likes three things still sees the rest of the pool.
- *
- * ⚠ The `isOwn` tier is NOT equally harmless, because own rows can fill the cap
- * outright — see {@link capWithCuratedFloor}, which is what stops this ranking
- * from becoming a partition.
- */
+/** Preserve diversified catalogue order while preferring the user's own foods. */
 export function rankCandidates(
   candidates: readonly MealprintCandidate[],
-  likedFoods: readonly string[],
 ): MealprintCandidate[] {
-  const likedTokens = new Set(
-    likedFoods.flatMap((food) => tokeniseFoodName(food)),
-  );
-
-  const tier = (candidate: MealprintCandidate): number => {
-    const nameTokens = tokeniseFoodName(candidate.name);
-    const isLiked =
-      likedTokens.size > 0 &&
-      nameTokens.some((token) => likedTokens.has(token));
-    if (candidate.isOwn && isLiked) return 0;
-    if (isLiked) return 1;
-    if (candidate.isOwn) return 2;
-    return 3;
-  };
-
-  // `Array.prototype.sort` is stable in every engine we target, so equal tiers
-  // keep the repository's deterministic ordering. That determinism is a
-  // prerequisite for evaluating the stage above this one.
-  return [...candidates].sort((a, b) => tier(a) - tier(b));
+  // Saved likes are sent to the model verbatim. Preserve diversified catalogue
+  // order inside each ownership tier rather than reinterpreting user prose.
+  return [...candidates].sort((a, b) => Number(b.isOwn) - Number(a.isOwn));
 }
 
 /**
@@ -215,7 +185,7 @@ export function assembleCandidates(
     unique.push(candidate);
   }
 
-  const ranked = rankCandidates(unique, preferences.likedFoods ?? []);
+  const ranked = rankCandidates(unique);
   const capped = capWithCuratedFloor(ranked, cap);
 
   return {

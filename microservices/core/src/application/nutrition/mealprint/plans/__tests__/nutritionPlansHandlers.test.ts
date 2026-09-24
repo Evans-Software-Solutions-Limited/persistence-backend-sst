@@ -708,3 +708,16 @@ describe("DELETE /nutrition/plans/:id", () => {
     expect((await body(res)).data.deleted).toBe(true);
   });
 });
+
+it("accepts a scoped food preference without reinterpreting the AI's composed meal", async () => {
+  prefMocks.get.mockResolvedValue({
+    ...PREFS,
+    avoidFoods: ["all fish except tinned tuna for sandwiches"],
+  });
+  candidateMocks.resolveByIds.mockResolvedValue([
+    food(FOOD_A, { name: "Tinned Tuna", allergenTags: ["en:fish"] }),
+  ]);
+  const response = await nutritionPlansCreateHandler.handle(post(postBody()));
+  expect(response.status).toBe(200);
+  expect(planMocks.create).toHaveBeenCalledOnce();
+});

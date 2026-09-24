@@ -165,6 +165,8 @@ describe("PlanTodayContainer", () => {
     });
     await waitFor(() => expect(probe().plan).not.toBeNull());
 
+    act(() => probe().onSwapMeal(plan.meals[0]!));
+    act(() => probe().swapFeedback!.onChange("Different ingredients"));
     await act(async () => {
       await probe().onLogMeal(plan.meals[0]!);
     });
@@ -174,6 +176,7 @@ describe("PlanTodayContainer", () => {
         storage.getCachedActiveMealPlan("user-1", today)!.meals[0]!.state,
       ).toBe("logged"),
     );
+    expect(probe().swapFeedback).toBeUndefined();
   });
 
   it("onDeletePlan calls the API, clears the cache and navigates back", async () => {
@@ -278,6 +281,7 @@ describe("PlanTodayContainer", () => {
     await waitFor(() => expect(probe().plan).not.toBeNull());
 
     act(() => probe().onSwapMeal(plan.meals[0]!));
+    act(() => probe().swapFeedback!.onGenerate());
 
     await waitFor(() =>
       expect(
@@ -297,6 +301,7 @@ describe("PlanTodayContainer", () => {
     await waitFor(() => expect(probe().plan).not.toBeNull());
 
     act(() => probe().onSwapMeal(plan.meals[0]!));
+    act(() => probe().swapFeedback!.onGenerate());
 
     await waitFor(() => expect(probe().swappingMealId).toBeNull());
     expect(
@@ -319,6 +324,7 @@ describe("PlanTodayContainer", () => {
     await waitFor(() => expect(probe().plan).not.toBeNull());
 
     act(() => probe().onSwapMeal(plan.meals[0]!));
+    act(() => probe().swapFeedback!.onGenerate());
 
     await waitFor(() => expect(probe().swappingMealId).toBeNull());
     expect(probe().actionFailure).toMatch(/used all of today's swaps/i);
@@ -335,9 +341,11 @@ describe("PlanTodayContainer", () => {
     await waitFor(() => expect(probe().plan).not.toBeNull());
 
     act(() => probe().onSwapMeal(plan.meals[0]!));
+    act(() => probe().swapFeedback!.onGenerate());
     await waitFor(() => expect(probe().actionFailure).not.toBeNull());
 
     act(() => probe().onSwapMeal(plan.meals[0]!));
+    act(() => probe().swapFeedback!.onGenerate());
     expect(probe().actionFailure).toBeNull();
   });
 
@@ -405,6 +413,7 @@ describe("PlanTodayContainer", () => {
     });
 
     act(() => probe().onSwapMeal(plan.meals[0]!));
+    act(() => probe().swapFeedback!.onGenerate());
     await waitFor(() => expect(probe().swappingMealId).toBeNull());
     expect(
       storage.getCachedActiveMealPlan("user-1", today)!.meals[0]!.label,
@@ -461,9 +470,247 @@ describe("PlanTodayContainer", () => {
     });
 
     act(() => probe().onSwapMeal(plan.meals[0]!));
+    act(() => probe().swapFeedback!.onGenerate());
     await waitFor(() => expect(probe().swappingMealId).toBeNull());
     expect(probe().actionFailure).toBe(
       "This meal is no longer part of your plan.",
     );
   });
+});
+
+it("collects optional feedback without a request until confirmed, and clears it on cancel", async () => {
+  const today = localDayISO();
+  const plan = fixturePlan({ planDate: today });
+  const { probe, api } = await mount((api, storage) => {
+    storage.cacheMealPlan("user-1", plan);
+    api.activePlanByDate.set(today, plan);
+    api.plans.set(plan.id, plan);
+  });
+  await waitFor(() => expect(probe().plan).not.toBeNull());
+  const spy = jest.spyOn(api, "swapPlanMeal");
+  act(() => probe().onSwapMeal(plan.meals[0]!));
+  act(() => probe().swapFeedback!.onChange("Try chicken"));
+  expect(spy).not.toHaveBeenCalled();
+  act(() => probe().swapFeedback!.onCancel());
+  expect(probe().swapFeedback).toBeUndefined();
+  expect(spy).not.toHaveBeenCalled();
+  act(() => probe().onSwapMeal(plan.meals[0]!));
+  expect(probe().swapFeedback!.value).toBe("");
+  act(() => probe().swapFeedback!.onChange("  Quicker to make  "));
+  act(() => probe().swapFeedback!.onGenerate());
+  await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+  expect(spy.mock.calls[0]![0].steer).toBe("Quicker to make");
+  await waitFor(() => expect(probe().swappingMealId).toBeNull());
+});
+
+it("keeps feedback and the original meal after an empty result, and blocks competing swaps while waiting", async () => {
+  const plan = fixturePlan({
+    planDate: localDayISO(),
+    meals: [
+      fixturePlan().meals[0]!,
+      { ...fixturePlan().meals[0]!, id: "meal-2", label: "Lunch" },
+    ],
+  });
+  const { api, probe } = await mount((api, storage) => {
+    api.activePlanByDate.set(plan.planDate, plan);
+    storage.cacheMealPlan("user-1", plan);
+  });
+  await waitFor(() => expect(probe().plan).not.toBeNull());
+  let settle!: (value: Awaited<ReturnType<typeof api.swapPlanMeal>>) => void;
+  const spy = jest.spyOn(api, "swapPlanMeal").mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        settle = resolve;
+      }),
+  );
+  act(() => probe().onSwapMeal(plan.meals[0]!));
+  act(() => probe().swapFeedback!.onChange("Less rice"));
+  act(() => probe().onSwapMeal(plan.meals[1]!));
+  expect(probe().swapFeedback!.value).toBe("");
+  act(() => probe().swapFeedback!.onChange("  More protein  "));
+  act(() => probe().swapFeedback!.onGenerate());
+  expect(probe().swapFeedback!.busy).toBe(true);
+  act(() => {
+    probe().swapFeedback!.onCancel();
+    probe().swapFeedback!.onGenerate();
+    probe().onSwapMeal(plan.meals[0]!);
+  });
+  expect(spy).toHaveBeenCalledTimes(1);
+  expect(spy.mock.calls[0]![0].steer).toBe("More protein");
+  expect(probe().swapFeedback!.mealId).toBe("meal-2");
+  await act(async () => {
+    settle(ok(api.planSwapResult));
+  });
+  expect(probe().swapFeedback!.busy).toBe(false);
+  expect(probe().swapFeedback!.value).toBe("  More protein  ");
+  expect(probe().swapFeedback!.error).toMatch(/No replacement matched/);
+  expect(probe().plan!.meals[1]!.label).toBe("Lunch");
+});
+
+it("clears feedback when the active plan changes even if its meal id is reused", async () => {
+  const plan = fixturePlan({ planDate: localDayISO() });
+  const { api, storage, probe } = await mount((api, storage) => {
+    api.activePlanByDate.set(plan.planDate, plan);
+    storage.cacheMealPlan("user-1", plan);
+  });
+  await waitFor(() => expect(probe().plan).not.toBeNull());
+  act(() => probe().onSwapMeal(plan.meals[0]!));
+  act(() => probe().swapFeedback!.onChange("Less rice"));
+  const replacement = { ...plan, id: "new-plan" };
+  await act(async () => {
+    storage.removeCachedMealPlan("user-1", plan.planDate);
+    storage.cacheMealPlan("user-1", replacement);
+    api.activePlanByDate.set(plan.planDate, replacement);
+    storage.emitChange("cached_meal_plans");
+  });
+  await waitFor(() => expect(probe().plan!.id).toBe("new-plan"));
+  expect(probe().swapFeedback).toBeUndefined();
+  act(() => probe().onSwapMeal(replacement.meals[0]!));
+  expect(probe().swapFeedback!.value).toBe("");
+});
+
+it("does not open swap feedback for an already logged meal", async () => {
+  const plan = fixturePlan({
+    planDate: localDayISO(),
+    meals: [{ ...fixturePlan().meals[0]!, state: "logged" }],
+  });
+  const { api, probe } = await mount((api, storage) => {
+    api.activePlanByDate.set(plan.planDate, plan);
+    storage.cacheMealPlan("user-1", plan);
+  });
+  await waitFor(() => expect(probe().plan).not.toBeNull());
+  act(() => probe().onSwapMeal(plan.meals[0]!));
+  expect(probe().swapFeedback).toBeUndefined();
+  expect(api.swapPlanMealCalls).toHaveLength(0);
+});
+
+it("retains feedback and the original accepted meal when the replacement conflicts with updated preferences", async () => {
+  const plan = fixturePlan({ planDate: localDayISO() });
+  const { probe, storage, api } = await mount((api, storage) => {
+    api.activePlanByDate.set(plan.planDate, plan);
+    api.plans.set(plan.id, plan);
+    storage.cacheMealPlan("user-1", plan);
+    api.planSwapResult = {
+      meal: {
+        name: "Replacement",
+        reason: "Fits",
+        logSlot: "dinner",
+        items: [],
+        kcal: 500,
+        proteinG: 40,
+        carbsG: 40,
+        fatG: 20,
+        containsUnverified: false,
+      },
+      emptyReason: null,
+      labelCheckRequired: true,
+    };
+    api.nextReplacePlanMealError = {
+      kind: "api",
+      code: "server",
+      message: "avoidance_violation",
+      status: 422,
+      planErrorCode: "avoidance_violation",
+    };
+  });
+  await waitFor(() => expect(probe().plan).not.toBeNull());
+  act(() => probe().onSwapMeal(plan.meals[0]!));
+  act(() => probe().swapFeedback!.onChange("More protein"));
+  act(() => probe().swapFeedback!.onGenerate());
+  await waitFor(() =>
+    expect(probe().swapFeedback!.error).toMatch(
+      /conflicts with your preferences/,
+    ),
+  );
+  expect(probe().swappingMealId).toBeNull();
+  expect(probe().swapFeedback!.value).toBe("More protein");
+  expect(api.replacePlanMealCalls).toHaveLength(1);
+  expect(
+    storage.getCachedActiveMealPlan("user-1", plan.planDate)!.meals[0]!.label,
+  ).toBe(plan.meals[0]!.label);
+});
+
+it("retains rejected meals across accepted-plan swaps and clears them for another plan", async () => {
+  const plan = fixturePlan({
+    meals: [
+      fixturePlan().meals[0]!,
+      { ...fixturePlan().meals[0]!, id: "meal-2", label: "Tofu bowl" },
+    ],
+  });
+  const { api, storage, probe } = await mount((api, storage) => {
+    storage.cacheMealPlan("user-1", plan);
+    api.activePlanByDate.set(plan.planDate, plan);
+  });
+  await waitFor(() => expect(probe().plan).not.toBeNull());
+  for (const meal of plan.meals) {
+    act(() => probe().onSwapMeal(meal));
+    act(() => probe().swapFeedback!.onGenerate());
+    await waitFor(() => expect(probe().swappingMealId).toBeNull());
+  }
+  expect(api.swapPlanMealCalls[1]!.notWantedMeals).toEqual([
+    { name: "Chicken & rice bowl", ingredients: [] },
+    { name: "Tofu bowl", ingredients: [] },
+  ]);
+  const other = fixturePlan({ id: "plan-2" });
+  act(() => {
+    storage.removeCachedMealPlan("user-1", plan.planDate);
+    storage.cacheMealPlan("user-1", other);
+    api.activePlanByDate.set(plan.planDate, other);
+    storage.emitChange("cached_meal_plans");
+  });
+  await waitFor(() => expect(probe().plan!.id).toBe("plan-2"));
+  act(() => probe().onSwapMeal(other.meals[0]!));
+  act(() => probe().swapFeedback!.onGenerate());
+  await waitFor(() => expect(api.swapPlanMealCalls).toHaveLength(3));
+  expect(api.swapPlanMealCalls[2]!.notWantedMeals).toEqual([
+    { name: "Chicken & rice bowl", ingredients: [] },
+  ]);
+});
+
+it("retains ingredient names for a generated replacement even without cached foods", async () => {
+  const plan = fixturePlan();
+  const { api, probe } = await mount((api, storage) => {
+    storage.cacheMealPlan("user-1", plan);
+    api.activePlanByDate.set(plan.planDate, plan);
+    api.plans.set(plan.id, plan);
+    api.planSwapResult = {
+      meal: {
+        name: "Tofu curry",
+        reason: "Fits",
+        logSlot: "dinner",
+        items: [
+          {
+            candidateId: "tofu",
+            kind: "food",
+            name: "Tofu",
+            servings: 1,
+            kcal: 150,
+            proteinG: 15,
+            carbsG: 5,
+            fatG: 8,
+          },
+        ],
+        kcal: 150,
+        proteinG: 15,
+        carbsG: 5,
+        fatG: 8,
+        containsUnverified: false,
+      },
+      emptyReason: null,
+      labelCheckRequired: true,
+    };
+  });
+  await waitFor(() => expect(probe().plan).not.toBeNull());
+  act(() => probe().onSwapMeal(probe().plan!.meals[0]!));
+  act(() => probe().swapFeedback!.onGenerate());
+  await waitFor(() => expect(probe().plan!.meals[0]!.label).toBe("Tofu curry"));
+  await waitFor(() => expect(probe().swappingMealId).toBeNull());
+  act(() => probe().onSwapMeal(probe().plan!.meals[0]!));
+  act(() => probe().swapFeedback!.onGenerate());
+  await waitFor(() => expect(api.swapPlanMealCalls).toHaveLength(2));
+  expect(api.swapPlanMealCalls[1]!.notWantedMeals).toEqual([
+    { name: "Chicken & rice bowl", ingredients: [] },
+    { name: "Tofu curry", ingredients: ["Tofu"] },
+  ]);
+  await waitFor(() => expect(probe().swappingMealId).toBeNull());
 });

@@ -32,6 +32,10 @@
  * N meal cards + caveats, easily past the fold of an 86% sheet.
  */
 
+import {
+  MealSwapFeedback,
+  type MealSwapFeedbackProps,
+} from "./MealSwapFeedback";
 import { Pressable, TextInput } from "react-native";
 import { Text, View } from "@tamagui/core";
 import {
@@ -105,6 +109,7 @@ export type MealprintPlanSheetProps = {
   readonly draft: PlanDraft | null;
   readonly flaggedIds: ReadonlySet<string>;
   readonly swappingId: string | null;
+  readonly swapFeedback?: MealSwapFeedbackProps;
   readonly onSwapMeal: (localId: string) => void;
   readonly onRemoveMeal: (localId: string) => void;
   /** The per-item serving stepper's write path (AC 4.4/gap 2). */
@@ -206,6 +211,7 @@ function GenerateAction({ onGenerate }: MealprintPlanSheetProps) {
 
 function AcceptAction({
   accepting,
+  swappingId,
   acceptBlocked,
   onAccept,
 }: MealprintPlanSheetProps) {
@@ -222,9 +228,11 @@ function AcceptAction({
     >
       {accepting
         ? "Saving…"
-        : acceptBlocked
-          ? "Fix flagged meals to continue"
-          : "Accept plan"}
+        : swappingId !== null
+          ? "Finish your swap to continue"
+          : acceptBlocked
+            ? "Fix flagged meals to continue"
+            : "Accept plan"}
     </Btn>
   );
 }
@@ -349,8 +357,8 @@ const EMPTY_COPY: Readonly<
     body: "Mealprint builds a day of meals to hit your daily target — so it needs one to aim at.",
   },
   no_candidates: {
-    title: "Nothing matched your preferences",
-    body: "Your dietary pattern and avoid list rule out everything we can currently vouch for. Try removing an allergen or a dislike, or add a few of your own foods and recipes.",
+    title: "Nothing matched your request",
+    body: "We couldn't find meals that fit your request, targets and food preferences. Try another request or add your own foods and recipes. Your saved avoidances still apply.",
   },
 };
 
@@ -694,6 +702,8 @@ function PlanMealCard({
   meal,
   flagged,
   swapping,
+  actionsDisabled,
+  swapFeedback,
   onSwap,
   onRemove,
   onItemServingsChange,
@@ -702,6 +712,8 @@ function PlanMealCard({
   meal: PlanDraft["meals"][number]["meal"];
   flagged: boolean;
   swapping: boolean;
+  actionsDisabled: boolean;
+  swapFeedback?: MealSwapFeedbackProps;
   onSwap: () => void;
   onRemove: () => void;
   onItemServingsChange: (candidateId: string, servings: number) => void;
@@ -814,7 +826,7 @@ function PlanMealCard({
                 localId={localId}
                 candidateId={item.candidateId}
                 servings={item.servings}
-                disabled={flagged || swapping}
+                disabled={flagged || actionsDisabled}
                 onChange={(servings) =>
                   onItemServingsChange(item.candidateId, servings)
                 }
@@ -827,7 +839,7 @@ function PlanMealCard({
       <View flexDirection="row" borderTopWidth={1} borderColor="$border">
         <Pressable
           onPress={onSwap}
-          disabled={swapping}
+          disabled={actionsDisabled}
           testID={`mealprint-plan-meal-swap-${localId}`}
           accessibilityRole="button"
           accessibilityLabel={`Swap ${meal.name}`}
@@ -852,7 +864,7 @@ function PlanMealCard({
         </Pressable>
         <Pressable
           onPress={onRemove}
-          disabled={swapping}
+          disabled={actionsDisabled}
           testID={`mealprint-plan-meal-remove-${localId}`}
           accessibilityRole="button"
           accessibilityLabel={`Remove ${meal.name}`}
@@ -878,6 +890,7 @@ function PlanMealCard({
           </Text>
         </Pressable>
       </View>
+      {swapFeedback ? <MealSwapFeedback {...swapFeedback} /> : null}
     </Card>
   );
 }
@@ -954,6 +967,12 @@ function DraftStage(props: MealprintPlanSheetProps) {
             meal={meal}
             flagged={flaggedIds.has(localId)}
             swapping={swappingId === localId}
+            actionsDisabled={swappingId !== null}
+            swapFeedback={
+              props.swapFeedback?.mealId === localId
+                ? props.swapFeedback
+                : undefined
+            }
             onSwap={() => onSwapMeal(localId)}
             onRemove={() => onRemoveMeal(localId)}
             onItemServingsChange={(candidateId, servings) =>

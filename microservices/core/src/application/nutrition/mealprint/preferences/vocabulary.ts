@@ -332,6 +332,7 @@ export const NAME_TOKENS = {
     "herring",
     "trout",
     "seabass",
+    "bass", // Also catches the common spaced spelling "sea bass".
     // Forms and trade names that contain no generic word: "Fishermans Pie"
     // tokenises to ["fisherman","pie"] and matched nothing.
     "fisherman",

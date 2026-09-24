@@ -1,3 +1,5 @@
+import { notWantedMealsSchema } from "../mealContext";
+
 import Elysia, { t } from "elysia";
 import {
   getAuthUser,
@@ -147,6 +149,7 @@ export const nutritionAiPlanMealSwapHandler = new Elysia()
         const locale = isSupportedLocale(preferences.locale)
           ? preferences.locale
           : "en-GB";
+
         const requireKnownAllergens = hasAllergenConstraint(preferences);
         const forbidden = [
           ...new Set([
@@ -229,7 +232,14 @@ export const nutritionAiPlanMealSwapHandler = new Elysia()
             maxSnackKcal: mealKcalCeiling,
             steer: steer ?? null,
             candidates: assembly.candidates,
+            dietaryPatterns: preferences.dietaryPatterns,
+            avoidAllergens: preferences.avoidAllergens,
+            avoidFoods: preferences.avoidFoods,
+            notWantedMeals: ctx.body.notWantedMeals ?? [],
+            originalRequest: ctx.body.originalRequest,
+            targetLogSlot: logSlot,
             likedFoods: preferences.likedFoods,
+            savedEffortLevel: preferences.effortLevel,
             effortLevel: preferences.effortLevel,
             locale,
           },
@@ -245,6 +255,7 @@ export const nutritionAiPlanMealSwapHandler = new Elysia()
         const byId = new Map<string, MealprintCandidate>(
           assembly.candidates.map((candidate) => [candidate.id, candidate]),
         );
+
         const portionFailure = assessCompositionPortion({
           items: chosen.items,
           candidates: byId,
@@ -267,8 +278,10 @@ export const nutritionAiPlanMealSwapHandler = new Elysia()
           carbsG += candidate.carbsG * item.servings;
           fatG += candidate.fatG * item.servings;
           const avoidance = assessAvoidance(candidate, preferences);
-          if (avoidance.allowed && avoidance.unverified)
-            containsUnverified = true;
+          if (!avoidance.allowed) {
+            throw new AiUnreadableError("ai_avoidance_violation: meal item");
+          }
+          if (avoidance.unverified) containsUnverified = true;
           return {
             candidateId: item.candidateId,
             kind: candidate.kind,
@@ -369,6 +382,8 @@ export const nutritionAiPlanMealSwapHandler = new Elysia()
         // plans always send the count used to derive their original ceiling.
         mealsPerDay: t.Optional(t.Integer({ minimum: 2, maximum: 6 })),
         steer: t.Optional(t.String({ maxLength: 200 })),
+        notWantedMeals: notWantedMealsSchema,
+        originalRequest: t.Optional(t.String({ maxLength: 200 })),
       }),
     },
   );

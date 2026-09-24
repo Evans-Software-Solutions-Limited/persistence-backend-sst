@@ -1,3 +1,5 @@
+import { notWantedMealsSchema } from "../mealContext";
+
 import Elysia, { t } from "elysia";
 import {
   getAuthUser,
@@ -254,6 +256,7 @@ export const nutritionAiMealSuggestHandler = new Elysia()
         const locale = isSupportedLocale(preferences.locale)
           ? preferences.locale
           : "en-GB";
+
         const requireKnownAllergens = hasAllergenConstraint(preferences);
         const forbidden = [
           ...new Set([
@@ -371,7 +374,12 @@ export const nutritionAiMealSuggestHandler = new Elysia()
             maxCheatMealKcal: cheatMealKcalCeiling,
             steer: steer ?? null,
             candidates: assembly.candidates,
+            dietaryPatterns: preferences.dietaryPatterns,
+            avoidAllergens: preferences.avoidAllergens,
+            avoidFoods: preferences.avoidFoods,
+            notWantedMeals: ctx.body.notWantedMeals ?? [],
             likedFoods: preferences.likedFoods,
+            savedEffortLevel: preferences.effortLevel,
             effortLevel: preferences.effortLevel,
             locale,
           },
@@ -506,6 +514,7 @@ export const nutritionAiMealSuggestHandler = new Elysia()
         // user controls. For `eating_out`, this is repurposed as the restaurant
         // name (amendment § A.1 table) — same field, same bound.
         steer: t.Optional(t.String({ maxLength: 200 })),
+        notWantedMeals: notWantedMealsSchema,
       }),
     },
   );

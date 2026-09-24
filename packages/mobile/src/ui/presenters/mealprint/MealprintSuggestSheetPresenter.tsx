@@ -646,8 +646,8 @@ const EMPTY_COPY: Readonly<
     body: "There aren't enough calories left on the day you're viewing for Mealprint to suggest anything worth logging.",
   },
   no_candidates: {
-    title: "Nothing matched your preferences",
-    body: "Your dietary pattern and avoid list rule out everything we can currently vouch for. Try removing an allergen or a dislike, or add a few of your own foods and recipes.",
+    title: "Nothing matched your request",
+    body: "We couldn't find meals that fit your request, targets and food preferences. Try another request or add your own foods and recipes. Your saved avoidances still apply.",
   },
 };
 

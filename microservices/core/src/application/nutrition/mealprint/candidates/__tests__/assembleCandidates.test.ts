@@ -56,7 +56,7 @@ describe("dedupeKey", () => {
 });
 
 describe("rankCandidates", () => {
-  it("promotes own rows and liked foods without dropping anything", () => {
+  it("promotes own rows while preserving diversified catalogue order", () => {
     // ⚠ Likes are a BIAS, never a filter (locked decision 1). A user who likes
     // three things must still see the rest of the pool.
     const pool = [
@@ -65,8 +65,8 @@ describe("rankCandidates", () => {
       candidate({ id: "own", isOwn: true, name: "My Shake" }),
       candidate({ id: "both", isOwn: true, name: "My Chicken Bowl" }),
     ];
-    const ranked = rankCandidates(pool, ["chicken"]);
-    expect(ranked.map((c) => c.id)).toEqual(["both", "liked", "own", "plain"]);
+    const ranked = rankCandidates(pool);
+    expect(ranked.map((c) => c.id)).toEqual(["own", "both", "plain", "liked"]);
     expect(ranked).toHaveLength(pool.length);
   });
 
@@ -77,12 +77,12 @@ describe("rankCandidates", () => {
       candidate({ id: "b" }),
       candidate({ id: "c" }),
     ];
-    expect(rankCandidates(pool, []).map((c) => c.id)).toEqual(["a", "b", "c"]);
+    expect(rankCandidates(pool).map((c) => c.id)).toEqual(["a", "b", "c"]);
   });
 
   it("does not treat an empty like list as matching everything", () => {
     const pool = [candidate({ id: "a" }), candidate({ id: "b", isOwn: true })];
-    expect(rankCandidates(pool, []).map((c) => c.id)).toEqual(["b", "a"]);
+    expect(rankCandidates(pool).map((c) => c.id)).toEqual(["b", "a"]);
   });
 });
 
@@ -242,4 +242,20 @@ describe("describeAssembly", () => {
     expect(line).not.toContain("Sensitive");
     expect(line).not.toContain("sensitive");
   });
+});
+
+it("retains free-text preference candidates for AI interpretation, including scoped exceptions", () => {
+  const pool = [
+    candidate({ id: "tuna", name: "Tinned Tuna", allergenTags: ["en:fish"] }),
+    candidate({ id: "chicken", name: "Chicken breast" }),
+  ];
+  expect(
+    assembleCandidates(pool, {
+      ...NO_PREFS,
+      avoidFoods: [
+        "all fish except tinned tuna for sandwiches",
+        "chicken free-range",
+      ],
+    }).candidates,
+  ).toEqual(pool);
 });

@@ -1,53 +1,16 @@
 /**
- * Mealprint (spec-26) — deterministic avoidance filtering.
- *
- * ⚠ **DANGEROUS AREA in the CLAUDE.md sense.** This is the module that decides
- * whether a food reaches someone who told us they must not eat it. It runs
- * TWICE on every generation (design § 1): once in stage 1, to build the
- * candidate pool the model is allowed to choose from, and again in stage 3 over
- * every item the model actually composed. The second pass is not redundancy for
- * its own sake — the model is treated as an untrusted composer, and a
- * composition that violates an avoidance must never reach the user even if the
- * pool that produced it was correct.
- *
- * Pure and synchronous: no DB, no clock, no I/O. Everything it needs is passed
- * in, so its behaviour is fully enumerable in tests, which is the only reason a
- * safety claim about it is worth anything.
- *
- * ## The two-tier posture, which is the central design decision here
- *
- * Requirements distinguish allergy-grade avoidance from dietary patterns and
- * dislikes, and this module enforces that distinction rather than flattening it:
- *
- *   - **Allergens are TAG-DERIVED AND FAIL CLOSED.** A row is cleared only when
- *     its `allergenTags` are present AND fully interpretable AND contain none of
- *     the avoided tags. `null` tags (unknown) exclude the row. A tag we cannot
- *     interpret excludes the row. A name that merely *looks* safe never clears
- *     it — no word list is allowed to vouch for an allergen (AC 2.2, design § 1).
- *   - **Patterns and dislikes are tag-derived WHERE TAGS EXIST and fall back to
- *     whole-token NAME matching where they do not**, with the verdict marked
- *     `unverified` so the caller can flag it. This is what AC 2.2 describes for
- *     unknown-tag rows ("pass dislike filtering by name-match only and are
- *     flagged"), and it is why a vegan's own hand-entered recipes do not vanish
- *     from their pool the way a fail-closed rule would make them.
- *
- * Getting that asymmetry backwards in either direction is a real harm: fail-open
- * on allergens hands a peanut avoider an unexamined product, and fail-closed on
- * patterns empties the pool and makes the feature look broken.
- *
- * ## What this module does NOT claim
- *
- * It cannot see cross-contamination, manufacturing practice, recipe changes, or
- * halal/kosher certification. Every allergen-relevant surface therefore renders
- * the label-check disclaimer (AC 1.2 / AC 3.4), and `halal`/`kosher` verdicts
- * carry `partialEnforcementOnly`. The disclaimer is not boilerplate — it is the
- * honest boundary of a filter built on crowd-sourced ingredient data.
+ * Deterministic allergen and known dietary-pattern safety checks. Run during
+ * candidate assembly, verification, and plan acceptance/replacement.
+ * Allergens remain tag-derived and fail closed; known dietary patterns retain
+ * their existing tag/name rules. Free-text dislikes, exceptions and requests
+ * are passed verbatim to the composer and are never parsed here.
+ * Crowd-sourced metadata cannot establish contamination or certification:
+ * callers retain the existing label-check and partial-enforcement notices.
  */
 
 import {
   ALLERGEN_OFF_TAGS,
   DIETARY_PATTERN_RULES,
-  HARD_TO_FIND_PREFIX,
   isAllergenKey,
   isDietaryPattern,
   isTokenNegatedInName,
@@ -82,7 +45,7 @@ export interface AvoidanceSubject {
 export interface AvoidancePreferences {
   dietaryPatterns: readonly string[];
   avoidAllergens: readonly string[];
-  /** Already normalised on write (`normaliseFoodText`); re-tokenised here. */
+  /** Free-text culinary context for AI; never interpreted by this safety filter. */
   avoidFoods: readonly string[];
 }
 
@@ -96,9 +59,7 @@ export type AvoidanceRule =
   /** A dietary pattern is violated by an OFF tag. */
   | "pattern_tag"
   /** A dietary pattern is violated by a name token (tags unavailable). */
-  | "pattern_name"
-  /** A free-text dislike matches the row's name. */
-  | "dislike_name";
+  | "pattern_name";
 
 export type AvoidanceVerdict =
   | {
@@ -577,39 +538,8 @@ export function assessAvoidance(
     }
   }
 
-  // ── 3. Dislikes — name only, no safety claim ──────────────────────────────
-  for (const dislike of preferences.avoidFoods) {
-    // ⚠ Strip the `hardtofind:` provenance prefix before tokenising. Without
-    // this, STORY-007's "hard to find near me" affordance was a PERMANENT NO-OP:
-    // the repository deliberately preserves the prefix on `avoid_foods`, so
-    // `tokeniseFoodName` produced `["hardtofind", "mushroom"]`, the
-    // every-token-present rule looked for the literal word "hardtofind" in the
-    // food name, and no food has ever contained it. The entry stored, round-
-    // tripped through the editor, and filtered nothing.
-    const body = dislike.startsWith(HARD_TO_FIND_PREFIX)
-      ? dislike.slice(HARD_TO_FIND_PREFIX.length)
-      : dislike;
-    const dislikeTokens = tokeniseFoodName(body);
-    if (dislikeTokens.length === 0) continue;
-    // ALL tokens must be present, so the multi-word dislike "chicken thigh"
-    // matches "Chicken Thighs" but not every chicken product. Single-word
-    // dislikes behave as you would expect.
-    const everyTokenPresent = dislikeTokens.every(
-      (token) =>
-        subjectTokens.has(token) &&
-        // "Mushroom-free soup" is not a mushroom product.
-        !isTokenNegatedInName(subject.name, token),
-    );
-    if (everyTokenPresent) {
-      return {
-        allowed: false,
-        rule: "dislike_name",
-        cause: dislike,
-        evidence: dislikeTokens.join(" "),
-      };
-    }
-  }
-
+  // Free-text dislikes and exceptions belong to the composer. They are passed
+  // verbatim alongside the request, rather than guessed from tokens here.
   return {
     allowed: true,
     // Keyed on TAGS-USABLE, not on null: a row whose tags we cannot read is just

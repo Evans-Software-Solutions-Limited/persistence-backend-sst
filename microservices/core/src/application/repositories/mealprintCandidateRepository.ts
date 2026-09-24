@@ -47,6 +47,8 @@ export interface MealprintCandidate {
   kind: "food" | "recipe" | "meal";
   id: string;
   name: string;
+  /** Original food name, before adding a brand for display; ingredient checks use this. */
+  unbrandedName?: string;
   /**
    * Macros for ONE SERVING of this candidate — already scaled out of the
    * per-100g basis for foods. The model multiplies by a servings count; the
@@ -190,26 +192,27 @@ export class MealprintCandidateRepository {
   }
 
   /**
-   * Curated candidates, ordered by PROTEIN DENSITY descending.
-   *
-   * ⚠ This ordering is a product judgement and should be read as one. The
-   * catalogue is ~144k rows and cannot be fetched whole, so something has to
-   * choose which 600 the model sees. Protein-per-kcal is that choice because the
-   * requirement this feature exists for is stated in those terms — "hitting
-   * protein with the calories left after dinner is a puzzle" (requirements §
-   * Overview) — and because in a lifting app protein is nearly always the binding
-   * macro. It is NOT claimed to be optimal for every run: a user who asked for
-   * "something sweet" is served by the model's selection over this pool, not by
-   * the retrieval. If suggestion quality disappoints, this ordering is the first
-   * thing to measure, and it should be measured rather than argued about.
-   *
-   * Ordering is deterministic (protein density, then id) so the same request
-   * twice sees the same pool — a prerequisite for any eval of the stage above it.
+   * Bounded, diversified catalogue sample. Round-robin products and metadata
+   * groups rather than filling the pool with the highest protein-density foods.
+   * This is request-independent; the composer interprets culinary preferences.
    */
   async listCuratedCandidates(
     input: CuratedQueryInput,
   ): Promise<MealprintCandidate[]> {
     const db = getDb();
+    // Round-robin existing catalogue category sets. Untagged foods use their
+    // dominant macro energy, so missing metadata does not restore a seafood-
+    // heavy protein-density pool. Product-name hashing is only stable sampling,
+    // never interpretation of the user's request or ingredient semantics.
+    const productName = sql`LOWER(${foods.name})`;
+    const group = sql`COALESCE(NULLIF((SELECT string_agg(tag, '|' ORDER BY tag)
+      FROM unnest(${foods.categoryTags}) AS tag), ''),
+      CASE WHEN ${foods.proteinG} * 4 >= GREATEST(${foods.carbsG} * 4, ${foods.fatG} * 9)
+        THEN 'untagged:protein'
+        WHEN ${foods.carbsG} * 4 >= ${foods.fatG} * 9 THEN 'untagged:carbs'
+        ELSE 'untagged:fat' END)`;
+    const productRound = sql`ROW_NUMBER() OVER (PARTITION BY ${productName} ORDER BY ${foods.id} ASC)`;
+    const categoryRound = sql`ROW_NUMBER() OVER (PARTITION BY ${group} ORDER BY md5(${productName}), ${foods.id} ASC)`;
     const rows = await db
       .select({
         id: foods.id,
@@ -228,7 +231,9 @@ export class MealprintCandidateRepository {
       .from(foods)
       .where(this.buildCuratedWhere(input))
       .orderBy(
-        sql`${foods.proteinG} / NULLIF(${foods.kcal}, 0) DESC`,
+        productRound,
+        categoryRound,
+        sql`md5(${productName})`,
         sql`${foods.id} ASC`,
       )
       .limit(input.limit ?? CURATED_FETCH_LIMIT);
@@ -624,6 +629,7 @@ function toFoodCandidate(
     // Yogurt" alone is not something a user can find in a shop, and it is also
     // what makes near-duplicate rows distinguishable in the prompt.
     name: row.brand ? `${row.name} (${row.brand})` : row.name,
+    unbrandedName: row.name,
     kcal: Number(row.kcal) * scale,
     proteinG: Number(row.proteinG) * scale,
     carbsG: Number(row.carbsG) * scale,
