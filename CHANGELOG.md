@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.24.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.23.1...persistence-v1.24.0) (2026-09-24)
+
+
+### Features
+
+* implement Together sessions, recovery and social backend (PER-20–22) ([#462](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/462)) ([7ef07b3](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/7ef07b39cc19e6fc58329bb46cf32cdf16b95ee3))
+
 ## [1.23.1](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.23.0...persistence-v1.23.1) (2026-09-20)
 
 
