@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.25.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.24.1...persistence-v1.25.0) (2026-09-28)
+
+
+### Features
+
+* add Apple sign-in to voucher redemption ([#468](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/468)) ([2210979](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/221097982190e893781b11d11d2cadda74a28283))
+
 ## [1.24.1](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.24.0...persistence-v1.24.1) (2026-09-28)
 
 
