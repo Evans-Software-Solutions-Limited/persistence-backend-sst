@@ -171,3 +171,30 @@ describe("customer authentication", () => {
     );
   });
 });
+
+it.each([
+  ["weak_password", "Choose a stronger password"],
+  ["invalid_credentials", "email or password is incorrect"],
+  ["email_not_confirmed", "Confirm your membership email"],
+  ["otp_expired", "sign-in link has expired"],
+])(
+  "maps %s to safe actionable copy without provider text",
+  async (code, copy) => {
+    fetcher.mockResolvedValueOnce(
+      json({ error_code: code, message: "secret provider payload" }, 422),
+    );
+    await expect(auth.signUp(user.email, "password")).rejects.toThrow(copy);
+    expect(auth.loadSession()).toBeNull();
+  },
+);
+it("does not expose unknown provider error details", async () => {
+  fetcher.mockResolvedValueOnce(
+    json(
+      { code: "user_already_exists", message: "private account details" },
+      400,
+    ),
+  );
+  await expect(auth.signUp(user.email, "password")).rejects.toThrow(
+    "Check your details",
+  );
+});

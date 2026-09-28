@@ -10,6 +10,8 @@ import {
 
 export function useRedemption() {
   const [draft, setDraft] = useState(loadDraft);
+  const [eligibilityCode, setEligibilityCode] = useState<string | null>(null);
+  const requiresEligibilityEmail = eligibilityCode === draft.code.trim();
   const [account, setAccount] = useState<auth.MembershipAccount | null>(null);
   const [stage, setStage] = useState<
     "details" | "account" | "verify" | "confirm" | "complete"
@@ -35,7 +37,14 @@ export function useRedemption() {
       : auth.currentAccount();
     request
       .then((a) => {
-        if (alive) setAccount(a);
+        if (alive) {
+          setAccount(a);
+          if (a)
+            setDraft((current) => ({
+              ...current,
+              accountEmail: current.accountEmail || a.email,
+            }));
+        }
       })
       .catch(() => {
         if (alive) {
@@ -73,7 +82,7 @@ export function useRedemption() {
   async function prepare(next: RedemptionDraft) {
     const proof = await voucherApi.prepare(
       next.code.trim(),
-      next.eligibilityEmail.trim().toLowerCase(),
+      next.eligibilityEmail.trim().toLowerCase() || undefined,
     );
     setChallenge(proof);
     setStage(proof.verified ? "confirm" : "verify");
@@ -81,18 +90,27 @@ export function useRedemption() {
 
   const details = () =>
     run(async () => {
+      const code = draft.code.trim();
+      const checked = await voucherApi.check(code);
+      setEligibilityCode(checked.requiresEligibilityEmail ? code : null);
+      if (
+        checked.requiresEligibilityEmail &&
+        (!requiresEligibilityEmail || !draft.eligibilityEmail.trim())
+      )
+        return;
       const next = {
         ...draft,
-        code: draft.code.trim(),
-        eligibilityEmail: draft.eligibilityEmail.trim().toLowerCase(),
-        accountEmail: (draft.differentAccount
-          ? draft.accountEmail
-          : draft.eligibilityEmail
-        )
-          .trim()
-          .toLowerCase(),
+        code,
+        eligibilityEmail: checked.requiresEligibilityEmail
+          ? draft.eligibilityEmail.trim().toLowerCase()
+          : "",
+        accountEmail: draft.accountEmail.trim().toLowerCase(),
       };
-      await voucherApi.check(next.code, next.eligibilityEmail);
+      // An email-specific preflight also prevents duplicate/ineligible attempts before auth.
+      await voucherApi.check(
+        next.code,
+        next.eligibilityEmail || next.accountEmail,
+      );
       saveDraft(next);
       setDraft(next);
       setChallenge(null);
@@ -103,7 +121,10 @@ export function useRedemption() {
 
   async function recheckBeforeAuth() {
     try {
-      await voucherApi.check(draft.code, draft.eligibilityEmail);
+      await voucherApi.check(
+        draft.code,
+        draft.eligibilityEmail || draft.accountEmail,
+      );
     } catch (e) {
       setStage("details");
       throw e;
@@ -167,6 +188,7 @@ export function useRedemption() {
   return {
     draft,
     setDraft,
+    requiresEligibilityEmail,
     account,
     stage,
     challenge,

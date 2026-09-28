@@ -1,5 +1,42 @@
 # Project memory · persistence-backend-sst
 
+### 2026-09-28 — Redemption email flow and production credential repair
+
+CloudWatch/Sentry PERSISTENCE-BACKEND-4 confirmed POST /vouchers/prepare failed
+at 09:21:02 UTC with an admin identity lookup 401. The deployed URL pointed to
+production opcvjypsoivaxerahbal, but the service-role JWT still identified retired
+shared project dfeyebgdktfteqlacmru. The workflow only checked non-emptiness.
+Production Supabase Auth also recorded five weak_password signup failures,
+masked by the redemption UI's generic auth error.
+
+With Brad's authorization, corrected the GitHub Production and SST service-role
+secrets and the core API/account-purge Lambda environments. Existing correct key
+was read through the approved Supabase CLI login; no key rotation, account or
+membership changes. Both deployed credentials verified against the production
+admin API with HTTP 200. This verifies admin access, not a real code redemption.
+
+Unrestricted codes now use the verified membership account identity without a
+separate work-email prompt. Restricted/assigned codes retain eligibility checks
+and separate-mailbox proof. Code preflight returns only a restriction boolean;
+old explicit-email clients/challenges remain compatible. Safe auth error mapping
+explains weak passwords, invalid credentials, confirmation and retry conditions.
+Both deployment workflows now verify project/role/expiry and live admin access
+before any migrations or configuration writes.
+
+Validation: full non-mobile suite 18/18 tasks (5,290 core; 1,532 web), typecheck
+9/9, lint 6/6 with existing warnings, non-mobile build 12/12, formatting and
+workflow actionlint pass. Final focused voucher suite 96/96 includes Inspector's
+shared-IP capacity correction: 5,000 checks/hour for 500 employees with retries;
+per-code/email caps unchanged. Changed web files have 100% statements/functions/
+lines and >=94.52% branches; repository 100% statements/functions and 97.25%
+branches; service 100%; deploy validator >=93.42% statements/lines, 97.05%
+branches, 100% functions. Local Inspector final full-diff sweep: clean. Browser
+visual review with synthetic local code checks: MATCH for unrestricted,
+restricted and signup states. No native/EAS build was initiated.
+
+Code changes still require the normal merge/release pipeline. Required
+slack-progress-updates skill was not available; no notification was sent.
+
 ### 2026-09-21 — Together backend across PER-20/PER-21/backend PER-22
 
 PR #462 on `codex/per-20-together-recovery-proof` now includes all Together backend

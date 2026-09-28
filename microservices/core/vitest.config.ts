@@ -17,6 +17,11 @@ export default defineConfig({
   },
   test: {
     globals: true,
+    // Turbo serialises workspaces, not Vitest workers. PGlite/WASM databases
+    // plus coverage can coexist in several forks, each inheriting CI's 6 GB
+    // heap ceiling. Keep one core file active per CI runner; retain isolation,
+    // the complete test set and all coverage thresholds.
+    fileParallelism: !process.env.CI,
     // ⚠ Not arbitrary. Handler suites build their Elysia app through a dynamic
     // `import()` inside the first test, so that test pays module resolution and
     // transform for the whole route tree — ~0.8 s alone, and multiples of that

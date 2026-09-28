@@ -503,7 +503,7 @@ export class VoucherRepository {
     }
   }
   /** Advisory pre-auth check. prepare/redeem must still recheck under their locks. */
-  async check(code: string, email: string) {
+  async check(code: string, email?: string) {
     const [row] = await getDb()
       .select({ voucher: vouchers, batch: batches })
       .from(vouchers)
@@ -518,15 +518,22 @@ export class VoucherRepository {
     if (
       !row ||
       status(row.voucher, row.batch) !== "unused" ||
-      !eligible(email, row.batch.allowedDomains, row.voucher.employeeEmail)
+      (email !== undefined &&
+        !eligible(email, row.batch.allowedDomains, row.voucher.employeeEmail))
     )
       throw new VoucherError(
         "invalid_voucher",
         400,
         "This code is invalid or no longer available.",
       );
-    await assertEmployeeUnused(getDb(), row.batch.id, email);
-    return { valid: true as const };
+    if (email !== undefined)
+      await assertEmployeeUnused(getDb(), row.batch.id, email);
+    return {
+      valid: true as const,
+      requiresEligibilityEmail:
+        row.batch.allowedDomains.length > 0 ||
+        row.voucher.employeeEmail !== null,
+    };
   }
   async prepare(
     account: VerifiedAccount,

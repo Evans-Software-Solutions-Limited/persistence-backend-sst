@@ -47,6 +47,12 @@ jobs:
       - name: Setup
         uses: ./.github/actions/setup
 
+      - name: Validate Supabase admin credential
+        env:
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: bun scripts/validate-supabase-admin.ts staging
+
       # Validate before migrations or any remote configuration changes.
       - name: Validate web authentication settings
         env:

@@ -54,7 +54,24 @@ async function authRequest(path: string, body?: unknown, accessToken?: string) {
   if (!response.ok) {
     if (response.status === 429)
       throw new Error("Too many attempts. Please wait before trying again.");
-    // Do not display provider payloads that may disclose account information.
+    // Only allowlisted error codes become user-facing copy; never show payload text.
+    const code = data.code ?? data.error_code;
+    if (code === "weak_password")
+      throw new Error(
+        "Choose a stronger password: use at least 8 characters and avoid common or previously exposed passwords. A longer, unique passphrase works well.",
+      );
+    if (code === "invalid_credentials")
+      throw new Error(
+        "The email or password is incorrect. Try again or request an email sign-in link.",
+      );
+    if (code === "email_not_confirmed")
+      throw new Error(
+        "Confirm your membership email using the link we sent before signing in.",
+      );
+    if (code === "otp_expired")
+      throw new Error(
+        "This sign-in link has expired. Request a new email sign-in link.",
+      );
     throw new Error(
       "We couldn't complete sign-in. Check your details or request an email sign-in link.",
     );

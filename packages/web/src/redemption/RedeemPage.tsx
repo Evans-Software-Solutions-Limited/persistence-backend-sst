@@ -101,6 +101,12 @@ function AccountForm({
           />
         </Field>
         {mode === "signup" && (
+          <p className="redeem-small">
+            Use at least 8 characters. Choose a long, unique password or
+            passphrase; common or previously exposed passwords are rejected.
+          </p>
+        )}
+        {mode === "signup" && (
           <label className="redeem-check">
             <input
               type="checkbox"
@@ -143,7 +149,10 @@ function AccountForm({
       )}
       <p className="redeem-small">
         Use the same account you use in the app. A voucher never changes an
-        existing account's password.
+        existing account's password. If you normally use Apple or Google,
+        request an email sign-in link using the email on that account. For Apple
+        Hide My Email, use your Apple relay address and check the inbox it
+        forwards to.
       </p>
     </>
   );
@@ -236,7 +245,8 @@ export default function RedeemPage() {
           {flow.stage === "details" && (
             <form onSubmit={submit(flow.details)}>
               <p>
-                Enter the code and eligibility email provided by your employer.
+                Enter your membership code and the email you use for
+                Persistence. A personal email is fine.
               </p>
               <Field id="voucher-code" label="Membership code">
                 <Input
@@ -253,58 +263,49 @@ export default function RedeemPage() {
                   }
                 />
               </Field>
-              <Field id="eligibility-email" label="Eligibility email">
+              <Field id="membership-email" label="Membership account email">
                 <Input
-                  id="eligibility-email"
+                  id="membership-email"
                   type="email"
                   required
                   autoComplete="email"
                   maxLength={254}
-                  value={flow.draft.eligibilityEmail}
+                  value={flow.draft.accountEmail}
                   disabled={flow.busy}
                   onChange={(e) =>
                     flow.setDraft({
                       ...flow.draft,
-                      eligibilityEmail: e.target.value,
+                      accountEmail: e.target.value,
                     })
                   }
                 />
               </Field>
-              <p className="redeem-small">
-                Usually your work email. We'll verify that you can access it.
-              </p>
-              <label className="redeem-check">
-                <input
-                  type="checkbox"
-                  checked={flow.draft.differentAccount}
-                  disabled={flow.busy}
-                  onChange={(e) =>
-                    flow.setDraft({
-                      ...flow.draft,
-                      differentAccount: e.target.checked,
-                    })
-                  }
-                />
-                <span>Use a different membership account</span>
-              </label>
-              {flow.draft.differentAccount && (
-                <Field id="membership-email" label="Membership account email">
-                  <Input
-                    id="membership-email"
-                    type="email"
-                    required
-                    autoComplete="email"
-                    maxLength={254}
-                    value={flow.draft.accountEmail}
-                    disabled={flow.busy}
-                    onChange={(e) =>
-                      flow.setDraft({
-                        ...flow.draft,
-                        accountEmail: e.target.value,
-                      })
-                    }
-                  />
-                </Field>
+              {flow.requiresEligibilityEmail && (
+                <>
+                  <Field id="eligibility-email" label="Eligibility email">
+                    <Input
+                      id="eligibility-email"
+                      type="email"
+                      required
+                      autoComplete="email"
+                      maxLength={254}
+                      value={flow.draft.eligibilityEmail}
+                      disabled={flow.busy}
+                      onChange={(e) =>
+                        flow.setDraft({
+                          ...flow.draft,
+                          eligibilityEmail: e.target.value,
+                        })
+                      }
+                    />
+                  </Field>
+                  <p className="redeem-small">
+                    This code is restricted to an eligible email. Enter the
+                    address your provider assigned or an address at their
+                    permitted domain. If it differs from your membership email,
+                    we'll send a verification code.
+                  </p>
+                </>
               )}
               {flow.account && (
                 <p className="redeem-small">

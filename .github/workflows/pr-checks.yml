@@ -71,9 +71,9 @@ jobs:
              [ "${{ steps.filter.outputs.mobile }}" == "true" ] || \
              [ "${{ steps.filter.outputs.scripts }}" == "true" ] || \
              [ "${{ steps.filter.outputs.infra }}" == "true" ]; then
-            echo "has-changes=true" >> $GITHUB_OUTPUT
+            echo "has-changes=true" >> "$GITHUB_OUTPUT"
           else
-            echo "has-changes=false" >> $GITHUB_OUTPUT
+            echo "has-changes=false" >> "$GITHUB_OUTPUT"
           fi
 
   typecheck-lint-prettier:
@@ -100,7 +100,7 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
-    needs: [install, typecheck-lint-prettier]
+    needs: [install, changes, typecheck-lint-prettier]
     if: needs.changes.outputs.has-changes == 'true'
     steps:
       - name: Checkout
@@ -115,7 +115,7 @@ jobs:
   unit-tests:
     name: Unit Tests & Coverage
     runs-on: ubuntu-latest
-    needs: [install, typecheck-lint-prettier]
+    needs: [install, changes, typecheck-lint-prettier]
     if: needs.changes.outputs.has-changes == 'true'
     # Raise the V8 heap ceiling for the whole job. The mobile Jest suite runs
     # `jest --coverage` with no worker cap and exhausts Node's default heap
@@ -135,7 +135,7 @@ jobs:
         uses: ./.github/actions/setup
 
       - name: Unit tests with coverage
-        # Each workspace runner already parallelises its own tests. Running
-        # web, core and mobile coverage together oversubscribes this runner
-        # and can exhaust the web tests' 5-second timeout during DOM queries.
-        run: bun run test:unit --concurrency=1
+        # Serialise workspaces; core also bounds file workers in vitest.config.
+        # Stream progress so a runner interruption preserves the last active
+        # suite instead of buffering all output until the process exits.
+        run: bun run test:unit --concurrency=1 --output-logs=full --log-order=stream
