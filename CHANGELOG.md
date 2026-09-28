@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.24.1](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.24.0...persistence-v1.24.1) (2026-09-28)
+
+
+### Bug Fixes
+
+* redeem unrestricted vouchers without work email and validate auth credentials ([#466](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/466)) ([d63014a](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/d63014ad9fa6266e00381208cc58a967a51cde4b))
+
 ## [1.24.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.23.1...persistence-v1.24.0) (2026-09-24)
 
 
