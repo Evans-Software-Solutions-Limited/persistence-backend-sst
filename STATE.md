@@ -1,5 +1,34 @@
 # Project memory · persistence-backend-sst
 
+### 2026-09-28 — Apple sign-in for voucher redemption
+
+Updated main to 7aba9490 and added Apple OAuth to redemption. The code step no
+longer requests membership email; Apple appears before email authentication and
+uses the verified Supabase identity, including Hide My Email. The saved voucher
+and restricted eligibility email survive the redirect. Tab-local S256 PKCE and
+one-use state reject invalid/replayed returns; pending exchanged tokens support
+retrying the identity read without replaying Apple's code. Stale typed emails do
+not constrain Apple preflight, and changing account clears the old email.
+
+Both deployment stages now add `/redeem/callback?flow=*` alongside the founding
+callback. Added and verified the narrow URL in live production and staging
+allowlists, retaining all existing entries and Site URLs. Both environments'
+authorize endpoints returned HTTP 302 to appleid.apple.com; this is initiation
+evidence, not a completed live Apple login or voucher redemption.
+
+Validation: 1,575 web tests and 222 script tests passed; changed web files have
+100% statements/lines/functions and >=95.65% branches. Apple configuration has
+98.82% statements/lines, 97.93% branches and 100% functions. Root formatting,
+typecheck (9 tasks), lint (6 tasks, existing warnings) and non-mobile build
+(12 tasks) passed. Local Inspector full-diff review CLEAN; independent 390px
+visual inspection MATCH for restricted and Apple/email account screens, with
+no horizontal overflow. No native/EAS/mobile build was started. Code requires
+normal PR merge/release.
+
+Separately configured global Codex MCP server `noise` at the user-supplied
+reporting endpoint and verified saved OAuth authorization. The required
+slack-progress-updates skill remains unavailable; no notification was sent.
+
 ### 2026-09-28 — Redemption email flow and production credential repair
 
 CloudWatch/Sentry PERSISTENCE-BACKEND-4 confirmed POST /vouchers/prepare failed

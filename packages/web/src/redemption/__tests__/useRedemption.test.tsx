@@ -6,6 +6,9 @@ import { voucherApi } from "../api";
 vi.mock("../auth", () => ({
   currentAccount: vi.fn(),
   completeCallback: vi.fn(),
+  completeAppleCallback: vi.fn(),
+  appleOAuthUrl: vi.fn(),
+  isRetryableAuthError: vi.fn().mockReturnValue(false),
   signOut: vi.fn(),
 }));
 vi.mock("../api", () => ({

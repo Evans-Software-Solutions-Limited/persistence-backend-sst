@@ -96,6 +96,9 @@ describe("configure Apple auth input validation", () => {
       expect(result.callback).toBe(
         `https://${getDomainConfig(stage).webHost}/founding/access/callback?flow=*`,
       );
+      expect(result.redemptionCallback).toBe(
+        `https://${getDomainConfig(stage).webHost}/redeem/callback?flow=*`,
+      );
       expect(result.nativeId).toBe(
         `com.bradleyevans96.persistence${stage === "staging" ? ".staging" : ""}`,
       );
@@ -289,7 +292,7 @@ describe("Apple configuration update", () => {
       external_apple_enabled: true,
       external_apple_client_id: `${servicesId},native.older,native.extra,com.bradleyevans96.persistence`,
       external_apple_secret: config.clientSecret,
-      uri_allow_list: `persistence://**,https://existing.example/callback,${config.callback}`,
+      uri_allow_list: `persistence://**,https://existing.example/callback,${config.callback},${config.redemptionCallback}`,
     });
     expect(buildPatch(config, patch)).toEqual(patch);
     expect(existing.external_google_secret).toBe("do-not-copy");
@@ -303,7 +306,9 @@ describe("Apple configuration update", () => {
     expect(patch.external_apple_client_id).toBe(
       `${servicesId},com.bradleyevans96.persistence`,
     );
-    expect(patch.uri_allow_list).toBe(config.callback);
+    expect(patch.uri_allow_list).toBe(
+      `${config.callback},${config.redemptionCallback}`,
+    );
   });
   it.each([
     null,
@@ -326,7 +331,7 @@ describe("Apple configuration update", () => {
       }),
     ).toMatchObject({
       external_apple_client_id: `${servicesId},com.bradleyevans96.persistence`,
-      uri_allow_list: config.callback,
+      uri_allow_list: `${config.callback},${config.redemptionCallback}`,
     });
   });
   it("GETs then PATCHes only the allowed fields and rereads configuration", async () => {
@@ -362,6 +367,22 @@ describe("Apple configuration update", () => {
         json({
           ...patch,
           [key]: key === "external_apple_enabled" ? false : "wrong",
+        }),
+      );
+    await expect(configureAppleAuth(config, fetcher)).rejects.toThrow(
+      "verification failed",
+    );
+  });
+  it("fails verification when only the new redemption callback was not saved", async () => {
+    const patch = buildPatch(config, existing);
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(json(existing))
+      .mockResolvedValueOnce(json({}))
+      .mockResolvedValueOnce(
+        json({
+          ...patch,
+          uri_allow_list: `${existing.uri_allow_list},${config.callback}`,
         }),
       );
     await expect(configureAppleAuth(config, fetcher)).rejects.toThrow(

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as auth from "./auth";
 import { voucherApi, type Challenge, type Redemption } from "./api";
 import {
@@ -21,10 +21,12 @@ export function useRedemption() {
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [callbackHash] = useState(() =>
+  const [retryableSignIn, setRetryableSignIn] = useState(false);
+  const startup = useRef<Promise<auth.MembershipAccount | null> | null>(null);
+  const [callback] = useState(() =>
     window.location.pathname.replace(/\/+$/, "") === "/redeem/callback"
-      ? window.location.hash
-      : "",
+      ? { hash: window.location.hash, search: window.location.search }
+      : null,
   );
 
   useEffect(() => {
@@ -32,25 +34,31 @@ export function useRedemption() {
     // Remove credentials before any provider/API requests or navigation.
     if (window.location.pathname.replace(/\/+$/, "") === "/redeem/callback")
       window.history.replaceState(null, "", "/redeem/callback");
-    const request = callbackHash
-      ? auth.completeCallback(callbackHash)
-      : auth.currentAccount();
-    request
+    startup.current ??= callback?.search
+      ? auth.completeAppleCallback(callback.search, callback.hash)
+      : callback?.hash
+        ? auth.completeCallback(callback.hash)
+        : auth.currentAccount();
+    startup.current
       .then((a) => {
         if (alive) {
           setAccount(a);
           if (a)
             setDraft((current) => ({
               ...current,
-              accountEmail: current.accountEmail || a.email,
+              accountEmail: a.email,
             }));
         }
       })
-      .catch(() => {
+      .catch((e) => {
         if (alive) {
-          auth.signOut();
+          const retryable = auth.isRetryableAuthError(e);
+          setRetryableSignIn(retryable);
+          if (!retryable) auth.signOut();
           setError(
-            "Your sign-in could not be verified. Continue below to sign in or request a new link.",
+            retryable && e instanceof Error
+              ? e.message
+              : "Your sign-in could not be verified. Continue below to sign in or request a new link.",
           );
         }
       })
@@ -60,7 +68,7 @@ export function useRedemption() {
     return () => {
       alive = false;
     };
-  }, [callbackHash]);
+  }, [callback]);
 
   async function run(action: () => Promise<void>) {
     setBusy(true);
@@ -109,7 +117,7 @@ export function useRedemption() {
       // An email-specific preflight also prevents duplicate/ineligible attempts before auth.
       await voucherApi.check(
         next.code,
-        next.eligibilityEmail || next.accountEmail,
+        next.eligibilityEmail || account?.email || undefined,
       );
       saveDraft(next);
       setDraft(next);
@@ -119,11 +127,12 @@ export function useRedemption() {
       else setStage("account");
     });
 
-  async function recheckBeforeAuth() {
+  async function recheckBeforeAuth(apple = false) {
     try {
       await voucherApi.check(
         draft.code,
-        draft.eligibilityEmail || draft.accountEmail,
+        draft.eligibilityEmail ||
+          (apple ? undefined : draft.accountEmail || undefined),
       );
     } catch (e) {
       setStage("details");
@@ -131,13 +140,44 @@ export function useRedemption() {
     }
   }
 
+  const apple = () =>
+    run(async () => {
+      await recheckBeforeAuth(true);
+      saveDraft(draft);
+      const url = await auth.appleOAuthUrl();
+      setAccount(null);
+      setChallenge(null);
+      window.location.assign(url);
+    });
+
+  const retrySignIn = () =>
+    run(async () => {
+      try {
+        const a = await auth.currentAccount();
+        setAccount(a);
+        if (a) setDraft((current) => ({ ...current, accountEmail: a.email }));
+        setRetryableSignIn(false);
+      } catch (e) {
+        const retryable = auth.isRetryableAuthError(e);
+        setRetryableSignIn(retryable);
+        if (!retryable) auth.signOut();
+        throw e;
+      }
+    });
+
   const authenticate = (mode: "signin" | "signup", password: string) =>
     run(async () => {
+      if (!draft.accountEmail.trim())
+        throw new Error("Enter your membership account email to continue.");
+      saveDraft(draft);
       await recheckBeforeAuth();
       const a =
         mode === "signup"
-          ? await auth.signUp(draft.accountEmail, password)
-          : await auth.signIn(draft.accountEmail, password);
+          ? await auth.signUp(draft.accountEmail.trim().toLowerCase(), password)
+          : await auth.signIn(
+              draft.accountEmail.trim().toLowerCase(),
+              password,
+            );
       if (!a) {
         setNotice(
           "Check your membership email for the confirmation link. After confirming, return here. If you already have an account, sign in instead.",
@@ -145,6 +185,7 @@ export function useRedemption() {
         return;
       }
       setAccount(a);
+      setDraft((current) => ({ ...current, accountEmail: a.email }));
       // Show authenticated identity before allowing any grant to that account.
       setStage("details");
       setNotice(`Signed in as ${a.email}. Continue to verify your voucher.`);
@@ -152,8 +193,11 @@ export function useRedemption() {
 
   const emailLink = () =>
     run(async () => {
+      if (!draft.accountEmail.trim())
+        throw new Error("Enter your membership account email to continue.");
+      saveDraft(draft);
       await recheckBeforeAuth();
-      await auth.sendSignInLink(draft.accountEmail);
+      await auth.sendSignInLink(draft.accountEmail.trim().toLowerCase());
       setNotice(
         "If an account exists for this email, a sign-in link is on its way. Open it to continue. New to Persistence? Choose Create account.",
       );
@@ -182,7 +226,9 @@ export function useRedemption() {
   };
   const changeAccount = () => {
     auth.signOut();
+    setRetryableSignIn(false);
     setAccount(null);
+    setDraft((current) => ({ ...current, accountEmail: "" }));
     restart();
   };
   return {
@@ -199,6 +245,9 @@ export function useRedemption() {
     details,
     authenticate,
     emailLink,
+    apple,
+    retrySignIn,
+    retryableSignIn,
     verify,
     redeem,
     restart,

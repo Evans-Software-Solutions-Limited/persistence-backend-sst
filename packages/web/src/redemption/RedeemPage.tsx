@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   IconArrowRight,
+  IconBrandApple,
   IconCheck,
   IconShieldCheck,
   IconTicket,
@@ -35,11 +36,15 @@ function AccountForm({
   busy,
   authenticate,
   emailLink,
+  apple,
+  setEmail,
 }: {
   email: string;
   busy: boolean;
   authenticate: (mode: "signin" | "signup", password: string) => Promise<void>;
   emailLink: () => Promise<void>;
+  apple: () => Promise<void>;
+  setEmail: (email: string) => void;
 }) {
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [password, setPassword] = useState("");
@@ -51,6 +56,28 @@ function AccountForm({
   }
   return (
     <>
+      <Button
+        type="button"
+        variant="outline"
+        disabled={busy}
+        onClick={() => void apple()}
+      >
+        <IconBrandApple size={20} aria-hidden="true" />
+        Continue with Apple
+      </Button>
+      <p className="redeem-small">
+        Use Apple to sign in or create your account, including Hide My Email. By
+        continuing, you agree to the{" "}
+        <a href="/terms" target="_blank" rel="noreferrer">
+          Terms
+        </a>{" "}
+        and acknowledge the{" "}
+        <a href="/privacy" target="_blank" rel="noreferrer">
+          Privacy Policy
+        </a>
+        .
+      </p>
+      <p className="redeem-small">Or continue with email</p>
       <div
         className="redeem-segments"
         role="group"
@@ -79,10 +106,19 @@ function AccountForm({
           Create account
         </button>
       </div>
-      <p>
-        Membership account: <strong className="redeem-email">{email}</strong>
-      </p>
       <form onSubmit={submit}>
+        <Field id="account-email" label="Membership account email">
+          <Input
+            id="account-email"
+            type="email"
+            required
+            autoComplete="email"
+            maxLength={254}
+            value={email}
+            disabled={busy}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+        </Field>
         <Field
           id="redeem-password"
           label={mode === "signup" ? "Create a password" : "Password"}
@@ -149,10 +185,9 @@ function AccountForm({
       )}
       <p className="redeem-small">
         Use the same account you use in the app. A voucher never changes an
-        existing account's password. If you normally use Apple or Google,
-        request an email sign-in link using the email on that account. For Apple
-        Hide My Email, use your Apple relay address and check the inbox it
-        forwards to.
+        existing account's password. If you normally use Apple, choose Continue
+        with Apple above. Google users can request a sign-in link using their
+        account email.
       </p>
     </>
   );
@@ -242,11 +277,20 @@ export default function RedeemPage() {
               {flow.notice}
             </p>
           )}
+          {flow.retryableSignIn && (
+            <Button
+              type="button"
+              disabled={flow.busy}
+              onClick={() => void flow.retrySignIn()}
+            >
+              Retry sign-in
+            </Button>
+          )}
           {flow.stage === "details" && (
             <form onSubmit={submit(flow.details)}>
               <p>
-                Enter your membership code and the email you use for
-                Persistence. A personal email is fine.
+                Enter your membership code. You can then continue with Apple or
+                your membership account email.
               </p>
               <Field id="voucher-code" label="Membership code">
                 <Input
@@ -260,23 +304,6 @@ export default function RedeemPage() {
                   disabled={flow.busy}
                   onChange={(e) =>
                     flow.setDraft({ ...flow.draft, code: e.target.value })
-                  }
-                />
-              </Field>
-              <Field id="membership-email" label="Membership account email">
-                <Input
-                  id="membership-email"
-                  type="email"
-                  required
-                  autoComplete="email"
-                  maxLength={254}
-                  value={flow.draft.accountEmail}
-                  disabled={flow.busy}
-                  onChange={(e) =>
-                    flow.setDraft({
-                      ...flow.draft,
-                      accountEmail: e.target.value,
-                    })
                   }
                 />
               </Field>
@@ -325,6 +352,10 @@ export default function RedeemPage() {
               busy={flow.busy}
               authenticate={flow.authenticate}
               emailLink={flow.emailLink}
+              apple={flow.apple}
+              setEmail={(accountEmail) =>
+                flow.setDraft({ ...flow.draft, accountEmail })
+              }
             />
           )}
           {flow.stage === "verify" && flow.challenge && (

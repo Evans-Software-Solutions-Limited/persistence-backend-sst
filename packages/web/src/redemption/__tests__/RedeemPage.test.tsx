@@ -14,6 +14,9 @@ import { voucherApi } from "../api";
 vi.mock("../auth", () => ({
   currentAccount: vi.fn(),
   completeCallback: vi.fn(),
+  completeAppleCallback: vi.fn(),
+  appleOAuthUrl: vi.fn(),
+  isRetryableAuthError: vi.fn().mockReturnValue(false),
   signIn: vi.fn(),
   signUp: vi.fn(),
   sendSignInLink: vi.fn(),
@@ -78,9 +81,6 @@ async function fill(eligibility = account.email) {
   fireEvent.change(screen.getByLabelText("Membership code"), {
     target: { value: " VOUCHER-CODE " },
   });
-  fireEvent.change(screen.getByLabelText("Membership account email"), {
-    target: { value: account.email },
-  });
   fireEvent.click(screen.getByRole("button", { name: "Continue" }));
   await waitFor(() =>
     expect(
@@ -93,6 +93,11 @@ async function fill(eligibility = account.email) {
     target: { value: eligibility },
   });
   fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+  await waitFor(() =>
+    expect(document.querySelector('[aria-busy="true"]')).toBeNull(),
+  );
+  const email = screen.queryByLabelText("Membership account email");
+  if (email) fireEvent.change(email, { target: { value: account.email } });
 }
 
 it("verifies the work mailbox separately and only redeems after explicit confirmation", async () => {
@@ -143,12 +148,14 @@ it("reuses verified same-email proof without asking for an OTP", async () => {
     screen.queryByRole("button", { name: "Activate membership" }),
   ).toBeNull();
 });
-it("authenticates the membership account rather than silently using a different signed-in account", async () => {
+it("lets the user explicitly switch from an existing signed-in account", async () => {
   vi.mocked(auth.currentAccount).mockResolvedValue({
     id: "other",
     email: "other@example.com",
   });
   await ready();
+  expect(screen.getByText("other@example.com")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Change account" }));
   await fill();
   await screen.findByRole("heading", { name: "Your membership account" });
   expect(voucherApi.prepare).not.toHaveBeenCalled();
@@ -392,9 +399,6 @@ it("waits for the code check before offering authentication", async () => {
   fireEvent.change(screen.getByLabelText("Membership code"), {
     target: { value: "VOUCHER-CODE" },
   });
-  fireEvent.change(screen.getByLabelText("Membership account email"), {
-    target: { value: account.email },
-  });
   fireEvent.click(screen.getByRole("button", { name: "Continue" }));
   expect(screen.queryByLabelText("Password")).toBeNull();
   expect(
@@ -471,12 +475,12 @@ it("offers signup for an unrestricted code using only a personal membership emai
   fireEvent.change(screen.getByLabelText("Membership code"), {
     target: { value: "OPEN-CODE" },
   });
-  fireEvent.change(screen.getByLabelText("Membership account email"), {
-    target: { value: account.email },
-  });
   fireEvent.click(screen.getByRole("button", { name: "Continue" }));
   await screen.findByRole("heading", { name: "Your membership account" });
   expect(screen.queryByLabelText("Eligibility email")).toBeNull();
+  fireEvent.change(screen.getByLabelText("Membership account email"), {
+    target: { value: account.email },
+  });
   fireEvent.click(screen.getByRole("button", { name: "Create account" }));
   expect(
     screen.getByText(/common or previously exposed passwords are rejected/),
@@ -488,4 +492,97 @@ it("offers signup for an unrestricted code using only a personal membership emai
   fireEvent.submit(screen.getByLabelText("Create a password").closest("form")!);
   await screen.findByText(/Check your membership email/);
   expect(auth.signUp).toHaveBeenCalledWith(account.email, "long-new-password");
+});
+
+it("does not use an old or typed email to gate Apple sign-in", async () => {
+  vi.mocked(auth.currentAccount).mockResolvedValue(null);
+  vi.mocked(voucherApi.check).mockResolvedValue({
+    valid: true,
+    requiresEligibilityEmail: false,
+  });
+  sessionStorage.setItem(
+    "persistence.redemption.draft",
+    JSON.stringify({
+      code: "OPEN-CODE",
+      eligibilityEmail: "",
+      accountEmail: "already-redeemed@example.test",
+      differentAccount: false,
+      savedAt: Date.now(),
+    }),
+  );
+  const assign = vi.fn();
+  vi.stubGlobal("location", { ...window.location, assign });
+  vi.mocked(auth.appleOAuthUrl).mockResolvedValue(
+    "https://auth.example.test/authorize",
+  );
+  await ready();
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+  await screen.findByRole("button", { name: "Continue with Apple" });
+  expect(voucherApi.check).toHaveBeenLastCalledWith("OPEN-CODE", undefined);
+  fireEvent.change(screen.getByLabelText("Membership account email"), {
+    target: { value: "another@example.test" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Continue with Apple" }));
+  await waitFor(() => expect(assign).toHaveBeenCalled());
+  expect(voucherApi.check).toHaveBeenLastCalledWith("OPEN-CODE", undefined);
+  vi.unstubAllGlobals();
+});
+it("returns to code details when Apple preflight fails without starting OAuth", async () => {
+  vi.mocked(auth.currentAccount).mockResolvedValue(null);
+  await ready();
+  await fill();
+  vi.mocked(voucherApi.check).mockRejectedValueOnce(
+    new Error("Code already used"),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Continue with Apple" }));
+  await screen.findByText("Code already used");
+  expect(auth.appleOAuthUrl).not.toHaveBeenCalled();
+  expect(
+    screen.queryByRole("button", { name: "Continue with Apple" }),
+  ).toBeNull();
+});
+it.each(["password", "link"])(
+  "requires account email only for email authentication (%s)",
+  async (method) => {
+    vi.mocked(auth.currentAccount).mockResolvedValue(null);
+    await ready();
+    await fill();
+    fireEvent.change(screen.getByLabelText("Membership account email"), {
+      target: { value: "" },
+    });
+    if (method === "link")
+      fireEvent.click(
+        screen.getByRole("button", { name: "Email me a sign-in link" }),
+      );
+    else fireEvent.submit(screen.getByLabelText("Password").closest("form")!);
+    await screen.findByText("Enter your membership account email to continue.");
+    expect(auth.signIn).not.toHaveBeenCalled();
+    expect(auth.sendSignInLink).not.toHaveBeenCalled();
+  },
+);
+it("uses the verified current account instead of a stale draft email on reload", async () => {
+  sessionStorage.setItem(
+    "persistence.redemption.draft",
+    JSON.stringify({
+      code: "OPEN-CODE",
+      eligibilityEmail: "",
+      accountEmail: "previous@example.test",
+      differentAccount: false,
+      savedAt: Date.now(),
+    }),
+  );
+  vi.mocked(voucherApi.check).mockResolvedValue({
+    valid: true,
+    requiresEligibilityEmail: false,
+  });
+  vi.mocked(voucherApi.prepare).mockResolvedValue({
+    ...challenge,
+    verified: true,
+    eligibilityEmail: account.email,
+  });
+  await ready();
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+  await screen.findByRole("heading", { name: "Make it yours" });
+  expect(voucherApi.check).toHaveBeenLastCalledWith("OPEN-CODE", account.email);
+  expect(voucherApi.prepare).toHaveBeenCalledWith("OPEN-CODE", undefined);
 });
