@@ -35,21 +35,25 @@ export class VoucherService {
       );
     return { id, email: normalizeEmail(identity.email) };
   }
-  async check(code: string, email: string, sourceIp: string = "unknown") {
+  async check(code: string, email?: string, sourceIp: string = "unknown") {
     // Source IP is overwritten from the Lambda request context at the API boundary.
-    // A workplace NAT can represent all 500 employees in a batch plus retries.
-    await this.repo.rateLimit([{ key: `check-ip:${sourceIp}`, limit: 2000 }]);
-    const eligibility = normalizeEmail(email);
+    // Allow 10 checks each for a 500-person workplace NAT: six for the
+    // restricted-code sign-in journey plus four for corrections or retries.
+    await this.repo.rateLimit([{ key: `check-ip:${sourceIp}`, limit: 5000 }]);
+    const eligibility = email === undefined ? undefined : normalizeEmail(email);
     await this.repo.rateLimit([
-      { key: `check-email:${sourceIp}:${eligibility}`, limit: 20 },
+      ...(eligibility === undefined
+        ? []
+        : [{ key: `check-email:${sourceIp}:${eligibility}`, limit: 20 }]),
       { key: `check-voucher:${canonicalCode(code)}`, limit: 30 },
     ]);
     return this.repo.check(code, eligibility);
   }
-  async prepare(id: string, code: string, email: string) {
+  async prepare(id: string, code: string, email?: string) {
     await this.repo.rateLimit([{ key: `prepare-account:${id}`, limit: 20 }]);
     const account = await this.account(id);
-    const eligibility = normalizeEmail(email);
+    const eligibility =
+      email === undefined ? account.email : normalizeEmail(email);
     await this.repo.rateLimit([
       { key: `prepare-email:${eligibility}`, limit: 10 },
       { key: `prepare-voucher:${canonicalCode(code)}`, limit: 20 },

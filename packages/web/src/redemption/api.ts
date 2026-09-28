@@ -60,9 +60,13 @@ async function post<T>(
   return result.data as T;
 }
 export const voucherApi = {
-  check: (code: string, eligibilityEmail: string) =>
-    post<{ valid: true }>("check", { code, eligibilityEmail }, false),
-  prepare: (code: string, eligibilityEmail: string) =>
+  check: (code: string, eligibilityEmail?: string) =>
+    post<{ valid: true; requiresEligibilityEmail: boolean }>(
+      "check",
+      { code, eligibilityEmail },
+      false,
+    ),
+  prepare: (code: string, eligibilityEmail?: string) =>
     post<Challenge>("prepare", { code, eligibilityEmail }),
   verify: (challengeId: string, otp: string) =>
     post<Challenge>("verify", { challengeId, otp }),

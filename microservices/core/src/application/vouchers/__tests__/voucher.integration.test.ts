@@ -1180,7 +1180,7 @@ describe("anonymous voucher preflight", () => {
         ` ${issued.codes[0].code.toLowerCase()} `,
         " USER@EXAMPLE.TEST ",
       ),
-    ).toEqual({ valid: true });
+    ).toMatchObject({ valid: true });
     expect(identity).not.toHaveBeenCalled();
     expect(mailer).not.toHaveBeenCalled();
     expect(
@@ -1228,7 +1228,7 @@ describe("anonymous voucher preflight", () => {
     const { issued, challenge } = await ready();
     expect(
       await service.check(issued.codes[0].code, "user@example.test"),
-    ).toEqual({ valid: true });
+    ).toMatchObject({ valid: true });
     await service.redeem(USER, challenge.challengeId);
     await expect(
       service.check(issued.codes[0].code, "user@example.test"),
@@ -1266,7 +1266,7 @@ describe("anonymous voucher preflight", () => {
       another.check(issued.codes[0].code.toLowerCase(), "other@example.test"),
     ).rejects.toMatchObject({ code: "rate_limited" });
     await pg.query(
-      "UPDATE business_voucher_rate_limits SET attempts=2000 WHERE key=$1",
+      "UPDATE business_voucher_rate_limits SET attempts=5000 WHERE key=$1",
       [hashSecret("check-ip:unknown")],
     );
     await expect(
@@ -1312,11 +1312,11 @@ it("blocks another code for the same employee in a batch, including challenges p
   });
   expect(
     await service.check(issued.codes[2].code, "other@example.test"),
-  ).toEqual({ valid: true });
+  ).toMatchObject({ valid: true });
   const nextBatch = await issue();
   expect(
     await service.check(nextBatch.codes[0].code, "user@example.test"),
-  ).toEqual({ valid: true });
+  ).toMatchObject({ valid: true });
   expect(
     (await pg.query("SELECT * FROM user_subscriptions")).rows,
   ).toHaveLength(1);
@@ -1338,7 +1338,7 @@ it("does not let invalid-code probes exhaust another IP's employee email quota",
       " USER@EXAMPLE.TEST ",
       "203.0.113.2",
     ),
-  ).toEqual({ valid: true });
+  ).toMatchObject({ valid: true });
   expect(identity).not.toHaveBeenCalled();
   expect(mailer).not.toHaveBeenCalled();
 });
@@ -1480,4 +1480,84 @@ describe("issuing additional codes into an existing batch", () => {
       2,
     );
   });
+});
+
+it("preflights code-only without exposing assignments and enforces omitted-email restrictions at preparation", async () => {
+  const open = await issue();
+  const assigned = await issue({ employeeEmails: ["employee@acme.com"] });
+  const restricted = await issue({ allowedDomains: ["acme.com"] });
+  expect(await service.check(open.codes[0].code)).toEqual({
+    valid: true,
+    requiresEligibilityEmail: false,
+  });
+  for (const issued of [assigned, restricted]) {
+    expect(await service.check(issued.codes[0].code)).toEqual({
+      valid: true,
+      requiresEligibilityEmail: true,
+    });
+    await expect(
+      service.prepare(USER, issued.codes[0].code),
+    ).rejects.toMatchObject({ code: "invalid_voucher" });
+  }
+  expect(mailer).not.toHaveBeenCalled();
+});
+it("defaults omitted eligibility to verified identity, preserves replay and blocks duplicate batch redemption", async () => {
+  const issued = await issue({ quantity: 2 });
+  const first = await service.prepare(USER, issued.codes[0].code);
+  expect(first).toMatchObject({
+    verified: true,
+    eligibilityEmail: "user@example.test",
+    accountEmail: "user@example.test",
+  });
+  expect(mailer).not.toHaveBeenCalled();
+  const redeemed = await service.redeem(USER, first.challengeId);
+  expect(await service.redeem(USER, first.challengeId)).toEqual(redeemed);
+  await expect(
+    service.prepare(USER, issued.codes[1].code),
+  ).rejects.toMatchObject({ code: "used_email" });
+});
+it("code-only preflight cannot bypass canonical voucher and trusted IP rate limits", async () => {
+  const issued = await issue();
+  await service.check(issued.codes[0].code);
+  await pg.query(
+    "UPDATE business_voucher_rate_limits SET attempts=30 WHERE key=$1",
+    [hashSecret(`check-voucher:${issued.codes[0].code}`)],
+  );
+  await expect(
+    service.check(issued.codes[0].code.toLowerCase()),
+  ).rejects.toMatchObject({ code: "rate_limited" });
+  await pg.query(
+    "UPDATE business_voucher_rate_limits SET attempts=5000 WHERE key=$1",
+    [hashSecret("check-ip:unknown")],
+  );
+  await expect(service.check("different-code")).rejects.toMatchObject({
+    code: "rate_limited",
+  });
+});
+
+it("allows a full 500-person shared-IP journey budget including retries while enforcing its ceiling", async () => {
+  const issued = await issue({ allowedDomains: ["example.test"] });
+  const sourceIp = "203.0.113.10";
+  await service.check(issued.codes[0].code, undefined, sourceIp);
+  // The previous 499 employees used six checks to sign in with restricted
+  // codes and four checks for corrections/retries. Exercise the final user's
+  // real preflight queries against that persisted shared-NAT counter.
+  await pg.query(
+    "UPDATE business_voucher_rate_limits SET attempts=$1 WHERE key=$2",
+    [499 * 10, hashSecret(`check-ip:${sourceIp}`)],
+  );
+  for (let attempt = 0; attempt < 10; attempt++) {
+    expect(
+      await service.check(
+        issued.codes[0].code,
+        attempt % 2 ? "user@example.test" : undefined,
+        sourceIp,
+      ),
+    ).toEqual({ valid: true, requiresEligibilityEmail: true });
+  }
+  await expect(
+    service.check(issued.codes[0].code, undefined, sourceIp),
+  ).rejects.toMatchObject({ code: "rate_limited" });
+  expect(identity).not.toHaveBeenCalled();
+  expect(mailer).not.toHaveBeenCalled();
 });

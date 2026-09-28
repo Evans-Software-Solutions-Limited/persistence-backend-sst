@@ -351,3 +351,14 @@ it("allows only admins to issue additional codes and validates issuance input", 
     id,
   );
 });
+
+it("accepts code-only preflight and authenticated preparation without an eligibility email", async () => {
+  expect((await request("/vouchers/check", { code: "open" }, "")).status).toBe(
+    200,
+  );
+  expect(check).toHaveBeenCalledWith("open", undefined, "unknown");
+  expect((await request("/vouchers/prepare", { code: "open" })).status).toBe(
+    200,
+  );
+  expect(prepare).toHaveBeenCalledWith(id, "open", undefined);
+});
