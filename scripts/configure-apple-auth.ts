@@ -1,4 +1,4 @@
-/** Sync only Apple OAuth and its founding callback; never print credentials. */
+/** Sync only Apple OAuth and customer callbacks; never print credentials. */
 import { getDomainConfig } from "../packages/api-utils/src/domains/domain-config";
 
 type Stage = "production" | "staging";
@@ -15,6 +15,7 @@ export interface ValidatedConfig {
   clientSecret: string;
   nativeId: string;
   callback: string;
+  redemptionCallback: string;
 }
 export class ConfigurationError extends Error {}
 
@@ -146,6 +147,7 @@ export function validateConfig(
     clientSecret,
     nativeId,
     callback: `https://${domain.webHost}/founding/access/callback?flow=*`,
+    redemptionCallback: `https://${domain.webHost}/redeem/callback?flow=*`,
   };
 }
 
@@ -191,7 +193,11 @@ export function buildPatch(config: ValidatedConfig, existing: unknown) {
     ].join(","),
     external_apple_secret: config.clientSecret,
     uri_allow_list: [
-      ...new Set([...entries(current.uri_allow_list), config.callback]),
+      ...new Set([
+        ...entries(current.uri_allow_list),
+        config.callback,
+        config.redemptionCallback,
+      ]),
     ].join(","),
   };
 }
