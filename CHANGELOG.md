@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.25.1](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.25.0...persistence-v1.25.1) (2026-09-29)
+
+
+### Bug Fixes
+
+* **web:** open installed app after code redemption ([#470](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/470)) ([fbdcde4](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/fbdcde44bf83daa4580d56970d8ba6a83e6b3f87))
+
 ## [1.25.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.24.1...persistence-v1.25.0) (2026-09-28)
 
 
