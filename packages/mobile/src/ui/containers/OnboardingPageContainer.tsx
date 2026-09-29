@@ -9,6 +9,7 @@ import {
   type OnboardingPath,
 } from "@/domain/models/onboarding";
 import { recommendOnboardingPlan } from "@/domain/services/onboardingRecommendation";
+import { getOnboardingBenefits } from "@/domain/services/onboardingBenefits";
 import { EditProfileContainer } from "@/ui/containers/EditProfileContainer";
 import { HabitSetupContainer } from "@/ui/containers/HabitSetupContainer";
 import { SubscriptionSelectionContainer } from "@/ui/containers/SubscriptionSelectionContainer";
@@ -324,7 +325,7 @@ export function OnboardingPageContainer({ page }: { page: OnboardingPage }) {
     );
   }
 
-  if (isEntitled) {
+  if (isEntitled && subscription.data) {
     const finishAccountOnlyJourney = async () => {
       await onboarding.completePage("recommendation");
       await onboarding.completeJourney();
@@ -332,8 +333,9 @@ export function OnboardingPageContainer({ page }: { page: OnboardingPage }) {
     };
     return (
       <OnboardingAccountConfirmationPresenter
-        tierDisplayName={subscription.data?.tierDisplayName ?? "Premium"}
-        expiresAt={subscription.data?.expiresAt ?? null}
+        tierDisplayName={subscription.data.tierDisplayName}
+        expiresAt={subscription.data.expiresAt}
+        benefits={getOnboardingBenefits(subscription.data)}
         onContinue={() => void finishAccountOnlyJourney()}
       />
     );

@@ -18,7 +18,20 @@ const mockSkipPage = jest.fn();
 const mockDismissJourney = jest.fn();
 const mockCompleteJourney = jest.fn();
 let mockSubscriptionProps: SubscriptionSelectionContainerProps | null = null;
-let mockIntentProps: { onContinue: () => void } | null = null;
+let mockIntentProps: {
+  onContinue: () => void;
+  onChange: (intent: string) => void;
+  onBack: () => void;
+  onSkip: () => void;
+} | null = null;
+let mockSetupProps: {
+  onComplete: () => void;
+  onBack: () => void;
+  onSkip: () => void;
+} | null = null;
+let mockWelcomeContinue: (() => void) | null = null;
+const mockSetPath = jest.fn();
+const mockSetIntentChoice = jest.fn();
 let mockConfirmationProps: {
   tierDisplayName: string;
   expiresAt: string | null;
@@ -64,12 +77,20 @@ jest.mock("@/ui/presenters/OnboardingPresenter", () => {
   const { Pressable } = jest.requireActual("react-native");
   return {
     ...actual,
-    OnboardingWelcomePresenter: ({ onSkip }: { onSkip: () => void }) =>
-      React.createElement(Pressable, {
+    OnboardingWelcomePresenter: ({
+      onSkip,
+      onContinue,
+    }: {
+      onSkip: () => void;
+      onContinue: () => void;
+    }) => {
+      mockWelcomeContinue = onContinue;
+      return React.createElement(Pressable, {
         onPress: onSkip,
         testID: "onboarding-welcome-skip",
-      }),
-    OnboardingIntentPresenter: (props: { onContinue: () => void }) => {
+      });
+    },
+    OnboardingIntentPresenter: (props: NonNullable<typeof mockIntentProps>) => {
       mockIntentProps = props;
       return null;
     },
@@ -97,7 +118,15 @@ jest.mock("@/ui/presenters/OnboardingPresenter", () => {
 
 jest.mock("@/ui/hooks/useMySubscription", () => ({
   useMySubscription: () => ({
-    data: mockSubscriptionData,
+    data: mockSubscriptionData
+      ? {
+          workoutLimit: null,
+          aiAccess: true,
+          isTrainerTier: false,
+          trainerClientLimit: null,
+          ...mockSubscriptionData,
+        }
+      : undefined,
     isError: mockSubscriptionIsError,
     refetch: mockRefetch,
   }),
@@ -136,8 +165,8 @@ jest.mock("@/ui/state/OnboardingProvider", () => ({
     skipPage: mockSkipPage,
     dismissJourney: mockDismissJourney,
     completeJourney: mockCompleteJourney,
-    setPath: jest.fn(),
-    setIntentChoice: jest.fn(),
+    setPath: mockSetPath,
+    setIntentChoice: mockSetIntentChoice,
     track: mockTrack,
   }),
 }));
@@ -147,6 +176,19 @@ jest.mock("@/ui/containers/SubscriptionSelectionContainer", () => ({
     props: SubscriptionSelectionContainerProps,
   ) => {
     mockSubscriptionProps = props;
+    return null;
+  },
+}));
+
+jest.mock("@/ui/containers/EditProfileContainer", () => ({
+  EditProfileContainer: (props: NonNullable<typeof mockSetupProps>) => {
+    mockSetupProps = props;
+    return null;
+  },
+}));
+jest.mock("@/ui/containers/HabitSetupContainer", () => ({
+  HabitSetupContainer: (props: NonNullable<typeof mockSetupProps>) => {
+    mockSetupProps = props;
     return null;
   },
 }));
@@ -182,6 +224,98 @@ describe("OnboardingPageContainer recommendation", () => {
     mockSubscriptionIsError = false;
     mockIsOnline = true;
     mockRefetch.mockReset();
+  });
+
+  it("continues from welcome to the next saved page", async () => {
+    mockCurrentPage = "welcome";
+    render(<OnboardingPageContainer page="welcome" />);
+    await act(async () => {
+      mockWelcomeContinue?.();
+    });
+    expect(mockCompletePage).toHaveBeenCalledWith("welcome");
+    expect(mockPush).toHaveBeenCalledWith("/(onboarding)/recommendation");
+  });
+
+  it.each(["profile", "habits"] as const)(
+    "wires %s completion, back and skip into onboarding",
+    async (page) => {
+      mockCurrentPage = page;
+      render(<OnboardingPageContainer page={page} />);
+      await act(async () => {
+        mockSetupProps?.onComplete();
+      });
+      expect(mockCompletePage).toHaveBeenCalledWith(page);
+      await act(async () => {
+        mockSetupProps?.onBack();
+      });
+      expect(mockDismissTo).toHaveBeenCalledWith("/(onboarding)/train");
+      mockSkipPage.mockResolvedValue("train");
+      await act(async () => {
+        mockSetupProps?.onSkip();
+      });
+      expect(mockSkipPage).toHaveBeenCalledWith(page);
+      expect(mockPush).toHaveBeenCalledWith("/(onboarding)/train");
+    },
+  );
+
+  it("saves coaching choices and connects role navigation", async () => {
+    mockCurrentPage = "role";
+    const screen = renderWithTamagui(<OnboardingPageContainer page="role" />);
+    fireEvent.press(screen.getByTestId("onboarding-role-coach"));
+    expect(mockSetPath).toHaveBeenCalledWith("coach", "1_5");
+    fireEvent.press(screen.getByTestId("onboarding-role-athlete"));
+    expect(mockSetPath).toHaveBeenCalledWith("athlete", null);
+    await act(async () => {
+      fireEvent.press(screen.getByTestId("onboarding-role-continue"));
+    });
+    expect(mockCompletePage).toHaveBeenCalledWith("role");
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText("Back"));
+    });
+    expect(mockGoBack).toHaveBeenCalled();
+    await act(async () => {
+      fireEvent.press(screen.getByText("Skip"));
+    });
+    expect(mockSkipPage).toHaveBeenCalledWith("role");
+  });
+
+  it.each(["nutrition", "train"] as const)(
+    "saves %s preferences and navigation",
+    async (page) => {
+      mockCurrentPage = page;
+      render(<OnboardingPageContainer page={page} />);
+      const intent =
+        page === "nutrition" ? "nutrition_barcode" : "training_three_workouts";
+      await act(async () => {
+        mockIntentProps?.onChange(intent);
+        mockIntentProps?.onBack();
+      });
+      expect(mockSetIntentChoice).toHaveBeenCalledWith(
+        page === "nutrition" ? "nutrition" : "training",
+        intent,
+      );
+      expect(mockGoBack).toHaveBeenCalled();
+      await act(async () => {
+        mockIntentProps?.onSkip();
+      });
+      expect(mockSkipPage).toHaveBeenCalledWith(page);
+    },
+  );
+
+  it("allows showing other plans and finishing on Free", async () => {
+    render(<OnboardingPageContainer page="recommendation" />);
+    await act(async () => {
+      mockSubscriptionProps?.onboardingRecommendation?.onToggleOtherPlans?.();
+    });
+    expect(
+      mockSubscriptionProps?.onboardingRecommendation?.showOtherPlans,
+    ).toBe(true);
+    await act(async () => {
+      mockSubscriptionProps?.onboardingRecommendation?.onContinueFree?.();
+    });
+    expect(mockCompletePage).toHaveBeenCalledWith("recommendation");
+    expect(mockCompleteJourney).toHaveBeenCalled();
+    expect(mockReplace).toHaveBeenCalledWith("/(app)/(tabs)");
   });
 
   it("offers the offline plan picker instead of the paywall when offline", async () => {
@@ -443,6 +577,10 @@ describe("OnboardingPageContainer recommendation", () => {
     expect(mockConfirmationProps).toEqual({
       tierDisplayName: "Premium+",
       expiresAt: "2026-12-25T00:00:00.000Z",
+      benefits: expect.arrayContaining([
+        expect.objectContaining({ title: "Loadout" }),
+        expect.objectContaining({ title: "Mealprint" }),
+      ]),
       onContinue: expect.any(Function),
     });
 
