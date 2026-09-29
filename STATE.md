@@ -1,5 +1,26 @@
 # Project memory · persistence-backend-sst
 
+### 2026-09-29 — Redemption success opens the installed app
+
+The redemption success CTA now reads "Open app" and uses the existing
+persistencemobile://train native route. Android uses an intent with the existing
+Google Play URL as fallback; iOS attempts the registered scheme and falls back
+to the configured App Store after 2.5 seconds. Visibility/pagehide cancels that
+fallback permanently so returning from the app does not open the store. Repeat
+clicks replace pending timers and unmount cleans up. Desktop retains the download
+homepage; the secondary Get the app link uses the device's configured store.
+No account identity, voucher or auth token is attached to these links.
+
+48 focused tests passed; full web coverage reports 100% statements, functions
+and branches on both changed production files. Typecheck 9/9, lint 6/6 and
+non-mobile build 12/12 passed. Local Inspector Brad full-diff review: clean.
+390px browser success-state preview verified with synthetic demo data; screenshot
+at /private/tmp/redemption-open-app.png. Native installed/uninstalled handoff
+still needs physical iOS/Android validation. No native or EAS build initiated.
+Full non-mobile test suite passed 18/18 tasks (1,593 web, 5,291 core and 222
+scripts tests); repository formatting passed. Physical-device handoff remains
+the only unverified runtime behaviour.
+
 ### 2026-09-28 — Apple sign-in for voucher redemption
 
 Updated main to 7aba9490 and added Apple OAuth to redemption. The code step no

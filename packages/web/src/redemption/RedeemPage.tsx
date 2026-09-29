@@ -1,5 +1,5 @@
 import { membershipTierLabel, isCoachMembership } from "@/lib/membershipTier";
-import { appDestination } from "@/lib/appDestination";
+import { useOpenApp } from "@/lib/useOpenApp";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -195,7 +195,7 @@ function AccountForm({
 
 export default function RedeemPage() {
   const flow = useRedemption();
-  const destination = appDestination();
+  const destination = useOpenApp();
   const [otp, setOtp] = useState("");
   useEffect(() => {
     const previous = document.title;
@@ -461,7 +461,7 @@ export default function RedeemPage() {
                 </p>
               ) : null}
               <Button asChild>
-                <a href={destination.href}>
+                <a href={destination.href} onClick={destination.onClick}>
                   {destination.label}
                   <IconArrowRight size={18} />
                 </a>
@@ -471,7 +471,7 @@ export default function RedeemPage() {
                 you're new. If the plan hasn't refreshed yet, reopen the app and
                 check your subscription.
               </p>
-              <a href="/" className="redeem-text-link">
+              <a href={destination.storeHref} className="redeem-text-link">
                 Get the app
               </a>
             </>

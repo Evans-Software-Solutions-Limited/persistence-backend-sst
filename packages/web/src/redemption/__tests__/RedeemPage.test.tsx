@@ -124,9 +124,7 @@ it("verifies the work mailbox separately and only redeems after explicit confirm
   expect(voucherApi.redeem).toHaveBeenCalledWith("c");
   expect(sessionStorage.getItem("persistence.redemption.draft")).toBeNull();
   expect(
-    screen
-      .getByRole("link", { name: "Go to Persistence" })
-      .getAttribute("href"),
+    screen.getByRole("link", { name: "Open app" }).getAttribute("href"),
   ).toBe("/");
 });
 it("reuses verified same-email proof without asking for an OTP", async () => {
