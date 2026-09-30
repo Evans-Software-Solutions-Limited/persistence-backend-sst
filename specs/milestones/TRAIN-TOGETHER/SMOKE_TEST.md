@@ -1,5 +1,15 @@
 # Persistence Together — integrated smoke evidence
 
+## Current scope — 30 September 2026
+
+Approved AC15–20 in [requirements](../../34-train-together/requirements.md)
+supersede conflicting two-person, universal host-approval and online-only scope
+below. Four athletes, trusted-friend admission, explicit PREV consent, host
+completion choices and fully offline nearby/Wi-Fi/hotspot support are required.
+[Offline design](./OFFLINE-DESIGN.md) distinguishes proposed native transport
+from proven implementation. PR #462 is merged; older evidence remains historical.
+No native builds are authorized.
+
 Use authorized test accounts/data in the development environment. Run `bun run dev` only after checking its infrastructure effects and existing repository instructions. Physical two-phone checks require a compatible binary supplied or specifically authorized by Brad; do not start a build. Record commit/runtime, platforms, entitlement fixtures, timestamps, observed results and screenshots. Never substitute two mocked screens for genuine synchronization.
 
 | Step                                                                                                                                                                     | Expected evidence                                                                                                                                                                                  | Criteria    |

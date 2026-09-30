@@ -1,5 +1,15 @@
 # Persistence Together — execution brief
 
+## Current scope — 30 September 2026
+
+Approved AC15–20 in [requirements](../../34-train-together/requirements.md)
+supersede conflicting two-person, universal host-approval and online-only scope
+below. Four athletes, trusted-friend admission, explicit PREV consent, host
+completion choices and fully offline nearby/Wi-Fi/hotspot support are required.
+[Offline design](./OFFLINE-DESIGN.md) distinguishes proposed native transport
+from proven implementation. PR #462 is merged; older evidence remains historical.
+No native builds are authorized.
+
 17 September 2026. This replaces the discussion brief; historical decisions remain in the parent specification. Brad authorized preparation/merge of these briefs. Defaults were selected for execution planning, not individually ratified product choices. The 21 September update authorizes PR #462 to deliver all Together backend work across PER-20, PER-21 and backend PER-22. Mobile and integrated rollout gates remain.
 
 ## Spec alignment

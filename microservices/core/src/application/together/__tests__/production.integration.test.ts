@@ -661,10 +661,8 @@ describe("production Together persistence and recovery", () => {
       consentVersion: "together-v1",
       consentAccepted: true,
     });
-    await repo.decide(a, s.sessionId, req.requestId, key(), {
-      decision: "reject",
-      expectedRevision: (await repo.snapshot(a, s.sessionId)).revision,
-    });
+    expect(req.status).toBe("approved");
+    expect((await repo.discovery(b, { audience: "friends" })).data).toEqual([]);
     expect((await repo.listRequests(a, s.sessionId)).data).toEqual([]);
     await withActors([a, b], (tx) => revokePair(tx, a, b, "friend_removed"));
     await repo.visibility(a, s.sessionId, key(), {
@@ -675,6 +673,14 @@ describe("production Together persistence and recovery", () => {
     expect(
       (
         await repo.discovery(b, {
+          audience: "nearby",
+          placeId: "geoapify:place",
+        })
+      ).data,
+    ).toEqual([]);
+    expect(
+      (
+        await repo.discovery(c, {
           audience: "nearby",
           placeId: "geoapify:place",
         })
@@ -1001,28 +1007,23 @@ describe("remaining recovery and migration boundaries", () => {
       audience: "friends",
       expiresAt: new Date(Date.now() + 60000).toISOString(),
     });
-    const req = await repo.requestJoin(b, key(), {
+    const joinBody = {
       sessionId: s.sessionId,
-      consentVersion: "together-v1",
-      consentAccepted: true,
-    });
-    const k = key(),
-      decision = {
-        decision: "approve" as const,
-        expectedRevision: (await repo.snapshot(a, s.sessionId)).revision,
-      };
-    await repo.decide(a, s.sessionId, req.requestId, k, decision);
-    expect(
-      (await repo.decide(a, s.sessionId, req.requestId, k, decision))
-        .participants,
-    ).toHaveLength(2);
+      consentVersion: "together-v1" as const,
+      consentAccepted: true as const,
+    };
+    const joinKey = key();
+    const req = await repo.requestJoin(b, joinKey, joinBody);
+    expect(req.status).toBe("approved");
+    expect(await repo.requestJoin(b, joinKey, joinBody)).toEqual(req);
+    expect((await repo.snapshot(b, s.sessionId)).participants).toHaveLength(2);
     await withActors([a, b], (tx) => revokePair(tx, a, b, "block"));
     expect((await repo.create(a, ck, body)).snapshot.participants).toHaveLength(
       1,
     );
-    await expect(
-      repo.decide(a, s.sessionId, req.requestId, k, decision),
-    ).rejects.toMatchObject({ status: 403 });
+    await expect(repo.requestJoin(b, joinKey, joinBody)).rejects.toMatchObject({
+      status: 403,
+    });
   });
   it("caps connected devices, accepts disconnect reconnect and rejects expired tickets and replay cursors", async () => {
     const s = await create();
@@ -1131,11 +1132,15 @@ describe("scoped friend invitation revocation", () => {
     const invite = await repo.invite(a, s.sessionId, key(), {
       expiresInMinutes: 15,
     });
-    const bReq = await repo.requestJoin(b, key(), {
-      inviteToken: invite.token,
-      consentVersion: "together-v1",
-      consentAccepted: true,
-    });
+    const [bReq] = await db
+      .insert(schema.togetherJoinRequests)
+      .values({
+        sessionId: s.sessionId,
+        userId: b,
+        inviteId: invite.tokenId,
+        consentVersion: "together-v1",
+      })
+      .returning();
     await withActors([a, b], (tx) => revokePair(tx, a, b, "friend_removed"));
     await expect(
       repo.requestJoin(b, key(), {
@@ -1149,15 +1154,13 @@ describe("scoped friend invitation revocation", () => {
       consentVersion: "together-v1",
       consentAccepted: true,
     });
-    expect(cReq.status).toBe("pending");
+    expect(cReq.status).toBe("approved");
     expect(
       (await db.select().from(schema.togetherJoinRequests)).find(
-        (r) => r.id === bReq.requestId,
+        (r) => r.id === bReq.id,
       )?.status,
     ).toBe("rejected");
-    expect(
-      (await repo.listRequests(a, s.sessionId, { limit: 1 })).data[0].userId,
-    ).toBe(c);
+    expect((await repo.listRequests(a, s.sessionId)).data).toEqual([]);
   });
 });
 
@@ -1384,4 +1387,201 @@ describe("serialized first-write identity races", () => {
     const snapshot = await repo.snapshot(a, s.sessionId);
     expect(snapshot.participants[0].ownRevision).toBe(1);
   });
+});
+
+describe("four-person admission", () => {
+  const consent = {
+    consentVersion: "together-v1" as const,
+    consentAccepted: true as const,
+  };
+  async function extraUser() {
+    const id = key();
+    await db.insert(schema.profiles).values({ id, fullName: "Guest" });
+    await db.insert(schema.userSubscriptions).values({
+      userId: id,
+      tierName: "premium",
+      paymentStatus: "active" as never,
+      startsAt: new Date(0),
+    });
+    return id;
+  }
+  async function join(id: string, userId: string) {
+    const invite = await repo.invite(a, id, key(), { expiresInMinutes: 15 });
+    return repo.requestJoin(userId, key(), {
+      inviteToken: invite.token,
+      ...consent,
+    });
+  }
+  async function approve(id: string, requestId: string) {
+    return repo.decide(a, id, requestId, key(), {
+      decision: "approve",
+      expectedRevision: (await repo.snapshot(a, id)).revision,
+    });
+  }
+  it("admits four with separate single-use invites and refuses a fifth at approval and request", async () => {
+    const s = await pair();
+    const d = await extraUser(),
+      e = await extraUser();
+    const third = await join(s.sessionId, c);
+    expect(third.status).toBe("pending");
+    await approve(s.sessionId, third.requestId);
+    await repo.visibility(a, s.sessionId, key(), {
+      audience: "nearby",
+      placeId: "geoapify:place",
+      expiresAt: new Date(Date.now() + 60000).toISOString(),
+    });
+    expect(
+      (
+        await repo.discovery(e, {
+          audience: "nearby",
+          placeId: "geoapify:place",
+        })
+      ).data[0].occupancy,
+    ).toBe(3);
+    const fifth = await repo.requestJoin(e, key(), {
+      sessionId: s.sessionId,
+      ...consent,
+    });
+    const fourth = await join(s.sessionId, d);
+    expect(
+      (await approve(s.sessionId, fourth.requestId)).participants,
+    ).toHaveLength(4);
+    expect(
+      (
+        await repo.discovery(e, {
+          audience: "nearby",
+          placeId: "geoapify:place",
+        })
+      ).data,
+    ).toEqual([]);
+    await expect(approve(s.sessionId, fifth.requestId)).rejects.toMatchObject({
+      code: "SESSION_FULL",
+    });
+    await expect(join(s.sessionId, e)).rejects.toMatchObject({
+      code: "SESSION_FULL",
+    });
+  });
+  it("auto-admits accepted friends only after consent and preserves invite consumption on replay", async () => {
+    const s = await create();
+    await db
+      .insert(schema.friendships)
+      .values({ userId: a, friendId: b, status: "accepted", initiatedBy: a });
+    expect((await repo.snapshot(a, s.sessionId)).participants).toHaveLength(1);
+    const invite = await repo.invite(a, s.sessionId, key(), {
+      expiresInMinutes: 15,
+    });
+    const body = { inviteToken: invite.token, ...consent },
+      k = key();
+    const result = await repo.requestJoin(b, k, body);
+    expect(result.status).toBe("approved");
+    expect(await repo.requestJoin(b, k, body)).toEqual(result);
+    expect((await repo.snapshot(a, s.sessionId)).participants).toHaveLength(2);
+    await expect(repo.requestJoin(c, key(), body)).rejects.toMatchObject({
+      code: "INVITE_EXPIRED",
+    });
+    expect(
+      (await db.select().from(schema.togetherReceipts)).some((r) =>
+        JSON.stringify(r).includes('"participants"'),
+      ),
+    ).toBe(false);
+  });
+  it.each([false, true])(
+    "revokes roster-scoped logging grants when a guest joins (friend=%s)",
+    async (friend) => {
+      const s = await pair();
+      const grant = await repo.delegation(b, s.sessionId, key(), {
+        allowPartnerLogging: true,
+      });
+      if (friend)
+        await db.insert(schema.friendships).values({
+          userId: a,
+          friendId: c,
+          status: "accepted",
+          initiatedBy: a,
+        });
+      const request = await join(s.sessionId, c);
+      if (!friend) await approve(s.sessionId, request.requestId);
+      const snapshot = await repo.snapshot(c, s.sessionId);
+      const owner = snapshot.participants.find((p) => p.userId === b)!;
+      expect(owner.allowPartnerLogging).toBe(false);
+      expect(owner.delegationGeneration).toBe(grant.generation + 1);
+      const delegated = {
+        ...cmd(b, s.plan.exercises[0].planExerciseId),
+        delegationGeneration: grant.generation,
+      };
+      await expect(run(c, s.sessionId, delegated)).rejects.toMatchObject({
+        code: "DELEGATION_REVOKED",
+      });
+      await expect(
+        run(c, s.sessionId, {
+          ...delegated,
+          delegationGeneration: owner.delegationGeneration,
+        }),
+      ).rejects.toMatchObject({ code: "DELEGATION_REVOKED" });
+      await expect(run(a, s.sessionId, delegated)).rejects.toMatchObject({
+        code: "DELEGATION_REVOKED",
+      });
+      const renewed = await repo.delegation(b, s.sessionId, key(), {
+        allowPartnerLogging: true,
+      });
+      await expect(run(a, s.sessionId, delegated)).rejects.toMatchObject({
+        code: "DELEGATION_REVOKED",
+      });
+      await run(a, s.sessionId, {
+        ...delegated,
+        delegationGeneration: renewed.generation,
+      });
+      expect(
+        (await repo.snapshot(b, s.sessionId)).participants.find(
+          (p) => p.userId === b,
+        )!.execution.exercises[0].sets,
+      ).toHaveLength(1);
+    },
+  );
+  it("uses the newly consented invitation when a pending guest becomes a friend", async () => {
+    const s = await create();
+    const pending = await join(s.sessionId, b);
+    expect(pending.status).toBe("pending");
+    await db
+      .insert(schema.friendships)
+      .values({ userId: a, friendId: b, status: "accepted", initiatedBy: a });
+    const approved = await join(s.sessionId, b);
+    expect(approved).toEqual({
+      requestId: pending.requestId,
+      status: "approved",
+    });
+    expect((await repo.snapshot(b, s.sessionId)).participants).toHaveLength(2);
+    const invites = await db.select().from(schema.togetherInvites);
+    expect(invites.filter((i) => i.revoked && !i.consumed)).toHaveLength(1);
+    expect(invites.filter((i) => !i.revoked && i.consumed)).toHaveLength(1);
+  });
+  it.each([false, true])(
+    "refuses a blocked guest pair before admission (reverse=%s)",
+    async (reverse) => {
+      const s = await pair();
+      const pending = await join(s.sessionId, c);
+      await db
+        .insert(schema.socialBlocks)
+        .values({ actorId: reverse ? c : b, subjectId: reverse ? b : c });
+      await expect(
+        approve(s.sessionId, pending.requestId),
+      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+      await db
+        .insert(schema.friendships)
+        .values({ userId: a, friendId: c, status: "accepted", initiatedBy: a });
+      await expect(join(s.sessionId, c)).rejects.toMatchObject({
+        code: "FORBIDDEN",
+      });
+      await repo.visibility(a, s.sessionId, key(), {
+        audience: "friends",
+        expiresAt: new Date(Date.now() + 60000).toISOString(),
+      });
+      expect((await repo.discovery(c, { audience: "friends" })).data).toEqual(
+        [],
+      );
+      expect((await repo.snapshot(a, s.sessionId)).participants).toHaveLength(
+        2,
+      );
+    },
+  );
 });

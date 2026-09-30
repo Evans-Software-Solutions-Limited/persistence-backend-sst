@@ -1,5 +1,15 @@
 # Together transport, authorization and recovery
 
+## Current scope — 30 September 2026
+
+Approved AC15–20 in [requirements](../../34-train-together/requirements.md)
+supersede conflicting two-person, universal host-approval and online-only scope
+below. Four athletes, trusted-friend admission, explicit PREV consent, host
+completion choices and fully offline nearby/Wi-Fi/hotspot support are required.
+[Offline design](./OFFLINE-DESIGN.md) distinguishes proposed native transport
+from proven implementation. PR #462 is merged; older evidence remains historical.
+No native builds are authorized.
+
 21 September 2026. PR #462 implements the backend for PER-20, PER-21 and the
 server portion of PER-22 (E1–3/server E7). Brad explicitly expanded the original
 proof scope to include all Together backend work. Mobile integration, activation
