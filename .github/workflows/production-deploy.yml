@@ -155,6 +155,7 @@ jobs:
           # public-safe but flows through the secret pattern for per-stage wiring.
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           TOGETHER_TOKEN_SECRET: ${{ secrets.TOGETHER_TOKEN_SECRET }}
+          TOGETHER_OFFLINE_AUTHORITY: ${{ secrets.TOGETHER_OFFLINE_AUTHORITY }}
           GEOAPIFY_API_KEY: ${{ secrets.GEOAPIFY_API_KEY }}
           # Meta Conversions API + Turnstile (spec-30 growth instrumentation).
           # ALL OPTIONAL + NOT fail-fast (like EXPO_ACCESS_TOKEN/SENTRY_DSN): an
@@ -220,6 +221,7 @@ jobs:
           bunx sst secret set SentryDsn "$SENTRY_DSN" --stage production
           # Optional until Together rollout; remain server-only.
           bunx sst secret set TogetherTokenSecret "$TOGETHER_TOKEN_SECRET" --stage production
+          bunx sst secret set TogetherOfflineAuthority "$TOGETHER_OFFLINE_AUTHORITY" --stage production
           bunx sst secret set GeoapifyApiKey "$GEOAPIFY_API_KEY" --stage production
           # Optional (spec-30) — safe to set empty; the CAPI drainer + Turnstile
           # verification no-op until these carry real values.

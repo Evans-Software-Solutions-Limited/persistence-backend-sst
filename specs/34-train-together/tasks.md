@@ -16,6 +16,11 @@ items are not implemented merely because their requirements are approved.
       closure outcomes, reviewed late sets and idempotent result/effect updates.
 - [ ] **F4 / PER-20/22:** authenticated offline device credentials/admission,
       native local and Wi-Fi transport, server reconciliation and wire fixtures.
+- [x] **F4a / PER-64:** server-signed bounded device credentials, pair friendship
+      evidence, signed four-person roster validation, and authenticated owner
+      command reconciliation into a private reconstructed review candidate.
+      This does not save workout history, activate cloud membership or implement
+      native transport; see `OFFLINE-BACKEND.md` in the milestone folder.
 - [x] **F5a / PER-64:** standalone account-scoped SQLite owner journal; nine real
       SQLite tests cover reopen, receipts, conflicts, rollback and account isolation.
       Not mounted in the app; no native peer transport is claimed.

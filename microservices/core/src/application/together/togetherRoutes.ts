@@ -1,3 +1,9 @@
+import { TogetherOfflineRepository } from "./offlineRepository";
+import {
+  registrationSchema,
+  recoveryUploadSchema,
+  offlineUuidSchema,
+} from "./offlineTypes";
 import Elysia, { t } from "elysia";
 import {
   getAuthUser,
@@ -20,6 +26,7 @@ const headers = t.Object(
 const params = t.Object({ id: uuidSchema });
 const finish = t.Object({ expectedOwnRevision: t.Integer({ minimum: 0 }) });
 const repository = new TogetherRepository();
+const offline = new TogetherOfflineRepository();
 export const togetherRoutes = new Elysia({ name: "togetherRoutes" })
   .derive(async ({ headers }) => ({
     user: await getAuthUser(headers.authorization),
@@ -57,6 +64,60 @@ export const togetherRoutes = new Elysia({ name: "togetherRoutes" })
   .onAfterHandle(async ({ request }) => {
     if (request.method !== "GET") await wakeTogether();
   })
+  .get("/together/offline/trust", async (c) => ({
+    data: await offline.trust(getUser(c).sub),
+  }))
+  .post(
+    "/together/offline/devices",
+    async (c) => ({
+      data: await offline.register(
+        getUser(c).sub,
+        c.headers["idempotency-key"],
+        c.body,
+      ),
+    }),
+    { headers, body: registrationSchema },
+  )
+  .delete(
+    "/together/offline/devices/:deviceId",
+    async (c) => ({
+      data: await offline.revoke(
+        getUser(c).sub,
+        c.params.deviceId,
+        c.headers["idempotency-key"],
+      ),
+    }),
+    { headers, params: t.Object({ deviceId: uuidSchema }) },
+  )
+  .post(
+    "/together/offline/friendship-proof",
+    async (c) => ({
+      data: await offline.friendship(
+        getUser(c).sub,
+        c.body.friendId,
+        c.headers["idempotency-key"],
+      ),
+    }),
+    { headers, body: t.Object({ friendId: offlineUuidSchema }) },
+  )
+  .post(
+    "/together/offline/recovery",
+    async (c) => ({
+      data: await offline.recover(
+        getUser(c).sub,
+        c.headers["idempotency-key"],
+        c.body,
+      ),
+    }),
+    { headers, body: recoveryUploadSchema },
+  )
+  .get(
+    "/together/offline/recovery/:executionId",
+    async (c) => ({
+      data: await offline.getRecovery(getUser(c).sub, c.params.executionId),
+    }),
+    { params: t.Object({ executionId: uuidSchema }) },
+  )
   .post(
     "/together/sessions",
     async (c) => ({

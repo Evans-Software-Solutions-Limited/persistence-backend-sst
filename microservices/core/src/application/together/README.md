@@ -15,6 +15,11 @@ setup and rollback; `RECOVERY-PROOF.md` records tests and remaining release gate
   alongside the existing core API. Disabled routes cannot affect solo routes.
 - `templates*`, adjacent `social/` and `places/`: independent plan copies, shared
   privacy/safety primitives and Geoapify adapter.
+- `offlineIdentity.ts` / `offlineRepository.ts`: signed device credentials,
+  pair friendship evidence, roster verification and private owner recovery.
+  `offlineRecovery.ts` reconstructs personal commands for review without writing
+  workout history or activating live cloud membership. See
+  `specs/milestones/TRAIN-TOGETHER/OFFLINE-BACKEND.md` for configuration and limits.
 
 `recoveryProof.ts` remains the original isolated contract projection. It is not
 mounted or used as a production recorder. Its 17 tests prove durable local

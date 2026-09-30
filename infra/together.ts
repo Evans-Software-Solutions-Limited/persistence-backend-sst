@@ -2,6 +2,7 @@ import {
   databaseUrl,
   sentryDsn,
   togetherTokenSecret,
+  togetherOfflineAuthority,
   geoapifyApiKey,
 } from "./secrets";
 import { supabaseUrl } from "./domains";
@@ -40,6 +41,7 @@ export const togetherEnvironment = {
   TOGETHER_MANAGEMENT_ENDPOINT: togetherSocket?.managementEndpoint ?? "",
   TOGETHER_QUEUE_URL: togetherQueue?.url ?? "",
   TOGETHER_TOKEN_SECRET: togetherTokenSecret.value,
+  TOGETHER_OFFLINE_AUTHORITY: togetherOfflineAuthority.value,
   GEOAPIFY_API_KEY: geoapifyApiKey.value,
 };
 const environment = {
