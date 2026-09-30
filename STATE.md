@@ -1,5 +1,25 @@
 # Project memory · persistence-backend-sst
 
+### 2026-09-29 — Native onboarding shows existing membership benefits
+
+Expanded the existing paid-member onboarding confirmation into one scrollable
+React Native/Tamagui feature page, with plan/expiry and the existing safe-area
+Continue action. It remains inside app onboarding, not a WebView or website.
+The container derives benefits from the current subscription's workout/client
+limits, AI access and shared adaptive-suite tier mapping. Premium does not
+advertise Loadout/Mealprint; coach tiers retain their actual client allowance.
+Parked programme imports and unsupported bulk/priority claims are not displayed.
+Free plan selection, entitlement loading and offline paths are unchanged.
+
+48 focused Jest tests pass; benefits model/presenter have 100% coverage, container
+has >=94% statements/branches/lines and 97.82% functions. Typecheck 9/9 and lint
+6/6 passed; local Inspector Brad full-diff review clean. Actual native components
+were previewed through Expo Web at 390px; this is not physical-device validation.
+Temporary preview entry/config changes were removed. No native/EAS build started.
+Full mobile suite: 538 suites / 7,004 tests passed. Jest retained open handles
+after reporting completion and was stopped; focused tests exit normally.
+Non-mobile build 12/12 and repository formatting passed.
+
 ### 2026-09-29 — Redemption success opens the installed app
 
 The redemption success CTA now reads "Open app" and uses the existing
