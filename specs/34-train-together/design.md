@@ -1,5 +1,21 @@
 # Train Together — design
 
+## D11 — Approved four-person/offline amendment, 30 September 2026
+
+AC15–20 supersede the historical online-only/two-person/mandatory-approval
+contract below. Use one four-seat admission transaction for stranger approval
+and trusted friend admission, preserving current authorization before idempotent
+receipt reads. Accepted friendships are the existing training-partner identity;
+check candidate blocks against every participant. One invitation remains one-use.
+
+Keep personal execution identities stable across cloud/local transports, solo
+conversion and late-work recovery. A transport endpoint cannot authorize an
+athlete. Durable local, peer and server acknowledgements are distinct states.
+Never infer Internet reachability from Wi-Fi connection or finish a workout on
+host disconnect. See [offline design](../milestones/TRAIN-TOGETHER/OFFLINE-DESIGN.md)
+for native transport feasibility and remaining contracts. Existing D8/ADR evidence
+covers the merged cloud baseline only; offline admission/import is new work.
+
 ## Backend implementation amendment — 21 September 2026
 
 PR #462 now covers E1–3/server E7 across PER-20/PER-21/backend PER-22, as described in
@@ -137,3 +153,7 @@ Mobile common `LocationPermissionPort` exposes `status(): granted|denied|undeter
 Current-main integration anchors (paths, not deployed claims): `packages/mobile/src/state/active-workout.ts`; `application/commands/session/complete-session.command.ts` under mobile src; `application/commands/sync.command.ts`; `domain/ports/{api,storage}.port.ts`; `adapters/api/sst-api.adapter.ts`; `microservices/core/src/application/sessions/record/sessionsRecordHandler.ts`; `microservices/core/src/application/repositories/sessionService.ts`; `microservices/core/src/application/entitlement/assertEntitlement.ts`; `packages/subscription-catalog/src/index.ts`; `packages/db/src/schema.ts`; `microservices/core/src/api.ts`. Recheck anchors before implementation; new modules live beside these conventions.
 
 Protocol spike chooses transport/operational ADR and contract fixtures first. Backend owns migrations/infra/wire types; frontend owns mobile models/ports/adapters/UI and mock fixtures consuming those types; agree any shared type package before editing shared files. Domain-specific conflict semantics above override generic solo last-write-wins. Use rollout flags; one integrated public release only after D6 evidence, AC10 research, moderation ownership, source checks and owner-controlled build compatibility. Never start native/EAS/mobile builds from these briefs.
+
+### Logging grants on admission
+
+The shared admission transaction clears `allowPartnerLogging` and increments `delegationGeneration` for all existing participants before emitting membership change. This applies equally to host-approved and accepted-friend auto-admission. Membership snapshots expose the revoked state; server authority checks reject both stale generations and new-generation commands while consent is disabled. Explicit re-grant creates a fresh generation for the current roster; old queued commands remain invalid. This is the safe boundary for the current session-wide consent model; recipient-specific delegation requires a separate contract/schema change.

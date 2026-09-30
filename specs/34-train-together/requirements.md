@@ -1,5 +1,54 @@
 # Train Together — requirements
 
+## Approved amendment — 30 September 2026
+
+This amendment supersedes conflicting historical two-person, mandatory host
+approval and online-only initial-promotion requirements. Brad approved execution.
+PR #462 is merged (22 September, `7ef07b39`); its evidence remains the old
+cloud/two-person baseline, not evidence for the changes below.
+
+- **AC15 — Four athletes and trusted joining:** maximum four including host.
+  Each join is deliberate and explicitly consents to the session. Accepted
+  friends/training partners of the host do not need a second host approval;
+  other joiners do. Existing accepted friendships are the trust relationship.
+  Neither friendship nor transport discovery grants history or log-for access.
+  Check blocks against every participant, paid eligibility, invite validity,
+  exercise visibility, active draft and capacity atomically. Existing one-use
+  invitations stay one-use: use a separate invitation for each new participant.
+- **AC16 — Previous values:** private by default; owner selects recipients for
+  relevant exercise previous values in the current session only. Revocation
+  stops later reads/replay and purges partner caches. Already seen values cannot
+  be made unseen. Current-number visibility and delegated logging stay separate.
+- **AC17 — Explicit completion:** nonhost saves own and leaves; host may save
+  everyone independently, or save own/end sharing while others continue solo.
+  Empty workouts create no result. No inactivity auto-save; host disconnection
+  never becomes an explicit finish. Offline sets remain recoverable and require
+  athlete review before updating that same completed execution/result, with
+  duplicate-safe histories, PRs, volume and streak effects.
+- **AC18 — Fully offline nearby:** nearby collaboration must start and work
+  without internet, including same Wi-Fi or a phone hotspot without internet.
+  Offer a local connection option as well as online remote collaboration.
+  Reconcile to the server when reachable. Cloud-only retries do not satisfy this.
+  Existing account/identity and workout data must be available on the device;
+  do not claim a new online sign-in or uncached download works without internet.
+- **AC19 — Durable poor-signal operation:** commit personal changes locally
+  before claiming local save; acknowledge peer receipt only after durable commit;
+  show server sync separately. Restart, disconnect, duplicate/out-of-order
+  delivery, lost acknowledgements and transport switching must not silently lose
+  sets or create duplicate workouts. A connected Wi-Fi network is not proof of
+  internet or peer reachability. Never silently overwrite a conflict.
+- **AC20 — Offline trust and release evidence:** transport peers must prove
+  identity; display names and endpoint IDs are not trusted identities. Document
+  bounded offline authorization and unavoidable delay in learning remote
+  revocations. Stop sharing on locally known revocation, preserve own recovery,
+  and revalidate before cloud reconciliation. Physical iOS/Android testing is a
+  release gate, including four devices, no-internet Wi-Fi/hotspot and blocked
+  LAN discovery. Native builds remain Brad-owned.
+
+Paid coach classes and scheduling remain separate follow-ups (PER-61/62).
+The [offline design](../milestones/TRAIN-TOGETHER/OFFLINE-DESIGN.md) separates
+approved behaviour from transport choices still requiring native proof.
+
 21 September 2026 execution update: Brad expanded PR #462 to include all Together
 backend work across PER-20, PER-21 and the server portion of PER-22. E1–3/server
 E7 implementation and local evidence are recorded in
@@ -47,3 +96,7 @@ Working name under discussion: Persistence Together; no naming approval or clear
 - **AC14 — Location and recovery:** Optional foreground GPS assists discovery; manual place selection is always available. No background tracking or public exact position. Leave, logout, device change and cancellation never silently discard pending commands: resolve acknowledged status, retain recoverable local work and explicitly explain device-local unsent data. Already uploaded work is recoverable on another authenticated device.
 
 AC1–10 remain requirements except their explicitly unresolved choices are resolved by AC11–14. AC10 thresholds remain provisional research criteria, not collected evidence. Research evidence gates release validation; it does not prevent the independent technical spike.
+
+### Roster-scoped logging consent
+
+Partner-logging consent covers only the current session roster. Every successful admission atomically revokes existing participants' logging grants and increments their delegation generations. A newly admitted participant never inherits a prior grant. Queued commands carrying old generations remain rejected, including commands from previously authorised participants; each owner must explicitly grant logging again for the expanded roster. Existing committed sets remain unchanged.

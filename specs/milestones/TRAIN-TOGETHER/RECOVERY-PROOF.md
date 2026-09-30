@@ -1,5 +1,52 @@
 # Together backend — executable evidence and release gates
 
+## Four-person/local-journal foundation — 30 September 2026
+
+This section describes new local evidence; earlier two-person backend evidence
+below remains historical. The source changes do not activate the feature.
+
+- Four-seat admission, accepted-friend auto-admission, all-member block checks,
+  single-use invites and discovery excluding joined sessions: tested against the
+  existing PGlite-backed production repository and HTTP contracts.
+- Roster changes invalidate existing logging permission generations. New members
+  cannot inherit previous grants; old queued commands remain invalid after a
+  fresh grant. Both friend and host-approved admission paths have regressions.
+- Focused backend result: 62 tests / five files; changed repository coverage
+  99.44% statements/lines, 97.55% branches and 100% functions.
+- Standalone mobile TogetherJournal: nine real file-backed SQLite tests with
+  close/reopen, lost/duplicate receipts, immutable command identity, account
+  isolation, rollback on failed writes and retained rejection/review payloads.
+  Coverage is 100% across statements/branches/functions/lines. It is not mounted
+  in app flows and is not native Expo SQLite/device evidence.
+
+Reproduce from the relevant package directory (Node 24 for mobile test tooling):
+
+```sh
+# microservices/core
+bun run test:unit -- src/application/together/__tests__ --coverage.include=src/application/together/togetherRepository.ts
+# packages/mobile
+bun run test -- --runInBand src/adapters/storage/__tests__/togetherJournal.test.ts --coverage --collectCoverageFrom=src/adapters/storage/togetherJournal.ts
+```
+
+Do not run two coverage commands against the same package/report directory at
+once: the first full-suite attempt lost coverage temporary files when a focused
+run cleared that directory. The unrestricted mobile suite also suffered a Jest
+worker SIGSEGV loading the unchanged PLogoDrawLoader suite; its nine tests passed
+in isolation. Preserve this test-runner reliability observation even if the
+bounded-worker rerun passes.
+
+Final full verification: non-mobile tests passed 18/18 tasks (including 5,298
+core tests); mobile passed 539 suites / 7,013 tests with `--maxWorkers=2`.
+Typecheck 9/9, lint 6/6 (existing warnings), repository formatting and non-mobile
+build 12/12 passed. Local Inspector Brad full-diff sweep is clean after both
+permission/discovery fixes. No native/EAS build was run.
+
+Still unproven/unimplemented: authenticated local/native transport, no-internet
+Wi-Fi/hotspot operation, offline credentials and server reconciliation, PREV
+recipient grants, host closure/solo conversion, UI/adapters, actual mobile journal
+integration and physical-device/performance/production-infrastructure gates.
+See [offline design](./OFFLINE-DESIGN.md) and AC15–20. Native builds remain Brad-owned.
+
 PR #462 covers PER-20, PER-21 and backend PER-22 under Brad's expanded backend
 instruction. This record supersedes the original proof-only evidence. The
 original `recoveryProof.ts` remains an isolated contract projection; production

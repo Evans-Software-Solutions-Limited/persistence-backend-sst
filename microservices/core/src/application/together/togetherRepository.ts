@@ -43,6 +43,8 @@ function secretToken(actor: string, route: string, key: string) {
     .update(JSON.stringify([actor, route, key]))
     .digest("base64url");
 }
+const MAX_PARTICIPANTS = 4;
+type JoinRequest = typeof requests.$inferSelect;
 type Session = typeof sessions.$inferSelect;
 type Participant = typeof participants.$inferSelect;
 const memberWhere = (id: string, uid: string) =>
@@ -582,6 +584,100 @@ export class TogetherRepository {
       );
     });
   }
+  private async canJoinMembers(
+    tx: TogetherTx,
+    ps: Participant[],
+    actor: string,
+  ) {
+    for (const member of ps)
+      if (
+        member.userId !== actor &&
+        !(await canInteract(tx, actor, member.userId))
+      )
+        return false;
+    return true;
+  }
+  private async approveJoin(
+    tx: TogetherTx,
+    s: Session,
+    ps: Participant[],
+    r: JoinRequest,
+  ) {
+    requireTogether(
+      await this.canJoinMembers(tx, ps, r.userId),
+      "FORBIDDEN",
+      403,
+    );
+    requireTogether(ps.length < MAX_PARTICIPANTS, "SESSION_FULL", 409);
+    await this.free(tx, r.userId);
+    if (r.inviteId) {
+      const [invite] = await tx
+        .select()
+        .from(invites)
+        .where(eq(invites.id, r.inviteId));
+      requireTogether(
+        invite &&
+          !invite.revoked &&
+          !invite.revokedFor.includes(r.userId) &&
+          (invite.audience !== "friends" ||
+            (await areFriends(tx, s.hostId!, r.userId))) &&
+          !invite.consumed &&
+          invite.expiresAt > new Date(),
+        "INVITE_EXPIRED",
+        410,
+      );
+      await tx
+        .update(invites)
+        .set({ consumed: true })
+        .where(eq(invites.id, r.inviteId));
+    } else
+      requireTogether(
+        s.audience !== "private" &&
+          (s.audience !== "friends" ||
+            (await areFriends(tx, s.hostId!, r.userId))),
+        "FORBIDDEN",
+        403,
+      );
+    const exerciseDefinitions = await this.planValid(tx, s.plan, [
+      ...ps.map((p) => p.userId),
+      r.userId,
+    ]);
+    for (const member of ps)
+      for (const e of member.execution.exercises)
+        if (e.substituteExerciseId)
+          await this.definitions(tx, [e.substituteExerciseId], [r.userId]);
+    const [p] = await tx
+      .insert(participants)
+      .values({
+        sessionId: s.id,
+        userId: r.userId,
+        execution: { exercises: [] },
+        exerciseDefinitions,
+        consentVersion: r.consentVersion,
+      })
+      .returning();
+    // A grant covers the roster its owner consented to, never future joiners.
+    await tx
+      .update(participants)
+      .set({
+        allowPartnerLogging: false,
+        delegationGeneration: sql`${participants.delegationGeneration}+1`,
+      })
+      .where(
+        and(
+          eq(participants.sessionId, s.id),
+          inArray(
+            participants.userId,
+            ps.map((member) => member.userId),
+          ),
+        ),
+      );
+    for (const member of ps) {
+      member.allowPartnerLogging = false;
+      member.delegationGeneration++;
+    }
+    ps.push(p);
+  }
   async requestJoin(
     actor: string,
     key: string,
@@ -605,7 +701,7 @@ export class TogetherRepository {
         s.hostId &&
           s.hostId !== actor &&
           (await this.live(tx, s, ps)) &&
-          (await canInteract(tx, actor, s.hostId)),
+          (await this.canJoinMembers(tx, ps, actor)),
         "FORBIDDEN",
         403,
       );
@@ -640,7 +736,7 @@ export class TogetherRepository {
       return replayMutation(tx, actor, "join", key, body, async () => {
         await enforceRateLimit(tx, actor, "join");
         await this.free(tx, actor);
-        requireTogether(ps.length < 2, "SESSION_FULL", 409);
+        requireTogether(ps.length < MAX_PARTICIPANTS, "SESSION_FULL", 409);
         const [existing] = await tx
           .select()
           .from(requests)
@@ -651,17 +747,34 @@ export class TogetherRepository {
               eq(requests.status, "pending"),
             ),
           );
-        if (existing) return { requestId: existing.id, status: "pending" };
-        const [r] = await tx
-          .insert(requests)
-          .values({
-            sessionId: id,
-            userId: actor,
-            inviteId: invite?.id,
-            consentVersion: body.consentVersion,
-          })
-          .returning();
-        await this.emit(tx, s, { type: "join_requested" });
+        const [r] = existing
+          ? await tx
+              .update(requests)
+              .set({
+                inviteId: invite?.id ?? null,
+                consentVersion: body.consentVersion,
+              })
+              .where(eq(requests.id, existing.id))
+              .returning()
+          : await tx
+              .insert(requests)
+              .values({
+                sessionId: id,
+                userId: actor,
+                inviteId: invite?.id,
+                consentVersion: body.consentVersion,
+              })
+              .returning();
+        if (await areFriends(tx, actor, s.hostId!)) {
+          await this.approveJoin(tx, s, ps, r);
+          await tx
+            .update(requests)
+            .set({ status: "approved" })
+            .where(eq(requests.id, r.id));
+          await this.emit(tx, s, { type: "membership_changed" });
+          return { requestId: r.id, status: "approved" };
+        }
+        if (!existing) await this.emit(tx, s, { type: "join_requested" });
         return { requestId: r.id, status: "pending" };
       });
     });
@@ -755,59 +868,7 @@ export class TogetherRepository {
                 s.revision,
               );
             if (body.decision === "approve") {
-              requireTogether(ps.length < 2, "SESSION_FULL", 409);
-              await this.free(tx, r.userId);
-              if (r.inviteId) {
-                const [invite] = await tx
-                  .select()
-                  .from(invites)
-                  .where(eq(invites.id, r.inviteId));
-                requireTogether(
-                  invite &&
-                    !invite.revoked &&
-                    !invite.revokedFor.includes(r.userId) &&
-                    (invite.audience !== "friends" ||
-                      (await areFriends(tx, actor, r.userId))) &&
-                    !invite.consumed &&
-                    invite.expiresAt > new Date(),
-                  "INVITE_EXPIRED",
-                  410,
-                );
-                await tx
-                  .update(invites)
-                  .set({ consumed: true })
-                  .where(eq(invites.id, r.inviteId));
-              } else
-                requireTogether(
-                  s.audience !== "private" &&
-                    (s.audience !== "friends" ||
-                      (await areFriends(tx, actor, r.userId))),
-                  "FORBIDDEN",
-                  403,
-                );
-              const exerciseDefinitions = await this.planValid(tx, s.plan, [
-                actor,
-                r.userId,
-              ]);
-              for (const member of ps)
-                for (const e of member.execution.exercises)
-                  if (e.substituteExerciseId)
-                    await this.definitions(
-                      tx,
-                      [e.substituteExerciseId],
-                      [r.userId],
-                    );
-              const [p] = await tx
-                .insert(participants)
-                .values({
-                  sessionId: id,
-                  userId: r.userId,
-                  execution: { exercises: [] },
-                  exerciseDefinitions,
-                  consentVersion: r.consentVersion,
-                })
-                .returning();
-              ps.push(p);
+              await this.approveJoin(tx, s, ps, current);
             }
             await tx
               .update(requests)
@@ -1189,7 +1250,9 @@ export class TogetherRepository {
           .where(eq(participants.sessionId, s.id));
         if (
           !(await this.live(tx, s, ps)) ||
-          ps.length >= 2 ||
+          ps.length >= MAX_PARTICIPANTS ||
+          ps.some((member) => member.userId === actor) ||
+          !(await this.canJoinMembers(tx, ps, actor)) ||
           ps.find((p) => p.userId === s.hostId)?.status !== "active"
         )
           continue;

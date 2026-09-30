@@ -1,5 +1,15 @@
 # Persistence Together — frontend agent
 
+## Current scope — 30 September 2026
+
+Approved AC15–20 in [requirements](../../34-train-together/requirements.md)
+supersede conflicting two-person, universal host-approval and online-only scope
+below. Four athletes, trusted-friend admission, explicit PREV consent, host
+completion choices and fully offline nearby/Wi-Fi/hotspot support are required.
+[Offline design](./OFFLINE-DESIGN.md) distinguishes proposed native transport
+from proven implementation. PR #462 is merged; older evidence remains historical.
+No native builds are authorized.
+
 Backend handoff (21 September 2026): PR #462 supplies the server contracts behind
 default-off flags. Consume its runtime wire examples and `TogetherApi`; do not
 mount the historical recovery projection. `hostId:null` means the host account

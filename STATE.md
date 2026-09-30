@@ -1,5 +1,49 @@
 # Project memory · persistence-backend-sst
 
+### 2026-09-30 — Together four-person admission and offline foundation
+
+Brad approved four-person peer sessions, accepted-friend automatic admission
+(strangers need approval), recipient/session-scoped PREV sharing, no inactivity
+saving, no empty results, and athlete-reviewed recovery of late sets into the same
+result. Fully offline nearby training, including Wi-Fi/hotspot without internet,
+is required; remote training needs internet. Linear PER-60 is reconciled and
+PER-64 tracks local transport/server reconciliation under PER-22. PR #462 was
+verified merged 22 September at 7ef07b39. Restored the missing canonical checkout
+from GitHub at main 9a31b4c8; branch codex/together-offline-four-person.
+
+Implemented four-seat admission/discovery and accepted-friend auto-admission;
+shared approval checks every participant's blocks and exercise visibility.
+Invitations remain single-use. Roster expansion revokes logging grants and bumps
+generations so new members cannot inherit consent. Discovery hides joined sessions.
+62 focused Together tests passed; repository coverage 99.44% lines/statements,
+97.55% branches, 100% functions. Regression tests fail against old implementation.
+
+Added standalone TogetherJournal storage using SQLite transactions, immutable
+account/command identities, distinct peer/server receipts, retained failed/review
+payloads and conflict protection. Nine tests use real file-backed Node SQLite,
+close/reopen, simulated disk failure and account isolation; 100% coverage.
+It is not mounted in mobile flows yet. PR test CI uses Node 24 for node:sqlite.
+
+Requirements/design/tasks and execution briefs now record the approved scope.
+OFFLINE-DESIGN.md evaluates Nearby Connections behind an Expo native module;
+Wi-Fi/hotspot support still needs device proof. No native SDK was added. No
+native/EAS build, deployment or feature activation was started.
+
+Still unfinished: recipient-scoped PREV API/UI; group closure/solo conversion and
+late-result updates; offline device credentials/transport/server import; mobile
+adapters/UI; owner-built physical-device, PostgreSQL/provider/moderation/pilot
+proof. This branch is a foundation, NOT the complete release.
+
+Review found and fixed inherited logging permissions and self-discovery after
+four-seat expansion. Initial full test attempt failed coverage collection because
+concurrent targeted tests removed core/coverage/.tmp; no concurrent coverage runs
+are allowed. Final reruns: non-mobile tests 18/18 tasks (5,298 core tests);
+mobile 539 suites / 7,013 tests with maxWorkers=2; typecheck 9/9, lint 6/6
+(existing warnings), formatting and non-mobile build 12/12 passed. The earlier
+unbounded mobile run had a PLogoDrawLoader worker SIGSEGV; nine isolated loader
+tests passed. Keep that runner reliability observation, not a silent retry.
+Local Inspector Brad final full-diff sweep: CLEAN. No native build.
+
 ### 2026-09-29 — Native onboarding shows existing membership benefits
 
 Expanded the existing paid-member onboarding confirmation into one scrollable

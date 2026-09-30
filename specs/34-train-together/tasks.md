@@ -1,5 +1,30 @@
 # Train Together — tasks
 
+## Current delivery — 30 September 2026
+
+Brad approved AC15–20, including friend auto-admission and fully offline nearby
+training. This checklist supersedes conflicting historical scope below; unchecked
+items are not implemented merely because their requirements are approved.
+
+- [x] Record approved decisions, merged PR #462 evidence and local/offline scope.
+- [x] **F1 / PER-20/21:** four-seat atomic admission, accepted-friend auto-admission,
+      all-member block checks, roster-scoped logging consent and bounded discovery;
+      62 focused backend tests pass. This is implementation evidence, not live
+      PostgreSQL contention or device proof.
+- [ ] **F2 / PER-20/22:** recipient-scoped PREV grants/read filtering/revocation.
+- [ ] **F3 / PER-20/22:** durable host finish-all/solo conversion, per-athlete
+      closure outcomes, reviewed late sets and idempotent result/effect updates.
+- [ ] **F4 / PER-20/22:** authenticated offline device credentials/admission,
+      native local and Wi-Fi transport, server reconciliation and wire fixtures.
+- [x] **F5a / PER-64:** standalone account-scoped SQLite owner journal; nine real
+      SQLite tests cover reopen, receipts, conflicts, rollback and account isolation.
+      Not mounted in the app; no native peer transport is claimed.
+- [ ] **F5 / PER-22:** wire journal into mobile adapters and complete UI integration;
+      distinguish local/peer/server save state and preserve own recovery.
+- [ ] **F6 / PER-22:** four-device iOS/Android, poor/no-signal, Wi-Fi/hotspot,
+      reconnect/restart/transport-switch and performance evidence, plus existing
+      provider/PostgreSQL/moderation/pilot gates. Brad owns native builds.
+
 ## Backend execution — 21 September 2026
 
 Brad explicitly expanded PR #462 to all Together backend work, covering PER-20,
