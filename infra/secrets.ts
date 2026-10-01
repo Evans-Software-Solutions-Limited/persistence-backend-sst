@@ -154,3 +154,9 @@ export const turnstileSecret = new sst.Secret("TurnstileSecret", "");
 export const togetherTokenSecret = new sst.Secret("TogetherTokenSecret", "");
 // Optional server-only place provider; missing key returns explicit provider unavailable.
 export const geoapifyApiKey = new sst.Secret("GeoapifyApiKey", "");
+
+// JSON Ed25519 key ring; unset keeps offline issuance fail-closed.
+export const togetherOfflineAuthority = new sst.Secret(
+  "TogetherOfflineAuthority",
+  "",
+);

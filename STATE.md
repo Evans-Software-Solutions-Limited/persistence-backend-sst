@@ -1,5 +1,33 @@
 # Project memory · persistence-backend-sst
 
+### 2026-09-30 — Offline identity and owner recovery
+
+PR #474 merged at 58c37535. Working branch:
+`codex/together-offline-admission-reconciliation`.
+The next backend slice supplies signed device identity/admission verification
+and a private, versioned owner recovery candidate. It does not save that candidate
+to workout history or activate cloud membership. See
+`specs/milestones/TRAIN-TOGETHER/OFFLINE-BACKEND.md` for the boundary.
+
+23 focused tests pass with real Ed25519 verification and PGlite persistence.
+New runtime coverage: 100% statements/lines/functions and 99.3% branches.
+Migration rerun, RLS/direct-role denial and pre-rollout rollback were exercised.
+Local Inspector Brad final full-diff sweep: CLEAN after fixing signed UUID
+canonicalization (including friendship issuance) and refusing private PEMs in
+public-key fields. A public deterministic wire vector supports client integration.
+No native transport is claimed by these backend tests.
+
+Final gates: all 5,321 core tests / 391 files passed with coverage; remaining
+non-mobile package test run passed 17/17 Turbo tasks. Typecheck 9/9, lint 6/6
+(existing warnings), non-mobile build 12/12, formatting and diff whitespace
+checks passed. SST provider installation succeeded; no deployment was run.
+Mobile runtime was unchanged and its typecheck passed; no native build was run.
+
+Completion/solo continuation and athlete-reviewed amendments to the same result
+remain the following backend piece. Native peer transport, secure key storage,
+mobile journal wiring and physical-device evidence are still required for PER-64.
+No native build, deployment, feature activation or merge is authorized here.
+
 ### 2026-09-30 — Together four-person admission and offline foundation
 
 Brad approved four-person peer sessions, accepted-friend automatic admission
