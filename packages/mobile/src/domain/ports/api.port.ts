@@ -1,3 +1,4 @@
+import type { TogetherOfflineApi } from "./togetherOfflineApi.port";
 import type { DashboardPayload } from "@/domain/models/dashboard";
 import type {
   CreateExerciseInput,
@@ -149,6 +150,8 @@ import type {
  * covers the foundation endpoints.
  */
 export interface ApiPort extends ReferralsPort {
+  /** Optional until all environments support offline Together provisioning. */
+  togetherOffline?: TogetherOfflineApi;
   /** Health check */
   healthCheck(): Promise<Result<{ status: string }, ApiError>>;
 

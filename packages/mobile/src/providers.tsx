@@ -2,7 +2,9 @@ import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { Platform } from "react-native";
 import Constants from "expo-constants";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { SSTApiAdapter } from "@/adapters/api";
+import { SSTApiAdapter, getApiBaseUrl } from "@/adapters/api";
+import { createTogetherProvisioning } from "@/adapters/together/createTogetherProvisioning";
+import { bindTogetherProvisioning } from "@/adapters/together/bindTogetherProvisioning";
 import { SupabaseAuthAdapter } from "@/adapters/auth";
 import { createHealthAdapter } from "@/adapters/health";
 import { RNNetInfoAdapter } from "@/adapters/netInfo";
@@ -118,9 +120,24 @@ export function AppProviders({ children }: { children: ReactNode }) {
       health: createHealthAdapter(),
       notifications: new ExpoNotificationsAdapter(),
       netInfo: new RNNetInfoAdapter(),
+      // Default-off release gate: no native imports or background registration.
+      togetherProvisioning: createTogetherProvisioning(
+        api.togetherOffline,
+        getApiBaseUrl(),
+      ),
       purchases: createPurchasesAdapter(),
     };
   }, []);
+
+  useEffect(
+    () =>
+      bindTogetherProvisioning(
+        adapters.auth,
+        adapters.netInfo,
+        adapters.togetherProvisioning,
+      ),
+    [adapters],
+  );
 
   // QueryClient lives at the root — one per app lifetime. Defaults
   // match the design.md § Subscription state (mobile) stale-times:

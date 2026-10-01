@@ -1,5 +1,49 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-01 — PER-64 offline mobile provisioning
+
+Pulled `main` with `--ff-only` to `29b7d659` (merged PR #480) before creating
+`codex/together-offline-provisioning`; fetched main again before PR preparation
+and confirmed no incoming commits. Added authenticated trust/device/friendship API
+calls and account/environment-scoped SecureStore identity with a public SQLite
+credential cache. Valid evidence survives offline restart; expired, tampered or
+explicitly refused authorization stops sharing while retaining owner recovery
+identity and journals. Composition follows account/connectivity lifecycle and
+remains disabled by default, with no new native SDK loads while disabled.
+
+Inspector found and the implementation fixes stale authorization across secure
+storage/network/promise boundaries, friendship resurrection during renewal,
+revoked issuer fallback, ignored concurrent global denial, lost reconnect intent
+and body-read network/timeout misclassification. Regression tests fail against
+the earlier implementations. Final local Inspector verdict: CLEAN. Tests use
+real SQLite and Ed25519 verification; provider tests exercise mount, account,
+connectivity, storage failure and unmount behavior.
+
+Validation: final mobile 551 suites / 7,257 tests; focused Together/provider
+206 tests; API 191 tests; core 5,446 tests. Root typecheck 9/9, lint 6/6,
+non-mobile build 12/12, formatting and whitespace checks pass. Sequential
+non-mobile tests pass 18/18 tasks, including all 1,594 web tests after the
+concurrent timeout recorded below. All new provisioning runtime files
+exceed 94% in every coverage metric; lifecycle/factory are 100%; providers are
+100% statements/functions/lines and 96.96% branches. Together API diff coverage
+is 100% (22 statements/lines, 9 affected functions, 43 affected branch outcomes).
+
+Open validation findings: the pre-existing monolithic SST API adapter falls below
+the changed-file 90% rule: baseline 54.58/59.50/41.42/55.15% statements/branches/
+functions/lines; final 57.01/63.13/43.77/57.66%. No exclusions or unrelated API
+refactor were added to hide this gap. The broad non-mobile run also hit the
+existing web `AdminVoucherBatch` “splits assignment templates ... beyond 500
+codes” five-second timeout under concurrent package tests. Keep that observed
+flakiness visible: the sequential rerun passes, but this is not an unqualified
+first-run green.
+
+Next: bind provisioned identity and verified host selection to the reviewed
+lobby/join flow; complete Nearby radio, Android hotspot-owner support, workout/
+consent/cache/recovery wiring, authority transitions and mixed-device evidence.
+The sole reviewed Claude design remains authoritative. This is still a disabled
+foundation, not a released Together feature. No native/prebuild/EAS build run;
+Brad owns compatible builds and release. PER-64 and parent PER-22 stay open.
+
 ### 2026-10-01 — PER-64 authenticated LAN source foundation
 
 PR #478 confirmed squash-merged at `22d99b6e`; branch `codex/together-local-lobby`
