@@ -1,5 +1,35 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-01 — Session-scoped PREV consent
+
+PR #477 confirmed squash-merged at `7531d26e`; the next slice is AC16/F2,
+PER-22/PER-60, on `codex/together-prev-consent`. Explicit owner-selected recipients
+and a separate consent version keep history sharing private by default and
+independent of friendship/delegated logging. Retries report current effective
+consent without restoring revoked grants. Active membership, collaboration,
+blocking/expiry/eligibility and personal completion are checked on partner reads.
+
+A dedicated transaction-bound query projects only effective non-skipped exercise
+previous values from completed owner history before the Together session started.
+No historical values or recipient lists enter shared events or mutation receipts.
+HTTP responses are no-store; the mobile snapshot/revision/cache-purge contract is
+in `specs/milestones/TRAIN-TOGETHER/PREV-CONSENT.md`. Native offline consent,
+transport, mobile UI/cache purge and physical-device proof remain unimplemented;
+Together stays disabled. No native build, deployment or activation.
+
+Evidence: 64 focused PGlite tests pass, including 18 new PREV cases; 5 new HTTP
+tests pass. All 18 repository tests and 5 HTTP tests fail against their respective
+old implementation, with current files restored afterward. Generated migration
+is tested for double apply, pre-rollout rollback and direct app-role denial.
+Initial fixture mistake (friendship columns) and HTTP default error-message
+expectation were corrected; these were deterministic test-authoring failures.
+Final full core: 5,384 tests in 394 files passed. Helper coverage is 100% in all
+metrics; every changed runtime file exceeds 90%. Typecheck9/9, lint6/6 (existing
+warnings), other non-mobile suites17/17, non-mobile build12/12, formatting and
+whitespace checks pass.
+Local Inspector full-diff verdict: CLEAN. Live PostgreSQL contention remains an
+external evidence gate; PGlite does not establish it.
+
 ### 2026-10-01 — Together completion and reviewed recovery
 
 Branch: `codex/together-completion-recovery`, based on merged main c1911c27.

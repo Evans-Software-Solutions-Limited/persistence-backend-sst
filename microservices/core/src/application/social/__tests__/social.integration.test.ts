@@ -155,6 +155,15 @@ beforeAll(async () => {
       "utf8",
     ),
   );
+  await pg.exec(
+    await readFile(
+      new URL(
+        "../../../../../../supabase/migrations/20261001133310_together_previous_consent.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
   db = drizzle(pg, { schema });
   holder.db = db;
 });

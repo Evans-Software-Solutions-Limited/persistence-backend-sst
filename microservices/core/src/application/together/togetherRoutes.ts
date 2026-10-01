@@ -204,6 +204,42 @@ export const togetherRoutes = new Elysia({ name: "togetherRoutes" })
     }),
     { params },
   )
+  .put(
+    "/together/sessions/:id/previous-consent",
+    async (c) => {
+      c.set.headers["Cache-Control"] = "no-store";
+      return {
+        data: await repository.previousConsent(
+          getUser(c).sub,
+          c.params.id,
+          c.headers["idempotency-key"],
+          c.body,
+        ),
+      };
+    },
+    {
+      params,
+      headers,
+      body: t.Object({
+        expectedVersion: t.Integer({ minimum: 0 }),
+        recipientIds: t.Array(uuidSchema, { maxItems: 3, uniqueItems: true }),
+      }),
+    },
+  )
+  .get(
+    "/together/sessions/:id/previous/:ownerId",
+    async (c) => {
+      c.set.headers["Cache-Control"] = "no-store";
+      return {
+        data: await repository.previousValues(
+          getUser(c).sub,
+          c.params.id,
+          c.params.ownerId,
+        ),
+      };
+    },
+    { params: t.Object({ id: uuidSchema, ownerId: uuidSchema }) },
+  )
   .post(
     "/together/sessions/:id/invites",
     async (c) => ({

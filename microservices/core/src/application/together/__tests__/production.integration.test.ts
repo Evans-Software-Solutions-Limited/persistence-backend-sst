@@ -116,7 +116,25 @@ beforeAll(async () => {
     "CREATE UNIQUE INDEX IF NOT EXISTS exercises_client_key ON exercises(created_by,client_request_id); ALTER TABLE exercises ADD FOREIGN KEY(created_by) REFERENCES profiles(id) ON DELETE CASCADE;ALTER TABLE session_exercises ADD FOREIGN KEY(exercise_id) REFERENCES exercises(id) ON DELETE CASCADE;ALTER TABLE session_exercises ADD FOREIGN KEY(original_exercise_id) REFERENCES exercises(id) ON DELETE SET NULL;",
   );
   await pg.exec(migration);
+  await pg.exec(
+    readFileSync(
+      new URL(
+        "../../../../../../supabase/migrations/20261001133310_together_previous_consent.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
   await pg.exec(migration);
+  await pg.exec(
+    readFileSync(
+      new URL(
+        "../../../../../../supabase/migrations/20261001133310_together_previous_consent.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
   db = drizzle(pg, { schema });
   holder.db = db;
 });
@@ -1079,6 +1097,15 @@ describe("remaining recovery and migration boundaries", () => {
       ).rows,
     ).toHaveLength(0);
     await pg.exec(migration);
+    await pg.exec(
+      readFileSync(
+        new URL(
+          "../../../../../../supabase/migrations/20261001133310_together_previous_consent.sql",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+    );
   });
 });
 
@@ -1832,5 +1859,532 @@ describe("explicit group closure", () => {
     );
     await repo.close(a, s.sessionId, key(), { ...body, mode: "save_own" });
     expect((await repo.snapshot(b, s.sessionId)).continuation).toBe("solo");
+  });
+});
+
+// Real historical rows exercise the authorized projection; no repository reads are mocked.
+describe("recipient-scoped previous values", () => {
+  const previousDate = new Date("2025-01-01T12:00:00.000Z");
+  async function history(
+    owner = a,
+    exerciseId = exercise,
+    options: {
+      weight?: string | null;
+      reps?: number | null;
+      setNumber?: number;
+      completedAt?: Date | null;
+      startedAt?: Date | null;
+      status?: "completed" | "cancelled" | "in_progress";
+      substituted?: boolean;
+      id?: string;
+    } = {},
+  ) {
+    const sessionId = options.id ?? key(),
+      rowId = key();
+    await db.insert(schema.workoutSessions).values({
+      id: sessionId,
+      userId: owner,
+      status: options.status ?? "completed",
+      name: "Private history title",
+      userNotes: "Never disclose",
+      trainerFeedback: "Private feedback",
+      completedAt:
+        options.completedAt === undefined ? previousDate : options.completedAt,
+      startedAt:
+        options.startedAt === undefined ? previousDate : options.startedAt,
+    });
+    await db.insert(schema.sessionExercises).values({
+      id: rowId,
+      sessionId,
+      exerciseId,
+      sortOrder: 0,
+      isSubstituted: options.substituted ?? false,
+      notes: "Private exercise notes",
+    });
+    await db.insert(schema.exerciseSets).values({
+      sessionExerciseId: rowId,
+      setNumber: options.setNumber ?? 1,
+      weightKg: options.weight === undefined ? "60.25" : options.weight,
+      reps: options.reps === undefined ? 8 : options.reps,
+      isCompleted: true,
+      isPersonalRecord: true,
+      rpe: 9,
+    });
+  }
+  async function grant(
+    id: string,
+    recipientIds = [b],
+    expectedVersion = 0,
+    owner = a,
+    k = key(),
+  ) {
+    return repo.previousConsent(owner, id, k, {
+      expectedVersion,
+      recipientIds,
+    });
+  }
+  async function joinC(id: string) {
+    const invite = await repo.invite(a, id, key(), { expiresInMinutes: 15 });
+    const request = await repo.requestJoin(c, key(), {
+      inviteToken: invite.token,
+      consentVersion: "together-v1",
+      consentAccepted: true,
+    });
+    await repo.decide(a, id, request.requestId, key(), {
+      decision: "approve",
+      expectedRevision: (await repo.snapshot(a, id)).revision,
+    });
+  }
+  it("is private by default despite friendship, joining and delegated logging", async () => {
+    const s = await pair();
+    await history();
+    await db
+      .insert(schema.friendships)
+      .values({ userId: a, friendId: b, initiatedBy: a, status: "accepted" });
+    await repo.delegation(a, s.sessionId, key(), { allowPartnerLogging: true });
+    await expect(repo.previousValues(b, s.sessionId, a)).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    const snapshot = await repo.snapshot(b, s.sessionId);
+    expect(snapshot.participants.find((p) => p.userId === a)).toMatchObject({
+      previousValuesAvailable: false,
+    });
+    expect(
+      snapshot.participants.find((p) => p.userId === a),
+    ).not.toHaveProperty("previousConsent");
+    expect(
+      snapshot.participants.find((p) => p.userId === b)?.previousConsent,
+    ).toEqual({ version: 0, recipientIds: [] });
+    expect((await repo.previousValues(a, s.sessionId, a)).values).toEqual([
+      {
+        exerciseId: exercise,
+        setNumber: 1,
+        weightKg: 60.25,
+        reps: 8,
+        recordedAt: previousDate.toISOString(),
+      },
+    ]);
+  });
+  it("exposes only the chosen owner's projection, with no durable or broadcast history", async () => {
+    const s = await pair();
+    await history();
+    await history(b, exercise, { weight: "100" });
+    expect(await grant(s.sessionId)).toEqual({
+      sessionId: s.sessionId,
+      ownerId: a,
+      version: 1,
+      recipientIds: [b],
+    });
+    const values = await repo.previousValues(b, s.sessionId, a);
+    expect(values).toMatchObject({
+      sessionId: s.sessionId,
+      ownerId: a,
+      consentVersion: 1,
+      ownRevision: 0,
+      planVersion: 1,
+      values: [{ weightKg: 60.25, reps: 8 }],
+    });
+    await expect(repo.previousValues(a, s.sessionId, b)).rejects.toMatchObject({
+      status: 403,
+    });
+    const snapshot = await repo.snapshot(b, s.sessionId);
+    expect(
+      snapshot.participants.find((p) => p.userId === a)
+        ?.previousValuesAvailable,
+    ).toBe(true);
+    expect(
+      snapshot.participants.find((p) => p.userId === a)?.allowPartnerLogging,
+    ).toBe(false);
+    const evs = await db.select().from(schema.togetherEvents);
+    expect(
+      evs.find(
+        (e) =>
+          (e.event as { type: string }).type === "previous_consent_changed",
+      )?.event,
+    ).toEqual({ type: "previous_consent_changed", userId: a, version: 1 });
+    const receipts = await db.select().from(schema.togetherReceipts);
+    expect(
+      receipts.find((r) => r.route.startsWith("previous-consent:"))?.result,
+    ).toEqual({ version: 1 });
+    const serialized = JSON.stringify([snapshot, evs, receipts]);
+    expect(serialized).not.toContain("60.25");
+    expect(serialized).not.toContain("Never disclose");
+  });
+  it("does not grant new participants or another session access; grants remain owner-specific", async () => {
+    const s = await pair();
+    await history();
+    await grant(s.sessionId);
+    await joinC(s.sessionId);
+    await expect(repo.previousValues(c, s.sessionId, a)).rejects.toMatchObject({
+      status: 403,
+    });
+    await expect(repo.previousValues(a, key(), a)).rejects.toMatchObject({
+      status: 404,
+    });
+    await expect(
+      repo.previousValues(key(), s.sessionId, a),
+    ).rejects.toMatchObject({ status: 404 });
+    await expect(
+      repo.previousValues(a, s.sessionId, key()),
+    ).rejects.toMatchObject({ status: 404 });
+    expect((await repo.previousValues(b, s.sessionId, a)).values).toHaveLength(
+      1,
+    );
+    await grant(s.sessionId, [c], 1);
+    await expect(repo.previousValues(b, s.sessionId, a)).rejects.toMatchObject({
+      status: 403,
+    });
+    expect((await repo.previousValues(c, s.sessionId, a)).values).toHaveLength(
+      1,
+    );
+    await grant(s.sessionId, [], 2);
+    await repo.finish(a, s.sessionId, key(), { expectedOwnRevision: 0 });
+    await repo.finish(b, s.sessionId, key(), { expectedOwnRevision: 0 });
+    await repo.finish(c, s.sessionId, key(), { expectedOwnRevision: 0 });
+    const next = await pair();
+    await expect(
+      repo.previousValues(b, next.sessionId, a),
+    ).rejects.toMatchObject({ status: 403 });
+  });
+  it("revokes with CAS and sanitizes old successful retries instead of restoring consent", async () => {
+    const s = await pair(),
+      k = key();
+    await history();
+    await grant(s.sessionId, [b], 0, a, k);
+    await grant(s.sessionId, [], 1);
+    expect(await grant(s.sessionId, [b], 0, a, k)).toMatchObject({
+      version: 2,
+      recipientIds: [],
+    });
+    await expect(grant(s.sessionId, [b], 0)).rejects.toMatchObject({
+      code: "VERSION_CONFLICT",
+      currentRevision: 2,
+    });
+    await expect(grant(s.sessionId, [], 0, a, k)).rejects.toMatchObject({
+      code: "IDEMPOTENCY_MISMATCH",
+    });
+    await expect(repo.previousValues(b, s.sessionId, a)).rejects.toMatchObject({
+      status: 403,
+    });
+    await grant(s.sessionId, [b], 2);
+    expect(await grant(s.sessionId, [b], 0, a, k)).toMatchObject({
+      version: 3,
+      recipientIds: [b],
+    });
+    expect(
+      (await db.select().from(schema.togetherEvents)).filter(
+        (e) =>
+          (e.event as { type: string }).type === "previous_consent_changed",
+      ),
+    ).toHaveLength(3);
+  });
+  it("rejects invalid, self, duplicate, excessive and unknown recipients without mutations", async () => {
+    const s = await pair();
+    for (const recipientIds of [
+      [a],
+      [b, b],
+      [b, c, key(), key()],
+      [c],
+      [key()],
+    ])
+      await expect(grant(s.sessionId, recipientIds)).rejects.toMatchObject({
+        code: "INVALID_PREVIOUS_CONSENT",
+      });
+    for (const expectedVersion of [-1, 0.1, Number.NaN])
+      await expect(
+        grant(s.sessionId, [b], expectedVersion),
+      ).rejects.toMatchObject({ status: 400 });
+    await expect(grant(s.sessionId, [], 0, c)).rejects.toMatchObject({
+      status: 404,
+    });
+    expect(
+      (await repo.snapshot(a, s.sessionId)).participants.find(
+        (p) => p.userId === a,
+      )?.previousConsent?.version,
+    ).toBe(0);
+  });
+  it.each([
+    "owner_finish",
+    "reader_finish",
+    "leave",
+    "close",
+    "expiry",
+    "block",
+    "paid_loss",
+  ])(
+    "stops subsequent reads and grant retries after %s while retaining owner history and revocation",
+    async (reason) => {
+      const s = await pair(),
+        k = key();
+      await history();
+      await grant(s.sessionId, [b], 0, a, k);
+      if (reason === "owner_finish")
+        await repo.finish(a, s.sessionId, key(), { expectedOwnRevision: 0 });
+      if (reason === "reader_finish")
+        await repo.finish(b, s.sessionId, key(), { expectedOwnRevision: 0 });
+      if (reason === "leave")
+        await repo.finish(
+          b,
+          s.sessionId,
+          key(),
+          { expectedOwnRevision: 0 },
+          true,
+        );
+      if (reason === "close")
+        await repo.close(a, s.sessionId, key(), {
+          expectedRevision: (await repo.snapshot(a, s.sessionId)).revision,
+          expectedOwnRevision: 0,
+          mode: "save_own",
+        });
+      if (reason === "expiry")
+        await db
+          .update(schema.togetherSessions)
+          .set({ expiresAt: new Date(0) });
+      if (reason === "block")
+        await withActors([a, b], (tx) => revokePair(tx, a, b, "block"));
+      if (reason === "paid_loss")
+        await db
+          .delete(schema.userSubscriptions)
+          .where(eq(schema.userSubscriptions.userId, a));
+      await expect(
+        repo.previousValues(b, s.sessionId, a),
+      ).rejects.toMatchObject({ status: 403 });
+      expect(await grant(s.sessionId, [b], 0, a, k)).toMatchObject({
+        version: 1,
+        recipientIds: [],
+      });
+      await expect(grant(s.sessionId, [b], 1)).rejects.toMatchObject({
+        status: reason === "reader_finish" ? 400 : 403,
+      });
+      expect(
+        (await repo.previousValues(a, s.sessionId, a)).values,
+      ).toHaveLength(1);
+      expect(await grant(s.sessionId, [], 1)).toMatchObject({
+        version: 2,
+        recipientIds: [],
+      });
+      const own = (await repo.snapshot(a, s.sessionId)).participants.find(
+        (p) => p.userId === a,
+      );
+      expect(own?.previousConsent).toEqual({ version: 2, recipientIds: [] });
+    },
+  );
+  it("revokes a finished nonhost's grant independently of live session sharing and logging authority", async () => {
+    const s = await pair();
+    await history(b);
+    await grant(s.sessionId, [a], 0, b);
+    await repo.finish(b, s.sessionId, key(), { expectedOwnRevision: 0 });
+    expect((await repo.snapshot(a, s.sessionId)).sharingActive).toBe(true);
+    await expect(repo.previousValues(a, s.sessionId, b)).rejects.toMatchObject({
+      status: 403,
+    });
+    expect(
+      (await repo.snapshot(a, s.sessionId)).participants.find(
+        (p) => p.userId === b,
+      )?.previousValuesAvailable,
+    ).toBe(false);
+    expect(await grant(s.sessionId, [], 1, b)).toMatchObject({
+      version: 2,
+      recipientIds: [],
+    });
+    await expect(grant(s.sessionId, [a], 2, b)).rejects.toMatchObject({
+      status: 403,
+    });
+  });
+  it("does not revoke explicit in-session consent merely because friendship is removed", async () => {
+    const s = await pair();
+    await history();
+    await grant(s.sessionId);
+    await withActors([a, b], (tx) => revokePair(tx, a, b, "friend_removed"));
+    expect((await repo.previousValues(b, s.sessionId, a)).values).toHaveLength(
+      1,
+    );
+  });
+  it("filters owner, relevance, status, substituted rows, missing numbers, bounds and post-start results", async () => {
+    const s = await pair();
+    await grant(s.sessionId);
+    await history(a, exercise, {
+      weight: "20",
+      completedAt: new Date("2024-01-01"),
+    });
+    await history(a, exercise, { weight: "30" });
+    await history(a, exercise, {
+      weight: "40",
+      completedAt: null,
+      startedAt: new Date("2025-06-01"),
+    });
+    await history(a, exercise, {
+      weight: "999",
+      completedAt: null,
+      startedAt: null,
+    });
+    await history(a, exercise, {
+      weight: "999",
+      completedAt: new Date(Date.now() + 100000),
+    });
+    await history(a, exercise, { weight: "999", substituted: true });
+    await history(a, exercise, { weight: "999", status: "cancelled" });
+    await history(a, exercise, { weight: "999", status: "in_progress" });
+    await history(a, exercise, { weight: null });
+    await history(a, exercise, { reps: null });
+    await history(a, exercise, { setNumber: 0 });
+    await history(a, exercise, { setNumber: 101 });
+    await history(a, exercise, { setNumber: 100 });
+    await history(a, otherExercise);
+    await history(b, exercise, { weight: "999" });
+    const values = (await repo.previousValues(b, s.sessionId, a)).values;
+    expect(values).toEqual([
+      {
+        exerciseId: exercise,
+        setNumber: 1,
+        weightKg: 40,
+        reps: 8,
+        recordedAt: new Date("2025-06-01").toISOString(),
+      },
+      {
+        exerciseId: exercise,
+        setNumber: 100,
+        weightKg: 60.25,
+        reps: 8,
+        recordedAt: previousDate.toISOString(),
+      },
+    ]);
+  });
+  it("uses deterministic ties and strictly excludes records at the current session start", async () => {
+    const s = await pair();
+    await grant(s.sessionId);
+    const session = (await db.select().from(schema.togetherSessions))[0];
+    await history(a, exercise, {
+      id: "00000000-0000-4000-8000-000000000001",
+      weight: "10",
+    });
+    await history(a, exercise, {
+      id: "ffffffff-ffff-4fff-8fff-ffffffffffff",
+      weight: "20",
+    });
+    await history(a, exercise, {
+      completedAt: session.createdAt,
+      weight: "999",
+    });
+    expect(
+      (await repo.previousValues(b, s.sessionId, a)).values[0].weightKg,
+    ).toBe(20);
+  });
+  it("selects effective substitutes, excludes skipped exercises and respects private frozen continuation", async () => {
+    const s = await pair(),
+      pid = s.plan.exercises[0].planExerciseId;
+    await history();
+    await history(a, otherExercise, { weight: "22" });
+    await grant(s.sessionId);
+    await run(
+      a,
+      s.sessionId,
+      cmd(a, pid, 0, {
+        type: "substitute",
+        planExerciseId: pid,
+        exerciseId: otherExercise,
+      }),
+    );
+    expect((await repo.previousValues(b, s.sessionId, a)).values).toMatchObject(
+      [{ exerciseId: otherExercise, weightKg: 22 }],
+    );
+    await run(
+      a,
+      s.sessionId,
+      cmd(a, pid, 1, { type: "skip", planExerciseId: pid, skipped: true }),
+    );
+    expect((await repo.previousValues(b, s.sessionId, a)).values).toEqual([]);
+    await run(
+      a,
+      s.sessionId,
+      cmd(a, pid, 2, { type: "skip", planExerciseId: pid, skipped: false }),
+    );
+    await run(
+      a,
+      s.sessionId,
+      cmd(a, pid, 3, {
+        type: "substitute",
+        planExerciseId: pid,
+        exerciseId: null,
+      }),
+    );
+    expect(
+      (await repo.previousValues(b, s.sessionId, a)).values[0].exerciseId,
+    ).toBe(exercise);
+    await repo.close(a, s.sessionId, key(), {
+      expectedRevision: (await repo.snapshot(a, s.sessionId)).revision,
+      expectedOwnRevision: 4,
+      mode: "save_own",
+    });
+    await history(b, exercise, { weight: "75" });
+    // A later change to shared plan storage must not alter the private frozen plan.
+    await db
+      .update(schema.togetherSessions)
+      .set({ plan: { name: "Changed", exercises: [] } });
+    expect(
+      (await repo.previousValues(b, s.sessionId, b)).values[0].weightKg,
+    ).toBe(75);
+    await expect(repo.previousValues(a, s.sessionId, b)).rejects.toMatchObject({
+      status: 403,
+    });
+  });
+  it("migration defaults to no consent, is rerunnable/reversible and preserves server-only access", async () => {
+    const filename = "20261001133310_together_previous_consent.sql";
+    const migrationText = readFileSync(
+      new URL(
+        `../../../../../../supabase/migrations/${filename}`,
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    const rollback = readFileSync(
+      new URL(
+        `../../../../../../supabase/rollbacks/${filename}`,
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    const s = await pair();
+    await grant(s.sessionId);
+    await pg.exec(migrationText);
+    await pg.exec(migrationText);
+    expect(
+      (await repo.snapshot(a, s.sessionId)).participants.find(
+        (p) => p.userId === a,
+      )?.previousConsent?.version,
+    ).toBe(1);
+    for (const role of ["anon", "authenticated"]) {
+      expect(
+        (
+          await pg.query<{ ok: boolean }>(
+            "select has_table_privilege($1,'together_participants','SELECT') as ok",
+            [role],
+          )
+        ).rows[0].ok,
+      ).toBe(false);
+      await pg.exec(`SET ROLE ${role}`);
+      try {
+        await expect(
+          pg.query("SELECT previous_recipient_ids FROM together_participants"),
+        ).rejects.toThrow(/permission denied/);
+      } finally {
+        await pg.exec("RESET ROLE");
+      }
+    }
+    await pg.exec(rollback);
+    await pg.exec(rollback);
+    await pg.exec(migrationText);
+    expect(
+      (await repo.snapshot(a, s.sessionId)).participants.find(
+        (p) => p.userId === a,
+      )?.previousConsent,
+    ).toEqual({ version: 0, recipientIds: [] });
+    expect(
+      (
+        await pg.query<{ ok: boolean }>(
+          "select relrowsecurity as ok from pg_class where relname='together_participants'",
+        )
+      ).rows[0].ok,
+    ).toBe(true);
   });
 });
