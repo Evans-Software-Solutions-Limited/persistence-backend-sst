@@ -1,28 +1,28 @@
 # Project memory · persistence-backend-sst
 
-### 2026-10-01 — Production workout rep validation hotfix
+### 2026-10-01 — Production workout rep normalization hotfix
 
-Sentry PERSISTENCE-BACKEND-5 (issue 150774666): three production POST /workouts
-failures, PostgreSQL 23514 on workout_exercises_target_reps_min_check. The event
-contained targetRepsMin=0 / targetRepsMax=20; the API accepted any number and only
-checked min <= max. Shared POST/PATCH schema now requires both provided rep bounds
-to be positive PostgreSQL int4 integers; invalid input returns 422 before database
-or entitlement access. Omitted defaults and inverted-range checks are preserved.
+Sentry PERSISTENCE-BACKEND-5 (issue 150774666): POST /workouts sent reps 0–20
+and PostgreSQL rejected target_reps_min >= 1. Brad approved a backend-first
+compatibility fix: zero/omitted/null means empty; one entered bound fills the other;
+both empty become 8–12. Shared resolver now drives range validation and the
+repository insert mapper used by create, edit and saved variation writes. Valid
+ranges remain unchanged; negative/fractional/overflowing/inverted values are rejected.
+Responses re-read the persisted normalized exercises. Metadata-only edits do not
+rewrite existing exercises. No migration or frontend change is required.
 
-All 16 new endpoint regression cases failed against the original implementation.
-Focused workout suite: 102 tests pass; shared schema coverage 100% in all metrics.
-Core typecheck, lint (0 errors, 9 existing warnings), build/typecheck and changed-file
-formatting pass. Full core suite: 5,400 tests across 394 files passed; overall
-coverage 98.02% lines, 94.22% branches, 97.75% functions. Local Inspector: CLEAN;
-independent affected-handler run passed 108 tests, including Loadout variations.
+Regression evidence: 40 cases failed against the previous reject-only/default-1
+implementation; focused workout/repository/variation suites pass 281 tests. New
+resolver and shared schema coverage: 100% in all metrics. Final full core suite:
+5,446 tests in 394 files pass, including normalized keyed first-save and replay
+coverage. Core typecheck/build, formatting and whitespace pass; lint has 0 errors
+and 9 existing warnings. Updated local Inspector: CLEAN; independent 233-test
+handler/repository/variation run passes.
 
-The mobile rep input can emit zero on clearing; this backend hotfix rejects it
-rather than silently changing the user's prescription. No database migration,
-production deployment or native app build performed. Work is isolated in
-/private/tmp/persistence-sentry-150774666 on codex/fix-workout-rep-validation;
-existing Together checkout changes remain untouched. The requested
-slack-progress-updates skill could not be found in installed skills or Documents;
-no notification credentials or destination were invented.
+PR #479 updated on codex/fix-workout-rep-validation in
+/private/tmp/persistence-sentry-150774666. No production deploy, OTA or native build
+started. Existing Together checkout changes remain untouched. The configured
+slack-progress-updates skill is not installed; no Slack/ntfy notification was sent.
 
 ### 2026-10-01 — Session-scoped PREV consent
 

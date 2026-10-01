@@ -636,6 +636,155 @@ describe("WorkoutRepository", () => {
   });
 
   describe("createWithExercises", () => {
+    it("normalizes a keyed first attempt and returns persisted rep values", async () => {
+      const normalizedRows = [
+        {
+          ...mockExercisesWithWorkoutId[0],
+          targetRepsMin: 20,
+          targetRepsMax: 20,
+        },
+      ];
+      const insertRows = vi.fn().mockResolvedValue(undefined);
+      const tx = {
+        insert: vi
+          .fn()
+          .mockReturnValueOnce({
+            values: vi.fn().mockReturnValue({
+              onConflictDoNothing: vi.fn().mockReturnValue({
+                returning: vi.fn().mockResolvedValue([baseWorkout]),
+              }),
+            }),
+          })
+          .mockReturnValueOnce({ values: insertRows }),
+        select: vi
+          .fn()
+          .mockReturnValue(makeExercisesByWorkoutChain(normalizedRows)),
+      };
+      (getDb as any).mockReturnValue({
+        transaction: async (fn: any) => fn(tx),
+      });
+      const result = await new WorkoutRepository().createWithExercises(
+        "user-1",
+        {
+          name: "Normalized",
+          exercises: [
+            {
+              exerciseId: "ex-1",
+              sortOrder: 0,
+              targetRepsMin: 0,
+              targetRepsMax: 20,
+            },
+          ],
+        },
+        "request-key",
+      );
+      expect(insertRows).toHaveBeenCalledWith([
+        expect.objectContaining({ targetRepsMin: 20, targetRepsMax: 20 }),
+      ]);
+      expect(result.exercises[0]).toMatchObject({
+        targetRepsMin: 20,
+        targetRepsMax: 20,
+      });
+    });
+
+    it("returns the normalized committed workout on keyed replay without duplicating exercises", async () => {
+      const normalizedRows = [
+        {
+          ...mockExercisesWithWorkoutId[0],
+          targetRepsMin: 8,
+          targetRepsMax: 12,
+        },
+      ];
+      const tx = {
+        insert: vi.fn().mockReturnValue({
+          values: vi.fn().mockReturnValue({
+            onConflictDoNothing: vi.fn().mockReturnValue({
+              returning: vi.fn().mockResolvedValue([]),
+            }),
+          }),
+        }),
+        select: vi
+          .fn()
+          .mockReturnValueOnce(makeSelectChain([baseWorkout]))
+          .mockReturnValue(makeExercisesByWorkoutChain(normalizedRows)),
+      };
+      (getDb as any).mockReturnValue({
+        transaction: async (fn: any) => fn(tx),
+      });
+      const result = await new WorkoutRepository().createWithExercises(
+        "user-1",
+        {
+          name: "Normalized",
+          exercises: [
+            {
+              exerciseId: "ex-1",
+              sortOrder: 0,
+              targetRepsMin: 0,
+              targetRepsMax: 0,
+            },
+          ],
+        },
+        "request-key",
+      );
+      expect(result.exercises[0]).toMatchObject({
+        targetRepsMin: 8,
+        targetRepsMax: 12,
+      });
+      expect(tx.insert).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      [0, 20, 20, 20],
+      [10, 0, 10, 10],
+      [undefined, 20, 20, 20],
+      [10, undefined, 10, 10],
+      [null, 20, 20, 20],
+      [10, null, 10, 10],
+      [0, 0, 8, 12],
+      [undefined, undefined, 8, 12],
+      [null, null, 8, 12],
+      [0, undefined, 8, 12],
+      [undefined, 0, 8, 12],
+      [8, 12, 8, 12],
+      [1, 1, 1, 1],
+    ])(
+      "normalizes stored create reps %s/%s to %s/%s",
+      async (min, max, expectedMin, expectedMax) => {
+        const insertRows = vi.fn().mockResolvedValue(undefined);
+        const tx = {
+          insert: vi
+            .fn()
+            .mockReturnValueOnce({
+              values: vi.fn().mockReturnValue({
+                returning: vi.fn().mockResolvedValue([baseWorkout]),
+              }),
+            })
+            .mockReturnValueOnce({ values: insertRows }),
+          select: vi.fn().mockReturnValue(makeExercisesByWorkoutChain([])),
+        };
+        (getDb as any).mockReturnValue({
+          transaction: async (fn: any) => fn(tx),
+        });
+        await new WorkoutRepository().createWithExercises("user-1", {
+          name: "Normalized",
+          exercises: [
+            {
+              exerciseId: "ex-1",
+              sortOrder: 0,
+              targetRepsMin: min,
+              targetRepsMax: max,
+            },
+          ],
+        });
+        expect(insertRows).toHaveBeenCalledWith([
+          expect.objectContaining({
+            targetRepsMin: expectedMin,
+            targetRepsMax: expectedMax,
+          }),
+        ]);
+      },
+    );
+
     it("should insert workout and nested exercises in a single transaction", async () => {
       const created = { ...baseWorkout, id: "wo-new", name: "New" };
       // The post-insert re-fetch goes through fetchExercisesForWorkouts
@@ -1025,44 +1174,69 @@ describe("WorkoutRepository", () => {
       expect(setSpy.mock.calls[0][0].estimatedDurationMinutes).toBeUndefined();
     });
 
-    it("should default targetRepsMin/Max to 1 when omitted in nested exercises", async () => {
-      const insertSpy = vi.fn().mockReturnValue({
-        values: vi.fn().mockResolvedValue(undefined),
-      });
-      const tx = {
-        update: vi.fn().mockReturnValue({
-          set: vi.fn().mockReturnValue({
-            where: vi.fn().mockReturnValue({
-              returning: vi.fn().mockResolvedValue([baseWorkout]),
+    it.each([
+      [0, 20, 20, 20],
+      [10, 0, 10, 10],
+      [undefined, 20, 20, 20],
+      [10, undefined, 10, 10],
+      [null, 20, 20, 20],
+      [10, null, 10, 10],
+      [0, 0, 8, 12],
+      [undefined, undefined, 8, 12],
+      [null, null, 8, 12],
+      [0, undefined, 8, 12],
+      [undefined, 0, 8, 12],
+      [8, 12, 8, 12],
+      [1, 1, 1, 1],
+    ])(
+      "normalizes stored update reps %s/%s to %s/%s",
+      async (min, max, expectedMin, expectedMax) => {
+        const insertSpy = vi.fn().mockReturnValue({
+          values: vi.fn().mockResolvedValue(undefined),
+        });
+        const tx = {
+          update: vi.fn().mockReturnValue({
+            set: vi.fn().mockReturnValue({
+              where: vi.fn().mockReturnValue({
+                returning: vi.fn().mockResolvedValue([baseWorkout]),
+              }),
             }),
           }),
-        }),
-        delete: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue(undefined),
-        }),
-        insert: insertSpy,
-        select: vi
-          .fn()
-          .mockReturnValueOnce(makeProvenanceCaptureChain())
-          .mockReturnValue(makeExercisesByWorkoutChain([])),
-      };
-      const mockDb = {
-        transaction: vi.fn().mockImplementation(async (fn: any) => fn(tx)),
-      };
-      (getDb as any).mockReturnValue(mockDb);
+          delete: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue(undefined),
+          }),
+          insert: insertSpy,
+          select: vi
+            .fn()
+            .mockReturnValueOnce(makeProvenanceCaptureChain())
+            .mockReturnValue(makeExercisesByWorkoutChain([])),
+        };
+        const mockDb = {
+          transaction: vi.fn().mockImplementation(async (fn: any) => fn(tx)),
+        };
+        (getDb as any).mockReturnValue(mockDb);
 
-      const repo = new WorkoutRepository();
-      await repo.update("wo-1", "user-1", {
-        exercises: [{ exerciseId: "ex-1", sortOrder: 0 }],
-      });
+        const repo = new WorkoutRepository();
+        await repo.update("wo-1", "user-1", {
+          exercises: [
+            {
+              exerciseId: "ex-1",
+              sortOrder: 0,
+              targetRepsMin: min,
+              targetRepsMax: max,
+            },
+          ],
+        });
 
-      // Drizzle insert chain: insert(table) -> values(rows)
-      const valuesArg = insertSpy.mock.results[0].value.values.mock.calls[0][0];
-      expect(valuesArg[0].targetRepsMin).toBe(1);
-      expect(valuesArg[0].targetRepsMax).toBe(1);
-      expect(valuesArg[0].restSeconds).toBe(90);
-      expect(valuesArg[0].supersetGroup).toBeNull();
-    });
+        // Drizzle insert chain: insert(table) -> values(rows)
+        const valuesArg =
+          insertSpy.mock.results[0].value.values.mock.calls[0][0];
+        expect(valuesArg[0].targetRepsMin).toBe(expectedMin);
+        expect(valuesArg[0].targetRepsMax).toBe(expectedMax);
+        expect(valuesArg[0].restSeconds).toBe(90);
+        expect(valuesArg[0].supersetGroup).toBeNull();
+      },
+    );
   });
 
   describe("delete", () => {

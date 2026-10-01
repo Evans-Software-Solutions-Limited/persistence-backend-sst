@@ -112,8 +112,6 @@ describe("WorkoutsCreateHandler", () => {
 
   describe("rep bounds validation (Sentry PERSISTENCE-BACKEND-5)", () => {
     it.each([
-      ["targetRepsMin", 0],
-      ["targetRepsMax", 0],
       ["targetRepsMin", -1],
       ["targetRepsMax", -1],
       ["targetRepsMin", 1.5],
@@ -154,6 +152,48 @@ describe("WorkoutsCreateHandler", () => {
       expect(workoutRepositoryMocks.createWithExercises).not.toHaveBeenCalled();
       expect(workoutRepositoryMocks.getById).not.toHaveBeenCalled();
       expect(assertEntitlementMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("empty rep bounds", () => {
+    it.each([
+      [0, 20],
+      [10, 0],
+      [undefined, 20],
+      [10, undefined],
+      [null, 20],
+      [10, null],
+      [0, 0],
+      [undefined, undefined],
+      [null, null],
+      [0, undefined],
+      [undefined, 0],
+      [8, 12],
+      [1, 1],
+    ])("accepts min=%s max=%s for backend normalization", async (min, max) => {
+      const { workoutsCreateHandler } =
+        await import("../workoutsCreateHandler");
+      const response = await workoutsCreateHandler.handle(
+        new Request("http://localhost/workouts", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            authorization: "Bearer test-token",
+          },
+          body: JSON.stringify({
+            name: "Normalize",
+            exercises: [
+              {
+                exerciseId: "ex-1",
+                sortOrder: 0,
+                targetRepsMin: min,
+                targetRepsMax: max,
+              },
+            ],
+          }),
+        }),
+      );
+      expect(response.status).toBe(201);
     });
   });
 
@@ -363,49 +403,6 @@ describe("WorkoutsCreateHandler", () => {
         }),
       );
       expect(response.status).toBe(400);
-    });
-
-    it("should return 400 when targetRepsMin is provided alone and exceeds the default max=1", async () => {
-      // Regression: pre-fix, the validator only fired when BOTH bounds
-      // were explicit. A payload with `targetRepsMin: 5` (no max) skipped
-      // the check, then the repository defaulted max to 1 and stored
-      // min=5/max=1 — violating the invariant.
-      const { workoutsCreateHandler } =
-        await import("../workoutsCreateHandler");
-      const response = await workoutsCreateHandler.handle(
-        new Request("http://localhost/workouts", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            authorization: "Bearer test-token",
-          },
-          body: JSON.stringify({
-            name: "Asymmetric",
-            exercises: [{ exerciseId: "ex-1", sortOrder: 0, targetRepsMin: 5 }],
-          }),
-        }),
-      );
-      expect(response.status).toBe(400);
-    });
-
-    it("should return 422 when targetRepsMax is provided alone below the default min=1", async () => {
-      // Invalid individual bounds are rejected by the schema before range checks.
-      const { workoutsCreateHandler } =
-        await import("../workoutsCreateHandler");
-      const response = await workoutsCreateHandler.handle(
-        new Request("http://localhost/workouts", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            authorization: "Bearer test-token",
-          },
-          body: JSON.stringify({
-            name: "Asymmetric",
-            exercises: [{ exerciseId: "ex-1", sortOrder: 0, targetRepsMax: 0 }],
-          }),
-        }),
-      );
-      expect(response.status).toBe(422);
     });
 
     it("should accept omitted reps bounds (both default to 1)", async () => {
