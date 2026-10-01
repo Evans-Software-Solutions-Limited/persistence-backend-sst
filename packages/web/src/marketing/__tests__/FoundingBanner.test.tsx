@@ -7,12 +7,14 @@ const banner = () => screen.queryByRole("region", { name: "Founding offer" });
 
 describe("FoundingBanner", () => {
   beforeEach(() => {
+    // Keep sale-path tests inside the offer window regardless of the CI date.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-10T10:00:00Z"));
     // The banner dismisses into sessionStorage (LANDING_PAGE.md § 5.1), which
     // jsdom keeps for the whole file — without this, the first test that
     // dismisses the banner hides it from every test after it.
     window.sessionStorage.clear();
     window.localStorage.clear();
-    vi.useRealTimers();
   });
   afterEach(() => vi.useRealTimers());
 
@@ -37,7 +39,6 @@ describe("FoundingBanner", () => {
   });
 
   it("disappears on its own after the close date, with no deploy", () => {
-    vi.useFakeTimers();
     vi.setSystemTime(new Date(FOUNDING_OFFER_CLOSES.getTime() + 1000));
     renderPage(<FoundingBanner />, { route: "/" });
     expect(banner()).toBeNull();
