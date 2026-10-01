@@ -66,6 +66,7 @@ Legacy reference (V1 behavioural source of truth per `_agent.md`): `../persisten
 - 2.6 [ ] Exercises in the form render as `<ExerciseConfigCard>`s with editable `targetSets`, `targetRepsMin`–`targetRepsMax`, `restSeconds`. Superset peers visually disabled and mirror the lead exercise's values.
 - 2.7 [ ] Editing `targetSets` or `restSeconds` on the lead exercise of a superset propagates to all peers (`propagateSupersetSharedFields` pure function — preserved).
 - 2.8 [ ] Validation on submit: name required + non-empty; ≥ 1 exercise; `targetRepsMin <= targetRepsMax`; `targetSets >= 1` when set.
+  Backend rep normalization (approved 2026-10-01): treat zero, omitted and null rep bounds as empty. Copy the entered bound when only one is populated; use 8–12 when both are empty. Apply the same normalization before range validation and persistence for create/edit and saved variations. Negative, fractional, overflowing and inverted explicit bounds remain invalid.
 - 2.9 [ ] Submit posts a single `POST /workouts` with the full nested `exercises[]`; backend transaction guarantees atomic create.
 - 2.10 [ ] **Offline support:** if offline at submit, the mutation queues in the sync queue (existing V2 pattern). Local cache updated optimistically with a tombstoned row; sync engine commits when connectivity resumes.
 - 2.11 [ ] On success, navigates back to Train > Workouts (`router.back()`) and the new workout appears under Mine; cache is updated optimistically with the server-returned row.

@@ -68,6 +68,30 @@ one durable command/acknowledgement and reconnect, then four-device extension.
 No runtime changes in this planning update; formatting/whitespace checks pass.
 Native builds remain Brad-owned; no build or activation started.
 
+### 2026-10-01 — Production workout rep normalization hotfix
+
+Sentry PERSISTENCE-BACKEND-5 (issue 150774666): POST /workouts sent reps 0–20
+and PostgreSQL rejected target_reps_min >= 1. Brad approved a backend-first
+compatibility fix: zero/omitted/null means empty; one entered bound fills the other;
+both empty become 8–12. Shared resolver now drives range validation and the
+repository insert mapper used by create, edit and saved variation writes. Valid
+ranges remain unchanged; negative/fractional/overflowing/inverted values are rejected.
+Responses re-read the persisted normalized exercises. Metadata-only edits do not
+rewrite existing exercises. No migration or frontend change is required.
+
+Regression evidence: 40 cases failed against the previous reject-only/default-1
+implementation; focused workout/repository/variation suites pass 281 tests. New
+resolver and shared schema coverage: 100% in all metrics. Final full core suite:
+5,446 tests in 394 files pass, including normalized keyed first-save and replay
+coverage. Core typecheck/build, formatting and whitespace pass; lint has 0 errors
+and 9 existing warnings. Updated local Inspector: CLEAN; independent 233-test
+handler/repository/variation run passes.
+
+PR #479 updated on codex/fix-workout-rep-validation in
+/private/tmp/persistence-sentry-150774666. No production deploy, OTA or native build
+started. Existing Together checkout changes remain untouched. The configured
+slack-progress-updates skill is not installed; no Slack/ntfy notification was sent.
+
 ### 2026-10-01 — Session-scoped PREV consent
 
 PR #477 confirmed squash-merged at `7531d26e`; the next slice is AC16/F2,
