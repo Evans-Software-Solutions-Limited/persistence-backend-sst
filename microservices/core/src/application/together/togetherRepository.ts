@@ -35,6 +35,7 @@ import { evaluateTogetherEligibility } from "../entitlement/togetherEligibility"
 import { pagePosition, nextPage } from "../social/pagination";
 import { ExerciseRepository } from "../repositories/exerciseRepository";
 import { placesRepository } from "../places/placesRepository";
+import { readPreviousValues } from "./previousValues";
 export const hashTogether = requestHash;
 function secretToken(actor: string, route: string, key: string) {
   const secret = process.env.TOGETHER_TOKEN_SECRET;
@@ -295,6 +296,20 @@ export class TogetherRepository {
         delegationGeneration: p.delegationGeneration,
         allowPartnerLogging: p.allowPartnerLogging,
         execution: p.execution,
+        previousValuesAvailable:
+          p.userId === actor ||
+          (shared &&
+            own.status === "active" &&
+            p.status === "active" &&
+            p.previousRecipientIds.includes(actor)),
+        ...(p.userId === actor
+          ? {
+              previousConsent: {
+                version: p.previousConsentVersion,
+                recipientIds: this.effectivePreviousRecipients(s, ps, p),
+              },
+            }
+          : {}),
         exerciseCatalog: Object.fromEntries(
           Object.entries(p.exerciseDefinitions).map(([id, definition]) => [
             id,
@@ -1129,6 +1144,129 @@ export class TogetherRepository {
           };
         },
       );
+    });
+  }
+  private effectivePreviousRecipients(
+    s: Session,
+    ps: Participant[],
+    owner: Participant,
+  ) {
+    if (
+      s.collaborationRevoked ||
+      s.state !== "active" ||
+      owner.status !== "active" ||
+      owner.leftAt
+    )
+      return [];
+    return owner.previousRecipientIds.filter((id) =>
+      ps.some((p) => p.userId === id && p.status === "active" && !p.leftAt),
+    );
+  }
+  async previousConsent(
+    actor: string,
+    id: string,
+    key: string,
+    body: { expectedVersion: number; recipientIds: string[] },
+  ) {
+    return this.transaction(actor, id, async (tx, s, ps) => {
+      const owner = this.member(ps, actor);
+      requireTogether(
+        Number.isSafeInteger(body.expectedVersion) &&
+          body.expectedVersion >= 0 &&
+          body.recipientIds.length <= MAX_PARTICIPANTS - 1 &&
+          new Set(body.recipientIds).size === body.recipientIds.length &&
+          !body.recipientIds.includes(actor),
+        "INVALID_PREVIOUS_CONSENT",
+        400,
+      );
+      // Receipts contain no recipients or historical values. Retrying a grant
+      // checks its original payload but always returns today's effective consent.
+      await replayMutation(
+        tx,
+        actor,
+        `previous-consent:${id}`,
+        key,
+        body,
+        async () => {
+          if (body.expectedVersion !== owner.previousConsentVersion)
+            throw new TogetherError(
+              "VERSION_CONFLICT",
+              409,
+              undefined,
+              owner.previousConsentVersion,
+            );
+          if (body.recipientIds.length) {
+            requireTogether(
+              owner.status === "active" &&
+                !owner.leftAt &&
+                (await this.live(tx, s, ps)),
+              "FORBIDDEN",
+              403,
+            );
+            await assertTogetherPaid(tx, actor);
+            requireTogether(
+              body.recipientIds.every((uid) =>
+                ps.some(
+                  (p) => p.userId === uid && p.status === "active" && !p.leftAt,
+                ),
+              ),
+              "INVALID_PREVIOUS_CONSENT",
+              400,
+            );
+          }
+          owner.previousConsentVersion++;
+          owner.previousRecipientIds = [...body.recipientIds].sort();
+          await tx
+            .update(participants)
+            .set({
+              previousRecipientIds: owner.previousRecipientIds,
+              previousConsentVersion: owner.previousConsentVersion,
+            })
+            .where(memberWhere(id, actor));
+          await this.emit(tx, s, {
+            type: "previous_consent_changed",
+            userId: actor,
+            version: owner.previousConsentVersion,
+          });
+          return { version: owner.previousConsentVersion };
+        },
+      );
+      return {
+        sessionId: id,
+        ownerId: actor,
+        version: owner.previousConsentVersion,
+        recipientIds: this.effectivePreviousRecipients(s, ps, owner),
+      };
+    });
+  }
+  async previousValues(actor: string, id: string, ownerId: string) {
+    return this.transaction(actor, id, async (tx, s, ps) => {
+      const reader = this.member(ps, actor);
+      const owner = this.member(ps, ownerId);
+      if (actor !== ownerId)
+        requireTogether(
+          (await this.live(tx, s, ps)) &&
+            reader.status === "active" &&
+            !reader.leftAt &&
+            this.effectivePreviousRecipients(s, ps, owner).includes(actor),
+          "FORBIDDEN",
+          403,
+        );
+      return {
+        sessionId: id,
+        ownerId,
+        consentVersion: owner.previousConsentVersion,
+        revision: s.revision,
+        planVersion: s.planVersion,
+        ownRevision: owner.ownRevision,
+        values: await readPreviousValues(
+          tx,
+          ownerId,
+          owner.frozenPlan ?? s.plan,
+          owner.execution,
+          s.createdAt,
+        ),
+      };
     });
   }
   async visibility(

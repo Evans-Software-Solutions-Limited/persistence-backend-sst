@@ -95,6 +95,13 @@ export const togetherParticipants = pgTable(
       .references(() => profiles.id, { onDelete: "cascade" }),
     status: text("status").notNull().default("active"),
     ownRevision: integer("own_revision").notNull().default(0),
+    previousRecipientIds: uuid("previous_recipient_ids")
+      .array()
+      .notNull()
+      .default([]),
+    previousConsentVersion: integer("previous_consent_version")
+      .notNull()
+      .default(0),
     delegationGeneration: integer("delegation_generation").notNull().default(0),
     allowPartnerLogging: boolean("allow_partner_logging")
       .notNull()

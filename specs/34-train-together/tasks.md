@@ -1,6 +1,6 @@
 # Train Together — tasks
 
-## Current delivery — 30 September 2026
+## Current delivery — 1 October 2026
 
 Brad approved AC15–20, including friend auto-admission and fully offline nearby
 training. This checklist supersedes conflicting historical scope below; unchecked
@@ -11,9 +11,14 @@ items are not implemented merely because their requirements are approved.
       all-member block checks, roster-scoped logging consent and bounded discovery;
       62 focused backend tests pass. This is implementation evidence, not live
       PostgreSQL contention or device proof.
-- [ ] **F2 / PER-20/22:** recipient-scoped PREV grants/read filtering/revocation.
-- [ ] **F3 / PER-20/22:** durable host finish-all/solo conversion, per-athlete
-      closure outcomes, reviewed late sets and idempotent result/effect updates.
+- [x] **F2 / PER-20/22 (backend):** recipient-scoped PREV grants/read filtering/
+      revocation, versioned retries and relevant-history projection; see
+      [PREV consent contract](../milestones/TRAIN-TOGETHER/PREV-CONSENT.md).
+      Mobile partner-cache purge remains part of F5.
+- [x] **F3 / PER-20/22 (backend):** durable host finish-all/solo conversion,
+      per-athlete closure outcomes, reviewed late sets and idempotent result/effect
+      updates. PR #477 merged at `7531d26e`; mobile flows and live contention
+      evidence remain open under F5/F6.
 - [ ] **F4 / PER-20/22:** authenticated offline device credentials/admission,
       native local and Wi-Fi transport, server reconciliation and wire fixtures.
 - [x] **F4a / PER-64:** server-signed bounded device credentials, pair friendship

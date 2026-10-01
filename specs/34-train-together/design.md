@@ -1,5 +1,14 @@
 # Train Together — design
 
+## PREV consent contract — 1 October 2026
+
+[PREV-CONSENT](../milestones/TRAIN-TOGETHER/PREV-CONSENT.md) defines the AC16
+backend wire contract, session/recipient scope, independent consent version,
+history projection and mobile cache-purge requirements. PREV values are fetched
+only through current authorization; durable replay carries invalidations only.
+Cloud grants do not establish native offline authority. Mobile integration and
+physical-device proof remain required for delivery.
+
 ## D11 — Approved four-person/offline amendment, 30 September 2026
 
 AC15–20 supersede the historical online-only/two-person/mandatory-approval

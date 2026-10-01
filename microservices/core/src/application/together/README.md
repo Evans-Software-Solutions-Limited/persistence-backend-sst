@@ -7,6 +7,10 @@ setup and rollback; `RECOVERY-PROOF.md` records tests and remaining release gate
 - `togetherRoutes.ts` / `togetherRepository.ts`: authenticated sessions,
   invitations/admission, independent editing, delegation, discovery and replay.
 - `shared.ts`: ordered actor locks, active/paid access, atomic receipts and limits.
+- `previousValues.ts`: minimal relevant exercise history projection for explicit
+  session-scoped PREV consent. `TogetherRepository` authorizes each recipient;
+  historical values never enter shared events or receipts. See
+  `specs/milestones/TRAIN-TOGETHER/PREV-CONSENT.md` for client purge requirements.
 - `recording.ts`: frozen per-athlete finalization through the existing recording,
   PR, streak and volume services; durable retry after failure.
 - `completionRepository.ts` / `recoveredRecording.ts`: explicit owner-reviewed
