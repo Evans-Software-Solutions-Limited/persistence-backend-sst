@@ -12,10 +12,8 @@ import {
   type RecordSessionInput,
 } from "../repositories/sessionRepository";
 import { PersonalRecordsRepository } from "../repositories/personalRecordsRepository";
-import { StreakRepository } from "../repositories/streakRepository";
-import { VolumeRepository } from "../repositories/volumeRepository";
 import { materializeTogetherExercise } from "./exerciseRecording";
-import { recomputeUserVolume } from "../progress/recompute";
+import { recomputeRecoveredEffects } from "./recoveredRecording";
 /** Persisted frozen participant state is the source of truth. Record, PRs and mapping commit together. */
 export async function processTogetherJob(id: string, userId: string) {
   const known = await getDb()
@@ -135,17 +133,21 @@ export async function processTogetherJob(id: string, userId: string) {
       );
     },
   );
-  const [job] = await getDb()
-    .select()
-    .from(jobs)
-    .where(and(eq(jobs.sessionId, id), eq(jobs.userId, userId)));
-  if (!job.effectsDone) {
-    // These rebuild from durable history and throw on failure; never mark swallowed errors done.
-    await new StreakRepository().reconcileWorkoutStreakHistory(userId);
-    await recomputeUserVolume(new VolumeRepository(), userId, new Date());
-    await getDb()
-      .update(jobs)
-      .set({ effectsDone: true })
+  await withActors([userId], async (tx) => {
+    const [job] = await tx
+      .select()
+      .from(jobs)
       .where(and(eq(jobs.sessionId, id), eq(jobs.userId, userId)));
-  }
+    if (!job.effectsDone) {
+      await recomputeRecoveredEffects(
+        userId,
+        [job.completedAt, new Date()],
+        tx,
+      );
+      await tx
+        .update(jobs)
+        .set({ effectsDone: true })
+        .where(and(eq(jobs.sessionId, id), eq(jobs.userId, userId)));
+    }
+  });
 }

@@ -8,6 +8,12 @@ const mocks = vi.hoisted(() => ({
   sqs: vi.fn(),
   client: vi.fn(),
   repo: vi.fn(),
+  pendingReviewed: vi.fn(),
+  processReviewed: vi.fn(),
+}));
+vi.mock("../completionRepository", () => ({
+  pendingReviewedEffects: mocks.pendingReviewed,
+  processReviewedEffects: mocks.processReviewed,
 }));
 vi.mock("@persistence/db/client", () => ({ getDb: vi.fn() }));
 vi.mock("@aws-sdk/client-apigatewaymanagementapi", () => ({
@@ -86,6 +92,7 @@ async function connection(
 }
 beforeEach(async () => {
   vi.resetAllMocks();
+  mocks.pendingReviewed.mockResolvedValue([]);
   vi.stubEnv("TOGETHER_ENABLED", "true");
   vi.stubEnv("TOGETHER_QUEUE_URL", "queue");
   vi.stubEnv("TOGETHER_MANAGEMENT_ENDPOINT", "https://management.example/test");
@@ -113,6 +120,23 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 describe("Together transport", () => {
+  it("drains reviewed-result effects and keeps failed work retryable", async () => {
+    mocks.pendingReviewed.mockResolvedValue([
+      { userId: user, sessionId: session },
+    ]);
+    mocks.processReviewed.mockRejectedValueOnce(new Error("retry"));
+    await expect(drain()).rejects.toThrow("1 retryable failures");
+    expect(mocks.processReviewed).toHaveBeenCalledWith(user, session);
+    expect(await drain()).toEqual({ jobs: 1, events: 0 });
+  });
+  it("wakes the next reviewed effects batch", async () => {
+    mocks.pendingReviewed.mockResolvedValue(
+      Array.from({ length: 50 }, () => ({ userId: user, sessionId: session })),
+    );
+    expect((await drain()).jobs).toBe(50);
+    expect(mocks.sqs).toHaveBeenCalled();
+  });
+
   it("fails closed without touching recovery storage and only queues enabled configured wakeups", async () => {
     vi.stubEnv("TOGETHER_ENABLED", "");
     expect(await drainTogether()).toEqual({ jobs: 0, events: 0 });

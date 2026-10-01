@@ -3,6 +3,13 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { getTableConfig, PgDialect } from "drizzle-orm/pg-core";
 import { workoutSessions } from "@persistence/db";
 
+// Query-shape unit fixtures have no rows/locks; real actor/root ordering is
+// asserted against PGlite in completionRepository.integration.test.ts.
+vi.mock("../../together/shared", async (original) => ({
+  ...(await original<typeof import("../../together/shared")>()),
+  lockActors: vi.fn(),
+}));
+
 vi.mock("@persistence/db/client", () => ({
   getDb: vi.fn(),
 }));
@@ -71,6 +78,14 @@ function makeDeleteChain(resolvedValue: unknown) {
   };
 }
 
+// Existing unit cases exercise query results; security mapping/lock behavior is
+// covered against real PostgreSQL semantics in completionRepository.integration.
+function withHistoryGuard(mockDb: any) {
+  mockDb.transaction ??= vi.fn(async (action) => action(mockDb));
+  mockDb.execute ??= vi.fn().mockResolvedValue([]);
+  return mockDb;
+}
+
 describe("SessionRepository", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -102,7 +117,7 @@ describe("SessionRepository", () => {
           }),
         }),
       };
-      (getDb as any).mockReturnValue(mockDb);
+      (getDb as any).mockReturnValue(withHistoryGuard(mockDb));
 
       const { SessionRepository } = await import("../sessionRepository");
       const repo = new SessionRepository();
@@ -136,7 +151,7 @@ describe("SessionRepository", () => {
       const mockDb = {
         select: vi.fn().mockReturnValue(makeListChain([mockSession])),
       };
-      (getDb as any).mockReturnValue(mockDb);
+      (getDb as any).mockReturnValue(withHistoryGuard(mockDb));
 
       const { SessionRepository } = await import("../sessionRepository");
       const repo = new SessionRepository();
@@ -293,7 +308,7 @@ describe("SessionRepository", () => {
           .mockReturnValueOnce(makeSelectChain([mockSession]))
           .mockReturnValueOnce(makeSelectWithOrderBy(mockExercises)),
       };
-      (getDb as any).mockReturnValue(mockDb);
+      (getDb as any).mockReturnValue(withHistoryGuard(mockDb));
 
       const { SessionRepository } = await import("../sessionRepository");
       const repo = new SessionRepository();
@@ -309,7 +324,7 @@ describe("SessionRepository", () => {
       const mockDb = {
         select: vi.fn().mockReturnValue(makeSelectChain([])),
       };
-      (getDb as any).mockReturnValue(mockDb);
+      (getDb as any).mockReturnValue(withHistoryGuard(mockDb));
 
       const { SessionRepository } = await import("../sessionRepository");
       const repo = new SessionRepository();
@@ -342,7 +357,7 @@ describe("SessionRepository", () => {
         select: vi.fn().mockReturnValue(makeSelectChain([mockSession])),
         update: vi.fn().mockReturnValue(makeUpdateChain([mockSession])),
       };
-      (getDb as any).mockReturnValue(mockDb);
+      (getDb as any).mockReturnValue(withHistoryGuard(mockDb));
 
       const { SessionRepository } = await import("../sessionRepository");
       const repo = new SessionRepository();
@@ -357,7 +372,7 @@ describe("SessionRepository", () => {
       const mockDb = {
         select: vi.fn().mockReturnValue(makeSelectChain([])),
       };
-      (getDb as any).mockReturnValue(mockDb);
+      (getDb as any).mockReturnValue(withHistoryGuard(mockDb));
 
       const { SessionRepository } = await import("../sessionRepository");
       const repo = new SessionRepository();
@@ -392,7 +407,7 @@ describe("SessionRepository", () => {
         select: vi.fn().mockReturnValue(makeSelectChain([mockSession])),
         delete: vi.fn().mockReturnValue(makeDeleteChain([mockSession])),
       };
-      (getDb as any).mockReturnValue(mockDb);
+      (getDb as any).mockReturnValue(withHistoryGuard(mockDb));
 
       const { SessionRepository } = await import("../sessionRepository");
       const repo = new SessionRepository();
@@ -405,7 +420,7 @@ describe("SessionRepository", () => {
       const mockDb = {
         select: vi.fn().mockReturnValue(makeSelectChain([])),
       };
-      (getDb as any).mockReturnValue(mockDb);
+      (getDb as any).mockReturnValue(withHistoryGuard(mockDb));
 
       const { SessionRepository } = await import("../sessionRepository");
       const repo = new SessionRepository();
@@ -433,7 +448,7 @@ describe("SessionRepository", () => {
           }),
         }),
       };
-      (getDb as any).mockReturnValue(mockDb);
+      (getDb as any).mockReturnValue(withHistoryGuard(mockDb));
 
       const { SessionRepository } = await import("../sessionRepository");
       const repo = new SessionRepository();
@@ -471,7 +486,7 @@ describe("SessionRepository", () => {
       const mockDb = {
         select: vi.fn().mockReturnValue(makeSelectWithOrderBy(mockExercises)),
       };
-      (getDb as any).mockReturnValue(mockDb);
+      (getDb as any).mockReturnValue(withHistoryGuard(mockDb));
 
       const { SessionRepository } = await import("../sessionRepository");
       const repo = new SessionRepository();
@@ -517,7 +532,7 @@ describe("SessionRepository", () => {
           .mockReturnValueOnce(makeDeleteChain([mockExercise])),
         delete: vi.fn().mockReturnValue(makeDeleteChain([mockExercise])),
       };
-      (getDb as any).mockReturnValue(mockDb);
+      (getDb as any).mockReturnValue(withHistoryGuard(mockDb));
 
       const { SessionRepository } = await import("../sessionRepository");
       const repo = new SessionRepository();
@@ -530,7 +545,7 @@ describe("SessionRepository", () => {
       const mockDb = {
         select: vi.fn().mockReturnValue(makeSelectChain([])),
       };
-      (getDb as any).mockReturnValue(mockDb);
+      (getDb as any).mockReturnValue(withHistoryGuard(mockDb));
 
       const { SessionRepository } = await import("../sessionRepository");
       const repo = new SessionRepository();
@@ -555,7 +570,7 @@ describe("SessionRepository", () => {
           .mockReturnValueOnce(makeSelectChain([mockExercise]))
           .mockReturnValueOnce(makeSelectChain([])),
       };
-      (getDb as any).mockReturnValue(mockDb);
+      (getDb as any).mockReturnValue(withHistoryGuard(mockDb));
 
       const { SessionRepository } = await import("../sessionRepository");
       const repo = new SessionRepository();
@@ -588,7 +603,7 @@ describe("SessionRepository", () => {
           }),
         }),
       };
-      (getDb as any).mockReturnValue(mockDb);
+      (getDb as any).mockReturnValue(withHistoryGuard(mockDb));
 
       const { SessionRepository } = await import("../sessionRepository");
       const repo = new SessionRepository();
@@ -639,7 +654,7 @@ describe("SessionRepository", () => {
           .fn()
           .mockReturnValue(makeSelectWithOrderByForExerciseSets(mockSets)),
       };
-      (getDb as any).mockReturnValue(mockDb);
+      (getDb as any).mockReturnValue(withHistoryGuard(mockDb));
 
       const { SessionRepository } = await import("../sessionRepository");
       const repo = new SessionRepository();
@@ -696,7 +711,7 @@ describe("SessionRepository", () => {
         }),
         update: vi.fn().mockReturnValue(makeUpdateChain([mockSet])),
       };
-      (getDb as any).mockReturnValue(mockDb);
+      (getDb as any).mockReturnValue(withHistoryGuard(mockDb));
 
       const { SessionRepository } = await import("../sessionRepository");
       const repo = new SessionRepository();
@@ -731,7 +746,7 @@ describe("SessionRepository", () => {
         }),
         update: vi.fn().mockReturnValue(makeUpdateChain([])),
       };
-      (getDb as any).mockReturnValue(mockDb);
+      (getDb as any).mockReturnValue(withHistoryGuard(mockDb));
 
       const { SessionRepository } = await import("../sessionRepository");
       const repo = new SessionRepository();
@@ -776,7 +791,7 @@ describe("SessionRepository", () => {
         }),
         delete: vi.fn().mockReturnValue(makeDeleteChain([mockSet])),
       };
-      (getDb as any).mockReturnValue(mockDb);
+      (getDb as any).mockReturnValue(withHistoryGuard(mockDb));
 
       const { SessionRepository } = await import("../sessionRepository");
       const repo = new SessionRepository();
@@ -804,7 +819,7 @@ describe("SessionRepository", () => {
         }),
         delete: vi.fn().mockReturnValue(makeDeleteChain([])),
       };
-      (getDb as any).mockReturnValue(mockDb);
+      (getDb as any).mockReturnValue(withHistoryGuard(mockDb));
 
       const { SessionRepository } = await import("../sessionRepository");
       const repo = new SessionRepository();
@@ -822,7 +837,7 @@ describe("SessionRepository", () => {
       const mockDb = {
         select: vi.fn().mockReturnValue(makeSelectChain([{ id: "sess-1" }])),
       };
-      (getDb as any).mockReturnValue(mockDb);
+      (getDb as any).mockReturnValue(withHistoryGuard(mockDb));
 
       const { SessionRepository } = await import("../sessionRepository");
       const repo = new SessionRepository();
@@ -838,7 +853,7 @@ describe("SessionRepository", () => {
       const mockDb = {
         select: vi.fn().mockReturnValue(makeSelectChain([])),
       };
-      (getDb as any).mockReturnValue(mockDb);
+      (getDb as any).mockReturnValue(withHistoryGuard(mockDb));
 
       const { SessionRepository } = await import("../sessionRepository");
       const repo = new SessionRepository();
@@ -1042,7 +1057,7 @@ describe("SessionRepository", () => {
           .fn()
           .mockImplementation((cb: (t: any) => any) => cb(tx)),
       };
-      (getDb as any).mockReturnValue(mockDb);
+      (getDb as any).mockReturnValue(withHistoryGuard(mockDb));
 
       // runPRDetection now returns the list of surfaced PRs. The test
       // pipes through a fixture — the repo just splices it into the
@@ -1142,7 +1157,7 @@ describe("SessionRepository", () => {
           .fn()
           .mockImplementation((cb: (t: any) => any) => cb(tx)),
       };
-      (getDb as any).mockReturnValue(mockDb);
+      (getDb as any).mockReturnValue(withHistoryGuard(mockDb));
 
       // First-occurrence: detection ran but surfaced no PRs.
       const runPRDetection = vi.fn().mockResolvedValue([]);
@@ -1205,7 +1220,7 @@ describe("SessionRepository", () => {
           .fn()
           .mockImplementation((cb: (t: any) => any) => cb(tx)),
       };
-      (getDb as any).mockReturnValue(mockDb);
+      (getDb as any).mockReturnValue(withHistoryGuard(mockDb));
 
       const runPRDetection = vi.fn().mockResolvedValue([]);
 
@@ -1286,7 +1301,7 @@ describe("SessionRepository", () => {
           .fn()
           .mockImplementation((cb: (t: any) => any) => cb(tx)),
       };
-      (getDb as any).mockReturnValue(mockDb);
+      (getDb as any).mockReturnValue(withHistoryGuard(mockDb));
 
       const runPRDetection = vi.fn().mockResolvedValue([]);
 
@@ -1410,7 +1425,7 @@ describe("SessionRepository", () => {
           .fn()
           .mockImplementation((cb: (t: any) => any) => cb(tx)),
       };
-      (getDb as any).mockReturnValue(mockDb);
+      (getDb as any).mockReturnValue(withHistoryGuard(mockDb));
 
       const runPRDetection = vi.fn().mockResolvedValue([]);
       const { SessionRepository } = await import("../sessionRepository");
@@ -1496,7 +1511,7 @@ describe("SessionRepository", () => {
           .fn()
           .mockImplementation((cb: (t: any) => any) => cb(tx)),
       };
-      (getDb as any).mockReturnValue(mockDb);
+      (getDb as any).mockReturnValue(withHistoryGuard(mockDb));
 
       const runPRDetection = vi.fn().mockResolvedValue([]);
       const { SessionRepository } = await import("../sessionRepository");
@@ -1572,7 +1587,7 @@ describe("SessionRepository", () => {
           .fn()
           .mockImplementation((cb: (t: any) => any) => cb(tx)),
       };
-      (getDb as any).mockReturnValue(mockDb);
+      (getDb as any).mockReturnValue(withHistoryGuard(mockDb));
 
       const runPRDetection = vi.fn().mockResolvedValue([]);
       const { SessionRepository } = await import("../sessionRepository");
@@ -1642,7 +1657,7 @@ describe("SessionRepository", () => {
           .fn()
           .mockImplementation((cb: (t: any) => any) => cb(tx)),
       };
-      (getDb as any).mockReturnValue(mockDb);
+      (getDb as any).mockReturnValue(withHistoryGuard(mockDb));
 
       const runPRDetection = vi.fn().mockResolvedValue([]);
       const { SessionRepository } = await import("../sessionRepository");
@@ -1684,7 +1699,7 @@ describe("SessionRepository", () => {
           .fn()
           .mockImplementation((cb: (t: any) => any) => cb(tx)),
       };
-      (getDb as any).mockReturnValue(mockDb);
+      (getDb as any).mockReturnValue(withHistoryGuard(mockDb));
 
       const runPRDetection = vi.fn().mockResolvedValue([]);
       const afterRecord = vi.fn().mockResolvedValue(undefined);
@@ -1729,7 +1744,7 @@ describe("SessionRepository", () => {
           .fn()
           .mockImplementation((cb: (t: any) => any) => cb(tx)),
       };
-      (getDb as any).mockReturnValue(mockDb);
+      (getDb as any).mockReturnValue(withHistoryGuard(mockDb));
 
       const runPRDetection = vi.fn().mockResolvedValue([]);
       const afterCompletedRecord = vi.fn().mockResolvedValue(undefined);
@@ -1893,7 +1908,7 @@ describe("SessionRepository", () => {
             .fn()
             .mockImplementation((cb: (t: any) => any) => cb(tx)),
         };
-        (getDb as any).mockReturnValue(mockDb);
+        (getDb as any).mockReturnValue(withHistoryGuard(mockDb));
 
         const runPRDetection = vi.fn().mockResolvedValue([]);
         // M13 sync-hardening (Cluster 1a Task 1): the replay reconstruction
@@ -1961,7 +1976,7 @@ describe("SessionRepository", () => {
             .fn()
             .mockImplementation((cb: (t: any) => any) => cb(tx)),
         };
-        (getDb as any).mockReturnValue(mockDb);
+        (getDb as any).mockReturnValue(withHistoryGuard(mockDb));
 
         const runPRDetection = vi.fn().mockResolvedValue([]);
         const { SessionRepository } = await import("../sessionRepository");
@@ -1999,7 +2014,7 @@ describe("SessionRepository", () => {
             .fn()
             .mockImplementation((cb: (t: any) => any) => cb(tx)),
         };
-        (getDb as any).mockReturnValue(mockDb);
+        (getDb as any).mockReturnValue(withHistoryGuard(mockDb));
 
         const runPRDetection = vi.fn().mockResolvedValue([]);
         const { SessionRepository } = await import("../sessionRepository");
@@ -2039,7 +2054,7 @@ describe("SessionRepository", () => {
             .fn()
             .mockImplementation((cb: (t: any) => any) => cb(tx)),
         };
-        (getDb as any).mockReturnValue(mockDb);
+        (getDb as any).mockReturnValue(withHistoryGuard(mockDb));
 
         const runPRDetection = vi.fn().mockResolvedValue([]);
         // Same Task 1 fix, exercised on the concurrent-race backstop path.
@@ -2104,7 +2119,7 @@ describe("SessionRepository", () => {
             .fn()
             .mockImplementation((cb: (t: any) => any) => cb(tx)),
         };
-        (getDb as any).mockReturnValue(mockDb);
+        (getDb as any).mockReturnValue(withHistoryGuard(mockDb));
 
         const runPRDetection = vi.fn().mockResolvedValue([]);
         const { SessionRepository } = await import("../sessionRepository");

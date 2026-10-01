@@ -1585,3 +1585,252 @@ describe("four-person admission", () => {
     },
   );
 });
+
+describe("explicit group closure", () => {
+  async function group() {
+    const s = await pair(),
+      d = key();
+    await db.insert(schema.profiles).values({ id: d, fullName: "D" });
+    await db.insert(schema.userSubscriptions).values({
+      userId: d,
+      tierName: "premium",
+      paymentStatus: "active" as never,
+      startsAt: new Date(0),
+    });
+    for (const userId of [c, d]) {
+      const invite = await repo.invite(a, s.sessionId, key(), {
+        expiresInMinutes: 15,
+      });
+      const request = await repo.requestJoin(userId, key(), {
+        inviteToken: invite.token,
+        consentVersion: "together-v1",
+        consentAccepted: true,
+      });
+      await repo.decide(a, s.sessionId, request.requestId, key(), {
+        decision: "approve",
+        expectedRevision: (await repo.snapshot(a, s.sessionId)).revision,
+      });
+    }
+    return { ...s, d };
+  }
+  async function closeBody(sessionId: string, mode: "finish_all" | "save_own") {
+    const snapshot = await repo.snapshot(a, sessionId);
+    return {
+      mode,
+      expectedRevision: snapshot.revision,
+      expectedOwnRevision: snapshot.completion.ownRevision,
+    };
+  }
+  it("finish-all freezes four separate acknowledged executions, leaves empties without histories and retries once", async () => {
+    const s = await group(),
+      pid = s.plan.exercises[0].planExerciseId;
+    for (const user of [a, b]) await run(user, s.sessionId, cmd(user, pid));
+    await run(
+      c,
+      s.sessionId,
+      cmd(c, pid, 0, {
+        type: "upsertSet",
+        planExerciseId: pid,
+        set: { ...set(), completed: false },
+      }),
+    );
+    const invite = await repo.invite(a, s.sessionId, key(), {
+      expiresInMinutes: 15,
+    });
+    const k = key(),
+      body = await closeBody(s.sessionId, "finish_all");
+    const result = await repo.close(a, s.sessionId, k, body);
+    expect(result).toMatchObject({
+      status: "pending",
+      sharingActive: false,
+      recoveryMayBePending: true,
+      acknowledgedStateOnly: true,
+      ownRevision: 1,
+    });
+    expect(await repo.close(a, s.sessionId, k, body)).toEqual(result);
+    const members = await db.select().from(schema.togetherParticipants);
+    expect(members.filter((p) => p.status === "finalizing")).toHaveLength(2);
+    expect(members.filter((p) => p.status === "finished_empty")).toHaveLength(
+      2,
+    );
+    expect(
+      members.every(
+        (p) => !p.allowPartnerLogging && p.frozenPlan?.name === s.plan.name,
+      ),
+    ).toBe(true);
+    expect(await db.select().from(schema.togetherJobs)).toHaveLength(2);
+    expect(
+      (await db.select().from(schema.togetherEvents)).filter(
+        (e) => (e.event as { type: string }).type === "session_closed",
+      ),
+    ).toHaveLength(1);
+    expect(
+      (await db.select().from(schema.togetherInvites)).find(
+        (i) => i.id === invite.tokenId,
+      )?.revoked,
+    ).toBe(true);
+    await expect(run(b, s.sessionId, cmd(b, pid, 1))).rejects.toMatchObject({
+      code: "INVALID_STATE",
+    });
+    for (const user of [a, b]) await repo.processJob(s.sessionId, user);
+    const histories = await db.select().from(schema.workoutSessions);
+    expect(histories).toHaveLength(2);
+    expect(new Set(histories.map((h) => h.userId))).toEqual(new Set([a, b]));
+    expect((await repo.close(a, s.sessionId, k, body)).historyId).toBeTruthy();
+    for (const user of [a, b, c, s.d]) {
+      const snapshot = await repo.snapshot(user, s.sessionId);
+      expect(snapshot.participants.map((p) => p.userId)).toEqual([user]);
+      expect(snapshot.completion.recoveryMayBePending).toBe(true);
+    }
+  });
+  it("save-own closes invitations, pending requests and peer access while guests continue private execution", async () => {
+    const s = await pair(),
+      pid = s.plan.exercises[0].planExerciseId;
+    await run(a, s.sessionId, cmd(a, pid));
+    const grant = await repo.delegation(b, s.sessionId, key(), {
+      allowPartnerLogging: true,
+    });
+    const ticket = await repo.ticket(b, s.sessionId, key());
+    await repo.consumeTicket(ticket.ticket, "guest-connection");
+    const invite = await repo.invite(a, s.sessionId, key(), {
+      expiresInMinutes: 15,
+    });
+    await repo.requestJoin(c, key(), {
+      inviteToken: invite.token,
+      consentVersion: "together-v1",
+      consentAccepted: true,
+    });
+    await repo.close(
+      a,
+      s.sessionId,
+      key(),
+      await closeBody(s.sessionId, "save_own"),
+    );
+    expect(
+      (await db.select().from(schema.togetherJoinRequests)).every(
+        (r) => r.status !== "pending",
+      ),
+    ).toBe(true);
+    expect(
+      (await db.select().from(schema.togetherConnections))[0].revoked,
+    ).toBe(true);
+    expect((await repo.active(b)).data).toContainEqual({
+      sessionId: s.sessionId,
+      status: "active",
+    });
+    const before = await repo.snapshot(b, s.sessionId);
+    expect(before.continuation).toBe("solo");
+    expect(before.sharingActive).toBe(false);
+    await run(b, s.sessionId, cmd(b, pid));
+    expect(
+      (await repo.snapshot(a, s.sessionId)).participants.map((p) => p.userId),
+    ).toEqual([a]);
+    await expect(
+      repo.command(b, s.sessionId, key(), {
+        ...cmd(a, pid),
+        delegationGeneration: grant.generation,
+      }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(
+      repo.command(b, s.sessionId, key(), {
+        commandId: key(),
+        expectedVersion: 1,
+        target: { kind: "plan" },
+        operation: { type: "replacePlan", plan: s.plan },
+      }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(
+      repo.requestJoin(c, key(), {
+        inviteToken: invite.token,
+        consentVersion: "together-v1",
+        consentAccepted: true,
+      }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(
+      await repo.finish(b, s.sessionId, key(), { expectedOwnRevision: 1 }),
+    ).toMatchObject({ status: "pending" });
+    expect(await db.select().from(schema.togetherJobs)).toHaveLength(2);
+  });
+  it("rejects stale revisions and nonhosts without completing anyone, and serializes competing host closes", async () => {
+    const s = await pair(),
+      body = await closeBody(s.sessionId, "finish_all");
+    await expect(repo.close(b, s.sessionId, key(), body)).rejects.toMatchObject(
+      { code: "FORBIDDEN" },
+    );
+    await expect(
+      repo.close(a, s.sessionId, key(), { ...body, expectedOwnRevision: 10 }),
+    ).rejects.toMatchObject({ code: "VERSION_CONFLICT" });
+    await expect(
+      repo.close(a, s.sessionId, key(), { ...body, expectedRevision: 0 }),
+    ).rejects.toMatchObject({ code: "VERSION_CONFLICT" });
+    expect(
+      (await db.select().from(schema.togetherParticipants)).every(
+        (p) => p.status === "active",
+      ),
+    ).toBe(true);
+    const results = await Promise.allSettled([
+      repo.close(a, s.sessionId, key(), body),
+      repo.close(a, s.sessionId, key(), { ...body, mode: "save_own" }),
+    ]);
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    expect(results.find((r) => r.status === "rejected")).toMatchObject({
+      reason: { code: "INVALID_STATE" },
+    });
+    expect(
+      (await db.select().from(schema.togetherEvents)).filter(
+        (e) => (e.event as { type: string }).type === "session_closed",
+      ),
+    ).toHaveLength(1);
+  });
+  it("preserves an already-saved guest result when the host finishes the group", async () => {
+    const s = await pair(),
+      pid = s.plan.exercises[0].planExerciseId;
+    await run(b, s.sessionId, cmd(b, pid));
+    await repo.finish(b, s.sessionId, key(), { expectedOwnRevision: 1 });
+    await repo.processJob(s.sessionId, b);
+    const saved = (await repo.snapshot(b, s.sessionId)).completion.historyId;
+    await repo.close(
+      a,
+      s.sessionId,
+      key(),
+      await closeBody(s.sessionId, "finish_all"),
+    );
+    expect((await repo.snapshot(b, s.sessionId)).completion.historyId).toBe(
+      saved,
+    );
+    expect(await db.select().from(schema.togetherJobs)).toHaveLength(1);
+    expect(await db.select().from(schema.workoutSessions)).toHaveLength(1);
+  });
+  it.each([false, true])(
+    "legacy host finish ends sharing but does not finish guests (leave=%s)",
+    async (leave) => {
+      const s = await pair();
+      await repo.finish(
+        a,
+        s.sessionId,
+        key(),
+        { expectedOwnRevision: 0 },
+        leave,
+      );
+      const guest = await repo.snapshot(b, s.sessionId);
+      expect(guest).toMatchObject({
+        state: "closed",
+        sharingActive: false,
+        continuation: "solo",
+      });
+      expect(guest.participants).toHaveLength(1);
+      expect(guest.participants[0].status).toBe("active");
+      await run(b, s.sessionId, cmd(b, s.plan.exercises[0].planExerciseId));
+    },
+  );
+  it("cannot finalize someone else's private recovery after sharing authority is lost", async () => {
+    const s = await pair();
+    await db.insert(schema.socialBlocks).values({ actorId: b, subjectId: a });
+    const body = await closeBody(s.sessionId, "finish_all");
+    await expect(repo.close(a, s.sessionId, key(), body)).rejects.toMatchObject(
+      { code: "FORBIDDEN" },
+    );
+    await repo.close(a, s.sessionId, key(), { ...body, mode: "save_own" });
+    expect((await repo.snapshot(b, s.sessionId)).continuation).toBe("solo");
+  });
+});

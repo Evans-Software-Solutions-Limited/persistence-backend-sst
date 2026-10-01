@@ -1,4 +1,8 @@
 import {
+  pendingReviewedEffects,
+  processReviewedEffects,
+} from "./completionRepository";
+import {
   ApiGatewayManagementApiClient,
   DeleteConnectionCommand,
   PostToConnectionCommand,
@@ -104,6 +108,15 @@ export async function drainTogether(injected?: {
       failures++;
     }
   }
+  const reviewed = await pendingReviewedEffects();
+  for (const result of reviewed) {
+    try {
+      await processReviewedEffects(result.userId, result.sessionId);
+      jobCount++;
+    } catch {
+      failures++;
+    }
+  }
   // Revoke sockets even when there are no pending workout events.
   const stale = await db
     .select()
@@ -172,6 +185,7 @@ export async function drainTogether(injected?: {
   // Continue bounded batches promptly; cron remains the backstop if this publish fails.
   if (
     pendingJobs.length === 50 ||
+    reviewed.length === 50 ||
     pendingEvents.length === 100 ||
     stale.length === 100
   )

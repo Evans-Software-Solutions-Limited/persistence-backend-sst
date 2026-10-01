@@ -1,4 +1,5 @@
-import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { TogetherError, lockActors } from "../together/shared";
+import { and, desc, eq, inArray, isNotNull, sql, type SQL } from "drizzle-orm";
 import {
   workoutSessions,
   sessionExercises,
@@ -177,6 +178,54 @@ export interface RecordedSession extends WorkoutSession {
 }
 
 export class SessionRepository {
+  /** Lock the owning root before checking mappings, matching reviewed-history writers.
+   * Separate statements ensure a waiter sees mappings committed with the root.
+   * Resolve owners, then acquire actor-before-root locks just like Together writers.
+   * Actor serialization also protects cross-history PR recomputation and set flags.
+   */
+  private async guardedHistoryMutation<T>(
+    roots: SQL,
+    userId: string | undefined,
+    metadataOnly: boolean,
+    action: (tx: DbTransaction) => Promise<T>,
+  ): Promise<T> {
+    return getDb().transaction(async (tx) => {
+      const owner = userId ? sql`and ws.user_id = ${userId}::uuid` : sql``;
+      const ownerResult = await tx.execute(
+        sql`select distinct ws.user_id as "userId" from workout_sessions ws where ws.id in (${roots}) ${owner} order by ws.user_id`,
+      );
+      const ownerRows = ownerResult as unknown as
+        | { userId: string }[]
+        | { rows: { userId: string }[] };
+      const owners = (
+        Array.isArray(ownerRows) ? ownerRows : ownerRows.rows
+      ).map((row) => row.userId);
+      if (owners.length) await lockActors(tx, owners);
+      await tx.execute(
+        sql`select ws.id from workout_sessions ws where ws.id in (${roots}) ${owner} order by ws.id for update`,
+      );
+      if (!metadataOnly) {
+        const response = await tx.execute(sql`select exists (
+          select 1 from workout_sessions ws
+          where ws.id in (${roots}) ${owner} and (
+            exists (select 1 from together_participants p where p.user_id=ws.user_id and p.history_id=ws.id)
+            or exists (select 1 from together_reviewed_results r where r.user_id=ws.user_id and r.history_id=ws.id)
+          )
+        ) as blocked`);
+        const result = response as unknown as
+          | { blocked: boolean }[]
+          | { rows: { blocked: boolean }[] };
+        const rows = Array.isArray(result) ? result : result.rows;
+        if (rows[0]?.blocked)
+          throw new TogetherError(
+            "TOGETHER_REVIEW_REQUIRED",
+            409,
+            "Review Together results through the owner recovery endpoint",
+          );
+      }
+      return action(tx);
+    });
+  }
   static readonly key = "SessionRepository";
 
   async list(
@@ -492,15 +541,15 @@ export class SessionRepository {
     const db = getDb();
 
     const record = async (tx: DbTransaction) => {
+      // A new solo record can update PR rows owned by another history. Serialize
+      // before any session/set/PR write, including clients without a stable ID.
+      await lockActors(tx, [userId]);
       if (
         process.env.TOGETHER_ENABLED === "true" &&
         !options?.togetherFinalization &&
         payload.clientSessionId
       ) {
-        const { lockActors, TogetherError } =
-          await import("../together/shared");
         const { togetherSessions } = await import("@persistence/db");
-        await lockActors(tx, [userId]);
         const [promoted] = await tx
           .select({ id: togetherSessions.id })
           .from(togetherSessions)
@@ -858,71 +907,98 @@ export class SessionRepository {
     userId: string,
     data: Partial<Omit<WorkoutSession, "id" | "userId" | "createdAt">>,
   ): Promise<WorkoutSession | null> {
-    const db = getDb();
+    return this.guardedHistoryMutation(
+      sql`select ${id}::uuid`,
+      userId,
+      Object.keys(data).every((key) =>
+        [
+          "name",
+          "userNotes",
+          "trainerFeedback",
+          "sessionRating",
+          "overallRpe",
+          "difficultyRanking",
+          "locationName",
+          "activityEnvironment",
+          "updatedAt",
+        ].includes(key),
+      ),
+      async (db) => {
+        // Verify ownership
+        const existing = await db
+          .select()
+          .from(workoutSessions)
+          .where(
+            and(eq(workoutSessions.id, id), eq(workoutSessions.userId, userId)),
+          )
+          .limit(1);
 
-    // Verify ownership
-    const existing = await db
-      .select()
-      .from(workoutSessions)
-      .where(
-        and(eq(workoutSessions.id, id), eq(workoutSessions.userId, userId)),
-      )
-      .limit(1);
+        if (!existing[0]) {
+          return null;
+        }
 
-    if (!existing[0]) {
-      return null;
-    }
+        // Refresh updatedAt on every mutation. Per
+        // microservices/core/src/application/sessions/CLAUDE.md § Status
+        // Transitions: "Status change must update `updatedAt` timestamp."
+        // Stamping unconditionally on every PATCH covers status + notes +
+        // any future fields without each handler having to remember.
+        const result = await db
+          .update(workoutSessions)
+          .set({ ...data, updatedAt: new Date() })
+          .where(eq(workoutSessions.id, id))
+          .returning();
 
-    // Refresh updatedAt on every mutation. Per
-    // microservices/core/src/application/sessions/CLAUDE.md § Status
-    // Transitions: "Status change must update `updatedAt` timestamp."
-    // Stamping unconditionally on every PATCH covers status + notes +
-    // any future fields without each handler having to remember.
-    const result = await db
-      .update(workoutSessions)
-      .set({ ...data, updatedAt: new Date() })
-      .where(eq(workoutSessions.id, id))
-      .returning();
-
-    return result[0] ?? null;
+        return result[0] ?? null;
+      },
+    );
   }
 
   async delete(id: string, userId: string): Promise<boolean> {
-    const db = getDb();
+    return this.guardedHistoryMutation(
+      sql`select ${id}::uuid`,
+      userId,
+      false,
+      async (db) => {
+        // Verify ownership
+        const existing = await db
+          .select()
+          .from(workoutSessions)
+          .where(
+            and(eq(workoutSessions.id, id), eq(workoutSessions.userId, userId)),
+          )
+          .limit(1);
 
-    // Verify ownership
-    const existing = await db
-      .select()
-      .from(workoutSessions)
-      .where(
-        and(eq(workoutSessions.id, id), eq(workoutSessions.userId, userId)),
-      )
-      .limit(1);
+        if (!existing[0]) {
+          return false;
+        }
 
-    if (!existing[0]) {
-      return false;
-    }
+        const result = await db
+          .delete(workoutSessions)
+          .where(eq(workoutSessions.id, id))
+          .returning();
 
-    const result = await db
-      .delete(workoutSessions)
-      .where(eq(workoutSessions.id, id))
-      .returning();
-
-    return !!result[0];
+        return !!result[0];
+      },
+    );
   }
 
   // Session Exercise operations
   async addExercise(
     data: Omit<NewSessionExercise, "createdAt" | "id">,
   ): Promise<SessionExercise> {
-    const db = getDb();
+    return this.guardedHistoryMutation(
+      sql`select ${data.sessionId}::uuid`,
+      undefined,
+      false,
+      async (db) => {
+        const result = await db
+          .insert(sessionExercises)
+          .values(data as NewSessionExercise)
+          .returning();
 
-    const result = await db
-      .insert(sessionExercises)
-      .values(data as NewSessionExercise)
-      .returning();
-
-    return result[0];
+        return result[0];
+      },
+    );
   }
 
   async getSessionExercises(sessionId: string): Promise<SessionExercise[]> {
@@ -936,52 +1012,62 @@ export class SessionRepository {
   }
 
   async removeExercise(exerciseId: string, userId: string): Promise<boolean> {
-    const db = getDb();
+    return this.guardedHistoryMutation(
+      sql`select session_id from session_exercises where id=${exerciseId}::uuid`,
+      userId,
+      false,
+      async (db) => {
+        // Verify ownership by checking if session belongs to user
+        const sessionExercise = await db
+          .select({ sessionId: sessionExercises.sessionId })
+          .from(sessionExercises)
+          .where(eq(sessionExercises.id, exerciseId))
+          .limit(1);
 
-    // Verify ownership by checking if session belongs to user
-    const sessionExercise = await db
-      .select({ sessionId: sessionExercises.sessionId })
-      .from(sessionExercises)
-      .where(eq(sessionExercises.id, exerciseId))
-      .limit(1);
+        if (!sessionExercise[0]) {
+          return false;
+        }
 
-    if (!sessionExercise[0]) {
-      return false;
-    }
+        const session = await db
+          .select()
+          .from(workoutSessions)
+          .where(
+            and(
+              eq(workoutSessions.id, sessionExercise[0].sessionId),
+              eq(workoutSessions.userId, userId),
+            ),
+          )
+          .limit(1);
 
-    const session = await db
-      .select()
-      .from(workoutSessions)
-      .where(
-        and(
-          eq(workoutSessions.id, sessionExercise[0].sessionId),
-          eq(workoutSessions.userId, userId),
-        ),
-      )
-      .limit(1);
+        if (!session[0]) {
+          return false;
+        }
 
-    if (!session[0]) {
-      return false;
-    }
+        const result = await db
+          .delete(sessionExercises)
+          .where(eq(sessionExercises.id, exerciseId))
+          .returning();
 
-    const result = await db
-      .delete(sessionExercises)
-      .where(eq(sessionExercises.id, exerciseId))
-      .returning();
-
-    return !!result[0];
+        return !!result[0];
+      },
+    );
   }
 
   // Exercise Set operations
   async addSet(data: Omit<NewExerciseSet, "createdAt">): Promise<ExerciseSet> {
-    const db = getDb();
+    return this.guardedHistoryMutation(
+      sql`select session_id from session_exercises where id=${data.sessionExerciseId}::uuid`,
+      undefined,
+      false,
+      async (db) => {
+        const result = await db
+          .insert(exerciseSets)
+          .values(data as NewExerciseSet)
+          .returning();
 
-    const result = await db
-      .insert(exerciseSets)
-      .values(data as NewExerciseSet)
-      .returning();
-
-    return result[0];
+        return result[0];
+      },
+    );
   }
 
   async getExerciseSets(sessionExerciseId: string): Promise<ExerciseSet[]> {
@@ -1032,7 +1118,7 @@ export class SessionRepository {
 
   /**
    * Folds JWT-scoped ownership into the mutation WHERE via a
-   * correlated subquery. Single round-trip; race-free; the set is
+   * correlated subquery after the transactional Together root guard; the set is
    * only mutated if it belongs to a session_exercise whose session
    * belongs to `userId`. Returns null when the join filters everything
    * out (set doesn't exist, or it does but isn't ours) — same surface
@@ -1050,56 +1136,69 @@ export class SessionRepository {
     userId: string,
     data: Partial<Omit<ExerciseSet, "id" | "createdAt">>,
   ): Promise<ExerciseSet | null> {
-    const db = getDb();
+    return this.guardedHistoryMutation(
+      sql`select se.session_id from session_exercises se join exercise_sets es on es.session_exercise_id=se.id where es.id=${setId}::uuid union select session_id from session_exercises where id=${data.sessionExerciseId ?? null}::uuid`,
+      userId,
+      false,
+      async (db) => {
+        const result = await db
+          .update(exerciseSets)
+          .set(data)
+          .where(
+            and(
+              eq(exerciseSets.id, setId),
+              ...(data.sessionExerciseId
+                ? [eq(exerciseSets.sessionExerciseId, data.sessionExerciseId)]
+                : []),
+              inArray(
+                exerciseSets.sessionExerciseId,
+                db
+                  .select({ id: sessionExercises.id })
+                  .from(sessionExercises)
+                  .innerJoin(
+                    workoutSessions,
+                    eq(sessionExercises.sessionId, workoutSessions.id),
+                  )
+                  .where(eq(workoutSessions.userId, userId)),
+              ),
+            ),
+          )
+          .returning();
 
-    const result = await db
-      .update(exerciseSets)
-      .set(data)
-      .where(
-        and(
-          eq(exerciseSets.id, setId),
-          inArray(
-            exerciseSets.sessionExerciseId,
-            db
-              .select({ id: sessionExercises.id })
-              .from(sessionExercises)
-              .innerJoin(
-                workoutSessions,
-                eq(sessionExercises.sessionId, workoutSessions.id),
-              )
-              .where(eq(workoutSessions.userId, userId)),
-          ),
-        ),
-      )
-      .returning();
-
-    return result[0] ?? null;
+        return result[0] ?? null;
+      },
+    );
   }
 
   /** Same TOCTOU-safe pattern as `updateSet`. See its docstring. */
   async deleteSet(setId: string, userId: string): Promise<boolean> {
-    const db = getDb();
+    return this.guardedHistoryMutation(
+      sql`select se.session_id from session_exercises se join exercise_sets es on es.session_exercise_id=se.id where es.id=${setId}::uuid`,
+      userId,
+      false,
+      async (db) => {
+        const result = await db
+          .delete(exerciseSets)
+          .where(
+            and(
+              eq(exerciseSets.id, setId),
+              inArray(
+                exerciseSets.sessionExerciseId,
+                db
+                  .select({ id: sessionExercises.id })
+                  .from(sessionExercises)
+                  .innerJoin(
+                    workoutSessions,
+                    eq(sessionExercises.sessionId, workoutSessions.id),
+                  )
+                  .where(eq(workoutSessions.userId, userId)),
+              ),
+            ),
+          )
+          .returning();
 
-    const result = await db
-      .delete(exerciseSets)
-      .where(
-        and(
-          eq(exerciseSets.id, setId),
-          inArray(
-            exerciseSets.sessionExerciseId,
-            db
-              .select({ id: sessionExercises.id })
-              .from(sessionExercises)
-              .innerJoin(
-                workoutSessions,
-                eq(sessionExercises.sessionId, workoutSessions.id),
-              )
-              .where(eq(workoutSessions.userId, userId)),
-          ),
-        ),
-      )
-      .returning();
-
-    return !!result[0];
+        return !!result[0];
+      },
+    );
   }
 }

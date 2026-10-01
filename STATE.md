@@ -1,5 +1,39 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-01 — Together completion and reviewed recovery
+
+Branch: `codex/together-completion-recovery`, based on merged main c1911c27.
+PER-22/PER-64: explicit host finish-all or save-own/end-sharing, stable frozen
+private solo continuation, and owner-reviewed recovery into the same historical
+result. No inactivity saves; initially empty results create no history. Existing
+history amended to empty becomes cancelled without changing its identity.
+
+New reviewed-results mapping is server-only, with revisioned durable effects.
+Full authoritative review corrects downward/deleted PR winners and rebuilds the
+relevant historical volume periods and workout streak. Actor locks serialize
+legacy and recovery effect workers; history/PR/mapping writes commit atomically.
+Explicit owner review is separate from signed journal upload. Native transport,
+mobile wiring and local/cloud authority switching remain later release gates.
+
+Inspector found generic history PATCH/DELETE could bypass recovery state. The
+fix routes Together result lifecycle/time/child edits through reviewed recovery;
+ordinary metadata remains editable. Generic mutation locks the actor then history before checking
+owner-scoped mappings and returns TOGETHER_REVIEW_REQUIRED (409) on conflict.
+
+Evidence: final full core 5,361 tests/393 files passed; remaining
+non-mobile suites 17/17 Turbo tasks; full typecheck/lint/non-mobile build passed.
+The seven new group-closure regression tests fail against origin/main and pass
+with this branch. Rerunnable migration, pre-rollout rollback and app-role denial
+are tested using PGlite. No live PostgreSQL/device concurrency is claimed.
+Initial capped test invocation rejected inconsistent min/max worker options before
+running tests; using minWorkers=1/maxWorkers=2 resolved the runner configuration.
+Local Inspector final full-diff sweep is CLEAN after lifecycle and lock-order
+fixes. Final changed runtime coverage exceeds 90% in every metric: SessionRepository
+branches 90.55%; volume branches 95.31%; completion branches 95.77%; recovered
+recording branches 97.73%. Typecheck 9/9, lint 6/6, non-mobile build 12/12,
+formatting and whitespace checks pass.
+No merge, deployment, native build or feature activation initiated.
+
 ### 2026-10-01 — Retire public founding promotion (PR #476)
 
 Redirect /founding to /pricing, preserving query parameters for referral

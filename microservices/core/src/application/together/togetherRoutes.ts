@@ -1,3 +1,4 @@
+import { TogetherCompletionRepository } from "./completionRepository";
 import { TogetherOfflineRepository } from "./offlineRepository";
 import {
   registrationSchema,
@@ -27,6 +28,7 @@ const params = t.Object({ id: uuidSchema });
 const finish = t.Object({ expectedOwnRevision: t.Integer({ minimum: 0 }) });
 const repository = new TogetherRepository();
 const offline = new TogetherOfflineRepository();
+const completion = new TogetherCompletionRepository();
 export const togetherRoutes = new Elysia({ name: "togetherRoutes" })
   .derive(async ({ headers }) => ({
     user: await getAuthUser(headers.authorization),
@@ -117,6 +119,64 @@ export const togetherRoutes = new Elysia({ name: "togetherRoutes" })
       data: await offline.getRecovery(getUser(c).sub, c.params.executionId),
     }),
     { params: t.Object({ executionId: uuidSchema }) },
+  )
+  .post(
+    "/together/offline/recovery/:executionId/complete",
+    async (c) => ({
+      data: await completion.completeOffline(
+        getUser(c).sub,
+        c.params.executionId,
+        c.headers["idempotency-key"],
+        c.body,
+      ),
+    }),
+    {
+      headers,
+      params: t.Object({ executionId: uuidSchema }),
+      body: t.Object({
+        expectedRevision: t.Integer({ minimum: 0 }),
+        completedAt: t.String({ format: "date-time" }),
+      }),
+    },
+  )
+  .post(
+    "/together/sessions/:id/review",
+    async (c) => ({
+      data: await completion.reviewCloud(
+        getUser(c).sub,
+        c.params.id,
+        c.headers["idempotency-key"],
+        c.body,
+      ),
+    }),
+    {
+      headers,
+      params,
+      body: t.Object({
+        expectedOwnRevision: t.Integer({ minimum: 0 }),
+        execution: executionSchema,
+      }),
+    },
+  )
+  .post(
+    "/together/sessions/:id/close",
+    async (c) => ({
+      data: await repository.close(
+        getUser(c).sub,
+        c.params.id,
+        c.headers["idempotency-key"],
+        c.body,
+      ),
+    }),
+    {
+      headers,
+      params,
+      body: t.Object({
+        expectedRevision: t.Integer({ minimum: 1 }),
+        expectedOwnRevision: t.Integer({ minimum: 0 }),
+        mode: t.Union([t.Literal("finish_all"), t.Literal("save_own")]),
+      }),
+    },
   )
   .post(
     "/together/sessions",
