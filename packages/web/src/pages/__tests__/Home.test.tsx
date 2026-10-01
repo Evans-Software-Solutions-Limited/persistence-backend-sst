@@ -92,12 +92,15 @@ describe("Home", () => {
     expect(links[0]?.querySelector("svg")).not.toBeNull();
   });
 
-  it("links the approved founding offer without invented proof stats", () => {
+  it("links current plans without promoting the retired founding offer", () => {
     const { container } = renderPage(<Home />);
     const text = container.textContent ?? "";
     expect(
-      screen.getAllByRole("link", { name: /founding offer/i }),
-    ).toHaveLength(2);
+      screen.queryAllByRole("link", { name: /founding offer/i }),
+    ).toHaveLength(0);
+    expect(
+      screen.getByRole("link", { name: "See plans" }).getAttribute("href"),
+    ).toBe("/pricing");
     expect(text).not.toMatch(/92%/);
     expect(text).not.toMatch(/early access/i);
   });

@@ -9,7 +9,6 @@ import Privacy from "./pages/Privacy";
 import Terms from "./pages/Terms";
 import DeleteAccount from "./pages/DeleteAccount";
 import OrganisationAdmin from "./pages/OrganisationAdmin";
-import Founding from "./pages/Founding";
 import FoundingThanks from "./pages/FoundingThanks";
 import FoundingAccess from "./founding/FoundingAccess";
 import RedeemPage from "./redemption/RedeemPage";
@@ -104,7 +103,15 @@ function App() {
           <Route path="/auth/callback" element={<AuthCallback />} />
           <Route path="/privacy" element={<Privacy />} />
           <Route path="/terms" element={<Terms />} />
-          <Route path="/founding" element={<Founding />} />
+          <Route
+            path="/founding"
+            element={
+              <Navigate
+                to={{ pathname: "/pricing", search: location.search }}
+                replace
+              />
+            }
+          />
           <Route path="/founding/thanks" element={<FoundingThanks />} />
           <Route path="/delete-account" element={<DeleteAccount />} />
           {/*

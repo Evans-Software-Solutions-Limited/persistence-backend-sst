@@ -101,8 +101,8 @@ export function Home() {
                 <div className="hero-ctas" data-reveal style={d(300)}>
                   <AppStoreCta variant="hero" />
                   <PlayStoreCta variant="hero" />
-                  <Link to="/founding" className="btn btn-line">
-                    Founding offer
+                  <Link to="/pricing" className="btn btn-line">
+                    See plans
                   </Link>
                   <a href="#coach" className="btn btn-line">
                     For coaches
@@ -647,10 +647,6 @@ export function Home() {
               <PlayStoreCta />
             </div>
             <StoreOfferCta variant="store" />
-            <p className="store-founding" data-reveal style={d(220)}>
-              Looking for six months with no automatic renewal?{" "}
-              <Link to="/founding">See the founding offer</Link>.
-            </p>
             {/*
              * The launch waitlist, repurposed rather than removed.
              *

@@ -197,9 +197,23 @@ describe("Founding", () => {
     });
   });
 
-  it("routes /founding to the founding page", () => {
+  it("redirects the retired /founding route to current pricing", () => {
     renderPage(<App />, { route: "/founding" });
-    expect(screen.getAllByText(/Founding offer/).length).toBeGreaterThan(0);
+    expect(
+      screen.getByRole("heading", { name: /one subscription/i }),
+    ).toBeDefined();
+    expect(screen.queryByText(/Founding offer/i)).toBeNull();
+    expect(screen.queryByLabelText("Founding prices")).toBeNull();
+  });
+
+  it("preserves referral attribution through the retired offer redirect", () => {
+    sessionStorage.removeItem("persistence.ref");
+    renderPage(<App />, { route: "/founding?ref=METAFOUND" });
+    expect(
+      screen.getByRole("heading", { name: /one subscription/i }),
+    ).toBeDefined();
+    expect(sessionStorage.getItem("persistence.ref")).toBe("METAFOUND");
+    sessionStorage.removeItem("persistence.ref");
   });
 
   it("routes /founding/thanks to the thanks page", () => {

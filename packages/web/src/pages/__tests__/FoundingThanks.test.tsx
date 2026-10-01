@@ -172,11 +172,11 @@ describe("FoundingThanks", () => {
     expect(vi.mocked(fetch).mock.calls.length).toBe(calls);
   });
 
-  it("always offers a way back to the plans", async () => {
+  it("always offers a way to current plans", async () => {
     stubStatus(COMPLETED);
     render();
     expect(
-      await screen.findByRole("link", { name: /back to founding prices/i }),
+      await screen.findByRole("link", { name: /view current plans/i }),
     ).toBeDefined();
   });
 });

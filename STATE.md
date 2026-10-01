@@ -1,5 +1,30 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-01 — Retire public founding promotion (PR #476)
+
+Redirect /founding to /pricing, preserving query parameters for referral
+attribution. Remove the shared founding banner, homepage offer links and sitemap
+entry. Existing purchase confirmation and activation pages now link to current
+plans. Keep reusable founding components and payment/claim/webhook/admin code for
+existing buyers and future offers; the expired checkout deadline remains enforced.
+
+Validation: full web suite 1,593 tests passed; added referral regression then
+passed all 16 focused Founding tests. Typecheck 9/9, lint 6/6, non-mobile build
+12/12 and formatting passed. Local Inspector full-diff review CLEAN after fixing
+referral query preservation. Visual criteria: no expired promotion, readable
+current pricing/navigation, mobile CTA without overlap, consistent light/dark
+layout. Browser checks confirmed redirect; independent screenshot review MATCH.
+Screenshots: /private/tmp/founding-retired-home-dark.png,
+/private/tmp/founding-retired-home-mobile.png,
+/private/tmp/founding-retired-pricing-light.png,
+/private/tmp/founding-retired-pricing-dark.png.
+
+Free trial reactivation is pending external store configuration: no code pause
+switch found. Mobile derives trial duration/eligibility from RevenueCat store
+products; no fabricated trial terms were added. App Store Connect browser access
+requires sign-in. Asked where the offer was disabled; no store settings changed.
+Existing Stripe trial resolver remains enabled. No deployment or native build.
+
 ### 2026-10-01 — Staging founding-checkout test clock
 
 Staging run 36842244479 stopped at unit tests before migrations, SST secrets or

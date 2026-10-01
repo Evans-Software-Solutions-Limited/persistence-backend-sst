@@ -436,8 +436,8 @@ export function FoundingAccessPresenter({
             </>
           )}
           {plan && !result && (!account || access.status === "none") && (
-            <a className="redeem-text-link" href="/founding">
-              Choose a different plan
+            <a className="redeem-text-link" href="/pricing">
+              View current plans
             </a>
           )}
           <footer className="redeem-footer">
