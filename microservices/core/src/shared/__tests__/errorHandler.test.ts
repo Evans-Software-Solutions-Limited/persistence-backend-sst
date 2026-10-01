@@ -29,21 +29,24 @@ describe("coreErrorHandler", () => {
     return (await response.json()) as Record<string, unknown>;
   }
 
-  it("preserves permanent promotion conflicts through the real legacy error boundary", async () => {
-    const app = new Elysia()
-      .use(coreErrorHandler)
-      .post("/sessions/record", () => {
-        throw new TogetherError("DRAFT_PROMOTED", 409);
+  it.each(["DRAFT_PROMOTED", "TOGETHER_REVIEW_REQUIRED"])(
+    "preserves %s through the real legacy error boundary",
+    async (code) => {
+      const app = new Elysia()
+        .use(coreErrorHandler)
+        .post("/sessions/record", () => {
+          throw new TogetherError(code, 409);
+        });
+      const response = await app.handle(
+        new Request("http://localhost/sessions/record", { method: "POST" }),
+      );
+      expect(response.status).toBe(409);
+      expect(await response.json()).toMatchObject({
+        error: { code },
       });
-    const response = await app.handle(
-      new Request("http://localhost/sessions/record", { method: "POST" }),
-    );
-    expect(response.status).toBe(409);
-    expect(await response.json()).toMatchObject({
-      error: { code: "DRAFT_PROMOTED" },
-    });
-    expect(captureServerError).not.toHaveBeenCalled();
-  });
+      expect(captureServerError).not.toHaveBeenCalled();
+    },
+  );
 
   it("retains Together retry and version metadata when crossing a legacy boundary", async () => {
     const app = new Elysia()

@@ -282,6 +282,8 @@ export class TogetherRepository {
     return {
       sessionId: s.id,
       state: s.state,
+      sharingActive: shared,
+      continuation: !shared && own.status === "active" ? "solo" : null,
       hostId: s.hostId,
       revision: s.revision,
       planVersion: s.planVersion,
@@ -305,7 +307,12 @@ export class TogetherRepository {
         ),
         ...(p.userId === actor ? { historyId: p.historyId } : {}),
       })),
-      completion: { status: own.status, historyId: own.historyId },
+      completion: {
+        status: own.status,
+        historyId: own.historyId,
+        ownRevision: own.ownRevision,
+        recoveryMayBePending: !shared,
+      },
     };
   }
   private async definitions(
@@ -993,7 +1000,7 @@ export class TogetherRepository {
             if (op.type === "rest") execution.restEndsAt = op.endsAt;
             else {
               requireTogether(
-                s.plan.exercises.some(
+                (live ? s.plan : (target.frozenPlan ?? s.plan)).exercises.some(
                   (e) => e.planExerciseId === op.planExerciseId,
                 ),
                 "INVALID_SCHEMA",
@@ -1398,6 +1405,155 @@ export class TogetherRepository {
       .delete(connections)
       .where(eq(connections.connectionId, connectionId));
   }
+  private async finalizeParticipant(
+    tx: TogetherTx,
+    s: Session,
+    p: Participant,
+  ) {
+    if (p.status !== "active") return;
+    const hasWork = p.execution.exercises.some((exercise) =>
+      exercise.sets.some((set) => set.completed),
+    );
+    p.status = hasWork ? "finalizing" : "finished_empty";
+    p.frozenPlan ??= s.plan;
+    p.allowPartnerLogging = false;
+    p.delegationGeneration++;
+    await tx
+      .update(participants)
+      .set({
+        status: p.status,
+        frozenPlan: p.frozenPlan,
+        allowPartnerLogging: false,
+        delegationGeneration: p.delegationGeneration,
+      })
+      .where(memberWhere(s.id, p.userId));
+    if (hasWork)
+      await tx
+        .insert(jobs)
+        .values({ sessionId: s.id, userId: p.userId })
+        .onConflictDoNothing();
+    await this.emit(tx, s, {
+      type: "participant_finished",
+      userId: p.userId,
+      status: p.status,
+    });
+  }
+  private async closeSharing(
+    tx: TogetherTx,
+    s: Session,
+    ps: Participant[],
+    mode: "finish_all" | "save_own",
+  ) {
+    s.state = "closed";
+    s.collaborationRevoked = true;
+    s.audience = "private";
+    await tx
+      .update(sessions)
+      .set({ state: "closed", collaborationRevoked: true, audience: "private" })
+      .where(eq(sessions.id, s.id));
+    await tx
+      .update(invites)
+      .set({ revoked: true })
+      .where(eq(invites.sessionId, s.id));
+    await tx
+      .update(requests)
+      .set({ status: "rejected" })
+      .where(and(eq(requests.sessionId, s.id), eq(requests.status, "pending")));
+    await tx
+      .update(connections)
+      .set({ revoked: true })
+      .where(eq(connections.sessionId, s.id));
+    for (const p of ps) {
+      p.frozenPlan ??= s.plan;
+      p.allowPartnerLogging = false;
+      p.delegationGeneration++;
+      await tx
+        .update(participants)
+        .set({
+          frozenPlan: p.frozenPlan,
+          allowPartnerLogging: false,
+          delegationGeneration: p.delegationGeneration,
+        })
+        .where(memberWhere(s.id, p.userId));
+    }
+    await this.emit(tx, s, {
+      type: "session_closed",
+      mode,
+      acknowledgedStateOnly: true,
+    });
+  }
+  async close(
+    actor: string,
+    id: string,
+    key: string,
+    body: {
+      expectedRevision: number;
+      expectedOwnRevision: number;
+      mode: "finish_all" | "save_own";
+    },
+  ) {
+    return this.transaction(actor, id, async (tx, s, ps) => {
+      const own = this.member(ps, actor);
+      requireTogether(
+        body.mode === "finish_all" || body.mode === "save_own",
+        "INVALID_SCHEMA",
+        400,
+      );
+      requireTogether(s.hostId === actor && !own.leftAt, "FORBIDDEN", 403);
+      const receipt = await replayMutation(
+        tx,
+        actor,
+        `close:${id}`,
+        key,
+        body,
+        async () => {
+          requireTogether(
+            s.state === "active" && own.status === "active",
+            "INVALID_STATE",
+            409,
+          );
+          if (body.mode === "finish_all")
+            requireTogether(await this.live(tx, s, ps), "FORBIDDEN", 403);
+          if (s.revision !== body.expectedRevision)
+            throw new TogetherError(
+              "VERSION_CONFLICT",
+              409,
+              "Session changed",
+              s.revision,
+            );
+          if (own.ownRevision !== body.expectedOwnRevision)
+            throw new TogetherError(
+              "VERSION_CONFLICT",
+              409,
+              "Personal execution changed",
+              own.ownRevision,
+            );
+          const targets =
+            body.mode === "finish_all" ? ps.filter((p) => !p.leftAt) : [own];
+          for (const participant of targets)
+            await this.finalizeParticipant(tx, s, participant);
+          await this.closeSharing(tx, s, ps, body.mode);
+          return {
+            mode: body.mode,
+            revision: s.revision,
+            acknowledgedStateOnly: true as const,
+          };
+        },
+      );
+      const [current] = await tx
+        .select()
+        .from(participants)
+        .where(memberWhere(id, actor));
+      return {
+        ...receipt,
+        sharingActive: false as const,
+        recoveryMayBePending: true as const,
+        ownRevision: current.ownRevision,
+        status: current.status === "finalizing" ? "pending" : current.status,
+        historyId: current.historyId,
+      };
+    });
+  }
   async finish(
     actor: string,
     id: string,
@@ -1422,28 +1578,7 @@ export class TogetherRepository {
                 "Personal execution changed",
                 p.ownRevision,
               );
-            const hasWork = p.execution.exercises.some((e) =>
-              e.sets.some((s) => s.completed),
-            );
-            p.status = hasWork ? "finalizing" : "finished_empty";
-            p.frozenPlan = s.plan;
-            await tx
-              .update(participants)
-              .set({
-                status: p.status,
-                frozenPlan: s.plan,
-                allowPartnerLogging: false,
-                delegationGeneration: p.delegationGeneration + 1,
-                ...(leave ? { leftAt: new Date() } : {}),
-              })
-              .where(memberWhere(id, actor));
-            if (hasWork)
-              await tx.insert(jobs).values({ sessionId: id, userId: actor });
-            await this.emit(tx, s, {
-              type: "participant_finished",
-              userId: actor,
-              status: p.status,
-            });
+            await this.finalizeParticipant(tx, s, p);
           }
           if (leave) {
             await tx
@@ -1460,15 +1595,8 @@ export class TogetherRepository {
                 ),
               );
           }
-          if (actor === s.hostId) {
-            await tx
-              .update(invites)
-              .set({ revoked: true })
-              .where(eq(invites.sessionId, id));
-            await tx
-              .update(sessions)
-              .set({ audience: "private" })
-              .where(eq(sessions.id, id));
+          if (actor === s.hostId && s.state === "active") {
+            await this.closeSharing(tx, s, ps, "save_own");
           }
           if (ps.every((p) => p.status !== "active"))
             await tx

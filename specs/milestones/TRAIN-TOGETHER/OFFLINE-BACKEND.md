@@ -42,11 +42,11 @@ discard the owner's journal based on that receipt. Recovered data remains privat
 to its owner even when a sharing credential has expired or a peer relationship
 has changed.
 
-The subsequent completion slice must let the athlete review recovery, update the
-same stable workout result, and recompute dependent effects without duplicates.
-It must cover host finish-all, save-own/end-sharing, solo continuation and empty
-results. Until that integration exists, the UI must not present server recovery
-as a completed save to workout history.
+The completion backend is specified in [COMPLETION-RECOVERY.md](./COMPLETION-RECOVERY.md).
+It adds explicit reviewed acceptance into the same stable history result, dependent
+effect repair, host finish-all, save-own/end-sharing and private solo continuation.
+Uploading remains storage-only; clients must call completion explicitly and use
+the returned status. Mobile integration is still outstanding.
 
 ## Remaining release evidence
 

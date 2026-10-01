@@ -9,6 +9,7 @@ import {
   togetherOfflineExecutions as executions,
   togetherOfflineCommands as commands,
   togetherSessions,
+  togetherReviewedResults as results,
   userSubscriptions,
 } from "@persistence/db";
 import {
@@ -389,7 +390,32 @@ export class TogetherOfflineRepository {
           ),
         );
       requireTogether(execution, "NOT_FOUND", 404);
-      return this.review(execution);
+      const [result] = await tx
+        .select()
+        .from(results)
+        .where(
+          and(
+            eq(results.userId, actor),
+            eq(results.sessionId, execution.sessionId),
+          ),
+        );
+      const reviewed = result?.reviewedRevision === execution.revision;
+      const hasWork = execution.execution.exercises.some((e) =>
+        e.sets.some((s) => s.completed),
+      );
+      return {
+        ...this.review(execution),
+        status: reviewed
+          ? hasWork
+            ? ("saved" as const)
+            : ("finished_empty" as const)
+          : ("stored_for_review" as const),
+        historySaved: !!(reviewed && hasWork && result.historyId),
+        historyId: result?.historyId ?? null,
+        reviewedRevision: result?.reviewedRevision ?? null,
+        effectsPending:
+          !!result && result.effectsDoneVersion < result.effectsVersion,
+      };
     });
   }
 }

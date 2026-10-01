@@ -9,6 +9,10 @@ setup and rollback; `RECOVERY-PROOF.md` records tests and remaining release gate
 - `shared.ts`: ordered actor locks, active/paid access, atomic receipts and limits.
 - `recording.ts`: frozen per-athlete finalization through the existing recording,
   PR, streak and volume services; durable retry after failure.
+- `completionRepository.ts` / `recoveredRecording.ts`: explicit owner-reviewed
+  recovery, stable result amendments, downward PR repair and revisioned effect
+  retries. Group closure and private continuation contracts are in
+  `specs/milestones/TRAIN-TOGETHER/COMPLETION-RECOVERY.md`.
 - `transport.ts`: content-free AWS WebSocket hints, one-use tickets and bounded
   outbox/finalizer recovery. SQS accelerates recovery; the cron sweep is a backstop.
 - `featureRoutes.ts`: separately typed `TogetherApi`, mounted by the Hono parent

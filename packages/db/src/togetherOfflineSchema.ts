@@ -62,3 +62,33 @@ export const togetherOfflineCommands = pgTable(
     ),
   ],
 );
+
+/** Owner-reviewed result identity and durable effects watermark; never exposed directly. */
+export const togetherReviewedResults = pgTable(
+  "together_reviewed_results",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    sessionId: uuid("session_id").notNull(),
+    clientRecordId: uuid("client_record_id").notNull(),
+    historyId: uuid("history_id"),
+    reviewedRevision: integer("reviewed_revision").notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true }).notNull(),
+    effectsVersion: integer("effects_version").notNull().default(1),
+    effectsDoneVersion: integer("effects_done_version").notNull().default(0),
+    exerciseDefinitions: jsonb("exercise_definitions")
+      .$type<
+        Record<string, import("./togetherSchema").TogetherExerciseDefinition>
+      >()
+      .notNull()
+      .default({}),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.sessionId] }),
+    uniqueIndex("together_reviewed_client_record_idx").on(
+      t.userId,
+      t.clientRecordId,
+    ),
+  ],
+);

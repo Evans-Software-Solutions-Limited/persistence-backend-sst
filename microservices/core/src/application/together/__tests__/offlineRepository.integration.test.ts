@@ -140,6 +140,15 @@ beforeAll(async () => {
   await pg.exec(migration);
   await pg.exec(offlineMigration);
   await pg.exec(offlineMigration);
+  await pg.exec(
+    readFileSync(
+      new URL(
+        "../../../../../../supabase/migrations/20261001120000_together_reviewed_results.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
   db = drizzle(pg, { schema });
   holder.db = db;
 });

@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
+  complete: vi.fn(),
+  review: vi.fn(),
+  close: vi.fn(),
   trust: vi.fn(),
   register: vi.fn(),
   revoke: vi.fn(),
@@ -8,6 +11,12 @@ const mocks = vi.hoisted(() => ({
   recover: vi.fn(),
   getRecovery: vi.fn(),
   wake: vi.fn(),
+}));
+vi.mock("../completionRepository", () => ({
+  TogetherCompletionRepository: class {
+    completeOffline = mocks.complete;
+    reviewCloud = mocks.review;
+  },
 }));
 vi.mock("../offlineRepository", () => ({
   TogetherOfflineRepository: class {
@@ -19,7 +28,11 @@ vi.mock("../offlineRepository", () => ({
     getRecovery = mocks.getRecovery;
   },
 }));
-vi.mock("../togetherRepository", () => ({ TogetherRepository: class {} }));
+vi.mock("../togetherRepository", () => ({
+  TogetherRepository: class {
+    close = mocks.close;
+  },
+}));
 vi.mock("../transport", () => ({ wakeTogether: mocks.wake }));
 vi.mock("../shared", async (original) => ({
   ...(await original<typeof import("../shared")>()),
@@ -245,4 +258,75 @@ describe("offline HTTP contract", () => {
       error: { code: "DEVICE_REVOKED", message: "Request cannot be completed" },
     });
   });
+});
+
+describe("reviewed completion routes", () => {
+  const paths = [
+    {
+      path: `/together/offline/recovery/${executionId}/complete`,
+      body: { expectedRevision: 1, completedAt: new Date().toISOString() },
+      mock: mocks.complete,
+      id: executionId,
+    },
+    {
+      path: `/together/sessions/${sessionId}/review`,
+      body: { expectedOwnRevision: 1, execution: { exercises: [] } },
+      mock: mocks.review,
+      id: sessionId,
+    },
+    {
+      path: `/together/sessions/${sessionId}/close`,
+      body: { expectedRevision: 1, expectedOwnRevision: 0, mode: "finish_all" },
+      mock: mocks.close,
+      id: sessionId,
+    },
+  ];
+  it.each(paths)(
+    "authorizes and forwards $path",
+    async ({ path, body, mock, id }) => {
+      mock.mockResolvedValue({ status: "saved" });
+      const response = await togetherRoutes.handle(
+        new Request(`http://localhost${path}`, {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${actor}`,
+            "idempotency-key": key,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(body),
+        }),
+      );
+      expect(response.status).toBe(200);
+      expect(mock).toHaveBeenCalledWith(actor, id, key, body);
+    },
+  );
+  it.each(paths)(
+    "requires auth and valid body for $path",
+    async ({ path, body, mock }) => {
+      const response = await togetherRoutes.handle(
+        new Request(`http://localhost${path}`, {
+          method: "POST",
+          headers: {
+            "idempotency-key": key,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(body),
+        }),
+      );
+      expect(response.status).toBe(401);
+      const invalid = await togetherRoutes.handle(
+        new Request(`http://localhost${path}`, {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${actor}`,
+            "idempotency-key": key,
+            "content-type": "application/json",
+          },
+          body: "{}",
+        }),
+      );
+      expect(invalid.status).toBe(400);
+      expect(mock).not.toHaveBeenCalled();
+    },
+  );
 });
