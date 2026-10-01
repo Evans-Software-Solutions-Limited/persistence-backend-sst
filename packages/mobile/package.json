@@ -20,6 +20,9 @@
     "@expo/vector-icons": "^15.1.1",
     "@gorhom/bottom-sheet": "^5.2.14",
     "@kingstinct/react-native-healthkit": "^14.0.0",
+    "@noble/ciphers": "2.4.0",
+    "@noble/curves": "2.4.0",
+    "@noble/hashes": "2.4.0",
     "@persistence/subscription-catalog": "workspace:*",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-community/datetimepicker": "8.6.0",
@@ -39,6 +42,7 @@
     "expo-camera": "~55.0.20",
     "expo-clipboard": "~55.0.13",
     "expo-constants": "~55.0.14",
+    "expo-crypto": "55.0.15",
     "expo-device": "^55.0.15",
     "expo-font": "~55.0.8",
     "expo-haptics": "~55.0.15",
@@ -47,8 +51,10 @@
     "expo-image-picker": "^55.0.20",
     "expo-linear-gradient": "^55.0.13",
     "expo-linking": "~55.0.13",
+    "expo-modules-core": "55.0.25",
     "expo-notifications": "~55.0.19",
     "expo-router": "~55.0.12",
+    "expo-secure-store": "55.0.14",
     "expo-splash-screen": "~55.0.18",
     "expo-sqlite": "~55.0.15",
     "expo-status-bar": "~55.0.5",
@@ -103,7 +109,7 @@
       "<rootDir>/__tests__/setup.ts"
     ],
     "transformIgnorePatterns": [
-      "node_modules/(?!(.bun/.*/)?(react-native|@react-native|@react-native-community|expo|expo-[^/]*|@expo|expo-modules-core|@expo-google-fonts|react-navigation|@react-navigation|@sentry/react-native|native-base|react-native-svg|react-native-qrcode-svg|tamagui|@tamagui|react-native-reanimated|react-native-reanimated-dnd|react-native-worklets)/)"
+      "node_modules/(?!(.bun/.*/)?(@noble|react-native|@react-native|@react-native-community|expo|expo-[^/]*|@expo|expo-modules-core|@expo-google-fonts|react-navigation|@react-navigation|@sentry/react-native|native-base|react-native-svg|react-native-qrcode-svg|tamagui|@tamagui|react-native-reanimated|react-native-reanimated-dnd|react-native-worklets)/)"
     ],
     "moduleNameMapper": {
       "^@/(.*)$": "<rootDir>/src/$1"

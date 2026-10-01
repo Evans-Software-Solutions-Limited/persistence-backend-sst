@@ -207,6 +207,11 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       )
         ? []
         : ["@react-native-community/datetimepicker"]),
+      "./plugins/withTogetherLan.js",
+      [
+        "expo-secure-store",
+        { configureAndroidBackup: true, faceIDPermission: false },
+      ],
       ...metaPlugins,
     ],
     // Preserve app.json's `extra` (eas.projectId, router) and add the resolved
