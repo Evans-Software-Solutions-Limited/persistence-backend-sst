@@ -12,8 +12,9 @@ export const workoutExerciseInputSchema = t.Object({
   sortOrder: t.Number(),
   supersetGroup: t.Optional(t.Union([t.Number(), t.Null()])),
   targetSets: t.Optional(t.Union([t.Number(), t.Null()])),
-  targetRepsMin: t.Optional(t.Number()),
-  targetRepsMax: t.Optional(t.Number()),
+  // Match PostgreSQL's positive int4 rep bounds before entering the handler.
+  targetRepsMin: t.Optional(t.Integer({ minimum: 1, maximum: 2147483647 })),
+  targetRepsMax: t.Optional(t.Integer({ minimum: 1, maximum: 2147483647 })),
   targetDurationSeconds: t.Optional(t.Union([t.Number(), t.Null()])),
   restSeconds: t.Optional(t.Union([t.Number(), t.Null()])),
   notes: t.Optional(t.Union([t.String(), t.Null()])),

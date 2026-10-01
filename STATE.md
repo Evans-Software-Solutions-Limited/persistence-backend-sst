@@ -1,5 +1,29 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-01 — Production workout rep validation hotfix
+
+Sentry PERSISTENCE-BACKEND-5 (issue 150774666): three production POST /workouts
+failures, PostgreSQL 23514 on workout_exercises_target_reps_min_check. The event
+contained targetRepsMin=0 / targetRepsMax=20; the API accepted any number and only
+checked min <= max. Shared POST/PATCH schema now requires both provided rep bounds
+to be positive PostgreSQL int4 integers; invalid input returns 422 before database
+or entitlement access. Omitted defaults and inverted-range checks are preserved.
+
+All 16 new endpoint regression cases failed against the original implementation.
+Focused workout suite: 102 tests pass; shared schema coverage 100% in all metrics.
+Core typecheck, lint (0 errors, 9 existing warnings), build/typecheck and changed-file
+formatting pass. Full core suite: 5,400 tests across 394 files passed; overall
+coverage 98.02% lines, 94.22% branches, 97.75% functions. Local Inspector: CLEAN;
+independent affected-handler run passed 108 tests, including Loadout variations.
+
+The mobile rep input can emit zero on clearing; this backend hotfix rejects it
+rather than silently changing the user's prescription. No database migration,
+production deployment or native app build performed. Work is isolated in
+/private/tmp/persistence-sentry-150774666 on codex/fix-workout-rep-validation;
+existing Together checkout changes remain untouched. The requested
+slack-progress-updates skill could not be found in installed skills or Documents;
+no notification credentials or destination were invented.
+
 ### 2026-10-01 — Session-scoped PREV consent
 
 PR #477 confirmed squash-merged at `7531d26e`; the next slice is AC16/F2,
