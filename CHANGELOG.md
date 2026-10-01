@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.26.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.25.1...persistence-v1.26.0) (2026-10-01)
+
+
+### Features
+
+* add four-person Together admission and durable local journal ([#474](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/474)) ([58c3753](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/58c3753542ed98b812097f86a79a0df6bc2e7aef))
+* add offline Together identity and owner recovery ([#475](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/475)) ([ba924bb](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/ba924bbd76a4b26fcc011264d657343a220d7e08))
+* add recipient-scoped Together PREV sharing ([#478](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/478)) ([22d99b6](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/22d99b6e1dac285a8eb043b7140feb61e59925d6))
+* complete Together sessions and review recovered workouts ([#477](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/477)) ([7531d26](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/7531d26e712c7a53eb8f576f2ee7bb147574f9ac))
+* **mobile:** show unlocked benefits during subscribed onboarding ([#472](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/472)) ([9a31b4c](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/9a31b4c8a4b3a1e3ed3b9ab41025b87c3ade5e0b))
+
+
+### Bug Fixes
+
+* normalize empty workout rep bounds in the backend ([#479](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/479)) ([fd36ca7](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/fd36ca7abdc405fa11b6f6f1937dc79acff9fb28))
+* retire founding promotion and stabilise expired-offer tests ([#476](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/476)) ([c1911c2](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/c1911c2716d6c4d1e9f4e40be4427a30ad3986dd))
+
 ## [1.25.1](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.25.0...persistence-v1.25.1) (2026-09-29)
 
 
