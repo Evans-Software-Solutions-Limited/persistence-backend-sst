@@ -86,8 +86,7 @@ function intersects(
  *   3. the replacement uses NONE.
  *
  * ⚠ Duration-prescribed rows are excluded, and that exclusion is load-bearing
- * rather than cosmetic. `findInvalidRepRangeIndex`'s `TARGET_REPS_DEFAULT` is
- * **1**, so a plank prescribed as `3 × 45 s` stores `targetRepsMax = 1` — which
+ * rather than cosmetic. Legacy timed rows can have `targetRepsMax = 1`, which
  * satisfies "reps ≤ 6" and would flag every timed row swapped off a machine as a
  * strength mismatch. The E2 corpus was all rep ranges, so this false positive is
  * not in the measured 10/171 and is guarded here instead.

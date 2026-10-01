@@ -1,4 +1,5 @@
 import { t } from "elysia";
+import { resolveWorkoutRepRange } from "./repRange";
 
 /**
  * Wire-format schema for a nested `WorkoutExercise` body entry. Shared
@@ -12,31 +13,25 @@ export const workoutExerciseInputSchema = t.Object({
   sortOrder: t.Number(),
   supersetGroup: t.Optional(t.Union([t.Number(), t.Null()])),
   targetSets: t.Optional(t.Union([t.Number(), t.Null()])),
-  targetRepsMin: t.Optional(t.Number()),
-  targetRepsMax: t.Optional(t.Number()),
+  // Zero, null and omitted bounds are normalized before persistence.
+  targetRepsMin: t.Optional(
+    t.Union([t.Integer({ minimum: 0, maximum: 2147483647 }), t.Null()]),
+  ),
+  targetRepsMax: t.Optional(
+    t.Union([t.Integer({ minimum: 0, maximum: 2147483647 }), t.Null()]),
+  ),
   targetDurationSeconds: t.Optional(t.Union([t.Number(), t.Null()])),
   restSeconds: t.Optional(t.Union([t.Number(), t.Null()])),
   notes: t.Optional(t.Union([t.String(), t.Null()])),
 });
-
-/**
- * Defaults applied by `WorkoutRepository.toWorkoutExerciseInsert` when a
- * client omits a rep bound. Validation must compare against these
- * resolved values, otherwise a payload like `{ targetRepsMin: 5 }`
- * (without a max) would store min=5 / max=1 in the database — violating
- * the min ≤ max invariant.
- *
- * Spec: specs/04-workout-management/requirements.md STORY-002 AC 2.9
- */
-export const TARGET_REPS_DEFAULT = 1;
 
 export type WorkoutExerciseInputBody = {
   exerciseId: string;
   sortOrder: number;
   supersetGroup?: number | null;
   targetSets?: number | null;
-  targetRepsMin?: number;
-  targetRepsMax?: number;
+  targetRepsMin?: number | null;
+  targetRepsMax?: number | null;
   targetDurationSeconds?: number | null;
   restSeconds?: number | null;
   notes?: string | null;
@@ -53,8 +48,8 @@ export function findInvalidRepRangeIndex(
 ): number | null {
   for (let i = 0; i < exercises.length; i++) {
     const ex = exercises[i];
-    const min = ex.targetRepsMin ?? TARGET_REPS_DEFAULT;
-    const max = ex.targetRepsMax ?? TARGET_REPS_DEFAULT;
+    const { targetRepsMin: min, targetRepsMax: max } =
+      resolveWorkoutRepRange(ex);
     if (min > max) return i;
   }
   return null;

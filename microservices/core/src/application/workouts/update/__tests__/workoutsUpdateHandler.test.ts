@@ -63,6 +63,93 @@ describe("WorkoutsUpdateHandler", () => {
     workoutRepositoryMocks.update.mockResolvedValue(updatedWorkout);
   });
 
+  describe("rep bounds validation (Sentry PERSISTENCE-BACKEND-5)", () => {
+    it.each([
+      ["targetRepsMin", -1],
+      ["targetRepsMax", -1],
+      ["targetRepsMin", 1.5],
+      ["targetRepsMax", 20.5],
+      ["targetRepsMin", 2147483648],
+      ["targetRepsMax", 2147483648],
+    ])("rejects %s=%s before database access", async (field, value) => {
+      const { workoutsUpdateHandler } =
+        await import("../workoutsUpdateHandler");
+      const response = await workoutsUpdateHandler.handle(
+        new Request("http://localhost/workouts/workout-1", {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            authorization: "Bearer test-token",
+          },
+          body: JSON.stringify({
+            name: "Rep validation",
+            exercises: [
+              {
+                exerciseId: "valid-exercise",
+                sortOrder: 0,
+                targetRepsMin: 5,
+                targetRepsMax: 10,
+              },
+              {
+                exerciseId: "invalid-exercise",
+                sortOrder: 1,
+                targetRepsMin: 1,
+                targetRepsMax: 20,
+                [field]: value,
+              },
+            ],
+          }),
+        }),
+      );
+      expect(response.status).toBe(422);
+      expect(workoutRepositoryMocks.update).not.toHaveBeenCalled();
+      expect(workoutRepositoryMocks.getById).not.toHaveBeenCalled();
+      expect(assertEntitlementMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("empty rep bounds", () => {
+    it.each([
+      [0, 20],
+      [10, 0],
+      [undefined, 20],
+      [10, undefined],
+      [null, 20],
+      [10, null],
+      [0, 0],
+      [undefined, undefined],
+      [null, null],
+      [0, undefined],
+      [undefined, 0],
+      [8, 12],
+      [1, 1],
+    ])("accepts min=%s max=%s for backend normalization", async (min, max) => {
+      const { workoutsUpdateHandler } =
+        await import("../workoutsUpdateHandler");
+      const response = await workoutsUpdateHandler.handle(
+        new Request("http://localhost/workouts/workout-1", {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            authorization: "Bearer test-token",
+          },
+          body: JSON.stringify({
+            name: "Normalize",
+            exercises: [
+              {
+                exerciseId: "ex-1",
+                sortOrder: 0,
+                targetRepsMin: min,
+                targetRepsMax: max,
+              },
+            ],
+          }),
+        }),
+      );
+      expect(response.status).toBe(200);
+    });
+  });
+
   describe("unauthenticated requests", () => {
     it("should require authentication", async () => {
       const { workoutsUpdateHandler } =
@@ -341,27 +428,6 @@ describe("WorkoutsUpdateHandler", () => {
                 targetRepsMax: 8,
               },
             ],
-          }),
-        }),
-      );
-      expect(response.status).toBe(400);
-    });
-
-    it("should return 400 when only targetRepsMin is provided and it exceeds the default max=1", async () => {
-      // Mirror of the create-handler regression test: validation must
-      // catch min/max violations even when the client omits one bound and
-      // the repository would default it.
-      const { workoutsUpdateHandler } =
-        await import("../workoutsUpdateHandler");
-      const response = await workoutsUpdateHandler.handle(
-        new Request("http://localhost/workouts/workout-1", {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-            authorization: "Bearer test-token",
-          },
-          body: JSON.stringify({
-            exercises: [{ exerciseId: "ex-1", sortOrder: 0, targetRepsMin: 5 }],
           }),
         }),
       );
