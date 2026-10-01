@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const authMocks = vi.hoisted(() => ({
   user: vi.fn(async () => ({ sub: "00000000-0000-4000-8000-000000000012" })),
@@ -156,6 +156,11 @@ function status(sessionId: string, ip = "203.0.113.6"): Promise<Response> {
   );
 }
 
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllEnvs();
+});
+
 describe("POST /founding/checkout", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -170,7 +175,10 @@ describe("POST /founding/checkout", () => {
     repoMocks.eligibility.mockResolvedValue(null);
     repoMocks.eligibilityIn.mockResolvedValue(null);
     resetRateLimits();
-    vi.useRealTimers();
+    // Sale-path fixtures must stay inside the offer window after the real deadline.
+    // Only freeze Date so asynchronous handler timers keep running normally.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-10T10:00:00Z"));
     vi.stubEnv("WEB_ORIGIN", "https://example.test");
     turnstileMock.mockResolvedValue("passed");
     // Explicit, not inherited from the `vi.fn(default)` argument: a test that
@@ -357,7 +365,6 @@ describe("POST /founding/checkout", () => {
     // fixed earlier and floored is routinely a second short and the whole call
     // is rejected. Headroom, and rounded up.
     const now = new Date("2026-09-10T10:00:00Z");
-    vi.useFakeTimers();
     vi.setSystemTime(now);
     await post(VALID);
     const args = stripeMocks.create.mock.calls[0]![0] as { expires_at: number };
@@ -366,7 +373,6 @@ describe("POST /founding/checkout", () => {
     ).holdExpiresAt;
     expect(hold).toEqual(new Date(now.getTime() + 30 * 60 * 1000));
     expect(args.expires_at * 1000).toBeGreaterThanOrEqual(hold.getTime());
-    vi.useRealTimers();
   });
 
   it("requires terms acceptance and states the cancellation position", async () => {
@@ -637,20 +643,16 @@ describe("POST /founding/checkout", () => {
     });
 
     it("refuses after the offer closes, with 410", async () => {
-      vi.useFakeTimers();
       vi.setSystemTime(new Date(FOUNDING_OFFER_CLOSES.getTime() + 1000));
       const res = await post(VALID);
       expect(res.status).toBe(410);
       expect(await res.json()).toEqual({ ok: false, error: "offer_closed" });
       expect(stripeMocks.create).not.toHaveBeenCalled();
-      vi.useRealTimers();
     });
 
     it("still sells on the last second before the close", async () => {
-      vi.useFakeTimers();
       vi.setSystemTime(FOUNDING_OFFER_CLOSES);
       expect((await post(VALID)).status).toBe(200);
-      vi.useRealTimers();
     });
 
     it("503s when the Price cannot be resolved or verified", async () => {

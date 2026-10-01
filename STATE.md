@@ -1,5 +1,60 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-01 — Retire public founding promotion (PR #476)
+
+Redirect /founding to /pricing, preserving query parameters for referral
+attribution. Remove the shared founding banner, homepage offer links and sitemap
+entry. Existing purchase confirmation and activation pages now link to current
+plans. Keep reusable founding components and payment/claim/webhook/admin code for
+existing buyers and future offers; the expired checkout deadline remains enforced.
+
+Validation: full web suite 1,593 tests passed; added referral regression then
+passed all 16 focused Founding tests. Typecheck 9/9, lint 6/6, non-mobile build
+12/12 and formatting passed. Local Inspector full-diff review CLEAN after fixing
+referral query preservation. Visual criteria: no expired promotion, readable
+current pricing/navigation, mobile CTA without overlap, consistent light/dark
+layout. Browser checks confirmed redirect; independent screenshot review MATCH.
+Screenshots: /private/tmp/founding-retired-home-dark.png,
+/private/tmp/founding-retired-home-mobile.png,
+/private/tmp/founding-retired-pricing-light.png,
+/private/tmp/founding-retired-pricing-dark.png.
+
+Free trial reactivation is pending external store configuration: no code pause
+switch found. Mobile derives trial duration/eligibility from RevenueCat store
+products; no fabricated trial terms were added. App Store Connect browser access
+requires sign-in. Asked where the offer was disabled; no store settings changed.
+Existing Stripe trial resolver remains enabled. No deployment or native build.
+
+### 2026-10-01 — Staging founding-checkout test clock
+
+Staging run 36842244479 stopped at unit tests before migrations, SST secrets or
+deployment. All 48 failures were in foundingCheckoutHandler.test.ts: the real
+clock passed the approved September 30 sale cutoff. Reproduced 48 failures / 22
+passes locally. Freeze only Date to an explicit in-window fixture in sale-path
+tests; restore clock and stubbed environment after each test, including failures.
+Existing post-close 410 and last-second sale tests remain. All 70 focused tests
+pass; exercised handler coverage 99.48% statements/lines, 98.3% branches, 100%
+functions. Production deadline and runtime code are unchanged.
+
+Full non-mobile run then passed all 5,321 core tests / 391 files but exposed the
+same calendar dependency in web Founding and FoundingBanner tests (16 failures).
+Applied the same Date-only fixture there, retaining expiry assertions; all 1,593
+web tests / 80 files now pass. No offer, API routing or UI runtime changes.
+Final staging-equivalent non-mobile test command passes 18/18 Turbo tasks.
+Typecheck 9/9, lint 6/6 (existing warnings), non-mobile build 12/12, formatting
+and whitespace checks pass. Inspector Brad final full-diff sweep: CLEAN.
+No workflow rerun, deployment, migration or native build initiated.
+
+API audit: Elysia 1.4.28; legacy CoreApi has 96 literal plugin mounts and known
+Eden TS2589 suppression in packages/web/src/lib/eden.ts. This is type complexity,
+not evidence of a numeric runtime handler cap. Together already has a separate
+typed app (40 explicit routes across Together/social/places/templates) dispatched
+by Hono. Both HTTP apps share the same Lambda; WebSocket/worker/cron are separate.
+Domain app/type extraction is justified to remove compiler debt; separate HTTP
+Lambdas need measured cold-start/latency/load or isolation justification. A single
+read-only /health probe returned 200 for staging and production; it does not prove
+authenticated/database route health or performance under load.
+
 ### 2026-09-30 — Offline identity and owner recovery
 
 PR #474 merged at 58c37535. Working branch:

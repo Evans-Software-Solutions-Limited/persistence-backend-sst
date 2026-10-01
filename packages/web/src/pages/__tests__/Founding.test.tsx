@@ -26,6 +26,9 @@ function availability(consumer = { used: 37, cap: 200 }) {
 
 describe("Founding", () => {
   beforeEach(() => {
+    // Keep sale-path tests inside the offer window regardless of the CI date.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-10T10:00:00Z"));
     vi.stubGlobal("fetch", availability());
   });
 
@@ -172,7 +175,6 @@ describe("Founding", () => {
 
   describe("after 30 September", () => {
     beforeEach(() => {
-      vi.useFakeTimers();
       vi.setSystemTime(new Date(FOUNDING_OFFER_CLOSES.getTime() + 1000));
     });
 
@@ -195,9 +197,23 @@ describe("Founding", () => {
     });
   });
 
-  it("routes /founding to the founding page", () => {
+  it("redirects the retired /founding route to current pricing", () => {
     renderPage(<App />, { route: "/founding" });
-    expect(screen.getAllByText(/Founding offer/).length).toBeGreaterThan(0);
+    expect(
+      screen.getByRole("heading", { name: /one subscription/i }),
+    ).toBeDefined();
+    expect(screen.queryByText(/Founding offer/i)).toBeNull();
+    expect(screen.queryByLabelText("Founding prices")).toBeNull();
+  });
+
+  it("preserves referral attribution through the retired offer redirect", () => {
+    sessionStorage.removeItem("persistence.ref");
+    renderPage(<App />, { route: "/founding?ref=METAFOUND" });
+    expect(
+      screen.getByRole("heading", { name: /one subscription/i }),
+    ).toBeDefined();
+    expect(sessionStorage.getItem("persistence.ref")).toBe("METAFOUND");
+    sessionStorage.removeItem("persistence.ref");
   });
 
   it("routes /founding/thanks to the thanks page", () => {
