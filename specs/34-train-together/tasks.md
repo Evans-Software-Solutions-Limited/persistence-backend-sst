@@ -21,6 +21,20 @@ items are not implemented merely because their requirements are approved.
       evidence remain open under F5/F6.
 - [ ] **F4 / PER-20/22:** authenticated offline device credentials/admission,
       native local and Wi-Fi transport, server reconciliation and wire fixtures.
+- [ ] **F4b / PER-64:** bounded training lobby and native transport
+      slice under AC21–22: host/scan/request/approve, verified identity, journal
+      dispatch/durable acknowledgements and reconnect. Prove nearby and same-LAN/
+      hotspot paths without internet. Keep remote discovery friends/invite-based;
+      do not expose the existing venue-public discovery as proof of proximity.
+      Prepare native integration and tests; physical-device proof requires a
+      compatible Brad-owned build. No native build authorization is implied.
+- [x] **F4b1 / PER-64 (source foundation):** explicit Bonjour/NSD LAN adapter,
+      mobile credential/roster verification, encrypted host-pinned connections,
+      host admission and durable owner-command/peer-receipt reconnect. Expo
+      autolinking detects both native targets; protocol and SQLite tests pass.
+      Native compilation/device proof is pending. Nearby radio, hotspot-owner
+      support, credential provisioning, discovery-to-host-pin UX and full shared
+      workout integration remain open. See the milestone `LAN-BRIEF.md`.
 - [x] **F4a / PER-64:** server-signed bounded device credentials, pair friendship
       evidence, signed four-person roster validation, and authenticated owner
       command reconciliation into a private reconstructed review candidate.
@@ -28,7 +42,7 @@ items are not implemented merely because their requirements are approved.
       native transport; see `OFFLINE-BACKEND.md` in the milestone folder.
 - [x] **F5a / PER-64:** standalone account-scoped SQLite owner journal; nine real
       SQLite tests cover reopen, receipts, conflicts, rollback and account isolation.
-      Not mounted in the app; no native peer transport is claimed.
+      Now consumed by the LAN session adapter; not mounted in workout UI.
 - [ ] **F5 / PER-22:** wire journal into mobile adapters and complete UI integration;
       distinguish local/peer/server save state and preserve own recovery.
 - [ ] **F6 / PER-22:** four-device iOS/Android, poor/no-signal, Wi-Fi/hotspot,

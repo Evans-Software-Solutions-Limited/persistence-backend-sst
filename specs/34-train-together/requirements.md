@@ -1,5 +1,25 @@
 # Train Together — requirements
 
+## Approved lobby scope — 1 October 2026
+
+- **AC21 — Bounded training lobbies:** hosts choose invite-only or open for join
+  requests. Open local lobbies are discoverable through nearby device transport;
+  open Wi-Fi/hotspot lobbies are discoverable on the same reachable local network,
+  including without internet. Network/radio discovery is not authorization or
+  proof of an exact physical distance. Non-friends require host approval;
+  verified accepted friends retain deliberate automatic admission. Existing
+  four-person capacity, blocking, eligibility and separate PREV/logging consent
+  apply. Before admission, show only the authorized lobby summary, never logs.
+- **AC22 — Remote discovery boundary:** online/remote sessions use friends or
+  explicit invitation links/codes. No worldwide public session directory in the
+  first release. Existing server venue-based `nearby` discovery is not proof of
+  local presence and must not stand in for a local/network lobby. Keep that
+  discovery path disabled or align it with this scope before activation.
+
+This supersedes conflicting venue-public discovery expectations below. Local
+permissions, network isolation and unreachable-peer states must offer an honest
+tested local-radio/hotspot alternative without discarding the owner's workout.
+
 ## Approved amendment — 30 September 2026
 
 This amendment supersedes conflicting historical two-person, mandatory host

@@ -6,6 +6,28 @@ not claim working native transport or close the device release gate.
 
 ## Required experiences
 
+### Approved training lobby boundary — 1 October 2026
+
+Use invite-only or open-for-join-requests visibility. An open local lobby is
+discovered through nearby device transport; an open Wi-Fi lobby is discovered
+on the same reachable LAN/hotspot, without requiring upstream internet. Remote
+sessions use friends or explicit invitations, with no global public directory.
+Venue selection in the existing cloud API does not enforce vicinity; keep venue
+discovery disabled until aligned with AC21–22.
+
+Discovery alone admits nobody. Bind lobby identity and admission to authenticated
+devices; unknown peers request host approval, verified accepted friends may join
+deliberately without another approval. Four seats include the host. Never expose
+logs, history or bearer credentials in advertisements or pre-admission summaries.
+
+The next implementation slice is an authenticated local lobby/transport vertical
+slice: host/scan/request/approve, one durable command and acknowledgement across
+two devices, reconnect without duplicate application, then four-device extension.
+Expose a transport-independent interface to the journal and a single authority
+per session. Define explicit local/cloud authority transitions before implementing
+automatic switching. Device success remains unproven until Brad supplies a
+compatible build and physical-device evidence is recorded.
+
 - Nearby: start and continue without internet, including local Wi-Fi or a phone
   hotspot without upstream internet. The app must explain unavailable local
   permissions or unreachable peers without discarding the active workout.
@@ -15,6 +37,32 @@ not claim working native transport or close the device release gate.
   equate a socket send with receipt, or peer receipt with server acceptance.
 
 ## Native transport candidate
+
+### 1 October implementation decision
+
+The explicit Wi-Fi option uses a separate LAN adapter: iOS Network.framework
+Bonjour/TCP and Android NSD/TCP. Nearby's Swift API exposes medium selection,
+but Android's public builder does not expose an equivalent Wi-Fi-only selector.
+Nearby radio remains a subsequent adapter, still required before first release.
+See [LAN-BRIEF.md](./LAN-BRIEF.md) for the current implementation/evidence boundary.
+
+The LAN module advertises only an opaque session UUID in Bonjour TXT. Native
+frames are length-prefixed, bounded to 64 KiB, with peer/queue/rate/deadline limits.
+Device credentials authenticate a pinned host/session and ephemeral X25519
+exchange; HKDF-separated directional keys protect ChaCha20-Poly1305 messages.
+Counters reject reordered/replayed frames. Reconnect creates a fresh channel;
+SQLite command identities and receipts survive it. No credentials/signing seeds
+or historical PREV values appear in advertisements. Private keys use SecureStore.
+
+The source restricts transport to Wi-Fi. Android hotspot-owner mode can lack a
+usable Wi-Fi Network and currently fails closed as unavailable; clients attached
+to a hotspot use its Wi-Fi network. Hotspot-owner support and both platforms'
+physical no-internet behaviour are unproven release gates, not shipped claims.
+This slice carries direct owner commands over a host/guest connection; guest-to-
+guest log projection, cloud transitions and full workout UI remain later wiring.
+Trust-key/credential provisioning and discovery-to-host-pin UI are not mounted.
+
+### Earlier candidate evaluation
 
 Google Nearby Connections provides offline peer discovery and encrypted data
 exchange using Bluetooth/Wi-Fi, with iOS and Android SDKs. Its star strategy fits

@@ -42,7 +42,7 @@ const identifier = (value: string) => {
 export class TogetherJournal {
   constructor(
     private readonly db: TogetherJournalDatabase,
-    private readonly accountId: string,
+    readonly accountId: string,
   ) {
     identifier(accountId);
     db.execSync(`

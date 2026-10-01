@@ -1,5 +1,73 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-01 — PER-64 authenticated LAN source foundation
+
+PR #478 confirmed squash-merged at `22d99b6e`; branch `codex/together-local-lobby`
+starts there. Added local Expo Bonjour/NSD TCP source for explicit same-network
+mode, mobile backend-compatible signed credentials/rosters, SecureStore device
+seeds and signed ephemeral X25519/ChaCha20-Poly1305 channels. Host-controlled
+four-seat admission preserves explicit consent, verified friend admission and
+stranger approval. Account-bound SQLite roster/inbox and owner journals commit
+before receipts, retain immutable retry IDs and never claim cloud acceptance.
+Native lifecycle coordinator stays disabled/unmounted; reviewed Claude UX is
+preserved. Linear project, central design reference and PER-22/60/64 reflect #478
+merged and this active slice.
+
+Local Inspector found two real reliability bugs: an 80-command backlog in each
+direction overflowed receive queues, and a stale startup failure stopped a newer
+lifecycle. Receipt-driven single-command delivery with 100ms monotonic pacing and
+generation/connection guards fix both. Inspector reproduced all 160 commands
+acknowledged after the fix and the replacement lifecycle surviving old failure.
+Final full-diff verdict: CLEAN. Calendar, durable-save and lifecycle mutation
+checks fail when their respective implementation guards are removed.
+
+Validation: 130 focused tests / 8 suites pass. Every changed JS/TS runtime file
+exceeds 90% in all four coverage metrics. Root typecheck 9/9, lint 6/6 (existing
+warnings), non-mobile build 12/12, non-mobile tests 18/18 (5,384 core tests),
+format and whitespace checks pass. Final full mobile: 546 suites / 7,134 tests pass.
+Read-only Expo autolinking detects the module on Apple and Android; Swift syntax
+parse passes. Native compilation, native runtime coverage and physical no-internet
+behaviour are NOT established. No native/prebuild/EAS build or activation run.
+
+Remaining: native Nearby radio adapter; Android hotspot-owner interface support
+(currently unavailable when no Wi-Fi Network exists); credential/key provisioning
+and discovery-to-verified-host selection; full reviewed workout/consent/cache/
+recovery UI, guest-to-guest projection, local/cloud authority transitions and
+mixed-device/infra/pilot evidence. Compatible builds remain Brad-owned. The
+LAN source foundation is not a released or integrated Together feature.
+
+### 2026-10-01 — Linear and reviewed design audit
+
+Brad confirmed Claude artifact FPeZDi5As7URgXtT1J5sM1 is the only Together design.
+Opened it successfully: Persistence Together v2, with starting/live/partners/
+recovery/coached/scheduled screen navigation. Added central Linear project document
+`7970adc93c8b` with source link, screen inventory, preserved UX and approved deltas.
+Linked the original and reference document on PER-19/20/21/22/60/61/64/62/12;
+updated current handoffs and project description while retaining older acceptance
+and evidence as historical. PER-64 previously lacked the original design link.
+PR #478 is still open; all five current GitHub CI checks pass. No release inferred.
+
+Frontend brief now explicitly requires reuse of reviewed layouts/components and
+screenshot comparison, not a new UX design. The original source export and
+TOGETHER_HANDOFF.md remain unarchived; the accessible artifact is the visual source.
+Only documentation/Linear changed; formatting and whitespace checks pass. Existing
+local lobby-spec edits from the prior turn are retained. No runtime/build changes.
+
+### 2026-10-01 — Approved bounded training lobbies
+
+Brad approved invite-only/open join-request lobbies scoped to nearby device
+discovery or the same reachable Wi-Fi/hotspot, including without internet.
+Remote remains friends/invites; no worldwide public directory. Non-friends need
+host approval, accepted friends retain deliberate auto-admission. Network/radio
+discovery alone grants no data access or exact-location proof. Existing cloud
+venue discovery must remain disabled or be aligned before release.
+
+Requirements AC21–22, offline design and F4b next-pickup tasks updated locally;
+PER-60/PER-64 updated in Linear. Next slice: authenticated native lobby/transport,
+one durable command/acknowledgement and reconnect, then four-device extension.
+No runtime changes in this planning update; formatting/whitespace checks pass.
+Native builds remain Brad-owned; no build or activation started.
+
 ### 2026-10-01 — Production workout rep normalization hotfix
 
 Sentry PERSISTENCE-BACKEND-5 (issue 150774666): POST /workouts sent reps 0–20

@@ -1,5 +1,29 @@
 # Persistence Together — frontend agent
 
+## Reviewed UX — reuse, do not redesign
+
+Brad confirmed on 1 October that the
+[reviewed Claude Together v2 artifact](https://claude.ai/artifact/FPeZDi5As7URgXtT1J5sM1)
+is the only Together design. Use the
+[central Linear design reference](https://linear.app/evans-software-solutions/document/together-reviewed-claude-ux-and-approved-implementation-changes-7970adc93c8b)
+for the screen inventory and approved amendments. Preserve the reviewed layouts,
+components, slim Together strip, named ownership/view switching and return-to-mine.
+Do not recreate agreed UX or replace it with a new design. Compare UI changes
+against the matching original prototype screen using screenshots.
+
+Apply approved AC15–22, including bounded nearby/same-network lobbies and
+friends/invitation-based remote sessions. Extend existing screens only for the
+confirmed missing consent, connection, recovery and completion states. Prototype
+coached capacity, inactivity auto-save and unrestricted numeric access are not
+approved behaviour. Coached distribution/scheduling remain separate tickets.
+The original source export/TOGETHER_HANDOFF.md is not archived locally; the
+working artifact and PER-60 are the handoff, not a reason to redesign.
+
+Current backend: PRs #474/#475/#477 are merged; PREV PR #478 is open and CI-green
+as checked on 1 October. Native transport/mobile integration remain outstanding.
+Older backend handoff and venue-discovery instructions below are historical;
+the current requirements and approved lobby scope supersede them.
+
 ## Current scope — 30 September 2026
 
 Approved AC15–20 in [requirements](../../34-train-together/requirements.md)
