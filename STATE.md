@@ -2,6 +2,10 @@
 
 ### 2026-10-02 — PER-64 / PER-22 provisioned lobby integration
 
+Review: [PR #483](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/483),
+attached to the Codex task. PER-64, PER-22 and the central design reference now
+link the current handoff. Local Inspector reviewed implementation `a4f34862`.
+
 Fetched/pulled clean main to merged #482 `97c7769e` before creating
 `codex/together-lobby-integration`. The reviewed prototype had no mobile UI on
 main; added its slim workout entry, existing foundation sheet/cards and separate
