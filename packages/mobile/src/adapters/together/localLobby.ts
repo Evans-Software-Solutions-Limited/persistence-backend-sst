@@ -24,7 +24,9 @@ export interface LobbyOptions extends HostPin {
   credential: Signed<Credential>;
   seed: Uint8Array;
   trustedKeys: TrustedKeys;
-  deniedPairs: () => readonly (readonly [string, string])[];
+  deniedPairs: (
+    candidateUserIds?: readonly string[],
+  ) => readonly (readonly [string, string])[];
   now: () => number;
   /** Persisted host choice; no widening after restart. Guests use the same pin. */
   audience: "invite-only" | "open";
@@ -139,6 +141,7 @@ export class TogetherLocalLobby {
       this.accept(current);
       return { status: "admitted", roster: current };
     }
+    if (current.payload.members.length >= 4) throw new Error("LOBBY_FULL");
     const member: RosterMember = {
       credential: request.credential,
       consent: request.consent,
@@ -159,7 +162,11 @@ export class TogetherLocalLobby {
       envelope,
       this.options.trustedKeys,
       current,
-      this.options.deniedPairs(),
+      this.options.deniedPairs(
+        envelope.payload.members.map(
+          (member) => member.credential.payload.userId,
+        ),
+      ),
       this.options.now(),
     );
     if (!request.friendship && !approved)
@@ -173,7 +180,11 @@ export class TogetherLocalLobby {
       roster,
       this.pin,
       this.options.trustedKeys,
-      this.options.deniedPairs(),
+      this.options.deniedPairs(
+        roster.payload.members.map(
+          (member) => member.credential.payload.userId,
+        ),
+      ),
       this.options.now(),
     );
   }
@@ -188,7 +199,11 @@ export class TogetherLocalLobby {
       roster,
       this.options.trustedKeys,
       chain.at(-2) ?? null,
-      this.options.deniedPairs(),
+      this.options.deniedPairs(
+        roster.payload.members.map(
+          (member) => member.credential.payload.userId,
+        ),
+      ),
       this.options.now(),
     );
     const own = roster.payload.members.find(
@@ -199,6 +214,11 @@ export class TogetherLocalLobby {
     );
     if (!own || !member) throw new Error("Device not admitted");
     return member;
+  }
+
+  /** Release the private signing copy when the foreground lobby ends. */
+  dispose(): void {
+    this.options.seed.fill(0);
   }
 
   get ownCredential(): Signed<Credential> {

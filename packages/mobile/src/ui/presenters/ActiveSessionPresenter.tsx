@@ -81,6 +81,8 @@ export function retrospectiveDayValue(completedAt: string): string {
 }
 
 export type ActiveSessionPresenterProps = {
+  /** Reviewed 40pt Together row; absent while the release gate is disabled. */
+  togetherRow?: ReactNode;
   sessionName: string;
   startedAt: string;
   exercises: SessionExercise[];
@@ -499,6 +501,7 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
                 onMinimize={props.onMinimize}
                 onEnd={props.onDiscard}
               />
+              {props.togetherRow}
               {props.withClient && (
                 <TrainerBannerPresenter
                   withClient={props.withClient}

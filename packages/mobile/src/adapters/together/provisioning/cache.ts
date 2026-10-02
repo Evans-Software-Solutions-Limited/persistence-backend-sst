@@ -5,6 +5,7 @@ import type {
   TrustedKeys,
   FriendshipEvidence,
 } from "../../../domain/models/togetherIdentity";
+import { uuid } from "../security/schema";
 export interface Snapshot {
   deviceId: string | null;
   blocked: boolean;
@@ -12,6 +13,9 @@ export interface Snapshot {
   trustedKeys: TrustedKeys;
   credential: Signed<Credential> | null;
   friends: Record<string, Signed<FriendshipEvidence>>;
+  /** Bounded authoritative pair decisions. Overflow fails closed for unknown pairs. */
+  friendAccess: Record<string, boolean>;
+  unknownFriendsDenied: boolean;
 }
 export class ProvisioningCache {
   constructor(private db: TogetherJournalDatabase) {
@@ -32,8 +36,14 @@ export class ProvisioningCache {
         trustedKeys: {},
         credential: null,
         friends: {},
+        friendAccess: {},
+        unknownFriendsDenied: false,
       };
     const value = JSON.parse(row.snapshot) as Snapshot;
+    // Old snapshots had no durable pair decisions; migrate without trusting peer input.
+    if (value && value.friendAccess === undefined) value.friendAccess = {};
+    if (value && value.unknownFriendsDenied === undefined)
+      value.unknownFriendsDenied = false;
     if (
       !value ||
       typeof value.blocked !== "boolean" ||
@@ -41,7 +51,15 @@ export class ProvisioningCache {
       value.observedAt < 0 ||
       !value.friends ||
       typeof value.friends !== "object" ||
-      Object.keys(value.friends).length > 100
+      Object.keys(value.friends).length > 100 ||
+      !value.friendAccess ||
+      typeof value.friendAccess !== "object" ||
+      Array.isArray(value.friendAccess) ||
+      Object.keys(value.friendAccess).length > 100 ||
+      Object.entries(value.friendAccess).some(
+        ([id, allowed]) => !uuid(id) || typeof allowed !== "boolean",
+      ) ||
+      typeof value.unknownFriendsDenied !== "boolean"
     )
       throw new Error("storage");
     return value;

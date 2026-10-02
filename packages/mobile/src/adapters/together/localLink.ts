@@ -14,6 +14,8 @@ import {
 } from "./security/identity";
 
 export type LocalLinkEvent =
+  | "full"
+  | "declined"
   | "authenticated"
   | "approval-required"
   | "roster"
@@ -132,10 +134,18 @@ export class TogetherLocalLink {
     if (object(m, ["kind", "request"]) && m.kind === "join") {
       if (!object(m.request, ["credential", "consent"], ["friendship"]))
         throw new Error("Invalid join request");
-      const result = this.lobby.admit(
-        m.request as unknown as LocalJoinRequest,
-        peer,
-      );
+      let result;
+      try {
+        result = this.lobby.admit(
+          m.request as unknown as LocalJoinRequest,
+          peer,
+        );
+      } catch (error) {
+        if (!(error instanceof Error) || error.message !== "LOBBY_FULL")
+          throw error;
+        await this.send({ kind: "full" });
+        return "full";
+      }
       if (result.status === "approval-required") {
         this.pending = m.request as unknown as LocalJoinRequest;
         await this.send({ kind: "approval-required" });
@@ -159,6 +169,12 @@ export class TogetherLocalLink {
       this.lobby.accept(m.roster as Signed<OfflineRoster>);
       return "roster";
     }
+    if (
+      object(m, ["kind"]) &&
+      (m.kind === "full" || m.kind === "declined") &&
+      !this.lobby.isHost
+    )
+      return m.kind;
     const member = this.lobby.member(peer);
     if (object(m, ["kind", "command"]) && m.kind === "command") {
       const p = readOwnerCommand(m.command, peer);
@@ -225,11 +241,27 @@ export class TogetherLocalLink {
   }
 
   /** Invoked only by the explicit host approval action; validates the request again. */
-  async approve(request: LocalJoinRequest): Promise<void> {
+  async approve(request: LocalJoinRequest): Promise<boolean> {
     if (!this.channel.ready) throw new Error("Not authenticated");
-    this.lobby.admit(request, this.channel.peerCredential!, true);
+    try {
+      this.lobby.admit(request, this.channel.peerCredential!, true);
+    } catch (error) {
+      if (!(error instanceof Error) || error.message !== "LOBBY_FULL")
+        throw error;
+      this.pending = undefined;
+      await this.send({ kind: "full" });
+      return false;
+    }
     this.pending = undefined;
     await this.syncRoster();
+    return true;
+  }
+
+  async decline(): Promise<void> {
+    if (!this.lobby.isHost || !this.pending)
+      throw new Error("No pending request");
+    this.pending = undefined;
+    await this.send({ kind: "declined" });
   }
 
   heartbeat(): Promise<void> {
