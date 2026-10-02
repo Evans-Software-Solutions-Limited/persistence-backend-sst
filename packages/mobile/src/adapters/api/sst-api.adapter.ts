@@ -1,3 +1,14 @@
+import type {
+  TogetherOfflineApi,
+  TogetherOfflineApiError,
+} from "@/domain/ports/togetherOfflineApi.port";
+import {
+  credentialValidator,
+  object,
+  signed,
+  uuid,
+  integer,
+} from "@/adapters/together/security/schema";
 import Constants from "expo-constants";
 import type { DashboardPayload } from "@/domain/models/dashboard";
 import type { AppliedReferral } from "@/domain/models/referral";
@@ -254,6 +265,9 @@ type RequestOptions = {
    */
   timeoutMs?: number;
   signal?: AbortSignal;
+  idempotencyKey?: string;
+  /** Strict provisioning responses must never fall back to offline on malformed JSON. */
+  validateResponse?: (value: unknown) => boolean;
 };
 
 /**
@@ -373,6 +387,10 @@ export class SSTApiAdapter implements ApiPort {
       "Content-Type": "application/json",
     };
 
+    if (options.idempotencyKey !== undefined) {
+      headers["Idempotency-Key"] = options.idempotencyKey;
+    }
+
     // Per-request abort wiring. Only allocated when a caller opts into
     // a timeout — fetch otherwise behaves exactly as before, so non-
     // dashboard endpoints are unaffected by this change. The timer is
@@ -415,13 +433,19 @@ export class SSTApiAdapter implements ApiPort {
 
       if (!response.ok) {
         const errorBody = await response.json().catch(() => null);
-        return fail(
-          mapHttpErrorToApiError(
-            response.status,
-            response.statusText,
-            errorBody,
-          ),
+        const error: TogetherOfflineApiError = mapHttpErrorToApiError(
+          response.status,
+          response.statusText,
+          errorBody,
         );
+        if (
+          options.validateResponse &&
+          typeof errorBody?.error?.code === "string" &&
+          /^[A-Z][A-Z0-9_]{0,63}$/.test(errorBody.error.code)
+        ) {
+          error.togetherCode = errorBody.error.code;
+        }
+        return fail(error);
       }
 
       // Handle 204 No Content (typical for DELETE)
@@ -432,7 +456,27 @@ export class SSTApiAdapter implements ApiPort {
         return ok(undefined as T);
       }
 
-      const json = (await response.json()) as T;
+      let json: T;
+      try {
+        json = (await response.json()) as T;
+      } catch (error) {
+        if (
+          options.validateResponse &&
+          (error instanceof SyntaxError ||
+            (typeof error === "object" &&
+              error !== null &&
+              "name" in error &&
+              error.name === "SyntaxError"))
+        ) {
+          return fail({
+            kind: "api",
+            code: "server",
+            status: response.status,
+            message: "Invalid Together response",
+          });
+        }
+        throw error;
+      }
       return ok(json);
     } catch (err) {
       // AbortError is fetch's signal that the controller fired. Surface
@@ -467,11 +511,82 @@ export class SSTApiAdapter implements ApiPort {
     const result = await this.request<ApiResponse<T>>(path, options);
     if (!result.ok) return result;
     const body = result.value;
+    const untrusted: unknown = body;
+    if (
+      options.validateResponse &&
+      (!object(untrusted, ["data"]) ||
+        !options.validateResponse(untrusted.data))
+    ) {
+      return fail({
+        kind: "api",
+        code: "server",
+        message: "Invalid Together response",
+      });
+    }
     if (isErrorResponse(body)) {
       return fail({ kind: "api", code: "server", message: body.error });
     }
     return ok(body.data);
   }
+
+  readonly togetherOffline: TogetherOfflineApi = {
+    trust: () =>
+      this.requestEnvelope("/together/offline/trust", {
+        timeoutMs: 10_000,
+        validateResponse: (value) =>
+          object(value, ["publicKeys", "maxCredentialAgeMs"]) &&
+          integer(value.maxCredentialAgeMs) &&
+          value.maxCredentialAgeMs > 0 &&
+          value.maxCredentialAgeMs <= 86_400_000 &&
+          !!value.publicKeys &&
+          typeof value.publicKeys === "object" &&
+          !Array.isArray(value.publicKeys) &&
+          Object.entries(value.publicKeys).length > 0 &&
+          Object.entries(value.publicKeys).every(
+            ([key, pem]) =>
+              /^[A-Za-z0-9_-]{1,64}$/.test(key) &&
+              typeof pem === "string" &&
+              /^-----BEGIN PUBLIC KEY-----\n[A-Za-z0-9+/]{59}=\n-----END PUBLIC KEY-----\n$/.test(
+                pem,
+              ),
+          ),
+      }),
+    register: (proof) =>
+      this.requestEnvelope("/together/offline/devices", {
+        method: "POST",
+        body: proof,
+        idempotencyKey: proof.payload.requestId,
+        timeoutMs: 10_000,
+        validateResponse: credentialValidator.Check,
+      }),
+    friendship: (friendId, requestId) =>
+      this.requestEnvelope("/together/offline/friendship-proof", {
+        method: "POST",
+        body: { friendId },
+        idempotencyKey: requestId,
+        timeoutMs: 10_000,
+        validateResponse: (value) =>
+          signed(
+            value,
+            (payload) =>
+              object(payload, [
+                "kind",
+                "keyId",
+                "users",
+                "issuedAt",
+                "expiresAt",
+              ]) &&
+              payload.kind === "together-friendship-v1" &&
+              typeof payload.keyId === "string" &&
+              /^[A-Za-z0-9_-]{1,64}$/.test(payload.keyId) &&
+              Array.isArray(payload.users) &&
+              payload.users.length === 2 &&
+              payload.users.every(uuid) &&
+              integer(payload.issuedAt) &&
+              integer(payload.expiresAt),
+          ),
+      }),
+  };
 
   // -- Health --
   async healthCheck() {

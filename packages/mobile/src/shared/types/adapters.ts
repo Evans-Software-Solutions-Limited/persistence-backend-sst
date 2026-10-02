@@ -5,6 +5,7 @@ import type { NetInfoPort } from "@/domain/ports/netInfo.port";
 import type { NotificationsPort } from "@/domain/ports/notifications.port";
 import type { PurchasesPort } from "@/domain/ports/purchases.port";
 import type { StoragePort } from "@/domain/ports/storage.port";
+import type { TogetherProvisioningPort } from "@/domain/ports/togetherProvisioning.port";
 
 export interface Adapters {
   api: ApiPort;
@@ -13,6 +14,8 @@ export interface Adapters {
   health: HealthPort;
   notifications: NotificationsPort;
   netInfo: NetInfoPort;
+  /** Prepared offline identity; absent until Together's release gate is enabled. */
+  togetherProvisioning?: TogetherProvisioningPort;
   /**
    * RevenueCat native IAP — the ONLY purchase rail in the mobile app. Optional
    * because it is iOS-only today (absent on Android until Play billing is wired
