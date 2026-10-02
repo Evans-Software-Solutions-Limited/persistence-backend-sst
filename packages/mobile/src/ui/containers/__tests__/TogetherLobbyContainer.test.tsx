@@ -45,6 +45,8 @@ function harness() {
       };
     },
     host: jest.fn(async () => {}),
+    browse: jest.fn(async () => {}),
+    selectDiscovered: jest.fn(async () => {}),
     selectInvite: jest.fn(async () => {}),
     join: jest.fn(async () => {}),
     approve: jest.fn(async () => {}),
@@ -67,6 +69,9 @@ function harness() {
   };
 }
 beforeEach(() => {
+  jest
+    .spyOn(AppState, "addEventListener")
+    .mockReturnValue({ remove: jest.fn() });
   mockRequest.mockReset();
   mockCopy.mockReset();
   mockCopy.mockResolvedValue(undefined);
@@ -82,7 +87,7 @@ it("hosts current workout, approves real peer IDs, copies invite and cleans up",
   );
   fireEvent.press(r.getByText("Start"));
   fireEvent.press(r.getByText("Start the session"));
-  expect(h.lobby.host).toHaveBeenCalledWith("Squats");
+  expect(h.lobby.host).toHaveBeenCalledWith("Squats", "invite-only");
   h.publish({
     phase: "hosting",
     role: "host",
@@ -242,4 +247,127 @@ it("background invalidates idle scanning and delayed camera permission", async (
   expect(r.queryByTestId("together-qr-camera")).toBeNull();
   r.unmount();
   subscription.mockRestore();
+});
+it("passes explicit audience and resets private on account change", () => {
+  const h = harness();
+  const r = renderWithTheme(
+    <TogetherLobbyContainer
+      lobby={h.lobby}
+      workoutName="Squats"
+      accountId="a"
+    />,
+  );
+  fireEvent.press(r.getByText("Start"));
+  fireEvent.press(r.getByRole("radio", { name: "Open on this network" }));
+  fireEvent.press(r.getByText("Start the session"));
+  expect(h.lobby.host).toHaveBeenLastCalledWith("Squats", "open");
+  r.rerender(
+    <TogetherLobbyContainer
+      lobby={h.lobby}
+      workoutName="Squats"
+      accountId="b"
+    />,
+  );
+  fireEvent.press(r.getByText("Start"));
+  fireEvent.press(r.getByText("Start the session"));
+  expect(h.lobby.host).toHaveBeenLastCalledWith("Squats", "invite-only");
+});
+it("browses, selects, and requires a separate Join; dismiss then retains admitted lobby", () => {
+  const h = harness();
+  const r = renderWithTheme(
+    <TogetherLobbyContainer
+      lobby={h.lobby}
+      workoutName="Squats"
+      accountId="a"
+    />,
+  );
+  fireEvent.press(r.getByText("Join"));
+  fireEvent.press(r.getByText("Find an open lobby on this network"));
+  expect(h.lobby.browse).toHaveBeenCalledTimes(1);
+  h.publish({
+    phase: "browsing",
+    discovered: [
+      {
+        sessionId: "s",
+        hostUserId: "h",
+        workoutName: "Pull day",
+        memberCount: 1,
+      },
+    ],
+  });
+  fireEvent.press(r.getByText("View lobby"));
+  expect(h.lobby.selectDiscovered).toHaveBeenCalledWith("s");
+  expect(h.lobby.join).not.toHaveBeenCalled();
+  h.publish({ phase: "selected" });
+  fireEvent.press(r.getByText("Join the lobby"));
+  expect(h.lobby.join).toHaveBeenCalledTimes(1);
+  h.publish({ phase: "joined" });
+  act(() => mockSheet.mock.calls.at(-1)![0].onClose());
+  expect(h.lobby.cancel).not.toHaveBeenCalled();
+});
+it("dismiss stops an in-flight browse preparation; code fallback cancels discovery", () => {
+  const h = harness();
+  const r = renderWithTheme(
+    <TogetherLobbyContainer
+      lobby={h.lobby}
+      workoutName="Squats"
+      accountId="a"
+    />,
+  );
+  fireEvent.press(r.getByText("Join"));
+  fireEvent.press(r.getByText("Find an open lobby on this network"));
+  h.publish({ phase: "preparing" });
+  act(() => mockSheet.mock.calls.at(-1)![0].onClose());
+  expect(h.lobby.cancel).toHaveBeenCalledTimes(1);
+  h.publish({ phase: "idle" });
+  fireEvent.press(r.getByText("Join"));
+  fireEvent.press(r.getByText("Find an open lobby on this network"));
+  h.publish({ phase: "browsing" });
+  fireEvent.press(r.getByText("Use a code or QR instead"));
+  expect(h.lobby.cancel).toHaveBeenCalledTimes(2);
+  h.publish({ phase: "idle" });
+  expect(r.getByLabelText("Session invitation")).toBeTruthy();
+  act(() => mockSheet.mock.calls.at(-1)![0].onClose());
+  expect(h.lobby.cancel).toHaveBeenCalledTimes(2);
+});
+
+it("cancelled browsing cannot make a later host dismissal leave the lobby", () => {
+  const h = harness();
+  const r = renderWithTheme(
+    <TogetherLobbyContainer
+      lobby={h.lobby}
+      workoutName="Squats"
+      accountId="a"
+    />,
+  );
+  fireEvent.press(r.getByText("Join"));
+  fireEvent.press(r.getByText("Find an open lobby on this network"));
+  h.publish({ phase: "browsing" });
+  fireEvent.press(r.getByText("Cancel · keep training on my own"));
+  expect(h.lobby.cancel).toHaveBeenCalledTimes(1);
+  h.publish({ phase: "idle" });
+  fireEvent.press(r.getByText("Start"));
+  fireEvent.press(r.getByText("Start the session"));
+  h.publish({ phase: "hosting" });
+  act(() => mockSheet.mock.calls.at(-1)![0].onClose());
+  expect(h.lobby.cancel).toHaveBeenCalledTimes(1);
+});
+
+it("starting discovery invalidates a camera permission response before preparation settles", async () => {
+  const h = harness();
+  let resolve!: (value: { granted: boolean }) => void;
+  mockRequest.mockReturnValue(new Promise((r) => (resolve = r)));
+  const r = renderWithTheme(
+    <TogetherLobbyContainer
+      lobby={h.lobby}
+      workoutName="Squats"
+      accountId="a"
+    />,
+  );
+  fireEvent.press(r.getByText("Join"));
+  fireEvent.press(r.getByText("Scan a QR code"));
+  fireEvent.press(r.getByText("Find an open lobby on this network"));
+  await act(async () => resolve({ granted: true }));
+  expect(h.lobby.browse).toHaveBeenCalledTimes(1);
+  expect(r.queryByTestId("together-qr-camera")).toBeNull();
 });

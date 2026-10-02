@@ -18,6 +18,7 @@ export interface LocalJoinRequest {
   credential: Signed<Credential>;
   consent: Signed<JoinConsent>;
   friendship?: Signed<FriendshipEvidence>;
+  invitationToken?: string;
 }
 
 export interface LobbyOptions extends HostPin {
@@ -31,6 +32,22 @@ export interface LobbyOptions extends HostPin {
   /** Persisted host choice; no widening after restart. Guests use the same pin. */
   audience: "invite-only" | "open";
   invitedUserIds: readonly string[];
+  invitationTokenHash?: string;
+}
+
+function matchesToken(token: unknown, expected: string | undefined): boolean {
+  if (
+    !expected ||
+    typeof token !== "string" ||
+    !/^[A-Za-z0-9_-]{43}$/.test(token) ||
+    !/^[a-f0-9]{64}$/.test(expected)
+  )
+    return false;
+  const actual = requestHash(token);
+  let difference = 0;
+  for (let i = 0; i < 64; i++)
+    difference |= actual.charCodeAt(i) ^ expected.charCodeAt(i);
+  return difference === 0;
 }
 
 /** Host-only admission decisions. Network discovery alone never admits anyone. */
@@ -59,6 +76,9 @@ export class TogetherLocalLobby {
       throw new Error("Wrong local identity");
     if (this.isHost)
       store.bindPolicy(options.sessionId, {
+        ...(options.invitationTokenHash
+          ? { invitationTokenHash: options.invitationTokenHash }
+          : {}),
         audience: options.audience,
         invitedUserIds: this.options.invitedUserIds,
         hostUserId: options.hostUserId,
@@ -124,7 +144,8 @@ export class TogetherLocalLobby {
     );
     if (
       this.options.audience === "invite-only" &&
-      !this.options.invitedUserIds.includes(identity.userId)
+      !this.options.invitedUserIds.includes(identity.userId) &&
+      !matchesToken(request.invitationToken, this.options.invitationTokenHash)
     )
       throw new Error("Invitation required");
     const current = this.store.current(this.options.sessionId);

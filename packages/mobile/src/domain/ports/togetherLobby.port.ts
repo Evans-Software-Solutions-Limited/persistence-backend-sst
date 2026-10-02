@@ -1,6 +1,8 @@
+export type TogetherLobbyAudience = "invite-only" | "open";
 /** Reviewed lobby state only. No credentials, signing seeds or PREV grants reach UI. */
 export interface TogetherLobbySnapshot {
   phase:
+    | "browsing"
     | "disabled"
     | "idle"
     | "preparing"
@@ -13,6 +15,13 @@ export interface TogetherLobbySnapshot {
     | "reconnecting"
     | "unavailable"
     | "full";
+  audience?: TogetherLobbyAudience;
+  discovered?: readonly {
+    sessionId: string;
+    hostUserId: string;
+    workoutName: string;
+    memberCount: number;
+  }[];
   error?: string;
   role?: "host" | "guest";
   invitation?: string;
@@ -23,7 +32,9 @@ export interface TogetherLobbySnapshot {
 export interface TogetherLobbyPort {
   getSnapshot(): TogetherLobbySnapshot;
   subscribe(listener: () => void): () => void;
-  host(workoutName: string): Promise<void>;
+  host(workoutName: string, audience?: TogetherLobbyAudience): Promise<void>;
+  browse(): Promise<void>;
+  selectDiscovered(sessionId: string): Promise<void>;
   selectInvite(text: string): Promise<void>;
   /** Explicit user consent; selection alone never starts discovery or admission. */
   join(): Promise<void>;

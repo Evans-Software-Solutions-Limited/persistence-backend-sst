@@ -2,12 +2,13 @@
 
 ## Current integration — 2 October 2026
 
-PRs #478, #480 and #482 are merged; `codex/together-lobby-integration` starts
-from current main `97c7769e`. [Lobby integration](./LOBBY-INTEGRATION.md) connects
-the reviewed code/QR and consent layouts to provisioned identity and authenticated
-same-LAN admission. It remains default-off and does not activate shared workouts.
-The older dated readiness statements below are historical. Open browsing,
-Nearby radio, workout/recovery wiring and physical-device evidence remain open.
+PR #483 is merged at `8257b532`. [Lobby integration](./LOBBY-INTEGRATION.md)
+connects the reviewed code/QR and consent layouts to provisioned identity and
+same-LAN admission. The next slice, [verified network lobbies](./NETWORK-LOBBIES.md),
+adds private/open audience controls and signed same-network browsing before
+explicit Join. It starts from current main and remains default-off; it does not
+activate shared workouts. Nearby radio, workout/recovery wiring and physical-device
+evidence remain open. Older dated readiness statements below are historical.
 
 ## Reviewed UX — reuse, do not redesign
 

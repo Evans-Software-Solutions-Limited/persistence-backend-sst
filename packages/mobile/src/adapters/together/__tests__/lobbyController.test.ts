@@ -811,4 +811,253 @@ describe("reviewed lobby coordinator, real cryptography and SQLite, simulated na
     ).toEqual({ payload: '{"own":"work"}' });
     provisioning.dispose();
   });
+  async function probe(
+    host: ReturnType<typeof setup>,
+    guest: ReturnType<typeof setup>,
+    endpointId = "nearby",
+  ) {
+    const sessionId = JSON.parse(host.controller.getSnapshot().invitation!)
+      .payload.sessionId;
+    const peerId = `probe-${endpointId}`;
+    host.native.targets.set(peerId, {
+      native: guest.native,
+      peerId: "probe-host",
+    });
+    guest.native.targets.set("probe-host", { native: host.native, peerId });
+    guest.native.emit({ type: "discovered", endpointId, lobbyId: sessionId });
+    await settle();
+    host.native.emit({ type: "connected", peerId, incoming: true });
+    guest.native.emit({
+      type: "connected",
+      peerId: "probe-host",
+      incoming: false,
+    });
+    await settle();
+    return sessionId;
+  }
+  it("open browsing authenticates host summaries without sharing visitor identity or recording consent", async () => {
+    const host = setup(),
+      guest = setup(2);
+    await host.controller.host("Open workout", "open");
+    await guest.controller.browse();
+    const sessionId = await probe(host, guest);
+    expect(guest.controller.getSnapshot()).toMatchObject({
+      phase: "browsing",
+      discovered: [
+        {
+          sessionId,
+          hostUserId: id(1),
+          workoutName: "Open workout",
+          memberCount: 1,
+        },
+      ],
+    });
+    expect(guest.provisioning.friendship).not.toHaveBeenCalled();
+    expect(host.controller.getSnapshot().pending).toEqual([]);
+    expect(host.controller.getSnapshot().members).toHaveLength(1);
+    for (const [, frame] of guest.native.send.mock.calls)
+      expect(JSON.parse(frame)).toEqual({
+        kind: "together-probe-v1",
+        nonce: expect.any(String),
+      });
+    await guest.controller.selectDiscovered(sessionId);
+    expect(guest.controller.getSnapshot().phase).toBe("selected");
+    expect(guest.native.stop).toHaveBeenCalled();
+    expect(guest.provisioning.friendship).not.toHaveBeenCalled();
+    await guest.controller.join();
+    const peerId = guest.identity.deviceId;
+    host.native.targets.set(peerId, { native: guest.native, peerId: "host" });
+    guest.native.targets.set("host", { native: host.native, peerId });
+    guest.native.emit({
+      type: "discovered",
+      endpointId: "real",
+      lobbyId: sessionId,
+    });
+    await settle();
+    host.native.emit({ type: "connected", peerId, incoming: true });
+    guest.native.emit({ type: "connected", peerId: "host", incoming: false });
+    await settle();
+    expect(guest.controller.getSnapshot().phase).toBe("pending-approval");
+    await host.controller.approve(peerId);
+    await settle();
+    expect(guest.controller.getSnapshot().phase).toBe("joined");
+  });
+  it("private hosts never disclose summary; their invite token admits only through normal approval", async () => {
+    const host = setup(),
+      guest = setup(2);
+    await host.controller.host("Private");
+    const invite = JSON.parse(
+      host.controller.getSnapshot().invitation!,
+    ).payload;
+    expect(invite).toMatchObject({
+      kind: "together-invitation-v2",
+      audience: "invite-only",
+      invitationToken: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/),
+    });
+    await guest.controller.browse();
+    await probe(host, guest);
+    expect(guest.controller.getSnapshot().discovered).toEqual([]);
+    expect(host.native.send).not.toHaveBeenCalled();
+    await guest.controller.cancel();
+    guest.native.startDiscovery.mockClear();
+    await join(host, guest);
+    expect(guest.controller.getSnapshot().phase).toBe("pending-approval");
+  });
+  it("forged summaries and replayed nonces never reach discovery UI", async () => {
+    const host = setup(),
+      guest = setup(2);
+    await host.controller.host("Open", "open");
+    await guest.controller.browse();
+    const sessionId = await probe(host, guest);
+    const frame = host.native.send.mock.calls[0][1];
+    await guest.controller.browse();
+    guest.native.emit({
+      type: "discovered",
+      endpointId: "evil",
+      lobbyId: sessionId,
+    });
+    guest.native.emit({ type: "connected", peerId: "evil", incoming: false });
+    guest.native.emit({ type: "frame", peerId: "evil", frame });
+    await settle();
+    expect(guest.controller.getSnapshot().discovered).toEqual([]);
+    guest.native.emit({
+      type: "discovered",
+      endpointId: "forged",
+      lobbyId: sessionId,
+    });
+    guest.native.emit({ type: "connected", peerId: "forged", incoming: false });
+    const envelope = JSON.parse(frame);
+    envelope.payload.nonce = JSON.parse(
+      guest.native.send.mock.calls.at(-1)![1],
+    ).nonce;
+    envelope.payload.workoutName = "forged";
+    guest.native.emit({
+      type: "frame",
+      peerId: "forged",
+      frame: JSON.stringify(envelope),
+    });
+    await settle();
+    expect(guest.controller.getSnapshot().discovered).toEqual([]);
+  });
+  it("filters known denied host pairs and removes lost or expired summaries", async () => {
+    let clock = now;
+    const host = setup(),
+      guest = setup(2, { now: () => clock });
+    await host.controller.host("Open", "open");
+    await guest.controller.browse();
+    await probe(host, guest);
+    expect(guest.controller.getSnapshot().discovered).toHaveLength(1);
+    guest.native.emit({ type: "lost", endpointId: "nearby" });
+    expect(guest.controller.getSnapshot().discovered).toHaveLength(0);
+    await probe(host, guest, "another");
+    clock += 16000;
+    jest.advanceTimersByTime(1000);
+    expect(guest.controller.getSnapshot().discovered).toHaveLength(0);
+    const denied = setup(3, { deniedPairs: () => [[id(1), id(3)]] });
+    await denied.controller.browse();
+    await probe(host, denied, "denied");
+    expect(denied.controller.getSnapshot().discovered).toEqual([]);
+  });
+  it("ends a timed-out browse generation before a late connection can be attributed to another endpoint", async () => {
+    const guest = setup(2);
+    await guest.controller.browse();
+    const stale = guest.native.listener!;
+    guest.native.emit({
+      type: "discovered",
+      endpointId: "first",
+      lobbyId: id(100),
+    });
+    guest.native.emit({
+      type: "discovered",
+      endpointId: "second",
+      lobbyId: id(101),
+    });
+    expect(guest.native.connect).toHaveBeenCalledTimes(1);
+    jest.advanceTimersByTime(5000);
+    await settle();
+    stale({ type: "connected", peerId: "late", incoming: false });
+    expect(guest.native.send).not.toHaveBeenCalled();
+    expect(guest.controller.getSnapshot()).toMatchObject({
+      phase: "unavailable",
+      error: "unreachable-host",
+    });
+    expect(guest.native.connect).toHaveBeenCalledTimes(1);
+  });
+  it.each(["cancel", "background", "account"])(
+    "invalidates browse callbacks on %s",
+    async (reason) => {
+      const guest = setup(2);
+      await guest.controller.browse();
+      const stale = guest.native.listener!;
+      if (reason === "cancel") await guest.controller.cancel();
+      else if (reason === "background") guest.controller.setActive(false);
+      else guest.controller.setAccount(id(3));
+      await settle();
+      stale({ type: "discovered", endpointId: "late", lobbyId: id(100) });
+      expect(guest.native.connect).not.toHaveBeenCalled();
+      expect(guest.controller.getSnapshot().phase).toBe("idle");
+    },
+  );
+  it("browse preparation obeys disabled, unavailable identity and missing native states", async () => {
+    const disabled = setup(2, { enabled: false });
+    await disabled.controller.browse();
+    expect(disabled.provisioning.prepare).not.toHaveBeenCalled();
+    const failed = setup(3);
+    jest
+      .mocked(failed.provisioning.prepare)
+      .mockResolvedValueOnce(
+        fail({ kind: "together-provisioning", code: "offline-unprepared" }),
+      );
+    await failed.controller.browse();
+    expect(failed.native.startDiscovery).not.toHaveBeenCalled();
+    const absent = setup(4, { native: null });
+    await absent.controller.browse();
+    expect(absent.controller.getSnapshot().phase).toBe("unavailable");
+  });
+  it("cancellation or expiry while selecting a verified summary cannot retain a stale pin", async () => {
+    let clock = now;
+    const host = setup(),
+      guest = setup(2, { now: () => clock });
+    await host.controller.host("Open", "open");
+    await guest.controller.browse();
+    const session = await probe(host, guest);
+    await guest.controller.selectDiscovered("missing");
+    expect(guest.controller.getSnapshot().phase).toBe("browsing");
+    const stopping = deferred<void>();
+    guest.native.stop.mockImplementationOnce(() => stopping.promise);
+    const selection = guest.controller.selectDiscovered(session);
+    await settle();
+    clock += 16000;
+    stopping.resolve();
+    await selection;
+    expect(guest.controller.getSnapshot()).toMatchObject({
+      phase: "unavailable",
+      error: "discovery-expired",
+    });
+    clock = now;
+    await guest.controller.browse();
+    await probe(host, guest, "again");
+    const second = deferred<void>();
+    guest.native.stop.mockImplementationOnce(() => second.promise);
+    const cancelled = guest.controller.selectDiscovered(session);
+    await settle();
+    const cleanup = guest.controller.cancel();
+    second.resolve();
+    await Promise.all([cancelled, cleanup]);
+    expect(guest.controller.getSnapshot().phase).toBe("idle");
+  });
+  it("verified selection remains readable beyond listing freshness while Join reauthenticates the host", async () => {
+    let clock = now;
+    const host = setup(),
+      guest = setup(2, { now: () => clock });
+    await host.controller.host("Open", "open");
+    await guest.controller.browse();
+    const session = await probe(host, guest);
+    await guest.controller.selectDiscovered(session);
+    clock += 16000;
+    jest.advanceTimersByTime(16000);
+    expect(guest.controller.getSnapshot().phase).toBe("selected");
+    await guest.controller.join();
+    expect(guest.controller.getSnapshot().phase).toBe("searching");
+  });
 });

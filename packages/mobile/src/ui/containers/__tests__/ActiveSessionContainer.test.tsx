@@ -241,6 +241,8 @@ describe("ActiveSessionContainer", () => {
         getSnapshot: () => snapshot,
         subscribe: () => () => {},
         host,
+        browse: jest.fn(),
+        selectDiscovered: jest.fn(),
         selectInvite: jest.fn(),
         join: jest.fn(),
         approve: jest.fn(),
@@ -270,7 +272,7 @@ describe("ActiveSessionContainer", () => {
         expect(r.getByTestId("together-workout-row")).toBeTruthy();
         fireEvent.press(r.getByText("Start"));
         fireEvent.press(r.getByText("Start the session"));
-        expect(host).toHaveBeenCalledWith("Quick Workout");
+        expect(host).toHaveBeenCalledWith("Quick Workout", "invite-only");
       }
       expect(storage.getActiveSession("user-1")?.status).toBe("in_progress");
       r.unmount();

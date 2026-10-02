@@ -132,7 +132,13 @@ export class TogetherLocalLink {
       return "heartbeat";
     }
     if (object(m, ["kind", "request"]) && m.kind === "join") {
-      if (!object(m.request, ["credential", "consent"], ["friendship"]))
+      if (
+        !object(
+          m.request,
+          ["credential", "consent"],
+          ["friendship", "invitationToken"],
+        )
+      )
         throw new Error("Invalid join request");
       let result;
       try {
