@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.27.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.26.0...persistence-v1.27.0) (2026-10-02)
+
+
+### Features
+
+* add authenticated offline Together LAN foundation ([#480](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/480)) ([29b7d65](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/29b7d659b3f99c87e5016688940aa72c23e9671d))
+* connect reviewed Together lobby to provisioned LAN admission ([#483](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/483)) ([8257b53](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/8257b532fef859dadfad929ae91fa826282f2b4b))
+* prepare mobile identities for offline Together ([#482](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/482)) ([97c7769](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/97c7769e549a0890ed0183528b73f2c074ea2878))
+
 ## [1.26.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.25.1...persistence-v1.26.0) (2026-10-01)
 
 
