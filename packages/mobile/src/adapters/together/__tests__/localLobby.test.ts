@@ -414,4 +414,60 @@ describe("local lobby and inbox with real SQLite", () => {
       requestHash(envelope),
     );
   });
+  it("bearer eligibility is secret-bound, stored only as hash, immutable and never skips stranger approval", () => {
+    const privatePin = { ...pin, sessionId: id(300) };
+    const token = "a".repeat(43);
+    const privateOptions = options(1, {
+      ...privatePin,
+      audience: "invite-only",
+      invitationTokenHash: requestHash(token),
+    });
+    const privateHost = new TogetherLocalLobby(store, privateOptions);
+    const consent = (n: number) =>
+      signPayload(
+        { ...person(n).consent.payload, ...privatePin },
+        person(n).seed,
+      );
+    privateHost.start(consent(1));
+    const request = { credential: person(2).credential, consent: consent(2) };
+    for (const invitationToken of [undefined, "bad", "b".repeat(43)])
+      expect(() =>
+        privateHost.admit({ ...request, invitationToken }, request.credential),
+      ).toThrow("Invitation required");
+    expect(
+      privateHost.admit(
+        { ...request, invitationToken: token },
+        request.credential,
+      ),
+    ).toEqual({ status: "approval-required" });
+    expect(
+      privateHost.admit(
+        { ...request, invitationToken: token },
+        request.credential,
+        true,
+      ).status,
+    ).toBe("admitted");
+    expect(
+      () =>
+        new TogetherLocalLobby(store, { ...privateOptions, audience: "open" }),
+    ).toThrow("policy changed");
+    expect(
+      () =>
+        new TogetherLocalLobby(store, {
+          ...privateOptions,
+          invitationTokenHash: undefined,
+        }),
+    ).toThrow("policy changed");
+    expect(
+      () =>
+        new TogetherLocalLobby(store, {
+          ...privateOptions,
+          invitationTokenHash: requestHash("b".repeat(43)),
+        }),
+    ).toThrow("policy changed");
+    const persisted = JSON.stringify(
+      db.prepare("SELECT * FROM together_local_policy").all(),
+    );
+    expect(persisted).not.toContain(token);
+  });
 });

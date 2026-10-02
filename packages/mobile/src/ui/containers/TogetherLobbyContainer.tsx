@@ -10,7 +10,10 @@ import { View, Text } from "@tamagui/core";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Clipboard from "expo-clipboard";
 import QRCode from "react-native-qrcode-svg";
-import type { TogetherLobbyPort } from "@/domain/ports/togetherLobby.port";
+import type {
+  TogetherLobbyAudience,
+  TogetherLobbyPort,
+} from "@/domain/ports/togetherLobby.port";
 import { BottomSheet, Btn } from "@/ui/components/foundation";
 import {
   TogetherLobbyPresenter,
@@ -33,6 +36,9 @@ export function TogetherLobbyContainer({
     (listener) => lobby.subscribe(listener),
     () => lobby.getSnapshot(),
   );
+  const [audience, setAudience] =
+    useState<TogetherLobbyAudience>("invite-only");
+  const browsingIntent = useRef(false);
   const [screen, setScreen] = useState<TogetherLobbyScreen>("start");
   const [visible, setVisible] = useState(false);
   const [code, setCode] = useState("");
@@ -49,6 +55,7 @@ export function TogetherLobbyContainer({
     setNotice("");
   };
   const close = () => {
+    browsingIntent.current = false;
     dismiss();
     void lobby.cancel().catch(() => {});
   };
@@ -59,6 +66,8 @@ export function TogetherLobbyContainer({
     setScanning(false);
     setCode("");
     setNotice("");
+    setAudience("invite-only");
+    browsingIntent.current = false;
     return () => {
       lifetime.current++;
       void lobby.cancel().catch(() => {});
@@ -67,6 +76,7 @@ export function TogetherLobbyContainer({
   useEffect(() => {
     const listener = AppState.addEventListener("change", (state) => {
       if (state !== "active") {
+        browsingIntent.current = false;
         generation.current++;
         setVisible(false);
         setScanning(false);
@@ -157,7 +167,13 @@ export function TogetherLobbyContainer({
       {children ? children(row) : row}
       <BottomSheet
         visible={visible}
-        onClose={dismiss}
+        onClose={() => {
+          dismiss();
+          if (browsingIntent.current) {
+            browsingIntent.current = false;
+            void lobby.cancel().catch(() => {});
+          }
+        }}
         title={
           snapshot.phase === "selected"
             ? "Join this workout"
@@ -174,10 +190,29 @@ export function TogetherLobbyContainer({
           code={code}
           notice={notice}
           workoutName={workoutName}
+          audience={audience}
+          onAudienceChange={setAudience}
+          onBrowse={() => {
+            generation.current++;
+            browsingIntent.current = true;
+            setScanning(false);
+            invoke(() => lobby.browse());
+          }}
+          onSelectDiscovered={(sessionId) =>
+            invoke(() => lobby.selectDiscovered(sessionId))
+          }
+          onUseInvitation={() => {
+            browsingIntent.current = false;
+            setScreen("join");
+            invoke(() => lobby.cancel());
+          }}
           onCodeChange={setCode}
-          onHost={() => invoke(() => lobby.host(workoutName))}
+          onHost={() => invoke(() => lobby.host(workoutName, audience))}
           onSelect={() => invoke(() => lobby.selectInvite(code))}
-          onJoin={() => invoke(() => lobby.join())}
+          onJoin={() => {
+            browsingIntent.current = false;
+            invoke(() => lobby.join());
+          }}
           onScan={scan}
           onCopy={() =>
             invoke(async () => {
