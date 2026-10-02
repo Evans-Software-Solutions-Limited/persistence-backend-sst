@@ -1,5 +1,14 @@
 # Persistence Together — frontend agent
 
+## Current integration — 2 October 2026
+
+PRs #478, #480 and #482 are merged; `codex/together-lobby-integration` starts
+from current main `97c7769e`. [Lobby integration](./LOBBY-INTEGRATION.md) connects
+the reviewed code/QR and consent layouts to provisioned identity and authenticated
+same-LAN admission. It remains default-off and does not activate shared workouts.
+The older dated readiness statements below are historical. Open browsing,
+Nearby radio, workout/recovery wiring and physical-device evidence remain open.
+
 ## Reviewed UX — reuse, do not redesign
 
 Brad confirmed on 1 October that the

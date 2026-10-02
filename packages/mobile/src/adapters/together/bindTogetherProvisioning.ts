@@ -12,6 +12,7 @@ export function bindTogetherProvisioning(
   auth: ProvisioningAuth,
   netInfo: NetInfoPort,
   provisioning: TogetherProvisioningPort | undefined,
+  onAuthorizationUnavailable?: (code: string) => void,
 ): () => void {
   if (!provisioning) return () => {};
   let stopped = false;
@@ -27,6 +28,19 @@ export function bindTogetherProvisioning(
       // Bootstrap only prepares durable evidence. A future join obtains its own
       // defensive key copy; secrets must never land in React/query state.
       if (result.ok) result.value.seed.fill(0);
+      else if (
+        !stopped &&
+        generation === accountGeneration &&
+        [
+          "unauthorized",
+          "expired",
+          "invalid-proof",
+          "key-unavailable",
+          "storage",
+          "offline-unprepared",
+        ].includes(result.error.code)
+      )
+        onAuthorizationUnavailable?.(result.error.code);
     } catch {
       // Readiness is obtained from the same adapter by the eventual join flow.
       // A native/storage failure must not interrupt ordinary auth or workouts.

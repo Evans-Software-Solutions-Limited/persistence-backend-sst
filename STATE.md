@@ -1,5 +1,58 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-02 — PER-64 / PER-22 provisioned lobby integration
+
+Fetched/pulled clean main to merged #482 `97c7769e` before creating
+`codex/together-lobby-integration`. The reviewed prototype had no mobile UI on
+main; added its slim workout entry, existing foundation sheet/cards and separate
+code/QR consent flow, connected to the merged provisioning and LAN classes.
+Signed invitations verify host account/device before LAN selection; discovery
+IDs only route traffic. Actual rosters drive friend admission, stranger approval,
+four-seat limits and reconnect. Internet reachability never gates valid LAN
+credentials. Personal logging remains unchanged; Together stays default-off.
+
+Inspector found and this slice fixes the real online-nonfriend API mismatch,
+scroll-contained sheet placement, accidental leave on sheet dismissal and idle
+camera background races. Backend distinguishes unblocked nonfriend from blocked
+or unpaid access; provisioning durably retains known pair denials, guards racing
+refreshes and permits stranger approval after a transient internet failure.
+Host and guest admission consult current known blocks. Local Inspector final
+full-diff verdict: CLEAN, including the additional backend/provisioning changes.
+Dismissal/camera regression mutations fail with the guards removed.
+
+Focused evidence: 293 Together/API mobile tests, 26 backend repository/route
+tests; new UI/composition coverage run: 75 tests. New/changed Together runtime,
+provisioning, backend and UI files exceed 90% in all metrics. Two inherited
+ActiveSession files remain below the whole-file 90% rule: main baseline container
+84.51/76.87/88.13/91.82% statements/branches/functions/lines; final
+84.64/77.52/88.33/91.90%. Presenter baseline/final 94.05/86.84/92.50/96.66%.
+No exclusions or unrelated workout refactor hide this existing gap.
+A concurrent broad coverage run hit the existing 45-command delivery test’s 20s
+limit; isolated instrumented reproduction passes in 7s. Keep this contention
+finding visible rather than calling that run green.
+
+Final gates: mobile 556 suites / 7,348 tests passed; the three added entry
+checks also pass against the final fixture. Non-mobile tests 18/18 tasks passed
+(core 5,449 tests); typecheck 9/9, lint 6/6 (existing warnings), non-mobile build
+12/12, formatting and whitespace pass. Mobile emitted its existing forced-worker
+teardown warning; focused new tests exit cleanly. A final fetch found main still
+at 97c7769e, with no incoming changes or STATE conflict.
+
+Screenshots use actual React presenters with simulated data; matching reference
+and dark join/consent/full evidence are in
+`/Users/bradleysimms-evans/.codex/visualizations/2026/10/02/01a0fd29-f2b3-7e20-a790-8c4be81873ca/together/`.
+Structural tests verify the root sheet and unchanged personal session. Neither
+web rendering nor simulated native transport proves device geometry, camera,
+Wi-Fi/hotspot or radio behaviour. No native/prebuild/EAS build was initiated.
+
+Remaining: verified open browsing/audience configuration (this slice shares a
+signed invitation), Nearby radio, Android hotspot-owner, full workout-plan/logging,
+PREV/delegation/cache/completion/recovery wiring, profile projection, local/cloud
+authority transitions and physical mixed-device evidence. No lower-tier or coached
+scope. PER-64 and PER-22 remain open; details in LOBBY-INTEGRATION.md.
+The configured slack-progress-updates skill was not found in installed skill
+locations; no Slack/ntfy completion notification could be sent through it.
+
 ### 2026-10-02 — PR #482 Inspector review fixes
 
 Addressed both CI Inspector comments: retryable HTTP 408/425/429 responses no

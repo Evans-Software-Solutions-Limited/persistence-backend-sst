@@ -363,6 +363,8 @@ export class TogetherProvisioning implements TogetherProvisioningPort {
         trustedKeys: copy(publicKeys),
         credential: copy(registered.value),
         friends: {},
+        friendAccess: snapshot.friendAccess,
+        unknownFriendsDenied: snapshot.unknownFriendsDenied,
       };
       for (const [friend, proof] of Object.entries(snapshot.friends)) {
         try {
@@ -385,6 +387,46 @@ export class TogetherProvisioning implements TogetherProvisioningPort {
         this.activeSeeds.delete(identity.seed);
       }
     }
+  }
+  private pairDecision(
+    snapshot: Snapshot,
+    friendId: string,
+    allowed: boolean,
+  ): void {
+    this.friendRevisions.set(
+      friendId,
+      (this.friendRevisions.get(friendId) ?? 0) + 1,
+    );
+    delete snapshot.friendAccess[friendId];
+    snapshot.friendAccess[friendId] = allowed;
+    while (Object.keys(snapshot.friendAccess).length > 100) {
+      const oldest = Object.keys(snapshot.friendAccess)[0];
+      // Evicting a known denial must never silently authorize that pair offline.
+      if (!snapshot.friendAccess[oldest]) snapshot.unknownFriendsDenied = true;
+      delete snapshot.friendAccess[oldest];
+    }
+  }
+  private pairDenied(snapshot: Snapshot, friendId: string): boolean {
+    return Object.hasOwn(snapshot.friendAccess, friendId)
+      ? !snapshot.friendAccess[friendId]
+      : snapshot.unknownFriendsDenied;
+  }
+  deniedPairs(
+    candidateUserIds: readonly string[] = [],
+  ): readonly (readonly [string, string])[] {
+    const denied = this.access();
+    if (denied) throw new Error(denied);
+    const snapshot = this.cache.read(this.scope(this.account!));
+    if (snapshot.blocked) throw new Error("unauthorized");
+    const users = new Set([
+      ...Object.keys(snapshot.friendAccess),
+      ...candidateUserIds,
+    ]);
+    return [...users]
+      .filter(
+        (user) => user !== this.account && this.pairDenied(snapshot, user),
+      )
+      .map((user) => [this.account!, user] as const);
   }
   async friendship(
     friendId: string,
@@ -423,7 +465,10 @@ export class TogetherProvisioning implements TogetherProvisioningPort {
           /* Expired or rotated evidence is unavailable offline. */
         }
       }
-      if (!online) return ok(copy(cached));
+      if (!online)
+        return this.pairDenied(snapshot, friendId)
+          ? failure("unauthorized")
+          : ok(copy(cached));
       const result = await this.options.api.friendship(
         friendId,
         randomUuid(this.options.randomBytes),
@@ -433,11 +478,12 @@ export class TogetherProvisioning implements TogetherProvisioningPort {
       snapshot = this.cache.read(scope);
       // A global server refusal remains authoritative even after a newer pair refusal,
       // an expired credential or another request changed the local authorization revision.
-      if (!result.ok && authoritative(result.error)) {
-        this.friendRevisions.set(
-          friendId,
-          (this.friendRevisions.get(friendId) ?? 0) + 1,
-        );
+      const ordinaryNonfriend =
+        !result.ok &&
+        result.error.status === 403 &&
+        result.error.togetherCode === "FRIENDSHIP_NOT_ACCEPTED";
+      if (!result.ok && authoritative(result.error) && !ordinaryNonfriend) {
+        this.pairDecision(snapshot, friendId, false);
         delete snapshot.friends[friendId];
         if (
           !(
@@ -460,7 +506,18 @@ export class TogetherProvisioning implements TogetherProvisioningPort {
       if (!snapshot.credential) return failure("invalid-proof");
       verifyCredential(snapshot.credential, snapshot.trustedKeys, this.now());
       if (!result.ok) {
-        if (transient(result.error) && cached) {
+        if (ordinaryNonfriend) {
+          delete snapshot.friends[friendId];
+          this.pairDecision(snapshot, friendId, true);
+          snapshot.observedAt = this.now();
+          this.cache.write(scope, snapshot);
+          return ok(null);
+        }
+        if (this.pairDenied(snapshot, friendId)) return failure("unauthorized");
+        if (transient(result.error)) {
+          // Reachability cannot gate LAN when both identities remain authorized.
+          // No friendship proof means explicit host approval, never friend admission.
+          if (!cached) return ok(null);
           validateFriend(
             cached,
             snapshot.trustedKeys,
@@ -479,6 +536,7 @@ export class TogetherProvisioning implements TogetherProvisioningPort {
         friendId,
         this.now(),
       );
+      this.pairDecision(snapshot, friendId, true);
       snapshot.friends[friendId] = copy(result.value);
       while (Object.keys(snapshot.friends).length > 100) {
         const oldest = Object.keys(snapshot.friends).sort(

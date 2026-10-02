@@ -394,7 +394,9 @@ it("friend refusal removes only known FORBIDDEN pair; paid or unknown denial blo
   expect(await service.friendship(B, { online: true })).toMatchObject({
     error: { code: "unauthorized" },
   });
-  expect(await service.friendship(B, { online: false })).toEqual(ok(null));
+  expect(await service.friendship(B, { online: false })).toMatchObject({
+    error: { code: "unauthorized" },
+  });
   expect((await service.prepare({ online: false })).ok).toBe(true);
   api.friendship.mockResolvedValueOnce(denial(403, "PAID_REQUIRED"));
   expect(await service.friendship(C, { online: true })).toMatchObject({
@@ -551,7 +553,9 @@ it("does not resurrect a refused pair from an older in-flight response", async (
   });
   gate.resolve(ok(friend()));
   expect(await old).toMatchObject({ error: { code: "unauthorized" } });
-  expect(await service.friendship(B, { online: false })).toEqual(ok(null));
+  expect(await service.friendship(B, { online: false })).toMatchObject({
+    error: { code: "unauthorized" },
+  });
 });
 it("does not fall back to a revoked issuer after successful trust rotation", async () => {
   await prepared();
@@ -691,7 +695,9 @@ it("preserves a pair refusal received during registration renewal", async () => 
   await friendRequest;
   gate.resolve();
   expect((await refresh).ok).toBe(true);
-  expect(await service.friendship(B, { online: false })).toEqual(ok(null));
+  expect(await service.friendship(B, { online: false })).toMatchObject({
+    error: { code: "unauthorized" },
+  });
 });
 it.each([403, 401, 404])(
   "persists global refusal %s even after a newer pair refusal",
@@ -832,9 +838,8 @@ it("rate limiting never grants absent or expired offline evidence", async () => 
   });
   await prepared();
   api.friendship.mockResolvedValueOnce(denial(429, "RATE_LIMITED"));
-  expect(await service.friendship(B, { online: true })).toMatchObject({
-    error: { code: "unavailable" },
-  });
+  // Valid identity can request host approval, but rate limiting never invents a friendship proof.
+  expect(await service.friendship(B, { online: true })).toEqual(ok(null));
   expect(await service.friendship(B, { online: false })).toEqual(ok(null));
   now += 600001;
   api.trust.mockResolvedValueOnce(denial(429, "RATE_LIMITED"));
@@ -902,3 +907,148 @@ it.each([
     }
   },
 );
+
+it("ordinary nonfriends erase stale proof without revoking paid preparation; only authoritative unblock clears pair denial", async () => {
+  await prepared();
+  await service.friendship(B, { online: true });
+  api.friendship.mockResolvedValueOnce(denial(403, "FRIENDSHIP_NOT_ACCEPTED"));
+  expect(await service.friendship(B, { online: true })).toEqual(ok(null));
+  expect(
+    new ProvisioningCache(database).read(scope()).friends[B],
+  ).toBeUndefined();
+  expect(await service.friendship(B, { online: false })).toEqual(ok(null));
+  api.friendship.mockResolvedValueOnce(denial(403, "FORBIDDEN"));
+  await service.friendship(B, { online: true });
+  service = make();
+  expect(await service.friendship(B, { online: false })).toMatchObject({
+    error: { code: "unauthorized" },
+  });
+  expect(await service.friendship(C, { online: false })).toEqual(ok(null));
+  api.friendship.mockResolvedValueOnce(
+    fail({ kind: "api", code: "network", message: "offline" }),
+  );
+  expect(await service.friendship(B, { online: true })).toMatchObject({
+    error: { code: "unauthorized" },
+  });
+  api.friendship.mockResolvedValueOnce(denial(403, "FRIENDSHIP_NOT_ACCEPTED"));
+  expect(await service.friendship(B, { online: true })).toEqual(ok(null));
+  expect(await service.friendship(B, { online: false })).toEqual(ok(null));
+  api.friendship.mockResolvedValueOnce(denial(403, "FORBIDDEN"));
+  await service.friendship(B, { online: true });
+  expect(await service.friendship(B, { online: true })).toEqual(ok(friend()));
+  expect(await service.friendship(B, { online: false })).toEqual(ok(friend()));
+});
+it.each(["FRIENDSHIP_NOT_ACCEPTED", "FORBIDDEN"])(
+  "older success never overrides newer %s",
+  async (code) => {
+    await prepared();
+    const gate = deferred<any>();
+    api.friendship.mockImplementationOnce(() => gate.promise);
+    const old = service.friendship(B, { online: true });
+    while (!api.friendship.mock.calls.length)
+      await new Promise((r) => setImmediate(r));
+    api.friendship.mockResolvedValueOnce(denial(403, code));
+    await service.friendship(B, { online: true });
+    gate.resolve(ok(friend()));
+    expect(await old).toMatchObject({ error: { code: "unauthorized" } });
+    expect(
+      new ProvisioningCache(database).read(scope()).friends[B],
+    ).toBeUndefined();
+  },
+);
+it("a stale nonfriend response cannot clear a newer pair block or global revocation", async () => {
+  await prepared();
+  const gate = deferred<any>();
+  api.friendship.mockImplementationOnce(() => gate.promise);
+  const old = service.friendship(B, { online: true });
+  while (!api.friendship.mock.calls.length)
+    await new Promise((r) => setImmediate(r));
+  api.friendship.mockResolvedValueOnce(denial(403, "FORBIDDEN"));
+  await service.friendship(B, { online: true });
+  gate.resolve(denial(403, "FRIENDSHIP_NOT_ACCEPTED"));
+  expect(await old).toMatchObject({ error: { code: "unauthorized" } });
+  expect(await service.friendship(B, { online: false })).toMatchObject({
+    error: { code: "unauthorized" },
+  });
+});
+it("bounds persisted pair decisions without evicting a denial into offline permission", async () => {
+  await prepared();
+  const cache = new ProvisioningCache(database),
+    snapshot = cache.read(scope());
+  for (let n = 10; n < 110; n++)
+    snapshot.friendAccess[
+      `00000000-0000-4000-8000-${n.toString(16).padStart(12, "0")}`
+    ] = false;
+  cache.write(scope(), snapshot);
+  api.friendship.mockResolvedValueOnce(denial(403, "FORBIDDEN"));
+  await service.friendship(B, { online: true });
+  const saved = cache.read(scope());
+  expect(Object.keys(saved.friendAccess)).toHaveLength(100);
+  expect(saved.unknownFriendsDenied).toBe(true);
+  expect(
+    await service.friendship("00000000-0000-4000-8000-00000000000a", {
+      online: false,
+    }),
+  ).toMatchObject({ error: { code: "unauthorized" } });
+  api.friendship.mockResolvedValueOnce(denial(403, "FRIENDSHIP_NOT_ACCEPTED"));
+  expect(await service.friendship(C, { online: true })).toEqual(ok(null));
+  expect(await service.friendship(C, { online: false })).toEqual(ok(null));
+  snapshot.friendAccess = Object.fromEntries(
+    Object.keys(snapshot.friendAccess).map((key) => [key, true]),
+  );
+  snapshot.unknownFriendsDenied = false;
+  cache.write(scope(), snapshot);
+  await service.friendship(B, { online: true });
+  expect(cache.read(scope()).unknownFriendsDenied).toBe(false);
+});
+it("migrates old snapshots and rejects malformed persisted pair decisions", async () => {
+  await prepared();
+  const cache = new ProvisioningCache(database),
+    snapshot = cache.read(scope());
+  const old = { ...snapshot } as Partial<typeof snapshot>;
+  delete old.friendAccess;
+  delete old.unknownFriendsDenied;
+  db.prepare("UPDATE together_provisioning SET snapshot=? WHERE scope=?").run(
+    JSON.stringify(old),
+    scope(),
+  );
+  expect(cache.read(scope()).friendAccess).toEqual({});
+  for (const patch of [
+    { friendAccess: [] },
+    { friendAccess: { bad: false } },
+    { friendAccess: { [B]: "yes" } },
+    { friendAccess: null },
+    { unknownFriendsDenied: 1 },
+    {
+      friendAccess: Object.fromEntries(
+        Array.from({ length: 101 }, (_, n) => [String(n), false]),
+      ),
+    },
+  ]) {
+    db.prepare("UPDATE together_provisioning SET snapshot=? WHERE scope=?").run(
+      JSON.stringify({ ...snapshot, ...patch }),
+      scope(),
+    );
+    expect(() => cache.read(scope())).toThrow("storage");
+  }
+});
+
+it("exposes current account-scoped refusals for host and member validation", async () => {
+  expect(() => make(null).deniedPairs()).toThrow("signed-out");
+  await prepared();
+  expect(service.deniedPairs()).toEqual([]);
+  api.friendship.mockResolvedValueOnce(denial(403, "FORBIDDEN"));
+  await service.friendship(B, { online: true });
+  expect(service.deniedPairs([A, B, C])).toEqual([[A, B]]);
+  const cache = new ProvisioningCache(database),
+    snapshot = cache.read(scope());
+  snapshot.unknownFriendsDenied = true;
+  cache.write(scope(), snapshot);
+  expect(service.deniedPairs([A, B, C])).toEqual([
+    [A, B],
+    [A, C],
+  ]);
+  snapshot.blocked = true;
+  cache.write(scope(), snapshot);
+  expect(() => service.deniedPairs([B])).toThrow("unauthorized");
+});

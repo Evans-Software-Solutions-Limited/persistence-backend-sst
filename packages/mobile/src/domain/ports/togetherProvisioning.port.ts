@@ -36,5 +36,9 @@ export interface TogetherProvisioningPort {
     friendId: string,
     options: { online: boolean },
   ): Promise<Result<Signed<FriendshipEvidence> | null, ProvisioningError>>;
+  /** Latest locally known pair refusals, including fail-closed bounded-cache overflow. */
+  deniedPairs?(
+    candidateUserIds?: readonly string[],
+  ): readonly (readonly [string, string])[];
   dispose(): void;
 }

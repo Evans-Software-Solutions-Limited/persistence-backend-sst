@@ -203,15 +203,17 @@ it("aborts hanging fetch at ten seconds", async () => {
     error: { code: "timeout" },
   });
 });
-it.each(["FORBIDDEN", "PAID_REQUIRED", "DEVICE_REVOKED"])(
-  "preserves Together authorization reason %s",
-  async (togetherCode) => {
-    respond({ error: { code: togetherCode, message: "refused" } }, 403);
-    expect(
-      await adapter.togetherOffline.friendship(deviceId, requestId),
-    ).toMatchObject({ ok: false, error: { status: 403, togetherCode } });
-  },
-);
+it.each([
+  "FORBIDDEN",
+  "FRIENDSHIP_NOT_ACCEPTED",
+  "PAID_REQUIRED",
+  "DEVICE_REVOKED",
+])("preserves Together authorization reason %s", async (togetherCode) => {
+  respond({ error: { code: togetherCode, message: "refused" } }, 403);
+  expect(
+    await adapter.togetherOffline.friendship(deviceId, requestId),
+  ).toMatchObject({ ok: false, error: { status: 403, togetherCode } });
+});
 it.each(["bad code", "A".repeat(65), 12, null])(
   "ignores malformed authorization reason %j",
   async (code) => {

@@ -21,7 +21,14 @@
  */
 
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { Alert } from "react-native";
 import {
   addSupersetSetCommand,
@@ -37,6 +44,7 @@ import { ExerciseNotesPopover } from "@/ui/components/session/ExerciseNotesPopov
 import { renumberSets } from "@/domain/services/sessionService";
 import type { Exercise } from "@/domain/models/exercise";
 import type { ExerciseSet } from "@/domain/models/session";
+import { TogetherLobbyContainer } from "@/ui/containers/TogetherLobbyContainer";
 import { ActiveSessionPresenter } from "@/ui/presenters/ActiveSessionPresenter";
 import { formatBarElapsed } from "@/ui/presenters/ActiveWorkoutBarPresenter";
 import { EndConfirmDialogPresenter } from "@/ui/presenters/EndConfirmDialogPresenter";
@@ -92,7 +100,7 @@ export function retrospectiveCompletedAtForDay(
 }
 
 export function ActiveSessionContainer() {
-  const { storage, api } = useAdapters();
+  const { storage, api, togetherLobby } = useAdapters();
   const params = useLocalSearchParams<{
     workoutId?: string;
     sessionId?: string;
@@ -733,61 +741,76 @@ export function ActiveSessionContainer() {
     return null;
   }
 
+  const renderPresenter = (togetherRow?: ReactNode) => (
+    <ActiveSessionPresenter
+      togetherRow={togetherRow}
+      sessionName={session.name}
+      startedAt={session.startedAt}
+      exercises={session.exercises}
+      previousSetsByExercise={previousSetsByExercise}
+      weightUnit={weightUnit}
+      preferredUnits={preferredUnits}
+      templateByExercise={templateByExercise}
+      restTimer={{
+        isActive: restTimer.isActive,
+        remainingSeconds: restTimer.remainingSeconds,
+        totalSeconds: restTimer.totalSeconds,
+        progress: restTimer.progress,
+        onSkip: restTimer.skip,
+        onDismiss: restTimer.dismiss,
+      }}
+      onLogSet={onLogSet}
+      onLogSupersetSet={onLogSupersetSet}
+      onRemoveSupersetSet={onRemoveSupersetSet}
+      onUpdateSet={onUpdateSet}
+      onRemoveSet={onRemoveSet}
+      onOpenNotes={onOpenNotes}
+      onOpenSupersetNotes={onOpenSupersetNotes}
+      onSubstitute={onSubstitute}
+      onRemoveExercise={onRemoveExercise}
+      onMoveExercise={onMoveExercise}
+      onReorderExercise={onReorderExercise}
+      onTapExercise={onTapExercise}
+      onAddExercise={onAddExercise}
+      onAddExerciseToSuperset={onAddExerciseToSuperset}
+      onStartRest={onStartRest}
+      withClient={withClient}
+      retroactive={retroactive}
+      activityEnvironment={session.activityEnvironment ?? null}
+      locationName={session.locationName ?? ""}
+      retrospectiveCompletedAt={session.retrospectiveCompletedAt ?? null}
+      retrospectiveDurationSeconds={
+        session.retrospectiveDurationSeconds ?? 3600
+      }
+      onActivityEnvironmentChange={(activityEnvironment) =>
+        updateSessionMetadata({ activityEnvironment })
+      }
+      onLocationNameChange={(locationName) =>
+        updateSessionMetadata({ locationName })
+      }
+      onRetrospectiveDateChange={onRetrospectiveDateChange}
+      onRetrospectiveDurationChange={(retrospectiveDurationSeconds) =>
+        updateSessionMetadata({ retrospectiveDurationSeconds })
+      }
+      onMinimize={onMinimize}
+      onDiscard={onDiscard}
+      onFinish={onFinish}
+    />
+  );
+
   return (
     <>
-      <ActiveSessionPresenter
-        sessionName={session.name}
-        startedAt={session.startedAt}
-        exercises={session.exercises}
-        previousSetsByExercise={previousSetsByExercise}
-        weightUnit={weightUnit}
-        preferredUnits={preferredUnits}
-        templateByExercise={templateByExercise}
-        restTimer={{
-          isActive: restTimer.isActive,
-          remainingSeconds: restTimer.remainingSeconds,
-          totalSeconds: restTimer.totalSeconds,
-          progress: restTimer.progress,
-          onSkip: restTimer.skip,
-          onDismiss: restTimer.dismiss,
-        }}
-        onLogSet={onLogSet}
-        onLogSupersetSet={onLogSupersetSet}
-        onRemoveSupersetSet={onRemoveSupersetSet}
-        onUpdateSet={onUpdateSet}
-        onRemoveSet={onRemoveSet}
-        onOpenNotes={onOpenNotes}
-        onOpenSupersetNotes={onOpenSupersetNotes}
-        onSubstitute={onSubstitute}
-        onRemoveExercise={onRemoveExercise}
-        onMoveExercise={onMoveExercise}
-        onReorderExercise={onReorderExercise}
-        onTapExercise={onTapExercise}
-        onAddExercise={onAddExercise}
-        onAddExerciseToSuperset={onAddExerciseToSuperset}
-        onStartRest={onStartRest}
-        withClient={withClient}
-        retroactive={retroactive}
-        activityEnvironment={session.activityEnvironment ?? null}
-        locationName={session.locationName ?? ""}
-        retrospectiveCompletedAt={session.retrospectiveCompletedAt ?? null}
-        retrospectiveDurationSeconds={
-          session.retrospectiveDurationSeconds ?? 3600
-        }
-        onActivityEnvironmentChange={(activityEnvironment) =>
-          updateSessionMetadata({ activityEnvironment })
-        }
-        onLocationNameChange={(locationName) =>
-          updateSessionMetadata({ locationName })
-        }
-        onRetrospectiveDateChange={onRetrospectiveDateChange}
-        onRetrospectiveDurationChange={(retrospectiveDurationSeconds) =>
-          updateSessionMetadata({ retrospectiveDurationSeconds })
-        }
-        onMinimize={onMinimize}
-        onDiscard={onDiscard}
-        onFinish={onFinish}
-      />
+      {togetherLobby && !withClient && !retroactive ? (
+        <TogetherLobbyContainer
+          lobby={togetherLobby}
+          accountId={userId}
+          workoutName={session.name}
+        >
+          {renderPresenter}
+        </TogetherLobbyContainer>
+      ) : (
+        renderPresenter()
+      )}
 
       {/* Picker routing — three single-purpose popovers, mounted by
           mode so the Modal stack only ever has one active:

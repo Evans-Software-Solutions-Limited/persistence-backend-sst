@@ -224,6 +224,59 @@ describe("ActiveSessionContainer", () => {
     jest.restoreAllMocks();
   });
 
+  it.each(["personal", "retrospective", "coached"])(
+    "Together entry respects %s logging and preserves the workout",
+    async (mode) => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      if (mode === "coached") {
+        const workout = buildWorkout();
+        storage.cacheWorkoutDetail("user-1", workout);
+        jest.spyOn(api, "getWorkout").mockResolvedValue(ok(workout));
+      }
+      const adapters = makeAdapters(api, storage);
+      const snapshot = { phase: "idle" as const, members: [], pending: [] };
+      const host = jest.fn(async () => {});
+      adapters.togetherLobby = {
+        getSnapshot: () => snapshot,
+        subscribe: () => () => {},
+        host,
+        selectInvite: jest.fn(),
+        join: jest.fn(),
+        approve: jest.fn(),
+        decline: jest.fn(),
+        reconnect: jest.fn(),
+        cancel: jest.fn(async () => {}),
+        setOnline: jest.fn(),
+        setActive: jest.fn(),
+        setAccount: jest.fn(),
+        dispose: jest.fn(),
+        invalidateAuthorization: jest.fn(),
+      };
+      mockUseLocalSearchParams.mockReturnValue(
+        mode === "retrospective"
+          ? { retroactive: "true" }
+          : mode === "coached"
+            ? { workoutId: "w-1", clientId: "client-1", clientName: "Mia" }
+            : {},
+      );
+      const r = renderWithTheme(
+        withAdapters(adapters, <ActiveSessionContainer />),
+      );
+      await r.findByTestId("active-session-screen");
+      if (mode !== "personal")
+        expect(r.queryByTestId("together-workout-row")).toBeNull();
+      else {
+        expect(r.getByTestId("together-workout-row")).toBeTruthy();
+        fireEvent.press(r.getByText("Start"));
+        fireEvent.press(r.getByText("Start the session"));
+        expect(host).toHaveBeenCalledWith("Quick Workout");
+      }
+      expect(storage.getActiveSession("user-1")?.status).toBe("in_progress");
+      r.unmount();
+    },
+  );
+
   it("keeps retrospective completion on the selected local day", () => {
     const beforeNoon = new Date(2026, 5, 5, 10, 0, 0, 0);
     const today = localDayISO(beforeNoon);

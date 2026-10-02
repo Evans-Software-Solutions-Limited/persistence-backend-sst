@@ -250,6 +250,19 @@ describe("offline HTTP contract", () => {
       ).status,
     ).toBe(400);
   });
+  it.each(["FRIENDSHIP_NOT_ACCEPTED", "FORBIDDEN"])(
+    "preserves friendship decision %s in the existing error envelope",
+    async (code) => {
+      mocks.friendship.mockRejectedValue(new TogetherError(code, 403));
+      const response = await request("/friendship-proof", "POST", {
+        friendId: id,
+      });
+      expect(response.status).toBe(403);
+      expect(await response.json()).toEqual({
+        error: { code, message: "Request cannot be completed" },
+      });
+    },
+  );
   it("exposes domain failures without issuing a success receipt", async () => {
     mocks.register.mockRejectedValue(new TogetherError("DEVICE_REVOKED", 403));
     const response = await request("/devices", "POST", registration);

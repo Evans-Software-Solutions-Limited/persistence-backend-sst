@@ -271,3 +271,45 @@ describe("Together provisioning auth/network lifecycle", () => {
     },
   );
 });
+
+it("propagates definitive refresh denial to active sharing but ignores stale account replies", async () => {
+  const h = harness();
+  const denied = jest.fn();
+  const pending =
+    deferred<Awaited<ReturnType<TogetherProvisioningPort["prepare"]>>>();
+  jest.mocked(h.provisioning.prepare).mockReturnValueOnce(pending.promise);
+  const stop = bindTogetherProvisioning(
+    h.auth,
+    h.netInfo,
+    h.provisioning,
+    denied,
+  );
+  h.persisted.resolve(session("A"));
+  await tick();
+  h.event(session("B"), "SIGNED_IN");
+  await tick();
+  denied.mockClear();
+  pending.resolve(
+    fail({ kind: "together-provisioning", code: "unauthorized" }),
+  );
+  await tick();
+  expect(denied).not.toHaveBeenCalled();
+  jest
+    .mocked(h.provisioning.prepare)
+    .mockResolvedValueOnce(
+      fail({ kind: "together-provisioning", code: "unauthorized" }),
+    );
+  h.network(true);
+  await tick();
+  expect(denied).toHaveBeenCalledWith("unauthorized");
+  denied.mockClear();
+  jest
+    .mocked(h.provisioning.prepare)
+    .mockResolvedValueOnce(
+      fail({ kind: "together-provisioning", code: "unavailable" }),
+    );
+  h.network(true);
+  await tick();
+  expect(denied).not.toHaveBeenCalled();
+  stop();
+});

@@ -19,7 +19,10 @@ export type LanSessionEvent =
         | "admitted"
         | "disconnected"
         | "command"
-        | "receipt";
+        | "receipt"
+        | "roster"
+        | "full"
+        | "declined";
       peerId: string;
     }
   | { type: "approval-required"; peerId: string; request?: LocalJoinRequest }
@@ -53,6 +56,7 @@ export class TogetherLanSession {
   private connecting = false;
   private connectDeadline?: ReturnType<typeof setTimeout>;
   private stopping = false;
+  private stopPromise?: Promise<void>;
   private request?: LocalJoinRequest;
   private readonly options: Readonly<LanSessionOptions>;
   constructor(options: LanSessionOptions) {
@@ -154,7 +158,12 @@ export class TogetherLanSession {
     if (this.mode !== "host" || !connection || !request)
       throw new Error("No pending request");
     try {
-      await connection.link.approve(request);
+      if (!(await connection.link.approve(request))) {
+        this.emit({ type: "full", peerId });
+        this.drop(peerId);
+        await this.disconnect(peerId);
+        return;
+      }
       if (this.links.get(peerId) !== connection) return;
       await this.admitted(peerId, connection);
       if (this.links.get(peerId) === connection)
@@ -163,6 +172,14 @@ export class TogetherLanSession {
       this.fail(peerId, "approval_failed", connection);
       throw error;
     }
+  }
+
+  async decline(peerId: string): Promise<void> {
+    const connection = this.links.get(peerId);
+    if (!connection) throw new Error("No pending request");
+    await connection.link.decline();
+    this.drop(peerId);
+    await this.disconnect(peerId);
   }
 
   async sendOwn(command: LocalCommand): Promise<void> {
@@ -274,7 +291,12 @@ export class TogetherLanSession {
             peerId: event.peerId,
             request: connection.link.pendingRequest,
           });
+        } else if (result === "full" || result === "declined") {
+          this.emit({ type: result, peerId: event.peerId });
+          this.drop(event.peerId);
+          await this.disconnect(event.peerId);
         } else if (result === "roster") {
+          this.emit({ type: "roster", peerId: event.peerId });
           await this.admitted(event.peerId, connection);
           if (
             this.links.get(event.peerId) === connection &&
@@ -409,6 +431,7 @@ export class TogetherLanSession {
   }
 
   async stop(): Promise<void> {
+    if (this.stopPromise) return this.stopPromise;
     ++this.generation;
     clearTimeout(this.connectDeadline);
     this.subscription?.remove();
@@ -422,9 +445,11 @@ export class TogetherLanSession {
     if (wasActive) {
       this.stopping = true;
       try {
-        await this.options.native!.stop();
+        this.stopPromise = this.options.native!.stop();
+        await this.stopPromise;
       } finally {
         this.stopping = false;
+        this.stopPromise = undefined;
       }
     }
   }

@@ -7,7 +7,10 @@ import type { PurchasesPort } from "@/domain/ports/purchases.port";
 import type { StoragePort } from "@/domain/ports/storage.port";
 import type { TogetherProvisioningPort } from "@/domain/ports/togetherProvisioning.port";
 
+import type { TogetherLobbyPort } from "@/domain/ports/togetherLobby.port";
+
 export interface Adapters {
+  togetherLobby?: TogetherLobbyPort;
   api: ApiPort;
   auth: AuthPort;
   storage: StoragePort;

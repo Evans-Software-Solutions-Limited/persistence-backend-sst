@@ -22,7 +22,7 @@ import {
   enforceRateLimit,
   togetherEnabled,
 } from "./shared";
-import { areFriends } from "../social/socialRepository";
+import { areFriends, canInteract } from "../social/socialRepository";
 import {
   offlineAuthority,
   signPayload,
@@ -171,7 +171,12 @@ export class TogetherOfflineRepository {
       await assertActorActive(tx, actor);
       await assertActorActive(tx, friendId);
       await assertTogetherPaid(tx, actor);
-      requireTogether(await areFriends(tx, actor, friendId), "FORBIDDEN", 403);
+      requireTogether(await canInteract(tx, actor, friendId), "FORBIDDEN", 403);
+      requireTogether(
+        await areFriends(tx, actor, friendId),
+        "FRIENDSHIP_NOT_ACCEPTED",
+        403,
+      );
       return replayMutation(
         tx,
         actor,

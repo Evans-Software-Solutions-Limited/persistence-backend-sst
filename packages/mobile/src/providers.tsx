@@ -1,5 +1,7 @@
+import { createTogetherLobby } from "@/adapters/together/createTogetherLobby";
+import { bindTogetherLobby } from "@/adapters/together/bindTogetherLobby";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
-import { Platform } from "react-native";
+import { AppState, Platform } from "react-native";
 import Constants from "expo-constants";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SSTApiAdapter, getApiBaseUrl } from "@/adapters/api";
@@ -112,6 +114,14 @@ export function AppProviders({ children }: { children: ReactNode }) {
     // Wire auth token into API client
     api.setTokenProvider(() => auth.getAccessToken());
 
+    const togetherProvisioning = createTogetherProvisioning(
+      api.togetherOffline,
+      getApiBaseUrl(),
+    );
+    const togetherLobby = createTogetherLobby(
+      togetherProvisioning,
+      getApiBaseUrl(),
+    );
     return {
       _auth: auth,
       api,
@@ -121,10 +131,8 @@ export function AppProviders({ children }: { children: ReactNode }) {
       notifications: new ExpoNotificationsAdapter(),
       netInfo: new RNNetInfoAdapter(),
       // Default-off release gate: no native imports or background registration.
-      togetherProvisioning: createTogetherProvisioning(
-        api.togetherOffline,
-        getApiBaseUrl(),
-      ),
+      togetherProvisioning,
+      togetherLobby,
       purchases: createPurchasesAdapter(),
     };
   }, []);
@@ -135,6 +143,18 @@ export function AppProviders({ children }: { children: ReactNode }) {
         adapters.auth,
         adapters.netInfo,
         adapters.togetherProvisioning,
+        (code) => adapters.togetherLobby?.invalidateAuthorization(code),
+      ),
+    [adapters],
+  );
+
+  useEffect(
+    () =>
+      bindTogetherLobby(
+        adapters.auth,
+        adapters.netInfo,
+        AppState,
+        adapters.togetherLobby,
       ),
     [adapters],
   );

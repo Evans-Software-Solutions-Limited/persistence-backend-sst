@@ -362,7 +362,7 @@ describe("offline credentials and owner recovery persistence", () => {
       repo.friendship(a, b.toUpperCase(), key()),
     ).rejects.toMatchObject({ code: "INVALID_SCHEMA" });
     await expect(repo.friendship(a, b, key())).rejects.toMatchObject({
-      code: "FORBIDDEN",
+      code: "FRIENDSHIP_NOT_ACCEPTED",
     });
     await expect(repo.friendship(a, a, key())).rejects.toMatchObject({
       code: "INVALID_SCHEMA",
@@ -379,6 +379,34 @@ describe("offline credentials and owner recovery persistence", () => {
     await db.insert(schema.socialBlocks).values({ actorId: b, subjectId: a });
     await expect(repo.friendship(a, b, k)).rejects.toMatchObject({
       code: "FORBIDDEN",
+    });
+  });
+  it("distinguishes absent/pending friendship from both directions of blocking and paid refusal", async () => {
+    await db
+      .insert(schema.friendships)
+      .values({ userId: a, friendId: b, status: "pending", initiatedBy: a });
+    await expect(repo.friendship(a, b, key())).rejects.toMatchObject({
+      code: "FRIENDSHIP_NOT_ACCEPTED",
+      status: 403,
+    });
+    await db.update(schema.friendships).set({ status: "blocked" });
+    await expect(repo.friendship(a, b, key())).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    await db.delete(schema.friendships);
+    for (const [actorId, subjectId] of [
+      [a, b],
+      [b, a],
+    ]) {
+      await db.insert(schema.socialBlocks).values({ actorId, subjectId });
+      await expect(repo.friendship(a, b, key())).rejects.toMatchObject({
+        code: "FORBIDDEN",
+      });
+      await db.delete(schema.socialBlocks);
+    }
+    await db.update(schema.userSubscriptions).set({ expiresAt: new Date(0) });
+    await expect(repo.friendship(a, b, key())).rejects.toMatchObject({
+      code: "PAID_REQUIRED",
     });
   });
   it("reconstructs a signed journal, retries without duplicates, and exposes only an owner review candidate", async () => {
