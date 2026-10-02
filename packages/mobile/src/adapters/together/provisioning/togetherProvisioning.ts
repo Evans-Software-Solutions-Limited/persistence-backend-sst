@@ -40,14 +40,20 @@ export interface TogetherProvisioningOptions {
 const failure = (code: ProvisioningErrorCode) =>
   fail<ProvisioningError>({ kind: "together-provisioning", code });
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value));
+const retryableClientStatus = (status: number | undefined) =>
+  status === 408 || status === 425 || status === 429;
 const transient = (e: ApiError) =>
   e.code === "network" ||
   e.code === "timeout" ||
+  retryableClientStatus(e.status) ||
   (e.status !== undefined && e.status >= 500 && e.status <= 599);
 const authoritative = (e: ApiError) =>
   e.code === "unauthorized" ||
   e.code === "not_found" ||
-  (e.status !== undefined && e.status >= 400 && e.status < 500);
+  (e.status !== undefined &&
+    e.status >= 400 &&
+    e.status < 500 &&
+    !retryableClientStatus(e.status));
 function errorCode(error: unknown): ProvisioningErrorCode {
   const message = error instanceof Error ? error.message : "storage";
   if (
@@ -168,6 +174,10 @@ export class TogetherProvisioning implements TogetherProvisioningPort {
           ),
         );
       }
+      // Detach the completed offline flight before upgrading. Other online
+      // waiters must join the new online flight, not repeatedly rejoin this one.
+      // Its remaining consumers still own their result and seed cleanup below.
+      if (this.pending === operation) this.pending = null;
     } catch (error) {
       const code = errorCode(error);
       if (code === "storage") this.storageFailed = true;

@@ -792,3 +792,113 @@ it("rechecks global authorization after friendship awaits prepared capability", 
     error: { code: "unauthorized" },
   });
 });
+
+it.each(
+  [408, 425, 429].flatMap((status) =>
+    (["trust", "register", "friendship"] as const).map((endpoint) => ({
+      status,
+      endpoint,
+    })),
+  ),
+)(
+  "preserves valid offline evidence after $endpoint returns $status",
+  async ({ status, endpoint }) => {
+    const initial = await prepared();
+    const proof = friend();
+    expect(await service.friendship(B, { online: true })).toEqual(ok(proof));
+    now += 400000;
+    api[endpoint].mockResolvedValueOnce(denial(status, "RATE_LIMITED"));
+    if (endpoint === "friendship") {
+      expect(await service.friendship(B, { online: true })).toEqual(ok(proof));
+    } else {
+      expect(await service.prepare({ online: true })).toEqual(ok(initial));
+    }
+    db.close();
+    db = new DatabaseSync(join(directory, "cache.db"));
+    database = adapter(db);
+    service = make();
+    expect((await service.prepare({ online: false })).ok).toBe(true);
+    expect(await service.friendship(B, { online: false })).toEqual(ok(proof));
+    expect(new ProvisioningCache(database).read(scope()).blocked).toBe(false);
+  },
+);
+it("rate limiting never grants absent or expired offline evidence", async () => {
+  api.trust.mockResolvedValueOnce(denial(429, "RATE_LIMITED"));
+  expect(await service.prepare({ online: true })).toMatchObject({
+    error: { code: "unavailable" },
+  });
+  expect(await service.prepare({ online: false })).toMatchObject({
+    error: { code: "offline-unprepared" },
+  });
+  await prepared();
+  api.friendship.mockResolvedValueOnce(denial(429, "RATE_LIMITED"));
+  expect(await service.friendship(B, { online: true })).toMatchObject({
+    error: { code: "unavailable" },
+  });
+  expect(await service.friendship(B, { online: false })).toEqual(ok(null));
+  now += 600001;
+  api.trust.mockResolvedValueOnce(denial(429, "RATE_LIMITED"));
+  expect(await service.prepare({ online: true })).toMatchObject({
+    error: { code: "unavailable" },
+  });
+  expect(await service.prepare({ online: false })).toMatchObject({
+    error: { code: "expired" },
+  });
+});
+it.each([
+  { callers: 2, status: 200 },
+  { callers: 8, status: 200 },
+  { callers: 2, status: 429 },
+  { callers: 2, status: 401 },
+])(
+  "upgrades a shared offline flight once for $callers online callers (status $status)",
+  async ({ callers, status }) => {
+    await prepared();
+    now += 600001;
+    const gate = deferred<string>();
+    secrets.getItemAsync.mockImplementationOnce(() => gate.promise);
+    if (status !== 200) api.trust.mockResolvedValueOnce(denial(status));
+    const offline = service.prepare({ online: false });
+    const online = Array.from({ length: callers }, () =>
+      service.prepare({ online: true }),
+    );
+    let completed = false;
+    const results = Promise.all([offline, ...online]).then((value) => {
+      completed = true;
+      return value;
+    });
+    gate.resolve(store.get(`together.provisioning.v1.${scope()}`)!);
+    // A timer cannot interrupt an infinite microtask chain. Bound the reproduction
+    // with another microtask participant so the old implementation fails, not hangs.
+    const watchdog = async () => {
+      for (let turn = 0; turn < 200 && !completed; turn++)
+        await Promise.resolve();
+      if (!completed) {
+        service.dispose();
+        throw new Error(
+          "Preparation did not settle within the bounded microtask budget",
+        );
+      }
+    };
+    const [settled] = await Promise.all([results, watchdog()]);
+    expect(settled[0]).toMatchObject({ error: { code: "expired" } });
+    expect(api.trust).toHaveBeenCalledTimes(2);
+    expect(api.register).toHaveBeenCalledTimes(status === 200 ? 2 : 1);
+    for (const result of settled.slice(1)) {
+      if (status === 200) expect(result.ok).toBe(true);
+      else
+        expect(result).toMatchObject({
+          error: { code: status === 401 ? "unauthorized" : "unavailable" },
+        });
+    }
+    if (status === 200) {
+      const first = settled[1],
+        second = settled[2];
+      if (!first.ok || !second.ok)
+        throw new Error("Expected prepared identities");
+      expect(first.value.seed).toEqual(second.value.seed);
+      first.value.seed.fill(0);
+      expect(second.value.seed.some((byte) => byte !== 0)).toBe(true);
+    }
+  },
+);

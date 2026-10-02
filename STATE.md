@@ -1,5 +1,27 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-02 — PR #482 Inspector review fixes
+
+Addressed both CI Inspector comments: retryable HTTP 408/425/429 responses no
+longer durably block Together or remove friendship proof. Only already-valid,
+verified cached evidence may be used; absent/expired proof still cannot authorize
+sharing and genuine authorization refusals remain durable. Completed offline
+preparation is detached before an online upgrade, so multiple waiting online
+callers share one new operation instead of endlessly rejoining the old one.
+Original consumers retain independent seed copies and cleanup ownership.
+
+Evidence: all 14 new regression cases fail against the previous implementation,
+then all 60 provisioning tests pass. Full mobile: 551 suites / 7,271 tests
+pass. Root typecheck 9/9, lint 6/6 (existing warnings), formatting and whitespace
+checks pass. Coverage for the changed service is
+96.57% statements / 94.62% branches / 100% functions / 98.70% lines. Includes
+real SQLite reopen after rate limiting, absent/expired proof, two/eight concurrent
+online waiters, success/rate-limit/denial outcomes and independent seed copies.
+The hang reproduction uses a bounded microtask participant: timers cannot abort
+microtask starvation. Local Inspector focused re-review: CLEAN. CI Inspector was
+not retriggered. Existing coverage/flakiness caveats from the PR remain recorded
+below. Together stays disabled and no native build was run.
+
 ### 2026-10-01 — PER-64 offline mobile provisioning
 
 Pulled `main` with `--ff-only` to `29b7d659` (merged PR #480) before creating
