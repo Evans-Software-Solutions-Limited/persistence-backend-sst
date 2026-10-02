@@ -2,6 +2,10 @@
 
 ### 2026-10-02 — PER-64 / PER-22 verified network lobbies
 
+Review: [PR #484](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/484),
+attached to the Codex task. PER-64/PER-22 and the central design reference link
+this handoff. Local Inspector reviewed implementation `b0990e04`.
+
 Pulled merged #483 to `8257b532` before creating
 `codex/together-network-browsing`; final main fetch still matches that commit.
 No unrelated changes or STATE conflict. Extends the reviewed radio cards and
