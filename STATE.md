@@ -2,6 +2,10 @@
 
 ### 2026-10-04 — PER-64 / PER-22 own-workout logging
 
+Review: [PR #485](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/485),
+attached to this task. PER-64, PER-22 and the central reviewed design document
+link the current handoff. Local Inspector reviewed implementation `1658c4e7`.
+
 Continued from merged #484 at `c6a71555`, pulled main before creating
 `codex/together-own-workout-logging`. Final pre-PR fetch still matches main;
 no unrelated local changes or STATE conflict. Production remains default-off.
