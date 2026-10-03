@@ -8,7 +8,7 @@ export type TogetherLanEvent =
   | { type: "disconnected"; peerId: string }
   | { type: "error"; code: string; peerId?: string };
 
-/** Raw, untrusted bytes. Only the authenticated Together channel may use this. */
+/** Raw, untrusted bytes. Anonymous probes carry public metadata only; admission and workout traffic require the authenticated channel. */
 export interface TogetherLanNative {
   startHost(lobbyId: string): Promise<void>;
   startDiscovery(): Promise<void>;

@@ -3,7 +3,10 @@ import { TextInput } from "react-native";
 import { Text, View } from "@tamagui/core";
 import { Btn } from "@/ui/components/foundation/Btn";
 import { Card } from "@/ui/components/foundation/Card";
-import type { TogetherLobbySnapshot } from "@/domain/ports/togetherLobby.port";
+import type {
+  TogetherLobbyAudience,
+  TogetherLobbySnapshot,
+} from "@/domain/ports/togetherLobby.port";
 
 export type TogetherLobbyScreen = "start" | "join";
 export interface TogetherLobbyPresenterProps {
@@ -12,6 +15,11 @@ export interface TogetherLobbyPresenterProps {
   code: string;
   notice: string;
   workoutName: string;
+  audience: TogetherLobbyAudience;
+  onAudienceChange(value: TogetherLobbyAudience): void;
+  onBrowse(): void;
+  onSelectDiscovered(sessionId: string): void;
+  onUseInvitation(): void;
   onCodeChange(value: string): void;
   onHost(): void;
   onSelect(): void;
@@ -32,6 +40,7 @@ const PHASE_COPY: Record<TogetherLobbySnapshot["phase"], string> = {
   preparing: "Preparing your secure connection…",
   selected: "Host identity verified. Choose Join to continue.",
   hosting: "Waiting for athletes on your Wi-Fi or hotspot.",
+  browsing: "Looking for verified open lobbies on this Wi-Fi or hotspot…",
   searching: "Looking for this host on your Wi-Fi or hotspot…",
   connecting: "Verifying the host connection…",
   "pending-approval": "Waiting for the host to approve your request.",
@@ -43,6 +52,10 @@ const PHASE_COPY: Record<TogetherLobbySnapshot["phase"], string> = {
 
 export function togetherErrorCopy(code?: string): string {
   if (!code) return "";
+  if (code === "discovery-expired")
+    return "This lobby listing has expired. Search this network again or ask the host for an invitation. Internet is not required.";
+  if (code === "host-unavailable")
+    return "This host is no longer available to join. Keep training on your own or choose another lobby.";
   if (/expired/i.test(code))
     return "Your offline access has expired. Connect to the internet to renew it, then try again.";
   if (/offline-unprepared/i.test(code))
@@ -95,16 +108,54 @@ export function TogetherLobbyPresenter(p: TogetherLobbyPresenterProps) {
             </Text>
             <Copy>Train without internet on the same reachable network.</Copy>
           </Card>
-          <Card>
+          <View
+            gap={10}
+            accessibilityRole="radiogroup"
+            accessibilityLabel="Who can join?"
+          >
             <Text fontFamily="$display" fontSize={15} color="$text">
               Who can join?
             </Text>
-            <Copy>
-              Share your invitation with the athletes joining you. Accepted
-              training partners join deliberately. Anyone else needs your
-              approval.
-            </Copy>
-          </Card>
+            {(
+              [
+                ["invite-only", "Private", "Code or QR only"],
+                [
+                  "open",
+                  "Open on this network",
+                  "Athletes on this Wi-Fi or hotspot can find it",
+                ],
+              ] as const
+            ).map(([value, title, detail]) => (
+              <Card
+                key={value}
+                onPress={() => p.onAudienceChange(value)}
+                accessibilityRole="radio"
+                accessibilityLabel={title}
+                accessibilityState={{ checked: p.audience === value }}
+                accent={p.audience === value ? "primary" : undefined}
+              >
+                <View flexDirection="row" alignItems="center" gap={12}>
+                  <Text
+                    color={p.audience === value ? "$primary" : "$text3"}
+                    fontSize={20}
+                  >
+                    {p.audience === value ? "◉" : "○"}
+                  </Text>
+                  <View flex={1}>
+                    <Text fontFamily="$display" fontSize={15} color="$text">
+                      {title}
+                    </Text>
+                    <Copy>{detail}</Copy>
+                  </View>
+                </View>
+              </Card>
+            ))}
+          </View>
+          <Copy>
+            Accepted training partners join deliberately. Anyone else needs your
+            approval. Joining never grants access to history or permission to
+            log for someone.
+          </Copy>
           <Copy>
             Nearby radio is not available yet. Use the same Wi-Fi or hotspot.
           </Copy>
@@ -154,8 +205,61 @@ export function TogetherLobbyPresenter(p: TogetherLobbyPresenterProps) {
               </Btn>
             </View>
           </Card>
+          <Btn full variant="outline" onPress={p.onBrowse}>
+            Find an open lobby on this network
+          </Btn>
           {p.scanner}
         </>
+      )}
+      {s.phase === "browsing" && (
+        <View gap={12}>
+          <Copy>
+            Only open lobbies on this reachable Wi-Fi or hotspot appear here.
+            Review a lobby, then choose Join separately.
+          </Copy>
+          {(s.discovered ?? []).length === 0 && (
+            <Card>
+              <Copy>
+                No verified open lobbies found yet. Private sessions need a code
+                or QR.
+              </Copy>
+            </Card>
+          )}
+          {s.discovered?.map((lobby) => (
+            <Card key={lobby.sessionId}>
+              <View gap={8}>
+                <Text fontFamily="$display" fontSize={17} color="$text">
+                  {lobby.workoutName}
+                </Text>
+                <Copy>Verified host · {lobby.hostUserId}</Copy>
+                <Copy>Athletes · {lobby.memberCount} of 4 at last check</Copy>
+                <Copy>
+                  Friends join deliberately. Other athletes request approval.
+                </Copy>
+                <Btn
+                  full
+                  variant="outline"
+                  onPress={() => p.onSelectDiscovered(lobby.sessionId)}
+                >
+                  View lobby
+                </Btn>
+              </View>
+            </Card>
+          ))}
+          <Btn full variant="outline" onPress={p.onBrowse}>
+            Search again
+          </Btn>
+          <Btn full variant="ghost" onPress={p.onUseInvitation}>
+            Use a code or QR instead
+          </Btn>
+        </View>
+      )}
+      {s.role === "host" && s.audience && (
+        <Copy>
+          {s.audience === "invite-only"
+            ? "Private · code or QR only"
+            : "Open · discoverable on this Wi-Fi or hotspot"}
+        </Copy>
       )}
       {s.selection && (
         <Card>

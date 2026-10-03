@@ -1,4 +1,11 @@
+import { encode64 } from "./security/encoding";
+import {
+  TogetherLobbyBrowser,
+  signSummary,
+  type LobbySummary,
+} from "./lobbyDiscovery";
 import type {
+  TogetherLobbyAudience,
   TogetherLobbyPort,
   TogetherLobbySnapshot,
 } from "../../domain/ports/togetherLobby.port";
@@ -16,6 +23,7 @@ import { TogetherLocalLobby, type LocalJoinRequest } from "./localLobby";
 import { TogetherLanSession, type LanSessionEvent } from "./lanSession";
 import { LocalSecureChannel } from "./security/channel";
 import {
+  requestHash,
   signPayload,
   verifyCredential,
   type JoinConsent,
@@ -55,6 +63,8 @@ export class TogetherLobbyController implements TogetherLobbyPort {
   private generation = 0;
   private resources?: Resources;
   private selected?: LobbyInvitation;
+  private browser?: TogetherLobbyBrowser;
+  private discovered = new Map<string, LobbySummary>();
   private identity?: ReadyIdentity;
   private nativeQueue: Promise<void> = Promise.resolve();
   private timer?: ReturnType<typeof setTimeout>;
@@ -125,6 +135,9 @@ export class TogetherLobbyController implements TogetherLobbyPort {
     this.clearTimers();
     const resources = this.resources;
     this.resources = undefined;
+    const browser = this.browser;
+    this.browser = undefined;
+    this.discovered.clear();
     this.selected = undefined;
     this.identity?.seed.fill(0);
     this.identity = undefined;
@@ -154,6 +167,7 @@ export class TogetherLobbyController implements TogetherLobbyPort {
       this.publish({ phase: "unavailable", error: "storage" });
     }
     await this.enqueue(async () => {
+      await browser?.stop();
       await resources?.session?.stop();
     }).catch(() => {
       if (this.generation === cancelledGeneration)
@@ -196,7 +210,10 @@ export class TogetherLobbyController implements TogetherLobbyPort {
     this.publish({ phase: "preparing", error: undefined });
     return generation;
   }
-  async host(workoutName: string): Promise<void> {
+  async host(
+    workoutName: string,
+    audience: TogetherLobbyAudience = "invite-only",
+  ): Promise<void> {
     const generation = await this.begin();
     if (generation === undefined) return;
     try {
@@ -207,16 +224,27 @@ export class TogetherLobbyController implements TogetherLobbyPort {
         hostUserId: identity.credential.payload.userId,
         hostDeviceId: identity.deviceId,
       };
+      const invitationToken =
+        audience === "invite-only"
+          ? encode64(this.options.randomBytes(32), true)
+          : undefined;
       const invitation = createLobbyInvitation(
         pin,
         workoutName,
         identity.credential,
         identity.seed,
+        { audience, ...(invitationToken ? { invitationToken } : {}) },
       );
-      const resources = this.createResources(pin, identity);
+      const resources = this.createResources(
+        pin,
+        identity,
+        audience,
+        invitationToken,
+      );
       resources.lobby.start(this.consent(pin, identity));
       this.publish({
         role: "host",
+        audience,
         invitation,
         selection: {
           hostUserId: pin.hostUserId,
@@ -228,6 +256,121 @@ export class TogetherLobbyController implements TogetherLobbyPort {
         this.publish({ phase: "hosting" });
         this.roster();
       }
+    } catch (error) {
+      this.failure(error, generation);
+    }
+  }
+  private deniedHost(hostUserId: string) {
+    const pairs = [
+      ...(this.options.deniedPairs?.() ?? []),
+      ...(this.options.provisioning.deniedPairs?.([
+        this.account!,
+        hostUserId,
+      ]) ?? []),
+    ];
+    return (
+      hostUserId === this.account ||
+      pairs.some(
+        ([a, b]) =>
+          (a === this.account && b === hostUserId) ||
+          (b === this.account && a === hostUserId),
+      )
+    );
+  }
+  async browse(): Promise<void> {
+    const generation = await this.begin();
+    if (generation === undefined) return;
+    try {
+      const identity = await this.prepare(generation);
+      if (!identity) return;
+      if (!this.options.native)
+        throw new Error("Together LAN requires a compatible native build");
+      const browser = new TogetherLobbyBrowser({
+        native: this.options.native,
+        trustedKeys: identity.trustedKeys,
+        randomBytes: this.options.randomBytes,
+        now: () => this.now(),
+        onChange: (summaries) => {
+          if (!this.current(generation)) return;
+          this.discovered.clear();
+          for (const summary of summaries)
+            if (!this.deniedHost(summary.hostUserId))
+              this.discovered.set(summary.sessionId, summary);
+          this.publish({
+            discovered: [...this.discovered.values()].map(
+              ({ sessionId, hostUserId, workoutName, memberCount }) => ({
+                sessionId,
+                hostUserId,
+                workoutName,
+                memberCount,
+              }),
+            ),
+          });
+        },
+        onError: (code) => this.failure(new Error(code), generation),
+      });
+      this.browser = browser;
+      this.publish({ phase: "browsing", role: "guest", discovered: [] });
+      this.watchExpiry(identity, Infinity, generation);
+      await this.enqueue(async () => {
+        if (this.current(generation)) await browser.start();
+      });
+    } catch (error) {
+      this.failure(error, generation);
+    }
+  }
+  async selectDiscovered(sessionId: string): Promise<void> {
+    const summary = this.discovered.get(sessionId);
+    if (
+      !this.allowed() ||
+      this.snapshot.phase !== "browsing" ||
+      !summary ||
+      !this.identity
+    )
+      return;
+    const generation = this.generation;
+    try {
+      if (summary.expiresAt <= this.now()) throw new Error("discovery-expired");
+      if (this.deniedHost(summary.hostUserId))
+        throw new Error("host-unavailable");
+      verifyCredential(
+        summary.credential,
+        this.identity.trustedKeys,
+        this.now(),
+      );
+      const browser = this.browser;
+      this.browser = undefined;
+      await this.enqueue(async () => {
+        await browser?.stop();
+      });
+      if (!this.current(generation)) return;
+      if (summary.expiresAt <= this.now()) throw new Error("discovery-expired");
+      if (this.deniedHost(summary.hostUserId))
+        throw new Error("host-unavailable");
+      this.selected = {
+        kind: "together-invitation-v2",
+        audience: "open",
+        sessionId: summary.sessionId,
+        hostUserId: summary.hostUserId,
+        hostDeviceId: summary.hostDeviceId,
+        credential: summary.credential,
+        workoutName: summary.workoutName,
+      };
+      this.discovered.clear();
+      this.publish({
+        phase: "selected",
+        audience: "open",
+        discovered: [],
+        selection: {
+          hostUserId: summary.hostUserId,
+          workoutName: summary.workoutName,
+        },
+      });
+      this.watchExpiry(
+        this.identity,
+        summary.credential.payload.expiresAt,
+        generation,
+      );
     } catch (error) {
       this.failure(error, generation);
     }
@@ -245,9 +388,12 @@ export class TogetherLobbyController implements TogetherLobbyPort {
       );
       if (selected.hostUserId === this.account)
         throw new Error("own-invitation");
+      if (this.deniedHost(selected.hostUserId))
+        throw new Error("host-unavailable");
       this.selected = selected;
       this.publish({
         phase: "selected",
+        audience: selected.audience ?? "open",
         role: "guest",
         selection: {
           hostUserId: selected.hostUserId,
@@ -288,6 +434,9 @@ export class TogetherLobbyController implements TogetherLobbyPort {
         credential: identity.credential,
         consent: this.consent(selected, identity),
         ...(friendship.value ? { friendship: friendship.value } : {}),
+        ...(selected.invitationToken
+          ? { invitationToken: selected.invitationToken }
+          : {}),
       };
       await this.start(resources, generation);
     } catch (error) {
@@ -311,12 +460,20 @@ export class TogetherLobbyController implements TogetherLobbyPort {
       identity.seed,
     );
   }
-  private createResources(pin: HostPin, identity: ReadyIdentity): Resources {
+  private createResources(
+    pin: HostPin,
+    identity: ReadyIdentity,
+    audience: TogetherLobbyAudience = "open",
+    invitationToken?: string,
+  ): Resources {
     const store = new TogetherLocalStore(this.options.database, this.account!);
     const lobby = new TogetherLocalLobby(store, {
       ...pin,
       ...identity,
-      audience: "open",
+      audience,
+      ...(invitationToken
+        ? { invitationTokenHash: requestHash(invitationToken) }
+        : {}),
       invitedUserIds: [],
       deniedPairs: (users) => [
         ...(this.options.deniedPairs?.() ?? []),
@@ -348,6 +505,19 @@ export class TogetherLobbyController implements TogetherLobbyPort {
             randomBytes: this.options.randomBytes,
             now: () => this.now(),
           }),
+        probeSummary: (nonce) => {
+          if (!this.current(generation) || this.snapshot.audience !== "open")
+            return;
+          return signSummary(
+            resources.lobby.pin,
+            resources.identity,
+            this.snapshot.selection!.workoutName,
+            resources.lobby.store.current(resources.lobby.pin.sessionId)!
+              .payload.members.length,
+            nonce,
+            this.now(),
+          );
+        },
         onEvent: (event) => {
           if (this.current(generation))
             this.event(event, resources, generation);

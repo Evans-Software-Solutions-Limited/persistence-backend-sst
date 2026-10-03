@@ -1,5 +1,91 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-03 — PR #484 lost-probe Inspector fix
+
+Validated the next CI Inspector lead: losing the currently connected discovery
+endpoint called fatal and discarded unrelated verified lobbies. Connected probes
+now use the existing per-peer finish path, preserving other summaries and
+waiting for disconnect to complete before trying the next endpoint. Loss before
+peer identity is bound still stops the generation, preventing stale connected
+events from being attributed to a different endpoint.
+
+The connected-loss regression fails before the fix and passes after it. It uses
+real signed summaries, deferred disconnect, late lost-peer frames/errors and
+continued verification of the next host. A separate regression retains the
+pre-connect safety guard. Browser/controller suites: 57 tests passed. Discovery
+coverage 98.37/95.74/100/100% statements/branches/functions/lines; controller
+remains above 90% in all metrics. Typecheck 9/9 and lint 6/6 pass with existing
+warnings; formatting and whitespace pass. Evidence is simulated LAN, not device
+proof. No native build or CI Inspector retrigger; production remains disabled.
+
+
+### 2026-10-03 — PR #484 blocked-invitation Inspector fix
+
+Validated CI Inspector's single lead: selectInvite used own-invitation for
+blocked pairs as well as self-invitations, so the existing presenter suggested
+a replacement code that could not help. Preserve the explicit self-invitation
+check and return host-unavailable for a denied host, matching network selection.
+The error does not disclose which athlete blocked the other.
+
+Four controller regressions fail before the fix and pass after it, covering
+both pair directions through provisioning and injected policy denials. They
+also prove no selection or LAN admission begins. Existing self-invitation
+coverage remains green; a presenter regression checks the helpful unavailable
+message and absence of replacement-code advice. 71 focused tests pass; controller
+coverage 97.27/92.89/98.43/98.49% statements/branches/functions/lines, presenter
+100% throughout. Root typecheck 9/9 and lint 6/6 pass (existing warnings).
+No native build or CI Inspector re-trigger; production stays disabled.
+
+
+### 2026-10-02 — PER-64 / PER-22 verified network lobbies
+
+Review: [PR #484](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/484),
+attached to the Codex task. PER-64/PER-22 and the central design reference link
+this handoff. Local Inspector reviewed implementation `b0990e04`.
+
+Pulled merged #483 to `8257b532` before creating
+`codex/together-network-browsing`; final main fetch still matches that commit.
+No unrelated changes or STATE conflict. Extends the reviewed radio cards and
+join/consent flow with private/open same-network lobbies, default-off.
+
+Open discovery uses anonymous nonce probes and host-signed, 15-second summaries
+verified with the visitor's provisioned issuer keys. No visitor credentials,
+logs, history or invitation secrets go to an unverified endpoint. Only verified
+host pins reach selection, and Join remains separate. Private code/QR now
+carries a random bearer token; immutable host policy persists only its hash.
+Tokens permit a request, not stranger approval, free access, PREV or log-for.
+Paid checks, current blocks and four seats remain enforced.
+
+Local Inspector final full-diff verdict: CLEAN after fixing Android normal EOF
+errors terminating browsing and stale-listing messages incorrectly asking users
+to renew offline credentials. Added error/disconnect/late-send regressions.
+Selection pins the host through credential lifetime, so reading consent is not
+limited by the short listing lifetime. Browser cancellation invalidates delayed
+camera permission; dismiss retains admitted lobbies but stops discovery.
+
+Focused evidence: 143 runtime tests across five suites and 40 UI tests across
+two suites. All eight changed runtime/UI files exceed 90% in all coverage
+metrics. Typecheck 9/9; lint 6/6 with existing warnings; non-mobile tests 18/18
+and build 12/12 reused valid Turbo cache; formatting and whitespace pass.
+Full mobile: 557 suites / 7,386 tests passed. The inherited forced-worker
+teardown warning remains; focused new suites exit cleanly. Mutation of private
+host submission to open makes the audience regression fail.
+
+Visual evidence: actual React presenters through React Native Web with simulated
+snapshots, compared against the sole reviewed Claude Who can join screen. New
+network-audience/network-browse previews and reviewed-audience-reference are in
+the task visualization together directory. This proves presentation only, not
+native sheet geometry or physical transport. Native source is unchanged; no
+native/prebuild/EAS build, deployment, activation or CI Inspector was triggered.
+
+Remaining: Nearby radio, Android hotspot-owner, full workout/logging/PREV/
+delegation/cache/completion/recovery wiring, profile/partner defaults and
+projection, authority transitions, and mixed-device/live infrastructure proof.
+Open metadata is intentionally public on the reachable LAN; known blocks filter
+the app list and admission, not an anonymous observer. Private invitations are
+forwardable bearer invites, not named-recipient restrictions. PER-64 and PER-22
+remain open. See NETWORK-LOBBIES.md. Notification skill remains unavailable.
+
 ### 2026-10-02 — PER-64 / PER-22 provisioned lobby integration
 
 Review: [PR #483](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/483),

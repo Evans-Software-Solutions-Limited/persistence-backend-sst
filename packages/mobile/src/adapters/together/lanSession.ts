@@ -1,3 +1,4 @@
+import { readProbe } from "./lobbyDiscovery";
 import type {
   TogetherLanNative,
   TogetherLanEvent,
@@ -31,6 +32,7 @@ interface Connection {
   channel: LocalSecureChannel;
   link: TogetherLocalLink;
   authenticated: boolean;
+  received: boolean;
   admitted: boolean;
   frames: number;
   processing: Promise<void>;
@@ -44,6 +46,7 @@ export interface LanSessionOptions {
   channelFactory: (role: "host" | "guest") => LocalSecureChannel;
   enabled?: boolean;
   onEvent: (event: LanSessionEvent) => void;
+  probeSummary?: (nonce: string) => string | undefined;
 }
 
 /** Foreground LAN lifecycle only. No UI mounting, account switching or cloud fallback. */
@@ -266,6 +269,17 @@ export class TogetherLanSession {
     connection.processing = connection.processing
       .then(async () => {
         if (this.links.get(event.peerId) !== connection) return;
+        if (this.mode === "host" && !connection.received) {
+          connection.received = true;
+          const nonce = readProbe(event.frame);
+          if (nonce) {
+            const summary = this.options.probeSummary?.(nonce);
+            if (summary) await this.options.native!.send(event.peerId, summary);
+            this.drop(event.peerId);
+            await this.disconnect(event.peerId);
+            return;
+          }
+        }
         const result = await connection.link.receive(event.frame);
         if (this.links.get(event.peerId) !== connection) return;
         if (!connection.authenticated && connection.link.ready) {
@@ -341,6 +355,7 @@ export class TogetherLanSession {
         channel,
         link,
         authenticated: false,
+        received: false,
         admitted: false,
         frames: 0,
         processing: Promise.resolve(),
