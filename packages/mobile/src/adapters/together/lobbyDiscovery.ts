@@ -193,8 +193,13 @@ export class TogetherLobbyBrowser {
       );
       this.summaries.delete(event.endpointId);
       this.publish();
-      if (this.active?.endpointId === event.endpointId)
-        this.fatal("unreachable-host");
+      const active = this.active;
+      if (active?.endpointId === event.endpointId) {
+        // A bound socket can be closed independently. An unbound connection
+        // must end this generation because native connected events lack endpoint IDs.
+        if (active.peerId) void this.finish(active);
+        else this.fatal("unreachable-host");
+      }
     } else if (event.type === "connected") {
       const active = this.active;
       if (!active || active.peerId || event.incoming) {

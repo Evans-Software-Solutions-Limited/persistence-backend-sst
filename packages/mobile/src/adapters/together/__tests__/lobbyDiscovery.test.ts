@@ -224,7 +224,7 @@ describe("bounded anonymous network browser lifecycle", () => {
       if (kind === "connect")
         jest.mocked(native.connect).mockRejectedValueOnce(new Error("lost"));
       discover();
-      if (kind !== "connect") connect();
+      if (kind !== "connect" && kind !== "lost") connect();
       if (kind === "disconnect") {
         jest.mocked(native.disconnect).mockRejectedValueOnce(new Error("lost"));
         emit({ type: "frame", peerId: "peer", frame: "{}" });
@@ -236,6 +236,76 @@ describe("bounded anonymous network browser lifecycle", () => {
       expect(errors).toHaveBeenCalledTimes(1);
     },
   );
+  it("losing a connected probe preserves verified hosts and safely advances after disconnect", async () => {
+    await browser.start();
+    discover("verified");
+    discover("lost");
+    discover("next");
+    connect("verified-peer");
+    const reply = (peerId: string, workoutName: string) => {
+      const challenge = JSON.parse(
+        jest.mocked(native.send).mock.calls.at(-1)![1],
+      ).nonce;
+      emit({
+        type: "frame",
+        peerId,
+        frame: signSummary(pin, identity, workoutName, 1, challenge, now),
+      });
+    };
+    reply("verified-peer", "Still here");
+    await settle();
+    connect("lost-peer");
+    const lateChallenge = JSON.parse(
+      jest.mocked(native.send).mock.calls.at(-1)![1],
+    ).nonce;
+    let disconnected!: () => void;
+    jest.mocked(native.disconnect).mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          disconnected = resolve;
+        }),
+    );
+    emit({ type: "lost", endpointId: "lost" });
+    expect(native.disconnect).toHaveBeenCalledWith("lost-peer");
+    expect(native.connect).toHaveBeenCalledTimes(2);
+    expect(changes).toHaveBeenLastCalledWith([
+      expect.objectContaining({ workoutName: "Still here" }),
+    ]);
+    emit({
+      type: "frame",
+      peerId: "lost-peer",
+      frame: signSummary(pin, identity, "Lost", 1, lateChallenge, now),
+    });
+    emit({ type: "error", peerId: "lost-peer", code: "read_failed" });
+    emit({ type: "disconnected", peerId: "lost-peer" });
+    expect(native.connect).toHaveBeenCalledTimes(2);
+    disconnected();
+    await settle();
+    expect(native.connect).toHaveBeenLastCalledWith("next");
+    connect("next-peer");
+    emit({ type: "lost", endpointId: "lost" });
+    emit({ type: "error", peerId: "lost-peer", code: "read_failed" });
+    reply("next-peer", "Next host");
+    await settle();
+    expect(changes).toHaveBeenLastCalledWith([
+      expect.objectContaining({ workoutName: "Still here" }),
+      expect.objectContaining({ workoutName: "Next host" }),
+    ]);
+    expect(errors).not.toHaveBeenCalled();
+    expect(native.stop).not.toHaveBeenCalled();
+  });
+  it("losing an unbound probe stops the generation so a late connection cannot become the next host", async () => {
+    await browser.start();
+    discover("lost");
+    discover("next");
+    emit({ type: "lost", endpointId: "lost" });
+    await settle();
+    connect("late-peer");
+    expect(errors).toHaveBeenCalledWith("unreachable-host");
+    expect(native.stop).toHaveBeenCalledTimes(1);
+    expect(native.connect).toHaveBeenCalledTimes(1);
+    expect(native.send).not.toHaveBeenCalled();
+  });
   it("serial stop is idempotent and late native events are inert", async () => {
     await browser.start();
     discover();

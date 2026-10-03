@@ -1,5 +1,24 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-03 — PR #484 lost-probe Inspector fix
+
+Validated the next CI Inspector lead: losing the currently connected discovery
+endpoint called fatal and discarded unrelated verified lobbies. Connected probes
+now use the existing per-peer finish path, preserving other summaries and
+waiting for disconnect to complete before trying the next endpoint. Loss before
+peer identity is bound still stops the generation, preventing stale connected
+events from being attributed to a different endpoint.
+
+The connected-loss regression fails before the fix and passes after it. It uses
+real signed summaries, deferred disconnect, late lost-peer frames/errors and
+continued verification of the next host. A separate regression retains the
+pre-connect safety guard. Browser/controller suites: 57 tests passed. Discovery
+coverage 98.37/95.74/100/100% statements/branches/functions/lines; controller
+remains above 90% in all metrics. Typecheck 9/9 and lint 6/6 pass with existing
+warnings; formatting and whitespace pass. Evidence is simulated LAN, not device
+proof. No native build or CI Inspector retrigger; production remains disabled.
+
+
 ### 2026-10-03 — PR #484 blocked-invitation Inspector fix
 
 Validated CI Inspector's single lead: selectInvite used own-invitation for
