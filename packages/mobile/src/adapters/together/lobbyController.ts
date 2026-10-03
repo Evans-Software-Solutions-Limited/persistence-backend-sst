@@ -386,8 +386,10 @@ export class TogetherLobbyController implements TogetherLobbyPort {
         identity.trustedKeys,
         this.now(),
       );
-      if (this.deniedHost(selected.hostUserId))
+      if (selected.hostUserId === this.account)
         throw new Error("own-invitation");
+      if (this.deniedHost(selected.hostUserId))
+        throw new Error("host-unavailable");
       this.selected = selected;
       this.publish({
         phase: "selected",

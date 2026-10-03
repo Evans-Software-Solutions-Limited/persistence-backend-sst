@@ -206,6 +206,32 @@ describe("reviewed lobby coordinator, real cryptography and SQLite, simulated na
     databases.splice(0).forEach((db) => db.close());
     jest.useRealTimers();
   });
+  it.each([
+    ["provisioning", false],
+    ["provisioning", true],
+    ["policy", false],
+    ["policy", true],
+  ] as const)(
+    "blocked host invitation uses unavailable copy (%s, reversed=%s)",
+    async (source, reversed) => {
+      const pairs = () =>
+        [[id(reversed ? 2 : 1), id(reversed ? 1 : 2)]] as const;
+      const guest = setup(2, source === "policy" ? { deniedPairs: pairs } : {});
+      if (source === "provisioning") guest.provisioning.deniedPairs = pairs;
+      await guest.controller.selectInvite(invitation());
+      expect(guest.controller.getSnapshot()).toMatchObject({
+        phase: "unavailable",
+        error: "host-unavailable",
+        members: [],
+        pending: [],
+      });
+      expect(guest.controller.getSnapshot().selection).toBeUndefined();
+      await guest.controller.join();
+      expect(guest.native.startDiscovery).not.toHaveBeenCalled();
+      expect(guest.native.connect).not.toHaveBeenCalled();
+    },
+  );
+
   it("friend explicitly joins offline and both rosters reflect independent verified athletes", async () => {
     const host = setup(),
       guest = setup(2);

@@ -211,3 +211,12 @@ it("distinguishes stale discovery from credential expiry without requiring inter
   );
   expect(togetherErrorCopy("expired")).toContain("renew");
 });
+
+it("blocked host invitation directs the athlete to another lobby, not a replacement code", () => {
+  const p = props("unavailable");
+  p.snapshot.error = "host-unavailable";
+  const r = renderWithTheme(<TogetherLobbyPresenter {...p} />);
+  expect(r.getByText(/This host is no longer available to join/)).toBeTruthy();
+  expect(r.queryByText(/Ask the host for a new code or QR/)).toBeNull();
+  expect(r.queryByText("Join the lobby")).toBeNull();
+});

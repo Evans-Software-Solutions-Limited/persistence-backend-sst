@@ -1,5 +1,23 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-03 — PR #484 blocked-invitation Inspector fix
+
+Validated CI Inspector's single lead: selectInvite used own-invitation for
+blocked pairs as well as self-invitations, so the existing presenter suggested
+a replacement code that could not help. Preserve the explicit self-invitation
+check and return host-unavailable for a denied host, matching network selection.
+The error does not disclose which athlete blocked the other.
+
+Four controller regressions fail before the fix and pass after it, covering
+both pair directions through provisioning and injected policy denials. They
+also prove no selection or LAN admission begins. Existing self-invitation
+coverage remains green; a presenter regression checks the helpful unavailable
+message and absence of replacement-code advice. 71 focused tests pass; controller
+coverage 97.27/92.89/98.43/98.49% statements/branches/functions/lines, presenter
+100% throughout. Root typecheck 9/9 and lint 6/6 pass (existing warnings).
+No native build or CI Inspector re-trigger; production stays disabled.
+
+
 ### 2026-10-02 — PER-64 / PER-22 verified network lobbies
 
 Review: [PR #484](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/484),
