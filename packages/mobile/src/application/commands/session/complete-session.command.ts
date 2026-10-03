@@ -55,6 +55,16 @@ export type CompleteSessionInput = {
   onBehalfClientId?: string | null;
 };
 
+export type TogetherCompletionPendingError = {
+  readonly kind: "together_completion_pending";
+  readonly code: "TOGETHER_COMPLETION_PENDING";
+  readonly message: string;
+};
+
+export type FinalizeSessionError =
+  | SessionNotFoundError
+  | TogetherCompletionPendingError;
+
 export type CompletedSessionResult = {
   session: WorkoutSession;
   /** Total seconds from `startedAt` → `completedAt`, ≥ 0. */
@@ -64,7 +74,7 @@ export type CompletedSessionResult = {
 export function completeSessionCommand(
   deps: CompleteSessionCommandDeps,
   input: CompleteSessionInput = {},
-): Result<CompletedSessionResult, SessionNotFoundError> {
+): Result<CompletedSessionResult, FinalizeSessionError> {
   return finalizeSessionCommand(
     deps,
     "completed",
@@ -93,13 +103,24 @@ export function finalizeSessionCommand(
    * on-behalf record endpoint for this client instead of the self endpoint.
    */
   onBehalfClientId: string | null = null,
-): Result<CompletedSessionResult, SessionNotFoundError> {
+): Result<CompletedSessionResult, FinalizeSessionError> {
   const session = deps.storage.getActiveSession(deps.userId);
   if (!session) {
     return fail({
       kind: "session_not_found",
       code: "SESSION_NOT_FOUND",
       message: `No active session — cannot ${status === "completed" ? "complete" : "cancel"}.`,
+    });
+  }
+
+  // The Together execution has its own result identity. Never send it through
+  // the solo bulk-record path, including after restart or loss of sharing.
+  if (session.together) {
+    return fail({
+      kind: "together_completion_pending",
+      code: "TOGETHER_COMPLETION_PENDING",
+      message:
+        "Your Together workout is saved on this device. Result saving is not available yet.",
     });
   }
 

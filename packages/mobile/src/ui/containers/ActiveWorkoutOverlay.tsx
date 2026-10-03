@@ -29,7 +29,7 @@
 
 import { router, useSegments } from "expo-router";
 import { useEffect, useState } from "react";
-import { View } from "react-native";
+import { Alert, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { cancelSessionCommand } from "@/application/commands/session";
 import {
@@ -170,10 +170,14 @@ export function ActiveWorkoutOverlay() {
     // client's behalf so the write stays scoped to the client + audited.
     const onBehalfClientId =
       useActiveWorkout.getState().active?.withClient?.id ?? null;
-    cancelSessionCommand(
+    const result = cancelSessionCommand(
       { storage, userId: session.userId },
       { onBehalfClientId },
     );
+    if (!result.ok && result.error.kind === "together_completion_pending") {
+      Alert.alert("Workout saved locally", result.error.message);
+      return;
+    }
     void useActiveWorkout.getState().end();
     // The bar's own end path triggers no navigation, so the cacheVersion-keyed
     // memo wouldn't otherwise refresh — re-read so the (now-cancelled) session

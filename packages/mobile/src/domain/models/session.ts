@@ -30,6 +30,8 @@ export type SessionClientRef = {
 };
 
 export type WorkoutSession = {
+  /** Durable Together checkpoint owns this workout after promotion. */
+  together?: { sessionId: string; executionId: string };
   /** `local-…`-prefixed UUID until the bulk-record flush returns canonical IDs. */
   id: string;
   userId: string;

@@ -415,3 +415,28 @@ it("shows the bar when the session starts AFTER mount (Inspector Brad 🔴 repro
     expect(getByTestId("active-workout-bar")).toBeTruthy();
   });
 });
+
+it("keeps promoted workout and active pointer when ending from the minimized bar", async () => {
+  const { adapters, storage, auth } = makeAdapters();
+  signIn(auth);
+  storage.cacheActiveSession(
+    USER,
+    makeSession({ together: { sessionId: "shared", executionId: "own" } }),
+  );
+  useActiveWorkout.setState({
+    active: {
+      sessionId: "local-abc",
+      workoutId: "w-1",
+      name: "Upper Body",
+      startedAt: new Date().toISOString(),
+    },
+    expanded: false,
+  });
+  const { findByTestId, getByTestId } = renderOverlay(adapters);
+  fireEvent(await findByTestId("active-workout-bar"), "longPress");
+  fireEvent.press(getByTestId("end-confirm-dialog-end"));
+  expect(storage.getActiveSession(USER)?.together).toBeTruthy();
+  expect(storage.getPendingMutations()).toHaveLength(0);
+  expect(useActiveWorkout.getState().active?.sessionId).toBe("local-abc");
+  expect(getByTestId("active-workout-bar")).toBeTruthy();
+});

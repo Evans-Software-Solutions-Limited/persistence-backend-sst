@@ -371,3 +371,154 @@ it("starting discovery invalidates a camera permission response before preparati
   expect(h.lobby.browse).toHaveBeenCalledTimes(1);
   expect(r.queryByTestId("together-qr-camera")).toBeNull();
 });
+
+function workoutHarness() {
+  const h = harness();
+  const listeners = new Set<() => void>();
+  let status:
+    | import("@/domain/ports/togetherWorkout.port").TogetherWorkoutStatus
+    | null = null;
+  const workout: import("@/domain/ports/togetherWorkout.port").TogetherWorkoutPort =
+    {
+      getActive: jest.fn(),
+      promote: jest.fn(async () => {}),
+      read: jest.fn(),
+      save: jest.fn(),
+      status: jest.fn((account, id) =>
+        account === "a" && id === "local" ? status : null,
+      ),
+      subscribe: (l) => {
+        listeners.add(l);
+        return () => {
+          listeners.delete(l);
+        };
+      },
+    };
+  return {
+    ...h,
+    lobby: { ...h.lobby, workout },
+    workout,
+    listeners,
+    update: (
+      sharing: import("@/domain/ports/togetherWorkout.port").TogetherWorkoutStatus["sharing"],
+      receivedCount = 0,
+    ) =>
+      act(() => {
+        status = {
+          sessionId: "s",
+          executionId: "e",
+          localSessionId: "local",
+          sharing,
+          receivedCount,
+          pendingCount: 2 - receivedCount,
+        };
+        listeners.forEach((l) => l());
+      }),
+  };
+}
+it("promotes only on consent using the fresh workout and shows durable receipt updates", async () => {
+  const h = workoutHarness();
+  const current: import("@/domain/models/session").WorkoutSession = {
+    id: "local",
+    userId: "a",
+    workoutId: null,
+    name: "Latest name",
+    status: "in_progress",
+    startedAt: "2026-10-04T09:00:00Z",
+    completedAt: null,
+    notes: null,
+    exercises: [],
+  };
+  const getWorkout = jest.fn(() => current);
+  const r = renderWithTheme(
+    <TogetherLobbyContainer
+      lobby={h.lobby}
+      workoutName="Old name"
+      accountId="a"
+      localSessionId="local"
+      getWorkout={getWorkout}
+    />,
+  );
+  fireEvent.press(r.getByText("Start"));
+  h.publish({ phase: "pending-approval" });
+  expect(r.queryByText("Use my workout in Together")).toBeNull();
+  expect(getWorkout).not.toHaveBeenCalled();
+  h.publish({ phase: "joined" });
+  expect(h.workout.promote).not.toHaveBeenCalled();
+  fireEvent.press(r.getByText("Use my workout in Together"));
+  expect(h.workout.promote).toHaveBeenCalledWith(current);
+  h.update("active", 1);
+  expect(r.getByText(/Changes received by another athlete: 1/)).toBeTruthy();
+  expect(r.queryByText(/Your workout remains personal/)).toBeNull();
+  h.publish({ phase: "idle" });
+  h.update("local-only");
+  expect(r.queryByText("Start the session")).toBeNull();
+  expect(r.queryByText("Join")).toBeNull();
+  expect(
+    r.getByText(/My workout · Saved locally · sharing ended/),
+  ).toBeTruthy();
+  r.rerender(
+    <TogetherLobbyContainer
+      lobby={h.lobby}
+      workoutName="Other"
+      accountId="b"
+      localSessionId="local"
+      getWorkout={getWorkout}
+    />,
+  );
+  expect(r.queryByText(/My workout ·/)).toBeNull();
+  expect(r.getByText("Start")).toBeTruthy();
+  r.unmount();
+  expect(h.listeners.size).toBe(0);
+});
+it("rejects a changed personal workout and explains unsupported promotion without hiding logging", async () => {
+  const h = workoutHarness();
+  const getWorkout = jest.fn<
+    ReturnType<
+      NonNullable<
+        React.ComponentProps<typeof TogetherLobbyContainer>["getWorkout"]
+      >
+    >,
+    []
+  >(() => null);
+  const r = renderWithTheme(
+    <TogetherLobbyContainer
+      lobby={h.lobby}
+      workoutName="Squats"
+      accountId="a"
+      localSessionId="local"
+      getWorkout={getWorkout}
+    />,
+  );
+  fireEvent.press(r.getByText("Start"));
+  h.publish({ phase: "hosting" });
+  fireEvent.press(r.getByText("Use my workout in Together"));
+  await r.findByText(/Could not complete this action/);
+  expect(h.workout.promote).not.toHaveBeenCalled();
+  const session: import("@/domain/models/session").WorkoutSession = {
+    id: "changed",
+    userId: "a",
+    workoutId: null,
+    name: "Squats",
+    status: "in_progress",
+    startedAt: "2026-10-04T09:00:00Z",
+    completedAt: null,
+    notes: null,
+    exercises: [],
+  };
+  getWorkout.mockReturnValue(session);
+  fireEvent.press(r.getByText("Use my workout in Together"));
+  await r.findByText(/Could not complete this action/);
+  session.id = "local";
+  session.userId = "b";
+  fireEvent.press(r.getByText("Use my workout in Together"));
+  await r.findByText(/Could not complete this action/);
+  expect(h.workout.promote).not.toHaveBeenCalled();
+  session.userId = "a";
+  jest
+    .mocked(h.workout.promote)
+    .mockRejectedValueOnce(Error("workout-unsupported"));
+  fireEvent.press(r.getByText("Use my workout in Together"));
+  await r.findByText(/This workout can’t be shared yet/);
+  expect(r.getByText("Leave lobby · keep my workout")).toBeTruthy();
+});

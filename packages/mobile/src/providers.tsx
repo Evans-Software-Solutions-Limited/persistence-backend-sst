@@ -1,3 +1,4 @@
+import { withTogetherWorkout } from "@/adapters/storage/withTogetherWorkout";
 import { createTogetherLobby } from "@/adapters/together/createTogetherLobby";
 import { bindTogetherLobby } from "@/adapters/together/bindTogetherLobby";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
@@ -126,7 +127,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
       _auth: auth,
       api,
       auth,
-      storage,
+      storage: withTogetherWorkout(storage, togetherLobby?.workout),
       health: createHealthAdapter(),
       notifications: new ExpoNotificationsAdapter(),
       netInfo: new RNNetInfoAdapter(),

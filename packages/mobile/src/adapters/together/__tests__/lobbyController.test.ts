@@ -1,4 +1,5 @@
 /** @jest-environment node */
+import type { WorkoutSession } from "../../../domain/models/session";
 import { TogetherProvisioning } from "../provisioning/togetherProvisioning";
 import type { TogetherOfflineApi } from "../../../domain/ports/togetherOfflineApi.port";
 import { DatabaseSync } from "node:sqlite";
@@ -200,6 +201,153 @@ describe("reviewed lobby coordinator, real cryptography and SQLite, simulated na
     guest.native.emit({ type: "connected", peerId: "host", incoming: false });
     await settle();
   }
+  function workout(n = 1): WorkoutSession {
+    return {
+      id: "local-session",
+      userId: id(n),
+      workoutId: null,
+      name: "Strength A",
+      status: "in_progress",
+      startedAt: new Date(now - 10000).toISOString(),
+      completedAt: null,
+      notes: "Keep personal",
+      exercises: [
+        {
+          id: "local-exercise",
+          sessionId: "local-session",
+          exerciseId: id(500),
+          exerciseName: "Squat",
+          category: "strength",
+          sortOrder: 0,
+          supersetGroup: null,
+          isSubstituted: false,
+          originalExerciseId: null,
+          notes: null,
+          sets: [
+            {
+              id: "local-set",
+              sessionExerciseId: "local-exercise",
+              setNumber: 1,
+              weightKg: 20,
+              reps: 10,
+              rpe: null,
+              durationSeconds: null,
+              distanceMeters: null,
+              isCompleted: false,
+              completedAt: null,
+            },
+          ],
+        },
+      ],
+    };
+  }
+  it("promotes admitted independent own executions and records only authenticated peer receipts", async () => {
+    const host = setup(),
+      guest = setup(2);
+    await expect(host.controller.workout.promote(workout())).rejects.toThrow(
+      "workout-not-admitted",
+    );
+    await host.controller.host("Strength A");
+    await join(host, guest);
+    await expect(guest.controller.workout.promote(workout(2))).rejects.toThrow(
+      "workout-not-admitted",
+    );
+    await host.controller.approve(id(12));
+    await settle();
+    await host.controller.workout.promote(workout());
+    await guest.controller.workout.promote(workout(2));
+    await settle();
+    const hostStatus = host.controller.workout.status(id(1), "local-session")!;
+    const guestStatus = guest.controller.workout.status(
+      id(2),
+      "local-session",
+    )!;
+    expect(hostStatus).toMatchObject({
+      sharing: "active",
+      receivedCount: 1,
+      pendingCount: 0,
+    });
+    expect(guestStatus).toMatchObject({
+      sharing: "active",
+      receivedCount: 1,
+      pendingCount: 0,
+    });
+    expect(hostStatus.sessionId).toBe(guestStatus.sessionId);
+    expect(hostStatus.executionId).not.toBe(guestStatus.executionId);
+    expect(host.controller.workout.read(id(2), "local-session")).toBeNull();
+    guest.native.emit({ type: "disconnected", peerId: "host" });
+    host.native.emit({ type: "disconnected", peerId: id(12) });
+    const edited = workout(2);
+    edited.exercises[0].sets[0].reps = 12;
+    guest.controller.workout.save(id(2), edited);
+    await settle();
+    expect(guest.controller.workout.status(id(2), edited.id)).toMatchObject({
+      sharing: "reconnecting",
+      pendingCount: 1,
+      receivedCount: 1,
+    });
+    await guest.controller.reconnect();
+    expect(guest.controller.workout.status(id(2), edited.id)?.sharing).toBe(
+      "reconnecting",
+    );
+    guest.native.emit({
+      type: "discovered",
+      endpointId: "back",
+      lobbyId: guestStatus.sessionId,
+    });
+    await settle();
+    host.native.emit({ type: "connected", peerId: id(12), incoming: true });
+    guest.native.emit({ type: "connected", peerId: "host", incoming: false });
+    await settle();
+    expect(guest.controller.workout.status(id(2), edited.id)).toMatchObject({
+      sharing: "active",
+      pendingCount: 0,
+      receivedCount: 2,
+      executionId: guestStatus.executionId,
+    });
+    const stale = guest.native.listener;
+    guest.controller.setActive(false);
+    await settle();
+    edited.exercises[0].sets[0].reps = 13;
+    guest.controller.workout.save(id(2), edited);
+    stale?.({ type: "frame", peerId: "host", frame: "late" });
+    await settle();
+    expect(guest.controller.workout.status(id(2), edited.id)).toMatchObject({
+      sharing: "local-only",
+      pendingCount: 1,
+      receivedCount: 2,
+    });
+    expect(
+      guest.controller.workout.read(id(2), edited.id)?.exercises[0].sets[0]
+        .reps,
+    ).toBe(13);
+    guest.controller.setAccount(id(3));
+    expect(guest.controller.workout.read(id(2), edited.id)).toBeNull();
+  });
+  it("expired authority cannot sign and cancellation during checkpoint notification cannot send", async () => {
+    let time = now;
+    const host = setup(1, { now: () => time });
+    await host.controller.host("Strength A");
+    let cancelled = false;
+    const cancel = host.controller.workout.subscribe(() => {
+      if (cancelled) return;
+      cancelled = true;
+      void host.controller.cancel();
+    });
+    await host.controller.workout.promote(workout());
+    cancel();
+    expect(host.native.send).not.toHaveBeenCalled();
+    expect(
+      host.controller.workout.status(id(1), "local-session")?.sharing,
+    ).toBe("local-only");
+    await host.controller.host("Strength A");
+    time = now + 60001;
+    const source = workout();
+    source.id = "other";
+    await expect(host.controller.workout.promote(source)).rejects.toThrow(
+      "workout-not-admitted",
+    );
+  });
   beforeEach(() => jest.useFakeTimers());
   afterEach(async () => {
     await Promise.all(controllers.splice(0).map((c) => c.dispose()));

@@ -1,14 +1,19 @@
 # Persistence Together — frontend agent
 
-## Current integration — 2 October 2026
+## Current integration — 4 October 2026
 
-PR #483 is merged at `8257b532`. [Lobby integration](./LOBBY-INTEGRATION.md)
-connects the reviewed code/QR and consent layouts to provisioned identity and
-same-LAN admission. The next slice, [verified network lobbies](./NETWORK-LOBBIES.md),
-adds private/open audience controls and signed same-network browsing before
-explicit Join. It starts from current main and remains default-off; it does not
-activate shared workouts. Nearby radio, workout/recovery wiring and physical-device
-evidence remain open. Older dated readiness statements below are historical.
+PR #484 is merged at `c6a71555`. [Verified network lobbies](./NETWORK-LOBBIES.md)
+now provides private/open audience controls and signed same-network browsing
+before explicit Join. The next slice, [own-workout logging](./OWN-WORKOUT.md),
+connects admitted athletes to explicit promotion, durable personal checkpoints
+and signed own-set LAN delivery. Production remains default-off.
+
+The existing active workout and set editor remain in place. The slim row and
+reviewed cards gain local-save, peer-receipt, paused and restart states. Partner
+view switching, shared-plan reconciliation, PREV/delegation, server result saving
+and full completion/recovery remain outstanding; no “in sync” claim is made from
+a peer receipt. Nearby radio and physical-device evidence are also open.
+Older dated readiness statements below are historical.
 
 ## Reviewed UX — reuse, do not redesign
 

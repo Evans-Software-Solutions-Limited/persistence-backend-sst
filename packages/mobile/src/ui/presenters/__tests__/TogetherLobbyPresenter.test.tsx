@@ -220,3 +220,46 @@ it("blocked host invitation directs the athlete to another lobby, not a replacem
   expect(r.queryByText(/Ask the host for a new code or QR/)).toBeNull();
   expect(r.queryByText("Join the lobby")).toBeNull();
 });
+
+it.each(["active", "reconnecting", "local-only", "paused"] as const)(
+  "reports %s own-workout durability without claiming server acceptance",
+  (sharing) => {
+    const p = props(sharing === "local-only" ? "idle" : "joined");
+    const r = renderWithTheme(
+      <TogetherLobbyPresenter
+        {...p}
+        workoutStatus={{
+          sessionId: "s",
+          executionId: "e",
+          localSessionId: "l",
+          sharing,
+          receivedCount: 3,
+          pendingCount: 2,
+        }}
+      />,
+    );
+    expect(r.getByText("My workout")).toBeTruthy();
+    expect(r.getByText(/Changes received by another athlete: 3/)).toBeTruthy();
+    expect(r.getByText(/A peer receipt does not mean/)).toBeTruthy();
+    expect(r.queryByText("Start the session")).toBeNull();
+    expect(r.queryByText(/Your workout remains personal/)).toBeNull();
+    if (sharing === "paused")
+      expect(r.getByText(/sharing stays paused/)).toBeTruthy();
+    if (sharing === "local-only")
+      expect(r.getByText(/does not rejoin or reopen/)).toBeTruthy();
+  },
+);
+it("requires promotion consent separately from admission", () => {
+  const p = props("joined"),
+    onPromote = jest.fn();
+  const r = renderWithTheme(
+    <TogetherLobbyPresenter {...p} onPromote={onPromote} />,
+  );
+  expect(onPromote).not.toHaveBeenCalled();
+  expect(
+    r.getByText(/Your exercises and logged sets stay in place/),
+  ).toBeTruthy();
+  expect(r.getByText(/until result saving is added/)).toBeTruthy();
+  fireEvent.press(r.getByText("Use my workout in Together"));
+  expect(onPromote).toHaveBeenCalledTimes(1);
+});

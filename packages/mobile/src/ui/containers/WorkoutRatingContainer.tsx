@@ -8,6 +8,7 @@
  * Spec: specs/05-active-session/requirements.md STORY-006
  */
 
+import { Alert } from "react-native";
 import { router } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { getApiBaseUrl } from "@/adapters/api";
@@ -50,6 +51,11 @@ export function WorkoutRatingContainer() {
           onBehalfClientId: withClient?.id ?? null,
         },
       );
+      if (!result.ok && result.error.kind === "together_completion_pending") {
+        setIsSubmitting(false);
+        Alert.alert("Workout saved locally", result.error.message);
+        return;
+      }
       // STORY-009 AC 9.4 — the session is finalized (or already was), so
       // clear the useActiveWorkout UI-state slice. Idempotent + safe in both
       // branches (under Hybrid Option A the slice is usually already empty;

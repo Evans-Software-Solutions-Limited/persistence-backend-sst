@@ -7,6 +7,7 @@ import type {
   TogetherLobbyAudience,
   TogetherLobbySnapshot,
 } from "@/domain/ports/togetherLobby.port";
+import type { TogetherWorkoutStatus } from "@/domain/ports/togetherWorkout.port";
 
 export type TogetherLobbyScreen = "start" | "join";
 export interface TogetherLobbyPresenterProps {
@@ -16,6 +17,8 @@ export interface TogetherLobbyPresenterProps {
   notice: string;
   workoutName: string;
   audience: TogetherLobbyAudience;
+  workoutStatus?: TogetherWorkoutStatus | null;
+  onPromote?(): void;
   onAudienceChange(value: TogetherLobbyAudience): void;
   onBrowse(): void;
   onSelectDiscovered(sessionId: string): void;
@@ -85,13 +88,76 @@ function Copy({ children }: { children: ReactNode }) {
   );
 }
 
+export function togetherWorkoutCopy(
+  sharing: TogetherWorkoutStatus["sharing"],
+): string {
+  return {
+    active: "Saved on this device",
+    reconnecting: "Reconnecting · saved locally",
+    "local-only": "Saved locally · sharing ended",
+    paused: "Saved locally · sharing paused",
+  }[sharing];
+}
+
 /** Reviewed cards, consent lines and entry layout; connection/error states are approved additions. */
 export function TogetherLobbyPresenter(p: TogetherLobbyPresenterProps) {
   const s = p.snapshot;
-  const idle = s.phase === "idle";
+  const idle = s.phase === "idle" && !p.workoutStatus;
   const error = togetherErrorCopy(s.error);
   return (
     <View gap={16} testID="together-lobby-content">
+      {p.workoutStatus ? (
+        <Card accent="primary">
+          <View gap={10} accessibilityLiveRegion="polite">
+            <Text fontFamily="$display" fontSize={17} color="$text">
+              My workout
+            </Text>
+            <Copy>{togetherWorkoutCopy(p.workoutStatus.sharing)}</Copy>
+            <Copy>
+              Changes received by another athlete:{" "}
+              {p.workoutStatus.receivedCount}. Awaiting a peer receipt:{" "}
+              {p.workoutStatus.pendingCount}.
+            </Copy>
+            {p.workoutStatus.sharing === "paused" && (
+              <Copy>
+                Your workout changed beyond what can be shared here. Keep
+                logging on this device; sharing stays paused.
+              </Copy>
+            )}
+            {p.workoutStatus.sharing === "local-only" && (
+              <Copy>
+                Your workout is restored on this device. This does not rejoin or
+                reopen the lobby.
+              </Copy>
+            )}
+            <Copy>
+              Result saving is not available yet. Your workout stays on this
+              device. A peer receipt does not mean your result is saved to your
+              account.
+            </Copy>
+          </View>
+        </Card>
+      ) : p.onPromote && (s.phase === "hosting" || s.phase === "joined") ? (
+        <Card accent="primary">
+          <View gap={12}>
+            <Text fontFamily="$display" fontSize={17} color="$text">
+              Keep your logged sets
+            </Text>
+            <Copy>
+              Use your current workout and share your own weights and reps. Your
+              exercises and logged sets stay in place. This does not share PREV
+              or let anyone log for you.
+            </Copy>
+            <Copy>
+              Result saving is not available yet. Once shared, this workout
+              stays on this device until result saving is added.
+            </Copy>
+            <Btn full onPress={p.onPromote}>
+              Use my workout in Together
+            </Btn>
+          </View>
+        </Card>
+      ) : null}
       {idle && p.screen === "start" && (
         <>
           <Copy>
@@ -308,7 +374,11 @@ export function TogetherLobbyPresenter(p: TogetherLobbyPresenterProps) {
       )}
       {s.phase !== "idle" && (
         <View accessibilityLiveRegion="polite">
-          <Copy>{PHASE_COPY[s.phase]}</Copy>
+          <Copy>
+            {s.phase === "joined" && p.workoutStatus
+              ? "Connected to the lobby. Everyone logs their own workout."
+              : PHASE_COPY[s.phase]}
+          </Copy>
         </View>
       )}
       {error && (

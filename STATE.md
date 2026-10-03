@@ -1,5 +1,64 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-04 — PER-64 / PER-22 own-workout logging
+
+Continued from merged #484 at `c6a71555`, pulled main before creating
+`codex/together-own-workout-logging`. Final pre-PR fetch still matches main;
+no unrelated local changes or STATE conflict. Production remains default-off.
+[Own-workout brief](./specs/milestones/TRAIN-TOGETHER/OWN-WORKOUT.md) and the
+current frontend brief describe this bounded preview.
+
+Admitted athletes explicitly promote their latest personal workout. Full draft,
+local ID/start time, prior and partial sets are retained in an account-scoped
+Together checkpoint, with stable independent execution and command IDs. Signed
+journal operations and checkpoint commit atomically before LAN send. Storage
+reads the checkpoint as authority even when the personal mirror fails. Compatible
+weights/reps edits/removals share through the existing authenticated transport;
+peer receipts never mean server acceptance. Reconnect retries preserve IDs.
+
+Leave/background/expiry/restart retain own logging without autojoining. Sign-out
+can clear the entire personal cache without stranding the checkpoint: recovery
+queries the account's unfinished checkpoint directly. A second unfinished
+promotion is rejected. Original credentials/canonical plan persist, never signing
+seeds. Without authority, new intents remain unsigned for later reviewed recovery.
+If identical authority returns, pending intents sign in sequence before newer edits.
+
+Initial promotion is strength/default-category weights/reps only. Unsupported
+sessions stay personal; later unsupported plan changes preserve the full draft
+and pause sharing. Completion/cancel returns TOGETHER_COMPLETION_PENDING before
+solo enqueue/finalization. Rating, both active-workout cancellation surfaces and
+the stale-workout discard prompt preserve the pointer and explain the limitation.
+
+Local Inspector final full-diff verdict: CLEAN. Fixed its two findings: retained
+checkpoint discovery after sign-out cache clearing, and stale discard ignoring
+the typed finalization refusal. Real SQLite/crypto and simulated authenticated
+LAN regressions cover rollback, reopen, account changes, receipts, reconnect and
+independent execution. Removing transaction/finalization guards makes the relevant
+regressions fail; both mutations restored. Focused final: 254 tests / 11 suites.
+Checkpoint and completion commands 100% all metrics; other new Together runtime,
+bridge, hook and UI files exceed 90% all metrics. Existing whole-file coverage
+gaps in ActiveSessionContainer and WorkoutRatingContainer remain; new finalizer
+refusal paths are exercised. Typecheck 9/9, lint 6/6 (existing warnings), non-mobile
+tests 18/18, non-mobile build 12/12, changed-file formatting and whitespace pass.
+Full mobile final: 560 suites / 7,465 tests passed. The initial concurrent run had
+two unrelated timing failures; both passed separately (54 tests), then the full
+run passed after removing duplicate runner contention. Existing worker teardown
+and act/config warnings remain.
+
+Visual: actual React Native Web presenter with simulated promotion, local-save,
+peer-receipt, restored and paused states, compared to the sole reviewed Claude
+active-workout/cards. Screenshots `own-workout-*.png` and `reviewed-live-workout.png`
+are in the task visualization together directory. This is presentation evidence,
+not native sheet geometry or physical-device proof. No native/prebuild/EAS build,
+activation, deployment or CI Inspector trigger. Requested slack-progress-updates
+skill is unavailable, as recorded by the earlier handoff; no external ping sent.
+
+Next: server result saving and reviewed finish/recovery, shared plan distribution,
+partner view projection, PREV/delegation/cache revocation, authority transitions,
+Nearby radio, Android hotspot-owner support and mixed-device proof. Preserve
+checkpoint access when changing the feature gate or factory lifecycle for launch.
+
+
 ### 2026-10-03 — PR #484 lost-probe Inspector fix
 
 Validated the next CI Inspector lead: losing the currently connected discovery

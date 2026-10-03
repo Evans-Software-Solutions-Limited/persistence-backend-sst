@@ -341,3 +341,27 @@ describe("WorkoutRatingContainer", () => {
     expect(queryByTestId("workout-rating-screen")).toBeNull();
   });
 });
+
+it("retains Together workout and pointer without solo submit or summary navigation", async () => {
+  jest.clearAllMocks();
+  const storage = new InMemoryStorageAdapter();
+  seed(storage);
+  storage.cacheActiveSession("user-1", {
+    ...storage.getActiveSession("user-1")!,
+    together: { sessionId: "shared", executionId: "own" },
+  });
+  const end = jest.spyOn(useActiveWorkout.getState(), "end");
+  const { findByTestId } = renderWithTheme(
+    <AdapterProvider adapters={makeAdapters(storage)}>
+      <WorkoutRatingContainer />
+    </AdapterProvider>,
+  );
+  fireEvent.press(await findByTestId("workout-rating-7"));
+  fireEvent.press(await findByTestId("workout-rating-submit"));
+  expect(storage.getActiveSession("user-1")?.together).toBeTruthy();
+  expect(storage.getPendingMutations()).toHaveLength(0);
+  expect(end).not.toHaveBeenCalled();
+  expect(mockRouterReplace).not.toHaveBeenCalled();
+  expect(mockFetch).not.toHaveBeenCalled();
+  end.mockRestore();
+});
