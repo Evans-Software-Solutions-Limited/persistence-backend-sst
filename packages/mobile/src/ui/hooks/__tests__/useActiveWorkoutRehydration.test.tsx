@@ -1,3 +1,4 @@
+import { Alert } from "react-native";
 import { renderHook, waitFor } from "@testing-library/react-native";
 import type { ReactNode } from "react";
 
@@ -385,4 +386,28 @@ describe("formatStartedAt", () => {
   it("falls back to 'earlier' for an unparseable timestamp", () => {
     expect(formatStartedAt("not-a-date")).toBe("earlier");
   });
+});
+
+it("retains an old Together workout when Discard cannot finalize it", async () => {
+  const { adapters, storage, auth } = makeAdapters();
+  signIn(auth);
+  const session = makeSession({
+    startedAt: new Date(Date.now() - 25 * 3600000).toISOString(),
+    together: { sessionId: "shared", executionId: "own" },
+  });
+  storage.cacheActiveSession(USER, session);
+  const alert = jest.spyOn(Alert, "alert");
+  const enqueue = jest.spyOn(storage, "enqueueMutation");
+  const confirm = jest.fn(({ onDiscard }) => onDiscard());
+  render(adapters, { confirm });
+  await waitFor(() =>
+    expect(alert).toHaveBeenCalledWith(
+      "Workout saved on this device",
+      expect.stringContaining("Result saving is not available yet"),
+    ),
+  );
+  expect(storage.getActiveSession(USER)).toEqual(session);
+  expect(useActiveWorkout.getState().active?.sessionId).toBe(session.id);
+  expect(enqueue).not.toHaveBeenCalled();
+  alert.mockRestore();
 });

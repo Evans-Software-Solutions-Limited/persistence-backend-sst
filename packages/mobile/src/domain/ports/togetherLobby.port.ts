@@ -1,3 +1,4 @@
+import type { TogetherWorkoutPort } from "./togetherWorkout.port";
 export type TogetherLobbyAudience = "invite-only" | "open";
 /** Reviewed lobby state only. No credentials, signing seeds or PREV grants reach UI. */
 export interface TogetherLobbySnapshot {
@@ -30,6 +31,7 @@ export interface TogetherLobbySnapshot {
   pending: readonly { peerId: string; userId: string }[];
 }
 export interface TogetherLobbyPort {
+  readonly workout?: TogetherWorkoutPort;
   getSnapshot(): TogetherLobbySnapshot;
   subscribe(listener: () => void): () => void;
   host(workoutName: string, audience?: TogetherLobbyAudience): Promise<void>;

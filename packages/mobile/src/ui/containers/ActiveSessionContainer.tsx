@@ -686,7 +686,14 @@ export function ActiveSessionContainer() {
     // client's behalf so the write stays scoped to the client + audited.
     const onBehalfClientId =
       useActiveWorkout.getState().active?.withClient?.id ?? null;
-    cancelSessionCommand({ storage, userId }, { onBehalfClientId });
+    const result = cancelSessionCommand(
+      { storage, userId },
+      { onBehalfClientId },
+    );
+    if (!result.ok && result.error.kind === "together_completion_pending") {
+      Alert.alert("Workout saved locally", result.error.message);
+      return;
+    }
     // Clear the UI-state slice too (Bug fix, Inspector Brad 🟡) — match the
     // overlay's end path. Without this, slice.active + the AsyncStorage pointer
     // dangle until the next launch's orphan reconciliation; and a stale
@@ -805,6 +812,8 @@ export function ActiveSessionContainer() {
           lobby={togetherLobby}
           accountId={userId}
           workoutName={session.name}
+          localSessionId={session.id}
+          getWorkout={() => storage.getActiveSession(userId)}
         >
           {renderPresenter}
         </TogetherLobbyContainer>

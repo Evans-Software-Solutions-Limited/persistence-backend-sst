@@ -14,9 +14,11 @@ import type {
   TogetherLobbyAudience,
   TogetherLobbyPort,
 } from "@/domain/ports/togetherLobby.port";
+import type { WorkoutSession } from "@/domain/models/session";
 import { BottomSheet, Btn } from "@/ui/components/foundation";
 import {
   TogetherLobbyPresenter,
+  togetherWorkoutCopy,
   type TogetherLobbyScreen,
 } from "@/ui/presenters/TogetherLobbyPresenter";
 
@@ -25,17 +27,29 @@ export function TogetherLobbyContainer({
   lobby,
   workoutName,
   accountId,
+  localSessionId,
+  getWorkout,
   children,
 }: {
   lobby: TogetherLobbyPort;
   workoutName: string;
   accountId: string;
+  localSessionId?: string;
+  getWorkout?: () => WorkoutSession | null;
   children?: (row: ReactNode) => ReactNode;
 }) {
   const snapshot = useSyncExternalStore(
     (listener) => lobby.subscribe(listener),
     () => lobby.getSnapshot(),
   );
+  const [, refreshWorkout] = useState(0);
+  useEffect(
+    () => lobby.workout?.subscribe(() => refreshWorkout((v) => v + 1)),
+    [lobby, accountId],
+  );
+  const workoutStatus = localSessionId
+    ? lobby.workout?.status(accountId, localSessionId)
+    : null;
   const [audience, setAudience] =
     useState<TogetherLobbyAudience>("invite-only");
   const browsingIntent = useRef(false);
@@ -97,10 +111,12 @@ export function TogetherLobbyContainer({
   const invoke = (action: () => Promise<void>) => {
     const current = generation.current;
     setNotice("");
-    void action().catch(() => {
+    void action().catch((error: unknown) => {
       if (current === generation.current)
         setNotice(
-          "Could not complete this action. Your personal workout is safe.",
+          error instanceof Error && error.message === "workout-unsupported"
+            ? "This workout can’t be shared yet. Use a strength workout with weights and reps, without supersets, substitutions or RPE. You can keep logging personally."
+            : "Could not complete this action. Your personal workout is safe.",
         );
     });
   };
@@ -133,9 +149,11 @@ export function TogetherLobbyContainer({
       testID="together-workout-row"
     >
       <Text flex={1} fontFamily="$body" fontSize={12} color="$text2">
-        {snapshot.phase === "idle"
-          ? "Train together · your sets stay yours"
-          : "Together · lobby"}
+        {workoutStatus
+          ? `My workout · ${togetherWorkoutCopy(workoutStatus.sharing)}`
+          : snapshot.phase === "idle"
+            ? "Train together · your sets stay yours"
+            : "Together · lobby"}
       </Text>
       <Btn
         size="sm"
@@ -146,9 +164,9 @@ export function TogetherLobbyContainer({
         }}
       >
         {" "}
-        {snapshot.phase === "idle" ? "Start" : "Open"}{" "}
+        {snapshot.phase === "idle" && !workoutStatus ? "Start" : "Open"}{" "}
       </Btn>
-      {snapshot.phase === "idle" && (
+      {snapshot.phase === "idle" && !workoutStatus && (
         <Btn
           size="sm"
           variant="ghost"
@@ -191,6 +209,22 @@ export function TogetherLobbyContainer({
           notice={notice}
           workoutName={workoutName}
           audience={audience}
+          workoutStatus={workoutStatus}
+          onPromote={
+            lobby.workout && getWorkout
+              ? () =>
+                  invoke(async () => {
+                    const session = getWorkout();
+                    if (
+                      !session ||
+                      session.id !== localSessionId ||
+                      session.userId !== accountId
+                    )
+                      throw new Error("workout-changed");
+                    await lobby.workout!.promote(session);
+                  })
+              : undefined
+          }
           onAudienceChange={setAudience}
           onBrowse={() => {
             generation.current++;

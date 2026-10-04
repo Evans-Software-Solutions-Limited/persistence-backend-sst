@@ -1,3 +1,4 @@
+import { TogetherWorkoutCheckpoint } from "./workoutCheckpoint";
 import { encode64 } from "./security/encoding";
 import {
   TogetherLobbyBrowser,
@@ -54,6 +55,7 @@ interface Resources {
 }
 /** Foreground, explicit-action coordinator. Discovery routes bytes only after a signed pin. */
 export class TogetherLobbyController implements TogetherLobbyPort {
+  readonly workout: TogetherWorkoutCheckpoint;
   private snapshot: TogetherLobbySnapshot;
   private listeners = new Set<() => void>();
   private account: string | null = null;
@@ -70,6 +72,43 @@ export class TogetherLobbyController implements TogetherLobbyPort {
   private timer?: ReturnType<typeof setTimeout>;
   private expiry?: ReturnType<typeof setTimeout>;
   constructor(private readonly options: TogetherLobbyControllerOptions) {
+    this.workout = new TogetherWorkoutCheckpoint(
+      options.database,
+      () => this.account,
+      () => {
+        const resources = this.resources;
+        if (
+          !this.allowed() ||
+          !resources?.session ||
+          resources.identity.credential.payload.expiresAt <= this.now()
+        )
+          return;
+        const member = resources.lobby.store
+          .current(resources.lobby.pin.sessionId)
+          ?.payload.members.find(
+            (m) =>
+              requestHash(m.credential) ===
+              requestHash(resources.identity.credential),
+          );
+        if (!member) return;
+        return {
+          sessionId: resources.lobby.pin.sessionId,
+          executionId: member.consent.payload.executionId,
+          credential: resources.identity.credential,
+          seed: resources.identity.seed,
+          sharing:
+            this.snapshot.phase === "reconnecting" ||
+            this.snapshot.phase === "searching"
+              ? "reconnecting"
+              : "active",
+          send: async (command) => {
+            if (!this.allowed() || this.resources !== resources) return;
+            await resources.session!.sendOwn(command);
+          },
+        };
+      },
+      options.randomUUID,
+    );
     this.snapshot = {
       phase: options.enabled ? "idle" : "disabled",
       members: [],
@@ -85,6 +124,7 @@ export class TogetherLobbyController implements TogetherLobbyPort {
   };
   private publish(change: Partial<TogetherLobbySnapshot>) {
     this.snapshot = { ...this.snapshot, ...change };
+    this.workout.changed();
     for (const listener of this.listeners) {
       try {
         listener();
@@ -576,6 +616,7 @@ export class TogetherLobbyController implements TogetherLobbyPort {
     resources: Resources,
     generation: number,
   ) {
+    if (event.type === "receipt") this.workout.changed();
     if (event.type === "discovered" && this.snapshot.phase === "searching") {
       clearTimeout(this.timer);
       this.publish({ phase: "connecting" });

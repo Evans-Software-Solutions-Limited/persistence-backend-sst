@@ -536,6 +536,41 @@ describe("ActiveSessionContainer", () => {
     expect(useActiveWorkout.getState().active).toBeNull();
   });
 
+  it("retains promoted workout and pointer when ending from the session header", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheActiveSession("user-1", {
+      id: "local-1",
+      userId: "user-1",
+      workoutId: null,
+      name: "Quick Workout",
+      status: "in_progress",
+      startedAt: "2026-05-05T10:00:00.000Z",
+      completedAt: null,
+      notes: null,
+      exercises: [],
+      together: { sessionId: "shared", executionId: "own" },
+    });
+    useActiveWorkout.setState({
+      active: {
+        sessionId: "local-1",
+        workoutId: null,
+        name: "Quick Workout",
+        startedAt: "2026-05-05T10:00:00.000Z",
+      },
+      expanded: true,
+    });
+    const { findByTestId } = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <ActiveSessionContainer />),
+    );
+    fireEvent.press(await findByTestId("session-end"));
+    fireEvent.press(await findByTestId("end-confirm-dialog-end"));
+    expect(storage.getActiveSession("user-1")?.together).toBeTruthy();
+    expect(storage.getPendingMutations()).toHaveLength(0);
+    expect(useActiveWorkout.getState().active?.sessionId).toBe("local-1");
+    expect(mockRouterDismissAll).not.toHaveBeenCalled();
+  });
+
   it("End-confirm dialog 'Keep going' dismisses without cancelling the session", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();

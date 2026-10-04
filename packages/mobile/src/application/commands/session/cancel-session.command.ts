@@ -14,10 +14,10 @@
 import {
   finalizeSessionCommand,
   type CompletedSessionResult,
+  type FinalizeSessionError,
   type CompleteSessionCommandDeps,
 } from "./complete-session.command";
 import type { Result } from "@/shared/errors";
-import type { SessionNotFoundError } from "./log-set.command";
 
 export type CancelSessionCommandDeps = CompleteSessionCommandDeps;
 
@@ -35,7 +35,7 @@ export type CancelSessionInput = {
 export function cancelSessionCommand(
   deps: CancelSessionCommandDeps,
   input: CancelSessionInput = {},
-): Result<CompletedSessionResult, SessionNotFoundError> {
+): Result<CompletedSessionResult, FinalizeSessionError> {
   return finalizeSessionCommand(
     deps,
     "cancelled",

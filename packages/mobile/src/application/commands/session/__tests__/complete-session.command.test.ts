@@ -410,3 +410,29 @@ describe("finalizeSessionCommand (shared path)", () => {
     expect(result.error.message).toMatch(/cancel/);
   });
 });
+
+describe("promoted Together finalization", () => {
+  it.each(["complete", "cancel"])(
+    "retains recovery and never queues a solo %s",
+    (action) => {
+      const storage = new InMemoryStorageAdapter();
+      const session = buildSession({
+        together: { sessionId: "shared", executionId: "own" },
+      });
+      storage.cacheActiveSession("user-1", session);
+      const enqueue = jest.spyOn(storage, "enqueueMutation");
+      const recent = jest.spyOn(storage, "upsertRecentSets");
+      const result =
+        action === "complete"
+          ? completeSessionCommand({ storage, userId: "user-1" }, { rating: 8 })
+          : cancelSessionCommand({ storage, userId: "user-1" });
+      expect(result).toMatchObject({
+        ok: false,
+        error: { kind: "together_completion_pending" },
+      });
+      expect(storage.getActiveSession("user-1")).toEqual(session);
+      expect(enqueue).not.toHaveBeenCalled();
+      expect(recent).not.toHaveBeenCalled();
+    },
+  );
+});
