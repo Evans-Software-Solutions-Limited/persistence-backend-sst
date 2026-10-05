@@ -637,21 +637,24 @@ export class TogetherLobbyController implements TogetherLobbyPort {
           const draft = this.workout.getActive(account);
           for (const intent of resources.shared!.getSnapshot().delegated) {
             try {
-              const accepted = resources.shared!.consumeDelegated(intent.id);
               if (!draft) throw new Error("workout-unavailable");
-              // Consuming notifies observers synchronously; they may sign out or background.
-              if (
-                this.account !== account ||
-                this.resources !== resources ||
-                !this.current(generation)
-              )
-                return;
-              this.workout.applyOwnOperation(
-                account,
-                draft.id,
-                accepted.expectedVersion,
-                accepted.operation,
-              );
+              // Give account/lifecycle observers a chance to invalidate this scope
+              // before committing; consumption itself now follows the durable write.
+              this.publish({});
+              resources.shared!.consumeDelegated(intent.id, (accepted) => {
+                if (
+                  this.account !== account ||
+                  this.resources !== resources ||
+                  !this.current(generation)
+                )
+                  throw new Error("workout-unavailable");
+                this.workout.applyOwnOperation(
+                  account,
+                  draft.id,
+                  accepted.expectedVersion,
+                  accepted.operation,
+                );
+              });
             } catch {
               if (
                 this.account === account &&

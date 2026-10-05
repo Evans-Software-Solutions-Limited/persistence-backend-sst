@@ -1,3 +1,8 @@
+import { DatabaseSync } from "node:sqlite";
+import { randomUUID } from "node:crypto";
+import { TogetherCloudController } from "../../../adapters/together/cloudSession";
+import type { TogetherCloudApi } from "@/domain/ports/togetherCloud.port";
+import { fail } from "@/shared/errors/result";
 import React from "react";
 import { Alert } from "react-native";
 import { act, fireEvent, waitFor } from "@testing-library/react-native";
@@ -643,4 +648,63 @@ it("discards queued actions and errors when the account changes before execution
   act(() => old.onHost());
   await act(async () => {});
   expect(h.cloud.hostWorkout).not.toHaveBeenCalled();
+});
+
+it("restores a personal workout through the real controller after terminal initial admission failure", async () => {
+  const h = setup();
+  const db = new DatabaseSync(":memory:");
+  const controller = new TogetherCloudController({
+    api: {
+      join: jest.fn(async () =>
+        fail({
+          kind: "api",
+          code: "server",
+          togetherCode: "SESSION_FULL",
+          message: "Full",
+        }),
+      ),
+    } as unknown as TogetherCloudApi,
+    randomUUID,
+    db: {
+      execSync: (sql) => db.exec(sql),
+      runSync: (sql, params) => db.prepare(sql).run(...params),
+      getFirstSync: <T,>(sql: string, params: (string | number | null)[]) =>
+        (db.prepare(sql).get(...params) as T) ?? null,
+      getAllSync: <T,>(sql: string, params: (string | number | null)[]) =>
+        db.prepare(sql).all(...params) as T[],
+      withTransactionSync: (fn) => {
+        db.exec("BEGIN");
+        try {
+          fn();
+          db.exec("COMMIT");
+        } catch (error) {
+          db.exec("ROLLBACK");
+          throw error;
+        }
+      },
+    },
+  });
+  controller.setAccount("u");
+  const restore = jest.fn();
+  try {
+    await expect(
+      controller.join({ sessionId: randomUUID() }, h.draft),
+    ).rejects.toThrow("SESSION_FULL");
+    const r = renderWithTheme(
+      <TogetherCloudContainer
+        {...h.props}
+        cloud={controller}
+        onRestorePersonal={restore}
+      />,
+    );
+    fireEvent.press(r.getByText("Open"));
+    fireEvent.press(r.getByText("Continue personally"));
+    await waitFor(() => expect(restore).toHaveBeenCalledWith(h.draft));
+    expect(h.props.onLocal).toHaveBeenCalledTimes(1);
+    expect(controller.readDraft("u")).toBeNull();
+    r.unmount();
+  } finally {
+    controller.dispose();
+    db.close();
+  }
 });

@@ -3,6 +3,7 @@ import type {
   CloudDraft,
   CloudExecution,
   CloudPlan,
+  CloudParticipant,
 } from "../../domain/ports/togetherCloud.port";
 import { requestHash } from "./security/identity";
 import { uuid } from "./security/schema";
@@ -207,6 +208,8 @@ export function mergeCloudExecution(
   execution: CloudExecution,
   mapping: CloudMapping,
   randomUUID: () => string,
+  plan: CloudPlan,
+  catalog: CloudParticipant["exerciseCatalog"] = {},
 ): void {
   session.restEndsAt = execution.restEndsAt ?? null;
   for (const row of session.exercises) {
@@ -214,14 +217,17 @@ export function mergeCloudExecution(
     const own = execution.exercises.find((e) => e.planExerciseId === canonical);
     if (!own) continue;
     row.skipped = own.skipped;
-    if (
-      own.substituteExerciseId &&
-      own.substituteExerciseId !== row.exerciseId
-    ) {
-      row.originalExerciseId ??= row.exerciseId;
-      row.exerciseId = own.substituteExerciseId;
-      row.isSubstituted = true;
+    const base = plan.exercises.find((p) => p.planExerciseId === canonical);
+    const exerciseId = own.substituteExerciseId ?? base?.exerciseId;
+    if (exerciseId && exerciseId !== row.exerciseId) {
+      row.originalExerciseId = own.substituteExerciseId
+        ? (base?.exerciseId ?? row.exerciseId)
+        : null;
+      row.exerciseId = exerciseId;
+      row.isSubstituted = !!own.substituteExerciseId;
     }
+    const definition = catalog[row.exerciseId];
+    if (definition) row.exerciseName = definition.name;
     for (const set of row.sets) {
       const id = mapping.sets[set.id];
       if (!id) continue;

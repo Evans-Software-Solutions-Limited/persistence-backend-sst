@@ -208,7 +208,7 @@ it("ignores an old account review reply", async () => {
 it("rejects duplicate save presses and reports stale review failure without clearing", async () => {
   const h = setup();
   let reject!: (error: Error) => void;
-  jest.mocked(h.cloud.finish).mockReturnValue(
+  jest.mocked(h.cloud.finish).mockReturnValueOnce(
     new Promise((_, r) => {
       reject = r;
     }),
@@ -223,6 +223,18 @@ it("rejects duplicate save presses and reports stale review failure without clea
   await act(async () => reject(new Error("cloud-review-stale")));
   expect(r.getByText(/cloud-review-stale/)).toBeTruthy();
   expect(mockStorage.getActiveSession("u")).not.toBeNull();
+  const previous = await h.cloud.prepareReview();
+  jest.mocked(h.cloud.prepareReview).mockResolvedValue({
+    ...previous,
+    token: "fresh-authority-token",
+  });
+  fireEvent.press(r.getByText("Refresh review"));
+  await act(async () => {});
+  await waitFor(() => expect(r.queryByText(/cloud-review-stale/)).toBeNull());
+  fireEvent.press(r.getByText("Save reviewed result"));
+  await waitFor(() => expect(r.getByText("Continue")).toBeTruthy());
+  expect(h.cloud.finish).toHaveBeenNthCalledWith(1, "displayed-token");
+  expect(h.cloud.finish).toHaveBeenNthCalledWith(2, "fresh-authority-token");
 });
 it("shows unavailable capability honestly and permits back", () => {
   setup();

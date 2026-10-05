@@ -709,6 +709,95 @@ describe("cloud authoritative personal checkpoint", () => {
     await expect(pending).rejects.toThrow("cloud-cancelled");
     expect(controller.getSnapshot().previous).toEqual({});
   });
+  it("retains an acknowledged private edit when an older same-group-revision poll arrives", async () => {
+    await controller.hostWorkout(draft());
+    server.hostId = other;
+    server.sharingActive = false;
+    server.continuation = "solo";
+    await controller.refresh();
+    const stale = copy(server);
+    let release!: (
+      value: Awaited<ReturnType<TogetherCloudApi["snapshot"]>>,
+    ) => void;
+    (api.snapshot as jest.Mock).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    );
+    const poll = controller.refresh();
+    const command = api.command;
+    api.command = jest.fn(async (...args) => {
+      const result = await command(...args);
+      server.revision = stale.revision;
+      return result.ok
+        ? ok({ ...result.value, revision: stale.revision })
+        : result;
+    });
+    const local = controller.readDraft(userId)!;
+    local.exercises[0].sets[0].weightKg = 55;
+    controller.saveDraft(userId, local);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(controller.getSnapshot().pendingCount).toBe(0);
+    expect(server.participants[0].ownRevision).toBe(1);
+    release(ok(stale));
+    await poll;
+    expect(controller.readDraft(userId)!.exercises[0].sets[0].weightKg).toBe(
+      55,
+    );
+    await controller.refresh();
+    expect(controller.getSnapshot().snapshot!.participants[0].ownRevision).toBe(
+      1,
+    );
+    expect(controller.readDraft(userId)!.exercises[0].sets[0].weightKg).toBe(
+      55,
+    );
+  });
+  it("accepts a fresh workout after a completed session with a higher own revision", async () => {
+    await controller.hostWorkout(draft());
+    await controller.command({
+      expectedVersion: 0,
+      target: { kind: "execution" },
+      operation: { type: "rest", endsAt: null },
+    });
+    server.participants[0].status = "saved";
+    server.completion.status = "saved";
+    await controller.refresh();
+    expect(controller.readDraft(userId)!.status).toBe("completed");
+    server = snapshot();
+    const next = draft();
+    next.id = "next-workout";
+    next.exercises[0].sessionId = next.id;
+    await controller.hostWorkout(next);
+    expect(controller.getSnapshot().snapshot!.sessionId).toBe(server.sessionId);
+    expect(controller.getSnapshot().snapshot!.participants[0].ownRevision).toBe(
+      0,
+    );
+    expect(controller.readDraft(userId)!.id).toBe("next-workout");
+  });
+  it("preserves a personal substitution used as the promoted plan base", async () => {
+    const personal = draft();
+    const base = randomUUID();
+    personal.exercises[0].originalExerciseId = exerciseId;
+    personal.exercises[0].exerciseId = base;
+    personal.exercises[0].exerciseName = "Substituted squat";
+    personal.exercises[0].isSubstituted = true;
+    await controller.hostWorkout(personal);
+    expect(server.plan.exercises[0].exerciseId).toBe(base);
+    expect(controller.readDraft(userId)!.exercises[0]).toMatchObject({
+      exerciseId: base,
+      originalExerciseId: exerciseId,
+      isSubstituted: true,
+    });
+    const local = controller.readDraft(userId)!;
+    local.exercises[0].sets[0].weightKg = 55;
+    controller.saveDraft(userId, local);
+    await controller.retry();
+    expect(controller.getSnapshot().error).toBeUndefined();
+    expect(
+      server.participants[0].execution!.exercises[0].sets[0].weightKg,
+    ).toBe(55);
+  });
   it("versioned manual owner command refreshes into own draft", async () => {
     await controller.hostWorkout(draft());
     await controller.command({
@@ -1455,6 +1544,104 @@ describe("cloud authoritative personal checkpoint", () => {
       ]);
       expect(completed.exercises[0].sets[1].weightKg).toBe(48);
       expect(controller.getSnapshot().pendingCount).toBe(0);
+    },
+  );
+  it.each(["finish", "close", "private"] as const)(
+    "refreshes conflict authority before immediate %s and requires the changed review again",
+    async (method) => {
+      await controller.hostWorkout(draft());
+      if (method === "private") {
+        server.sharingActive = false;
+        server.continuation = "solo";
+        await controller.refresh();
+      }
+      server.participants[0].ownRevision = 1;
+      server.revision++;
+      const local = controller.readDraft(userId)!;
+      local.exercises[0].sets[0].weightKg = 49;
+      controller.saveDraft(userId, local);
+      await expect(controller.retry()).rejects.toThrow("VERSION_CONFLICT");
+      const stale = await controller.prepareReview();
+      const commit = (review: typeof stale) =>
+        method === "finish"
+          ? controller.finish(review.token)
+          : method === "close"
+            ? controller.close("save_own", review.token)
+            : controller.reviewOwn(review.execution, review.token);
+      api.close = jest.fn(async () =>
+        ok({
+          status: "saved" as const,
+          historyId: randomUUID(),
+          revision: server.revision,
+          ownRevision: server.participants[0].ownRevision,
+          sharingActive: false as const,
+          recoveryMayBePending: true as const,
+          acknowledgedStateOnly: true as const,
+          mode: "save_own" as const,
+        }),
+      );
+      const snapshots = api.snapshot;
+      api.snapshot = jest.fn(async () =>
+        fail({
+          kind: "api" as const,
+          code: "network" as const,
+          message: "offline",
+        }),
+      );
+      await expect(commit(stale)).rejects.toThrow("network");
+      expect(api.command).toHaveBeenCalledTimes(1);
+      expect(controller.getSnapshot().pendingCount).toBe(0);
+      api.snapshot = snapshots;
+      await expect(commit(stale)).rejects.toThrow("cloud-review-stale");
+      expect(api.command).toHaveBeenCalledTimes(1);
+      expect(controller.getSnapshot().pendingCount).toBe(0);
+      const fresh = await controller.prepareReview();
+      expect(fresh.execution).toEqual(stale.execution);
+      expect(fresh.token).not.toBe(stale.token);
+      await commit(fresh);
+      expect(api.command).toHaveBeenLastCalledWith(
+        server.sessionId,
+        expect.any(String),
+        expect.objectContaining({ expectedVersion: 1 }),
+      );
+      expect(controller.getSnapshot().pendingCount).toBe(0);
+    },
+  );
+  it.each([false, true])(
+    "does not reuse an in-flight poll for conflict authority (account change: %s)",
+    async (changeAccount) => {
+      await controller.hostWorkout(draft());
+      const old = copy(server);
+      server.participants[0].ownRevision = 1;
+      server.revision++;
+      const local = controller.readDraft(userId)!;
+      local.exercises[0].sets[0].weightKg = 50;
+      controller.saveDraft(userId, local);
+      await expect(controller.retry()).rejects.toThrow("VERSION_CONFLICT");
+      const shown = await controller.prepareReview();
+      let release!: (
+        v: Awaited<ReturnType<TogetherCloudApi["snapshot"]>>,
+      ) => void;
+      jest.mocked(api.snapshot).mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            release = resolve;
+          }),
+      );
+      const poll = controller.refresh();
+      const saving = controller.finish(shown.token);
+      const rejected = expect(saving).rejects.toThrow(
+        changeAccount ? "cloud-cancelled" : "cloud-review-stale",
+      );
+      const polled = changeAccount
+        ? expect(poll).rejects.toThrow("cloud-cancelled")
+        : poll;
+      if (changeAccount) controller.setAccount(other);
+      release(ok(old));
+      await polled;
+      await rejected;
+      expect(api.command).toHaveBeenCalledTimes(1);
+      expect(api.finish).not.toHaveBeenCalled();
     },
   );
 });

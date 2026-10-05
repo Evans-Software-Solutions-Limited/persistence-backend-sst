@@ -135,7 +135,20 @@ describe("lossless supported cloud draft projection", () => {
       "removeSet",
       "rest",
     ]);
-    mergeCloudExecution(s, next, mapping, randomUUID);
+    const catalog = {
+      [d.plan.exercises[0].exerciseId]: {
+        name: "Original",
+        category: "strength",
+        primaryMuscles: [],
+      },
+      [next.exercises[0].substituteExerciseId!]: {
+        name: "Substitute",
+        category: "strength",
+        primaryMuscles: [],
+      },
+    };
+    mergeCloudExecution(s, next, mapping, randomUUID, d.plan, catalog);
+    expect(s.exercises[0].exerciseName).toBe("Substitute");
     expect(s.exercises[0].isSubstituted).toBe(true);
     expect(s.exercises[0].sets[0].reps).toBeNull();
     expect(s.notes).toBe("Keep notes");
@@ -143,6 +156,17 @@ describe("lossless supported cloud draft projection", () => {
       cloudProjection(s, d.plan, mapping, randomUUID).exercises[0]
         .substituteExerciseId,
     ).toBe(next.exercises[0].substituteExerciseId);
+    next.exercises[0].substituteExerciseId = null;
+    mergeCloudExecution(s, next, mapping, randomUUID, d.plan, catalog);
+    expect(s.exercises[0].exerciseName).toBe("Original");
+    expect(s.exercises[0].exerciseId).toBe(d.plan.exercises[0].exerciseId);
+    expect(s.exercises[0].isSubstituted).toBe(false);
+    expect(s.exercises[0].originalExerciseId).toBeNull();
+    expect(
+      cloudOperations(next, cloudProjection(s, d.plan, mapping, randomUUID)),
+    ).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: "substitute" })]),
+    );
     expect(() => cloudOperations(next, { exercises: [] })).toThrow(
       "cloud-plan-mismatch",
     );

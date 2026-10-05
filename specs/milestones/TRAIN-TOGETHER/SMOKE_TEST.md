@@ -68,3 +68,50 @@ this checklist. Lower-priced tiers and coached classes are not part of this test
   when the OTA manifest claims a newer JS version. Preserve local workouts.
 - Record the separate compatible bootstrap rollout for pre-gate 1.1.2 clients;
   this source cannot retroactively install a gate in an already-installed binary.
+
+## Staging follow-up: delegation, membership and recovery races
+
+Use four paid test accounts and retain each athlete's independent result IDs.
+Automated fault-injection tests cover these races; repeat the user-visible paths
+on Brad-built devices before physical sign-off.
+
+- Delegate a set while the owner's workout is temporarily unavailable; restore
+  the same workout and confirm the pending set applies once. Simulated storage
+  failure must retain the intent without spinning or displaying success.
+- Queue writes from two partners, then disconnect/remove one. The remaining
+  partner's pending write must survive. Removing several peers must clear every
+  peer's cached state even when one simulated persistence operation fails.
+- Finish a guest's own result, then leave. Remaining clients must refresh their
+  membership and consent state; repeating leave must not revoke newly granted
+  consent again.
+- Remove an athlete who continues privately. Their own edits and completion must
+  remain available to them without sending activity/revision events to the other
+  athletes. Confirm independent history contains one result.
+- Create a revision conflict and immediately finish, before the polling interval.
+  Changed authority must require a fresh review; Review again then finish must
+  work. An offline refresh must not resend a stale completion.
+- Promote an older retained personal workout. Its original start and PREV cutoff
+  must survive while the new cloud session's creation time reflects creation now.
+- On a release build, verify missing required native modules block initialization
+  and emit a diagnostic identifying the missing modules when Sentry is enabled.
+  Development/web remain unaffected. This needs a deliberately prepared owner
+  build; the automated module fixture is not binary-linkage proof.
+- In staging policy configuration, raise and then correct an erroneous minimum.
+  Check again must recover after a valid lower policy response, including after
+  app restart. Do not ask users to reinstall and risk local workout data.
+
+Deployment rollback accepts true/false, 1/0 and on/off, ignoring surrounding
+whitespace and case. An unrecognised explicit setting aborts configuration rather
+than silently enabling Together. An unset value remains enabled as approved.
+No build, live policy change or deployment is performed by this checklist.
+
+- While privately continuing after removal, delay a cloud refresh, save an own
+  set, then deliver the older refresh. The acknowledged set remains unchanged;
+  a later refresh agrees with it even though the group revision did not move.
+- On another signed-in device, remove an exercise substitution. Refresh the
+  first device: the original exercise/name returns, and editing a set does not
+  reinstate the substitution.
+- Attempt a first cloud join into a full lobby or with an invalid invitation.
+  A conclusive rejection must offer explicit personal continuation, preserving
+  all notes/sets. A lost or ambiguous response must retain its original retry
+  key and must not permit detachment that could duplicate an admitted workout.

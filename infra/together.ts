@@ -6,9 +6,10 @@ import {
   geoapifyApiKey,
 } from "./secrets";
 import { supabaseUrl } from "./domains";
+import { togetherEnabledForDeployment } from "./togetherFlag";
 
 // Enabled for release. Explicit false remains an operational rollback switch.
-const enabled = process.env.TOGETHER_ENABLED !== "false";
+const enabled = togetherEnabledForDeployment(process.env.TOGETHER_ENABLED);
 export const togetherSocket = enabled
   ? new sst.aws.ApiGatewayWebSocket("TogetherSocket", {
       accessLog: { retention: "1 week" },

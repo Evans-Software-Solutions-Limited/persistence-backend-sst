@@ -57,3 +57,14 @@ it("falls back safely on empty/corrupt/unreadable cache and enforces online poli
     await fetchPolicy(storage, "api", new AbortController().signal),
   ).toEqual(policy);
 });
+
+it("persists a valid lower rollback over an erroneous high floor for subsequent launches", async () => {
+  let cached = JSON.stringify({ ...policy, iosMinimumVersion: "9.9.9" });
+  storage.getItem.mockImplementation(async () => cached);
+  storage.setItem.mockImplementation(async (_key, value) => {
+    cached = value;
+  });
+  expect((await readPolicy(storage, "api"))?.iosMinimumVersion).toBe("9.9.9");
+  await fetchPolicy(storage, "api", new AbortController().signal);
+  expect(await readPolicy(storage, "api")).toEqual(policy);
+});

@@ -9,6 +9,11 @@ import {
 import { act, fireEvent, waitFor } from "@testing-library/react-native";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 import { AppUpdateGate } from "../AppUpdateGate";
+import { Sentry, isSentryEnabled } from "@/lib/sentry";
+jest.mock("@/lib/sentry", () => ({
+  isSentryEnabled: jest.fn(() => true),
+  Sentry: { captureMessage: jest.fn() },
+}));
 import { readPolicy, fetchPolicy } from "@/adapters/appUpdate/loadPolicy";
 import { RequiredUpdatePresenter } from "../../presenters/RequiredUpdatePresenter";
 let mockNative: Record<string, unknown>;
@@ -52,6 +57,8 @@ const show = () =>
   );
 beforeEach(() => {
   jest.clearAllMocks();
+  jest.mocked(isSentryEnabled).mockReturnValue(true);
+  jest.mocked(Sentry.captureMessage).mockReset();
   Object.assign(global, { __DEV__: false });
   Object.defineProperty(Platform, "OS", { value: "ios", configurable: true });
   mockNative = {
@@ -242,4 +249,50 @@ it("never lowers an accepted in-memory requirement using stale cache on an offli
   await act(async () => {});
   expect(r.getByText(/Version 2.0.0/)).toBeTruthy();
   expect(readPolicy).toHaveBeenCalledTimes(1);
+});
+
+it("reports the exact missing modules once while retaining the mandatory gate", async () => {
+  delete mockNative.TogetherNearby;
+  delete mockNative.TogetherLan;
+  const r = show();
+  await waitFor(() => expect(r.getByText("Update app")).toBeTruthy());
+  expect(Sentry.captureMessage).toHaveBeenCalledWith(
+    "Required native modules missing",
+    {
+      level: "error",
+      tags: { platform: "ios", missing_modules: "TogetherLan,TogetherNearby" },
+    },
+  );
+  fireEvent.press(r.getByText("Check again"));
+  await act(async () => {});
+  expect(Sentry.captureMessage).toHaveBeenCalledTimes(1);
+  expect(r.queryByText("Private workout")).toBeNull();
+});
+it.each(["disabled", "failed"])(
+  "keeps the native update gate usable when telemetry is %s",
+  async (mode) => {
+    delete mockNative.TogetherNearby;
+    if (mode === "disabled")
+      jest.mocked(isSentryEnabled).mockReturnValue(false);
+    else
+      jest.mocked(Sentry.captureMessage).mockImplementation(() => {
+        throw new Error("telemetry unavailable");
+      });
+    const r = show();
+    await waitFor(() => expect(r.getByText("Update app")).toBeTruthy());
+    if (mode === "disabled")
+      expect(Sentry.captureMessage).not.toHaveBeenCalled();
+  },
+);
+it("recovers from an erroneous cached 9.9.9 floor on a valid server rollback without reinstalling", async () => {
+  jest
+    .mocked(readPolicy)
+    .mockResolvedValue({ ...policy, iosMinimumVersion: "9.9.9" });
+  jest.mocked(fetchPolicy).mockRejectedValueOnce(new Error("offline"));
+  const r = show();
+  await waitFor(() => expect(r.getByText("Update app")).toBeTruthy());
+  jest.mocked(fetchPolicy).mockResolvedValue(policy);
+  fireEvent.press(r.getByText("Check again"));
+  await waitFor(() => expect(r.getByText("Private workout")).toBeTruthy());
+  expect(Sentry.captureMessage).not.toHaveBeenCalled();
 });

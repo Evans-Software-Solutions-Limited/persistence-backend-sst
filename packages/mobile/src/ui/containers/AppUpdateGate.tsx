@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AppState, Linking, Platform } from "react-native";
 import { requireOptionalNativeModule } from "expo";
 import Constants from "expo-constants";
+import { Sentry, isSentryEnabled } from "@/lib/sentry";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getApiBaseUrl } from "@/adapters/api";
 import { fetchPolicy, readPolicy } from "@/adapters/appUpdate/loadPolicy";
@@ -18,6 +19,7 @@ import { PLogoDrawLoader } from "@/ui/components/PLogoDrawLoader";
 /** Gate precedes AppProviders: unsupported binaries never initialize Together. */
 export function AppUpdateGate({ children }: { children: ReactNode }) {
   const bootstrapped = useRef(false);
+  const reportedNativeFailure = useRef(false);
   const release =
     !__DEV__ && (Platform.OS === "ios" || Platform.OS === "android");
   const [policy, setPolicy] = useState<AppVersionPolicy | null>(null),
@@ -27,6 +29,21 @@ export function AppUpdateGate({ children }: { children: ReactNode }) {
     [error, setError] = useState("");
   useEffect(() => {
     if (!release) return;
+    const missing = ["TogetherLan", "TogetherNearby"].filter(
+      (name) => !requireOptionalNativeModule(name),
+    );
+    if (missing.length && !reportedNativeFailure.current) {
+      reportedNativeFailure.current = true;
+      try {
+        if (isSentryEnabled())
+          Sentry.captureMessage("Required native modules missing", {
+            level: "error",
+            tags: { platform: Platform.OS, missing_modules: missing.join(",") },
+          });
+      } catch {
+        // Diagnostics must never prevent the mandatory update screen rendering.
+      }
+    }
     let alive = true;
     let running: Promise<void> | undefined;
     let controller: AbortController | undefined;

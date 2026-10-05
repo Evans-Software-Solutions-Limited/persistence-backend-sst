@@ -538,7 +538,6 @@ export class TogetherRepository {
             .values({
               hostId: actor,
               clientDraftId: body.clientDraftId,
-              createdAt: body.startedAt ? new Date(body.startedAt) : undefined,
               promotionHash: hashTogether(body),
               plan: body.plan,
               expiresAt: new Date(Date.now() + 4 * 3600000),
@@ -1305,7 +1304,7 @@ export class TogetherRepository {
               .where(memberWhere(id, target.userId));
           }
           const event = {
-            revision: s.revision + 1,
+            revision: s.revision + (own.removedFromRoster ? 0 : 1),
             commandId: body.commandId,
             target: isPlan
               ? { kind: "plan" as const }
@@ -1314,7 +1313,9 @@ export class TogetherRepository {
             newVersion: version + 1,
             operation: op,
           };
-          await this.emit(tx, s, event);
+          // A removed athlete retains their own durable execution, but their
+          // private edits must not advertise activity to the remaining roster.
+          if (!own.removedFromRoster) await this.emit(tx, s, event);
           const result = {
             commandId: body.commandId,
             revision: s.revision,
@@ -1490,13 +1491,14 @@ export class TogetherRepository {
               [versionField]: owner[versionField],
             })
             .where(memberWhere(id, actor));
-          await this.emit(tx, s, {
-            type: numbers
-              ? "numbers_consent_changed"
-              : "previous_consent_changed",
-            userId: actor,
-            version: owner[versionField],
-          });
+          if (!owner.removedFromRoster)
+            await this.emit(tx, s, {
+              type: numbers
+                ? "numbers_consent_changed"
+                : "previous_consent_changed",
+              userId: actor,
+              version: owner[versionField],
+            });
           return { version: owner[versionField] };
         },
       );
@@ -1860,16 +1862,24 @@ export class TogetherRepository {
         delegationGeneration: p.delegationGeneration,
       })
       .where(memberWhere(s.id, p.userId));
-    if (hasWork)
+    if (hasWork || p.removedFromRoster)
       await tx
         .insert(jobs)
-        .values({ sessionId: s.id, userId: p.userId })
+        .values({
+          sessionId: s.id,
+          userId: p.userId,
+          // Empty private completion has no shared event timestamp. Retain its
+          // completion identity/time for a later explicit reviewed amendment,
+          // without scheduling recording or fabricating a history result.
+          ...(!hasWork ? { status: "saved", effectsDone: true } : {}),
+        })
         .onConflictDoNothing();
-    await this.emit(tx, s, {
-      type: "participant_finished",
-      userId: p.userId,
-      status: p.status,
-    });
+    if (!p.removedFromRoster)
+      await this.emit(tx, s, {
+        type: "participant_finished",
+        userId: p.userId,
+        status: p.status,
+      });
   }
   private async closeSharing(
     tx: TogetherTx,
@@ -2013,7 +2023,7 @@ export class TogetherRepository {
               );
             await this.finalizeParticipant(tx, s, p);
           }
-          if (leave) {
+          if (leave && !p.leftAt) {
             if (actor !== s.hostId) {
               await tx
                 .update(participants)
@@ -2022,6 +2032,8 @@ export class TogetherRepository {
                   delegationGeneration: sql`${participants.delegationGeneration}+1`,
                   previousRecipientIds: [],
                   numbersRecipientIds: [],
+                  previousConsentVersion: sql`${participants.previousConsentVersion}+1`,
+                  numbersConsentVersion: sql`${participants.numbersConsentVersion}+1`,
                 })
                 .where(eq(participants.sessionId, id));
               for (const member of ps) {
@@ -2029,13 +2041,17 @@ export class TogetherRepository {
                 member.delegationGeneration++;
                 member.previousRecipientIds = [];
                 member.numbersRecipientIds = [];
+                member.previousConsentVersion++;
+                member.numbersConsentVersion++;
               }
             }
+            p.leftAt = new Date();
+            p.removedFromRoster = actor !== s.hostId;
             await tx
               .update(participants)
               .set({
-                leftAt: new Date(),
-                removedFromRoster: actor !== s.hostId,
+                leftAt: p.leftAt,
+                removedFromRoster: p.removedFromRoster,
               })
               .where(memberWhere(id, actor));
             await tx
@@ -2047,6 +2063,8 @@ export class TogetherRepository {
                   eq(connections.userId, actor),
                 ),
               );
+            if (actor !== s.hostId)
+              await this.emit(tx, s, { type: "membership_changed" });
           }
           if (actor === s.hostId && s.state === "active") {
             await this.closeSharing(tx, s, ps, "save_own");

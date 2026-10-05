@@ -1540,6 +1540,68 @@ describe("reviewed lobby coordinator, real cryptography and SQLite, simulated na
     },
   );
 
+  it.each(["missing-draft", "disk-failure"] as const)(
+    "retains a delegated write after %s and applies it when the owner can save",
+    async (failure) => {
+      const { host, guest } = await sharedPair();
+      await host.controller.shared.setConsent(id(2), {
+        numbers: true,
+        prev: false,
+        logging: true,
+      });
+      await settle();
+      const projection = guest.controller.shared
+        .getSnapshot()
+        .athletes.find((a) => a.userId === id(1))!;
+      const unavailable =
+        failure === "missing-draft"
+          ? jest
+              .spyOn(host.controller.workout, "getActive")
+              .mockReturnValue(null)
+          : null;
+      if (failure === "disk-failure")
+        host.db.exec(
+          "CREATE TRIGGER fail_checkpoint BEFORE UPDATE ON together_workout_checkpoint BEGIN SELECT RAISE(ABORT, 'disk full'); END",
+        );
+      const before = host.controller.workout.getOwnExecution(
+        id(1),
+        "local-session",
+      );
+      const setId = randomUUID();
+      await guest.controller.shared.requestDelegatedSet(
+        id(1),
+        {
+          type: "upsertSet",
+          planExerciseId: Object.keys(projection.exercises)[0],
+          set: { setId, reps: 12, weightKg: 35, completed: true },
+        },
+        projection.revision,
+      );
+      await settle();
+      expect(host.controller.getSnapshot().error).toBe("delegation-conflict");
+      expect(host.controller.shared.getSnapshot().delegated).toHaveLength(1);
+      expect(
+        host.controller.workout.read(id(1), "local-session")!.exercises[0].sets,
+      ).toHaveLength(1);
+      expect(
+        host.controller.workout.getOwnExecution(id(1), "local-session"),
+      ).toEqual(before);
+      unavailable?.mockRestore();
+      if (failure === "disk-failure")
+        host.db.exec("DROP TRIGGER fail_checkpoint");
+      await guest.controller.shared.publishProfile("Sam");
+      await settle();
+      expect(host.controller.shared.getSnapshot().delegated).toEqual([]);
+      expect(
+        host.controller.workout.getOwnExecution(id(1), "local-session")!
+          .execution.exercises[0].sets,
+      ).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ setId, reps: 12, weightKg: 35 }),
+        ]),
+      );
+    },
+  );
   it("an owner edit while delegated bytes are delayed produces a conflict without replacing own values", async () => {
     const { host, guest } = await sharedPair();
     await host.controller.shared.setConsent(id(2), {

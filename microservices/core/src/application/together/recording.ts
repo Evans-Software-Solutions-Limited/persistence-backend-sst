@@ -119,15 +119,17 @@ export async function processTogetherJob(id: string, userId: string) {
               .update(jobs)
               .set({ status: "saved" })
               .where(and(eq(jobs.sessionId, id), eq(jobs.userId, uid)));
-            await recordTx
-              .update(sessions)
-              .set({ revision: s.revision + 1 })
-              .where(eq(sessions.id, id));
-            await recordTx.insert(events).values({
-              sessionId: id,
-              revision: s.revision + 1,
-              event: { type: "completion_saved", userId: uid },
-            });
+            if (!p.removedFromRoster) {
+              await recordTx
+                .update(sessions)
+                .set({ revision: s.revision + 1 })
+                .where(eq(sessions.id, id));
+              await recordTx.insert(events).values({
+                sessionId: id,
+                revision: s.revision + 1,
+                event: { type: "completion_saved", userId: uid },
+              });
+            }
           },
         },
       );

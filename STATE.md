@@ -1,5 +1,55 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-05 — PR #486 next Inspector batch and staging coverage
+
+Brad requested broad API/integration/container/presenter coverage before his
+manual staging merge. The previous normal CI run 37308617753 passed, including
+Unit Tests & Coverage (15m9s), before this new Inspector batch.
+
+Confirmed delegation durability/peer-isolation/cleanup failures, stale cloud
+conflict authority and backend membership/privacy issues are corrected
+with fault injection and real SQLite/PGlite-backed regressions. Related consent,
+leave and private-completion event paths are included. Cloud runtime and recovery
+container tests exercise immediate stale finish, fresh review, offline failure
+and account changes; source and UI coverage exceed 90% in the focused run.
+
+The repeated cancellation race remains disproved by the shared requester lock.
+Original workout start times remain valid for retained/recovered work; cloud
+session creation uses server time rather than backdating session metadata.
+Required native modules remain mandatory as Brad requested; missing module names
+are now reported through enabled Sentry without weakening or breaking the gate.
+A valid corrected app policy already replaces a cached excessive floor: tests
+cover recheck and durable replacement, with no reinstall. Policy caps/expiry
+would undermine mandatory version enforcement and are not introduced.
+
+Together deployment defaults stay enabled as approved. Explicit true/false,
+1/0 and on/off now normalize case/whitespace; unknown explicit values abort
+configuration. Eighteen table-driven tests cover rollback settings; restoring
+the old comparator makes regressions fail. New staging cases are in SMOKE_TEST.md.
+Full local Inspector found three additional cloud defects: delayed private polls
+could overwrite acknowledged edits, null substitutions were ignored, and a
+conclusively rejected initial admission trapped personal work. Regression fixes
+cover own-revision monotonicity, substitution reset/name restoration and safe
+first-attempt rejection recovery, retaining ambiguous admission retry identity.
+Reverting backend fixes reproduces five failures; delegated durability/cleanup
+and cloud snapshot/substitution regressions also distinguish the old behavior.
+
+Local Inspector re-review is clean after session-scoping the own revision guard,
+using the canonical plan base for substitution resets, and preserving edits made
+during/after a rejected admission. Focused final cloud adapter/container tests:
+136/136, every changed runtime/UI file above 90% on all coverage metrics.
+Final full mobile: 588 suites / 7,989 tests passed; coverage 96.42% statements,
+91.72% branches, 96.50% functions, 97.78% lines. Full non-mobile tests 18/18
+(core 5,477); non-mobile build 12/12; typecheck 9/9; lint 6/6 and formatting pass.
+Backend repository coverage is 99.75% statements / 97.87% branches; recording
+is 100% on all metrics. Intermediate runs exposed new test-fixture/fix edge cases;
+those were corrected before the final complete passing run. No exclusions or
+thresholds changed. PR #486 records each lead's disposition and keeps the
+acknowledged PREV >30 KB limitation and physical-device acceptance outstanding.
+Unrelated AGENTS.md, CLAUDE.md and specs/_agent.md edits remain untouched.
+No merge,
+CI Inspector, native/prebuild/EAS build or deployment was initiated.
+
 ### 2026-10-05 — PR #486 eight-lead validation
 
 The replacement unit-test/coverage CI run 37302424575 passed (23m6s), clearing the

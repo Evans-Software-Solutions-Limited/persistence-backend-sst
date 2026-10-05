@@ -251,6 +251,10 @@ export class TogetherSharedSession implements TogetherSharedPort {
       this.delegated.clear();
     }
   }
+  private purgeDelegatedActor(userId: string) {
+    for (const [id, intent] of this.delegated)
+      if (intent.actorId === userId) this.delegated.delete(id);
+  }
   private active(userId: string) {
     return (
       !this.disposed &&
@@ -689,7 +693,12 @@ export class TogetherSharedSession implements TogetherSharedPort {
       )
         this.progress.clear();
       else this.progress.delete(p.authorId);
-      this.delegated.clear();
+      if (
+        p.authorId === this.options.lobby.pin.hostUserId ||
+        p.authorId === this.ownId
+      )
+        this.delegated.clear();
+      else this.purgeDelegatedActor(p.authorId);
       this.deliveries.clear();
       return;
     }
@@ -724,7 +733,7 @@ export class TogetherSharedSession implements TogetherSharedPort {
       )
         this.bindPlan(p.authorId, body.plan);
 
-      this.delegated.clear();
+      if (p.authorId === this.ownId) this.purgeDelegatedActor(p.recipientId);
       return;
     }
     if (!this.active(p.authorId) || !this.active(p.recipientId)) return;
@@ -1094,7 +1103,13 @@ export class TogetherSharedSession implements TogetherSharedPort {
       },
     });
   }
-  consumeDelegated(id: string) {
+  consumeDelegated(
+    id: string,
+    apply?: (accepted: {
+      operation: Record<string, unknown>;
+      expectedVersion: number;
+    }) => void,
+  ) {
     this.member(this.ownId);
     const intent = this.delegated.get(id),
       grant = intent && this.grant(this.ownId, intent.actorId);
@@ -1106,12 +1121,16 @@ export class TogetherSharedSession implements TogetherSharedPort {
         this.active(intent.actorId) &&
         intent.expectedVersion === this.ownRevision,
     );
-    this.delegated.delete(id);
-    this.notify();
-    return {
+    const accepted = {
       operation: clone(intent.operation),
       expectedVersion: intent.expectedVersion,
     };
+    // A durable owner write must succeed before the intent is acknowledged locally.
+    // Failure retains the pending intent without notifying/retrying in a tight loop.
+    apply?.(accepted);
+    this.delegated.delete(id);
+    this.notify();
+    return accepted;
   }
   async close(mode: "finish_all" | "save_own" | "leave") {
     const existing = this.closures.get(this.ownId);
@@ -1206,11 +1225,21 @@ export class TogetherSharedSession implements TogetherSharedPort {
         )
         .filter((id) => !members.has(id)),
     );
-    if (!members.has(this.ownId))
-      this.suspendPeer(this.options.lobby.pin.hostUserId);
-    else for (const userId of removed) this.suspendPeer(userId);
+    const failures: unknown[] = [];
+    const peers = !members.has(this.ownId)
+      ? [this.options.lobby.pin.hostUserId]
+      : removed;
+    for (const userId of peers) {
+      try {
+        this.suspendPeer(userId);
+      } catch (error) {
+        failures.push(error);
+      }
+    }
     for (const userId of removed) this.profiles.delete(userId);
     this.notify();
+    if (failures.length)
+      throw new AggregateError(failures, "Shared roster cleanup failed");
   }
 
   /** Disconnected grants are not proof of current authorization. Require a fresh owner revision. */
@@ -1251,11 +1280,14 @@ export class TogetherSharedSession implements TogetherSharedPort {
         this.deliveries.clear();
       } else {
         this.purge(userId);
-        this.deliveries.delete(userId);
-        this.delegated.clear();
       }
     } catch (error) {
       failure = error;
+    }
+    // Durable purge can fail; memory authorization must still be withdrawn.
+    if (!all) {
+      this.deliveries.delete(userId);
+      this.purgeDelegatedActor(userId);
     }
     for (const p of suspended)
       try {

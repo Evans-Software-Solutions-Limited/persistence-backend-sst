@@ -16,12 +16,24 @@ import {
 import * as schema from "@persistence/db/schema";
 const holder = vi.hoisted(() => ({ db: null as unknown }));
 vi.mock("@persistence/db/client", () => ({ getDb: () => holder.db }));
+vi.mock("@persistence/api-utils/auth/supabaseAuth", async (original) => ({
+  ...(await original<
+    typeof import("@persistence/api-utils/auth/supabaseAuth")
+  >()),
+  getAuthUser: async (authorization: string | undefined) =>
+    authorization?.startsWith("Bearer ")
+      ? { sub: authorization.slice(7) }
+      : null,
+}));
 import {
   TogetherRepository,
   revokePair,
   canReportTogether,
 } from "../togetherRepository";
 import { withActors } from "../shared";
+import { drainTogether } from "../transport";
+import { togetherRoutes } from "../togetherRoutes";
+import { TogetherCompletionRepository } from "../completionRepository";
 import { placesRepository } from "../../places/placesRepository";
 import { SessionRepository } from "../../repositories/sessionRepository";
 import type { TogetherCommand } from "../types";
@@ -144,6 +156,15 @@ beforeAll(async () => {
   );
   await pg.exec(numbersMigration);
   await pg.exec(numbersMigration);
+  await pg.exec(
+    readFileSync(
+      new URL(
+        "../../../../../../supabase/migrations/20261001120000_together_reviewed_results.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
   db = drizzle(pg, { schema });
   holder.db = db;
 });
@@ -1110,7 +1131,7 @@ describe("remaining recovery and migration boundaries", () => {
     const flags = await pg.query<{ name: string; enabled: boolean }>(
       "SELECT c.relname AS name,c.relrowsecurity AS enabled FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind='r' AND (c.relname LIKE 'together_%' OR c.relname LIKE 'social_%')",
     );
-    expect(flags.rows).toHaveLength(18);
+    expect(flags.rows).toHaveLength(19);
     expect(flags.rows.every((r) => r.enabled)).toBe(true);
     for (const role of ["anon", "authenticated"]) {
       const grants = await pg.query<{ ok: boolean }>(
@@ -2204,24 +2225,30 @@ describe("recipient-scoped previous values", () => {
       await expect(
         repo.previousValues(b, s.sessionId, a),
       ).rejects.toMatchObject({ status: 403 });
+      const revokedVersion = reason === "leave" ? 2 : 1;
       expect(await grant(s.sessionId, [b], 0, a, k)).toMatchObject({
-        version: 1,
+        version: revokedVersion,
         recipientIds: [],
       });
-      await expect(grant(s.sessionId, [b], 1)).rejects.toMatchObject({
+      await expect(
+        grant(s.sessionId, [b], revokedVersion),
+      ).rejects.toMatchObject({
         status: ["reader_finish", "leave"].includes(reason) ? 400 : 403,
       });
       expect(
         (await repo.previousValues(a, s.sessionId, a)).values,
       ).toHaveLength(1);
-      expect(await grant(s.sessionId, [], 1)).toMatchObject({
-        version: 2,
+      expect(await grant(s.sessionId, [], revokedVersion)).toMatchObject({
+        version: revokedVersion + 1,
         recipientIds: [],
       });
       const own = (await repo.snapshot(a, s.sessionId)).participants.find(
         (p) => p.userId === a,
       );
-      expect(own?.previousConsent).toEqual({ version: 2, recipientIds: [] });
+      expect(own?.previousConsent).toEqual({
+        version: revokedVersion + 1,
+        recipientIds: [],
+      });
     },
   );
   it("revokes a finished nonhost's grant independently of live session sharing and logging authority", async () => {
@@ -2581,6 +2608,47 @@ describe("independent current numeric consent", () => {
 });
 
 describe("roster removal preserves independent own continuation", () => {
+  it("retains private empty completion time for later reviewed own work without shared activity", async () => {
+    const s = await pair();
+    await repo.removeParticipant(a, s.sessionId, b, key(), {
+      expectedRevision: (await repo.snapshot(a, s.sessionId)).revision,
+    });
+    const revision = (await repo.snapshot(a, s.sessionId)).revision;
+    await repo.finish(b, s.sessionId, key(), { expectedOwnRevision: 0 });
+    const [job] = await db
+      .select()
+      .from(schema.togetherJobs)
+      .where(eq(schema.togetherJobs.userId, b));
+    expect(job).toMatchObject({ status: "saved", effectsDone: true });
+    expect(await db.select().from(schema.workoutSessions)).toEqual([]);
+    const completedAt = job.completedAt;
+    await new TogetherCompletionRepository().reviewCloud(
+      b,
+      s.sessionId,
+      key(),
+      {
+        expectedOwnRevision: 0,
+        execution: {
+          exercises: [
+            {
+              planExerciseId: s.plan.exercises[0].planExerciseId,
+              skipped: false,
+              sets: [{ setId: key(), reps: 8, weightKg: 40, completed: true }],
+            },
+          ],
+        },
+      },
+    );
+    const [history] = await db
+      .select()
+      .from(schema.workoutSessions)
+      .where(eq(schema.workoutSessions.userId, b));
+    expect(history.completedAt?.toISOString()).toBe(completedAt.toISOString());
+    expect(await repo.events(a, s.sessionId, revision)).toEqual({
+      data: [],
+      revision,
+    });
+  });
   it("removes only the selected guest, purges grants and keeps remaining peers sharing", async () => {
     const s = await pair();
     const invitation = await repo.invite(a, s.sessionId, key(), {
@@ -2639,8 +2707,58 @@ describe("roster removal preserves independent own continuation", () => {
     await expect(repo.ticket(b, s.sessionId, key())).rejects.toMatchObject({
       code: "FORBIDDEN",
     });
+    const privateRevision = (await repo.snapshot(a, s.sessionId)).revision;
+    for (const event of await repo.listPendingEvents())
+      await repo.acknowledgeEvent(event.sessionId, event.revision);
+    const ticket = await repo.ticket(a, s.sessionId, key());
+    await repo.consumeTicket(ticket.ticket, "remaining-host");
     await run(b, s.sessionId, cmd(b, pid, 1));
+    await repo.numbersConsent(b, s.sessionId, key(), {
+      expectedVersion: own.participants[0].numbersConsent!.version,
+      recipientIds: [],
+    });
+    await repo.previousConsent(b, s.sessionId, key(), {
+      expectedVersion: own.participants[0].previousConsent!.version,
+      recipientIds: [],
+    });
     await repo.finish(b, s.sessionId, key(), { expectedOwnRevision: 2 });
+    const socket = { hint: vi.fn(), disconnect: vi.fn() };
+    await drainTogether({ repository: repo, socket });
+    expect(socket.hint).not.toHaveBeenCalled();
+    const eventsResponse = await togetherRoutes.handle(
+      new Request(
+        `http://localhost/together/sessions/${s.sessionId}/events?afterRevision=${privateRevision}`,
+        { headers: { authorization: `Bearer ${a}` } },
+      ),
+    );
+    expect(eventsResponse.status).toBe(200);
+    expect(await eventsResponse.json()).toEqual({
+      data: [],
+      revision: privateRevision,
+    });
+    expect(await repo.events(a, s.sessionId, privateRevision)).toEqual({
+      data: [],
+      revision: privateRevision,
+    });
+    const response = await togetherRoutes.handle(
+      new Request(`http://localhost/together/sessions/${s.sessionId}`, {
+        headers: { authorization: `Bearer ${b}` },
+      }),
+    );
+    expect(response.status).toBe(200);
+    const recovered = (
+      (await response.json()) as {
+        data: Awaited<ReturnType<TogetherRepository["snapshot"]>>;
+      }
+    ).data;
+    expect(
+      recovered.participants.map((member: { userId: string }) => member.userId),
+    ).toEqual([b]);
+    expect(recovered.participants[0].status).toBe("saved");
+    expect(recovered.participants[0].execution!.exercises[0].sets).toHaveLength(
+      2,
+    );
+    expect(recovered.completion.historyId).toBeTruthy();
     expect((await repo.snapshot(a, s.sessionId)).sharingActive).toBe(true);
     await expect(
       repo.requestJoin(b, key(), {
@@ -2658,9 +2776,87 @@ describe("roster removal preserves independent own continuation", () => {
       "finished_empty",
     );
   });
+  it("versions and announces finished guest leave once, rejecting pre-leave consent updates", async () => {
+    const s = await pair();
+    await repo.numbersConsent(a, s.sessionId, key(), {
+      expectedVersion: 0,
+      recipientIds: [b],
+    });
+    await repo.previousConsent(a, s.sessionId, key(), {
+      expectedVersion: 0,
+      recipientIds: [b],
+    });
+    await repo.finish(b, s.sessionId, key(), { expectedOwnRevision: 0 });
+    const before = (await repo.snapshot(a, s.sessionId)).revision;
+    const leaveKey = key();
+    await repo.finish(
+      b,
+      s.sessionId,
+      leaveKey,
+      { expectedOwnRevision: 0 },
+      true,
+    );
+    const after = await repo.snapshot(a, s.sessionId);
+    expect(after.participants[0].numbersConsent).toEqual({
+      version: 2,
+      recipientIds: [],
+    });
+    expect(after.participants[0].previousConsent).toEqual({
+      version: 2,
+      recipientIds: [],
+    });
+    expect((await repo.events(a, s.sessionId, before)).data).toEqual([
+      { revision: before + 1, event: { type: "membership_changed" } },
+    ]);
+    await expect(
+      repo.numbersConsent(a, s.sessionId, key(), {
+        expectedVersion: 1,
+        recipientIds: [],
+      }),
+    ).rejects.toMatchObject({ code: "VERSION_CONFLICT" });
+    await expect(
+      repo.previousConsent(a, s.sessionId, key(), {
+        expectedVersion: 1,
+        recipientIds: [],
+      }),
+    ).rejects.toMatchObject({ code: "VERSION_CONFLICT" });
+    await repo.finish(
+      b,
+      s.sessionId,
+      leaveKey,
+      { expectedOwnRevision: 0 },
+      true,
+    );
+    await repo.finish(b, s.sessionId, key(), { expectedOwnRevision: 0 }, true);
+    expect(await repo.snapshot(a, s.sessionId)).toEqual(after);
+  });
 });
 
 describe("cloud personal start and durable admission recovery", () => {
+  it("retains an old workout start without backdating shared session creation", async () => {
+    const p = plan();
+    const startedAt = "2020-01-01T09:00:00.000Z";
+    const now = Date.now();
+    const created = await repo.create(a, key(), {
+      clientDraftId: key(),
+      startedAt,
+      plan: p,
+      ownExecution: { exercises: [] },
+    });
+    const [stored] = await db
+      .select()
+      .from(schema.togetherSessions)
+      .where(eq(schema.togetherSessions.id, created.sessionId));
+    expect(stored.createdAt.getTime()).toBeGreaterThanOrEqual(now);
+    await run(a, created.sessionId, cmd(a, p.exercises[0].planExerciseId));
+    await repo.finish(a, created.sessionId, key(), { expectedOwnRevision: 1 });
+    await repo.processJob(created.sessionId, a);
+    const [history] = await db
+      .select()
+      .from(schema.workoutSessions)
+      .where(eq(schema.workoutSessions.userId, a));
+    expect(history.startedAt?.toISOString()).toBe(startedAt);
+  });
   it("records an existing guest workout from its original start independently of the host", async () => {
     const s = await create();
     const startedAt = new Date(Date.now() - 600_000).toISOString();

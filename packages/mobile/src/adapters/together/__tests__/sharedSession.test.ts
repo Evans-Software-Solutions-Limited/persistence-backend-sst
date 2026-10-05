@@ -846,6 +846,88 @@ describe("shared plans, sealed consent and independent projections", () => {
     expect(engines[1].getSnapshot().grants).toEqual([]);
     expect(engines[1].getSnapshot().deliveries).toEqual([]);
   });
+  it.each([
+    "suspend",
+    "revoke",
+    "unrelated-consent",
+    "leave",
+    "host-close",
+  ] as const)(
+    "%s only invalidates the affected actors delegated writes",
+    async (change) => {
+      await engines[0].publishPlan(plan);
+      for (const peer of [2, 3])
+        await engines[0].setConsent(id(peer), { ...none, logging: true });
+      const operation = readOwnerCommand(
+        command(1),
+        person(1).credential,
+      ).operation;
+      await engines[1].requestDelegatedSet(id(1), operation, 0);
+      await engines[2].requestDelegatedSet(id(1), operation, 0);
+      expect(engines[0].getSnapshot().delegated).toHaveLength(2);
+      if (change === "suspend") engines[0].suspendPeer(id(2));
+      if (change === "revoke") await engines[0].setConsent(id(2), none);
+      if (change === "unrelated-consent")
+        await engines[1].setConsent(id(3), { ...none, numbers: true });
+      if (change === "leave") await engines[1].close("leave");
+      if (change === "host-close") await engines[0].close("finish_all");
+      const pending = engines[0].getSnapshot().delegated;
+      expect(pending.map((i) => i.actorId)).toEqual(
+        change === "host-close"
+          ? []
+          : change === "unrelated-consent"
+            ? [id(2), id(3)]
+            : [id(3)],
+      );
+      if (change === "host-close") return;
+      expect(
+        engines[0].consumeDelegated(
+          pending.find((i) => i.actorId === id(3))!.id,
+        ),
+      ).toEqual({
+        operation,
+        expectedVersion: 0,
+      });
+    },
+  );
+  it.each(["suspendShared", "purgePeerCommands", "deleteShared"] as const)(
+    "cleans every removed peer and notifies observers after %s fails",
+    async (method) => {
+      await engines[0].publishPlan(plan);
+      for (const peer of [2, 3]) {
+        await engines[peer - 1].publishProfile(`Peer ${peer}`);
+        await engines[0].setConsent(id(peer), { ...none, logging: true });
+        await engines[peer - 1].setConsent(id(1), { ...none, numbers: true });
+        await engines[peer - 1].publishProgress(command(peer));
+      }
+      lobbies[0].removeParticipant(id(2));
+      lobbies[0].removeParticipant(id(3));
+      const suspension = jest.spyOn(lobbies[0].store, "suspendShared");
+      const failure =
+        method === "suspendShared"
+          ? suspension
+          : jest.spyOn(lobbies[0].store, method);
+      failure.mockImplementationOnce(() => {
+        throw new Error("disk full");
+      });
+      const notify = jest.fn();
+      engines[0].subscribe(notify);
+      expect(() => engines[0].rosterChanged()).toThrow(
+        "Shared roster cleanup failed",
+      );
+      expect(
+        suspension.mock.calls.some(
+          (args) => args[1] === id(3) || args[2] === id(3),
+        ),
+      ).toBe(true);
+      const state = engines[0].getSnapshot();
+      expect(state.profiles[id(2)]).toBeUndefined();
+      expect(state.profiles[id(3)]).toBeUndefined();
+      expect(state.grants).toEqual([]);
+      expect(state.athletes).toEqual([]);
+      expect(notify).toHaveBeenCalled();
+    },
+  );
   it("link loss keeps the owner's own projection for independent continuation and renewed sharing", async () => {
     await engines[0].publishPlan(plan);
     await engines[1].publishProgress(command(2));

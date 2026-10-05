@@ -45,6 +45,7 @@ interface Action {
   method: Mutation;
   args: unknown[];
   own?: boolean;
+  admissionAttempted?: boolean;
 }
 interface Durable {
   detached?: boolean;
@@ -261,6 +262,17 @@ export class TogetherCloudController implements TogetherCloudPort {
         Math.max(this.state.snapshot.revision, stored.own?.revision ?? 0)
     )
       return;
+    // Private execution advances independently of the shared roster revision.
+    // A poll begun before an acknowledged write must not restore its old values.
+    const acknowledgedOwnRevision = Math.max(
+      ...[stored.own, this.state.snapshot].map((current) =>
+        current?.sessionId === snapshot.sessionId
+          ? (current.participants.find((p) => p.userId === this.account)
+              ?.ownRevision ?? 0)
+          : 0,
+      ),
+    );
+    if (own.ownRevision < acknowledgedOwnRevision) return;
     stored.sessionId = snapshot.sessionId;
     const createdPersonal = !stored.personal;
     if (!stored.personal) {
@@ -307,6 +319,8 @@ export class TogetherCloudController implements TogetherCloudPort {
         own.execution,
         stored.mapping,
         this.options.randomUUID,
+        snapshot.plan,
+        own.exerciseCatalog,
       );
       stored.desired = copy(own.execution);
       stored.desiredPlanHash = requestHash(snapshot.plan);
@@ -322,6 +336,8 @@ export class TogetherCloudController implements TogetherCloudPort {
         own.execution,
         stored.mapping,
         this.options.randomUUID,
+        snapshot.plan,
+        own.exerciseCatalog,
       );
       stored.desired = copy(own.execution);
       stored.desiredPlanHash = requestHash(snapshot.plan);
@@ -425,7 +441,13 @@ export class TogetherCloudController implements TogetherCloudPort {
       mapping,
       desired: copy(draft.ownExecution),
       desiredPlanHash: requestHash(draft.plan),
-      pending: [{ method: "create", args: [this.options.randomUUID(), body] }],
+      pending: [
+        {
+          method: "create",
+          args: [this.options.randomUUID(), body],
+          admissionAttempted: false,
+        },
+      ],
     };
     if (record.personal)
       record.personal.together = {
@@ -457,6 +479,7 @@ export class TogetherCloudController implements TogetherCloudPort {
       pending: [
         {
           method: "join",
+          admissionAttempted: false,
           args: [
             this.options.randomUUID(),
             {
@@ -579,11 +602,52 @@ export class TogetherCloudController implements TogetherCloudPort {
             next.args[0] = stored.sessionId;
             this.persist(stored);
           }
+          const initialAdmission =
+            next.method === "create" || next.method === "join";
+          // Persist before sending: a crash or lost response may hide a committed
+          // admission. Legacy outboxes are deliberately treated as ambiguous.
+          const firstAdmissionAttempt =
+            initialAdmission && next.admissionAttempted === false;
+          if (initialAdmission) {
+            next.admissionAttempted = true;
+            this.persist(stored);
+            this.guard(context);
+          }
           const method = this.options.api[next.method] as (
             ...args: never[]
           ) => Promise<Result<unknown, TogetherOfflineApiError>>;
           const response = await method(...(next.args as never[]));
           this.guard(context);
+          if (
+            firstAdmissionAttempt &&
+            !response.ok &&
+            [
+              "SESSION_FULL",
+              "NOT_FOUND",
+              "INVALID_SCHEMA",
+              "FORBIDDEN",
+              "INVITE_EXPIRED",
+              "PAID_REQUIRED",
+              "INVALID_STATE",
+            ].includes(response.error.togetherCode ?? "")
+          ) {
+            const rejected = this.load()!;
+            if (requestHash(rejected.pending[0]) !== requestHash(next))
+              throw new Error("cloud-outbox-conflict");
+            rejected.pending.shift();
+            // Local edits can queue while admission is in flight. Their full
+            // checkpoint survives; unsent commands have no server execution.
+            rejected.pending = rejected.pending.filter(
+              (action) =>
+                !(
+                  action.method === "command" &&
+                  action.own &&
+                  action.args[0] === null
+                ),
+            );
+            rejected.joinStatus = "rejected";
+            this.persist(rejected);
+          }
           if (
             !response.ok &&
             response.error.togetherCode === "VERSION_CONFLICT"
@@ -724,6 +788,12 @@ export class TogetherCloudController implements TogetherCloudPort {
         ? { together: stored.personal.together }
         : {}),
     };
+    if (!stored.own && stored.joinStatus === "rejected") {
+      // A definitive non-admission stays personal until explicit detachment.
+      // Keep new local edits without rebuilding an impossible cloud outbox.
+      this.persist(stored);
+      return;
+    }
     try {
       const plan = stored.own?.plan ?? stored.draft?.plan;
       if (!plan) throw new Error("cloud-awaiting-plan");
@@ -1035,7 +1105,7 @@ export class TogetherCloudController implements TogetherCloudPort {
     method: "finish" | "close",
     choice: boolean | "finish_all" | "save_own",
   ) {
-    this.context();
+    await this.refreshConflictAuthority(reviewed.token);
     const { s, p } = this.own(),
       stored = this.load()!;
     if (stored.pending.length || this.draining || !p.execution)
@@ -1082,8 +1152,23 @@ export class TogetherCloudController implements TogetherCloudPort {
     this.persist(stored);
     await this.drain();
   }
+  private async refreshConflictAuthority(token: string) {
+    const context = this.context();
+    // A poll already in flight can predate the conflict; do not reuse it as
+    // proof that this explicit commit has refreshed its authority.
+    if (this.refreshing) {
+      await this.refreshing;
+      this.guard(context);
+    }
+    await this.refresh();
+    this.guard(context);
+    // A changed authority must be shown again before any reviewed writes.
+    this.checkReview(token);
+  }
   async reviewOwn(execution: CloudExecution, token: string) {
     this.checkReview(token);
+    if (this.load()?.projectionConflict)
+      await this.refreshConflictAuthority(token);
     const { s, p } = this.own();
     if (s.sharingActive) throw new Error("cloud-sharing-active");
     const reviewed = await this.prepareReview();
