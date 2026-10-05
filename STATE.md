@@ -1,5 +1,30 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-05 — PER-64 iOS Nearby SPM import fix
+
+Brad merged PR #486 and reported the first owner-build failure:
+`TogetherNearbyModule.swift: no such module NearbyConnections`. The CocoaPods
+post-install hook linked the SPM product but omitted its Swift module search path;
+CocoaPods' per-pod output directory differs from the shared SPM products directory.
+The fix adds the configuration/platform-specific SYMROOT path only to TogetherNearby,
+preserves inherited/custom paths and retains existing package linkage. Based on
+pulled main a773d581; unrelated local AGENTS.md changes remain untouched.
+
+Real Xcodeproj fixtures exercise the post-install entry point, save/reload,
+Debug/Release/Staging, scalar/array/unset paths, paths with spaces and idempotence.
+The previous helper fails the import-path regression; the fixed helper passes.
+Expo config tests: 7 passed, measured aggregate coverage 100/91.66/100/100.
+Local Inspector is clean. Native compilation is still unverified: no native,
+prebuild, pod installation, package resolution or EAS build was started.
+
+After merging/pulling the fix, Brad runs pod install in the existing generated
+packages/mobile/ios project (using Bundler if configured), then retries his build.
+If its Podfile lacks the Together post-install hook, his normal prebuild workflow
+must regenerate it first. Sentry/deployment-target warnings are separate from the
+reported blocking import error. Physical-device Together acceptance remains open.
+[PER-64](https://linear.app/evans-software-solutions/issue/PER-64).
+
+
 ### 2026-10-05 — PR #486 five-lead review
 
 [PER-64](https://linear.app/evans-software-solutions/issue/PER-64) /

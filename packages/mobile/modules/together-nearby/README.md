@@ -12,7 +12,16 @@ The Expo config uses `plugin/withTogetherNearby.js`. At the owner-run CocoaPods
 post-install, `link_nearby.rb` adds Google's `NearbyConnections` Swift package to
 both the TogetherNearby pod target (compile) and application target (link), pinned
 to `8b96295426de02266e59efb7b28d6846704c8c97`. It preserves existing project entries
-and fails rather than silently creating an unavailable Swift stub. Android uses
+and fails rather than silently creating an unavailable Swift stub. The pod target
+also inherits the SPM configuration/platform products directory in
+`SWIFT_INCLUDE_PATHS`; CocoaPods' per-pod output directory otherwise hides the
+SPM Swift module at compile time. Existing custom import paths remain intact.
+After pulling this fix into an already-generated iOS project, run `pod install`
+from `packages/mobile/ios` (or your existing Bundler equivalent) before retrying
+the owner build. The existing post-install hook loads the updated Ruby helper;
+no clean prebuild or manual Xcode edits are required if that hook is present.
+If the generated Podfile predates Together, regenerate it using your normal
+owner-controlled Expo prebuild workflow first. Android uses
 `com.google.android.gms:play-services-nearby:19.5.0`. A compatible owner build must
 resolve these dependencies; old binaries return a null JS adapter.
 

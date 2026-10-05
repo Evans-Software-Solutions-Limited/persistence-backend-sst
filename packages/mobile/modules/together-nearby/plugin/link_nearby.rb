@@ -1,8 +1,11 @@
 # Called only by the owner-run CocoaPods post_install. Does not invoke a build.
+require 'shellwords'
+
 module PersistenceTogetherNearby
   URL = 'https://github.com/google/nearby.git'.freeze
   REVISION = '8b96295426de02266e59efb7b28d6846704c8c97'.freeze
   PRODUCT = 'NearbyConnections'.freeze
+  SWIFT_PRODUCTS = '$(SYMROOT)/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)'.freeze
 
   def self.attach(project, target)
     objects = Xcodeproj::Project::Object
@@ -27,10 +30,30 @@ module PersistenceTogetherNearby
     end
   end
 
+  # CocoaPods puts each pod in its own CONFIGURATION_BUILD_DIR, whereas SPM
+  # emits Swift modules in the shared configuration/platform products directory.
+  # Package linkage alone therefore does not make `import NearbyConnections` work.
+  def self.configure_swift_imports(target)
+    target.build_configurations.each do |config|
+      existing = config.build_settings['SWIFT_INCLUDE_PATHS']
+      paths = if existing.is_a?(String)
+        Shellwords.split(existing)
+      else
+        Array(existing).map { |path| path.start_with?('"') ? Shellwords.split(path).first : path }
+      end
+      # Xcodeproj serializes this setting as a space-separated string. Quote each
+      # entry so custom paths (and expanded build directories) can contain spaces.
+      config.build_settings['SWIFT_INCLUDE_PATHS'] = (['$(inherited)'] + paths + [SWIFT_PRODUCTS]).uniq.map do |path|
+        '"' + path.gsub('\\', '\\\\').gsub('"', '\\"') + '"'
+      end.join(' ')
+    end
+  end
+
   def self.install(installer)
     pod_target = installer.pods_project.targets.find { |target| target.name == 'TogetherNearby' }
     raise 'TogetherNearby pod target missing; check Expo local-module autolinking' unless pod_target
     attach(installer.pods_project, pod_target)
+    configure_swift_imports(pod_target)
     installer.aggregate_targets.each do |aggregate|
       aggregate.user_targets.each do |target|
         next unless target.product_type == 'com.apple.product-type.application'
