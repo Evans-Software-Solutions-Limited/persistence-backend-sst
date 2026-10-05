@@ -17,8 +17,12 @@ source-contract checks only, not compilation or physical prompt proof.
 The zero-set template lead conflates social template copying with live shared-plan
 adoption. Social templates legitimately retain zero target sets and copy via the
 backend; live adoption consumes a separately validated plan. Preserve that contract
-and add coverage rather than modifying template data. Final validation and local
-Inspector disposition are recorded in the PR. Brad retains manual merge/build
+and add coverage rather than modifying template data. Local Inspector clean at
+98c62d5a. Final mobile: 592 suites / 8,045 tests; coverage 96.42% statements,
+91.73% branches, 96.49% functions, 97.79% lines. Typecheck 9/9, lint 6/6
+and formatting pass. Focused shared/native 61 tests and cloud/API 113 tests pass;
+reverting fixes reproduces receipt and cloud races. Backend is unchanged in this
+batch; prior full backend validation remains applicable. Brad retains manual merge/build
 ownership; no native build, deployment or CI Inspector trigger.
 
 
