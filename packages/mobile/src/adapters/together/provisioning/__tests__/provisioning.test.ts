@@ -253,7 +253,14 @@ it.each([401, 402, 403, 404, 409])(
     now += 400000;
     api.trust.mockResolvedValueOnce(denial(status));
     expect(await service.prepare({ online: true })).toMatchObject({
-      error: { code: "unauthorized" },
+      error: {
+        code:
+          status === 401
+            ? "authentication-required"
+            : status === 404
+              ? "service-unavailable"
+              : "unauthorized",
+      },
     });
     service = make();
     expect(await service.prepare({ online: false })).toMatchObject({
@@ -404,7 +411,7 @@ it("friend refusal removes only known FORBIDDEN pair; paid or unknown denial blo
   expect((await service.prepare({ online: false })).ok).toBe(true);
   api.friendship.mockResolvedValueOnce(denial(403, "PAID_REQUIRED"));
   expect(await service.friendship(C, { online: true })).toMatchObject({
-    error: { code: "unauthorized" },
+    error: { code: "paid-required" },
   });
   expect(await service.prepare({ online: false })).toMatchObject({
     error: { code: "unauthorized" },
@@ -897,7 +904,9 @@ it.each([
       if (status === 200) expect(result.ok).toBe(true);
       else
         expect(result).toMatchObject({
-          error: { code: status === 401 ? "unauthorized" : "unavailable" },
+          error: {
+            code: status === 401 ? "authentication-required" : "unavailable",
+          },
         });
     }
     if (status === 200) {
@@ -1160,3 +1169,32 @@ describe("original device journal recovery signing", () => {
     });
   });
 });
+
+it.each([
+  [401, "UNAUTHENTICATED", "authentication-required"],
+  [403, "PAID_REQUIRED", "paid-required"],
+  [404, "NOT_FOUND", "service-unavailable"],
+  [403, "DEVICE_REVOKED", "device-revoked"],
+  [409, "IDEMPOTENCY_MISMATCH", "registration-conflict"],
+  [403, "INVALID_PROOF", "registration-invalid"],
+  [400, "INVALID_SCHEMA", "unauthorized"],
+  [403, "FORBIDDEN", "unauthorized"],
+] as const)(
+  "retains registration denial %s/%s as %s without allowing cached sharing",
+  async (status, reason, code) => {
+    const initial = await prepared();
+    now += 400000;
+    api.register.mockResolvedValueOnce(denial(status, reason));
+    expect(await service.prepare({ online: true })).toMatchObject({
+      error: { code },
+    });
+    expect(new ProvisioningCache(database).read(scope()).blocked).toBe(true);
+    expect(new ProvisioningCache(database).read(scope()).credential).toEqual(
+      initial.credential,
+    );
+    service = make();
+    expect(await service.prepare({ online: false })).toMatchObject({
+      error: { code: "unauthorized" },
+    });
+  },
+);

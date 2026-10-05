@@ -294,7 +294,9 @@ it("keeps explicit hotspot-owner and nearby permission/unreachable states distin
   const p = props("idle");
   p.snapshot.transport = "hotspot-owner";
   const r = renderWithTheme(<TogetherLobbyPresenter {...p} />);
-  expect(r.getByText("This Android phone’s hotspot")).toBeTruthy();
+  expect(
+    r.getByText("Athletes on this Android phone’s hotspot can find it"),
+  ).toBeTruthy();
   expect(r.getByText(/Discovery depends on device support/)).toBeTruthy();
   r.rerender(
     <TogetherLobbyPresenter
@@ -302,7 +304,7 @@ it("keeps explicit hotspot-owner and nearby permission/unreachable states distin
       snapshot={{ ...p.snapshot, transport: "nearby" }}
     />,
   );
-  expect(r.getByText("Nearby · Bluetooth and local radio")).toBeTruthy();
+  expect(r.getByText("Athletes nearby can find it")).toBeTruthy();
   expect(r.getByText("Open nearby")).toBeTruthy();
 });
 
@@ -344,3 +346,32 @@ it("nearby discovery expiry asks to search nearby, and hotspot browsing names th
   );
   expect(r.getByText(/Connect the other phones/)).toBeTruthy();
 });
+
+it.each([
+  ["authentication-required", "Sign in again"],
+  ["signed-out", "Sign in again"],
+  ["service-unavailable", "account or app environment"],
+  ["device-revoked", "was revoked"],
+  ["registration-conflict", "register this device"],
+  ["registration-invalid", "date and time"],
+  ["unauthorized", "could not be authorized"],
+  ["ineligible", "could not be authorized"],
+])(
+  "shows the specific %s failure without mislabeling it a subscription denial",
+  (code, message) => {
+    const p = props("unavailable");
+    p.snapshot.error = code;
+    const r = renderWithTheme(<TogetherLobbyPresenter {...p} />);
+    expect(r.getByText(togetherErrorCopy(code))).toBeTruthy();
+    expect(togetherErrorCopy(code)).toContain(message);
+    expect(
+      r.queryByText(/Every athlete needs a qualifying paid subscription/),
+    ).toBeNull();
+  },
+);
+it.each(["paid-required", "PAID_REQUIRED"])(
+  "identifies explicit %s subscription denial",
+  (code) => {
+    expect(togetherErrorCopy(code)).toContain("qualifying paid subscription");
+  },
+);

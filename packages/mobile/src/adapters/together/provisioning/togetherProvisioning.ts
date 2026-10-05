@@ -1,6 +1,7 @@
 import { commandFromEnvelope, readOwnerCommand } from "../localCommand";
 import type {
   TogetherOfflineApi,
+  TogetherOfflineApiError,
   TogetherRecoveryCommand,
 } from "../../../domain/ports/togetherOfflineApi.port";
 import type {
@@ -59,6 +60,18 @@ const authoritative = (e: ApiError) =>
     e.status >= 400 &&
     e.status < 500 &&
     !retryableClientStatus(e.status));
+/** Denial still revokes cached sharing authority; its reason must not imply payment. */
+function denialCode(error: TogetherOfflineApiError): ProvisioningErrorCode {
+  if (error.status === 401 || error.togetherCode === "UNAUTHENTICATED")
+    return "authentication-required";
+  if (error.togetherCode === "PAID_REQUIRED") return "paid-required";
+  if (error.status === 404) return "service-unavailable";
+  if (error.togetherCode === "DEVICE_REVOKED") return "device-revoked";
+  if (error.togetherCode === "IDEMPOTENCY_MISMATCH")
+    return "registration-conflict";
+  if (error.togetherCode === "INVALID_PROOF") return "registration-invalid";
+  return "unauthorized";
+}
 function errorCode(error: unknown): ProvisioningErrorCode {
   const message = error instanceof Error ? error.message : "storage";
   if (
@@ -322,12 +335,12 @@ export class TogetherProvisioning implements TogetherProvisioningPort {
       }
       if (this.now() < snapshot.observedAt) return failure("expired");
       const fallback = (
-        error: ApiError,
+        error: TogetherOfflineApiError,
       ): Result<ReadyIdentity, ProvisioningError> => {
         if (authoritative(error)) {
           this.authorizationRevision++;
           this.cache.block(scope);
-          return failure("unauthorized");
+          return failure(denialCode(error));
         }
         if (this.authorizationRevision !== authorizationRevision)
           return failure("unauthorized");
@@ -545,7 +558,7 @@ export class TogetherProvisioning implements TogetherProvisioningPort {
           this.authorizationRevision++;
         }
         this.cache.write(scope, snapshot);
-        return failure("unauthorized");
+        return failure(denialCode(result.error));
       }
       if (
         snapshot.blocked ||

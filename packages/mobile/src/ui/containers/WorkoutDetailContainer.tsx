@@ -1,5 +1,8 @@
+import { TogetherStartRow } from "@/ui/presenters/TogetherStartRow";
+import { TogetherStartSheet } from "@/ui/presenters/TogetherStartSheet";
+import type { TogetherLobbyAudience } from "@/domain/ports/togetherLobby.port";
 import { router, useLocalSearchParams } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   deriveDominantEquipment,
   deriveWorkoutMuscles,
@@ -42,9 +45,16 @@ import { AdaptiveSuiteRouteGuard } from "@/ui/components/subscription/AdaptiveSu
 export function WorkoutDetailContainer() {
   const params = useLocalSearchParams<{ id?: string }>();
   const workoutId = params.id ?? null;
-  const { storage } = useAdapters();
+  const { storage, togetherLobby } = useAdapters();
+  const [togetherOpen, setTogetherOpen] = useState(false);
+  const [togetherAudience, setTogetherAudience] =
+    useState<TogetherLobbyAudience>("invite-only");
   const { session } = useAuth();
   const userId = session?.userId ?? null;
+  useEffect(() => {
+    setTogetherOpen(false);
+    setTogetherAudience("invite-only");
+  }, [userId, workoutId]);
   const weightUnit = useProfilePage().payload?.profile.weightUnit ?? "kg";
 
   const detail = useWorkout(workoutId);
@@ -151,7 +161,8 @@ export function WorkoutDetailContainer() {
   // starting a session — checked client-side so the user never even opens
   // a session that the server's over-limit backstop would deny at Finish.
   const onStartWorkout = useCallback(
-    (id: string) => {
+    (id: string, audience?: TogetherLobbyAudience) => {
+      if (audience && !userId) return;
       if (isLoadoutWorkout && !loadoutGate.allowed) {
         openLoadoutUpsell();
         return;
@@ -160,9 +171,20 @@ export function WorkoutDetailContainer() {
         totalCapGate.onLocked();
         return;
       }
-      router.push(`/(app)/session?workoutId=${id}` as never);
+      setTogetherOpen(false);
+      router.push(
+        (audience
+          ? `/(app)/session?workoutId=${encodeURIComponent(id)}&togetherAudience=${audience}&togetherAccountId=${encodeURIComponent(userId ?? "")}`
+          : `/(app)/session?workoutId=${id}`) as never,
+      );
     },
-    [isLoadoutWorkout, loadoutGate.allowed, openLoadoutUpsell, totalCapGate],
+    [
+      isLoadoutWorkout,
+      loadoutGate.allowed,
+      openLoadoutUpsell,
+      totalCapGate,
+      userId,
+    ],
   );
 
   // Stack-push the exercise detail on top so the workout stays underneath.
@@ -257,6 +279,20 @@ export function WorkoutDetailContainer() {
         onClose={onClose}
         onEdit={onEdit}
         onStartWorkout={onStartWorkout}
+        togetherEntry={
+          togetherLobby ? (
+            <TogetherStartRow
+              detail={
+                togetherAudience === "open"
+                  ? togetherLobby.getSnapshot().transport === "nearby"
+                    ? "open nearby"
+                    : "open on this network"
+                  : "private"
+              }
+              onStart={() => setTogetherOpen(true)}
+            />
+          ) : undefined
+        }
         onExercisePress={onExercisePress}
         // AC-1.2 is read-scoped, not owner-scoped: coach-assigned and template
         // workouts can be adapted too, with the resulting setup owned by the
@@ -274,6 +310,19 @@ export function WorkoutDetailContainer() {
         loadoutVariations={loadoutGate.allowed ? variations.variations : []}
         onOpenLoadout={onOpenLoadout}
         onOpenVariation={isLoadoutWorkout ? undefined : onOpenVariation}
+      />
+      <TogetherStartSheet
+        visible={togetherOpen}
+        onClose={() => setTogetherOpen(false)}
+        onStart={() => {
+          if (workout) onStartWorkout(workout.id, togetherAudience);
+        }}
+        audience={togetherAudience}
+        onAudienceChange={setTogetherAudience}
+        transport={togetherLobby?.getSnapshot().transport}
+        activeWorkoutName={
+          userId ? storage.getActiveSession(userId)?.name : undefined
+        }
       />
       {/* The upsell belongs to, and is layered within, its owning screen. */}
       <LoadoutUpsellSheet

@@ -136,10 +136,12 @@ it("does not apply a camera permission reply after cancellation", async () => {
       accountId="a"
     />,
   );
+  fireEvent.press(r.getByText("Start"));
   fireEvent.press(r.getByText("Join"));
   fireEvent.press(r.getByText("Scan a QR code"));
   fireEvent.press(r.getByText("Cancel · keep training on my own"));
   await act(async () => resolve({ granted: true }));
+  fireEvent.press(r.getByText("Start"));
   fireEvent.press(r.getByText("Join"));
   expect(r.queryByTestId("together-qr-camera")).toBeNull();
   expect(h.lobby.selectInvite).not.toHaveBeenCalled();
@@ -154,6 +156,7 @@ it("camera denial allows paste; scanning verifies once, then join requires conse
       accountId="a"
     />,
   );
+  fireEvent.press(r.getByText("Start"));
   fireEvent.press(r.getByText("Join"));
   fireEvent.press(r.getByText("Scan a QR code"));
   await waitFor(() =>
@@ -253,18 +256,21 @@ it("background invalidates idle scanning and delayed camera permission", async (
       accountId="a"
     />,
   );
+  fireEvent.press(r.getByText("Start"));
   fireEvent.press(r.getByText("Join"));
   fireEvent.press(r.getByText("Scan a QR code"));
   await r.findByTestId("together-qr-camera");
   act(() => lifecycle("background"));
   expect(r.queryByTestId("together-qr-camera")).toBeNull();
   act(() => lifecycle("active"));
+  fireEvent.press(r.getByText("Start"));
   fireEvent.press(r.getByText("Join"));
   mockRequest.mockReturnValueOnce(new Promise((r) => (resolve = r)));
   fireEvent.press(r.getByText("Scan a QR code"));
   act(() => lifecycle("background"));
   await act(async () => resolve({ granted: true }));
   act(() => lifecycle("active"));
+  fireEvent.press(r.getByText("Start"));
   fireEvent.press(r.getByText("Join"));
   expect(r.queryByTestId("together-qr-camera")).toBeNull();
   r.unmount();
@@ -303,6 +309,7 @@ it("browses, selects, and requires a separate Join; dismiss then retains admitte
       accountId="a"
     />,
   );
+  fireEvent.press(r.getByText("Start"));
   fireEvent.press(r.getByText("Join"));
   fireEvent.press(r.getByText("Find an open lobby on this network"));
   expect(h.lobby.browse).toHaveBeenCalledTimes(1);
@@ -336,12 +343,14 @@ it("dismiss stops an in-flight browse preparation; code fallback cancels discove
       accountId="a"
     />,
   );
+  fireEvent.press(r.getByText("Start"));
   fireEvent.press(r.getByText("Join"));
   fireEvent.press(r.getByText("Find an open lobby on this network"));
   h.publish({ phase: "preparing" });
   act(() => mockSheet.mock.calls.at(-1)![0].onClose());
   expect(h.lobby.cancel).toHaveBeenCalledTimes(1);
   h.publish({ phase: "idle" });
+  fireEvent.press(r.getByText("Start"));
   fireEvent.press(r.getByText("Join"));
   fireEvent.press(r.getByText("Find an open lobby on this network"));
   h.publish({ phase: "browsing" });
@@ -362,6 +371,7 @@ it("cancelled browsing cannot make a later host dismissal leave the lobby", () =
       accountId="a"
     />,
   );
+  fireEvent.press(r.getByText("Start"));
   fireEvent.press(r.getByText("Join"));
   fireEvent.press(r.getByText("Find an open lobby on this network"));
   h.publish({ phase: "browsing" });
@@ -386,6 +396,7 @@ it("starting discovery invalidates a camera permission response before preparati
       accountId="a"
     />,
   );
+  fireEvent.press(r.getByText("Start"));
   fireEvent.press(r.getByText("Join"));
   fireEvent.press(r.getByText("Scan a QR code"));
   fireEvent.press(r.getByText("Find an open lobby on this network"));
@@ -1244,4 +1255,117 @@ it("omits skipped PREV in cached and refreshed publication, using the current wo
     Date.parse(workout.startedAt),
   );
   r.unmount();
+});
+
+it("consumes a detail host intent once and does not restart after an error or cancellation", async () => {
+  const h = harness();
+  const consume = jest.fn();
+  jest.mocked(h.lobby.host).mockRejectedValueOnce(new Error("unavailable"));
+  const r = renderWithTheme(
+    <TogetherLobbyContainer
+      lobby={h.lobby}
+      accountId="me"
+      workoutName="Squats"
+      initialHostAudience="open"
+      onConsumeHostIntent={consume}
+    />,
+  );
+  await waitFor(() => expect(h.lobby.host).toHaveBeenCalledTimes(1));
+  expect(h.lobby.host).toHaveBeenCalledWith("Squats", "open");
+  expect(consume).toHaveBeenCalledTimes(1);
+  await waitFor(() =>
+    expect(
+      r.getByText(
+        "Could not complete this action. Your personal workout is safe.",
+      ),
+    ).toBeTruthy(),
+  );
+  act(() => mockSheet.mock.calls.at(-1)![0].onClose());
+  h.publish({ phase: "idle" });
+  expect(h.lobby.host).toHaveBeenCalledTimes(1);
+});
+
+it.each(["ready", "cancel", "account"])(
+  "defers detail hosting while preparing and handles %s",
+  (outcome) => {
+    const h = harness();
+    h.publish({ phase: "preparing" });
+    const consume = jest.fn();
+    const render = (accountId: string) => (
+      <TogetherLobbyContainer
+        lobby={h.lobby}
+        accountId={accountId}
+        workoutName="Squats"
+        initialHostAudience="open"
+        onConsumeHostIntent={consume}
+      />
+    );
+    const r = renderWithTheme(render("me"));
+    expect(h.lobby.host).not.toHaveBeenCalled();
+    if (outcome === "cancel")
+      act(() => mockSheet.mock.calls.at(-1)![0].onClose());
+    if (outcome === "account") {
+      r.rerender(render("other"));
+      r.rerender(render("me"));
+    }
+    h.publish({ phase: "idle" });
+    expect(h.lobby.host).toHaveBeenCalledTimes(outcome === "ready" ? 1 : 0);
+  },
+);
+
+it.each(["cloud", "local"] as const)(
+  "does not auto-host over an existing %s workout checkpoint",
+  (transport) => {
+    const h = harness();
+    const consume = jest.fn();
+    const session: WorkoutSession = {
+      ...personal(),
+      together: {
+        sessionId: "owned",
+        executionId: "own-execution",
+        ...(transport === "cloud" ? { transport: "cloud" as const } : {}),
+      },
+    };
+    renderWithTheme(
+      <TogetherLobbyContainer
+        lobby={h.lobby}
+        accountId="a"
+        workoutName="Squats"
+        cloud={{} as TogetherCloudPort}
+        getWorkout={() => session}
+        initialHostAudience="open"
+        onConsumeHostIntent={consume}
+      />,
+    );
+    expect(h.lobby.host).not.toHaveBeenCalled();
+    expect(consume).toHaveBeenCalledTimes(1);
+    expect(session.together?.sessionId).toBe("owned");
+    if (transport === "cloud") expect(mockCloud).toHaveBeenCalled();
+  },
+);
+
+it("background consumes a pending detail host intent before preparation completes", () => {
+  let lifecycle!: (state: AppStateStatus) => void;
+  jest.spyOn(AppState, "addEventListener").mockImplementation((_, callback) => {
+    lifecycle = callback;
+    return { remove: jest.fn() };
+  });
+  const h = harness();
+  h.publish({ phase: "preparing" });
+  const consume = jest.fn();
+  renderWithTheme(
+    <TogetherLobbyContainer
+      lobby={h.lobby}
+      accountId="a"
+      workoutName="Squats"
+      initialHostAudience="open"
+      onConsumeHostIntent={consume}
+    />,
+  );
+  act(() => lifecycle("background"));
+  expect(consume).toHaveBeenCalledTimes(1);
+  h.publish({ phase: "idle" });
+  act(() => lifecycle("active"));
+  expect(h.lobby.host).not.toHaveBeenCalled();
+  expect(mockSheet.mock.calls.at(-1)![0].visible).toBe(false);
 });

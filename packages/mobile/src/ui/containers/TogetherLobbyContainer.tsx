@@ -1,3 +1,4 @@
+import { TogetherStartRow } from "@/ui/presenters/TogetherStartRow";
 import { TogetherWorkoutRow } from "@/ui/presenters/TogetherWorkoutRow";
 import { TogetherCloudContainer } from "./TogetherCloudContainer";
 import type { TogetherCloudPort } from "@/domain/ports/togetherCloud.port";
@@ -56,7 +57,11 @@ export function TogetherLobbyContainer({
   onAdoptPlan,
   onRestorePersonal,
   children,
+  initialHostAudience,
+  onConsumeHostIntent,
 }: {
+  initialHostAudience?: TogetherLobbyAudience;
+  onConsumeHostIntent?: () => void;
   lobby: TogetherLobbyPort;
   cloud?: TogetherCloudPort;
   workoutName: string;
@@ -106,7 +111,11 @@ export function TogetherLobbyContainer({
   refreshPreviousRef.current = refreshPrevious;
   const consentRequests = useRef(new Map<string, number>());
 
+  const consumedHostIntent = useRef(false);
+  const hostIntentAccount = useRef(accountId);
   const dismiss = () => {
+    consumedHostIntent.current = true;
+    if (initialHostAudience) onConsumeHostIntent?.();
     generation.current++;
     setVisible(false);
     setScanning(false);
@@ -150,6 +159,8 @@ export function TogetherLobbyContainer({
   useEffect(() => {
     const listener = AppState.addEventListener("change", (state) => {
       if (state !== "active") {
+        consumedHostIntent.current = true;
+        if (initialHostAudience) onConsumeHostIntent?.();
         browsingIntent.current = false;
         generation.current++;
         setVisible(false);
@@ -159,7 +170,7 @@ export function TogetherLobbyContainer({
       }
     });
     return () => listener.remove();
-  }, []);
+  }, [initialHostAudience, onConsumeHostIntent]);
   useEffect(() => {
     if (
       (snapshot.phase === "hosting" || snapshot.phase === "joined") &&
@@ -203,6 +214,24 @@ export function TogetherLobbyContainer({
         );
     });
   };
+  useEffect(() => {
+    if (!initialHostAudience || consumedHostIntent.current) return;
+    if (hostIntentAccount.current !== accountId) {
+      consumedHostIntent.current = true;
+      onConsumeHostIntent?.();
+      return;
+    }
+    setAudience(initialHostAudience);
+    setScreen("start");
+    setVisible(true);
+    if (snapshot.phase === "preparing") return;
+    consumedHostIntent.current = true;
+    onConsumeHostIntent?.();
+    if (snapshot.phase === "idle" && !getWorkout?.()?.together)
+      invoke(() => lobby.host(workoutName, initialHostAudience));
+    // An explicit detail-page action is consumed once, never retried by a render or failure.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialHostAudience, snapshot.phase, accountId]);
   const confirmRemoval = (id: string) => {
     const dialogGeneration = generation.current;
     Alert.alert(
@@ -304,6 +333,14 @@ export function TogetherLobbyContainer({
           setVisible(true);
         }}
       />
+    ) : snapshot.phase === "idle" && !workoutStatus ? (
+      <TogetherStartRow
+        detail="your sets stay yours"
+        onStart={() => {
+          setScreen("start");
+          setVisible(true);
+        }}
+      />
     ) : (
       <View
         minHeight={44}
@@ -332,18 +369,6 @@ export function TogetherLobbyContainer({
           {" "}
           {snapshot.phase === "idle" && !workoutStatus ? "Start" : "Open"}{" "}
         </Btn>
-        {snapshot.phase === "idle" && !workoutStatus && (
-          <Btn
-            size="sm"
-            variant="ghost"
-            onPress={() => {
-              setScreen("join");
-              setVisible(true);
-            }}
-          >
-            Join
-          </Btn>
-        )}
       </View>
     );
   return (
@@ -386,60 +411,13 @@ export function TogetherLobbyContainer({
             ? "Join this workout"
             : screen === "join"
               ? "Join a session"
-              : "Train together"
+              : snapshot.phase === "idle" && !workoutStatus
+                ? "Who can join?"
+                : "Train together"
         }
         eyebrow="TRAIN TOGETHER"
         height="tall"
       >
-        {snapshot.phase === "idle" &&
-          !workoutStatus &&
-          lobby.selectTransport && (
-            <View gap={8}>
-              <Text color="$text2" fontFamily="$body">
-                Connection
-              </Text>
-              {(lobby.transports ?? ["lan"]).map((transport) => (
-                <Btn
-                  key={transport}
-                  full
-                  variant={
-                    (snapshot.transport ?? "lan") === transport
-                      ? "soft"
-                      : "outline"
-                  }
-                  onPress={() =>
-                    invoke(async () => lobby.selectTransport!(transport))
-                  }
-                >
-                  {transport === "nearby"
-                    ? "Nearby phones"
-                    : transport === "hotspot-owner"
-                      ? "This Android phone’s hotspot"
-                      : "Same Wi-Fi or hotspot"}
-                </Btn>
-              ))}
-              {cloud && getWorkout && (
-                <Btn
-                  full
-                  variant="outline"
-                  onPress={() =>
-                    invoke(async () => {
-                      const remoteGeneration = generation.current;
-                      await lobby.cancel();
-                      if (remoteGeneration === generation.current)
-                        setRemote(true);
-                    })
-                  }
-                >
-                  Remote · training partners
-                </Btn>
-              )}
-              <Text color="$text2" fontSize={12}>
-                Nearby or directly connected phones only. Internet is not
-                required once every athlete has valid offline access.
-              </Text>
-            </View>
-          )}
         {lobby.shared &&
           sharedSnapshot &&
           (snapshot.phase === "hosting" ||
@@ -562,6 +540,57 @@ export function TogetherLobbyContainer({
           Training partners
         </Btn>
         <TogetherLobbyPresenter
+          connectionOptions={
+            snapshot.phase === "idle" &&
+            !workoutStatus &&
+            lobby.selectTransport && (
+              <View gap={8}>
+                <Text color="$text2" fontFamily="$body">
+                  Connection
+                </Text>
+                {(lobby.transports ?? ["lan"]).map((transport) => (
+                  <Btn
+                    key={transport}
+                    full
+                    variant={
+                      (snapshot.transport ?? "lan") === transport
+                        ? "soft"
+                        : "outline"
+                    }
+                    onPress={() =>
+                      invoke(async () => lobby.selectTransport!(transport))
+                    }
+                  >
+                    {transport === "nearby"
+                      ? "Nearby phones"
+                      : transport === "hotspot-owner"
+                        ? "This Android phone’s hotspot"
+                        : "Same Wi-Fi or hotspot"}
+                  </Btn>
+                ))}
+                {cloud && getWorkout && (
+                  <Btn
+                    full
+                    variant="outline"
+                    onPress={() =>
+                      invoke(async () => {
+                        const remoteGeneration = generation.current;
+                        await lobby.cancel();
+                        if (remoteGeneration === generation.current)
+                          setRemote(true);
+                      })
+                    }
+                  >
+                    Remote · training partners
+                  </Btn>
+                )}
+                <Text color="$text2" fontSize={12}>
+                  Nearby or directly connected phones only. Internet is not
+                  required once every athlete has valid offline access.
+                </Text>
+              </View>
+            )
+          }
           snapshot={snapshot}
           screen={screen}
           code={code}
@@ -616,7 +645,7 @@ export function TogetherLobbyContainer({
           onUseInvitation={() => {
             browsingIntent.current = false;
             setScreen("join");
-            invoke(() => lobby.cancel());
+            if (snapshot.phase !== "idle") invoke(() => lobby.cancel());
           }}
           onCodeChange={setCode}
           onHost={() => invoke(() => lobby.host(workoutName, audience))}

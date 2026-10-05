@@ -65,6 +65,7 @@ interface WorkoutDetailPresenterProps {
   readonly onClose: () => void;
   readonly onEdit: () => void;
   readonly onStartWorkout: (workoutId: string) => void;
+  readonly togetherEntry?: React.ReactNode;
   readonly onExercisePress: (exerciseId: string) => void;
 
   // ── Loadout (spec-21 T-2.2 / T-2.8) ────────────────────────────────────────
@@ -166,6 +167,7 @@ export function WorkoutDetailPresenter({
   onClose,
   onEdit,
   onStartWorkout,
+  togetherEntry,
   onExercisePress,
   showLoadout = false,
   loadoutLocked = false,
@@ -280,6 +282,7 @@ export function WorkoutDetailPresenter({
             )}
           </ScrollView>
 
+          {togetherEntry}
           <View style={styles.footer}>
             <TouchableOpacity
               style={styles.startButton}

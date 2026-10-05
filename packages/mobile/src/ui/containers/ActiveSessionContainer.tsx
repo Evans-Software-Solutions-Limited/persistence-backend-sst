@@ -115,6 +115,8 @@ export function ActiveSessionContainer() {
     clientName?: string;
     clientInitials?: string;
     retroactive?: string;
+    togetherAudience?: string;
+    togetherAccountId?: string;
   }>();
   const requestedWorkoutId = params.workoutId ?? null;
 
@@ -144,6 +146,28 @@ export function ActiveSessionContainer() {
   const pointerRetroactive = useActiveWorkout((s) => s.active?.retroactive);
   const retroactive =
     pointerRetroactive === true || params.retroactive === "true";
+
+  useEffect(() => {
+    if (
+      params.togetherAudience &&
+      (params.togetherAccountId !== userId ||
+        withClient ||
+        retroactive ||
+        params.clientId)
+    ) {
+      router.setParams({
+        togetherAudience: undefined,
+        togetherAccountId: undefined,
+      });
+    }
+  }, [
+    params.togetherAudience,
+    params.togetherAccountId,
+    params.clientId,
+    userId,
+    withClient,
+    retroactive,
+  ]);
 
   // Stable id factory — empty deps, M2 learning #7.
   const generateId = useCallback(
@@ -927,6 +951,20 @@ export function ActiveSessionContainer() {
       {togetherLobby && !withClient && !retroactive ? (
         <TogetherLobbyContainer
           lobby={togetherLobby}
+          initialHostAudience={
+            !params.clientId &&
+            params.togetherAccountId === userId &&
+            (params.togetherAudience === "invite-only" ||
+              params.togetherAudience === "open")
+              ? params.togetherAudience
+              : undefined
+          }
+          onConsumeHostIntent={() =>
+            router.setParams({
+              togetherAudience: undefined,
+              togetherAccountId: undefined,
+            })
+          }
           cloud={togetherCloud}
           accountId={userId}
           workoutName={session.name}

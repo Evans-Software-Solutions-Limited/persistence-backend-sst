@@ -1,5 +1,50 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-05 — PR #488 reviewed Together entry and honest preparation errors
+
+[PER-22](https://linear.app/evans-software-solutions/issue/PER-22) /
+[PER-64](https://linear.app/evans-software-solutions/issue/PER-64): Brad supplied
+the Claude v2 export and requested UI corrections in the existing open PR #488.
+Add its slim Together entry above workout detail's existing Start workout button;
+the rest of that page stays unchanged. Reuse the entry during a solo workout.
+The setup sheet creates no workout/lobby on cancellation. Explicit Start preserves
+loadout/cap checks, resumes existing personal work with a warning, and carries a
+single account-bound audience intent through preparation. Dismiss/background or
+account changes invalidate it; existing cloud/local checkpoints cannot create a
+second lobby. Join stays available inside the active setup sheet.
+
+Choice cards use the exported geometry, white labels, muted descriptions and cyan
+selection markers. Approved bounded local choices and separate consent remain;
+no unrestricted public/coached/default-setting behaviour is inferred from the
+historical prototype. See DESIGN-REFERENCE.md and FRONTEND_BRIEF.md.
+
+Provisioning previously collapsed authoritative 4xx responses into unauthorized,
+which the UI mislabeled as a subscription failure. Preserve safe denial categories
+while still clearing rejected sharing authority. Only explicit PAID_REQUIRED now
+shows paid-access copy; authentication, environment/route, revoked-device and
+registration failures have distinct messages. Brad's exact failing runtime
+response is still unverified; matching staging environment values/deployment alone
+does not establish entitlement or physical connectivity.
+
+Validation: full mobile 592 suites / 8,073 tests; coverage 96.43% statements,
+91.71% branches, 96.52% functions, 97.80% lines. Typecheck 9/9, lint 6/6 (existing
+warnings), formatting pass; focused Jest runs also report lingering test timers; non-mobile tests 18/18 and builds 12/12 are cache hits.
+Provisioning regressions fail with the old mapping restored. Existing ActiveSession
+and WorkoutDetail monoliths retain below-90% whole-file coverage; this run does not
+claim those legacy gaps are closed. New audience/entry presenters and lobby
+presenter have 100% measured coverage; final focused run 119/119, including
+existing-workout preservation, signed-out/cap refusal and background cancellation.
+Local Inspector clean after fixing the
+existing-authority auto-host race. Actual RN-web component screenshots compared
+with the exported first-run screen: `specs/milestones/TRAIN-TOGETHER/evidence/ui-2026-10-05/` (component preview and
+Claude reference). This is simulated component evidence,
+not native sheet/device proof. No native/prebuild/EAS build or CI Inspector run.
+
+Next: Brad pulls PR #488 and tests the entry and resulting specific preparation
+message locally; exact account denial, native compilation and mixed-device
+acceptance remain open. Manual merge/build ownership stays with Brad.
+
+
 ### 2026-10-05 — PR #488 owner-build Swift visibility correction
 
 Brad tested PR #488 locally before merge. His actual xcodebuild log now reaches

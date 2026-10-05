@@ -181,6 +181,7 @@ const mockLoadoutGate = {
 jest.mock("@/ui/hooks/useLoadoutGate", () => ({
   useLoadoutGate: () => mockLoadoutGate,
 }));
+const mockRouterSetParams = jest.fn();
 const mockUseLocalSearchParams = jest.fn(() => ({}) as Record<string, string>);
 jest.mock("expo-router", () => {
   // useFocusEffect's prod implementation registers with the React
@@ -193,6 +194,7 @@ jest.mock("expo-router", () => {
   return {
     __esModule: true,
     router: {
+      setParams: (...args: unknown[]) => mockRouterSetParams(...args),
       back: (...args: unknown[]) => mockRouterBack(...args),
       push: (...args: unknown[]) => mockRouterPush(...args),
       dismissAll: (...args: unknown[]) => mockRouterDismissAll(...args),
@@ -225,7 +227,7 @@ describe("ActiveSessionContainer", () => {
     jest.restoreAllMocks();
   });
 
-  it.each(["personal", "retrospective", "coached"])(
+  it.each(["personal", "retrospective", "coached", "detail", "other-account"])(
     "Together entry respects %s logging and preserves the workout",
     async (mode) => {
       const api = new InMemoryApiAdapter();
@@ -261,13 +263,31 @@ describe("ActiveSessionContainer", () => {
           ? { retroactive: "true" }
           : mode === "coached"
             ? { workoutId: "w-1", clientId: "client-1", clientName: "Mia" }
-            : {},
+            : mode === "detail" || mode === "other-account"
+              ? {
+                  togetherAudience: "open",
+                  togetherAccountId: mode === "detail" ? "user-1" : "other",
+                }
+              : {},
       );
       const r = renderWithTheme(
         withAdapters(adapters, <ActiveSessionContainer />),
       );
       await r.findByTestId("active-session-screen");
-      if (mode !== "personal")
+      if (mode === "detail") {
+        expect(host).toHaveBeenCalledWith("Quick Workout", "open");
+        expect(host).toHaveBeenCalledTimes(1);
+        expect(mockRouterSetParams).toHaveBeenCalledWith({
+          togetherAudience: undefined,
+          togetherAccountId: undefined,
+        });
+      } else if (mode === "other-account") {
+        expect(host).not.toHaveBeenCalled();
+        expect(mockRouterSetParams).toHaveBeenCalledWith({
+          togetherAudience: undefined,
+          togetherAccountId: undefined,
+        });
+      } else if (mode !== "personal")
         expect(r.queryByTestId("together-workout-row")).toBeNull();
       else {
         expect(r.getByTestId("together-workout-row")).toBeTruthy();

@@ -49,8 +49,11 @@ friends/invitation-based remote sessions. Extend existing screens only for the
 confirmed missing consent, connection, recovery and completion states. Prototype
 coached capacity, inactivity auto-save and unrestricted numeric access are not
 approved behaviour. Coached distribution/scheduling remain separate tickets.
-The original source export/TOGETHER_HANDOFF.md is not archived locally; the
-working artifact and PER-60 are the handoff, not a reason to redesign.
+Brad supplied the source export on 5 October at `~/Downloads/export/persistence-together`.
+Use its v2 `entry.jsx`, `sheets.jsx` and `persistence-tokens.css` for the reviewed
+entry/choice geometry; [DESIGN-REFERENCE](./DESIGN-REFERENCE.md) records the
+implementation reference and approved behavioural differences. The workout-detail
+page itself remains unchanged outside the Together entry.
 
 Historical 1 October backend handoff: PRs #474/#475/#477 and the subsequently
 merged PREV/offline foundations are reused by the current integration.
