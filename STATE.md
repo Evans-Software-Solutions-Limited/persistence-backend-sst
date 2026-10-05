@@ -1,5 +1,16 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-05 — PR #488 owner-build Swift visibility correction
+
+Brad tested PR #488 locally before merge. His actual xcodebuild log now reaches
+TogetherNearby compilation with Nearby resolved, and reports one compiler error:
+`deadline` takes the private nested `Peer` type but is not itself private.
+Mark the helper private and update the existing source-test boundary. This is
+an access-control correction, not another dependency workaround. The full native
+build remains Brad's to rerun; no build was initiated here.
+[PER-64](https://linear.app/evans-software-solutions/issue/PER-64).
+
+
 ### 2026-10-05 — PER-64 Nearby registration through React Native
 
 PR #486 is merged at a773d581. Brad's owner iOS build failed at
