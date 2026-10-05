@@ -14,6 +14,7 @@ import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.net.InetAddress
 import java.net.InetSocketAddress
+import java.net.NetworkInterface
 import java.net.ServerSocket
 import java.net.Socket
 import java.nio.ByteBuffer
@@ -45,6 +46,7 @@ class TogetherLanModule : Module() {
   private var registration: NsdManager.RegistrationListener? = null
   private var server: ServerSocket? = null
   private var network: Network? = null
+  private var hotspotOwner = false
   private var generation = 0
   private val serviceType = "_persist-tg._tcp."
 
@@ -64,8 +66,14 @@ class TogetherLanModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("TogetherLan")
     Events("onEvent")
-    AsyncFunction("startHost") { lobbyId: String, promise: Promise -> command(promise) { host(lobbyId) } }
-    AsyncFunction("startDiscovery") { promise: Promise -> command(promise) { discover() } }
+    AsyncFunction("startHost") { lobbyId: String, promise: Promise -> command(promise) { selectTransport(false); host(lobbyId) } }
+    AsyncFunction("startHotspotHost") { lobbyId: String, promise: Promise -> command(promise) {
+      selectTransport(true); host(lobbyId)
+    } }
+    AsyncFunction("startHotspotDiscovery") { promise: Promise -> command(promise) {
+      selectTransport(true); discover()
+    } }
+    AsyncFunction("startDiscovery") { promise: Promise -> command(promise) { selectTransport(false); discover() } }
     AsyncFunction("connect") { endpointId: String, promise: Promise -> command(promise) { connect(endpointId) } }
     AsyncFunction("send") { peerId: String, frame: String, promise: Promise ->
       if (!post {
@@ -110,13 +118,58 @@ class TogetherLanModule : Module() {
     }?.also { network = it } ?: error("wifi_unavailable")
   }
 
+  /** Explicit opt-in only. Never guesses an AP interface name or falls back from Wi-Fi. */
+  private fun selectTransport(owner: Boolean) {
+    check(server == null && discovery == null && peers.isEmpty()) { "stop_before_transport_change" }
+    hotspotOwner = owner
+  }
+  private fun localOnly(address: InetAddress): Boolean {
+    if (address.isLoopbackAddress || address.isAnyLocalAddress || address.isMulticastAddress) return false
+    val bytes = address.address
+    // Java site-local covers RFC1918 IPv4; include IPv6 ULA and link-local.
+    return address.isSiteLocalAddress || address.isLinkLocalAddress ||
+      (bytes.size == 16 && (bytes[0].toInt() and 0xfe) == 0xfc)
+  }
+  private fun samePrefix(a: InetAddress, b: InetAddress, prefix: Int): Boolean {
+    val left = a.address; val right = b.address
+    return left.size == right.size && prefix in 1..(left.size * 8) &&
+      (0 until prefix).all { bit -> ((left[bit / 8].toInt() xor right[bit / 8].toInt()) and (1 shl (7 - bit % 8))) == 0 }
+  }
+  private fun ownerAllowedAddress(local: InetAddress): Boolean {
+    // An AP-owned interface need not have a Network. Never use a known cellular,
+    // VPN or other non-Wi-Fi Network merely because its address is private.
+    return connectivity.allNetworks.none { candidate ->
+      val capabilities = connectivity.getNetworkCapabilities(candidate)
+      connectivity.getLinkProperties(candidate)?.linkAddresses?.any { it.address == local } == true &&
+        (capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) != true ||
+          capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true ||
+          capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true)
+    }
+  }
+  private fun ownerRoute(local: InetAddress, remote: InetAddress): Boolean = runCatching {
+    if (!localOnly(local) || !localOnly(remote) || !ownerAllowedAddress(local)) return@runCatching false
+    val actual = NetworkInterface.getByInetAddress(local) ?: return@runCatching false
+    actual.isUp && !actual.isLoopback && !actual.isPointToPoint && actual.interfaceAddresses.any {
+      it.address == local && samePrefix(local, remote, it.networkPrefixLength.toInt())
+    }
+  }.getOrDefault(false)
+  private fun ownerAddress(remote: InetAddress): InetAddress? = runCatching {
+    if (!localOnly(remote)) return@runCatching null
+    // Only directly connected local subnets, selected from a resolved NSD endpoint.
+    // A private address alone is insufficient; VPN point-to-point routes are rejected.
+    NetworkInterface.getNetworkInterfaces().toList().asSequence()
+      .filter { it.isUp && !it.isLoopback && !it.isPointToPoint }
+      .flatMap { it.interfaceAddresses.asSequence() }
+      .firstOrNull { localOnly(it.address) && ownerAllowedAddress(it.address) && samePrefix(it.address, remote, it.networkPrefixLength.toInt()) }?.address
+  }.getOrNull()
+
   private fun validLobby(value: String): Boolean = try { UUID.fromString(value).toString() == value } catch (_: Exception) { false }
 
   private fun host(lobbyId: String) {
     check(validLobby(lobbyId)) { "invalid_lobby" }
     check(server == null) { "already_hosting" }
-    val localNetwork = wifi()
-    check(connectivity.getLinkProperties(localNetwork)?.linkAddresses?.isNotEmpty() == true) { "wifi_unavailable" }
+    val localNetwork = if (hotspotOwner) null else wifi()
+    if (localNetwork != null) check(connectivity.getLinkProperties(localNetwork)?.linkAddresses?.isNotEmpty() == true) { "wifi_unavailable" }
     val socket = ServerSocket()
     try { socket.bind(InetSocketAddress(0), 8) } catch (error: Exception) { socket.close(); throw error }
     server = socket
@@ -124,7 +177,7 @@ class TogetherLanModule : Module() {
     val info = NsdServiceInfo().apply {
       serviceName = lobbyId; serviceType = this@TogetherLanModule.serviceType
       port = socket.localPort; setAttribute("lobby", lobbyId)
-      if (Build.VERSION.SDK_INT >= 33) setNetwork(localNetwork)
+      if (Build.VERSION.SDK_INT >= 33 && localNetwork != null) setNetwork(localNetwork)
     }
     val callback = object : NsdManager.RegistrationListener {
       override fun onServiceRegistered(info: NsdServiceInfo) {
@@ -159,7 +212,7 @@ class TogetherLanModule : Module() {
 
   private fun discover() {
     if (discovery != null) return
-    wifi()
+    if (!hotspotOwner) wifi()
     val token = generation
     val callback = object : NsdManager.DiscoveryListener {
       override fun onDiscoveryStarted(type: String) {
@@ -221,6 +274,7 @@ class TogetherLanModule : Module() {
 
   private fun onLink(address: InetAddress?): Boolean {
     if (address == null || address.isLoopbackAddress || address.isAnyLocalAddress || address.isMulticastAddress) return false
+    if (hotspotOwner) return ownerAddress(address) != null
     val active = network ?: return false
     return connectivity.getLinkProperties(active)?.linkAddresses?.any { local ->
       val a = address.address; val b = local.address.address
@@ -234,10 +288,12 @@ class TogetherLanModule : Module() {
   private fun connect(endpointId: String) {
     val info = endpoints[endpointId] ?: error("unknown_endpoint")
     check(peers.size < 8) { "peer_limit" }
-    val localNetwork = wifi()
+    val localNetwork = if (hotspotOwner) null else wifi()
     check(onLink(info.host)) { "endpoint_not_local" }
     val socket = Socket()
-    try { localNetwork.bindSocket(socket) } catch (error: Exception) { socket.close(); throw error }
+    try { if (localNetwork != null) localNetwork.bindSocket(socket)
+      else socket.bind(InetSocketAddress(requireNotNull(ownerAddress(info.host)), 0))
+    } catch (error: Exception) { socket.close(); throw error }
     if (!peerSlots.tryAcquire()) { socket.close(); error("peer_limit") }
     val id = UUID.randomUUID().toString()
     val peer = Peer(socket); peers[id] = peer
@@ -245,7 +301,10 @@ class TogetherLanModule : Module() {
     io.execute {
       try {
         socket.connect(InetSocketAddress(info.host, info.port), 10_000)
-        post { if (peers[id] === peer) ready(id, peer, false) }
+        post { if (peers[id] === peer) {
+          if (hotspotOwner && !ownerRoute(socket.localAddress, socket.inetAddress)) drop(id, "endpoint_not_local")
+          else ready(id, peer, false)
+        } }
       } catch (_: Exception) { post { if (peers[id] === peer) drop(id, "connect_failed") } }
     }
   }
@@ -253,7 +312,7 @@ class TogetherLanModule : Module() {
   private fun attach(socket: Socket, incoming: Boolean) {
     // The dual-stack listener can accept either advertised address family. Reject
     // every destination other than an address currently owned by our Wi-Fi network.
-    val localWifi = network?.let { connectivity.getLinkProperties(it) }?.linkAddresses?.any {
+    val localWifi = if (hotspotOwner) ownerRoute(socket.localAddress, socket.inetAddress) else network?.let { connectivity.getLinkProperties(it) }?.linkAddresses?.any {
       it.address == socket.localAddress
     } == true
     if (!localWifi || !onLink(socket.inetAddress)) { socket.close(); peerSlots.release(); return }
@@ -333,6 +392,6 @@ class TogetherLanModule : Module() {
     runCatching { server?.close() }; server = null
     peers.keys.toList().forEach { drop(it) }
     endpoints.keys.forEach { emit("type" to "lost", "endpointId" to it) }
-    endpoints.clear(); services.clear(); resolving.clear(); resolveActive = false; network = null
+    endpoints.clear(); services.clear(); resolving.clear(); resolveActive = false; network = null; hotspotOwner = false
   }
 }

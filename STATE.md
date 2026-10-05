@@ -1,5 +1,72 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-05 — consolidated Together test implementation (PER-64 / PER-22)
+
+Brad superseded the sequential PR plan with one consolidated implementation PR.
+Leave it **open for Brad's manual review and merge**; no auto-merge. Based on
+freshly pulled #485/main `bc4c34f3`, branch `codex/together-own-result-recovery`.
+Pre-PR fetch still matches that main. Prior STATE entries are preserved below.
+
+Connects own-result saving/reviewed offline recovery, shared plans, named partner
+views and safe nonnumeric progress, independent numeric/PREV/logging grants,
+revocation and recipient cache purge, host removal and explicit finish/leave.
+Cloud friend/invitation sessions retain authoritative personal drafts and stable
+retry keys; original start times, private continuations and partial recoveries
+preserve unsent personal work. Four concurrent seats include the host; removed
+cloud athletes keep private results without reclaiming their former admission.
+Person-code/QR friend requests, block/report and independent template copies are
+wired. Nearby iOS/Android module and explicit Android hotspot-owner transport are
+included with pinned SDK linkage and bounded buffers, reusing authenticated LAN
+identity/encryption. No worldwide directory or automatic authority handover.
+
+Production remains disabled. Testing requires the explicit public test flag plus
+`__DEV__`, a compatible Brad-built development client and configured test backend.
+No native/prebuild/EAS/mobile build, deployment or migration apply was initiated.
+No lower-priced subscription or coached-class work. Exact prerequisites, schema
+and limits: [TEST-READINESS](./specs/milestones/TRAIN-TOGETHER/TEST-READINESS.md).
+[SMOKE_TEST](./specs/milestones/TRAIN-TOGETHER/SMOKE_TEST.md) records physical
+acceptance, including four mixed-platform phones, offline/restart/reconnect,
+permissions, hotspot routing, independent history and reviewed UX. Swift syntax,
+Xcode-project fixtures and simulated delivery do not prove native SDK compilation
+or physical-device behavior. Unsupported signed-plan edits remain personal with
+explicit omissions; partial saves retain differences rather than discard them.
+
+Local Inspector found and fixed historical capacity consumption, an action queued
+during cloud refresh returning before delivery, and an old iOS Nearby write timer
+disconnecting a replacement peer. Incremental review also covers UI account/lifecycle
+races, review navigation and local write failures. Typecheck 9/9, lint 6/6 (existing
+warnings), non-mobile tests 18/18 (core 5,466; web 1,594), non-mobile build 12/12.
+The initial combined non-mobile run hit two unrelated web timeouts; serialized
+workspaces passed without test changes. Initial full mobile: 7,917 passed, one
+stale provisioning mock expectation failed; corrected expectation plus latest
+UI changes passed 98 focused tests. Final full mobile evidence and PR link follow.
+Prior PR-count estimates below are historical; device findings determine
+correction PRs and sign-off, not a fixed count.
+
+### 2026-10-04 — PR #485 signed off; result recovery next
+
+Brad confirmed PR #485 merged and signed off. GitHub confirms merge `bc4c34f3`
+at 20:55 UTC on 4 October. PER-64, PER-22 and the central reviewed design
+reference now record the merged slice, next pickup and estimated testing path;
+the parent issues remain In Progress. Pulled current main cleanly before creating
+`codex/together-own-result-recovery`; no unrelated changes were present.
+
+Next slice: own-result saving and reviewed offline recovery using the merged
+backend. Preserve stable execution/history identity and idempotency, explicit
+owner review, local work until server acceptance, retry after ambiguous responses,
+and recovery without renewed sharing entitlement. Separate candidate storage from
+history saving. Keep production disabled and retain the sole reviewed UX.
+
+Planning estimate: about 2 more PRs for a bounded same-Wi-Fi end-to-end test;
+5–7 implementation PRs for full agreed-feature testing, then approximately 1–3
+fix PRs (6–10 total) before potential sign-off. This is an estimate, not a
+commitment or a redefinition of release scope. Remaining tracks: result recovery,
+shared plans/partner views, consent/PREV/delegation and revocation, lifecycle/
+closure/authority and remote integration, Nearby/Android hotspot, test readiness.
+Real mixed-device/four-athlete/offline/reconnect/restart/result evidence and
+reviewed UX acceptance determine sign-off, not PR count. Brad owns builds.
+
+
 ### 2026-10-04 — PER-64 / PER-22 own-workout logging
 
 Review: [PR #485](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/485),

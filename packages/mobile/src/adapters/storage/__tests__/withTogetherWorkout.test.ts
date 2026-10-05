@@ -25,7 +25,16 @@ function setup() {
         together: { sessionId: "shared", executionId: "own" },
       };
     },
-    getActive: (user) => (checkpoint?.userId === user ? checkpoint : null),
+    getActive: (user) =>
+      checkpoint?.userId === user && checkpoint.status === "in_progress"
+        ? checkpoint
+        : null,
+    getPlan: () => null,
+    getOwnExecution: () => null,
+    applyOwnOperation: jest.fn(),
+    review: jest.fn(),
+    getReview: () => null,
+    finish: jest.fn(),
     read: (user, id) =>
       checkpoint?.userId === user && checkpoint.id === id ? checkpoint : null,
     save: (user, session) => {
@@ -153,4 +162,37 @@ it("discovers the account checkpoint after sign-out clears every personal row", 
     notes: "after relogin",
   });
   expect(reopened.getActiveSession("u")?.notes).toBe("after relogin");
+});
+
+it("never resurrects a server-finished checkpoint from its stale personal mirror", async () => {
+  const { base, workout, storage } = setup();
+  await workout.promote(draft());
+  storage.cacheActiveSession("u", { ...draft(), notes: "preserved" });
+  workout.save("u", {
+    ...storage.getActiveSession("u")!,
+    status: "completed",
+    completedAt: "2026-10-05T11:00:00Z",
+  });
+  expect(base.getActiveSession("u")?.status).toBe("in_progress");
+  expect(storage.getActiveSession("u")).toBeNull();
+  expect(storage.getLatestSession("u")).toMatchObject({
+    status: "completed",
+    notes: "preserved",
+    together: { executionId: "own" },
+  });
+  storage.clearActiveSession("u");
+  expect(base.getActiveSession("u")).toBeNull();
+  expect(workout.read("u", "local-1")?.notes).toBe("preserved");
+});
+it("allows personal logging after Together completion without overwriting recovery evidence", async () => {
+  const { workout, storage } = setup();
+  await workout.promote(draft());
+  workout.save("u", {
+    ...draft(),
+    status: "completed",
+    completedAt: "2026-10-05T11:00:00Z",
+  });
+  storage.cacheActiveSession("u", { ...draft(), id: "new-personal" });
+  expect(storage.getActiveSession("u")?.id).toBe("new-personal");
+  expect(workout.read("u", "local-1")?.status).toBe("completed");
 });

@@ -19,6 +19,7 @@ export interface TogetherLobbyPresenterProps {
   audience: TogetherLobbyAudience;
   workoutStatus?: TogetherWorkoutStatus | null;
   onPromote?(): void;
+  onReview?(): void;
   onAudienceChange(value: TogetherLobbyAudience): void;
   onBrowse(): void;
   onSelectDiscovered(sessionId: string): void;
@@ -53,10 +54,21 @@ const PHASE_COPY: Record<TogetherLobbySnapshot["phase"], string> = {
   full: "This lobby is full. Four athletes can join, including the host.",
 };
 
-export function togetherErrorCopy(code?: string): string {
+export function togetherErrorCopy(
+  code?: string,
+  transport?: TogetherLobbySnapshot["transport"],
+): string {
+  const nearby = transport === "nearby",
+    owner = transport === "hotspot-owner";
   if (!code) return "";
+  if (code === "removed-from-session")
+    return "You were removed from this session. Your own workout remains on this device for personal logging and review.";
   if (code === "discovery-expired")
-    return "This lobby listing has expired. Search this network again or ask the host for an invitation. Internet is not required.";
+    return nearby
+      ? "This nearby lobby listing has expired. Search nearby again or ask the host for an invitation. Internet is not required."
+      : owner
+        ? "This lobby listing has expired. Search this Android phone’s hotspot again or ask the host for an invitation. Internet is not required."
+        : "This lobby listing has expired. Search this network again or ask the host for an invitation. Internet is not required.";
   if (code === "host-unavailable")
     return "This host is no longer available to join. Keep training on your own or choose another lobby.";
   if (/expired/i.test(code))
@@ -68,9 +80,18 @@ export function togetherErrorCopy(code?: string): string {
   if (
     /permission|wifi|lan_unavailable|discovery|advertising|listener/i.test(code)
   )
-    return "Check local-network permissions and that both phones are on the same reachable Wi-Fi or hotspot. Internet is not required.";
+    if (nearby)
+      return "Check Bluetooth and nearby-device permissions on both phones, and keep them within reach. Internet is not required.";
+    else if (owner)
+      return "Check local-network permissions, turn on this Android phone’s hotspot and connect the other phones to it. Hotspot discovery may be unavailable on this device; internet is not required.";
+    else
+      return "Check local-network permissions and that both phones are on the same reachable Wi-Fi or hotspot. Internet is not required.";
   if (/timeout|unreachable/i.test(code))
-    return "The host could not be reached. Check the host is still here and both phones share the same Wi-Fi or hotspot.";
+    return nearby
+      ? "The host could not be reached. Keep both phones nearby with Bluetooth and nearby-device permissions enabled."
+      : owner
+        ? "The host could not be reached. Check this Android phone’s hotspot is still on and the other phone is connected to it."
+        : "The host could not be reached. Check the host is still here and both phones share the same Wi-Fi or hotspot.";
   if (/invalid|proof|signature|invite/i.test(code))
     return "This invitation could not be verified. Ask the host for a new code or QR.";
   if (/declined/i.test(code))
@@ -103,7 +124,31 @@ export function togetherWorkoutCopy(
 export function TogetherLobbyPresenter(p: TogetherLobbyPresenterProps) {
   const s = p.snapshot;
   const idle = s.phase === "idle" && !p.workoutStatus;
-  const error = togetherErrorCopy(s.error);
+  const nearby = s.transport === "nearby",
+    owner = s.transport === "hotspot-owner";
+  const place = nearby
+    ? "nearby"
+    : owner
+      ? "on this Android phone’s hotspot"
+      : "on this Wi-Fi or hotspot";
+  const error = togetherErrorCopy(s.error, s.transport);
+  const phaseCopy = nearby
+    ? {
+        ...PHASE_COPY,
+        hosting: "Waiting for nearby athletes.",
+        browsing: "Looking for verified nearby open lobbies…",
+        searching: "Looking for this host nearby…",
+      }
+    : owner
+      ? {
+          ...PHASE_COPY,
+          hosting:
+            "Waiting for athletes connected to this Android phone’s hotspot.",
+          browsing:
+            "Looking for verified open lobbies on this Android phone’s hotspot…",
+          searching: "Looking for this host on this Android phone’s hotspot…",
+        }
+      : PHASE_COPY;
   return (
     <View gap={16} testID="together-lobby-content">
       {p.workoutStatus ? (
@@ -114,9 +159,8 @@ export function TogetherLobbyPresenter(p: TogetherLobbyPresenterProps) {
             </Text>
             <Copy>{togetherWorkoutCopy(p.workoutStatus.sharing)}</Copy>
             <Copy>
-              Changes received by another athlete:{" "}
-              {p.workoutStatus.receivedCount}. Awaiting a peer receipt:{" "}
-              {p.workoutStatus.pendingCount}.
+              Your complete workout journal is retained on this device. Private
+              shared views have separate delivery receipts.
             </Copy>
             {p.workoutStatus.sharing === "paused" && (
               <Copy>
@@ -131,10 +175,15 @@ export function TogetherLobbyPresenter(p: TogetherLobbyPresenterProps) {
               </Copy>
             )}
             <Copy>
-              Result saving is not available yet. Your workout stays on this
-              device. A peer receipt does not mean your result is saved to your
+              Your workout stays on this device until you review and save your
+              result. A peer receipt does not mean your result is saved to your
               account.
             </Copy>
+            {p.onReview && (
+              <Btn full variant="outline" onPress={p.onReview}>
+                Review my result
+              </Btn>
+            )}
           </View>
         </Card>
       ) : p.onPromote && (s.phase === "hosting" || s.phase === "joined") ? (
@@ -144,13 +193,13 @@ export function TogetherLobbyPresenter(p: TogetherLobbyPresenterProps) {
               Keep your logged sets
             </Text>
             <Copy>
-              Use your current workout and share your own weights and reps. Your
-              exercises and logged sets stay in place. This does not share PREV
-              or let anyone log for you.
+              Use your current workout. Choose who can see your weights and reps
+              in Together settings. Your exercises and logged sets stay in
+              place. This does not share PREV or let anyone log for you.
             </Copy>
             <Copy>
-              Result saving is not available yet. Once shared, this workout
-              stays on this device until result saving is added.
+              Your workout is kept on this device. When you finish, review your
+              own result before saving it to your account.
             </Copy>
             <Btn full onPress={p.onPromote}>
               Use my workout in Together
@@ -170,9 +219,19 @@ export function TogetherLobbyPresenter(p: TogetherLobbyPresenterProps) {
             accessibilityState={{ checked: true }}
           >
             <Text fontFamily="$display" fontSize={15} color="$text">
-              Same Wi-Fi / hotspot
+              {nearby
+                ? "Nearby · Bluetooth and local radio"
+                : owner
+                  ? "This Android phone’s hotspot"
+                  : "Same Wi-Fi / hotspot"}
             </Text>
-            <Copy>Train without internet on the same reachable network.</Copy>
+            <Copy>
+              {nearby
+                ? "Train without internet with reachable nearby phones."
+                : owner
+                  ? "Turn on your Android hotspot and connect the other phones to it. Discovery depends on device support."
+                  : "Train without internet on the same reachable network."}
+            </Copy>
           </Card>
           <View
             gap={10}
@@ -187,8 +246,8 @@ export function TogetherLobbyPresenter(p: TogetherLobbyPresenterProps) {
                 ["invite-only", "Private", "Code or QR only"],
                 [
                   "open",
-                  "Open on this network",
-                  "Athletes on this Wi-Fi or hotspot can find it",
+                  nearby ? "Open nearby" : "Open on this network",
+                  `Athletes ${place} can find it`,
                 ],
               ] as const
             ).map(([value, title, detail]) => (
@@ -222,9 +281,7 @@ export function TogetherLobbyPresenter(p: TogetherLobbyPresenterProps) {
             approval. Joining never grants access to history or permission to
             log for someone.
           </Copy>
-          <Copy>
-            Nearby radio is not available yet. Use the same Wi-Fi or hotspot.
-          </Copy>
+
           <Btn full onPress={p.onHost}>
             Start the session
           </Btn>
@@ -233,8 +290,11 @@ export function TogetherLobbyPresenter(p: TogetherLobbyPresenterProps) {
       {idle && p.screen === "join" && (
         <>
           <Copy>
-            Enter the invitation they shared, or scan their QR. Use the same
-            Wi-Fi or hotspot.
+            {nearby
+              ? "Enter the invitation they shared, or scan their QR. Keep both phones nearby."
+              : owner
+                ? "Enter the invitation they shared, or scan their QR. Connect the other phones to this Android phone’s hotspot."
+                : "Enter the invitation they shared, or scan their QR. Use the same Wi-Fi or hotspot."}
           </Copy>
           <Card>
             <View gap={12}>
@@ -272,7 +332,9 @@ export function TogetherLobbyPresenter(p: TogetherLobbyPresenterProps) {
             </View>
           </Card>
           <Btn full variant="outline" onPress={p.onBrowse}>
-            Find an open lobby on this network
+            {nearby
+              ? "Find an open lobby nearby"
+              : "Find an open lobby on this network"}
           </Btn>
           {p.scanner}
         </>
@@ -280,8 +342,11 @@ export function TogetherLobbyPresenter(p: TogetherLobbyPresenterProps) {
       {s.phase === "browsing" && (
         <View gap={12}>
           <Copy>
-            Only open lobbies on this reachable Wi-Fi or hotspot appear here.
-            Review a lobby, then choose Join separately.
+            {nearby
+              ? "Only reachable nearby open lobbies appear here. Review a lobby, then choose Join separately."
+              : owner
+                ? "Only open lobbies reachable through this Android phone’s hotspot appear here. Review a lobby, then choose Join separately."
+                : "Only open lobbies on this reachable Wi-Fi or hotspot appear here. Review a lobby, then choose Join separately."}
           </Copy>
           {(s.discovered ?? []).length === 0 && (
             <Card>
@@ -324,7 +389,7 @@ export function TogetherLobbyPresenter(p: TogetherLobbyPresenterProps) {
         <Copy>
           {s.audience === "invite-only"
             ? "Private · code or QR only"
-            : "Open · discoverable on this Wi-Fi or hotspot"}
+            : `Open · discoverable ${place}`}
         </Copy>
       )}
       {s.selection && (
@@ -377,7 +442,7 @@ export function TogetherLobbyPresenter(p: TogetherLobbyPresenterProps) {
           <Copy>
             {s.phase === "joined" && p.workoutStatus
               ? "Connected to the lobby. Everyone logs their own workout."
-              : PHASE_COPY[s.phase]}
+              : phaseCopy[s.phase]}
           </Copy>
         </View>
       )}

@@ -6,7 +6,7 @@
  *       specs/milestones/M3-active-session/EXECUTION_PLAN.md § 2 Commit 7
  */
 
-import { fireEvent, waitFor } from "@testing-library/react-native";
+import { act, fireEvent, waitFor } from "@testing-library/react-native";
 import React from "react";
 import { Alert } from "react-native";
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
@@ -23,6 +23,7 @@ import {
   ActiveSessionContainer,
   retrospectiveCompletedAtForDay,
 } from "@/ui/containers/ActiveSessionContainer";
+import { ActiveSessionPresenter } from "@/ui/presenters/ActiveSessionPresenter";
 import { useActiveWorkout } from "@/state/active-workout";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 
@@ -1931,4 +1932,102 @@ describe("ActiveSessionContainer", () => {
     expect(chip).toBeTruthy();
     expect(await findByText("8 reps • 60 kg")).toBeTruthy();
   });
+});
+
+describe("Together active workout integration", () => {
+  it.each(["cloud", "offline"] as const)(
+    "routes %s completion through own review even with no logged sets",
+    async (transport) => {
+      jest.clearAllMocks();
+      mockUseLocalSearchParams.mockReturnValue({});
+      useActiveWorkout.setState({ active: null, expanded: false });
+      const storage = new InMemoryStorageAdapter();
+      storage.cacheActiveSession("user-1", {
+        id: "together-local",
+        userId: "user-1",
+        workoutId: null,
+        name: "Together",
+        status: "in_progress",
+        startedAt: "2026-10-05T09:00:00Z",
+        completedAt: null,
+        notes: null,
+        together: {
+          sessionId: "shared",
+          executionId: "own",
+          ...(transport === "cloud" ? { transport: "cloud" as const } : {}),
+        },
+        exercises: [
+          {
+            id: "e",
+            sessionId: "together-local",
+            exerciseId: "ex-bench",
+            exerciseName: "Bench Press",
+            sortOrder: 0,
+            supersetGroup: null,
+            isSubstituted: false,
+            originalExerciseId: null,
+            notes: null,
+            sets: [],
+          },
+        ],
+      });
+      const r = renderWithTheme(
+        withAdapters(
+          makeAdapters(new InMemoryApiAdapter(), storage),
+          <ActiveSessionContainer />,
+        ),
+      );
+      await r.findByTestId("active-session-screen");
+      const presenter = () => r.UNSAFE_getByType(ActiveSessionPresenter).props;
+      act(() => presenter().onSkipExercise("e"));
+      expect(storage.getActiveSession("user-1")!.exercises[0].skipped).toBe(
+        true,
+      );
+      act(() => presenter().onSkipExercise("e"));
+      expect(storage.getActiveSession("user-1")!.exercises[0].skipped).toBe(
+        false,
+      );
+      const alert = jest.spyOn(Alert, "alert").mockImplementation(() => {});
+      const save = jest.spyOn(storage, "cacheActiveSession");
+      save.mockImplementationOnce(() => {
+        throw new Error("disk full");
+      });
+      act(() => presenter().onSkipExercise("e"));
+      expect(storage.getActiveSession("user-1")!.exercises[0].skipped).toBe(
+        false,
+      );
+      expect(alert).toHaveBeenCalledWith(
+        "Change not saved",
+        expect.any(String),
+      );
+      save.mockImplementationOnce(() => {
+        throw new Error("disk full");
+      });
+      act(() => presenter().onStartRest("e"));
+      expect(storage.getActiveSession("user-1")!.restEndsAt).toBeUndefined();
+      act(() => presenter().onStartRest("e"));
+      expect(
+        Date.parse(storage.getActiveSession("user-1")!.restEndsAt!),
+      ).toBeGreaterThan(Date.now());
+      save.mockImplementationOnce(() => {
+        throw new Error("disk full");
+      });
+      act(() => presenter().restTimer.onDismiss());
+      expect(storage.getActiveSession("user-1")!.restEndsAt).not.toBeNull();
+      act(() => presenter().restTimer.onSkip());
+      save.mockRestore();
+      alert.mockRestore();
+      expect(storage.getActiveSession("user-1")!.restEndsAt).toBeNull();
+      fireEvent.press(r.getByTestId("active-session-finish"));
+      expect(mockRouterPush).toHaveBeenCalledWith({
+        pathname:
+          transport === "cloud"
+            ? "/(app)/session/together-cloud-review"
+            : "/(app)/session/together-review",
+        params: { localSessionId: "together-local" },
+      });
+      expect(storage.getPendingMutations()).toHaveLength(0);
+      r.unmount();
+    },
+  );
 });

@@ -1,19 +1,36 @@
 # Persistence Together — frontend agent
 
-## Current integration — 4 October 2026
+## Current integration — 5 October 2026
 
-PR #484 is merged at `c6a71555`. [Verified network lobbies](./NETWORK-LOBBIES.md)
-now provides private/open audience controls and signed same-network browsing
-before explicit Join. The next slice, [own-workout logging](./OWN-WORKOUT.md),
-connects admitted athletes to explicit promotion, durable personal checkpoints
-and signed own-set LAN delivery. Production remains default-off.
+The consolidated PR on merged #485 (`bc4c34f3`) wires the reviewed lobby to
+own logging/recovery, independent named partner views, shared templates,
+nonnumeric progress, separate numeric/PREV/logging controls, host removal and
+completion choices. Cloud friends/invitation sessions and person-code/QR partner
+flows use the same explicit ownership rules. Nearby and Android hotspot-owner
+source are included; compiled/device behavior is not yet established.
 
-The existing active workout and set editor remain in place. The slim row and
-reviewed cards gain local-save, peer-receipt, paused and restart states. Partner
-view switching, shared-plan reconciliation, PREV/delegation, server result saving
-and full completion/recovery remain outstanding; no “in sync” claim is made from
-a peer receipt. Nearby radio and physical-device evidence are also open.
-Older dated readiness statements below are historical.
+Use [TEST-READINESS](./TEST-READINESS.md) for exact development flags, migrations,
+owner build prerequisites and limits, and [SMOKE_TEST](./SMOKE_TEST.md) for device
+acceptance. Production remains disabled: the public test flag only works when
+`__DEV__` is true. Full checks, final visual evidence and Inspector must be recorded
+by the PR owner rather than inferred from this implementation inventory.
+
+Keep the existing active workout/set editor, slim Together row, partner cards,
+named owner switching and return-to-mine. Sharing state, projection receipts and
+server result acceptance are distinct. Private numbers still show nonnumeric plan
+progress; PREV and permission to log for an athlete require their separate grants.
+A delegated editor must send the revision rendered on screen, never silently use
+a newer revision. Removed/disconnected athletes retain personal logging/recovery.
+
+Shared-plan adoption is explicit before promotion and preserves the athlete's
+existing draft. Immutable signed plans cannot relabel previously logged slots.
+Review lists unsupported local differences; partial acceptance retains the full
+personal checkpoint rather than silently completing it. Cloud pending drafts
+also remain authoritative; only a confirmed safe explicit personal continuation
+can release them. No automatic solo save or LAN/cloud authority transition.
+
+Older dated readiness and venue-discovery instructions below are historical;
+current approved requirements and this handoff supersede conflicting statements.
 
 ## Reviewed UX — reuse, do not redesign
 
@@ -34,8 +51,8 @@ approved behaviour. Coached distribution/scheduling remain separate tickets.
 The original source export/TOGETHER_HANDOFF.md is not archived locally; the
 working artifact and PER-60 are the handoff, not a reason to redesign.
 
-Current backend: PRs #474/#475/#477 are merged; PREV PR #478 is open and CI-green
-as checked on 1 October. Native transport/mobile integration remain outstanding.
+Historical 1 October backend handoff: PRs #474/#475/#477 and the subsequently
+merged PREV/offline foundations are reused by the current integration.
 Older backend handoff and venue-discovery instructions below are historical;
 the current requirements and approved lobby scope supersede them.
 

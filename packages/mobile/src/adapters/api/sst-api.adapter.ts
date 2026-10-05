@@ -1,3 +1,8 @@
+import { createCloudApis } from "@/adapters/together/cloudApi";
+import {
+  recoveryCandidate,
+  recoveryResult,
+} from "@/adapters/together/recoverySchema";
 import type {
   TogetherOfflineApi,
   TogetherOfflineApiError,
@@ -529,7 +534,40 @@ export class SSTApiAdapter implements ApiPort {
     return ok(body.data);
   }
 
+  private readonly cloudApis = createCloudApis(
+    (path, options) => this.requestEnvelope(path, options),
+    (path, options) => this.request(path, options),
+  );
+  readonly togetherCloud = this.cloudApis.cloud;
+  readonly togetherSocial = this.cloudApis.social;
+
   readonly togetherOffline: TogetherOfflineApi = {
+    recovery: {
+      upload: (requestId, body) =>
+        this.requestEnvelope("/together/offline/recovery", {
+          method: "POST",
+          body,
+          idempotencyKey: requestId,
+          timeoutMs: 15_000,
+          validateResponse: (value) => recoveryCandidate(value, true),
+        }),
+      get: (executionId) =>
+        this.requestEnvelope(
+          `/together/offline/recovery/${encodeURIComponent(executionId)}`,
+          { timeoutMs: 15_000, validateResponse: recoveryCandidate },
+        ),
+      complete: (executionId, requestId, body) =>
+        this.requestEnvelope(
+          `/together/offline/recovery/${encodeURIComponent(executionId)}/complete`,
+          {
+            method: "POST",
+            body,
+            idempotencyKey: requestId,
+            timeoutMs: 15_000,
+            validateResponse: recoveryResult,
+          },
+        ),
+    },
     trust: () =>
       this.requestEnvelope("/together/offline/trust", {
         timeoutMs: 10_000,

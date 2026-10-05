@@ -1183,6 +1183,19 @@ export class InMemoryStorageAdapter implements StoragePort {
       .map((r) => ({ ...r }));
   }
 
+  getPreviousForTogether(
+    userId: string,
+    exerciseIds: readonly string[],
+    before: string,
+  ): RecentSetEntry[] {
+    return (this.recentSets.get(userId) ?? [])
+      .filter(
+        (row) =>
+          exerciseIds.includes(row.exerciseId) &&
+          Date.parse(row.recordedAt) < Date.parse(before),
+      )
+      .slice(0, 100);
+  }
   getRecentSetsByExercise(
     userId: string,
     exerciseIds: readonly string[],

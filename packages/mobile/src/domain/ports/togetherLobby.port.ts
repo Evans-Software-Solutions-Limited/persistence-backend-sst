@@ -1,7 +1,10 @@
 import type { TogetherWorkoutPort } from "./togetherWorkout.port";
+import type { TogetherSharedPort } from "./togetherShared.port";
 export type TogetherLobbyAudience = "invite-only" | "open";
+export type TogetherTransport = "lan" | "nearby" | "hotspot-owner";
 /** Reviewed lobby state only. No credentials, signing seeds or PREV grants reach UI. */
 export interface TogetherLobbySnapshot {
+  transport?: TogetherTransport;
   phase:
     | "browsing"
     | "disabled"
@@ -31,7 +34,10 @@ export interface TogetherLobbySnapshot {
   pending: readonly { peerId: string; userId: string }[];
 }
 export interface TogetherLobbyPort {
+  readonly transports?: readonly TogetherTransport[];
+  selectTransport?(transport: TogetherTransport): void;
   readonly workout?: TogetherWorkoutPort;
+  readonly shared?: TogetherSharedPort;
   getSnapshot(): TogetherLobbySnapshot;
   subscribe(listener: () => void): () => void;
   host(workoutName: string, audience?: TogetherLobbyAudience): Promise<void>;
@@ -42,6 +48,7 @@ export interface TogetherLobbyPort {
   join(): Promise<void>;
   approve(peerId: string): Promise<void>;
   decline(peerId: string): Promise<void>;
+  removeParticipant?(userId: string): Promise<void>;
   reconnect(): Promise<void>;
   cancel(): Promise<void>;
   invalidateAuthorization(code: string): void;

@@ -95,6 +95,13 @@ export const togetherParticipants = pgTable(
       .references(() => profiles.id, { onDelete: "cascade" }),
     status: text("status").notNull().default("active"),
     ownRevision: integer("own_revision").notNull().default(0),
+    numbersRecipientIds: uuid("numbers_recipient_ids")
+      .array()
+      .notNull()
+      .default([]),
+    numbersConsentVersion: integer("numbers_consent_version")
+      .notNull()
+      .default(0),
     previousRecipientIds: uuid("previous_recipient_ids")
       .array()
       .notNull()
@@ -114,6 +121,8 @@ export const togetherParticipants = pgTable(
     frozenPlan: jsonb("frozen_plan").$type<TogetherPlan>(),
     consentVersion: text("consent_version").notNull(),
     leftAt: at("left_at"),
+    originalStartedAt: at("original_started_at"),
+    removedFromRoster: boolean("removed_from_roster").notNull().default(false),
     historyId: uuid("history_id").references(() => workoutSessions.id, {
       onDelete: "set null",
     }),
@@ -149,6 +158,7 @@ export const togetherJoinRequests = pgTable(
       .notNull()
       .references(() => profiles.id, { onDelete: "cascade" }),
     inviteId: uuid("invite_id").references(() => togetherInvites.id),
+    originalStartedAt: at("original_started_at"),
     consentVersion: text("consent_version").notNull(),
     status: text("status").notNull().default("pending"),
     createdAt: at("created_at").notNull().defaultNow(),

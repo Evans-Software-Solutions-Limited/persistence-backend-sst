@@ -77,6 +77,7 @@ const tables = [
   schema.profiles,
   schema.friendships,
   schema.socialProfiles,
+  schema.socialPersonCodes,
   schema.socialBlocks,
   schema.socialReports,
   schema.socialRequestDecisions,
@@ -159,6 +160,24 @@ beforeAll(async () => {
     await readFile(
       new URL(
         "../../../../../../supabase/migrations/20261001133310_together_previous_consent.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
+  await pg.exec(
+    await readFile(
+      new URL(
+        "../../../../../../supabase/migrations/20261005130000_social_person_codes.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
+  await pg.exec(
+    await readFile(
+      new URL(
+        "../../../../../../supabase/migrations/20261005120000_together_numbers_consent.sql",
         import.meta.url,
       ),
       "utf8",
@@ -806,4 +825,138 @@ it("requires existing exercise visibility for BOTH template parties and rechecks
       .from(schema.workoutExercises)
       .where(eq(schema.workoutExercises.workoutId, copy.workoutId!)),
   ).toHaveLength(1);
+});
+
+describe("private person invitations", () => {
+  it("reads own profile only and gives relationship-scoped names", async () => {
+    expect(await social.getProfile(a)).toEqual({ discoverable: false });
+    await social.profile(b, key(), true);
+    expect(await social.getProfile(a)).toEqual({ discoverable: false });
+    const request = await social.request(a, b, key());
+    await social.decision(b, request.requestId, key(), "accept");
+    expect((await social.list(a, "accepted")).data[0].person).toEqual({
+      userId: b,
+      displayName: "Alicia",
+      avatarUrl: null,
+    });
+    expect((await social.list(c, "accepted")).data).toEqual([]);
+  });
+  it("resolves opaque codes for private profiles without accepting or granting PREV", async () => {
+    const code = await social.personCode(b, key());
+    expect(code.code).toMatch(/^[A-Za-z0-9_-]{32}$/);
+    expect(code.code).not.toContain(b);
+    expect(await social.resolvePersonCode(a, code.code)).toEqual({
+      userId: b,
+      displayName: "Alicia",
+      avatarUrl: null,
+    });
+    expect(await withActors([a, b], (tx) => areFriends(tx, a, b))).toBe(false);
+    await expect(social.request(a, b, key())).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+    const request = await social.request(a, b, key(), code.code);
+    expect(request.status).toBe("pending");
+    expect(await withActors([a, b], (tx) => areFriends(tx, a, b))).toBe(false);
+    expect(await social.getProfile(b)).toEqual({ discoverable: false });
+  });
+  it("replays issuance, rotates old codes and rejects expired codes at resolve and request", async () => {
+    const k = key(),
+      old = await social.personCode(b, k);
+    expect(await social.personCode(b, k)).toEqual(old);
+    const next = await social.personCode(b, key());
+    expect(next.code).not.toBe(old.code);
+    await expect(social.resolvePersonCode(a, old.code)).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+    await expect(social.request(a, b, key(), old.code)).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+    await db
+      .update(schema.socialPersonCodes)
+      .set({ expiresAt: new Date(0) })
+      .where(eq(schema.socialPersonCodes.userId, b));
+    await expect(social.resolvePersonCode(a, next.code)).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+    await expect(social.request(a, b, key(), next.code)).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+  });
+  it("does not reveal blocked/deleted people, self or malformed codes", async () => {
+    const code = await social.personCode(b, key());
+    await social.block(b, a, key(), true);
+    await expect(social.resolvePersonCode(a, code.code)).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+    await expect(social.resolvePersonCode(b, code.code)).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    await expect(social.resolvePersonCode(c, "bad")).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+    await expect(
+      social.resolvePersonCode(c, "x".repeat(32)),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await db
+      .update(schema.profiles)
+      .set({ deletedAt: new Date() })
+      .where(eq(schema.profiles.id, b));
+    await expect(social.resolvePersonCode(c, code.code)).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+  });
+  it("requires auth and idempotency, validates code schema and resolves by POST", async () => {
+    expect((await http("/social/profile", null)).status).toBe(401);
+    expect(
+      (await http("/social/person-code", null, "POST", {}, key())).status,
+    ).toBe(401);
+    expect((await http("/social/person-code", a, "POST", {})).status).toBe(400);
+    expect(
+      (await http("/social/person-code/resolve", a, "POST", { code: "bad" }))
+        .status,
+    ).toBe(400);
+    const issued = await http("/social/person-code", b, "POST", {}, key());
+    expect(issued.status).toBe(200);
+    const { data } = (await issued.json()) as { data: { code: string } };
+    const resolved = await http("/social/person-code/resolve", a, "POST", {
+      code: data.code,
+    });
+    expect(resolved.status).toBe(200);
+    expect(
+      ((await resolved.json()) as { data: { userId: string } }).data.userId,
+    ).toBe(b);
+    expect(
+      (
+        await http(
+          "/social/requests",
+          a,
+          "POST",
+          { userId: b, personCode: data.code },
+          key(),
+        )
+      ).status,
+    ).toBe(200);
+  });
+  it("keeps capability digests inaccessible to Data API client roles", async () => {
+    const migration = await readFile(
+      new URL(
+        "../../../../../../supabase/migrations/20261005130000_social_person_codes.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    await pg.exec(migration);
+    const result = await pg.query<{
+      relrowsecurity: boolean;
+      anon: boolean;
+      authenticated: boolean;
+    }>(
+      "select relrowsecurity,has_table_privilege('anon','social_person_codes','select') as anon,has_table_privilege('authenticated','social_person_codes','insert') as authenticated from pg_class where relname='social_person_codes'",
+    );
+    expect(result.rows[0]).toEqual({
+      relrowsecurity: true,
+      anon: false,
+      authenticated: false,
+    });
+  });
 });

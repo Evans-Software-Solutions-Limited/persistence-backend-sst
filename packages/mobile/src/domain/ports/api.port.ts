@@ -1,3 +1,5 @@
+import type { TogetherCloudApi } from "./togetherCloud.port";
+import type { TogetherSocialApi } from "./togetherSocial.port";
 import type { TogetherOfflineApi } from "./togetherOfflineApi.port";
 import type { DashboardPayload } from "@/domain/models/dashboard";
 import type {
@@ -152,6 +154,8 @@ import type {
 export interface ApiPort extends ReferralsPort {
   /** Optional until all environments support offline Together provisioning. */
   togetherOffline?: TogetherOfflineApi;
+  togetherCloud?: TogetherCloudApi;
+  togetherSocial?: TogetherSocialApi;
   /** Health check */
   healthCheck(): Promise<Result<{ status: string }, ApiError>>;
 

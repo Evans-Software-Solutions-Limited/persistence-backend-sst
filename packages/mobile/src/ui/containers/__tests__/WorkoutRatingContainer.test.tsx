@@ -342,7 +342,7 @@ describe("WorkoutRatingContainer", () => {
   });
 });
 
-it("retains Together workout and pointer without solo submit or summary navigation", async () => {
+it("routes Together workout to explicit recovery without solo submit or losing the pointer", async () => {
   jest.clearAllMocks();
   const storage = new InMemoryStorageAdapter();
   seed(storage);
@@ -351,17 +351,22 @@ it("retains Together workout and pointer without solo submit or summary navigati
     together: { sessionId: "shared", executionId: "own" },
   });
   const end = jest.spyOn(useActiveWorkout.getState(), "end");
-  const { findByTestId } = renderWithTheme(
+  const { queryByTestId } = renderWithTheme(
     <AdapterProvider adapters={makeAdapters(storage)}>
       <WorkoutRatingContainer />
     </AdapterProvider>,
   );
-  fireEvent.press(await findByTestId("workout-rating-7"));
-  fireEvent.press(await findByTestId("workout-rating-submit"));
+  await waitFor(() =>
+    expect(mockRouterReplace).toHaveBeenCalledWith({
+      pathname: "/(app)/session/together-review",
+      params: { localSessionId: "local-1" },
+    }),
+  );
+  expect(queryByTestId("workout-rating-submit")).toBeNull();
   expect(storage.getActiveSession("user-1")?.together).toBeTruthy();
   expect(storage.getPendingMutations()).toHaveLength(0);
   expect(end).not.toHaveBeenCalled();
-  expect(mockRouterReplace).not.toHaveBeenCalled();
+  expect(mockRouterReplace).not.toHaveBeenCalledWith("/(app)/session/summary");
   expect(mockFetch).not.toHaveBeenCalled();
   end.mockRestore();
 });

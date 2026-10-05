@@ -1,4 +1,8 @@
-import type { TogetherOfflineApi } from "../../../domain/ports/togetherOfflineApi.port";
+import { commandFromEnvelope, readOwnerCommand } from "../localCommand";
+import type {
+  TogetherOfflineApi,
+  TogetherRecoveryCommand,
+} from "../../../domain/ports/togetherOfflineApi.port";
 import type {
   ProvisioningError,
   ProvisioningErrorCode,
@@ -7,6 +11,7 @@ import type {
 } from "../../../domain/ports/togetherProvisioning.port";
 import type {
   FriendshipEvidence,
+  Credential,
   Signed,
 } from "../../../domain/models/togetherIdentity";
 import {
@@ -192,6 +197,51 @@ export class TogetherProvisioning implements TogetherProvisioningPort {
       }
     }
     return this.prepare({ online: true });
+  }
+  async signRecovery(
+    credential: Signed<Credential>,
+    commands: readonly TogetherRecoveryCommand[],
+  ): Promise<Result<Signed<TogetherRecoveryCommand>[], ProvisioningError>> {
+    if (this.stopped) return failure("cancelled");
+    if (!this.account) return failure("signed-out");
+    if (
+      credential.payload.userId !== this.account ||
+      !commands.length ||
+      commands.length > 100
+    )
+      return failure("invalid-proof");
+    const account = this.account,
+      generation = this.generation;
+    let identity: Device | undefined;
+    try {
+      // No cache/paid entitlement check: expired sharing authority still owns its journal.
+      identity = await device(
+        this.options.secrets,
+        this.scope(account),
+        account,
+        this.options.environment,
+        credential.payload.deviceId,
+        false,
+        this.options.randomBytes,
+      );
+      this.activeSeeds.add(identity.seed);
+      this.guard(generation);
+      if (publicKeyPem(identity.seed) !== credential.payload.publicKey)
+        return failure("invalid-proof");
+      const signed = commands.map((command) => {
+        const envelope = signPayload(command, identity!.seed);
+        readOwnerCommand(commandFromEnvelope(envelope), credential);
+        return envelope;
+      });
+      return ok(signed);
+    } catch (error) {
+      return failure(errorCode(error));
+    } finally {
+      if (identity) {
+        identity.seed.fill(0);
+        this.activeSeeds.delete(identity.seed);
+      }
+    }
   }
   private ready(
     snapshot: Snapshot,

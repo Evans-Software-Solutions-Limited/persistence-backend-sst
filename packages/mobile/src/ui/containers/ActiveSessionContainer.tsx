@@ -20,6 +20,8 @@
  *       specs/milestones/M3-active-session/EXECUTION_PLAN.md § 2 Commit 7
  */
 
+import { randomUUID } from "expo-crypto";
+import { adoptSharedPlan } from "@/adapters/together/adoptSharedPlan";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import {
   useCallback,
@@ -100,7 +102,7 @@ export function retrospectiveCompletedAtForDay(
 }
 
 export function ActiveSessionContainer() {
-  const { storage, api, togetherLobby } = useAdapters();
+  const { storage, api, togetherLobby, togetherCloud } = useAdapters();
   const params = useLocalSearchParams<{
     workoutId?: string;
     sessionId?: string;
@@ -323,9 +325,25 @@ export function ActiveSessionContainer() {
       if (!exercise) return;
       const template = templateByExercise[sessionExerciseId];
       const restSeconds = template?.restSeconds ?? DEFAULT_REST_SECONDS;
+      const fresh = userId ? storage.getActiveSession(userId) : null;
+      if (fresh?.together && userId) {
+        try {
+          storage.cacheActiveSession(userId, {
+            ...fresh,
+            restEndsAt: new Date(Date.now() + restSeconds * 1000).toISOString(),
+          });
+          rereadCache();
+        } catch {
+          Alert.alert(
+            "Rest not saved",
+            "Your workout is unchanged. Try again.",
+          );
+          return;
+        }
+      }
       restTimer.start(restSeconds, exercise.exerciseName);
     },
-    [session, templateByExercise, restTimer],
+    [session, templateByExercise, restTimer, userId, storage, rereadCache],
   );
 
   // -- Mutation wiring --------------------------------------------------
@@ -649,6 +667,16 @@ export function ActiveSessionContainer() {
     // this gate the user can tap Complete on an empty session, Submit
     // on rating, and record a 0-set workout to the server.
     if (!session) return;
+    if (session.together) {
+      router.push({
+        pathname:
+          session.together.transport === "cloud"
+            ? "/(app)/session/together-cloud-review"
+            : "/(app)/session/together-review",
+        params: { localSessionId: session.id },
+      } as never);
+      return;
+    }
     const hasLoggedSet = session.exercises.some((ex) => {
       const category = templateByExercise[ex.id]?.category;
       return ex.sets.some((set) =>
@@ -691,7 +719,16 @@ export function ActiveSessionContainer() {
       { onBehalfClientId },
     );
     if (!result.ok && result.error.kind === "together_completion_pending") {
-      Alert.alert("Workout saved locally", result.error.message);
+      const own = storage.getActiveSession(userId);
+      if (own?.together)
+        router.push({
+          pathname:
+            own.together.transport === "cloud"
+              ? "/(app)/session/together-cloud-review"
+              : "/(app)/session/together-review",
+          params: { localSessionId: own.id },
+        } as never);
+      else Alert.alert("Workout saved locally", result.error.message);
       return;
     }
     // Clear the UI-state slice too (Bug fix, Inspector Brad 🟡) — match the
@@ -748,6 +785,22 @@ export function ActiveSessionContainer() {
     return null;
   }
 
+  const clearTogetherRest = () => {
+    const fresh = userId ? storage.getActiveSession(userId) : null;
+    if (fresh?.together && userId) {
+      try {
+        storage.cacheActiveSession(userId, { ...fresh, restEndsAt: null });
+        rereadCache();
+      } catch {
+        Alert.alert(
+          "Rest not saved",
+          "Try again to stop the shared rest timer.",
+        );
+        return false;
+      }
+    }
+    return true;
+  };
   const renderPresenter = (togetherRow?: ReactNode) => (
     <ActiveSessionPresenter
       togetherRow={togetherRow}
@@ -763,8 +816,12 @@ export function ActiveSessionContainer() {
         remainingSeconds: restTimer.remainingSeconds,
         totalSeconds: restTimer.totalSeconds,
         progress: restTimer.progress,
-        onSkip: restTimer.skip,
-        onDismiss: restTimer.dismiss,
+        onSkip: () => {
+          if (clearTogetherRest()) restTimer.skip();
+        },
+        onDismiss: () => {
+          if (clearTogetherRest()) restTimer.dismiss();
+        },
       }}
       onLogSet={onLogSet}
       onLogSupersetSet={onLogSupersetSet}
@@ -781,6 +838,28 @@ export function ActiveSessionContainer() {
       onAddExercise={onAddExercise}
       onAddExerciseToSuperset={onAddExerciseToSuperset}
       onStartRest={onStartRest}
+      onSkipExercise={
+        session.together
+          ? (id) => {
+              const fresh = storage.getActiveSession(userId);
+              if (!fresh?.together) return;
+              try {
+                storage.cacheActiveSession(userId, {
+                  ...fresh,
+                  exercises: fresh.exercises.map((e) =>
+                    e.id === id ? { ...e, skipped: !e.skipped } : e,
+                  ),
+                });
+                rereadCache();
+              } catch {
+                Alert.alert(
+                  "Change not saved",
+                  "Your workout is unchanged. Try again.",
+                );
+              }
+            }
+          : undefined
+      }
       withClient={withClient}
       retroactive={retroactive}
       activityEnvironment={session.activityEnvironment ?? null}
@@ -810,10 +889,43 @@ export function ActiveSessionContainer() {
       {togetherLobby && !withClient && !retroactive ? (
         <TogetherLobbyContainer
           lobby={togetherLobby}
+          cloud={togetherCloud}
           accountId={userId}
           workoutName={session.name}
+          displayName={profile?.fullName ?? profile?.username ?? undefined}
+          exerciseNames={Object.fromEntries(
+            session.exercises.map((e) => [e.exerciseId, e.exerciseName]),
+          )}
           localSessionId={session.id}
           getWorkout={() => storage.getActiveSession(userId)}
+          onRestorePersonal={(draft) => {
+            if (draft.userId !== userId) throw new Error("account-changed");
+            storage.cacheActiveSession(userId, draft);
+            rereadCache();
+          }}
+          onAdoptPlan={(plan, mode) => {
+            const fresh = storage.getActiveSession(userId);
+            if (!fresh || fresh.id !== session.id)
+              throw new Error("workout-changed");
+            storage.cacheActiveSession(
+              userId,
+              adoptSharedPlan(fresh, plan, mode, {
+                randomUUID,
+                exerciseName: (id) =>
+                  storage.getCachedExercises().find((e) => e.id === id)?.name,
+              }),
+            );
+            rereadCache();
+          }}
+          getPrevious={() =>
+            (
+              storage.getPreviousForTogether?.(
+                userId,
+                session.exercises.map((e) => e.exerciseId),
+                session.startedAt,
+              ) ?? []
+            ).map((row) => ({ ...row, recordedAt: Date.parse(row.recordedAt) }))
+          }
         >
           {renderPresenter}
         </TogetherLobbyContainer>

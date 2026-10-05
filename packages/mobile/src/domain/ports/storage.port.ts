@@ -852,6 +852,13 @@ export interface StoragePort {
    * Out-of-band exerciseIds (not in the recent-sets cache) are simply
    * omitted from the result; callers treat absence as "no previous".
    */
+  /** Owner-only bounded historical values for explicit Together PREV consent. */
+  getPreviousForTogether?(
+    userId: string,
+    exerciseIds: readonly string[],
+    before: string,
+  ): RecentSetEntry[];
+
   getRecentSetsByExercise(
     userId: string,
     exerciseIds: readonly string[],

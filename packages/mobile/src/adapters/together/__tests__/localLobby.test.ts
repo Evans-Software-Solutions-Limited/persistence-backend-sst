@@ -470,4 +470,27 @@ describe("local lobby and inbox with real SQLite", () => {
     );
     expect(persisted).not.toContain(token);
   });
+  it("removes exactly one athlete with signed monotonic authority and requires fresh host approval to rejoin", () => {
+    host.start(person(1).consent);
+    host.admit(friend(2), person(2).credential);
+    host.admit(friend(3), person(3).credential);
+    const before = store.current(pin.sessionId)!;
+    const removed = host.removeParticipant(id(2));
+    expect(removed.payload.revision).toBe(before.payload.revision + 1);
+    expect(
+      removed.payload.members.map((m) => m.credential.payload.userId),
+    ).toEqual([id(1), id(3)]);
+    expect(() => host.member(person(2).credential)).toThrow();
+    expect(() => host.member(person(3).credential)).not.toThrow();
+    host.accept(before);
+    expect(store.current(pin.sessionId)).toEqual(removed);
+    expect(host.admit(friend(2), person(2).credential).status).toBe(
+      "approval-required",
+    );
+    expect(host.admit(friend(2), person(2).credential, true).status).toBe(
+      "admitted",
+    );
+    expect(() => host.removeParticipant(id(1))).toThrow();
+    expect(() => host.removeParticipant(id(9))).toThrow();
+  });
 });

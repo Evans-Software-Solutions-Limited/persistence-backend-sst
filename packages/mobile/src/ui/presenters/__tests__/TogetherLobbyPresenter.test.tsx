@@ -239,8 +239,14 @@ it.each(["active", "reconnecting", "local-only", "paused"] as const)(
       />,
     );
     expect(r.getByText("My workout")).toBeTruthy();
-    expect(r.getByText(/Changes received by another athlete: 3/)).toBeTruthy();
-    expect(r.getByText(/A peer receipt does not mean/)).toBeTruthy();
+    expect(
+      r.getByText(/Your complete workout journal is retained/),
+    ).toBeTruthy();
+    expect(
+      r.getByText(
+        /private shared view|shared views have separate delivery receipts/i,
+      ),
+    ).toBeTruthy();
     expect(r.queryByText("Start the session")).toBeNull();
     expect(r.queryByText(/Your workout remains personal/)).toBeNull();
     if (sharing === "paused")
@@ -259,7 +265,82 @@ it("requires promotion consent separately from admission", () => {
   expect(
     r.getByText(/Your exercises and logged sets stay in place/),
   ).toBeTruthy();
-  expect(r.getByText(/until result saving is added/)).toBeTruthy();
+  expect(r.getByText(/own result before saving/)).toBeTruthy();
   fireEvent.press(r.getByText("Use my workout in Together"));
   expect(onPromote).toHaveBeenCalledTimes(1);
+});
+
+it.each(["hosting", "browsing", "searching"] as const)(
+  "describes %s using nearby transport without a Wi-Fi gate",
+  (phase) => {
+    const p = props(phase);
+    p.snapshot.transport = "nearby";
+    const r = renderWithTheme(<TogetherLobbyPresenter {...p} />);
+    expect(r.queryByText(/Wi-Fi|hotspot/)).toBeNull();
+    expect(r.getAllByText(/nearby/i).length).toBeGreaterThan(0);
+  },
+);
+it("keeps explicit hotspot-owner and nearby permission/unreachable states distinct", () => {
+  expect(togetherErrorCopy("permission-denied", "nearby")).toMatch(
+    /Bluetooth and nearby-device/,
+  );
+  expect(togetherErrorCopy("timeout", "nearby")).toMatch(/both phones nearby/);
+  expect(togetherErrorCopy("permission-denied", "hotspot-owner")).toMatch(
+    /this Android phone’s hotspot/,
+  );
+  expect(togetherErrorCopy("timeout", "hotspot-owner")).toMatch(
+    /other phone is connected/,
+  );
+  const p = props("idle");
+  p.snapshot.transport = "hotspot-owner";
+  const r = renderWithTheme(<TogetherLobbyPresenter {...p} />);
+  expect(r.getByText("This Android phone’s hotspot")).toBeTruthy();
+  expect(r.getByText(/Discovery depends on device support/)).toBeTruthy();
+  r.rerender(
+    <TogetherLobbyPresenter
+      {...p}
+      snapshot={{ ...p.snapshot, transport: "nearby" }}
+    />,
+  );
+  expect(r.getByText("Nearby · Bluetooth and local radio")).toBeTruthy();
+  expect(r.getByText("Open nearby")).toBeTruthy();
+});
+
+it("nearby discovery expiry asks to search nearby, and hotspot browsing names the owner mode", () => {
+  expect(togetherErrorCopy("discovery-expired", "nearby")).toMatch(
+    /Search nearby again/,
+  );
+  expect(togetherErrorCopy("discovery-expired", "hotspot-owner")).toMatch(
+    /Android phone’s hotspot/,
+  );
+  expect(togetherErrorCopy("removed-from-session")).toMatch(
+    /own workout remains/,
+  );
+  const p = props("browsing");
+  const r = renderWithTheme(
+    <TogetherLobbyPresenter
+      {...p}
+      snapshot={{ ...p.snapshot, transport: "hotspot-owner" }}
+    />,
+  );
+  expect(
+    r.getByText(/Only open lobbies reachable through this Android phone/),
+  ).toBeTruthy();
+  r.rerender(
+    <TogetherLobbyPresenter
+      {...p}
+      screen="join"
+      snapshot={{ ...p.snapshot, phase: "idle", transport: "nearby" }}
+    />,
+  );
+  expect(r.getByText("Find an open lobby nearby")).toBeTruthy();
+  expect(r.queryByText(/Use the same Wi-Fi/)).toBeNull();
+  r.rerender(
+    <TogetherLobbyPresenter
+      {...p}
+      screen="join"
+      snapshot={{ ...p.snapshot, phase: "idle", transport: "hotspot-owner" }}
+    />,
+  );
+  expect(r.getByText(/Connect the other phones/)).toBeTruthy();
 });

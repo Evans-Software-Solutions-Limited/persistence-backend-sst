@@ -166,6 +166,15 @@ beforeAll(async () => {
   await pg.exec(reviewRollback);
   await pg.exec(reviewRollback);
   await pg.exec(reviewMigration);
+  await pg.exec(
+    readFileSync(
+      new URL(
+        "../../../../../../supabase/migrations/20261005120000_together_numbers_consent.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
   db = drizzle(pg, {
     schema,
     logger: {

@@ -1,3 +1,4 @@
+import type { TogetherSharedSession, SharedEnvelope } from "./sharedSession";
 import {
   TogetherJournal,
   type TogetherJournalEntry,
@@ -14,6 +15,7 @@ import {
 } from "./security/identity";
 
 export type LocalLinkEvent =
+  | "shared"
   | "full"
   | "declined"
   | "authenticated"
@@ -43,6 +45,11 @@ export class TogetherLocalLink {
     private readonly lobby: TogetherLocalLobby,
     private readonly journal: TogetherJournal,
     private readonly sendFrame: (frame: string) => Promise<void>,
+    private readonly shared?: TogetherSharedSession,
+    private readonly relayShared?: (
+      envelope: SharedEnvelope,
+      peerId: string,
+    ) => Promise<void>,
   ) {
     const pin = lobby.pin;
     if (
@@ -173,6 +180,7 @@ export class TogetherLocalLink {
       !this.lobby.isHost
     ) {
       this.lobby.accept(m.roster as Signed<OfflineRoster>);
+      this.shared?.rosterChanged();
       return "roster";
     }
     if (
@@ -182,7 +190,15 @@ export class TogetherLocalLink {
     )
       return m.kind;
     const member = this.lobby.member(peer);
+    if (object(m, ["kind", "envelope"]) && m.kind === "shared") {
+      if (!this.shared) throw new Error("Shared protocol unavailable");
+      const envelope = m.envelope as SharedEnvelope;
+      if (this.shared.accept(envelope, peer.payload.userId))
+        await this.relayShared?.(envelope, peer.payload.userId);
+      return "shared";
+    }
     if (object(m, ["kind", "command"]) && m.kind === "command") {
+      if (this.shared) throw new Error("Unconsented legacy numeric command");
       const p = readOwnerCommand(m.command, peer);
       if (
         p.sessionId !== this.lobby.pin.sessionId ||
@@ -237,6 +253,11 @@ export class TogetherLocalLink {
     throw new Error("Invalid lobby message");
   }
 
+  async sendShared(envelope: SharedEnvelope): Promise<void> {
+    this.lobby.member(this.channel.peerCredential!);
+    await this.send({ kind: "shared", envelope });
+  }
+
   join(request: LocalJoinRequest): Promise<void> {
     if (
       this.lobby.isHost ||
@@ -282,6 +303,12 @@ export class TogetherLocalLink {
       await this.send({ kind: "roster", roster });
   }
 
+  async sendRemovalRoster(roster: Signed<OfflineRoster>): Promise<void> {
+    if (!this.lobby.isHost || !this.channel.ready)
+      throw new Error("Host connection required");
+    await this.send({ kind: "roster", roster });
+  }
+
   /** Resolves after durable local save and an initial send/schedule, never waits
    * for a receipt. A busy link retains the command in its durable queue. */
   async sendOwn(command: LocalCommand): Promise<void> {
@@ -293,12 +320,23 @@ export class TogetherLocalLink {
     )
       throw new Error("Wrong owner execution");
     this.journal.append(command);
+    if (this.shared) {
+      await this.shared.publishProgress(command);
+      return;
+    }
     this.lobby.member(this.channel.peerCredential!);
     await this.deliverNext();
   }
 
   /** Retries preserve exact signed bytes and IDs. Receipt loss cannot lose the log. */
   async resendOwn(): Promise<void> {
+    if (this.shared) {
+      for (const envelope of this.shared.replay(
+        this.channel.peerCredential!.payload.userId,
+      ))
+        await this.sendShared(envelope);
+      return;
+    }
     await this.deliverNext(true);
   }
 

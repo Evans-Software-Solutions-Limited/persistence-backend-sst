@@ -163,11 +163,19 @@ export class TogetherLocalLobby {
       return { status: "admitted", roster: current };
     }
     if (current.payload.members.length >= 4) throw new Error("LOBBY_FULL");
+    const previouslyAdmitted = this.store
+      .rosters(this.options.sessionId)
+      .some((roster) =>
+        roster.payload.members.some(
+          (member) => member.credential.payload.userId === identity.userId,
+        ),
+      );
+    const friend = request.friendship && !previouslyAdmitted;
     const member: RosterMember = {
       credential: request.credential,
       consent: request.consent,
-      admission: request.friendship ? "friend" : "approved",
-      ...(request.friendship ? { friendship: request.friendship } : {}),
+      admission: friend ? "friend" : "approved",
+      ...(friend ? { friendship: request.friendship } : {}),
     };
     const envelope = signPayload<OfflineRoster>(
       {
@@ -190,10 +198,37 @@ export class TogetherLocalLobby {
       ),
       this.options.now(),
     );
-    if (!request.friendship && !approved)
-      return { status: "approval-required" };
+    if (!friend && !approved) return { status: "approval-required" };
     this.accept(envelope);
     return { status: "admitted", roster: envelope };
+  }
+
+  /** A removal is one host-signed roster revision; old join proofs require fresh approval. */
+  removeParticipant(userId: string): Signed<OfflineRoster> {
+    if (!this.isHost) throw new Error("Only the host can remove athletes");
+    const current = this.store.current(this.options.sessionId);
+    if (
+      !current ||
+      userId === this.pin.hostUserId ||
+      !current.payload.members.some(
+        (m) => m.credential.payload.userId === userId,
+      )
+    )
+      throw new Error("Athlete not removable");
+    this.member(this.ownCredential);
+    const envelope = signPayload<OfflineRoster>(
+      {
+        ...current.payload,
+        revision: current.payload.revision + 1,
+        previousHash: requestHash(current.payload),
+        members: current.payload.members.filter(
+          (m) => m.credential.payload.userId !== userId,
+        ),
+      },
+      this.options.seed,
+    );
+    this.accept(envelope);
+    return envelope;
   }
 
   accept(roster: Signed<OfflineRoster>): void {

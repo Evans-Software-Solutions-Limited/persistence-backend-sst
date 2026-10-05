@@ -80,6 +80,7 @@ export type SessionExerciseCardProps = {
   onRemoveExercise: () => void;
   onTapExercise: () => void;
   onStartRest: () => void;
+  onSkip?: () => void;
   reorderPosition?: number;
   reorderTotal?: number;
   onMove?: (direction: -1 | 1) => void;
@@ -250,6 +251,18 @@ export function SessionExerciseCard(props: SessionExerciseCardProps) {
           );
         })}
 
+        {props.onSkip && (
+          <TouchableOpacity
+            onPress={props.onSkip}
+            accessibilityLabel={
+              props.exercise.skipped ? "Resume exercise" : "Skip exercise"
+            }
+          >
+            <Text style={styles.footerButtonText}>
+              {props.exercise.skipped ? "SKIPPED · RESUME" : "SKIP EXERCISE"}
+            </Text>
+          </TouchableOpacity>
+        )}
         <View style={styles.buttonsContainer}>
           <TouchableOpacity
             onPress={props.onLogSet}

@@ -1,3 +1,4 @@
+import { createHash, randomBytes } from "node:crypto";
 import { and, eq, gt, ilike, isNull, ne, or, sql } from "drizzle-orm";
 import {
   getDb,
@@ -7,6 +8,7 @@ import {
 } from "@persistence/db";
 import {
   socialBlocks,
+  socialPersonCodes,
   socialRequestDecisions,
   togetherReceipts,
   socialProfiles,
@@ -115,7 +117,81 @@ async function invalidate(
   const { revokePair } = await import("../together/togetherRepository");
   await revokePair(tx, actor, target, reason);
 }
+const codeHash = (code: string) =>
+  createHash("sha256").update(code).digest("hex");
+async function currentCode(tx: TogetherTx, target: string, code: string) {
+  if (!/^[A-Za-z0-9_-]{32}$/.test(code)) return false;
+  return !!(
+    await tx
+      .select()
+      .from(socialPersonCodes)
+      .where(
+        and(
+          eq(socialPersonCodes.userId, target),
+          eq(socialPersonCodes.codeHash, codeHash(code)),
+          gt(socialPersonCodes.expiresAt, new Date()),
+        ),
+      )
+      .limit(1)
+  ).length;
+}
 export const socialRepository = {
+  getProfile(actor: string) {
+    return withActors([actor], async (tx) => {
+      const [row] = await tx
+        .select()
+        .from(socialProfiles)
+        .where(eq(socialProfiles.userId, actor));
+      return { discoverable: row?.discoverable ?? false };
+    });
+  },
+  personCode(actor: string, key: string) {
+    return withActors([actor], (tx) =>
+      replayMutation(tx, actor, "person-code", key, {}, async () => {
+        const code = randomBytes(24).toString("base64url"),
+          expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+        await tx
+          .insert(socialPersonCodes)
+          .values({ userId: actor, codeHash: codeHash(code), expiresAt })
+          .onConflictDoUpdate({
+            target: socialPersonCodes.userId,
+            set: { codeHash: codeHash(code), expiresAt },
+          });
+        return { code, expiresAt: expiresAt.toISOString() };
+      }),
+    );
+  },
+  async resolvePersonCode(actor: string, code: string) {
+    requireTogether(/^[A-Za-z0-9_-]{32}$/.test(code), "NOT_FOUND", 404);
+    const [initial] = await getDb()
+      .select()
+      .from(socialPersonCodes)
+      .where(eq(socialPersonCodes.codeHash, codeHash(code)))
+      .limit(1);
+    requireTogether(initial, "NOT_FOUND", 404);
+    return withActors([actor, initial.userId], async (tx) => {
+      requireTogether(
+        await currentCode(tx, initial.userId, code),
+        "NOT_FOUND",
+        404,
+      );
+      requireTogether(
+        await canInteract(tx, actor, initial.userId),
+        "NOT_FOUND",
+        404,
+      );
+      await targetExists(tx, actor, initial.userId);
+      const [person] = await tx
+        .select({
+          userId: profiles.id,
+          displayName: profiles.fullName,
+          avatarUrl: profiles.avatarUrl,
+        })
+        .from(profiles)
+        .where(eq(profiles.id, initial.userId));
+      return person;
+    });
+  },
   profile(actor: string, key: string, discoverable: boolean) {
     return withActors([actor], (tx) =>
       replayMutation(tx, actor, "profile", key, { discoverable }, async () => {
@@ -189,7 +265,19 @@ export const socialRepository = {
         .limit(limit + 1);
       const visible = [];
       for (const row of data.slice(0, limit))
-        if (await canInteract(tx, row.userId, row.friendId)) visible.push(row);
+        if (await canInteract(tx, row.userId, row.friendId)) {
+          const other = row.userId === actor ? row.friendId : row.userId;
+          const [person] = await tx
+            .select({
+              userId: profiles.id,
+              displayName: profiles.fullName,
+              avatarUrl: profiles.avatarUrl,
+            })
+            .from(profiles)
+            .where(and(eq(profiles.id, other), isNull(profiles.deletedAt)))
+            .limit(1);
+          if (person) visible.push({ ...row, person });
+        }
       return {
         data: visible,
         nextCursor:
@@ -199,7 +287,7 @@ export const socialRepository = {
       };
     });
   },
-  request(actor: string, target: string, key: string) {
+  request(actor: string, target: string, key: string, personCode?: string) {
     return withActors([actor, target], async (tx) => {
       await targetExists(tx, actor, target);
       requireTogether(await canInteract(tx, actor, target), "FORBIDDEN", 403);
@@ -207,13 +295,20 @@ export const socialRepository = {
         .select()
         .from(socialProfiles)
         .where(eq(socialProfiles.userId, target));
-      requireTogether(visible?.discoverable, "NOT_FOUND", 404);
+      requireTogether(
+        visible?.discoverable ||
+          (personCode && (await currentCode(tx, target, personCode))),
+        "NOT_FOUND",
+        404,
+      );
       return replayMutation(
         tx,
         actor,
         "request",
         key,
-        { userId: target },
+        {
+          userId: target,
+        },
         async () => {
           const [existing] = await tx
             .select()

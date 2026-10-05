@@ -4,6 +4,7 @@ import { randomBytes } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { commandFromEnvelope, readOwnerCommand } from "../../localCommand";
 import { TogetherProvisioning } from "../togetherProvisioning";
 import { ProvisioningCache } from "../cache";
 import { device, randomUuid } from "../device";
@@ -15,7 +16,10 @@ import {
 } from "../../security/identity";
 import { ok, fail } from "../../../../shared/errors/result";
 import type { TogetherJournalDatabase } from "../../../storage/togetherJournal";
-import type { TogetherOfflineApi } from "../../../../domain/ports/togetherOfflineApi.port";
+import type {
+  TogetherOfflineApi,
+  TogetherRecoveryCommand,
+} from "../../../../domain/ports/togetherOfflineApi.port";
 import type {
   Registration,
   FriendshipEvidence,
@@ -1051,4 +1055,108 @@ it("exposes current account-scoped refusals for host and member validation", asy
   snapshot.blocked = true;
   cache.write(scope(), snapshot);
   expect(() => service.deniedPairs([B])).toThrow("unauthorized");
+});
+
+describe("original device journal recovery signing", () => {
+  const command = (): TogetherRecoveryCommand => ({
+    kind: "together-recovery-v1",
+    userId: A,
+    sessionId: B,
+    executionId: C,
+    commandId: "00000000-0000-4000-8000-000000000004",
+    planHash: "a".repeat(64),
+    startedAt: 1,
+    expectedVersion: 0,
+    operation: { type: "rest", endsAt: null },
+  });
+  it("signs after expiry, logout/restart and sharing denial without trust/register/prepare", async () => {
+    const original = await prepared();
+    service.setAccount(null);
+    now += 86400000;
+    service = make(A, environment, false);
+    api.trust.mockClear();
+    api.register.mockClear();
+    api.friendship.mockClear();
+    const signed = await service.signRecovery(original.credential, [command()]);
+    expect(signed.ok).toBe(true);
+    if (!signed.ok) throw new Error("not signed");
+    expect(
+      readOwnerCommand(
+        commandFromEnvelope(signed.value[0]),
+        original.credential,
+      ),
+    ).toEqual(command());
+    expect(api.trust).not.toHaveBeenCalled();
+    expect(api.register).not.toHaveBeenCalled();
+    expect(api.friendship).not.toHaveBeenCalled();
+    expect(secrets.setItemAsync).toHaveBeenCalledTimes(1);
+  });
+  it("cannot recover another account or environment and never creates a replacement secret", async () => {
+    const original = await prepared();
+    service.setAccount(B);
+    expect(
+      await service.signRecovery(original.credential, [command()]),
+    ).toMatchObject({ ok: false, error: { code: "invalid-proof" } });
+    const other = make(A, "https://api.test/production");
+    expect(
+      await other.signRecovery(original.credential, [command()]),
+    ).toMatchObject({ ok: false, error: { code: "key-unavailable" } });
+    expect(secrets.setItemAsync).toHaveBeenCalledTimes(1);
+    store.clear();
+    service = make();
+    expect(
+      await service.signRecovery(original.credential, [command()]),
+    ).toMatchObject({ ok: false, error: { code: "key-unavailable" } });
+    expect(secrets.setItemAsync).toHaveBeenCalledTimes(1);
+  });
+  it("rejects signed-out, stopped, oversized, empty and mismatched original credentials", async () => {
+    const original = await prepared();
+    expect(await service.signRecovery(original.credential, [])).toMatchObject({
+      ok: false,
+    });
+    expect(
+      await service.signRecovery(
+        original.credential,
+        Array(101).fill(command()),
+      ),
+    ).toMatchObject({ ok: false });
+    const wrong = {
+      ...original.credential,
+      payload: {
+        ...original.credential.payload,
+        publicKey: publicKeyPem(server),
+      },
+    };
+    expect(await service.signRecovery(wrong, [command()])).toMatchObject({
+      ok: false,
+      error: { code: "invalid-proof" },
+    });
+    service.setAccount(null);
+    expect(
+      await service.signRecovery(original.credential, [command()]),
+    ).toMatchObject({ ok: false, error: { code: "signed-out" } });
+    service.dispose();
+    expect(
+      await service.signRecovery(original.credential, [command()]),
+    ).toMatchObject({ ok: false, error: { code: "cancelled" } });
+  });
+  it("rejects non-owner operations and clears loaded key on account switch in flight", async () => {
+    const original = await prepared();
+    expect(
+      (
+        await service.signRecovery(original.credential, [
+          { ...command(), userId: B },
+        ])
+      ).ok,
+    ).toBe(false);
+    const pending = deferred<string | null>();
+    secrets.getItemAsync.mockReturnValueOnce(pending.promise);
+    const signing = service.signRecovery(original.credential, [command()]);
+    service.setAccount(B);
+    pending.resolve(store.get(`together.provisioning.v1.${scope()}`)!);
+    expect(await signing).toMatchObject({
+      ok: false,
+      error: { code: "cancelled" },
+    });
+  });
 });

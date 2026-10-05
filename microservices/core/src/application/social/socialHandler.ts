@@ -30,7 +30,7 @@ export const socialHandler = new Elysia()
   .onBeforeHandle(async (c) => {
     const path = new URL(c.request.url).pathname;
     const bucket =
-      path === "/social/people"
+      path === "/social/people" || path.startsWith("/social/person-code")
         ? "search"
         : c.request.method === "POST" && path === "/social/requests"
           ? "invite"
@@ -58,6 +58,37 @@ export const socialHandler = new Elysia()
       return { error: { code: error.code, message: error.message } };
     }
   })
+  .get("/social/profile", async (c) => ({
+    data: await repo.getProfile(getUser(c).sub),
+  }))
+  .post(
+    "/social/person-code",
+    async (c) => ({
+      data: await repo.personCode(getUser(c).sub, c.headers["idempotency-key"]),
+    }),
+    {
+      headers: socialMutationHeaders,
+      body: t.Object({}, { additionalProperties: false }),
+    },
+  )
+  .post(
+    "/social/person-code/resolve",
+    async (c) => ({
+      data: await repo.resolvePersonCode(getUser(c).sub, c.body.code),
+    }),
+    {
+      body: t.Object(
+        {
+          code: t.String({
+            minLength: 32,
+            maxLength: 32,
+            pattern: "^[A-Za-z0-9_-]+$",
+          }),
+        },
+        { additionalProperties: false },
+      ),
+    },
+  )
   .put(
     "/social/profile",
     async (c) => ({
@@ -103,9 +134,25 @@ export const socialHandler = new Elysia()
         getUser(c).sub,
         c.body.userId,
         c.headers["idempotency-key"],
+        c.body.personCode,
       ),
     }),
-    { headers: socialMutationHeaders, body: userParams },
+    {
+      headers: socialMutationHeaders,
+      body: t.Object(
+        {
+          userId: t.String({ format: "uuid" }),
+          personCode: t.Optional(
+            t.String({
+              minLength: 32,
+              maxLength: 32,
+              pattern: "^[A-Za-z0-9_-]+$",
+            }),
+          ),
+        },
+        { additionalProperties: false },
+      ),
+    },
   )
   .post(
     "/social/requests/:id/decision",

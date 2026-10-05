@@ -87,7 +87,7 @@ export async function processTogetherJob(id: string, userId: string) {
       const payload: RecordSessionInput = {
         clientSessionId: job.clientRecordId,
         name: p.frozenPlan.name,
-        startedAt: s.createdAt.toISOString(),
+        startedAt: (p.originalStartedAt ?? s.createdAt).toISOString(),
         completedAt: job.completedAt.toISOString(),
         status: "completed",
         exercises: recordedExercises,

@@ -48,3 +48,44 @@ describe("Together LAN bridge", () => {
     expect(remove).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("explicit hotspot-owner transport", () => {
+  it("does not offer owner mode on older native modules", () => {
+    jest
+      .mocked(requireOptionalNativeModule)
+      .mockReturnValue({ startHost: jest.fn() } as never);
+    expect(load().togetherHotspotOwner).toBeNull();
+  });
+  it("uses only explicitly selected owner entrypoints and forwards normal byte routing", async () => {
+    const remove = jest.fn();
+    const native = {
+      startHost: jest.fn(),
+      startDiscovery: jest.fn(),
+      startHotspotHost: jest.fn(async () => {}),
+      startHotspotDiscovery: jest.fn(async () => {}),
+      connect: jest.fn(async () => {}),
+      send: jest.fn(async () => {}),
+      disconnect: jest.fn(async () => {}),
+      stop: jest.fn(async () => {}),
+      addListener: jest.fn(() => ({ remove })),
+    };
+    jest.mocked(requireOptionalNativeModule).mockReturnValue(native as never);
+    const owner = load().togetherHotspotOwner!;
+    await owner.startHost("lobby");
+    await owner.startDiscovery();
+    await owner.connect("endpoint");
+    await owner.send("peer", "encrypted");
+    await owner.disconnect("peer");
+    owner.addListener("onEvent", jest.fn()).remove();
+    await owner.stop();
+    expect(native.startHotspotHost).toHaveBeenCalledWith("lobby");
+    expect(native.startHotspotDiscovery).toHaveBeenCalledTimes(1);
+    expect(native.startHost).not.toHaveBeenCalled();
+    expect(native.startDiscovery).not.toHaveBeenCalled();
+    expect(native.connect).toHaveBeenCalledWith("endpoint");
+    expect(native.send).toHaveBeenCalledWith("peer", "encrypted");
+    expect(native.disconnect).toHaveBeenCalledWith("peer");
+    expect(native.stop).toHaveBeenCalledTimes(1);
+    expect(remove).toHaveBeenCalledTimes(1);
+  });
+});

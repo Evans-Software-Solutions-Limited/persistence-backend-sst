@@ -267,7 +267,9 @@ export class TogetherCompletionRepository {
       const [own] = await tx.select().from(participants).where(predicate);
       requireTogether(session && own, "NOT_FOUND", 404);
       requireTogether(
-        session.state === "closed" || session.collaborationRevoked,
+        session.state === "closed" ||
+          session.collaborationRevoked ||
+          own.removedFromRoster,
         "SHARING_ACTIVE",
         409,
       );
@@ -309,7 +311,7 @@ export class TogetherCompletionRepository {
             plan: own.frozenPlan!,
             execution: body.execution,
             definitions: own.exerciseDefinitions,
-            startedAt: session.createdAt,
+            startedAt: own.originalStartedAt ?? session.createdAt,
             completedAt: job?.completedAt ?? finished?.createdAt ?? new Date(),
             historyId: own.historyId,
             clientRecordId: job?.clientRecordId,

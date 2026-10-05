@@ -1,10 +1,11 @@
 /** @jest-environment node */
 import { DatabaseSync } from "node:sqlite";
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import {
   TogetherJournal,
   TogetherJournalDatabase,
 } from "../../storage/togetherJournal";
+import { TogetherSharedSession } from "../sharedSession";
 import { TogetherLocalStore, LocalCommand } from "../localStore";
 import { TogetherLocalLobby, LocalJoinRequest } from "../localLobby";
 import {
@@ -17,6 +18,7 @@ import { commandFromEnvelope, OwnerCommand } from "../localCommand";
 import {
   signPayload,
   publicKeyPem,
+  requestHash,
   Credential,
   JoinConsent,
 } from "../security/identity";
@@ -153,7 +155,11 @@ const settle = async () => {
 describe("LAN session lifecycle with actual crypto and SQLite", () => {
   const databases: DatabaseSync[] = [];
   const sessions: TogetherLanSession[] = [];
-  function setup(n: number, overrides: Partial<LanSessionOptions> = {}) {
+  function setup(
+    n: number,
+    overrides: Partial<LanSessionOptions> = {},
+    withShared = false,
+  ) {
     const db = new DatabaseSync(":memory:");
     databases.push(db);
     const storage = adapter(db);
@@ -192,9 +198,20 @@ describe("LAN session lifecycle with actual crypto and SQLite", () => {
       onEvent: (event) => events.push(event),
       ...overrides,
     };
+    const shared = withShared
+      ? new TogetherSharedSession({
+          lobby,
+          seed: who.seed,
+          randomBytes,
+          randomUUID,
+          now: () => time,
+          send: (envelope) => session.sendShared(envelope),
+        })
+      : undefined;
+    if (shared) options.shared = shared;
     const session = new TogetherLanSession(options);
     sessions.push(session);
-    return { native, lobby, journal, events, session, options };
+    return { native, lobby, journal, events, session, options, shared };
   }
   async function wire(
     host: ReturnType<typeof setup>,
@@ -740,5 +757,132 @@ describe("LAN session lifecycle with actual crypto and SQLite", () => {
       code: "heartbeat_failed",
       peerId: "again",
     });
+  });
+  it("joins, replays host plan, seals selected guest progress through the host and stops legacy leakage", async () => {
+    const host = setup(1, {}, true),
+      guest = setup(2, {}, true),
+      other = setup(3, {}, true);
+    const plan = {
+      name: "Shared",
+      exercises: [
+        { planExerciseId: id(50), exerciseId: id(51), order: 0, targetSets: 3 },
+      ],
+    };
+    for (const item of [host, guest, other]) item.shared!.setOwnPlan(plan);
+    await host.session.startHost();
+    await host.shared!.publishPlan(plan);
+    await guest.session.startDiscovery();
+    await wire(host, guest);
+    expect(guest.shared!.getSnapshot().plan).toEqual(plan);
+    await other.session.startDiscovery();
+    await wire(host, other, "other", true, 3);
+    await settle();
+    await guest.session.sendOwn(command({ planHash: requestHash(plan) }));
+    await settle();
+    expect(host.shared!.getSnapshot().athletes).toEqual([]);
+    expect(other.shared!.getSnapshot().athletes).toEqual([]);
+    await guest.shared!.setConsent(id(3), {
+      numbers: true,
+      prev: false,
+      logging: false,
+    });
+    await settle();
+    expect(other.shared!.getSnapshot().athletes[0].userId).toBe(id(2));
+    expect(host.shared!.getSnapshot().athletes).toEqual([]);
+    expect(guest.journal.list(pin.sessionId, id(22))).toHaveLength(1);
+    await guest.shared!.setConsent(id(3), {
+      numbers: false,
+      prev: false,
+      logging: false,
+    });
+    await settle();
+    expect(other.shared!.getSnapshot().athletes).toEqual([]);
+    await host.shared!.close("save_own");
+    await settle();
+    expect(other.shared!.getSnapshot().closures).toEqual([
+      { userId: id(1), mode: "save_own" },
+    ]);
+    for (const item of [host, guest, other]) item.shared!.dispose();
+  });
+  it("shared-send failure removes only the failed connection", async () => {
+    const host = setup(1, {}, true),
+      guest = setup(2, {}, true);
+    const plan = {
+      name: "A",
+      exercises: [
+        { planExerciseId: id(50), exerciseId: id(51), order: 0, targetSets: 1 },
+      ],
+    };
+    host.shared!.setOwnPlan(plan);
+    guest.shared!.setOwnPlan(plan);
+    await host.session.startHost();
+    await guest.session.startDiscovery();
+    await wire(host, guest);
+    host.native.send.mockRejectedValueOnce(new Error("network"));
+    await expect(host.shared!.publishPlan(plan)).rejects.toThrow("network");
+    expect(host.events).toContainEqual({
+      type: "error",
+      code: "send_failed",
+      peerId: "peer",
+    });
+    host.shared!.dispose();
+    guest.shared!.dispose();
+  });
+  it("host removal propagates authenticated roster, disconnects only target and retains their own journal", async () => {
+    const host = setup(1, {}, true),
+      guest = setup(2, {}, true),
+      other = setup(3, {}, true);
+    const plan = {
+      name: "Shared",
+      exercises: [
+        { planExerciseId: id(50), exerciseId: id(51), order: 0, targetSets: 3 },
+      ],
+    };
+    for (const item of [host, guest, other]) item.shared!.setOwnPlan(plan);
+    await host.session.startHost();
+    await guest.session.startDiscovery();
+    await wire(host, guest);
+    await other.session.startDiscovery();
+    await wire(host, other, "other", true, 3);
+    await host.shared!.publishPlan(plan);
+    await settle();
+    await guest.session.sendOwn(command({ planHash: requestHash(plan) }));
+    await settle();
+    await guest.shared!.setConsent(id(3), {
+      numbers: true,
+      prev: false,
+      logging: false,
+    });
+    await settle();
+    expect(other.shared!.getSnapshot().athletes).toHaveLength(1);
+    await expect(guest.session.removeParticipant(id(3))).rejects.toThrow(
+      "Host",
+    );
+    await host.session.removeParticipant(id(2));
+    await settle();
+    expect(host.native.disconnect).toHaveBeenCalledWith("peer");
+    expect(host.native.disconnect).not.toHaveBeenCalledWith("other");
+    expect(
+      guest.lobby.store
+        .current(pin.sessionId)!
+        .payload.members.map((m) => m.credential.payload.userId),
+    ).toEqual([id(1), id(3)]);
+    expect(other.shared!.getSnapshot().athletes).toEqual([]);
+    expect(guest.journal.list(pin.sessionId, id(22))).toHaveLength(1);
+    await expect(
+      guest.session.sendOwn(
+        command({ expectedVersion: 1, planHash: requestHash(plan) }),
+      ),
+    ).rejects.toThrow();
+    await host.shared!.setConsent(id(3), {
+      numbers: true,
+      prev: false,
+      logging: false,
+    });
+    await settle();
+    expect(
+      other.shared!.getSnapshot().grants.some((g) => g.ownerId === id(1)),
+    ).toBe(true);
+    for (const item of [host, guest, other]) item.shared!.dispose();
   });
 });

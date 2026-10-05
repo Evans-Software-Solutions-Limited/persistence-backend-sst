@@ -125,6 +125,7 @@ it("withholds children until storage is ready and keeps Together disabled", asyn
   expect(createTogetherProvisioning).toHaveBeenCalledWith(
     { trust: "trust" },
     "https://api.example",
+    false,
   );
   expect(await mockSetToken.mock.calls[0][0]()).toBe("current-token");
   resolve();
