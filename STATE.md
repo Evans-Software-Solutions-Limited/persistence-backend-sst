@@ -39,7 +39,22 @@ warnings), non-mobile tests 18/18 (core 5,466; web 1,594), non-mobile build 12/1
 The initial combined non-mobile run hit two unrelated web timeouts; serialized
 workspaces passed without test changes. Initial full mobile: 7,917 passed, one
 stale provisioning mock expectation failed; corrected expectation plus latest
-UI changes passed 98 focused tests. Final full mobile evidence and PR link follow.
+UI changes passed 98 focused tests. Final full mobile executed 584 suites / 7,905
+passing tests; the unrelated YouContainer Jest worker exited with SIGSEGV before
+its tests ran. Its isolated rerun passed all 14 tests (existing open-handle warning).
+Thus all 7,919 tests passed across the final full run plus isolated rerun; the full
+command itself was not green. Aggregate coverage still exceeds 90% all metrics;
+new Together runtime/UI meets 90% in focused evidence, including lobby 100% lines /
+96.89% branches and cloud UI >94% branches. Existing large ActiveSession/Rating
+whole-file coverage gaps remain visible. No coverage exclusions or threshold edits.
+
+Local Inspector: clean at implementation `cabba195`, full diff plus incremental
+review. Actual RNWeb presenters compared with the reviewed Claude design; dark
+Partner read-only/logging/private-progress, cloud idle/full, retained recovery,
+sharing and Partners/Add/profile/person-code screenshots are in the task's
+`together` visualization directory. Web shell/native-module shims and simulated
+fixtures are documented evidence limits, not native/light-theme proof. PR link
+will be recorded when created; Linear remains In Progress until device acceptance.
 Prior PR-count estimates below are historical; device findings determine
 correction PRs and sign-off, not a fixed count.
 

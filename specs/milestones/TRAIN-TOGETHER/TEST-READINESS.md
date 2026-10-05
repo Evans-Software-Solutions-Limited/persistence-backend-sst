@@ -80,3 +80,19 @@ project-file fixtures cannot establish SDK compatibility.
 - Nearby SDK media selection is not proof that bytes traversed a particular hotspot.
   Android owner mode verifies a directly connected local route, not the OS AP role;
   OEM discovery/routing remains a physical-device check.
+
+## Local handoff evidence
+
+Implementation `cabba195`: local Inspector full-diff and incremental review clean.
+Typecheck 9/9, lint 6/6, non-mobile build 12/12 and non-mobile tests 18/18 pass
+(core 5,466; web 1,594). Final mobile run passed 7,905 tests / 584 suites but a Jest
+worker crashed with SIGSEGV loading the unrelated YouContainer suite; its isolated
+rerun passed 14/14. This is 7,919 passing tests across those runs, not a claim that
+the full command exited successfully. Aggregate coverage exceeds 90% all metrics;
+existing warnings and broad ActiveSession/Rating file coverage gaps remain.
+
+Actual current presenters were compared in RNWeb against the sole reviewed Claude
+artifact: sharing/recovery, Partners/Add/profile/code, partner read-only/logging/
+private progress, cloud idle/full and retained recovery. Dark theme only; actual
+fonts/components with web-native compatibility shims and simulated fixtures. The
+screenshots do not establish native layout, camera/QR scanning or transport proof.
