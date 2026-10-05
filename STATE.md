@@ -23,7 +23,12 @@ both are fixed. Focused secure-transfer tests: 132 passed, chunk assembler 100%
 coverage, link/session above 90% on all metrics. Owner-history API/repository tests
 include real PGlite and a failing filter-revert regression. Permission evidence is
 source/plugin tests only. No native/prebuild/EAS/mobile build, deployment or merge.
-Full final gate results recorded in the PR. Remaining: Brad's native build and
+Final full mobile: 592 suites / 8,036 tests; coverage 96.42% statements,
+91.73% branches, 96.49% functions and 97.79% lines. Non-mobile tests 18/18
+(core 5,485; web 1,594), typecheck 9/9, lint 6/6, non-mobile build 12/12 pass.
+Repository formatting found one changed design document; corrected and rechecked.
+Latest main 85ec607f merged without source or STATE conflicts; local instruction
+files preserved byte-for-byte. Remaining: Brad's native build and
 physical mixed-device/radio/permission/reconnect/throughput acceptance; tests use
 simulated links with real crypto/SQLite, not physical radio proof. See TRANSFER.md,
 HISTORY-LOADING.md, TEST-READINESS.md and SMOKE_TEST.md for bounded contracts.
