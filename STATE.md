@@ -1,5 +1,18 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-05 — PR #486 CI referral-test timing fix
+
+CI run 37300755593 failed one existing SubscriptionSelectionContainer referral
+assertion (7,941 passed). Coverage passed: 96.4% statements, 91.71% branches,
+96.46% functions, 97.75% lines. The same test passed locally, so the observed
+failure is intermittent. Referral tests now use scoped virtual timers to drive
+React Query notifications through auth/bootstrap rather than racing RTL's 1s
+wall-clock wait. Real adapters/hooks and UI assertions remain; cleanup unmounts
+before timers are cleared and real time is restored. No production code or
+coverage threshold changed. Local incremental Inspector is clean; focused 23
+assertions, mobile typecheck, targeted lint and formatting pass. Full coverage
+and the replacement CI run are recorded in the PR handoff.
+
 ### 2026-10-05 — PR #486 release gating and Inspector follow-up
 
 Brad explicitly superseded development-only/production-disabled packaging:
