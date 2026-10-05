@@ -783,7 +783,7 @@ export class TogetherSharedSession implements TogetherSharedPort {
           body.value.effective.length === athletePlan.exercises.length &&
           integer(body.value.startedAt) &&
           Array.isArray(body.value.rows) &&
-          body.value.rows.length <= 100,
+          body.value.rows.length <= 100 * 100,
       );
       const effectiveIds = new Set<string>();
       for (const item of body.value.effective) {
@@ -806,7 +806,10 @@ export class TogetherSharedSession implements TogetherSharedPort {
       );
       const knownVersion = this.ownerVersions.get(p.authorId) ?? 0;
       if (body.value.executionRevision < knownVersion) return;
-      for (const row of body.value.rows)
+      // A complete PREV snapshot may contain 100 sets for each of 100 exercises.
+      // The signed envelope byte budget still rejects oversized snapshots atomically.
+      const previousKeys = new Set<string>();
+      for (const row of body.value.rows) {
         check(
           object(row, [
             "exerciseId",
@@ -817,6 +820,7 @@ export class TogetherSharedSession implements TogetherSharedPort {
           ]) &&
             uuid(row.exerciseId) &&
             effective.has(row.exerciseId) &&
+            !previousKeys.has(`${row.exerciseId}:${row.setNumber}`) &&
             integer(row.setNumber) &&
             row.setNumber >= 1 &&
             row.setNumber <= 100 &&
@@ -829,6 +833,8 @@ export class TogetherSharedSession implements TogetherSharedPort {
             integer(row.recordedAt) &&
             row.recordedAt < body.value.startedAt,
         );
+        previousKeys.add(`${row.exerciseId}:${row.setNumber}`);
+      }
       if (p.recipientId === this.ownId)
         this.previous.set(
           p.authorId,

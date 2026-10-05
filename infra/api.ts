@@ -160,6 +160,8 @@ export const coreRoute = coreAPI.route("$default", {
   ],
   environment: {
     ...togetherEnvironment,
+    APP_MIN_IOS_VERSION: process.env.APP_MIN_IOS_VERSION || "1.1.3",
+    APP_MIN_ANDROID_VERSION: process.env.APP_MIN_ANDROID_VERSION || "1.1.3",
     DATABASE_URL: databaseUrl.value,
     SUPABASE_URL: supabaseUrl,
     // Supabase service-role key — server-side only. Used exclusively by

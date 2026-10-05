@@ -7,8 +7,8 @@ import {
 } from "./secrets";
 import { supabaseUrl } from "./domains";
 
-// Explicit stage rollout. Defining this code does not activate a provider or deploy.
-const enabled = process.env.TOGETHER_ENABLED === "true";
+// Enabled for release. Explicit false remains an operational rollback switch.
+const enabled = process.env.TOGETHER_ENABLED !== "false";
 export const togetherSocket = enabled
   ? new sst.aws.ApiGatewayWebSocket("TogetherSocket", {
       accessLog: { retention: "1 week" },

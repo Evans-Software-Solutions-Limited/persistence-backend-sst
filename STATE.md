@@ -1,5 +1,44 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-05 — PR #486 release gating and Inspector follow-up
+
+Brad explicitly superseded development-only/production-disabled packaging:
+Together must be available in release builds and the backend need not stay
+disabled. Partners route now exports its container directly. Providers compose
+Together without a development/environment test flag; obsolete test-gate code is
+removed. Backend infrastructure/deployment variables default enabled, with
+explicit false retained as an operational rollback. Friends-only remote
+visibility/discovery no longer depends on the venue-directory switch, which
+remains off; all paid, friendship, block and admission checks remain.
+
+Native version 1.1.3 includes ExpoApplication plus Together native modules. A root
+mandatory-update gate precedes AppProviders, checks the actual installed native
+version/capabilities, and reads public `/app-policy` with independent platform
+minimums. Cached policy is scoped by API environment; compatible offline launches
+continue, while stale cache cannot weaken an accepted in-memory requirement on
+foreground/retry. Store update, store-failure and internal-distribution states use
+existing foundation components. The OTA manifest supplies at most a store-listing
+identifier, never installed-version authority.
+
+Existing 1.1.2 clients do not contain this gate. A separately reviewed compatible
+bootstrap OTA or native update is required before they can honor the policy;
+shipping only the 1.1.3 runtime cannot retroactively force them. Owner-controlled
+builds, store availability and deployment remain outstanding. No build, deploy,
+OTA publication, merge or CI Inspector trigger was run.
+
+Validated CI Inspector lead 4182992617: removed global 100-row PREV lookup truncation
+and receiver ceiling. Real SQLite/encrypted/replay/revocation tests preserve all
+105 rows including the final exercise; duplicate keys and oversized snapshots
+reject atomically under the existing 30 KB envelope cap. Local Inspector also found
+and fixed stale-policy downgrade and the friends-discovery activation mismatch.
+Follow-up validation: mobile 587 suites / 7,942 tests; non-mobile tests 18/18
+(core 5,472); typecheck 9/9; lint 6/6; non-mobile build 12/12. Latest
+update-policy/SQLite regressions pass 36/36; restoring the SQL truncation makes
+the 105-row regression fail. Local Inspector full follow-up and final incremental
+sweep are clean. Update-screen screenshots are simulated RNWeb evidence only.
+PR #486 remains open for Brad to review and merge; prior results below describe
+the earlier development-only implementation.
+
 ### 2026-10-05 — consolidated Together test implementation (PER-64 / PER-22)
 
 Brad superseded the sequential PR plan with one consolidated implementation PR.

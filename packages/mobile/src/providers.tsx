@@ -1,7 +1,6 @@
 import { createTogetherCloud } from "@/adapters/together/createTogetherCloud";
 import { bindTogetherCloud } from "@/adapters/together/bindTogetherCloud";
 import { withTogetherCloudWorkout } from "@/adapters/storage/withTogetherCloudWorkout";
-import { togetherTestEnabled } from "@/adapters/together/testGate";
 import { withTogetherWorkout } from "@/adapters/storage/withTogetherWorkout";
 import { createTogetherLobby } from "@/adapters/together/createTogetherLobby";
 import { bindTogetherLobby } from "@/adapters/together/bindTogetherLobby";
@@ -119,10 +118,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
     // Wire auth token into API client
     api.setTokenProvider(() => auth.getAccessToken());
 
-    const togetherEnabled = togetherTestEnabled(
-      __DEV__,
-      process.env.EXPO_PUBLIC_TOGETHER_TEST,
-    );
+    const togetherEnabled = true;
     const togetherProvisioning = createTogetherProvisioning(
       api.togetherOffline,
       getApiBaseUrl(),

@@ -651,6 +651,33 @@ describe("production Together persistence and recovery", () => {
     ).toMatchObject({ status: "finished_empty" });
     expect((await repo.snapshot(a, s.sessionId)).state).toBe("closed");
   });
+  it("allows friends-only discovery while venue directory stays disabled", async () => {
+    vi.stubEnv("TOGETHER_DISCOVERY_ENABLED", "false");
+    const s = await create();
+    await db
+      .insert(schema.friendships)
+      .values({ userId: a, friendId: b, status: "accepted", initiatedBy: a });
+    await repo.visibility(a, s.sessionId, key(), {
+      audience: "friends",
+      expiresAt: new Date(Date.now() + 60000).toISOString(),
+    });
+    expect(
+      (await repo.discovery(b, { audience: "friends" })).data.map(
+        (x) => x.sessionId,
+      ),
+    ).toEqual([s.sessionId]);
+    expect((await repo.discovery(c, { audience: "friends" })).data).toEqual([]);
+    await expect(
+      repo.visibility(a, s.sessionId, key(), {
+        audience: "nearby",
+        placeId: "geoapify:place",
+        expiresAt: new Date(Date.now() + 60000).toISOString(),
+      }),
+    ).rejects.toMatchObject({ status: 403 });
+    await expect(
+      repo.discovery(b, { audience: "nearby", placeId: "geoapify:place" }),
+    ).rejects.toMatchObject({ status: 403 });
+  });
   it("visibility and discovery restrict friends/private, cursor scope and nearby place selection", async () => {
     const s = await create();
     await expect(

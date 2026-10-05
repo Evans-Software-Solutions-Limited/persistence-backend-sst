@@ -1572,7 +1572,7 @@ export class TogetherRepository {
         400,
       );
       requireTogether(
-        body.audience === "private" ||
+        body.audience !== "nearby" ||
           process.env.TOGETHER_DISCOVERY_ENABLED === "true",
         "FORBIDDEN",
         403,
@@ -1612,7 +1612,8 @@ export class TogetherRepository {
     },
   ) {
     requireTogether(
-      process.env.TOGETHER_DISCOVERY_ENABLED === "true",
+      query.audience === "friends" ||
+        process.env.TOGETHER_DISCOVERY_ENABLED === "true",
       "FORBIDDEN",
       403,
     );

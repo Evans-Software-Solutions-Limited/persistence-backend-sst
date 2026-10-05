@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-require-imports -- Durable native store is loaded only by the internal test capability. */
+/* eslint-disable @typescript-eslint/no-require-imports -- Durable native store is loaded lazily during application composition. */
 import type {
   TogetherCloudApi,
   TogetherCloudPort,

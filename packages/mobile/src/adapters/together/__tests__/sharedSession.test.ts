@@ -283,6 +283,67 @@ describe("shared plans, sealed consent and independent projections", () => {
     await engines[1].publishProgress(command(2));
     expect(engines[2].getSnapshot().previous[id(2)]).toEqual([]);
   });
+  it("shares all 105 PREV rows in one bounded encrypted snapshot and retains replay/revocation semantics", async () => {
+    const largePlan = {
+      ...plan,
+      exercises: Array.from({ length: 15 }, (_, i) => ({
+        planExerciseId: id(200 + i),
+        exerciseId: id(300 + i),
+        order: i,
+        targetSets: 7,
+      })),
+    };
+    engines.forEach((e) => e.dispose());
+    engines = [make(1), make(2), make(3)];
+    engines.forEach((e) => e.setOwnPlan(largePlan));
+    await engines[0].publishPlan(largePlan);
+    await engines[1].setConsent(id(3), { ...none, prev: true });
+    const rows = largePlan.exercises.flatMap((e) =>
+      Array.from({ length: 7 }, (_, i) => ({
+        exerciseId: e.exerciseId,
+        setNumber: i + 1,
+        reps: 8,
+        weightKg: 62.5,
+        recordedAt: time - 100,
+      })),
+    );
+    await engines[1].publishPrevious(id(3), rows, time);
+    expect(engines[2].getSnapshot().previous[id(2)]).toEqual(rows);
+    expect(engines[2].getSnapshot().previous[id(2)].at(-1)).toEqual(rows[104]);
+    const envelope = sent.filter((e) => e.payload.type === "previous").at(-1)!;
+    expect(
+      new TextEncoder().encode(JSON.stringify(envelope)).length,
+    ).toBeLessThanOrEqual(30000);
+    expect(engines[0].getSnapshot().previous).toEqual({});
+    engines[2].dispose();
+    engines[2] = make(3);
+    expect(engines[2].getSnapshot().previous[id(2)]).toEqual(rows);
+    const before = sent.length;
+    await expect(
+      engines[1].publishPrevious(id(3), [rows[0], rows[0]], time),
+    ).rejects.toThrow();
+    const oversized = largePlan.exercises.flatMap((e) =>
+      Array.from({ length: 100 }, (_, i) => ({
+        ...rows[0],
+        exerciseId: e.exerciseId,
+        setNumber: i + 1,
+      })),
+    );
+    await expect(
+      engines[1].publishPrevious(id(3), oversized, time),
+    ).rejects.toThrow();
+    expect(sent).toHaveLength(before);
+    expect(engines[2].getSnapshot().previous[id(2)]).toEqual(rows);
+    expect(
+      engines[1].replay(id(3)).filter((e) => e.payload.type === "previous"),
+    ).toEqual([envelope]);
+    await engines[1].setConsent(id(3), none);
+    engines[2].accept(envelope, id(1));
+    expect(engines[2].getSnapshot().previous).toEqual({});
+    engines[2].dispose();
+    engines[2] = make(3);
+    expect(engines[2].getSnapshot().previous).toEqual({});
+  });
   it("delegation is a separately versioned owner-consumed request and stale authorization cannot apply", async () => {
     await engines[0].publishPlan(plan);
     await engines[1].setConsent(id(3), { ...none, logging: true });

@@ -1,3 +1,4 @@
+import { AppUpdateGate } from "@/ui/containers/AppUpdateGate";
 import { useEffect } from "react";
 import { Platform, View } from "react-native";
 import {
@@ -448,17 +449,19 @@ function RootLayout() {
           })
         }
       >
-        <AppProviders>
-          <AuthCallbackCaptureBootstrap />
-          <NotificationPermissionsBootstrap />
-          <MetaAttributionBootstrap />
-          <PushNotificationsBootstrap />
-          <UserModeBootstrap />
-          <ActiveWorkoutBootstrap />
-          <PurchasesIdentityBootstrap />
-          <ReferenceListBootstrap />
-          <AuthGate />
-        </AppProviders>
+        <AppUpdateGate>
+          <AppProviders>
+            <AuthCallbackCaptureBootstrap />
+            <NotificationPermissionsBootstrap />
+            <MetaAttributionBootstrap />
+            <PushNotificationsBootstrap />
+            <UserModeBootstrap />
+            <ActiveWorkoutBootstrap />
+            <PurchasesIdentityBootstrap />
+            <ReferenceListBootstrap />
+            <AuthGate />
+          </AppProviders>
+        </AppUpdateGate>
       </ErrorBoundary>
     </GestureHandlerRootView>
   );

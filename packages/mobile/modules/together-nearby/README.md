@@ -70,7 +70,9 @@ Android owner, Nearby iOS-to-Android and both same-platform directions; deny and
 regrant permissions; test 4 athletes, 8 pending native peers, fragmentation, max frames,
 slow peers,background/account switch,radio loss and fresh reconnect. Verify no
 cloud authority transition and that personal recovery continues when sharing
-fails. Production must remain disabled until release gates pass.
+fails. Brad has authorized release-enabled source configuration; actual native
+SDK compilation and physical release acceptance still require the owner-built
+1.1.3 binary. No build or deployment is performed by this handoff.
 
 Sources: [Swift SDK setup](https://developers.google.com/nearby/connections/swift/get-started),
 [Swift discovery](https://developers.google.com/nearby/connections/swift/discover-devices),

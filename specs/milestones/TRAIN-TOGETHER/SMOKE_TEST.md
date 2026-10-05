@@ -3,7 +3,8 @@
 **Not executed by this source handoff.** Use the compatible binary and test-stage
 configuration supplied by Brad; prerequisites and exact flags/migrations are in
 [TEST-READINESS](./TEST-READINESS.md). Agents must not start native, prebuild, EAS,
-mobile build or deployment workflows. Production flags remain off.
+mobile build or deployment workflows. Release availability is now authorized in
+source; actual builds and deployments remain Brad-owned.
 
 For every case record commit/binary/runtime, OS/device models, selected transport,
 account entitlement fixtures, Internet/local-network state, timestamps, actual
@@ -54,3 +55,16 @@ Release sign-off still requires the PR's full automated gates, reviewed-design
 screenshots, clean local Inspector, owner-built runtime compatibility, this device
 matrix and operational/moderation ownership. No CI Inspector run is authorized by
 this checklist. Lower-priced tiers and coached classes are not part of this test.
+
+## Release update gate
+
+- Install a compatible 1.1.3 release binary: Together is available without developer
+  flags. With cached valid credentials, lose Internet and confirm LAN still works.
+- Deliver a higher minimum policy to that binary: only Update/Check again remain;
+  foreground/retry/offline must not reopen the app from an older cached policy.
+- Confirm store links target the installed production app; internal variants show
+  installation guidance for the testing distribution, not the production store.
+- Verify an old native version or missing required native module is blocked even
+  when the OTA manifest claims a newer JS version. Preserve local workouts.
+- Record the separate compatible bootstrap rollout for pre-gate 1.1.2 clients;
+  this source cannot retroactively install a gate in an already-installed binary.

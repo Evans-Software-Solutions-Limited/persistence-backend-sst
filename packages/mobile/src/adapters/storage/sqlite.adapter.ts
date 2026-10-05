@@ -3366,7 +3366,7 @@ ${indentSyncQueueDdl(12)}
       reps: number;
       recorded_at: string;
     }>(
-      `SELECT exercise_id,set_number,weight_kg,reps,recorded_at FROM recent_sets WHERE user_id = ? AND exercise_id IN (${exerciseIds.map(() => "?").join(",")}) AND julianday(recorded_at) < julianday(?) ORDER BY exercise_id,set_number LIMIT 100`,
+      `SELECT exercise_id,set_number,weight_kg,reps,recorded_at FROM recent_sets WHERE user_id = ? AND exercise_id IN (${exerciseIds.map(() => "?").join(",")}) AND julianday(recorded_at) < julianday(?) ORDER BY exercise_id,set_number`,
       [userId, ...exerciseIds, before],
     );
     return rows.map((row) => ({

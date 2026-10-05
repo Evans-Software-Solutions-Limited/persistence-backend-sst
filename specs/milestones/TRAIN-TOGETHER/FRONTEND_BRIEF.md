@@ -11,9 +11,10 @@ source are included; compiled/device behavior is not yet established.
 
 Use [TEST-READINESS](./TEST-READINESS.md) for exact development flags, migrations,
 owner build prerequisites and limits, and [SMOKE_TEST](./SMOKE_TEST.md) for device
-acceptance. Production remains disabled: the public test flag only works when
-`__DEV__` is true. Full checks, final visual evidence and Inspector must be recorded
-by the PR owner rather than inferred from this implementation inventory.
+acceptance. Brad subsequently authorized release-build availability: the public
+test flag and per-route version fallback are removed. The app-wide native update
+gate requires a compatible 1.1.3 binary; backend configuration defaults enabled
+with an explicit false rollback switch. No build or deployment is implied.
 
 Keep the existing active workout/set editor, slim Together row, partner cards,
 named owner switching and return-to-mine. Sharing state, projection receipts and

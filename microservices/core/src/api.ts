@@ -1,4 +1,5 @@
 import { trustedSourceHeaders } from "./shared/trustedSourceHeaders";
+import { appPolicyHandler } from "./application/appPolicy/appPolicyHandler";
 import Elysia from "elysia";
 import { togetherFeatureRoutes } from "./application/together/featureRoutes";
 import { Hono } from "hono";
@@ -282,6 +283,7 @@ honoApp.post("/revenuecat/webhook", (c) => handleRevenueCatWebhook(c.req.raw));
 for (const prefix of ["/together/*", "/social/*", "/places/*"]) {
   honoApp.all(prefix, (c) => togetherFeatureRoutes.fetch(c.req.raw));
 }
+honoApp.all("/app-policy", (c) => appPolicyHandler.fetch(c.req.raw));
 honoApp.mount("/", app.fetch);
 const honoHandler = handle(honoApp);
 
