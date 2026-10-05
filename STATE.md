@@ -53,8 +53,12 @@ review. Actual RNWeb presenters compared with the reviewed Claude design; dark
 Partner read-only/logging/private-progress, cloud idle/full, retained recovery,
 sharing and Partners/Add/profile/person-code screenshots are in the task's
 `together` visualization directory. Web shell/native-module shims and simulated
-fixtures are documented evidence limits, not native/light-theme proof. PR link
-will be recorded when created; Linear remains In Progress until device acceptance.
+fixtures are documented evidence limits, not native/light-theme proof.
+
+Review: [PR #486](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/486),
+attached to this task and left open for Brad. PER-64, PER-22 and the central
+reviewed-design document now link this exact handoff and remain In Progress until
+device acceptance. No merge or auto-merge was initiated.
 Prior PR-count estimates below are historical; device findings determine
 correction PRs and sign-off, not a fixed count.
 
