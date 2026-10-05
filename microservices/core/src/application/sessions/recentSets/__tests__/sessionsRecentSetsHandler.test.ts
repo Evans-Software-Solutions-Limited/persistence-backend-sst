@@ -138,3 +138,38 @@ describe("SessionsRecentSetsHandler", () => {
     expect(body.data).toEqual([]);
   });
 });
+
+it("passes bounded filters to the JWT-owned history query", async () => {
+  const { sessionsRecentSetsHandler } =
+    await import("../sessionsRecentSetsHandler");
+  mocks.getRecentSets.mockResolvedValue([]);
+  const res = await sessionsRecentSetsHandler.handle(
+    new Request(
+      "http://localhost/sessions/recent-sets?exerciseIds=squat,press,squat&before=2026-10-05T10:00:00Z",
+      { headers: { authorization: "Bearer token" } },
+    ),
+  );
+  expect(res.status).toBe(200);
+  expect(mocks.getRecentSets).toHaveBeenLastCalledWith("test-user-id", {
+    exerciseIds: ["squat", "press"],
+    before: new Date("2026-10-05T10:00:00Z"),
+  });
+});
+it.each([
+  "exerciseIds=squat",
+  "before=2026-10-05T10:00:00Z",
+  "exerciseIds=squat&before=bad",
+  "exerciseIds=squat,,press&before=2026-10-05T10:00:00Z",
+  `exerciseIds=${Array.from({ length: 101 }, (_, i) => `ex${i}`).join(",")}&before=2026-10-05T10:00:00Z`,
+])("rejects invalid scoped history query %s", async (query) => {
+  const { sessionsRecentSetsHandler } =
+    await import("../sessionsRecentSetsHandler");
+  mocks.getRecentSets.mockClear();
+  const res = await sessionsRecentSetsHandler.handle(
+    new Request(`http://localhost/sessions/recent-sets?${query}`, {
+      headers: { authorization: "Bearer token" },
+    }),
+  );
+  expect([400, 422]).toContain(res.status);
+  expect(mocks.getRecentSets).not.toHaveBeenCalled();
+});

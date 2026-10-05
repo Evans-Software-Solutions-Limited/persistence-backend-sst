@@ -282,7 +282,10 @@ export class SessionRepository {
    * keeps one row per group — the newest by `completed_at` (then `started_at`
    * as a stable tiebreak). Scoped to `userId` throughout — no cross-user leak.
    */
-  async getRecentSets(userId: string): Promise<
+  async getRecentSets(
+    userId: string,
+    filters?: { exerciseIds: string[]; before: Date },
+  ): Promise<
     Array<{
       exerciseId: string;
       setNumber: number;
@@ -315,6 +318,12 @@ export class SessionRepository {
         and(
           eq(workoutSessions.userId, userId),
           eq(workoutSessions.status, "completed"),
+          filters
+            ? inArray(sessionExercises.exerciseId, filters.exerciseIds)
+            : undefined,
+          filters
+            ? sql`coalesce(${workoutSessions.completedAt}, ${workoutSessions.startedAt}) < ${filters.before}`
+            : undefined,
           eq(sessionExercises.isSubstituted, false),
           isNotNull(exerciseSets.weightKg),
           isNotNull(exerciseSets.reps),

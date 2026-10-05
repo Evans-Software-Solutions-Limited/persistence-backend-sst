@@ -1,3 +1,8 @@
+import {
+  SharedAssembly,
+  sharedChunks,
+  MAX_SHARED_BYTES,
+} from "./sharedTransfer";
 import type { TogetherSharedSession, SharedEnvelope } from "./sharedSession";
 import {
   TogetherJournal,
@@ -31,6 +36,9 @@ export type LocalLinkEvent =
  * Call close on native disconnect. Reconnect uses a NEW channel and resendOwn.
  */
 export class TogetherLocalLink {
+  private assembly = new SharedAssembly();
+  private transfers: Promise<void> = Promise.resolve();
+  private queuedTransfers = 0;
   private writes: Promise<void> = Promise.resolve();
   private reads: Promise<unknown> = Promise.resolve();
   private closed = false;
@@ -100,6 +108,7 @@ export class TogetherLocalLink {
 
   close(): void {
     this.closed = true;
+    this.assembly.clear();
     if (this.commandTimer !== undefined) clearTimeout(this.commandTimer);
     this.commandTimer = undefined;
     this.channel.close();
@@ -190,11 +199,18 @@ export class TogetherLocalLink {
     )
       return m.kind;
     const member = this.lobby.member(peer);
+    if (m.kind === "shared-chunk") {
+      if (!this.shared) throw new Error("Shared protocol unavailable");
+      const envelope = this.assembly.accept(m);
+      if (envelope && this.shared.accept(envelope, peer.payload.userId))
+        await this.relay(envelope, peer.payload.userId);
+      return "shared";
+    }
     if (object(m, ["kind", "envelope"]) && m.kind === "shared") {
       if (!this.shared) throw new Error("Shared protocol unavailable");
       const envelope = m.envelope as SharedEnvelope;
       if (this.shared.accept(envelope, peer.payload.userId))
-        await this.relayShared?.(envelope, peer.payload.userId);
+        await this.relay(envelope, peer.payload.userId);
       return "shared";
     }
     if (object(m, ["kind", "command"]) && m.kind === "command") {
@@ -253,9 +269,45 @@ export class TogetherLocalLink {
     throw new Error("Invalid lobby message");
   }
 
+  private async relay(envelope: SharedEnvelope, peerId: string): Promise<void> {
+    const delivery = this.relayShared?.(envelope, peerId);
+    if (JSON.stringify(envelope).length <= MAX_SHARED_BYTES) {
+      await delivery;
+      return;
+    }
+    // Authorization messages must keep flowing while a paced snapshot is relayed.
+    // The destination link bounds its queue and rechecks consent before each chunk.
+    void delivery?.catch(() => this.close());
+  }
+
   async sendShared(envelope: SharedEnvelope): Promise<void> {
     this.lobby.member(this.channel.peerCredential!);
-    await this.send({ kind: "shared", envelope });
+    if (JSON.stringify(envelope).length <= MAX_SHARED_BYTES) {
+      await this.send({ kind: "shared", envelope });
+      return;
+    }
+    if (++this.queuedTransfers > 4) {
+      this.queuedTransfers--;
+      throw new Error("Shared transfer queue full");
+    }
+    const transfer = this.transfers.then(async () => {
+      const chunks = sharedChunks(envelope);
+      for (const chunk of chunks) {
+        if (this.closed) throw new Error("Link closed");
+        this.lobby.member(this.channel.peerCredential!);
+        if (!this.shared?.isCurrent(envelope)) return;
+        await this.send(chunk);
+        // Leave room for native fragmentation, heartbeat and revocation traffic.
+        if (chunk.index + 1 < chunks.length)
+          await new Promise<void>((resolve) => setTimeout(resolve, 120));
+      }
+    });
+    this.transfers = transfer
+      .catch(() => {})
+      .finally(() => {
+        this.queuedTransfers--;
+      });
+    await transfer;
   }
 
   join(request: LocalJoinRequest): Promise<void> {

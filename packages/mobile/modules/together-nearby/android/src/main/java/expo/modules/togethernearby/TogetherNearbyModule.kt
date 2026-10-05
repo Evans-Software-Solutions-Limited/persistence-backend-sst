@@ -101,7 +101,7 @@ class TogetherNearbyModule : Module() {
     if (Build.VERSION.SDK_INT <= 32) add("android.permission.ACCESS_FINE_LOCATION")
     if (Build.VERSION.SDK_INT >= 31) addAll(listOf("android.permission.BLUETOOTH_SCAN", "android.permission.BLUETOOTH_CONNECT", "android.permission.BLUETOOTH_ADVERTISE"))
     if (Build.VERSION.SDK_INT >= 33) add("android.permission.NEARBY_WIFI_DEVICES")
-    if (Build.VERSION.SDK_INT >= 37) add("android.permission.ACCESS_LOCAL_NETWORK")
+    if (Build.VERSION.SDK_INT >= 37 && requireNotNull(appContext.reactContext).applicationInfo.targetSdkVersion >= 37) add("android.permission.ACCESS_LOCAL_NETWORK")
   }.toTypedArray()
   private fun start(next: String, promise: Promise, action: (Int) -> Unit) {
     if (mode != null) { promise.reject("already_started", "Stop Nearby before changing mode", null); return }

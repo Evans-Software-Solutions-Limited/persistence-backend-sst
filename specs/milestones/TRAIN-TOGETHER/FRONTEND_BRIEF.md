@@ -98,3 +98,7 @@ Implement in this order:
 Test domain/state transitions and restart-safe storage; presenter accessibility, offline/conflict/permission empty states; container-to-adapter contract flows; regression of solo completion. Verify screens visually using the visual-verify skill. Run formatting/typecheck/lint/relevant tests and report actual results. Follow repository conventions, not speculative new architecture.
 
 Provide [SMOKE_TEST](./SMOKE_TEST.md) evidence on two real phones when a compatible owner-built binary exists. Mock adapters are development aids, not release evidence. Document runtime/native dependency changes and permission copy for Brad. Never trigger native/EAS/mobile builds; report physical-device evidence as blocked until supplied. No separate feature launch: friends/nearby/reuse form the same gated release.
+
+### Approved permission follow-up (2026-10-05)
+
+Android local-network permission is declared and requested only for target SDK 37+; runtime requests also require device API 37+. Target SDK remains 36 in this slice. LAN and explicit hotspot-owner starts share a cancellable permission gate; denial, stop, destruction or a superseding start cannot create a stale listener/discovery. Nearby uses the same target/device rule. Camera explanations include Together lobby QR scanning. Native compilation and denial/regrant/device testing remain Brad-owned evidence.

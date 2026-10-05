@@ -276,10 +276,14 @@ export interface ApiPort extends ReferralsPort {
    * cache. `GET /sessions/recent-sets` (user-scoped). Lets a fresh install
    * (new phone / App Store install after TestFlight / reinstall) hydrate its
    * empty `recent_sets` cache so previous-set hints appear without re-logging
-   * every lift. The client only calls this when the local cache is empty (see
-   * `hydrateRecentSetsCommand`), so it never clobbers fresher offline entries.
+   * every lift. Together optionally supplies relevant exercises and the
+   * original workout start; its refresh merges without replacing newer local
+   * entries. Unfiltered bootstrap hydration still runs only for an empty cache.
    */
-  getRecentSets(): Promise<Result<RecentSetEntry[], ApiError>>;
+  getRecentSets(params?: {
+    exerciseIds: readonly string[];
+    before: string;
+  }): Promise<Result<RecentSetEntry[], ApiError>>;
 
   /**
    * M3: app-launch resume detection. Returns the user's most recent

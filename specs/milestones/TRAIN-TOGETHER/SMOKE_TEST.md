@@ -115,3 +115,20 @@ No build, live policy change or deployment is performed by this checklist.
   A conclusive rejection must offer explicit personal continuation, preserving
   all notes/sets. A lost or ambiguous response must retain its original retry
   key and must not permit detachment that could duplicate an admitted workout.
+
+### Large history and permission follow-up
+
+- Join online with an empty local cache: own relevant previous sets hydrate before
+  the original workout start; no other athlete history appears without PREV consent.
+- Join without internet with cached credentials/history: admission and cached PREV
+  still work. Change account or leave while hydration is pending; no late publication.
+- Share 50 exercises ×5 sets, then a maximum supported snapshot. Verify complete
+  recipient display only after transfer, no host plaintext for guest-to-guest sharing,
+  and independent progress while transfer runs. Measure device throughput separately.
+- Revoke PREV during host relay, interrupt Wi-Fi, reconnect and retry. No partial or
+  revoked history appears; current authorized state restores after reconnect.
+- Skip an exercise before granting PREV; remaining exercises still share correctly.
+- Current target 36: exercise existing Nearby permission denial/retry and LAN/hotspot.
+  On a future target 37 build running Android 17+, verify local-network denial,
+  grant, cancellation and retry for both paths. iOS: local-network/Bluetooth denial,
+  Bonjour discovery and camera Together QR prompt on physical devices.

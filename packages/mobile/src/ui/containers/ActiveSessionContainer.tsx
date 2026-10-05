@@ -20,6 +20,7 @@
  *       specs/milestones/M3-active-session/EXECUTION_PLAN.md § 2 Commit 7
  */
 
+import { refreshTogetherOwnPrevious } from "@/adapters/together/ownPrevious";
 import { randomUUID } from "expo-crypto";
 import { adoptSharedPlan } from "@/adapters/together/adoptSharedPlan";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
@@ -102,7 +103,8 @@ export function retrospectiveCompletedAtForDay(
 }
 
 export function ActiveSessionContainer() {
-  const { storage, api, togetherLobby, togetherCloud } = useAdapters();
+  const { storage, api, auth, netInfo, togetherLobby, togetherCloud } =
+    useAdapters();
   const params = useLocalSearchParams<{
     workoutId?: string;
     sessionId?: string;
@@ -117,6 +119,20 @@ export function ActiveSessionContainer() {
   const requestedWorkoutId = params.workoutId ?? null;
 
   const { session, userId, rereadCache } = useActiveSession();
+  const historyKey = session
+    ? `${session.id}:${session.startedAt}:${session.exercises
+        .filter((e) => !e.skipped)
+        .map((e) => e.exerciseId)
+        .join(",")}`
+    : undefined;
+  const historyOwner = useRef({ userId, sessionId: historyKey });
+  historyOwner.current = { userId, sessionId: historyKey };
+  useEffect(
+    () => () => {
+      historyOwner.current = { userId: null, sessionId: undefined };
+    },
+    [],
+  );
   const profile = useProfilePage().payload?.profile;
   const weightUnit = profile?.weightUnit ?? "kg";
   const preferredUnits = weightUnit === "lb" ? "imperial" : "metric";
@@ -939,11 +955,30 @@ export function ActiveSessionContainer() {
             );
             rereadCache();
           }}
+          refreshPrevious={(isCurrent) =>
+            refreshTogetherOwnPrevious({
+              storage,
+              api,
+              auth,
+              netInfo,
+              userId,
+              exerciseIds: session.exercises
+                .filter((e) => !e.skipped)
+                .map((e) => e.exerciseId),
+              before: session.startedAt,
+              isCurrent: () =>
+                isCurrent() &&
+                historyOwner.current.userId === userId &&
+                historyOwner.current.sessionId === historyKey,
+            })
+          }
           getPrevious={() =>
             (
               storage.getPreviousForTogether?.(
                 userId,
-                session.exercises.map((e) => e.exerciseId),
+                session.exercises
+                  .filter((e) => !e.skipped)
+                  .map((e) => e.exerciseId),
                 session.startedAt,
               ) ?? []
             ).map((row) => ({ ...row, recordedAt: Date.parse(row.recordedAt) }))

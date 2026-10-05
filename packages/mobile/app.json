@@ -16,7 +16,7 @@
         "NSHealthShareUsageDescription": "Persistence needs access to your health data to track your fitness progress, including steps, workouts, and activity levels.",
         "NSHealthUpdateUsageDescription": "Persistence saves the weigh-ins and sleep you log in the app to Health, so your other apps stay in sync. Nothing is written unless you log it.",
         "NSPhotoLibraryUsageDescription": "Persistence needs access to your photos so you can choose a profile picture, snap a photo of your meals for AI food logging, or use a photo of your gym so Loadout can read the equipment.",
-        "NSCameraUsageDescription": "Persistence uses the camera to scan food barcodes, take a profile picture, snap photos of your meals for AI food logging, and photograph your gym so Loadout can read the equipment."
+        "NSCameraUsageDescription": "Persistence uses the camera to scan Together lobby QR codes and food barcodes, take a profile picture, snap photos of your meals for AI food logging, and photograph your gym so Loadout can read the equipment."
       },
       "entitlements": {
         "com.apple.developer.healthkit": true,
@@ -90,7 +90,7 @@
         "expo-image-picker",
         {
           "photosPermission": "Persistence needs access to your photos so you can choose a profile picture, snap a photo of your meals for AI food logging, or use a photo of your gym so Loadout can read the equipment.",
-          "cameraPermission": "Persistence uses the camera to scan food barcodes, take a profile picture, snap photos of your meals for AI food logging, and photograph your gym so Loadout can read the equipment."
+          "cameraPermission": "Persistence uses the camera to scan Together lobby QR codes and food barcodes, take a profile picture, snap photos of your meals for AI food logging, and photograph your gym so Loadout can read the equipment."
         }
       ],
       "expo-font",
@@ -99,7 +99,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Persistence uses the camera to scan food barcodes, snap photos of your meals for AI food logging, and photograph your gym so Loadout can read the equipment."
+          "cameraPermission": "Persistence uses the camera to scan Together lobby QR codes and food barcodes, snap photos of your meals for AI food logging, and photograph your gym so Loadout can read the equipment."
         }
       ],
       "@sentry/react-native"

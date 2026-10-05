@@ -80,3 +80,7 @@ Sources: [Swift SDK setup](https://developers.google.com/nearby/connections/swif
 [BYTES ordering](https://developers.google.com/nearby/connections/android/exchange-data),
 [SDK releases](https://developers.google.com/android/guides/releases),
 [local-only hotspot contract](https://developer.android.com/develop/connectivity/wifi/localonlyhotspot).
+
+## Android local-network permission
+
+The current owner build targets SDK 36. Android 17 devices retain implicit LAN access for that target; do not request or declare `ACCESS_LOCAL_NETWORK` yet. The config plugins add it when the explicit `expo-build-properties` target becomes 37+, and native code requests it only when both device and target are 37+. Keep SDK configuration in that plugin when upgrading. LAN/Wi-Fi and explicit hotspot-owner starts wait for permission; stop/destruction invalidates a delayed permission grant. Denial is reported without starting discovery/listening. This follows [Android local-network guidance](https://developer.android.com/privacy-and-security/local-network-permission). Test denial/regrant, cancellation during the prompt, and account switching on Brad’s owner-built binary; source-contract tests are not physical-device evidence.

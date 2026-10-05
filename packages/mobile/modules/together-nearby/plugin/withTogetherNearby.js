@@ -1,6 +1,8 @@
 const { createHash } = require("node:crypto");
 const { withInfoPlist, withPodfile } = require("@expo/config-plugins");
 
+const withTogetherLocalNetwork = require("../../../plugins/withTogetherLocalNetwork");
+
 const marker = "# persistence-together-nearby";
 function patchPodfile(contents) {
   if (contents.includes(marker)) return contents;
@@ -17,6 +19,7 @@ function patchPodfile(contents) {
   );
 }
 module.exports = function withTogetherNearby(config) {
+  config = withTogetherLocalNetwork(config);
   config = withInfoPlist(config, (mod) => {
     mod.modResults.NSBluetoothAlwaysUsageDescription ??=
       "Discover and connect to nearby Together training partners, including without internet.";

@@ -283,7 +283,7 @@ describe("shared plans, sealed consent and independent projections", () => {
     await engines[1].publishProgress(command(2));
     expect(engines[2].getSnapshot().previous[id(2)]).toEqual([]);
   });
-  it("rejects a 50-exercise PREV snapshot atomically without truncating or blocking later sharing", async () => {
+  it("shares a 50-exercise PREV snapshot without truncation, with a bounded logical envelope", async () => {
     const largePlan = {
       ...plan,
       exercises: Array.from({ length: 50 }, (_, i) => ({
@@ -308,15 +308,13 @@ describe("shared plans, sealed consent and independent projections", () => {
       })),
     );
     const before = sent.length;
-    await expect(engines[1].publishPrevious(id(3), rows, time)).rejects.toThrow(
-      "Invalid shared session message",
-    );
-    expect(sent).toHaveLength(before);
-    expect(engines[2].getSnapshot().previous).toEqual({});
-    expect(
-      engines[1].replay(id(3)).filter((e) => e.payload.type === "previous"),
-    ).toEqual([]);
-    // Rejecting an oversized snapshot must not poison the channel or grant.
+    await engines[1].publishPrevious(id(3), rows, time);
+    expect(sent).toHaveLength(before + 1);
+    expect(engines[2].getSnapshot().previous[id(2)]).toEqual(rows);
+    expect(JSON.stringify(sent.at(-1)).length).toBeGreaterThan(30000);
+    expect(JSON.stringify(sent.at(-1)).length).toBeLessThan(2 * 1024 * 1024);
+    expect(engines[0].getSnapshot().previous).toEqual({});
+    // A smaller replacement supersedes the complete prior snapshot.
     await engines[1].publishPrevious(id(3), [rows.at(-1)!], time);
     expect(engines[2].getSnapshot().previous[id(2)]).toEqual([rows.at(-1)!]);
     expect(engines[0].getSnapshot().previous).toEqual({});
@@ -361,7 +359,7 @@ describe("shared plans, sealed consent and independent projections", () => {
       engines[1].publishPrevious(id(3), [rows[0], rows[0]], time),
     ).rejects.toThrow();
     const oversized = largePlan.exercises.flatMap((e) =>
-      Array.from({ length: 100 }, (_, i) => ({
+      Array.from({ length: 101 }, (_, i) => ({
         ...rows[0],
         exerciseId: e.exerciseId,
         setNumber: i + 1,
@@ -604,6 +602,260 @@ describe("shared plans, sealed consent and independent projections", () => {
     await engines[0].close("save_own");
     expect(sent.at(-1)).toEqual(first);
     await expect(engines[0].close("finish_all")).rejects.toThrow();
+  });
+  it.each(["complete", "revoke", "disconnect"] as const)(
+    "transfers large PREV over the authenticated channel atomically: %s",
+    async (mode) => {
+      paused = true;
+      const largePlan = {
+        ...plan,
+        exercises: Array.from({ length: 50 }, (_, i) => ({
+          planExerciseId: id(200 + i),
+          exerciseId: id(300 + i),
+          order: i,
+          targetSets: 5,
+        })),
+      };
+      engines.forEach((e) => e.dispose());
+      engines = [make(1), make(2), make(3)];
+      engines.forEach((e) => e.setOwnPlan(largePlan));
+      const hframes: string[] = [],
+        gframes: string[] = [];
+      let direct = false;
+      let first!: () => void;
+      const firstChunk = new Promise<void>((resolve) => {
+        first = resolve;
+      });
+      const hchannel = new LocalSecureChannel({
+        role: "host",
+        ...pin,
+        ...person(1),
+        trustedKeys: trusted,
+        randomBytes,
+        now: () => clock,
+      });
+      const gchannel = new LocalSecureChannel({
+        role: "guest",
+        ...pin,
+        ...person(2),
+        trustedKeys: trusted,
+        randomBytes,
+        now: () => clock,
+      });
+      let received = 0;
+      const guest = new TogetherLocalLink(
+        gchannel,
+        lobbies[1],
+        new TogetherJournal(adapter(databases[1]), id(2)),
+        async (frame) => {
+          gframes.push(frame);
+        },
+        engines[1],
+      );
+      const host = new TogetherLocalLink(
+        hchannel,
+        lobbies[0],
+        new TogetherJournal(adapter(databases[0]), id(1)),
+        async (frame) => {
+          if (!direct) {
+            hframes.push(frame);
+            return;
+          }
+          await guest.receive(frame);
+          received++;
+          if (received === 1) first();
+        },
+        engines[0],
+      );
+      try {
+        await guest.start();
+        while (gframes.length || hframes.length) {
+          if (gframes.length) await host.receive(gframes.shift()!);
+          if (hframes.length) await guest.receive(hframes.shift()!);
+        }
+        await engines[0].setConsent(id(2), { ...none, prev: true });
+        await host.sendShared(sent.at(-1)!);
+        await guest.receive(hframes.shift()!);
+        const rows = largePlan.exercises.flatMap((e) =>
+          Array.from({ length: 5 }, (_, i) => ({
+            exerciseId: e.exerciseId,
+            setNumber: i + 1,
+            reps: 8,
+            weightKg: 62.5,
+            recordedAt: time - 100,
+          })),
+        );
+        await engines[0].publishPrevious(id(2), rows, time);
+        const envelope = sent.at(-1)!;
+        expect(JSON.stringify(envelope).length).toBeGreaterThan(30000);
+        direct = true;
+        const transfer = host.sendShared(envelope);
+        const failure = transfer.catch((e: Error) => e.message);
+        await firstChunk;
+        expect(engines[1].getSnapshot().previous).toEqual({});
+        expect(
+          lobbies[1].store
+            .sharedEvents(pin.sessionId)
+            .some((text) => text.includes(envelope.payload.id)),
+        ).toBe(false);
+        if (mode === "revoke") {
+          await engines[0].setConsent(id(2), none);
+          await host.sendShared(sent.at(-1)!);
+        }
+        if (mode === "disconnect") {
+          host.close();
+          guest.close();
+        }
+        await failure;
+        if (mode === "complete") {
+          expect(engines[1].getSnapshot().previous[id(1)]).toEqual(rows);
+          await host.sendShared(envelope);
+          expect(engines[1].getSnapshot().previous[id(1)]).toEqual(rows);
+          engines[1].dispose();
+          engines[1] = make(2);
+          expect(engines[1].getSnapshot().previous[id(1)]).toEqual(rows);
+        } else {
+          expect(engines[1].getSnapshot().previous).toEqual({});
+          expect(received).toBeLessThanOrEqual(2);
+        }
+      } finally {
+        host.close();
+        guest.close();
+      }
+    },
+  );
+  it("processes guest revocation while the host relays a large PREV", async () => {
+    paused = true;
+    const largePlan = {
+      ...plan,
+      exercises: Array.from({ length: 50 }, (_, i) => ({
+        planExerciseId: id(200 + i),
+        exerciseId: id(300 + i),
+        order: i,
+        targetSets: 5,
+      })),
+    };
+    engines.forEach((e) => e.dispose());
+    engines = [make(1), make(2), make(3)];
+    engines.forEach((e) => e.setOwnPlan(largePlan));
+    let first!: () => void;
+    const firstChunk = new Promise<void>((resolve) => {
+      first = resolve;
+    });
+    let relayed: Promise<void> | undefined;
+    let destinationChunks = 0;
+    const links: TogetherLocalLink[] = [];
+    const connect = async (
+      n: number,
+      relay?: (e: SharedEnvelope, peer: string) => Promise<void>,
+    ) => {
+      const toHost: string[] = [],
+        toGuest: string[] = [];
+      let direct = false;
+      const channel = (role: "host" | "guest") =>
+        new LocalSecureChannel({
+          role,
+          ...pin,
+          ...person(role === "host" ? 1 : n),
+          trustedKeys: trusted,
+          randomBytes,
+          now: () => clock,
+        });
+      const guest = new TogetherLocalLink(
+        channel("guest"),
+        lobbies[n - 1],
+        new TogetherJournal(adapter(databases[n - 1]), id(n)),
+        async (frame) => {
+          if (direct) await host.receive(frame);
+          else toHost.push(frame);
+        },
+        engines[n - 1],
+      );
+      const host = new TogetherLocalLink(
+        channel("host"),
+        lobbies[0],
+        new TogetherJournal(adapter(databases[0]), id(1)),
+        async (frame) => {
+          if (direct) {
+            await guest.receive(frame);
+            if (n === 3 && relayed) {
+              destinationChunks++;
+              first();
+            }
+          } else toGuest.push(frame);
+        },
+        engines[0],
+        relay,
+      );
+      links.push(host, guest);
+      await guest.start();
+      while (toHost.length || toGuest.length) {
+        if (toHost.length) await host.receive(toHost.shift()!);
+        if (toGuest.length) await guest.receive(toGuest.shift()!);
+      }
+      direct = true;
+      return { host, guest };
+    };
+    try {
+      const destination = await connect(3);
+      const source = await connect(2, (envelope) => {
+        const delivery = destination.host.sendShared(envelope);
+        if (envelope.payload.type === "previous") relayed = delivery;
+        return delivery;
+      });
+      await engines[1].setConsent(id(3), { ...none, prev: true });
+      await source.guest.sendShared(sent.at(-1)!);
+      const rows = largePlan.exercises.flatMap((e) =>
+        Array.from({ length: 5 }, (_, i) => ({
+          exerciseId: e.exerciseId,
+          setNumber: i + 1,
+          reps: 8,
+          weightKg: 62.5,
+          recordedAt: time - 100,
+        })),
+      );
+      await engines[1].publishPrevious(id(3), rows, time);
+      const sending = source.guest.sendShared(sent.at(-1)!);
+      await firstChunk;
+      expect(engines[2].getSnapshot().previous).toEqual({});
+      await engines[1].setConsent(id(3), none);
+      await source.guest.sendShared(sent.at(-1)!);
+      await sending;
+      await relayed;
+      expect(destinationChunks).toBeLessThanOrEqual(2);
+      expect(engines[2].getSnapshot().previous).toEqual({});
+      expect(engines[0].getSnapshot().previous).toEqual({});
+    } finally {
+      links.forEach((link) => link.close());
+    }
+  });
+  it("supports the maximum 100 exercise by 100 set PREV snapshot", async () => {
+    const maximum = {
+      ...plan,
+      exercises: Array.from({ length: 100 }, (_, i) => ({
+        planExerciseId: id(200 + i),
+        exerciseId: id(300 + i),
+        order: i,
+        targetSets: 100,
+      })),
+    };
+    engines.forEach((e) => e.dispose());
+    engines = [make(1), make(2), make(3)];
+    engines.forEach((e) => e.setOwnPlan(maximum));
+    await engines[1].setConsent(id(3), { ...none, prev: true });
+    const rows = maximum.exercises.flatMap((e) =>
+      Array.from({ length: 100 }, (_, i) => ({
+        exerciseId: e.exerciseId,
+        setNumber: i + 1,
+        reps: 10000,
+        weightKg: 9999.99,
+        recordedAt: time - 100,
+      })),
+    );
+    await engines[1].publishPrevious(id(3), rows, time);
+    expect(JSON.stringify(sent.at(-1)).length).toBeLessThan(2 * 1024 * 1024);
+    expect(engines[2].getSnapshot().previous[id(2)]).toEqual(rows);
+    expect(engines[0].getSnapshot().previous).toEqual({});
   });
   it("uses the real authenticated link for plan/consent and rejects legacy numeric leakage", async () => {
     paused = true;

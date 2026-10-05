@@ -868,8 +868,17 @@ export class SSTApiAdapter implements ApiPort {
     return this.request<void>(`/sessions/${id}`, { method: "DELETE" });
   }
 
-  async getRecentSets() {
-    return this.requestEnvelope<RecentSetEntry[]>("/sessions/recent-sets");
+  async getRecentSets(params?: {
+    exerciseIds: readonly string[];
+    before: string;
+  }) {
+    const query = params
+      ? `?${new URLSearchParams({ exerciseIds: params.exerciseIds.join(","), before: params.before })}`
+      : "";
+    return this.requestEnvelope<RecentSetEntry[]>(
+      `/sessions/recent-sets${query}`,
+      { timeoutMs: 10_000 },
+    );
   }
 
   async recordSession(payload: RecordSessionInput) {

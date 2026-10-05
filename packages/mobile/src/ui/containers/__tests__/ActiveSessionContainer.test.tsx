@@ -1919,6 +1919,112 @@ describe("ActiveSessionContainer", () => {
     expect(await findByTestId("active-session-screen")).toBeTruthy();
   });
 
+  it.each([false, true])(
+    "hydrates only the active owner's non-skipped exercises (skipped=%s) without gating the workout",
+    async (skipped) => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      const workout = buildWorkout();
+      storage.cacheWorkoutDetail("user-1", workout);
+      jest.spyOn(api, "getWorkout").mockResolvedValue(ok(workout));
+      if (skipped)
+        storage.cacheActiveSession("user-1", {
+          id: "local-skipped",
+          userId: "user-1",
+          workoutId: workout.id,
+          name: workout.name,
+          status: "in_progress",
+          startedAt: "2026-10-05T10:00:00Z",
+          completedAt: null,
+          notes: null,
+          exercises: workout.exercises.map((exercise, index) => ({
+            id: exercise.id,
+            sessionId: "local-skipped",
+            exerciseId: exercise.exerciseId,
+            exerciseName: exercise.exercise?.name ?? exercise.exerciseId,
+            sortOrder: index,
+            supersetGroup: null,
+            isSubstituted: false,
+            originalExerciseId: null,
+            notes: null,
+            sets: [],
+            skipped: index === 0,
+          })),
+        });
+      const adapters = makeAdapters(api, storage);
+      adapters.netInfo = {
+        isConnected: jest.fn(async () => true),
+        subscribe: jest.fn(() => () => {}),
+      };
+      const snapshot = {
+        phase: "hosting" as const,
+        role: "host" as const,
+        members: [],
+        pending: [],
+      };
+      adapters.togetherLobby = {
+        getSnapshot: () => snapshot,
+        subscribe: () => () => {},
+        host: jest.fn(),
+        browse: jest.fn(),
+        selectDiscovered: jest.fn(),
+        selectInvite: jest.fn(),
+        join: jest.fn(),
+        approve: jest.fn(),
+        decline: jest.fn(),
+        reconnect: jest.fn(),
+        cancel: jest.fn(async () => {}),
+        setOnline: jest.fn(),
+        setActive: jest.fn(),
+        setAccount: jest.fn(),
+        dispose: jest.fn(),
+        invalidateAuthorization: jest.fn(),
+      };
+      let finish!: (
+        value: Awaited<ReturnType<typeof api.getRecentSets>>,
+      ) => void;
+      const request = jest.spyOn(api, "getRecentSets").mockImplementation(
+        () =>
+          new Promise((r) => {
+            finish = r;
+          }),
+      );
+      mockUseLocalSearchParams.mockReturnValue({ workoutId: "w-1" });
+      const r = renderWithTheme(
+        withAdapters(adapters, <ActiveSessionContainer />),
+      );
+      expect(await r.findByTestId("active-session-screen")).toBeTruthy();
+      await waitFor(() =>
+        expect(request).toHaveBeenCalledWith({
+          exerciseIds: skipped ? ["ex-row"] : ["ex-bench", "ex-row"],
+          before: storage.getActiveSession("user-1")!.startedAt,
+        }),
+      );
+      expect(storage.hasAnyRecentSets("user-1")).toBe(false);
+      await act(async () =>
+        finish(
+          ok([
+            {
+              exerciseId: skipped ? "ex-row" : "ex-bench",
+              setNumber: 1,
+              weightKg: 60,
+              reps: 8,
+              recordedAt: "2026-01-01T00:00:00Z",
+            },
+          ]),
+        ),
+      );
+      const expectedExercise = skipped ? "ex-row" : "ex-bench";
+      expect(
+        storage.getRecentSetsByExercise("user-1", ["ex-bench", "ex-row"]),
+      ).toEqual({
+        [expectedExercise]: { 1: { weightKg: 60, reps: 8 } },
+      });
+      expect(storage.hasAnyRecentSets("other")).toBe(false);
+      r.unmount();
+    },
+  );
+
   it("shows PREV hints when the recent-sets backfill lands AFTER the screen has mounted (change-bus reactivity)", async () => {
     // Regression for the fresh-install "Previous" bug: the server backfill
     // (`hydrateRecentSetsCommand`) upserts `recent_sets` asynchronously, after

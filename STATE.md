@@ -1,5 +1,34 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-05 — PR #486 bounded PREV transfer and own-history hydration
+
+[PER-64](https://linear.app/evans-software-solutions/issue/PER-64) /
+[PER-22](https://linear.app/evans-software-solutions/issue/PER-22): Brad approved
+this follow-up before manually merging PR #486. PREV now references the granted
+plan and supports up to 2 MiB encrypted envelopes through ordered authenticated
+12,000-character chunks. Other messages retain the 30,000-byte cap. Partial data
+never reaches history; fixed expiry, bounded queues, signature/hash verification,
+current grants and disconnect cleanup apply. Relay forwarding does not block
+incoming revocation. Host remains blind to guest-to-guest PREV plaintext.
+
+Own-only API hydration filters relevant non-skipped exercises before selecting
+latest sets older than the original workout start. Cached offline sharing remains
+available; fresh rows publish only for the unchanged account/workout/grant.
+Newer offline history is preserved. Both publication paths filter current skips.
+Target-37 Android permissions now cover Nearby and LAN/hotspot while current
+target 36 remains unchanged. Camera copy includes Together QR scanning.
+
+Local Inspector found and re-reviewed relay revocation and skipped-history defects;
+both are fixed. Focused secure-transfer tests: 132 passed, chunk assembler 100%
+coverage, link/session above 90% on all metrics. Owner-history API/repository tests
+include real PGlite and a failing filter-revert regression. Permission evidence is
+source/plugin tests only. No native/prebuild/EAS/mobile build, deployment or merge.
+Full final gate results recorded in the PR. Remaining: Brad's native build and
+physical mixed-device/radio/permission/reconnect/throughput acceptance; tests use
+simulated links with real crypto/SQLite, not physical radio proof. See TRANSFER.md,
+HISTORY-LOADING.md, TEST-READINESS.md and SMOKE_TEST.md for bounded contracts.
+
+
 ### 2026-10-05 — PR #486 next Inspector batch and staging coverage
 
 Brad requested broad API/integration/container/presenter coverage before his

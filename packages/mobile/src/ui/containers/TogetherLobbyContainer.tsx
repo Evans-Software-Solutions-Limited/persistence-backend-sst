@@ -29,6 +29,18 @@ import {
   type TogetherLobbyScreen,
 } from "@/ui/presenters/TogetherLobbyPresenter";
 
+function currentPreviousRows(
+  workout: WorkoutSession,
+  rows: readonly TogetherPreviousRow[],
+) {
+  const exerciseIds = new Set(
+    workout.exercises
+      .filter((exercise) => !exercise.skipped)
+      .map((exercise) => exercise.exerciseId),
+  );
+  return rows.filter((row) => exerciseIds.has(row.exerciseId));
+}
+
 /** Mounted only by the disabled-by-default capability. Signing keys stay in the adapter. */
 export function TogetherLobbyContainer({
   lobby,
@@ -40,6 +52,7 @@ export function TogetherLobbyContainer({
   localSessionId,
   getWorkout,
   getPrevious,
+  refreshPrevious,
   onAdoptPlan,
   onRestorePersonal,
   children,
@@ -53,6 +66,9 @@ export function TogetherLobbyContainer({
   localSessionId?: string;
   getWorkout?: () => WorkoutSession | null;
   getPrevious?: () => readonly TogetherPreviousRow[];
+  refreshPrevious?: (
+    isCurrent: () => boolean,
+  ) => Promise<readonly TogetherPreviousRow[] | null>;
   onRestorePersonal?: (draft: WorkoutSession) => void;
   onAdoptPlan?: (
     plan: import("@/domain/ports/togetherShared.port").TogetherSharedPlan,
@@ -86,6 +102,10 @@ export function TogetherLobbyContainer({
   const [permission, requestPermission] = useCameraPermissions();
   const generation = useRef(0);
   const scanned = useRef(false);
+  const refreshPreviousRef = useRef(refreshPrevious);
+  refreshPreviousRef.current = refreshPrevious;
+  const consentRequests = useRef(new Map<string, number>());
+
   const dismiss = () => {
     generation.current++;
     setVisible(false);
@@ -160,6 +180,17 @@ export function TogetherLobbyContainer({
       setCode("");
     }
   }, [snapshot.phase]);
+  useEffect(() => {
+    if (snapshot.phase !== "hosting" && snapshot.phase !== "joined") return;
+    let active = true;
+    const lifetime = generation.current;
+    void refreshPreviousRef
+      .current?.(() => active && generation.current === lifetime)
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [snapshot.phase, accountId, localSessionId]);
   const invoke = (action: () => Promise<void>) => {
     const current = generation.current;
     setNotice("");
@@ -423,19 +454,60 @@ export function TogetherLobbyContainer({
               onConsent={(recipient, consent) =>
                 invoke(async () => {
                   const consentGeneration = generation.current;
-                  await lobby.shared!.setConsent(recipient, consent);
-                  if (consentGeneration !== generation.current) return;
+                  const request =
+                    (consentRequests.current.get(recipient) ?? 0) + 1;
+                  consentRequests.current.set(recipient, request);
+                  const shared = lobby.shared!;
+                  const stillCurrent = () =>
+                    consentGeneration === generation.current &&
+                    lobby.shared === shared &&
+                    consentRequests.current.get(recipient) === request;
+                  await shared.setConsent(recipient, consent);
+                  if (!stillCurrent()) return;
                   const current = getWorkout?.();
                   if (
                     consent.prev &&
                     current?.userId === accountId &&
                     getPrevious
-                  )
-                    await lobby.shared!.publishPrevious(
+                  ) {
+                    const grantVersion = shared
+                      .getSnapshot()
+                      .grants.find(
+                        (g) =>
+                          g.ownerId === accountId &&
+                          g.recipientId === recipient,
+                      )?.version;
+                    await shared.publishPrevious(
                       recipient,
-                      getPrevious(),
+                      currentPreviousRows(current, getPrevious()),
                       Date.parse(current.startedAt),
                     );
+                    if (!stillCurrent() || !refreshPrevious) return;
+                    const rows = await refreshPrevious(stillCurrent);
+                    if (rows === null) return;
+                    const fresh = getWorkout?.();
+                    if (
+                      !stillCurrent() ||
+                      fresh?.id !== current.id ||
+                      fresh.userId !== accountId ||
+                      fresh.startedAt !== current.startedAt
+                    )
+                      return;
+                    const grant = shared
+                      .getSnapshot()
+                      .grants.find(
+                        (g) =>
+                          g.ownerId === accountId &&
+                          g.recipientId === recipient,
+                      );
+                    if (!grant?.consent.prev || grant.version !== grantVersion)
+                      return;
+                    await shared.publishPrevious(
+                      recipient,
+                      currentPreviousRows(fresh, rows),
+                      Date.parse(current.startedAt),
+                    );
+                  }
                 })
               }
               onClose={confirmClose}

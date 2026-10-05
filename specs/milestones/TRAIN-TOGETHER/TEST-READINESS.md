@@ -124,9 +124,9 @@ does not force every already-installed older binary to update. No bootstrap OTA,
 store binary, build or deployment has been executed by this task.
 
 PREV no longer truncates a workout at 100 history rows: a real 105-row workout was
-verified through SQLite lookup and recipient-encrypted sharing. The existing
-30 KB envelope cap still rejects oversized snapshots atomically with an explicit
-failure; no silent partial PREV snapshot is published.
+verified through SQLite lookup and recipient-encrypted sharing. The follow-up transfer protocol supports PREV envelopes up to 2 MiB using
+12,000-character authenticated chunks; other envelopes retain the 30,000-byte cap.
+Incomplete snapshots never populate recipient history.
 
 Release follow-up validation: full mobile 587 suites / 7,942 tests passed;
 non-mobile tests 18/18 (core 5,472), typecheck 9/9, lint 6/6 and non-mobile
@@ -135,8 +135,13 @@ the removed SQL limit made the 105-row regression fail. Local Inspector follow-u
 and final incremental review are clean. Store-update, store-error and internal
 distribution screens were visually verified at 320×680 in simulated RNWeb.
 
-Inspector follow-up: a 50-exercise ×5-set PREV snapshot exceeds the existing
-30 KB signed/encrypted envelope cap. This is an acknowledged unsupported payload
-size, not silently truncated history: publication rejects atomically, preserves
-owner history, and later bounded sharing remains possible. Full transfer of such
-snapshots still requires chunking/reassembly or scoped requests.
+Transfer follow-up: 50-exercise ×5-set snapshots now pass through real secure
+channel/link code in simulated transport, with revocation and disconnect tests.
+The maximum 100-exercise ×100-set payload passes encrypted engine validation.
+Neither test establishes physical-radio throughput. Fixed 60-second reassembly
+expiry, bounded queues, whole-message signatures and recipient encryption apply.
+Owner-only API hydration uses relevant exercise IDs and the original start cutoff;
+offline admission and cached sharing remain available. Target 36 keeps existing
+Android permission behavior; target 37 declares and requests local-network access
+for Nearby and LAN/hotspot. Native source-contract checks are not compilation or
+physical prompt evidence. Brad must build and exercise the device matrix.

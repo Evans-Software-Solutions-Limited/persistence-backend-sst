@@ -1,3 +1,4 @@
+import { MAX_PREVIOUS_BYTES, sharedLimit } from "./sharedTransfer";
 import { ed25519, x25519 } from "@noble/curves/ed25519.js";
 import { chacha20poly1305 } from "@noble/ciphers/chacha.js";
 import { sha256 } from "@noble/hashes/sha2.js";
@@ -314,7 +315,13 @@ export class TogetherSharedSession implements TogetherSharedPort {
             key,
             decode64(sealed.nonce, true),
             new TextEncoder().encode(JSON.stringify(header)),
-          ).decrypt(decode64(sealed.ciphertext, true)),
+          ).decrypt(
+            decode64(
+              sealed.ciphertext,
+              true,
+              p.type === "previous" ? MAX_PREVIOUS_BYTES : 60000,
+            ),
+          ),
         ),
       );
     } finally {
@@ -351,7 +358,10 @@ export class TogetherSharedSession implements TogetherSharedPort {
       { ...header, body: this.seal(body, header) },
       this.seed,
     );
-    check(JSON.stringify(envelope).length <= 30000);
+    check(
+      new TextEncoder().encode(JSON.stringify(envelope)).length <=
+        sharedLimit(envelope),
+    );
     this.accept(envelope);
     if (send) await this.options.send(envelope);
   }
@@ -374,7 +384,8 @@ export class TogetherSharedSession implements TogetherSharedPort {
           "revision",
           "body",
         ]) &&
-        JSON.stringify(envelope).length <= 30000 &&
+        new TextEncoder().encode(JSON.stringify(envelope)).length <=
+          sharedLimit(envelope) &&
         p.kind === "together-shared-v1" &&
         p.sessionId === this.options.lobby.pin.sessionId &&
         uuid(p.id) &&
@@ -443,7 +454,13 @@ export class TogetherSharedSession implements TogetherSharedPort {
                   key,
                   decode64(b.nonce, true),
                   new TextEncoder().encode(JSON.stringify(header)),
-                ).decrypt(decode64(b.ciphertext, true)),
+                ).decrypt(
+                  decode64(
+                    b.ciphertext,
+                    true,
+                    p.type === "previous" ? MAX_PREVIOUS_BYTES : 60000,
+                  ),
+                ),
               ),
             );
           } finally {
@@ -737,16 +754,10 @@ export class TogetherSharedSession implements TogetherSharedPort {
       return;
     }
     if (!this.active(p.authorId) || !this.active(p.recipientId)) return;
-    check(object(body, ["grantVersion", "planHash", "plan", "value"]));
+    check(object(body, ["grantVersion", "planHash", "value"], ["plan"]));
+    if (p.type !== "previous") check(Object.hasOwn(body, "plan"));
     check(integer(body.grantVersion) && hash(body.planHash));
-    check(planShape(body.plan) && body.planHash === requestHash(body.plan));
     const planOwner = p.type === "delegate" ? p.recipientId : p.authorId;
-    if (p.type === "delegate")
-      check(
-        this.athletePlans.has(planOwner) &&
-          requestHash(this.athletePlans.get(planOwner)) === body.planHash,
-      );
-    const athletePlan = body.plan;
     const permission =
       p.type === "delegate"
         ? this.grant(p.recipientId, p.authorId)
@@ -768,6 +779,16 @@ export class TogetherSharedSession implements TogetherSharedPort {
         ])
     )
       return;
+    const resolvedPlan = body.plan ?? this.athletePlans.get(planOwner);
+    check(
+      planShape(resolvedPlan) && body.planHash === requestHash(resolvedPlan),
+    );
+    if (p.type === "delegate")
+      check(
+        this.athletePlans.has(planOwner) &&
+          requestHash(this.athletePlans.get(planOwner)) === body.planHash,
+      );
+    const athletePlan = resolvedPlan;
     if (p.type !== "delegate") this.bindPlan(planOwner, athletePlan);
     if (p.type === "progress") {
       this.validateProjection(body.value, p.authorId);
@@ -816,7 +837,7 @@ export class TogetherSharedSession implements TogetherSharedPort {
       const knownVersion = this.ownerVersions.get(p.authorId) ?? 0;
       if (body.value.executionRevision < knownVersion) return;
       // A complete PREV snapshot may contain 100 sets for each of 100 exercises.
-      // The signed envelope byte budget still rejects oversized snapshots atomically.
+      // Bounded transport chunks carry the complete recipient-encrypted snapshot.
       const previousKeys = new Set<string>();
       for (const row of body.value.rows) {
         check(
@@ -1063,7 +1084,6 @@ export class TogetherSharedSession implements TogetherSharedPort {
     await this.publish("previous", recipientId, {
       grantVersion: grant.version,
       planHash: requestHash(ownPlan),
-      plan: ownPlan,
       value: {
         rows,
         startedAt,
@@ -1143,6 +1163,16 @@ export class TogetherSharedSession implements TogetherSharedPort {
       return;
     }
     await this.publish("closure", "all", { mode });
+  }
+  /** Checked between transfer chunks: revocation/supersession stops stale sends. */
+  isCurrent(envelope: SharedEnvelope): boolean {
+    const p = envelope.payload;
+    return (
+      !this.disposed &&
+      this.active(p.authorId) &&
+      this.active(p.recipientId) &&
+      this.latest.get(scope(p))?.payload.id === p.id
+    );
   }
   /** Only current consent/data is replayed, ordered permission first. No stale encrypted caches. */
   replay(recipientId: string): SharedEnvelope[] {

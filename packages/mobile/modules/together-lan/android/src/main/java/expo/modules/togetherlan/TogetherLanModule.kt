@@ -7,6 +7,8 @@ import android.net.NetworkCapabilities
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import expo.modules.kotlin.Promise
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
@@ -48,6 +50,9 @@ class TogetherLanModule : Module() {
   private var network: Network? = null
   private var hotspotOwner = false
   private var generation = 0
+  private var pendingStart: Promise? = null
+  private val main = Handler(Looper.getMainLooper())
+  private val localPermission = "android.permission.ACCESS_LOCAL_NETWORK"
   private val serviceType = "_persist-tg._tcp."
 
   private class Peer(val socket: Socket) {
@@ -66,14 +71,14 @@ class TogetherLanModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("TogetherLan")
     Events("onEvent")
-    AsyncFunction("startHost") { lobbyId: String, promise: Promise -> command(promise) { selectTransport(false); host(lobbyId) } }
-    AsyncFunction("startHotspotHost") { lobbyId: String, promise: Promise -> command(promise) {
+    AsyncFunction("startHost") { lobbyId: String, promise: Promise -> start(promise) { selectTransport(false); host(lobbyId) } }
+    AsyncFunction("startHotspotHost") { lobbyId: String, promise: Promise -> start(promise) {
       selectTransport(true); host(lobbyId)
     } }
-    AsyncFunction("startHotspotDiscovery") { promise: Promise -> command(promise) {
+    AsyncFunction("startHotspotDiscovery") { promise: Promise -> start(promise) {
       selectTransport(true); discover()
     } }
-    AsyncFunction("startDiscovery") { promise: Promise -> command(promise) { selectTransport(false); discover() } }
+    AsyncFunction("startDiscovery") { promise: Promise -> start(promise) { selectTransport(false); discover() } }
     AsyncFunction("connect") { endpointId: String, promise: Promise -> command(promise) { connect(endpointId) } }
     AsyncFunction("send") { peerId: String, frame: String, promise: Promise ->
       if (!post {
@@ -103,6 +108,62 @@ class TogetherLanModule : Module() {
     if (!post {
       try { action(); promise.resolve(null) }
       catch (error: Exception) { promise.reject("lan_unavailable", error.message, error) }
+    }) promise.reject("module_destroyed", "LAN module is destroyed", null)
+  }
+
+  private fun needsLocalPermission(): Boolean =
+    Build.VERSION.SDK_INT >= 37 && context.applicationInfo.targetSdkVersion >= 37
+
+  /** Permission callbacks return to the serial controller and cannot revive a stopped session. */
+  private fun start(promise: Promise, action: () -> Unit) {
+    if (!post {
+      if (pendingStart != null || server != null || discovery != null || peers.isNotEmpty()) {
+        promise.reject("already_started", "Stop LAN before changing mode", null)
+        return@post
+      }
+      val token = ++generation
+      pendingStart = promise
+      fun finish() {
+        if (generation != token || pendingStart !== promise) return
+        pendingStart = null
+        try { action(); promise.resolve(null) }
+        catch (error: Exception) { stopAll(); promise.reject("lan_unavailable", error.message, error) }
+      }
+      try {
+        if (!needsLocalPermission()) finish()
+        else {
+          val manager = appContext.permissions
+          if (manager == null) {
+            pendingStart = null
+            promise.reject("permissions_unavailable", "Local network permissions unavailable", null)
+          } else if (manager.hasGrantedPermissions(localPermission)) finish()
+          else main.post {
+            // The permission API presents UI on the main thread; only the controller mutates state.
+            try {
+              manager.askForPermissions({ _ ->
+                post permissionResult@{
+                  if (generation != token || pendingStart !== promise) return@permissionResult
+                  if (manager.hasGrantedPermissions(localPermission)) finish()
+                  else {
+                    pendingStart = null
+                    promise.reject("permission_denied", "Local network permission denied", null)
+                  }
+                }
+              }, localPermission)
+            } catch (error: Exception) {
+              post {
+                if (generation == token && pendingStart === promise) {
+                  pendingStart = null
+                  promise.reject("permissions_unavailable", error.message, error)
+                }
+              }
+            }
+          }
+        }
+      } catch (error: Exception) {
+        pendingStart = null
+        promise.reject("permissions_unavailable", error.message, error)
+      }
     }) promise.reject("module_destroyed", "LAN module is destroyed", null)
   }
 
@@ -386,6 +447,7 @@ class TogetherLanModule : Module() {
 
   private fun stopAll() {
     generation++
+    pendingStart?.reject("cancelled", "LAN stopped", null); pendingStart = null
     resolveTimer?.cancel(false)
     discovery?.let { runCatching { nsd.stopServiceDiscovery(it) } }; discovery = null
     registration?.let { runCatching { nsd.unregisterService(it) } }; registration = null

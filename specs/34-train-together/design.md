@@ -1,5 +1,12 @@
 # Train Together — design
 
+## Bounded offline PREV transfer — 5 October 2026
+
+[TRANSFER](../milestones/TRAIN-TOGETHER/TRANSFER.md) extends the approved peer
+protocol with bounded, authenticated chunk reassembly and plan-hash references.
+The complete signed recipient-encrypted snapshot remains the atomic authority
+and cache unit; cloud and local authorization never switch implicitly.
+
 ## PREV consent contract — 1 October 2026
 
 [PREV-CONSENT](../milestones/TRAIN-TOGETHER/PREV-CONSENT.md) defines the AC16
