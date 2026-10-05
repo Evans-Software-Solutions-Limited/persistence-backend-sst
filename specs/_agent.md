@@ -1,5 +1,11 @@
 # Persistence Mobile — Agent Instructions
 
+For current scope, sequencing and session handoffs, first follow the repository
+[AGENTS.md](../AGENTS.md). Linear owns product priority; these specs own technical
+contracts. Reconcile approved product changes into the relevant spec before
+implementation. Historical milestone delegation patterns do not mandate
+parallel agents or multiple PRs for a bounded slice.
+
 ## Purpose
 
 This file guides AI agents working on the Persistence mobile app. It defines architectural constraints, quality gates, and patterns that **must** be followed for every feature implementation.

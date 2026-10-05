@@ -1,19 +1,25 @@
 # CLAUDE.md – Persistence Backend SST
 
-**Canonical state ledger: [`./STATE.md`](./STATE.md) — read at session
-start, update before ending any session.** Milestone status, open
-failures, and parked tasks live there, not here. Sessions older than the
+**Start with [AGENTS.md](./AGENTS.md): it defines the shared Linear-first
+startup and handoff workflow for Claude and Codex.** Linear owns current product
+scope, sequencing and design handoffs; do not choose work from an old ledger.
+
+**Technical state ledger: [`./STATE.md`](./STATE.md) — read relevant recent
+entries and update after code work.** Implementation evidence and open technical
+failures live there. Sessions older than the
 four most recent are in [`./STATE-ARCHIVE.md`](./STATE-ARCHIVE.md) — read
 that only when you need the history behind a specific decision, and treat
 `STATE.md` as authoritative where they disagree.
 
 ## Current execution model
 
-Work ships via milestone-driven parallel agents. Specs are the source of truth; briefs drive PRs.
+Work follows the live Linear slice and repository technical specs/briefs.
+Parallel agents are optional for substantial independent tracks under the
+applicable model-routing rules, not a requirement for every task.
 
 - **Feature specs** live at `specs/NN-<feature>/` (requirements + design + tasks) and are authoritative.
 - **Milestone briefs** live at `specs/milestones/M<N>-<name>/` and scope a shippable cross-feature slice. Each milestone produces `BRIEF.md`, `BACKEND_BRIEF.md`, `FRONTEND_BRIEF.md`, and `SMOKE_TEST.md`.
-- **Agents always work from a brief**, never from a raw `tasks.md`. Backend + frontend agents run in parallel against their respective briefs and land two PRs on a shared milestone branch, gated on an e2e smoke test.
+- **Feature implementation works from a brief**, never from a raw `tasks.md`. Use backend/frontend briefs when the slice needs both; use parallel ownership and separate PRs only when justified. A bounded bug fix follows its issue and relevant technical contract without manufacturing a new milestone.
 - **The authoritative status ledger is [`./STATE.md`](./STATE.md).** `specs/milestones/ROADMAP.md` (§ Phase status) was refreshed 2026-07-05 but can lag merged PRs — cross-check `STATE.md` + `git log --oneline -30` before assuming any milestone is "pending".
 
 See [`specs/milestones/ROADMAP.md`](./specs/milestones/ROADMAP.md) for the M0 → M11 layout, and [`specs/_agent.md`](./specs/_agent.md) for the execution-model details.
@@ -39,7 +45,7 @@ See `feedback_port_then_revamp.md` in memory for the full discipline rules (whic
 Brad runs many sessions across this repo and occasionally switches Claude accounts. Most context survives because it lives on disk, not in the Claude account. The few things that DON'T survive:
 
 - **MCP connectors are account-scoped on the Claude side.** Supabase, Stripe, Slack, Notion, Atlassian, Figma, etc. — each one needs the connector re-enabled in the new account's Claude Code settings. If a `mcp__*` tool errors with "connector not connected" or returns a 401, that's the first thing to check. Don't fall through to slower tools — surface the disconnect to Brad so he can re-auth in one go.
-- **`STATE.md` (in-repo) is the canonical state ledger** — last shipped milestones, active gotchas, parked tasks, decisions Brad has explicitly baked in. Read it at session start; update it before ending any session. Anything that contradicts STATE.md is wrong by default.
+- **`STATE.md` is the technical evidence ledger** — read relevant recent entries and update after code work. Linear carries current product decisions and priority; reconcile newer decisions with specs before implementation. Historical ledger entries do not override Brad's current instructions or newer verified evidence.
 - **CLAUDE.md (this file), `STATE.md`, and `specs/` are in the repo** — survive everything.
 - **Skills + ntfy topic + Slack channel ID are filesystem-resident** in `~/.claude/.../skills/slack-progress-updates/` — survive everything. The Slack channel ID `C0ATYL6T11V` for `#brad-claude-agents` is hardcoded.
 - **Stripe / Supabase MCP project credentials are project-scoped on the service side**, not Claude-side — they survive the account switch as long as the MCP connector itself is re-enabled.
