@@ -473,6 +473,231 @@ describe("cloud authoritative personal checkpoint", () => {
     controller.setAccount(null);
     expect(controller.readDraft(userId)).toBeNull();
   });
+  it("serializes rapid consent changes by kind and keeps acknowledged versions during refresh", async () => {
+    await controller.hostWorkout(draft());
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let first = true;
+    api.consent = jest.fn(
+      async (
+        _id,
+        _key,
+        kind,
+        body,
+      ): ReturnType<TogetherCloudApi["consent"]> => {
+        if (first) {
+          first = false;
+          await gate;
+        }
+        const field = kind === "numbers" ? "numbersConsent" : "previousConsent";
+        const current = server.participants[0][field]!;
+        if (body.expectedVersion !== current.version)
+          return fail({
+            kind: "api",
+            code: "server",
+            message: "conflict",
+            togetherCode: "VERSION_CONFLICT",
+          });
+        server.participants[0][field] = {
+          version: current.version + 1,
+          recipientIds: body.recipientIds,
+        };
+        return ok({
+          sessionId: server.sessionId,
+          ownerId: userId,
+          ...server.participants[0][field]!,
+        });
+      },
+    );
+    const allow = controller.numbersConsent([other]);
+    const previous = controller.previousConsent([other]);
+    const revoke = controller.numbersConsent([]);
+    release();
+    await Promise.all([allow, previous, revoke]);
+    expect(
+      (api.consent as jest.Mock).mock.calls.map((c) => [
+        c[2],
+        c[3].expectedVersion,
+      ]),
+    ).toEqual([
+      ["numbers", 0],
+      ["previous", 0],
+      ["numbers", 1],
+    ]);
+    expect(server.participants[0].numbersConsent).toEqual({
+      version: 2,
+      recipientIds: [],
+    });
+    expect(controller.getSnapshot().pendingCount).toBe(0);
+
+    let releasePoll!: (
+      value: Awaited<ReturnType<TogetherCloudApi["snapshot"]>>,
+    ) => void;
+    (api.snapshot as jest.Mock).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          releasePoll = resolve;
+        }),
+    );
+    const next = controller.numbersConsent([other]);
+    for (let i = 0; i < 20 && !releasePoll; i++) await Promise.resolve();
+    const stale = copy(server);
+    const last = controller.numbersConsent([]);
+    releasePoll(ok(stale));
+    await Promise.all([next, last]);
+    expect(
+      (api.consent as jest.Mock).mock.calls
+        .slice(-2)
+        .map((c) => c[3].expectedVersion),
+    ).toEqual([2, 3]);
+    expect(server.participants[0].numbersConsent).toEqual({
+      version: 4,
+      recipientIds: [],
+    });
+  });
+  it("does not count an applied pending own edit twice when polling wins the response race", async () => {
+    await controller.hostWorkout(draft());
+    const command = api.command;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let first = true;
+    api.command = jest.fn(
+      async (...args: Parameters<TogetherCloudApi["command"]>) => {
+        const result = await command(...args);
+        if (first) {
+          first = false;
+          await gate;
+        }
+        return result;
+      },
+    );
+    const local = controller.readDraft(userId)!;
+    local.exercises[0].sets[0].weightKg = 30;
+    controller.saveDraft(userId, local);
+    await controller.refresh();
+    expect(controller.getSnapshot().snapshot!.participants[0].ownRevision).toBe(
+      1,
+    );
+    const later = controller.readDraft(userId)!;
+    later.exercises[0].sets[0].weightKg = 35;
+    controller.saveDraft(userId, later);
+    release();
+    await controller.retry();
+    expect(
+      (api.command as jest.Mock).mock.calls.map((c) => c[2].expectedVersion),
+    ).toEqual([0, 1]);
+    expect(
+      server.participants[0].execution!.exercises[0].sets[0].weightKg,
+    ).toBe(35);
+    expect(controller.readDraft(userId)!.exercises[0].sets[0].weightKg).toBe(
+      35,
+    );
+    expect(controller.getSnapshot().pendingCount).toBe(0);
+    expect(controller.getSnapshot().error).toBeUndefined();
+  });
+  it("does not count an applied pending consent twice when polling wins the response race", async () => {
+    await controller.hostWorkout(draft());
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let first = true;
+    api.consent = jest.fn(
+      async (
+        _id,
+        _key,
+        kind,
+        body,
+      ): ReturnType<TogetherCloudApi["consent"]> => {
+        const field = kind === "numbers" ? "numbersConsent" : "previousConsent";
+        const current = server.participants[0][field]!;
+        if (body.expectedVersion !== current.version)
+          return fail({
+            kind: "api",
+            code: "server",
+            message: "conflict",
+            togetherCode: "VERSION_CONFLICT",
+          });
+        const result = {
+          version: current.version + 1,
+          recipientIds: body.recipientIds,
+        };
+        server.participants[0][field] = result;
+        if (first) {
+          first = false;
+          await gate;
+        }
+        return ok({ sessionId: server.sessionId, ownerId: userId, ...result });
+      },
+    );
+    const allow = controller.numbersConsent([other]);
+    await controller.refresh();
+    expect(
+      controller.getSnapshot().snapshot!.participants[0].numbersConsent!
+        .version,
+    ).toBe(1);
+    const revoke = controller.numbersConsent([]);
+    release();
+    await Promise.all([allow, revoke]);
+    expect(
+      (api.consent as jest.Mock).mock.calls.map((c) => c[3].expectedVersion),
+    ).toEqual([0, 1]);
+    expect(server.participants[0].numbersConsent).toEqual({
+      version: 2,
+      recipientIds: [],
+    });
+    expect(controller.getSnapshot().pendingCount).toBe(0);
+  });
+  it.each(["network", "timeout"] as const)(
+    "retains roster on %s while clearing partner values until fresh authority returns",
+    async (code) => {
+      server.participants.push({
+        ...copy(server.participants[0]),
+        userId: other,
+        allowPartnerLogging: true,
+      });
+      await controller.hostWorkout(draft());
+      const before = copy(controller.getSnapshot().snapshot!);
+      (api.snapshot as jest.Mock).mockResolvedValueOnce(
+        fail({ kind: "api", code, message: "offline" }),
+      );
+      await expect(controller.refresh()).rejects.toThrow(code);
+      const state = controller.getSnapshot();
+      expect(state.phase).toBe("reconnecting");
+      expect(state.snapshot?.participants.map((p) => p.userId)).toEqual([
+        userId,
+        other,
+      ]);
+      expect(state.snapshot?.sharingActive).toBe(true);
+      expect(state.snapshot?.participants[0].execution).toEqual(
+        before.participants[0].execution,
+      );
+      expect(state.snapshot?.participants[1]).toMatchObject({
+        execution: null,
+        numbersAvailable: false,
+        previousValuesAvailable: false,
+        allowPartnerLogging: false,
+        exerciseCatalog: {},
+      });
+      expect(state.previous).toEqual({});
+      expect(state.requests).toEqual([]);
+      await controller.refresh();
+      expect(
+        controller.getSnapshot().snapshot?.participants[1].execution,
+      ).toEqual(before.participants[1].execution);
+      (api.snapshot as jest.Mock).mockResolvedValueOnce(
+        fail({ kind: "api", code: "forbidden", message: "denied" }),
+      );
+      await expect(controller.refresh()).rejects.toThrow("forbidden");
+      expect(
+        controller.getSnapshot().snapshot?.participants.map((p) => p.userId),
+      ).toEqual([userId]);
+    },
+  );
   it("uses scoped consent/delegation and versioned host controls and clears PREV cache on refresh", async () => {
     await controller.hostWorkout(draft());
     api.invite = jest.fn(async () =>
@@ -488,14 +713,20 @@ describe("cloud authoritative personal checkpoint", () => {
       ok({ removed: true, snapshot: copy(server) }),
     );
     api.delegation = jest.fn(async () => ok({ generation: 1, allowed: true }));
-    api.consent = jest.fn(async (_id, _key, kind, body) =>
-      ok({
+    api.consent = jest.fn(async (_id, _key, kind, body) => {
+      server.participants[0][
+        kind === "numbers" ? "numbersConsent" : "previousConsent"
+      ] = {
+        version: body.expectedVersion + 1,
+        recipientIds: body.recipientIds,
+      };
+      return ok({
         sessionId: server.sessionId,
         ownerId: userId,
         version: body.expectedVersion + 1,
         recipientIds: body.recipientIds,
-      }),
-    );
+      });
+    });
     api.visibility = jest.fn(async () => ok({ revision: server.revision }));
     api.friends = jest.fn(async () => ok({ data: [], nextCursor: null }));
     api.previous = jest.fn(async () =>

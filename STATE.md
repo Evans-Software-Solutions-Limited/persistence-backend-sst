@@ -1,5 +1,27 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-05 — PR #486 five-lead review
+
+[PER-64](https://linear.app/evans-software-solutions/issue/PER-64) /
+[PER-22](https://linear.app/evans-software-solutions/issue/PER-22): reviewed the
+five new Inspector comments on 5302d5fc. Confirmed peer-leave receipt cleanup,
+queued same-kind cloud consent versions, transient roster collapse and Nearby
+permission callback context loss. Fixes scope receipts to affected peers, preserve
+ordered consent intent, retain last-known membership without retaining sensitive
+peer values, and capture permission requirements before the prompt with safe
+cached-client teardown. Local review additionally caught consent and own-command
+version double-counting when a poll observes a commit before its response arrives;
+queued versions use the maximum acknowledged/pending version rather than counts. Regression tests cover these paths; native evidence is
+source-contract checks only, not compilation or physical prompt proof.
+
+The zero-set template lead conflates social template copying with live shared-plan
+adoption. Social templates legitimately retain zero target sets and copy via the
+backend; live adoption consumes a separately validated plan. Preserve that contract
+and add coverage rather than modifying template data. Final validation and local
+Inspector disposition are recorded in the PR. Brad retains manual merge/build
+ownership; no native build, deployment or CI Inspector trigger.
+
+
 ### 2026-10-05 — PR #486 bounded PREV transfer and own-history hydration
 
 [PER-64](https://linear.app/evans-software-solutions/issue/PER-64) /

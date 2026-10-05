@@ -16,7 +16,8 @@ import java.util.UUID
 class TogetherNearbyModule : Module() {
   private val handler = Handler(Looper.getMainLooper())
   private val service = "uk.persistence.together.v1"
-  private val client get() = Nearby.getConnectionsClient(requireNotNull(appContext.reactContext))
+  private var connectionsClient: ConnectionsClient? = null
+  private val client get() = connectionsClient ?: Nearby.getConnectionsClient(requireNotNull(appContext.reactContext).applicationContext).also { connectionsClient = it }
   private var generation = 0
   private var mode: String? = null
   private val endpoints = mutableMapOf<String, String>()
@@ -97,23 +98,26 @@ class TogetherNearbyModule : Module() {
   private fun strict(bytes: ByteArray): String = Charsets.UTF_8.newDecoder()
     .onMalformedInput(CodingErrorAction.REPORT).onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(bytes)).toString()
   private fun emit(vararg fields: Pair<String, Any>) { sendEvent("onEvent", mapOf(*fields)) }
-  private fun permissions(): Array<String> = buildList {
+  private fun permissions(targetSdk: Int): Array<String> = buildList {
     if (Build.VERSION.SDK_INT <= 32) add("android.permission.ACCESS_FINE_LOCATION")
     if (Build.VERSION.SDK_INT >= 31) addAll(listOf("android.permission.BLUETOOTH_SCAN", "android.permission.BLUETOOTH_CONNECT", "android.permission.BLUETOOTH_ADVERTISE"))
     if (Build.VERSION.SDK_INT >= 33) add("android.permission.NEARBY_WIFI_DEVICES")
-    if (Build.VERSION.SDK_INT >= 37 && requireNotNull(appContext.reactContext).applicationInfo.targetSdkVersion >= 37) add("android.permission.ACCESS_LOCAL_NETWORK")
+    if (Build.VERSION.SDK_INT >= 37 && targetSdk >= 37) add("android.permission.ACCESS_LOCAL_NETWORK")
   }.toTypedArray()
   private fun start(next: String, promise: Promise, action: (Int) -> Unit) {
     if (mode != null) { promise.reject("already_started", "Stop Nearby before changing mode", null); return }
+    val context = appContext.reactContext
+    if (context == null) { promise.reject("permissions_unavailable", "Nearby context unavailable", null); return }
+    val required = permissions(context.applicationInfo.targetSdkVersion)
     val token = ++generation
     mode = next
     val permissionManager = appContext.permissions
     if (permissionManager == null) { failure(token, promise, "permissions_unavailable"); return }
     permissionManager.askForPermissions({ _ -> handler.post {
       if (generation != token) { promise.reject("cancelled", "Nearby stopped", null); return@post }
-      if (!permissionManager.hasGrantedPermissions(*permissions())) { failure(token, promise, "permission_denied"); return@post }
+      if (appContext.reactContext == null || !permissionManager.hasGrantedPermissions(*required)) { failure(token, promise, "permission_denied"); return@post }
       try { action(token) } catch (e: Exception) { failure(token, promise, "nearby_unavailable") }
-    } }, *permissions())
+    } }, *required)
   }
   private fun lifecycle(token: Int) = object : ConnectionLifecycleCallback() {
     override fun onConnectionInitiated(id: String, info: ConnectionInfo) {
@@ -162,14 +166,14 @@ class TogetherNearbyModule : Module() {
   private fun drop(id: String, code: String? = null) {
     val peer = peers.remove(id) ?: return
     peer.deadline?.let { handler.removeCallbacks(it) }
-    client.disconnectFromEndpoint(id)
+    connectionsClient?.disconnectFromEndpoint(id)
     if (code != null) emit("type" to "error", "peerId" to id, "code" to code)
     emit("type" to "disconnected", "peerId" to id)
   }
   private fun stop() {
     ++generation; mode = null
     peers.keys.toList().forEach { drop(it) }; endpoints.clear()
-    client.stopAdvertising(); client.stopDiscovery(); client.stopAllEndpoints()
+    connectionsClient?.let { it.stopAdvertising(); it.stopDiscovery(); it.stopAllEndpoints() }
   }
   private fun failure(token: Int, promise: Promise, code: String) {
     if (generation == token) stop()

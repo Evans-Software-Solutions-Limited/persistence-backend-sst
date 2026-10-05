@@ -487,7 +487,24 @@ describe("authenticated Together cloud/social API contracts", () => {
     const api = createCloudApis(request as never, request as never);
     expect((await api.social.template(id)).ok).toBe(true);
     response.plan.exercises = [{ ...plan.exercises[0], targetSets: 0 }];
-    expect((await api.social.template(id)).ok).toBe(true);
+    const zeroSet = await api.social.template(id);
+    expect(zeroSet.ok).toBe(true);
+    if (zeroSet.ok) expect(zeroSet.value.plan.exercises[0].targetSets).toBe(0);
+    // Social copies are server-owned workout templates; they are not passed to
+    // the local session-plan adoption validator (which requires planned sets).
+    response = { workoutId: id };
+    expect((await api.social.copy(other, id)).ok).toBe(true);
+    expect(request).toHaveBeenLastCalledWith(
+      `/together/templates/${id}/copy`,
+      expect.objectContaining({ method: "POST" }),
+    );
+    response = {
+      id,
+      senderId: id,
+      recipientId: other,
+      plan: { name: "Template", exercises: [null] },
+      revoked: false,
+    };
     response.plan.exercises[0] = null;
     expect((await api.social.template(id)).ok).toBe(false);
     response.plan.name = "x".repeat(201);

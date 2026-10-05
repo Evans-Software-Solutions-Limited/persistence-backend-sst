@@ -57,7 +57,5 @@ it("does not bring Android 17 permission in through the library manifest on targ
     ),
     "utf8",
   );
-  expect(nearby).toContain(
-    "Build.VERSION.SDK_INT >= 37 && requireNotNull(appContext.reactContext).applicationInfo.targetSdkVersion >= 37",
-  );
+  expect(nearby).toContain("Build.VERSION.SDK_INT >= 37 && targetSdk >= 37");
 });

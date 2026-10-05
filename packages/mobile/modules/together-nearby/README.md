@@ -84,3 +84,8 @@ Sources: [Swift SDK setup](https://developers.google.com/nearby/connections/swif
 ## Android local-network permission
 
 The current owner build targets SDK 36. Android 17 devices retain implicit LAN access for that target; do not request or declare `ACCESS_LOCAL_NETWORK` yet. The config plugins add it when the explicit `expo-build-properties` target becomes 37+, and native code requests it only when both device and target are 37+. Keep SDK configuration in that plugin when upgrading. LAN/Wi-Fi and explicit hotspot-owner starts wait for permission; stop/destruction invalidates a delayed permission grant. Denial is reported without starting discovery/listening. This follows [Android local-network guidance](https://developer.android.com/privacy-and-security/local-network-permission). Test denial/regrant, cancellation during the prompt, and account switching on Brad’s owner-built binary; source-contract tests are not physical-device evidence.
+
+Permission requirements are captured before the Android prompt. A destroyed React
+context rejects the pending start; teardown uses the cached application-context
+client and never constructs a new client from a destroyed activity. Permission
+prompt/destruction behavior still requires physical-device validation.

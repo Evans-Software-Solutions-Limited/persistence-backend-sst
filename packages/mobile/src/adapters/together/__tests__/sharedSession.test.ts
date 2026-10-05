@@ -1077,6 +1077,27 @@ describe("shared plans, sealed consent and independent projections", () => {
     engines[1].accept(staleReceipt, id(1));
     expect(engines[1].getSnapshot().deliveries[0].state).toBe("pending");
   });
+  it.each(["peer", "own", "host"] as const)(
+    "%s departure clears only affected delivery receipts",
+    async (actor) => {
+      await engines[0].publishPlan(plan);
+      for (const peer of [2, 3])
+        await engines[0].setConsent(id(peer), { ...none, numbers: true });
+      await engines[0].publishProgress(command(1));
+      expect(engines[0].getSnapshot().deliveries).toEqual([
+        { recipientId: id(2), revision: 1, state: "received" },
+        { recipientId: id(3), revision: 1, state: "received" },
+      ]);
+      if (actor === "peer") await engines[1].close("leave");
+      else if (actor === "host") await engines[0].close("finish_all");
+      else await engines[0].close("leave");
+      expect(engines[0].getSnapshot().deliveries).toEqual(
+        actor === "peer"
+          ? [{ recipientId: id(3), revision: 1, state: "received" }]
+          : [],
+      );
+    },
+  );
   it("link loss purges private caches and requires a fresh owner grant even across restart", async () => {
     await engines[0].publishPlan(plan);
     await engines[1].setConsent(id(3), { ...none, numbers: true, prev: true });

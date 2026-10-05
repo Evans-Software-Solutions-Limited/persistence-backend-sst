@@ -31,3 +31,6 @@ Mixed older protocol peers fail closed; ship this slice in the same compatible
 native release, before broad rollout. Tests must cover >30 KB real encrypted
 round trips, reconnect/retry, incomplete/expired/reordered/tampered input,
 revocation/supersession during transfer and maximum supported logical payload.
+
+Peer departure invalidates only that peer's delivery receipts; host/own closure
+clears all delivery state. Still-active peers retain acknowledged delivery status.

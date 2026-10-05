@@ -273,6 +273,14 @@ export class TogetherCloudController implements TogetherCloudPort {
       ),
     );
     if (own.ownRevision < acknowledgedOwnRevision) return;
+    const acknowledgedOwner =
+      stored.own?.sessionId === snapshot.sessionId
+        ? stored.own.participants.find((p) => p.userId === this.account)
+        : undefined;
+    for (const key of ["numbersConsent", "previousConsent"] as const) {
+      if ((own[key]?.version ?? 0) < (acknowledgedOwner?.[key]?.version ?? 0))
+        return;
+    }
     stored.sessionId = snapshot.sessionId;
     const createdPersonal = !stored.personal;
     if (!stored.personal) {
@@ -528,11 +536,29 @@ export class TogetherCloudController implements TogetherCloudPort {
   private fail(error: unknown) {
     const code = error instanceof Error ? error.message : "cloud-unavailable";
     const stored = this.load();
-    const snapshot = stored?.own;
+    const transient = ["network", "timeout"].includes(code);
+    // Preserve last-known membership without retaining permission-sensitive
+    // partner values when authority cannot be refreshed.
+    const snapshot =
+      transient && this.state.snapshot
+        ? {
+            ...copy(this.state.snapshot),
+            participants: this.state.snapshot.participants.map((p) =>
+              p.userId === this.account
+                ? copy(p)
+                : {
+                    ...copy(p),
+                    execution: null,
+                    numbersAvailable: false,
+                    previousValuesAvailable: false,
+                    allowPartnerLogging: false,
+                    exerciseCatalog: {},
+                  },
+            ),
+          }
+        : stored?.own;
     this.publish({
-      phase: ["network", "timeout"].includes(code)
-        ? "reconnecting"
-        : "unavailable",
+      phase: transient ? "reconnecting" : "unavailable",
       snapshot,
       previous: {},
       requests: [],
@@ -716,6 +742,22 @@ export class TogetherCloudController implements TogetherCloudPort {
               fresh.own!.revision = (latest as { revision: number }).revision;
             }
           }
+          if (next.method === "consent") {
+            const key =
+              next.args[2] === "numbers" ? "numbersConsent" : "previousConsent";
+            const acknowledged = latest as {
+              version: number;
+              recipientIds: string[];
+            };
+            const owner = fresh.own?.participants.find(
+              (p) => p.userId === this.account,
+            );
+            if (owner)
+              owner[key] = {
+                version: acknowledged.version,
+                recipientIds: copy(acknowledged.recipientIds),
+              };
+          }
           if (next.method === "cancelJoin") fresh.joinStatus = "rejected";
           this.persist(fresh);
           if (next.method === "create")
@@ -811,10 +853,13 @@ export class TogetherCloudController implements TogetherCloudPort {
       stored.error = undefined;
       stored.retainedLocalChanges = false;
       const operations = cloudOperations(previous, desired);
-      let revision =
-        (stored.own?.participants.find((p) => p.userId === userId)
-          ?.ownRevision ?? 0) +
-        stored.pending.filter((p) => p.method === "command" && p.own).length;
+      let revision = Math.max(
+        stored.own?.participants.find((p) => p.userId === userId)
+          ?.ownRevision ?? 0,
+        ...stored.pending
+          .filter((p) => p.method === "command" && p.own)
+          .map((p) => (p.args[2] as CloudCommand).expectedVersion + 1),
+      );
       for (const operation of operations) {
         const commandId = this.options.randomUUID();
         stored.pending.push({
@@ -910,13 +955,33 @@ export class TogetherCloudController implements TogetherCloudPort {
     recipientIds: string[],
   ) {
     const { s, p } = this.own();
-    const current = kind === "numbers" ? p.numbersConsent : p.previousConsent;
+    const key = kind === "numbers" ? "numbersConsent" : "previousConsent";
+    const current = p[key];
+    const acknowledged = this.load()?.own?.participants.find(
+      (p) => p.userId === this.account,
+    )?.[key];
     if (!current) throw new Error("cloud-invalid-response");
     await this.queue("consent", [
       s.sessionId,
       this.options.randomUUID(),
       kind,
-      { expectedVersion: current.version, recipientIds: copy(recipientIds) },
+      {
+        expectedVersion: Math.max(
+          current.version,
+          acknowledged?.version ?? 0,
+          ...this.load()!
+            .pending.filter(
+              (action) =>
+                action.method === "consent" && action.args[2] === kind,
+            )
+            .map(
+              (action) =>
+                (action.args[3] as { expectedVersion: number })
+                  .expectedVersion + 1,
+            ),
+        ),
+        recipientIds: copy(recipientIds),
+      },
     ]);
   }
   numbersConsent(recipientIds: string[]) {

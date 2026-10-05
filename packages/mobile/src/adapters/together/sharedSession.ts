@@ -716,7 +716,12 @@ export class TogetherSharedSession implements TogetherSharedPort {
       )
         this.delegated.clear();
       else this.purgeDelegatedActor(p.authorId);
-      this.deliveries.clear();
+      if (
+        p.authorId === this.options.lobby.pin.hostUserId ||
+        p.authorId === this.ownId
+      )
+        this.deliveries.clear();
+      else this.deliveries.delete(p.authorId);
       return;
     }
     if (p.type === "consent") {
