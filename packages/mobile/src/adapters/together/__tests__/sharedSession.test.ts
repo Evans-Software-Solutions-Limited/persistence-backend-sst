@@ -283,6 +283,44 @@ describe("shared plans, sealed consent and independent projections", () => {
     await engines[1].publishProgress(command(2));
     expect(engines[2].getSnapshot().previous[id(2)]).toEqual([]);
   });
+  it("rejects a 50-exercise PREV snapshot atomically without truncating or blocking later sharing", async () => {
+    const largePlan = {
+      ...plan,
+      exercises: Array.from({ length: 50 }, (_, i) => ({
+        planExerciseId: id(200 + i),
+        exerciseId: id(300 + i),
+        order: i,
+        targetSets: 5,
+      })),
+    };
+    engines.forEach((e) => e.dispose());
+    engines = [make(1), make(2), make(3)];
+    engines.forEach((e) => e.setOwnPlan(largePlan));
+    await engines[0].publishPlan(largePlan);
+    await engines[1].setConsent(id(3), { ...none, prev: true });
+    const rows = largePlan.exercises.flatMap((e) =>
+      Array.from({ length: 5 }, (_, i) => ({
+        exerciseId: e.exerciseId,
+        setNumber: i + 1,
+        reps: 8,
+        weightKg: 62.5,
+        recordedAt: time - 100,
+      })),
+    );
+    const before = sent.length;
+    await expect(engines[1].publishPrevious(id(3), rows, time)).rejects.toThrow(
+      "Invalid shared session message",
+    );
+    expect(sent).toHaveLength(before);
+    expect(engines[2].getSnapshot().previous).toEqual({});
+    expect(
+      engines[1].replay(id(3)).filter((e) => e.payload.type === "previous"),
+    ).toEqual([]);
+    // Rejecting an oversized snapshot must not poison the channel or grant.
+    await engines[1].publishPrevious(id(3), [rows.at(-1)!], time);
+    expect(engines[2].getSnapshot().previous[id(2)]).toEqual([rows.at(-1)!]);
+    expect(engines[0].getSnapshot().previous).toEqual({});
+  });
   it("shares all 105 PREV rows in one bounded encrypted snapshot and retains replay/revocation semantics", async () => {
     const largePlan = {
       ...plan,

@@ -31,7 +31,13 @@ export type SessionClientRef = {
 
 export type WorkoutSession = {
   /** Durable Together checkpoint owns this workout after promotion. */
-  together?: { sessionId: string; executionId: string; transport?: "cloud" };
+  together?: {
+    sessionId: string;
+    executionId: string;
+    transport?: "cloud";
+    /** Opaque version of the authoritative local snapshot read by the editor. */
+    checkpointVersion?: string;
+  };
   /** Together own rest timer; never another athlete's timer. */
   restEndsAt?: string | null;
   /** `local-…`-prefixed UUID until the bulk-record flush returns canonical IDs. */

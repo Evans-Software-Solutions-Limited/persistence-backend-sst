@@ -144,7 +144,7 @@ describe("cloud authoritative personal checkpoint", () => {
         if (c.expectedVersion !== p.ownRevision)
           return fail({
             kind: "api",
-            code: "conflict",
+            code: "server",
             message: "conflict",
             togetherCode: "VERSION_CONFLICT",
           });
@@ -640,7 +640,7 @@ describe("cloud authoritative personal checkpoint", () => {
     await Promise.all([one, two]);
     expect(api.snapshot).toHaveBeenCalledTimes(1);
   });
-  it("keeps full incompatible guest plan and rejects unsafe finish", async () => {
+  it("keeps full incompatible guest plan after explicitly finishing only the reviewed server candidate", async () => {
     server.plan.exercises[0].exerciseId = randomUUID();
     await controller.join({ sessionId: server.sessionId }, draft());
     expect(controller.getSnapshot().error).toBe("cloud-plan-mismatch");
@@ -650,12 +650,13 @@ describe("cloud authoritative personal checkpoint", () => {
     await expect(controller.publishOwnDraft()).rejects.toThrow(
       "cloud-plan-mismatch",
     );
-    await expect(controller.finish(controller.reviewToken())).rejects.toThrow(
-      "cloud-unsaved-work",
+    const review = await controller.prepareReview();
+    expect(review.retainedLocalChanges).toBe(true);
+    await controller.finish(review.token);
+    expect(controller.readDraft(userId)?.status).toBe("in_progress");
+    expect(controller.readDraft(userId)?.exercises[0].exerciseId).toBe(
+      exerciseId,
     );
-    await expect(
-      controller.close("finish_all", controller.reviewToken()),
-    ).rejects.toThrow("cloud-unsaved-work");
   });
   it("binds edits queued while host creation is in flight to the actual server identity", async () => {
     const original = api.create;
@@ -1152,4 +1153,308 @@ describe("cloud authoritative personal checkpoint", () => {
     await failed;
     expect(controller.getSnapshot().pendingCount).toBe(1);
   });
+  it("drops a definitive stale control action and never retries it after restart", async () => {
+    await controller.hostWorkout(draft());
+    api.decide = jest.fn(async () =>
+      fail({
+        kind: "api" as const,
+        code: "server" as const,
+        message: "stale",
+        togetherCode: "VERSION_CONFLICT",
+      }),
+    );
+    await expect(controller.decide(other, "approve")).rejects.toThrow(
+      "VERSION_CONFLICT",
+    );
+    expect(controller.getSnapshot().pendingCount).toBe(0);
+    controller.dispose();
+    controller = new TogetherCloudController({
+      api,
+      db: adapter(db),
+      randomUUID,
+    });
+    controller.setAccount(userId);
+    await controller.retry();
+    expect(api.decide).toHaveBeenCalledTimes(1);
+    api.invite = jest.fn(async () =>
+      ok({
+        tokenId: other,
+        token: "fresh",
+        expiresAt: "2026-10-06T00:00:00.000Z",
+      }),
+    );
+    expect((await controller.invite()).token).toBe("fresh");
+  });
+  it.each(["finish", "close"] as const)(
+    "preserves conflicting own edits and requires an explicit reviewed %s after refreshing authority",
+    async (method) => {
+      await controller.hostWorkout(draft());
+      const original = api.command;
+      let release!: (
+        value: Awaited<ReturnType<TogetherCloudApi["command"]>>,
+      ) => void;
+      api.command = jest.fn(
+        () =>
+          new Promise((resolve) => {
+            release = resolve;
+          }),
+      );
+      const first = controller.readDraft(userId)!;
+      first.exercises[0].sets[0].weightKg = 41;
+      controller.saveDraft(userId, first);
+      const second = controller.readDraft(userId)!;
+      second.exercises[0].sets[0].weightKg = 42;
+      controller.saveDraft(userId, second);
+      const failed = expect(controller.retry()).rejects.toThrow(
+        "VERSION_CONFLICT",
+      );
+      server.participants[0].ownRevision = 1;
+      server.revision++;
+      server.participants[0].execution!.exercises[0].sets[0].weightKg = 30;
+      release(
+        fail({
+          kind: "api",
+          code: "server",
+          message: "stale",
+          togetherCode: "VERSION_CONFLICT",
+        }),
+      );
+      await failed;
+      expect(controller.getSnapshot().pendingCount).toBe(0);
+      expect(api.command).toHaveBeenCalledTimes(1);
+      controller.dispose();
+      controller = new TogetherCloudController({
+        api,
+        db: adapter(db),
+        randomUUID,
+      });
+      controller.setAccount(userId);
+      await controller.retry();
+      expect(api.command).toHaveBeenCalledTimes(1);
+      expect(controller.readDraft(userId)?.exercises[0].sets[0].weightKg).toBe(
+        42,
+      );
+      const local = controller.readDraft(userId)!;
+      local.notes = "Still logging locally";
+      controller.saveDraft(userId, local);
+      expect(controller.getSnapshot().pendingCount).toBe(0);
+      api.command = jest.fn(original);
+      api.close = jest.fn(async () =>
+        ok({
+          status: "saved",
+          historyId: other,
+          revision: server.revision,
+          ownRevision: server.participants[0].ownRevision,
+          sharingActive: false as const,
+          recoveryMayBePending: true as const,
+          acknowledgedStateOnly: true as const,
+          mode: "save_own" as const,
+        }),
+      );
+      const review = await controller.prepareReview();
+      if (method === "finish") await controller.finish(review.token);
+      else await controller.close("save_own", review.token);
+      expect(api.command).toHaveBeenCalledWith(
+        server.sessionId,
+        expect.any(String),
+        expect.objectContaining({ expectedVersion: 1 }),
+      );
+      expect(
+        server.participants[0].execution!.exercises[0].sets[0].weightKg,
+      ).toBe(42);
+    },
+  );
+  it("retains an ambiguous owner operation with the identical idempotency key until its receipt is recovered", async () => {
+    await controller.hostWorkout(draft());
+    const original = api.command;
+    let receipt: Awaited<ReturnType<TogetherCloudApi["command"]>>;
+    api.command = jest.fn(async (...args) => {
+      if (!receipt) {
+        receipt = await original(...args);
+        return fail({
+          kind: "api" as const,
+          code: "network" as const,
+          message: "lost response",
+        });
+      }
+      return receipt;
+    });
+    const local = controller.readDraft(userId)!;
+    local.exercises[0].sets[0].weightKg = 44;
+    controller.saveDraft(userId, local);
+    await expect(controller.retry()).rejects.toThrow("network");
+    expect(controller.getSnapshot().pendingCount).toBe(1);
+    await controller.retry();
+    expect((api.command as jest.Mock).mock.calls[0]).toEqual(
+      (api.command as jest.Mock).mock.calls[1],
+    );
+    expect(server.participants[0].ownRevision).toBe(1);
+    expect(controller.getSnapshot().pendingCount).toBe(0);
+  });
+  it("retains admitted authority after removal and completes the full own draft privately without solo detach", async () => {
+    await controller.hostWorkout(draft());
+    server.hostId = other;
+    server.sharingActive = false;
+    server.continuation = "solo";
+    await controller.refresh();
+    expect(controller.getSnapshot().phase).toBe("private");
+    expect(() => controller.detachDraft(userId, () => {})).toThrow(
+      "cloud-cannot-detach",
+    );
+    const local = controller.readDraft(userId)!;
+    local.exercises[0].sets[0].weightKg = 46;
+    controller.setActive(false);
+    controller.saveDraft(userId, local);
+    controller.setActive(true);
+    await controller.refresh();
+    const review = await controller.prepareReview();
+    expect(review.execution.exercises[0].sets[0].weightKg).toBe(46);
+    await controller.reviewOwn(review.execution, review.token);
+    expect(controller.readDraft(userId)?.status).toBe("completed");
+    expect(() => controller.detachDraft(userId, () => {})).toThrow(
+      "cloud-cannot-detach",
+    );
+    expect(controller.readDraft(userId)?.together?.transport).toBe("cloud");
+  });
+  it("does not durably mutate a preview or notify storage subscribers, and commits retention only on explicit finish", async () => {
+    await controller.hostWorkout(draft());
+    controller.setActive(false);
+    const local = controller.readDraft(userId)!;
+    local.exercises[0].sets[0].rpe = 8;
+    controller.saveDraft(userId, local);
+    controller.setActive(true);
+    await controller.refresh();
+    const before = db
+      .prepare("SELECT payload FROM together_cloud_workout WHERE account_id=?")
+      .get(userId);
+    const listener = jest.fn();
+    const stop = controller.subscribe(listener);
+    const first = await controller.prepareReview(),
+      second = await controller.prepareReview();
+    expect(first).toEqual(second);
+    expect(first.retainedLocalChanges).toBe(true);
+    expect(
+      db
+        .prepare(
+          "SELECT payload FROM together_cloud_workout WHERE account_id=?",
+        )
+        .get(userId),
+    ).toEqual(before);
+    expect(listener).not.toHaveBeenCalled();
+    stop();
+    await controller.finish(first.token);
+    const row = db
+      .prepare("SELECT payload FROM together_cloud_workout WHERE account_id=?")
+      .get(userId) as { payload: string };
+    expect(JSON.parse(row.payload).retainedLocalChanges).toBe(true);
+    expect(controller.readDraft(userId)?.exercises[0].sets[0].rpe).toBe(8);
+  });
+  it("does not prematurely clear PREV while consent is pending but fails closed on uncertainty and refetches after retry", async () => {
+    await controller.hostWorkout(draft());
+    api.previous = jest.fn(async () =>
+      ok({
+        sessionId: server.sessionId,
+        ownerId: userId,
+        revision: server.revision,
+        consentVersion: 0,
+        planVersion: server.planVersion,
+        ownRevision: 0,
+        values: [],
+      }),
+    );
+    await controller.previous(userId);
+    let release!: (
+      value: Awaited<ReturnType<TogetherCloudApi["consent"]>>,
+    ) => void;
+    api.consent = jest.fn(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    );
+    const pending = controller.numbersConsent([other]);
+    const failed = expect(pending).rejects.toThrow("network");
+    expect(controller.getSnapshot().previous[userId]).toBeDefined();
+    release(fail({ kind: "api", code: "network", message: "timeout" }));
+    await failed;
+    expect(controller.getSnapshot().previous).toEqual({});
+    api.consent = jest.fn(async () =>
+      ok({
+        sessionId: server.sessionId,
+        ownerId: userId,
+        version: 1,
+        recipientIds: [other],
+      }),
+    );
+    await controller.retry();
+    await controller.previous(userId);
+    expect(controller.getSnapshot().previous[userId]).toBeDefined();
+  });
+  it("rejects a stale finish once and retains the displayed full draft through the next authority refresh", async () => {
+    await controller.hostWorkout(draft());
+    const reviewed = await controller.prepareReview();
+    server.participants[0].ownRevision = 1;
+    server.revision++;
+    server.participants[0].execution!.exercises[0].sets[0].weightKg = 33;
+    api.finish = jest.fn(async () =>
+      fail({
+        kind: "api" as const,
+        code: "server" as const,
+        message: "stale",
+        togetherCode: "VERSION_CONFLICT",
+      }),
+    );
+    await expect(controller.finish(reviewed.token)).rejects.toThrow(
+      "VERSION_CONFLICT",
+    );
+    expect(controller.getSnapshot().pendingCount).toBe(0);
+    await controller.retry();
+    expect(api.finish).toHaveBeenCalledTimes(1);
+    expect(controller.readDraft(userId)?.exercises[0].sets[0].weightKg).toBe(
+      25,
+    );
+    expect(controller.readDraft(userId)?.status).toBe("in_progress");
+  });
+  it.each(["active", "private"] as const)(
+    "keeps canonical IDs stable for new sets added after conflict through %s completion",
+    async (mode) => {
+      await controller.hostWorkout(draft());
+      server.participants[0].ownRevision = 1;
+      server.revision++;
+      const changed = controller.readDraft(userId)!;
+      changed.exercises[0].sets[0].weightKg = 42;
+      controller.saveDraft(userId, changed);
+      await expect(controller.retry()).rejects.toThrow("VERSION_CONFLICT");
+      await controller.retry();
+      const callsBefore = (api.command as jest.Mock).mock.calls.length;
+      const local = controller.readDraft(userId)!;
+      local.exercises[0].sets.push({
+        ...local.exercises[0].sets[0],
+        id: "local-extra",
+        setNumber: 2,
+        weightKg: 48,
+      });
+      controller.saveDraft(userId, local);
+      expect(controller.getSnapshot().pendingCount).toBe(0);
+      expect(api.command).toHaveBeenCalledTimes(callsBefore);
+      if (mode === "private") {
+        server.sharingActive = false;
+        server.continuation = "solo";
+        await controller.refresh();
+      }
+      const first = await controller.prepareReview();
+      expect(await controller.prepareReview()).toEqual(first);
+      expect(first.execution.exercises[0].sets).toHaveLength(2);
+      if (mode === "active") await controller.finish(first.token);
+      else await controller.reviewOwn(first.execution, first.token);
+      const completed = controller.readDraft(userId)!;
+      expect(completed.status).toBe("completed");
+      expect(completed.exercises[0].sets.map((set) => set.id)).toEqual([
+        "local-set",
+        "local-extra",
+      ]);
+      expect(completed.exercises[0].sets[1].weightKg).toBe(48);
+      expect(controller.getSnapshot().pendingCount).toBe(0);
+    },
+  );
 });

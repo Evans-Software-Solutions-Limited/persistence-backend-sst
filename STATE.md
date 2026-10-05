@@ -1,5 +1,46 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-05 — PR #486 eight-lead validation
+
+The replacement unit-test/coverage CI run 37302424575 passed (23m6s), clearing the
+referral timing failure at 946db9c4. Brad then requested validation of eight new
+Inspector leads. The outbox conflict, stale checkpoint save and review-preview
+mutation findings were confirmed and corrected with regression coverage. Rejected cloud
+version conflicts are retired without rebasing stale writes; personal drafts
+require explicit reviewed reconciliation. Local full-snapshot saves carry an
+opaque checkpoint version and reject stale writers before journal/cache mutation.
+Metadata-only UI edits apply their narrow patch to the current workout snapshot.
+Review previews no longer persist retainedLocalChanges; explicit commits do.
+Local Inspector also caught unmapped new sets receiving unstable IDs after a
+conflict: saveDraft now durably assigns IDs before pausing outbound projection.
+Repeated previews and active/private completion preserve local IDs without
+duplicating rows.
+The redundant pre-send PREV clear was removed, while authority failures still
+purge private caches until refreshed authorization and a new PREV fetch.
+
+Cancellation/approval already serialize on the same requesting-user row lock;
+regressions exercise both competing call orders and repeat cancellation with a
+new key. Already-rejected requests correctly report no pending admission.
+Removed admitted users retain cloud-owned private results and must not detach
+into duplicate standalone results. Multiple CocoaPods post_install hooks are
+invalid upstream; the Expo hook guard stays in place, with no native build run.
+
+The PREV 30 KB envelope limit is a confirmed, documented size limitation, retained
+explicitly rather than silently truncating history. A 50-exercise ×5-set snapshot
+is rejected before send/replay mutation, and subsequent bounded sharing remains
+usable. Full large-snapshot support requires authenticated chunking/reassembly;
+it is not claimed complete by this PR. Original personal history stays intact.
+
+Focused cloud tests pass 179/179 (91.71% branches); checkpoint tests pass 98/98
+(98.25% branches). Reverting guards/preview/outbox fixes makes their regressions
+fail. Backend tests pass 5,474/5,474; non-mobile tasks 18/18, build 12/12,
+typecheck 9/9, lint 6/6 and repository formatting pass. Final local Inspector
+found no further unaccepted defects, retaining the documented PREV size limit.
+Full mobile: 587 suites / 7,956 tests passed; coverage 96.42% statements,
+91.72% branches, 96.50% functions, 97.78% lines. Per-lead dispositions are
+recorded in PR #486. No merge,
+native/prebuild/EAS build, deployment or CI Inspector trigger is authorized here.
+
 ### 2026-10-05 — PR #486 CI referral-test timing fix
 
 CI run 37300755593 failed one existing SubscriptionSelectionContainer referral

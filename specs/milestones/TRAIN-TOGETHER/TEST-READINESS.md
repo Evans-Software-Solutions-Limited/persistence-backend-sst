@@ -134,3 +134,9 @@ build 12/12 passed. Final update-policy/SQLite tests passed 36/36; restoring
 the removed SQL limit made the 105-row regression fail. Local Inspector follow-up
 and final incremental review are clean. Store-update, store-error and internal
 distribution screens were visually verified at 320×680 in simulated RNWeb.
+
+Inspector follow-up: a 50-exercise ×5-set PREV snapshot exceeds the existing
+30 KB signed/encrypted envelope cap. This is an acknowledged unsupported payload
+size, not silently truncated history: publication rejects atomically, preserves
+owner history, and later bounded sharing remains possible. Full transfer of such
+snapshots still requires chunking/reassembly or scoped requests.

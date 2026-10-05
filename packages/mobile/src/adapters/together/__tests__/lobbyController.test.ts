@@ -280,7 +280,7 @@ describe("reviewed lobby coordinator, real cryptography and SQLite, simulated na
     expect(host.controller.workout.read(id(2), "local-session")).toBeNull();
     guest.native.emit({ type: "disconnected", peerId: "host" });
     host.native.emit({ type: "disconnected", peerId: id(12) });
-    const edited = workout(2);
+    let edited = guest.controller.workout.read(id(2), "local-session")!;
     edited.exercises[0].sets[0].reps = 12;
     guest.controller.workout.save(id(2), edited);
     await settle();
@@ -311,6 +311,7 @@ describe("reviewed lobby coordinator, real cryptography and SQLite, simulated na
     const stale = guest.native.listener;
     guest.controller.setActive(false);
     await settle();
+    edited = guest.controller.workout.read(id(2), "local-session")!;
     edited.exercises[0].sets[0].reps = 13;
     guest.controller.workout.save(id(2), edited);
     stale?.({ type: "frame", peerId: "host", frame: "late" });

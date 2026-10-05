@@ -57,6 +57,7 @@ export interface TogetherWorkoutPort {
   /** Restore authoritative unfinished work even when the personal cache was cleared. */
   getActive(userId: string): WorkoutSession | null;
   read(userId: string, localSessionId: string): WorkoutSession | null;
+  /** Saves a snapshot from read/getActive; rejects stale or absent checkpointVersion. */
   save(userId: string, session: WorkoutSession): void;
   status(userId: string, localSessionId: string): TogetherWorkoutStatus | null;
   subscribe(listener: () => void): () => void;

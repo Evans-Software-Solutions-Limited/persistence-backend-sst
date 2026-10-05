@@ -334,6 +334,67 @@ describe("ActiveSessionContainer", () => {
     );
   });
 
+  it("rebases metadata on current workout data and reports failed writes without replacing newer sets", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    mockUseLocalSearchParams.mockReturnValue({ retroactive: "true" });
+    const r = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <ActiveSessionContainer />),
+    );
+    await r.findByTestId("retrospective-workout-duration");
+    const staleEdit = r.UNSAFE_getByType(ActiveSessionPresenter).props
+      .onLocationNameChange;
+    const current = storage.getActiveSession("user-1")!;
+    // An external/delegated update reaches storage before React rereads it.
+    const newer = {
+      ...current,
+      notes: "New private note",
+      exercises: [
+        {
+          id: "ex-new",
+          sessionId: current.id,
+          exerciseId: "ex-bench",
+          exerciseName: "Bench",
+          sortOrder: 0,
+          supersetGroup: null,
+          isSubstituted: false,
+          originalExerciseId: null,
+          notes: null,
+          sets: [
+            {
+              id: "delegated",
+              sessionExerciseId: "ex-new",
+              setNumber: 1,
+              reps: 12,
+              weightKg: 35,
+              rpe: null,
+              durationSeconds: null,
+              distanceMeters: null,
+              isCompleted: true,
+              completedAt: null,
+            },
+          ],
+        },
+      ],
+    };
+    storage.cacheActiveSession("user-1", newer);
+    act(() => staleEdit("Home gym"));
+    expect(storage.getActiveSession("user-1")).toEqual({
+      ...newer,
+      locationName: "Home gym",
+    });
+    const alert = jest.spyOn(Alert, "alert").mockImplementation(() => {});
+    jest.spyOn(storage, "cacheActiveSession").mockImplementationOnce(() => {
+      throw new Error("workout-version-conflict");
+    });
+    act(() => staleEdit("Garage"));
+    expect(alert).toHaveBeenCalledWith("Change not saved", expect.any(String));
+    expect(storage.getActiveSession("user-1")?.locationName).toBe("Home gym");
+    const replacement = { ...newer, id: "different", exercises: [] };
+    storage.cacheActiveSession("user-1", replacement);
+    act(() => staleEdit("Stale location"));
+    expect(storage.getActiveSession("user-1")).toEqual(replacement);
+  });
   it("does not seed a new session from a retained Loadout template after entitlement loss", async () => {
     const api = new InMemoryApiAdapter();
     const workout = buildWorkout({

@@ -1,5 +1,7 @@
 /** @jest-environment node */
 import { DatabaseSync } from "node:sqlite";
+import { withTogetherWorkout } from "../../storage/withTogetherWorkout";
+import { InMemoryStorageAdapter } from "../../storage/__tests__/in-memory-storage.adapter";
 import { randomUUID } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -83,6 +85,19 @@ function draft(): WorkoutSession {
     ],
   };
 }
+// Sequential edit fixtures explicitly take the current read version. Race tests
+// below retain the original read token and call save directly instead.
+function saveCurrent(
+  runtime: TogetherWorkoutCheckpoint,
+  user: string,
+  session: WorkoutSession,
+) {
+  const current = runtime.read(user, session.id);
+  runtime.save(user, {
+    ...session,
+    ...(current?.together ? { together: current.together } : {}),
+  });
+}
 function database(db: DatabaseSync): TogetherJournalDatabase {
   return {
     execSync: (sql) => db.exec(sql),
@@ -145,6 +160,7 @@ describe("own workout durable checkpoint (real SQLite and signatures)", () => {
       together: {
         sessionId: authority!.sessionId,
         executionId: authority!.executionId,
+        checkpointVersion: expect.any(String),
       },
     });
     const list = entries();
@@ -170,7 +186,7 @@ describe("own workout durable checkpoint (real SQLite and signatures)", () => {
       expect.objectContaining({ planExerciseId: "local-exercise" }),
     );
     await runtime.promote(source);
-    runtime.save(userId, source);
+    saveCurrent(runtime, userId, source);
     expect(entries()).toHaveLength(1);
     expect(runtime.status(userId, source.id)).toMatchObject({
       sharing: "active",
@@ -186,23 +202,90 @@ describe("own workout durable checkpoint (real SQLite and signatures)", () => {
       receivedCount: 1,
     });
   });
+  it("rejects a stale storage edit after a delegated set without signing deletion, then saves a fresh edit", async () => {
+    const base = new InMemoryStorageAdapter();
+    const storage = withTogetherWorkout(base, runtime);
+    storage.cacheActiveSession(userId, draft());
+    await runtime.promote(draft());
+    const stale = storage.getActiveSession(userId)!;
+    const planExerciseId = runtime.getPlan(userId, stale.id)!.exercises[0]
+      .planExerciseId;
+    const delegatedId = randomUUID();
+    runtime.applyOwnOperation(
+      userId,
+      stale.id,
+      runtime.getOwnExecution(userId, stale.id)!.revision,
+      {
+        type: "upsertSet",
+        planExerciseId,
+        set: { setId: delegatedId, reps: 12, weightKg: 35, completed: true },
+      },
+    );
+    const durable = runtime.read(userId, stale.id)!;
+    const journalBefore = entries();
+    const mirrorBefore = base.getActiveSession(userId);
+    stale.exercises[0].sets[0].reps = 9;
+    expect(() => storage.cacheActiveSession(userId, stale)).toThrow(
+      "workout-version-conflict",
+    );
+    expect(runtime.read(userId, stale.id)).toEqual(durable);
+    expect(entries()).toEqual(journalBefore);
+    expect(base.getActiveSession(userId)).toEqual(mirrorBefore);
+    const fresh = storage.getActiveSession(userId)!;
+    fresh.exercises[0].sets[0].reps = 9;
+    storage.cacheActiveSession(userId, fresh);
+    expect(
+      storage.getActiveSession(userId)!.exercises[0].sets.map((s) => s.reps),
+    ).toEqual([9, 12]);
+    expect(
+      runtime.getOwnExecution(userId, fresh.id)!.execution.exercises[0].sets,
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ setId: delegatedId, reps: 12, weightKg: 35 }),
+      ]),
+    );
+    expect(entries()).toHaveLength(journalBefore.length + 1);
+    expect(base.getActiveSession(userId)).toEqual(
+      storage.getActiveSession(userId),
+    );
+    expect(() => runtime.save(userId, draft())).toThrow(
+      "workout-version-conflict",
+    );
+  });
+  it("versions private-only edits even when signed execution revision does not change", async () => {
+    await runtime.promote(draft());
+    const stale = runtime.getActive(userId)!;
+    const fresh = runtime.read(userId, stale.id)!;
+    const revision = runtime.getOwnExecution(userId, stale.id)!.revision;
+    fresh.notes = "New private note";
+    runtime.save(userId, fresh);
+    expect(runtime.getOwnExecution(userId, stale.id)!.revision).toBe(revision);
+    stale.exercises[0].sets[0].reps = 10;
+    expect(() => runtime.save(userId, stale)).toThrow(
+      "workout-version-conflict",
+    );
+    expect(runtime.read(userId, stale.id)?.notes).toBe("New private note");
+    const latest = runtime.read(userId, stale.id)!;
+    runtime.save(userId, latest);
+    expect(runtime.read(userId, stale.id)).toEqual(latest);
+  });
   it("edits, partial values, removed sets and newly completed sets produce ordered immutable operations", async () => {
     const s = draft();
     await runtime.promote(s);
     s.exercises[0].sets[0].reps = 9;
-    runtime.save(userId, s);
+    saveCurrent(runtime, userId, s);
     s.exercises[0].sets[0].weightKg = null;
-    runtime.save(userId, s);
-    runtime.save(userId, s);
+    saveCurrent(runtime, userId, s);
+    saveCurrent(runtime, userId, s);
     s.exercises[0].sets.push({
       ...s.exercises[0].sets[0],
       id: "another",
       weightKg: 30,
       reps: 10,
     });
-    runtime.save(userId, s);
+    saveCurrent(runtime, userId, s);
     s.exercises[0].sets.splice(1, 1);
-    runtime.save(userId, s);
+    saveCurrent(runtime, userId, s);
     const commands = entries().map((e) =>
       readOwnerCommand(
         {
@@ -259,7 +342,7 @@ describe("own workout durable checkpoint (real SQLite and signatures)", () => {
         throw new Error("disk full");
       return original(sql, p);
     };
-    expect(() => runtime.save(userId, s)).toThrow("disk full");
+    expect(() => saveCurrent(runtime, userId, s)).toThrow("disk full");
     expect(entries()).toHaveLength(1);
     expect(runtime.read(userId, s.id)!.exercises[0].sets[0].reps).toBe(8);
   });
@@ -268,7 +351,7 @@ describe("own workout durable checkpoint (real SQLite and signatures)", () => {
     await runtime.promote(s);
     authority = undefined;
     s.exercises[0].sets[0].reps = 10;
-    runtime.save(userId, s);
+    saveCurrent(runtime, userId, s);
     expect(runtime.status(userId, s.id)).toMatchObject({
       sharing: "local-only",
       pendingCount: 2,
@@ -276,14 +359,14 @@ describe("own workout durable checkpoint (real SQLite and signatures)", () => {
     account = randomUUID();
     expect(runtime.read(userId, s.id)).toBeNull();
     expect(runtime.status(userId, s.id)).toBeNull();
-    expect(() => runtime.save(userId, s)).toThrow("workout-account");
+    expect(() => saveCurrent(runtime, userId, s)).toThrow("workout-account");
     await expect(runtime.promote(s)).rejects.toThrow("workout-account");
     account = userId;
     await expect(runtime.promote(s)).rejects.toThrow("workout-not-admitted");
-    expect(() => runtime.save(userId, { ...s, userId: randomUUID() })).toThrow(
-      "workout-account",
-    );
-    expect(() => runtime.save(userId, { ...s, id: "unknown" })).toThrow(
+    expect(() =>
+      saveCurrent(runtime, userId, { ...s, userId: randomUUID() }),
+    ).toThrow("workout-account");
+    expect(() => saveCurrent(runtime, userId, { ...s, id: "unknown" })).toThrow(
       "workout-not-promoted",
     );
   });
@@ -324,14 +407,14 @@ describe("own workout durable checkpoint (real SQLite and signatures)", () => {
       else if (key === "startedAt") s.startedAt = "2026-10-04T10:00:00Z";
       else if (key === "exerciseId") s.exercises[0].exerciseId = randomUUID();
       else s.exercises[0].sortOrder = 1;
-      runtime.save(userId, s);
+      saveCurrent(runtime, userId, s);
       expect(runtime.status(userId, s.id)).toMatchObject({
         sharing: "paused",
         error: "workout-plan-changed",
       });
       expect(runtime.read(userId, s.id)).toMatchObject(s);
       expect(entries()).toHaveLength(1);
-      runtime.save(userId, draft());
+      saveCurrent(runtime, userId, draft());
       expect(runtime.status(userId, s.id)?.sharing).toBe("paused");
     },
   );
@@ -555,7 +638,7 @@ describe("own workout durable checkpoint (real SQLite and signatures)", () => {
       await expect(runtime.promote(s)).rejects.toThrow("workout-unsupported");
       expect(runtime.read(userId, s.id)).toBeNull();
       await runtime.promote(draft());
-      runtime.save(userId, s);
+      saveCurrent(runtime, userId, s);
       if (name === "empty sets") {
         expect(runtime.status(userId, s.id)?.sharing).toBe("active");
         expect(entries()).toHaveLength(2);
@@ -594,7 +677,7 @@ describe("own workout durable checkpoint (real SQLite and signatures)", () => {
       randomUUID,
     );
     expect(runtime.getActive(userId)).toEqual(original);
-    runtime.save(userId, { ...original, status: "cancelled" });
+    saveCurrent(runtime, userId, { ...original, status: "cancelled" });
     expect(runtime.getActive(userId)).toBeNull();
   });
   it("signs missing earlier intents before new versions when the same authority returns", async () => {
@@ -603,10 +686,10 @@ describe("own workout durable checkpoint (real SQLite and signatures)", () => {
     const original = authority!;
     authority = undefined;
     s.exercises[0].sets[0].reps = 12;
-    runtime.save(userId, s);
+    saveCurrent(runtime, userId, s);
     authority = original;
     s.exercises[0].sets[0].reps = 13;
-    runtime.save(userId, s);
+    saveCurrent(runtime, userId, s);
     const rows = entries();
     expect(rows).toHaveLength(3);
     expect(
@@ -616,7 +699,7 @@ describe("own workout durable checkpoint (real SQLite and signatures)", () => {
       sharing: "active",
       pendingCount: 3,
     });
-    runtime.save(userId, s);
+    saveCurrent(runtime, userId, s);
     expect(entries()).toHaveLength(3);
   });
   it("supports native database prototype methods without nested transactions", async () => {
@@ -646,7 +729,7 @@ describe("own workout durable checkpoint (real SQLite and signatures)", () => {
       await runtime.promote(s);
       authority = undefined;
       s.exercises[0].sets[0].reps = 11;
-      runtime.save(userId, s);
+      saveCurrent(runtime, userId, s);
       db.close();
       db = new DatabaseSync(join(dir, "journal.sqlite"));
       adapter = database(db);
@@ -807,7 +890,7 @@ describe("own workout durable checkpoint (real SQLite and signatures)", () => {
       id: `set-${i}`,
       setNumber: i + 1,
     }));
-    runtime.save(userId, s);
+    saveCurrent(runtime, userId, s);
     expect(() =>
       runtime.applyOwnOperation(
         userId,
@@ -829,16 +912,16 @@ describe("own workout durable checkpoint (real SQLite and signatures)", () => {
     s.exercises[0].originalExerciseId = original;
     s.exercises[0].exerciseId = randomUUID();
     s.exercises[0].exerciseName = "Alternative";
-    runtime.save(userId, s);
+    saveCurrent(runtime, userId, s);
     expect(runtime.status(userId, s.id)?.sharing).toBe("active");
     expect(
       runtime.getOwnExecution(userId, s.id)?.execution.exercises[0]
         .substituteExerciseId,
     ).toBe(s.exercises[0].exerciseId);
     s.exercises[0].sets[0].reps = 8;
-    runtime.save(userId, s);
+    saveCurrent(runtime, userId, s);
     s.exercises[0].exerciseId = randomUUID();
-    runtime.save(userId, s);
+    saveCurrent(runtime, userId, s);
     expect(runtime.status(userId, s.id)).toMatchObject({
       sharing: "paused",
       error: "workout-substitution-locked",
@@ -1091,7 +1174,7 @@ describe("own workout durable checkpoint (real SQLite and signatures)", () => {
       ).toEqual(saved);
       expect(await runtime.review(userId, s.id)).toEqual(saved);
       expect(completions).toHaveLength(1);
-      expect(() => runtime.save(userId, s)).toThrow("workout-finished");
+      expect(() => saveCurrent(runtime, userId, s)).toThrow("workout-finished");
     });
     it("keeps blank and partial sets, explicitly finishes empty without fabricated weight/reps", async () => {
       const s = draft();
@@ -1122,7 +1205,7 @@ describe("own workout durable checkpoint (real SQLite and signatures)", () => {
       authority = undefined;
       for (let reps = 9; reps < 214; reps++) {
         s.exercises[0].sets[0].reps = reps;
-        runtime.save(userId, s);
+        saveCurrent(runtime, userId, s);
       }
       runtime = new TogetherWorkoutCheckpoint(
         adapter,
@@ -1200,7 +1283,7 @@ describe("own workout durable checkpoint (real SQLite and signatures)", () => {
       await runtime.promote(s);
       const review = await runtime.review(userId, s.id);
       s.notes = "Edited after review";
-      runtime.save(userId, s);
+      saveCurrent(runtime, userId, s);
       expect(runtime.getReview(userId, s.id)).toBeNull();
       await expect(
         runtime.finish(userId, s.id, review.revision, review.snapshotToken),
@@ -1219,7 +1302,7 @@ describe("own workout durable checkpoint (real SQLite and signatures)", () => {
       api.complete = async (...args) => {
         const result = await complete(...args);
         s.exercises[0].sets[0].reps = 15;
-        runtime.save(userId, s);
+        saveCurrent(runtime, userId, s);
         return result;
       };
       await expect(
@@ -1244,12 +1327,12 @@ describe("own workout durable checkpoint (real SQLite and signatures)", () => {
         await runtime.promote(s);
         const change = () => {
           s.notes = "new";
-          runtime.save(userId, s);
+          saveCurrent(runtime, userId, s);
         };
         if (where === "sign") {
           authority = undefined;
           s.exercises[0].sets[0].reps = 12;
-          runtime.save(userId, s);
+          saveCurrent(runtime, userId, s);
           sign.mockImplementation(async (_c, commands) => {
             change();
             return commands.map((c: TogetherRecoveryCommand) =>
@@ -1298,7 +1381,7 @@ describe("own workout durable checkpoint (real SQLite and signatures)", () => {
       const s = draft();
       await runtime.promote(s);
       s.exercises[0].sets[0].rpe = 7;
-      runtime.save(userId, s);
+      saveCurrent(runtime, userId, s);
       const review = await runtime.review(userId, s.id);
       expect(review.retainedLocalChanges).toBe(true);
       expect(review.omissions.join(" ")).toContain("not included");
@@ -1343,10 +1426,10 @@ describe("own workout durable checkpoint (real SQLite and signatures)", () => {
       s.exercises[0].exerciseId = randomUUID();
       s.exercises[0].skipped = true;
       s.restEndsAt = "2026-10-05T10:00:00.000Z";
-      runtime.save(userId, s);
+      saveCurrent(runtime, userId, s);
       s.exercises[0].sets[0].reps = 10;
       s.exercises[0].sets.push({ ...s.exercises[0].sets[0], id: "second" });
-      runtime.save(userId, s);
+      saveCurrent(runtime, userId, s);
       const review = await runtime.review(userId, s.id);
       expect(review.execution.exercises[0]).toMatchObject({
         skipped: true,
@@ -1421,7 +1504,7 @@ describe("own workout durable checkpoint (real SQLite and signatures)", () => {
       await runtime.promote(s);
       authority = undefined;
       s.exercises[0].sets[0].reps = 12;
-      runtime.save(userId, s);
+      saveCurrent(runtime, userId, s);
       sign.mockResolvedValue([]);
       await expect(runtime.review(userId, s.id)).rejects.toThrow(
         "recovery-invalid-signature",
@@ -1512,7 +1595,7 @@ describe("own workout durable checkpoint (real SQLite and signatures)", () => {
           s.exercises[0].exerciseName = "Private substitute";
           s.exercises[0].sets[0].reps = 12;
         }
-        runtime.save(userId, s);
+        saveCurrent(runtime, userId, s);
         expect(runtime.status(userId, s.id)?.sharing).toBe("paused");
         const changed = runtime.read(userId, s.id)!;
         const review = await runtime.review(userId, s.id);
@@ -1534,7 +1617,7 @@ describe("own workout durable checkpoint (real SQLite and signatures)", () => {
         expect(runtime.read(userId, s.id)?.status).toBe("in_progress");
         const continued = runtime.read(userId, s.id)!;
         continued.notes = "Continue privately without losing the changed work";
-        runtime.save(userId, continued);
+        saveCurrent(runtime, userId, continued);
         expect(runtime.getActive(userId)?.notes).toBe(continued.notes);
         const again = await runtime.review(userId, s.id);
         expect(again.retainedLocalChanges).toBe(true);

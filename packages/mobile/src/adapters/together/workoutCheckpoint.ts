@@ -217,7 +217,8 @@ export class TogetherWorkoutCheckpoint implements TogetherWorkoutPort {
     return row ? (JSON.parse(row.payload) as Checkpoint) : null;
   }
   read(userId: string, localId: string): WorkoutSession | null {
-    return this.load(userId, localId)?.snapshot ?? null;
+    const checkpoint = this.load(userId, localId);
+    return checkpoint ? this.editableSnapshot(checkpoint) : null;
   }
   getActive(userId: string): WorkoutSession | null {
     if (this.account() !== userId) return null;
@@ -228,9 +229,19 @@ export class TogetherWorkoutCheckpoint implements TogetherWorkoutPort {
     for (const row of rows) {
       const checkpoint = JSON.parse(row.payload) as Checkpoint;
       if (checkpoint.snapshot.status === "in_progress")
-        return checkpoint.snapshot;
+        return this.editableSnapshot(checkpoint);
     }
     return null;
+  }
+  private editableSnapshot(checkpoint: Checkpoint): WorkoutSession {
+    return {
+      ...copy(checkpoint.snapshot),
+      together: {
+        sessionId: checkpoint.sessionId,
+        executionId: checkpoint.executionId,
+        checkpointVersion: snapshotToken(checkpoint),
+      },
+    };
   }
   status(userId: string, localId: string): TogetherWorkoutStatus | null {
     const c = this.load(userId, localId);
@@ -533,6 +544,10 @@ export class TogetherWorkoutCheckpoint implements TogetherWorkoutPort {
     if (!c) throw new Error("workout-not-promoted");
     if (c.snapshot.status !== "in_progress")
       throw new Error("workout-finished");
+    // The version must travel with the editor's snapshot. Reading the latest
+    // version here would bless an old full snapshot and delete delegated sets.
+    if (session.together?.checkpointVersion !== snapshotToken(c))
+      throw new Error("workout-version-conflict");
     this.write(c, session);
   }
   private write(c: Checkpoint, session: WorkoutSession) {

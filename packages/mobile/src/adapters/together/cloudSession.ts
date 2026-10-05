@@ -49,6 +49,7 @@ interface Action {
 interface Durable {
   detached?: boolean;
   retainedLocalChanges?: boolean;
+  projectionConflict?: boolean;
   desiredPlanHash?: string;
   draft?: CloudDraft;
   personal?: WorkoutSession;
@@ -581,8 +582,33 @@ export class TogetherCloudController implements TogetherCloudPort {
           const method = this.options.api[next.method] as (
             ...args: never[]
           ) => Promise<Result<unknown, TogetherOfflineApiError>>;
-          latest = unwrap(await method(...(next.args as never[])));
+          const response = await method(...(next.args as never[]));
           this.guard(context);
+          if (
+            !response.ok &&
+            response.error.togetherCode === "VERSION_CONFLICT"
+          ) {
+            const conflicted = this.load()!;
+            if (requestHash(conflicted.pending[0]) !== requestHash(next))
+              throw new Error("cloud-outbox-conflict");
+            conflicted.pending.shift();
+            if (
+              next.own ||
+              ["finish", "close", "review"].includes(next.method)
+            ) {
+              // Subsequent owner versions and completion requests depend on the
+              // rejected write. Preserve the full draft for explicit review.
+              conflicted.pending = conflicted.pending.filter(
+                (action) =>
+                  !action.own &&
+                  !["finish", "close", "review"].includes(action.method),
+              );
+              conflicted.projectionConflict = true;
+              conflicted.error = "cloud-own-version-conflict";
+            }
+            this.persist(conflicted);
+          }
+          latest = unwrap(response);
           const resultKey = requestHash(next);
           if (this.mutationResults.has(resultKey))
             this.mutationResults.set(resultKey, { done: true, value: latest });
@@ -653,10 +679,17 @@ export class TogetherCloudController implements TogetherCloudPort {
       }
     }
   }
-  private async queue(method: Mutation, args: unknown[], own = false) {
+  private async queue(
+    method: Mutation,
+    args: unknown[],
+    own = false,
+    retainedLocalChanges?: boolean,
+  ) {
     const context = this.context();
     const stored = this.load();
     if (!stored) throw new Error("cloud-not-admitted");
+    if (retainedLocalChanges !== undefined)
+      stored.retainedLocalChanges = retainedLocalChanges;
     const action = { method, args, own };
     const resultKey = requestHash(action);
     stored.pending.push(action);
@@ -701,6 +734,10 @@ export class TogetherCloudController implements TogetherCloudPort {
           this.options.randomUUID,
         ),
         previous = stored.desired ?? { exercises: [] };
+      // Allocate durable canonical IDs even while sending is paused. Review reads
+      // must never invent fresh IDs for the same retained personal set.
+      if (stored.projectionConflict)
+        throw new Error("cloud-own-version-conflict");
       stored.error = undefined;
       stored.retainedLocalChanges = false;
       const operations = cloudOperations(previous, desired);
@@ -805,7 +842,6 @@ export class TogetherCloudController implements TogetherCloudPort {
     const { s, p } = this.own();
     const current = kind === "numbers" ? p.numbersConsent : p.previousConsent;
     if (!current) throw new Error("cloud-invalid-response");
-    this.publish({ previous: {} });
     await this.queue("consent", [
       s.sessionId,
       this.options.randomUUID(),
@@ -858,6 +894,9 @@ export class TogetherCloudController implements TogetherCloudPort {
     return result;
   }
   async prepareReview() {
+    return this.buildReview();
+  }
+  private buildReview() {
     const { s, p } = this.own();
     const stored = this.load()!;
     let execution = p.execution;
@@ -869,7 +908,7 @@ export class TogetherCloudController implements TogetherCloudPort {
         execution = cloudProjection(
           { ...stored.personal, status: "in_progress" },
           s.plan,
-          stored.mapping,
+          copy(stored.mapping),
           this.options.randomUUID,
         );
       } catch {
@@ -883,7 +922,6 @@ export class TogetherCloudController implements TogetherCloudPort {
         );
       }
     }
-    stored.retainedLocalChanges = retainedLocalChanges;
     if (stored.personal) {
       const p = stored.personal;
       if (
@@ -900,7 +938,6 @@ export class TogetherCloudController implements TogetherCloudPort {
       )
         omissions.push("Incomplete sets remain on this device.");
     }
-    this.persist(stored);
     return {
       plan: copy(s.plan),
       execution: copy(execution),
@@ -920,12 +957,12 @@ export class TogetherCloudController implements TogetherCloudPort {
   private checkReview(token: string) {
     if (token !== this.reviewToken()) throw new Error("cloud-review-stale");
   }
-  private requireAcknowledged() {
+  private requireAcknowledged(retainedLocalChanges: boolean) {
     const { s, p } = this.own();
     const stored = this.load()!;
     if (
       stored.pending.length ||
-      (stored.error && !stored.retainedLocalChanges) ||
+      (stored.error && !retainedLocalChanges) ||
       !p.execution
     )
       throw new Error("cloud-unsaved-work");
@@ -933,7 +970,7 @@ export class TogetherCloudController implements TogetherCloudPort {
       stored.personal &&
       cloudOperations(
         p.execution,
-        stored.retainedLocalChanges
+        retainedLocalChanges
           ? stored.desired && stored.desiredPlanHash === requestHash(s.plan)
             ? stored.desired
             : p.execution
@@ -950,13 +987,18 @@ export class TogetherCloudController implements TogetherCloudPort {
   private async finishOwn(leave: boolean, token: string) {
     this.checkReview(token);
     const { s, p } = this.own();
-    this.requireAcknowledged();
-    await this.queue("finish", [
-      s.sessionId,
-      this.options.randomUUID(),
-      p.ownRevision,
-      leave,
-    ]);
+    const reviewed = this.buildReview();
+    if (this.load()?.projectionConflict) {
+      await this.commitConflictReview(reviewed, "finish", leave);
+      return;
+    }
+    this.requireAcknowledged(reviewed.retainedLocalChanges);
+    await this.queue(
+      "finish",
+      [s.sessionId, this.options.randomUUID(), p.ownRevision, leave],
+      false,
+      reviewed.retainedLocalChanges,
+    );
   }
   finish(token: string) {
     return this.finishOwn(false, token);
@@ -967,16 +1009,78 @@ export class TogetherCloudController implements TogetherCloudPort {
   async close(mode: "finish_all" | "save_own", token: string) {
     this.checkReview(token);
     const { s, p } = this.own();
-    this.requireAcknowledged();
-    await this.queue("close", [
-      s.sessionId,
-      this.options.randomUUID(),
-      {
-        mode,
-        expectedRevision: s.revision,
-        expectedOwnRevision: p.ownRevision,
-      },
-    ]);
+    const reviewed = this.buildReview();
+    if (this.load()?.projectionConflict) {
+      await this.commitConflictReview(reviewed, "close", mode);
+      return;
+    }
+    this.requireAcknowledged(reviewed.retainedLocalChanges);
+    await this.queue(
+      "close",
+      [
+        s.sessionId,
+        this.options.randomUUID(),
+        {
+          mode,
+          expectedRevision: s.revision,
+          expectedOwnRevision: p.ownRevision,
+        },
+      ],
+      false,
+      reviewed.retainedLocalChanges,
+    );
+  }
+  private async commitConflictReview(
+    reviewed: ReturnType<TogetherCloudController["buildReview"]>,
+    method: "finish" | "close",
+    choice: boolean | "finish_all" | "save_own",
+  ) {
+    this.context();
+    const { s, p } = this.own(),
+      stored = this.load()!;
+    if (stored.pending.length || this.draining || !p.execution)
+      throw new Error("cloud-unsaved-work");
+    const operations = cloudOperations(p.execution, reviewed.execution);
+    let revision = p.ownRevision;
+    for (const operation of operations) {
+      const commandId = this.options.randomUUID();
+      stored.pending.push({
+        method: "command",
+        own: true,
+        args: [
+          s.sessionId,
+          commandId,
+          {
+            commandId,
+            expectedVersion: revision++,
+            target: { kind: "execution", athleteId: this.account },
+            operation,
+          },
+        ],
+      });
+    }
+    stored.pending.push({
+      method,
+      args:
+        method === "finish"
+          ? [s.sessionId, this.options.randomUUID(), revision, choice]
+          : [
+              s.sessionId,
+              this.options.randomUUID(),
+              {
+                mode: choice,
+                expectedRevision: s.revision + operations.length,
+                expectedOwnRevision: revision,
+              },
+            ],
+    });
+    stored.projectionConflict = false;
+    stored.error = undefined;
+    stored.retainedLocalChanges = reviewed.retainedLocalChanges;
+    stored.desired = copy(reviewed.execution);
+    stored.desiredPlanHash = requestHash(s.plan);
+    this.persist(stored);
+    await this.drain();
   }
   async reviewOwn(execution: CloudExecution, token: string) {
     this.checkReview(token);
@@ -990,6 +1094,7 @@ export class TogetherCloudController implements TogetherCloudPort {
     stored.pending = [];
     if (!reviewed.retainedLocalChanges) stored.error = undefined;
     stored.retainedLocalChanges = reviewed.retainedLocalChanges;
+    stored.projectionConflict = false;
     stored.desired = copy(execution);
     stored.desiredPlanHash = requestHash(s.plan);
     if (this.draining) throw new Error("cloud-request-in-flight");

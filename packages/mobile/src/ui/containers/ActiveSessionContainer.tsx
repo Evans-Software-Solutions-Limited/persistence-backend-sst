@@ -245,10 +245,32 @@ export function ActiveSessionContainer() {
   ]);
 
   const updateSessionMetadata = useCallback(
-    (patch: Partial<import("@/domain/models/session").WorkoutSession>) => {
+    (
+      patch: Partial<
+        Pick<
+          import("@/domain/models/session").WorkoutSession,
+          | "activityEnvironment"
+          | "locationName"
+          | "retrospectiveCompletedAt"
+          | "retrospectiveDurationSeconds"
+        >
+      >,
+    ) => {
       if (!session || !userId) return;
-      storage.cacheActiveSession(userId, { ...session, ...patch });
-      rereadCache();
+      try {
+        const fresh = storage.getActiveSession(userId);
+        if (!fresh || fresh.id !== session.id || fresh.userId !== userId)
+          throw new Error("workout-changed");
+        // Rebase only the explicitly edited metadata, never the render's sets.
+        storage.cacheActiveSession(userId, { ...fresh, ...patch });
+        rereadCache();
+      } catch {
+        Alert.alert(
+          "Change not saved",
+          "Your workout is unchanged. Reopen it and try again.",
+        );
+        rereadCache();
+      }
     },
     [rereadCache, session, storage, userId],
   );

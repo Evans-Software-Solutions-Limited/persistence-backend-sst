@@ -2525,10 +2525,59 @@ describe("independent current numeric consent", () => {
     const mutation = key();
     await repo.cancelJoin(b, request.requestId, mutation);
     await repo.cancelJoin(b, request.requestId, mutation);
+    // A new HTTP key still confirms the already-cancelled state. It must not
+    // report ALREADY_ADMITTED merely because no pending row needed updating.
+    expect(await repo.cancelJoin(b, request.requestId, key())).toEqual({
+      cancelled: true,
+    });
     expect(await repo.joinStatus(b, request.requestId)).toMatchObject({
       status: "rejected",
     });
   });
+  it.each(["cancel", "approve"] as const)(
+    "keeps cancellation and admission mutually exclusive when %s starts first",
+    async (first) => {
+      const s = await create();
+      const invitation = await repo.invite(a, s.sessionId, key(), {
+        expiresInMinutes: 15,
+      });
+      const request = await repo.requestJoin(b, key(), {
+        inviteToken: invitation.token,
+        consentVersion: "together-v1",
+        consentAccepted: true,
+      });
+      const revision = (await repo.snapshot(a, s.sessionId)).revision;
+      const cancel = () => repo.cancelJoin(b, request.requestId, key());
+      const approve = () =>
+        repo.decide(a, s.sessionId, request.requestId, key(), {
+          decision: "approve",
+          expectedRevision: revision,
+        });
+      const results = await Promise.allSettled(
+        first === "cancel" ? [cancel(), approve()] : [approve(), cancel()],
+      );
+      const cancellation = results[first === "cancel" ? 0 : 1];
+      const approval = results[first === "approve" ? 0 : 1];
+      expect(
+        results.filter((result) => result.status === "fulfilled"),
+      ).toHaveLength(1);
+      const current = await repo.joinStatus(b, request.requestId);
+      const members = (await repo.snapshot(a, s.sessionId)).participants;
+      if (cancellation.status === "fulfilled") {
+        expect(cancellation.value).toEqual({ cancelled: true });
+        expect(current.status).toBe("rejected");
+        expect(members.some((member) => member.userId === b)).toBe(false);
+        expect(approval).toMatchObject({
+          status: "rejected",
+          reason: { code: "INVALID_STATE" },
+        });
+      } else {
+        expect(current.status).toBe("approved");
+        expect(members.some((member) => member.userId === b)).toBe(true);
+        expect(cancellation.reason).toMatchObject({ code: "ALREADY_ADMITTED" });
+      }
+    },
+  );
 });
 
 describe("roster removal preserves independent own continuation", () => {
