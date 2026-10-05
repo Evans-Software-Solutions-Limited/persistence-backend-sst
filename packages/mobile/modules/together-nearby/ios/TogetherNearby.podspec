@@ -13,5 +13,14 @@ Pod::Spec.new do |s|
   s.frameworks = 'CoreBluetooth'
   s.swift_version = '5.9'
   s.source_files = '**/*.swift'
-  # withTogetherNearby links the pinned NearbyConnections SPM product to this Pods target.
+  # Register with React Native's SPM manager. react_native_post_install owns
+  # package references and the Swift import paths for CocoaPods targets.
+  unless respond_to?(:spm_dependency, true)
+    raise 'TogetherNearby requires React Native spm_dependency; load react_native_pods before Expo autolinking'
+  end
+  spm_dependency(s,
+    url: 'https://github.com/google/nearby.git',
+    requirement: { kind: 'revision', revision: '8b96295426de02266e59efb7b28d6846704c8c97' },
+    products: ['NearbyConnections']
+  )
 end

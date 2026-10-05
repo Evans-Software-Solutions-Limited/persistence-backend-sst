@@ -8,22 +8,24 @@ there is no automatic LAN/Nearby/cloud switch.
 
 ## Owner build integration
 
-The Expo config uses `plugin/withTogetherNearby.js`. At the owner-run CocoaPods
-post-install, `link_nearby.rb` adds Google's `NearbyConnections` Swift package to
-both the TogetherNearby pod target (compile) and application target (link), pinned
-to `8b96295426de02266e59efb7b28d6846704c8c97`. It preserves existing project entries
-and fails rather than silently creating an unavailable Swift stub. The pod target
-also inherits the SPM configuration/platform products directory in
-`SWIFT_INCLUDE_PATHS`; CocoaPods' per-pod output directory otherwise hides the
-SPM Swift module at compile time. Existing custom import paths remain intact.
-After pulling this fix into an already-generated iOS project, run `pod install`
-from `packages/mobile/ios` (or your existing Bundler equivalent) before retrying
-the owner build. The existing post-install hook loads the updated Ruby helper;
-no clean prebuild or manual Xcode edits are required if that hook is present.
-If the generated Podfile predates Together, regenerate it using your normal
-owner-controlled Expo prebuild workflow first. Android uses
-`com.google.android.gms:play-services-nearby:19.5.0`. A compatible owner build must
-resolve these dependencies; old binaries return a null JS adapter.
+The podspec registers Google's `NearbyConnections` product using React Native's
+`spm_dependency`, pinned to `8b96295426de02266e59efb7b28d6846704c8c97`.
+React Native 0.83.4's `react_native_post_install` invokes its SPM manager, which
+owns package registration and the CocoaPods target's Swift import paths. Expo's
+config plugin only configures permissions; it no longer injects registration into
+the Podfile. The podspec fails explicitly if the React Native helper is unavailable.
+Android uses `com.google.android.gms:play-services-nearby:19.5.0`.
+
+The previous custom hook has been removed entirely; this feature has not shipped.
+For an existing local test project generated before this change, regenerate iOS
+with the normal owner-controlled Expo workflow to remove the old Podfile hook and
+manual app-target package reference, then install pods and retry the build. A clean
+regeneration replaces the generated iOS directory: preserve any manual native
+changes first. Fresh projects only need the normal Expo/CocoaPods setup.
+
+No manual Add Package or Xcode search-path edits are needed. Static-link behavior,
+transitive SDK module resolution and final application linking still require Brad's
+native build; project fixtures do not establish them.
 
 Nearby starts ask Android for the applicable runtime Bluetooth, location
 (API 32 and earlier), Nearby Wi-Fi (33+), and local-network (37+) permissions.
@@ -66,8 +68,9 @@ routing on a manually enabled AP remain device checks.
 ## Evidence and remaining native gate
 
 JS framing/bridge/plugin tests exercise bounds, ordering, cancellation and
-explicit selection. The Ruby fixture generates and reloads real Xcode project
-files to verify package pinning and idempotent linking; it never builds them.
+explicit selection. The Ruby fixture evaluates the actual podspec and runs the installed React Native
+SPM manager against temporary Xcode projects, then reloads them to verify the pin,
+product registration and generated import paths. It also covers preservation of unrelated registered dependencies. It never runs pod install or builds the app.
 Swift syntax parsing is not SDK typechecking. Kotlin/Swift compilation, dependency
 resolution in the actual generated project, permission prompts, mixed-platform
 radio delivery, AP-owner NSD reachability, reconnect and battery behavior remain

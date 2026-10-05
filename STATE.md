@@ -1,29 +1,35 @@
 # Project memory · persistence-backend-sst
 
-### 2026-10-05 — PER-64 iOS Nearby SPM import fix
+### 2026-10-05 — PER-64 Nearby registration through React Native
 
-Brad merged PR #486 and reported the first owner-build failure:
-`TogetherNearbyModule.swift: no such module NearbyConnections`. The CocoaPods
-post-install hook linked the SPM product but omitted its Swift module search path;
-CocoaPods' per-pod output directory differs from the shared SPM products directory.
-The fix adds the configuration/platform-specific SYMROOT path only to TogetherNearby,
-preserves inherited/custom paths and retains existing package linkage. Based on
-pulled main a773d581; unrelated local AGENTS.md changes remain untouched.
+PR #486 is merged at a773d581. Brad's owner iOS build failed at
+`import NearbyConnections`. PR #488's initial custom import-path correction is
+superseded: React Native 0.83.4 already provides `spm_dependency` and its
+post-install SPM manager clears unregistered remote package references. The
+original Together hook ran before that manager and could lose its registration.
 
-Real Xcodeproj fixtures exercise the post-install entry point, save/reload,
-Debug/Release/Staging, scalar/array/unset paths, paths with spaces and idempotence.
-The previous helper fails the import-path regression; the fixed helper passes.
-Expo config tests: 7 passed, measured aggregate coverage 100/91.66/100/100.
-Local Inspector is clean. Native compilation is still unverified: no native,
-prebuild, pod installation, package resolution or EAS build was started.
+TogetherNearby.podspec now declares the pinned Google product through the real
+React Native helper; React Native owns registration and Swift import paths.
+The Expo plugin only sets permissions, with no new Podfile registration hook.
+Brad explicitly requested no old-hook compatibility because this is unreleased
+and only used in local testing. The custom Ruby helper is deleted entirely.
+Existing locally generated iOS projects must be regenerated to remove the old
+hook and app package references; preserve any manual native changes first.
+Fresh projects use normal Expo/CocoaPods setup.
 
-After merging/pulling the fix, Brad runs pod install in the existing generated
-packages/mobile/ios project (using Bundler if configured), then retries his build.
-If its Podfile lacks the Together post-install hook, his normal prebuild workflow
-must regenerate it first. Sentry/deployment-target warnings are separate from the
-reported blocking import error. Physical-device Together acceptance remains open.
-[PER-64](https://linear.app/evans-software-solutions/issue/PER-64).
+Validation uses the actual installed React Native SPM manager and actual podspec,
+with temporary CocoaPods/Xcodeproj projects, including configuration/platform import paths and unrelated registered dependencies.
+This is configuration evidence, not SDK compilation or final application linking.
+Expo plugin tests: 7 passed with 100% measured coverage. Mobile typecheck, lint
+(no errors; existing warnings) and changed-file formatting pass. Local Inspector
+and final fixture evidence are recorded in the PR. No native/prebuild/EAS build,
+pod install, package resolution, deployment or merge was run.
 
+Next: Brad reviews/merges the revised PR #488, pulls, regenerates his local iOS
+test project with his normal Expo workflow, installs pods and retries his native
+build. No compatibility cleanup remains. Physical-device Together acceptance remains open.
+[PER-64](https://linear.app/evans-software-solutions/issue/PER-64) /
+[PER-22](https://linear.app/evans-software-solutions/issue/PER-22).
 
 ### 2026-10-05 — PR #486 five-lead review
 
