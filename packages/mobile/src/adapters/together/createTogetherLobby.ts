@@ -1,17 +1,21 @@
-/* eslint-disable @typescript-eslint/no-require-imports -- Native imports must remain behind the release gate. */
+/* eslint-disable @typescript-eslint/no-require-imports -- Native imports remain lazy for platform-specific composition. */
 import type { TogetherProvisioningPort } from "@/domain/ports/togetherProvisioning.port";
 import type { TogetherLobbyPort } from "@/domain/ports/togetherLobby.port";
+import type { TogetherRecoveryApi } from "@/domain/ports/togetherOfflineApi.port";
 
-/** Deliberately default-off: old binaries and ordinary workouts load no LAN SDK. */
+/** Explicit composition: the app-wide update gate owns native binary compatibility. */
 export function createTogetherLobby(
   provisioning: TogetherProvisioningPort | undefined,
   environment: string,
   enabled = false,
+  recovery?: TogetherRecoveryApi,
 ): TogetherLobbyPort | undefined {
   if (!enabled || !provisioning) return undefined;
   try {
-    const { togetherLan } =
+    const { togetherLan, togetherHotspotOwner } =
       require("../../../modules/together-lan") as typeof import("../../../modules/together-lan");
+    const { togetherNearby } =
+      require("../../../modules/together-nearby") as typeof import("../../../modules/together-nearby");
     const { getRandomBytes, randomUUID } =
       require("expo-crypto") as typeof import("expo-crypto");
     const { openDatabaseSync } =
@@ -28,9 +32,12 @@ export function createTogetherLobby(
         enabled: true,
         provisioning,
         native: togetherLan,
+        nearby: togetherNearby,
+        hotspotOwner: togetherHotspotOwner,
         database: db,
         randomBytes: getRandomBytes,
         randomUUID,
+        recovery,
       });
       const dispose = controller.dispose.bind(controller);
       let disposed = false;

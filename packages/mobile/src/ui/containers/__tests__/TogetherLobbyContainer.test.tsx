@@ -1,5 +1,5 @@
 import React from "react";
-import { AppState, View, type AppStateStatus } from "react-native";
+import { Alert, AppState, View, type AppStateStatus } from "react-native";
 import { act, fireEvent, waitFor } from "@testing-library/react-native";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 import { TogetherLobbyContainer } from "../TogetherLobbyContainer";
@@ -7,6 +7,25 @@ import type {
   TogetherLobbyPort,
   TogetherLobbySnapshot,
 } from "@/domain/ports/togetherLobby.port";
+import { router } from "expo-router";
+import { TogetherSharingPresenter } from "@/ui/presenters/TogetherSharingPresenter";
+import { TogetherPartnerPresenter } from "@/ui/presenters/TogetherPartnerPresenter";
+import { TogetherWorkoutRow } from "@/ui/presenters/TogetherWorkoutRow";
+import type {
+  TogetherPreviousRow,
+  TogetherSharedPort,
+  TogetherSharedSnapshot,
+} from "@/domain/ports/togetherShared.port";
+import type { TogetherCloudPort } from "@/domain/ports/togetherCloud.port";
+import type { WorkoutSession } from "@/domain/models/session";
+const mockCloud = jest.fn();
+jest.mock("../TogetherCloudContainer", () => ({
+  TogetherCloudContainer: (props: unknown) => {
+    mockCloud(props);
+    return null;
+  },
+}));
+jest.mock("expo-router", () => ({ router: { push: jest.fn() } }));
 const mockSheet = jest.fn();
 const mockRequest = jest.fn();
 const mockCopy = jest.fn();
@@ -72,6 +91,9 @@ beforeEach(() => {
   jest
     .spyOn(AppState, "addEventListener")
     .mockReturnValue({ remove: jest.fn() });
+  mockCloud.mockClear();
+  jest.mocked(router.push).mockClear();
+  jest.spyOn(Alert, "alert").mockImplementation(() => {});
   mockRequest.mockReset();
   mockCopy.mockReset();
   mockCopy.mockResolvedValue(undefined);
@@ -381,6 +403,12 @@ function workoutHarness() {
   const workout: import("@/domain/ports/togetherWorkout.port").TogetherWorkoutPort =
     {
       getActive: jest.fn(),
+      getPlan: jest.fn(),
+      getOwnExecution: jest.fn(),
+      applyOwnOperation: jest.fn(),
+      review: jest.fn(),
+      getReview: jest.fn(),
+      finish: jest.fn(),
       promote: jest.fn(async () => {}),
       read: jest.fn(),
       save: jest.fn(),
@@ -448,7 +476,7 @@ it("promotes only on consent using the fresh workout and shows durable receipt u
   fireEvent.press(r.getByText("Use my workout in Together"));
   expect(h.workout.promote).toHaveBeenCalledWith(current);
   h.update("active", 1);
-  expect(r.getByText(/Changes received by another athlete: 1/)).toBeTruthy();
+  expect(r.getByText(/complete workout journal is retained/)).toBeTruthy();
   expect(r.queryByText(/Your workout remains personal/)).toBeNull();
   h.publish({ phase: "idle" });
   h.update("local-only");
@@ -521,4 +549,699 @@ it("rejects a changed personal workout and explains unsupported promotion withou
   fireEvent.press(r.getByText("Use my workout in Together"));
   await r.findByText(/This workout can’t be shared yet/);
   expect(r.getByText("Leave lobby · keep my workout")).toBeTruthy();
+});
+
+const plan = {
+  name: "Shared plan",
+  exercises: [
+    { planExerciseId: "p", exerciseId: "squat", order: 0, targetSets: 3 },
+  ],
+};
+const personal = (): WorkoutSession => ({
+  id: "local",
+  userId: "a",
+  workoutId: null,
+  name: "My workout",
+  status: "in_progress",
+  startedAt: "2026-10-05T09:00:00Z",
+  completedAt: null,
+  notes: null,
+  exercises: [
+    {
+      id: "squat-slot",
+      sessionId: "local",
+      exerciseId: "squat",
+      exerciseName: "Squat",
+      sortOrder: 0,
+      supersetGroup: null,
+      isSubstituted: false,
+      originalExerciseId: null,
+      notes: null,
+      sets: [],
+    },
+  ],
+});
+function sharingHarness() {
+  const h = workoutHarness();
+  let view: TogetherSharedSnapshot = {
+    progress: [],
+    plan,
+    planHash: "hash",
+    athletePlans: {},
+    profiles: { other: "Mia" },
+    athletes: [],
+    previous: {},
+    grants: [],
+    closures: [],
+    delegated: [],
+    deliveries: [],
+  };
+  const shared: TogetherSharedPort = {
+    getSnapshot: () => view,
+    subscribe: () => () => {},
+    publishPlan: jest.fn(async () => {}),
+    publishProfile: jest.fn(async () => {}),
+    setOwnPlan: jest.fn(),
+    setConsent: jest.fn(async () => {}),
+    publishPrevious: jest.fn(async () => {}),
+    requestDelegatedSet: jest.fn(async () => {}),
+    consumeDelegated: jest.fn(),
+    close: jest.fn(async () => {}),
+  };
+  const lobby: TogetherLobbyPort = {
+    ...h.lobby,
+    shared,
+    removeParticipant: jest.fn(async () => {}),
+    transports: ["lan", "nearby", "hotspot-owner"],
+    selectTransport: jest.fn(),
+  };
+  return {
+    ...h,
+    lobby,
+    shared,
+    setShared: (next: Partial<TogetherSharedSnapshot>) => {
+      view = { ...view, ...next };
+      h.publish({});
+    },
+  };
+}
+function mountShared(
+  h: ReturnType<typeof sharingHarness>,
+  extra: Partial<React.ComponentProps<typeof TogetherLobbyContainer>> = {},
+) {
+  return renderWithTheme(
+    <TogetherLobbyContainer
+      lobby={h.lobby}
+      workoutName="Mine"
+      accountId="a"
+      localSessionId="local"
+      getWorkout={() => personal()}
+      {...extra}
+    />,
+  );
+}
+function shareProps(r: ReturnType<typeof renderWithTheme>) {
+  return r.UNSAFE_getByType(TogetherSharingPresenter)
+    .props as React.ComponentProps<typeof TogetherSharingPresenter>;
+}
+function lastDialog() {
+  return jest.mocked(Alert.alert).mock.calls.at(-1)![2]!;
+}
+it("selects explicit transports and switches to remote only after local cancellation", async () => {
+  const h = sharingHarness(),
+    cloud = {} as TogetherCloudPort;
+  const r = mountShared(h, { cloud });
+  fireEvent.press(r.getByText("Start"));
+  fireEvent.press(r.getByText("Nearby phones"));
+  fireEvent.press(r.getByText("This Android phone’s hotspot"));
+  fireEvent.press(r.getByText("Same Wi-Fi or hotspot"));
+  expect(h.lobby.selectTransport).toHaveBeenNthCalledWith(1, "nearby");
+  expect(h.lobby.selectTransport).toHaveBeenNthCalledWith(2, "hotspot-owner");
+  expect(h.lobby.selectTransport).toHaveBeenNthCalledWith(3, "lan");
+  let finish!: () => void;
+  jest.mocked(h.lobby.cancel).mockReturnValueOnce(
+    new Promise((r) => {
+      finish = r;
+    }),
+  );
+  fireEvent.press(r.getByText("Remote · training partners"));
+  expect(mockCloud).not.toHaveBeenCalled();
+  await act(async () => finish());
+  expect(mockCloud).toHaveBeenCalledWith(
+    expect.objectContaining({ cloud, accountId: "a" }),
+  );
+  act(() => mockCloud.mock.calls.at(-1)![0].onLocal());
+  expect(r.getByText("Start the session")).toBeTruthy();
+});
+it("late cancellation cannot switch another account to the remote flow", async () => {
+  const h = sharingHarness(),
+    cloud = {} as TogetherCloudPort;
+  let finish!: () => void;
+  jest.mocked(h.lobby.cancel).mockReturnValueOnce(
+    new Promise((r) => {
+      finish = r;
+    }),
+  );
+  const r = mountShared(h, { cloud });
+  fireEvent.press(r.getByText("Start"));
+  fireEvent.press(r.getByText("Remote · training partners"));
+  r.rerender(
+    <TogetherLobbyContainer
+      lobby={h.lobby}
+      cloud={cloud}
+      accountId="b"
+      workoutName="Other"
+      getWorkout={() => ({ ...personal(), userId: "b" })}
+    />,
+  );
+  await act(async () => finish());
+  expect(mockCloud).not.toHaveBeenCalled();
+  expect(r.getByText("Start")).toBeTruthy();
+});
+it("restores a cloud-owned workout directly and forwards personal restoration", () => {
+  const h = sharingHarness(),
+    cloud = {} as TogetherCloudPort,
+    onRestorePersonal = jest.fn(),
+    session = {
+      ...personal(),
+      together: {
+        sessionId: "s",
+        executionId: "e",
+        transport: "cloud" as const,
+      },
+    };
+  mountShared(h, { cloud, getWorkout: () => session, onRestorePersonal });
+  expect(mockCloud).toHaveBeenCalledWith(
+    expect.objectContaining({ cloud, onRestorePersonal }),
+  );
+  expect(h.lobby.host).not.toHaveBeenCalled();
+});
+it("scopes PREV publication to explicit recipient, current owner and workout start", async () => {
+  const h = sharingHarness(),
+    getPrevious = jest.fn(() => [
+      {
+        exerciseId: "squat",
+        setNumber: 1,
+        reps: 8,
+        weightKg: 60,
+        recordedAt: 1,
+      },
+    ]);
+  const r = mountShared(h, { getPrevious });
+  fireEvent.press(r.getByText("Start"));
+  h.publish({
+    phase: "hosting",
+    role: "host",
+    members: [
+      { userId: "a", host: true },
+      { userId: "other", host: false },
+    ],
+  });
+  await act(async () =>
+    shareProps(r).onConsent("other", {
+      numbers: false,
+      prev: true,
+      logging: false,
+    }),
+  );
+  expect(h.shared.setConsent).toHaveBeenCalledWith("other", {
+    numbers: false,
+    prev: true,
+    logging: false,
+  });
+  expect(h.shared.publishPrevious).toHaveBeenCalledWith(
+    "other",
+    getPrevious(),
+    Date.parse(personal().startedAt),
+  );
+  jest.mocked(h.shared.publishPrevious).mockClear();
+  await act(async () =>
+    shareProps(r).onConsent("other", {
+      numbers: true,
+      prev: false,
+      logging: true,
+    }),
+  );
+  expect(h.shared.publishPrevious).not.toHaveBeenCalled();
+});
+it("does not publish PREV after a delayed grant crosses accounts", async () => {
+  const h = sharingHarness();
+  let finish!: () => void;
+  jest.mocked(h.shared.setConsent).mockReturnValueOnce(
+    new Promise((r) => {
+      finish = r;
+    }),
+  );
+  const getPrevious = jest.fn(() => []);
+  const r = mountShared(h, { getPrevious });
+  fireEvent.press(r.getByText("Start"));
+  h.publish({ phase: "hosting", role: "host" });
+  act(() =>
+    shareProps(r).onConsent("other", {
+      numbers: true,
+      prev: true,
+      logging: false,
+    }),
+  );
+  r.rerender(
+    <TogetherLobbyContainer
+      lobby={h.lobby}
+      accountId="b"
+      workoutName="Other"
+      getWorkout={() => ({ ...personal(), userId: "b" })}
+      getPrevious={getPrevious}
+    />,
+  );
+  await act(async () => finish());
+  expect(getPrevious).not.toHaveBeenCalled();
+  expect(h.shared.publishPrevious).not.toHaveBeenCalled();
+});
+it("never reads PREV from a draft belonging to another account", async () => {
+  const h = sharingHarness(),
+    getPrevious = jest.fn(() => []);
+  const r = mountShared(h, {
+    getWorkout: () => ({ ...personal(), userId: "b" }),
+    getPrevious,
+  });
+  fireEvent.press(r.getByText("Start"));
+  h.publish({ phase: "hosting", role: "host" });
+  await act(async () =>
+    shareProps(r).onConsent("other", {
+      numbers: false,
+      prev: true,
+      logging: false,
+    }),
+  );
+  expect(getPrevious).not.toHaveBeenCalled();
+});
+it("publishes the chosen display name only while admitted and tolerates failed profile delivery", async () => {
+  const h = sharingHarness();
+  jest.mocked(h.shared.publishProfile).mockRejectedValue(new Error("offline"));
+  mountShared(h, { displayName: "Brad" });
+  expect(h.shared.publishProfile).not.toHaveBeenCalled();
+  await act(async () => h.publish({ phase: "joined" }));
+  expect(h.shared.publishProfile).toHaveBeenCalledWith("Brad");
+});
+it("adopts an offered plan deliberately and never offers replacement over logged sets", async () => {
+  const h = sharingHarness(),
+    onAdoptPlan = jest.fn();
+  const r = mountShared(h, { onAdoptPlan });
+  fireEvent.press(r.getByText("Start"));
+  h.publish({ phase: "joined", role: "guest" });
+  expect(onAdoptPlan).not.toHaveBeenCalled();
+  fireEvent.press(r.getByText("Add their plan to mine"));
+  expect(onAdoptPlan).toHaveBeenLastCalledWith(plan, "append");
+  fireEvent.press(r.getByText("Use this plan"));
+  expect(onAdoptPlan).toHaveBeenLastCalledWith(plan, "replace-empty");
+  const session = personal();
+  session.exercises = [
+    {
+      id: "x",
+      sessionId: "local",
+      exerciseId: "squat",
+      exerciseName: "Squat",
+      sortOrder: 0,
+      supersetGroup: null,
+      isSubstituted: false,
+      originalExerciseId: null,
+      notes: null,
+      sets: [
+        {
+          id: "set",
+          sessionExerciseId: "x",
+          setNumber: 1,
+          weightKg: 60,
+          reps: 8,
+          rpe: null,
+          durationSeconds: null,
+          distanceMeters: null,
+          isCompleted: true,
+          completedAt: null,
+        },
+      ],
+    },
+  ];
+  r.rerender(
+    <TogetherLobbyContainer
+      lobby={h.lobby}
+      workoutName="Mine"
+      accountId="a"
+      getWorkout={() => session}
+      onAdoptPlan={onAdoptPlan}
+    />,
+  );
+  expect(r.queryByText("Use this plan")).toBeNull();
+  expect(r.getByText("Add their plan to mine")).toBeTruthy();
+});
+it("promotes and publishes only the current host plan; guests keep their own plan", async () => {
+  const h = sharingHarness();
+  jest.mocked(h.workout.getPlan).mockReturnValue(plan);
+  const r = mountShared(h);
+  fireEvent.press(r.getByText("Start"));
+  h.publish({ phase: "hosting", role: "host" });
+  await act(async () =>
+    fireEvent.press(r.getByText("Use my workout in Together")),
+  );
+  expect(h.shared.setOwnPlan).toHaveBeenCalledWith(plan);
+  expect(h.shared.publishPlan).toHaveBeenCalledWith(plan);
+  jest.mocked(h.shared.publishPlan).mockClear();
+  h.publish({ phase: "joined", role: "guest" });
+  await act(async () =>
+    fireEvent.press(r.getByText("Use my workout in Together")),
+  );
+  expect(h.shared.publishPlan).not.toHaveBeenCalled();
+});
+it("does not publish an old account's plan after delayed promotion", async () => {
+  const h = sharingHarness();
+  let finish!: () => void;
+  jest.mocked(h.workout.promote).mockReturnValueOnce(
+    new Promise((r) => {
+      finish = r;
+    }),
+  );
+  jest.mocked(h.workout.getPlan).mockReturnValue(plan);
+  const r = mountShared(h);
+  fireEvent.press(r.getByText("Start"));
+  h.publish({ phase: "hosting", role: "host" });
+  fireEvent.press(r.getByText("Use my workout in Together"));
+  r.rerender(
+    <TogetherLobbyContainer
+      lobby={h.lobby}
+      accountId="b"
+      workoutName="Other"
+      getWorkout={() => ({ ...personal(), userId: "b" })}
+    />,
+  );
+  await act(async () => finish());
+  expect(h.shared.setOwnPlan).not.toHaveBeenCalled();
+  expect(h.shared.publishPlan).not.toHaveBeenCalled();
+});
+it("partner view delegates only the displayed revision and returns to own workout on removal", async () => {
+  const h = sharingHarness();
+  const r = mountShared(h, {
+    displayName: "Brad",
+    children: (row) => <View testID="personal-workout">{row}</View>,
+  });
+  h.publish({
+    phase: "joined",
+    members: [
+      { userId: "a", host: false },
+      { userId: "other", host: true },
+    ],
+  });
+  h.update("active");
+  fireEvent.press(r.getByLabelText("View Mia’s workout"));
+  expect(r.queryByTestId("personal-workout")).toBeNull();
+  const p = r.UNSAFE_getByType(TogetherPartnerPresenter)
+    .props as React.ComponentProps<typeof TogetherPartnerPresenter>;
+  await act(async () => p.onOperation({ type: "upsertSet" }, 7));
+  expect(h.shared.requestDelegatedSet).toHaveBeenCalledWith(
+    "other",
+    { type: "upsertSet" },
+    7,
+  );
+  act(() => p.onMine());
+  expect(r.getByTestId("personal-workout")).toBeTruthy();
+  fireEvent.press(r.getByLabelText("View Mia’s workout"));
+  h.publish({ members: [{ userId: "a", host: false }] });
+  expect(r.getByTestId("personal-workout")).toBeTruthy();
+});
+it("destructive dialogs are generation-bound and do nothing when dismissed", async () => {
+  const h = sharingHarness();
+  const r = mountShared(h);
+  fireEvent.press(r.getByText("Start"));
+  h.publish({
+    phase: "hosting",
+    role: "host",
+    members: [
+      { userId: "a", host: true },
+      { userId: "other", host: false },
+    ],
+  });
+  act(() => shareProps(r).onRemove!("other"));
+  expect(h.lobby.removeParticipant).not.toHaveBeenCalled();
+  const oldRemove = lastDialog().find((b) => b.text === "Remove")!;
+  r.rerender(
+    <TogetherLobbyContainer
+      lobby={h.lobby}
+      accountId="b"
+      workoutName="Other"
+    />,
+  );
+  await act(async () => oldRemove.onPress!());
+  expect(h.lobby.removeParticipant).not.toHaveBeenCalled();
+  fireEvent.press(r.getByText("Open"));
+  act(() => shareProps(r).onClose("finish_all"));
+  const oldClose = lastDialog().find((b) => b.text === "End sharing")!;
+  r.unmount();
+  await act(async () => oldClose.onPress!());
+  expect(h.shared.close).not.toHaveBeenCalled();
+});
+it("confirms removal and routes an acknowledged closure to own recovery", async () => {
+  const h = sharingHarness();
+  const r = mountShared(h);
+  fireEvent.press(r.getByText("Start"));
+  h.publish({
+    phase: "hosting",
+    role: "host",
+    members: [
+      { userId: "a", host: true },
+      { userId: "other", host: false },
+    ],
+  });
+  act(() => shareProps(r).onRemove!("other"));
+  await act(async () =>
+    lastDialog().find((b) => b.text === "Remove")!.onPress!(),
+  );
+  expect(h.lobby.removeParticipant).toHaveBeenCalledWith("other");
+  act(() => shareProps(r).onClose("save_own"));
+  expect(h.shared.close).not.toHaveBeenCalled();
+  await act(async () =>
+    lastDialog().find((b) => b.text === "End sharing")!.onPress!(),
+  );
+  expect(h.shared.close).toHaveBeenCalledWith("save_own");
+  expect(router.push).toHaveBeenCalledWith({
+    pathname: "/(app)/session/together-review",
+    params: { localSessionId: "local" },
+  });
+});
+it("late closure cannot navigate or cancel a newer account's lobby", async () => {
+  const h = sharingHarness();
+  let finish!: () => void;
+  jest.mocked(h.shared.close).mockReturnValueOnce(
+    new Promise((r) => {
+      finish = r;
+    }),
+  );
+  const r = mountShared(h);
+  fireEvent.press(r.getByText("Start"));
+  h.publish({ phase: "hosting", role: "host" });
+  act(() => shareProps(r).onClose("finish_all"));
+  act(() => lastDialog().find((b) => b.text === "End sharing")!.onPress!());
+  r.rerender(
+    <TogetherLobbyContainer
+      lobby={h.lobby}
+      accountId="b"
+      workoutName="Other"
+    />,
+  );
+  await act(async () => finish());
+  expect(router.push).not.toHaveBeenCalled();
+  jest.mocked(h.shared.close).mockReturnValueOnce(
+    new Promise((r) => {
+      finish = r;
+    }),
+  );
+  fireEvent.press(r.getByText("Open"));
+  fireEvent.press(r.getByText("Leave lobby · keep my workout"));
+  r.rerender(
+    <TogetherLobbyContainer
+      lobby={h.lobby}
+      accountId="c"
+      workoutName="Third"
+    />,
+  );
+  const cancellations = jest.mocked(h.lobby.cancel).mock.calls.length;
+  await act(async () => finish());
+  expect(h.lobby.cancel).toHaveBeenCalledTimes(cancellations);
+});
+it("explicit leave signals shared closure before cancelling; review and partner navigation dismiss locally", async () => {
+  const h = sharingHarness();
+  const r = mountShared(h);
+  fireEvent.press(r.getByText("Start"));
+  h.publish({ phase: "joined", role: "guest" });
+  await act(async () =>
+    fireEvent.press(r.getByText("Leave lobby · keep my workout")),
+  );
+  expect(h.shared.close).toHaveBeenCalledWith("leave");
+  expect(h.lobby.cancel).toHaveBeenCalled();
+  fireEvent.press(r.getByText("Open"));
+  h.update("active");
+  fireEvent.press(r.getByText("Review my result"));
+  expect(router.push).toHaveBeenLastCalledWith({
+    pathname: "/(app)/session/together-review",
+    params: { localSessionId: "local" },
+  });
+  fireEvent.press(r.getByText("Open"));
+  fireEvent.press(r.getByText("Training partners"));
+  expect(router.push).toHaveBeenLastCalledWith("/(app)/together/partners");
+});
+
+it("workout row opens settings and end controls while self selection restores the personal view", () => {
+  const h = sharingHarness();
+  const r = mountShared(h);
+  h.publish({
+    phase: "joined",
+    role: "guest",
+    members: [
+      { userId: "a", host: true },
+      { userId: "b", host: false },
+    ],
+  });
+  h.update("active");
+  const row = () => r.UNSAFE_getByType(TogetherWorkoutRow).props;
+  act(() => row().onSettings());
+  expect(r.getByText("Training partners")).toBeTruthy();
+  act(() => row().onSelect("b"));
+  expect(r.UNSAFE_getByType(TogetherPartnerPresenter)).toBeTruthy();
+  act(() => row().onSelect("a"));
+  expect(r.UNSAFE_queryByType(TogetherPartnerPresenter)).toBeNull();
+  act(() => row().onEnd());
+  expect(r.getByText("Leave · review my result")).toBeTruthy();
+});
+
+it("warms own history after local admission without gating lobby or sharing without consent", async () => {
+  const h = sharingHarness();
+  const refreshPrevious = jest.fn<
+    Promise<readonly TogetherPreviousRow[]>,
+    [() => boolean]
+  >(async () => []);
+  const r = mountShared(h, { refreshPrevious });
+  fireEvent.press(r.getByText("Start"));
+  h.publish({ phase: "hosting", role: "host" });
+  await act(async () => {});
+  expect(refreshPrevious).toHaveBeenCalledTimes(1);
+  expect(refreshPrevious.mock.calls[0]![0]()).toBe(true);
+  expect(h.shared.publishPrevious).not.toHaveBeenCalled();
+  r.unmount();
+  expect(refreshPrevious.mock.calls[0]![0]()).toBe(false);
+});
+
+it.each(["current", "revoked", "regranted", "workout", "unmounted"])(
+  "refreshes consented PREV only for the unchanged grant: %s",
+  async (state) => {
+    const h = sharingHarness();
+    const refreshed = [
+      {
+        exerciseId: "squat",
+        setNumber: 1,
+        reps: 8,
+        weightKg: 80,
+        recordedAt: 1,
+      },
+    ];
+    const refreshPrevious = jest.fn<
+      Promise<readonly TogetherPreviousRow[]>,
+      [() => boolean]
+    >(async () => []);
+    let workout = personal();
+    const r = mountShared(h, {
+      refreshPrevious,
+      getPrevious: () => [],
+      getWorkout: () => workout,
+    });
+    fireEvent.press(r.getByText("Start"));
+    h.publish({ phase: "hosting", role: "host" });
+    await act(async () => {});
+    let resolve!: (rows: readonly TogetherPreviousRow[]) => void;
+    refreshPrevious.mockImplementation(
+      () =>
+        new Promise((r) => {
+          resolve = r;
+        }),
+    );
+    const grant = {
+      ownerId: "a",
+      recipientId: "other",
+      version: 1,
+      consent: { prev: true, numbers: false, logging: false },
+    };
+    h.setShared({ grants: [grant] });
+    await act(async () => {
+      shareProps(r).onConsent("other", grant.consent);
+    });
+    expect(h.shared.publishPrevious).toHaveBeenCalledWith(
+      "other",
+      [],
+      Date.parse(workout.startedAt),
+    );
+    if (state === "revoked") {
+      h.setShared({
+        grants: [
+          { ...grant, version: 2, consent: { ...grant.consent, prev: false } },
+        ],
+      });
+      await act(async () => {
+        shareProps(r).onConsent("other", { ...grant.consent, prev: false });
+      });
+    }
+    if (state === "regranted")
+      h.setShared({ grants: [{ ...grant, version: 3 }] });
+    if (state === "workout") workout = { ...workout, id: "another" };
+    if (state === "unmounted") r.unmount();
+    await act(async () => resolve(refreshed));
+    expect(h.shared.publishPrevious).toHaveBeenCalledTimes(
+      state === "current" ? 2 : 1,
+    );
+    if (state === "current")
+      expect(h.shared.publishPrevious).toHaveBeenLastCalledWith(
+        "other",
+        refreshed,
+        Date.parse(workout.startedAt),
+      );
+  },
+);
+
+it("omits skipped PREV in cached and refreshed publication, using the current workout on resend", async () => {
+  const h = sharingHarness();
+  const squat = personal().exercises[0]!;
+  let workout = {
+    ...personal(),
+    exercises: [
+      { ...squat, skipped: true },
+      { ...squat, id: "press-slot", exerciseId: "press", skipped: false },
+      { ...squat, id: "row-slot", exerciseId: "row", skipped: false },
+    ],
+  };
+  const rows = ["squat", "press", "row"].map((exerciseId) => ({
+    exerciseId,
+    setNumber: 1,
+    reps: 8,
+    weightKg: 60,
+    recordedAt: 1,
+  }));
+  const refreshPrevious = jest.fn<
+    Promise<readonly TogetherPreviousRow[]>,
+    [() => boolean]
+  >(async () => []);
+  const r = mountShared(h, {
+    getWorkout: () => workout,
+    getPrevious: () => rows,
+    refreshPrevious,
+  });
+  fireEvent.press(r.getByText("Start"));
+  h.publish({ phase: "hosting", role: "host" });
+  await act(async () => {});
+  let resolve!: (value: readonly TogetherPreviousRow[]) => void;
+  refreshPrevious.mockImplementation(
+    () =>
+      new Promise((done) => {
+        resolve = done;
+      }),
+  );
+  const consent = { prev: true, numbers: false, logging: false };
+  h.setShared({
+    grants: [{ ownerId: "a", recipientId: "other", version: 1, consent }],
+  });
+  await act(async () => {
+    shareProps(r).onConsent("other", consent);
+  });
+  expect(h.shared.publishPrevious).toHaveBeenLastCalledWith(
+    "other",
+    rows.slice(1),
+    Date.parse(workout.startedAt),
+  );
+  workout = {
+    ...workout,
+    exercises: workout.exercises.map((e) =>
+      e.exerciseId === "row" ? { ...e, skipped: true } : e,
+    ),
+  };
+  await act(async () => resolve(rows.map((row) => ({ ...row, weightKg: 80 }))));
+  expect(h.shared.publishPrevious).toHaveBeenLastCalledWith(
+    "other",
+    [{ ...rows[1], weightKg: 80 }],
+    Date.parse(workout.startedAt),
+  );
+  r.unmount();
 });

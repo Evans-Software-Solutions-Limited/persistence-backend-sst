@@ -2,12 +2,20 @@ import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   consent: vi.fn(),
+  numbers: vi.fn(),
+  remove: vi.fn(),
+  joinStatus: vi.fn(),
+  cancelJoin: vi.fn(),
   values: vi.fn(),
   wake: vi.fn(),
 }));
 vi.mock("../togetherRepository", () => ({
   TogetherRepository: class {
     previousConsent = mocks.consent;
+    numbersConsent = mocks.numbers;
+    removeParticipant = mocks.remove;
+    joinStatus = mocks.joinStatus;
+    cancelJoin = mocks.cancelJoin;
     previousValues = mocks.values;
   },
 }));
@@ -152,5 +160,85 @@ describe("Together PREV HTTP contract", () => {
     expect(await denied.json()).toEqual({
       error: { code: "FORBIDDEN", message: "Request cannot be completed" },
     });
+  });
+});
+
+describe("cloud numeric consent and host removal HTTP contracts", () => {
+  it("authenticates and validates recipient consent separately from PREV", async () => {
+    mocks.numbers.mockResolvedValue({ version: 1, recipientIds: [owner] });
+    const response = await request(`${id}/numbers-consent`, "PUT", body);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(mocks.numbers).toHaveBeenCalledWith(actor, id, key, body);
+    expect(mocks.values).not.toHaveBeenCalled();
+    expect(
+      (await request(`${id}/numbers-consent`, "PUT", body, false)).status,
+    ).toBe(401);
+    expect(
+      (
+        await request(`${id}/numbers-consent`, "PUT", {
+          expectedVersion: 0,
+          recipientIds: [owner, owner],
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (await request(`${id}/numbers-consent`, "PUT", body, true, null)).status,
+    ).toBe(400);
+  });
+  it("host removal passes authenticated actor, selected member and displayed revision", async () => {
+    mocks.remove.mockResolvedValue({ removed: true, snapshot: {} });
+    expect(
+      (
+        await request(`${id}/participants/${owner}/remove`, "POST", {
+          expectedRevision: 4,
+        })
+      ).status,
+    ).toBe(200);
+    expect(mocks.remove).toHaveBeenCalledWith(actor, id, owner, key, {
+      expectedRevision: 4,
+    });
+    expect(
+      (
+        await request(`${id}/participants/${owner}/remove`, "POST", {
+          expectedRevision: -1,
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await request(
+          `${id}/participants/${owner}/remove`,
+          "POST",
+          { expectedRevision: 4 },
+          false,
+        )
+      ).status,
+    ).toBe(401);
+  });
+  it("join request status and cancellation are authenticated, uncacheable and actor scoped", async () => {
+    mocks.joinStatus.mockResolvedValue({
+      requestId: owner,
+      sessionId: id,
+      status: "pending",
+    });
+    mocks.cancelJoin.mockResolvedValue({ cancelled: true });
+    const make = (method: string, auth = true) =>
+      togetherRoutes.fetch(
+        new Request(`http://localhost/together/join-requests/${owner}`, {
+          method,
+          headers: {
+            ...(auth ? { authorization: `Bearer ${actor}` } : {}),
+            "idempotency-key": key,
+          },
+        }),
+      );
+    const status = await make("GET");
+    expect(status.status).toBe(200);
+    expect(status.headers.get("cache-control")).toBe("no-store");
+    expect(mocks.joinStatus).toHaveBeenCalledWith(actor, owner);
+    expect((await make("DELETE")).status).toBe(200);
+    expect(mocks.cancelJoin).toHaveBeenCalledWith(actor, owner, key);
+    expect((await make("DELETE", false)).status).toBe(401);
   });
 });

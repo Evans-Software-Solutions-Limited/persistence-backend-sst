@@ -128,6 +128,7 @@
         "date-fns": "^4.4.0",
         "expo": "^55.0.0",
         "expo-apple-authentication": "~55.0.13",
+        "expo-application": "~55.0.15",
         "expo-build-properties": "~55.0.13",
         "expo-camera": "~55.0.20",
         "expo-clipboard": "~55.0.13",

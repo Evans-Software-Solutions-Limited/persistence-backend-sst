@@ -1,3 +1,4 @@
+import type { TogetherRecoveryCommand } from "./togetherOfflineApi.port";
 import type {
   Credential,
   Signed,
@@ -28,6 +29,11 @@ export interface ReadyIdentity {
   deviceId: string;
 }
 export interface TogetherProvisioningPort {
+  /** Original owner key only; never prepares, renews or registers sharing. */
+  signRecovery?(
+    credential: Signed<Credential>,
+    commands: readonly TogetherRecoveryCommand[],
+  ): Promise<Result<Signed<TogetherRecoveryCommand>[], ProvisioningError>>;
   setAccount(userId: string | null): void;
   prepare(options: {
     online: boolean;

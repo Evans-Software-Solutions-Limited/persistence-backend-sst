@@ -1,5 +1,294 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-05 — PR #486 five-lead review
+
+[PER-64](https://linear.app/evans-software-solutions/issue/PER-64) /
+[PER-22](https://linear.app/evans-software-solutions/issue/PER-22): reviewed the
+five new Inspector comments on 5302d5fc. Confirmed peer-leave receipt cleanup,
+queued same-kind cloud consent versions, transient roster collapse and Nearby
+permission callback context loss. Fixes scope receipts to affected peers, preserve
+ordered consent intent, retain last-known membership without retaining sensitive
+peer values, and capture permission requirements before the prompt with safe
+cached-client teardown. Local review additionally caught consent and own-command
+version double-counting when a poll observes a commit before its response arrives;
+queued versions use the maximum acknowledged/pending version rather than counts. Regression tests cover these paths; native evidence is
+source-contract checks only, not compilation or physical prompt proof.
+
+The zero-set template lead conflates social template copying with live shared-plan
+adoption. Social templates legitimately retain zero target sets and copy via the
+backend; live adoption consumes a separately validated plan. Preserve that contract
+and add coverage rather than modifying template data. Local Inspector clean at
+98c62d5a. Final mobile: 592 suites / 8,045 tests; coverage 96.42% statements,
+91.73% branches, 96.49% functions, 97.79% lines. Typecheck 9/9, lint 6/6
+and formatting pass. Focused shared/native 61 tests and cloud/API 113 tests pass;
+reverting fixes reproduces receipt and cloud races. Backend is unchanged in this
+batch; prior full backend validation remains applicable. Brad retains manual merge/build
+ownership; no native build, deployment or CI Inspector trigger.
+
+
+### 2026-10-05 — PR #486 bounded PREV transfer and own-history hydration
+
+[PER-64](https://linear.app/evans-software-solutions/issue/PER-64) /
+[PER-22](https://linear.app/evans-software-solutions/issue/PER-22): Brad approved
+this follow-up before manually merging PR #486. PREV now references the granted
+plan and supports up to 2 MiB encrypted envelopes through ordered authenticated
+12,000-character chunks. Other messages retain the 30,000-byte cap. Partial data
+never reaches history; fixed expiry, bounded queues, signature/hash verification,
+current grants and disconnect cleanup apply. Relay forwarding does not block
+incoming revocation. Host remains blind to guest-to-guest PREV plaintext.
+
+Own-only API hydration filters relevant non-skipped exercises before selecting
+latest sets older than the original workout start. Cached offline sharing remains
+available; fresh rows publish only for the unchanged account/workout/grant.
+Newer offline history is preserved. Both publication paths filter current skips.
+Target-37 Android permissions now cover Nearby and LAN/hotspot while current
+target 36 remains unchanged. Camera copy includes Together QR scanning.
+
+Local Inspector found and re-reviewed relay revocation and skipped-history defects;
+both are fixed. Focused secure-transfer tests: 132 passed, chunk assembler 100%
+coverage, link/session above 90% on all metrics. Owner-history API/repository tests
+include real PGlite and a failing filter-revert regression. Permission evidence is
+source/plugin tests only. No native/prebuild/EAS/mobile build, deployment or merge.
+Final full mobile: 592 suites / 8,036 tests; coverage 96.42% statements,
+91.73% branches, 96.49% functions and 97.79% lines. Non-mobile tests 18/18
+(core 5,485; web 1,594), typecheck 9/9, lint 6/6, non-mobile build 12/12 pass.
+Repository formatting found one changed design document; corrected and rechecked.
+Latest main 85ec607f merged without source or STATE conflicts; local instruction
+files preserved byte-for-byte. Remaining: Brad's native build and
+physical mixed-device/radio/permission/reconnect/throughput acceptance; tests use
+simulated links with real crypto/SQLite, not physical radio proof. See TRANSFER.md,
+HISTORY-LOADING.md, TEST-READINESS.md and SMOKE_TEST.md for bounded contracts.
+
+
+### 2026-10-05 — PR #486 next Inspector batch and staging coverage
+
+Brad requested broad API/integration/container/presenter coverage before his
+manual staging merge. The previous normal CI run 37308617753 passed, including
+Unit Tests & Coverage (15m9s), before this new Inspector batch.
+
+Confirmed delegation durability/peer-isolation/cleanup failures, stale cloud
+conflict authority and backend membership/privacy issues are corrected
+with fault injection and real SQLite/PGlite-backed regressions. Related consent,
+leave and private-completion event paths are included. Cloud runtime and recovery
+container tests exercise immediate stale finish, fresh review, offline failure
+and account changes; source and UI coverage exceed 90% in the focused run.
+
+The repeated cancellation race remains disproved by the shared requester lock.
+Original workout start times remain valid for retained/recovered work; cloud
+session creation uses server time rather than backdating session metadata.
+Required native modules remain mandatory as Brad requested; missing module names
+are now reported through enabled Sentry without weakening or breaking the gate.
+A valid corrected app policy already replaces a cached excessive floor: tests
+cover recheck and durable replacement, with no reinstall. Policy caps/expiry
+would undermine mandatory version enforcement and are not introduced.
+
+Together deployment defaults stay enabled as approved. Explicit true/false,
+1/0 and on/off now normalize case/whitespace; unknown explicit values abort
+configuration. Eighteen table-driven tests cover rollback settings; restoring
+the old comparator makes regressions fail. New staging cases are in SMOKE_TEST.md.
+Full local Inspector found three additional cloud defects: delayed private polls
+could overwrite acknowledged edits, null substitutions were ignored, and a
+conclusively rejected initial admission trapped personal work. Regression fixes
+cover own-revision monotonicity, substitution reset/name restoration and safe
+first-attempt rejection recovery, retaining ambiguous admission retry identity.
+Reverting backend fixes reproduces five failures; delegated durability/cleanup
+and cloud snapshot/substitution regressions also distinguish the old behavior.
+
+Local Inspector re-review is clean after session-scoping the own revision guard,
+using the canonical plan base for substitution resets, and preserving edits made
+during/after a rejected admission. Focused final cloud adapter/container tests:
+136/136, every changed runtime/UI file above 90% on all coverage metrics.
+Final full mobile: 588 suites / 7,989 tests passed; coverage 96.42% statements,
+91.72% branches, 96.50% functions, 97.78% lines. Full non-mobile tests 18/18
+(core 5,477); non-mobile build 12/12; typecheck 9/9; lint 6/6 and formatting pass.
+Backend repository coverage is 99.75% statements / 97.87% branches; recording
+is 100% on all metrics. Intermediate runs exposed new test-fixture/fix edge cases;
+those were corrected before the final complete passing run. No exclusions or
+thresholds changed. PR #486 records each lead's disposition and keeps the
+acknowledged PREV >30 KB limitation and physical-device acceptance outstanding.
+Unrelated AGENTS.md, CLAUDE.md and specs/_agent.md edits remain untouched.
+No merge,
+CI Inspector, native/prebuild/EAS build or deployment was initiated.
+
+### 2026-10-05 — PR #486 eight-lead validation
+
+The replacement unit-test/coverage CI run 37302424575 passed (23m6s), clearing the
+referral timing failure at 946db9c4. Brad then requested validation of eight new
+Inspector leads. The outbox conflict, stale checkpoint save and review-preview
+mutation findings were confirmed and corrected with regression coverage. Rejected cloud
+version conflicts are retired without rebasing stale writes; personal drafts
+require explicit reviewed reconciliation. Local full-snapshot saves carry an
+opaque checkpoint version and reject stale writers before journal/cache mutation.
+Metadata-only UI edits apply their narrow patch to the current workout snapshot.
+Review previews no longer persist retainedLocalChanges; explicit commits do.
+Local Inspector also caught unmapped new sets receiving unstable IDs after a
+conflict: saveDraft now durably assigns IDs before pausing outbound projection.
+Repeated previews and active/private completion preserve local IDs without
+duplicating rows.
+The redundant pre-send PREV clear was removed, while authority failures still
+purge private caches until refreshed authorization and a new PREV fetch.
+
+Cancellation/approval already serialize on the same requesting-user row lock;
+regressions exercise both competing call orders and repeat cancellation with a
+new key. Already-rejected requests correctly report no pending admission.
+Removed admitted users retain cloud-owned private results and must not detach
+into duplicate standalone results. Multiple CocoaPods post_install hooks are
+invalid upstream; the Expo hook guard stays in place, with no native build run.
+
+The PREV 30 KB envelope limit is a confirmed, documented size limitation, retained
+explicitly rather than silently truncating history. A 50-exercise ×5-set snapshot
+is rejected before send/replay mutation, and subsequent bounded sharing remains
+usable. Full large-snapshot support requires authenticated chunking/reassembly;
+it is not claimed complete by this PR. Original personal history stays intact.
+
+Focused cloud tests pass 179/179 (91.71% branches); checkpoint tests pass 98/98
+(98.25% branches). Reverting guards/preview/outbox fixes makes their regressions
+fail. Backend tests pass 5,474/5,474; non-mobile tasks 18/18, build 12/12,
+typecheck 9/9, lint 6/6 and repository formatting pass. Final local Inspector
+found no further unaccepted defects, retaining the documented PREV size limit.
+Full mobile: 587 suites / 7,956 tests passed; coverage 96.42% statements,
+91.72% branches, 96.50% functions, 97.78% lines. Per-lead dispositions are
+recorded in PR #486. No merge,
+native/prebuild/EAS build, deployment or CI Inspector trigger is authorized here.
+
+### 2026-10-05 — PR #486 CI referral-test timing fix
+
+CI run 37300755593 failed one existing SubscriptionSelectionContainer referral
+assertion (7,941 passed). Coverage passed: 96.4% statements, 91.71% branches,
+96.46% functions, 97.75% lines. The same test passed locally, so the observed
+failure is intermittent. Referral tests now use scoped virtual timers to drive
+React Query notifications through auth/bootstrap rather than racing RTL's 1s
+wall-clock wait. Real adapters/hooks and UI assertions remain; cleanup unmounts
+before timers are cleared and real time is restored. No production code or
+coverage threshold changed. Local incremental Inspector is clean; focused 23
+assertions, mobile typecheck, targeted lint and formatting pass. Full coverage
+and the replacement CI run are recorded in the PR handoff.
+
+### 2026-10-05 — PR #486 release gating and Inspector follow-up
+
+Brad explicitly superseded development-only/production-disabled packaging:
+Together must be available in release builds and the backend need not stay
+disabled. Partners route now exports its container directly. Providers compose
+Together without a development/environment test flag; obsolete test-gate code is
+removed. Backend infrastructure/deployment variables default enabled, with
+explicit false retained as an operational rollback. Friends-only remote
+visibility/discovery no longer depends on the venue-directory switch, which
+remains off; all paid, friendship, block and admission checks remain.
+
+Native version 1.1.3 includes ExpoApplication plus Together native modules. A root
+mandatory-update gate precedes AppProviders, checks the actual installed native
+version/capabilities, and reads public `/app-policy` with independent platform
+minimums. Cached policy is scoped by API environment; compatible offline launches
+continue, while stale cache cannot weaken an accepted in-memory requirement on
+foreground/retry. Store update, store-failure and internal-distribution states use
+existing foundation components. The OTA manifest supplies at most a store-listing
+identifier, never installed-version authority.
+
+Existing 1.1.2 clients do not contain this gate. A separately reviewed compatible
+bootstrap OTA or native update is required before they can honor the policy;
+shipping only the 1.1.3 runtime cannot retroactively force them. Owner-controlled
+builds, store availability and deployment remain outstanding. No build, deploy,
+OTA publication, merge or CI Inspector trigger was run.
+
+Validated CI Inspector lead 4182992617: removed global 100-row PREV lookup truncation
+and receiver ceiling. Real SQLite/encrypted/replay/revocation tests preserve all
+105 rows including the final exercise; duplicate keys and oversized snapshots
+reject atomically under the existing 30 KB envelope cap. Local Inspector also found
+and fixed stale-policy downgrade and the friends-discovery activation mismatch.
+Follow-up validation: mobile 587 suites / 7,942 tests; non-mobile tests 18/18
+(core 5,472); typecheck 9/9; lint 6/6; non-mobile build 12/12. Latest
+update-policy/SQLite regressions pass 36/36; restoring the SQL truncation makes
+the 105-row regression fail. Local Inspector full follow-up and final incremental
+sweep are clean. Update-screen screenshots are simulated RNWeb evidence only.
+PR #486 remains open for Brad to review and merge; prior results below describe
+the earlier development-only implementation.
+
+### 2026-10-05 — consolidated Together test implementation (PER-64 / PER-22)
+
+Brad superseded the sequential PR plan with one consolidated implementation PR.
+Leave it **open for Brad's manual review and merge**; no auto-merge. Based on
+freshly pulled #485/main `bc4c34f3`, branch `codex/together-own-result-recovery`.
+Pre-PR fetch still matches that main. Prior STATE entries are preserved below.
+
+Connects own-result saving/reviewed offline recovery, shared plans, named partner
+views and safe nonnumeric progress, independent numeric/PREV/logging grants,
+revocation and recipient cache purge, host removal and explicit finish/leave.
+Cloud friend/invitation sessions retain authoritative personal drafts and stable
+retry keys; original start times, private continuations and partial recoveries
+preserve unsent personal work. Four concurrent seats include the host; removed
+cloud athletes keep private results without reclaiming their former admission.
+Person-code/QR friend requests, block/report and independent template copies are
+wired. Nearby iOS/Android module and explicit Android hotspot-owner transport are
+included with pinned SDK linkage and bounded buffers, reusing authenticated LAN
+identity/encryption. No worldwide directory or automatic authority handover.
+
+Production remains disabled. Testing requires the explicit public test flag plus
+`__DEV__`, a compatible Brad-built development client and configured test backend.
+No native/prebuild/EAS/mobile build, deployment or migration apply was initiated.
+No lower-priced subscription or coached-class work. Exact prerequisites, schema
+and limits: [TEST-READINESS](./specs/milestones/TRAIN-TOGETHER/TEST-READINESS.md).
+[SMOKE_TEST](./specs/milestones/TRAIN-TOGETHER/SMOKE_TEST.md) records physical
+acceptance, including four mixed-platform phones, offline/restart/reconnect,
+permissions, hotspot routing, independent history and reviewed UX. Swift syntax,
+Xcode-project fixtures and simulated delivery do not prove native SDK compilation
+or physical-device behavior. Unsupported signed-plan edits remain personal with
+explicit omissions; partial saves retain differences rather than discard them.
+
+Local Inspector found and fixed historical capacity consumption, an action queued
+during cloud refresh returning before delivery, and an old iOS Nearby write timer
+disconnecting a replacement peer. Incremental review also covers UI account/lifecycle
+races, review navigation and local write failures. Typecheck 9/9, lint 6/6 (existing
+warnings), non-mobile tests 18/18 (core 5,466; web 1,594), non-mobile build 12/12.
+The initial combined non-mobile run hit two unrelated web timeouts; serialized
+workspaces passed without test changes. Initial full mobile: 7,917 passed, one
+stale provisioning mock expectation failed; corrected expectation plus latest
+UI changes passed 98 focused tests. Final full mobile executed 584 suites / 7,905
+passing tests; the unrelated YouContainer Jest worker exited with SIGSEGV before
+its tests ran. Its isolated rerun passed all 14 tests (existing open-handle warning).
+Thus all 7,919 tests passed across the final full run plus isolated rerun; the full
+command itself was not green. Aggregate coverage still exceeds 90% all metrics;
+new Together runtime/UI meets 90% in focused evidence, including lobby 100% lines /
+96.89% branches and cloud UI >94% branches. Existing large ActiveSession/Rating
+whole-file coverage gaps remain visible. No coverage exclusions or threshold edits.
+
+Local Inspector: clean at implementation `cabba195`, full diff plus incremental
+review. Actual RNWeb presenters compared with the reviewed Claude design; dark
+Partner read-only/logging/private-progress, cloud idle/full, retained recovery,
+sharing and Partners/Add/profile/person-code screenshots are in the task's
+`together` visualization directory. Web shell/native-module shims and simulated
+fixtures are documented evidence limits, not native/light-theme proof.
+
+Review: [PR #486](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/486),
+attached to this task and left open for Brad. PER-64, PER-22 and the central
+reviewed-design document now link this exact handoff and remain In Progress until
+device acceptance. No merge or auto-merge was initiated.
+Prior PR-count estimates below are historical; device findings determine
+correction PRs and sign-off, not a fixed count.
+
+### 2026-10-04 — PR #485 signed off; result recovery next
+
+Brad confirmed PR #485 merged and signed off. GitHub confirms merge `bc4c34f3`
+at 20:55 UTC on 4 October. PER-64, PER-22 and the central reviewed design
+reference now record the merged slice, next pickup and estimated testing path;
+the parent issues remain In Progress. Pulled current main cleanly before creating
+`codex/together-own-result-recovery`; no unrelated changes were present.
+
+Next slice: own-result saving and reviewed offline recovery using the merged
+backend. Preserve stable execution/history identity and idempotency, explicit
+owner review, local work until server acceptance, retry after ambiguous responses,
+and recovery without renewed sharing entitlement. Separate candidate storage from
+history saving. Keep production disabled and retain the sole reviewed UX.
+
+Planning estimate: about 2 more PRs for a bounded same-Wi-Fi end-to-end test;
+5–7 implementation PRs for full agreed-feature testing, then approximately 1–3
+fix PRs (6–10 total) before potential sign-off. This is an estimate, not a
+commitment or a redefinition of release scope. Remaining tracks: result recovery,
+shared plans/partner views, consent/PREV/delegation and revocation, lifecycle/
+closure/authority and remote integration, Nearby/Android hotspot, test readiness.
+Real mixed-device/four-athlete/offline/reconnect/restart/result evidence and
+reviewed UX acceptance determine sign-off, not PR count. Brad owns builds.
+
+
 ### 2026-10-04 — PER-64 / PER-22 own-workout logging
 
 Review: [PR #485](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/485),

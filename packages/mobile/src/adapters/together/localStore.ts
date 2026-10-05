@@ -29,6 +29,15 @@ export class TogetherLocalStore {
     if (!accountId || accountId.length > 200)
       throw new Error("Invalid account");
     db.execSync(`
+      CREATE TABLE IF NOT EXISTS together_shared_suspensions (
+        account_id TEXT NOT NULL, session_id TEXT NOT NULL, owner_id TEXT NOT NULL,
+        recipient_id TEXT NOT NULL, revision INTEGER NOT NULL,
+        PRIMARY KEY(account_id,session_id,owner_id,recipient_id)
+      );
+      CREATE TABLE IF NOT EXISTS together_shared_events (
+        account_id TEXT NOT NULL, session_id TEXT NOT NULL, event_id TEXT NOT NULL,
+        envelope TEXT NOT NULL, PRIMARY KEY(account_id, session_id, event_id)
+      );
       CREATE TABLE IF NOT EXISTS together_local_rosters (
         account_id TEXT NOT NULL, session_id TEXT NOT NULL,
         revision INTEGER NOT NULL, envelope TEXT NOT NULL,
@@ -49,6 +58,75 @@ export class TogetherLocalStore {
         PRIMARY KEY(account_id, session_id, owner_id, command_id)
       );
     `);
+  }
+
+  sharedSuspensions(
+    sessionId: string,
+  ): { ownerId: string; recipientId: string; revision: number }[] {
+    return this.db.getAllSync(
+      "SELECT owner_id AS ownerId,recipient_id AS recipientId,revision FROM together_shared_suspensions WHERE account_id = ? AND session_id = ?",
+      [this.accountId, sessionId],
+    );
+  }
+  suspendShared(
+    sessionId: string,
+    ownerId: string,
+    recipientId: string,
+    revision: number,
+  ): void {
+    this.db.runSync(
+      "INSERT INTO together_shared_suspensions(account_id,session_id,owner_id,recipient_id,revision) VALUES (?,?,?,?,?) ON CONFLICT(account_id,session_id,owner_id,recipient_id) DO UPDATE SET revision = MAX(revision,excluded.revision)",
+      [this.accountId, sessionId, ownerId, recipientId, revision],
+    );
+  }
+
+  sharedEvents(sessionId: string): string[] {
+    return this.db
+      .getAllSync<{
+        envelope: string;
+      }>(
+        "SELECT envelope FROM together_shared_events WHERE account_id = ? AND session_id = ? ORDER BY rowid",
+        [this.accountId, sessionId],
+      )
+      .map((row) => row.envelope);
+  }
+  saveShared(sessionId: string, eventId: string, envelope: string): void {
+    this.db.withTransactionSync(() => {
+      const previous = this.db.getFirstSync<{ envelope: string }>(
+        "SELECT envelope FROM together_shared_events WHERE account_id = ? AND session_id = ? AND event_id = ?",
+        [this.accountId, sessionId, eventId],
+      );
+      if (previous) {
+        if (previous.envelope !== envelope)
+          throw new Error("Conflicting shared event");
+        return;
+      }
+      const count = this.db.getFirstSync<{ total: number }>(
+        "SELECT COUNT(*) AS total FROM together_shared_events WHERE account_id = ? AND session_id = ?",
+        [this.accountId, sessionId],
+      )!.total;
+      if (count >= 4096) throw new Error("Shared event journal full");
+      this.db.runSync(
+        "INSERT INTO together_shared_events(account_id,session_id,event_id,envelope) VALUES (?,?,?,?)",
+        [this.accountId, sessionId, eventId, envelope],
+      );
+    });
+  }
+  deleteShared(sessionId: string, ids: readonly string[]): void {
+    this.db.withTransactionSync(() => {
+      for (const id of ids)
+        this.db.runSync(
+          "DELETE FROM together_shared_events WHERE account_id = ? AND session_id = ? AND event_id = ?",
+          [this.accountId, sessionId, id],
+        );
+    });
+  }
+
+  purgePeerCommands(sessionId: string, ownerId: string): void {
+    this.db.runSync(
+      "DELETE FROM together_local_inbox WHERE account_id = ? AND session_id = ? AND owner_id = ?",
+      [this.accountId, sessionId, ownerId],
+    );
   }
 
   bindPolicy(sessionId: string, policy: unknown): void {

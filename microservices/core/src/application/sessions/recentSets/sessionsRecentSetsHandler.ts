@@ -1,4 +1,4 @@
-import Elysia from "elysia";
+import Elysia, { t } from "elysia";
 import { SessionService } from "../../repositories/sessionService";
 import {
   getAuthUser,
@@ -19,6 +19,8 @@ import {
  * TestFlight, reinstall) showed no "Previous" hints even though the full set
  * history is safe on the server. This endpoint closes that gap; the client
  * calls it once when the local cache is empty and upserts the result.
+ * Together also supplies bounded exerciseIds and before to refresh only the
+ * owner's relevant pre-workout history, retaining newer offline cache entries.
  *
  * Ownership: `userId` comes from the validated JWT and scopes every row (see
  * `SessionRepository.getRecentSets`) — a user can only ever read their own
@@ -36,23 +38,52 @@ export const sessionsRecentSetsHandler = new Elysia()
   }))
   .onBeforeHandle(requireAuth)
   .use(SessionService)
-  .get("/sessions/recent-sets", async (ctx) => {
-    const { sub: userId } = getUser(ctx);
+  .get(
+    "/sessions/recent-sets",
+    async (ctx) => {
+      const { sub: userId } = getUser(ctx);
 
-    const rows = await ctx.SessionRepository.getRecentSets(userId);
+      const { exerciseIds, before } = ctx.query;
+      if ((exerciseIds === undefined) !== (before === undefined)) {
+        ctx.set.status = 400;
+        return { message: "exerciseIds and before must be supplied together" };
+      }
+      const ids = exerciseIds?.split(",");
+      if (
+        ids &&
+        (ids.length > 100 ||
+          ids.some((id) => !/^[a-zA-Z0-9_-]{1,100}$/.test(id)))
+      ) {
+        ctx.set.status = 400;
+        return { message: "Provide between 1 and 100 exercise IDs" };
+      }
+      const rows =
+        ids && before
+          ? await ctx.SessionRepository.getRecentSets(userId, {
+              exerciseIds: [...new Set(ids)],
+              before: new Date(before),
+            })
+          : await ctx.SessionRepository.getRecentSets(userId);
 
-    const data = rows
-      // A null `recordedAt` (both completed_at and started_at null) can't
-      // carry a "previous" timestamp — drop it rather than emit null.
-      .filter((r) => r.recordedAt != null)
-      .map((r) => ({
-        exerciseId: r.exerciseId,
-        setNumber: r.setNumber,
-        // NUMERIC → string over the wire; the mobile cache stores a number.
-        weightKg: Number(r.weightKg),
-        reps: r.reps,
-        recordedAt: (r.recordedAt as Date).toISOString(),
-      }));
+      const data = rows
+        // A null `recordedAt` (both completed_at and started_at null) can't
+        // carry a "previous" timestamp — drop it rather than emit null.
+        .filter((r) => r.recordedAt != null)
+        .map((r) => ({
+          exerciseId: r.exerciseId,
+          setNumber: r.setNumber,
+          // NUMERIC → string over the wire; the mobile cache stores a number.
+          weightKg: Number(r.weightKg),
+          reps: r.reps,
+          recordedAt: (r.recordedAt as Date).toISOString(),
+        }));
 
-    return { data };
-  });
+      return { data };
+    },
+    {
+      query: t.Object({
+        exerciseIds: t.Optional(t.String({ minLength: 1, maxLength: 10100 })),
+        before: t.Optional(t.String({ format: "date-time" })),
+      }),
+    },
+  );

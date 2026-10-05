@@ -272,4 +272,44 @@ describe("offline publicly verifiable identity", () => {
       verifyRoster(g.roster(4, before), trusted, before, [], now),
     ).toThrow();
   });
+  it("accepts one host-signed removal without permitting replacement, reorder, host removal or replay", () => {
+    const f = fixture(),
+      previous = f.roster(3);
+    const payload = {
+      ...previous.payload,
+      revision: previous.payload.revision + 1,
+      previousHash: requestHash(previous.payload),
+      members: [f.members[0], f.members[2]],
+    };
+    const removed = signPayload(payload, f.keys[0].privateKey);
+    expect(verifyRoster(removed, trusted, previous, [], now).userIds).toEqual([
+      f.users[0],
+      f.users[2],
+    ]);
+    for (const members of [
+      [f.members[0]],
+      [f.members[1], f.members[2]],
+      [f.members[0], f.members[3]],
+      [f.members[2], f.members[0]],
+    ])
+      expect(() =>
+        verifyRoster(
+          signPayload({ ...payload, members }, f.keys[0].privateKey),
+          trusted,
+          previous,
+          [],
+          now,
+        ),
+      ).toThrow();
+    expect(() => verifyRoster(removed, trusted, removed, [], now)).toThrow();
+    expect(() =>
+      verifyRoster(
+        signPayload(payload, f.keys[1].privateKey),
+        trusted,
+        previous,
+        [],
+        now,
+      ),
+    ).toThrow();
+  });
 });

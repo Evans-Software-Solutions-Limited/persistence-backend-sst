@@ -20,6 +20,9 @@ export const setSchema = t.Object({
   completed: t.Boolean(),
 });
 export const executionSchema = t.Object({
+  restEndsAt: t.Optional(
+    t.Union([t.String({ format: "date-time" }), t.Null()]),
+  ),
   exercises: t.Array(
     t.Object({
       planExerciseId: uuidSchema,

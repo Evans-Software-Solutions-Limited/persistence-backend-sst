@@ -4,7 +4,7 @@ import type { TogetherProvisioningPort } from "@/domain/ports/togetherProvisioni
 
 let deviceSecrets: DeviceSecretStore | undefined;
 
-/** Release-gated composition. Disabled/older binaries never load new native SDKs. */
+/** Native provisioning composition. The app-wide update gate owns binary compatibility. */
 export function createTogetherProvisioning(
   api: TogetherOfflineApi | undefined,
   environment: string,

@@ -371,3 +371,63 @@ describe("SetLogger", () => {
     expect(onFillPrevious).toHaveBeenCalled();
   });
 });
+
+it.each(["strength", "cardio", "plyometric"] as const)(
+  "read-only %s rows cannot emit edits, PREV fills or removals",
+  (trackingMode) => {
+    const onChange = jest.fn(),
+      onRemove = jest.fn(),
+      onFillPrevious = jest.fn();
+    const r = renderWithTheme(
+      <SetLogger
+        set={buildSet({
+          reps: 8,
+          weightKg: 60,
+          durationSeconds: 30,
+          distanceMeters: 2,
+        })}
+        setNumber={1}
+        previous={{ reps: 7, weightKg: 55 }}
+        trackingMode={trackingMode}
+        readOnly
+        onChange={onChange}
+        onRemove={onRemove}
+        onFillPrevious={onFillPrevious}
+      />,
+    );
+    const first = r.getByTestId(
+        trackingMode === "cardio" ? "set-logger-duration" : "set-logger-reps",
+      ),
+      second = r.getByTestId(
+        trackingMode === "strength"
+          ? "set-logger-weight"
+          : "set-logger-distance",
+      );
+    expect(first.props.editable).toBe(false);
+    expect(second.props.editable).toBe(false);
+    fireEvent.changeText(first, "99");
+    fireEvent.changeText(second, "999");
+    fireEvent.press(r.getByTestId("set-logger-fill-previous"));
+    expect(onChange).not.toHaveBeenCalled();
+    expect(onFillPrevious).not.toHaveBeenCalled();
+    expect(r.queryByTestId("set-logger-remove")).toBeNull();
+    expect(onRemove).not.toHaveBeenCalled();
+  },
+);
+it("can hide remove while retaining deliberate writable inputs", () => {
+  const onChange = jest.fn();
+  const r = renderWithTheme(
+    <SetLogger
+      set={buildSet()}
+      setNumber={1}
+      previous={null}
+      hideRemove
+      onChange={onChange}
+      onRemove={jest.fn()}
+      onFillPrevious={jest.fn()}
+    />,
+  );
+  expect(r.queryByTestId("set-logger-remove")).toBeNull();
+  fireEvent.changeText(r.getByTestId("set-logger-reps"), "6");
+  expect(onChange).toHaveBeenCalledWith({ reps: 6 });
+});

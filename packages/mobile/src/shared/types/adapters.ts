@@ -9,7 +9,10 @@ import type { TogetherProvisioningPort } from "@/domain/ports/togetherProvisioni
 
 import type { TogetherLobbyPort } from "@/domain/ports/togetherLobby.port";
 
+import type { TogetherCloudPort } from "@/domain/ports/togetherCloud.port";
+
 export interface Adapters {
+  togetherCloud?: TogetherCloudPort;
   togetherLobby?: TogetherLobbyPort;
   api: ApiPort;
   auth: AuthPort;

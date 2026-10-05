@@ -1,3 +1,6 @@
+import { createTogetherCloud } from "@/adapters/together/createTogetherCloud";
+import { bindTogetherCloud } from "@/adapters/together/bindTogetherCloud";
+import { withTogetherCloudWorkout } from "@/adapters/storage/withTogetherCloudWorkout";
 import { withTogetherWorkout } from "@/adapters/storage/withTogetherWorkout";
 import { createTogetherLobby } from "@/adapters/together/createTogetherLobby";
 import { bindTogetherLobby } from "@/adapters/together/bindTogetherLobby";
@@ -115,19 +118,33 @@ export function AppProviders({ children }: { children: ReactNode }) {
     // Wire auth token into API client
     api.setTokenProvider(() => auth.getAccessToken());
 
+    const togetherEnabled = true;
     const togetherProvisioning = createTogetherProvisioning(
       api.togetherOffline,
       getApiBaseUrl(),
+      togetherEnabled,
     );
     const togetherLobby = createTogetherLobby(
       togetherProvisioning,
       getApiBaseUrl(),
+      togetherEnabled,
+      api.togetherOffline?.recovery,
+    );
+    const togetherCloud = createTogetherCloud(
+      api.togetherCloud,
+      getApiBaseUrl(),
+      togetherEnabled,
     );
     return {
+      togetherCloud,
       _auth: auth,
       api,
       auth,
-      storage: withTogetherWorkout(storage, togetherLobby?.workout),
+      storage: withTogetherCloudWorkout(
+        withTogetherWorkout(storage, togetherLobby?.workout),
+        togetherCloud,
+        storage,
+      ),
       health: createHealthAdapter(),
       notifications: new ExpoNotificationsAdapter(),
       netInfo: new RNNetInfoAdapter(),
@@ -156,6 +173,17 @@ export function AppProviders({ children }: { children: ReactNode }) {
         adapters.netInfo,
         AppState,
         adapters.togetherLobby,
+      ),
+    [adapters],
+  );
+
+  useEffect(
+    () =>
+      bindTogetherCloud(
+        adapters.auth,
+        adapters.netInfo,
+        AppState,
+        adapters.togetherCloud,
       ),
     [adapters],
   );

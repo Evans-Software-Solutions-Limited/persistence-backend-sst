@@ -23,5 +23,24 @@ export interface TogetherLanNative {
 }
 
 // Old builds and Expo Go must remain usable while Together is disabled.
-export const togetherLan =
-  requireOptionalNativeModule<TogetherLanNative>("TogetherLan");
+export const togetherLan = requireOptionalNativeModule<
+  TogetherLanNative & {
+    startHotspotHost?(lobbyId: string): Promise<void>;
+    startHotspotDiscovery?(): Promise<void>;
+  }
+>("TogetherLan");
+
+/** Explicit Android AP-owner mode; never an automatic fallback from ordinary Wi-Fi. */
+export const togetherHotspotOwner: TogetherLanNative | null =
+  togetherLan?.startHotspotHost && togetherLan.startHotspotDiscovery
+    ? {
+        startHost: (id) => togetherLan.startHotspotHost!(id),
+        startDiscovery: () => togetherLan.startHotspotDiscovery!(),
+        connect: (id) => togetherLan.connect(id),
+        send: (id, frame) => togetherLan.send(id, frame),
+        disconnect: (id) => togetherLan.disconnect(id),
+        stop: () => togetherLan.stop(),
+        addListener: (name, listener) =>
+          togetherLan.addListener(name, listener),
+      }
+    : null;

@@ -277,13 +277,24 @@ export function verifyRoster(
       previous.payload.sessionId === p.sessionId &&
         previous.payload.hostUserId === p.hostUserId &&
         previous.payload.hostDeviceId === p.hostDeviceId &&
-        p.members.length === previous.payload.members.length + 1,
+        Math.abs(p.members.length - previous.payload.members.length) === 1,
       "INVALID_ROSTER",
       400,
     );
-    for (let i = 0; i < previous.payload.members.length; i++)
+    const removed = p.members.length < previous.payload.members.length;
+    const retained = removed
+      ? previous.payload.members.filter((member) =>
+          users.has(member.credential.payload.userId),
+        )
+      : previous.payload.members;
+    requireTogether(
+      !removed || retained.length === p.members.length,
+      "INVALID_ROSTER",
+      400,
+    );
+    for (let i = 0; i < retained.length; i++)
       requireTogether(
-        requestHash(previous.payload.members[i]) === requestHash(p.members[i]),
+        requestHash(retained[i]) === requestHash(p.members[i]),
         "INVALID_ROSTER",
         400,
       );

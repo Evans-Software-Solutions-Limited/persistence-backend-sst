@@ -3348,6 +3348,36 @@ ${indentSyncQueueDdl(12)}
     return rows.map(toPersonalRecord);
   }
 
+  getPreviousForTogether(
+    userId: string,
+    exerciseIds: readonly string[],
+    before: string,
+  ): RecentSetEntry[] {
+    if (
+      !exerciseIds.length ||
+      exerciseIds.length > 100 ||
+      !Number.isFinite(Date.parse(before))
+    )
+      return [];
+    const rows = this.getDb().getAllSync<{
+      exercise_id: string;
+      set_number: number;
+      weight_kg: number;
+      reps: number;
+      recorded_at: string;
+    }>(
+      `SELECT exercise_id,set_number,weight_kg,reps,recorded_at FROM recent_sets WHERE user_id = ? AND exercise_id IN (${exerciseIds.map(() => "?").join(",")}) AND julianday(recorded_at) < julianday(?) ORDER BY exercise_id,set_number`,
+      [userId, ...exerciseIds, before],
+    );
+    return rows.map((row) => ({
+      exerciseId: row.exercise_id,
+      setNumber: row.set_number,
+      weightKg: row.weight_kg,
+      reps: row.reps,
+      recordedAt: row.recorded_at,
+    }));
+  }
+
   getRecentSetsByExercise(
     userId: string,
     exerciseIds: readonly string[],

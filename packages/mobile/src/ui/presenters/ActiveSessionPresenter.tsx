@@ -172,6 +172,7 @@ export type ActiveSessionPresenterProps = {
    * button). User-tap-driven — no auto-fire on set completion.
    */
   onStartRest: (sessionExerciseId: string) => void;
+  onSkipExercise?: (sessionExerciseId: string) => void;
   /**
    * Coach on-behalf context (M8 / `10-trainer-features`). Defaults undefined —
    * the trainer banner renders only when `withClient` is present (STORY-004
@@ -427,6 +428,11 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
           onRemoveExercise={() => props.onRemoveExercise(ex.id)}
           onTapExercise={() => props.onTapExercise(ex.exerciseId)}
           onStartRest={() => props.onStartRest(ex.id)}
+          onSkip={
+            props.onSkipExercise
+              ? () => props.onSkipExercise!(ex.id)
+              : undefined
+          }
           reorderPosition={blockOf(ex.id)?.position}
           reorderTotal={rows.length}
           onMove={

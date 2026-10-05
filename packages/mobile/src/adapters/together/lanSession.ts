@@ -1,3 +1,4 @@
+import type { TogetherSharedSession, SharedEnvelope } from "./sharedSession";
 import { readProbe } from "./lobbyDiscovery";
 import type {
   TogetherLanNative,
@@ -21,11 +22,11 @@ export type LanSessionEvent =
         | "disconnected"
         | "command"
         | "receipt"
-        | "roster"
         | "full"
         | "declined";
       peerId: string;
     }
+  | { type: "roster"; peerId?: string }
   | { type: "approval-required"; peerId: string; request?: LocalJoinRequest }
   | { type: "error"; code: string; peerId?: string };
 interface Connection {
@@ -46,6 +47,7 @@ export interface LanSessionOptions {
   channelFactory: (role: "host" | "guest") => LocalSecureChannel;
   enabled?: boolean;
   onEvent: (event: LanSessionEvent) => void;
+  shared?: TogetherSharedSession;
   probeSummary?: (nonce: string) => string | undefined;
 }
 
@@ -177,6 +179,34 @@ export class TogetherLanSession {
     }
   }
 
+  async removeParticipant(userId: string): Promise<void> {
+    if (this.mode !== "host") throw new Error("Host connection required");
+    const roster = this.options.lobby.removeParticipant(userId);
+    try {
+      this.options.shared?.rosterChanged();
+    } catch {
+      this.emit({ type: "error", code: "cache_purge_failed" });
+    }
+    await Promise.all(
+      [...this.links].map(async ([peerId, connection]) => {
+        if (!connection.admitted) return;
+        const removed =
+          connection.channel.peerCredential?.payload.userId === userId;
+        try {
+          await connection.link.sendRemovalRoster(roster);
+        } catch {
+          this.fail(peerId, "roster_failed", connection);
+        } finally {
+          if (removed) {
+            this.drop(peerId);
+            await this.disconnect(peerId);
+          }
+        }
+      }),
+    );
+    this.emit({ type: "roster" });
+  }
+
   async decline(peerId: string): Promise<void> {
     const connection = this.links.get(peerId);
     if (!connection) throw new Error("No pending request");
@@ -202,6 +232,10 @@ export class TogetherLanSession {
       throw new Error("Wrong owner execution");
     // Keep valid own work even offline or after credential expiry; sharing still revalidates.
     this.options.journal.append(command);
+    if (this.options.shared) {
+      await this.options.shared.publishProgress(command);
+      return;
+    }
     const connections = [...this.links].filter(([, value]) => value.admitted);
     await Promise.all(
       connections.map(async ([peerId, connection]) => {
@@ -213,6 +247,30 @@ export class TogetherLanSession {
         }
       }),
     );
+  }
+
+  async sendShared(
+    envelope: SharedEnvelope,
+    exceptUserId?: string,
+  ): Promise<void> {
+    const p = envelope.payload;
+    for (const [peerId, connection] of this.links) {
+      const peer = connection.channel.peerCredential?.payload.userId;
+      if (!connection.admitted || peer === exceptUserId) continue;
+      // A guest sends to its pinned host relay; the host forwards only the intended recipient.
+      if (
+        this.mode === "host" &&
+        p.recipientId !== "all" &&
+        p.recipientId !== peer
+      )
+        continue;
+      try {
+        await connection.link.sendShared(envelope);
+      } catch (error) {
+        this.fail(peerId, "send_failed", connection);
+        throw error;
+      }
+    }
   }
 
   private emit(event: LanSessionEvent): void {
@@ -311,6 +369,21 @@ export class TogetherLanSession {
           await this.disconnect(event.peerId);
         } else if (result === "roster") {
           this.emit({ type: "roster", peerId: event.peerId });
+          const roster = this.options.lobby.store.current(
+            this.options.lobby.pin.sessionId,
+          );
+          if (
+            connection.admitted &&
+            !roster?.payload.members.some(
+              (m) =>
+                m.credential.payload.userId ===
+                this.options.lobby.ownCredential.payload.userId,
+            )
+          ) {
+            this.drop(event.peerId);
+            await this.disconnect(event.peerId);
+            return;
+          }
           await this.admitted(event.peerId, connection);
           if (
             this.links.get(event.peerId) === connection &&
@@ -350,6 +423,10 @@ export class TogetherLanSession {
         this.options.lobby,
         this.options.journal,
         (frame) => this.options.native!.send(event.peerId, frame),
+        this.options.shared,
+        async (envelope, authorId) => {
+          if (this.mode === "host") await this.sendShared(envelope, authorId);
+        },
       );
       const connection: Connection = {
         channel,
@@ -415,6 +492,14 @@ export class TogetherLanSession {
     const connection = this.links.get(peerId);
     if (!connection) return;
     this.links.delete(peerId);
+    const userId = connection.channel.peerCredential?.payload.userId;
+    if (userId) {
+      try {
+        this.options.shared?.suspendPeer(userId);
+      } catch {
+        this.emit({ type: "error", code: "cache_purge_failed", peerId });
+      }
+    }
     clearTimeout(connection.deadline);
     clearInterval(connection.heartbeat);
     connection.link.close();

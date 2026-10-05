@@ -189,6 +189,25 @@ describe("SessionRepository", () => {
       return { selectDistinctOn, captured };
     }
 
+    it("filters the owned exercise history before selecting the newest set", async () => {
+      const { selectDistinctOn, captured } = makeRecentSetsChain([]);
+      (getDb as any).mockReturnValue({ selectDistinctOn });
+      const { SessionRepository } = await import("../sessionRepository");
+      const before = new Date("2026-10-05T10:00:00Z");
+      await new SessionRepository().getRecentSets("owner", {
+        exerciseIds: ["squat", "press"],
+        before,
+      });
+      const query = new PgDialect().sqlToQuery(captured.where as any);
+      expect(query.sql).toContain('"user_id"');
+      expect(query.sql).toContain('"exercise_id" in');
+      expect(query.sql).toContain("coalesce");
+      expect(query.sql).toContain(" < ");
+      expect(query.params).toEqual(
+        expect.arrayContaining(["owner", "squat", "press", before]),
+      );
+    });
+
     it("maps rows and uses completedAt as recordedAt", async () => {
       const completedAt = new Date("2026-08-07T14:25:28.838Z");
       const startedAt = new Date("2026-08-07T13:08:00.185Z");

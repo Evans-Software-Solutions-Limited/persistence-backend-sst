@@ -31,6 +31,16 @@ export function WorkoutRatingContainer() {
   // pending would unmount the screen before the user could interact.
   const authResolved = authSession !== undefined && authSession !== null;
   useEffect(() => {
+    if (session?.together) {
+      router.replace({
+        pathname:
+          session.together.transport === "cloud"
+            ? "/(app)/session/together-cloud-review"
+            : "/(app)/session/together-review",
+        params: { localSessionId: session.id },
+      } as never);
+      return;
+    }
     if (authResolved && !session) {
       router.back();
     }
@@ -118,7 +128,7 @@ export function WorkoutRatingContainer() {
     router.back();
   }, []);
 
-  if (!session) {
+  if (!session || session.together) {
     // Auth still resolving OR no session — render nothing; the
     // useEffect above bounces if/when we confirm there's no session.
     return null;

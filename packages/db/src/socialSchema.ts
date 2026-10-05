@@ -92,3 +92,12 @@ export const socialRequestDecisions = pgTable("social_request_decisions", {
     .notNull()
     .references(() => profiles.id, { onDelete: "cascade" }),
 });
+
+/** Only a digest is indexed. Resolving an opaque, expiring code never accepts a partnership. */
+export const socialPersonCodes = pgTable("social_person_codes", {
+  userId: uuid("user_id")
+    .primaryKey()
+    .references(() => profiles.id, { onDelete: "cascade" }),
+  codeHash: text("code_hash").notNull().unique(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+});

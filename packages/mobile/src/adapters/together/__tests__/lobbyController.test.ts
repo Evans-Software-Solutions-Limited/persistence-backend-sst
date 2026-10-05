@@ -1,7 +1,10 @@
 /** @jest-environment node */
 import type { WorkoutSession } from "../../../domain/models/session";
 import { TogetherProvisioning } from "../provisioning/togetherProvisioning";
-import type { TogetherOfflineApi } from "../../../domain/ports/togetherOfflineApi.port";
+import type {
+  TogetherOfflineApi,
+  TogetherRecoveryApi,
+} from "../../../domain/ports/togetherOfflineApi.port";
 import { DatabaseSync } from "node:sqlite";
 import { randomBytes, randomUUID } from "node:crypto";
 import {
@@ -241,7 +244,7 @@ describe("reviewed lobby coordinator, real cryptography and SQLite, simulated na
       ],
     };
   }
-  it("promotes admitted independent own executions and records only authenticated peer receipts", async () => {
+  it("promotes admitted independent own executions and keeps full journals private instead of claiming projection receipts as journal acknowledgements", async () => {
     const host = setup(),
       guest = setup(2);
     await expect(host.controller.workout.promote(workout())).rejects.toThrow(
@@ -264,27 +267,27 @@ describe("reviewed lobby coordinator, real cryptography and SQLite, simulated na
     )!;
     expect(hostStatus).toMatchObject({
       sharing: "active",
-      receivedCount: 1,
-      pendingCount: 0,
+      receivedCount: 0,
+      pendingCount: 1,
     });
     expect(guestStatus).toMatchObject({
       sharing: "active",
-      receivedCount: 1,
-      pendingCount: 0,
+      receivedCount: 0,
+      pendingCount: 1,
     });
     expect(hostStatus.sessionId).toBe(guestStatus.sessionId);
     expect(hostStatus.executionId).not.toBe(guestStatus.executionId);
     expect(host.controller.workout.read(id(2), "local-session")).toBeNull();
     guest.native.emit({ type: "disconnected", peerId: "host" });
     host.native.emit({ type: "disconnected", peerId: id(12) });
-    const edited = workout(2);
+    let edited = guest.controller.workout.read(id(2), "local-session")!;
     edited.exercises[0].sets[0].reps = 12;
     guest.controller.workout.save(id(2), edited);
     await settle();
     expect(guest.controller.workout.status(id(2), edited.id)).toMatchObject({
       sharing: "reconnecting",
-      pendingCount: 1,
-      receivedCount: 1,
+      pendingCount: 2,
+      receivedCount: 0,
     });
     await guest.controller.reconnect();
     expect(guest.controller.workout.status(id(2), edited.id)?.sharing).toBe(
@@ -301,21 +304,22 @@ describe("reviewed lobby coordinator, real cryptography and SQLite, simulated na
     await settle();
     expect(guest.controller.workout.status(id(2), edited.id)).toMatchObject({
       sharing: "active",
-      pendingCount: 0,
-      receivedCount: 2,
+      pendingCount: 2,
+      receivedCount: 0,
       executionId: guestStatus.executionId,
     });
     const stale = guest.native.listener;
     guest.controller.setActive(false);
     await settle();
+    edited = guest.controller.workout.read(id(2), "local-session")!;
     edited.exercises[0].sets[0].reps = 13;
     guest.controller.workout.save(id(2), edited);
     stale?.({ type: "frame", peerId: "host", frame: "late" });
     await settle();
     expect(guest.controller.workout.status(id(2), edited.id)).toMatchObject({
       sharing: "local-only",
-      pendingCount: 1,
-      receivedCount: 2,
+      pendingCount: 3,
+      receivedCount: 0,
     });
     expect(
       guest.controller.workout.read(id(2), edited.id)?.exercises[0].sets[0]
@@ -1233,5 +1237,412 @@ describe("reviewed lobby coordinator, real cryptography and SQLite, simulated na
     expect(guest.controller.getSnapshot().phase).toBe("selected");
     await guest.controller.join();
     expect(guest.controller.getSnapshot().phase).toBe("searching");
+  });
+  async function sharedPair() {
+    const host = setup(),
+      guest = setup(2);
+    await host.controller.host("Strength A");
+    await join(host, guest, true);
+    await host.controller.workout.promote(workout());
+    await guest.controller.workout.promote(workout(2));
+    await settle();
+    await host.controller.shared.publishPlan(
+      host.controller.workout.getPlan(id(1), "local-session")!,
+    );
+    await settle();
+    return { host, guest };
+  }
+  it("composes named profiles, independent plans and projection receipts without journal acknowledgement", async () => {
+    const { host, guest } = await sharedPair();
+    await host.controller.shared.publishProfile("Brad");
+    await guest.controller.shared.publishProfile("Sam");
+    await settle();
+    expect(host.controller.shared.getSnapshot().profiles[id(2)]).toBe("Sam");
+    expect(guest.controller.shared.getSnapshot().profiles[id(1)]).toBe("Brad");
+    expect(
+      guest.controller.shared
+        .getSnapshot()
+        .athletes.some((a) => a.userId === id(1)),
+    ).toBe(false);
+    await host.controller.shared.setConsent(id(2), {
+      numbers: true,
+      prev: false,
+      logging: false,
+    });
+    await settle();
+    expect(
+      guest.controller.shared
+        .getSnapshot()
+        .athletes.some((a) => a.userId === id(1)),
+    ).toBe(true);
+    expect(host.controller.shared.getSnapshot().deliveries[0].state).toBe(
+      "received",
+    );
+    expect(
+      host.controller.workout.status(id(1), "local-session")!.receivedCount,
+    ).toBe(0);
+    host.controller.setActive(false);
+    await settle();
+    expect(host.controller.shared.getSnapshot().athletes).toEqual([]);
+    expect(host.controller.workout.getActive(id(1))?.notes).toBe(
+      "Keep personal",
+    );
+    expect(() => host.controller.shared.publishProfile("Late")).toThrow();
+  });
+  it("host removal becomes terminal sharing loss while both athletes retain personal results", async () => {
+    const { host, guest } = await sharedPair();
+    await host.controller.shared.setConsent(id(2), {
+      numbers: true,
+      prev: false,
+      logging: false,
+    });
+    await settle();
+    await expect(guest.controller.removeParticipant(id(1))).rejects.toThrow(
+      "host-required",
+    );
+    await host.controller.removeParticipant(id(2));
+    await settle();
+    expect(host.controller.getSnapshot().members.map((m) => m.userId)).toEqual([
+      id(1),
+    ]);
+    expect(guest.controller.getSnapshot()).toMatchObject({
+      phase: "unavailable",
+      error: "removed-from-session",
+    });
+    expect(guest.controller.shared.getSnapshot().grants).toEqual([]);
+    expect(
+      guest.controller.workout.status(id(2), "local-session")?.sharing,
+    ).toBe("local-only");
+    const personal = guest.controller.workout.read(id(2), "local-session")!;
+    personal.exercises[0].sets[0].reps = 14;
+    guest.controller.workout.save(id(2), personal);
+    await settle();
+    expect(
+      guest.controller.workout.read(id(2), "local-session")?.exercises[0]
+        .sets[0].reps,
+    ).toBe(14);
+    expect(
+      host.controller.workout.status(id(1), "local-session")?.sharing,
+    ).toBe("active");
+  });
+  it("applies explicit delegated edits once and rejects an unseen owner revision", async () => {
+    const { host, guest } = await sharedPair();
+    await host.controller.shared.setConsent(id(2), {
+      numbers: true,
+      prev: false,
+      logging: true,
+    });
+    await settle();
+    const projection = guest.controller.shared
+      .getSnapshot()
+      .athletes.find((a) => a.userId === id(1))!;
+    const operation = {
+      type: "upsertSet",
+      planExerciseId: Object.keys(projection.exercises)[0],
+      set: { setId: randomUUID(), reps: 7, weightKg: 30, completed: true },
+    };
+    await expect(
+      guest.controller.shared.requestDelegatedSet(
+        id(1),
+        operation,
+        projection.revision - 1,
+      ),
+    ).rejects.toThrow();
+    await guest.controller.shared.requestDelegatedSet(
+      id(1),
+      operation,
+      projection.revision,
+    );
+    await settle();
+    expect(
+      host.controller.workout.read(id(1), "local-session")!.exercises[0].sets,
+    ).toHaveLength(2);
+    expect(host.controller.shared.getSnapshot().delegated).toEqual([]);
+    expect(host.controller.getSnapshot().error).toBeUndefined();
+    await expect(
+      guest.controller.shared.requestDelegatedSet(
+        id(1),
+        operation,
+        projection.revision,
+      ),
+    ).rejects.toThrow();
+  });
+  it("an account switch during delegated consumption cannot write the old or new account", async () => {
+    const { host, guest } = await sharedPair();
+    await host.controller.shared.setConsent(id(2), {
+      numbers: true,
+      prev: false,
+      logging: true,
+    });
+    await settle();
+    const projection = guest.controller.shared
+      .getSnapshot()
+      .athletes.find((a) => a.userId === id(1))!;
+    let armed = true;
+    const unsubscribe = host.controller.subscribe(() => {
+      if (armed) {
+        armed = false;
+        host.controller.setAccount(id(3));
+      }
+    });
+    await guest.controller.shared.requestDelegatedSet(
+      id(1),
+      {
+        type: "upsertSet",
+        planExerciseId: Object.keys(projection.exercises)[0],
+        set: { setId: randomUUID(), reps: 99, weightKg: 99, completed: true },
+      },
+      projection.revision,
+    );
+    await settle();
+    unsubscribe();
+    expect(host.controller.workout.getActive(id(3))).toBeNull();
+    expect(host.controller.workout.read(id(1), "local-session")).toBeNull();
+    host.controller.setAccount(id(1));
+    expect(
+      host.controller.workout.read(id(1), "local-session")!.exercises[0].sets,
+    ).toHaveLength(1);
+    expect(host.controller.getSnapshot().phase).toBe("idle");
+  });
+  it.each(["lan", "nearby", "hotspot-owner"] as const)(
+    "selects only installed %s transport while idle",
+    async (transport) => {
+      const nearby = new Native(),
+        hotspotOwner = new Native();
+      const value = setup(1, { nearby, hotspotOwner });
+      expect(value.controller.transports).toEqual([
+        "lan",
+        "nearby",
+        "hotspot-owner",
+      ]);
+      value.controller.selectTransport(transport);
+      await value.controller.host("A");
+      expect(
+        (transport === "lan"
+          ? value.native
+          : transport === "nearby"
+            ? nearby
+            : hotspotOwner
+        ).startHost,
+      ).toHaveBeenCalled();
+      expect(() => value.controller.selectTransport("lan")).toThrow(
+        "transport-unavailable",
+      );
+      const minimal = setup(2);
+      expect(minimal.controller.transports).toEqual(["lan"]);
+      expect(() => minimal.controller.selectTransport("nearby")).toThrow();
+    },
+  );
+  it.each(["finish_all", "save_own", "leave"] as const)(
+    "signed %s immediately makes own logging local-only",
+    async (mode) => {
+      const { host, guest } = await sharedPair();
+      const target = mode === "leave" ? guest : host;
+      const user = mode === "leave" ? id(2) : id(1);
+      const plan = target.controller.workout.getPlan(user, "local-session")!;
+      target.controller.shared.setOwnPlan(plan);
+      const observe = jest.fn(() => {
+        throw Error("observer");
+      });
+      const unsubscribe = target.controller.shared.subscribe(observe);
+      await target.controller.shared.setConsent(
+        mode === "leave" ? id(1) : id(2),
+        { numbers: false, prev: true, logging: false },
+      );
+      await target.controller.shared.publishPrevious(
+        mode === "leave" ? id(1) : id(2),
+        [],
+        now,
+      );
+      await settle();
+      expect(() =>
+        target.controller.shared.consumeDelegated("missing"),
+      ).toThrow();
+      await target.controller.shared.close(mode);
+      await settle();
+      expect(
+        target.controller.workout.status(user, "local-session")?.sharing,
+      ).toBe("local-only");
+      expect(target.controller.workout.read(user, "local-session")?.notes).toBe(
+        "Keep personal",
+      );
+      expect(observe).toHaveBeenCalled();
+      unsubscribe();
+      if (mode !== "leave")
+        expect(
+          guest.controller.workout.status(id(2), "local-session")?.sharing,
+        ).toBe("local-only");
+    },
+  );
+  it.each(["success", "missing", "denied"] as const)(
+    "expired own logging uses original recovery signer (%s), never reprovisioning",
+    async (outcome) => {
+      let clock = now;
+      const upload = jest
+        .fn()
+        .mockResolvedValue(
+          fail({ kind: "api", code: "network", message: "offline" }),
+        );
+      const recovery = { upload } as unknown as TogetherRecoveryApi;
+      const owner = setup(1, { recovery, now: () => clock });
+      await owner.controller.host("A");
+      await owner.controller.workout.promote(workout());
+      await settle();
+      clock += 61000;
+      const draft = owner.controller.workout.read(id(1), "local-session")!;
+      draft.exercises[0].sets[0].reps = 19;
+      owner.controller.workout.save(id(1), draft);
+      await settle();
+      const signer = jest.fn<
+        ReturnType<NonNullable<TogetherProvisioningPort["signRecovery"]>>,
+        Parameters<NonNullable<TogetherProvisioningPort["signRecovery"]>>
+      >(async (_credential, commands) =>
+        outcome === "denied"
+          ? fail({ kind: "together-provisioning", code: "key-unavailable" })
+          : ok(commands.map((c) => signPayload(c, person(1).seed))),
+      );
+      if (outcome !== "missing") owner.provisioning.signRecovery = signer;
+      await expect(
+        owner.controller.workout.review(id(1), "local-session"),
+      ).rejects.toThrow(outcome === "success" ? "network" : "key-unavailable");
+      expect(owner.provisioning.prepare).toHaveBeenCalledTimes(1);
+      expect(
+        owner.controller.workout.read(id(1), "local-session")!.exercises[0]
+          .sets[0].reps,
+      ).toBe(19);
+      expect(
+        owner.controller.workout.status(id(1), "local-session")?.sharing,
+      ).toBe("local-only");
+      expect(upload).toHaveBeenCalledTimes(outcome === "success" ? 1 : 0);
+    },
+  );
+  it.each([false, true])(
+    "new denial before selected host stop (%s) invalidates the verified selection",
+    async (duringStop) => {
+      let blocked = false;
+      const host = setup(),
+        guest = setup(2, {
+          deniedPairs: () => (blocked ? [[id(1), id(2)]] : []),
+        });
+      await host.controller.host("Open", "open");
+      await guest.controller.browse();
+      const session = await probe(host, guest);
+      if (duringStop)
+        guest.native.stop.mockImplementationOnce(async () => {
+          blocked = true;
+        });
+      else blocked = true;
+      await guest.controller.selectDiscovered(session);
+      expect(guest.controller.getSnapshot()).toMatchObject({
+        phase: "unavailable",
+        error: "host-unavailable",
+      });
+    },
+  );
+
+  it.each(["missing-draft", "disk-failure"] as const)(
+    "retains a delegated write after %s and applies it when the owner can save",
+    async (failure) => {
+      const { host, guest } = await sharedPair();
+      await host.controller.shared.setConsent(id(2), {
+        numbers: true,
+        prev: false,
+        logging: true,
+      });
+      await settle();
+      const projection = guest.controller.shared
+        .getSnapshot()
+        .athletes.find((a) => a.userId === id(1))!;
+      const unavailable =
+        failure === "missing-draft"
+          ? jest
+              .spyOn(host.controller.workout, "getActive")
+              .mockReturnValue(null)
+          : null;
+      if (failure === "disk-failure")
+        host.db.exec(
+          "CREATE TRIGGER fail_checkpoint BEFORE UPDATE ON together_workout_checkpoint BEGIN SELECT RAISE(ABORT, 'disk full'); END",
+        );
+      const before = host.controller.workout.getOwnExecution(
+        id(1),
+        "local-session",
+      );
+      const setId = randomUUID();
+      await guest.controller.shared.requestDelegatedSet(
+        id(1),
+        {
+          type: "upsertSet",
+          planExerciseId: Object.keys(projection.exercises)[0],
+          set: { setId, reps: 12, weightKg: 35, completed: true },
+        },
+        projection.revision,
+      );
+      await settle();
+      expect(host.controller.getSnapshot().error).toBe("delegation-conflict");
+      expect(host.controller.shared.getSnapshot().delegated).toHaveLength(1);
+      expect(
+        host.controller.workout.read(id(1), "local-session")!.exercises[0].sets,
+      ).toHaveLength(1);
+      expect(
+        host.controller.workout.getOwnExecution(id(1), "local-session"),
+      ).toEqual(before);
+      unavailable?.mockRestore();
+      if (failure === "disk-failure")
+        host.db.exec("DROP TRIGGER fail_checkpoint");
+      await guest.controller.shared.publishProfile("Sam");
+      await settle();
+      expect(host.controller.shared.getSnapshot().delegated).toEqual([]);
+      expect(
+        host.controller.workout.getOwnExecution(id(1), "local-session")!
+          .execution.exercises[0].sets,
+      ).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ setId, reps: 12, weightKg: 35 }),
+        ]),
+      );
+    },
+  );
+  it("an owner edit while delegated bytes are delayed produces a conflict without replacing own values", async () => {
+    const { host, guest } = await sharedPair();
+    await host.controller.shared.setConsent(id(2), {
+      numbers: true,
+      prev: false,
+      logging: true,
+    });
+    await settle();
+    const projection = guest.controller.shared
+      .getSnapshot()
+      .athletes.find((a) => a.userId === id(1))!;
+    const held = deferred<void>();
+    let deliver!: () => void;
+    guest.native.send.mockImplementationOnce(async (peerId, frame) => {
+      deliver = () => {
+        const target = guest.native.targets.get(peerId)!;
+        target.native.emit({ type: "frame", peerId: target.peerId, frame });
+      };
+      await held.promise;
+      deliver();
+    });
+    const request = guest.controller.shared.requestDelegatedSet(
+      id(1),
+      {
+        type: "upsertSet",
+        planExerciseId: Object.keys(projection.exercises)[0],
+        set: { setId: randomUUID(), reps: 99, weightKg: 99, completed: true },
+      },
+      projection.revision,
+    );
+    await settle();
+    const own = host.controller.workout.read(id(1), "local-session")!;
+    own.exercises[0].sets[0].reps = 15;
+    host.controller.workout.save(id(1), own);
+    await settle();
+    held.resolve();
+    await request;
+    await settle();
+    expect(host.controller.getSnapshot().error).toBe("delegation-conflict");
+    const saved = host.controller.workout.read(id(1), "local-session")!;
+    expect(saved.exercises[0].sets).toHaveLength(1);
+    expect(saved.exercises[0].sets[0].reps).toBe(15);
   });
 });

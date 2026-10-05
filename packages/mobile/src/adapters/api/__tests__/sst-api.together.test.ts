@@ -246,3 +246,149 @@ it.each(["network", "timeout"])(
     });
   },
 );
+
+const recoveryPlan = {
+  name: "Squats",
+  exercises: [
+    {
+      planExerciseId: deviceId,
+      exerciseId: requestId,
+      order: 0,
+      targetSets: 1,
+    },
+  ],
+};
+const recoveryCandidate = {
+  status: "stored_for_review",
+  sharingActive: false,
+  historySaved: false,
+  sessionId: deviceId,
+  executionId: requestId,
+  revision: 1,
+  startedAt: 100,
+  plan: recoveryPlan,
+  execution: {
+    exercises: [
+      {
+        planExerciseId: deviceId,
+        skipped: false,
+        sets: [{ setId: userId, reps: 10, weightKg: 20, completed: true }],
+        everAcknowledged: true,
+      },
+    ],
+  },
+};
+const recovered = {
+  status: "saved",
+  historyId: userId,
+  reviewedRevision: 1,
+  effectsPending: true,
+  sharingActive: false,
+};
+const upload = {
+  credential,
+  sessionId: deviceId,
+  executionId: requestId,
+  startedAt: 100,
+  plan: recoveryPlan,
+  commands: [],
+} as unknown as Parameters<
+  NonNullable<typeof adapter.togetherOffline.recovery>["upload"]
+>[1];
+it("routes bounded signed upload, candidate read and explicit reviewed completion with exact idempotency keys", async () => {
+  const value = {
+    ...recoveryCandidate,
+    receipts: [
+      {
+        commandId: userId,
+        commandHash: "a".repeat(64),
+        revision: 1,
+        status: "stored_for_review",
+      },
+    ],
+  };
+  respond({ data: value });
+  expect(
+    await adapter.togetherOffline.recovery!.upload(userId, upload),
+  ).toEqual({ ok: true, value });
+  expect(fetchMock).toHaveBeenLastCalledWith(
+    "http://test.local/together/offline/recovery",
+    expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify(upload),
+      headers: expect.objectContaining({ "Idempotency-Key": userId }),
+    }),
+  );
+  respond({ data: recoveryCandidate });
+  expect(await adapter.togetherOffline.recovery!.get(requestId)).toEqual({
+    ok: true,
+    value: recoveryCandidate,
+  });
+  expect(fetchMock).toHaveBeenLastCalledWith(
+    `http://test.local/together/offline/recovery/${requestId}`,
+    expect.objectContaining({ method: "GET" }),
+  );
+  const body = { expectedRevision: 1, completedAt: "2026-10-05T10:00:00Z" };
+  respond({ data: recovered });
+  expect(
+    await adapter.togetherOffline.recovery!.complete(requestId, userId, body),
+  ).toEqual({ ok: true, value: recovered });
+  expect(fetchMock).toHaveBeenLastCalledWith(
+    `http://test.local/together/offline/recovery/${requestId}/complete`,
+    expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify(body),
+      headers: expect.objectContaining({ "Idempotency-Key": userId }),
+    }),
+  );
+});
+it.each([
+  { ...recoveryCandidate, revision: -1 },
+  { ...recoveryCandidate, sharingActive: true },
+  { ...recoveryCandidate, plan: { name: "", exercises: [] } },
+  {
+    ...recoveryCandidate,
+    execution: {
+      exercises: [
+        {
+          planExerciseId: deviceId,
+          skipped: false,
+          sets: [{ setId: userId, reps: 1.5, weightKg: 20, completed: true }],
+        },
+      ],
+    },
+  },
+  {
+    ...recoveryCandidate,
+    execution: {
+      exercises: [
+        {
+          planExerciseId: deviceId,
+          skipped: false,
+          sets: [
+            { setId: userId, reps: 1, weightKg: Infinity, completed: true },
+          ],
+        },
+      ],
+    },
+  },
+])("rejects malformed recovery candidates", async (value) => {
+  respond({ data: value });
+  expect(await adapter.togetherOffline.recovery!.get(requestId)).toMatchObject({
+    ok: false,
+    error: { message: "Invalid Together response" },
+  });
+});
+it.each([
+  { ...recovered, historyId: null },
+  { ...recovered, reviewedRevision: -1 },
+  { ...recovered, sharingActive: true },
+])("rejects malformed completion responses", async (value) => {
+  respond({ data: value });
+  expect(
+    await adapter.togetherOffline.recovery!.complete(requestId, userId, {
+      expectedRevision: 1,
+      completedAt: "2026-10-05T10:00:00Z",
+    }),
+  ).toMatchObject({ ok: false });
+});

@@ -34,6 +34,7 @@ export const togetherRoutes = new Elysia({ name: "togetherRoutes" })
     user: await getAuthUser(headers.authorization),
   }))
   .onBeforeHandle((ctx) => {
+    ctx.set.headers["Cache-Control"] = "no-store";
     if (requireAuth(ctx))
       return {
         error: { code: "UNAUTHENTICATED", message: "Authentication required" },
@@ -191,6 +192,7 @@ export const togetherRoutes = new Elysia({ name: "togetherRoutes" })
       headers,
       body: t.Object({
         clientDraftId: uuidSchema,
+        startedAt: t.Optional(t.String({ format: "date-time" })),
         plan: planSchema,
         ownExecution: executionSchema,
       }),
@@ -203,6 +205,28 @@ export const togetherRoutes = new Elysia({ name: "togetherRoutes" })
       data: await repository.snapshot(getUser(c).sub, c.params.id),
     }),
     { params },
+  )
+  .put(
+    "/together/sessions/:id/numbers-consent",
+    async (c) => {
+      c.set.headers["Cache-Control"] = "no-store";
+      return {
+        data: await repository.numbersConsent(
+          getUser(c).sub,
+          c.params.id,
+          c.headers["idempotency-key"],
+          c.body,
+        ),
+      };
+    },
+    {
+      params,
+      headers,
+      body: t.Object({
+        expectedVersion: t.Integer({ minimum: 0 }),
+        recipientIds: t.Array(uuidSchema, { maxItems: 3, uniqueItems: true }),
+      }),
+    },
   )
   .put(
     "/together/sessions/:id/previous-consent",
@@ -280,14 +304,34 @@ export const togetherRoutes = new Elysia({ name: "togetherRoutes" })
           inviteToken: t.String({ minLength: 20, maxLength: 200 }),
           consentVersion: t.Literal("together-v1"),
           consentAccepted: t.Literal(true),
+          startedAt: t.Optional(t.String({ format: "date-time" })),
         }),
         t.Object({
           sessionId: uuidSchema,
           consentVersion: t.Literal("together-v1"),
           consentAccepted: t.Literal(true),
+          startedAt: t.Optional(t.String({ format: "date-time" })),
         }),
       ]),
     },
+  )
+  .get(
+    "/together/join-requests/:requestId",
+    async (c) => ({
+      data: await repository.joinStatus(getUser(c).sub, c.params.requestId),
+    }),
+    { params: t.Object({ requestId: uuidSchema }) },
+  )
+  .delete(
+    "/together/join-requests/:requestId",
+    async (c) => ({
+      data: await repository.cancelJoin(
+        getUser(c).sub,
+        c.params.requestId,
+        c.headers["idempotency-key"],
+      ),
+    }),
+    { headers, params: t.Object({ requestId: uuidSchema }) },
   )
   .get(
     "/together/sessions/:id/join-requests",
@@ -396,6 +440,26 @@ export const togetherRoutes = new Elysia({ name: "togetherRoutes" })
       ),
     }),
     { params, headers, body: t.Object({}) },
+  )
+  .post(
+    "/together/sessions/:id/participants/:userId/remove",
+    async (c) => ({
+      data: await repository.removeParticipant(
+        getUser(c).sub,
+        c.params.id,
+        c.params.userId,
+        c.headers["idempotency-key"],
+        c.body,
+      ),
+    }),
+    {
+      params: t.Object({
+        id: t.String({ format: "uuid" }),
+        userId: t.String({ format: "uuid" }),
+      }),
+      headers,
+      body: t.Object({ expectedRevision: t.Integer({ minimum: 0 }) }),
+    },
   )
   .post(
     "/together/sessions/:id/finish",

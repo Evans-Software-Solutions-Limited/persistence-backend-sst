@@ -15,7 +15,8 @@ export function withTogetherWorkout(
     const base = latest
       ? storage.getLatestSession(userId)
       : storage.getActiveSession(userId);
-    return base ? (workout.read(userId, base.id) ?? base) : null;
+    const result = base ? (workout.read(userId, base.id) ?? base) : null;
+    return latest || result?.status === "in_progress" ? result : null;
   };
   const overrides: Partial<StoragePort> = {
     getActiveSession: (userId) => read(userId),
@@ -43,7 +44,7 @@ export function withTogetherWorkout(
       }
     },
     clearActiveSession(userId) {
-      if (read(userId, true)?.together) {
+      if (read(userId)?.together) {
         throw new Error("Your Together workout must be retained for recovery.");
       }
       storage.clearActiveSession(userId);

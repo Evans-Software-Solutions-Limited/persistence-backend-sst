@@ -7,8 +7,12 @@ export function encode64(bytes: Uint8Array, url = false): string {
     ? encoded.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
     : encoded;
 }
-export function decode64(text: string, url = false): Uint8Array {
-  if (typeof text !== "string" || text.length > 60000)
+export function decode64(
+  text: string,
+  url = false,
+  maxLength = 60000,
+): Uint8Array {
+  if (typeof text !== "string" || text.length > maxLength)
     throw new Error("INVALID_ENCODING");
   const standard = url ? text.replace(/-/g, "+").replace(/_/g, "/") : text;
   const result = Uint8Array.from(atob(standard), (c) => c.charCodeAt(0));

@@ -1,4 +1,10 @@
 import { TogetherWorkoutCheckpoint } from "./workoutCheckpoint";
+import { TogetherSharedSession } from "./sharedSession";
+import type {
+  TogetherSharedPort,
+  TogetherSharedSnapshot,
+} from "../../domain/ports/togetherShared.port";
+import type { TogetherRecoveryApi } from "../../domain/ports/togetherOfflineApi.port";
 import { encode64 } from "./security/encoding";
 import {
   TogetherLobbyBrowser,
@@ -9,6 +15,7 @@ import type {
   TogetherLobbyAudience,
   TogetherLobbyPort,
   TogetherLobbySnapshot,
+  TogetherTransport,
 } from "../../domain/ports/togetherLobby.port";
 import type {
   ReadyIdentity,
@@ -39,14 +46,18 @@ export interface TogetherLobbyControllerOptions {
   enabled?: boolean;
   provisioning: TogetherProvisioningPort;
   native: TogetherLanNative | null;
+  nearby?: TogetherLanNative | null;
+  hotspotOwner?: TogetherLanNative | null;
   /** Composition supplies an environment-specific database; rows are account-scoped. */
   database: TogetherJournalDatabase;
   randomBytes(length: number): Uint8Array;
   randomUUID(): string;
   now?: () => number;
   deniedPairs?: () => readonly (readonly [string, string])[];
+  recovery?: TogetherRecoveryApi;
 }
 interface Resources {
+  shared?: TogetherSharedSession;
   identity: ReadyIdentity;
   lobby: TogetherLocalLobby;
   journal: TogetherJournal;
@@ -56,6 +67,50 @@ interface Resources {
 /** Foreground, explicit-action coordinator. Discovery routes bytes only after a signed pin. */
 export class TogetherLobbyController implements TogetherLobbyPort {
   readonly workout: TogetherWorkoutCheckpoint;
+  private transport: TogetherTransport = "lan";
+  get transports(): readonly TogetherTransport[] {
+    return [
+      "lan",
+      ...(this.options.nearby ? ["nearby" as const] : []),
+      ...(this.options.hotspotOwner ? ["hotspot-owner" as const] : []),
+    ];
+  }
+  selectTransport(transport: TogetherTransport) {
+    if (this.snapshot.phase !== "idle" || !this.transports.includes(transport))
+      throw new Error("transport-unavailable");
+    this.transport = transport;
+    this.publish({ transport });
+  }
+  private native() {
+    return this.transport === "nearby"
+      ? (this.options.nearby ?? null)
+      : this.transport === "hotspot-owner"
+        ? (this.options.hotspotOwner ?? null)
+        : this.options.native;
+  }
+  readonly shared: TogetherSharedPort = {
+    getSnapshot: () => this.resources?.shared?.getSnapshot() ?? EMPTY_SHARED,
+    subscribe: (listener) => this.subscribe(listener),
+    setOwnPlan: (plan) => this.sharedEngine().setOwnPlan(plan),
+    publishPlan: (plan) => this.sharedEngine().publishPlan(plan),
+    publishProfile: (name) => this.sharedEngine().publishProfile(name),
+    setConsent: (recipient, consent) =>
+      this.sharedEngine().setConsent(recipient, consent),
+    publishPrevious: (recipient, rows, startedAt) =>
+      this.sharedEngine().publishPrevious(recipient, rows, startedAt),
+    requestDelegatedSet: (owner, operation, observedRevision) =>
+      this.sharedEngine().requestDelegatedSet(
+        owner,
+        operation,
+        observedRevision,
+      ),
+    consumeDelegated: (id) => this.sharedEngine().consumeDelegated(id),
+    close: (mode) => this.sharedEngine().close(mode),
+  };
+  private sharedEngine() {
+    if (!this.resources?.shared) throw new Error("sharing-unavailable");
+    return this.resources.shared;
+  }
   private snapshot: TogetherLobbySnapshot;
   private listeners = new Set<() => void>();
   private account: string | null = null;
@@ -91,6 +146,16 @@ export class TogetherLobbyController implements TogetherLobbyPort {
               requestHash(resources.identity.credential),
           );
         if (!member) return;
+        if (
+          resources.shared
+            ?.getSnapshot()
+            .closures.some(
+              (c) =>
+                c.userId === this.account ||
+                c.userId === resources.lobby.pin.hostUserId,
+            )
+        )
+          return;
         return {
           sessionId: resources.lobby.pin.sessionId,
           executionId: member.consent.payload.executionId,
@@ -103,11 +168,31 @@ export class TogetherLobbyController implements TogetherLobbyPort {
               : "active",
           send: async (command) => {
             if (!this.allowed() || this.resources !== resources) return;
+            const draft = this.workout.getActive(
+              resources.lobby.store.accountId,
+            );
+            const plan = draft && this.workout.getPlan(draft.userId, draft.id);
+            if (plan) resources.shared?.setOwnPlan(plan);
             await resources.session!.sendOwn(command);
           },
         };
       },
       options.randomUUID,
+      options.recovery
+        ? {
+            api: options.recovery,
+            now: options.now,
+            sign: async (credential, commands) => {
+              const result = await options.provisioning.signRecovery?.(
+                credential,
+                commands,
+              );
+              if (!result?.ok)
+                throw new Error(result?.error.code ?? "key-unavailable");
+              return result.value;
+            },
+          }
+        : undefined,
     );
     this.snapshot = {
       phase: options.enabled ? "idle" : "disabled",
@@ -182,9 +267,11 @@ export class TogetherLobbyController implements TogetherLobbyPort {
     this.identity?.seed.fill(0);
     this.identity = undefined;
     resources?.identity.seed.fill(0);
+    resources?.shared?.dispose();
     resources?.lobby.dispose();
     this.snapshot = {
       phase: this.options.enabled ? "idle" : "disabled",
+      transport: this.transport,
       members: [],
       pending: [],
     };
@@ -323,10 +410,11 @@ export class TogetherLobbyController implements TogetherLobbyPort {
     try {
       const identity = await this.prepare(generation);
       if (!identity) return;
-      if (!this.options.native)
-        throw new Error("Together LAN requires a compatible native build");
+      const native = this.native();
+      if (!native)
+        throw new Error("Together requires a compatible native build");
       const browser = new TogetherLobbyBrowser({
-        native: this.options.native,
+        native,
         trustedKeys: identity.trustedKeys,
         randomBytes: this.options.randomBytes,
         now: () => this.now(),
@@ -521,11 +609,67 @@ export class TogetherLobbyController implements TogetherLobbyPort {
       ],
       now: () => this.now(),
     });
-    const resources = {
+    const resources: Resources = {
       identity,
       lobby,
       journal: new TogetherJournal(this.options.database, this.account!),
     };
+    resources.shared = new TogetherSharedSession({
+      lobby,
+      seed: identity.seed,
+      randomBytes: this.options.randomBytes,
+      randomUUID: this.options.randomUUID,
+      now: () => this.now(),
+      send: async (envelope) => {
+        if (this.resources !== resources || !resources.session)
+          throw new Error("sharing-unavailable");
+        await resources.session.sendShared(envelope);
+      },
+    });
+    let applyingDelegation = false;
+    resources.shared.subscribe(() => {
+      if (this.resources !== resources) return;
+      if (!applyingDelegation && this.account) {
+        applyingDelegation = true;
+        try {
+          const account = this.account;
+          const generation = this.generation;
+          const draft = this.workout.getActive(account);
+          for (const intent of resources.shared!.getSnapshot().delegated) {
+            try {
+              if (!draft) throw new Error("workout-unavailable");
+              // Give account/lifecycle observers a chance to invalidate this scope
+              // before committing; consumption itself now follows the durable write.
+              this.publish({});
+              resources.shared!.consumeDelegated(intent.id, (accepted) => {
+                if (
+                  this.account !== account ||
+                  this.resources !== resources ||
+                  !this.current(generation)
+                )
+                  throw new Error("workout-unavailable");
+                this.workout.applyOwnOperation(
+                  account,
+                  draft.id,
+                  accepted.expectedVersion,
+                  accepted.operation,
+                );
+              });
+            } catch {
+              if (
+                this.account === account &&
+                this.resources === resources &&
+                this.current(generation)
+              )
+                this.publish({ error: "delegation-conflict" });
+            }
+          }
+        } finally {
+          applyingDelegation = false;
+        }
+      }
+      if (this.resources === resources) this.publish({});
+    });
     this.resources = resources;
     return resources;
   }
@@ -534,9 +678,10 @@ export class TogetherLobbyController implements TogetherLobbyPort {
       if (!this.current(generation)) return;
       const session = new TogetherLanSession({
         enabled: this.options.enabled,
-        native: this.options.native,
+        native: this.native(),
         lobby: resources.lobby,
         journal: resources.journal,
+        shared: resources.shared,
         channelFactory: (role) =>
           new LocalSecureChannel({
             role,
@@ -636,7 +781,18 @@ export class TogetherLobbyController implements TogetherLobbyPort {
         });
       else this.publish({ phase: "pending-approval" });
     } else if (event.type === "admitted" || event.type === "roster") {
+      const wasMember = this.snapshot.members.some(
+        (m) => m.userId === this.account,
+      );
       this.roster();
+      if (
+        !resources.lobby.isHost &&
+        wasMember &&
+        !this.snapshot.members.some((m) => m.userId === this.account)
+      ) {
+        this.failure(new Error("removed-from-session"), generation);
+        return;
+      }
       if (
         !resources.lobby.isHost &&
         this.snapshot.members.some((m) => m.userId === this.account)
@@ -678,6 +834,15 @@ export class TogetherLobbyController implements TogetherLobbyPort {
       if (this.generation === failedGeneration) this.publish({});
     });
   }
+  async removeParticipant(userId: string): Promise<void> {
+    if (
+      !this.allowed() ||
+      !this.resources?.lobby.isHost ||
+      !this.resources.session
+    )
+      throw new Error("host-required");
+    await this.resources.session.removeParticipant(userId);
+  }
   async approve(peerId: string): Promise<void> {
     const generation = this.generation;
     try {
@@ -716,3 +881,17 @@ export class TogetherLobbyController implements TogetherLobbyPort {
     }
   }
 }
+
+const EMPTY_SHARED: TogetherSharedSnapshot = {
+  progress: [],
+  profiles: {},
+  deliveries: [],
+  plan: null,
+  planHash: null,
+  athletes: [],
+  athletePlans: {},
+  previous: {},
+  grants: [],
+  closures: [],
+  delegated: [],
+};

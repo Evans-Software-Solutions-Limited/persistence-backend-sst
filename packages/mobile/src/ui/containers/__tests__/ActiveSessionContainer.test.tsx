@@ -6,7 +6,7 @@
  *       specs/milestones/M3-active-session/EXECUTION_PLAN.md § 2 Commit 7
  */
 
-import { fireEvent, waitFor } from "@testing-library/react-native";
+import { act, fireEvent, waitFor } from "@testing-library/react-native";
 import React from "react";
 import { Alert } from "react-native";
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
@@ -23,6 +23,7 @@ import {
   ActiveSessionContainer,
   retrospectiveCompletedAtForDay,
 } from "@/ui/containers/ActiveSessionContainer";
+import { ActiveSessionPresenter } from "@/ui/presenters/ActiveSessionPresenter";
 import { useActiveWorkout } from "@/state/active-workout";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 
@@ -333,6 +334,67 @@ describe("ActiveSessionContainer", () => {
     );
   });
 
+  it("rebases metadata on current workout data and reports failed writes without replacing newer sets", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    mockUseLocalSearchParams.mockReturnValue({ retroactive: "true" });
+    const r = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <ActiveSessionContainer />),
+    );
+    await r.findByTestId("retrospective-workout-duration");
+    const staleEdit = r.UNSAFE_getByType(ActiveSessionPresenter).props
+      .onLocationNameChange;
+    const current = storage.getActiveSession("user-1")!;
+    // An external/delegated update reaches storage before React rereads it.
+    const newer = {
+      ...current,
+      notes: "New private note",
+      exercises: [
+        {
+          id: "ex-new",
+          sessionId: current.id,
+          exerciseId: "ex-bench",
+          exerciseName: "Bench",
+          sortOrder: 0,
+          supersetGroup: null,
+          isSubstituted: false,
+          originalExerciseId: null,
+          notes: null,
+          sets: [
+            {
+              id: "delegated",
+              sessionExerciseId: "ex-new",
+              setNumber: 1,
+              reps: 12,
+              weightKg: 35,
+              rpe: null,
+              durationSeconds: null,
+              distanceMeters: null,
+              isCompleted: true,
+              completedAt: null,
+            },
+          ],
+        },
+      ],
+    };
+    storage.cacheActiveSession("user-1", newer);
+    act(() => staleEdit("Home gym"));
+    expect(storage.getActiveSession("user-1")).toEqual({
+      ...newer,
+      locationName: "Home gym",
+    });
+    const alert = jest.spyOn(Alert, "alert").mockImplementation(() => {});
+    jest.spyOn(storage, "cacheActiveSession").mockImplementationOnce(() => {
+      throw new Error("workout-version-conflict");
+    });
+    act(() => staleEdit("Garage"));
+    expect(alert).toHaveBeenCalledWith("Change not saved", expect.any(String));
+    expect(storage.getActiveSession("user-1")?.locationName).toBe("Home gym");
+    const replacement = { ...newer, id: "different", exercises: [] };
+    storage.cacheActiveSession("user-1", replacement);
+    act(() => staleEdit("Stale location"));
+    expect(storage.getActiveSession("user-1")).toEqual(replacement);
+  });
   it("does not seed a new session from a retained Loadout template after entitlement loss", async () => {
     const api = new InMemoryApiAdapter();
     const workout = buildWorkout({
@@ -1857,6 +1919,112 @@ describe("ActiveSessionContainer", () => {
     expect(await findByTestId("active-session-screen")).toBeTruthy();
   });
 
+  it.each([false, true])(
+    "hydrates only the active owner's non-skipped exercises (skipped=%s) without gating the workout",
+    async (skipped) => {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      const workout = buildWorkout();
+      storage.cacheWorkoutDetail("user-1", workout);
+      jest.spyOn(api, "getWorkout").mockResolvedValue(ok(workout));
+      if (skipped)
+        storage.cacheActiveSession("user-1", {
+          id: "local-skipped",
+          userId: "user-1",
+          workoutId: workout.id,
+          name: workout.name,
+          status: "in_progress",
+          startedAt: "2026-10-05T10:00:00Z",
+          completedAt: null,
+          notes: null,
+          exercises: workout.exercises.map((exercise, index) => ({
+            id: exercise.id,
+            sessionId: "local-skipped",
+            exerciseId: exercise.exerciseId,
+            exerciseName: exercise.exercise?.name ?? exercise.exerciseId,
+            sortOrder: index,
+            supersetGroup: null,
+            isSubstituted: false,
+            originalExerciseId: null,
+            notes: null,
+            sets: [],
+            skipped: index === 0,
+          })),
+        });
+      const adapters = makeAdapters(api, storage);
+      adapters.netInfo = {
+        isConnected: jest.fn(async () => true),
+        subscribe: jest.fn(() => () => {}),
+      };
+      const snapshot = {
+        phase: "hosting" as const,
+        role: "host" as const,
+        members: [],
+        pending: [],
+      };
+      adapters.togetherLobby = {
+        getSnapshot: () => snapshot,
+        subscribe: () => () => {},
+        host: jest.fn(),
+        browse: jest.fn(),
+        selectDiscovered: jest.fn(),
+        selectInvite: jest.fn(),
+        join: jest.fn(),
+        approve: jest.fn(),
+        decline: jest.fn(),
+        reconnect: jest.fn(),
+        cancel: jest.fn(async () => {}),
+        setOnline: jest.fn(),
+        setActive: jest.fn(),
+        setAccount: jest.fn(),
+        dispose: jest.fn(),
+        invalidateAuthorization: jest.fn(),
+      };
+      let finish!: (
+        value: Awaited<ReturnType<typeof api.getRecentSets>>,
+      ) => void;
+      const request = jest.spyOn(api, "getRecentSets").mockImplementation(
+        () =>
+          new Promise((r) => {
+            finish = r;
+          }),
+      );
+      mockUseLocalSearchParams.mockReturnValue({ workoutId: "w-1" });
+      const r = renderWithTheme(
+        withAdapters(adapters, <ActiveSessionContainer />),
+      );
+      expect(await r.findByTestId("active-session-screen")).toBeTruthy();
+      await waitFor(() =>
+        expect(request).toHaveBeenCalledWith({
+          exerciseIds: skipped ? ["ex-row"] : ["ex-bench", "ex-row"],
+          before: storage.getActiveSession("user-1")!.startedAt,
+        }),
+      );
+      expect(storage.hasAnyRecentSets("user-1")).toBe(false);
+      await act(async () =>
+        finish(
+          ok([
+            {
+              exerciseId: skipped ? "ex-row" : "ex-bench",
+              setNumber: 1,
+              weightKg: 60,
+              reps: 8,
+              recordedAt: "2026-01-01T00:00:00Z",
+            },
+          ]),
+        ),
+      );
+      const expectedExercise = skipped ? "ex-row" : "ex-bench";
+      expect(
+        storage.getRecentSetsByExercise("user-1", ["ex-bench", "ex-row"]),
+      ).toEqual({
+        [expectedExercise]: { 1: { weightKg: 60, reps: 8 } },
+      });
+      expect(storage.hasAnyRecentSets("other")).toBe(false);
+      r.unmount();
+    },
+  );
+
   it("shows PREV hints when the recent-sets backfill lands AFTER the screen has mounted (change-bus reactivity)", async () => {
     // Regression for the fresh-install "Previous" bug: the server backfill
     // (`hydrateRecentSetsCommand`) upserts `recent_sets` asynchronously, after
@@ -1931,4 +2099,102 @@ describe("ActiveSessionContainer", () => {
     expect(chip).toBeTruthy();
     expect(await findByText("8 reps • 60 kg")).toBeTruthy();
   });
+});
+
+describe("Together active workout integration", () => {
+  it.each(["cloud", "offline"] as const)(
+    "routes %s completion through own review even with no logged sets",
+    async (transport) => {
+      jest.clearAllMocks();
+      mockUseLocalSearchParams.mockReturnValue({});
+      useActiveWorkout.setState({ active: null, expanded: false });
+      const storage = new InMemoryStorageAdapter();
+      storage.cacheActiveSession("user-1", {
+        id: "together-local",
+        userId: "user-1",
+        workoutId: null,
+        name: "Together",
+        status: "in_progress",
+        startedAt: "2026-10-05T09:00:00Z",
+        completedAt: null,
+        notes: null,
+        together: {
+          sessionId: "shared",
+          executionId: "own",
+          ...(transport === "cloud" ? { transport: "cloud" as const } : {}),
+        },
+        exercises: [
+          {
+            id: "e",
+            sessionId: "together-local",
+            exerciseId: "ex-bench",
+            exerciseName: "Bench Press",
+            sortOrder: 0,
+            supersetGroup: null,
+            isSubstituted: false,
+            originalExerciseId: null,
+            notes: null,
+            sets: [],
+          },
+        ],
+      });
+      const r = renderWithTheme(
+        withAdapters(
+          makeAdapters(new InMemoryApiAdapter(), storage),
+          <ActiveSessionContainer />,
+        ),
+      );
+      await r.findByTestId("active-session-screen");
+      const presenter = () => r.UNSAFE_getByType(ActiveSessionPresenter).props;
+      act(() => presenter().onSkipExercise("e"));
+      expect(storage.getActiveSession("user-1")!.exercises[0].skipped).toBe(
+        true,
+      );
+      act(() => presenter().onSkipExercise("e"));
+      expect(storage.getActiveSession("user-1")!.exercises[0].skipped).toBe(
+        false,
+      );
+      const alert = jest.spyOn(Alert, "alert").mockImplementation(() => {});
+      const save = jest.spyOn(storage, "cacheActiveSession");
+      save.mockImplementationOnce(() => {
+        throw new Error("disk full");
+      });
+      act(() => presenter().onSkipExercise("e"));
+      expect(storage.getActiveSession("user-1")!.exercises[0].skipped).toBe(
+        false,
+      );
+      expect(alert).toHaveBeenCalledWith(
+        "Change not saved",
+        expect.any(String),
+      );
+      save.mockImplementationOnce(() => {
+        throw new Error("disk full");
+      });
+      act(() => presenter().onStartRest("e"));
+      expect(storage.getActiveSession("user-1")!.restEndsAt).toBeUndefined();
+      act(() => presenter().onStartRest("e"));
+      expect(
+        Date.parse(storage.getActiveSession("user-1")!.restEndsAt!),
+      ).toBeGreaterThan(Date.now());
+      save.mockImplementationOnce(() => {
+        throw new Error("disk full");
+      });
+      act(() => presenter().restTimer.onDismiss());
+      expect(storage.getActiveSession("user-1")!.restEndsAt).not.toBeNull();
+      act(() => presenter().restTimer.onSkip());
+      save.mockRestore();
+      alert.mockRestore();
+      expect(storage.getActiveSession("user-1")!.restEndsAt).toBeNull();
+      fireEvent.press(r.getByTestId("active-session-finish"));
+      expect(mockRouterPush).toHaveBeenCalledWith({
+        pathname:
+          transport === "cloud"
+            ? "/(app)/session/together-cloud-review"
+            : "/(app)/session/together-review",
+        params: { localSessionId: "together-local" },
+      });
+      expect(storage.getPendingMutations()).toHaveLength(0);
+      r.unmount();
+    },
+  );
 });

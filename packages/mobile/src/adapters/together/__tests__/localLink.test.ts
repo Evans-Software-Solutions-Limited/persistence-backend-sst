@@ -737,4 +737,22 @@ describe("encrypted local link over real durable SQLite", () => {
     s.guest.store.close(pin.sessionId);
     await expect(s.guest.link.sendOwn(command())).rejects.toThrow("closed");
   });
+  it("declines pending strangers without admission and only host can send removal rosters", async () => {
+    const s = setup();
+    await expect(s.host.link.decline()).rejects.toThrow("pending");
+    const roster = s.host.store.current(pin.sessionId)!;
+    await expect(s.host.link.sendRemovalRoster(roster)).rejects.toThrow("Host");
+    await s.handshake();
+    await expect(s.guest.link.sendRemovalRoster(roster)).rejects.toThrow(
+      "Host",
+    );
+    await s.guest.link.join(request());
+    await s.pump();
+    await s.host.link.decline();
+    expect(await s.pump()).toContain("declined");
+    expect(s.host.link.pendingRequest).toBeUndefined();
+    expect(s.host.store.current(pin.sessionId)!.payload.members).toHaveLength(
+      1,
+    );
+  });
 });

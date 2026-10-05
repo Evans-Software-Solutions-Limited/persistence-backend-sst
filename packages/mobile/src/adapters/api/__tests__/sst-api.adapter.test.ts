@@ -2933,3 +2933,29 @@ describe("SSTApiAdapter Mealprint (spec-26 Phase 0/1)", () => {
     expect(sawSignal).toBe(true);
   });
 });
+
+describe("Together own PREV query", () => {
+  it("encodes bounded exercise IDs and original start on the authenticated own endpoint", async () => {
+    const fetchMock = installFetchMock(
+      async () =>
+        new Response(JSON.stringify({ data: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+    );
+    const adapter = new SSTApiAdapter();
+    adapter.setTokenProvider(async () => "own-token");
+    expect(
+      await adapter.getRecentSets({
+        exerciseIds: ["squat", "press"],
+        before: "2026-10-05T10:00:00Z",
+      }),
+    ).toEqual(ok([]));
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://test.local/sessions/recent-sets?exerciseIds=squat%2Cpress&before=2026-10-05T10%3A00%3A00Z",
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: "Bearer own-token" }),
+      }),
+    );
+  });
+});

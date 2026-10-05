@@ -16,12 +16,24 @@ import {
 import * as schema from "@persistence/db/schema";
 const holder = vi.hoisted(() => ({ db: null as unknown }));
 vi.mock("@persistence/db/client", () => ({ getDb: () => holder.db }));
+vi.mock("@persistence/api-utils/auth/supabaseAuth", async (original) => ({
+  ...(await original<
+    typeof import("@persistence/api-utils/auth/supabaseAuth")
+  >()),
+  getAuthUser: async (authorization: string | undefined) =>
+    authorization?.startsWith("Bearer ")
+      ? { sub: authorization.slice(7) }
+      : null,
+}));
 import {
   TogetherRepository,
   revokePair,
   canReportTogether,
 } from "../togetherRepository";
 import { withActors } from "../shared";
+import { drainTogether } from "../transport";
+import { togetherRoutes } from "../togetherRoutes";
+import { TogetherCompletionRepository } from "../completionRepository";
 import { placesRepository } from "../../places/placesRepository";
 import { SessionRepository } from "../../repositories/sessionRepository";
 import type { TogetherCommand } from "../types";
@@ -130,6 +142,24 @@ beforeAll(async () => {
     readFileSync(
       new URL(
         "../../../../../../supabase/migrations/20261001133310_together_previous_consent.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
+  const numbersMigration = readFileSync(
+    new URL(
+      "../../../../../../supabase/migrations/20261005120000_together_numbers_consent.sql",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  await pg.exec(numbersMigration);
+  await pg.exec(numbersMigration);
+  await pg.exec(
+    readFileSync(
+      new URL(
+        "../../../../../../supabase/migrations/20261001120000_together_reviewed_results.sql",
         import.meta.url,
       ),
       "utf8",
@@ -312,7 +342,7 @@ describe("production Together persistence and recovery", () => {
       p,
     );
     expect(
-      s.snapshot.participants[0].execution.exercises[0].everAcknowledged,
+      s.snapshot.participants[0].execution!.exercises[0].everAcknowledged,
     ).toBe(true);
   });
   it("keeps invitations hashed even in receipts, replays deterministic tokens and requires current approval", async () => {
@@ -394,7 +424,7 @@ describe("production Together persistence and recovery", () => {
     expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
     const snap = await repo.snapshot(a, s.sessionId);
     expect(snap.participants).toHaveLength(2);
-    expect(snap.participants[1].execution.exercises).toEqual([]);
+    expect(snap.participants.find((p) => p.userId !== a)?.execution).toBeNull();
   });
   it("accepts concurrent own actions without global conflict and deduplicates commands under different HTTP keys", async () => {
     const s = await pair();
@@ -422,6 +452,10 @@ describe("production Together persistence and recovery", () => {
     });
     const grant = await repo.delegation(b, s.sessionId, key(), {
       allowPartnerLogging: true,
+    });
+    await repo.numbersConsent(b, s.sessionId, key(), {
+      expectedVersion: 0,
+      recipientIds: [a],
     });
     command.delegationGeneration = grant.generation;
     await run(a, s.sessionId, command);
@@ -524,7 +558,7 @@ describe("production Together persistence and recovery", () => {
       }),
     );
     expect(
-      (await repo.snapshot(a, s.sessionId)).participants[0].execution
+      (await repo.snapshot(a, s.sessionId)).participants[0].execution!
         .exercises[0].sets[0].weightKg,
     ).toBe(50);
     await expect(run(a, s.sessionId, cmd(a, key(), 5))).rejects.toMatchObject({
@@ -637,6 +671,33 @@ describe("production Together persistence and recovery", () => {
       ),
     ).toMatchObject({ status: "finished_empty" });
     expect((await repo.snapshot(a, s.sessionId)).state).toBe("closed");
+  });
+  it("allows friends-only discovery while venue directory stays disabled", async () => {
+    vi.stubEnv("TOGETHER_DISCOVERY_ENABLED", "false");
+    const s = await create();
+    await db
+      .insert(schema.friendships)
+      .values({ userId: a, friendId: b, status: "accepted", initiatedBy: a });
+    await repo.visibility(a, s.sessionId, key(), {
+      audience: "friends",
+      expiresAt: new Date(Date.now() + 60000).toISOString(),
+    });
+    expect(
+      (await repo.discovery(b, { audience: "friends" })).data.map(
+        (x) => x.sessionId,
+      ),
+    ).toEqual([s.sessionId]);
+    expect((await repo.discovery(c, { audience: "friends" })).data).toEqual([]);
+    await expect(
+      repo.visibility(a, s.sessionId, key(), {
+        audience: "nearby",
+        placeId: "geoapify:place",
+        expiresAt: new Date(Date.now() + 60000).toISOString(),
+      }),
+    ).rejects.toMatchObject({ status: 403 });
+    await expect(
+      repo.discovery(b, { audience: "nearby", placeId: "geoapify:place" }),
+    ).rejects.toMatchObject({ status: 403 });
   });
   it("visibility and discovery restrict friends/private, cursor scope and nearby place selection", async () => {
     const s = await create();
@@ -1070,7 +1131,7 @@ describe("remaining recovery and migration boundaries", () => {
     const flags = await pg.query<{ name: string; enabled: boolean }>(
       "SELECT c.relname AS name,c.relrowsecurity AS enabled FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind='r' AND (c.relname LIKE 'together_%' OR c.relname LIKE 'social_%')",
     );
-    expect(flags.rows).toHaveLength(18);
+    expect(flags.rows).toHaveLength(19);
     expect(flags.rows.every((r) => r.enabled)).toBe(true);
     for (const role of ["anon", "authenticated"]) {
       const grants = await pg.query<{ ok: boolean }>(
@@ -1097,6 +1158,15 @@ describe("remaining recovery and migration boundaries", () => {
       ).rows,
     ).toHaveLength(0);
     await pg.exec(migration);
+    await pg.exec(
+      readFileSync(
+        new URL(
+          "../../../../../../supabase/migrations/20261005120000_together_numbers_consent.sql",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+    );
     await pg.exec(
       readFileSync(
         new URL(
@@ -1377,8 +1447,9 @@ describe("serialized first-write identity races", () => {
     expect(outcomes[0].status).toBe("fulfilled");
     const snapshot = await repo.snapshot(a, s.sessionId);
     expect(
-      snapshot.participants.find((p) => p.userId === b)?.execution.exercises[0]
-        .everAcknowledged,
+      (await repo.snapshot(b, s.sessionId)).participants.find(
+        (p) => p.userId === b,
+      )?.execution!.exercises[0].everAcknowledged,
     ).toBe(true);
     if (outcomes[1].status === "rejected")
       expect(snapshot.plan.exercises[0].exerciseId).toBe(exercise);
@@ -1548,6 +1619,10 @@ describe("four-person admission", () => {
       await expect(run(a, s.sessionId, delegated)).rejects.toMatchObject({
         code: "DELEGATION_REVOKED",
       });
+      await repo.numbersConsent(b, s.sessionId, key(), {
+        expectedVersion: 0,
+        recipientIds: [a],
+      });
       const renewed = await repo.delegation(b, s.sessionId, key(), {
         allowPartnerLogging: true,
       });
@@ -1561,7 +1636,7 @@ describe("four-person admission", () => {
       expect(
         (await repo.snapshot(b, s.sessionId)).participants.find(
           (p) => p.userId === b,
-        )!.execution.exercises[0].sets,
+        )!.execution!.exercises[0].sets,
       ).toHaveLength(1);
     },
   );
@@ -1575,6 +1650,7 @@ describe("four-person admission", () => {
     const approved = await join(s.sessionId, b);
     expect(approved).toEqual({
       requestId: pending.requestId,
+      sessionId: s.sessionId,
       status: "approved",
     });
     expect((await repo.snapshot(b, s.sessionId)).participants).toHaveLength(2);
@@ -2149,24 +2225,30 @@ describe("recipient-scoped previous values", () => {
       await expect(
         repo.previousValues(b, s.sessionId, a),
       ).rejects.toMatchObject({ status: 403 });
+      const revokedVersion = reason === "leave" ? 2 : 1;
       expect(await grant(s.sessionId, [b], 0, a, k)).toMatchObject({
-        version: 1,
+        version: revokedVersion,
         recipientIds: [],
       });
-      await expect(grant(s.sessionId, [b], 1)).rejects.toMatchObject({
-        status: reason === "reader_finish" ? 400 : 403,
+      await expect(
+        grant(s.sessionId, [b], revokedVersion),
+      ).rejects.toMatchObject({
+        status: ["reader_finish", "leave"].includes(reason) ? 400 : 403,
       });
       expect(
         (await repo.previousValues(a, s.sessionId, a)).values,
       ).toHaveLength(1);
-      expect(await grant(s.sessionId, [], 1)).toMatchObject({
-        version: 2,
+      expect(await grant(s.sessionId, [], revokedVersion)).toMatchObject({
+        version: revokedVersion + 1,
         recipientIds: [],
       });
       const own = (await repo.snapshot(a, s.sessionId)).participants.find(
         (p) => p.userId === a,
       );
-      expect(own?.previousConsent).toEqual({ version: 2, recipientIds: [] });
+      expect(own?.previousConsent).toEqual({
+        version: revokedVersion + 1,
+        recipientIds: [],
+      });
     },
   );
   it("revokes a finished nonhost's grant independently of live session sharing and logging authority", async () => {
@@ -2386,5 +2468,515 @@ describe("recipient-scoped previous values", () => {
         )
       ).rows[0].ok,
     ).toBe(true);
+  });
+});
+
+describe("independent current numeric consent", () => {
+  it("admission, PREV and delegation never disclose numeric snapshots or event replay", async () => {
+    const s = await pair();
+    const pid = s.plan.exercises[0].planExerciseId;
+    const grant = await repo.delegation(b, s.sessionId, key(), {
+      allowPartnerLogging: true,
+    });
+    await repo.previousConsent(b, s.sessionId, key(), {
+      expectedVersion: 0,
+      recipientIds: [a],
+    });
+    await run(b, s.sessionId, cmd(b, pid));
+    expect(
+      (await repo.snapshot(a, s.sessionId)).participants.find(
+        (p) => p.userId === b,
+      )?.execution,
+    ).toBeNull();
+    const delegated = {
+      ...cmd(b, pid, 1),
+      delegationGeneration: grant.generation,
+    };
+    await expect(run(a, s.sessionId, delegated)).rejects.toMatchObject({
+      code: "DELEGATION_REVOKED",
+    });
+    expect(
+      JSON.stringify((await repo.events(a, s.sessionId, 0)).data),
+    ).not.toContain('"weightKg"');
+    await repo.numbersConsent(b, s.sessionId, key(), {
+      expectedVersion: 0,
+      recipientIds: [a],
+    });
+    expect(
+      (await repo.snapshot(a, s.sessionId)).participants.find(
+        (p) => p.userId === b,
+      )?.execution?.exercises[0].sets,
+    ).toHaveLength(1);
+    await run(a, s.sessionId, delegated);
+    await repo.numbersConsent(b, s.sessionId, key(), {
+      expectedVersion: 1,
+      recipientIds: [],
+    });
+    expect(
+      (await repo.snapshot(a, s.sessionId)).participants.find(
+        (p) => p.userId === b,
+      )?.execution,
+    ).toBeNull();
+    expect(
+      JSON.stringify((await repo.events(a, s.sessionId, 0)).data),
+    ).not.toContain('"weightKg"');
+    expect(
+      (await repo.snapshot(b, s.sessionId)).participants.find(
+        (p) => p.userId === b,
+      )?.execution?.exercises[0].sets,
+    ).toHaveLength(2);
+    await expect(
+      repo.numbersConsent(b, s.sessionId, key(), {
+        expectedVersion: 1,
+        recipientIds: [a],
+      }),
+    ).rejects.toMatchObject({ code: "VERSION_CONFLICT" });
+  });
+  it("reads and cancels only the requesting account's pending admission", async () => {
+    const s = await create();
+    const invitation = await repo.invite(a, s.sessionId, key(), {
+      expiresInMinutes: 15,
+    });
+    const request = await repo.requestJoin(b, key(), {
+      inviteToken: invitation.token,
+      consentVersion: "together-v1",
+      consentAccepted: true,
+    });
+    expect(await repo.joinStatus(b, request.requestId)).toMatchObject({
+      sessionId: s.sessionId,
+      status: "pending",
+    });
+    await expect(repo.joinStatus(c, request.requestId)).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+    const mutation = key();
+    await repo.cancelJoin(b, request.requestId, mutation);
+    await repo.cancelJoin(b, request.requestId, mutation);
+    // A new HTTP key still confirms the already-cancelled state. It must not
+    // report ALREADY_ADMITTED merely because no pending row needed updating.
+    expect(await repo.cancelJoin(b, request.requestId, key())).toEqual({
+      cancelled: true,
+    });
+    expect(await repo.joinStatus(b, request.requestId)).toMatchObject({
+      status: "rejected",
+    });
+  });
+  it.each(["cancel", "approve"] as const)(
+    "keeps cancellation and admission mutually exclusive when %s starts first",
+    async (first) => {
+      const s = await create();
+      const invitation = await repo.invite(a, s.sessionId, key(), {
+        expiresInMinutes: 15,
+      });
+      const request = await repo.requestJoin(b, key(), {
+        inviteToken: invitation.token,
+        consentVersion: "together-v1",
+        consentAccepted: true,
+      });
+      const revision = (await repo.snapshot(a, s.sessionId)).revision;
+      const cancel = () => repo.cancelJoin(b, request.requestId, key());
+      const approve = () =>
+        repo.decide(a, s.sessionId, request.requestId, key(), {
+          decision: "approve",
+          expectedRevision: revision,
+        });
+      const results = await Promise.allSettled(
+        first === "cancel" ? [cancel(), approve()] : [approve(), cancel()],
+      );
+      const cancellation = results[first === "cancel" ? 0 : 1];
+      const approval = results[first === "approve" ? 0 : 1];
+      expect(
+        results.filter((result) => result.status === "fulfilled"),
+      ).toHaveLength(1);
+      const current = await repo.joinStatus(b, request.requestId);
+      const members = (await repo.snapshot(a, s.sessionId)).participants;
+      if (cancellation.status === "fulfilled") {
+        expect(cancellation.value).toEqual({ cancelled: true });
+        expect(current.status).toBe("rejected");
+        expect(members.some((member) => member.userId === b)).toBe(false);
+        expect(approval).toMatchObject({
+          status: "rejected",
+          reason: { code: "INVALID_STATE" },
+        });
+      } else {
+        expect(current.status).toBe("approved");
+        expect(members.some((member) => member.userId === b)).toBe(true);
+        expect(cancellation.reason).toMatchObject({ code: "ALREADY_ADMITTED" });
+      }
+    },
+  );
+});
+
+describe("roster removal preserves independent own continuation", () => {
+  it("retains private empty completion time for later reviewed own work without shared activity", async () => {
+    const s = await pair();
+    await repo.removeParticipant(a, s.sessionId, b, key(), {
+      expectedRevision: (await repo.snapshot(a, s.sessionId)).revision,
+    });
+    const revision = (await repo.snapshot(a, s.sessionId)).revision;
+    await repo.finish(b, s.sessionId, key(), { expectedOwnRevision: 0 });
+    const [job] = await db
+      .select()
+      .from(schema.togetherJobs)
+      .where(eq(schema.togetherJobs.userId, b));
+    expect(job).toMatchObject({ status: "saved", effectsDone: true });
+    expect(await db.select().from(schema.workoutSessions)).toEqual([]);
+    const completedAt = job.completedAt;
+    await new TogetherCompletionRepository().reviewCloud(
+      b,
+      s.sessionId,
+      key(),
+      {
+        expectedOwnRevision: 0,
+        execution: {
+          exercises: [
+            {
+              planExerciseId: s.plan.exercises[0].planExerciseId,
+              skipped: false,
+              sets: [{ setId: key(), reps: 8, weightKg: 40, completed: true }],
+            },
+          ],
+        },
+      },
+    );
+    const [history] = await db
+      .select()
+      .from(schema.workoutSessions)
+      .where(eq(schema.workoutSessions.userId, b));
+    expect(history.completedAt?.toISOString()).toBe(completedAt.toISOString());
+    expect(await repo.events(a, s.sessionId, revision)).toEqual({
+      data: [],
+      revision,
+    });
+  });
+  it("removes only the selected guest, purges grants and keeps remaining peers sharing", async () => {
+    const s = await pair();
+    const invitation = await repo.invite(a, s.sessionId, key(), {
+      expiresInMinutes: 15,
+    });
+    const pending = await repo.requestJoin(c, key(), {
+      inviteToken: invitation.token,
+      consentVersion: "together-v1",
+      consentAccepted: true,
+    });
+    await repo.decide(a, s.sessionId, pending.requestId, key(), {
+      decision: "approve",
+      expectedRevision: (await repo.snapshot(a, s.sessionId)).revision,
+    });
+    const pid = s.plan.exercises[0].planExerciseId;
+    await run(b, s.sessionId, cmd(b, pid));
+    await repo.numbersConsent(b, s.sessionId, key(), {
+      expectedVersion: 0,
+      recipientIds: [a, c],
+    });
+    await expect(
+      repo.removeParticipant(b, s.sessionId, c, key(), {
+        expectedRevision: (await repo.snapshot(a, s.sessionId)).revision,
+      }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    const revision = (await repo.snapshot(a, s.sessionId)).revision;
+    await expect(
+      repo.removeParticipant(a, s.sessionId, b, key(), {
+        expectedRevision: revision - 1,
+      }),
+    ).rejects.toMatchObject({ code: "VERSION_CONFLICT" });
+    const mutation = key();
+    await repo.removeParticipant(a, s.sessionId, b, mutation, {
+      expectedRevision: revision,
+    });
+    await repo.removeParticipant(a, s.sessionId, b, mutation, {
+      expectedRevision: revision,
+    });
+    const remaining = await repo.snapshot(a, s.sessionId);
+    expect(remaining.sharingActive).toBe(true);
+    expect(new Set(remaining.participants.map((p) => p.userId))).toEqual(
+      new Set([a, c]),
+    );
+    expect(
+      remaining.participants.find((p) => p.userId === a)?.numbersConsent
+        ?.recipientIds,
+    ).toEqual([]);
+    const own = await repo.snapshot(b, s.sessionId);
+    expect(own.sharingActive).toBe(false);
+    expect(own.participants.map((p) => p.userId)).toEqual([b]);
+    expect(own.participants[0].status).toBe("active");
+    expect(own.participants[0].execution!.exercises[0].sets).toHaveLength(1);
+    await expect(repo.events(b, s.sessionId, 0)).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    await expect(repo.ticket(b, s.sessionId, key())).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    const privateRevision = (await repo.snapshot(a, s.sessionId)).revision;
+    for (const event of await repo.listPendingEvents())
+      await repo.acknowledgeEvent(event.sessionId, event.revision);
+    const ticket = await repo.ticket(a, s.sessionId, key());
+    await repo.consumeTicket(ticket.ticket, "remaining-host");
+    await run(b, s.sessionId, cmd(b, pid, 1));
+    await repo.numbersConsent(b, s.sessionId, key(), {
+      expectedVersion: own.participants[0].numbersConsent!.version,
+      recipientIds: [],
+    });
+    await repo.previousConsent(b, s.sessionId, key(), {
+      expectedVersion: own.participants[0].previousConsent!.version,
+      recipientIds: [],
+    });
+    await repo.finish(b, s.sessionId, key(), { expectedOwnRevision: 2 });
+    const socket = { hint: vi.fn(), disconnect: vi.fn() };
+    await drainTogether({ repository: repo, socket });
+    expect(socket.hint).not.toHaveBeenCalled();
+    const eventsResponse = await togetherRoutes.handle(
+      new Request(
+        `http://localhost/together/sessions/${s.sessionId}/events?afterRevision=${privateRevision}`,
+        { headers: { authorization: `Bearer ${a}` } },
+      ),
+    );
+    expect(eventsResponse.status).toBe(200);
+    expect(await eventsResponse.json()).toEqual({
+      data: [],
+      revision: privateRevision,
+    });
+    expect(await repo.events(a, s.sessionId, privateRevision)).toEqual({
+      data: [],
+      revision: privateRevision,
+    });
+    const response = await togetherRoutes.handle(
+      new Request(`http://localhost/together/sessions/${s.sessionId}`, {
+        headers: { authorization: `Bearer ${b}` },
+      }),
+    );
+    expect(response.status).toBe(200);
+    const recovered = (
+      (await response.json()) as {
+        data: Awaited<ReturnType<TogetherRepository["snapshot"]>>;
+      }
+    ).data;
+    expect(
+      recovered.participants.map((member: { userId: string }) => member.userId),
+    ).toEqual([b]);
+    expect(recovered.participants[0].status).toBe("saved");
+    expect(recovered.participants[0].execution!.exercises[0].sets).toHaveLength(
+      2,
+    );
+    expect(recovered.completion.historyId).toBeTruthy();
+    expect((await repo.snapshot(a, s.sessionId)).sharingActive).toBe(true);
+    await expect(
+      repo.requestJoin(b, key(), {
+        inviteToken: invitation.token,
+        consentVersion: "together-v1",
+        consentAccepted: true,
+      }),
+    ).rejects.toBeDefined();
+  });
+  it("deliberate guest leave finishes only their own result while peers continue", async () => {
+    const s = await pair();
+    await repo.finish(b, s.sessionId, key(), { expectedOwnRevision: 0 }, true);
+    expect((await repo.snapshot(a, s.sessionId)).sharingActive).toBe(true);
+    expect((await repo.snapshot(b, s.sessionId)).participants[0].status).toBe(
+      "finished_empty",
+    );
+  });
+  it("versions and announces finished guest leave once, rejecting pre-leave consent updates", async () => {
+    const s = await pair();
+    await repo.numbersConsent(a, s.sessionId, key(), {
+      expectedVersion: 0,
+      recipientIds: [b],
+    });
+    await repo.previousConsent(a, s.sessionId, key(), {
+      expectedVersion: 0,
+      recipientIds: [b],
+    });
+    await repo.finish(b, s.sessionId, key(), { expectedOwnRevision: 0 });
+    const before = (await repo.snapshot(a, s.sessionId)).revision;
+    const leaveKey = key();
+    await repo.finish(
+      b,
+      s.sessionId,
+      leaveKey,
+      { expectedOwnRevision: 0 },
+      true,
+    );
+    const after = await repo.snapshot(a, s.sessionId);
+    expect(after.participants[0].numbersConsent).toEqual({
+      version: 2,
+      recipientIds: [],
+    });
+    expect(after.participants[0].previousConsent).toEqual({
+      version: 2,
+      recipientIds: [],
+    });
+    expect((await repo.events(a, s.sessionId, before)).data).toEqual([
+      { revision: before + 1, event: { type: "membership_changed" } },
+    ]);
+    await expect(
+      repo.numbersConsent(a, s.sessionId, key(), {
+        expectedVersion: 1,
+        recipientIds: [],
+      }),
+    ).rejects.toMatchObject({ code: "VERSION_CONFLICT" });
+    await expect(
+      repo.previousConsent(a, s.sessionId, key(), {
+        expectedVersion: 1,
+        recipientIds: [],
+      }),
+    ).rejects.toMatchObject({ code: "VERSION_CONFLICT" });
+    await repo.finish(
+      b,
+      s.sessionId,
+      leaveKey,
+      { expectedOwnRevision: 0 },
+      true,
+    );
+    await repo.finish(b, s.sessionId, key(), { expectedOwnRevision: 0 }, true);
+    expect(await repo.snapshot(a, s.sessionId)).toEqual(after);
+  });
+});
+
+describe("cloud personal start and durable admission recovery", () => {
+  it("retains an old workout start without backdating shared session creation", async () => {
+    const p = plan();
+    const startedAt = "2020-01-01T09:00:00.000Z";
+    const now = Date.now();
+    const created = await repo.create(a, key(), {
+      clientDraftId: key(),
+      startedAt,
+      plan: p,
+      ownExecution: { exercises: [] },
+    });
+    const [stored] = await db
+      .select()
+      .from(schema.togetherSessions)
+      .where(eq(schema.togetherSessions.id, created.sessionId));
+    expect(stored.createdAt.getTime()).toBeGreaterThanOrEqual(now);
+    await run(a, created.sessionId, cmd(a, p.exercises[0].planExerciseId));
+    await repo.finish(a, created.sessionId, key(), { expectedOwnRevision: 1 });
+    await repo.processJob(created.sessionId, a);
+    const [history] = await db
+      .select()
+      .from(schema.workoutSessions)
+      .where(eq(schema.workoutSessions.userId, a));
+    expect(history.startedAt?.toISOString()).toBe(startedAt);
+  });
+  it("records an existing guest workout from its original start independently of the host", async () => {
+    const s = await create();
+    const startedAt = new Date(Date.now() - 600_000).toISOString();
+    const invitation = await repo.invite(a, s.sessionId, key(), {
+      expiresInMinutes: 15,
+    });
+    const request = await repo.requestJoin(b, key(), {
+      inviteToken: invitation.token,
+      consentVersion: "together-v1",
+      consentAccepted: true,
+      startedAt,
+    });
+    await repo.decide(a, s.sessionId, request.requestId, key(), {
+      decision: "approve",
+      expectedRevision: (await repo.snapshot(a, s.sessionId)).revision,
+    });
+    await run(b, s.sessionId, cmd(b, s.plan.exercises[0].planExerciseId));
+    await repo.finish(b, s.sessionId, key(), { expectedOwnRevision: 1 });
+    await repo.processJob(s.sessionId, b);
+    const [history] = await db
+      .select()
+      .from(schema.workoutSessions)
+      .where(eq(schema.workoutSessions.userId, b));
+    expect(history.startedAt?.toISOString()).toBe(startedAt);
+    await repo.finish(a, s.sessionId, key(), { expectedOwnRevision: 0 });
+    expect(await repo.joinStatus(b, request.requestId)).toMatchObject({
+      status: "approved",
+    });
+    await expect(
+      repo.cancelJoin(b, request.requestId, key()),
+    ).rejects.toMatchObject({ code: "ALREADY_ADMITTED" });
+  });
+  it("refuses future personal starts before creating any join request", async () => {
+    const s = await create();
+    await expect(
+      repo.requestJoin(b, key(), {
+        sessionId: s.sessionId,
+        consentVersion: "together-v1",
+        consentAccepted: true,
+        startedAt: new Date(Date.now() + 86_400_000).toISOString(),
+      }),
+    ).rejects.toMatchObject({ code: "INVALID_SCHEMA" });
+    expect(await db.select().from(schema.togetherJoinRequests)).toEqual([]);
+  });
+});
+
+describe("four concurrent seats after removal", () => {
+  it("refills a removed seat once, keeps the removed own workout private and excludes it from finish-all", async () => {
+    const fresh = async () => {
+      const user = key();
+      await db
+        .insert(schema.profiles)
+        .values({ id: user, fullName: "New athlete" });
+      await db.insert(schema.userSubscriptions).values({
+        userId: user,
+        tierName: "premium",
+        paymentStatus: "active" as never,
+        startsAt: new Date(0),
+      });
+      return user;
+    };
+    const request = async (id: string, user: string) => {
+      const invite = await repo.invite(a, id, key(), { expiresInMinutes: 15 });
+      return repo.requestJoin(user, key(), {
+        inviteToken: invite.token,
+        consentVersion: "together-v1",
+        consentAccepted: true,
+      });
+    };
+    const admit = async (id: string, user: string) => {
+      const r = await request(id, user);
+      await repo.decide(a, id, r.requestId, key(), {
+        decision: "approve",
+        expectedRevision: (await repo.snapshot(a, id)).revision,
+      });
+    };
+    const s = await pair();
+    const d = await fresh(),
+      e = await fresh(),
+      f = await fresh();
+    await admit(s.sessionId, c);
+    await admit(s.sessionId, d);
+    await run(b, s.sessionId, cmd(b, s.plan.exercises[0].planExerciseId));
+    await repo.removeParticipant(a, s.sessionId, b, key(), {
+      expectedRevision: (await repo.snapshot(a, s.sessionId)).revision,
+    });
+    await withActors([b, c], (tx) => revokePair(tx, b, c, "block"));
+    expect((await repo.snapshot(a, s.sessionId)).sharingActive).toBe(true);
+    const pendingE = await request(s.sessionId, e),
+      pendingF = await request(s.sessionId, f);
+    const revision = (await repo.snapshot(a, s.sessionId)).revision;
+    const outcomes = await Promise.allSettled(
+      [pendingE, pendingF].map((r) =>
+        repo.decide(a, s.sessionId, r.requestId, key(), {
+          decision: "approve",
+          expectedRevision: revision,
+        }),
+      ),
+    );
+    expect(outcomes.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    expect((await repo.snapshot(a, s.sessionId)).participants).toHaveLength(4);
+    const g = await fresh();
+    await expect(request(s.sessionId, g)).rejects.toMatchObject({
+      code: "SESSION_FULL",
+    });
+    await expect(request(s.sessionId, b)).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    const removed = await repo.snapshot(b, s.sessionId);
+    expect(removed.participants).toHaveLength(1);
+    expect(removed.participants[0].execution!.exercises[0].sets).toHaveLength(
+      1,
+    );
+    await repo.close(a, s.sessionId, key(), {
+      mode: "finish_all",
+      expectedRevision: (await repo.snapshot(a, s.sessionId)).revision,
+      expectedOwnRevision: 0,
+    });
+    expect((await repo.snapshot(b, s.sessionId)).participants[0].status).toBe(
+      "active",
+    );
   });
 });

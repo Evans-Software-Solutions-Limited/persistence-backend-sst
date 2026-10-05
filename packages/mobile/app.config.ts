@@ -199,6 +199,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     },
     runtimeVersion: { policy: "appVersion" },
     plugins: [
+      "./modules/together-nearby/plugin/withTogetherNearby.js",
       ...(config.plugins ?? []),
       ...((config.plugins ?? []).some((plugin) =>
         Array.isArray(plugin)

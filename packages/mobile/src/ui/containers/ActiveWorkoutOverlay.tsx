@@ -175,7 +175,16 @@ export function ActiveWorkoutOverlay() {
       { onBehalfClientId },
     );
     if (!result.ok && result.error.kind === "together_completion_pending") {
-      Alert.alert("Workout saved locally", result.error.message);
+      const own = storage.getActiveSession(session.userId);
+      if (own?.together)
+        router.push({
+          pathname:
+            own.together.transport === "cloud"
+              ? "/(app)/session/together-cloud-review"
+              : "/(app)/session/together-review",
+          params: { localSessionId: own.id },
+        } as never);
+      else Alert.alert("Workout saved locally", result.error.message);
       return;
     }
     void useActiveWorkout.getState().end();

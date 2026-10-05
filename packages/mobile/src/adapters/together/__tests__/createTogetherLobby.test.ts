@@ -9,6 +9,9 @@ jest.mock("../../../../modules/together-lan", () => {
   mockLoads.push("lan");
   return { togetherLan: {} };
 });
+jest.mock("../../../../modules/together-nearby", () => ({
+  togetherNearby: null,
+}));
 jest.mock("expo-crypto", () => {
   mockLoads.push("crypto");
   return { getRandomBytes: jest.fn(), randomUUID: jest.fn() };

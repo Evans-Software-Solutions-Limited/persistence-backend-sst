@@ -33,6 +33,8 @@ import {
 } from "@/shared/utils/activityUnits";
 
 export type SetLoggerProps = {
+  readOnly?: boolean;
+  hideRemove?: boolean;
   set: ExerciseSet;
   /** 1-based display position. */
   setNumber: number;
@@ -158,7 +160,8 @@ export function SetLogger(props: SetLoggerProps) {
 
       {props.previous ? (
         <TouchableOpacity
-          onPress={props.onFillPrevious}
+          disabled={props.readOnly}
+          onPress={props.readOnly ? undefined : props.onFillPrevious}
           style={styles.previousContainer}
           testID="set-logger-fill-previous"
         >
@@ -175,10 +178,15 @@ export function SetLogger(props: SetLoggerProps) {
       )}
 
       <TextInput
+        editable={!props.readOnly}
         style={[styles.input, styles.repsInput]}
         value={trackingMode === "cardio" ? duration : reps}
         onChangeText={
-          trackingMode === "cardio" ? handleDurationChange : handleRepsChange
+          props.readOnly
+            ? undefined
+            : trackingMode === "cardio"
+              ? handleDurationChange
+              : handleRepsChange
         }
         keyboardType={
           trackingMode === "cardio" ? "numbers-and-punctuation" : "number-pad"
@@ -209,13 +217,16 @@ export function SetLogger(props: SetLoggerProps) {
       />
 
       <TextInput
+        editable={!props.readOnly}
         ref={weightInputRef}
         style={[styles.input, styles.weightInput]}
         value={trackingMode === "strength" ? weight_kg : distance}
         onChangeText={
-          trackingMode === "strength"
-            ? handleWeightChange
-            : handleDistanceChange
+          props.readOnly
+            ? undefined
+            : trackingMode === "strength"
+              ? handleWeightChange
+              : handleDistanceChange
         }
         keyboardType="decimal-pad"
         onFocus={() => {
@@ -252,13 +263,15 @@ export function SetLogger(props: SetLoggerProps) {
       />
 
       <View style={styles.trashContainer}>
-        <TouchableOpacity
-          onPress={props.onRemove}
-          testID="set-logger-remove"
-          accessibilityLabel="Remove set"
-        >
-          <IconX size={12} color={color.$error} />
-        </TouchableOpacity>
+        {!props.readOnly && !props.hideRemove && (
+          <TouchableOpacity
+            onPress={props.onRemove}
+            testID="set-logger-remove"
+            accessibilityLabel="Remove set"
+          >
+            <IconX size={12} color={color.$error} />
+          </TouchableOpacity>
+        )}
       </View>
     </View>
   );

@@ -28,7 +28,7 @@ export type UseActiveSession = {
 };
 
 export function useActiveSession(): UseActiveSession {
-  const { storage, togetherLobby } = useAdapters();
+  const { storage, togetherLobby, togetherCloud } = useAdapters();
   const { session: authSession } = useAuth();
   const userId = authSession?.userId ?? null;
 
@@ -47,6 +47,11 @@ export function useActiveSession(): UseActiveSession {
   useEffect(
     () => togetherLobby?.workout?.subscribe(rereadCache),
     [togetherLobby, rereadCache],
+  );
+
+  useEffect(
+    () => togetherCloud?.subscribe(rereadCache),
+    [togetherCloud, rereadCache],
   );
 
   return { session, userId, rereadCache };
