@@ -33,6 +33,14 @@ export function bindTogetherProvisioning(
         generation === accountGeneration &&
         [
           "unauthorized",
+          "paid-required",
+          "authentication-required",
+          "service-unavailable",
+          "device-revoked",
+          "registration-conflict",
+          "registration-invalid",
+          "disabled",
+          "signed-out",
           "expired",
           "invalid-proof",
           "key-unavailable",

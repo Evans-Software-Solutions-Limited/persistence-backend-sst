@@ -1,3 +1,4 @@
+import { useTogetherGate } from "@/ui/hooks/useTogetherGate";
 import { TogetherConnectionChoice } from "@/ui/presenters/TogetherConnectionChoice";
 import { TogetherStartRow } from "@/ui/presenters/TogetherStartRow";
 import { TogetherStartSheet } from "@/ui/presenters/TogetherStartSheet";
@@ -47,6 +48,7 @@ export function WorkoutDetailContainer() {
   const params = useLocalSearchParams<{ id?: string }>();
   const workoutId = params.id ?? null;
   const { storage, togetherLobby, togetherCloud } = useAdapters();
+  const togetherGate = useTogetherGate();
   const [togetherOpen, setTogetherOpen] = useState(false);
   const [togetherConnection, setTogetherConnection] = useState<
     "local" | "online"
@@ -60,6 +62,9 @@ export function WorkoutDetailContainer() {
     setTogetherConnection("local");
     setTogetherAudience("invite-only");
   }, [userId, workoutId]);
+  useEffect(() => {
+    if (!togetherGate.allowed) setTogetherOpen(false);
+  }, [togetherGate.allowed]);
   const weightUnit = useProfilePage().payload?.profile.weightUnit ?? "kg";
 
   const detail = useWorkout(workoutId);
@@ -167,7 +172,7 @@ export function WorkoutDetailContainer() {
   // a session that the server's over-limit backstop would deny at Finish.
   const onStartWorkout = useCallback(
     (id: string, audience?: TogetherLobbyAudience) => {
-      if (audience && !userId) return;
+      if (audience && (!userId || !togetherGate.allowed)) return;
       if (isLoadoutWorkout && !loadoutGate.allowed) {
         openLoadoutUpsell();
         return;
@@ -190,6 +195,7 @@ export function WorkoutDetailContainer() {
       totalCapGate,
       userId,
       togetherConnection,
+      togetherGate.allowed,
     ],
   );
 
@@ -286,7 +292,7 @@ export function WorkoutDetailContainer() {
         onEdit={onEdit}
         onStartWorkout={onStartWorkout}
         togetherEntry={
-          togetherLobby ? (
+          togetherLobby && togetherGate.allowed ? (
             <TogetherStartRow
               detail={
                 togetherAudience === "friends"
@@ -328,7 +334,7 @@ export function WorkoutDetailContainer() {
             transport={togetherLobby?.getSnapshot().transport}
           />
         }
-        visible={togetherOpen}
+        visible={togetherOpen && togetherGate.allowed}
         onClose={() => setTogetherOpen(false)}
         onStart={() => {
           if (workout) onStartWorkout(workout.id, togetherAudience);

@@ -1,3 +1,24 @@
+let mockUseRealTogetherGate = false;
+const mockTogetherGate = {
+  allowed: true,
+  state: "allowed" as "allowed" | "locked" | "pending" | "unavailable",
+  onUpgrade: jest.fn(),
+  retry: jest.fn(),
+};
+jest.mock("@/ui/hooks/useTogetherGate", () => ({
+  useTogetherGate: () =>
+    mockUseRealTogetherGate
+      ? jest.requireActual("@/ui/hooks/useTogetherGate").useTogetherGate()
+      : mockTogetherGate,
+}));
+beforeEach(() => {
+  mockUseRealTogetherGate = false;
+  mockTogetherGate.allowed = true;
+  mockTogetherGate.state = "allowed";
+  mockTogetherGate.onUpgrade.mockClear();
+  mockTogetherGate.retry.mockClear();
+});
+
 /**
  * ActiveSessionContainer tests — exercise the container/presenter
  * wiring with an in-memory storage adapter + mocked notifications. (M3.)
@@ -228,17 +249,62 @@ describe("ActiveSessionContainer", () => {
     jest.restoreAllMocks();
   });
 
-  it.each(["personal", "retrospective", "coached", "detail", "other-account"])(
+  it.each([
+    "personal",
+    "retrospective",
+    "coached",
+    "detail",
+    "other-account",
+    "staggered-auth",
+    "locked",
+    "pending",
+    "unavailable",
+  ])(
     "Together entry respects %s logging and preserves the workout",
     async (mode) => {
+      if (mode === "locked" || mode === "pending" || mode === "unavailable") {
+        mockTogetherGate.allowed = false;
+        mockTogetherGate.state = mode;
+      }
       const api = new InMemoryApiAdapter();
       const storage = new InMemoryStorageAdapter();
-      if (mode === "coached" || mode === "detail") {
+      if (
+        mode === "coached" ||
+        mode === "detail" ||
+        mode === "staggered-auth"
+      ) {
         const workout = buildWorkout();
         storage.cacheWorkoutDetail("user-1", workout);
         jest.spyOn(api, "getWorkout").mockResolvedValue(ok(workout));
       }
       const adapters = makeAdapters(api, storage);
+      let releaseGateAuth: (() => void) | undefined;
+      if (mode === "staggered-auth") {
+        mockUseRealTogetherGate = true;
+        const sessionResult = await adapters.auth.getSession();
+        jest
+          .mocked(adapters.auth.onAuthStateChange)
+          .mockImplementation(() => () => {});
+        jest.mocked(adapters.auth.getSession).mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              releaseGateAuth = () => resolve(sessionResult);
+            }),
+        );
+        const access = {
+          accountId: "user-1",
+          state: "allowed" as const,
+          expiresAt: Date.now() + 60000,
+        };
+        adapters.togetherProvisioning = {
+          getAccessSnapshot: () => access,
+          subscribeAccess: () => () => {},
+          setAccount: jest.fn(),
+          prepare: jest.fn(),
+          friendship: jest.fn(),
+          dispose: jest.fn(),
+        };
+      }
       const snapshot = { phase: "idle" as const, members: [], pending: [] };
       const host = jest.fn(async () => {});
       adapters.togetherLobby = {
@@ -264,11 +330,18 @@ describe("ActiveSessionContainer", () => {
           ? { retroactive: "true" }
           : mode === "coached"
             ? { workoutId: "w-1", clientId: "client-1", clientName: "Mia" }
-            : mode === "detail" || mode === "other-account"
+            : mode === "detail" ||
+                mode === "staggered-auth" ||
+                mode === "other-account"
               ? {
-                  ...(mode === "detail" ? { workoutId: "w-1" } : {}),
+                  ...(mode === "detail" || mode === "staggered-auth"
+                    ? { workoutId: "w-1" }
+                    : {}),
                   togetherAudience: "open",
-                  togetherAccountId: mode === "detail" ? "user-1" : "other",
+                  togetherAccountId:
+                    mode === "detail" || mode === "staggered-auth"
+                      ? "user-1"
+                      : "other",
                 }
               : {},
       );
@@ -282,7 +355,15 @@ describe("ActiveSessionContainer", () => {
         withAdapters(adapters, <ActiveSessionContainer />),
       );
       await r.findByTestId("active-session-screen");
-      if (mode === "detail") {
+      if (mode === "staggered-auth") {
+        expect(host).not.toHaveBeenCalled();
+        expect(routeParams.togetherAudience).toBe("open");
+        await act(async () => {
+          releaseGateAuth!();
+        });
+        await waitFor(() => expect(host).toHaveBeenCalledTimes(1));
+      }
+      if (mode === "detail" || mode === "staggered-auth") {
         expect(host).toHaveBeenCalledWith("Push Day", "open");
         expect(host).toHaveBeenCalledTimes(1);
         expect(mockRouterSetParams).toHaveBeenCalledWith({
@@ -2131,8 +2212,10 @@ describe("ActiveSessionContainer", () => {
 
 describe("Together active workout integration", () => {
   it.each(["cloud", "offline"] as const)(
-    "routes %s completion through own review even with no logged sets",
+    "routes %s completion through own review after paid access ends, even with no logged sets",
     async (transport) => {
+      mockTogetherGate.allowed = false;
+      mockTogetherGate.state = "locked";
       jest.clearAllMocks();
       mockUseLocalSearchParams.mockReturnValue({});
       useActiveWorkout.setState({ active: null, expanded: false });

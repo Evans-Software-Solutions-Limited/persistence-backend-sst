@@ -1573,3 +1573,23 @@ it.each(["existing-authority", "wrong-account"])(
     expect(h.workout.promote).not.toHaveBeenCalled();
   },
 );
+
+it("does not expose new sharing or consume a host action when entry access is denied", () => {
+  const h = harness();
+  const r = renderWithTheme(
+    <TogetherLobbyContainer
+      lobby={h.lobby}
+      accountId="me"
+      workoutName="My workout"
+      allowNewSharing={false}
+      initialHostAudience="invite-only"
+    >
+      {(row) => <View testID="personal-workout">{row}</View>}
+    </TogetherLobbyContainer>,
+  );
+  expect(r.getByTestId("personal-workout")).toBeTruthy();
+  expect(r.queryByTestId("together-workout-row")).toBeNull();
+  expect(r.queryByText("Start the session")).toBeNull();
+  expect(h.lobby.host).not.toHaveBeenCalled();
+  expect(h.lobby.browse).not.toHaveBeenCalled();
+});

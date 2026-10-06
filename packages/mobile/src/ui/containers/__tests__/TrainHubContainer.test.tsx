@@ -1,3 +1,19 @@
+const mockTogetherGate = {
+  allowed: true,
+  state: "allowed" as "allowed" | "locked" | "pending" | "unavailable",
+  onUpgrade: jest.fn(),
+  retry: jest.fn(),
+};
+jest.mock("@/ui/hooks/useTogetherGate", () => ({
+  useTogetherGate: () => mockTogetherGate,
+}));
+beforeEach(() => {
+  mockTogetherGate.allowed = true;
+  mockTogetherGate.state = "allowed";
+  mockTogetherGate.onUpgrade.mockClear();
+  mockTogetherGate.retry.mockClear();
+});
+
 import { fireEvent, within } from "@testing-library/react-native";
 
 import { renderWithTheme } from "../../../../__tests__/test-utils";
@@ -323,3 +339,29 @@ describe("TrainHubContainer", () => {
     );
   });
 });
+
+it.each(["locked", "pending", "unavailable"] as const)(
+  "guards the Together hub for %s access but keeps partner management available",
+  (state) => {
+    mockTogetherGate.allowed = false;
+    mockTogetherGate.state = state;
+    useTrainSegment.setState({ segment: "Together", hydrated: true });
+    const r = renderWithTheme(<TrainHubContainer />);
+    expect(r.queryByLabelText("Train together")).toBeNull();
+    expect(r.getByTestId("together-access-gate")).toBeTruthy();
+    expect(r.getByLabelText("Training partners")).toBeTruthy();
+    if (state === "locked") {
+      fireEvent.press(r.getByText("View subscriptions"));
+      expect(mockTogetherGate.onUpgrade).toHaveBeenCalledTimes(1);
+      fireEvent.press(r.getByText("Check access again"));
+      expect(mockTogetherGate.retry).toHaveBeenCalledTimes(1);
+    } else if (state === "unavailable") {
+      fireEvent.press(r.getByText("Retry access check"));
+      expect(mockTogetherGate.retry).toHaveBeenCalledTimes(1);
+      expect(r.queryByText("View subscriptions")).toBeNull();
+    } else {
+      expect(r.getByText("Checking your Together access…")).toBeTruthy();
+      expect(r.queryByText("View subscriptions")).toBeNull();
+    }
+  },
+);

@@ -1,3 +1,4 @@
+import { useTogetherGate } from "@/ui/hooks/useTogetherGate";
 /**
  * ActiveSessionContainer — owns session state + mutations for the
  * `/(app)/session` modal screen. (M3, Stories 002 + 004 + 005 + 009.)
@@ -103,6 +104,7 @@ export function retrospectiveCompletedAtForDay(
 }
 
 export function ActiveSessionContainer() {
+  const togetherGate = useTogetherGate();
   const { storage, api, auth, netInfo, togetherLobby, togetherCloud } =
     useAdapters();
   const params = useLocalSearchParams<{
@@ -157,7 +159,8 @@ export function ActiveSessionContainer() {
       (params.togetherAccountId !== userId ||
         withClient ||
         retroactive ||
-        params.clientId)
+        params.clientId ||
+        (togetherGate.state !== "pending" && !togetherGate.allowed))
     ) {
       router.setParams({
         togetherAudience: undefined,
@@ -166,6 +169,8 @@ export function ActiveSessionContainer() {
       });
     }
   }, [
+    togetherGate.state,
+    togetherGate.allowed,
     authLoading,
     params.togetherAudience,
     params.togetherAccountId,
@@ -954,10 +959,15 @@ export function ActiveSessionContainer() {
 
   return (
     <>
-      {togetherLobby && !withClient && !retroactive ? (
+      {togetherLobby &&
+      !withClient &&
+      !retroactive &&
+      (togetherGate.allowed || !!session.together) ? (
         <TogetherLobbyContainer
           lobby={togetherLobby}
+          allowNewSharing={togetherGate.allowed}
           initialHostAudience={
+            togetherGate.allowed &&
             !params.clientId &&
             params.togetherAccountId === userId &&
             (params.togetherAudience === "invite-only" ||

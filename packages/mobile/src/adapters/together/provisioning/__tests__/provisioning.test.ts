@@ -1198,3 +1198,107 @@ it.each([
     });
   },
 );
+
+describe("secret-free sharing access projection", () => {
+  it("publishes verified cached offline access without credentials or seeds", async () => {
+    const listener = jest.fn();
+    const unsubscribe = service.subscribeAccess(listener);
+    expect(service.getAccessSnapshot()).toMatchObject({
+      accountId: A,
+      state: "pending",
+    });
+    await service.refreshAccess({ online: true });
+    expect(service.getAccessSnapshot()).toEqual({
+      accountId: A,
+      state: "allowed",
+      expiresAt: now + 600000,
+    });
+    const reopened = make();
+    api.trust.mockClear();
+    api.register.mockClear();
+    await reopened.refreshAccess({ online: false });
+    expect(reopened.getAccessSnapshot()).toEqual(service.getAccessSnapshot());
+    expect(api.trust).not.toHaveBeenCalled();
+    expect(api.register).not.toHaveBeenCalled();
+    expect(listener).toHaveBeenCalled();
+    unsubscribe();
+    reopened.dispose();
+  });
+  it("notifies at credential expiry and cancels the timer on account changes", async () => {
+    jest.useFakeTimers();
+    try {
+      await service.refreshAccess({ online: true });
+      const listener = jest.fn();
+      service.subscribeAccess(listener);
+      now += 600000;
+      jest.advanceTimersByTime(600000);
+      expect(service.getAccessSnapshot()).toMatchObject({
+        state: "unavailable",
+        error: "expired",
+      });
+      expect(listener).toHaveBeenCalledTimes(1);
+      await service.refreshAccess({ online: true });
+      service.setAccount(B);
+      expect(jest.getTimerCount()).toBe(0);
+      expect(service.getAccessSnapshot()).toEqual({
+        accountId: B,
+        state: "pending",
+        expiresAt: null,
+      });
+      service.dispose();
+      expect(jest.getTimerCount()).toBe(0);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+  it.each([
+    ["PAID_REQUIRED", "locked", "paid-required"],
+    ["DEVICE_REVOKED", "unavailable", "device-revoked"],
+  ])(
+    "projects %s without turning nonpayment failures into an upsell",
+    async (code, state, error) => {
+      await service.refreshAccess({ online: true });
+      api.friendship.mockResolvedValueOnce(denial(403, code));
+      await service.friendship(B, { online: true });
+      expect(service.getAccessSnapshot()).toMatchObject({ state, error });
+      await service.refreshAccess({ online: false });
+      expect(service.getAccessSnapshot().state).toBe(state);
+    },
+  );
+  it("cannot restore the previous account from delayed preparation", async () => {
+    const flight = deferred<Awaited<ReturnType<TogetherOfflineApi["trust"]>>>();
+    api.trust.mockReturnValueOnce(flight.promise);
+    const pending = service.refreshAccess({ online: true });
+    // Yield until preparation has entered its trust request.
+    while (api.trust.mock.calls.length === 0) await Promise.resolve();
+    service.setAccount(B);
+    flight.resolve(
+      ok({
+        publicKeys: { v1: publicKeyPem(server) },
+        maxCredentialAgeMs: 86400000,
+      }),
+    );
+    await pending;
+    expect(service.getAccessSnapshot()).toEqual({
+      accountId: B,
+      state: "pending",
+      expiresAt: null,
+    });
+    service.dispose();
+  });
+});
+
+it("explicit retry detaches a hung prepare and ignores its later refusal", async () => {
+  const flight = deferred<Awaited<ReturnType<TogetherOfflineApi["trust"]>>>();
+  api.trust.mockReturnValueOnce(flight.promise);
+  const old = service.prepare({ online: true });
+  while (api.trust.mock.calls.length === 0) await Promise.resolve();
+  await service.refreshAccess({ online: true });
+  expect(api.trust).toHaveBeenCalledTimes(2);
+  expect(service.getAccessSnapshot().state).toBe("allowed");
+  flight.resolve(denial(403, "PAID_REQUIRED"));
+  expect(await old).toMatchObject({ ok: false, error: { code: "cancelled" } });
+  expect(service.getAccessSnapshot().state).toBe("allowed");
+  expect(new ProvisioningCache(database).read(scope()).blocked).toBe(false);
+  service.dispose();
+});

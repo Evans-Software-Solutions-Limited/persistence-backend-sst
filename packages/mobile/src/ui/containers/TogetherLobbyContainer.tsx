@@ -59,10 +59,12 @@ export function TogetherLobbyContainer({
   onRestorePersonal,
   children,
   initialHostAudience,
+  allowNewSharing = true,
   initialHostConnection = "local",
   onConsumeHostIntent,
 }: {
   initialHostAudience?: TogetherLobbyAudience;
+  allowNewSharing?: boolean;
   initialHostConnection?: "local" | "online";
   onConsumeHostIntent?: () => void;
   lobby: TogetherLobbyPort;
@@ -322,7 +324,8 @@ export function TogetherLobbyContainer({
     }
   };
   useEffect(() => {
-    if (!initialHostAudience || consumedHostIntent.current) return;
+    if (!allowNewSharing || !initialHostAudience || consumedHostIntent.current)
+      return;
     if (hostIntentAccount.current !== accountId) {
       consumedHostIntent.current = true;
       onConsumeHostIntent?.();
@@ -351,7 +354,13 @@ export function TogetherLobbyContainer({
       void startLocalWorkout(initialHostAudience);
     // An explicit detail-page action is consumed once, never retried by a render or failure.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialHostAudience, initialHostConnection, snapshot.phase, accountId]);
+  }, [
+    initialHostAudience,
+    initialHostConnection,
+    snapshot.phase,
+    accountId,
+    allowNewSharing,
+  ]);
   const confirmRemoval = (id: string) => {
     const dialogGeneration = generation.current;
     Alert.alert(
@@ -438,7 +447,8 @@ export function TogetherLobbyContainer({
         {children}
       </TogetherCloudContainer>
     );
-  if (snapshot.phase === "disabled") return children?.(null) ?? null;
+  if (snapshot.phase === "disabled" || (!allowNewSharing && !workoutStatus))
+    return children?.(null) ?? null;
   const showInvitation =
     snapshot.phase === "hosting" &&
     snapshot.role === "host" &&

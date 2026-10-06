@@ -34,7 +34,18 @@ export interface ReadyIdentity {
   seed: Uint8Array;
   deviceId: string;
 }
+/** Verified sharing authority only; never credentials or signing material. */
+export interface TogetherAccessSnapshot {
+  accountId: string | null;
+  state: "pending" | "allowed" | "locked" | "unavailable";
+  expiresAt: number | null;
+  error?: ProvisioningErrorCode;
+}
 export interface TogetherProvisioningPort {
+  getAccessSnapshot?(): TogetherAccessSnapshot;
+  subscribeAccess?(listener: () => void): () => void;
+  /** Prepare sharing authority without returning secret material to UI callers. */
+  refreshAccess?(options: { online: boolean }): Promise<void>;
   /** Original owner key only; never prepares, renews or registers sharing. */
   signRecovery?(
     credential: Signed<Credential>,

@@ -158,3 +158,19 @@ presenter, HeaderBar and controls at 402×874 with simulated safe-area/data and 
 browser substitute for the native sheet. The fixture QR encodes a sample 32-character
 partner code. Browser evidence checks content, typography and pinned layout; it
 is not proof of Gorhom native geometry, share-sheet integration or device scanning.
+
+## Subscription entry guard — 6 October owner correction
+
+Workout detail and personal-active-workout Start Together controls are hidden
+until the existing signed paid credential is verified. The Train hub replaces
+its actionable Train together card with a subscription gate for authoritative
+paid denial; pending/technical failure are distinct checking/retry states.
+Training partner management remains independent. Subscription selection uses the
+existing route, with Check access again after upgrading. Approved expiry/account
+changes close setup, while existing own-workout recovery remains reachable.
+
+[Paid-access gate](./evidence/ui-2026-10-06/together-subscription-gate.png) and
+[technical retry](./evidence/ui-2026-10-06/together-access-retry.png) render the
+actual TogetherHubPresenter at 402×874 with simulated props and simplified hub
+chrome. This is browser component evidence, not native navigation or provisioning
+proof. It reuses existing Card/Btn/type tokens for the approved missing states.

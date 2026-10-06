@@ -1,5 +1,40 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-06 — PR #488 paid-access entry guard (PER-22 / PER-64)
+
+The Together entry previously checked only for a configured adapter. New sharing
+now requires account-bound verified paid readiness from the existing provisioning
+adapter. It exposes only state/expiry/error, never credentials or signing seeds.
+Valid signed cached credentials preserve offline entry; account changes, expiry
+and definitive denials remove access. The detail/personal-active Start control is
+hidden when unauthorized. Train → Together shows subscription selection only for
+paid denial, with checking/retry for other states and Check access again after an
+upgrade. Partner management and existing own-workout completion/recovery remain
+accessible. No staging subscription records were changed.
+
+Retry bounds connectivity lookup and can supersede a hung preparation; stale
+responses cannot publish authority. Auth bootstrap remains pending until the
+hook's own auth read settles, independently of the active-workout auth read.
+The staggered-auth integration failed before this guard and passes after it;
+three entry-gate regressions fail against the old hub presenter. Local Inspector
+clean after resolving independent auth bootstrap and locked-state recheck leads.
+
+Focused adapter/hook/binder: 123 tests; gate 100/97.61/100/100%, provisioning
+96.59/93.66/100/98.8%, binder 100%. Entry/recovery containers: 121 tests pass.
+Typecheck 9/9, lint 6/6 and non-mobile builds 12/12 pass. Existing active/detail
+monolith whole-file coverage gaps remain, with no exclusions. Browser screenshots
+use actual hub presenter with simulated state; native-device proof remains open.
+Full mobile: 595 suites / 8,178 tests pass; aggregate coverage
+96.37/91.73/96.49/97.73%.
+
+Staging diagnosis: latest successful deployment is still a773d581, so the PR's
+opaque-ID sync fix is not deployed. The owner's queried staging subscription is
+cancelled/expired and its complimentary grant revoked; the paid denial is valid,
+not a simulator restriction. No deploy, native/prebuild/EAS build, merge or CI
+Inspector trigger. Next: owner review and backend deployment, then trial with a
+valid staging entitlement. PR remains open.
+
+
 ### 2026-10-06 — PR #488 partner drawer and connection-control correction
 
 Partner management now uses the reviewed fixed HeaderBar/back icon and a separate

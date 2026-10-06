@@ -105,3 +105,19 @@ Provide [SMOKE_TEST](./SMOKE_TEST.md) evidence on two real phones when a compati
 ### Approved permission follow-up (2026-10-05)
 
 Android local-network permission is declared and requested only for target SDK 37+; runtime requests also require device API 37+. Target SDK remains 36 in this slice. LAN and explicit hotspot-owner starts share a cancellable permission gate; denial, stop, destruction or a superseding start cannot create a stale listener/discovery. Nearby uses the same target/device rule. Camera explanations include Together lobby QR scanning. Native compilation and denial/regrant/device testing remain Brad-owned evidence.
+
+### Paid-access entry guard — owner correction, 6 October 2026
+
+New host/join entry points require verified paid Together authorization, not merely
+an installed transport adapter. Hide the workout-detail and personal-active-workout
+Start Together controls until authorized. The Train hub uses the existing feature
+gate pattern: explicit paid denial offers subscription selection; preparation and
+technical failure show checking/retry rather than a misleading paywall. Training
+partner management remains separate from paid sharing.
+
+Project only account-bound readiness/expiry/error from the existing provisioning
+verifier into UI. No signing secrets or raw credentials reach React state. Valid
+signed cached credentials preserve authorized offline LAN access; account changes,
+authoritative denial and expiry revoke readiness. Guard navigation and delayed
+host intent as well as visible controls. Existing Together own-workout logging,
+completion and recovery remain accessible when paid sharing ends.

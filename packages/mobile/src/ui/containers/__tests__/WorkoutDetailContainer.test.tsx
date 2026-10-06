@@ -1,3 +1,19 @@
+const mockTogetherGate = {
+  allowed: true,
+  state: "allowed" as "allowed" | "locked" | "pending" | "unavailable",
+  onUpgrade: jest.fn(),
+  retry: jest.fn(),
+};
+jest.mock("@/ui/hooks/useTogetherGate", () => ({
+  useTogetherGate: () => mockTogetherGate,
+}));
+beforeEach(() => {
+  mockTogetherGate.allowed = true;
+  mockTogetherGate.state = "allowed";
+  mockTogetherGate.onUpgrade.mockClear();
+  mockTogetherGate.retry.mockClear();
+});
+
 import { act, fireEvent, waitFor } from "@testing-library/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React from "react";
@@ -878,5 +894,53 @@ it("offers online partner discovery and explains local joining without a managem
     "/(app)/session?workoutId=w-1&togetherAudience=friends&togetherAccountId=user-1&togetherConnection=online",
   );
   expect(r.queryByText("Add or manage training partners")).toBeNull();
+  expect(storage.getActiveSession("user-1")).toBeNull();
+});
+
+it.each(["locked", "pending", "unavailable"] as const)(
+  "hides the Together start for %s access without blocking a personal workout",
+  async (state) => {
+    mockTogetherGate.allowed = false;
+    mockTogetherGate.state = state;
+    const api = new InMemoryApiAdapter();
+    jest.spyOn(api, "getWorkout").mockResolvedValue(ok(buildWorkout()));
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheWorkoutDetail("user-1", buildWorkout());
+    const adapters = makeAdapters(api, storage);
+    adapters.togetherLobby = togetherLobby();
+    mockUseLocalSearchParams.mockReturnValue({ id: "w-1" });
+    mockRouterPush.mockClear();
+    const r = renderWithTheme(
+      withAdapters(adapters, <WorkoutDetailContainer />),
+    );
+    await r.findByText("Bench Press");
+    expect(r.queryByTestId("together-start")).toBeNull();
+    fireEvent.press(r.getByText("Start workout"));
+    expect(mockRouterPush).toHaveBeenCalledWith("/(app)/session?workoutId=w-1");
+    expect(adapters.togetherLobby.host).not.toHaveBeenCalled();
+  },
+);
+
+it("closes setup and rejects its action when paid access is lost", async () => {
+  const api = new InMemoryApiAdapter();
+  jest.spyOn(api, "getWorkout").mockResolvedValue(ok(buildWorkout()));
+  const storage = new InMemoryStorageAdapter();
+  storage.cacheWorkoutDetail("user-1", buildWorkout());
+  const adapters = makeAdapters(api, storage);
+  adapters.togetherLobby = togetherLobby();
+  mockUseLocalSearchParams.mockReturnValue({ id: "w-1" });
+  mockRouterPush.mockClear();
+  const tree = () => withAdapters(adapters, <WorkoutDetailContainer />);
+  const r = renderWithTheme(tree());
+  await r.findByText("Bench Press");
+  fireEvent.press(r.getByTestId("together-start"));
+  expect(r.getByText("Who can join?")).toBeTruthy();
+  mockTogetherGate.allowed = false;
+  mockTogetherGate.state = "locked";
+  r.rerender(tree());
+  expect(r.queryByTestId("together-start")).toBeNull();
+  expect(r.UNSAFE_getByType(TogetherStartSheet).props.visible).toBe(false);
+  act(() => r.UNSAFE_getByType(TogetherStartSheet).props.onStart());
+  expect(mockRouterPush).not.toHaveBeenCalled();
   expect(storage.getActiveSession("user-1")).toBeNull();
 });
