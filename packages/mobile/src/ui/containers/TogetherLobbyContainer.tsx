@@ -3,7 +3,8 @@ import { TogetherWorkoutRow } from "@/ui/presenters/TogetherWorkoutRow";
 import { TogetherCloudContainer } from "./TogetherCloudContainer";
 import type { TogetherCloudPort } from "@/domain/ports/togetherCloud.port";
 import { TogetherPartnerPresenter } from "@/ui/presenters/TogetherPartnerPresenter";
-import { Alert, AppState } from "react-native";
+import { TogetherInvitePresenter } from "@/ui/presenters/TogetherInvitePresenter";
+import { Alert, AppState, Share } from "react-native";
 import { TogetherSharingPresenter } from "@/ui/presenters/TogetherSharingPresenter";
 import type { TogetherPreviousRow } from "@/domain/ports/togetherShared.port";
 import { router } from "expo-router";
@@ -58,9 +59,11 @@ export function TogetherLobbyContainer({
   onRestorePersonal,
   children,
   initialHostAudience,
+  initialHostConnection = "local",
   onConsumeHostIntent,
 }: {
-  initialHostAudience?: TogetherLobbyAudience | "friends";
+  initialHostAudience?: TogetherLobbyAudience;
+  initialHostConnection?: "local" | "online";
   onConsumeHostIntent?: () => void;
   lobby: TogetherLobbyPort;
   cloud?: TogetherCloudPort;
@@ -99,12 +102,17 @@ export function TogetherLobbyContainer({
   const browsingIntent = useRef(false);
   const [screen, setScreen] = useState<TogetherLobbyScreen>("start");
   const [visible, setVisible] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [startingWorkout, setStartingWorkout] = useState(false);
+  const [startFailed, setStartFailed] = useState(false);
+  const hostGeneration = useRef(0);
   const [code, setCode] = useState("");
   const [notice, setNotice] = useState("");
   const [viewing, setViewing] = useState<string | null>(null);
   const [remote, setRemote] = useState(false);
   const [hostFriends, setHostFriends] = useState(false);
   const [friendsSelected, setFriendsSelected] = useState(false);
+  const [connection, setConnection] = useState<"local" | "online">("local");
   const [scanning, setScanning] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
   const generation = useRef(0);
@@ -116,6 +124,8 @@ export function TogetherLobbyContainer({
   const consumedHostIntent = useRef(false);
   const hostIntentAccount = useRef(accountId);
   const dismiss = () => {
+    hostGeneration.current++;
+    setStartingWorkout(false);
     consumedHostIntent.current = true;
     if (initialHostAudience) onConsumeHostIntent?.();
     generation.current++;
@@ -144,25 +154,34 @@ export function TogetherLobbyContainer({
   };
   useEffect(() => {
     const lifetime = generation;
+    const hostLifetime = hostGeneration;
+    hostGeneration.current++;
+    setStartingWorkout(false);
+    setStartFailed(false);
     generation.current++;
     setVisible(false);
     setScanning(false);
     setCode("");
     setNotice("");
+    setSettingsOpen(false);
     setAudience("invite-only");
     setViewing(null);
     setRemote(false);
     setHostFriends(false);
     setFriendsSelected(false);
+    setConnection("local");
     browsingIntent.current = false;
     return () => {
       lifetime.current++;
+      hostLifetime.current++;
       void lobby.cancel().catch(() => {});
     };
   }, [accountId, lobby]);
   useEffect(() => {
     const listener = AppState.addEventListener("change", (state) => {
       if (state !== "active") {
+        hostGeneration.current++;
+        setStartingWorkout(false);
         consumedHostIntent.current = true;
         if (initialHostAudience) onConsumeHostIntent?.();
         browsingIntent.current = false;
@@ -218,6 +237,90 @@ export function TogetherLobbyContainer({
         );
     });
   };
+  const startLocalWorkout = async (selectedAudience: TogetherLobbyAudience) => {
+    const scope = ++hostGeneration.current;
+    const draft = getWorkout?.();
+    const promote = !!(lobby.workout && draft);
+    setStartingWorkout(promote);
+    setStartFailed(false);
+    setSettingsOpen(false);
+    setNotice("");
+    try {
+      if (
+        getWorkout &&
+        (!draft ||
+          draft.userId !== accountId ||
+          draft.together ||
+          (localSessionId && draft.id !== localSessionId))
+      )
+        throw new Error("workout-changed");
+      await lobby.host(workoutName, selectedAudience);
+      if (scope !== hostGeneration.current) return;
+      const hosted = lobby.getSnapshot();
+      if (hosted.phase !== "hosting" || hosted.role !== "host") return;
+      if (!promote) return;
+      const fresh = getWorkout?.();
+      if (
+        !fresh ||
+        fresh.userId !== accountId ||
+        fresh.id !== draft!.id ||
+        fresh.together
+      )
+        throw new Error("workout-changed");
+      await lobby.workout!.promote(fresh);
+      if (scope !== hostGeneration.current) return;
+      const plan = lobby.workout!.getPlan(accountId, fresh.id);
+      if (!plan || !lobby.shared) throw new Error("workout-plan-unavailable");
+      if (plan && lobby.shared) {
+        lobby.shared.setOwnPlan(plan);
+        await lobby.shared.publishPlan(plan);
+      }
+    } catch (error) {
+      if (scope === hostGeneration.current) {
+        setStartFailed(true);
+        setNotice(
+          error instanceof Error && error.message === "workout-unsupported"
+            ? "This workout can’t be shared yet. Use a strength workout with weights and reps, without supersets, substitutions or RPE. You can keep logging personally."
+            : "Could not finish preparing Together. Your workout stays on this device. Open settings to retry sharing or review your result.",
+        );
+      }
+    } finally {
+      if (scope === hostGeneration.current) setStartingWorkout(false);
+    }
+  };
+  const retryHostedPlan = async () => {
+    const scope = ++hostGeneration.current;
+    setStartingWorkout(true);
+    setNotice("");
+    try {
+      const current = getWorkout?.();
+      const host = lobby.getSnapshot();
+      if (
+        !current ||
+        current.userId !== accountId ||
+        current.id !== localSessionId ||
+        host.phase !== "hosting" ||
+        host.role !== "host" ||
+        !lobby.workout?.status(accountId, current.id)
+      )
+        throw new Error("workout-changed");
+      const plan = lobby.workout.getPlan(accountId, current.id);
+      if (!plan || !lobby.shared) throw new Error("workout-plan-unavailable");
+      lobby.shared.setOwnPlan(plan);
+      await lobby.shared.publishPlan(plan);
+      if (scope === hostGeneration.current) {
+        setStartFailed(false);
+        setSettingsOpen(false);
+      }
+    } catch {
+      if (scope === hostGeneration.current)
+        setNotice(
+          "Could not finish sharing your workout. Retry when connected, or review your own result. Your workout stays on this device.",
+        );
+    } finally {
+      if (scope === hostGeneration.current) setStartingWorkout(false);
+    }
+  };
   useEffect(() => {
     if (!initialHostAudience || consumedHostIntent.current) return;
     if (hostIntentAccount.current !== accountId) {
@@ -225,7 +328,10 @@ export function TogetherLobbyContainer({
       onConsumeHostIntent?.();
       return;
     }
-    if (initialHostAudience === "friends") {
+    if (
+      initialHostAudience === "friends" &&
+      initialHostConnection === "online"
+    ) {
       consumedHostIntent.current = true;
       onConsumeHostIntent?.();
       if (cloud && getWorkout && !getWorkout()?.together) {
@@ -234,6 +340,7 @@ export function TogetherLobbyContainer({
       }
       return;
     }
+    setFriendsSelected(initialHostAudience === "friends");
     setAudience(initialHostAudience);
     setScreen("start");
     setVisible(true);
@@ -241,10 +348,10 @@ export function TogetherLobbyContainer({
     consumedHostIntent.current = true;
     onConsumeHostIntent?.();
     if (snapshot.phase === "idle" && !getWorkout?.()?.together)
-      invoke(() => lobby.host(workoutName, initialHostAudience));
+      void startLocalWorkout(initialHostAudience);
     // An explicit detail-page action is consumed once, never retried by a render or failure.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialHostAudience, snapshot.phase, accountId]);
+  }, [initialHostAudience, initialHostConnection, snapshot.phase, accountId]);
   const confirmRemoval = (id: string) => {
     const dialogGeneration = generation.current;
     Alert.alert(
@@ -332,6 +439,13 @@ export function TogetherLobbyContainer({
       </TogetherCloudContainer>
     );
   if (snapshot.phase === "disabled") return children?.(null) ?? null;
+  const showInvitation =
+    snapshot.phase === "hosting" &&
+    snapshot.role === "host" &&
+    !!snapshot.invitation &&
+    !settingsOpen &&
+    !startingWorkout &&
+    !startFailed;
   const row =
     workoutStatus && snapshot.members.length ? (
       <TogetherWorkoutRow
@@ -345,8 +459,12 @@ export function TogetherLobbyContainer({
         selectedId={viewing ?? accountId}
         status={togetherWorkoutCopy(workoutStatus.sharing)}
         onSelect={(id) => setViewing(id === accountId ? null : id)}
-        onSettings={() => setVisible(true)}
+        onSettings={() => {
+          setSettingsOpen(true);
+          setVisible(true);
+        }}
         onEnd={() => {
+          setSettingsOpen(true);
           setScreen("start");
           setVisible(true);
         }}
@@ -425,312 +543,399 @@ export function TogetherLobbyContainer({
           }
         }}
         title={
-          snapshot.phase === "selected"
-            ? "Join this workout"
-            : screen === "join"
-              ? "Join a session"
-              : snapshot.phase === "idle" && !workoutStatus
-                ? "Who can join?"
-                : "Train together"
+          showInvitation
+            ? "Session is live"
+            : settingsOpen && snapshot.phase === "hosting"
+              ? "Together settings"
+              : snapshot.phase === "selected"
+                ? "Join this workout"
+                : screen === "join"
+                  ? "Join a session"
+                  : snapshot.phase === "idle" && !workoutStatus
+                    ? "Who can join?"
+                    : "Train together"
         }
         eyebrow="TRAIN TOGETHER"
         height="tall"
+        footer={
+          showInvitation ? (
+            <Btn full onPress={dismiss}>
+              Back to my workout
+            </Btn>
+          ) : undefined
+        }
       >
-        {lobby.shared &&
-          sharedSnapshot &&
-          (snapshot.phase === "hosting" ||
-            snapshot.phase === "joined" ||
-            workoutStatus) && (
-            <TogetherSharingPresenter
-              snapshot={sharedSnapshot}
-              accountId={accountId}
-              members={snapshot.members}
-              role={snapshot.role}
-              onRemove={lobby.removeParticipant ? confirmRemoval : undefined}
-              onConsent={(recipient, consent) =>
-                invoke(async () => {
-                  const consentGeneration = generation.current;
-                  const request =
-                    (consentRequests.current.get(recipient) ?? 0) + 1;
-                  consentRequests.current.set(recipient, request);
-                  const shared = lobby.shared!;
-                  const stillCurrent = () =>
-                    consentGeneration === generation.current &&
-                    lobby.shared === shared &&
-                    consentRequests.current.get(recipient) === request;
-                  await shared.setConsent(recipient, consent);
-                  if (!stillCurrent()) return;
-                  const current = getWorkout?.();
-                  if (
-                    consent.prev &&
-                    current?.userId === accountId &&
-                    getPrevious
-                  ) {
-                    const grantVersion = shared
-                      .getSnapshot()
-                      .grants.find(
-                        (g) =>
-                          g.ownerId === accountId &&
-                          g.recipientId === recipient,
-                      )?.version;
-                    await shared.publishPrevious(
-                      recipient,
-                      currentPreviousRows(current, getPrevious()),
-                      Date.parse(current.startedAt),
-                    );
-                    if (!stillCurrent() || !refreshPrevious) return;
-                    const rows = await refreshPrevious(stillCurrent);
-                    if (rows === null) return;
-                    const fresh = getWorkout?.();
-                    if (
-                      !stillCurrent() ||
-                      fresh?.id !== current.id ||
-                      fresh.userId !== accountId ||
-                      fresh.startedAt !== current.startedAt
-                    )
-                      return;
-                    const grant = shared
-                      .getSnapshot()
-                      .grants.find(
-                        (g) =>
-                          g.ownerId === accountId &&
-                          g.recipientId === recipient,
-                      );
-                    if (!grant?.consent.prev || grant.version !== grantVersion)
-                      return;
-                    await shared.publishPrevious(
-                      recipient,
-                      currentPreviousRows(fresh, rows),
-                      Date.parse(current.startedAt),
-                    );
-                  }
-                })
-              }
-              onClose={confirmClose}
-            />
-          )}
-        {snapshot.role === "guest" &&
-          !workoutStatus &&
-          sharedSnapshot?.plan &&
-          onAdoptPlan && (
-            <View gap={8}>
-              <Text color="$text" fontFamily="$display">
-                {sharedSnapshot.plan.name}
+        {showInvitation ? (
+          <TogetherInvitePresenter
+            qr={
+              <View padding={8} backgroundColor="white">
+                <QRCode value={snapshot.invitation!} size={140} />
+              </View>
+            }
+            notice={notice || snapshot.error}
+            pendingCount={snapshot.pending.length}
+            friendsOnly={snapshot.audience === "friends"}
+            personal={!workoutStatus}
+            onCopy={() =>
+              invoke(async () => {
+                await Clipboard.setStringAsync(snapshot.invitation!);
+              })
+            }
+            onShare={() =>
+              invoke(async () => {
+                await Share.share({ message: snapshot.invitation! });
+              })
+            }
+            onSettings={() => setSettingsOpen(true)}
+          />
+        ) : (
+          <>
+            {startingWorkout && (
+              <Text color="$text2" accessibilityLiveRegion="polite">
+                Preparing your shared workout…
               </Text>
-              <Text color="$text2">
-                Keep your own workout, or copy this plan before sharing. Your
-                logged sets are never replaced.
-              </Text>
+            )}
+            {startFailed && workoutStatus && snapshot.phase === "hosting" && (
               <Btn
                 full
-                variant="outline"
-                onPress={() =>
-                  invoke(async () =>
-                    onAdoptPlan(sharedSnapshot.plan!, "append"),
-                  )
-                }
+                disabled={startingWorkout}
+                onPress={() => void retryHostedPlan()}
               >
-                Add their plan to mine
+                Retry sharing my workout
               </Btn>
-              {!getWorkout?.()?.exercises.some((e) => e.sets.length > 0) && (
-                <Btn
-                  full
-                  variant="outline"
-                  onPress={() =>
-                    invoke(async () =>
-                      onAdoptPlan(sharedSnapshot.plan!, "replace-empty"),
-                    )
-                  }
-                >
-                  Use this plan
+            )}
+            {settingsOpen &&
+              snapshot.phase === "hosting" &&
+              snapshot.invitation && (
+                <Btn full variant="soft" onPress={() => setSettingsOpen(false)}>
+                  Show session invitation
                 </Btn>
               )}
-            </View>
-          )}
-        <Btn
-          full
-          variant="ghost"
-          onPress={() => {
-            dismiss();
-            router.push("/(app)/together/partners" as never);
-          }}
-        >
-          Training partners
-        </Btn>
-        <TogetherLobbyPresenter
-          connectionOptions={
-            snapshot.phase === "idle" &&
-            !workoutStatus &&
-            lobby.selectTransport && (
-              <View gap={8}>
-                <Text color="$text2" fontFamily="$body">
-                  Connection
-                </Text>
-                {(lobby.transports ?? ["lan"]).map((transport) => (
-                  <Btn
-                    key={transport}
-                    full
-                    variant={
-                      (snapshot.transport ?? "lan") === transport
-                        ? "soft"
-                        : "outline"
-                    }
-                    onPress={() =>
-                      invoke(async () => lobby.selectTransport!(transport))
-                    }
-                  >
-                    {transport === "nearby"
-                      ? "Nearby phones"
-                      : transport === "hotspot-owner"
-                        ? "This Android phone’s hotspot"
-                        : "Same Wi-Fi or hotspot"}
-                  </Btn>
-                ))}
-                {cloud && getWorkout && (
+            {lobby.shared &&
+              sharedSnapshot &&
+              (snapshot.phase === "hosting" ||
+                snapshot.phase === "joined" ||
+                workoutStatus) && (
+                <TogetherSharingPresenter
+                  snapshot={sharedSnapshot}
+                  accountId={accountId}
+                  members={snapshot.members}
+                  role={snapshot.role}
+                  onRemove={
+                    lobby.removeParticipant ? confirmRemoval : undefined
+                  }
+                  onConsent={(recipient, consent) =>
+                    invoke(async () => {
+                      const consentGeneration = generation.current;
+                      const request =
+                        (consentRequests.current.get(recipient) ?? 0) + 1;
+                      consentRequests.current.set(recipient, request);
+                      const shared = lobby.shared!;
+                      const stillCurrent = () =>
+                        consentGeneration === generation.current &&
+                        lobby.shared === shared &&
+                        consentRequests.current.get(recipient) === request;
+                      await shared.setConsent(recipient, consent);
+                      if (!stillCurrent()) return;
+                      const current = getWorkout?.();
+                      if (
+                        consent.prev &&
+                        current?.userId === accountId &&
+                        getPrevious
+                      ) {
+                        const grantVersion = shared
+                          .getSnapshot()
+                          .grants.find(
+                            (g) =>
+                              g.ownerId === accountId &&
+                              g.recipientId === recipient,
+                          )?.version;
+                        await shared.publishPrevious(
+                          recipient,
+                          currentPreviousRows(current, getPrevious()),
+                          Date.parse(current.startedAt),
+                        );
+                        if (!stillCurrent() || !refreshPrevious) return;
+                        const rows = await refreshPrevious(stillCurrent);
+                        if (rows === null) return;
+                        const fresh = getWorkout?.();
+                        if (
+                          !stillCurrent() ||
+                          fresh?.id !== current.id ||
+                          fresh.userId !== accountId ||
+                          fresh.startedAt !== current.startedAt
+                        )
+                          return;
+                        const grant = shared
+                          .getSnapshot()
+                          .grants.find(
+                            (g) =>
+                              g.ownerId === accountId &&
+                              g.recipientId === recipient,
+                          );
+                        if (
+                          !grant?.consent.prev ||
+                          grant.version !== grantVersion
+                        )
+                          return;
+                        await shared.publishPrevious(
+                          recipient,
+                          currentPreviousRows(fresh, rows),
+                          Date.parse(current.startedAt),
+                        );
+                      }
+                    })
+                  }
+                  onClose={confirmClose}
+                />
+              )}
+            {snapshot.role === "guest" &&
+              !workoutStatus &&
+              sharedSnapshot?.plan &&
+              onAdoptPlan && (
+                <View gap={8}>
+                  <Text color="$text" fontFamily="$display">
+                    {sharedSnapshot.plan.name}
+                  </Text>
+                  <Text color="$text2">
+                    Keep your own workout, or copy this plan before sharing.
+                    Your logged sets are never replaced.
+                  </Text>
                   <Btn
                     full
                     variant="outline"
                     onPress={() =>
-                      invoke(async () => {
-                        const remoteGeneration = generation.current;
-                        await lobby.cancel();
-                        if (remoteGeneration === generation.current)
-                          setRemote(true);
-                      })
+                      invoke(async () =>
+                        onAdoptPlan(sharedSnapshot.plan!, "append"),
+                      )
                     }
                   >
-                    Remote · training partners
+                    Add their plan to mine
                   </Btn>
-                )}
-                <Text color="$text2" fontSize={12}>
-                  Nearby or directly connected phones only. Internet is not
-                  required once every athlete has valid offline access.
-                </Text>
-              </View>
-            )
-          }
-          snapshot={snapshot}
-          screen={screen}
-          code={code}
-          notice={notice}
-          workoutName={workoutName}
-          trainingPartners={
-            cloud && getWorkout
-              ? {
-                  selected: friendsSelected,
-                  onSelect: () => setFriendsSelected(true),
-                }
-              : undefined
-          }
-          audience={audience}
-          workoutStatus={workoutStatus}
-          onReview={
-            localSessionId
-              ? () => {
-                  dismiss();
-                  router.push({
-                    pathname: "/(app)/session/together-review",
-                    params: { localSessionId },
-                  } as never);
-                }
-              : undefined
-          }
-          onPromote={
-            lobby.workout && getWorkout
-              ? () =>
-                  invoke(async () => {
-                    const session = getWorkout();
-                    if (
-                      !session ||
-                      session.id !== localSessionId ||
-                      session.userId !== accountId
-                    )
-                      throw new Error("workout-changed");
-                    const promotionGeneration = generation.current;
-                    await lobby.workout!.promote(session);
-                    if (promotionGeneration !== generation.current) return;
-                    const plan = lobby.workout!.getPlan(accountId, session.id);
-                    if (plan && lobby.shared) {
-                      lobby.shared.setOwnPlan(plan);
-                      if (snapshot.role === "host")
-                        await lobby.shared.publishPlan(plan);
+                  {!getWorkout?.()?.exercises.some(
+                    (e) => e.sets.length > 0,
+                  ) && (
+                    <Btn
+                      full
+                      variant="outline"
+                      onPress={() =>
+                        invoke(async () =>
+                          onAdoptPlan(sharedSnapshot.plan!, "replace-empty"),
+                        )
+                      }
+                    >
+                      Use this plan
+                    </Btn>
+                  )}
+                </View>
+              )}
+            <Btn
+              full
+              variant="ghost"
+              onPress={() => {
+                dismiss();
+                router.push("/(app)/together/partners" as never);
+              }}
+            >
+              Training partners
+            </Btn>
+            <TogetherLobbyPresenter
+              connectionOptions={
+                snapshot.phase === "idle" &&
+                !workoutStatus &&
+                lobby.selectTransport && (
+                  <View gap={8}>
+                    <Text color="$text2" fontFamily="$body">
+                      Connection
+                    </Text>
+                    {(lobby.transports ?? ["lan"]).map((transport) => (
+                      <Btn
+                        key={transport}
+                        full
+                        variant={
+                          connection === "local" &&
+                          (snapshot.transport ?? "lan") === transport
+                            ? "soft"
+                            : "outline"
+                        }
+                        onPress={() => {
+                          setConnection("local");
+                          invoke(async () => lobby.selectTransport!(transport));
+                        }}
+                      >
+                        {transport === "nearby"
+                          ? "Nearby phones"
+                          : transport === "hotspot-owner"
+                            ? "This Android phone’s hotspot"
+                            : "Same Wi-Fi or hotspot"}
+                      </Btn>
+                    ))}
+                    {friendsSelected && cloud && getWorkout && (
+                      <Btn
+                        full
+                        variant={connection === "online" ? "soft" : "outline"}
+                        onPress={() => setConnection("online")}
+                      >
+                        Online · internet required
+                      </Btn>
+                    )}
+                    {screen === "join" && cloud && getWorkout && (
+                      <Btn
+                        full
+                        variant="outline"
+                        onPress={() =>
+                          invoke(async () => {
+                            const scope = generation.current;
+                            await lobby.cancel();
+                            if (scope !== generation.current) return;
+                            setHostFriends(false);
+                            setRemote(true);
+                          })
+                        }
+                      >
+                        Browse online sessions
+                      </Btn>
+                    )}
+                    <Text color="$text2" fontSize={12}>
+                      {connection === "online"
+                        ? "Partners can discover this session online."
+                        : friendsSelected
+                          ? "Only verified training partners can join. Share the code or QR; internet is not required with valid offline access."
+                          : "Nearby or directly connected phones only. Internet is not required once every athlete has valid offline access."}
+                    </Text>
+                  </View>
+                )
+              }
+              snapshot={snapshot}
+              screen={screen}
+              code={code}
+              notice={notice}
+              workoutName={workoutName}
+              trainingPartners={{
+                selected: friendsSelected,
+                onSelect: () => {
+                  setFriendsSelected(true);
+                  setConnection("local");
+                },
+              }}
+              audience={audience}
+              workoutStatus={workoutStatus}
+              onReview={
+                localSessionId
+                  ? () => {
+                      dismiss();
+                      router.push({
+                        pathname: "/(app)/session/together-review",
+                        params: { localSessionId },
+                      } as never);
                     }
-                  })
-              : undefined
-          }
-          onAudienceChange={(value) => {
-            setFriendsSelected(false);
-            setAudience(value);
-          }}
-          onBrowse={() => {
-            generation.current++;
-            browsingIntent.current = true;
-            setScanning(false);
-            invoke(() => lobby.browse());
-          }}
-          onSelectDiscovered={(sessionId) =>
-            invoke(() => lobby.selectDiscovered(sessionId))
-          }
-          onUseInvitation={() => {
-            browsingIntent.current = false;
-            setScreen("join");
-            if (snapshot.phase !== "idle") invoke(() => lobby.cancel());
-          }}
-          onCodeChange={setCode}
-          onHost={() => {
-            if (!friendsSelected) {
-              invoke(() => lobby.host(workoutName, audience));
-              return;
-            }
-            invoke(async () => {
-              const scope = generation.current;
-              if (!cloud || !getWorkout || getWorkout()?.together)
-                throw new Error("workout-changed");
-              await lobby.cancel();
-              if (scope !== generation.current) return;
-              setHostFriends(true);
-              setRemote(true);
-            });
-          }}
-          onSelect={() => invoke(() => lobby.selectInvite(code))}
-          onJoin={() => {
-            browsingIntent.current = false;
-            invoke(() => lobby.join());
-          }}
-          onScan={scan}
-          onCopy={() =>
-            invoke(async () => {
-              await Clipboard.setStringAsync(snapshot.invitation!);
-            })
-          }
-          onReconnect={() => invoke(() => lobby.reconnect())}
-          onCancel={close}
-          onApprove={(peerId) => invoke(() => lobby.approve(peerId))}
-          onDecline={(peerId) => invoke(() => lobby.decline(peerId))}
-          qr={
-            snapshot.invitation ? (
-              <View padding={12} backgroundColor="white">
-                <QRCode value={snapshot.invitation} size={180} />
-              </View>
-            ) : undefined
-          }
-          scanner={
-            scanning ? (
-              <CameraView
-                testID="together-qr-camera"
-                style={{ height: 220 }}
-                barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
-                onBarcodeScanned={({ data }) => {
-                  if (scanned.current) return;
-                  scanned.current = true;
-                  setScanning(false);
-                  setCode(data);
-                  invoke(() => lobby.selectInvite(data));
-                }}
-              />
-            ) : undefined
-          }
-        />
+                  : undefined
+              }
+              onPromote={
+                lobby.workout && getWorkout
+                  ? () =>
+                      invoke(async () => {
+                        const session = getWorkout();
+                        if (
+                          !session ||
+                          session.id !== localSessionId ||
+                          session.userId !== accountId
+                        )
+                          throw new Error("workout-changed");
+                        const promotionGeneration = generation.current;
+                        await lobby.workout!.promote(session);
+                        if (promotionGeneration !== generation.current) return;
+                        const plan = lobby.workout!.getPlan(
+                          accountId,
+                          session.id,
+                        );
+                        if (plan && lobby.shared) {
+                          lobby.shared.setOwnPlan(plan);
+                          if (snapshot.role === "host")
+                            await lobby.shared.publishPlan(plan);
+                        }
+                        setStartFailed(false);
+                      })
+                  : undefined
+              }
+              onAudienceChange={(value) => {
+                setFriendsSelected(false);
+                setConnection("local");
+                setAudience(value);
+              }}
+              onBrowse={() => {
+                generation.current++;
+                browsingIntent.current = true;
+                setScanning(false);
+                invoke(() => lobby.browse());
+              }}
+              onSelectDiscovered={(sessionId) =>
+                invoke(() => lobby.selectDiscovered(sessionId))
+              }
+              onUseInvitation={() => {
+                browsingIntent.current = false;
+                setScreen("join");
+                if (snapshot.phase !== "idle") invoke(() => lobby.cancel());
+              }}
+              onCodeChange={setCode}
+              onHost={() => {
+                if (!friendsSelected || connection === "local") {
+                  void startLocalWorkout(
+                    friendsSelected ? "friends" : audience,
+                  );
+                  return;
+                }
+                invoke(async () => {
+                  const scope = generation.current;
+                  if (!cloud || !getWorkout || getWorkout()?.together)
+                    throw new Error("workout-changed");
+                  await lobby.cancel();
+                  if (scope !== generation.current) return;
+                  setHostFriends(true);
+                  setRemote(true);
+                });
+              }}
+              onSelect={() => invoke(() => lobby.selectInvite(code))}
+              onJoin={() => {
+                browsingIntent.current = false;
+                invoke(() => lobby.join());
+              }}
+              onScan={scan}
+              onCopy={() =>
+                invoke(async () => {
+                  await Clipboard.setStringAsync(snapshot.invitation!);
+                })
+              }
+              onReconnect={() => invoke(() => lobby.reconnect())}
+              onCancel={close}
+              onApprove={(peerId) => invoke(() => lobby.approve(peerId))}
+              onDecline={(peerId) => invoke(() => lobby.decline(peerId))}
+              qr={
+                snapshot.invitation ? (
+                  <View padding={12} backgroundColor="white">
+                    <QRCode value={snapshot.invitation} size={180} />
+                  </View>
+                ) : undefined
+              }
+              scanner={
+                scanning ? (
+                  <CameraView
+                    testID="together-qr-camera"
+                    style={{ height: 220 }}
+                    barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
+                    onBarcodeScanned={({ data }) => {
+                      if (scanned.current) return;
+                      scanned.current = true;
+                      setScanning(false);
+                      setCode(data);
+                      invoke(() => lobby.selectInvite(data));
+                    }}
+                  />
+                ) : undefined
+              }
+            />
+          </>
+        )}
       </BottomSheet>
     </>
   );

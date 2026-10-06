@@ -1,10 +1,10 @@
 import { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
 import { TogetherCloudController } from "../../../adapters/together/cloudSession";
-import type { TogetherCloudApi } from "@/domain/ports/togetherCloud.port";
 import { fail } from "@/shared/errors/result";
 import React from "react";
-import { Alert, AppState } from "react-native";
+import QRCode from "react-native-qrcode-svg";
+import { Alert, AppState, Share } from "react-native";
 import { act, fireEvent, waitFor } from "@testing-library/react-native";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 import {
@@ -15,11 +15,18 @@ import { TogetherCloudPresenter } from "../../presenters/TogetherCloudPresenter"
 import { TogetherPartnerPresenter } from "../../presenters/TogetherPartnerPresenter";
 import { TogetherSharingPresenter } from "../../presenters/TogetherSharingPresenter";
 import type {
+  TogetherCloudApi,
   TogetherCloudPort,
   TogetherCloudState,
   CloudSnapshot,
 } from "@/domain/ports/togetherCloud.port";
 import type { WorkoutSession } from "@/domain/models/session";
+const mockCameraPermission = jest.fn();
+jest.mock("expo-camera", () => ({
+  useCameraPermissions: () => [null, mockCameraPermission],
+  CameraView: "CameraView",
+}));
+jest.mock("react-native-qrcode-svg", () => "QRCode");
 const mockPush = jest.fn(),
   mockCopy = jest.fn();
 jest.mock("expo-router", () => ({
@@ -30,8 +37,17 @@ jest.mock("expo-clipboard", () => ({
 }));
 jest.mock("expo-crypto", () => ({ randomUUID: () => "uuid" }));
 jest.mock("@/ui/components/foundation/BottomSheet", () => ({
-  BottomSheet: (p: { visible: boolean; children: React.ReactNode }) =>
-    p.visible ? p.children : null,
+  BottomSheet: (p: {
+    visible: boolean;
+    children: React.ReactNode;
+    footer?: React.ReactNode;
+  }) =>
+    p.visible ? (
+      <>
+        {p.children}
+        {p.footer}
+      </>
+    ) : null,
 }));
 const server: CloudSnapshot = {
   sessionId: "s",
@@ -122,7 +138,7 @@ function setup(active = false) {
     invite: jest.fn(async () => ({
       tokenId: "token-id",
       token: "invite",
-      expiresAt: "later",
+      expiresAt: new Date(Date.now() + 900_000).toISOString(),
     })),
     revokeInvite: jest.fn(async () => {}),
     friends: jest.fn(async () => ({
@@ -133,7 +149,7 @@ function setup(active = false) {
             sessionId: "friend-session",
             host: { userId: "friend", displayName: "Mia", avatarUrl: null },
             occupancy: 2,
-            expiresAt: "later",
+            expiresAt: new Date(Date.now() + 900_000).toISOString(),
           },
         ],
         nextCursor: null,
@@ -268,7 +284,7 @@ it("does not apply a late friend lookup or chained consent to another account", 
               avatarUrl: null,
             },
             occupancy: 2,
-            expiresAt: "later",
+            expiresAt: new Date(Date.now() + 900_000).toISOString(),
           },
         ],
         nextCursor: null,
@@ -404,7 +420,11 @@ it("ignores stale invitation replies after unmount and resumes only a persisted 
   await act(async () => {});
   r.unmount();
   await act(async () =>
-    resolve({ tokenId: "id", token: "private", expiresAt: "later" }),
+    resolve({
+      tokenId: "id",
+      token: "private",
+      expiresAt: new Date(Date.now() + 900_000).toISOString(),
+    }),
   );
   expect(mockCopy).not.toHaveBeenCalled();
   const pending = setup();
@@ -809,4 +829,179 @@ it("does not publish a training-partner session before hosting is confirmed", as
   act(() => ui(r).onRetry());
   await waitFor(() => expect(h.cloud.retry).toHaveBeenCalledTimes(1));
   expect(h.cloud.hostWorkout).toHaveBeenCalledTimes(1);
+});
+
+it("shows the actual online invitation after confirmed Start and retries invitation failure without hosting twice", async () => {
+  const h = setup();
+  jest.mocked(h.cloud.hostWorkout).mockImplementation(async () => {
+    h.publish({ phase: "active", snapshot: server });
+  });
+  jest.mocked(h.cloud.invite).mockRejectedValueOnce(new Error("network"));
+  const r = renderWithTheme(
+    <TogetherCloudContainer {...h.props} initialHostFriends />,
+  );
+  await waitFor(() =>
+    expect(r.getByText("Generate new invitation")).toBeTruthy(),
+  );
+  await waitFor(() =>
+    expect(r.getByText(/invitation is not ready/)).toBeTruthy(),
+  );
+  expect(r.queryByText("Scan to join")).toBeNull();
+  fireEvent.press(r.getByText("Generate new invitation"));
+  await waitFor(() => expect(r.getByText("Scan to join")).toBeTruthy());
+  expect(h.cloud.hostWorkout).toHaveBeenCalledTimes(1);
+  expect(h.cloud.invite).toHaveBeenCalledTimes(2);
+  expect(r.UNSAFE_getByType(QRCode).props.value).toBe("invite");
+  expect(r.getByText(/Scan from Online join/)).toBeTruthy();
+  fireEvent.press(r.getByText("Copy"));
+  await waitFor(() => expect(mockCopy).toHaveBeenCalledWith("invite"));
+  const share = jest
+    .spyOn(Share, "share")
+    .mockResolvedValue({ action: Share.sharedAction });
+  fireEvent.press(r.getByText("Share"));
+  await waitFor(() =>
+    expect(share).toHaveBeenCalledWith({ message: "invite" }),
+  );
+  share.mockRestore();
+  fireEvent.press(r.getByText("Back to my workout"));
+  expect(r.queryByText("Scan to join")).toBeNull();
+  expect(h.cloud.getSnapshot().phase).toBe("active");
+  expect(h.cloud.cancel).not.toHaveBeenCalled();
+  fireEvent.press(r.getByLabelText("Together settings"));
+  expect(r.getByText("Scan to join")).toBeTruthy();
+  fireEvent.press(r.getByText("Session settings"));
+  expect(ui(r)).toBeDefined();
+});
+it("scans an online token but requires a deliberate Join and handles camera denial", async () => {
+  const h = setup();
+  mockCameraPermission
+    .mockResolvedValueOnce({ granted: false })
+    .mockResolvedValue({ granted: true });
+  const r = renderWithTheme(<TogetherCloudContainer {...h.props} />);
+  fireEvent.press(r.getByText("Open"));
+  fireEvent.press(r.getByText("Scan online invitation"));
+  await waitFor(() =>
+    expect(r.getByText(/Camera permission is needed/)).toBeTruthy(),
+  );
+  fireEvent.press(r.getByText("Scan online invitation"));
+  await waitFor(() =>
+    expect(r.getByTestId("together-online-qr-camera")).toBeTruthy(),
+  );
+  act(() =>
+    r
+      .getByTestId("together-online-qr-camera")
+      .props.onBarcodeScanned({ data: "server-token" }),
+  );
+  expect(h.cloud.join).not.toHaveBeenCalled();
+  expect(ui(r).code).toBe("server-token");
+  await act(async () => ui(r).onJoin());
+  expect(h.cloud.join).toHaveBeenCalledWith(
+    { inviteToken: "server-token" },
+    h.draft,
+  );
+});
+it("does not publish a late generated invitation or scan after lifecycle interruption", async () => {
+  const h = setup();
+  jest.mocked(h.cloud.hostWorkout).mockImplementation(async () => {
+    h.publish({ phase: "active", snapshot: server });
+  });
+  let resolve!: (
+    value: Awaited<ReturnType<TogetherCloudPort["invite"]>>,
+  ) => void;
+  jest.mocked(h.cloud.invite).mockReturnValueOnce(
+    new Promise((done) => {
+      resolve = done;
+    }),
+  );
+  const listener = jest.spyOn(AppState, "addEventListener");
+  const r = renderWithTheme(
+    <TogetherCloudContainer {...h.props} initialHostFriends />,
+  );
+  await waitFor(() => expect(h.cloud.invite).toHaveBeenCalledTimes(1));
+  act(() => listener.mock.calls.at(-1)![1]("background"));
+  await act(async () =>
+    resolve({
+      tokenId: "late",
+      token: "late-secret",
+      expiresAt: new Date(Date.now() + 900_000).toISOString(),
+    }),
+  );
+  expect(r.queryByText("Scan to join")).toBeNull();
+  r.unmount();
+  const join = setup();
+  mockCameraPermission.mockResolvedValue({ granted: true });
+  const page = renderWithTheme(<TogetherCloudContainer {...join.props} />);
+  fireEvent.press(page.getByText("Open"));
+  fireEvent.press(page.getByText("Scan online invitation"));
+  await waitFor(() =>
+    expect(page.getByTestId("together-online-qr-camera")).toBeTruthy(),
+  );
+  const scan = page.getByTestId("together-online-qr-camera").props
+    .onBarcodeScanned;
+  act(() => listener.mock.calls.at(-1)![1]("background"));
+  act(() => scan({ data: "late-secret" }));
+  expect(ui(page).code).toBe("");
+  expect(join.cloud.join).not.toHaveBeenCalled();
+});
+
+it("invalidates the single-use invitation after admission and after expiry", async () => {
+  const h = setup();
+  jest.mocked(h.cloud.hostWorkout).mockImplementation(async () => {
+    h.publish({ phase: "active", snapshot: server });
+  });
+  const r = renderWithTheme(
+    <TogetherCloudContainer {...h.props} initialHostFriends />,
+  );
+  await waitFor(() => expect(r.getByText("Scan to join")).toBeTruthy());
+  act(() =>
+    h.publish({
+      snapshot: {
+        ...server,
+        participants: [
+          ...server.participants,
+          { ...server.participants[1], userId: "new-athlete" },
+        ],
+      },
+    }),
+  );
+  await waitFor(() => expect(r.queryByText("Scan to join")).toBeNull());
+  expect(r.getByText("Generate new invitation")).toBeTruthy();
+  jest.mocked(h.cloud.invite).mockResolvedValue({
+    tokenId: "next",
+    token: "new-invite",
+    expiresAt: new Date(Date.now() + 60_000).toISOString(),
+  });
+  fireEvent.press(r.getByText("Generate new invitation"));
+  await waitFor(() => expect(r.getByText("Scan to join")).toBeTruthy());
+  expect(h.cloud.hostWorkout).toHaveBeenCalledTimes(1);
+  const now = jest.spyOn(Date, "now").mockReturnValue(Date.now() + 120_000);
+  fireEvent.press(r.getByText("Copy"));
+  await waitFor(() => expect(r.queryByText("Scan to join")).toBeNull());
+  expect(mockCopy).not.toHaveBeenCalledWith("new-invite");
+  now.mockRestore();
+});
+it("removes the QR automatically when its server expiry is reached", async () => {
+  jest.useFakeTimers();
+  try {
+    const h = setup();
+    jest.mocked(h.cloud.hostWorkout).mockImplementation(async () => {
+      h.publish({ phase: "active", snapshot: server });
+    });
+    jest.mocked(h.cloud.invite).mockResolvedValue({
+      tokenId: "short",
+      token: "short-lived",
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    });
+    const r = renderWithTheme(
+      <TogetherCloudContainer {...h.props} initialHostFriends />,
+    );
+    await waitFor(() => expect(r.getByText("Scan to join")).toBeTruthy());
+    act(() => jest.advanceTimersByTime(60_000));
+    expect(r.queryByText("Scan to join")).toBeNull();
+    expect(r.getByText("Generate new invitation")).toBeTruthy();
+    expect(h.cloud.invite).toHaveBeenCalledTimes(1);
+    r.unmount();
+  } finally {
+    jest.useRealTimers();
+  }
 });

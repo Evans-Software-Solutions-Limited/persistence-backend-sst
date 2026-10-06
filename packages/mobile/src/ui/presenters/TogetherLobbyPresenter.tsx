@@ -72,6 +72,8 @@ export function togetherErrorCopy(
       : owner
         ? "This lobby listing has expired. Search this Android phone’s hotspot again or ask the host for an invitation. Internet is not required."
         : "This lobby listing has expired. Search this network again or ask the host for an invitation. Internet is not required.";
+  if (code === "friendship-required")
+    return "Only accepted training partners can join this session. Connect online to refresh your friendship, then try again.";
   if (code === "host-unavailable")
     return "This host is no longer available to join. Keep training on your own or choose another lobby.";
   if (/expired/i.test(code))
@@ -235,9 +237,10 @@ export function TogetherLobbyPresenter(p: TogetherLobbyPresenterProps) {
             transport={s.transport}
           />
           <Copy>
-            Accepted training partners join deliberately. Anyone else needs your
-            approval. Joining never grants access to history or permission to
-            log for someone.
+            Local Training partners sessions require verified friendship. In
+            other sessions, accepted partners join deliberately and anyone else
+            needs your approval. Joining never grants access to history or
+            permission to log for someone.
           </Copy>
 
           {owner && (
@@ -246,7 +249,7 @@ export function TogetherLobbyPresenter(p: TogetherLobbyPresenterProps) {
               Discovery depends on device support.
             </Copy>
           )}
-          {!p.trainingPartners?.selected && p.connectionOptions}
+          {p.connectionOptions}
           <Btn full onPress={p.onHost}>
             Start the session
           </Btn>
@@ -356,9 +359,11 @@ export function TogetherLobbyPresenter(p: TogetherLobbyPresenterProps) {
       )}
       {s.role === "host" && s.audience && (
         <Copy>
-          {s.audience === "invite-only"
-            ? "Private · code or QR only"
-            : `Open · discoverable ${place}`}
+          {s.audience === "friends"
+            ? "Training partners only · share the code or QR"
+            : s.audience === "invite-only"
+              ? "Private · code or QR only"
+              : `Open · discoverable ${place}`}
         </Copy>
       )}
       {s.selection && (

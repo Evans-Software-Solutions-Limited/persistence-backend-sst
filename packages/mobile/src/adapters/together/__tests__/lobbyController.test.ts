@@ -384,7 +384,7 @@ describe("reviewed lobby coordinator, real cryptography and SQLite, simulated na
     },
   );
 
-  it.each(["invite-only", "open"] as const)(
+  it.each(["invite-only", "friends", "open"] as const)(
     "friend explicitly joins %s offline with no further approval",
     async (audience) => {
       const host = setup(),
@@ -466,30 +466,33 @@ describe("reviewed lobby coordinator, real cryptography and SQLite, simulated na
     expect(pending.controller.getSnapshot().phase).toBe("full");
     expect(host.controller.getSnapshot().phase).toBe("hosting");
   });
-  it("reconnects using same signed consent and journal after native disconnect", async () => {
-    const host = setup(),
-      guest = setup(2);
-    await host.controller.host("Strength A");
-    await join(host, guest, true);
-    host.native.emit({ type: "disconnected", peerId: id(12) });
-    guest.native.emit({ type: "disconnected", peerId: "host" });
-    expect(guest.controller.getSnapshot().phase).toBe("reconnecting");
-    await guest.controller.reconnect();
-    const sessionId = JSON.parse(host.controller.getSnapshot().invitation!)
-      .payload.sessionId;
-    guest.native.emit({
-      type: "discovered",
-      endpointId: "nearby",
-      lobbyId: sessionId,
-    });
-    await settle();
-    host.native.emit({ type: "connected", peerId: id(12), incoming: true });
-    guest.native.emit({ type: "connected", peerId: "host", incoming: false });
-    await settle();
-    expect(guest.controller.getSnapshot().phase).toBe("joined");
-    expect(guest.controller.getSnapshot().members).toHaveLength(2);
-    expect(guest.native.stop).toHaveBeenCalledTimes(1);
-  });
+  it.each(["invite-only", "friends"] as const)(
+    "reconnects %s using same signed consent and journal after native disconnect",
+    async (audience) => {
+      const host = setup(),
+        guest = setup(2);
+      await host.controller.host("Strength A", audience);
+      await join(host, guest, true);
+      host.native.emit({ type: "disconnected", peerId: id(12) });
+      guest.native.emit({ type: "disconnected", peerId: "host" });
+      expect(guest.controller.getSnapshot().phase).toBe("reconnecting");
+      await guest.controller.reconnect();
+      const sessionId = JSON.parse(host.controller.getSnapshot().invitation!)
+        .payload.sessionId;
+      guest.native.emit({
+        type: "discovered",
+        endpointId: "nearby",
+        lobbyId: sessionId,
+      });
+      await settle();
+      host.native.emit({ type: "connected", peerId: id(12), incoming: true });
+      guest.native.emit({ type: "connected", peerId: "host", incoming: false });
+      await settle();
+      expect(guest.controller.getSnapshot().phase).toBe("joined");
+      expect(guest.controller.getSnapshot().members).toHaveLength(2);
+      expect(guest.native.stop).toHaveBeenCalledTimes(1);
+    },
+  );
   it("discovery session names cannot select or replace a signed host", async () => {
     const guest = setup(2);
     await guest.controller.selectInvite(invitation());
@@ -1064,6 +1067,30 @@ describe("reviewed lobby coordinator, real cryptography and SQLite, simulated na
     await host.controller.approve(peerId);
     await settle();
     expect(guest.controller.getSnapshot().phase).toBe("joined");
+  });
+  it("friends hosts reveal no public summary and reject missing friendship before connecting", async () => {
+    const host = setup(),
+      guest = setup(2);
+    await host.controller.host("Friends", "friends");
+    expect(
+      JSON.parse(host.controller.getSnapshot().invitation!).payload.audience,
+    ).toBe("friends");
+    await guest.controller.browse();
+    await probe(host, guest);
+    expect(guest.controller.getSnapshot().discovered).toEqual([]);
+    expect(host.native.send).not.toHaveBeenCalled();
+    await guest.controller.cancel();
+    guest.native.connect.mockClear();
+    await guest.controller.selectInvite(
+      host.controller.getSnapshot().invitation!,
+    );
+    await guest.controller.join();
+    expect(guest.controller.getSnapshot()).toMatchObject({
+      phase: "unavailable",
+      error: "friendship-required",
+    });
+    expect(guest.native.connect).not.toHaveBeenCalled();
+    expect(host.controller.getSnapshot().pending).toEqual([]);
   });
   it("private hosts never disclose summary; their invite token admits only through normal approval", async () => {
     const host = setup(),

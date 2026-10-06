@@ -9,8 +9,10 @@ export function togetherCloudErrorCopy(error?: string): string | null {
   const code = error.toLowerCase().replaceAll("_", "-");
   if (code === "session-full" || code === "full")
     return "All four places are occupied. A place becomes available when an athlete leaves or the host removes them.";
-  if (/ineligible|entitlement|subscription/.test(code))
+  if (/ineligible|entitlement|subscription|paid-required/.test(code))
     return "Every athlete needs a qualifying paid subscription. You can keep logging your own workout.";
+  if (code === "invalid-schema")
+    return "This workout could not be shared in its current format. Continue personally to keep and finish your logged work.";
   if (/pending-approval|join-pending|approval-required/.test(code))
     return "Waiting for host approval. Your personal workout remains available.";
   if (/rejected|declined/.test(code))

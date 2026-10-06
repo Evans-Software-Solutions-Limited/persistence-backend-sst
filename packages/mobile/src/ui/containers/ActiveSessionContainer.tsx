@@ -116,11 +116,12 @@ export function ActiveSessionContainer() {
     clientInitials?: string;
     retroactive?: string;
     togetherAudience?: string;
+    togetherConnection?: string;
     togetherAccountId?: string;
   }>();
   const requestedWorkoutId = params.workoutId ?? null;
 
-  const { session, userId, rereadCache } = useActiveSession();
+  const { session, userId, authLoading, rereadCache } = useActiveSession();
   const historyKey = session
     ? `${session.id}:${session.startedAt}:${session.exercises
         .filter((e) => !e.skipped)
@@ -148,7 +149,10 @@ export function ActiveSessionContainer() {
     pointerRetroactive === true || params.retroactive === "true";
 
   useEffect(() => {
+    // A new route begins with null auth while the local session loads. That
+    // temporary state must not erase the deliberate detail-page host request.
     if (
+      !authLoading &&
       params.togetherAudience &&
       (params.togetherAccountId !== userId ||
         withClient ||
@@ -157,10 +161,12 @@ export function ActiveSessionContainer() {
     ) {
       router.setParams({
         togetherAudience: undefined,
+        togetherConnection: undefined,
         togetherAccountId: undefined,
       });
     }
   }, [
+    authLoading,
     params.togetherAudience,
     params.togetherAccountId,
     params.clientId,
@@ -960,9 +966,13 @@ export function ActiveSessionContainer() {
               ? params.togetherAudience
               : undefined
           }
+          initialHostConnection={
+            params.togetherConnection === "online" ? "online" : "local"
+          }
           onConsumeHostIntent={() =>
             router.setParams({
               togetherAudience: undefined,
+              togetherConnection: undefined,
               togetherAccountId: undefined,
             })
           }

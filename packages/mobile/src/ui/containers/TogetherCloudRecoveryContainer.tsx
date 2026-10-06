@@ -12,9 +12,11 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { useActiveWorkout } from "@/state/active-workout";
+import { TogetherAdmissionRecoveryPresenter } from "@/ui/presenters/TogetherAdmissionRecoveryPresenter";
 import { TogetherRecoveryPresenter } from "@/ui/presenters/TogetherRecoveryPresenter";
 import type { TogetherWorkoutReview } from "@/domain/ports/togetherWorkout.port";
-const EMPTY = {
+import type { TogetherCloudState } from "@/domain/ports/togetherCloud.port";
+const EMPTY: TogetherCloudState = {
   phase: "idle" as const,
   requests: [],
   previous: {},
@@ -158,36 +160,65 @@ export function TogetherCloudRecoveryContainer() {
     >
       <View gap={16}>
         {params.mode === "finish_all" && (
-          <Text color="$text2">
+          <Text fontFamily="$body" color="$text2">
             End for everyone saves only the work already acknowledged by the
             server. Unsent work remains on each athlete’s phone for their own
             review.
           </Text>
         )}
         {state.pendingCount > 0 && (
-          <Text color="$text2">
-            {state.pendingCount} changes are still waiting to sync. Review must
-            account for your local work before finishing.
+          <Text fontFamily="$body" color="$text2">
+            {state.pendingCount}{" "}
+            {state.pendingCount === 1 ? "change is" : "changes are"} still
+            waiting to sync. Review must account for your local work before
+            finishing.
           </Text>
         )}
-        <TogetherRecoveryPresenter
-          name={draft?.name ?? "My workout"}
-          available={valid}
-          review={review}
-          busy={busy}
-          error={
-            valid
-              ? error
-              : "This account’s cloud workout is unavailable. Your saved local work has not been deleted."
-          }
-          exerciseNames={Object.fromEntries(
-            draft?.exercises.map((e) => [e.exerciseId, e.exerciseName]) ?? [],
-          )}
-          onReview={prepare}
-          onSave={save}
-          onBack={() => router.back()}
-          onDone={done}
-        />
+        {valid && !state.snapshot ? (
+          <TogetherAdmissionRecoveryPresenter
+            canContinuePersonally={!!state.canDetachDraft}
+            busy={busy}
+            error={error}
+            onContinuePersonally={() =>
+              run(async () => {
+                cloud!.detachDraft(userId!, (personal) => {
+                  if (!current() || personal.userId !== userId)
+                    throw new Error("account-changed");
+                  const existing = storage.getLatestSession(userId!);
+                  if (existing && existing.id !== personal.id)
+                    throw new Error("workout-changed");
+                  storage.cacheActiveSession(userId!, personal);
+                });
+                if (current()) router.back();
+              })
+            }
+            onRetry={() =>
+              run(async () => {
+                await cloud!.retry();
+              })
+            }
+            onBack={() => router.back()}
+          />
+        ) : (
+          <TogetherRecoveryPresenter
+            name={draft?.name ?? "My workout"}
+            available={valid}
+            review={review}
+            busy={busy}
+            error={
+              valid
+                ? error
+                : "This account’s cloud workout is unavailable. Your saved local work has not been deleted."
+            }
+            exerciseNames={Object.fromEntries(
+              draft?.exercises.map((e) => [e.exerciseId, e.exerciseName]) ?? [],
+            )}
+            onReview={prepare}
+            onSave={save}
+            onBack={() => router.back()}
+            onDone={done}
+          />
+        )}
       </View>
     </ScrollView>
   );

@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Text, View } from "@tamagui/core";
 import { BottomSheet, Btn } from "@/ui/components/foundation";
 import { TogetherAudienceOptions } from "./TogetherAudienceOptions";
@@ -15,14 +16,14 @@ export function TogetherStartSheet({
   onAudienceChange,
   onStart,
   onClose,
-  trainingPartnersAvailable,
+  connectionOptions,
 }: {
   visible: boolean;
   activeWorkoutName?: string;
-  trainingPartnersAvailable?: boolean;
-  audience: TogetherLobbyAudience | "friends";
+  connectionOptions?: ReactNode;
+  audience: TogetherLobbyAudience;
   transport?: TogetherTransport;
-  onAudienceChange(value: TogetherLobbyAudience | "friends"): void;
+  onAudienceChange(value: TogetherLobbyAudience): void;
   onStart(): void;
   onClose(): void;
 }) {
@@ -61,21 +62,19 @@ export function TogetherStartSheet({
         </Text>
         <TogetherAudienceOptions
           audience={audience === "friends" ? "invite-only" : audience}
-          trainingPartners={
-            trainingPartnersAvailable
-              ? {
-                  selected: audience === "friends",
-                  onSelect: () => onAudienceChange("friends"),
-                }
-              : undefined
-          }
+          trainingPartners={{
+            selected: audience === "friends",
+            onSelect: () => onAudienceChange("friends"),
+          }}
           onAudienceChange={onAudienceChange}
           transport={transport}
         />
+        {connectionOptions}
         <Text color="$text3" fontFamily="$body" fontSize={12}>
-          Accepted training partners join deliberately. Anyone else needs your
-          approval. Joining never grants access to history or permission to log
-          for someone.
+          Local Training partners sessions require verified friendship. In other
+          sessions, accepted partners join deliberately and anyone else needs
+          your approval. Joining never grants access to history or permission to
+          log for someone.
         </Text>
       </View>
     </BottomSheet>

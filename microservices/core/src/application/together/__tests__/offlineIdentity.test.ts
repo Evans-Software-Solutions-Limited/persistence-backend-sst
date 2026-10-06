@@ -94,6 +94,29 @@ function fixture() {
 }
 afterEach(() => vi.unstubAllEnvs());
 describe("offline publicly verifiable identity", () => {
+  it("enforces signed friends-only policy during offline recovery and rejects downgrade", () => {
+    const f = fixture();
+    const sign = (payload: OfflineRoster) =>
+      signPayload(payload, f.keys[0].privateKey);
+    const first = sign({ ...f.roster(1).payload, audience: "friends" });
+    expect(() => verifyRoster(first, trusted, null, [], now)).not.toThrow();
+    const joined = sign({ ...f.roster(2, first).payload, audience: "friends" });
+    expect(() => verifyRoster(joined, trusted, first, [], now)).toThrow();
+    f.members[1].friendship = signPayload<FriendshipEvidence>(
+      {
+        kind: "together-friendship-v1",
+        keyId: "test",
+        users: [f.users[0], f.users[1]],
+        issuedAt: now - 1,
+        expiresAt: now + 1000,
+      },
+      issuer.privateKey,
+    );
+    const valid = sign({ ...f.roster(2, first).payload, audience: "friends" });
+    expect(() => verifyRoster(valid, trusted, first, [], now)).not.toThrow();
+    const downgraded = f.roster(3, valid);
+    expect(() => verifyRoster(downgraded, trusted, valid, [], now)).toThrow();
+  });
   it("matches a deterministic native interoperability vector with independent Node verification", () => {
     expect(signatureBytes(vector.envelope.payload).toString()).toBe(
       vector.preimage,

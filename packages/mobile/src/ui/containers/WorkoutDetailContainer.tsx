@@ -1,3 +1,4 @@
+import { TogetherConnectionChoice } from "@/ui/presenters/TogetherConnectionChoice";
 import { TogetherStartRow } from "@/ui/presenters/TogetherStartRow";
 import { TogetherStartSheet } from "@/ui/presenters/TogetherStartSheet";
 import type { TogetherLobbyAudience } from "@/domain/ports/togetherLobby.port";
@@ -47,13 +48,16 @@ export function WorkoutDetailContainer() {
   const workoutId = params.id ?? null;
   const { storage, togetherLobby, togetherCloud } = useAdapters();
   const [togetherOpen, setTogetherOpen] = useState(false);
-  const [togetherAudience, setTogetherAudience] = useState<
-    TogetherLobbyAudience | "friends"
-  >("invite-only");
+  const [togetherConnection, setTogetherConnection] = useState<
+    "local" | "online"
+  >("local");
+  const [togetherAudience, setTogetherAudience] =
+    useState<TogetherLobbyAudience>("invite-only");
   const { session } = useAuth();
   const userId = session?.userId ?? null;
   useEffect(() => {
     setTogetherOpen(false);
+    setTogetherConnection("local");
     setTogetherAudience("invite-only");
   }, [userId, workoutId]);
   const weightUnit = useProfilePage().payload?.profile.weightUnit ?? "kg";
@@ -162,7 +166,7 @@ export function WorkoutDetailContainer() {
   // starting a session — checked client-side so the user never even opens
   // a session that the server's over-limit backstop would deny at Finish.
   const onStartWorkout = useCallback(
-    (id: string, audience?: TogetherLobbyAudience | "friends") => {
+    (id: string, audience?: TogetherLobbyAudience) => {
       if (audience && !userId) return;
       if (isLoadoutWorkout && !loadoutGate.allowed) {
         openLoadoutUpsell();
@@ -175,7 +179,7 @@ export function WorkoutDetailContainer() {
       setTogetherOpen(false);
       router.push(
         (audience
-          ? `/(app)/session?workoutId=${encodeURIComponent(id)}&togetherAudience=${audience}&togetherAccountId=${encodeURIComponent(userId ?? "")}`
+          ? `/(app)/session?workoutId=${encodeURIComponent(id)}&togetherAudience=${audience}&togetherAccountId=${encodeURIComponent(userId ?? "")}${audience === "friends" && togetherConnection === "online" ? "&togetherConnection=online" : ""}`
           : `/(app)/session?workoutId=${id}`) as never,
       );
     },
@@ -185,6 +189,7 @@ export function WorkoutDetailContainer() {
       openLoadoutUpsell,
       totalCapGate,
       userId,
+      togetherConnection,
     ],
   );
 
@@ -315,14 +320,24 @@ export function WorkoutDetailContainer() {
         onOpenVariation={isLoadoutWorkout ? undefined : onOpenVariation}
       />
       <TogetherStartSheet
-        trainingPartnersAvailable={!!togetherCloud}
+        connectionOptions={
+          <TogetherConnectionChoice
+            value={togetherConnection}
+            onChange={setTogetherConnection}
+            onlineAvailable={togetherAudience === "friends" && !!togetherCloud}
+            transport={togetherLobby?.getSnapshot().transport}
+          />
+        }
         visible={togetherOpen}
         onClose={() => setTogetherOpen(false)}
         onStart={() => {
           if (workout) onStartWorkout(workout.id, togetherAudience);
         }}
         audience={togetherAudience}
-        onAudienceChange={setTogetherAudience}
+        onAudienceChange={(next) => {
+          setTogetherAudience(next);
+          setTogetherConnection("local");
+        }}
         transport={togetherLobby?.getSnapshot().transport}
         activeWorkoutName={
           userId ? storage.getActiveSession(userId)?.name : undefined

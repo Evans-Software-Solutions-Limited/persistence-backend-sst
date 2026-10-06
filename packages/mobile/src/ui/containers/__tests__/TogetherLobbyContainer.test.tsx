@@ -1,5 +1,11 @@
 import React from "react";
-import { Alert, AppState, View, type AppStateStatus } from "react-native";
+import {
+  Alert,
+  AppState,
+  Share,
+  View,
+  type AppStateStatus,
+} from "react-native";
 import { act, fireEvent, waitFor } from "@testing-library/react-native";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 import { TogetherLobbyContainer } from "../TogetherLobbyContainer";
@@ -41,10 +47,16 @@ jest.mock("@/ui/components/foundation/BottomSheet", () => ({
   BottomSheet: (props: {
     visible: boolean;
     children: React.ReactNode;
+    footer?: React.ReactNode;
     onClose(): void;
   }) => {
     mockSheet(props);
-    return props.visible ? props.children : null;
+    return props.visible ? (
+      <>
+        {props.children}
+        {props.footer}
+      </>
+    ) : null;
   },
 }));
 
@@ -116,7 +128,8 @@ it("hosts current workout, approves real peer IDs, copies invite and cleans up",
     invitation: "signed",
     pending: [{ userId: "g", peerId: "p" }],
   });
-  fireEvent.press(r.getByText("Copy invitation"));
+  fireEvent.press(r.getByText("Copy"));
+  fireEvent.press(r.getByLabelText("Session settings"));
   expect(mockCopy).toHaveBeenCalledWith("signed");
   fireEvent.press(r.getByText("Approve"));
   expect(h.lobby.approve).toHaveBeenCalledWith("p");
@@ -210,7 +223,7 @@ it("account replacement clears input; late failures cannot reappear", async () =
   jest.mocked(h.lobby.host).mockRejectedValueOnce(Error("now"));
   fireEvent.press(r.getByText("Start the session"));
   await waitFor(() =>
-    expect(r.getByText(/Could not complete this action/)).toBeTruthy(),
+    expect(r.getByText(/Could not finish preparing Together/)).toBeTruthy(),
   );
   h.publish({ phase: "disabled" });
   expect(r.queryByTestId("together-workout-row")).toBeNull();
@@ -675,7 +688,9 @@ it("selects explicit transports and switches to remote only after local cancella
       finish = r;
     }),
   );
-  fireEvent.press(r.getByText("Remote · training partners"));
+  fireEvent.press(r.getByLabelText("Training partners"));
+  fireEvent.press(r.getByText("Online · internet required"));
+  fireEvent.press(r.getByText("Start the session"));
   expect(mockCloud).not.toHaveBeenCalled();
   await act(async () => finish());
   expect(mockCloud).toHaveBeenCalledWith(
@@ -695,7 +710,9 @@ it("late cancellation cannot switch another account to the remote flow", async (
   );
   const r = mountShared(h, { cloud });
   fireEvent.press(r.getByText("Start"));
-  fireEvent.press(r.getByText("Remote · training partners"));
+  fireEvent.press(r.getByLabelText("Training partners"));
+  fireEvent.press(r.getByText("Online · internet required"));
+  fireEvent.press(r.getByText("Start the session"));
   r.rerender(
     <TogetherLobbyContainer
       lobby={h.lobby}
@@ -1276,7 +1293,7 @@ it("consumes a detail host intent once and does not restart after an error or ca
   await waitFor(() =>
     expect(
       r.getByText(
-        "Could not complete this action. Your personal workout is safe.",
+        "Could not finish preparing Together. Your workout stays on this device. Open settings to retry sharing or review your result.",
       ),
     ).toBeTruthy(),
   );
@@ -1370,12 +1387,13 @@ it("background consumes a pending detail host intent before preparation complete
   expect(mockSheet.mock.calls.at(-1)![0].visible).toBe(false);
 });
 
-it("starts training partners from the reviewed audience choice without hosting a local lobby", async () => {
+it("starts online training partners only after explicit connection selection", async () => {
   const h = sharingHarness(),
     cloud = {} as TogetherCloudPort;
   const r = mountShared(h, { cloud });
   fireEvent.press(r.getByText("Start"));
   fireEvent.press(r.getByLabelText("Training partners"));
+  fireEvent.press(r.getByText("Online · internet required"));
   fireEvent.press(r.getByText("Start the session"));
   await waitFor(() =>
     expect(mockCloud).toHaveBeenCalledWith(
@@ -1393,6 +1411,7 @@ it("routes a training-partners detail intent independently of local credential p
   mountShared(h, {
     cloud,
     initialHostAudience: "friends",
+    initialHostConnection: "online",
     onConsumeHostIntent: consume,
   });
   await waitFor(() =>
@@ -1403,3 +1422,154 @@ it("routes a training-partners detail intent independently of local credential p
   expect(consume).toHaveBeenCalledTimes(1);
   expect(h.lobby.host).not.toHaveBeenCalled();
 });
+
+it("hosts partners locally by default without contacting cloud", async () => {
+  const h = sharingHarness();
+  const r = mountShared(h, { cloud: {} as TogetherCloudPort });
+  fireEvent.press(r.getByText("Start"));
+  fireEvent.press(r.getByLabelText("Training partners"));
+  fireEvent.press(r.getByText("Start the session"));
+  expect(h.lobby.host).toHaveBeenCalledWith("Mine", "friends");
+  expect(mockCloud).not.toHaveBeenCalled();
+});
+it("waits for credentials then hosts local partner detail intent", () => {
+  const h = sharingHarness();
+  h.publish({ phase: "preparing" });
+  const consume = jest.fn();
+  mountShared(h, {
+    initialHostAudience: "friends",
+    onConsumeHostIntent: consume,
+  });
+  expect(h.lobby.host).not.toHaveBeenCalled();
+  h.publish({ phase: "idle" });
+  expect(h.lobby.host).toHaveBeenCalledWith("Mine", "friends");
+  expect(consume).toHaveBeenCalledTimes(1);
+  expect(mockCloud).not.toHaveBeenCalled();
+});
+
+it("keeps online discovery available to a joiner without hosting", async () => {
+  const h = sharingHarness();
+  const cloud = {} as TogetherCloudPort;
+  const r = mountShared(h, { cloud });
+  fireEvent.press(r.getByText("Start"));
+  fireEvent.press(r.getByText("Join"));
+  fireEvent.press(r.getByText("Browse online sessions"));
+  await waitFor(() =>
+    expect(mockCloud).toHaveBeenCalledWith(
+      expect.objectContaining({ cloud, initialHostFriends: false }),
+    ),
+  );
+  expect(h.lobby.host).not.toHaveBeenCalled();
+});
+
+it("starts and promotes the detail workout before showing the actual invitation, and Back preserves it", async () => {
+  const h = sharingHarness();
+  jest.mocked(h.workout.getPlan).mockReturnValue(plan);
+  jest.mocked(h.lobby.host).mockImplementation(async () => {
+    h.publish({
+      phase: "hosting",
+      role: "host",
+      invitation: "signed-real-payload",
+    });
+  });
+  const share = jest
+    .spyOn(Share, "share")
+    .mockResolvedValue({ action: "sharedAction" });
+  const r = mountShared(h, { initialHostAudience: "invite-only" });
+  await waitFor(() => expect(r.getByText("Scan to join")).toBeTruthy());
+  expect(h.workout.promote).toHaveBeenCalledWith(
+    expect.objectContaining({ id: "local", userId: "a" }),
+  );
+  expect(h.shared.publishPlan).toHaveBeenCalledWith(plan);
+  expect(mockSheet.mock.calls.at(-1)![0].title).toBe("Session is live");
+  expect(r.UNSAFE_getByType("QRCode" as never).props.value).toBe(
+    "signed-real-payload",
+  );
+  fireEvent.press(r.getByText("Copy"));
+  fireEvent.press(r.getByText("Share"));
+  expect(mockCopy).toHaveBeenCalledWith("signed-real-payload");
+  expect(share).toHaveBeenCalledWith({ message: "signed-real-payload" });
+  fireEvent.press(r.getByText("Back to my workout"));
+  expect(mockSheet.mock.calls.at(-1)![0].visible).toBe(false);
+  expect(h.lobby.cancel).not.toHaveBeenCalled();
+  fireEvent.press(r.getByText("Open"));
+  fireEvent.press(r.getByLabelText("Session settings"));
+  expect(mockSheet.mock.calls.at(-1)![0].title).toBe("Together settings");
+  expect(r.getByText("Show session invitation")).toBeTruthy();
+  share.mockRestore();
+});
+
+it.each(["hosting-fails", "promotion-fails", "cancelled"])(
+  "does not claim a live shared session when %s",
+  async (outcome) => {
+    const h = sharingHarness();
+    let release!: () => void;
+    jest.mocked(h.lobby.host).mockImplementation(async () => {
+      if (outcome === "cancelled")
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+      h.publish({
+        phase: outcome === "hosting-fails" ? "unavailable" : "hosting",
+        role: "host",
+        invitation: "signed",
+        error: outcome === "hosting-fails" ? "network" : undefined,
+      });
+    });
+    if (outcome === "promotion-fails")
+      jest
+        .mocked(h.workout.promote)
+        .mockRejectedValue(new Error("workout-unsupported"));
+    const r = mountShared(h, { initialHostAudience: "invite-only" });
+    if (outcome === "cancelled") {
+      act(() => mockSheet.mock.calls.at(-1)![0].onClose());
+      await act(async () => release());
+    } else await act(async () => {});
+    expect(r.queryByText("Scan to join")).toBeNull();
+    if (outcome === "cancelled")
+      expect(mockSheet.mock.calls.at(-1)![0].visible).toBe(false);
+    else
+      expect(mockSheet.mock.calls.at(-1)![0].title).not.toBe("Session is live");
+    if (outcome !== "promotion-fails")
+      expect(h.workout.promote).not.toHaveBeenCalled();
+  },
+);
+
+it("retries failed host plan publication after promotion without hosting or promoting twice", async () => {
+  const h = sharingHarness();
+  jest.mocked(h.workout.getPlan).mockReturnValue(plan);
+  jest.mocked(h.lobby.host).mockImplementation(async () => {
+    h.publish({ phase: "hosting", role: "host", invitation: "signed" });
+  });
+  jest.mocked(h.workout.promote).mockImplementation(async () => {
+    h.update("active");
+  });
+  jest.mocked(h.shared.publishPlan).mockRejectedValueOnce(new Error("network"));
+  const r = mountShared(h, { initialHostAudience: "invite-only" });
+  await waitFor(() =>
+    expect(r.getByText("Retry sharing my workout")).toBeTruthy(),
+  );
+  expect(r.queryByText("Scan to join")).toBeNull();
+  fireEvent.press(r.getByText("Retry sharing my workout"));
+  await waitFor(() => expect(r.getByText("Scan to join")).toBeTruthy());
+  expect(h.lobby.host).toHaveBeenCalledTimes(1);
+  expect(h.workout.promote).toHaveBeenCalledTimes(1);
+  expect(h.shared.publishPlan).toHaveBeenCalledTimes(2);
+});
+
+it.each(["existing-authority", "wrong-account"])(
+  "refuses to replace %s before starting a local host",
+  async (reason) => {
+    const h = sharingHarness();
+    const draft = personal();
+    if (reason === "existing-authority")
+      draft.together = { sessionId: "kept", executionId: "own" };
+    else draft.userId = "other";
+    const r = mountShared(h, { getWorkout: () => draft });
+    fireEvent.press(r.getByText("Start"));
+    fireEvent.press(r.getByText("Start the session"));
+    await r.findByText(/Could not finish preparing Together/);
+    expect(h.lobby.host).not.toHaveBeenCalled();
+    expect(h.workout.promote).not.toHaveBeenCalled();
+  },
+);

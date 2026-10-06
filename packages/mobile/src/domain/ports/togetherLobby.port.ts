@@ -1,6 +1,6 @@
 import type { TogetherWorkoutPort } from "./togetherWorkout.port";
 import type { TogetherSharedPort } from "./togetherShared.port";
-export type TogetherLobbyAudience = "invite-only" | "open";
+export type TogetherLobbyAudience = "invite-only" | "friends" | "open";
 export type TogetherTransport = "lan" | "nearby" | "hotspot-owner";
 /** Reviewed lobby state only. No credentials, signing seeds or PREV grants reach UI. */
 export interface TogetherLobbySnapshot {

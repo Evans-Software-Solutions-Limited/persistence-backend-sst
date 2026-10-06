@@ -1,7 +1,10 @@
 import React from "react";
 import { fireEvent } from "@testing-library/react-native";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
-import { TogetherCloudPresenter } from "../TogetherCloudPresenter";
+import {
+  TogetherCloudPresenter,
+  togetherCloudErrorCopy,
+} from "../TogetherCloudPresenter";
 import type { CloudSnapshot } from "@/domain/ports/togetherCloud.port";
 const snapshot: CloudSnapshot = {
   sessionId: "s",
@@ -230,4 +233,14 @@ it("contains unknown backend errors and still shows useful caller notices", () =
   expect(r.queryByText(/internal SQL/)).toBeNull();
   r.rerender(<TogetherCloudPresenter {...p} notice="Invite copied" />);
   expect(r.getByText("Invite copied")).toBeTruthy();
+});
+
+it("explains known admission failures without exposing raw server strings", () => {
+  expect(togetherCloudErrorCopy("PAID_REQUIRED")).toMatch(
+    /qualifying paid subscription/,
+  );
+  expect(togetherCloudErrorCopy("INVALID_SCHEMA")).toMatch(
+    /Continue personally/,
+  );
+  expect(togetherCloudErrorCopy("unrecognized-internal-error")).toBeNull();
 });

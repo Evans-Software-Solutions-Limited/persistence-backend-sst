@@ -217,6 +217,7 @@ jest.mock("expo-router", () => {
 describe("ActiveSessionContainer", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockRouterSetParams.mockReset();
     mockUseLocalSearchParams.mockReturnValue({});
     mockLoadoutGate.allowed = true;
     mockLoadoutGate.isResolved = true;
@@ -232,7 +233,7 @@ describe("ActiveSessionContainer", () => {
     async (mode) => {
       const api = new InMemoryApiAdapter();
       const storage = new InMemoryStorageAdapter();
-      if (mode === "coached") {
+      if (mode === "coached" || mode === "detail") {
         const workout = buildWorkout();
         storage.cacheWorkoutDetail("user-1", workout);
         jest.spyOn(api, "getWorkout").mockResolvedValue(ok(workout));
@@ -265,17 +266,24 @@ describe("ActiveSessionContainer", () => {
             ? { workoutId: "w-1", clientId: "client-1", clientName: "Mia" }
             : mode === "detail" || mode === "other-account"
               ? {
+                  ...(mode === "detail" ? { workoutId: "w-1" } : {}),
                   togetherAudience: "open",
                   togetherAccountId: mode === "detail" ? "user-1" : "other",
                 }
               : {},
       );
+      // Router updates must affect subsequent renders: a spy-only setParams
+      // masks loss of the host intent while asynchronous auth initializes.
+      const routeParams = mockUseLocalSearchParams();
+      mockRouterSetParams.mockImplementation((patch) => {
+        Object.assign(routeParams, patch);
+      });
       const r = renderWithTheme(
         withAdapters(adapters, <ActiveSessionContainer />),
       );
       await r.findByTestId("active-session-screen");
       if (mode === "detail") {
-        expect(host).toHaveBeenCalledWith("Quick Workout", "open");
+        expect(host).toHaveBeenCalledWith("Push Day", "open");
         expect(host).toHaveBeenCalledTimes(1);
         expect(mockRouterSetParams).toHaveBeenCalledWith({
           togetherAudience: undefined,

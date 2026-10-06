@@ -24,12 +24,13 @@ import { useAuth } from "./useAuth";
 export type UseActiveSession = {
   session: WorkoutSession | null;
   userId: string | null;
+  authLoading: boolean;
   rereadCache: () => void;
 };
 
 export function useActiveSession(): UseActiveSession {
   const { storage, togetherLobby, togetherCloud } = useAdapters();
-  const { session: authSession } = useAuth();
+  const { session: authSession, isLoading: authLoading } = useAuth();
   const userId = authSession?.userId ?? null;
 
   const [cacheVersion, setCacheVersion] = useState(0);
@@ -54,5 +55,5 @@ export function useActiveSession(): UseActiveSession {
     [togetherCloud, rereadCache],
   );
 
-  return { session, userId, rereadCache };
+  return { session, userId, authLoading, rereadCache };
 }

@@ -647,15 +647,19 @@ export class TogetherCloudController implements TogetherCloudPort {
           if (
             firstAdmissionAttempt &&
             !response.ok &&
-            [
-              "SESSION_FULL",
-              "NOT_FOUND",
-              "INVALID_SCHEMA",
-              "FORBIDDEN",
-              "INVITE_EXPIRED",
-              "PAID_REQUIRED",
-              "INVALID_STATE",
-            ].includes(response.error.togetherCode ?? "")
+            ([401, 402, 403, 404, 422].includes(response.error.status ?? 0) ||
+              ["unauthorized", "entitlement_denied", "not_found"].includes(
+                response.error.code,
+              ) ||
+              [
+                "SESSION_FULL",
+                "NOT_FOUND",
+                "INVALID_SCHEMA",
+                "FORBIDDEN",
+                "INVITE_EXPIRED",
+                "PAID_REQUIRED",
+                "INVALID_STATE",
+              ].includes(response.error.togetherCode ?? ""))
           ) {
             const rejected = this.load()!;
             if (requestHash(rejected.pending[0]) !== requestHash(next))

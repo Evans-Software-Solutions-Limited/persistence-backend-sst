@@ -860,12 +860,10 @@ it("offers online partner discovery and explains local joining without a managem
   await r.findByText("Bench Press");
   fireEvent.press(r.getByTestId("together-start"));
   expect(
-    r.getByText("Partners can discover it online and choose to join"),
+    r.getByText("Train with your accepted training partners"),
   ).toBeTruthy();
   expect(
-    r.getByText(
-      /Training partners can also join Private or Open sessions locally without/,
-    ),
+    r.getByText(/No internet needed with valid offline access/),
   ).toBeTruthy();
   fireEvent.press(r.getByText("Training partners"));
   fireEvent.press(r.getByText("Start the session"));
@@ -874,6 +872,11 @@ it("offers online partner discovery and explains local joining without a managem
   );
   expect(storage.getActiveSession("user-1")).toBeNull();
   fireEvent.press(r.getByTestId("together-start"));
+  fireEvent.press(r.getByText("Online · internet required"));
+  fireEvent.press(r.getByText("Start the session"));
+  expect(mockRouterPush).toHaveBeenLastCalledWith(
+    "/(app)/session?workoutId=w-1&togetherAudience=friends&togetherAccountId=user-1&togetherConnection=online",
+  );
   expect(r.queryByText("Add or manage training partners")).toBeNull();
   expect(storage.getActiveSession("user-1")).toBeNull();
 });

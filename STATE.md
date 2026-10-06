@@ -1,5 +1,77 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-06 — PR #488 final owner-testing corrections and validation
+
+Successful local Start now hosts, promotes the current workout and publishes its
+plan before the reviewed invite screen. Failed publication has an explicit retry
+without another lobby/checkpoint. Online hosting creates a real server invitation;
+expired/consumed invitations are cleared, with generation retry without rehosting.
+Online QR capture fills the token for deliberate joining through Online join.
+Copy/Share validate current invitation authority; cancellation resets scanning.
+Pinned Back to my workout dismisses the invite without closing the session.
+
+Final verification: mobile 594 suites / 8,137 tests pass; coverage
+96.36/91.71/96.48/97.73%. Core 396 suites / 5,489 tests pass, coverage
+98.07/94.29/97.78/98.07%. Root typecheck 9/9, lint 6/6, changed-file
+formatting and non-mobile builds 12/12 pass. New presenters reach 100%; local
+lobby, cloud container and cloud recovery exceed 90% across all metrics. Existing
+active/detail monolith coverage gaps and Jest act/timer warnings remain; no
+exclusions added. Local Inspector clean after fixing partial plan-publication
+retry, stale single-use online invitations and scanner dismissal lifecycle.
+
+Visuals in evidence/ui-2026-10-06 cover local/online connection, local/online host
+invitation, rejected/pending admission recovery. Real RN-web components use
+browser sheet shells, simulated adapters and a sample QR matrix; these are not
+native navigation/scanning or physical-device proof. PR #488 stays open. No
+native/prebuild/EAS build, deploy, CI Inspector or merge. The original live server
+rejection remains unidentified; specific known API errors now have useful copy.
+
+### 2026-10-06 — PR #488 detail start lost during auth bootstrap
+
+Owner testing exposed a real route-lifecycle gap: useAuth initializes with a null
+session while loading local credentials, and ActiveSessionContainer cleared the
+Together audience/account parameters as if the account had changed. The workout
+then opened personally with no automatic host request. Wait for auth resolution
+before invalidating that intent; confirmed account mismatch remains rejected.
+
+The old test used a spy-only router.setParams, leaving consumed parameters in its
+mock. The regression now applies parameter changes and loads the selected workout
+through the real auth/session hooks. It fails against the old implementation (host
+called zero times) and passes with the bootstrap guard; 44 active-container tests
+and both active-hook tests pass. The failed-cloud-start review dead end is also addressed: a rejected first request
+can explicitly restore personal logging, while ambiguous admission keeps its
+identity and offers retry. Storage/account/newer-workout guards remain. Seven
+recovery regressions fail with the old runtime. Known API denial codes have more
+specific messages; the actual runtime reason for Brad's original rejection is
+still unknown. Broader final validation is recorded below.
+
+### 2026-10-06 — PR #488 local friends-only audience and explicit connection
+
+This supersedes the cloud-only Training partners mapping in the earlier handoff.
+Training partners now defaults to local hosting. Audience and connection are
+separate: Online is an explicit choice and the only choice labelled internet
+required. Local hosts share a signed code/QR; joiners need valid cached credentials
+and a fresh signed friendship proof for the exact host/guest pair. Strangers cannot
+enter through host approval. Friends-only sessions expose no public discovery
+summary; automatic friends-only nearby discovery is not implemented.
+
+Signed rosters retain the friends restriction across reconnect, persistence and
+backend recovery; guests and backend reject policy downgrades. Backend deployment
+is required for recovery with the new optional signed audience marker. Legacy
+rosters remain supported. Partner management stays under Train → Together.
+
+Backend: 396 suites / 5,489 tests pass (98.07/94.29/97.78/98.07% coverage).
+Mobile: 593 suites / 8,106 tests pass; coverage 96.43/91.73/96.53/97.78%.
+Focused UI/lifecycle: 171 tests pass. New connection presenter has 100% coverage;
+Together lobby container exceeds 95% all metrics. Typecheck 9/9, lint 6/6 and
+changed-file formatting and non-mobile builds 12/12 pass. Local Inspector reports
+no actionable code findings.
+Evidence: partners-local-connection.png and partners-online-connection.png in
+specs/milestones/TRAIN-TOGETHER/evidence/ui-2026-10-06/. Actual RN-web setup
+contents use a browser sheet shell; this is simulated visual evidence, not native
+geometry or physical-device proof. No native/prebuild/EAS build, CI Inspector,
+deployment or merge. Rich hub feed and remembered audience defaults remain open.
+
 ### 2026-10-06 — PR #488 Train navigation and offline-partner clarification
 
 PER-22 / PER-64: partner management belongs under Train, not as a detour from

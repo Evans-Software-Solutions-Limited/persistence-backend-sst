@@ -4,6 +4,7 @@ import {
   signPayload,
   publicKeyPem,
   verifyCredential,
+  verifyFriendship,
   verifyRoster,
   type Credential,
   type JoinConsent,
@@ -30,7 +31,7 @@ export interface LobbyOptions extends HostPin {
   ) => readonly (readonly [string, string])[];
   now: () => number;
   /** Persisted host choice; no widening after restart. Guests use the same pin. */
-  audience: "invite-only" | "open";
+  audience: "invite-only" | "friends" | "open";
   invitedUserIds: readonly string[];
   invitationTokenHash?: string;
 }
@@ -74,7 +75,7 @@ export class TogetherLocalLobby {
       own.publicKey !== publicKeyPem(options.seed)
     )
       throw new Error("Wrong local identity");
-    if (this.isHost)
+    if (this.isHost || options.audience === "friends")
       store.bindPolicy(options.sessionId, {
         ...(options.invitationTokenHash
           ? { invitationTokenHash: options.invitationTokenHash }
@@ -113,6 +114,9 @@ export class TogetherLocalLobby {
     const envelope = signPayload<OfflineRoster>(
       {
         kind: "together-roster-v1",
+        ...(this.options.audience === "friends"
+          ? { audience: "friends" as const }
+          : {}),
         ...this.pin,
         revision: 1,
         previousHash: null,
@@ -148,6 +152,20 @@ export class TogetherLocalLobby {
       !matchesToken(request.invitationToken, this.options.invitationTokenHash)
     )
       throw new Error("Invitation required");
+    if (this.options.audience === "friends") {
+      try {
+        if (!request.friendship) throw new Error("missing");
+        verifyFriendship(
+          request.friendship,
+          this.options.trustedKeys,
+          this.pin.hostUserId,
+          identity.userId,
+          this.options.now(),
+        );
+      } catch {
+        throw new Error("friendship-required");
+      }
+    }
     const current = this.store.current(this.options.sessionId);
     if (!current) throw new Error("Host lobby not started");
     const existing = current.payload.members.find(
@@ -175,7 +193,9 @@ export class TogetherLocalLobby {
       credential: request.credential,
       consent: request.consent,
       admission: friend ? "friend" : "approved",
-      ...(friend ? { friendship: request.friendship } : {}),
+      ...(friend || this.options.audience === "friends"
+        ? { friendship: request.friendship }
+        : {}),
     };
     const envelope = signPayload<OfflineRoster>(
       {
@@ -232,6 +252,11 @@ export class TogetherLocalLobby {
   }
 
   accept(roster: Signed<OfflineRoster>): void {
+    if (
+      (roster.payload.audience === "friends") !==
+      (this.options.audience === "friends")
+    )
+      throw new Error("Lobby policy changed");
     this.store.commitRoster(
       roster,
       this.pin,

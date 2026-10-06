@@ -92,3 +92,49 @@ hub/presenter with simulated navigation, account, safe-area and segment state.
 [Local partner copy](./evidence/ui-2026-10-06/local-partner-copy.png) uses the actual
 setup contents and a browser sheet-shell substitute. Both are 402×874 RN-web
 fixtures, not native-device evidence. Earlier screenshots document prior states.
+
+## Local Training partners and connection choice — latest 6 October correction
+
+This supersedes the cloud-only mapping documented above. Training partners is an
+audience independent of connection: local is selected by default and Online is an
+explicit internet-dependent option. Local partners share the signed session code
+or QR and must have valid offline access and verified friendship. These sessions
+are not publicly advertised; automatic friends-only nearby discovery is still
+absent. Partner management remains in Train → Together.
+
+[Local default](./evidence/ui-2026-10-06/partners-local-connection.png) and
+[explicit online choice](./evidence/ui-2026-10-06/partners-online-connection.png)
+render the real setup, audience and connection components at 402×874. The new
+connection section extends the approved audience cards for the missing state.
+A browser shell substitutes for the native sheet; native geometry and device
+connections are not verified by these screenshots.
+
+## Start and failed-admission recovery — 6 October owner-testing correction
+
+The workout-detail host intent now survives asynchronous authentication bootstrap.
+The selected workout starts Together deliberately instead of reopening personal
+setup. Local hosting promotes the existing own draft and publishes its plan before
+showing the reviewed invitation; failed plan publication can retry without creating
+another lobby or checkpoint. The exported v2 `sheets.jsx` invite view supplies the
+QR card, Copy/Share controls, separate settings and pinned Back to my workout action.
+A signed invitation replaces the prototype's invented short code. Back dismisses
+the sheet and preserves the live session.
+
+An unadmitted cloud draft no longer offers an invalid result review. Confirmed
+first-attempt rejection permits explicit Continue personally; uncertain admission
+retains the same request for retry to avoid duplicate results. These are approved
+missing failure/recovery states, not a claim that the original server rejection is
+diagnosed. [Rejected start](./evidence/ui-2026-10-06/cloud-start-rejected.png) and
+[pending start](./evidence/ui-2026-10-06/cloud-start-pending.png) render the actual
+recovery container/presenter with simulated auth and adapters in RN-web at 402×874.
+They do not establish physical-device or native navigation acceptance.
+
+[Local host invitation](./evidence/ui-2026-10-06/local-host-invitation.png) and
+[online host invitation](./evidence/ui-2026-10-06/online-host-invitation.png)
+use the real shared presenter with a browser sheet shell and sample QR matrix.
+Online QR codes are scanned from Online join, which captures the token before
+explicit joining. Online invitations are single-use and expire; the view clears
+stale tokens and offers regeneration without another session. Local friends-only
+invitations enforce signed friendship, while online friends visibility can also
+admit explicitly invited non-friends after host approval. Setup copy distinguishes
+these policies. No sample token or fabricated short code is used in the app.
