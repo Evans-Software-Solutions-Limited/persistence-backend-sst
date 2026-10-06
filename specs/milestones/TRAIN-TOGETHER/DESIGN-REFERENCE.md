@@ -42,3 +42,13 @@ Evidence: [Claude reference](./evidence/ui-2026-10-05/claude-reference.png) and
 [isolated component preview](./evidence/ui-2026-10-05/component-preview.png).
 The preview assembles entry and sheet components for inspection; it is not a
 screenshot of the full native screen.
+
+## Full detail-page correction — 6 October
+
+The isolated components above did not verify their placement within the existing
+page: its absolute Start workout footer covered the Together row. The complete
+presenter now keeps both actions in the same non-shrinking, in-flow footer.
+[Before](./evidence/ui-2026-10-06/detail-before.png) reproduces the missing entry;
+[after](./evidence/ui-2026-10-06/detail-after.png) shows it above Start workout at
+402×874. These render the actual presenter with browser substitutes for native
+icons, gradient and safe area; they prove web layout, not native device acceptance.

@@ -1,5 +1,26 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-06 — PR #488 workout-detail footer overlap
+
+Brad's latest checkout contained b8b2047f but Together remained invisible.
+The new row sat outside the existing absolutely positioned Start workout footer,
+which painted over it. This was a layout bug, not evidence of missing native
+capability. The earlier isolated-component preview did not exercise page layout.
+
+Together and Start workout now share one non-shrinking, in-flow footer. Its height
+is reserved by the scroll layout; the solo-only footer retains its prior layout.
+A regression asserts both controls share that footer and Together remains tappable.
+43 focused presenter/container tests pass; root typecheck/lint and changed-file
+formatting pass. Local Inspector clean. Previous and fixed full presenters were
+rendered at 402×874: the old code reproduces the hidden entry, the fix places it
+above Start workout. Evidence: `specs/milestones/TRAIN-TOGETHER/evidence/ui-2026-10-06/`.
+These are RN-web layout fixtures with browser substitutes for native icons,
+gradient and safe area, not physical-device proof. No native build was run.
+
+Next: pull this follow-up from PR #488 and reload the local app. PER-22 / PER-64
+remain open for runtime/device acceptance. Preserve unrelated AGENTS.md edits.
+
+
 ### 2026-10-05 — PR #488 reviewed Together entry and honest preparation errors
 
 [PER-22](https://linear.app/evans-software-solutions/issue/PER-22) /
