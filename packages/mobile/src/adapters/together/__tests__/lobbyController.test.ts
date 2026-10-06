@@ -384,27 +384,32 @@ describe("reviewed lobby coordinator, real cryptography and SQLite, simulated na
     },
   );
 
-  it("friend explicitly joins offline and both rosters reflect independent verified athletes", async () => {
-    const host = setup(),
-      guest = setup(2);
-    await host.controller.host("Strength A");
-    await join(host, guest, true);
-    expect(guest.controller.getSnapshot()).toMatchObject({
-      phase: "joined",
-      members: [
-        { userId: id(1), host: true },
-        { userId: id(2), host: false },
-      ],
-    });
-    expect(host.controller.getSnapshot().pending).toEqual([]);
-    expect(guest.provisioning.prepare).toHaveBeenCalledWith({ online: false });
-    expect(guest.provisioning.friendship).toHaveBeenCalledWith(id(1), {
-      online: false,
-    });
-    expect(JSON.stringify(guest.controller.getSnapshot())).not.toContain(
-      "seed",
-    );
-  });
+  it.each(["invite-only", "open"] as const)(
+    "friend explicitly joins %s offline with no further approval",
+    async (audience) => {
+      const host = setup(),
+        guest = setup(2);
+      await host.controller.host("Strength A", audience);
+      await join(host, guest, true);
+      expect(guest.controller.getSnapshot()).toMatchObject({
+        phase: "joined",
+        members: [
+          { userId: id(1), host: true },
+          { userId: id(2), host: false },
+        ],
+      });
+      expect(host.controller.getSnapshot().pending).toEqual([]);
+      expect(guest.provisioning.prepare).toHaveBeenCalledWith({
+        online: false,
+      });
+      expect(guest.provisioning.friendship).toHaveBeenCalledWith(id(1), {
+        online: false,
+      });
+      expect(JSON.stringify(guest.controller.getSnapshot())).not.toContain(
+        "seed",
+      );
+    },
+  );
   it("strangers remain pending until actual host approval and decline is authenticated", async () => {
     const host = setup(),
       guest = setup(2);

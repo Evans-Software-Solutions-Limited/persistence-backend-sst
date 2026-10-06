@@ -316,10 +316,6 @@ export function WorkoutDetailContainer() {
       />
       <TogetherStartSheet
         trainingPartnersAvailable={!!togetherCloud}
-        onPartners={() => {
-          setTogetherOpen(false);
-          router.push("/(app)/together/partners" as never);
-        }}
         visible={togetherOpen}
         onClose={() => setTogetherOpen(false)}
         onStart={() => {

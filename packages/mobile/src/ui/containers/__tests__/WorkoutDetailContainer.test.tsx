@@ -846,7 +846,7 @@ describe("WorkoutDetailContainer", () => {
   });
 });
 
-it("offers training partners before starting and routes management without creating a workout", async () => {
+it("offers online partner discovery and explains local joining without a management detour", async () => {
   jest.clearAllMocks();
   mockUseLocalSearchParams.mockReturnValue({ id: "w-1" });
   const api = new InMemoryApiAdapter();
@@ -859,6 +859,14 @@ it("offers training partners before starting and routes management without creat
   const r = renderWithTheme(withAdapters(adapters, <WorkoutDetailContainer />));
   await r.findByText("Bench Press");
   fireEvent.press(r.getByTestId("together-start"));
+  expect(
+    r.getByText("Partners can discover it online and choose to join"),
+  ).toBeTruthy();
+  expect(
+    r.getByText(
+      /Training partners can also join Private or Open sessions locally without/,
+    ),
+  ).toBeTruthy();
   fireEvent.press(r.getByText("Training partners"));
   fireEvent.press(r.getByText("Start the session"));
   expect(mockRouterPush).toHaveBeenCalledWith(
@@ -866,8 +874,6 @@ it("offers training partners before starting and routes management without creat
   );
   expect(storage.getActiveSession("user-1")).toBeNull();
   fireEvent.press(r.getByTestId("together-start"));
-  fireEvent.press(r.getByText("Add or manage training partners"));
-  expect(mockRouterPush).toHaveBeenLastCalledWith("/(app)/together/partners");
-  expect(r.UNSAFE_getByType(TogetherStartSheet).props.visible).toBe(false);
+  expect(r.queryByText("Add or manage training partners")).toBeNull();
   expect(storage.getActiveSession("user-1")).toBeNull();
 });

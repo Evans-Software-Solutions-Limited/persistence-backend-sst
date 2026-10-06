@@ -3,7 +3,7 @@ import { create } from "zustand";
 
 /**
  * useTrainSegment — Train hub segment slice (Training | Workouts | Exercises |
- * Gyms).
+ * Together | Gyms).
  *
  * Spec: specs/14-navigation/design.md § <TrainHubContainer> — Segmented
  *       composition
@@ -26,7 +26,12 @@ import { create } from "zustand";
  * "Gyms" added 2026-08-02 (spec-21 AC-7.2) — saved-gym management moved here from
  * Profile · Account.
  */
-export type TrainSegment = "Training" | "Workouts" | "Exercises" | "Gyms";
+export type TrainSegment =
+  | "Training"
+  | "Workouts"
+  | "Exercises"
+  | "Together"
+  | "Gyms";
 
 export interface TrainSegmentState {
   segment: TrainSegment;
@@ -64,6 +69,7 @@ function isTrainSegment(value: string | null): value is TrainSegment {
     value === "Training" ||
     value === "Workouts" ||
     value === "Exercises" ||
+    value === "Together" ||
     value === "Gyms"
   );
 }

@@ -1,5 +1,33 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-06 — PR #488 Train navigation and offline-partner clarification
+
+PER-22 / PER-64: partner management belongs under Train, not as a detour from
+workout setup. The reviewed Together segment now exposes the Training partners
+entry and a workout-selection entry. Opening partners pushes the existing screen;
+Back returns to the persisted Together segment. Removed the pre-start management
+link. This restores the requested entry points; the prototype's richer hub session
+feed and remembered audience defaults are not claimed as implemented here.
+
+The Training partners audience currently performs online cloud discovery. It is
+not a requirement that friends train online: existing Private/code/QR and Open
+nearby/network sessions admit verified accepted partners offline without extra
+approval, with valid cached credentials and friendship proof. Expanded the actual
+local controller regression across both audiences. Setup now distinguishes online
+partner discovery from local joining. No friends audience is mapped to public
+local advertising; private friends-only local discovery remains unimplemented.
+
+Visual evidence: `evidence/ui-2026-10-06/train-partners-entry.png` (actual hub and
+presenter with simulated segment/account/navigation dependencies) and
+`local-partner-copy.png` (actual setup contents, browser sheet-shell substitute).
+No native/prebuild/EAS build or physical-device evidence. Focused verification:
+167 tests across five suites pass. Train hub 100/96.66/100/100% coverage; segment
+store, new hub presenter and changed setup/audience presenters 100% all metrics.
+Existing Jest configuration/open-handle warnings remain. Local review has no code
+findings and scoped visual match; typecheck 9/9, lint 6/6 and formatting pass.
+Full mobile/backend validation at 429d3885 remains the preceding baseline.
+
+
 ### 2026-10-06 — PR #488 opaque personal IDs and missing partner audience
 
 [PER-22](https://linear.app/evans-software-solutions/issue/PER-22) /

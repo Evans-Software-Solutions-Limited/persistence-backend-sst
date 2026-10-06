@@ -52,6 +52,12 @@ describe("useTrainSegment", () => {
     expect(useTrainSegment.getState().hydrated).toBe(true);
   });
 
+  it("restores Together on returning to Train", async () => {
+    mockGetItem.mockResolvedValue("Together");
+    const { useTrainSegment } = await loadFresh();
+    expect(useTrainSegment.getState().segment).toBe("Together");
+  });
+
   it("hydrates the persisted segment value on import", async () => {
     mockGetItem.mockResolvedValue("Exercises");
     const { useTrainSegment } = await loadFresh();

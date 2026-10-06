@@ -122,6 +122,20 @@ beforeEach(() => {
 });
 
 describe("TrainHubContainer", () => {
+  it("opens partner management from Train and preserves Together on return", () => {
+    activeCoaches.current = [];
+    const r = renderWithTheme(<TrainHubContainer />);
+    fireEvent.press(r.getByTestId("train-segment-option-Together"));
+    fireEvent.press(r.getByLabelText("Training partners"));
+    expect(mockPush).toHaveBeenCalledWith("/(app)/together/partners");
+    expect(useTrainSegment.getState().segment).toBe("Together");
+    r.unmount();
+    const returned = renderWithTheme(<TrainHubContainer />);
+    expect(returned.getByLabelText("Training partners")).toBeTruthy();
+    fireEvent.press(returned.getByLabelText("Train together"));
+    expect(returned.getByTestId("workouts-body")).toBeTruthy();
+  });
+
   it("leads with the Training overview (default segment) + no top-right action", () => {
     // The store default is now "Training" (M16); assert it here (beforeEach
     // pins the other tests to Workouts).

@@ -40,7 +40,7 @@ export function TogetherAudienceOptions({
                 [
                   "friends",
                   "Training partners",
-                  "Partners can see it and choose to join · internet required",
+                  "Partners can discover it online and choose to join",
                   IconUsers,
                 ] as const,
               ]
@@ -120,6 +120,11 @@ export function TogetherAudienceOptions({
           </Card>
         );
       })}
+      <Text fontFamily="$body" fontSize={11.5} lineHeight={16} color="$text3">
+        Training partners can also join Private or Open sessions locally without
+        internet. Valid saved credentials are required; a saved friendship proof
+        lets accepted partners join without another approval.
+      </Text>
     </View>
   );
 }

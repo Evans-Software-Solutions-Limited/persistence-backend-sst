@@ -71,3 +71,24 @@ this correction does not add an inert switch or claim complete prototype parity.
 render the actual setup content, audience cards and buttons at 402×874 with a
 browser sheet-shell substitute. They establish component appearance and selection,
 not Gorhom/native sheet geometry or physical connection evidence.
+
+## Train entry and offline partners — 6 October follow-up
+
+Partner management moves out of pre-workout setup to **Train → Together →
+Training partners**. The reference is `prototype/together/social.jsx`'s Together
+segment and compact Friends entry, renamed Training partners in v2. Existing
+Workouts/Exercises/Gyms segments remain. The hub restores workout selection and
+partner-management entry points; the prototype's full open-session feed is not
+implemented by this correction.
+
+The Training partners audience uses online discovery. Private/code/QR and Open
+nearby/network already support offline accepted-partner admission with valid cached
+credentials and a signed friendship proof; no additional host approval is needed
+when that proof is verified. Copy distinguishes these paths. This does not claim
+friends-only local discovery, and never maps that audience to public advertising.
+
+[Train entry](./evidence/ui-2026-10-06/train-partners-entry.png) renders the actual
+hub/presenter with simulated navigation, account, safe-area and segment state.
+[Local partner copy](./evidence/ui-2026-10-06/local-partner-copy.png) uses the actual
+setup contents and a browser sheet-shell substitute. Both are 402×874 RN-web
+fixtures, not native-device evidence. Earlier screenshots document prior states.
