@@ -138,3 +138,23 @@ stale tokens and offers regeneration without another session. Local friends-only
 invitations enforce signed friendship, while online friends visibility can also
 admit explicitly invited non-friends after host approval. Setup copy distinguishes
 these policies. No sample token or fabricated short code is used in the app.
+
+## Partner drawer and connection controls — 6 October owner-testing correction
+
+The v2 partners.jsx header/back/QR entry is restored with existing HeaderBar and
+IconBtn components. The header is fixed; only the page body scrolls. All drawers
+are siblings of the scroll area, and the root workout overlay is hidden on this
+route while preserving the draft. Your code centres the QR and keeps New code,
+Share and Copy reachable in the shared BottomSheet footer.
+
+A single local connection is information rather than a dead button. Two available
+connections use the same radio-card treatment as audience selection:
+[local information](./evidence/ui-2026-10-06/connection-local-information.png) and
+[radio options](./evidence/ui-2026-10-06/connection-radio-options.png).
+
+[Partner page](./evidence/ui-2026-10-06/partners-page-fixed.png) and
+[Your code drawer](./evidence/ui-2026-10-06/partners-code-fixed.png) render the real
+presenter, HeaderBar and controls at 402×874 with simulated safe-area/data and a
+browser substitute for the native sheet. The fixture QR encodes a sample 32-character
+partner code. Browser evidence checks content, typography and pinned layout; it
+is not proof of Gorhom native geometry, share-sheet integration or device scanning.

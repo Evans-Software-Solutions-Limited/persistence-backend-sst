@@ -483,3 +483,23 @@ it.each(["cloud", "offline"] as const)(
     expect(storage.getPendingMutations()).toHaveLength(0);
   },
 );
+
+it("keeps the workout but hides its overlay throughout partner management", async () => {
+  const { adapters, storage, auth } = makeAdapters();
+  signIn(auth);
+  storage.cacheActiveSession(USER, makeSession());
+  const page = () => (
+    <AdapterProvider adapters={adapters}>
+      <ActiveWorkoutOverlay />
+    </AdapterProvider>
+  );
+  const r = renderWithTheme(page());
+  await waitFor(() => expect(r.getByTestId("active-workout-bar")).toBeTruthy());
+  mockSegments = ["(app)", "together", "partners"];
+  r.rerender(page());
+  expect(r.queryByTestId("active-workout-bar")).toBeNull();
+  expect(storage.getActiveSession(USER)?.status).toBe("in_progress");
+  mockSegments = ["(app)", "(tabs)", "train"];
+  r.rerender(page());
+  await waitFor(() => expect(r.getByTestId("active-workout-bar")).toBeTruthy());
+});

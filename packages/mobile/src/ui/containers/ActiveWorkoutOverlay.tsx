@@ -102,6 +102,11 @@ export function ActiveWorkoutOverlay() {
       lastSegment === "edit" ||
       lastSegment === "[id]");
 
+  // Partner management owns its full-screen drawers; the root bar must not
+  // paint over their code, request or offer controls.
+  const onPartnerScreen =
+    segments.includes("together") && lastSegment === "partners";
+
   // The ProfileDrawer is a root-mounted sibling that renders BEFORE this overlay
   // in `app/(app)/_layout.tsx`, so with no z-index the floating bar paints on
   // TOP of the open drawer (device-QA: "active workout shows over the drawer").
@@ -122,6 +127,7 @@ export function ActiveWorkoutOverlay() {
     !loadoutLocked &&
     !onSessionScreen &&
     !onWorkoutScreen &&
+    !onPartnerScreen &&
     !inAuth &&
     !drawerOpen;
 

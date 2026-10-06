@@ -1,5 +1,10 @@
 import { Text, View, useTheme } from "@tamagui/core";
-import { Image, Pressable, Switch, TextInput } from "react-native";
+import { Image, Pressable, ScrollView, Switch, TextInput } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { QrCode } from "lucide-react-native";
+import { HeaderBar } from "@/ui/components/foundation/HeaderBar";
+import { IconBtn } from "@/ui/components/foundation/IconBtn";
+import { IconBack, iconDefaults } from "@/ui/components/icons";
 import { BottomSheet } from "@/ui/components/foundation/BottomSheet";
 import { Btn } from "@/ui/components/foundation/Btn";
 import { Card } from "@/ui/components/foundation/Card";
@@ -25,6 +30,7 @@ export interface TogetherPartnersPresenterProps {
   onResolve(): void;
   onNewCode(): void;
   onCopyCode(): void;
+  onShareCode(): void;
   onScan(): void;
   tab: string;
   query: string;
@@ -68,6 +74,7 @@ const Copy = ({ children }: { children: React.ReactNode }) => (
 const name = (p: SocialPerson) => p.displayName || `Account ${p.userId}`;
 export function TogetherPartnersPresenter(p: TogetherPartnersPresenterProps) {
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const disabled = p.busy || !p.available;
   const row = (person: PartnerRow) => (
     <Pressable
@@ -121,230 +128,293 @@ export function TogetherPartnersPresenter(p: TogetherPartnersPresenterProps) {
     </Pressable>
   );
   return (
-    <>
-      <View gap={18} testID="together-partners">
-        <View flexDirection="row" justifyContent="space-between">
-          <Btn variant="ghost" onPress={p.onBack}>
-            Back
-          </Btn>
-          <Btn variant="ghost" disabled={disabled} onPress={p.onShowCode}>
-            My code and QR
+    <View flex={1} backgroundColor="$bg" testID="together-partners-root">
+      <View paddingTop={insets.top} flexShrink={0}>
+        <HeaderBar
+          large
+          eyebrow="Train together"
+          title="Training partners"
+          testID="together-partners-header"
+          leading={
+            <IconBtn
+              icon={<IconBack {...iconDefaults({ size: 20 })} />}
+              tone="ghost"
+              onPress={p.onBack}
+              accessibilityLabel="Go back"
+            />
+          }
+          trailing={
+            <IconBtn
+              icon={<QrCode {...iconDefaults({ size: 20 })} />}
+              tone="ghost"
+              disabled={disabled}
+              onPress={p.onShowCode}
+              accessibilityLabel="My code and QR"
+            />
+          }
+        />
+      </View>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{
+          paddingHorizontal: 20,
+          paddingTop: 8,
+          paddingBottom: insets.bottom + 20,
+        }}
+        keyboardShouldPersistTaps="handled"
+        testID="together-partners-scroll"
+      >
+        <View gap={18} testID="together-partners">
+          <Segmented
+            options={["Partners", "Add"]}
+            value={p.tab}
+            onChange={p.onTab}
+          />
+          {p.error !== "" && !p.codeVisible && (
+            <Text fontFamily="$body" accessibilityRole="alert" color="$warning">
+              {p.error}
+            </Text>
+          )}
+          {p.notice !== "" && <Copy>{p.notice}</Copy>}
+          {p.loading && <Copy>Loading training partners…</Copy>}
+          {p.tab === "Partners" ? (
+            <>
+              {p.requests.map((person) => (
+                <Card key={person.requestId}>
+                  <View
+                    flexDirection="row"
+                    gap={10}
+                    alignItems="center"
+                    flexWrap="wrap"
+                  >
+                    <View flex={1} minWidth={140} gap={4}>
+                      <Pressable onPress={() => p.onSelect(person)}>
+                        <Text fontFamily="$body" color="$text">
+                          {name(person)}
+                        </Text>
+                      </Pressable>
+                      <Copy>
+                        {person.outgoing
+                          ? "Invitation sent"
+                          : "Wants to be a training partner"}
+                      </Copy>
+                    </View>
+                    {!person.outgoing && (
+                      <View flexDirection="row" gap={4}>
+                        <Btn
+                          disabled={disabled}
+                          variant="ghost"
+                          onPress={() =>
+                            p.onDecide(person.requestId!, "reject")
+                          }
+                        >
+                          No
+                        </Btn>
+                        <Btn
+                          disabled={disabled}
+                          onPress={() =>
+                            p.onDecide(person.requestId!, "accept")
+                          }
+                        >
+                          Accept
+                        </Btn>
+                      </View>
+                    )}
+                  </View>
+                </Card>
+              ))}
+              <View>
+                <Text fontFamily="$display" fontSize={11} color="$text3">
+                  {p.friends.length} PARTNERS
+                </Text>
+                {p.friends.length > 0 ? (
+                  <Card>{p.friends.map(row)}</Card>
+                ) : (
+                  !p.loading && (
+                    <Copy>
+                      No training partners yet. Add someone deliberately to
+                      train together.
+                    </Copy>
+                  )
+                )}
+              </View>
+              <Copy>
+                Removing a partner hides your partner sessions from them and
+                cancels unused invites and shared plans.
+              </Copy>
+              <Card>
+                <View flexDirection="row" gap={12} alignItems="center">
+                  <View flex={1}>
+                    <Text fontFamily="$body" color="$text">
+                      Let people find me by name
+                    </Text>
+                    <Copy>
+                      Off by default. Name and photo only — nothing about your
+                      training.
+                    </Copy>
+                    {p.discoverable === null && (
+                      <Copy>Current preference unavailable.</Copy>
+                    )}
+                  </View>
+                  <Switch
+                    accessibilityLabel="Let people find me by name"
+                    value={p.discoverable === true}
+                    disabled={disabled || p.discoverable === null}
+                    onValueChange={p.onDiscoverable}
+                  />
+                </View>
+              </Card>
+              <Copy>
+                Being partners shares no history, body metrics, food or
+                coaching. Session access never grants permission to log for
+                someone or view their previous numbers.
+              </Copy>
+              {p.offers.length > 0 && (
+                <>
+                  <Text fontFamily="$body" color="$text3">
+                    SHARED WORKOUT PLANS
+                  </Text>
+                  {p.offers.map((offer) => (
+                    <Btn
+                      key={offer.id}
+                      variant="outline"
+                      disabled={disabled}
+                      onPress={() => p.onOffer(offer)}
+                    >
+                      Review {offer.plan.name}
+                    </Btn>
+                  ))}
+                </>
+              )}
+            </>
+          ) : (
+            <>
+              <Text fontFamily="$body" color="$text">
+                Find by name
+              </Text>
+              <TextInput
+                accessibilityLabel="Find by name"
+                value={p.query}
+                onChangeText={p.onQuery}
+                placeholder="Search for a training partner"
+                placeholderTextColor={theme.text3?.val}
+                style={{
+                  color: theme.text?.val,
+                  backgroundColor: theme.surface2?.val,
+                  borderRadius: 12,
+                  padding: 14,
+                }}
+                onSubmitEditing={p.onSearch}
+              />
+              <Copy>
+                Only people who have turned on being findable appear. A name
+                alone never reveals somebody who has not.
+              </Copy>
+              <Btn
+                disabled={disabled || p.query.trim().length < 2}
+                onPress={p.onSearch}
+              >
+                Search
+              </Btn>
+              <Copy>
+                or use a partner’s code or QR, including when name search is
+                off.
+              </Copy>
+              <TextInput
+                accessibilityLabel="Partner code"
+                value={p.code}
+                onChangeText={p.onCode}
+                autoCapitalize="none"
+                autoCorrect={false}
+                placeholder="Paste partner code"
+                placeholderTextColor={theme.text3?.val}
+                style={{
+                  color: theme.text?.val,
+                  backgroundColor: theme.surface2?.val,
+                  borderRadius: 12,
+                  padding: 14,
+                }}
+              />
+              <View flexDirection="row" gap={10}>
+                <Btn
+                  disabled={disabled || p.code.trim().length !== 32}
+                  onPress={p.onResolve}
+                >
+                  Find by code
+                </Btn>
+                <Btn disabled={disabled} variant="outline" onPress={p.onScan}>
+                  Scan QR
+                </Btn>
+              </View>
+              {p.scanner}
+              {p.results.map((person) => (
+                <Card key={person.userId}>
+                  <View gap={10}>
+                    {row(person)}
+                    <Btn
+                      disabled={disabled}
+                      onPress={() => p.onRequest(person.userId)}
+                    >
+                      Invite as training partner
+                    </Btn>
+                  </View>
+                </Card>
+              ))}
+            </>
+          )}
+          <Btn variant="ghost" disabled={disabled} onPress={p.onRefresh}>
+            Refresh
           </Btn>
         </View>
-        <Text
-          fontFamily="$display"
-          fontSize={10}
-          letterSpacing={2}
-          color="$text3"
-        >
-          TRAIN TOGETHER
-        </Text>
-        <Text fontFamily="$display" fontSize={28} color="$text">
-          Training partners
-        </Text>
-        <Segmented
-          options={["Partners", "Add"]}
-          value={p.tab}
-          onChange={p.onTab}
-        />
-        {p.error !== "" && (
-          <Text fontFamily="$body" accessibilityRole="alert" color="$warning">
-            {p.error}
-          </Text>
-        )}
-        {p.notice !== "" && <Copy>{p.notice}</Copy>}
-        {p.loading && <Copy>Loading training partners…</Copy>}
-        {p.tab === "Partners" ? (
-          <>
-            {p.requests.map((person) => (
-              <Card key={person.requestId}>
-                <View
-                  flexDirection="row"
-                  gap={10}
-                  alignItems="center"
-                  flexWrap="wrap"
-                >
-                  <View flex={1} minWidth={140} gap={4}>
-                    <Pressable onPress={() => p.onSelect(person)}>
-                      <Text fontFamily="$body" color="$text">
-                        {name(person)}
-                      </Text>
-                    </Pressable>
-                    <Copy>
-                      {person.outgoing
-                        ? "Invitation sent"
-                        : "Wants to be a training partner"}
-                    </Copy>
-                  </View>
-                  {!person.outgoing && (
-                    <View flexDirection="row" gap={4}>
-                      <Btn
-                        disabled={disabled}
-                        variant="ghost"
-                        onPress={() => p.onDecide(person.requestId!, "reject")}
-                      >
-                        No
-                      </Btn>
-                      <Btn
-                        disabled={disabled}
-                        onPress={() => p.onDecide(person.requestId!, "accept")}
-                      >
-                        Accept
-                      </Btn>
-                    </View>
-                  )}
-                </View>
-              </Card>
-            ))}
-            <View>
-              <Text fontFamily="$display" fontSize={11} color="$text3">
-                {p.friends.length} PARTNERS
-              </Text>
-              {p.friends.length > 0 ? (
-                <Card>{p.friends.map(row)}</Card>
-              ) : (
-                !p.loading && (
-                  <Copy>
-                    No training partners yet. Add someone deliberately to train
-                    together.
-                  </Copy>
-                )
-              )}
-            </View>
-            <Copy>
-              Removing a partner hides your partner sessions from them and
-              cancels unused invites and shared plans.
-            </Copy>
-            <Card>
-              <View flexDirection="row" gap={12} alignItems="center">
-                <View flex={1}>
-                  <Text fontFamily="$body" color="$text">
-                    Let people find me by name
-                  </Text>
-                  <Copy>
-                    Off by default. Name and photo only — nothing about your
-                    training.
-                  </Copy>
-                  {p.discoverable === null && (
-                    <Copy>Current preference unavailable.</Copy>
-                  )}
-                </View>
-                <Switch
-                  accessibilityLabel="Let people find me by name"
-                  value={p.discoverable === true}
-                  disabled={disabled || p.discoverable === null}
-                  onValueChange={p.onDiscoverable}
-                />
-              </View>
-            </Card>
-            <Copy>
-              Being partners shares no history, body metrics, food or coaching.
-              Session access never grants permission to log for someone or view
-              their previous numbers.
-            </Copy>
-            {p.offers.length > 0 && (
-              <>
-                <Text fontFamily="$body" color="$text3">
-                  SHARED WORKOUT PLANS
-                </Text>
-                {p.offers.map((offer) => (
-                  <Btn
-                    key={offer.id}
-                    variant="outline"
-                    disabled={disabled}
-                    onPress={() => p.onOffer(offer)}
-                  >
-                    Review {offer.plan.name}
-                  </Btn>
-                ))}
-              </>
-            )}
-          </>
-        ) : (
-          <>
-            <Text fontFamily="$body" color="$text">
-              Find by name
-            </Text>
-            <TextInput
-              accessibilityLabel="Find by name"
-              value={p.query}
-              onChangeText={p.onQuery}
-              placeholder="Search for a training partner"
-              placeholderTextColor={theme.text3?.val}
-              style={{
-                color: theme.text?.val,
-                backgroundColor: theme.surface2?.val,
-                borderRadius: 12,
-                padding: 14,
-              }}
-              onSubmitEditing={p.onSearch}
-            />
-            <Copy>
-              Only people who have turned on being findable appear. A name alone
-              never reveals somebody who has not.
-            </Copy>
-            <Btn
-              disabled={disabled || p.query.trim().length < 2}
-              onPress={p.onSearch}
-            >
-              Search
-            </Btn>
-            <Copy>
-              or use a partner’s code or QR, including when name search is off.
-            </Copy>
-            <TextInput
-              accessibilityLabel="Partner code"
-              value={p.code}
-              onChangeText={p.onCode}
-              autoCapitalize="none"
-              autoCorrect={false}
-              placeholder="Paste partner code"
-              placeholderTextColor={theme.text3?.val}
-              style={{
-                color: theme.text?.val,
-                backgroundColor: theme.surface2?.val,
-                borderRadius: 12,
-                padding: 14,
-              }}
-            />
-            <View flexDirection="row" gap={10}>
-              <Btn
-                disabled={disabled || p.code.trim().length !== 32}
-                onPress={p.onResolve}
-              >
-                Find by code
-              </Btn>
-              <Btn disabled={disabled} variant="outline" onPress={p.onScan}>
-                Scan QR
-              </Btn>
-            </View>
-            {p.scanner}
-            {p.results.map((person) => (
-              <Card key={person.userId}>
-                <View gap={10}>
-                  {row(person)}
-                  <Btn
-                    disabled={disabled}
-                    onPress={() => p.onRequest(person.userId)}
-                  >
-                    Invite as training partner
-                  </Btn>
-                </View>
-              </Card>
-            ))}
-          </>
-        )}
-        <Btn variant="ghost" disabled={disabled} onPress={p.onRefresh}>
-          Refresh
-        </Btn>
-      </View>
+      </ScrollView>
       <BottomSheet
+        testID="together-partner-code-sheet"
         visible={p.codeVisible}
         onClose={p.onCloseCode}
         title="Your code"
         height="default"
+        footer={
+          <View gap={8}>
+            <View flexDirection="row" gap={8}>
+              <View flex={1}>
+                <Btn
+                  full
+                  disabled={disabled}
+                  variant="outline"
+                  onPress={p.onNewCode}
+                >
+                  New code
+                </Btn>
+              </View>
+              <View flex={1}>
+                <Btn
+                  full
+                  disabled={disabled || !p.ownCode}
+                  onPress={p.onShareCode}
+                >
+                  Share
+                </Btn>
+              </View>
+            </View>
+            <Btn
+              full
+              size="sm"
+              disabled={disabled || !p.ownCode}
+              variant="ghost"
+              onPress={p.onCopyCode}
+            >
+              Copy my code
+            </Btn>
+          </View>
+        }
       >
         <View gap={16}>
+          {!!p.error && (
+            <Text fontFamily="$body" accessibilityRole="alert" color="$warning">
+              {p.error}
+            </Text>
+          )}
+          {!p.ownCode && !p.error && <Copy>Preparing your code…</Copy>}
           <Copy>
             Anyone with this can send you a partner request. It never exposes
             your training.
@@ -352,7 +422,14 @@ export function TogetherPartnersPresenter(p: TogetherPartnersPresenterProps) {
           {p.ownCode && (
             <>
               {p.qr}
-              <Text fontFamily="$body" selectable color="$text">
+              <Text
+                fontFamily="$body"
+                selectable
+                color="$primary"
+                textAlign="center"
+                fontSize={16}
+                letterSpacing={1}
+              >
                 {p.ownCode.code}
               </Text>
               <Copy>
@@ -364,12 +441,6 @@ export function TogetherPartnersPresenter(p: TogetherPartnersPresenterProps) {
               </Copy>
             </>
           )}
-          <Btn disabled={disabled} variant="outline" onPress={p.onNewCode}>
-            New code
-          </Btn>
-          <Btn disabled={disabled || !p.ownCode} onPress={p.onCopyCode}>
-            Copy my code
-          </Btn>
         </View>
       </BottomSheet>
       <BottomSheet
@@ -460,6 +531,6 @@ export function TogetherPartnersPresenter(p: TogetherPartnersPresenterProps) {
           </View>
         )}
       </BottomSheet>
-    </>
+    </View>
   );
 }

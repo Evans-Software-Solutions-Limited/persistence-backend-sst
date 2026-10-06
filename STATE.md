@@ -1,5 +1,32 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-06 — PR #488 partner drawer and connection-control correction
+
+Partner management now uses the reviewed fixed HeaderBar/back icon and a separate
+scrolling body. All three drawers are root siblings of that body, not children of
+an outer ScrollView. The code drawer centres a compact QR and pins New code,
+Share and Copy actions. Native Share uses the issued partner code; failures remain
+visible inside the drawer. The active-workout bar is hidden on the partners route
+without stopping or deleting the workout, and reappears on returning to Train.
+
+A sole local connection is explanatory text rather than a button with no effect.
+When online is available, the connection choices are visibly selected accessible
+radio cards. The local copy explains joining the same Wi-Fi/hotspot before Start.
+The simulator screenshot's paid-access copy maps to PAID_REQUIRED in current code;
+no simulator-only block was found. Actual account/environment eligibility remains
+unverified, pending owner confirmation; do not bypass the paid-access policy.
+
+
+Verification for this UI follow-up: mobile 594 suites / 8,141 tests pass;
+coverage 96.36/91.69/96.48/97.73%. All four changed runtime files exceed 90%
+in every metric; connection choice is 100%. Typecheck 9/9, lint 6/6 and
+changed-file formatting pass. Partner tests cover drawer/scroll ancestry,
+Share failure/copy fallback and code preservation; overlay regression verifies
+hide/return without draft loss. Browser screenshots at 402×874 use the actual
+presenter/header with a simulated sheet shell, not native-device proof. Local
+Inspector clean for the connection and partner-layout follow-ups. No native build,
+deployment, merge or CI Inspector trigger.
+
 ### 2026-10-06 — PR #488 final owner-testing corrections and validation
 
 Successful local Start now hosts, promotes the current workout and publishes its

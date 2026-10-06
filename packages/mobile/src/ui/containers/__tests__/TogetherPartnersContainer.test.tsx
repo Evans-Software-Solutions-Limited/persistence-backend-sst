@@ -1,6 +1,6 @@
 import { router } from "expo-router";
 import React from "react";
-import { AppState } from "react-native";
+import { AppState, Share } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import { act, waitFor } from "@testing-library/react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -512,4 +512,39 @@ it("declines explicitly and filters self from search", async () => {
     "other",
     undefined,
   );
+});
+
+it("shares the issued person code and closes its drawer without leaving partners", async () => {
+  const share = jest
+    .spyOn(Share, "share")
+    .mockResolvedValue({ action: "sharedAction" });
+  const r = renderWithTheme(<TogetherPartnersContainer />);
+  await waitFor(() => expect(props(r).loading).toBe(false));
+  act(() => props(r).onShowCode());
+  await waitFor(() => expect(props(r).ownCode).not.toBeNull());
+  act(() => props(r).onShareCode());
+  expect(share).toHaveBeenCalledWith({ message: "a".repeat(32) });
+  act(() => props(r).onCloseCode());
+  expect(props(r).codeVisible).toBe(false);
+  expect(props(r).ownCode?.code).toBe("a".repeat(32));
+  share.mockRestore();
+});
+
+it("keeps a failed native share actionable in the open code drawer", async () => {
+  const share = jest
+    .spyOn(Share, "share")
+    .mockRejectedValue(new Error("unavailable"));
+  const r = renderWithTheme(<TogetherPartnersContainer />);
+  await waitFor(() => expect(props(r).loading).toBe(false));
+  act(() => props(r).onShowCode());
+  await waitFor(() => expect(props(r).ownCode).not.toBeNull());
+  act(() => props(r).onShareCode());
+  await waitFor(() =>
+    expect(props(r).error).toBe("Could not share the code. Copy it instead."),
+  );
+  expect(props(r).codeVisible).toBe(true);
+  expect(
+    r.getByText("Could not share the code. Copy it instead."),
+  ).toBeTruthy();
+  share.mockRestore();
 });

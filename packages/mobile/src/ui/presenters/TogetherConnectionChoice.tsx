@@ -1,5 +1,5 @@
 import { Text, View } from "@tamagui/core";
-import { Btn } from "@/ui/components/foundation/Btn";
+import { Card } from "@/ui/components/foundation/Card";
 import type { TogetherTransport } from "@/domain/ports/togetherLobby.port";
 
 export function TogetherConnectionChoice({
@@ -13,31 +13,77 @@ export function TogetherConnectionChoice({
   onlineAvailable: boolean;
   transport?: TogetherTransport;
 }) {
+  const localLabel =
+    transport === "nearby" ? "Nearby phones" : "Same Wi-Fi or hotspot";
+  const online = onlineAvailable && value === "online";
   return (
     <View gap={8}>
       <Text fontFamily="$display" fontSize={14} fontWeight="600" color="$text">
         Connection
       </Text>
-      <Btn
-        full
-        variant={value === "local" ? "soft" : "outline"}
-        onPress={() => onChange("local")}
-      >
-        {transport === "nearby" ? "Nearby phones" : "Same Wi-Fi or hotspot"}
-      </Btn>
-      {onlineAvailable && (
-        <Btn
-          full
-          variant={value === "online" ? "soft" : "outline"}
-          onPress={() => onChange("online")}
+      {onlineAvailable ? (
+        <View
+          gap={8}
+          accessibilityRole="radiogroup"
+          accessibilityLabel="Connection"
         >
-          Online · internet required
-        </Btn>
+          {(
+            [
+              ["local", localLabel],
+              ["online", "Online · internet required"],
+            ] as const
+          ).map(([option, label]) => {
+            const selected = value === option;
+            return (
+              <Card
+                key={option}
+                surface={1}
+                pad={13}
+                radius={12}
+                onPress={() => onChange(option)}
+                accessibilityRole="radio"
+                accessibilityLabel={label}
+                accessibilityState={{ checked: selected }}
+                accent={selected ? "primary" : undefined}
+              >
+                <View flexDirection="row" alignItems="center" gap={11}>
+                  <View
+                    width={16}
+                    height={16}
+                    borderRadius={8}
+                    borderWidth={1.5}
+                    borderColor={selected ? "$primary" : "$border3"}
+                    alignItems="center"
+                    justifyContent="center"
+                  >
+                    {selected && (
+                      <View
+                        width={8}
+                        height={8}
+                        borderRadius={4}
+                        backgroundColor="$primary"
+                      />
+                    )}
+                  </View>
+                  <Text flex={1} fontFamily="$body" fontSize={13} color="$text">
+                    {label}
+                  </Text>
+                </View>
+              </Card>
+            );
+          })}
+        </View>
+      ) : (
+        <Text fontFamily="$body" fontSize={13} color="$text2">
+          {localLabel}
+        </Text>
       )}
       <Text fontFamily="$body" fontSize={12} color="$text3">
-        {value === "online"
+        {online
           ? "Your training partners can find this session online."
-          : "No internet needed with valid offline access. Share the session code or QR with your training partners."}
+          : transport === "nearby"
+            ? "Keep the phones nearby, then start the session. No internet needed with valid offline access."
+            : "Connect both phones to the same Wi-Fi or hotspot, then start the session. No internet needed with valid offline access."}
       </Text>
     </View>
   );

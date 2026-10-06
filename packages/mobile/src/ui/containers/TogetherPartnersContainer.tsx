@@ -2,12 +2,11 @@ import { CameraView, useCameraPermissions } from "expo-camera";
 import QRCode from "react-native-qrcode-svg";
 import * as Clipboard from "expo-clipboard";
 import { useEffect, useRef, useState } from "react";
-import { AppState, ScrollView } from "react-native";
+import { AppState, Share } from "react-native";
 import { View } from "@tamagui/core";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { randomUUID } from "expo-crypto";
 import { router } from "expo-router";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
 import {
@@ -54,7 +53,6 @@ function PartnersAccount({
   api: TogetherSocialApi | undefined;
   current(): boolean;
 }) {
-  const insets = useSafeAreaInsets();
   const [permission, requestPermission] = useCameraPermissions();
   const [codeVisible, setCodeVisible] = useState(false);
   const [code, setCode] = useState(""),
@@ -295,190 +293,187 @@ function PartnersAccount({
   }
   const available = !!api && !!userId;
   return (
-    <View
-      flex={1}
-      backgroundColor="$bg"
-      paddingTop={insets.top}
-      paddingBottom={insets.bottom}
-    >
-      <ScrollView
-        contentContainerStyle={{ padding: 20 }}
-        keyboardShouldPersistTaps="handled"
-      >
-        <TogetherPartnersPresenter
-          codeVisible={codeVisible}
-          onCloseCode={() => setCodeVisible(false)}
-          onShowCode={() => {
-            setCodeVisible(true);
-            if (!ownCode)
-              void mutate(
-                "person-code",
-                (key) => api!.personCode(key),
-                "Your code is ready.",
-                (value) =>
-                  setOwnCode(value as { code: string; expiresAt: string }),
-              );
-          }}
-          code={code}
-          ownCode={ownCode}
-          onCode={(value) => {
-            setCode(value);
-            searchVersion.current++;
-            setResults([]);
-          }}
-          onResolve={() => void resolveCode()}
-          onNewCode={() =>
-            void mutate(
-              "person-code",
-              (key) => api!.personCode(key),
-              "Your new code is ready. Previous codes no longer work.",
-              (value) =>
-                setOwnCode(value as { code: string; expiresAt: string }),
-            )
-          }
-          onCopyCode={() => {
-            if (ownCode && live())
-              void Clipboard.setStringAsync(ownCode.code).catch(() => {
-                if (live()) setError("Could not copy the code.");
-              });
-          }}
-          onScan={() => void scan()}
-          qr={
-            ownCode ? (
-              <View padding={12} backgroundColor="white" alignSelf="flex-start">
-                <QRCode value={ownCode.code} size={180} />
-              </View>
-            ) : undefined
-          }
-          scanner={
-            scanning ? (
-              <CameraView
-                testID="partner-code-camera"
-                style={{ height: 220 }}
-                barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
-                onBarcodeScanned={({ data }) => {
-                  if (scanned.current || !live()) return;
-                  scanned.current = true;
-                  setScanning(false);
-                  setCode(data);
-                  void resolveCode(data);
-                }}
-              />
-            ) : undefined
-          }
-          tab={tab}
-          query={query}
-          busy={busy || loading}
-          loading={loading}
-          available={available}
-          error={
-            !userId
-              ? "Sign in to manage training partners."
-              : !api
-                ? "Training partners are unavailable in this app version."
-                : error
-          }
-          notice={notice}
-          friends={friends}
-          requests={requests}
-          results={results}
-          offers={offers}
-          reporting={reporting}
-          onReporting={setReporting}
-          selected={selected}
-          selectedOffer={selectedOffer}
-          discoverable={discoverable}
-          onTab={(value) => {
-            scanGeneration.current++;
-            setScanning(false);
-            setTab(value);
-            searchVersion.current++;
-            setResults([]);
-            setNotice("");
-          }}
-          onQuery={(value) => {
-            setQuery(value);
-            searchVersion.current++;
-            setResults([]);
-            setNotice("");
-          }}
-          onSearch={() => void search()}
-          onRefresh={() => void load()}
-          onBack={() => router.back()}
-          onSelect={(value) => {
-            setReporting(false);
-            setSelected(value);
-          }}
-          onRequest={(id) =>
-            void mutate(
-              `request:${id}`,
-              (key) =>
-                api!.request(
-                  key,
-                  id,
-                  results.find((p) => p.userId === id)?.personCode,
-                ),
-              "Training partner invitation sent.",
-            )
-          }
-          onDecide={(id, decision) =>
-            void mutate(
-              `decide:${id}:${decision}`,
-              (key) => api!.decide(key, id, decision),
-              decision === "accept"
-                ? "Training partner accepted."
-                : "Invitation declined.",
-            )
-          }
-          onRemove={(id) =>
-            void mutate(
-              `remove:${id}`,
-              (key) => api!.remove(key, id),
-              "Training partner removed.",
-            )
-          }
-          onBlock={(id) =>
-            void mutate(
-              `block:${id}`,
-              (key) => api!.block(key, id, true),
-              "Account blocked.",
-            )
-          }
-          onReport={(id, reason) =>
-            void mutate(
-              `report:${id}:${reason}`,
-              (key) =>
-                api!.report(key, {
-                  subjectUserId: id,
-                  context: "together",
-                  reason,
-                }),
-              "Report sent privately to the Persistence team.",
-            )
-          }
-          onDiscoverable={(value) =>
-            void mutate(
-              `profile:${value}`,
-              (key) => api!.profile(key, value),
-              value
-                ? "People can find you by name."
-                : "You are hidden from name search.",
-            )
-          }
-          onOffer={setSelectedOffer}
-          onCopy={(id) => {
-            if (
-              offers.some((o) => o.id === id && !o.revoked) &&
-              selectedOffer?.id === id
-            )
-              void mutate(
-                `copy:${id}`,
-                (key) => api!.copy(key, id),
-                "Independent workout copy saved.",
-              );
-          }}
-        />
-      </ScrollView>
-    </View>
+    <TogetherPartnersPresenter
+      codeVisible={codeVisible}
+      onCloseCode={() => setCodeVisible(false)}
+      onShowCode={() => {
+        setCodeVisible(true);
+        if (!ownCode)
+          void mutate(
+            "person-code",
+            (key) => api!.personCode(key),
+            "Your code is ready.",
+            (value) => setOwnCode(value as { code: string; expiresAt: string }),
+          );
+      }}
+      code={code}
+      ownCode={ownCode}
+      onCode={(value) => {
+        setCode(value);
+        searchVersion.current++;
+        setResults([]);
+      }}
+      onResolve={() => void resolveCode()}
+      onNewCode={() =>
+        void mutate(
+          "person-code",
+          (key) => api!.personCode(key),
+          "Your new code is ready. Previous codes no longer work.",
+          (value) => setOwnCode(value as { code: string; expiresAt: string }),
+        )
+      }
+      onCopyCode={() => {
+        if (ownCode && live())
+          void Clipboard.setStringAsync(ownCode.code).catch(() => {
+            if (live()) setError("Could not copy the code.");
+          });
+      }}
+      onShareCode={() => {
+        if (ownCode && live())
+          void Share.share({ message: ownCode.code }).catch(() => {
+            if (live()) setError("Could not share the code. Copy it instead.");
+          });
+      }}
+      onScan={() => void scan()}
+      qr={
+        ownCode ? (
+          <View
+            padding={10}
+            backgroundColor="white"
+            alignSelf="center"
+            borderRadius={14}
+          >
+            <QRCode value={ownCode.code} size={152} />
+          </View>
+        ) : undefined
+      }
+      scanner={
+        scanning ? (
+          <CameraView
+            testID="partner-code-camera"
+            style={{ height: 220 }}
+            barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
+            onBarcodeScanned={({ data }) => {
+              if (scanned.current || !live()) return;
+              scanned.current = true;
+              setScanning(false);
+              setCode(data);
+              void resolveCode(data);
+            }}
+          />
+        ) : undefined
+      }
+      tab={tab}
+      query={query}
+      busy={busy || loading}
+      loading={loading}
+      available={available}
+      error={
+        !userId
+          ? "Sign in to manage training partners."
+          : !api
+            ? "Training partners are unavailable in this app version."
+            : error
+      }
+      notice={notice}
+      friends={friends}
+      requests={requests}
+      results={results}
+      offers={offers}
+      reporting={reporting}
+      onReporting={setReporting}
+      selected={selected}
+      selectedOffer={selectedOffer}
+      discoverable={discoverable}
+      onTab={(value) => {
+        scanGeneration.current++;
+        setScanning(false);
+        setTab(value);
+        searchVersion.current++;
+        setResults([]);
+        setNotice("");
+      }}
+      onQuery={(value) => {
+        setQuery(value);
+        searchVersion.current++;
+        setResults([]);
+        setNotice("");
+      }}
+      onSearch={() => void search()}
+      onRefresh={() => void load()}
+      onBack={() => router.back()}
+      onSelect={(value) => {
+        setReporting(false);
+        setSelected(value);
+      }}
+      onRequest={(id) =>
+        void mutate(
+          `request:${id}`,
+          (key) =>
+            api!.request(
+              key,
+              id,
+              results.find((p) => p.userId === id)?.personCode,
+            ),
+          "Training partner invitation sent.",
+        )
+      }
+      onDecide={(id, decision) =>
+        void mutate(
+          `decide:${id}:${decision}`,
+          (key) => api!.decide(key, id, decision),
+          decision === "accept"
+            ? "Training partner accepted."
+            : "Invitation declined.",
+        )
+      }
+      onRemove={(id) =>
+        void mutate(
+          `remove:${id}`,
+          (key) => api!.remove(key, id),
+          "Training partner removed.",
+        )
+      }
+      onBlock={(id) =>
+        void mutate(
+          `block:${id}`,
+          (key) => api!.block(key, id, true),
+          "Account blocked.",
+        )
+      }
+      onReport={(id, reason) =>
+        void mutate(
+          `report:${id}:${reason}`,
+          (key) =>
+            api!.report(key, {
+              subjectUserId: id,
+              context: "together",
+              reason,
+            }),
+          "Report sent privately to the Persistence team.",
+        )
+      }
+      onDiscoverable={(value) =>
+        void mutate(
+          `profile:${value}`,
+          (key) => api!.profile(key, value),
+          value
+            ? "People can find you by name."
+            : "You are hidden from name search.",
+        )
+      }
+      onOffer={setSelectedOffer}
+      onCopy={(id) => {
+        if (
+          offers.some((o) => o.id === id && !o.revoked) &&
+          selectedOffer?.id === id
+        )
+          void mutate(
+            `copy:${id}`,
+            (key) => api!.copy(key, id),
+            "Independent workout copy saved.",
+          );
+      }}
+    />
   );
 }
