@@ -272,6 +272,27 @@ const cmd = (
 const run = (actor: string, id: string, body: TogetherCommand, k = key()) =>
   repo.command(actor, id, k, body);
 describe("production Together persistence and recovery", () => {
+  it.each(["local-1791234567890-abc123", "legacy-session-key", key()])(
+    "records and deduplicates personal client ID %s with Together enabled",
+    async (clientSessionId) => {
+      const sessions = new SessionRepository();
+      const payload = {
+        clientSessionId,
+        startedAt: new Date().toISOString(),
+        status: "completed" as const,
+        exercises: [{ exerciseId: exercise, sortOrder: 0, sets: [] }],
+      };
+      const first = await sessions.recordSession(a, payload, async () => []);
+      const retry = await sessions.recordSession(a, payload, async () => []);
+      expect(retry.id).toBe(first.id);
+      const rows = await db.select().from(schema.workoutSessions);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].clientSessionId).toBe(clientSessionId);
+      const exercises = await db.select().from(schema.sessionExercises);
+      expect(exercises).toHaveLength(1);
+      expect(exercises[0].exerciseId).toBe(exercise);
+    },
+  );
   it("migration is rerunnable; promotion deduplicates by draft and blocks parallel drafts and solo completion", async () => {
     const body = {
       clientDraftId: key(),
@@ -303,6 +324,19 @@ describe("production Together persistence and recovery", () => {
         async () => [],
       ),
     ).rejects.toMatchObject({ code: "DRAFT_PROMOTED" });
+    await expect(
+      new SessionRepository().recordSession(
+        a,
+        {
+          clientSessionId: body.clientDraftId.toUpperCase(),
+          startedAt: new Date().toISOString(),
+          status: "completed",
+          exercises: [],
+        },
+        async () => [],
+      ),
+    ).rejects.toMatchObject({ code: "DRAFT_PROMOTED" });
+    expect(await db.select().from(schema.workoutSessions)).toHaveLength(0);
     expect((await repo.active(a)).data).toHaveLength(1);
     await expect(repo.snapshot(c, s.sessionId)).rejects.toMatchObject({
       status: 404,

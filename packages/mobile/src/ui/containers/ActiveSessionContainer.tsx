@@ -955,7 +955,8 @@ export function ActiveSessionContainer() {
             !params.clientId &&
             params.togetherAccountId === userId &&
             (params.togetherAudience === "invite-only" ||
-              params.togetherAudience === "open")
+              params.togetherAudience === "open" ||
+              params.togetherAudience === "friends")
               ? params.togetherAudience
               : undefined
           }

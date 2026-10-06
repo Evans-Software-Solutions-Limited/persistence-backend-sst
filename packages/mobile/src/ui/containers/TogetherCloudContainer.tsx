@@ -1,4 +1,4 @@
-import { Alert } from "react-native";
+import { Alert, AppState } from "react-native";
 import { TogetherWorkoutRow } from "@/ui/presenters/TogetherWorkoutRow";
 import {
   useEffect,
@@ -142,6 +142,7 @@ export function cloudSharedView(
 }
 export function TogetherCloudContainer(p: {
   cloud: TogetherCloudPort;
+  initialHostFriends?: boolean;
   accountId: string;
   workoutName: string;
   getWorkout: () => WorkoutSession | null;
@@ -229,6 +230,53 @@ export function TogetherCloudContainer(p: {
         }
       });
   };
+  const initialHostConsumed = useRef(false);
+  useEffect(() => {
+    const listener = AppState.addEventListener("change", (status) => {
+      if (status !== "active") {
+        initialHostConsumed.current = true;
+        generation.current++;
+        locked.current = false;
+        setBusy(false);
+      }
+    });
+    return () => listener.remove();
+  }, []);
+  useEffect(() => {
+    if (!p.initialHostFriends || initialHostConsumed.current) return;
+    initialHostConsumed.current = true;
+    setVisible(true);
+    // A recovered Together checkpoint keeps its existing authority.
+    if (p.getWorkout()?.together) return;
+    run(async () => {
+      const scope = generation.current;
+      await p.cloud.hostWorkout(personalDraft());
+      if (scope !== generation.current || !isCurrent()) return;
+      const hosted = p.cloud.getSnapshot();
+      if (
+        hosted.phase !== "active" ||
+        hosted.snapshot?.hostId !== p.accountId
+      ) {
+        setNotice(
+          "Your session has not been confirmed. Retry to recover it before making it visible to training partners.",
+        );
+        return;
+      }
+      try {
+        await p.cloud.visibility(
+          "friends",
+          new Date(Date.now() + 15 * 60_000).toISOString(),
+        );
+      } catch {
+        if (scope === generation.current)
+          setNotice(
+            "Your session was created, but visibility to training partners is not confirmed. Retry or use Show to training partners. Your workout is safe.",
+          );
+      }
+    });
+    // Consume an explicit account-bound detail-page action once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [p.initialHostFriends]);
   const current = p.getWorkout();
   const resumeId =
     current?.userId === p.accountId && current.together?.transport === "cloud"
@@ -338,7 +386,12 @@ export function TogetherCloudContainer(p: {
       )}
       <BottomSheet
         visible={visible}
-        onClose={() => setVisible(false)}
+        onClose={() => {
+          generation.current++;
+          locked.current = false;
+          setBusy(false);
+          setVisible(false);
+        }}
         title="Train together"
         eyebrow="REMOTE SESSION"
         height="tall"
@@ -419,6 +472,9 @@ export function TogetherCloudContainer(p: {
           onRetry={() => run(() => p.cloud.retry())}
           onReview={() => review()}
           onCancel={() => {
+            generation.current++;
+            locked.current = false;
+            setBusy(false);
             if (state.phase === "pending-approval") {
               run(async () => {
                 const cancelScope = generation.current;
@@ -435,6 +491,9 @@ export function TogetherCloudContainer(p: {
             p.onLocal();
           }}
           onPartners={() => {
+            generation.current++;
+            locked.current = false;
+            setBusy(false);
             setVisible(false);
             router.push("/(app)/together/partners" as never);
           }}

@@ -27,7 +27,7 @@ Reference measurements from `entry.jsx`, `v2/sheets.jsx` and
 | Choice label       | 14px semibold, white `#F4F4F8`                                                       |
 | Choice description | 11.5px, muted `#8A8A98`, 2px top spacing                                             |
 
-Approved differences remain deliberate: local audiences are Private or bounded
+Approved differences remain deliberate: the Public label becomes bounded
 Open nearby/on this network; accepted friends join deliberately and strangers
 require approval. All athletes need qualifying paid access. PREV and delegated
 logging remain separate consent. No unrestricted public directory, coached
@@ -52,3 +52,22 @@ presenter now keeps both actions in the same non-shrinking, in-flow footer.
 [after](./evidence/ui-2026-10-06/detail-after.png) shows it above Start workout at
 402×874. These render the actual presenter with browser substitutes for native
 icons, gradient and safe area; they prove web layout, not native device acceptance.
+
+## Audience omission and personal sync correction — 6 October
+
+The export's Training partners audience was incorrectly omitted by limiting the
+shared choice component to local transport audiences. It is restored in detail
+setup and active solo setup, and routes to cloud hosting followed by explicit
+friends visibility. Add/manage training partners opens the existing social
+request/accept/code/QR screen before a workout starts. Internet is required for
+that cloud audience, not for authorized local Private/Open sessions. A failure
+to confirm hosting or friend visibility is surfaced rather than claiming the
+session is discoverable. Existing checkpoints keep their authority.
+
+The exported persistent “Make this my default” preference is still not implemented;
+this correction does not add an inert switch or claim complete prototype parity.
+[Private](./evidence/ui-2026-10-06/audience-private.png) and
+[Training partners selected](./evidence/ui-2026-10-06/training-partners-selected.png)
+render the actual setup content, audience cards and buttons at 402×874 with a
+browser sheet-shell substitute. They establish component appearance and selection,
+not Gorhom/native sheet geometry or physical connection evidence.

@@ -1369,3 +1369,37 @@ it("background consumes a pending detail host intent before preparation complete
   expect(h.lobby.host).not.toHaveBeenCalled();
   expect(mockSheet.mock.calls.at(-1)![0].visible).toBe(false);
 });
+
+it("starts training partners from the reviewed audience choice without hosting a local lobby", async () => {
+  const h = sharingHarness(),
+    cloud = {} as TogetherCloudPort;
+  const r = mountShared(h, { cloud });
+  fireEvent.press(r.getByText("Start"));
+  fireEvent.press(r.getByLabelText("Training partners"));
+  fireEvent.press(r.getByText("Start the session"));
+  await waitFor(() =>
+    expect(mockCloud).toHaveBeenCalledWith(
+      expect.objectContaining({ cloud, initialHostFriends: true }),
+    ),
+  );
+  expect(h.lobby.host).not.toHaveBeenCalled();
+});
+
+it("routes a training-partners detail intent independently of local credential preparation", async () => {
+  const h = sharingHarness(),
+    cloud = {} as TogetherCloudPort;
+  h.publish({ phase: "preparing" });
+  const consume = jest.fn();
+  mountShared(h, {
+    cloud,
+    initialHostAudience: "friends",
+    onConsumeHostIntent: consume,
+  });
+  await waitFor(() =>
+    expect(mockCloud).toHaveBeenCalledWith(
+      expect.objectContaining({ cloud, initialHostFriends: true }),
+    ),
+  );
+  expect(consume).toHaveBeenCalledTimes(1);
+  expect(h.lobby.host).not.toHaveBeenCalled();
+});

@@ -18,6 +18,7 @@ export interface TogetherLobbyPresenterProps {
   notice: string;
   workoutName: string;
   audience: TogetherLobbyAudience;
+  trainingPartners?: { selected: boolean; onSelect(): void };
   workoutStatus?: TogetherWorkoutStatus | null;
   onPromote?(): void;
   onReview?(): void;
@@ -228,6 +229,7 @@ export function TogetherLobbyPresenter(p: TogetherLobbyPresenterProps) {
             Your logged sets stay yours.
           </Copy>
           <TogetherAudienceOptions
+            trainingPartners={p.trainingPartners}
             audience={p.audience}
             onAudienceChange={p.onAudienceChange}
             transport={s.transport}
@@ -244,7 +246,7 @@ export function TogetherLobbyPresenter(p: TogetherLobbyPresenterProps) {
               Discovery depends on device support.
             </Copy>
           )}
-          {p.connectionOptions}
+          {!p.trainingPartners?.selected && p.connectionOptions}
           <Btn full onPress={p.onHost}>
             Start the session
           </Btn>

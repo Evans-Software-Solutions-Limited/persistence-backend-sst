@@ -45,10 +45,11 @@ import { AdaptiveSuiteRouteGuard } from "@/ui/components/subscription/AdaptiveSu
 export function WorkoutDetailContainer() {
   const params = useLocalSearchParams<{ id?: string }>();
   const workoutId = params.id ?? null;
-  const { storage, togetherLobby } = useAdapters();
+  const { storage, togetherLobby, togetherCloud } = useAdapters();
   const [togetherOpen, setTogetherOpen] = useState(false);
-  const [togetherAudience, setTogetherAudience] =
-    useState<TogetherLobbyAudience>("invite-only");
+  const [togetherAudience, setTogetherAudience] = useState<
+    TogetherLobbyAudience | "friends"
+  >("invite-only");
   const { session } = useAuth();
   const userId = session?.userId ?? null;
   useEffect(() => {
@@ -161,7 +162,7 @@ export function WorkoutDetailContainer() {
   // starting a session — checked client-side so the user never even opens
   // a session that the server's over-limit backstop would deny at Finish.
   const onStartWorkout = useCallback(
-    (id: string, audience?: TogetherLobbyAudience) => {
+    (id: string, audience?: TogetherLobbyAudience | "friends") => {
       if (audience && !userId) return;
       if (isLoadoutWorkout && !loadoutGate.allowed) {
         openLoadoutUpsell();
@@ -283,11 +284,13 @@ export function WorkoutDetailContainer() {
           togetherLobby ? (
             <TogetherStartRow
               detail={
-                togetherAudience === "open"
-                  ? togetherLobby.getSnapshot().transport === "nearby"
-                    ? "open nearby"
-                    : "open on this network"
-                  : "private"
+                togetherAudience === "friends"
+                  ? "training partners"
+                  : togetherAudience === "open"
+                    ? togetherLobby.getSnapshot().transport === "nearby"
+                      ? "open nearby"
+                      : "open on this network"
+                    : "private"
               }
               onStart={() => setTogetherOpen(true)}
             />
@@ -312,6 +315,11 @@ export function WorkoutDetailContainer() {
         onOpenVariation={isLoadoutWorkout ? undefined : onOpenVariation}
       />
       <TogetherStartSheet
+        trainingPartnersAvailable={!!togetherCloud}
+        onPartners={() => {
+          setTogetherOpen(false);
+          router.push("/(app)/together/partners" as never);
+        }}
         visible={togetherOpen}
         onClose={() => setTogetherOpen(false)}
         onStart={() => {

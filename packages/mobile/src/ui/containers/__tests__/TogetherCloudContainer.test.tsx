@@ -4,7 +4,7 @@ import { TogetherCloudController } from "../../../adapters/together/cloudSession
 import type { TogetherCloudApi } from "@/domain/ports/togetherCloud.port";
 import { fail } from "@/shared/errors/result";
 import React from "react";
-import { Alert } from "react-native";
+import { Alert, AppState } from "react-native";
 import { act, fireEvent, waitFor } from "@testing-library/react-native";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 import {
@@ -172,6 +172,9 @@ const ui = (r: ReturnType<typeof renderWithTheme>) =>
     typeof TogetherCloudPresenter
   >;
 beforeEach(() => {
+  jest
+    .spyOn(AppState, "addEventListener")
+    .mockImplementation(() => ({ remove: jest.fn() }));
   mockPush.mockReset();
   mockCopy.mockReset().mockResolvedValue(undefined);
 });
@@ -707,4 +710,103 @@ it("restores a personal workout through the real controller after terminal initi
     controller.dispose();
     db.close();
   }
+});
+
+it("starts a selected training-partner session once and publishes only after confirmed hosting", async () => {
+  const h = setup();
+  jest.mocked(h.cloud.hostWorkout).mockImplementation(async () => {
+    h.publish({ phase: "active", snapshot: server });
+  });
+  const r = renderWithTheme(
+    <TogetherCloudContainer {...h.props} initialHostFriends />,
+  );
+  await waitFor(() => expect(h.cloud.visibility).toHaveBeenCalledTimes(1));
+  expect(h.cloud.hostWorkout).toHaveBeenCalledWith(h.draft);
+  expect(h.cloud.visibility).toHaveBeenCalledWith(
+    "friends",
+    expect.any(String),
+  );
+  r.rerender(<TogetherCloudContainer {...h.props} initialHostFriends />);
+  expect(h.cloud.hostWorkout).toHaveBeenCalledTimes(1);
+});
+
+it("preserves existing Together authority rather than hosting a second session", () => {
+  const h = setup();
+  h.draft.together = {
+    sessionId: "existing",
+    executionId: "own",
+  };
+  renderWithTheme(<TogetherCloudContainer {...h.props} initialHostFriends />);
+  expect(h.cloud.hostWorkout).not.toHaveBeenCalled();
+  expect(h.cloud.visibility).not.toHaveBeenCalled();
+});
+
+it.each(["account", "unmount", "background", "cancel", "partners"])(
+  "does not publish friends visibility after %s interrupts hosting",
+  async (reason) => {
+    const h = setup();
+    let finish!: () => void;
+    jest.mocked(h.cloud.hostWorkout).mockReturnValue(
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const appListener = jest.spyOn(AppState, "addEventListener");
+    const r = renderWithTheme(
+      <TogetherCloudContainer {...h.props} initialHostFriends />,
+    );
+    await waitFor(() => expect(h.cloud.hostWorkout).toHaveBeenCalledTimes(1));
+    if (reason === "account")
+      r.rerender(
+        <TogetherCloudContainer
+          {...h.props}
+          accountId="other"
+          initialHostFriends
+        />,
+      );
+    if (reason === "unmount") r.unmount();
+    if (reason === "cancel") act(() => ui(r).onCancel());
+    if (reason === "partners") act(() => ui(r).onPartners());
+    if (reason === "background")
+      act(() => {
+        appListener.mock.calls.at(-1)![1]("background");
+      });
+    await act(async () => {
+      h.publish({ phase: "active", snapshot: server });
+      finish();
+    });
+    expect(h.cloud.visibility).not.toHaveBeenCalled();
+  },
+);
+
+it("reports publication failure while retaining the created session", async () => {
+  const h = setup();
+  jest.mocked(h.cloud.hostWorkout).mockImplementation(async () => {
+    h.publish({ phase: "active", snapshot: server });
+  });
+  jest.mocked(h.cloud.visibility).mockRejectedValue(new Error("offline"));
+  const r = renderWithTheme(
+    <TogetherCloudContainer {...h.props} initialHostFriends />,
+  );
+  await waitFor(() =>
+    expect(
+      r.getByText(/visibility to training partners is not confirmed/),
+    ).toBeTruthy(),
+  );
+  expect(h.state().snapshot?.sessionId).toBe(server.sessionId);
+  expect(h.cloud.cancel).not.toHaveBeenCalled();
+});
+
+it("does not publish a training-partner session before hosting is confirmed", async () => {
+  const h = setup();
+  const r = renderWithTheme(
+    <TogetherCloudContainer {...h.props} initialHostFriends />,
+  );
+  await waitFor(() =>
+    expect(r.getByText(/Your session has not been confirmed/)).toBeTruthy(),
+  );
+  expect(h.cloud.visibility).not.toHaveBeenCalled();
+  act(() => ui(r).onRetry());
+  await waitFor(() => expect(h.cloud.retry).toHaveBeenCalledTimes(1));
+  expect(h.cloud.hostWorkout).toHaveBeenCalledTimes(1);
 });

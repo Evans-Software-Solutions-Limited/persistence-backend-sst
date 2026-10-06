@@ -1,5 +1,42 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-06 — PR #488 opaque personal IDs and missing partner audience
+
+[PER-22](https://linear.app/evans-software-solutions/issue/PER-22) /
+[PER-64](https://linear.app/evans-software-solutions/issue/PER-64): ordinary mobile
+session IDs are opaque `local-…` strings. Enabling Together caused its promotion
+lookup to bind them against a UUID draft column, raising PostgreSQL 22P02 and
+stranding completed workouts in failed sync. The server now only performs that
+lookup for canonical UUIDs, retaining opaque idempotency keys unchanged. Existing
+queued payloads can be retried after backend deployment; no queue deletion, ID
+replacement or migration is required. Promoted UUIDs still reject solo completion,
+including uppercase UUID input. Real PGlite regressions fail before the fix and
+pass after it, checking one session/exercise survives repeated record calls.
+
+The exported design's Training partners choice was omitted, not an approved
+change. Restored in detail and active-solo setup and wired to cloud hosting then
+friends visibility; explicit publication errors do not claim discovery succeeded.
+Add/manage training partners opens the existing request/accept/code/QR flow before
+starting. Bounded nearby/network wording remains deliberate; cloud friends need
+internet while local authorized sessions do not. Persistent default audience is
+still absent and explicitly recorded in DESIGN-REFERENCE.md.
+
+Backend: 396 suites / 5,488 tests pass; aggregate coverage 98.07/94.29/97.78/98.07%.
+Changed repository has 98.16% statements, 92.48% branches, 100% functions.
+Phone-sized real presenter-content screenshots use a browser sheet-shell substitute:
+`evidence/ui-2026-10-06/training-partners-selected.png` and `audience-private.png`.
+No native/prebuild/EAS build, live deployment, data discard or CI Inspector trigger.
+Mobile: 592 suites / 8,089 tests pass; coverage 96.43/91.72/96.53/97.78%.
+Focused audience/lifecycle run: 209/209. New setup/audience presenters reach 100%;
+Together cloud/lobby containers exceed 90% on all metrics. Existing detail/active
+monolith coverage gaps remain (no exclusions added). Root typecheck 9/9, lint 6/6
+(existing warnings), non-mobile build 12/12 and other workspace tests 17/17 pass.
+Changed-file formatting passes; existing Jest timer warnings remain. Local
+Inspector found no blocking issues. PR #488 stays open for Brad's manual merge;
+backend deployment is required to repair the sync path. Then reload the updated
+app for the audience entry and trial the actual partner flow on devices.
+
+
 ### 2026-10-06 — PR #488 workout-detail footer overlap
 
 Brad's latest checkout contained b8b2047f but Together remained invisible.

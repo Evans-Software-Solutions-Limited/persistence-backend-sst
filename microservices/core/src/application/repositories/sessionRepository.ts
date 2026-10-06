@@ -556,7 +556,13 @@ export class SessionRepository {
       if (
         process.env.TOGETHER_ENABLED === "true" &&
         !options?.togetherFinalization &&
-        payload.clientSessionId
+        payload.clientSessionId &&
+        // Personal clients use opaque IDs (including local-…). Only canonical
+        // UUIDs can reference a Together draft; keep the original opaque value
+        // for personal-record idempotency and never cast it into a UUID query.
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          payload.clientSessionId,
+        )
       ) {
         const { togetherSessions } = await import("@persistence/db");
         const [promoted] = await tx

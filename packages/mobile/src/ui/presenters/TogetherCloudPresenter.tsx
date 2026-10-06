@@ -192,7 +192,7 @@ export function TogetherCloudPresenter(p: {
                 disabled={p.busy}
                 onPress={p.onVisible}
               >
-                Visible to accepted training partners for 15 minutes
+                Show to training partners for 15 minutes
               </Btn>
             </>
           )}

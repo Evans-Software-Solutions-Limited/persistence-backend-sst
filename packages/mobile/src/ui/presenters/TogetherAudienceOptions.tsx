@@ -11,7 +11,9 @@ export function TogetherAudienceOptions({
   audience,
   onAudienceChange,
   transport,
+  trainingPartners,
 }: {
+  trainingPartners?: { selected: boolean; onSelect(): void };
   audience: TogetherLobbyAudience;
   onAudienceChange(value: TogetherLobbyAudience): void;
   transport?: TogetherLobbySnapshot["transport"];
@@ -33,6 +35,16 @@ export function TogetherAudienceOptions({
       {(
         [
           ["invite-only", "Private", "Code or QR only", IconLock],
+          ...(trainingPartners
+            ? [
+                [
+                  "friends",
+                  "Training partners",
+                  "Partners can see it and choose to join · internet required",
+                  IconUsers,
+                ] as const,
+              ]
+            : []),
           [
             "open",
             nearby ? "Open nearby" : "Open on this network",
@@ -41,14 +53,21 @@ export function TogetherAudienceOptions({
           ],
         ] as const
       ).map(([value, title, detail, Icon]) => {
-        const selected = audience === value;
+        const selected =
+          value === "friends"
+            ? trainingPartners?.selected
+            : !trainingPartners?.selected && audience === value;
         return (
           <Card
             key={value}
             surface={1}
             pad={13}
             radius={12}
-            onPress={() => onAudienceChange(value)}
+            onPress={() =>
+              value === "friends"
+                ? trainingPartners?.onSelect()
+                : onAudienceChange(value)
+            }
             accessibilityRole="radio"
             accessibilityLabel={title}
             accessibilityState={{ checked: selected }}

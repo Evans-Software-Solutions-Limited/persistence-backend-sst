@@ -60,7 +60,7 @@ export function TogetherLobbyContainer({
   initialHostAudience,
   onConsumeHostIntent,
 }: {
-  initialHostAudience?: TogetherLobbyAudience;
+  initialHostAudience?: TogetherLobbyAudience | "friends";
   onConsumeHostIntent?: () => void;
   lobby: TogetherLobbyPort;
   cloud?: TogetherCloudPort;
@@ -103,6 +103,8 @@ export function TogetherLobbyContainer({
   const [notice, setNotice] = useState("");
   const [viewing, setViewing] = useState<string | null>(null);
   const [remote, setRemote] = useState(false);
+  const [hostFriends, setHostFriends] = useState(false);
+  const [friendsSelected, setFriendsSelected] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
   const generation = useRef(0);
@@ -150,6 +152,8 @@ export function TogetherLobbyContainer({
     setAudience("invite-only");
     setViewing(null);
     setRemote(false);
+    setHostFriends(false);
+    setFriendsSelected(false);
     browsingIntent.current = false;
     return () => {
       lifetime.current++;
@@ -219,6 +223,15 @@ export function TogetherLobbyContainer({
     if (hostIntentAccount.current !== accountId) {
       consumedHostIntent.current = true;
       onConsumeHostIntent?.();
+      return;
+    }
+    if (initialHostAudience === "friends") {
+      consumedHostIntent.current = true;
+      onConsumeHostIntent?.();
+      if (cloud && getWorkout && !getWorkout()?.together) {
+        setHostFriends(true);
+        setRemote(true);
+      }
       return;
     }
     setAudience(initialHostAudience);
@@ -304,10 +317,15 @@ export function TogetherLobbyContainer({
     return (
       <TogetherCloudContainer
         cloud={cloud}
+        initialHostFriends={hostFriends}
         accountId={accountId}
         workoutName={workoutName}
         getWorkout={getWorkout}
-        onLocal={() => setRemote(false)}
+        onLocal={() => {
+          setRemote(false);
+          setHostFriends(false);
+          setFriendsSelected(false);
+        }}
         onRestorePersonal={onRestorePersonal}
       >
         {children}
@@ -596,6 +614,14 @@ export function TogetherLobbyContainer({
           code={code}
           notice={notice}
           workoutName={workoutName}
+          trainingPartners={
+            cloud && getWorkout
+              ? {
+                  selected: friendsSelected,
+                  onSelect: () => setFriendsSelected(true),
+                }
+              : undefined
+          }
           audience={audience}
           workoutStatus={workoutStatus}
           onReview={
@@ -632,7 +658,10 @@ export function TogetherLobbyContainer({
                   })
               : undefined
           }
-          onAudienceChange={setAudience}
+          onAudienceChange={(value) => {
+            setFriendsSelected(false);
+            setAudience(value);
+          }}
           onBrowse={() => {
             generation.current++;
             browsingIntent.current = true;
@@ -648,7 +677,21 @@ export function TogetherLobbyContainer({
             if (snapshot.phase !== "idle") invoke(() => lobby.cancel());
           }}
           onCodeChange={setCode}
-          onHost={() => invoke(() => lobby.host(workoutName, audience))}
+          onHost={() => {
+            if (!friendsSelected) {
+              invoke(() => lobby.host(workoutName, audience));
+              return;
+            }
+            invoke(async () => {
+              const scope = generation.current;
+              if (!cloud || !getWorkout || getWorkout()?.together)
+                throw new Error("workout-changed");
+              await lobby.cancel();
+              if (scope !== generation.current) return;
+              setHostFriends(true);
+              setRemote(true);
+            });
+          }}
           onSelect={() => invoke(() => lobby.selectInvite(code))}
           onJoin={() => {
             browsingIntent.current = false;

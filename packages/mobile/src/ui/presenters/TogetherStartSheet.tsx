@@ -15,12 +15,16 @@ export function TogetherStartSheet({
   onAudienceChange,
   onStart,
   onClose,
+  trainingPartnersAvailable,
+  onPartners,
 }: {
   visible: boolean;
   activeWorkoutName?: string;
-  audience: TogetherLobbyAudience;
+  trainingPartnersAvailable?: boolean;
+  onPartners?(): void;
+  audience: TogetherLobbyAudience | "friends";
   transport?: TogetherTransport;
-  onAudienceChange(value: TogetherLobbyAudience): void;
+  onAudienceChange(value: TogetherLobbyAudience | "friends"): void;
   onStart(): void;
   onClose(): void;
 }) {
@@ -58,10 +62,23 @@ export function TogetherStartSheet({
           Everyone logs and saves their own workout.
         </Text>
         <TogetherAudienceOptions
-          audience={audience}
+          audience={audience === "friends" ? "invite-only" : audience}
+          trainingPartners={
+            trainingPartnersAvailable
+              ? {
+                  selected: audience === "friends",
+                  onSelect: () => onAudienceChange("friends"),
+                }
+              : undefined
+          }
           onAudienceChange={onAudienceChange}
           transport={transport}
         />
+        {onPartners && (
+          <Btn full variant="ghost" onPress={onPartners}>
+            Add or manage training partners
+          </Btn>
+        )}
         <Text color="$text3" fontFamily="$body" fontSize={12}>
           Accepted training partners join deliberately. Anyone else needs your
           approval. Joining never grants access to history or permission to log

@@ -11,6 +11,7 @@ import { fail, ok } from "@/shared/errors";
 import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import { useLoadoutFlow } from "@/state/loadout-flow";
+import { TogetherStartSheet } from "@/ui/presenters/TogetherStartSheet";
 import { WorkoutDetailPresenter } from "@/ui/presenters/WorkoutDetailPresenter";
 import { WorkoutDetailContainer } from "@/ui/containers/WorkoutDetailContainer";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
@@ -843,4 +844,30 @@ describe("WorkoutDetailContainer", () => {
       expect(mockRedirect).not.toHaveBeenCalled();
     });
   });
+});
+
+it("offers training partners before starting and routes management without creating a workout", async () => {
+  jest.clearAllMocks();
+  mockUseLocalSearchParams.mockReturnValue({ id: "w-1" });
+  const api = new InMemoryApiAdapter();
+  jest.spyOn(api, "getWorkout").mockResolvedValue(ok(buildWorkout()));
+  const storage = new InMemoryStorageAdapter();
+  storage.cacheWorkoutDetail("user-1", buildWorkout());
+  const adapters = makeAdapters(api, storage);
+  adapters.togetherLobby = togetherLobby();
+  adapters.togetherCloud = {} as NonNullable<Adapters["togetherCloud"]>;
+  const r = renderWithTheme(withAdapters(adapters, <WorkoutDetailContainer />));
+  await r.findByText("Bench Press");
+  fireEvent.press(r.getByTestId("together-start"));
+  fireEvent.press(r.getByText("Training partners"));
+  fireEvent.press(r.getByText("Start the session"));
+  expect(mockRouterPush).toHaveBeenCalledWith(
+    "/(app)/session?workoutId=w-1&togetherAudience=friends&togetherAccountId=user-1",
+  );
+  expect(storage.getActiveSession("user-1")).toBeNull();
+  fireEvent.press(r.getByTestId("together-start"));
+  fireEvent.press(r.getByText("Add or manage training partners"));
+  expect(mockRouterPush).toHaveBeenLastCalledWith("/(app)/together/partners");
+  expect(r.UNSAFE_getByType(TogetherStartSheet).props.visible).toBe(false);
+  expect(storage.getActiveSession("user-1")).toBeNull();
 });

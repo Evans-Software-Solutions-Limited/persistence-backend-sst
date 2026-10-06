@@ -126,9 +126,7 @@ it("only an active host gets invite, visibility and stranger approval controls",
   );
   fireEvent.press(r.getByText("Copy invitation"));
   fireEvent.press(r.getByText("Revoke this invitation"));
-  fireEvent.press(
-    r.getByText("Visible to accepted training partners for 15 minutes"),
-  );
+  fireEvent.press(r.getByText("Show to training partners for 15 minutes"));
   fireEvent.press(r.getByText("Approve"));
   fireEvent.press(r.getByText("Decline"));
   fireEvent.press(r.getByText("Review my result"));
