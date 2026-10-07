@@ -41,7 +41,7 @@ function setup(transport?: "cloud") {
     await finish();
     result.status = "saved";
   });
-  const snapshot = { sharingActive: true, participants: [result] };
+  const snapshot = { sharingActive: true, hostId: "u", participants: [result] };
   const cloud = {
     publishOwnDraft: jest.fn(async () => {}),
     prepareReview: jest.fn(async () => ({
@@ -62,6 +62,8 @@ function setup(transport?: "cloud") {
     userId: "u",
     localSessionId: "local",
     isCurrent: () => true,
+    isLocalHost: () => true,
+    localSharingAuthority: () => ({ sessionId: "shared", hostUserId: "u" }),
   };
   return { deps, own, review, snapshot, finish, cloudFinish };
 }
@@ -218,4 +220,142 @@ it("closes an already empty cloud result without fabricating history", async () 
   );
   expect(h.cloudFinish).not.toHaveBeenCalled();
   expect(h.deps.storage.getPendingMutations()).toHaveLength(0);
+});
+
+it.each(["finish_all", "save_own"])(
+  "announces LAN %s only after confirmed own result",
+  async (mode) => {
+    const h = setup();
+    const close = jest.fn(async () => {
+      expect(h.deps.storage.getLatestSession("u")?.status).toBe("completed");
+    });
+    await completeTogetherSession(
+      {
+        ...h.deps,
+        shared: { close, getSnapshot: () => ({ closures: [] }) } as never,
+      },
+      { ...input, mode },
+    );
+    expect(close).toHaveBeenCalledWith(mode);
+  },
+);
+it("does not end sharing when own finish fails", async () => {
+  const h = setup();
+  const close = jest.fn();
+  h.finish.mockRejectedValue(new Error("offline"));
+  await expect(
+    completeTogetherSession(
+      {
+        ...h.deps,
+        shared: { close, getSnapshot: () => ({ closures: [] }) } as never,
+      },
+      { ...input, mode: "finish_all" },
+    ),
+  ).rejects.toThrow("offline");
+  expect(close).not.toHaveBeenCalled();
+});
+it("allows a failed closure delivery to retry against the same saved result", async () => {
+  const h = setup();
+  const close = jest
+    .fn()
+    .mockRejectedValueOnce(new Error("disconnected"))
+    .mockResolvedValueOnce(undefined);
+  const deps = {
+    ...h.deps,
+    shared: { close, getSnapshot: () => ({ closures: [] }) } as never,
+  };
+  await expect(
+    completeTogetherSession(deps, { ...input, mode: "finish_all" }),
+  ).rejects.toThrow("disconnected");
+  expect(h.deps.storage.getPendingMutations()).toHaveLength(0);
+  await completeTogetherSession(deps, { ...input, mode: "finish_all" });
+  expect(close).toHaveBeenCalledTimes(2);
+  expect(h.deps.storage.getPendingMutations()).toHaveLength(1);
+});
+
+it("finishes a guest result without calling the host-only close endpoint", async () => {
+  const h = setup("cloud");
+  h.snapshot.hostId = "host";
+  h.deps.cloud.close = jest.fn();
+  await completeTogetherSession(h.deps, { ...input, mode: "save_own" });
+  expect(h.deps.cloud.close).not.toHaveBeenCalled();
+  expect(h.deps.cloud.finish).toHaveBeenCalledWith("token");
+});
+it("rejects finish-all if host authority changed before submit", async () => {
+  const h = setup("cloud");
+  h.snapshot.hostId = "host";
+  await expect(
+    completeTogetherSession(h.deps, { ...input, mode: "finish_all" }),
+  ).rejects.toThrow("host-changed");
+  expect(h.cloudFinish).not.toHaveBeenCalled();
+});
+it("announces guest own completion as leave, not a host closure", async () => {
+  const h = setup();
+  const close = jest.fn(async () => {});
+  await completeTogetherSession(
+    {
+      ...h.deps,
+      isLocalHost: () => false,
+      shared: { close, getSnapshot: () => ({ closures: [] }) } as never,
+    },
+    { ...input, mode: "save_own" },
+  );
+  expect(close).toHaveBeenCalledWith("leave");
+});
+it("does not send a conflicting closure after sharing already ended", async () => {
+  const h = setup();
+  const close = jest.fn();
+  await completeTogetherSession(
+    {
+      ...h.deps,
+      shared: {
+        close,
+        getSnapshot: () => ({ closures: [{ userId: "u", mode: "leave" }] }),
+      } as never,
+    },
+    { ...input, mode: "save_own" },
+  );
+  expect(close).not.toHaveBeenCalled();
+});
+it("does not save or announce finish-all after losing LAN host authority", async () => {
+  const h = setup();
+  await expect(
+    completeTogetherSession(
+      { ...h.deps, isLocalHost: () => false },
+      { ...input, mode: "finish_all" },
+    ),
+  ).rejects.toThrow("host-changed");
+  expect(h.finish).not.toHaveBeenCalled();
+});
+
+it("finishes a local-only draft without touching the disposed shared wrapper", async () => {
+  const h = setup();
+  const getSnapshot = jest.fn(() => {
+    throw new Error("shared-unavailable");
+  });
+  const close = jest.fn();
+  await completeTogetherSession(
+    {
+      ...h.deps,
+      localSharingAuthority: () => null,
+      shared: { getSnapshot, close } as never,
+    },
+    { ...input, mode: "save_own" },
+  );
+  expect(getSnapshot).not.toHaveBeenCalled();
+  expect(close).not.toHaveBeenCalled();
+  expect(h.deps.storage.getPendingMutations()).toHaveLength(1);
+});
+it("ignores sharing belonging to a different session", async () => {
+  const h = setup();
+  const getSnapshot = jest.fn();
+  await completeTogetherSession(
+    {
+      ...h.deps,
+      localSharingAuthority: () => ({ sessionId: "other", hostUserId: "u" }),
+      shared: { getSnapshot } as never,
+    },
+    { ...input, mode: "save_own" },
+  );
+  expect(getSnapshot).not.toHaveBeenCalled();
 });

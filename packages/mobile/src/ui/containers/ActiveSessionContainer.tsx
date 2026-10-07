@@ -51,6 +51,7 @@ import { renumberSets } from "@/domain/services/sessionService";
 import type { Exercise } from "@/domain/models/exercise";
 import type { ExerciseSet } from "@/domain/models/session";
 import { TogetherLobbyContainer } from "@/ui/containers/TogetherLobbyContainer";
+import { TogetherFinishChoicePresenter } from "@/ui/presenters/TogetherFinishChoicePresenter";
 import { ActiveSessionPresenter } from "@/ui/presenters/ActiveSessionPresenter";
 import { formatBarElapsed } from "@/ui/presenters/ActiveWorkoutBarPresenter";
 import { EndConfirmDialogPresenter } from "@/ui/presenters/EndConfirmDialogPresenter";
@@ -728,6 +729,64 @@ export function ActiveSessionContainer() {
     router.dismiss();
   }, []);
 
+  const [finishChoice, setFinishChoice] = useState<{
+    userId: string;
+    localSessionId: string;
+  } | null>(null);
+  const canFinishForAll = useCallback(() => {
+    if (!userId || !session?.together) return false;
+    const fresh = storage.getActiveSession(userId);
+    if (fresh?.id !== session.id) return false;
+    if (fresh.together?.transport === "cloud") {
+      const snapshot = togetherCloud?.getSnapshot().snapshot;
+      return (
+        snapshot?.sessionId === fresh.together.sessionId &&
+        snapshot.state === "active" &&
+        snapshot.sharingActive &&
+        snapshot.hostId === userId
+      );
+    }
+    const status = togetherLobby?.workout?.status(userId, session.id);
+    const lobby = togetherLobby?.getSnapshot();
+    return (
+      !!status &&
+      status.sessionId === fresh.together?.sessionId &&
+      (status.sharing === "active" || status.sharing === "reconnecting") &&
+      lobby?.role === "host" &&
+      lobby.members.some((member) => member.userId === userId && member.host) &&
+      !togetherLobby?.shared
+        ?.getSnapshot()
+        .closures.some(
+          (closure) =>
+            closure.mode === "finish_all" || closure.userId === userId,
+        )
+    );
+  }, [userId, session, storage, togetherCloud, togetherLobby]);
+  const chooseFinish = useCallback(
+    (mode: "finish_all" | "save_own") => {
+      const choice = finishChoice;
+      setFinishChoice(null);
+      if (
+        !choice ||
+        choice.userId !== userId ||
+        storage.getActiveSession(choice.userId)?.id !== choice.localSessionId
+      )
+        return;
+      if (mode === "finish_all" && !canFinishForAll()) {
+        Alert.alert(
+          "Session changed",
+          "Sharing has ended. Finish your own workout instead.",
+        );
+        return;
+      }
+      router.push({
+        pathname: "/(app)/session/rate",
+        params: { localSessionId: choice.localSessionId, mode },
+      } as never);
+    },
+    [finishChoice, userId, storage, canFinishForAll],
+  );
+
   const onFinish = useCallback(() => {
     // Tap Complete → rating screen captures 1-10 difficulty + notes
     // → submit fires completeSessionCommand → replaces with summary.
@@ -761,8 +820,18 @@ export function ActiveSessionContainer() {
       );
       return;
     }
+    if (session.together && userId) {
+      if (canFinishForAll())
+        setFinishChoice({ userId, localSessionId: session.id });
+      else
+        router.push({
+          pathname: "/(app)/session/rate",
+          params: { localSessionId: session.id, mode: "save_own" },
+        } as never);
+      return;
+    }
     router.push("/(app)/session/rate" as never);
-  }, [session, templateByExercise]);
+  }, [session, templateByExercise, userId, canFinishForAll]);
 
   // 05.4: the header "End" pill opens the styled <EndConfirmDialogPresenter>
   // (replacing the legacy Alert.alert). Confirming fires cancelSessionCommand
@@ -909,28 +978,6 @@ export function ActiveSessionContainer() {
       onAddExercise={onAddExercise}
       onAddExerciseToSuperset={onAddExerciseToSuperset}
       onStartRest={onStartRest}
-      onSkipExercise={
-        session.together
-          ? (id) => {
-              const fresh = storage.getActiveSession(userId);
-              if (!fresh?.together) return;
-              try {
-                storage.cacheActiveSession(userId, {
-                  ...fresh,
-                  exercises: fresh.exercises.map((e) =>
-                    e.id === id ? { ...e, skipped: !e.skipped } : e,
-                  ),
-                });
-                rereadCache();
-              } catch {
-                Alert.alert(
-                  "Change not saved",
-                  "Your workout is unchanged. Try again.",
-                );
-              }
-            }
-          : undefined
-      }
       withClient={withClient}
       retroactive={retroactive}
       activityEnvironment={session.activityEnvironment ?? null}
@@ -1112,6 +1159,16 @@ export function ActiveSessionContainer() {
         onCancel={onCloseNotes}
       />
 
+      <TogetherFinishChoicePresenter
+        visible={
+          !!finishChoice &&
+          finishChoice.userId === userId &&
+          finishChoice.localSessionId === session.id
+        }
+        onCancel={() => setFinishChoice(null)}
+        onFinishAll={() => chooseFinish("finish_all")}
+        onFinishOwn={() => chooseFinish("save_own")}
+      />
       {endConfirmVisible && (
         <EndConfirmDialogPresenter
           elapsed={formatBarElapsed(

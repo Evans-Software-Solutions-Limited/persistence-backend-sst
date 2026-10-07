@@ -73,7 +73,7 @@ it("routes each local athlete once on host finish-all, not private continuation"
   expect(mockPush).toHaveBeenCalledTimes(1);
   expect(mockPush).toHaveBeenCalledWith({
     pathname: "/(app)/session/rate",
-    params: { localSessionId: "local" },
+    params: { localSessionId: "local", groupFinish: "true" },
   });
   r.unmount();
   h.emit();

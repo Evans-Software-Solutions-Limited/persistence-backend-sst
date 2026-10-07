@@ -3,6 +3,7 @@ import { TextInput } from "react-native";
 import { Text, View } from "@tamagui/core";
 import { Btn } from "@/ui/components/foundation/Btn";
 import { Card } from "@/ui/components/foundation/Card";
+import { TogetherAthleteAvatar } from "./TogetherAthleteAvatar";
 import { TogetherAudienceOptions } from "./TogetherAudienceOptions";
 import type {
   TogetherLobbyAudience,
@@ -17,6 +18,8 @@ export interface TogetherLobbyPresenterProps {
   code: string;
   notice: string;
   workoutName: string;
+  accountId?: string;
+  athleteNames?: Readonly<Record<string, string>>;
   audience: TogetherLobbyAudience;
   trainingPartners?: { selected: boolean; onSelect(): void };
   workoutStatus?: TogetherWorkoutStatus | null;
@@ -130,10 +133,10 @@ export function togetherWorkoutCopy(
   sharing: TogetherWorkoutStatus["sharing"],
 ): string {
   return {
-    active: "Saved on this device",
-    reconnecting: "Reconnecting · saved locally",
-    "local-only": "Saved locally · sharing ended",
-    paused: "Saved locally · sharing paused",
+    active: "Training together",
+    reconnecting: "Reconnecting · your sets are kept on this device",
+    "local-only": "Sharing ended · continue your workout",
+    paused: "Sharing paused · your sets are kept on this device",
   }[sharing];
 }
 
@@ -376,7 +379,12 @@ export function TogetherLobbyPresenter(p: TogetherLobbyPresenterProps) {
           >
             {s.selection.workoutName}
           </Text>
-          <Copy>Verified host · {s.selection.hostUserId}</Copy>
+          <Copy>
+            Verified host
+            {p.athleteNames?.[s.selection.hostUserId]
+              ? ` · ${p.athleteNames[s.selection.hostUserId]}`
+              : ""}
+          </Copy>
         </Card>
       )}
       {s.phase === "selected" && (
@@ -448,11 +456,40 @@ export function TogetherLobbyPresenter(p: TogetherLobbyPresenterProps) {
             <Text fontFamily="$display" fontSize={15} color="$text">
               Athletes · {s.members.length} of 4
             </Text>
-            {s.members.map((m) => (
-              <Copy key={m.userId}>
-                {m.host ? "Host" : "Athlete"} · {m.userId}
-              </Copy>
-            ))}
+            {s.members.map((m, index) => {
+              const name =
+                p.athleteNames?.[m.userId] ??
+                (m.userId === p.accountId ? "You" : `Athlete ${index + 1}`);
+              return (
+                <View
+                  key={m.userId}
+                  flexDirection="row"
+                  gap={11}
+                  alignItems="center"
+                  paddingVertical={6}
+                >
+                  <TogetherAthleteAvatar
+                    name={name}
+                    size={34}
+                    selected={m.userId === p.accountId}
+                  />
+                  <View flex={1} gap={2}>
+                    <Text
+                      fontFamily="$display"
+                      fontSize={14}
+                      fontWeight="600"
+                      color="$text"
+                    >
+                      {name}
+                    </Text>
+                    <Copy>
+                      {m.host ? "Host" : "Athlete"}
+                      {m.userId === p.accountId ? " · You" : ""}
+                    </Copy>
+                  </View>
+                </View>
+              );
+            })}
           </View>
         </Card>
       )}

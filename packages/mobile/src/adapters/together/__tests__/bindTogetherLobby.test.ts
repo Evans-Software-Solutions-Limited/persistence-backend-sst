@@ -6,7 +6,7 @@ import type { NetInfoPort } from "@/domain/ports/netInfo.port";
 const flush = async () => {
   for (let i = 0; i < 8; i++) await Promise.resolve();
 };
-function setup(persisted = true) {
+function setup(persisted = true, currentState: string | null = "active") {
   let resolveAuth!: (value: unknown) => void;
   let resolveOnline!: (value: boolean) => void;
   let authEvent!: (...args: any[]) => void;
@@ -34,7 +34,7 @@ function setup(persisted = true) {
     },
   } as NetInfoPort;
   const lifecycle = {
-    currentState: "active",
+    currentState,
     addEventListener: (_: string, listener: typeof appEvent) => {
       appEvent = listener;
       return { remove: jest.fn() };
@@ -148,3 +148,29 @@ it("failed bootstrap/network probes do not overwrite later lifecycle events", as
   expect(lobby.setOnline).not.toHaveBeenCalled();
   stop();
 });
+
+it("preserves the last foreground state through transient inactive events", () => {
+  const s = setup();
+  s.appEvent("inactive");
+  expect(s.lobby.setActive).toHaveBeenCalledTimes(1);
+  expect(s.lobby.setActive).toHaveBeenLastCalledWith(true);
+  s.appEvent("background");
+  s.appEvent("inactive");
+  expect(s.lobby.setActive).toHaveBeenCalledTimes(2);
+  expect(s.lobby.setActive).toHaveBeenLastCalledWith(false);
+  s.appEvent("active");
+  expect(s.lobby.setActive).toHaveBeenLastCalledWith(true);
+  s.stop();
+});
+it.each([null, "inactive", "background"])(
+  "does not authorize a lobby before a known active state (%s)",
+  (state) => {
+    const s = setup(true, state);
+    expect(s.lobby.setActive).toHaveBeenLastCalledWith(false);
+    s.appEvent("inactive");
+    expect(s.lobby.setActive).toHaveBeenCalledTimes(1);
+    s.appEvent("active");
+    expect(s.lobby.setActive).toHaveBeenLastCalledWith(true);
+    s.stop();
+  },
+);

@@ -53,7 +53,7 @@ export function useTogetherEndNavigation(
       routed.current = own.id;
       router.push({
         pathname: "/(app)/session/rate",
-        params: { localSessionId: own.id },
+        params: { localSessionId: own.id, groupFinish: "true" },
       } as never);
     };
     recheck.current = check;

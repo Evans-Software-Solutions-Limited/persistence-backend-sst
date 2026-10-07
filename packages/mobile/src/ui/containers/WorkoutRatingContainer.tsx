@@ -25,6 +25,7 @@ export function WorkoutRatingContainer() {
   const { storage, auth, togetherLobby, togetherCloud } = useAdapters();
   const params = useLocalSearchParams<{
     mode?: string;
+    groupFinish?: string;
     localSessionId?: string;
   }>();
   const { session: authSession } = useAuth();
@@ -75,6 +76,53 @@ export function WorkoutRatingContainer() {
           {
             storage,
             workout: togetherLobby?.workout,
+            shared: togetherLobby?.shared,
+            localSharingAuthority: () => {
+              const status = togetherLobby?.workout?.status(userId, session.id);
+              const live = togetherLobby?.getSnapshot();
+              const host = live?.members.find((m) => m.host);
+              if (
+                !status ||
+                status.sessionId !== session.together?.sessionId ||
+                !live ||
+                !["hosting", "joined", "reconnecting"].includes(live.phase) ||
+                !host
+              )
+                return null;
+              if (!["active", "reconnecting"].includes(status.sharing)) {
+                // A locally persisted closure stops new sharing before its send
+                // is acknowledged. Keep replaying that exact event on retry.
+                const closureMode =
+                  params.mode === "finish_all"
+                    ? "finish_all"
+                    : host.userId === userId
+                      ? "save_own"
+                      : "leave";
+                let retryOwnClosure = false;
+                try {
+                  retryOwnClosure =
+                    (params.mode === "finish_all" ||
+                      params.mode === "save_own") &&
+                    !!togetherLobby?.shared
+                      ?.getSnapshot()
+                      .closures.some(
+                        (closure) =>
+                          closure.userId === userId &&
+                          closure.mode === closureMode,
+                      );
+                } catch {
+                  // The controller wrapper can outlive its disposed engine.
+                  return null;
+                }
+                if (!retryOwnClosure) return null;
+              }
+              return { sessionId: status.sessionId, hostUserId: host.userId };
+            },
+            isLocalHost: () =>
+              togetherLobby?.getSnapshot().role === "host" &&
+              togetherLobby
+                .getSnapshot()
+                .members.some((m) => m.userId === userId && m.host),
             cloud: togetherCloud,
             userId,
             localSessionId: session.id,
@@ -220,8 +268,34 @@ export function WorkoutRatingContainer() {
     return null;
   }
 
+  const group =
+    (params.mode === "finish_all" || params.groupFinish === "true") &&
+    session.together
+      ? session.together.transport === "cloud"
+        ? togetherCloud
+            ?.getSnapshot()
+            .snapshot?.participants.map((member, index) => ({
+              id: member.userId,
+              name:
+                member.userId === userId
+                  ? "You"
+                  : (member.displayName ?? `Athlete ${index + 1}`),
+              own: member.userId === userId,
+            }))
+        : togetherLobby?.getSnapshot().members.map((member, index) => ({
+            id: member.userId,
+            name:
+              member.userId === userId
+                ? "You"
+                : (togetherLobby.shared?.getSnapshot().profiles[
+                    member.userId
+                  ] ?? `Athlete ${index + 1}`),
+            own: member.userId === userId,
+          }))
+      : undefined;
   return (
     <WorkoutRatingPresenter
+      group={group}
       isLoading={isSubmitting}
       initialNotes={session.notes ?? ""}
       onSubmit={onSubmit}

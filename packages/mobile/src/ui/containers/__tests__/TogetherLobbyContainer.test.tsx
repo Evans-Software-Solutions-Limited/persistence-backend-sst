@@ -509,7 +509,7 @@ it("promotes only on consent using the fresh workout and shows durable receipt u
   expect(r.queryByText("Start the session")).toBeNull();
   expect(r.queryByText("Join")).toBeNull();
   expect(
-    r.getByText(/My workout · Saved locally · sharing ended/),
+    r.getByText(/My workout · Sharing ended · continue your workout/),
   ).toBeTruthy();
   r.rerender(
     <TogetherLobbyContainer
@@ -1664,4 +1664,30 @@ it("leaves startup honestly when credential preparation becomes unavailable", ()
   expect(r.queryByTestId("together-starting")).toBeNull();
   expect(mockSheet.mock.calls.at(-1)![0].title).toBe("Train together");
   expect(h.lobby.host).not.toHaveBeenCalled();
+});
+
+it("preserves permission interruption during hosting until the workout and plan are published", async () => {
+  let lifecycle!: (state: AppStateStatus) => void;
+  jest.spyOn(AppState, "addEventListener").mockImplementation((_, callback) => {
+    lifecycle = callback;
+    return { remove: jest.fn() };
+  });
+  const h = sharingHarness();
+  let finishHost!: () => void;
+  jest.mocked(h.lobby.host).mockImplementation(
+    () =>
+      new Promise<void>((resolve) => {
+        finishHost = resolve;
+      }),
+  );
+  jest.mocked(h.workout.getPlan).mockReturnValue(plan);
+  const r = mountShared(h, { initialHostAudience: "invite-only" });
+  h.publish({ phase: "preparing" });
+  act(() => lifecycle("inactive"));
+  act(() => lifecycle("active"));
+  h.publish({ phase: "hosting", role: "host", invitation: "signed" });
+  await act(async () => finishHost());
+  await waitFor(() => expect(h.workout.promote).toHaveBeenCalledTimes(1));
+  expect(h.shared.publishPlan).toHaveBeenCalledWith(plan);
+  expect(r.getByText("Scan to join")).toBeTruthy();
 });

@@ -46,7 +46,11 @@ function makeAdapters(storage: InMemoryStorageAdapter): Adapters {
   };
 }
 
-let mockParams: { localSessionId?: string; mode?: string } = {};
+let mockParams: {
+  localSessionId?: string;
+  mode?: string;
+  groupFinish?: string;
+} = {};
 const mockRouterBack = jest.fn();
 const mockRouterReplace = jest.fn();
 const mockRouterDismissAll = jest.fn();
@@ -380,7 +384,9 @@ it("Together submit saves its own result, rating and closes the pointer before s
     return { status: "saved", historyId: "history" };
   });
   adapters.togetherLobby = {
+    getSnapshot: () => ({ phase: "idle", members: [] }),
     workout: {
+      status: () => null,
       subscribe: () => () => {},
       review: jest.fn(async () => ({ revision: 4, snapshotToken: "token" })),
       finish,
@@ -437,4 +443,128 @@ it("does not rate a newer active workout from an older Together completion route
   expect(storage.getActiveSession("user-1")?.id).toBe("local-1");
   expect(storage.getPendingMutations()).toHaveLength(0);
   mockParams = {};
+});
+
+it.each(["lan", "cloud"])(
+  "shows named %s group context for finish-all without another athlete rating input",
+  async (transport) => {
+    mockParams = { localSessionId: "local-1", mode: "finish_all" };
+    const storage = new InMemoryStorageAdapter();
+    seed(storage);
+    storage.cacheActiveSession("user-1", {
+      ...storage.getActiveSession("user-1")!,
+      together: {
+        sessionId: "shared",
+        executionId: "own",
+        ...(transport === "cloud" ? { transport: "cloud" as const } : {}),
+      },
+    });
+    const adapters = makeAdapters(storage);
+    adapters.togetherLobby = {
+      getSnapshot: () => ({
+        members: [
+          { userId: "user-1", host: true },
+          { userId: "mia", host: false },
+        ],
+      }),
+      shared: { getSnapshot: () => ({ profiles: { mia: "Mia" } }) },
+    } as unknown as Adapters["togetherLobby"];
+    adapters.togetherCloud = {
+      subscribe: () => () => {},
+      getSnapshot: () => ({
+        snapshot: {
+          sessionId: "shared",
+          participants: [
+            { userId: "user-1" },
+            { userId: "mia", displayName: "Mia" },
+          ],
+        },
+      }),
+    } as unknown as Adapters["togetherCloud"];
+    const r = renderWithTheme(
+      <AdapterProvider adapters={adapters}>
+        <WorkoutRatingContainer />
+      </AdapterProvider>,
+    );
+    expect(await r.findByText("Finishing together")).toBeTruthy();
+    expect(r.getByText("Mia")).toBeTruthy();
+    expect(r.getByText("Your rating below")).toBeTruthy();
+    expect(r.getByText("Rates on their phone")).toBeTruthy();
+    expect(r.getAllByTestId("workout-rating-submit")).toHaveLength(1);
+    expect(storage.getPendingMutations()).toHaveLength(0);
+    mockParams = {};
+  },
+);
+
+it("replays a persisted finish-all closure after its failed delivery before leaving rating", async () => {
+  mockParams = {
+    localSessionId: "local-1",
+    mode: "finish_all",
+    groupFinish: "true",
+  };
+  const storage = new InMemoryStorageAdapter();
+  seed(storage);
+  const own = {
+    ...storage.getActiveSession("user-1")!,
+    together: { sessionId: "shared", executionId: "own" },
+  };
+  storage.cacheActiveSession("user-1", own);
+  const adapters = makeAdapters(storage);
+  let sharing = "active";
+  const closures: { userId: string; mode: string }[] = [];
+  let acknowledge!: () => void;
+  const close = jest.fn(async () => {
+    if (!closures.length) {
+      closures.push({ userId: "user-1", mode: "finish_all" });
+      sharing = "local-only";
+      throw new Error("delivery failed");
+    }
+    await new Promise<void>((resolve) => {
+      acknowledge = resolve;
+    });
+  });
+  const cancel = jest.fn(async () => {});
+  adapters.togetherLobby = {
+    getSnapshot: () => ({
+      phase: "hosting",
+      role: "host",
+      members: [{ userId: "user-1", host: true }],
+      pending: [],
+    }),
+    shared: { getSnapshot: () => ({ profiles: {}, closures }), close },
+    workout: {
+      status: () => ({ sessionId: "shared", sharing }),
+      subscribe: () => () => {},
+      review: async () => ({ revision: 4, snapshotToken: "token" }),
+      finish: async () => {
+        storage.cacheActiveSession("user-1", { ...own, status: "completed" });
+        return { status: "saved", historyId: "history" };
+      },
+    },
+    cancel,
+  } as unknown as Adapters["togetherLobby"];
+  const r = renderWithTheme(
+    <AdapterProvider adapters={adapters}>
+      <WorkoutRatingContainer />
+    </AdapterProvider>,
+  );
+  fireEvent.press(await r.findByTestId("workout-rating-submit"));
+  await waitFor(() => expect(close).toHaveBeenCalledTimes(1));
+  await waitFor(() =>
+    expect(
+      r.getByTestId("workout-rating-submit").props.accessibilityState?.disabled,
+    ).not.toBe(true),
+  );
+  expect(mockRouterReplace).not.toHaveBeenCalled();
+  expect(cancel).not.toHaveBeenCalled();
+  fireEvent.press(r.getByTestId("workout-rating-submit"));
+  await waitFor(() => expect(close).toHaveBeenCalledTimes(2));
+  expect(mockRouterReplace).not.toHaveBeenCalled();
+  expect(cancel).not.toHaveBeenCalled();
+  acknowledge();
+  await waitFor(() =>
+    expect(mockRouterReplace).toHaveBeenCalledWith("/(app)/session/summary"),
+  );
+  expect(cancel).toHaveBeenCalledTimes(1);
+  r.unmount();
 });

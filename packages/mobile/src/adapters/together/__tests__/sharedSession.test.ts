@@ -1,4 +1,7 @@
 /** @jest-environment node */
+import { completeTogetherSession } from "@/application/commands/session/complete-together-session.command";
+import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
+import type { WorkoutSession } from "@/domain/models/session";
 import { TogetherSharedSession, type SharedEnvelope } from "../sharedSession";
 import { DatabaseSync } from "node:sqlite";
 import { randomBytes, randomUUID } from "node:crypto";
@@ -414,6 +417,58 @@ describe("shared plans, sealed consent and independent projections", () => {
       expect(engines[2].getSnapshot().athletes).toEqual([]);
       await expect(engines[1].publishProgress(command(2, 1))).rejects.toThrow();
       await engines[1].setConsent(id(3), none);
+    },
+  );
+  it.each(["save_own", "finish_all", "leave"] as const)(
+    "completes the guest's own saved result after signed %s without conflicting closure",
+    async (mode) => {
+      await engines[0].publishPlan(plan);
+      // A different guest leaving must not prevent this guest's own leave.
+      await (mode === "leave" ? engines[2] : engines[0]).close(mode);
+      const storage = new InMemoryStorageAdapter();
+      const own: WorkoutSession = {
+        id: "local-own",
+        userId: id(2),
+        workoutId: null,
+        name: "Strength",
+        status: "in_progress",
+        startedAt: new Date(time).toISOString(),
+        completedAt: null,
+        notes: null,
+        exercises: [],
+        together: { sessionId: pin.sessionId, executionId: id(22) },
+      };
+      storage.cacheActiveSession(id(2), own);
+      const close = jest.spyOn(engines[1], "close");
+      const result = await completeTogetherSession(
+        {
+          storage,
+          userId: id(2),
+          localSessionId: own.id,
+          isCurrent: () => true,
+          shared: engines[1],
+          isLocalHost: () => false,
+          localSharingAuthority: () => ({
+            sessionId: pin.sessionId,
+            hostUserId: pin.hostUserId,
+          }),
+          workout: {
+            review: async () => ({ revision: 1, snapshotToken: "review" }),
+            finish: async () => {
+              storage.cacheActiveSession(id(2), {
+                ...own,
+                status: "completed",
+              });
+              return { status: "saved", historyId: id(90) };
+            },
+          } as never,
+        },
+        { rating: 7, notes: "", mode: "save_own" },
+      );
+      expect(result.status).toBe("completed");
+      expect(storage.getPendingMutations()).toHaveLength(1);
+      if (mode === "leave") expect(close).toHaveBeenCalledWith("leave");
+      else expect(close).not.toHaveBeenCalled();
     },
   );
   it("guest leave cannot close other athletes or forge host authority", async () => {

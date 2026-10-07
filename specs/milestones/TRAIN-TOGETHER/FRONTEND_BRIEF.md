@@ -1,5 +1,17 @@
 # Persistence Together — frontend agent
 
+## Active Together follow-up — 7 October 2026
+
+Use the export’s 26-point single-border presence avatar and named roster cards.
+Names are presentation only; verified account/device identity still controls admission.
+Do not display UUIDs as athlete names or introduce a Together-only Skip Exercise.
+Finish Workout offers active hosts Finish for all / Finish just for me; guests
+finish their own. All finish paths reuse normal rating. Group context displays
+athlete cards, while each athlete rates only their own result on their phone.
+Transient inactive system interruptions preserve the lobby and pending promotion;
+actual background still ends sharing under the current key/transport lifecycle.
+Do not imply locally retained sets mean the workout was completed or uploaded.
+
 ## Completion correction — 7 October 2026
 
 Brad requires normal workout completion for Together: Complete and shared End

@@ -1,5 +1,6 @@
 /** @jest-environment node */
 import type { WorkoutSession } from "../../../domain/models/session";
+import { bindTogetherLobby } from "../bindTogetherLobby";
 import { TogetherProvisioning } from "../provisioning/togetherProvisioning";
 import type {
   TogetherOfflineApi,
@@ -530,6 +531,55 @@ describe("reviewed lobby coordinator, real cryptography and SQLite, simulated na
       expect(value.native.startHost).not.toHaveBeenCalled();
     },
   );
+  it("keeps the admitted roster during iOS interruptions but retires it on true background", async () => {
+    const host = setup();
+    const guest = setup(2);
+    const issued = person(1);
+    jest.mocked(host.provisioning.prepare).mockResolvedValue(ok(issued));
+    let appEvent!: (state: string) => void;
+    const unbind = bindTogetherLobby(
+      {
+        getPersistedSession: async () => null,
+        getSession: jest.fn(),
+        onAuthStateChange: () => () => {},
+      },
+      { isConnected: async () => false, subscribe: () => () => {} },
+      {
+        currentState: "active",
+        addEventListener: (_, callback) => {
+          appEvent = callback;
+          return { remove: () => {} };
+        },
+      },
+      host.controller,
+    );
+    // Complete auth bootstrap before establishing the real signed lobby.
+    await settle();
+    host.controller.setAccount(id(1));
+    await host.controller.host("A");
+    await join(host, guest, true);
+    const before = host.controller.getSnapshot();
+    expect(before.members).toHaveLength(2);
+    appEvent("inactive");
+    await settle();
+    expect(host.controller.getSnapshot()).toEqual(before);
+    expect(host.native.stop).not.toHaveBeenCalled();
+    expect(issued.seed.some((n) => n !== 0)).toBe(true);
+    appEvent("active");
+    expect(host.controller.getSnapshot()).toEqual(before);
+    appEvent("background");
+    await settle();
+    expect(host.controller.getSnapshot().members).toEqual([]);
+    expect(host.native.stop).toHaveBeenCalledTimes(1);
+    expect(issued.seed.every((n) => n === 0)).toBe(true);
+    appEvent("inactive");
+    appEvent("active");
+    await settle();
+    // Foregrounding cannot silently resurrect terminal membership/signing keys.
+    expect(host.controller.getSnapshot().members).toEqual([]);
+    expect(host.native.startHost).toHaveBeenCalledTimes(1);
+    unbind();
+  });
   it("clears credentials and native resources on expiry, background and account changes", async () => {
     const value = setup();
     const issued = person(1);
@@ -1277,6 +1327,8 @@ describe("reviewed lobby coordinator, real cryptography and SQLite, simulated na
     await join(host, guest, true);
     await host.controller.workout.promote(workout());
     await guest.controller.workout.promote(workout(2));
+    // Publication is deliberately outside the local input/save task.
+    await jest.advanceTimersByTimeAsync(0);
     await settle();
     await host.controller.shared.publishPlan(
       host.controller.workout.getPlan(id(1), "local-session")!,
@@ -1385,6 +1437,8 @@ describe("reviewed lobby coordinator, real cryptography and SQLite, simulated na
       operation,
       projection.revision,
     );
+    await settle();
+    await jest.advanceTimersByTimeAsync(0);
     await settle();
     expect(
       host.controller.workout.read(id(1), "local-session")!.exercises[0].sets,

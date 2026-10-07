@@ -19,6 +19,7 @@
  *       "Confirmation to save session"
  */
 
+import { TogetherAthleteAvatar } from "./TogetherAthleteAvatar";
 import React, { useState } from "react";
 import {
   Keyboard,
@@ -59,6 +60,7 @@ const getDifficultyColor = (rating: number): string => {
 
 export type WorkoutRatingPresenterProps = {
   isLoading?: boolean;
+  group?: readonly { id: string; name: string; own: boolean }[];
   initialNotes?: string;
   onSubmit: (rating: number, notes: string) => void;
   onBack: () => void;
@@ -104,6 +106,42 @@ export function WorkoutRatingPresenter(props: WorkoutRatingPresenterProps) {
             You&apos;ve completed your workout!
           </Text>
 
+          {!!props.group?.length && (
+            <View
+              testID="together-group-rating"
+              style={{ alignSelf: "stretch", gap: 10, marginBottom: 20 }}
+            >
+              <Text
+                style={{ color: color.$text, fontSize: 17, fontWeight: "600" }}
+              >
+                Finishing together
+              </Text>
+              {props.group.map((member) => (
+                <View
+                  key={member.id}
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 10,
+                  }}
+                >
+                  <TogetherAthleteAvatar
+                    name={member.name}
+                    selected={member.own}
+                  />
+                  <Text style={{ color: color.$text, flex: 1 }}>
+                    {member.name}
+                  </Text>
+                  <Text style={{ color: color.$text2, fontSize: 12 }}>
+                    {member.own ? "Your rating below" : "Rates on their phone"}
+                  </Text>
+                </View>
+              ))}
+              <Text style={{ color: color.$text2, fontSize: 12 }}>
+                Everyone rates and saves their own workout.
+              </Text>
+            </View>
+          )}
           <Text style={styles.question}>How difficult was that?</Text>
 
           <View

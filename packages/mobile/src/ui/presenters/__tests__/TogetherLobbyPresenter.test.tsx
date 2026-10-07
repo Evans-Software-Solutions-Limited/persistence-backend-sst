@@ -375,3 +375,25 @@ it.each(["paid-required", "PAID_REQUIRED"])(
     expect(togetherErrorCopy(code)).toContain("qualifying paid subscription");
   },
 );
+
+it("shows named athlete cards without exposing internal account IDs", () => {
+  const p = props("hosting");
+  p.accountId = "private-owner-id";
+  p.athleteNames = {
+    "private-owner-id": "Brad Evans",
+    "private-guest-id": "Mia",
+  };
+  p.snapshot.members = [
+    { userId: "private-owner-id", host: true },
+    { userId: "private-guest-id", host: false },
+    { userId: "unknown-private-id", host: false },
+  ];
+  const r = renderWithTheme(<TogetherLobbyPresenter {...p} />);
+  expect(r.getByText("Brad Evans")).toBeTruthy();
+  expect(r.getByText("Mia")).toBeTruthy();
+  expect(r.getByText("Athlete 3")).toBeTruthy();
+  expect(r.getByText("Host · You")).toBeTruthy();
+  expect(
+    r.queryByText(/private-id|private-owner-id|private-guest-id/),
+  ).toBeNull();
+});

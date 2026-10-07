@@ -2257,27 +2257,9 @@ describe("Together active workout integration", () => {
       );
       await r.findByTestId("active-session-screen");
       const presenter = () => r.UNSAFE_getByType(ActiveSessionPresenter).props;
-      act(() => presenter().onSkipExercise("e"));
-      expect(storage.getActiveSession("user-1")!.exercises[0].skipped).toBe(
-        true,
-      );
-      act(() => presenter().onSkipExercise("e"));
-      expect(storage.getActiveSession("user-1")!.exercises[0].skipped).toBe(
-        false,
-      );
+      expect(presenter().onSkipExercise).toBeUndefined();
       const alert = jest.spyOn(Alert, "alert").mockImplementation(() => {});
       const save = jest.spyOn(storage, "cacheActiveSession");
-      save.mockImplementationOnce(() => {
-        throw new Error("disk full");
-      });
-      act(() => presenter().onSkipExercise("e"));
-      expect(storage.getActiveSession("user-1")!.exercises[0].skipped).toBe(
-        false,
-      );
-      expect(alert).toHaveBeenCalledWith(
-        "Change not saved",
-        expect.any(String),
-      );
       save.mockImplementationOnce(() => {
         throw new Error("disk full");
       });
@@ -2302,4 +2284,120 @@ describe("Together active workout integration", () => {
       r.unmount();
     },
   );
+});
+
+describe("Together finish scope", () => {
+  async function setupFinish(host = true, sharingActive = true) {
+    jest.clearAllMocks();
+    mockUseLocalSearchParams.mockReturnValue({});
+    useActiveWorkout.setState({ active: null, expanded: false });
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheActiveSession("user-1", {
+      id: "local-finish",
+      userId: "user-1",
+      workoutId: null,
+      name: "Together",
+      status: "in_progress",
+      startedAt: "2026-10-07T09:00:00Z",
+      completedAt: null,
+      notes: null,
+      together: {
+        sessionId: "shared-finish",
+        executionId: "own",
+        transport: "cloud",
+      },
+      exercises: [
+        {
+          id: "e",
+          sessionId: "local-finish",
+          exerciseId: "ex-bench",
+          exerciseName: "Bench",
+          sortOrder: 0,
+          supersetGroup: null,
+          isSubstituted: false,
+          originalExerciseId: null,
+          notes: null,
+          sets: [
+            {
+              id: "s",
+              sessionExerciseId: "e",
+              setNumber: 1,
+              weightKg: 20,
+              reps: 10,
+              rpe: null,
+              durationSeconds: null,
+              distanceMeters: null,
+              isCompleted: false,
+              completedAt: null,
+            },
+          ],
+        },
+      ],
+    });
+    const snapshot = {
+      sessionId: "shared-finish",
+      state: "active",
+      sharingActive,
+      hostId: host ? "user-1" : "other",
+      participants: [],
+    };
+    const adapters = makeAdapters(new InMemoryApiAdapter(), storage);
+    adapters.togetherCloud = {
+      getSnapshot: () => ({ snapshot }),
+      subscribe: () => () => {},
+    } as never;
+    const r = renderWithTheme(
+      withAdapters(adapters, <ActiveSessionContainer />),
+    );
+    fireEvent.press(await r.findByTestId("active-session-finish"));
+    return { r, storage, snapshot };
+  }
+  it.each(["all", "own"])(
+    "offers host the %s choice before rating without closing sharing",
+    async (choice) => {
+      const { r, storage } = await setupFinish();
+      expect(mockRouterPush).not.toHaveBeenCalled();
+      fireEvent.press(r.getByTestId(`together-finish-${choice}`));
+      expect(mockRouterPush).toHaveBeenCalledWith({
+        pathname: "/(app)/session/rate",
+        params: {
+          mode: choice === "all" ? "finish_all" : "save_own",
+          localSessionId: "local-finish",
+        },
+      });
+      expect(storage.getActiveSession("user-1")?.status).toBe("in_progress");
+      r.unmount();
+    },
+  );
+  it.each([
+    [false, true],
+    [true, false],
+  ])(
+    "only rates own result for guest or inactive sharing (%s,%s)",
+    async (host, active) => {
+      const { r } = await setupFinish(host, active);
+      expect(mockRouterPush).toHaveBeenCalledWith({
+        pathname: "/(app)/session/rate",
+        params: { mode: "save_own", localSessionId: "local-finish" },
+      });
+      r.unmount();
+    },
+  );
+  it("rechecks host authority when selecting finish for all", async () => {
+    const { r, snapshot } = await setupFinish();
+    snapshot.hostId = "other";
+    fireEvent.press(r.getByTestId("together-finish-all"));
+    expect(mockRouterPush).not.toHaveBeenCalled();
+    r.unmount();
+  });
+  it("does not finish a replacement workout from an old choice", async () => {
+    const { r, storage } = await setupFinish();
+    storage.cacheActiveSession("user-1", {
+      ...storage.getActiveSession("user-1")!,
+      id: "replacement",
+    });
+    fireEvent.press(r.getByTestId("together-finish-own"));
+    expect(mockRouterPush).not.toHaveBeenCalled();
+    r.unmount();
+  });
 });

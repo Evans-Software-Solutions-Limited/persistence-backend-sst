@@ -171,6 +171,8 @@ export class TogetherWorkoutCheckpoint implements TogetherWorkoutPort {
   private observedAccount: string | null = null;
   private recoveryRuntime?: TogetherWorkoutRecovery;
   private flights = new Map<string, "uploading" | "saving">();
+  private publicationQueue: (() => Promise<void>)[] = [];
+  private publishing = false;
   constructor(
     private readonly db: TogetherJournalDatabase,
     private readonly account: () => string | null,
@@ -195,6 +197,8 @@ export class TogetherWorkoutCheckpoint implements TogetherWorkoutPort {
     if (account !== this.observedAccount) {
       this.observedAccount = account;
       this.accountGeneration++;
+      this.publicationQueue = [];
+      this.publishing = false;
     }
     return this.accountGeneration;
   }
@@ -715,8 +719,49 @@ export class TogetherWorkoutCheckpoint implements TogetherWorkoutPort {
     }
     this.persist(c, commands);
     this.changed();
-    for (const command of commands)
-      void auth!.send(command).catch(() => this.changed());
+    if (auth && commands.length) {
+      const generation = this.accessGeneration();
+      const userId = c.snapshot.userId;
+      const localId = c.snapshot.id;
+      // Calling an async transport still runs its verification, encryption and
+      // projection synchronously up to its first await. Keep that work outside
+      // the input event; the signed journal above is already durable. Commands
+      // cannot be coalesced: their expectedVersion values form an ordered chain.
+      for (const command of commands)
+        this.publicationQueue.push(async () => {
+          if (
+            this.accessGeneration() !== generation ||
+            this.account() !== userId
+          )
+            return;
+          const current = this.load(userId, localId);
+          if (
+            !current ||
+            current.snapshot.status !== "in_progress" ||
+            current.error ||
+            !this.match(current)
+          )
+            return;
+          await auth.send(command);
+        });
+      this.schedulePublication();
+    }
+  }
+  private schedulePublication() {
+    if (this.publishing || !this.publicationQueue.length) return;
+    const generation = this.accessGeneration();
+    this.publishing = true;
+    setTimeout(() => {
+      if (this.accessGeneration() !== generation) return;
+      const publish = this.publicationQueue.shift()!;
+      void publish()
+        .catch(() => this.changed())
+        .finally(() => {
+          if (this.accessGeneration() !== generation) return;
+          this.publishing = false;
+          this.schedulePublication();
+        });
+    }, 0);
   }
   private persist(c: Checkpoint, commands: LocalCommand[]) {
     // The journal and checkpoint share one transaction, including all prior-set promotion.

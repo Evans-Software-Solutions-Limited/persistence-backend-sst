@@ -1,5 +1,48 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-07 — PR #488 athlete UI, finish scope and input/lifecycle follow-up
+
+[PER-22](https://linear.app/evans-software-solutions/issue/PER-22) /
+[PER-64](https://linear.app/evans-software-solutions/issue/PER-64).
+
+Together now uses the Claude export’s single 26-point presence avatar (no nested
+profile rings), named roster cards and live profile updates. Unknown athletes use
+neutral labels instead of account IDs. Removed the Together-only Skip Exercise
+control to preserve the normal active-workout layout. Active hosts choose Finish
+for all or Finish just for me; others rate only their own result. Finish-all shows
+group cards on the normal rating screen, with each athlete rating on their phone.
+The guest group-context route does not grant host finish-all authority.
+
+Quick-fill synchronously persists its signed own journal, but transport crypto,
+projection and publication now run on a later turn in command order. Real SQLite
+regression proves two durable commands and zero transport calls before yielding,
+then versions [0,1]. No verification removed and no device speed claim. Transient
+iOS inactive interruptions no longer terminally cancel the lobby or abort host
+promotion. True background still clears transport/keys and ends sharing; safe
+background resume remains outstanding. Copy says Sharing ended / continue your
+workout, never claims completed save. The exact owner event is not yet correlated.
+
+Inspector found private completion re-closing ended sharing and permission-prompt
+host promotion invalidation; both fixed with regressions. Further closure-delivery
+retry regression guards persisted closure replay before summary/cancel.
+Actual presenter browser screenshots: evidence/ui-2026-10-07-followup, with simulated
+athletes and explicit native-sheet/slider/icon substitutes. No native build,
+physical-device acceptance, deploy, merge or CI Inspector.
+
+Validation: 599 mobile suites / 8,271 tests pass; root typecheck 9/9 and lint
+6/6 pass. Final local Inspector review is clean, including the closure retry.
+
+Sentry OAuth connected and staging reviewed on 7 October. PERSISTENCE-MOBILE-2's
+latest event confirms PostgreSQL 22P02: a legacy local- session ID reaches the
+Together UUID draft lookup. The existing PR backend guard addresses that exact
+query; deploy it before retrying retained queue entries. PERSISTENCE-MOBILE-6
+records four >=2-second simulator app hangs (release 1.1.3+1); main/JS stacks
+returned redacted, so causality and performance resolution remain unproven.
+Staging mobile log search over seven days returned no entries. Neither Sentry
+issue was resolved or suppressed. No additional speculative runtime patch.
+Next: review PR, deploy backend changes from prior handoff, then owner trials
+and fresh hang evidence. Preserve unrelated AGENTS.md changes.
+
 ### 2026-10-07 — PR #488 normal Together completion and escape
 
 [PER-22](https://linear.app/evans-software-solutions/issue/PER-22) /

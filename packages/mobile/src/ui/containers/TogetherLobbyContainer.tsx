@@ -99,7 +99,12 @@ export function TogetherLobbyContainer({
   const workoutStatus = localSessionId
     ? lobby.workout?.status(accountId, localSessionId)
     : null;
-  const sharedSnapshot = lobby.shared?.getSnapshot();
+  const shared = lobby.shared;
+  useEffect(
+    () => shared?.subscribe(() => refreshWorkout((v) => v + 1)),
+    [shared],
+  );
+  const sharedSnapshot = shared?.getSnapshot();
   const [audience, setAudience] =
     useState<TogetherLobbyAudience>("invite-only");
   const browsingIntent = useRef(false);
@@ -182,7 +187,7 @@ export function TogetherLobbyContainer({
   }, [accountId, lobby]);
   useEffect(() => {
     const listener = AppState.addEventListener("change", (state) => {
-      if (state !== "active") {
+      if (state === "background") {
         hostGeneration.current++;
         setStartingWorkout(false);
         consumedHostIntent.current = true;
@@ -769,6 +774,11 @@ export function TogetherLobbyContainer({
               Training partners
             </Btn>
             <TogetherLobbyPresenter
+              accountId={accountId}
+              athleteNames={{
+                ...sharedSnapshot?.profiles,
+                [accountId]: displayName ?? "You",
+              }}
               connectionOptions={
                 snapshot.phase === "idle" &&
                 !workoutStatus &&
