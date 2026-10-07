@@ -86,6 +86,7 @@ export const rosterSchema = t.Object(
     payload: t.Object(
       {
         kind: t.Literal("together-roster-v1"),
+        audience: t.Optional(t.Literal("friends")),
         sessionId: uuid,
         hostUserId: uuid,
         hostDeviceId: uuid,

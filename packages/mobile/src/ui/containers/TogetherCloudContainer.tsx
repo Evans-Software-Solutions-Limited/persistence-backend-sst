@@ -1,4 +1,7 @@
-import { Alert } from "react-native";
+import { Alert, AppState, Share } from "react-native";
+import { CameraView, useCameraPermissions } from "expo-camera";
+import QRCode from "react-native-qrcode-svg";
+import { TogetherInvitePresenter } from "@/ui/presenters/TogetherInvitePresenter";
 import { TogetherWorkoutRow } from "@/ui/presenters/TogetherWorkoutRow";
 import {
   useEffect,
@@ -142,6 +145,7 @@ export function cloudSharedView(
 }
 export function TogetherCloudContainer(p: {
   cloud: TogetherCloudPort;
+  initialHostFriends?: boolean;
   accountId: string;
   workoutName: string;
   getWorkout: () => WorkoutSession | null;
@@ -169,9 +173,16 @@ export function TogetherCloudContainer(p: {
     [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false),
     [viewing, setViewing] = useState<string | null>(null);
+  const [, requestCameraPermission] = useCameraPermissions();
+  const [scanning, setScanning] = useState(false);
+  const scanned = useRef(false);
+  const scanGeneration = useRef(0);
+  const [inviteView, setInviteView] = useState(false);
   const [invitation, setInvitation] = useState<{
     tokenId: string;
     token: string;
+    expiresAt: string;
+    members: string;
   } | null>(null);
   const [friends, setFriends] = useState<
     { sessionId: string; hostName: string; occupancy: number }[]
@@ -187,6 +198,8 @@ export function TogetherCloudContainer(p: {
     setCode("");
     setFriends([]);
     setInvitation(null);
+    setInviteView(false);
+    setScanning(false);
     setViewing(null);
     return () => {
       lifetime.current++;
@@ -229,6 +242,111 @@ export function TogetherCloudContainer(p: {
         }
       });
   };
+  const invitationMembers = (snapshot: TogetherCloudState["snapshot"]) =>
+    (snapshot?.participants.map((member) => member.userId).sort() ?? []).join(
+      ",",
+    );
+  const currentMembers = invitationMembers(state.snapshot);
+  useEffect(() => {
+    if (!invitation) return;
+    if (invitation.members !== currentMembers) {
+      setInvitation(null);
+      return;
+    }
+    const remaining = Date.parse(invitation.expiresAt) - Date.now();
+    const timer = setTimeout(() => setInvitation(null), Math.max(0, remaining));
+    return () => clearTimeout(timer);
+  }, [invitation, currentMembers]);
+  const installInvitation = (
+    result: Awaited<ReturnType<TogetherCloudPort["invite"]>>,
+  ) => {
+    if (
+      !Number.isFinite(Date.parse(result.expiresAt)) ||
+      Date.parse(result.expiresAt) <= Date.now()
+    )
+      throw new Error("invitation-expired");
+    setInvitation({
+      ...result,
+      members: invitationMembers(p.cloud.getSnapshot().snapshot),
+    });
+  };
+  const liveInvitation = () => {
+    if (
+      !invitation ||
+      Date.parse(invitation.expiresAt) <= Date.now() ||
+      invitation.members !== invitationMembers(p.cloud.getSnapshot().snapshot)
+    ) {
+      setInvitation(null);
+      throw new Error("invitation-expired");
+    }
+    return invitation.token;
+  };
+  const prepareInvitation = async () => {
+    const scope = generation.current;
+    const hosted = p.cloud.getSnapshot();
+    if (hosted.phase !== "active" || hosted.snapshot?.hostId !== p.accountId)
+      return;
+    setInviteView(true);
+    const result = await p.cloud.invite();
+    if (scope !== generation.current || !isCurrent()) return;
+    const current = p.cloud.getSnapshot();
+    if (
+      current.phase !== "active" ||
+      current.snapshot?.sessionId !== hosted.snapshot.sessionId
+    )
+      return;
+    installInvitation(result);
+  };
+  const initialHostConsumed = useRef(false);
+  useEffect(() => {
+    const listener = AppState.addEventListener("change", (status) => {
+      if (status !== "active") {
+        initialHostConsumed.current = true;
+        generation.current++;
+        locked.current = false;
+        setBusy(false);
+        setScanning(false);
+      }
+    });
+    return () => listener.remove();
+  }, []);
+  useEffect(() => {
+    if (!p.initialHostFriends || initialHostConsumed.current) return;
+    initialHostConsumed.current = true;
+    setVisible(true);
+    // A recovered Together checkpoint keeps its existing authority.
+    if (p.getWorkout()?.together) return;
+    run(async () => {
+      const scope = generation.current;
+      await p.cloud.hostWorkout(personalDraft());
+      if (scope !== generation.current || !isCurrent()) return;
+      const hosted = p.cloud.getSnapshot();
+      if (
+        hosted.phase !== "active" ||
+        hosted.snapshot?.hostId !== p.accountId
+      ) {
+        setNotice(
+          "Your session has not been confirmed. Retry to recover it before making it visible to training partners.",
+        );
+        return;
+      }
+      try {
+        await p.cloud.visibility(
+          "friends",
+          new Date(Date.now() + 15 * 60_000).toISOString(),
+        );
+      } catch {
+        if (scope === generation.current)
+          setNotice(
+            "Your session was created, but visibility to training partners is not confirmed. Retry or use Show to training partners. Your workout is safe.",
+          );
+      }
+      if (scope === generation.current && isCurrent())
+        await prepareInvitation();
+    });
+    // Consume an explicit account-bound detail-page action once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [p.initialHostFriends]);
   const current = p.getWorkout();
   const resumeId =
     current?.userId === p.accountId && current.together?.transport === "cloud"
@@ -260,7 +378,7 @@ export function TogetherCloudContainer(p: {
   const review = (mode?: string) => {
     setVisible(false);
     router.push({
-      pathname: "/(app)/session/together-cloud-review",
+      pathname: "/(app)/session/rate",
       params: { localSessionId: current?.id, mode },
     } as never);
   };
@@ -338,175 +456,313 @@ export function TogetherCloudContainer(p: {
       )}
       <BottomSheet
         visible={visible}
-        onClose={() => setVisible(false)}
-        title="Train together"
-        eyebrow="REMOTE SESSION"
+        onClose={() => {
+          generation.current++;
+          locked.current = false;
+          setBusy(false);
+          setVisible(false);
+          setScanning(false);
+        }}
+        title={
+          inviteView && state.phase === "active" && invitation
+            ? "Session is live"
+            : "Train together"
+        }
+        eyebrow="TRAIN TOGETHER"
         height="tall"
+        footer={
+          inviteView ? (
+            <Btn
+              full
+              variant="soft"
+              onPress={() => {
+                generation.current++;
+                locked.current = false;
+                setBusy(false);
+                setVisible(false);
+              }}
+            >
+              Back to my workout
+            </Btn>
+          ) : undefined
+        }
       >
-        {state.canDetachDraft && p.onRestorePersonal && (
-          <Btn
-            full
-            variant="outline"
-            onPress={() =>
-              run(async () => {
-                p.cloud.detachDraft(p.accountId, p.onRestorePersonal!);
+        {inviteView &&
+        state.phase === "active" &&
+        state.snapshot?.hostId === p.accountId ? (
+          invitation ? (
+            <TogetherInvitePresenter
+              qr={
+                <View padding={12} backgroundColor="white">
+                  <QRCode value={invitation.token} size={140} />
+                </View>
+              }
+              notice={notice}
+              scanInstruction="Scan from Online join, or copy and send the invitation."
+              pendingCount={state.requests.length}
+              personal={false}
+              onCopy={() =>
+                run(() => Clipboard.setStringAsync(liveInvitation()))
+              }
+              onShare={() =>
+                run(() => Share.share({ message: liveInvitation() }))
+              }
+              onSettings={() => setInviteView(false)}
+            />
+          ) : (
+            <View gap={16}>
+              <Text fontFamily="$body" color="$text2">
+                {busy
+                  ? "Preparing your invitation…"
+                  : "Your session is active, but its invitation is not ready."}
+              </Text>
+              {!!notice && (
+                <Text fontFamily="$body" color="$text2">
+                  {notice}
+                </Text>
+              )}
+              <Btn full disabled={busy} onPress={() => run(prepareInvitation)}>
+                Generate new invitation
+              </Btn>
+              <Btn full variant="outline" onPress={() => setInviteView(false)}>
+                Session settings
+              </Btn>
+            </View>
+          )
+        ) : (
+          <>
+            {state.canDetachDraft && p.onRestorePersonal && (
+              <Btn
+                full
+                variant="outline"
+                onPress={() =>
+                  run(async () => {
+                    p.cloud.detachDraft(p.accountId, p.onRestorePersonal!);
+                    p.onLocal();
+                  })
+                }
+              >
+                Continue personally
+              </Btn>
+            )}
+            {!state.snapshot && (
+              <>
+                <Btn
+                  full
+                  variant="outline"
+                  disabled={busy}
+                  onPress={() =>
+                    run(async () => {
+                      const scope = generation.current;
+                      const permission = await requestCameraPermission();
+                      if (scope !== generation.current || !isCurrent()) return;
+                      if (!permission.granted) {
+                        setNotice(
+                          "Camera permission is needed to scan. You can paste the online invitation instead.",
+                        );
+                        return;
+                      }
+                      scanned.current = false;
+                      scanGeneration.current = scope;
+                      setScanning(true);
+                    })
+                  }
+                >
+                  Scan online invitation
+                </Btn>
+                {scanning && (
+                  <CameraView
+                    testID="together-online-qr-camera"
+                    style={{ height: 220 }}
+                    barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
+                    onBarcodeScanned={({ data }) => {
+                      if (
+                        scanned.current ||
+                        scanGeneration.current !== generation.current ||
+                        !isCurrent()
+                      )
+                        return;
+                      scanned.current = true;
+                      setScanning(false);
+                      setCode(data.trim());
+                      setNotice(
+                        "Online invitation scanned. Choose Join to request admission.",
+                      );
+                    }}
+                  />
+                )}
+              </>
+            )}
+            <TogetherCloudPresenter
+              state={state}
+              accountId={p.accountId}
+              workoutName={p.workoutName}
+              code={code}
+              onCode={setCode}
+              busy={busy}
+              notice={notice}
+              invitation={invitation?.token}
+              friends={friends}
+              onHost={() =>
+                run(async () => {
+                  const fresh = p.getWorkout();
+                  if (!fresh || fresh.userId !== p.accountId || fresh.together)
+                    throw new Error("workout-changed");
+                  const scope = generation.current;
+                  setScanning(false);
+                  await p.cloud.hostWorkout(fresh);
+                  if (scope === generation.current && isCurrent())
+                    await prepareInvitation();
+                })
+              }
+              onJoin={() =>
+                run(() => {
+                  setScanning(false);
+                  return p.cloud.join(
+                    { inviteToken: code.trim() },
+                    personalDraft(),
+                  );
+                })
+              }
+              onFriends={() =>
+                run(async () => {
+                  const scope = generation.current;
+                  const result = await p.cloud.friends();
+                  if (!result.ok) throw new Error(result.error.message);
+                  if (scope === generation.current)
+                    setFriends(
+                      result.value.data.map((f) => ({
+                        sessionId: f.sessionId,
+                        hostName: f.host.displayName ?? "Training partner",
+                        occupancy: f.occupancy,
+                      })),
+                    );
+                })
+              }
+              onSelectFriend={(id) =>
+                run(() => p.cloud.join({ sessionId: id }, personalDraft()))
+              }
+              onInvite={() =>
+                run(async () => {
+                  const scope = generation.current;
+                  const result = await p.cloud.invite();
+                  if (scope !== generation.current) return;
+                  installInvitation(result);
+                  await Clipboard.setStringAsync(result.token);
+                })
+              }
+              onRevoke={() =>
+                run(async () => {
+                  if (invitation)
+                    await p.cloud.revokeInvite(invitation.tokenId);
+                  setInvitation(null);
+                })
+              }
+              onDecision={(id, approved) =>
+                run(() => p.cloud.decide(id, approved ? "approve" : "reject"))
+              }
+              onRetry={() => run(() => p.cloud.retry())}
+              onReview={() => review()}
+              onCancel={() => {
+                setScanning(false);
+                generation.current++;
+                locked.current = false;
+                setBusy(false);
+                if (state.phase === "pending-approval") {
+                  run(async () => {
+                    const cancelScope = generation.current;
+                    await p.cloud.cancelJoin();
+                    if (cancelScope === generation.current) setVisible(false);
+                  });
+                  return;
+                }
+                p.cloud.cancel();
+                setVisible(false);
+              }}
+              onLocal={() => {
+                setScanning(false);
+                p.cloud.cancel();
                 p.onLocal();
-              })
-            }
-          >
-            Continue personally
-          </Btn>
-        )}
-        <TogetherCloudPresenter
-          state={state}
-          accountId={p.accountId}
-          workoutName={p.workoutName}
-          code={code}
-          onCode={setCode}
-          busy={busy}
-          notice={notice}
-          invitation={invitation?.token}
-          friends={friends}
-          onHost={() =>
-            run(async () => {
-              const fresh = p.getWorkout();
-              if (!fresh || fresh.userId !== p.accountId || fresh.together)
-                throw new Error("workout-changed");
-              await p.cloud.hostWorkout(fresh);
-            })
-          }
-          onJoin={() =>
-            run(() =>
-              p.cloud.join({ inviteToken: code.trim() }, personalDraft()),
-            )
-          }
-          onFriends={() =>
-            run(async () => {
-              const scope = generation.current;
-              const result = await p.cloud.friends();
-              if (!result.ok) throw new Error(result.error.message);
-              if (scope === generation.current)
-                setFriends(
-                  result.value.data.map((f) => ({
-                    sessionId: f.sessionId,
-                    hostName: f.host.displayName ?? "Training partner",
-                    occupancy: f.occupancy,
-                  })),
-                );
-            })
-          }
-          onSelectFriend={(id) =>
-            run(() => p.cloud.join({ sessionId: id }, personalDraft()))
-          }
-          onInvite={() =>
-            run(async () => {
-              const scope = generation.current;
-              const result = await p.cloud.invite();
-              if (scope !== generation.current) return;
-              setInvitation(result);
-              await Clipboard.setStringAsync(result.token);
-            })
-          }
-          onRevoke={() =>
-            run(async () => {
-              if (invitation) await p.cloud.revokeInvite(invitation.tokenId);
-              setInvitation(null);
-            })
-          }
-          onDecision={(id, approved) =>
-            run(() => p.cloud.decide(id, approved ? "approve" : "reject"))
-          }
-          onRetry={() => run(() => p.cloud.retry())}
-          onReview={() => review()}
-          onCancel={() => {
-            if (state.phase === "pending-approval") {
-              run(async () => {
-                const cancelScope = generation.current;
-                await p.cloud.cancelJoin();
-                if (cancelScope === generation.current) setVisible(false);
-              });
-              return;
-            }
-            p.cloud.cancel();
-            setVisible(false);
-          }}
-          onLocal={() => {
-            p.cloud.cancel();
-            p.onLocal();
-          }}
-          onPartners={() => {
-            setVisible(false);
-            router.push("/(app)/together/partners" as never);
-          }}
-          onVisible={() =>
-            run(() =>
-              p.cloud.visibility(
-                "friends",
-                new Date(Date.now() + 15 * 60_000).toISOString(),
-              ),
-            )
-          }
-        />
-        {state.snapshot && own && (
-          <TogetherSharingPresenter
-            snapshot={shared}
-            accountId={p.accountId}
-            members={state.snapshot.participants.map((x) => ({
-              userId: x.userId,
-              host: x.userId === state.snapshot!.hostId,
-            }))}
-            role={state.snapshot.hostId === p.accountId ? "host" : "guest"}
-            onRemove={(id) => {
-              const dialogGeneration = generation.current;
-              Alert.alert(
-                "Remove athlete?",
-                "They keep their own workout. Other athletes can continue this session.",
-                [
-                  { text: "Keep training", style: "cancel" },
-                  {
-                    text: "Remove",
-                    style: "destructive",
-                    onPress: () => {
-                      if (dialogGeneration === generation.current)
-                        run(() => p.cloud.remove(id));
-                    },
-                  },
-                ],
-              );
-            }}
-            sessionLogging={own.allowPartnerLogging}
-            onSessionLogging={(allowed) =>
-              run(() => p.cloud.delegation(allowed))
-            }
-            onConsent={(id, consent) =>
-              run(async () => {
-                const consentScope = generation.current;
-                const next = (ids: string[] | undefined, on: boolean) =>
-                  on
-                    ? [...new Set([...(ids ?? []), id])]
-                    : (ids ?? []).filter((x) => x !== id);
-                if (
-                  consent.numbers !==
-                  (own.numbersConsent?.recipientIds.includes(id) ?? false)
+              }}
+              onPartners={() => {
+                setScanning(false);
+                generation.current++;
+                locked.current = false;
+                setBusy(false);
+                setVisible(false);
+                router.push("/(app)/together/partners" as never);
+              }}
+              onVisible={() =>
+                run(() =>
+                  p.cloud.visibility(
+                    "friends",
+                    new Date(Date.now() + 15 * 60_000).toISOString(),
+                  ),
                 )
-                  await p.cloud.numbersConsent(
-                    next(own.numbersConsent?.recipientIds, consent.numbers),
+              }
+            />
+            {state.snapshot && own && (
+              <TogetherSharingPresenter
+                snapshot={shared}
+                accountId={p.accountId}
+                members={state.snapshot.participants.map((x) => ({
+                  userId: x.userId,
+                  host: x.userId === state.snapshot!.hostId,
+                }))}
+                role={state.snapshot.hostId === p.accountId ? "host" : "guest"}
+                onRemove={(id) => {
+                  const dialogGeneration = generation.current;
+                  Alert.alert(
+                    "Remove athlete?",
+                    "They keep their own workout. Other athletes can continue this session.",
+                    [
+                      { text: "Keep training", style: "cancel" },
+                      {
+                        text: "Remove",
+                        style: "destructive",
+                        onPress: () => {
+                          if (dialogGeneration === generation.current)
+                            run(() => p.cloud.remove(id));
+                        },
+                      },
+                    ],
                   );
-                if (consentScope !== generation.current) return;
-                if (
-                  consent.prev !==
-                  (own.previousConsent?.recipientIds.includes(id) ?? false)
-                )
-                  await p.cloud.previousConsent(
-                    next(own.previousConsent?.recipientIds, consent.prev),
-                  );
-                if (consentScope !== generation.current) return;
-                if (consent.logging !== own.allowPartnerLogging)
-                  await p.cloud.delegation(consent.logging);
-              })
-            }
-            onClose={(mode) => review(mode)}
-          />
+                }}
+                sessionLogging={own.allowPartnerLogging}
+                onSessionLogging={(allowed) =>
+                  run(() => p.cloud.delegation(allowed))
+                }
+                onConsent={(id, consent) =>
+                  run(async () => {
+                    const consentScope = generation.current;
+                    const next = (ids: string[] | undefined, on: boolean) =>
+                      on
+                        ? [...new Set([...(ids ?? []), id])]
+                        : (ids ?? []).filter((x) => x !== id);
+                    if (
+                      consent.numbers !==
+                      (own.numbersConsent?.recipientIds.includes(id) ?? false)
+                    )
+                      await p.cloud.numbersConsent(
+                        next(own.numbersConsent?.recipientIds, consent.numbers),
+                      );
+                    if (consentScope !== generation.current) return;
+                    if (
+                      consent.prev !==
+                      (own.previousConsent?.recipientIds.includes(id) ?? false)
+                    )
+                      await p.cloud.previousConsent(
+                        next(own.previousConsent?.recipientIds, consent.prev),
+                      );
+                    if (consentScope !== generation.current) return;
+                    if (consent.logging !== own.allowPartnerLogging)
+                      await p.cloud.delegation(consent.logging);
+                  })
+                }
+                onClose={(mode) => review(mode)}
+              />
+            )}
+          </>
         )}
       </BottomSheet>
     </>

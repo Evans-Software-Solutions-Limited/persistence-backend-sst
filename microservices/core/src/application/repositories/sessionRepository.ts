@@ -1,6 +1,8 @@
 import { TogetherError, lockActors } from "../together/shared";
 import { and, desc, eq, inArray, isNotNull, sql, type SQL } from "drizzle-orm";
 import {
+  togetherJobs,
+  togetherReviewedResults,
   workoutSessions,
   sessionExercises,
   exerciseSets,
@@ -13,6 +15,7 @@ import {
   type Db,
 } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
+import { PersonalRecordsRepository } from "./personalRecordsRepository";
 import type {
   DbOrTx,
   DetectedPersonalRecord,
@@ -358,6 +361,65 @@ export class SessionRepository {
     }));
   }
 
+  /** Read the existing owner's canonical completion; never records another workout. */
+  async getRecordedSummary(
+    id: string,
+    userId: string,
+  ): Promise<RecordedSession | null> {
+    return getDb().transaction(async (tx) => {
+      const [owned] = await tx
+        .select({
+          id: workoutSessions.id,
+          status: workoutSessions.status,
+          clientSessionId: workoutSessions.clientSessionId,
+        })
+        .from(workoutSessions)
+        .where(
+          and(eq(workoutSessions.id, id), eq(workoutSessions.userId, userId)),
+        )
+        .limit(1);
+      if (!owned || owned.status !== "completed") return null;
+      const [job] = await tx
+        .select({ effectsDone: togetherJobs.effectsDone })
+        .from(togetherJobs)
+        .where(
+          and(
+            eq(togetherJobs.userId, userId),
+            eq(
+              sql<string>`${togetherJobs.clientRecordId}::text`,
+              owned.clientSessionId ?? "",
+            ),
+          ),
+        )
+        .limit(1);
+      const [review] = await tx
+        .select({
+          effectsVersion: togetherReviewedResults.effectsVersion,
+          effectsDoneVersion: togetherReviewedResults.effectsDoneVersion,
+        })
+        .from(togetherReviewedResults)
+        .where(
+          and(
+            eq(togetherReviewedResults.userId, userId),
+            eq(togetherReviewedResults.historyId, id),
+          ),
+        )
+        .limit(1);
+      if (
+        (job && !job.effectsDone) ||
+        (review && review.effectsDoneVersion < review.effectsVersion)
+      )
+        return null;
+      const personalRecords =
+        await new PersonalRecordsRepository().getPersonalRecordsForSessionReplay(
+          userId,
+          id,
+          tx,
+        );
+      return this.buildRecordedSession(tx, userId, id, personalRecords, true);
+    });
+  }
+
   async getById(
     id: string,
     userId: string,
@@ -556,7 +618,13 @@ export class SessionRepository {
       if (
         process.env.TOGETHER_ENABLED === "true" &&
         !options?.togetherFinalization &&
-        payload.clientSessionId
+        payload.clientSessionId &&
+        // Personal clients use opaque IDs (including local-…). Only canonical
+        // UUIDs can reference a Together draft; keep the original opaque value
+        // for personal-record idempotency and never cast it into a UUID query.
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          payload.clientSessionId,
+        )
       ) {
         const { togetherSessions } = await import("@persistence/db");
         const [promoted] = await tx

@@ -1,5 +1,7 @@
 /** @jest-environment node */
 import { DatabaseSync } from "node:sqlite";
+import { completeTogetherSession } from "../../../application/commands/session/complete-together-session.command";
+import { calculateSummary } from "../../../domain/services/sessionService";
 import { withTogetherWorkout } from "../../storage/withTogetherWorkout";
 import { InMemoryStorageAdapter } from "../../storage/__tests__/in-memory-storage.adapter";
 import { randomUUID } from "node:crypto";
@@ -152,6 +154,47 @@ describe("own workout durable checkpoint (real SQLite and signatures)", () => {
       authority!.sessionId,
       authority!.executionId,
     );
+  it("retires an explicitly discarded checkpoint across restart without erasing signed work or reviving through delegated edits", async () => {
+    const base = new InMemoryStorageAdapter();
+    base.cacheActiveSession(userId, draft());
+    await runtime.promote(draft());
+    const stale = runtime.read(userId, draft().id)!;
+    const version = runtime.getOwnExecution(userId, draft().id)!.revision;
+    const before = entries();
+    expect(before.length).toBeGreaterThan(0);
+    expect(() => runtime.discard("other", draft().id)).toThrow(
+      "workout-not-promoted",
+    );
+    expect(() => runtime.discard(userId, "other-id")).toThrow(
+      "workout-not-promoted",
+    );
+    runtime.discard(userId, draft().id);
+    const storage = withTogetherWorkout(base, runtime);
+    expect(storage.getActiveSession(userId)).toBeNull();
+    expect(() => storage.clearActiveSession(userId)).not.toThrow();
+    runtime = new TogetherWorkoutCheckpoint(
+      adapter,
+      () => account,
+      () => authority,
+      randomUUID,
+    );
+    expect(runtime.getActive(userId)).toBeNull();
+    expect(runtime.read(userId, draft().id)?.status).toBe("cancelled");
+    expect(entries()).toEqual(before);
+    expect(() =>
+      runtime.applyOwnOperation(userId, draft().id, version, {
+        type: "rest",
+        endsAt: null,
+      }),
+    ).toThrow("workout-finished");
+    expect(() => runtime.save(userId, stale)).toThrow("workout-finished");
+    expect(runtime.getActive(userId)).toBeNull();
+    expect(entries()).toEqual(before);
+    const restarted = withTogetherWorkout(base, runtime);
+    restarted.cacheActiveSession(userId, { ...draft(), id: "new-personal" });
+    expect(restarted.getActiveSession(userId)?.id).toBe("new-personal");
+  });
+
   it("atomically preserves full personal snapshot and projects already logged false-completed sets with stable IDs", async () => {
     const source = draft();
     await runtime.promote(source);
@@ -398,6 +441,58 @@ describe("own workout durable checkpoint (real SQLite and signatures)", () => {
     authority!.sharing = "reconnecting";
     expect(runtime.status(userId, draft().id)?.sharing).toBe("reconnecting");
   });
+  it("durably saves quick-fill before deferred ordered transport work", async () => {
+    jest.useFakeTimers();
+    try {
+      const send = authority!.send as jest.Mock;
+      await runtime.promote(draft());
+      const next = runtime.read(userId, draft().id)!;
+      next.exercises[0].sets[0].reps = 12;
+      next.exercises[0].sets[0].weightKg = 40;
+      runtime.save(userId, next);
+
+      // Operation-count evidence: no transport/projection work in either
+      // synchronous save, while both authentic signed commands are on disk.
+      expect(send).not.toHaveBeenCalled();
+      const entries = new TogetherJournal(adapter, userId).list(
+        authority!.sessionId,
+        authority!.executionId,
+      );
+      expect(entries).toHaveLength(2);
+      expect(
+        runtime.read(userId, draft().id)!.exercises[0].sets[0],
+      ).toMatchObject({
+        reps: 12,
+        weightKg: 40,
+      });
+      await jest.runAllTimersAsync();
+      expect(send).toHaveBeenCalledTimes(2);
+      expect(
+        send.mock.calls.map(
+          ([command]) => readOwnerCommand(command, credential).expectedVersion,
+        ),
+      ).toEqual([0, 1]);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+  it.each(["account", "authority", "discard"])(
+    "does not publish deferred commands after %s changes",
+    async (change) => {
+      jest.useFakeTimers();
+      try {
+        const send = authority!.send as jest.Mock;
+        await runtime.promote(draft());
+        if (change === "account") account = randomUUID();
+        else if (change === "authority") authority = undefined;
+        else runtime.discard(userId, draft().id);
+        await jest.runAllTimersAsync();
+        expect(send).not.toHaveBeenCalled();
+      } finally {
+        jest.useRealTimers();
+      }
+    },
+  );
   it.each(["name", "startedAt", "exerciseId", "sortOrder"])(
     "pauses changed immutable %s while retaining all personal edits",
     async (key) => {
@@ -1127,6 +1222,51 @@ describe("own workout durable checkpoint (real SQLite and signatures)", () => {
         randomUUID,
         options(),
       );
+    });
+    it("completes unmarked logged sets through the rating command and durable storage without duplicating history", async () => {
+      const source = draft();
+      expect(source.exercises[0].sets[0].isCompleted).toBe(false);
+      const base = new InMemoryStorageAdapter();
+      base.cacheActiveSession(userId, source);
+      const storage = withTogetherWorkout(base, runtime);
+      await runtime.promote(source);
+      const result = await completeTogetherSession(
+        {
+          storage,
+          workout: runtime,
+          userId,
+          localSessionId: source.id,
+          isCurrent: () => account === userId,
+        },
+        { rating: 8, notes: " Strong session " },
+      );
+      expect(result.status).toBe("completed");
+      expect(storage.getActiveSession(userId)).toBeNull();
+      const latest = storage.getLatestSession(userId)!;
+      expect(latest.status).toBe("completed");
+      expect(latest.exercises[0].sets[0]).toMatchObject({
+        isCompleted: true,
+        weightKg: 25,
+        reps: 8,
+      });
+      expect(calculateSummary(latest)).toMatchObject({
+        setsCompleted: 1,
+        exercisesCompleted: 1,
+        totalVolume: 200,
+      });
+      expect(completions).toHaveLength(1);
+      expect(storage.getPendingMutations()).toEqual([
+        expect.objectContaining({
+          entityId: accepted!.historyId,
+          endpoint: `/sessions/${accepted!.historyId}`,
+          method: "PATCH",
+          operation: "update",
+          payload: JSON.stringify({
+            sessionRating: 8,
+            userNotes: "Strong session",
+          }),
+        }),
+      ]);
     });
     it("uploads genuine own commands, requires review, explicitly finishes stable history and retires active checkpoint", async () => {
       const s = draft();

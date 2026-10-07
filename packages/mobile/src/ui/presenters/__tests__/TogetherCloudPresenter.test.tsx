@@ -1,7 +1,10 @@
 import React from "react";
 import { fireEvent } from "@testing-library/react-native";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
-import { TogetherCloudPresenter } from "../TogetherCloudPresenter";
+import {
+  TogetherCloudPresenter,
+  togetherCloudErrorCopy,
+} from "../TogetherCloudPresenter";
 import type { CloudSnapshot } from "@/domain/ports/togetherCloud.port";
 const snapshot: CloudSnapshot = {
   sessionId: "s",
@@ -126,9 +129,7 @@ it("only an active host gets invite, visibility and stranger approval controls",
   );
   fireEvent.press(r.getByText("Copy invitation"));
   fireEvent.press(r.getByText("Revoke this invitation"));
-  fireEvent.press(
-    r.getByText("Visible to accepted training partners for 15 minutes"),
-  );
+  fireEvent.press(r.getByText("Show to training partners for 15 minutes"));
   fireEvent.press(r.getByText("Approve"));
   fireEvent.press(r.getByText("Decline"));
   fireEvent.press(r.getByText("Review my result"));
@@ -232,4 +233,14 @@ it("contains unknown backend errors and still shows useful caller notices", () =
   expect(r.queryByText(/internal SQL/)).toBeNull();
   r.rerender(<TogetherCloudPresenter {...p} notice="Invite copied" />);
   expect(r.getByText("Invite copied")).toBeTruthy();
+});
+
+it("explains known admission failures without exposing raw server strings", () => {
+  expect(togetherCloudErrorCopy("PAID_REQUIRED")).toMatch(
+    /qualifying paid subscription/,
+  );
+  expect(togetherCloudErrorCopy("INVALID_SCHEMA")).toMatch(
+    /Continue personally/,
+  );
+  expect(togetherCloudErrorCopy("unrecognized-internal-error")).toBeNull();
 });

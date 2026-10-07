@@ -160,6 +160,63 @@ describe("terminal initial cloud admission recovery", () => {
       expect(controller.readDraft(userId)?.together).toBeDefined();
     },
   );
+  it.each([401, 402, 403, 404, 422])(
+    "allows explicit personal recovery after first-attempt HTTP %s rejection",
+    async (status) => {
+      jest.mocked(api.create).mockResolvedValue(
+        fail({
+          kind: "api",
+          code: "server",
+          status,
+          message: "Rejected without Together envelope",
+        }),
+      );
+      await expect(start("create")).rejects.toThrow("server");
+      expect(controller.getSnapshot().canDetachDraft).toBe(true);
+      const save = jest.fn();
+      controller.detachDraft(userId, save);
+      expect(save).toHaveBeenCalledWith(draft());
+    },
+  );
+  it.each([400, 408, 429, 500, 502, 503])(
+    "retains admission identity for ambiguous HTTP %s",
+    async (status) => {
+      jest.mocked(api.create).mockResolvedValue(
+        fail({
+          kind: "api",
+          code: "server",
+          status,
+          message: "Unknown failure",
+        }),
+      );
+      await expect(start("create")).rejects.toThrow("server");
+      expect(controller.getSnapshot().canDetachDraft).toBe(false);
+      expect(() => controller.detachDraft(userId, jest.fn())).toThrow(
+        "cloud-cannot-detach",
+      );
+    },
+  );
+  it("does not treat a later HTTP authorization failure as proof the timed-out creation never committed", async () => {
+    jest
+      .mocked(api.create)
+      .mockResolvedValueOnce(
+        fail({ kind: "api", code: "timeout", message: "Unknown result" }),
+      )
+      .mockResolvedValue(
+        fail({
+          kind: "api",
+          code: "unauthorized",
+          status: 401,
+          message: "Expired",
+        }),
+      );
+    await expect(start("create")).rejects.toThrow("timeout");
+    await expect(controller.retry()).rejects.toThrow("unauthorized");
+    expect(controller.getSnapshot().canDetachDraft).toBe(false);
+    expect(jest.mocked(api.create).mock.calls[0]).toEqual(
+      jest.mocked(api.create).mock.calls[1],
+    );
+  });
   it("preserves unknown server responses for safe idempotent retry", async () => {
     jest.mocked(api.join).mockResolvedValue(reject());
     await expect(start("join")).rejects.toThrow("server");

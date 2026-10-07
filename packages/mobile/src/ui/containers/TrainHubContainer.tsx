@@ -1,3 +1,4 @@
+import { useTogetherGate } from "@/ui/hooks/useTogetherGate";
 import { Text, View } from "@tamagui/core";
 import { router, useFocusEffect } from "expo-router";
 import { useCallback, useEffect } from "react";
@@ -10,6 +11,7 @@ import { IconPlus } from "@/ui/components/icons";
 import { ExerciseListContainer } from "@/ui/containers/ExerciseListContainer";
 import { WorkoutsListContainer } from "@/ui/containers/WorkoutsListContainer";
 import { TrainOverviewContainer } from "@/ui/containers/TrainOverviewContainer";
+import { TogetherHubPresenter } from "@/ui/presenters/TogetherHubPresenter";
 import { GymsSegmentContainer } from "@/ui/containers/GymsSegmentContainer";
 
 /**
@@ -37,6 +39,7 @@ import { GymsSegmentContainer } from "@/ui/containers/GymsSegmentContainer";
  * legacy creator + the 04.6 editor).
  */
 export function TrainHubContainer() {
+  const togetherGate = useTogetherGate();
   const segment = useTrainSegment((s) => s.segment);
   const setSegment = useTrainSegment((s) => s.setSegment);
   const consumePendingSegment = useTrainSegment((s) => s.consumePendingSegment);
@@ -142,8 +145,8 @@ export function TrainHubContainer() {
           // feature is discoverable before a workout is opened.
           options={
             showTraining
-              ? ["Training", "Workouts", "Exercises", "Gyms"]
-              : ["Workouts", "Exercises", "Gyms"]
+              ? ["Training", "Workouts", "Exercises", "Together", "Gyms"]
+              : ["Workouts", "Exercises", "Together", "Gyms"]
           }
           value={effectiveSegment}
           onChange={(next) => {
@@ -153,6 +156,7 @@ export function TrainHubContainer() {
               next === "Training" ||
               next === "Workouts" ||
               next === "Exercises" ||
+              next === "Together" ||
               next === "Gyms"
             ) {
               setSegment(next);
@@ -166,6 +170,14 @@ export function TrainHubContainer() {
           <TrainOverviewContainer />
         ) : effectiveSegment === "Workouts" ? (
           <WorkoutsListContainer />
+        ) : effectiveSegment === "Together" ? (
+          <TogetherHubPresenter
+            accessState={togetherGate.state}
+            onUpgrade={togetherGate.onUpgrade}
+            onRetry={togetherGate.retry}
+            onWorkouts={() => setSegment("Workouts")}
+            onPartners={() => router.push("/(app)/together/partners")}
+          />
         ) : effectiveSegment === "Gyms" ? (
           <GymsSegmentContainer />
         ) : (

@@ -10,7 +10,7 @@ import { object, uuid } from "./security/schema";
 import type { HostPin } from "./localStore";
 export interface LobbyInvitation extends HostPin {
   kind: "together-invitation-v1" | "together-invitation-v2";
-  audience?: "invite-only" | "open";
+  audience?: "invite-only" | "friends" | "open";
   invitationToken?: string;
   workoutName: string;
   credential: Signed<Credential>;
@@ -20,7 +20,10 @@ export function createLobbyInvitation(
   workoutName: string,
   credential: Signed<Credential>,
   seed: Uint8Array,
-  policy?: { audience: "invite-only" | "open"; invitationToken?: string },
+  policy?: {
+    audience: "invite-only" | "friends" | "open";
+    invitationToken?: string;
+  },
 ): string {
   if (!workoutName.trim() || workoutName.length > 100)
     throw new Error("invalid-workout-name");
@@ -75,7 +78,9 @@ export function readLobbyInvitation(
       p.kind as string,
     ) ||
     (p.kind === "together-invitation-v2" &&
-      ((p.audience !== "open" && p.audience !== "invite-only") ||
+      ((p.audience !== "open" &&
+        p.audience !== "invite-only" &&
+        p.audience !== "friends") ||
         (p.audience === "invite-only" &&
           (typeof p.invitationToken !== "string" ||
             !/^[A-Za-z0-9_-]{43}$/.test(p.invitationToken))))) ||

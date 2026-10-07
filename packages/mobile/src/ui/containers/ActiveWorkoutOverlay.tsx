@@ -1,3 +1,4 @@
+import { discardTogetherSession } from "@/application/commands/session/discard-together-session.command";
 /**
  * ActiveWorkoutOverlay — the single root-mounted "workout in progress" surface.
  *
@@ -62,7 +63,7 @@ const ACTIVE_WORKOUT_BAR_GAP = 12;
 const BAR_GLOW_CLEARANCE = 10;
 export function ActiveWorkoutOverlay() {
   const { session, rereadCache } = useActiveSession();
-  const { storage } = useAdapters();
+  const { storage, togetherLobby, togetherCloud } = useAdapters();
   const recoveredVariationKind =
     session?.templateVariationKind ??
     (session?.workoutId
@@ -102,6 +103,11 @@ export function ActiveWorkoutOverlay() {
       lastSegment === "edit" ||
       lastSegment === "[id]");
 
+  // Partner management owns its full-screen drawers; the root bar must not
+  // paint over their code, request or offer controls.
+  const onPartnerScreen =
+    segments.includes("together") && lastSegment === "partners";
+
   // The ProfileDrawer is a root-mounted sibling that renders BEFORE this overlay
   // in `app/(app)/_layout.tsx`, so with no z-index the floating bar paints on
   // TOP of the open drawer (device-QA: "active workout shows over the drawer").
@@ -122,6 +128,7 @@ export function ActiveWorkoutOverlay() {
     !loadoutLocked &&
     !onSessionScreen &&
     !onWorkoutScreen &&
+    !onPartnerScreen &&
     !inAuth &&
     !drawerOpen;
 
@@ -175,17 +182,22 @@ export function ActiveWorkoutOverlay() {
       { onBehalfClientId },
     );
     if (!result.ok && result.error.kind === "together_completion_pending") {
-      const own = storage.getActiveSession(session.userId);
-      if (own?.together)
-        router.push({
-          pathname:
-            own.together.transport === "cloud"
-              ? "/(app)/session/together-cloud-review"
-              : "/(app)/session/together-review",
-          params: { localSessionId: own.id },
-        } as never);
-      else Alert.alert("Workout saved locally", result.error.message);
-      return;
+      try {
+        discardTogetherSession({
+          storage,
+          userId: session.userId,
+          localSessionId: session!.id,
+          workout: togetherLobby?.workout,
+          cloud: togetherCloud,
+        });
+        void togetherLobby?.cancel().catch(() => {});
+      } catch {
+        Alert.alert(
+          "Could not close the workout",
+          "Your workout is still on this device. Please try End again.",
+        );
+        return;
+      }
     }
     void useActiveWorkout.getState().end();
     // The bar's own end path triggers no navigation, so the cacheVersion-keyed

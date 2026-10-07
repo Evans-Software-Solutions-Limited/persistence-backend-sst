@@ -1,5 +1,33 @@
 # Persistence Together — frontend agent
 
+## Active Together follow-up — 7 October 2026
+
+Use the export’s 26-point single-border presence avatar and named roster cards.
+Names are presentation only; verified account/device identity still controls admission.
+Do not display UUIDs as athlete names or introduce a Together-only Skip Exercise.
+Finish Workout offers active hosts Finish for all / Finish just for me; guests
+finish their own. All finish paths reuse normal rating. Group context displays
+athlete cards, while each athlete rates only their own result on their phone.
+Transient inactive system interruptions preserve the lobby and pending promotion;
+actual background still ends sharing under the current key/transport lifecycle.
+Do not imply locally retained sets mean the workout was completed or uploaded.
+
+## Completion correction — 7 October 2026
+
+Brad requires normal workout completion for Together: Complete and shared End
+choices enter the existing rating screen, save only the current athlete’s result,
+clear the active workout and show the existing saved-workout summary. Other
+athletes receiving finish-all enter their own rating flow. The bespoke review
+route remains an explicit exception/recovery path for unsupported retained edits,
+not the default ending screen. Canonical PR/monthly stats are read after server
+effects finish; local set/volume stats are available immediately after confirmation.
+
+End → confirmed discard must retire the current own draft without a result and
+clear the active UI, including broken/offline states. Keep its durable journal;
+reconcile deferred cloud membership retirement before a later admission. Never
+finish or discard another workout because route/account state changed. Starting
+Together has one stable preparing body and pinned Cancel through promotion.
+
 ## Current integration — 5 October 2026
 
 The consolidated PR on merged #485 (`bc4c34f3`) wires the reviewed lobby to
@@ -49,8 +77,11 @@ friends/invitation-based remote sessions. Extend existing screens only for the
 confirmed missing consent, connection, recovery and completion states. Prototype
 coached capacity, inactivity auto-save and unrestricted numeric access are not
 approved behaviour. Coached distribution/scheduling remain separate tickets.
-The original source export/TOGETHER_HANDOFF.md is not archived locally; the
-working artifact and PER-60 are the handoff, not a reason to redesign.
+Brad supplied the source export on 5 October at `~/Downloads/export/persistence-together`.
+Use its v2 `entry.jsx`, `sheets.jsx` and `persistence-tokens.css` for the reviewed
+entry/choice geometry; [DESIGN-REFERENCE](./DESIGN-REFERENCE.md) records the
+implementation reference and approved behavioural differences. The workout-detail
+page itself remains unchanged outside the Together entry.
 
 Historical 1 October backend handoff: PRs #474/#475/#477 and the subsequently
 merged PREV/offline foundations are reused by the current integration.
@@ -102,3 +133,19 @@ Provide [SMOKE_TEST](./SMOKE_TEST.md) evidence on two real phones when a compati
 ### Approved permission follow-up (2026-10-05)
 
 Android local-network permission is declared and requested only for target SDK 37+; runtime requests also require device API 37+. Target SDK remains 36 in this slice. LAN and explicit hotspot-owner starts share a cancellable permission gate; denial, stop, destruction or a superseding start cannot create a stale listener/discovery. Nearby uses the same target/device rule. Camera explanations include Together lobby QR scanning. Native compilation and denial/regrant/device testing remain Brad-owned evidence.
+
+### Paid-access entry guard — owner correction, 6 October 2026
+
+New host/join entry points require verified paid Together authorization, not merely
+an installed transport adapter. Hide the workout-detail and personal-active-workout
+Start Together controls until authorized. The Train hub uses the existing feature
+gate pattern: explicit paid denial offers subscription selection; preparation and
+technical failure show checking/retry rather than a misleading paywall. Training
+partner management remains separate from paid sharing.
+
+Project only account-bound readiness/expiry/error from the existing provisioning
+verifier into UI. No signing secrets or raw credentials reach React state. Valid
+signed cached credentials preserve authorized offline LAN access; account changes,
+authoritative denial and expiry revoke readiness. Guard navigation and delayed
+host intent as well as visible controls. Existing Together own-workout logging,
+completion and recovery remain accessible when paid sharing ends.

@@ -132,3 +132,21 @@ No build, live policy change or deployment is performed by this checklist.
   On a future target 37 build running Android 17+, verify local-network denial,
   grant, cancellation and retry for both paths. iOS: local-network/Bluetooth denial,
   Bonjour discovery and camera Together QR prompt on physical devices.
+
+## Completion regression acceptance — 7 October 2026
+
+- Start from workout detail: a single preparing state remains visible until the
+  invitation is ready. Cancel during preparation never reopens or promotes late.
+- Log a set, Complete, rate and save: own result is recorded once, active workout
+  closes and the normal summary shows the logged sets/volume. PR and monthly
+  counts populate from the confirmed result after server effects complete.
+- Host finish-all: every athlete enters their own rating flow, including an
+  athlete who returns from another screen. Save-own never ends another athlete.
+- End → discard in a broken or offline session: active workout disappears and
+  does not resurrect on restart. The next online session retires prior membership
+  before admission; no discarded result is added to history.
+- Change account or active workout while a rating screen is open: stale actions
+  cannot save/discard the replacement. Network failure retains a retryable draft.
+
+These are owner/device acceptance steps, not claims of physical verification.
+Backend deployment must include the discard route and saved-summary read support.

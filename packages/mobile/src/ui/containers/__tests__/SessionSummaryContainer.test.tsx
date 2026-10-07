@@ -6,7 +6,7 @@
  *       specs/milestones/M3-active-session/EXECUTION_PLAN.md § 2 Commit 8
  */
 
-import { fireEvent } from "@testing-library/react-native";
+import { fireEvent, waitFor } from "@testing-library/react-native";
 import React from "react";
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
@@ -509,4 +509,43 @@ describe("SessionSummaryContainer", () => {
 
     expect(queryByTestId("session-summary-screen")).toBeNull();
   });
+});
+
+it("hydrates Together stats from its confirmed own history instead of waiting for a solo record", async () => {
+  const storage = new InMemoryStorageAdapter();
+  seedActive(storage);
+  const completed = {
+    ...storage.getActiveSession("user-1")!,
+    status: "completed" as const,
+    completedAt: "2026-05-05T10:30:00Z",
+    together: { sessionId: "shared", executionId: "own", historyId: "history" },
+  };
+  storage.cacheActiveSession("user-1", completed);
+  const api = new InMemoryApiAdapter();
+  const read = jest.spyOn(api, "getSession").mockResolvedValue(
+    ok({
+      id: "history",
+      userId: "user-1",
+      status: "completed",
+      personalRecords: [],
+      workoutsThisMonth: 3,
+    } as never),
+  );
+  const r = renderWithTheme(
+    <AdapterProvider adapters={makeAdapters(api, storage)}>
+      <SessionSummaryContainer />
+    </AdapterProvider>,
+  );
+  await waitFor(() =>
+    expect(read).toHaveBeenCalledWith("history", { summary: true }),
+  );
+  await waitFor(() =>
+    expect(storage.getRecordResponse("user-1")).toMatchObject({
+      localSessionId: "local-1",
+      workoutsThisMonth: 3,
+      personalRecords: [],
+    }),
+  );
+  expect(storage.getPendingMutations()).toHaveLength(0);
+  r.unmount();
 });

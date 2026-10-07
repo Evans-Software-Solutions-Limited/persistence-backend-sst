@@ -368,8 +368,8 @@ it("handles non-Error failures and disappearing session without losing the shown
   fireEvent.press(r.getByText("Review my result"));
   await waitFor(() => expect(r.getByText("Save reviewed result")).toBeTruthy());
   act(() => h.setState({ snapshot: undefined, pendingCount: 2 }));
-  fireEvent.press(r.getByText("Save reviewed result"));
-  await waitFor(() => expect(r.getByText(/session-unavailable/)).toBeTruthy());
+  expect(r.queryByText("Save reviewed result")).toBeNull();
+  expect(r.getByText("Retry connection")).toBeTruthy();
   expect(h.cloud.finish).not.toHaveBeenCalled();
   expect(r.getByText(/2 changes are still/)).toBeTruthy();
 });
@@ -407,4 +407,66 @@ it("preserves a newer personal cache while leaving the reviewed result", async (
   expect(mockStorage.getActiveSession("u")?.id).toBe("new");
   expect(useActiveWorkout.getState().active?.sessionId).toBe("new");
   await useActiveWorkout.getState().end();
+});
+
+it("offers explicit personal recovery without trying to review an unadmitted rejected workout", async () => {
+  const h = setup();
+  h.setState({
+    snapshot: undefined,
+    phase: "unavailable",
+    canDetachDraft: true,
+  });
+  h.cloud.detachDraft = jest.fn((_user, persist) => {
+    const personal = { ...h.cloud.readDraft("u")! };
+    delete personal.together;
+    persist(personal);
+    return personal;
+  });
+  const r = renderWithTheme(<TogetherCloudRecoveryContainer />);
+  expect(r.queryByText("Review my result")).toBeNull();
+  fireEvent.press(r.getByText("Continue personally"));
+  await waitFor(() => expect(mockBack).toHaveBeenCalledTimes(1));
+  expect(h.cloud.prepareReview).not.toHaveBeenCalled();
+  expect(h.cloud.finish).not.toHaveBeenCalled();
+  expect(mockStorage.getActiveSession("u")?.together).toBeUndefined();
+  expect(mockStorage.getActiveSession("u")?.status).toBe("in_progress");
+});
+it("keeps uncertain admission attached and retries its connection before offering review", async () => {
+  const h = setup();
+  const snapshot = h.state().snapshot;
+  h.setState({
+    snapshot: undefined,
+    phase: "reconnecting",
+    pendingCount: 1,
+    canDetachDraft: false,
+  });
+  h.cloud.retry = jest.fn(async () =>
+    h.setState({ snapshot, phase: "active", pendingCount: 0 }),
+  );
+  const r = renderWithTheme(<TogetherCloudRecoveryContainer />);
+  expect(r.queryByText("Continue personally")).toBeNull();
+  expect(r.queryByText("Review my result")).toBeNull();
+  fireEvent.press(r.getByText("Retry connection"));
+  await waitFor(() => expect(r.getByText("Review my result")).toBeTruthy());
+  expect(h.cloud.retry).toHaveBeenCalledTimes(1);
+  expect(h.cloud.prepareReview).not.toHaveBeenCalled();
+  expect(mockStorage.getActiveSession("u")?.together).toBeDefined();
+});
+it("keeps the personal recovery checkpoint when saving it fails and lets the athlete return", async () => {
+  const h = setup();
+  h.setState({
+    snapshot: undefined,
+    phase: "unavailable",
+    canDetachDraft: true,
+  });
+  h.cloud.detachDraft = jest.fn(() => {
+    throw new Error("disk full");
+  });
+  const r = renderWithTheme(<TogetherCloudRecoveryContainer />);
+  fireEvent.press(r.getByText("Continue personally"));
+  await waitFor(() => expect(r.getByText(/disk full/)).toBeTruthy());
+  expect(mockStorage.getActiveSession("u")?.together).toBeDefined();
+  expect(mockBack).not.toHaveBeenCalled();
+  fireEvent.press(r.getByText("Back to workout"));
+  expect(mockBack).toHaveBeenCalledTimes(1);
 });

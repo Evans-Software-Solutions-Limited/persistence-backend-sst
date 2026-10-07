@@ -1,14 +1,34 @@
-import { fireEvent, waitFor } from "@testing-library/react-native";
+const mockTogetherGate = {
+  allowed: true,
+  state: "allowed" as "allowed" | "locked" | "pending" | "unavailable",
+  onUpgrade: jest.fn(),
+  retry: jest.fn(),
+};
+jest.mock("@/ui/hooks/useTogetherGate", () => ({
+  useTogetherGate: () => mockTogetherGate,
+}));
+beforeEach(() => {
+  mockTogetherGate.allowed = true;
+  mockTogetherGate.state = "allowed";
+  mockTogetherGate.onUpgrade.mockClear();
+  mockTogetherGate.retry.mockClear();
+});
+
+import { act, fireEvent, waitFor } from "@testing-library/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React from "react";
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
 import type { AuthSession } from "@/domain/ports/auth.port";
+import type { WorkoutSession } from "@/domain/models/session";
+import type { TogetherLobbyPort } from "@/domain/ports/togetherLobby.port";
 import type { Workout } from "@/domain/models/workout";
 import { fail, ok } from "@/shared/errors";
 import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import { useLoadoutFlow } from "@/state/loadout-flow";
+import { TogetherStartSheet } from "@/ui/presenters/TogetherStartSheet";
+import { WorkoutDetailPresenter } from "@/ui/presenters/WorkoutDetailPresenter";
 import { WorkoutDetailContainer } from "@/ui/containers/WorkoutDetailContainer";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 
@@ -46,6 +66,27 @@ const buildWorkout = (overrides: Partial<Workout> = {}): Workout => ({
   showInOwnerLibrary: overrides.showInOwnerLibrary ?? true,
   ...overrides,
 });
+
+function togetherLobby(): TogetherLobbyPort {
+  return {
+    getSnapshot: () => ({ phase: "idle", members: [], pending: [] }),
+    subscribe: () => () => {},
+    host: jest.fn(),
+    browse: jest.fn(),
+    selectDiscovered: jest.fn(),
+    selectInvite: jest.fn(),
+    join: jest.fn(),
+    approve: jest.fn(),
+    decline: jest.fn(),
+    reconnect: jest.fn(),
+    cancel: jest.fn(),
+    invalidateAuthorization: jest.fn(),
+    setOnline: jest.fn(),
+    setActive: jest.fn(),
+    setAccount: jest.fn(),
+    dispose: jest.fn(),
+  };
+}
 
 function makeAdapters(
   api: InMemoryApiAdapter,
@@ -171,6 +212,106 @@ describe("WorkoutDetailContainer", () => {
     expect(mockRouterPush).toHaveBeenCalledWith("/(app)/exercises/ex-bench");
   });
 
+  it.each([false, true])(
+    "Together setup preserves existing personal workout=%s until explicit continuation",
+    async (existing) => {
+      const api = new InMemoryApiAdapter();
+      jest.spyOn(api, "getWorkout").mockResolvedValue(ok(buildWorkout()));
+      const storage = new InMemoryStorageAdapter();
+      storage.cacheWorkoutDetail("user-1", buildWorkout());
+      const active: WorkoutSession | null = existing
+        ? {
+            id: "local-kept",
+            userId: "user-1",
+            workoutId: "other-template",
+            name: "Evening Squats",
+            status: "in_progress",
+            startedAt: "2026-10-05T12:00:00Z",
+            completedAt: null,
+            notes: "Keep my work",
+            exercises: [
+              {
+                id: "se-kept",
+                sessionId: "local-kept",
+                exerciseId: "squat",
+                exerciseName: "Squat",
+                sortOrder: 0,
+                supersetGroup: null,
+                isSubstituted: false,
+                originalExerciseId: null,
+                notes: null,
+                sets: [
+                  {
+                    id: "set-kept",
+                    sessionExerciseId: "se-kept",
+                    setNumber: 1,
+                    weightKg: 80,
+                    reps: 8,
+                    rpe: null,
+                    durationSeconds: null,
+                    distanceMeters: null,
+                    isCompleted: true,
+                    completedAt: "2026-10-05T12:02:00Z",
+                  },
+                ],
+              },
+            ],
+          }
+        : null;
+      if (active) storage.cacheActiveSession("user-1", active);
+      const adapters = makeAdapters(api, storage);
+      adapters.togetherLobby = togetherLobby();
+      const r = renderWithTheme(
+        withAdapters(adapters, <WorkoutDetailContainer />),
+      );
+      await r.findByText("Bench Press");
+      fireEvent.press(r.getByTestId("together-start"));
+      expect(r.getByText("Who can join?")).toBeTruthy();
+      if (existing)
+        expect(
+          r.getByText(/You already have an active workout: Evening Squats/),
+        ).toBeTruthy();
+      expect(storage.getActiveSession("user-1")).toEqual(active);
+      expect(mockRouterPush).not.toHaveBeenCalled();
+      fireEvent.press(r.getByText("Cancel"));
+      expect(mockRouterPush).not.toHaveBeenCalled();
+      fireEvent.press(r.getByTestId("together-start"));
+      fireEvent.press(r.getByText("Start the session"));
+      expect(mockRouterPush).toHaveBeenCalledWith(
+        "/(app)/session?workoutId=w-1&togetherAudience=invite-only&togetherAccountId=user-1",
+      );
+      expect(storage.getActiveSession("user-1")).toEqual(active);
+    },
+  );
+
+  it("refuses a Together start callback while the account is signed out", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    const adapters = makeAdapters(api, storage);
+    adapters.togetherLobby = togetherLobby();
+    jest.mocked(adapters.auth.getSession).mockResolvedValue(ok(null));
+    jest
+      .mocked(adapters.auth.onAuthStateChange)
+      .mockImplementation((listener) => {
+        listener(null, "SIGNED_OUT");
+        return () => {};
+      });
+    const r = renderWithTheme(
+      withAdapters(adapters, <WorkoutDetailContainer />),
+    );
+    await act(async () => {});
+    // Exercise the container's action boundary even if a late UI event arrives
+    // while auth is unresolved/signed out; the visible detail is loading.
+    act(() =>
+      r
+        .UNSAFE_getByType(WorkoutDetailPresenter)
+        .props.onStartWorkout("w-1", "invite-only"),
+    );
+    expect(mockRouterPush).not.toHaveBeenCalled();
+    expect(adapters.togetherLobby.host).not.toHaveBeenCalled();
+    expect(storage.getActiveSession("user-1")).toBeNull();
+  });
+
   it("Start Workout opens the active-session modal seeded from the workout id (M3)", async () => {
     const api = new InMemoryApiAdapter();
     jest.spyOn(api, "getWorkout").mockResolvedValue(ok(buildWorkout()));
@@ -238,8 +379,10 @@ describe("WorkoutDetailContainer", () => {
     storage.cacheWorkoutsList("user-1", "assigned", [], null);
     storage.cacheWorkoutsList("user-1", "default", [], null);
 
-    const { getByTestId, findByText } = renderWithTheme(
-      withAdapters(makeAdapters(api, storage), <WorkoutDetailContainer />),
+    const adapters = makeAdapters(api, storage);
+    adapters.togetherLobby = togetherLobby();
+    const { getByTestId, getByText, findByText } = renderWithTheme(
+      withAdapters(adapters, <WorkoutDetailContainer />),
     );
     await findByText("Bench Press");
     // The subscription query settles asynchronously; re-press inside
@@ -252,6 +395,12 @@ describe("WorkoutDetailContainer", () => {
         "/(app)/workout-limit-locked",
       );
     });
+    mockRouterPush.mockClear();
+    fireEvent.press(getByTestId("together-start"));
+    fireEvent.press(getByText("Start the session"));
+    expect(mockRouterPush).toHaveBeenCalledTimes(1);
+    expect(mockRouterPush).toHaveBeenCalledWith("/(app)/workout-limit-locked");
+    expect(storage.getActiveSession("user-1")).toBeNull();
   });
 
   it("renders the loader on cold start when no cached detail", async () => {
@@ -711,4 +860,87 @@ describe("WorkoutDetailContainer", () => {
       expect(mockRedirect).not.toHaveBeenCalled();
     });
   });
+});
+
+it("offers online partner discovery and explains local joining without a management detour", async () => {
+  jest.clearAllMocks();
+  mockUseLocalSearchParams.mockReturnValue({ id: "w-1" });
+  const api = new InMemoryApiAdapter();
+  jest.spyOn(api, "getWorkout").mockResolvedValue(ok(buildWorkout()));
+  const storage = new InMemoryStorageAdapter();
+  storage.cacheWorkoutDetail("user-1", buildWorkout());
+  const adapters = makeAdapters(api, storage);
+  adapters.togetherLobby = togetherLobby();
+  adapters.togetherCloud = {} as NonNullable<Adapters["togetherCloud"]>;
+  const r = renderWithTheme(withAdapters(adapters, <WorkoutDetailContainer />));
+  await r.findByText("Bench Press");
+  fireEvent.press(r.getByTestId("together-start"));
+  expect(
+    r.getByText("Train with your accepted training partners"),
+  ).toBeTruthy();
+  expect(
+    r.getByText(/No internet needed with valid offline access/),
+  ).toBeTruthy();
+  fireEvent.press(r.getByText("Training partners"));
+  fireEvent.press(r.getByText("Start the session"));
+  expect(mockRouterPush).toHaveBeenCalledWith(
+    "/(app)/session?workoutId=w-1&togetherAudience=friends&togetherAccountId=user-1",
+  );
+  expect(storage.getActiveSession("user-1")).toBeNull();
+  fireEvent.press(r.getByTestId("together-start"));
+  fireEvent.press(r.getByText("Online · internet required"));
+  fireEvent.press(r.getByText("Start the session"));
+  expect(mockRouterPush).toHaveBeenLastCalledWith(
+    "/(app)/session?workoutId=w-1&togetherAudience=friends&togetherAccountId=user-1&togetherConnection=online",
+  );
+  expect(r.queryByText("Add or manage training partners")).toBeNull();
+  expect(storage.getActiveSession("user-1")).toBeNull();
+});
+
+it.each(["locked", "pending", "unavailable"] as const)(
+  "hides the Together start for %s access without blocking a personal workout",
+  async (state) => {
+    mockTogetherGate.allowed = false;
+    mockTogetherGate.state = state;
+    const api = new InMemoryApiAdapter();
+    jest.spyOn(api, "getWorkout").mockResolvedValue(ok(buildWorkout()));
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheWorkoutDetail("user-1", buildWorkout());
+    const adapters = makeAdapters(api, storage);
+    adapters.togetherLobby = togetherLobby();
+    mockUseLocalSearchParams.mockReturnValue({ id: "w-1" });
+    mockRouterPush.mockClear();
+    const r = renderWithTheme(
+      withAdapters(adapters, <WorkoutDetailContainer />),
+    );
+    await r.findByText("Bench Press");
+    expect(r.queryByTestId("together-start")).toBeNull();
+    fireEvent.press(r.getByText("Start workout"));
+    expect(mockRouterPush).toHaveBeenCalledWith("/(app)/session?workoutId=w-1");
+    expect(adapters.togetherLobby.host).not.toHaveBeenCalled();
+  },
+);
+
+it("closes setup and rejects its action when paid access is lost", async () => {
+  const api = new InMemoryApiAdapter();
+  jest.spyOn(api, "getWorkout").mockResolvedValue(ok(buildWorkout()));
+  const storage = new InMemoryStorageAdapter();
+  storage.cacheWorkoutDetail("user-1", buildWorkout());
+  const adapters = makeAdapters(api, storage);
+  adapters.togetherLobby = togetherLobby();
+  mockUseLocalSearchParams.mockReturnValue({ id: "w-1" });
+  mockRouterPush.mockClear();
+  const tree = () => withAdapters(adapters, <WorkoutDetailContainer />);
+  const r = renderWithTheme(tree());
+  await r.findByText("Bench Press");
+  fireEvent.press(r.getByTestId("together-start"));
+  expect(r.getByText("Who can join?")).toBeTruthy();
+  mockTogetherGate.allowed = false;
+  mockTogetherGate.state = "locked";
+  r.rerender(tree());
+  expect(r.queryByTestId("together-start")).toBeNull();
+  expect(r.UNSAFE_getByType(TogetherStartSheet).props.visible).toBe(false);
+  act(() => r.UNSAFE_getByType(TogetherStartSheet).props.onStart());
+  expect(mockRouterPush).not.toHaveBeenCalled();
+  expect(storage.getActiveSession("user-1")).toBeNull();
 });

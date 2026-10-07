@@ -313,3 +313,35 @@ it("propagates definitive refresh denial to active sharing but ignores stale acc
   expect(denied).not.toHaveBeenCalled();
   stop();
 });
+
+it.each([
+  "paid-required",
+  "authentication-required",
+  "service-unavailable",
+  "device-revoked",
+  "registration-conflict",
+  "registration-invalid",
+  "disabled",
+  "signed-out",
+] as const)(
+  "invalidates current sharing after definitive %s without touching recovery",
+  async (code) => {
+    const h = harness();
+    const denied = jest.fn();
+    jest
+      .mocked(h.provisioning.prepare)
+      .mockResolvedValueOnce(fail({ kind: "together-provisioning", code }));
+    const stop = bindTogetherProvisioning(
+      h.auth,
+      h.netInfo,
+      h.provisioning,
+      denied,
+    );
+    h.persisted.resolve(session("A"));
+    await tick();
+    expect(denied).toHaveBeenCalledWith(code);
+    expect(h.provisioning.dispose).not.toHaveBeenCalled();
+    expect(h.provisioning.setAccount).not.toHaveBeenCalledWith(null);
+    stop();
+  },
+);

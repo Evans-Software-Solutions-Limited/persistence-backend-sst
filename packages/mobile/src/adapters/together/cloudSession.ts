@@ -1,3 +1,4 @@
+import { markLoggedSetsCompleted } from "../../domain/services/sessionService";
 import type {
   TogetherCloudApi,
   TogetherCloudPort,
@@ -49,6 +50,9 @@ interface Action {
 }
 interface Durable {
   detached?: boolean;
+  discarded?: boolean;
+  retirementKey?: string;
+  retired?: boolean;
   retainedLocalChanges?: boolean;
   projectionConflict?: boolean;
   desiredPlanHash?: string;
@@ -93,13 +97,14 @@ export class TogetherCloudController implements TogetherCloudPort {
   private timer?: ReturnType<typeof setTimeout>;
   private draining?: Promise<unknown>;
   private refreshing?: Promise<void>;
+  private retiring?: Promise<void>;
   private mutationResults = new Map<
     string,
     { done: boolean; value?: unknown }
   >();
   constructor(private readonly options: CloudControllerOptions) {
     options.db.execSync(
-      "CREATE TABLE IF NOT EXISTS together_cloud_workout(account_id TEXT PRIMARY KEY,payload TEXT NOT NULL)",
+      "CREATE TABLE IF NOT EXISTS together_cloud_workout(account_id TEXT PRIMARY KEY,payload TEXT NOT NULL); CREATE TABLE IF NOT EXISTS together_cloud_workout_archive(account_id TEXT NOT NULL,local_session_id TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(account_id,local_session_id))",
     );
   }
   getSnapshot = () => this.state;
@@ -164,6 +169,7 @@ export class TogetherCloudController implements TogetherCloudPort {
     this.state = empty();
     this.draining = undefined;
     this.refreshing = undefined;
+    this.retiring = undefined;
     this.mutationResults.clear();
     this.publish({});
   }
@@ -194,10 +200,104 @@ export class TogetherCloudController implements TogetherCloudPort {
     this.reset();
     this.listeners.clear();
   }
+  discardDraft(userId: string, localSessionId: string) {
+    if (userId !== this.account) throw new Error("cloud-account");
+    const stored = this.load();
+    if (!stored?.personal || stored.personal.id !== localSessionId)
+      throw new Error("cloud-missing-draft");
+    stored.discarded = true;
+    stored.retirementKey ??= this.options.randomUUID();
+    stored.personal.status = "cancelled";
+    stored.personal.completedAt = new Date().toISOString();
+    const payload = JSON.stringify(stored);
+    // Archive before releasing the single current-session slot. The tombstone
+    // also prevents an old personal mirror from reviving across a crash.
+    this.options.db.withTransactionSync(() => {
+      this.options.db.runSync(
+        "INSERT OR IGNORE INTO together_cloud_workout_archive(account_id,local_session_id,payload) VALUES (?,?,?)",
+        [userId, localSessionId, payload],
+      );
+      this.options.db.runSync(
+        "UPDATE together_cloud_workout SET payload = ? WHERE account_id = ?",
+        [payload, userId],
+      );
+    });
+    this.cancel();
+  }
+  /** Resolve only admission, never replay discarded workout edits or Finish. */
+  private async retireDiscarded() {
+    if (this.retiring) return this.retiring;
+    const operation = this.performRetirement();
+    this.retiring = operation;
+    try {
+      await operation;
+    } finally {
+      if (this.retiring === operation) this.retiring = undefined;
+    }
+  }
+  private async performRetirement() {
+    const context = this.context();
+    const stored = this.load();
+    if (!stored?.discarded || stored.retired) return;
+    stored.retirementKey ??= this.options.randomUUID();
+    this.persist(stored);
+    const admission = stored.pending.find(
+      (a) => a.method === "create" || a.method === "join",
+    );
+    if (
+      !stored.sessionId &&
+      admission &&
+      admission.admissionAttempted !== false
+    ) {
+      if (admission.method === "create") {
+        const result = unwrap(
+          await this.options.api.create(
+            ...(admission.args as Parameters<TogetherCloudApi["create"]>),
+          ),
+        );
+        this.guard(context);
+        stored.sessionId = result.sessionId;
+      } else {
+        const result = unwrap(
+          await this.options.api.join(
+            ...(admission.args as Parameters<TogetherCloudApi["join"]>),
+          ),
+        );
+        this.guard(context);
+        stored.sessionId = result.sessionId;
+        stored.requestId = result.requestId;
+        stored.joinStatus = result.status;
+      }
+      this.persist(stored);
+    }
+    let admitted = !!stored.sessionId;
+    if (stored.requestId && stored.joinStatus !== "approved") {
+      const result = await this.options.api.cancelJoin(
+        stored.requestId,
+        stored.retirementKey,
+      );
+      this.guard(context);
+      if (result.ok) admitted = false;
+      else if (result.error.togetherCode !== "ALREADY_ADMITTED") unwrap(result);
+    }
+    if (admitted) {
+      unwrap(
+        await this.options.api.discard(stored.sessionId!, stored.retirementKey),
+      );
+      this.guard(context);
+    }
+    stored.retired = true;
+    stored.pending = [];
+    this.persist(stored);
+  }
   readDraft(userId: string) {
     if (userId !== this.account) return null;
     const stored = this.load();
-    return stored?.detached ? null : (stored?.personal ?? null);
+    return stored?.detached
+      ? null
+      : stored?.discarded && stored.personal
+        ? { ...stored.personal, status: "cancelled" as const }
+        : (stored?.personal ?? null);
   }
   detachDraft(
     userId: string,
@@ -394,15 +494,23 @@ export class TogetherCloudController implements TogetherCloudPort {
         sessionId: snapshot.sessionId,
         executionId: stored.draft?.clientDraftId ?? snapshot.sessionId,
         transport: "cloud",
+        ...(own.historyId ? { historyId: own.historyId } : {}),
       };
       if (
         ["saved", "finished_empty"].includes(own.status) &&
         !stored.pending.length &&
         !stored.error &&
         !stored.retainedLocalChanges
-      )
-        stored.personal.status =
-          own.status === "saved" ? "completed" : "cancelled";
+      ) {
+        const completedAt =
+          stored.personal.completedAt ??
+          new Date((this.options.now ?? Date.now)()).toISOString();
+        stored.personal = {
+          ...markLoggedSetsCompleted(stored.personal, completedAt),
+          status: own.status === "saved" ? "completed" : "cancelled",
+          completedAt,
+        };
+      }
     }
     this.persist(stored);
     // All partner-derived data is replaced, never merged across consent changes.
@@ -430,11 +538,14 @@ export class TogetherCloudController implements TogetherCloudPort {
     draft: CloudDraft,
     mapping: CloudMapping = { exercises: {}, sets: {} },
   ) {
-    this.context();
+    const context = this.context();
+    if (this.load()?.discarded) await this.retireDiscarded();
+    this.guard(context);
     const old = this.load();
     if (
       old &&
       !old.detached &&
+      !old.discarded &&
       (old.pending.length ||
         old.personal?.status === "in_progress" ||
         old.own?.completion.status === "active")
@@ -468,7 +579,9 @@ export class TogetherCloudController implements TogetherCloudPort {
     await this.drain();
   }
   async join(target: CloudJoin, personalDraft?: WorkoutSession) {
-    this.context();
+    const context = this.context();
+    if (this.load()?.discarded) await this.retireDiscarded();
+    this.guard(context);
     if (
       personalDraft &&
       (personalDraft.userId !== this.account || personalDraft.together)
@@ -478,6 +591,7 @@ export class TogetherCloudController implements TogetherCloudPort {
     if (
       old &&
       !old.detached &&
+      !old.discarded &&
       (old.pending.length || old.personal?.status === "in_progress")
     )
       throw new Error("cloud-workout-exists");
@@ -530,6 +644,10 @@ export class TogetherCloudController implements TogetherCloudPort {
     await this.retry();
   }
   async retry() {
+    if (this.load()?.discarded) {
+      await this.retireDiscarded();
+      return;
+    }
     await this.drain();
     await this.refresh();
   }
@@ -566,6 +684,7 @@ export class TogetherCloudController implements TogetherCloudPort {
     });
   }
   async refresh() {
+    if (this.load()?.discarded) return;
     if (this.refreshing) return this.refreshing;
     const context = this.context();
     const operation = (async () => {
@@ -622,7 +741,7 @@ export class TogetherCloudController implements TogetherCloudPort {
         for (;;) {
           const stored = this.load();
           const next = stored?.pending[0];
-          if (!stored || !next) break;
+          if (!stored || !next || stored.discarded) break;
           if (next.method === "command" && next.args[0] === null) {
             if (!stored.sessionId) throw new Error("cloud-awaiting-plan");
             next.args[0] = stored.sessionId;
@@ -647,15 +766,19 @@ export class TogetherCloudController implements TogetherCloudPort {
           if (
             firstAdmissionAttempt &&
             !response.ok &&
-            [
-              "SESSION_FULL",
-              "NOT_FOUND",
-              "INVALID_SCHEMA",
-              "FORBIDDEN",
-              "INVITE_EXPIRED",
-              "PAID_REQUIRED",
-              "INVALID_STATE",
-            ].includes(response.error.togetherCode ?? "")
+            ([401, 402, 403, 404, 422].includes(response.error.status ?? 0) ||
+              ["unauthorized", "entitlement_denied", "not_found"].includes(
+                response.error.code,
+              ) ||
+              [
+                "SESSION_FULL",
+                "NOT_FOUND",
+                "INVALID_SCHEMA",
+                "FORBIDDEN",
+                "INVITE_EXPIRED",
+                "PAID_REQUIRED",
+                "INVALID_STATE",
+              ].includes(response.error.togetherCode ?? ""))
           ) {
             const rejected = this.load()!;
             if (requestHash(rejected.pending[0]) !== requestHash(next))
@@ -780,7 +903,11 @@ export class TogetherCloudController implements TogetherCloudPort {
     } finally {
       if (this.draining === operation) {
         this.draining = undefined;
-        if (this.load()?.pending.length && !this.state.error)
+        if (
+          this.load()?.pending.length &&
+          !this.load()?.discarded &&
+          !this.state.error
+        )
           void this.drain().catch(() => {});
       }
     }
@@ -822,7 +949,7 @@ export class TogetherCloudController implements TogetherCloudPort {
     const stored = this.load();
     if (!stored?.personal || stored.personal.id !== session.id)
       throw new Error("cloud-missing-draft");
-    if (stored.personal.status !== "in_progress")
+    if (stored.discarded || stored.personal.status !== "in_progress")
       throw new Error("cloud-workout-finished");
     stored.personal = {
       ...copy(session),

@@ -122,7 +122,7 @@ private final class NearbyEngine: ConnectionManagerDelegate, AdvertiserDelegate,
       }
     }
   }
-  func deadline(_ id: String, _ peer: Peer, _ seconds: Double) {
+  private func deadline(_ id: String, _ peer: Peer, _ seconds: Double) {
     peer.timeout?.cancel()
     let timer = DispatchWorkItem { [weak self, weak peer] in
       guard let self, let peer, self.peers[id] === peer else { return }

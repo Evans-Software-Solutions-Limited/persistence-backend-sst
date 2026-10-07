@@ -53,6 +53,8 @@ export interface TogetherWorkoutPort {
     reviewedRevision: number,
     snapshotToken: string,
   ): Promise<TogetherWorkoutReview>;
+  /** Explicitly discard this own active workout; retain the journal for audit. */
+  discard?(userId: string, localSessionId: string): void;
   promote(session: WorkoutSession): Promise<void>;
   /** Restore authoritative unfinished work even when the personal cache was cleared. */
   getActive(userId: string): WorkoutSession | null;

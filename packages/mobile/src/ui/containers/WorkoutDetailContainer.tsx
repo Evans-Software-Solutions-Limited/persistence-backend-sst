@@ -1,5 +1,10 @@
+import { useTogetherGate } from "@/ui/hooks/useTogetherGate";
+import { TogetherConnectionChoice } from "@/ui/presenters/TogetherConnectionChoice";
+import { TogetherStartRow } from "@/ui/presenters/TogetherStartRow";
+import { TogetherStartSheet } from "@/ui/presenters/TogetherStartSheet";
+import type { TogetherLobbyAudience } from "@/domain/ports/togetherLobby.port";
 import { router, useLocalSearchParams } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   deriveDominantEquipment,
   deriveWorkoutMuscles,
@@ -42,9 +47,24 @@ import { AdaptiveSuiteRouteGuard } from "@/ui/components/subscription/AdaptiveSu
 export function WorkoutDetailContainer() {
   const params = useLocalSearchParams<{ id?: string }>();
   const workoutId = params.id ?? null;
-  const { storage } = useAdapters();
+  const { storage, togetherLobby, togetherCloud } = useAdapters();
+  const togetherGate = useTogetherGate();
+  const [togetherOpen, setTogetherOpen] = useState(false);
+  const [togetherConnection, setTogetherConnection] = useState<
+    "local" | "online"
+  >("local");
+  const [togetherAudience, setTogetherAudience] =
+    useState<TogetherLobbyAudience>("invite-only");
   const { session } = useAuth();
   const userId = session?.userId ?? null;
+  useEffect(() => {
+    setTogetherOpen(false);
+    setTogetherConnection("local");
+    setTogetherAudience("invite-only");
+  }, [userId, workoutId]);
+  useEffect(() => {
+    if (!togetherGate.allowed) setTogetherOpen(false);
+  }, [togetherGate.allowed]);
   const weightUnit = useProfilePage().payload?.profile.weightUnit ?? "kg";
 
   const detail = useWorkout(workoutId);
@@ -151,7 +171,8 @@ export function WorkoutDetailContainer() {
   // starting a session — checked client-side so the user never even opens
   // a session that the server's over-limit backstop would deny at Finish.
   const onStartWorkout = useCallback(
-    (id: string) => {
+    (id: string, audience?: TogetherLobbyAudience) => {
+      if (audience && (!userId || !togetherGate.allowed)) return;
       if (isLoadoutWorkout && !loadoutGate.allowed) {
         openLoadoutUpsell();
         return;
@@ -160,9 +181,22 @@ export function WorkoutDetailContainer() {
         totalCapGate.onLocked();
         return;
       }
-      router.push(`/(app)/session?workoutId=${id}` as never);
+      setTogetherOpen(false);
+      router.push(
+        (audience
+          ? `/(app)/session?workoutId=${encodeURIComponent(id)}&togetherAudience=${audience}&togetherAccountId=${encodeURIComponent(userId ?? "")}${audience === "friends" && togetherConnection === "online" ? "&togetherConnection=online" : ""}`
+          : `/(app)/session?workoutId=${id}`) as never,
+      );
     },
-    [isLoadoutWorkout, loadoutGate.allowed, openLoadoutUpsell, totalCapGate],
+    [
+      isLoadoutWorkout,
+      loadoutGate.allowed,
+      openLoadoutUpsell,
+      totalCapGate,
+      userId,
+      togetherConnection,
+      togetherGate.allowed,
+    ],
   );
 
   // Stack-push the exercise detail on top so the workout stays underneath.
@@ -257,6 +291,22 @@ export function WorkoutDetailContainer() {
         onClose={onClose}
         onEdit={onEdit}
         onStartWorkout={onStartWorkout}
+        togetherEntry={
+          togetherLobby && togetherGate.allowed ? (
+            <TogetherStartRow
+              detail={
+                togetherAudience === "friends"
+                  ? "training partners"
+                  : togetherAudience === "open"
+                    ? togetherLobby.getSnapshot().transport === "nearby"
+                      ? "open nearby"
+                      : "open on this network"
+                    : "private"
+              }
+              onStart={() => setTogetherOpen(true)}
+            />
+          ) : undefined
+        }
         onExercisePress={onExercisePress}
         // AC-1.2 is read-scoped, not owner-scoped: coach-assigned and template
         // workouts can be adapted too, with the resulting setup owned by the
@@ -274,6 +324,30 @@ export function WorkoutDetailContainer() {
         loadoutVariations={loadoutGate.allowed ? variations.variations : []}
         onOpenLoadout={onOpenLoadout}
         onOpenVariation={isLoadoutWorkout ? undefined : onOpenVariation}
+      />
+      <TogetherStartSheet
+        connectionOptions={
+          <TogetherConnectionChoice
+            value={togetherConnection}
+            onChange={setTogetherConnection}
+            onlineAvailable={togetherAudience === "friends" && !!togetherCloud}
+            transport={togetherLobby?.getSnapshot().transport}
+          />
+        }
+        visible={togetherOpen && togetherGate.allowed}
+        onClose={() => setTogetherOpen(false)}
+        onStart={() => {
+          if (workout) onStartWorkout(workout.id, togetherAudience);
+        }}
+        audience={togetherAudience}
+        onAudienceChange={(next) => {
+          setTogetherAudience(next);
+          setTogetherConnection("local");
+        }}
+        transport={togetherLobby?.getSnapshot().transport}
+        activeWorkoutName={
+          userId ? storage.getActiveSession(userId)?.name : undefined
+        }
       />
       {/* The upsell belongs to, and is layered within, its owning screen. */}
       <LoadoutUpsellSheet

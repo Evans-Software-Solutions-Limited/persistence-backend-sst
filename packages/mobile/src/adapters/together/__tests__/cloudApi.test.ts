@@ -55,6 +55,14 @@ const finish = { status: "saved", historyId: other };
 const cases: [string, string, unknown[], string, string, unknown][] = [
   [
     "cloud",
+    "discard",
+    [id, key],
+    `/together/sessions/${id}/discard`,
+    "POST",
+    { retired: true },
+  ],
+  [
+    "cloud",
     "create",
     [key, { clientDraftId: other, plan, ownExecution: execution }],
     "/together/sessions",

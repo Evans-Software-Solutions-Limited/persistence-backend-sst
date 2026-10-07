@@ -4,7 +4,11 @@ import type {
   FriendshipEvidence,
   TrustedKeys,
 } from "@/domain/models/togetherIdentity";
-import { credentialValidator, rosterValidator } from "./schema";
+import {
+  credentialValidator,
+  rosterValidator,
+  friendshipValidator,
+} from "./schema";
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex } from "@noble/hashes/utils.js";
@@ -140,6 +144,8 @@ export interface RosterMember {
   friendship?: Signed<FriendshipEvidence>;
 }
 export interface OfflineRoster {
+  /** Signed friends-only admission policy; absent preserves legacy policies. */
+  audience?: "friends";
   kind: "together-roster-v1";
   sessionId: string;
   hostUserId: string;
@@ -230,7 +236,7 @@ export function verifyRoster(
         "INVALID_PROOF",
         403,
       );
-      if (member.admission === "friend") {
+      if (member.admission === "friend" || p.audience === "friends") {
         const proof = member.friendship;
         requireTogether(
           proof &&
@@ -258,7 +264,8 @@ export function verifyRoster(
   );
   if (previous) {
     requireTogether(
-      previous.payload.sessionId === p.sessionId &&
+      previous.payload.audience === p.audience &&
+        previous.payload.sessionId === p.sessionId &&
         previous.payload.hostUserId === p.hostUserId &&
         previous.payload.hostDeviceId === p.hostDeviceId &&
         Math.abs(p.members.length - previous.payload.members.length) === 1,
@@ -288,4 +295,26 @@ export function verifyRoster(
     revision: p.revision,
     userIds: [...users],
   };
+}
+
+/** Authority-signed friendship binds this exact pair and remains fresh. */
+export function verifyFriendship(
+  envelope: Signed<FriendshipEvidence>,
+  trusted: TrustedKeys,
+  hostUserId: string,
+  userId: string,
+  now: number,
+): void {
+  requireTogether(friendshipValidator.Check(envelope), "INVALID_PROOF", 403);
+  const proof = envelope.payload;
+  requireTogether(Object.hasOwn(trusted, proof.keyId), "INVALID_PROOF", 403);
+  verifySignature(envelope, trusted[proof.keyId]);
+  fresh(proof, now);
+  requireTogether(
+    proof.users.includes(hostUserId) &&
+      proof.users.includes(userId) &&
+      hostUserId !== userId,
+    "INVALID_PROOF",
+    403,
+  );
 }

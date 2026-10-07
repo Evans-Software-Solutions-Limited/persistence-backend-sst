@@ -65,6 +65,7 @@ interface WorkoutDetailPresenterProps {
   readonly onClose: () => void;
   readonly onEdit: () => void;
   readonly onStartWorkout: (workoutId: string) => void;
+  readonly togetherEntry?: React.ReactNode;
   readonly onExercisePress: (exerciseId: string) => void;
 
   // ── Loadout (spec-21 T-2.2 / T-2.8) ────────────────────────────────────────
@@ -166,6 +167,7 @@ export function WorkoutDetailPresenter({
   onClose,
   onEdit,
   onStartWorkout,
+  togetherEntry,
   onExercisePress,
   showLoadout = false,
   loadoutLocked = false,
@@ -227,7 +229,10 @@ export function WorkoutDetailPresenter({
       ) : workout ? (
         <>
           <ScrollView
-            contentContainerStyle={styles.scrollContent}
+            contentContainerStyle={[
+              styles.scrollContent,
+              togetherEntry ? styles.scrollContentWithTogether : undefined,
+            ]}
             showsVerticalScrollIndicator={false}
           >
             <HeroCard
@@ -280,15 +285,24 @@ export function WorkoutDetailPresenter({
             )}
           </ScrollView>
 
-          <View style={styles.footer}>
-            <TouchableOpacity
-              style={styles.startButton}
-              onPress={() => onStartWorkout(workout.id)}
-              testID="workout-detail-start"
-            >
-              <Ionicons name="play" size={18} color={color.$text} />
-              <Text style={styles.startButtonText}>Start workout</Text>
-            </TouchableOpacity>
+          <View
+            testID="workout-detail-footer"
+            style={[
+              styles.footer,
+              togetherEntry ? styles.togetherFooter : undefined,
+            ]}
+          >
+            {togetherEntry}
+            <View style={styles.footerActions}>
+              <TouchableOpacity
+                style={styles.startButton}
+                onPress={() => onStartWorkout(workout.id)}
+                testID="workout-detail-start"
+              >
+                <Ionicons name="play" size={18} color={color.$text} />
+                <Text style={styles.startButtonText}>Start workout</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </>
       ) : null}
@@ -1016,10 +1030,19 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
+    backgroundColor: color.$bg,
+  },
+  togetherFooter: {
+    position: "relative",
+    flexShrink: 0,
+  },
+  scrollContentWithTogether: {
+    paddingBottom: 16,
+  },
+  footerActions: {
     paddingHorizontal: 16,
     paddingTop: 14,
     paddingBottom: 18,
-    backgroundColor: color.$bg,
   },
   startButton: {
     backgroundColor: color.$primary,

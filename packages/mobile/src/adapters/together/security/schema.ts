@@ -118,15 +118,20 @@ function member(value: unknown) {
 }
 function roster(value: unknown) {
   return (
-    object(value, [
-      "kind",
-      "sessionId",
-      "hostUserId",
-      "hostDeviceId",
-      "revision",
-      "previousHash",
-      "members",
-    ]) &&
+    object(
+      value,
+      [
+        "kind",
+        "sessionId",
+        "hostUserId",
+        "hostDeviceId",
+        "revision",
+        "previousHash",
+        "members",
+      ],
+      ["audience"],
+    ) &&
+    (!Object.hasOwn(value, "audience") || value.audience === "friends") &&
     value.kind === "together-roster-v1" &&
     uuid(value.sessionId) &&
     uuid(value.hostUserId) &&
@@ -145,4 +150,8 @@ export const credentialValidator = {
 };
 export const rosterValidator = {
   Check: (value: unknown) => signed(value, roster),
+};
+
+export const friendshipValidator = {
+  Check: (value: unknown) => signed(value, friendship),
 };

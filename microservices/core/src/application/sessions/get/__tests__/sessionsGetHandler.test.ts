@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const mocks = { getById: vi.fn() };
+const mocks = { getById: vi.fn(), getRecordedSummary: vi.fn() };
 
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getAuthUser: vi.fn(async (authHeader: string | undefined) => {
@@ -76,5 +76,38 @@ describe("SessionsGetHandler", () => {
       }),
     );
     expect(response.status).toBe(404);
+  });
+  it("reads an owner-scoped canonical summary only when explicitly requested", async () => {
+    mocks.getRecordedSummary.mockResolvedValue({
+      id: "s1",
+      personalRecords: [],
+      workoutsThisMonth: 3,
+    });
+    const { sessionsGetHandler } = await import("../sessionsGetHandler");
+    const response = await sessionsGetHandler.handle(
+      new Request("http://localhost/sessions/s1?summary=true", {
+        headers: { authorization: "Bearer token" },
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      data: { workoutsThisMonth: 3 },
+    });
+    expect(mocks.getRecordedSummary).toHaveBeenCalledWith("s1", "test-user-id");
+    expect(mocks.getById).not.toHaveBeenCalled();
+  });
+  it("does not expose missing, foreign, or unfinished summary and validates the opt-in", async () => {
+    mocks.getRecordedSummary.mockResolvedValue(null);
+    const { sessionsGetHandler } = await import("../sessionsGetHandler");
+    const call = (query: string) =>
+      sessionsGetHandler.handle(
+        new Request("http://localhost/sessions/s1" + query, {
+          headers: { authorization: "Bearer token" },
+        }),
+      );
+    expect((await call("?summary=true")).status).toBe(404);
+    expect((await call("?summary=garbage")).status).toBe(422);
+    expect((await call("?summary=false")).status).toBe(200);
+    expect(mocks.getRecordedSummary).toHaveBeenCalledTimes(1);
   });
 });

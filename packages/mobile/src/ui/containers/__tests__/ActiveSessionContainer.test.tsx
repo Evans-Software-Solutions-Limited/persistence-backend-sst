@@ -1,3 +1,24 @@
+let mockUseRealTogetherGate = false;
+const mockTogetherGate = {
+  allowed: true,
+  state: "allowed" as "allowed" | "locked" | "pending" | "unavailable",
+  onUpgrade: jest.fn(),
+  retry: jest.fn(),
+};
+jest.mock("@/ui/hooks/useTogetherGate", () => ({
+  useTogetherGate: () =>
+    mockUseRealTogetherGate
+      ? jest.requireActual("@/ui/hooks/useTogetherGate").useTogetherGate()
+      : mockTogetherGate,
+}));
+beforeEach(() => {
+  mockUseRealTogetherGate = false;
+  mockTogetherGate.allowed = true;
+  mockTogetherGate.state = "allowed";
+  mockTogetherGate.onUpgrade.mockClear();
+  mockTogetherGate.retry.mockClear();
+});
+
 /**
  * ActiveSessionContainer tests — exercise the container/presenter
  * wiring with an in-memory storage adapter + mocked notifications. (M3.)
@@ -181,6 +202,7 @@ const mockLoadoutGate = {
 jest.mock("@/ui/hooks/useLoadoutGate", () => ({
   useLoadoutGate: () => mockLoadoutGate,
 }));
+const mockRouterSetParams = jest.fn();
 const mockUseLocalSearchParams = jest.fn(() => ({}) as Record<string, string>);
 jest.mock("expo-router", () => {
   // useFocusEffect's prod implementation registers with the React
@@ -193,6 +215,7 @@ jest.mock("expo-router", () => {
   return {
     __esModule: true,
     router: {
+      setParams: (...args: unknown[]) => mockRouterSetParams(...args),
       back: (...args: unknown[]) => mockRouterBack(...args),
       push: (...args: unknown[]) => mockRouterPush(...args),
       dismissAll: (...args: unknown[]) => mockRouterDismissAll(...args),
@@ -215,6 +238,7 @@ jest.mock("expo-router", () => {
 describe("ActiveSessionContainer", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockRouterSetParams.mockReset();
     mockUseLocalSearchParams.mockReturnValue({});
     mockLoadoutGate.allowed = true;
     mockLoadoutGate.isResolved = true;
@@ -225,17 +249,62 @@ describe("ActiveSessionContainer", () => {
     jest.restoreAllMocks();
   });
 
-  it.each(["personal", "retrospective", "coached"])(
+  it.each([
+    "personal",
+    "retrospective",
+    "coached",
+    "detail",
+    "other-account",
+    "staggered-auth",
+    "locked",
+    "pending",
+    "unavailable",
+  ])(
     "Together entry respects %s logging and preserves the workout",
     async (mode) => {
+      if (mode === "locked" || mode === "pending" || mode === "unavailable") {
+        mockTogetherGate.allowed = false;
+        mockTogetherGate.state = mode;
+      }
       const api = new InMemoryApiAdapter();
       const storage = new InMemoryStorageAdapter();
-      if (mode === "coached") {
+      if (
+        mode === "coached" ||
+        mode === "detail" ||
+        mode === "staggered-auth"
+      ) {
         const workout = buildWorkout();
         storage.cacheWorkoutDetail("user-1", workout);
         jest.spyOn(api, "getWorkout").mockResolvedValue(ok(workout));
       }
       const adapters = makeAdapters(api, storage);
+      let releaseGateAuth: (() => void) | undefined;
+      if (mode === "staggered-auth") {
+        mockUseRealTogetherGate = true;
+        const sessionResult = await adapters.auth.getSession();
+        jest
+          .mocked(adapters.auth.onAuthStateChange)
+          .mockImplementation(() => () => {});
+        jest.mocked(adapters.auth.getSession).mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              releaseGateAuth = () => resolve(sessionResult);
+            }),
+        );
+        const access = {
+          accountId: "user-1",
+          state: "allowed" as const,
+          expiresAt: Date.now() + 60000,
+        };
+        adapters.togetherProvisioning = {
+          getAccessSnapshot: () => access,
+          subscribeAccess: () => () => {},
+          setAccount: jest.fn(),
+          prepare: jest.fn(),
+          friendship: jest.fn(),
+          dispose: jest.fn(),
+        };
+      }
       const snapshot = { phase: "idle" as const, members: [], pending: [] };
       const host = jest.fn(async () => {});
       adapters.togetherLobby = {
@@ -261,13 +330,53 @@ describe("ActiveSessionContainer", () => {
           ? { retroactive: "true" }
           : mode === "coached"
             ? { workoutId: "w-1", clientId: "client-1", clientName: "Mia" }
-            : {},
+            : mode === "detail" ||
+                mode === "staggered-auth" ||
+                mode === "other-account"
+              ? {
+                  ...(mode === "detail" || mode === "staggered-auth"
+                    ? { workoutId: "w-1" }
+                    : {}),
+                  togetherAudience: "open",
+                  togetherAccountId:
+                    mode === "detail" || mode === "staggered-auth"
+                      ? "user-1"
+                      : "other",
+                }
+              : {},
       );
+      // Router updates must affect subsequent renders: a spy-only setParams
+      // masks loss of the host intent while asynchronous auth initializes.
+      const routeParams = mockUseLocalSearchParams();
+      mockRouterSetParams.mockImplementation((patch) => {
+        Object.assign(routeParams, patch);
+      });
       const r = renderWithTheme(
         withAdapters(adapters, <ActiveSessionContainer />),
       );
       await r.findByTestId("active-session-screen");
-      if (mode !== "personal")
+      if (mode === "staggered-auth") {
+        expect(host).not.toHaveBeenCalled();
+        expect(routeParams.togetherAudience).toBe("open");
+        await act(async () => {
+          releaseGateAuth!();
+        });
+        await waitFor(() => expect(host).toHaveBeenCalledTimes(1));
+      }
+      if (mode === "detail" || mode === "staggered-auth") {
+        expect(host).toHaveBeenCalledWith("Push Day", "open");
+        expect(host).toHaveBeenCalledTimes(1);
+        expect(mockRouterSetParams).toHaveBeenCalledWith({
+          togetherAudience: undefined,
+          togetherAccountId: undefined,
+        });
+      } else if (mode === "other-account") {
+        expect(host).not.toHaveBeenCalled();
+        expect(mockRouterSetParams).toHaveBeenCalledWith({
+          togetherAudience: undefined,
+          togetherAccountId: undefined,
+        });
+      } else if (mode !== "personal")
         expect(r.queryByTestId("together-workout-row")).toBeNull();
       else {
         expect(r.getByTestId("together-workout-row")).toBeTruthy();
@@ -2103,8 +2212,10 @@ describe("ActiveSessionContainer", () => {
 
 describe("Together active workout integration", () => {
   it.each(["cloud", "offline"] as const)(
-    "routes %s completion through own review even with no logged sets",
+    "keeps the normal empty-set completion guard for %s after paid access ends",
     async (transport) => {
+      mockTogetherGate.allowed = false;
+      mockTogetherGate.state = "locked";
       jest.clearAllMocks();
       mockUseLocalSearchParams.mockReturnValue({});
       useActiveWorkout.setState({ active: null, expanded: false });
@@ -2146,27 +2257,9 @@ describe("Together active workout integration", () => {
       );
       await r.findByTestId("active-session-screen");
       const presenter = () => r.UNSAFE_getByType(ActiveSessionPresenter).props;
-      act(() => presenter().onSkipExercise("e"));
-      expect(storage.getActiveSession("user-1")!.exercises[0].skipped).toBe(
-        true,
-      );
-      act(() => presenter().onSkipExercise("e"));
-      expect(storage.getActiveSession("user-1")!.exercises[0].skipped).toBe(
-        false,
-      );
+      expect(presenter().onSkipExercise).toBeUndefined();
       const alert = jest.spyOn(Alert, "alert").mockImplementation(() => {});
       const save = jest.spyOn(storage, "cacheActiveSession");
-      save.mockImplementationOnce(() => {
-        throw new Error("disk full");
-      });
-      act(() => presenter().onSkipExercise("e"));
-      expect(storage.getActiveSession("user-1")!.exercises[0].skipped).toBe(
-        false,
-      );
-      expect(alert).toHaveBeenCalledWith(
-        "Change not saved",
-        expect.any(String),
-      );
       save.mockImplementationOnce(() => {
         throw new Error("disk full");
       });
@@ -2186,15 +2279,125 @@ describe("Together active workout integration", () => {
       alert.mockRestore();
       expect(storage.getActiveSession("user-1")!.restEndsAt).toBeNull();
       fireEvent.press(r.getByTestId("active-session-finish"));
-      expect(mockRouterPush).toHaveBeenCalledWith({
-        pathname:
-          transport === "cloud"
-            ? "/(app)/session/together-cloud-review"
-            : "/(app)/session/together-review",
-        params: { localSessionId: "together-local" },
-      });
+      expect(mockRouterPush).not.toHaveBeenCalled();
       expect(storage.getPendingMutations()).toHaveLength(0);
       r.unmount();
     },
   );
+});
+
+describe("Together finish scope", () => {
+  async function setupFinish(host = true, sharingActive = true) {
+    jest.clearAllMocks();
+    mockUseLocalSearchParams.mockReturnValue({});
+    useActiveWorkout.setState({ active: null, expanded: false });
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheActiveSession("user-1", {
+      id: "local-finish",
+      userId: "user-1",
+      workoutId: null,
+      name: "Together",
+      status: "in_progress",
+      startedAt: "2026-10-07T09:00:00Z",
+      completedAt: null,
+      notes: null,
+      together: {
+        sessionId: "shared-finish",
+        executionId: "own",
+        transport: "cloud",
+      },
+      exercises: [
+        {
+          id: "e",
+          sessionId: "local-finish",
+          exerciseId: "ex-bench",
+          exerciseName: "Bench",
+          sortOrder: 0,
+          supersetGroup: null,
+          isSubstituted: false,
+          originalExerciseId: null,
+          notes: null,
+          sets: [
+            {
+              id: "s",
+              sessionExerciseId: "e",
+              setNumber: 1,
+              weightKg: 20,
+              reps: 10,
+              rpe: null,
+              durationSeconds: null,
+              distanceMeters: null,
+              isCompleted: false,
+              completedAt: null,
+            },
+          ],
+        },
+      ],
+    });
+    const snapshot = {
+      sessionId: "shared-finish",
+      state: "active",
+      sharingActive,
+      hostId: host ? "user-1" : "other",
+      participants: [],
+    };
+    const adapters = makeAdapters(new InMemoryApiAdapter(), storage);
+    adapters.togetherCloud = {
+      getSnapshot: () => ({ snapshot }),
+      subscribe: () => () => {},
+    } as never;
+    const r = renderWithTheme(
+      withAdapters(adapters, <ActiveSessionContainer />),
+    );
+    fireEvent.press(await r.findByTestId("active-session-finish"));
+    return { r, storage, snapshot };
+  }
+  it.each(["all", "own"])(
+    "offers host the %s choice before rating without closing sharing",
+    async (choice) => {
+      const { r, storage } = await setupFinish();
+      expect(mockRouterPush).not.toHaveBeenCalled();
+      fireEvent.press(r.getByTestId(`together-finish-${choice}`));
+      expect(mockRouterPush).toHaveBeenCalledWith({
+        pathname: "/(app)/session/rate",
+        params: {
+          mode: choice === "all" ? "finish_all" : "save_own",
+          localSessionId: "local-finish",
+        },
+      });
+      expect(storage.getActiveSession("user-1")?.status).toBe("in_progress");
+      r.unmount();
+    },
+  );
+  it.each([
+    [false, true],
+    [true, false],
+  ])(
+    "only rates own result for guest or inactive sharing (%s,%s)",
+    async (host, active) => {
+      const { r } = await setupFinish(host, active);
+      expect(mockRouterPush).toHaveBeenCalledWith({
+        pathname: "/(app)/session/rate",
+        params: { mode: "save_own", localSessionId: "local-finish" },
+      });
+      r.unmount();
+    },
+  );
+  it("rechecks host authority when selecting finish for all", async () => {
+    const { r, snapshot } = await setupFinish();
+    snapshot.hostId = "other";
+    fireEvent.press(r.getByTestId("together-finish-all"));
+    expect(mockRouterPush).not.toHaveBeenCalled();
+    r.unmount();
+  });
+  it("does not finish a replacement workout from an old choice", async () => {
+    const { r, storage } = await setupFinish();
+    storage.cacheActiveSession("user-1", {
+      ...storage.getActiveSession("user-1")!,
+      id: "replacement",
+    });
+    fireEvent.press(r.getByTestId("together-finish-own"));
+    expect(mockRouterPush).not.toHaveBeenCalled();
+    r.unmount();
+  });
 });

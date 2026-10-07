@@ -3,6 +3,8 @@ import { TextInput } from "react-native";
 import { Text, View } from "@tamagui/core";
 import { Btn } from "@/ui/components/foundation/Btn";
 import { Card } from "@/ui/components/foundation/Card";
+import { TogetherAthleteAvatar } from "./TogetherAthleteAvatar";
+import { TogetherAudienceOptions } from "./TogetherAudienceOptions";
 import type {
   TogetherLobbyAudience,
   TogetherLobbySnapshot,
@@ -16,7 +18,10 @@ export interface TogetherLobbyPresenterProps {
   code: string;
   notice: string;
   workoutName: string;
+  accountId?: string;
+  athleteNames?: Readonly<Record<string, string>>;
   audience: TogetherLobbyAudience;
+  trainingPartners?: { selected: boolean; onSelect(): void };
   workoutStatus?: TogetherWorkoutStatus | null;
   onPromote?(): void;
   onReview?(): void;
@@ -34,6 +39,7 @@ export interface TogetherLobbyPresenterProps {
   onCancel(): void;
   onApprove(peerId: string): void;
   onDecline(peerId: string): void;
+  connectionOptions?: ReactNode;
   qr?: ReactNode;
   scanner?: ReactNode;
 }
@@ -69,14 +75,28 @@ export function togetherErrorCopy(
       : owner
         ? "This lobby listing has expired. Search this Android phone’s hotspot again or ask the host for an invitation. Internet is not required."
         : "This lobby listing has expired. Search this network again or ask the host for an invitation. Internet is not required.";
+  if (code === "friendship-required")
+    return "Only accepted training partners can join this session. Connect online to refresh your friendship, then try again.";
   if (code === "host-unavailable")
     return "This host is no longer available to join. Keep training on your own or choose another lobby.";
   if (/expired/i.test(code))
     return "Your offline access has expired. Connect to the internet to renew it, then try again.";
   if (/offline-unprepared/i.test(code))
     return "Connect to the internet once to prepare Together on this device.";
-  if (/unauthorized|ineligible/i.test(code))
+  if (code === "paid-required" || code === "PAID_REQUIRED")
     return "Every athlete needs a qualifying paid subscription to train together.";
+  if (code === "authentication-required" || code === "signed-out")
+    return "Sign in again to prepare Together. Your personal workout remains on this device.";
+  if (code === "service-unavailable")
+    return "Together access is unavailable for this account or app environment. Try again later. Your personal workout is safe.";
+  if (code === "device-revoked")
+    return "Together access for this device was revoked. Contact support to restore device access. You can keep training on your own.";
+  if (code === "registration-conflict")
+    return "Together could not register this device securely. Contact support if this continues. Your personal workout is safe.";
+  if (code === "registration-invalid")
+    return "Together could not verify this device. Check that your phone’s date and time are automatic, then try again.";
+  if (/unauthorized|ineligible/i.test(code))
+    return "Together access could not be authorized. Connect to the internet and try again. Your personal workout is safe.";
   if (
     /permission|wifi|lan_unavailable|discovery|advertising|listener/i.test(code)
   )
@@ -113,10 +133,10 @@ export function togetherWorkoutCopy(
   sharing: TogetherWorkoutStatus["sharing"],
 ): string {
   return {
-    active: "Saved on this device",
-    reconnecting: "Reconnecting · saved locally",
-    "local-only": "Saved locally · sharing ended",
-    paused: "Saved locally · sharing paused",
+    active: "Training together",
+    reconnecting: "Reconnecting · your sets are kept on this device",
+    "local-only": "Sharing ended · continue your workout",
+    paused: "Sharing paused · your sets are kept on this device",
   }[sharing];
 }
 
@@ -213,80 +233,35 @@ export function TogetherLobbyPresenter(p: TogetherLobbyPresenterProps) {
             Up to four athletes. Everyone needs a qualifying paid subscription.
             Your logged sets stay yours.
           </Copy>
-          <Card
-            accent="primary"
-            accessibilityRole="radio"
-            accessibilityState={{ checked: true }}
-          >
-            <Text fontFamily="$display" fontSize={15} color="$text">
-              {nearby
-                ? "Nearby · Bluetooth and local radio"
-                : owner
-                  ? "This Android phone’s hotspot"
-                  : "Same Wi-Fi / hotspot"}
-            </Text>
-            <Copy>
-              {nearby
-                ? "Train without internet with reachable nearby phones."
-                : owner
-                  ? "Turn on your Android hotspot and connect the other phones to it. Discovery depends on device support."
-                  : "Train without internet on the same reachable network."}
-            </Copy>
-          </Card>
-          <View
-            gap={10}
-            accessibilityRole="radiogroup"
-            accessibilityLabel="Who can join?"
-          >
-            <Text fontFamily="$display" fontSize={15} color="$text">
-              Who can join?
-            </Text>
-            {(
-              [
-                ["invite-only", "Private", "Code or QR only"],
-                [
-                  "open",
-                  nearby ? "Open nearby" : "Open on this network",
-                  `Athletes ${place} can find it`,
-                ],
-              ] as const
-            ).map(([value, title, detail]) => (
-              <Card
-                key={value}
-                onPress={() => p.onAudienceChange(value)}
-                accessibilityRole="radio"
-                accessibilityLabel={title}
-                accessibilityState={{ checked: p.audience === value }}
-                accent={p.audience === value ? "primary" : undefined}
-              >
-                <View flexDirection="row" alignItems="center" gap={12}>
-                  <Text
-                    color={p.audience === value ? "$primary" : "$text3"}
-                    fontSize={20}
-                  >
-                    {p.audience === value ? "◉" : "○"}
-                  </Text>
-                  <View flex={1}>
-                    <Text fontFamily="$display" fontSize={15} color="$text">
-                      {title}
-                    </Text>
-                    <Copy>{detail}</Copy>
-                  </View>
-                </View>
-              </Card>
-            ))}
-          </View>
+          <TogetherAudienceOptions
+            trainingPartners={p.trainingPartners}
+            audience={p.audience}
+            onAudienceChange={p.onAudienceChange}
+            transport={s.transport}
+          />
           <Copy>
-            Accepted training partners join deliberately. Anyone else needs your
-            approval. Joining never grants access to history or permission to
-            log for someone.
+            Local Training partners sessions require verified friendship. In
+            other sessions, accepted partners join deliberately and anyone else
+            needs your approval. Joining never grants access to history or
+            permission to log for someone.
           </Copy>
 
+          {owner && (
+            <Copy>
+              Turn on your Android hotspot and connect the other phones to it.
+              Discovery depends on device support.
+            </Copy>
+          )}
+          {p.connectionOptions}
           <Btn full onPress={p.onHost}>
             Start the session
           </Btn>
+          <Btn full variant="outline" onPress={p.onUseInvitation}>
+            Join
+          </Btn>
         </>
       )}
+      {idle && p.screen === "join" && p.connectionOptions}
       {idle && p.screen === "join" && (
         <>
           <Copy>
@@ -387,9 +362,11 @@ export function TogetherLobbyPresenter(p: TogetherLobbyPresenterProps) {
       )}
       {s.role === "host" && s.audience && (
         <Copy>
-          {s.audience === "invite-only"
-            ? "Private · code or QR only"
-            : `Open · discoverable ${place}`}
+          {s.audience === "friends"
+            ? "Training partners only · share the code or QR"
+            : s.audience === "invite-only"
+              ? "Private · code or QR only"
+              : `Open · discoverable ${place}`}
         </Copy>
       )}
       {s.selection && (
@@ -402,7 +379,12 @@ export function TogetherLobbyPresenter(p: TogetherLobbyPresenterProps) {
           >
             {s.selection.workoutName}
           </Text>
-          <Copy>Verified host · {s.selection.hostUserId}</Copy>
+          <Copy>
+            Verified host
+            {p.athleteNames?.[s.selection.hostUserId]
+              ? ` · ${p.athleteNames[s.selection.hostUserId]}`
+              : ""}
+          </Copy>
         </Card>
       )}
       {s.phase === "selected" && (
@@ -474,11 +456,40 @@ export function TogetherLobbyPresenter(p: TogetherLobbyPresenterProps) {
             <Text fontFamily="$display" fontSize={15} color="$text">
               Athletes · {s.members.length} of 4
             </Text>
-            {s.members.map((m) => (
-              <Copy key={m.userId}>
-                {m.host ? "Host" : "Athlete"} · {m.userId}
-              </Copy>
-            ))}
+            {s.members.map((m, index) => {
+              const name =
+                p.athleteNames?.[m.userId] ??
+                (m.userId === p.accountId ? "You" : `Athlete ${index + 1}`);
+              return (
+                <View
+                  key={m.userId}
+                  flexDirection="row"
+                  gap={11}
+                  alignItems="center"
+                  paddingVertical={6}
+                >
+                  <TogetherAthleteAvatar
+                    name={name}
+                    size={34}
+                    selected={m.userId === p.accountId}
+                  />
+                  <View flex={1} gap={2}>
+                    <Text
+                      fontFamily="$display"
+                      fontSize={14}
+                      fontWeight="600"
+                      color="$text"
+                    >
+                      {name}
+                    </Text>
+                    <Copy>
+                      {m.host ? "Host" : "Athlete"}
+                      {m.userId === p.accountId ? " · You" : ""}
+                    </Copy>
+                  </View>
+                </View>
+              );
+            })}
           </View>
         </Card>
       )}

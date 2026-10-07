@@ -1,5 +1,7 @@
-import { fireEvent } from "@testing-library/react-native";
+import { fireEvent, within } from "@testing-library/react-native";
 import React from "react";
+import { StyleSheet } from "react-native";
+import { TogetherStartRow } from "../TogetherStartRow";
 import type {
   Workout,
   WorkoutExercise,
@@ -313,4 +315,20 @@ describe("WorkoutDetailPresenter", () => {
     expect(getByLabelText("Close")).toBeTruthy();
     expect(getByLabelText("Edit workout")).toBeTruthy();
   });
+});
+
+it("keeps Together and Start workout inside one non-overlapping footer", () => {
+  const onTogether = jest.fn();
+  const r = renderDetail({
+    togetherEntry: <TogetherStartRow detail="private" onStart={onTogether} />,
+  });
+  const footer = r.getByTestId("workout-detail-footer");
+  expect(StyleSheet.flatten(footer.props.style)).toMatchObject({
+    position: "relative",
+    flexShrink: 0,
+  });
+  const controls = within(footer);
+  fireEvent.press(controls.getByTestId("together-start"));
+  expect(onTogether).toHaveBeenCalledTimes(1);
+  expect(controls.getByTestId("workout-detail-start")).toBeTruthy();
 });

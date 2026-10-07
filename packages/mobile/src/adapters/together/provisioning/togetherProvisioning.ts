@@ -1,6 +1,7 @@
 import { commandFromEnvelope, readOwnerCommand } from "../localCommand";
 import type {
   TogetherOfflineApi,
+  TogetherOfflineApiError,
   TogetherRecoveryCommand,
 } from "../../../domain/ports/togetherOfflineApi.port";
 import type {
@@ -8,6 +9,7 @@ import type {
   ProvisioningErrorCode,
   ReadyIdentity,
   TogetherProvisioningPort,
+  TogetherAccessSnapshot,
 } from "../../../domain/ports/togetherProvisioning.port";
 import type {
   FriendshipEvidence,
@@ -59,6 +61,18 @@ const authoritative = (e: ApiError) =>
     e.status >= 400 &&
     e.status < 500 &&
     !retryableClientStatus(e.status));
+/** Denial still revokes cached sharing authority; its reason must not imply payment. */
+function denialCode(error: TogetherOfflineApiError): ProvisioningErrorCode {
+  if (error.status === 401 || error.togetherCode === "UNAUTHENTICATED")
+    return "authentication-required";
+  if (error.togetherCode === "PAID_REQUIRED") return "paid-required";
+  if (error.status === 404) return "service-unavailable";
+  if (error.togetherCode === "DEVICE_REVOKED") return "device-revoked";
+  if (error.togetherCode === "IDEMPOTENCY_MISMATCH")
+    return "registration-conflict";
+  if (error.togetherCode === "INVALID_PROOF") return "registration-invalid";
+  return "unauthorized";
+}
 function errorCode(error: unknown): ProvisioningErrorCode {
   const message = error instanceof Error ? error.message : "storage";
   if (
@@ -77,8 +91,76 @@ function errorCode(error: unknown): ProvisioningErrorCode {
     return "invalid-proof";
   return "storage";
 }
-/** Explicit online preparation only. No timers, discovery or automatic enrolment. */
+/** Explicit preparation only. Expiry timers revoke UI readiness; they never enrol or discover. */
 export class TogetherProvisioning implements TogetherProvisioningPort {
+  private accessSnapshot: TogetherAccessSnapshot = {
+    accountId: null,
+    state: "unavailable",
+    expiresAt: null,
+    error: "signed-out",
+  };
+  private accessListeners = new Set<() => void>();
+  private accessTimer: ReturnType<typeof setTimeout> | undefined;
+  getAccessSnapshot = (): TogetherAccessSnapshot => this.accessSnapshot;
+  subscribeAccess = (listener: () => void): (() => void) => {
+    this.accessListeners.add(listener);
+    return () => {
+      this.accessListeners.delete(listener);
+    };
+  };
+  private publishAccess(snapshot: TogetherAccessSnapshot): void {
+    if (this.accessTimer !== undefined) clearTimeout(this.accessTimer);
+    this.accessTimer = undefined;
+    this.accessSnapshot = snapshot;
+    if (snapshot.state === "allowed" && snapshot.expiresAt !== null) {
+      const generation = this.generation;
+      this.accessTimer = setTimeout(
+        () => {
+          if (generation !== this.generation || this.stopped) return;
+          if (snapshot.expiresAt! > this.now()) this.publishAccess(snapshot);
+          else
+            this.publishAccess({
+              accountId: this.account,
+              state: "unavailable",
+              expiresAt: null,
+              error: "expired",
+            });
+        },
+        Math.min(Math.max(0, snapshot.expiresAt - this.now()), 2_147_483_647),
+      );
+      // Node test/service consumers must not be kept alive by readiness observation.
+      (this.accessTimer as unknown as { unref?: () => void }).unref?.();
+    }
+    for (const listener of this.accessListeners) listener();
+  }
+  private publishAccessFailure(code: ProvisioningErrorCode): void {
+    const locked =
+      code === "paid-required" ||
+      (code === "unauthorized" && this.accessSnapshot.state === "locked");
+    this.publishAccess({
+      accountId: this.account,
+      state: locked ? "locked" : "unavailable",
+      expiresAt: null,
+      error: locked ? "paid-required" : code,
+    });
+  }
+  async refreshAccess(options: { online: boolean }): Promise<void> {
+    if (this.pending) {
+      // Explicit retry abandons a hung request. Guards prevent its late response
+      // from updating evidence; active lobby keys and owner journals stay intact.
+      this.generation++;
+      this.pending = null;
+      this.publishAccess(this.accessSnapshot);
+    }
+    if (this.accessSnapshot.state === "unavailable")
+      this.publishAccess({
+        accountId: this.account,
+        state: "pending",
+        expiresAt: null,
+      });
+    const result = await this.prepare(options);
+    if (result.ok) result.value.seed.fill(0);
+  }
   private cache: ProvisioningCache;
   private account: string | null = null;
   private generation = 0;
@@ -123,6 +205,12 @@ export class TogetherProvisioning implements TogetherProvisioningPort {
     this.account = account;
     this.generation++;
     this.pending = null;
+    this.publishAccess({
+      accountId: account,
+      state: account ? "pending" : "unavailable",
+      expiresAt: null,
+      ...(account ? {} : { error: "signed-out" as const }),
+    });
     for (const seed of this.activeSeeds) seed.fill(0);
     this.activeSeeds.clear();
     if (previous !== null) {
@@ -136,6 +224,9 @@ export class TogetherProvisioning implements TogetherProvisioningPort {
   dispose(): void {
     this.setAccount(null);
     this.stopped = true;
+    if (this.accessTimer !== undefined) clearTimeout(this.accessTimer);
+    this.accessTimer = undefined;
+    this.accessListeners.clear();
   }
   private guard(generation: number): void {
     if (this.stopped || this.generation !== generation)
@@ -148,7 +239,40 @@ export class TogetherProvisioning implements TogetherProvisioningPort {
     if (!this.account) return "signed-out";
     return null;
   }
-  async prepare({
+  async prepare(options: {
+    online: boolean;
+  }): Promise<Result<ReadyIdentity, ProvisioningError>> {
+    const generation = this.generation;
+    const revision = this.authorizationRevision;
+    let result = await this.prepareIdentity(options);
+    if (
+      result.ok &&
+      (generation !== this.generation ||
+        this.stopped ||
+        revision !== this.authorizationRevision ||
+        result.value.credential.payload.expiresAt <= this.now())
+    ) {
+      result.value.seed.fill(0);
+      result = failure(
+        generation !== this.generation || this.stopped
+          ? "cancelled"
+          : revision !== this.authorizationRevision
+            ? "unauthorized"
+            : "expired",
+      );
+    }
+    if (generation === this.generation && !this.stopped) {
+      if (result.ok)
+        this.publishAccess({
+          accountId: this.account,
+          state: "allowed",
+          expiresAt: result.value.credential.payload.expiresAt,
+        });
+      else this.publishAccessFailure(result.error.code);
+    }
+    return result;
+  }
+  private async prepareIdentity({
     online,
   }: {
     online: boolean;
@@ -196,7 +320,7 @@ export class TogetherProvisioning implements TogetherProvisioningPort {
         });
       }
     }
-    return this.prepare({ online: true });
+    return this.prepareIdentity({ online: true });
   }
   async signRecovery(
     credential: Signed<Credential>,
@@ -322,12 +446,13 @@ export class TogetherProvisioning implements TogetherProvisioningPort {
       }
       if (this.now() < snapshot.observedAt) return failure("expired");
       const fallback = (
-        error: ApiError,
+        error: TogetherOfflineApiError,
       ): Result<ReadyIdentity, ProvisioningError> => {
         if (authoritative(error)) {
           this.authorizationRevision++;
           this.cache.block(scope);
-          return failure("unauthorized");
+          this.publishAccessFailure(denialCode(error));
+          return failure(denialCode(error));
         }
         if (this.authorizationRevision !== authorizationRevision)
           return failure("unauthorized");
@@ -543,9 +668,10 @@ export class TogetherProvisioning implements TogetherProvisioningPort {
         ) {
           snapshot.blocked = true;
           this.authorizationRevision++;
+          this.publishAccessFailure(denialCode(result.error));
         }
         this.cache.write(scope, snapshot);
-        return failure("unauthorized");
+        return failure(denialCode(result.error));
       }
       if (
         snapshot.blocked ||

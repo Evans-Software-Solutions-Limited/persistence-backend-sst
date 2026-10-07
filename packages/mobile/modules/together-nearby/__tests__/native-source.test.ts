@@ -9,7 +9,7 @@ it("binds an iOS write timeout to its original peer while always rejecting that 
   );
   const send = source.slice(
     source.indexOf("  func send("),
-    source.indexOf("  func deadline("),
+    source.indexOf("  private func deadline("),
   );
   const timer = send.slice(
     send.indexOf("let timer = DispatchWorkItem"),

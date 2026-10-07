@@ -1,3 +1,4 @@
+import { markLoggedSetsCompleted } from "../../domain/services/sessionService";
 import type { TogetherWorkoutReview } from "../../domain/ports/togetherWorkout.port";
 import type {
   TogetherRecoveryApi,
@@ -165,7 +166,7 @@ export class TogetherWorkoutRecovery {
       !reviewed.retainedLocalChanges
     ) {
       fresh.snapshot = {
-        ...fresh.snapshot,
+        ...markLoggedSetsCompleted(fresh.snapshot, attempt.completedAt),
         status: result.status === "saved" ? "completed" : "cancelled",
         completedAt: attempt.completedAt,
       };
@@ -293,7 +294,11 @@ export class TogetherWorkoutRecovery {
       // Server reports a prior explicit acceptance of this exact candidate. Keep
       // unknown completion time null; never invent a second workout/history ID.
       c.snapshot = {
-        ...c.snapshot,
+        ...markLoggedSetsCompleted(
+          c.snapshot,
+          c.snapshot.completedAt ??
+            new Date((this.options.now ?? Date.now)()).toISOString(),
+        ),
         status: candidate.status === "saved" ? "completed" : "cancelled",
       };
     }

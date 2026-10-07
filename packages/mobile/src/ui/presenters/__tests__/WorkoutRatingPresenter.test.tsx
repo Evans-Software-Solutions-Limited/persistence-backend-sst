@@ -12,6 +12,7 @@
 
 import { fireEvent, render } from "@testing-library/react-native";
 import React from "react";
+import { renderWithTheme } from "../../../../__tests__/test-utils";
 import { color } from "@/ui/theme/tokens";
 import { WorkoutRatingPresenter } from "../WorkoutRatingPresenter";
 
@@ -73,4 +74,24 @@ describe("WorkoutRatingPresenter — Phase 3a port", () => {
     fireEvent.press(getByTestId("workout-rating-10"));
     expect(flatten("workout-rating-message").color).toBe(color.$error);
   });
+});
+
+it("shows the finish-all group while only submitting the current athlete's rating", () => {
+  const onSubmit = jest.fn();
+  const r = renderWithTheme(
+    <WorkoutRatingPresenter
+      onSubmit={onSubmit}
+      onBack={jest.fn()}
+      group={[
+        { id: "me", name: "You", own: true },
+        { id: "mia", name: "Mia", own: false },
+      ]}
+    />,
+  );
+  expect(r.getByText("Finishing together")).toBeTruthy();
+  expect(r.getByText("Mia")).toBeTruthy();
+  expect(r.getByText("Rates on their phone")).toBeTruthy();
+  fireEvent.press(r.getByText("Submit Workout"));
+  expect(onSubmit).toHaveBeenCalledTimes(1);
+  expect(onSubmit).toHaveBeenCalledWith(1, "");
 });

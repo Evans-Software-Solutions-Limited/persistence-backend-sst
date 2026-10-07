@@ -128,6 +128,88 @@ describe("local lobby and inbox with real SQLite", () => {
     db.close();
     rmSync(directory, { recursive: true, force: true });
   });
+  function friendsHost() {
+    db.exec("DELETE FROM together_local_policy");
+    return new TogetherLocalLobby(store, options(1, { audience: "friends" }));
+  }
+  it.each(["missing", "expired", "forged", "wrong-pair"])(
+    "friends-only rejects %s proof even with host approval",
+    (kind) => {
+      host = friendsHost();
+      host.start(person(1).consent);
+      const request = friend(2);
+      if (kind === "missing") delete request.friendship;
+      else if (kind === "forged")
+        request.friendship = signPayload(
+          request.friendship!.payload,
+          person(2).seed,
+        );
+      else
+        request.friendship = signPayload(
+          {
+            ...request.friendship!.payload,
+            ...(kind === "expired"
+              ? { expiresAt: time - 1 }
+              : { users: [id(2), id(3)] as [string, string] }),
+          },
+          authority,
+        );
+      expect(() => host.admit(request, request.credential, true)).toThrow(
+        "friendship-required",
+      );
+      expect(store.current(pin.sessionId)!.payload.members).toHaveLength(1);
+    },
+  );
+  it("persists friends-only policy across restart, reconnect and removed-member reapproval", () => {
+    host = friendsHost();
+    expect(host.start(person(1).consent).payload.audience).toBe("friends");
+    const request = friend(2);
+    const joined = host.admit(request, request.credential);
+    expect(joined.status).toBe("admitted");
+    db.close();
+    db = new DatabaseSync(path);
+    store = new TogetherLocalStore(adapter(db), id(1));
+    host = new TogetherLocalLobby(store, options(1, { audience: "friends" }));
+    expect(host.admit(request, request.credential)).toEqual(joined);
+    expect(() => new TogetherLocalLobby(store, options())).toThrow(
+      "policy changed",
+    );
+    host.removeParticipant(id(2));
+    expect(host.admit(request, request.credential).status).toBe(
+      "approval-required",
+    );
+    expect(() => host.admit(person(2), request.credential, true)).toThrow(
+      "friendship-required",
+    );
+    expect(host.admit(request, request.credential, true).status).toBe(
+      "admitted",
+    );
+    expect(host.member(request.credential).friendship).toEqual(
+      request.friendship,
+    );
+  });
+  it("guest rejects a host-signed friends-only policy downgrade before storing it", () => {
+    host = friendsHost();
+    const first = host.start(person(1).consent);
+    const guestStore = new TogetherLocalStore(adapter(db), id(2));
+    const guest = new TogetherLocalLobby(
+      guestStore,
+      options(2, { audience: "friends" }),
+    );
+    guest.accept(first);
+    const { audience: _audience, ...payload } = first.payload;
+    expect(() => guest.accept(signPayload(payload, person(1).seed))).toThrow(
+      "policy changed",
+    );
+    expect(guestStore.current(pin.sessionId)).toEqual(first);
+    expect(
+      () =>
+        new TogetherLocalLobby(
+          guestStore,
+          options(2, { audience: "friends", hostDeviceId: id(99) }),
+        ),
+    ).toThrow("policy changed");
+  });
   it("persists a host roster and policy across reopen; exact start retry is immutable", () => {
     const roster = host.start(person(1).consent);
     expect(host.start(person(1).consent)).toEqual(roster);

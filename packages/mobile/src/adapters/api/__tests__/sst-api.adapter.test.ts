@@ -2959,3 +2959,35 @@ describe("Together own PREV query", () => {
     );
   });
 });
+
+describe("completed session summary opt-in", () => {
+  it("preserves ordinary session reads and requests canonical summary fields explicitly", async () => {
+    const summary = {
+      id: "saved",
+      userId: "owner",
+      status: "completed",
+      personalRecords: [],
+      workoutsThisMonth: 7,
+    };
+    const fetchMock = installFetchMock(
+      async () =>
+        new Response(JSON.stringify({ data: summary }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+    );
+    const adapter = new SSTApiAdapter();
+    await adapter.getSession("saved");
+    const result = await adapter.getSession("saved", { summary: true });
+    expect(String(fetchMock.mock.calls[0][0])).toBe(
+      "http://test.local/sessions/saved",
+    );
+    expect(String(fetchMock.mock.calls[1][0])).toBe(
+      "http://test.local/sessions/saved?summary=true",
+    );
+    expect(result).toEqual({ ok: true, value: summary });
+    expect(
+      fetchMock.mock.calls.every(([, options]) => options?.method === "GET"),
+    ).toBe(true);
+  });
+});

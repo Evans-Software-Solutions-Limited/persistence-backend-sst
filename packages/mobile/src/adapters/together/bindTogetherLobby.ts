@@ -37,7 +37,13 @@ export function bindTogetherLobby(
     lobby.setOnline(online);
   });
   const app = lifecycle.addEventListener("change", (state) => {
-    if (!stopped) lobby.setActive(state === "active");
+    if (stopped) return;
+    // iOS emits inactive for permission prompts, Control Centre and other
+    // temporary interruptions. It is not a terminal background transition.
+    // Keep the last authoritative state until active/background is observed;
+    // in particular, inactive must never reactivate a backgrounded lobby.
+    if (state === "active") lobby.setActive(true);
+    else if (state === "background") lobby.setActive(false);
   });
   const probeRevision = networkRevision;
   void network

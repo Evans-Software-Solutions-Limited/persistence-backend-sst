@@ -156,6 +156,8 @@ export interface RosterMember {
   friendship?: Signed<FriendshipEvidence>;
 }
 export interface OfflineRoster {
+  /** Signed friends-only admission policy; absent preserves legacy policies. */
+  audience?: "friends";
   kind: "together-roster-v1";
   sessionId: string;
   hostUserId: string;
@@ -246,7 +248,7 @@ export function verifyRoster(
         "INVALID_PROOF",
         403,
       );
-      if (member.admission === "friend") {
+      if (member.admission === "friend" || p.audience === "friends") {
         const proof = member.friendship;
         requireTogether(
           proof &&
@@ -274,7 +276,8 @@ export function verifyRoster(
   );
   if (previous) {
     requireTogether(
-      previous.payload.sessionId === p.sessionId &&
+      previous.payload.audience === p.audience &&
+        previous.payload.sessionId === p.sessionId &&
         previous.payload.hostUserId === p.hostUserId &&
         previous.payload.hostDeviceId === p.hostDeviceId &&
         Math.abs(p.members.length - previous.payload.members.length) === 1,

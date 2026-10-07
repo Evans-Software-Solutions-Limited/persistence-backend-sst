@@ -1,5 +1,392 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-07 — PR #488 athlete UI, finish scope and input/lifecycle follow-up
+
+[PER-22](https://linear.app/evans-software-solutions/issue/PER-22) /
+[PER-64](https://linear.app/evans-software-solutions/issue/PER-64).
+
+Together now uses the Claude export’s single 26-point presence avatar (no nested
+profile rings), named roster cards and live profile updates. Unknown athletes use
+neutral labels instead of account IDs. Removed the Together-only Skip Exercise
+control to preserve the normal active-workout layout. Active hosts choose Finish
+for all or Finish just for me; others rate only their own result. Finish-all shows
+group cards on the normal rating screen, with each athlete rating on their phone.
+The guest group-context route does not grant host finish-all authority.
+
+Quick-fill synchronously persists its signed own journal, but transport crypto,
+projection and publication now run on a later turn in command order. Real SQLite
+regression proves two durable commands and zero transport calls before yielding,
+then versions [0,1]. No verification removed and no device speed claim. Transient
+iOS inactive interruptions no longer terminally cancel the lobby or abort host
+promotion. True background still clears transport/keys and ends sharing; safe
+background resume remains outstanding. Copy says Sharing ended / continue your
+workout, never claims completed save. The exact owner event is not yet correlated.
+
+Inspector found private completion re-closing ended sharing and permission-prompt
+host promotion invalidation; both fixed with regressions. Further closure-delivery
+retry regression guards persisted closure replay before summary/cancel.
+Actual presenter browser screenshots: evidence/ui-2026-10-07-followup, with simulated
+athletes and explicit native-sheet/slider/icon substitutes. No native build,
+physical-device acceptance, deploy, merge or CI Inspector.
+
+Validation: 599 mobile suites / 8,271 tests pass; root typecheck 9/9 and lint
+6/6 pass. Final local Inspector review is clean, including the closure retry.
+
+Sentry OAuth connected and staging reviewed on 7 October. PERSISTENCE-MOBILE-2's
+latest event confirms PostgreSQL 22P02: a legacy local- session ID reaches the
+Together UUID draft lookup. The existing PR backend guard addresses that exact
+query; deploy it before retrying retained queue entries. PERSISTENCE-MOBILE-6
+records four >=2-second simulator app hangs (release 1.1.3+1); main/JS stacks
+returned redacted, so causality and performance resolution remain unproven.
+Staging mobile log search over seven days returned no entries. Neither Sentry
+issue was resolved or suppressed. No additional speculative runtime patch.
+Next: review PR, deploy backend changes from prior handoff, then owner trials
+and fresh hang evidence. Preserve unrelated AGENTS.md changes.
+
+### 2026-10-07 — PR #488 normal Together completion and escape
+
+[PER-22](https://linear.app/evans-software-solutions/issue/PER-22) /
+[PER-64](https://linear.app/evans-software-solutions/issue/PER-64)
+
+Complete and shared End now use the existing workout rating and saved-summary
+flow. Each athlete confirms only their own result; successful save clears the
+active pointer and closes the lobby. Host finish-all reaches each athlete’s rating
+screen, including late shared-session binding and returning from another screen.
+The rating route binds its original account/workout ID, preventing stale screens
+from saving a replacement workout. Unsupported retained edits remain explicit
+recovery exceptions; network failures preserve retryable personal work.
+
+Confirmed End/discard retires the own durable draft without creating history,
+clears the active UI and cannot resurrect it from an unmarked personal mirror.
+Offline cloud discard retains an idempotent membership-retirement operation that
+must reconcile before a later host/join. The authenticated discard route cannot
+revoke current athletes’ grants when called by an already removed participant.
+Startup renders one preparing body with pinned Cancel until promotion completes;
+cancelled delayed starts cannot reopen. Confirmed results mark logged sets
+completed, fixing empty stats. Owner-only summary reads hydrate canonical PR and
+monthly counts after effects finish without recording a second workout.
+
+Validation: mobile 599 suites / 8,236 tests pass, with coverage
+96.35/91.69/96.38/97.71%. Local Inspector clean after lifecycle, stale-route and
+former-member retirement fixes. Core 397 suites / 5,497 tests pass (98.07/94.30/97.78/98.07%).
+Completion/discard commands have 100% coverage; end-navigation hook 97.67/90.9/
+100/100%; summary hydration helper 100%. Three new rating regressions fail against
+the old container. Typecheck 9/9, lint 6/6 (existing warnings), non-mobile build
+12/12 pass. Actual preparing/summary presenters have simulated browser screenshots
+in evidence/ui-2026-10-07; native rating, gestures and mixed-device proof remain
+owner acceptance work. No native/prebuild/EAS build, deploy, merge or CI Inspector.
+
+Next: owner review of PR #488, backend deployment including discard/summary routes
+and existing opaque-ID sync fix, then trial the normal finish and broken-state
+exit paths with valid paid staging accounts. PR and PER-22/PER-64 remain open.
+
+### 2026-10-06 — PR #488 paid-access entry guard (PER-22 / PER-64)
+
+The Together entry previously checked only for a configured adapter. New sharing
+now requires account-bound verified paid readiness from the existing provisioning
+adapter. It exposes only state/expiry/error, never credentials or signing seeds.
+Valid signed cached credentials preserve offline entry; account changes, expiry
+and definitive denials remove access. The detail/personal-active Start control is
+hidden when unauthorized. Train → Together shows subscription selection only for
+paid denial, with checking/retry for other states and Check access again after an
+upgrade. Partner management and existing own-workout completion/recovery remain
+accessible. No staging subscription records were changed.
+
+Retry bounds connectivity lookup and can supersede a hung preparation; stale
+responses cannot publish authority. Auth bootstrap remains pending until the
+hook's own auth read settles, independently of the active-workout auth read.
+The staggered-auth integration failed before this guard and passes after it;
+three entry-gate regressions fail against the old hub presenter. Local Inspector
+clean after resolving independent auth bootstrap and locked-state recheck leads.
+
+Focused adapter/hook/binder: 123 tests; gate 100/97.61/100/100%, provisioning
+96.59/93.66/100/98.8%, binder 100%. Entry/recovery containers: 121 tests pass.
+Typecheck 9/9, lint 6/6 and non-mobile builds 12/12 pass. Existing active/detail
+monolith whole-file coverage gaps remain, with no exclusions. Browser screenshots
+use actual hub presenter with simulated state; native-device proof remains open.
+Full mobile: 595 suites / 8,178 tests pass; aggregate coverage
+96.37/91.73/96.49/97.73%.
+
+Staging diagnosis: latest successful deployment is still a773d581, so the PR's
+opaque-ID sync fix is not deployed. The owner's queried staging subscription is
+cancelled/expired and its complimentary grant revoked; the paid denial is valid,
+not a simulator restriction. No deploy, native/prebuild/EAS build, merge or CI
+Inspector trigger. Next: owner review and backend deployment, then trial with a
+valid staging entitlement. PR remains open.
+
+
+### 2026-10-06 — PR #488 partner drawer and connection-control correction
+
+Partner management now uses the reviewed fixed HeaderBar/back icon and a separate
+scrolling body. All three drawers are root siblings of that body, not children of
+an outer ScrollView. The code drawer centres a compact QR and pins New code,
+Share and Copy actions. Native Share uses the issued partner code; failures remain
+visible inside the drawer. The active-workout bar is hidden on the partners route
+without stopping or deleting the workout, and reappears on returning to Train.
+
+A sole local connection is explanatory text rather than a button with no effect.
+When online is available, the connection choices are visibly selected accessible
+radio cards. The local copy explains joining the same Wi-Fi/hotspot before Start.
+The simulator screenshot's paid-access copy maps to PAID_REQUIRED in current code;
+no simulator-only block was found. Actual account/environment eligibility remains
+unverified, pending owner confirmation; do not bypass the paid-access policy.
+
+
+Verification for this UI follow-up: mobile 594 suites / 8,141 tests pass;
+coverage 96.36/91.69/96.48/97.73%. All four changed runtime files exceed 90%
+in every metric; connection choice is 100%. Typecheck 9/9, lint 6/6 and
+changed-file formatting pass. Partner tests cover drawer/scroll ancestry,
+Share failure/copy fallback and code preservation; overlay regression verifies
+hide/return without draft loss. Browser screenshots at 402×874 use the actual
+presenter/header with a simulated sheet shell, not native-device proof. Local
+Inspector clean for the connection and partner-layout follow-ups. No native build,
+deployment, merge or CI Inspector trigger.
+
+### 2026-10-06 — PR #488 final owner-testing corrections and validation
+
+Successful local Start now hosts, promotes the current workout and publishes its
+plan before the reviewed invite screen. Failed publication has an explicit retry
+without another lobby/checkpoint. Online hosting creates a real server invitation;
+expired/consumed invitations are cleared, with generation retry without rehosting.
+Online QR capture fills the token for deliberate joining through Online join.
+Copy/Share validate current invitation authority; cancellation resets scanning.
+Pinned Back to my workout dismisses the invite without closing the session.
+
+Final verification: mobile 594 suites / 8,137 tests pass; coverage
+96.36/91.71/96.48/97.73%. Core 396 suites / 5,489 tests pass, coverage
+98.07/94.29/97.78/98.07%. Root typecheck 9/9, lint 6/6, changed-file
+formatting and non-mobile builds 12/12 pass. New presenters reach 100%; local
+lobby, cloud container and cloud recovery exceed 90% across all metrics. Existing
+active/detail monolith coverage gaps and Jest act/timer warnings remain; no
+exclusions added. Local Inspector clean after fixing partial plan-publication
+retry, stale single-use online invitations and scanner dismissal lifecycle.
+
+Visuals in evidence/ui-2026-10-06 cover local/online connection, local/online host
+invitation, rejected/pending admission recovery. Real RN-web components use
+browser sheet shells, simulated adapters and a sample QR matrix; these are not
+native navigation/scanning or physical-device proof. PR #488 stays open. No
+native/prebuild/EAS build, deploy, CI Inspector or merge. The original live server
+rejection remains unidentified; specific known API errors now have useful copy.
+
+### 2026-10-06 — PR #488 detail start lost during auth bootstrap
+
+Owner testing exposed a real route-lifecycle gap: useAuth initializes with a null
+session while loading local credentials, and ActiveSessionContainer cleared the
+Together audience/account parameters as if the account had changed. The workout
+then opened personally with no automatic host request. Wait for auth resolution
+before invalidating that intent; confirmed account mismatch remains rejected.
+
+The old test used a spy-only router.setParams, leaving consumed parameters in its
+mock. The regression now applies parameter changes and loads the selected workout
+through the real auth/session hooks. It fails against the old implementation (host
+called zero times) and passes with the bootstrap guard; 44 active-container tests
+and both active-hook tests pass. The failed-cloud-start review dead end is also addressed: a rejected first request
+can explicitly restore personal logging, while ambiguous admission keeps its
+identity and offers retry. Storage/account/newer-workout guards remain. Seven
+recovery regressions fail with the old runtime. Known API denial codes have more
+specific messages; the actual runtime reason for Brad's original rejection is
+still unknown. Broader final validation is recorded below.
+
+### 2026-10-06 — PR #488 local friends-only audience and explicit connection
+
+This supersedes the cloud-only Training partners mapping in the earlier handoff.
+Training partners now defaults to local hosting. Audience and connection are
+separate: Online is an explicit choice and the only choice labelled internet
+required. Local hosts share a signed code/QR; joiners need valid cached credentials
+and a fresh signed friendship proof for the exact host/guest pair. Strangers cannot
+enter through host approval. Friends-only sessions expose no public discovery
+summary; automatic friends-only nearby discovery is not implemented.
+
+Signed rosters retain the friends restriction across reconnect, persistence and
+backend recovery; guests and backend reject policy downgrades. Backend deployment
+is required for recovery with the new optional signed audience marker. Legacy
+rosters remain supported. Partner management stays under Train → Together.
+
+Backend: 396 suites / 5,489 tests pass (98.07/94.29/97.78/98.07% coverage).
+Mobile: 593 suites / 8,106 tests pass; coverage 96.43/91.73/96.53/97.78%.
+Focused UI/lifecycle: 171 tests pass. New connection presenter has 100% coverage;
+Together lobby container exceeds 95% all metrics. Typecheck 9/9, lint 6/6 and
+changed-file formatting and non-mobile builds 12/12 pass. Local Inspector reports
+no actionable code findings.
+Evidence: partners-local-connection.png and partners-online-connection.png in
+specs/milestones/TRAIN-TOGETHER/evidence/ui-2026-10-06/. Actual RN-web setup
+contents use a browser sheet shell; this is simulated visual evidence, not native
+geometry or physical-device proof. No native/prebuild/EAS build, CI Inspector,
+deployment or merge. Rich hub feed and remembered audience defaults remain open.
+
+### 2026-10-06 — PR #488 Train navigation and offline-partner clarification
+
+PER-22 / PER-64: partner management belongs under Train, not as a detour from
+workout setup. The reviewed Together segment now exposes the Training partners
+entry and a workout-selection entry. Opening partners pushes the existing screen;
+Back returns to the persisted Together segment. Removed the pre-start management
+link. This restores the requested entry points; the prototype's richer hub session
+feed and remembered audience defaults are not claimed as implemented here.
+
+The Training partners audience currently performs online cloud discovery. It is
+not a requirement that friends train online: existing Private/code/QR and Open
+nearby/network sessions admit verified accepted partners offline without extra
+approval, with valid cached credentials and friendship proof. Expanded the actual
+local controller regression across both audiences. Setup now distinguishes online
+partner discovery from local joining. No friends audience is mapped to public
+local advertising; private friends-only local discovery remains unimplemented.
+
+Visual evidence: `evidence/ui-2026-10-06/train-partners-entry.png` (actual hub and
+presenter with simulated segment/account/navigation dependencies) and
+`local-partner-copy.png` (actual setup contents, browser sheet-shell substitute).
+No native/prebuild/EAS build or physical-device evidence. Focused verification:
+167 tests across five suites pass. Train hub 100/96.66/100/100% coverage; segment
+store, new hub presenter and changed setup/audience presenters 100% all metrics.
+Existing Jest configuration/open-handle warnings remain. Local review has no code
+findings and scoped visual match; typecheck 9/9, lint 6/6 and formatting pass.
+Full mobile/backend validation at 429d3885 remains the preceding baseline.
+
+
+### 2026-10-06 — PR #488 opaque personal IDs and missing partner audience
+
+[PER-22](https://linear.app/evans-software-solutions/issue/PER-22) /
+[PER-64](https://linear.app/evans-software-solutions/issue/PER-64): ordinary mobile
+session IDs are opaque `local-…` strings. Enabling Together caused its promotion
+lookup to bind them against a UUID draft column, raising PostgreSQL 22P02 and
+stranding completed workouts in failed sync. The server now only performs that
+lookup for canonical UUIDs, retaining opaque idempotency keys unchanged. Existing
+queued payloads can be retried after backend deployment; no queue deletion, ID
+replacement or migration is required. Promoted UUIDs still reject solo completion,
+including uppercase UUID input. Real PGlite regressions fail before the fix and
+pass after it, checking one session/exercise survives repeated record calls.
+
+The exported design's Training partners choice was omitted, not an approved
+change. Restored in detail and active-solo setup and wired to cloud hosting then
+friends visibility; explicit publication errors do not claim discovery succeeded.
+Add/manage training partners opens the existing request/accept/code/QR flow before
+starting. Bounded nearby/network wording remains deliberate; cloud friends need
+internet while local authorized sessions do not. Persistent default audience is
+still absent and explicitly recorded in DESIGN-REFERENCE.md.
+
+Backend: 396 suites / 5,488 tests pass; aggregate coverage 98.07/94.29/97.78/98.07%.
+Changed repository has 98.16% statements, 92.48% branches, 100% functions.
+Phone-sized real presenter-content screenshots use a browser sheet-shell substitute:
+`evidence/ui-2026-10-06/training-partners-selected.png` and `audience-private.png`.
+No native/prebuild/EAS build, live deployment, data discard or CI Inspector trigger.
+Mobile: 592 suites / 8,089 tests pass; coverage 96.43/91.72/96.53/97.78%.
+Focused audience/lifecycle run: 209/209. New setup/audience presenters reach 100%;
+Together cloud/lobby containers exceed 90% on all metrics. Existing detail/active
+monolith coverage gaps remain (no exclusions added). Root typecheck 9/9, lint 6/6
+(existing warnings), non-mobile build 12/12 and other workspace tests 17/17 pass.
+Changed-file formatting passes; existing Jest timer warnings remain. Local
+Inspector found no blocking issues. PR #488 stays open for Brad's manual merge;
+backend deployment is required to repair the sync path. Then reload the updated
+app for the audience entry and trial the actual partner flow on devices.
+
+
+### 2026-10-06 — PR #488 workout-detail footer overlap
+
+Brad's latest checkout contained b8b2047f but Together remained invisible.
+The new row sat outside the existing absolutely positioned Start workout footer,
+which painted over it. This was a layout bug, not evidence of missing native
+capability. The earlier isolated-component preview did not exercise page layout.
+
+Together and Start workout now share one non-shrinking, in-flow footer. Its height
+is reserved by the scroll layout; the solo-only footer retains its prior layout.
+A regression asserts both controls share that footer and Together remains tappable.
+43 focused presenter/container tests pass; root typecheck/lint and changed-file
+formatting pass. Local Inspector clean. Previous and fixed full presenters were
+rendered at 402×874: the old code reproduces the hidden entry, the fix places it
+above Start workout. Evidence: `specs/milestones/TRAIN-TOGETHER/evidence/ui-2026-10-06/`.
+These are RN-web layout fixtures with browser substitutes for native icons,
+gradient and safe area, not physical-device proof. No native build was run.
+
+Next: pull this follow-up from PR #488 and reload the local app. PER-22 / PER-64
+remain open for runtime/device acceptance. Preserve unrelated AGENTS.md edits.
+
+
+### 2026-10-05 — PR #488 reviewed Together entry and honest preparation errors
+
+[PER-22](https://linear.app/evans-software-solutions/issue/PER-22) /
+[PER-64](https://linear.app/evans-software-solutions/issue/PER-64): Brad supplied
+the Claude v2 export and requested UI corrections in the existing open PR #488.
+Add its slim Together entry above workout detail's existing Start workout button;
+the rest of that page stays unchanged. Reuse the entry during a solo workout.
+The setup sheet creates no workout/lobby on cancellation. Explicit Start preserves
+loadout/cap checks, resumes existing personal work with a warning, and carries a
+single account-bound audience intent through preparation. Dismiss/background or
+account changes invalidate it; existing cloud/local checkpoints cannot create a
+second lobby. Join stays available inside the active setup sheet.
+
+Choice cards use the exported geometry, white labels, muted descriptions and cyan
+selection markers. Approved bounded local choices and separate consent remain;
+no unrestricted public/coached/default-setting behaviour is inferred from the
+historical prototype. See DESIGN-REFERENCE.md and FRONTEND_BRIEF.md.
+
+Provisioning previously collapsed authoritative 4xx responses into unauthorized,
+which the UI mislabeled as a subscription failure. Preserve safe denial categories
+while still clearing rejected sharing authority. Only explicit PAID_REQUIRED now
+shows paid-access copy; authentication, environment/route, revoked-device and
+registration failures have distinct messages. Brad's exact failing runtime
+response is still unverified; matching staging environment values/deployment alone
+does not establish entitlement or physical connectivity.
+
+Validation: full mobile 592 suites / 8,073 tests; coverage 96.43% statements,
+91.71% branches, 96.52% functions, 97.80% lines. Typecheck 9/9, lint 6/6 (existing
+warnings), formatting pass; focused Jest runs also report lingering test timers; non-mobile tests 18/18 and builds 12/12 are cache hits.
+Provisioning regressions fail with the old mapping restored. Existing ActiveSession
+and WorkoutDetail monoliths retain below-90% whole-file coverage; this run does not
+claim those legacy gaps are closed. New audience/entry presenters and lobby
+presenter have 100% measured coverage; final focused run 119/119, including
+existing-workout preservation, signed-out/cap refusal and background cancellation.
+Local Inspector clean after fixing the
+existing-authority auto-host race. Actual RN-web component screenshots compared
+with the exported first-run screen: `specs/milestones/TRAIN-TOGETHER/evidence/ui-2026-10-05/` (component preview and
+Claude reference). This is simulated component evidence,
+not native sheet/device proof. No native/prebuild/EAS build or CI Inspector run.
+
+Next: Brad pulls PR #488 and tests the entry and resulting specific preparation
+message locally; exact account denial, native compilation and mixed-device
+acceptance remain open. Manual merge/build ownership stays with Brad.
+
+
+### 2026-10-05 — PR #488 owner-build Swift visibility correction
+
+Brad tested PR #488 locally before merge. His actual xcodebuild log now reaches
+TogetherNearby compilation with Nearby resolved, and reports one compiler error:
+`deadline` takes the private nested `Peer` type but is not itself private.
+Mark the helper private and update the existing source-test boundary. This is
+an access-control correction, not another dependency workaround. The full native
+build remains Brad's to rerun; no build was initiated here.
+[PER-64](https://linear.app/evans-software-solutions/issue/PER-64).
+
+
+### 2026-10-05 — PER-64 Nearby registration through React Native
+
+PR #486 is merged at a773d581. Brad's owner iOS build failed at
+`import NearbyConnections`. PR #488's initial custom import-path correction is
+superseded: React Native 0.83.4 already provides `spm_dependency` and its
+post-install SPM manager clears unregistered remote package references. The
+original Together hook ran before that manager and could lose its registration.
+
+TogetherNearby.podspec now declares the pinned Google product through the real
+React Native helper; React Native owns registration and Swift import paths.
+The Expo plugin only sets permissions, with no new Podfile registration hook.
+Brad explicitly requested no old-hook compatibility because this is unreleased
+and only used in local testing. The custom Ruby helper is deleted entirely.
+Existing locally generated iOS projects must be regenerated to remove the old
+hook and app package references; preserve any manual native changes first.
+Fresh projects use normal Expo/CocoaPods setup.
+
+Validation uses the actual installed React Native SPM manager and actual podspec,
+with temporary CocoaPods/Xcodeproj projects, including configuration/platform import paths and unrelated registered dependencies.
+This is configuration evidence, not SDK compilation or final application linking.
+Expo plugin tests: 7 passed with 100% measured coverage. Mobile typecheck, lint
+(no errors; existing warnings) and changed-file formatting pass. Local Inspector
+and final fixture evidence are recorded in the PR. No native/prebuild/EAS build,
+pod install, package resolution, deployment or merge was run.
+
+Next: Brad reviews/merges the revised PR #488, pulls, regenerates his local iOS
+test project with his normal Expo workflow, installs pods and retries his native
+build. No compatibility cleanup remains. Physical-device Together acceptance remains open.
+[PER-64](https://linear.app/evans-software-solutions/issue/PER-64) /
+[PER-22](https://linear.app/evans-software-solutions/issue/PER-22).
+
 ### 2026-10-05 — PR #486 five-lead review
 
 [PER-64](https://linear.app/evans-software-solutions/issue/PER-64) /

@@ -462,6 +462,17 @@ export const togetherRoutes = new Elysia({ name: "togetherRoutes" })
     },
   )
   .post(
+    "/together/sessions/:id/discard",
+    async (c) => ({
+      data: await repository.discard(
+        getUser(c).sub,
+        c.params.id,
+        c.headers["idempotency-key"],
+      ),
+    }),
+    { params, headers, body: t.Object({}) },
+  )
+  .post(
     "/together/sessions/:id/finish",
     async (c) => ({
       data: await repository.finish(

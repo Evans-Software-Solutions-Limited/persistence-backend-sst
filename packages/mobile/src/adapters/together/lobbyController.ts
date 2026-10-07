@@ -557,7 +557,13 @@ export class TogetherLobbyController implements TogetherLobbyPort {
       );
       if (!this.current(generation)) return;
       if (!friendship.ok) throw new Error(friendship.error.code);
-      const resources = this.createResources(selected, identity);
+      if (selected.audience === "friends" && !friendship.value)
+        throw new Error("friendship-required");
+      const resources = this.createResources(
+        selected,
+        identity,
+        selected.audience ?? "open",
+      );
       resources.request = {
         credential: identity.credential,
         consent: this.consent(selected, identity),

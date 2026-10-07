@@ -1,5 +1,5 @@
 import { Text, View } from "@tamagui/core";
-import { Avatar } from "@/ui/components/foundation/Avatar";
+import { TogetherAthleteAvatar } from "./TogetherAthleteAvatar";
 import { Btn } from "@/ui/components/foundation/Btn";
 import { IconBtn } from "@/ui/components/foundation/IconBtn";
 import { IconSettings } from "@/ui/components/icons";
@@ -16,32 +16,18 @@ export function TogetherWorkoutRow(p: {
       minHeight={44}
       flexDirection="row"
       alignItems="center"
-      gap={6}
+      gap={8}
       paddingHorizontal={16}
       backgroundColor="$surface"
       testID="together-workout-row"
     >
       {p.members.map((m) => (
-        <View
+        <TogetherAthleteAvatar
           key={m.userId}
-          borderWidth={1}
-          borderRadius={30}
-          padding={2}
-          borderColor={m.userId === p.selectedId ? "$primary" : "transparent"}
-        >
-          <Avatar
-            size={24}
-            initials={m.name
-              .trim()
-              .split(/\s+/)
-              .map((x) => x[0])
-              .slice(0, 2)
-              .join("")
-              .toUpperCase()}
-            accessibilityLabel={`View ${m.name}’s workout`}
-            onPress={() => p.onSelect(m.userId)}
-          />
-        </View>
+          name={m.name}
+          selected={m.userId === p.selectedId}
+          onPress={() => p.onSelect(m.userId)}
+        />
       ))}
       <Text flex={1} color="$text2" fontFamily="$body" fontSize={11}>
         {p.status}

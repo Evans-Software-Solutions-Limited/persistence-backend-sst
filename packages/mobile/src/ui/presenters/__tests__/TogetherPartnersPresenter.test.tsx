@@ -1,4 +1,5 @@
 import React from "react";
+import { ScrollView, StyleSheet } from "react-native";
 import { fireEvent } from "@testing-library/react-native";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 import {
@@ -44,6 +45,7 @@ function props(): TogetherPartnersPresenterProps {
     onCloseCode: jest.fn(),
     onNewCode: jest.fn(),
     onCopyCode: jest.fn(),
+    onShareCode: jest.fn(),
     onScan: jest.fn(),
     onSearch: jest.fn(),
     onRefresh: jest.fn(),
@@ -70,9 +72,9 @@ it("uses deliberate request decisions and actual partner profile actions", () =>
   expect(p.onSelect).toHaveBeenCalledWith(person);
   fireEvent.press(r.getByText("Review Push"));
   expect(p.onOffer).toHaveBeenCalledWith(offer);
-  fireEvent.press(r.getByText("Back"));
+  fireEvent.press(r.getByLabelText("Go back"));
   fireEvent.press(r.getByText("Refresh"));
-  fireEvent.press(r.getByText("My code and QR"));
+  fireEvent.press(r.getByLabelText("My code and QR"));
   expect(p.onShowCode).toHaveBeenCalled();
   fireEvent(
     r.getByLabelText("Let people find me by name"),
@@ -113,7 +115,7 @@ it("has no actionable fake rows, distinguishes outgoing invitations and disables
   expect(r.getByLabelText("Let people find me by name").props.disabled).toBe(
     true,
   );
-  fireEvent.press(r.getByText("My code and QR"));
+  fireEvent.press(r.getByLabelText("My code and QR"));
   expect(p.onShowCode).not.toHaveBeenCalled();
   r.rerender(<TogetherPartnersPresenter {...p} friends={[]} loading={false} />);
   expect(r.getByText(/No training partners yet/)).toBeTruthy();
@@ -155,9 +157,11 @@ it("reviews authorized plan and own code in separate sheets", () => {
   fireEvent.press(r.getByText("Save my own copy"));
   fireEvent.press(r.getByText("New code"));
   fireEvent.press(r.getByText("Copy my code"));
+  fireEvent.press(r.getByText("Share"));
   expect(p.onCopy).toHaveBeenCalledWith("offer");
   expect(p.onNewCode).toHaveBeenCalled();
   expect(p.onCopyCode).toHaveBeenCalled();
+  expect(p.onShareCode).toHaveBeenCalled();
   r.UNSAFE_getAllByType(BottomSheet).forEach((s) => s.props.onClose());
   expect(p.onCloseCode).toHaveBeenCalled();
   expect(p.onOffer).toHaveBeenCalledWith(null);
@@ -175,4 +179,32 @@ it("names anonymous profiles honestly without calling them friends", () => {
   );
   expect(r.getByText("Account unknown")).toBeTruthy();
   expect(r.getByText("Name and photo only")).toBeTruthy();
+});
+
+it("keeps the header fixed and all three drawers outside the scrolling list, with code actions pinned", () => {
+  const r = renderWithTheme(
+    <TogetherPartnersPresenter
+      {...props()}
+      codeVisible
+      ownCode={{ code: "a".repeat(32), expiresAt: "2026-10-12" }}
+    />,
+  );
+  const scroll = r.UNSAFE_getByType(ScrollView);
+  expect(
+    scroll.findAllByProps({ testID: "together-partners-header" }),
+  ).toHaveLength(0);
+  const sheets = r.UNSAFE_getAllByType(BottomSheet);
+  expect(sheets).toHaveLength(3);
+  for (const sheet of sheets) {
+    let parent = sheet.parent;
+    while (parent) {
+      expect(parent).not.toBe(scroll);
+      parent = parent.parent;
+    }
+  }
+  const codeSheet = sheets.find((sheet) => sheet.props.title === "Your code")!;
+  expect(codeSheet.props.footer).toBeTruthy();
+  expect(
+    StyleSheet.flatten(r.getByTestId("together-partners-root").props.style),
+  ).toEqual(expect.objectContaining({ flex: 1 }));
 });

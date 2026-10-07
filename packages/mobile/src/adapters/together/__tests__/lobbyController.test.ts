@@ -1,5 +1,6 @@
 /** @jest-environment node */
 import type { WorkoutSession } from "../../../domain/models/session";
+import { bindTogetherLobby } from "../bindTogetherLobby";
 import { TogetherProvisioning } from "../provisioning/togetherProvisioning";
 import type {
   TogetherOfflineApi,
@@ -384,27 +385,32 @@ describe("reviewed lobby coordinator, real cryptography and SQLite, simulated na
     },
   );
 
-  it("friend explicitly joins offline and both rosters reflect independent verified athletes", async () => {
-    const host = setup(),
-      guest = setup(2);
-    await host.controller.host("Strength A");
-    await join(host, guest, true);
-    expect(guest.controller.getSnapshot()).toMatchObject({
-      phase: "joined",
-      members: [
-        { userId: id(1), host: true },
-        { userId: id(2), host: false },
-      ],
-    });
-    expect(host.controller.getSnapshot().pending).toEqual([]);
-    expect(guest.provisioning.prepare).toHaveBeenCalledWith({ online: false });
-    expect(guest.provisioning.friendship).toHaveBeenCalledWith(id(1), {
-      online: false,
-    });
-    expect(JSON.stringify(guest.controller.getSnapshot())).not.toContain(
-      "seed",
-    );
-  });
+  it.each(["invite-only", "friends", "open"] as const)(
+    "friend explicitly joins %s offline with no further approval",
+    async (audience) => {
+      const host = setup(),
+        guest = setup(2);
+      await host.controller.host("Strength A", audience);
+      await join(host, guest, true);
+      expect(guest.controller.getSnapshot()).toMatchObject({
+        phase: "joined",
+        members: [
+          { userId: id(1), host: true },
+          { userId: id(2), host: false },
+        ],
+      });
+      expect(host.controller.getSnapshot().pending).toEqual([]);
+      expect(guest.provisioning.prepare).toHaveBeenCalledWith({
+        online: false,
+      });
+      expect(guest.provisioning.friendship).toHaveBeenCalledWith(id(1), {
+        online: false,
+      });
+      expect(JSON.stringify(guest.controller.getSnapshot())).not.toContain(
+        "seed",
+      );
+    },
+  );
   it("strangers remain pending until actual host approval and decline is authenticated", async () => {
     const host = setup(),
       guest = setup(2);
@@ -461,30 +467,33 @@ describe("reviewed lobby coordinator, real cryptography and SQLite, simulated na
     expect(pending.controller.getSnapshot().phase).toBe("full");
     expect(host.controller.getSnapshot().phase).toBe("hosting");
   });
-  it("reconnects using same signed consent and journal after native disconnect", async () => {
-    const host = setup(),
-      guest = setup(2);
-    await host.controller.host("Strength A");
-    await join(host, guest, true);
-    host.native.emit({ type: "disconnected", peerId: id(12) });
-    guest.native.emit({ type: "disconnected", peerId: "host" });
-    expect(guest.controller.getSnapshot().phase).toBe("reconnecting");
-    await guest.controller.reconnect();
-    const sessionId = JSON.parse(host.controller.getSnapshot().invitation!)
-      .payload.sessionId;
-    guest.native.emit({
-      type: "discovered",
-      endpointId: "nearby",
-      lobbyId: sessionId,
-    });
-    await settle();
-    host.native.emit({ type: "connected", peerId: id(12), incoming: true });
-    guest.native.emit({ type: "connected", peerId: "host", incoming: false });
-    await settle();
-    expect(guest.controller.getSnapshot().phase).toBe("joined");
-    expect(guest.controller.getSnapshot().members).toHaveLength(2);
-    expect(guest.native.stop).toHaveBeenCalledTimes(1);
-  });
+  it.each(["invite-only", "friends"] as const)(
+    "reconnects %s using same signed consent and journal after native disconnect",
+    async (audience) => {
+      const host = setup(),
+        guest = setup(2);
+      await host.controller.host("Strength A", audience);
+      await join(host, guest, true);
+      host.native.emit({ type: "disconnected", peerId: id(12) });
+      guest.native.emit({ type: "disconnected", peerId: "host" });
+      expect(guest.controller.getSnapshot().phase).toBe("reconnecting");
+      await guest.controller.reconnect();
+      const sessionId = JSON.parse(host.controller.getSnapshot().invitation!)
+        .payload.sessionId;
+      guest.native.emit({
+        type: "discovered",
+        endpointId: "nearby",
+        lobbyId: sessionId,
+      });
+      await settle();
+      host.native.emit({ type: "connected", peerId: id(12), incoming: true });
+      guest.native.emit({ type: "connected", peerId: "host", incoming: false });
+      await settle();
+      expect(guest.controller.getSnapshot().phase).toBe("joined");
+      expect(guest.controller.getSnapshot().members).toHaveLength(2);
+      expect(guest.native.stop).toHaveBeenCalledTimes(1);
+    },
+  );
   it("discovery session names cannot select or replace a signed host", async () => {
     const guest = setup(2);
     await guest.controller.selectInvite(invitation());
@@ -522,6 +531,55 @@ describe("reviewed lobby coordinator, real cryptography and SQLite, simulated na
       expect(value.native.startHost).not.toHaveBeenCalled();
     },
   );
+  it("keeps the admitted roster during iOS interruptions but retires it on true background", async () => {
+    const host = setup();
+    const guest = setup(2);
+    const issued = person(1);
+    jest.mocked(host.provisioning.prepare).mockResolvedValue(ok(issued));
+    let appEvent!: (state: string) => void;
+    const unbind = bindTogetherLobby(
+      {
+        getPersistedSession: async () => null,
+        getSession: jest.fn(),
+        onAuthStateChange: () => () => {},
+      },
+      { isConnected: async () => false, subscribe: () => () => {} },
+      {
+        currentState: "active",
+        addEventListener: (_, callback) => {
+          appEvent = callback;
+          return { remove: () => {} };
+        },
+      },
+      host.controller,
+    );
+    // Complete auth bootstrap before establishing the real signed lobby.
+    await settle();
+    host.controller.setAccount(id(1));
+    await host.controller.host("A");
+    await join(host, guest, true);
+    const before = host.controller.getSnapshot();
+    expect(before.members).toHaveLength(2);
+    appEvent("inactive");
+    await settle();
+    expect(host.controller.getSnapshot()).toEqual(before);
+    expect(host.native.stop).not.toHaveBeenCalled();
+    expect(issued.seed.some((n) => n !== 0)).toBe(true);
+    appEvent("active");
+    expect(host.controller.getSnapshot()).toEqual(before);
+    appEvent("background");
+    await settle();
+    expect(host.controller.getSnapshot().members).toEqual([]);
+    expect(host.native.stop).toHaveBeenCalledTimes(1);
+    expect(issued.seed.every((n) => n === 0)).toBe(true);
+    appEvent("inactive");
+    appEvent("active");
+    await settle();
+    // Foregrounding cannot silently resurrect terminal membership/signing keys.
+    expect(host.controller.getSnapshot().members).toEqual([]);
+    expect(host.native.startHost).toHaveBeenCalledTimes(1);
+    unbind();
+  });
   it("clears credentials and native resources on expiry, background and account changes", async () => {
     const value = setup();
     const issued = person(1);
@@ -1060,6 +1118,30 @@ describe("reviewed lobby coordinator, real cryptography and SQLite, simulated na
     await settle();
     expect(guest.controller.getSnapshot().phase).toBe("joined");
   });
+  it("friends hosts reveal no public summary and reject missing friendship before connecting", async () => {
+    const host = setup(),
+      guest = setup(2);
+    await host.controller.host("Friends", "friends");
+    expect(
+      JSON.parse(host.controller.getSnapshot().invitation!).payload.audience,
+    ).toBe("friends");
+    await guest.controller.browse();
+    await probe(host, guest);
+    expect(guest.controller.getSnapshot().discovered).toEqual([]);
+    expect(host.native.send).not.toHaveBeenCalled();
+    await guest.controller.cancel();
+    guest.native.connect.mockClear();
+    await guest.controller.selectInvite(
+      host.controller.getSnapshot().invitation!,
+    );
+    await guest.controller.join();
+    expect(guest.controller.getSnapshot()).toMatchObject({
+      phase: "unavailable",
+      error: "friendship-required",
+    });
+    expect(guest.native.connect).not.toHaveBeenCalled();
+    expect(host.controller.getSnapshot().pending).toEqual([]);
+  });
   it("private hosts never disclose summary; their invite token admits only through normal approval", async () => {
     const host = setup(),
       guest = setup(2);
@@ -1245,6 +1327,8 @@ describe("reviewed lobby coordinator, real cryptography and SQLite, simulated na
     await join(host, guest, true);
     await host.controller.workout.promote(workout());
     await guest.controller.workout.promote(workout(2));
+    // Publication is deliberately outside the local input/save task.
+    await jest.advanceTimersByTimeAsync(0);
     await settle();
     await host.controller.shared.publishPlan(
       host.controller.workout.getPlan(id(1), "local-session")!,
@@ -1353,6 +1437,8 @@ describe("reviewed lobby coordinator, real cryptography and SQLite, simulated na
       operation,
       projection.revision,
     );
+    await settle();
+    await jest.advanceTimersByTimeAsync(0);
     await settle();
     expect(
       host.controller.workout.read(id(1), "local-session")!.exercises[0].sets,
