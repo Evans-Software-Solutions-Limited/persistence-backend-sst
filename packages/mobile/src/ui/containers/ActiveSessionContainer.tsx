@@ -1,3 +1,5 @@
+import { useTogetherEndNavigation } from "@/ui/hooks/useTogetherEndNavigation";
+import { discardTogetherSession } from "@/application/commands/session/discard-together-session.command";
 import { useTogetherGate } from "@/ui/hooks/useTogetherGate";
 /**
  * ActiveSessionContainer — owns session state + mutations for the
@@ -124,6 +126,7 @@ export function ActiveSessionContainer() {
   const requestedWorkoutId = params.workoutId ?? null;
 
   const { session, userId, authLoading, rereadCache } = useActiveSession();
+  useTogetherEndNavigation(userId, storage, togetherLobby, togetherCloud);
   const historyKey = session
     ? `${session.id}:${session.startedAt}:${session.exercises
         .filter((e) => !e.skipped)
@@ -740,16 +743,6 @@ export function ActiveSessionContainer() {
     // this gate the user can tap Complete on an empty session, Submit
     // on rating, and record a 0-set workout to the server.
     if (!session) return;
-    if (session.together) {
-      router.push({
-        pathname:
-          session.together.transport === "cloud"
-            ? "/(app)/session/together-cloud-review"
-            : "/(app)/session/together-review",
-        params: { localSessionId: session.id },
-      } as never);
-      return;
-    }
     const hasLoggedSet = session.exercises.some((ex) => {
       const category = templateByExercise[ex.id]?.category;
       return ex.sets.some((set) =>
@@ -792,17 +785,22 @@ export function ActiveSessionContainer() {
       { onBehalfClientId },
     );
     if (!result.ok && result.error.kind === "together_completion_pending") {
-      const own = storage.getActiveSession(userId);
-      if (own?.together)
-        router.push({
-          pathname:
-            own.together.transport === "cloud"
-              ? "/(app)/session/together-cloud-review"
-              : "/(app)/session/together-review",
-          params: { localSessionId: own.id },
-        } as never);
-      else Alert.alert("Workout saved locally", result.error.message);
-      return;
+      try {
+        discardTogetherSession({
+          storage,
+          userId: userId,
+          localSessionId: session!.id,
+          workout: togetherLobby?.workout,
+          cloud: togetherCloud,
+        });
+        void togetherLobby?.cancel().catch(() => {});
+      } catch {
+        Alert.alert(
+          "Could not close the workout",
+          "Your workout is still on this device. Please try End again.",
+        );
+        return;
+      }
     }
     // Clear the UI-state slice too (Bug fix, Inspector Brad 🟡) — match the
     // overlay's end path. Without this, slice.active + the AsyncStorage pointer
@@ -811,7 +809,7 @@ export function ActiveSessionContainer() {
     // session once M8 wires start() to populate them.
     void useActiveWorkout.getState().end();
     router.dismissAll();
-  }, [userId, storage]);
+  }, [userId, storage, session, togetherLobby, togetherCloud]);
 
   // Existing-exercise ids gate every picker (Add, Add-to-Superset,
   // Swap) — Brad's rule after the in-place swap fix landed: no

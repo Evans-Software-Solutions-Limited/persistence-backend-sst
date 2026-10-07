@@ -232,6 +232,14 @@ export function createCloudApis(
           cursor,
           { audience: "friends" },
         ),
+      discard: (id, key) =>
+        call(
+          `${session(id)}/discard`,
+          "POST",
+          (v) => record(v) && v.retired === true,
+          {},
+          key,
+        ),
       finish: (id, key, revision, leave) =>
         call(
           `${session(id)}/${leave ? "leave" : "finish"}`,

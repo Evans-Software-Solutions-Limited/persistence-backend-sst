@@ -1,5 +1,21 @@
 # Persistence Together — frontend agent
 
+## Completion correction — 7 October 2026
+
+Brad requires normal workout completion for Together: Complete and shared End
+choices enter the existing rating screen, save only the current athlete’s result,
+clear the active workout and show the existing saved-workout summary. Other
+athletes receiving finish-all enter their own rating flow. The bespoke review
+route remains an explicit exception/recovery path for unsupported retained edits,
+not the default ending screen. Canonical PR/monthly stats are read after server
+effects finish; local set/volume stats are available immediately after confirmation.
+
+End → confirmed discard must retire the current own draft without a result and
+clear the active UI, including broken/offline states. Keep its durable journal;
+reconcile deferred cloud membership retirement before a later admission. Never
+finish or discard another workout because route/account state changed. Starting
+Together has one stable preparing body and pinned Cancel through promotion.
+
 ## Current integration — 5 October 2026
 
 The consolidated PR on merged #485 (`bc4c34f3`) wires the reviewed lobby to

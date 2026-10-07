@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
+import { withTogetherCloudWorkout } from "../../storage/withTogetherCloudWorkout";
+import { InMemoryStorageAdapter } from "../../storage/__tests__/in-memory-storage.adapter";
 import { TogetherCloudController } from "../cloudSession";
 import { promoteCloudDraft } from "../cloudDraft";
 import type {
@@ -167,6 +169,8 @@ describe("cloud authoritative personal checkpoint", () => {
           event: { newVersion: p.ownRevision },
         });
       }),
+      discard: jest.fn(async () => ok({ retired: true as const })),
+      cancelJoin: jest.fn(async () => ok({ cancelled: true })),
       finish: jest.fn(async () => {
         server.participants[0].status = "saved";
         server.completion.status = "saved";
@@ -207,6 +211,290 @@ describe("cloud authoritative personal checkpoint", () => {
       directory = undefined;
     }
   });
+  it("retires a pending cloud draft across restart, keeps the journal and suppresses an old unmarked personal mirror", async () => {
+    const base = new InMemoryStorageAdapter();
+    base.cacheActiveSession(userId, draft());
+    jest
+      .mocked(api.create)
+      .mockResolvedValueOnce(
+        fail({ kind: "api", code: "network", message: "offline" }),
+      );
+    await expect(controller.hostWorkout(draft())).rejects.toThrow();
+    const stored = () =>
+      JSON.parse(
+        (
+          db
+            .prepare(
+              "SELECT payload FROM together_cloud_workout WHERE account_id = ?",
+            )
+            .get(userId) as { payload: string }
+        ).payload,
+      );
+    const journal = copy(stored().pending);
+    expect(journal).toHaveLength(1);
+    const stale = controller.readDraft(userId)!;
+    expect(() => controller.discardDraft(other, stale.id)).toThrow(
+      "cloud-account",
+    );
+    expect(() => controller.discardDraft(userId, "wrong-id")).toThrow(
+      "cloud-missing-draft",
+    );
+    controller.discardDraft(userId, stale.id);
+    controller.dispose();
+    controller = new TogetherCloudController({
+      api,
+      db: adapter(db),
+      randomUUID,
+    });
+    controller.setAccount(userId);
+    const storage = withTogetherCloudWorkout(base, controller, base);
+    expect(controller.readDraft(userId)?.status).toBe("cancelled");
+    expect(storage.getActiveSession(userId)).toBeNull();
+    expect(stored().pending).toEqual(journal);
+    expect(() => controller.saveDraft(userId, stale)).toThrow(
+      "cloud-workout-finished",
+    );
+    expect(() => storage.clearActiveSession(userId)).not.toThrow();
+    storage.cacheActiveSession(userId, { ...draft(), id: "new-personal" });
+    expect(storage.getActiveSession(userId)?.id).toBe("new-personal");
+    expect(stored().pending).toEqual(journal);
+  });
+
+  it.each(["host", "join"])(
+    "starts a new %s after discard and restart while preserving the old journal in an archive",
+    async (mode) => {
+      controller.dispose();
+      db.close();
+      directory = mkdtempSync(join(tmpdir(), "together-discard-"));
+      const file = join(directory, "checkpoint.sqlite");
+      db = new DatabaseSync(file);
+      controller = new TogetherCloudController({
+        api,
+        db: adapter(db),
+        randomUUID,
+      });
+      controller.setAccount(userId);
+      jest
+        .mocked(api.create)
+        .mockResolvedValueOnce(
+          fail({ kind: "api", code: "network", message: "offline" }),
+        );
+      await expect(controller.hostWorkout(draft())).rejects.toThrow();
+      const before = JSON.parse(
+        (
+          db
+            .prepare(
+              "SELECT payload FROM together_cloud_workout WHERE account_id = ?",
+            )
+            .get(userId) as { payload: string }
+        ).payload,
+      );
+      controller.discardDraft(userId, draft().id);
+      controller.dispose();
+      db.close();
+      db = new DatabaseSync(file);
+      controller = new TogetherCloudController({
+        api,
+        db: adapter(db),
+        randomUUID,
+      });
+      controller.setAccount(userId);
+      const next = { ...draft(), id: "next-workout" };
+      next.exercises.forEach((exercise) => {
+        exercise.sessionId = next.id;
+      });
+      if (mode === "host") await controller.hostWorkout(next);
+      else await controller.join({ sessionId: server.sessionId }, next);
+      expect(api.discard).toHaveBeenCalledWith(
+        server.sessionId,
+        expect.any(String),
+      );
+      expect(controller.readDraft(userId)?.id).toBe("next-workout");
+      expect(controller.readDraft(userId)?.status).toBe("in_progress");
+      const archive = JSON.parse(
+        (
+          db
+            .prepare(
+              "SELECT payload FROM together_cloud_workout_archive WHERE account_id = ? AND local_session_id = ?",
+            )
+            .get(userId, draft().id) as { payload: string }
+        ).payload,
+      );
+      expect(archive.discarded).toBe(true);
+      expect(archive.personal.status).toBe("cancelled");
+      expect(archive.pending).toEqual(before.pending);
+    },
+  );
+
+  it("keeps discard durable when remote retirement fails and retries the same key before new admission", async () => {
+    await controller.hostWorkout(draft());
+    controller.discardDraft(userId, draft().id);
+    jest
+      .mocked(api.discard)
+      .mockResolvedValueOnce(
+        fail({ kind: "api", code: "network", message: "offline" }),
+      );
+    const next = { ...draft(), id: "next" };
+    next.exercises.forEach((e) => {
+      e.sessionId = next.id;
+    });
+    await expect(controller.hostWorkout(next)).rejects.toThrow("network");
+    expect(controller.readDraft(userId)).toMatchObject({
+      id: draft().id,
+      status: "cancelled",
+    });
+    expect(api.create).toHaveBeenCalledTimes(1);
+    const retirementKey = jest.mocked(api.discard).mock.calls[0][1];
+    controller.dispose();
+    controller = new TogetherCloudController({
+      api,
+      db: adapter(db),
+      randomUUID,
+    });
+    controller.setAccount(userId);
+    await controller.hostWorkout(next);
+    expect(api.discard).toHaveBeenLastCalledWith(
+      server.sessionId,
+      retirementKey,
+    );
+    expect(api.create).toHaveBeenCalledTimes(2);
+    expect(api.finish).not.toHaveBeenCalled();
+  });
+  it("cancels a still-pending join without inventing an admitted membership", async () => {
+    const pending = {
+      requestId: randomUUID(),
+      sessionId: server.sessionId,
+      status: "pending" as const,
+    };
+    jest.mocked(api.join).mockResolvedValueOnce(ok(pending));
+    jest.mocked(api.joinStatus).mockResolvedValueOnce(ok(pending));
+    await controller.join({ sessionId: server.sessionId }, draft());
+    controller.discardDraft(userId, draft().id);
+    await controller.retry();
+    expect(api.cancelJoin).toHaveBeenCalledWith(
+      pending.requestId,
+      expect.any(String),
+    );
+    expect(api.discard).not.toHaveBeenCalled();
+  });
+  it("does not admit or overwrite a different account after retirement responds late", async () => {
+    await controller.hostWorkout(draft());
+    controller.discardDraft(userId, draft().id);
+    let release!: () => void;
+    jest.mocked(api.discard).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = () => resolve(ok({ retired: true }));
+        }),
+    );
+    const next = { ...draft(), id: "next" };
+    next.exercises.forEach((e) => {
+      e.sessionId = next.id;
+    });
+    const starting = controller.hostWorkout(next);
+    controller.setAccount(other);
+    release();
+    await expect(starting).rejects.toThrow("cloud-cancelled");
+    expect(controller.readDraft(other)).toBeNull();
+    expect(api.create).toHaveBeenCalledTimes(1);
+    controller.setAccount(userId);
+    expect(controller.readDraft(userId)?.status).toBe("cancelled");
+  });
+  it("coalesces concurrent retirement and admits only one replacement workout", async () => {
+    await controller.hostWorkout(draft());
+    controller.discardDraft(userId, draft().id);
+    let release!: () => void;
+    jest.mocked(api.discard).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = () => resolve(ok({ retired: true }));
+        }),
+    );
+    const next = { ...draft(), id: "next" };
+    next.exercises.forEach((e) => {
+      e.sessionId = next.id;
+    });
+    const first = controller.hostWorkout(next);
+    const second = controller.hostWorkout(next);
+    release();
+    const results = await Promise.allSettled([first, second]);
+    expect(results.map((r) => r.status).sort()).toEqual([
+      "fulfilled",
+      "rejected",
+    ]);
+    expect(api.discard).toHaveBeenCalledTimes(1);
+    expect(api.create).toHaveBeenCalledTimes(2);
+  });
+  it("retires membership when pending join cancellation races host approval", async () => {
+    jest.mocked(api.join).mockResolvedValueOnce(
+      ok({
+        requestId: randomUUID(),
+        sessionId: server.sessionId,
+        status: "pending",
+      }),
+    );
+    jest.mocked(api.joinStatus).mockResolvedValueOnce(
+      ok({
+        requestId: randomUUID(),
+        sessionId: server.sessionId,
+        status: "pending",
+      }),
+    );
+    await controller.join({ sessionId: server.sessionId }, draft());
+    controller.discardDraft(userId, draft().id);
+    jest.mocked(api.cancelJoin).mockResolvedValueOnce(
+      fail({
+        kind: "api",
+        code: "server",
+        togetherCode: "ALREADY_ADMITTED",
+        message: "approved",
+      }),
+    );
+    await controller.retry();
+    expect(api.discard).toHaveBeenCalledWith(
+      server.sessionId,
+      expect.any(String),
+    );
+    expect(controller.readDraft(userId)?.status).toBe("cancelled");
+    expect(api.finish).not.toHaveBeenCalled();
+  });
+  it("rolls back both archive and discard if the current checkpoint cannot be retired", async () => {
+    await controller.hostWorkout(draft());
+    db.exec(
+      "CREATE TRIGGER fail_discard BEFORE UPDATE ON together_cloud_workout BEGIN SELECT RAISE(ABORT, 'disk failure'); END",
+    );
+    expect(() => controller.discardDraft(userId, draft().id)).toThrow(
+      "disk failure",
+    );
+    expect(controller.readDraft(userId)?.status).toBe("in_progress");
+    expect(
+      db
+        .prepare("SELECT count(*) AS n FROM together_cloud_workout_archive")
+        .get(),
+    ).toEqual({ n: 0 });
+  });
+
+  it("does not reactivate discarded local work when a newer server execution arrives", async () => {
+    await controller.hostWorkout(draft());
+    controller.discardDraft(userId, draft().id);
+    server.participants[0].ownRevision++;
+    server.revision++;
+    server.participants[0].execution!.exercises[0].sets[0].reps = 99;
+    await controller.retry();
+    expect(controller.readDraft(userId)?.status).toBe("cancelled");
+    const base = new InMemoryStorageAdapter();
+    expect(
+      withTogetherCloudWorkout(base, controller, base).getActiveSession(userId),
+    ).toBeNull();
+    const revived = {
+      ...controller.readDraft(userId)!,
+      status: "in_progress" as const,
+    };
+    expect(() => controller.saveDraft(userId, revived)).toThrow(
+      "cloud-workout-finished",
+    );
+  });
+
   it("preserves prelogged complete personal snapshot and stable canonical IDs through partial/remove and finish", async () => {
     await controller.hostWorkout(draft());
     expect(controller.readDraft(userId)?.notes).toBe("Keep notes");

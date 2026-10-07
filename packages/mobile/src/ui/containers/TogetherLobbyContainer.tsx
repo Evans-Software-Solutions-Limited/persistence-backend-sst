@@ -1,3 +1,4 @@
+import { TogetherPreparingPresenter } from "@/ui/presenters/TogetherPreparingPresenter";
 import { TogetherStartRow } from "@/ui/presenters/TogetherStartRow";
 import { TogetherWorkoutRow } from "@/ui/presenters/TogetherWorkoutRow";
 import { TogetherCloudContainer } from "./TogetherCloudContainer";
@@ -243,7 +244,7 @@ export function TogetherLobbyContainer({
     const scope = ++hostGeneration.current;
     const draft = getWorkout?.();
     const promote = !!(lobby.workout && draft);
-    setStartingWorkout(promote);
+    setStartingWorkout(true);
     setStartFailed(false);
     setSettingsOpen(false);
     setNotice("");
@@ -398,7 +399,7 @@ export function TogetherLobbyContainer({
               if (localSessionId) {
                 dismiss();
                 router.push({
-                  pathname: "/(app)/session/together-review",
+                  pathname: "/(app)/session/rate",
                   params: { localSessionId },
                 } as never);
               }
@@ -449,6 +450,17 @@ export function TogetherLobbyContainer({
     );
   if (snapshot.phase === "disabled" || (!allowNewSharing && !workoutStatus))
     return children?.(null) ?? null;
+  // A host start traverses idle cleanup, credential preparation and promotion.
+  // Keep one cancellable screen until the complete start action settles.
+  const startingSession =
+    startingWorkout ||
+    (!!initialHostAudience &&
+      !consumedHostIntent.current &&
+      visible &&
+      (snapshot.phase === "idle" || snapshot.phase === "preparing") &&
+      !(
+        initialHostAudience === "friends" && initialHostConnection === "online"
+      ));
   const showInvitation =
     snapshot.phase === "hosting" &&
     snapshot.role === "host" &&
@@ -546,6 +558,10 @@ export function TogetherLobbyContainer({
       <BottomSheet
         visible={visible}
         onClose={() => {
+          if (startingSession) {
+            close();
+            return;
+          }
           dismiss();
           if (browsingIntent.current) {
             browsingIntent.current = false;
@@ -553,29 +569,37 @@ export function TogetherLobbyContainer({
           }
         }}
         title={
-          showInvitation
-            ? "Session is live"
-            : settingsOpen && snapshot.phase === "hosting"
-              ? "Together settings"
-              : snapshot.phase === "selected"
-                ? "Join this workout"
-                : screen === "join"
-                  ? "Join a session"
-                  : snapshot.phase === "idle" && !workoutStatus
-                    ? "Who can join?"
-                    : "Train together"
+          startingSession
+            ? "Starting Together"
+            : showInvitation
+              ? "Session is live"
+              : settingsOpen && snapshot.phase === "hosting"
+                ? "Together settings"
+                : snapshot.phase === "selected"
+                  ? "Join this workout"
+                  : screen === "join"
+                    ? "Join a session"
+                    : snapshot.phase === "idle" && !workoutStatus
+                      ? "Who can join?"
+                      : "Train together"
         }
         eyebrow="TRAIN TOGETHER"
         height="tall"
         footer={
-          showInvitation ? (
+          startingSession ? (
+            <Btn full variant="outline" onPress={close}>
+              Cancel · keep my workout
+            </Btn>
+          ) : showInvitation ? (
             <Btn full onPress={dismiss}>
               Back to my workout
             </Btn>
           ) : undefined
         }
       >
-        {showInvitation ? (
+        {startingSession ? (
+          <TogetherPreparingPresenter />
+        ) : showInvitation ? (
           <TogetherInvitePresenter
             qr={
               <View padding={8} backgroundColor="white">
@@ -600,11 +624,6 @@ export function TogetherLobbyContainer({
           />
         ) : (
           <>
-            {startingWorkout && (
-              <Text color="$text2" accessibilityLiveRegion="polite">
-                Preparing your shared workout…
-              </Text>
-            )}
             {startFailed && workoutStatus && snapshot.phase === "hosting" && (
               <Btn
                 full

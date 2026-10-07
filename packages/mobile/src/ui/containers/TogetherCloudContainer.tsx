@@ -378,7 +378,7 @@ export function TogetherCloudContainer(p: {
   const review = (mode?: string) => {
     setVisible(false);
     router.push({
-      pathname: "/(app)/session/together-cloud-review",
+      pathname: "/(app)/session/rate",
       params: { localSessionId: current?.id, mode },
     } as never);
   };

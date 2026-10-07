@@ -216,6 +216,17 @@ export class TogetherWorkoutCheckpoint implements TogetherWorkoutPort {
     );
     return row ? (JSON.parse(row.payload) as Checkpoint) : null;
   }
+  discard(userId: string, localId: string) {
+    const c = this.load(userId, localId);
+    if (!c) throw new Error("workout-not-promoted");
+    c.snapshot = {
+      ...c.snapshot,
+      status: "cancelled",
+      completedAt: new Date().toISOString(),
+    };
+    this.persist(c, []);
+    this.changed();
+  }
   read(userId: string, localId: string): WorkoutSession | null {
     const checkpoint = this.load(userId, localId);
     return checkpoint ? this.editableSnapshot(checkpoint) : null;
@@ -239,6 +250,10 @@ export class TogetherWorkoutCheckpoint implements TogetherWorkoutPort {
       together: {
         sessionId: checkpoint.sessionId,
         executionId: checkpoint.executionId,
+        ...(checkpoint.snapshot.status === "completed" &&
+        checkpoint.recovery?.review?.historyId
+          ? { historyId: checkpoint.recovery.review.historyId }
+          : {}),
         checkpointVersion: snapshotToken(checkpoint),
       },
     };

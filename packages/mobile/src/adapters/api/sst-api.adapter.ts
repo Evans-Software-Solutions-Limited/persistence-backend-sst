@@ -846,8 +846,11 @@ export class SSTApiAdapter implements ApiPort {
     return this.requestEnvelope<ApiSession[]>("/sessions", { params });
   }
 
-  async getSession(id: string) {
-    return this.requestEnvelope<ApiSession>(`/sessions/${id}`);
+  async getSession(id: string, options?: { summary?: boolean }) {
+    return this.requestEnvelope<ApiSession>(
+      `/sessions/${id}`,
+      options?.summary ? { params: { summary: "true" } } : undefined,
+    );
   }
 
   async createSession(data: CreateSessionInput) {

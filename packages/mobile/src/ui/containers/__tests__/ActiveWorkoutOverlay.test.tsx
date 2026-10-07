@@ -442,7 +442,7 @@ it("keeps promoted workout and active pointer when ending from the minimized bar
 });
 
 it.each(["cloud", "offline"] as const)(
-  "ending a %s Together workout opens review and preserves its personal pointer",
+  "explicitly discards a %s Together workout and closes its personal pointer",
   async (transport) => {
     const { adapters, storage, auth } = makeAdapters();
     signIn(auth);
@@ -465,21 +465,32 @@ it.each(["cloud", "offline"] as const)(
       },
       expanded: false,
     });
+    const discard = jest.fn(() =>
+      storage.cacheActiveSession(USER, {
+        ...storage.getActiveSession(USER)!,
+        status: "cancelled",
+      }),
+    );
+    if (transport === "cloud")
+      adapters.togetherCloud = {
+        discardDraft: discard,
+        subscribe: () => () => {},
+      } as unknown as NonNullable<Adapters["togetherCloud"]>;
+    else
+      adapters.togetherLobby = {
+        workout: { discard, subscribe: () => () => {} },
+        cancel: jest.fn(async () => {}),
+      } as unknown as NonNullable<Adapters["togetherLobby"]>;
     const r = renderOverlay(adapters);
     await waitFor(() =>
       expect(r.getByTestId("active-workout-bar")).toBeTruthy(),
     );
     fireEvent(r.getByTestId("active-workout-bar"), "longPress");
     fireEvent.press(r.getByTestId("end-confirm-dialog-end"));
-    expect(mockPush).toHaveBeenCalledWith({
-      pathname:
-        transport === "cloud"
-          ? "/(app)/session/together-cloud-review"
-          : "/(app)/session/together-review",
-      params: { localSessionId: "local-abc" },
-    });
-    expect(storage.getActiveSession(USER)?.status).toBe("in_progress");
-    expect(useActiveWorkout.getState().active?.sessionId).toBe("local-abc");
+    expect(discard).toHaveBeenCalledWith(USER, "local-abc");
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(storage.getActiveSession(USER)).toBeNull();
+    expect(useActiveWorkout.getState().active).toBeNull();
     expect(storage.getPendingMutations()).toHaveLength(0);
   },
 );

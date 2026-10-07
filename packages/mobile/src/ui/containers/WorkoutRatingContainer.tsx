@@ -1,3 +1,4 @@
+import { completeTogetherSession } from "@/application/commands/session/complete-together-session.command";
 /**
  * WorkoutRatingContainer — owns the rating-screen submit. Reads the
  * in-progress session via `useActiveSession`; on Submit fires
@@ -9,8 +10,8 @@
  */
 
 import { Alert } from "react-native";
-import { router } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
+import { router, useLocalSearchParams } from "expo-router";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getApiBaseUrl } from "@/adapters/api";
 import { completeSessionCommand } from "@/application/commands/session";
 import { processSyncQueue } from "@/application/commands/sync.command";
@@ -21,35 +22,118 @@ import { useAuth } from "@/ui/hooks/useAuth";
 import { WorkoutRatingPresenter } from "@/ui/presenters/WorkoutRatingPresenter";
 
 export function WorkoutRatingContainer() {
-  const { storage, auth } = useAdapters();
+  const { storage, auth, togetherLobby, togetherCloud } = useAdapters();
+  const params = useLocalSearchParams<{
+    mode?: string;
+    localSessionId?: string;
+  }>();
   const { session: authSession } = useAuth();
-  const { session, userId } = useActiveSession();
+  const { session: activeSession, userId } = useActiveSession();
+  const latest = userId ? storage.getLatestSession(userId) : null;
+  const ratingOwner = useRef<{ userId: string; id: string } | null>(null);
+  if (userId && ratingOwner.current?.userId !== userId)
+    ratingOwner.current = null;
+  if (userId && activeSession && !ratingOwner.current)
+    ratingOwner.current = { userId, id: activeSession.id };
+  const expectedId = params.localSessionId ?? ratingOwner.current?.id;
+  const session =
+    (activeSession?.id === expectedId ? activeSession : null) ??
+    (latest?.together && latest.id === expectedId ? latest : null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const submitting = useRef(false);
+  const owner = useRef(userId);
+  owner.current = userId;
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   // Race-guard: bounce back ONLY after auth has resolved AND no
   // in-progress session is present. Routing back while auth is still
   // pending would unmount the screen before the user could interact.
   const authResolved = authSession !== undefined && authSession !== null;
   useEffect(() => {
-    if (session?.together) {
-      router.replace({
-        pathname:
-          session.together.transport === "cloud"
-            ? "/(app)/session/together-cloud-review"
-            : "/(app)/session/together-review",
-        params: { localSessionId: session.id },
-      } as never);
-      return;
-    }
-    if (authResolved && !session) {
+    if (authResolved && !session && !submitting.current) {
       router.back();
     }
   }, [authResolved, session]);
 
   const onSubmit = useCallback(
     (rating: number, notes: string) => {
-      if (!userId || isSubmitting) return;
+      if (!userId || submitting.current) return;
+      submitting.current = true;
       setIsSubmitting(true);
+      if (session?.together) {
+        const isCurrent = () =>
+          mounted.current &&
+          owner.current === userId &&
+          storage.getLatestSession(userId)?.id === session.id;
+        void completeTogetherSession(
+          {
+            storage,
+            workout: togetherLobby?.workout,
+            cloud: togetherCloud,
+            userId,
+            localSessionId: session.id,
+            isCurrent,
+          },
+          { rating, notes, mode: params.mode },
+        )
+          .then(async (saved) => {
+            if (!isCurrent()) return;
+            // The durable result has closed the active session before navigation.
+            await useActiveWorkout.getState().end();
+            if (!isCurrent()) return;
+            void togetherLobby?.cancel().catch(() => {});
+            void processSyncQueue(storage, auth, getApiBaseUrl()).catch(
+              () => {},
+            );
+            if (saved.status === "cancelled") {
+              storage.clearActiveSession(userId);
+              router.dismissAll();
+            } else router.replace("/(app)/session/summary" as never);
+          })
+          .catch((error: unknown) => {
+            if (!isCurrent()) return;
+            Alert.alert(
+              "Workout kept on this device",
+              error instanceof Error && error.message === "review-required"
+                ? "Some changes need your review before saving. Your workout has not been discarded."
+                : "Could not confirm the save. Retry when connected, or go Back to end and discard this workout.",
+              [
+                { text: "OK" },
+                ...(error instanceof Error &&
+                error.message === "review-required"
+                  ? [
+                      {
+                        text: "Review changes",
+                        onPress: () => {
+                          if (isCurrent())
+                            router.push({
+                              pathname:
+                                session.together?.transport === "cloud"
+                                  ? "/(app)/session/together-cloud-review"
+                                  : "/(app)/session/together-review",
+                              params: { localSessionId: session.id },
+                            } as never);
+                        },
+                      },
+                    ]
+                  : []),
+              ],
+            );
+          })
+          .finally(() => {
+            if (isCurrent()) {
+              submitting.current = false;
+              setIsSubmitting(false);
+            }
+          });
+        return;
+      }
       // Capture the coach on-behalf context BEFORE end() clears the pointer.
       // Present only for a coach-run Start-live session (M18).
       const withClient = useActiveWorkout.getState().active?.withClient ?? null;
@@ -62,6 +146,7 @@ export function WorkoutRatingContainer() {
         },
       );
       if (!result.ok && result.error.kind === "together_completion_pending") {
+        submitting.current = false;
         setIsSubmitting(false);
         Alert.alert("Workout saved locally", result.error.message);
         return;
@@ -86,6 +171,7 @@ export function WorkoutRatingContainer() {
       if (!result.ok) {
         // No active session → already finalized. Route the user somewhere
         // sensible anyway (Client Detail for the coach, summary otherwise).
+        submitting.current = false;
         setIsSubmitting(false);
         if (withClient) {
           goCoachHome();
@@ -121,14 +207,14 @@ export function WorkoutRatingContainer() {
       // /rate → /summary indefinitely if the user re-finishes.
       router.replace("/(app)/session/summary" as never);
     },
-    [userId, isSubmitting, storage, auth],
+    [userId, session, storage, auth, togetherLobby, togetherCloud, params.mode],
   );
 
   const onBack = useCallback(() => {
     router.back();
   }, []);
 
-  if (!session || session.together) {
+  if (!session) {
     // Auth still resolving OR no session — render nothing; the
     // useEffect above bounces if/when we confirm there's no session.
     return null;

@@ -110,7 +110,7 @@ beforeEach(() => {
   mockCopy.mockReset();
   mockCopy.mockResolvedValue(undefined);
 });
-it("hosts current workout, approves real peer IDs, copies invite and cleans up", () => {
+it("hosts current workout, approves real peer IDs, copies invite and cleans up", async () => {
   const h = harness();
   const r = renderWithTheme(
     <TogetherLobbyContainer
@@ -128,6 +128,7 @@ it("hosts current workout, approves real peer IDs, copies invite and cleans up",
     invitation: "signed",
     pending: [{ userId: "g", peerId: "p" }],
   });
+  await act(async () => {});
   fireEvent.press(r.getByText("Copy"));
   fireEvent.press(r.getByLabelText("Session settings"));
   expect(mockCopy).toHaveBeenCalledWith("signed");
@@ -375,7 +376,7 @@ it("dismiss stops an in-flight browse preparation; code fallback cancels discove
   expect(h.lobby.cancel).toHaveBeenCalledTimes(2);
 });
 
-it("cancelled browsing cannot make a later host dismissal leave the lobby", () => {
+it("cancelled browsing cannot make a later host dismissal leave the lobby", async () => {
   const h = harness();
   const r = renderWithTheme(
     <TogetherLobbyContainer
@@ -394,6 +395,7 @@ it("cancelled browsing cannot make a later host dismissal leave the lobby", () =
   fireEvent.press(r.getByText("Start"));
   fireEvent.press(r.getByText("Start the session"));
   h.publish({ phase: "hosting" });
+  await act(async () => {});
   act(() => mockSheet.mock.calls.at(-1)![0].onClose());
   expect(h.lobby.cancel).toHaveBeenCalledTimes(1);
 });
@@ -1029,7 +1031,7 @@ it("confirms removal and routes an acknowledged closure to own recovery", async 
   );
   expect(h.shared.close).toHaveBeenCalledWith("save_own");
   expect(router.push).toHaveBeenCalledWith({
-    pathname: "/(app)/session/together-review",
+    pathname: "/(app)/session/rate",
     params: { localSessionId: "local" },
   });
 });
@@ -1592,4 +1594,74 @@ it("does not expose new sharing or consume a host action when entry access is de
   expect(r.queryByText("Start the session")).toBeNull();
   expect(h.lobby.host).not.toHaveBeenCalled();
   expect(h.lobby.browse).not.toHaveBeenCalled();
+});
+
+it("keeps one startup screen across host cleanup, credentials and workout promotion", async () => {
+  const h = sharingHarness();
+  let finishHost!: () => void;
+  let finishPromotion!: () => void;
+  jest.mocked(h.lobby.host).mockImplementation(async () => {
+    await new Promise<void>((resolve) => {
+      finishHost = resolve;
+    });
+  });
+  jest.mocked(h.workout.promote).mockReturnValue(
+    new Promise<void>((resolve) => {
+      finishPromotion = resolve;
+    }),
+  );
+  jest.mocked(h.workout.getPlan).mockReturnValue(plan);
+  const r = mountShared(h, { initialHostAudience: "invite-only" });
+  expect(r.getByTestId("together-starting")).toBeTruthy();
+  expect(r.queryByText("Start the session")).toBeNull();
+  h.publish({ phase: "preparing" });
+  expect(mockSheet.mock.calls.at(-1)![0].title).toBe("Starting Together");
+  h.publish({ phase: "hosting", role: "host", invitation: "signed" });
+  await act(async () => finishHost());
+  await waitFor(() => expect(h.workout.promote).toHaveBeenCalledTimes(1));
+  expect(mockSheet.mock.calls.at(-1)![0].title).toBe("Starting Together");
+  expect(r.queryByText("Use my workout in Together")).toBeNull();
+  expect(r.queryByText("Scan to join")).toBeNull();
+  await act(async () => finishPromotion());
+  await waitFor(() => expect(r.getByText("Scan to join")).toBeTruthy());
+  expect(h.lobby.host).toHaveBeenCalledTimes(1);
+});
+
+it.each(["button", "swipe"])(
+  "cancels native startup through %s without reopening when hosting settles",
+  async (mode) => {
+    const h = sharingHarness();
+    let finishHost!: () => void;
+    jest.mocked(h.lobby.host).mockImplementation(async () => {
+      await new Promise<void>((resolve) => {
+        finishHost = resolve;
+      });
+    });
+    const consume = jest.fn();
+    const r = mountShared(h, {
+      initialHostAudience: "invite-only",
+      onConsumeHostIntent: consume,
+    });
+    h.publish({ phase: "preparing" });
+    if (mode === "button")
+      fireEvent.press(r.getByText("Cancel · keep my workout"));
+    else act(() => mockSheet.mock.calls.at(-1)![0].onClose());
+    await waitFor(() => expect(h.lobby.cancel).toHaveBeenCalledTimes(1));
+    h.publish({ phase: "hosting", role: "host", invitation: "signed" });
+    await act(async () => finishHost());
+    expect(mockSheet.mock.calls.at(-1)![0].visible).toBe(false);
+    expect(h.workout.promote).not.toHaveBeenCalled();
+    expect(h.lobby.host).toHaveBeenCalledTimes(1);
+  },
+);
+
+it("leaves startup honestly when credential preparation becomes unavailable", () => {
+  const h = sharingHarness();
+  h.publish({ phase: "preparing" });
+  const r = mountShared(h, { initialHostAudience: "invite-only" });
+  expect(r.getByTestId("together-starting")).toBeTruthy();
+  h.publish({ phase: "unavailable", error: "expired" });
+  expect(r.queryByTestId("together-starting")).toBeNull();
+  expect(mockSheet.mock.calls.at(-1)![0].title).toBe("Train together");
+  expect(h.lobby.host).not.toHaveBeenCalled();
 });

@@ -183,6 +183,7 @@ export interface TogetherCloudApi {
       expiresAt: string;
     }>
   >;
+  discard(id: string, key: string): CloudResult<{ retired: true }>;
   finish(
     id: string,
     key: string,
@@ -246,6 +247,7 @@ export interface TogetherCloudPort {
   cancelJoin(): Promise<void>;
   cancel(): void;
   dispose(): void;
+  discardDraft?(userId: string, localSessionId: string): void;
   readDraft(userId: string): WorkoutSession | null;
   detachDraft(
     userId: string,

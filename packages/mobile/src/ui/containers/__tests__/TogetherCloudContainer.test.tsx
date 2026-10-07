@@ -254,7 +254,7 @@ it("wires host invitations, explicit approvals, scoped grants and reviewed closu
   );
   act(() => settings().onClose("finish_all"));
   expect(mockPush).toHaveBeenCalledWith({
-    pathname: "/(app)/session/together-cloud-review",
+    pathname: "/(app)/session/rate",
     params: { localSessionId: "local", mode: "finish_all" },
   });
 });
@@ -494,7 +494,7 @@ it("ends from the workout strip through review and clears revoked per-recipient 
   const r = renderWithTheme(<TogetherCloudContainer {...h.props} />);
   fireEvent.press(r.getByText("End"));
   expect(mockPush).toHaveBeenCalledWith({
-    pathname: "/(app)/session/together-cloud-review",
+    pathname: "/(app)/session/rate",
     params: { localSessionId: "local", mode: undefined },
   });
   fireEvent.press(r.getByLabelText("Together settings"));
@@ -847,7 +847,9 @@ it("shows the actual online invitation after confirmed Start and retries invitat
     expect(r.getByText(/invitation is not ready/)).toBeTruthy(),
   );
   expect(r.queryByText("Scan to join")).toBeNull();
-  fireEvent.press(r.getByText("Generate new invitation"));
+  await act(async () => {
+    fireEvent.press(r.getByText("Generate new invitation"));
+  });
   await waitFor(() => expect(r.getByText("Scan to join")).toBeTruthy());
   expect(h.cloud.hostWorkout).toHaveBeenCalledTimes(1);
   expect(h.cloud.invite).toHaveBeenCalledTimes(2);
@@ -971,7 +973,9 @@ it("invalidates the single-use invitation after admission and after expiry", asy
     token: "new-invite",
     expiresAt: new Date(Date.now() + 60_000).toISOString(),
   });
-  fireEvent.press(r.getByText("Generate new invitation"));
+  await act(async () => {
+    fireEvent.press(r.getByText("Generate new invitation"));
+  });
   await waitFor(() => expect(r.getByText("Scan to join")).toBeTruthy());
   expect(h.cloud.hostWorkout).toHaveBeenCalledTimes(1);
   const now = jest.spyOn(Date, "now").mockReturnValue(Date.now() + 120_000);

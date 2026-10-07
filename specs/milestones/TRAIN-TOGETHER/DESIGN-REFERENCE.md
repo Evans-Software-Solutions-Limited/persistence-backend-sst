@@ -174,3 +174,11 @@ changes close setup, while existing own-workout recovery remains reachable.
 actual TogetherHubPresenter at 402×874 with simulated props and simplified hub
 chrome. This is browser component evidence, not native navigation or provisioning
 proof. It reuses existing Card/Btn/type tokens for the approved missing states.
+
+### 7 October — normal completion and stable preparation
+
+Brad explicitly requested reuse of normal workout rating, save and stats instead
+of the default bespoke Together review route. The recovery screen remains for
+unsupported retained edits. Preparing and saved-summary screenshots use actual
+presenters with simulated state; see [evidence and limitations](./evidence/ui-2026-10-07/README.md).
+The rating presenter itself is unchanged; no native visual proof is claimed.

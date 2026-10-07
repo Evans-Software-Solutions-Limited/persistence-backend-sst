@@ -1,3 +1,4 @@
+import { hydrateTogetherCompletionSummary } from "@/adapters/together/hydrateCompletionSummary";
 /**
  * SessionSummaryContainer — post-completion stats screen for the
  * `/(app)/session/summary` route. (M3, Story-006.)
@@ -63,9 +64,11 @@ const EMPTY_SUMMARY: SessionSummary = {
 const POLL_INTERVAL_MS = 500;
 
 export function SessionSummaryContainer() {
-  const { storage } = useAdapters();
+  const { storage, api } = useAdapters();
   const { session: authSession } = useAuth();
   const userId = authSession?.userId ?? null;
+  const currentUser = useRef(userId);
+  currentUser.current = userId;
   const weightUnit = useProfilePage().payload?.profile.weightUnit ?? "kg";
 
   // Snapshot the latest session as soon as auth resolves. We hold
@@ -99,7 +102,16 @@ export function SessionSummaryContainer() {
     null,
   );
   useEffect(() => {
-    if (!userId || !snapshot || serverData != null) return;
+    setServerData(null);
+  }, [userId]);
+  useEffect(() => {
+    if (
+      !userId ||
+      !snapshot ||
+      snapshot.userId !== userId ||
+      serverData != null
+    )
+      return;
     const tick = () => {
       const cached = storage.getRecordResponse(userId);
       if (cached && cached.localSessionId === snapshot.id) {
@@ -148,6 +160,47 @@ export function SessionSummaryContainer() {
     // value.
     return localSummary.personalRecords.map(fromLocalPR);
   }, [serverData, localSummary]);
+
+  useEffect(() => {
+    const historyId = snapshot?.together?.historyId;
+    if (
+      !userId ||
+      !snapshot ||
+      snapshot.userId !== userId ||
+      !historyId ||
+      serverData
+    )
+      return;
+    let active = true;
+    let inFlight = false;
+    const hydrate = async () => {
+      if (!active || inFlight) return;
+      inFlight = true;
+      try {
+        await hydrateTogetherCompletionSummary({
+          api,
+          storage,
+          userId,
+          localSessionId: snapshot.id,
+          historyId,
+          isCurrent: () =>
+            active &&
+            currentUser.current === userId &&
+            storage.getLatestSession(userId)?.id === snapshot.id,
+        });
+      } finally {
+        inFlight = false;
+      }
+    };
+    void hydrate();
+    const timer = setInterval(() => {
+      void hydrate();
+    }, 3000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [api, storage, userId, snapshot, serverData]);
 
   const workoutsThisMonth = serverData?.workoutsThisMonth ?? null;
   const recordsHit = displayPersonalRecords.length;
@@ -211,7 +264,7 @@ export function SessionSummaryContainer() {
     router.dismissAll();
   }, [userId, storage]);
 
-  if (!snapshot) {
+  if (!snapshot || snapshot.userId !== userId) {
     // Race: user navigated to /summary before any session existed. Bounce.
     return null;
   }

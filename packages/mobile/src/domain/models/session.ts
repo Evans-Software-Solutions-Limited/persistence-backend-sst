@@ -35,6 +35,8 @@ export type WorkoutSession = {
     sessionId: string;
     executionId: string;
     transport?: "cloud";
+    /** Confirmed own saved result; used only for owner-scoped summary reads. */
+    historyId?: string;
     /** Opaque version of the authoritative local snapshot read by the editor. */
     checkpointVersion?: string;
   };

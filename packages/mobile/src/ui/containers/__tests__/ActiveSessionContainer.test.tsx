@@ -2212,7 +2212,7 @@ describe("ActiveSessionContainer", () => {
 
 describe("Together active workout integration", () => {
   it.each(["cloud", "offline"] as const)(
-    "routes %s completion through own review after paid access ends, even with no logged sets",
+    "keeps the normal empty-set completion guard for %s after paid access ends",
     async (transport) => {
       mockTogetherGate.allowed = false;
       mockTogetherGate.state = "locked";
@@ -2297,13 +2297,7 @@ describe("Together active workout integration", () => {
       alert.mockRestore();
       expect(storage.getActiveSession("user-1")!.restEndsAt).toBeNull();
       fireEvent.press(r.getByTestId("active-session-finish"));
-      expect(mockRouterPush).toHaveBeenCalledWith({
-        pathname:
-          transport === "cloud"
-            ? "/(app)/session/together-cloud-review"
-            : "/(app)/session/together-review",
-        params: { localSessionId: "together-local" },
-      });
+      expect(mockRouterPush).not.toHaveBeenCalled();
       expect(storage.getPendingMutations()).toHaveLength(0);
       r.unmount();
     },

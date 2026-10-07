@@ -1997,6 +1997,59 @@ export class TogetherRepository {
       };
     });
   }
+  /** Explicit own discard retires membership without recording a workout result. */
+  async discard(actor: string, id: string, key: string) {
+    return this.transaction(actor, id, async (tx, s, ps) => {
+      const own = this.member(ps, actor);
+      return replayMutation(tx, actor, `discard:${id}`, key, {}, async () => {
+        // A recording already accepted by Finish must settle before releasing
+        // its membership. Discard cannot race or erase that committed result.
+        requireTogether(own.status !== "finalizing", "RESULT_PENDING", 409);
+        if (own.status !== "active") return { retired: true as const };
+        const wasInRoster = !own.leftAt && !own.removedFromRoster;
+        own.status = "finished_empty";
+        own.leftAt ??= new Date();
+        own.removedFromRoster = actor !== s.hostId;
+        await tx
+          .update(participants)
+          .set({
+            status: own.status,
+            leftAt: own.leftAt,
+            removedFromRoster: own.removedFromRoster,
+          })
+          .where(memberWhere(id, actor));
+        // Removed athletes may retire their private checkpoint, but have no
+        // authority to change grants belonging to the current roster.
+        if (!wasInRoster) return { retired: true as const };
+        // Leaving revokes the roster's former sharing grants, matching Leave.
+        await tx
+          .update(participants)
+          .set({
+            allowPartnerLogging: false,
+            delegationGeneration: sql`${participants.delegationGeneration}+1`,
+            previousRecipientIds: [],
+            numbersRecipientIds: [],
+            previousConsentVersion: sql`${participants.previousConsentVersion}+1`,
+            numbersConsentVersion: sql`${participants.numbersConsentVersion}+1`,
+          })
+          .where(eq(participants.sessionId, id));
+        await tx
+          .update(connections)
+          .set({ revoked: true })
+          .where(
+            and(eq(connections.sessionId, id), eq(connections.userId, actor)),
+          );
+        for (const member of ps) {
+          member.allowPartnerLogging = false;
+          member.delegationGeneration++;
+        }
+        if (actor === s.hostId && s.state === "active")
+          await this.closeSharing(tx, s, ps, "save_own");
+        else await this.emit(tx, s, { type: "membership_changed" });
+        return { retired: true as const };
+      });
+    });
+  }
   async finish(
     actor: string,
     id: string,

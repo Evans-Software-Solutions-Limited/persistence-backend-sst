@@ -17,7 +17,12 @@ export function withTogetherCloudWorkout(
       const draft = own(userId);
       if (draft?.status === "in_progress") return draft;
       const base = storage.getActiveSession(userId);
-      return base?.together?.transport === "cloud" ? null : base;
+      // A pre-promotion mirror may lack the cloud marker. A terminal durable
+      // checkpoint still wins for that same draft, including after a crash
+      // between explicit discard and clearing the personal cache.
+      return base?.id === draft?.id || base?.together?.transport === "cloud"
+        ? null
+        : base;
     },
     getLatestSession(userId) {
       const draft = own(userId);

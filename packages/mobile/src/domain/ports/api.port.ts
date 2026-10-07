@@ -261,7 +261,10 @@ export interface ApiPort extends ReferralsPort {
   getSessions(
     params?: PaginationParams,
   ): Promise<Result<ApiSession[], ApiError>>;
-  getSession(id: string): Promise<Result<ApiSession, ApiError>>;
+  getSession(
+    id: string,
+    options?: { summary?: boolean },
+  ): Promise<Result<ApiSession, ApiError>>;
   createSession(
     data: CreateSessionInput,
   ): Promise<Result<ApiSession, ApiError>>;
@@ -2122,6 +2125,8 @@ export type GetWorkoutsResult = {
 };
 
 export type ApiSession = {
+  personalRecords?: readonly import("./storage.port").RecordResponseSummaryPR[];
+  workoutsThisMonth?: number | null;
   id: string;
   userId: string;
   workoutId: string | null;

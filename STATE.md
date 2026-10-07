@@ -1,5 +1,42 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-07 — PR #488 normal Together completion and escape
+
+[PER-22](https://linear.app/evans-software-solutions/issue/PER-22) /
+[PER-64](https://linear.app/evans-software-solutions/issue/PER-64)
+
+Complete and shared End now use the existing workout rating and saved-summary
+flow. Each athlete confirms only their own result; successful save clears the
+active pointer and closes the lobby. Host finish-all reaches each athlete’s rating
+screen, including late shared-session binding and returning from another screen.
+The rating route binds its original account/workout ID, preventing stale screens
+from saving a replacement workout. Unsupported retained edits remain explicit
+recovery exceptions; network failures preserve retryable personal work.
+
+Confirmed End/discard retires the own durable draft without creating history,
+clears the active UI and cannot resurrect it from an unmarked personal mirror.
+Offline cloud discard retains an idempotent membership-retirement operation that
+must reconcile before a later host/join. The authenticated discard route cannot
+revoke current athletes’ grants when called by an already removed participant.
+Startup renders one preparing body with pinned Cancel until promotion completes;
+cancelled delayed starts cannot reopen. Confirmed results mark logged sets
+completed, fixing empty stats. Owner-only summary reads hydrate canonical PR and
+monthly counts after effects finish without recording a second workout.
+
+Validation: mobile 599 suites / 8,236 tests pass, with coverage
+96.35/91.69/96.38/97.71%. Local Inspector clean after lifecycle, stale-route and
+former-member retirement fixes. Core 397 suites / 5,497 tests pass (98.07/94.30/97.78/98.07%).
+Completion/discard commands have 100% coverage; end-navigation hook 97.67/90.9/
+100/100%; summary hydration helper 100%. Three new rating regressions fail against
+the old container. Typecheck 9/9, lint 6/6 (existing warnings), non-mobile build
+12/12 pass. Actual preparing/summary presenters have simulated browser screenshots
+in evidence/ui-2026-10-07; native rating, gestures and mixed-device proof remain
+owner acceptance work. No native/prebuild/EAS build, deploy, merge or CI Inspector.
+
+Next: owner review of PR #488, backend deployment including discard/summary routes
+and existing opaque-ID sync fix, then trial the normal finish and broken-state
+exit paths with valid paid staging accounts. PR and PER-22/PER-64 remain open.
+
 ### 2026-10-06 — PR #488 paid-access entry guard (PER-22 / PER-64)
 
 The Together entry previously checked only for a configured adapter. New sharing
