@@ -97,3 +97,9 @@ Earlier T0–T7 items remain historical and unchecked; use this superseding chec
 - [ ] **E5** Friends/nearby/reuse, optional foreground permissions and manual fallback (AC5–8,11,13–14; D9).
 - [ ] **E6** Research protocol/prototype and authorized recruitment; record actual evidence and limitations (AC9–10; D7).
 - [ ] **E7** Contract/security/fault tests, two-phone smoke, product pilot, owner build and integrated release evidence (AC1–14; D6–10).
+
+### PER-22 QR scanning follow-up
+
+- Add bounded reversible compact local invitation encoding, preserving existing signed verification and old links.
+- Share a responsive 256px QR renderer with 24px quiet zone across all session invitation surfaces.
+- Verify payload reduction, signature-preserving admission, hostile inputs and display bounds; retain physical two-iPhone scanning acceptance.

@@ -204,3 +204,9 @@ Protocol spike chooses transport/operational ADR and contract fixtures first. Ba
 ### Logging grants on admission
 
 The shared admission transaction clears `allowPartnerLogging` and increments `delegationGeneration` for all existing participants before emitting membership change. This applies equally to host-approved and accepted-friend auto-admission. Membership snapshots expose the revoked state; server authority checks reject both stale generations and new-generation commands while consent is disabled. Explicit re-grant creates a fresh generation for the current roster; old queued commands remain invalid. This is the safe boundary for the current session-wide consent model; recipient-specific delegation requires a separate contract/schema change.
+
+### D13. Scannable invitation envelope (PER-22 QR follow-up)
+
+App links retain the existing join route and connection/transport parameters. Local signed JSON may use a versioned `z1.` DEFLATE/base64url invitation value when shorter than percent-encoded raw authority. Decode exactly to the original signed bytes before adapter verification; retain raw invitation/link compatibility. Bound compressed input and decoded UTF-8 to 6,000 bytes, reject malformed/truncated/oversized envelopes, and never infer admission from decoding. Online opaque tokens remain unchanged. No network shortener or native compression dependency.
+
+All session invitation QR surfaces use a shared responsive renderer: 256px code on a normal phone, bounded to available width on narrow devices, solid black/white, 24px white quiet zone, medium error correction, no logo. Actual iPhone scanning remains staging acceptance.

@@ -142,3 +142,7 @@ AC1–10 remain requirements except their explicitly unresolved choices are reso
 ### Roster-scoped logging consent
 
 Partner-logging consent covers only the current session roster. Every successful admission atomically revokes existing participants' logging grants and increments their delegation generations. A newly admitted participant never inherits a prior grant. Queued commands carrying old generations remain rejected, including commands from previously authorised participants; each owner must explicitly grant logging again for the expanded roster. Existing committed sets remain unchanged.
+
+### QR scanning follow-up (PER-22)
+
+Session invitations reduce QR payload density without dropping signed authority, expiry or admission checks. All invite/settings QR displays have a larger responsive black/white code and clear white margin; old raw invitations continue to join. Validate round-trip signatures and malformed/oversized compressed input, then check OS Camera and in-app scanning on both staging iPhones.
