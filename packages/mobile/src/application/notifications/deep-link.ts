@@ -59,7 +59,7 @@ const LEGACY_REDIRECTS: Record<string, string> = {
  * per-variant constant) so this module stays pure — no expo/Constants import
  * — while still resolving links from any variant's build.
  */
-const APP_SCHEME_RE = /^persistencemobile(?:-[a-z0-9]+)?:\/\//i;
+const APP_SCHEME_RE = /^persistencemobile(?:-[a-z0-9-]+)?:\/\//i;
 
 const SCHEME_HOSTS: Record<string, string> = {
   requests: "/(app)/requests",
@@ -72,6 +72,8 @@ const SCHEME_HOSTS: Record<string, string> = {
   // (`persistencemobile://accept-invite?code=X`) lands on the athlete
   // redeem screen, which reads `code` off the preserved query string.
   "accept-invite": "/(app)/accept-invite",
+  "together/join": "/(app)/together/join",
+  "together/partners": "/(app)/together/partners",
 };
 
 /**

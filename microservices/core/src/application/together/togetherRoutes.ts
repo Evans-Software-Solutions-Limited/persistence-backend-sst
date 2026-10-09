@@ -160,6 +160,17 @@ export const togetherRoutes = new Elysia({ name: "togetherRoutes" })
     },
   )
   .post(
+    "/together/sessions/:id/stop-sharing",
+    async (c) => ({
+      data: await repository.stopSharing(
+        getUser(c).sub,
+        c.params.id,
+        c.headers["idempotency-key"],
+      ),
+    }),
+    { headers, params, body: t.Object({}, { additionalProperties: false }) },
+  )
+  .post(
     "/together/sessions/:id/close",
     async (c) => ({
       data: await repository.close(

@@ -228,7 +228,9 @@ it("wires host invitations, explicit approvals, scoped grants and reviewed closu
   const r = renderWithTheme(<TogetherCloudContainer {...h.props} />);
   fireEvent.press(r.getByLabelText("Together settings"));
   await act(async () => ui(r).onInvite());
-  expect(mockCopy).toHaveBeenCalledWith("invite");
+  expect(mockCopy).toHaveBeenCalledWith(
+    "persistencemobile://together/join?connection=online&invitation=invite",
+  );
   await act(async () => ui(r).onRevoke());
   expect(h.cloud.revokeInvite).toHaveBeenCalledWith("token-id");
   await act(async () => ui(r).onDecision("request", true));
@@ -493,11 +495,8 @@ it("ends from the workout strip through review and clears revoked per-recipient 
   };
   const r = renderWithTheme(<TogetherCloudContainer {...h.props} />);
   fireEvent.press(r.getByText("End"));
-  expect(mockPush).toHaveBeenCalledWith({
-    pathname: "/(app)/session/rate",
-    params: { localSessionId: "local", mode: undefined },
-  });
-  fireEvent.press(r.getByLabelText("Together settings"));
+  expect(mockPush).not.toHaveBeenCalled();
+  expect(r.UNSAFE_getByType(TogetherSharingPresenter)).toBeTruthy();
   await act(async () =>
     r
       .UNSAFE_getByType(TogetherSharingPresenter)
@@ -853,16 +852,24 @@ it("shows the actual online invitation after confirmed Start and retries invitat
   await waitFor(() => expect(r.getByText("Scan to join")).toBeTruthy());
   expect(h.cloud.hostWorkout).toHaveBeenCalledTimes(1);
   expect(h.cloud.invite).toHaveBeenCalledTimes(2);
-  expect(r.UNSAFE_getByType(QRCode).props.value).toBe("invite");
+  expect(r.UNSAFE_getByType(QRCode).props.value).toBe(
+    "persistencemobile://together/join?connection=online&invitation=invite",
+  );
   expect(r.getByText(/Scan from Online join/)).toBeTruthy();
   fireEvent.press(r.getByText("Copy"));
-  await waitFor(() => expect(mockCopy).toHaveBeenCalledWith("invite"));
+  await waitFor(() =>
+    expect(mockCopy).toHaveBeenCalledWith(
+      "persistencemobile://together/join?connection=online&invitation=invite",
+    ),
+  );
   const share = jest
     .spyOn(Share, "share")
     .mockResolvedValue({ action: Share.sharedAction });
   fireEvent.press(r.getByText("Share"));
   await waitFor(() =>
-    expect(share).toHaveBeenCalledWith({ message: "invite" }),
+    expect(share).toHaveBeenCalledWith({
+      url: "persistencemobile://together/join?connection=online&invitation=invite",
+    }),
   );
   share.mockRestore();
   fireEvent.press(r.getByText("Back to my workout"));

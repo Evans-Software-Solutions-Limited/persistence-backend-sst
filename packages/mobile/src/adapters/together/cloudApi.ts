@@ -240,6 +240,14 @@ export function createCloudApis(
           {},
           key,
         ),
+      stopSharing: (id, key) =>
+        call(
+          `${session(id)}/stop-sharing`,
+          "POST",
+          (v) => record(v) && v.stopped === true,
+          {},
+          key,
+        ),
       finish: (id, key, revision, leave) =>
         call(
           `${session(id)}/${leave ? "leave" : "finish"}`,

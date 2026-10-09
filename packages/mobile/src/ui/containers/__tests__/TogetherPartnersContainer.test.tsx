@@ -26,7 +26,10 @@ jest.mock("expo-crypto", () => ({
 let mockUser: string | null = "u";
 let mockApi: TogetherSocialApi | undefined;
 jest.mock("@/ui/hooks/useAdapters", () => ({
-  useAdapters: () => ({ api: { togetherSocial: mockApi } }),
+  useAdapters: () => ({
+    api: { togetherSocial: mockApi },
+    storage: { getCachedProfilePage: () => null },
+  }),
 }));
 jest.mock("@/ui/hooks/useAuth", () => ({
   useAuth: () => ({ session: mockUser ? { userId: mockUser } : null }),
@@ -327,9 +330,10 @@ it("requests camera only deliberately, deduplicates scans and closes it in backg
   await waitFor(() => expect(props(r).loading).toBe(false));
   expect(mockRequestPermission).not.toHaveBeenCalled();
   await act(async () => props(r).onScan());
-  const scanner = props(r).scanner as React.ReactElement<{
-    onBarcodeScanned(v: { data: string }): void;
+  const wrapper = props(r).scanner as React.ReactElement<{
+    camera: React.ReactElement<{ onBarcodeScanned(v: { data: string }): void }>;
   }>;
+  const scanner = wrapper.props.camera;
   expect(scanner).toBeTruthy();
   await act(async () => {
     scanner.props.onBarcodeScanned({ data: "b".repeat(32) });

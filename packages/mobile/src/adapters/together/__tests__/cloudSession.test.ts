@@ -203,6 +203,35 @@ describe("cloud authoritative personal checkpoint", () => {
     });
     controller.setAccount(userId);
   });
+  it("stops sharing through its durable outbox without finalizing the own draft", async () => {
+    await controller.hostWorkout(draft());
+    const before = controller.readDraft(userId)!;
+    api.close = jest.fn();
+    api.stopSharing = jest.fn(async () => {
+      server.sharingActive = false;
+      return ok({ stopped: true as const });
+    });
+    await controller.stopSharing();
+    expect(api.stopSharing).toHaveBeenCalledWith(
+      server.sessionId,
+      expect.any(String),
+    );
+    expect(controller.readDraft(userId)).toMatchObject({
+      id: before.id,
+      status: "in_progress",
+      exercises: before.exercises,
+    });
+    expect(api.finish).not.toHaveBeenCalled();
+    expect(api.close).not.toHaveBeenCalled();
+    expect(controller.getSnapshot().snapshot?.sharingActive).toBe(false);
+  });
+  it("keeps work when stop-sharing is unavailable", async () => {
+    await controller.hostWorkout(draft());
+    await expect(controller.stopSharing()).rejects.toThrow(
+      "stop-sharing-unavailable",
+    );
+    expect(controller.readDraft(userId)?.status).toBe("in_progress");
+  });
   afterEach(() => {
     controller.dispose();
     db.close();

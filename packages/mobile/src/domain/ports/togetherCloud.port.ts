@@ -184,6 +184,7 @@ export interface TogetherCloudApi {
     }>
   >;
   discard(id: string, key: string): CloudResult<{ retired: true }>;
+  stopSharing?(id: string, key: string): CloudResult<{ stopped: true }>;
   finish(
     id: string,
     key: string,
@@ -248,6 +249,7 @@ export interface TogetherCloudPort {
   cancel(): void;
   dispose(): void;
   discardDraft?(userId: string, localSessionId: string): void;
+  stopSharing?(): Promise<void>;
   readDraft(userId: string): WorkoutSession | null;
   detachDraft(
     userId: string,

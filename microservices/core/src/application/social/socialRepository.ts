@@ -22,6 +22,11 @@ import {
   type TogetherTx,
 } from "../together/shared";
 import { nextPage, pagePosition } from "./pagination";
+import {
+  NotificationRepository,
+  type AppNotification,
+} from "../repositories/notificationRepository";
+import { NotificationDispatcher } from "../notifications/push/notificationDispatcher";
 
 const pair = (a: string, b: string) =>
   or(
@@ -287,8 +292,14 @@ export const socialRepository = {
       };
     });
   },
-  request(actor: string, target: string, key: string, personCode?: string) {
-    return withActors([actor, target], async (tx) => {
+  async request(
+    actor: string,
+    target: string,
+    key: string,
+    personCode?: string,
+  ) {
+    let notification: AppNotification | undefined;
+    const result = await withActors([actor, target], async (tx) => {
       await targetExists(tx, actor, target);
       requireTogether(await canInteract(tx, actor, target), "FORBIDDEN", 403);
       const [visible] = await tx
@@ -326,10 +337,28 @@ export const socialRepository = {
               status: "pending",
             })
             .returning();
+          notification = await new NotificationRepository().create(
+            target,
+            {
+              type: "friend_request",
+              title: "Training partner request",
+              message:
+                "You have a new training partner request. Review it in Persistence.",
+              data: { deepLink: "/(app)/together/partners" },
+              relatedEntityType: "friendship",
+              relatedEntityId: row.id,
+            },
+            tx,
+          );
           return { requestId: row.id, status: row.status };
         },
       );
     });
+    // The row commits with the request. Only the first creation attempts push;
+    // retries and already-existing relationships never send duplicates.
+    if (notification)
+      await new NotificationDispatcher().dispatchExisting(target, notification);
+    return result;
   },
   async decision(
     actor: string,

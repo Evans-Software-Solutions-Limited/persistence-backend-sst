@@ -55,6 +55,14 @@ const finish = { status: "saved", historyId: other };
 const cases: [string, string, unknown[], string, string, unknown][] = [
   [
     "cloud",
+    "stopSharing",
+    [id, key],
+    `/together/sessions/${id}/stop-sharing`,
+    "POST",
+    { stopped: true },
+  ],
+  [
+    "cloud",
     "discard",
     [id, key],
     `/together/sessions/${id}/discard`,

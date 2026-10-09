@@ -7,6 +7,7 @@ export function TogetherAdmissionRecoveryPresenter(p: {
   onContinuePersonally(): void;
   onRetry(): void;
   onBack(): void;
+  onDiscard?(): void;
 }) {
   return (
     <View gap={16}>
@@ -34,6 +35,17 @@ export function TogetherAdmissionRecoveryPresenter(p: {
       >
         {p.canContinuePersonally ? "Continue personally" : "Retry connection"}
       </Btn>
+      {p.onDiscard && (
+        <Btn
+          full
+          variant="ghost"
+          tone="error"
+          disabled={p.busy}
+          onPress={p.onDiscard}
+        >
+          Discard without saving
+        </Btn>
+      )}
       <Btn full variant="outline" onPress={p.onBack}>
         Back to workout
       </Btn>

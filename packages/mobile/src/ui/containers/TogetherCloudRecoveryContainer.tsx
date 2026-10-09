@@ -1,3 +1,4 @@
+import { useDiscardWorkout } from "@/ui/hooks/useDiscardWorkout";
 import {
   useEffect,
   useMemo,
@@ -31,6 +32,7 @@ export function TogetherCloudRecoveryContainer() {
     mode?: string;
   }>();
   const insets = useSafeAreaInsets();
+  const confirmDiscard = useDiscardWorkout(userId, params.localSessionId);
   const state = useSyncExternalStore(
     (l) => cloud?.subscribe(l) ?? (() => {}),
     () => cloud?.getSnapshot() ?? EMPTY,
@@ -197,6 +199,7 @@ export function TogetherCloudRecoveryContainer() {
                 await cloud!.retry();
               })
             }
+            onDiscard={confirmDiscard}
             onBack={() => router.back()}
           />
         ) : (
@@ -215,6 +218,7 @@ export function TogetherCloudRecoveryContainer() {
             )}
             onReview={prepare}
             onSave={save}
+            onDiscard={confirmDiscard}
             onBack={() => router.back()}
             onDone={done}
           />

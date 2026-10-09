@@ -1,5 +1,54 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-09 — PER-22 staging join, guided start and discard corrections
+
+[PER-22](https://linear.app/evans-software-solutions/issue/PER-22), branch
+`codex/together-staging-followup`, based on merged PR #488 / `2f0df36d`.
+Specs AC23–27 and D12 committed before implementation. Together embeds verified
+local discovery, explicit Join/Scan and the partners list in one refreshable
+scroll. Standalone invitation review works before a workout exists; opening a
+link selects authority without admitting. QR/Copy/Share use the installed
+variant's app link; iOS Share uses URL for AirDrop. A three-step start guide
+chooses cached workout, audience and connection, then uses the existing
+account-bound host intent. Existing personal sets are preserved.
+
+Navigation no longer cancels adapter-owned local sessions. Scanners have fixed
+preview bounds and permission-prompt inactive is nonterminal. Retained callbacks,
+background/unmount and account changes invalidate late UI effects. Explicit local
+stop/discard cancels only the acknowledged public session identity. Cloud
+`stop-sharing` persists departure/closure through the outbox without completion,
+history or rating, and retains private own logging. Discard uses the existing
+durable local/cloud retirement command and is exposed through settings, finish,
+rating and recovery. Peers retain their own work.
+
+Partners use pull-to-refresh, readable rows/photos, neutral missing-name labels,
+a profile-edit route, foreground refresh and periodic request refresh. Request
+creation inserts one recipient `friend_request` in the friendship transaction,
+then dispatches through existing push preferences/devices after commit; replay
+never inserts or sends twice. No schema migration.
+
+Verified: 71 relevant mobile suites / 1,395 tests; 54 focused new-flow tests with
+all four new modules >=90% in every metric (Join branches 90%). Invitation parser
+and installed-scheme adapter 100%. Full core 397 files / 5,501 tests, coverage
+98.07 statements/lines, 94.30 branches, 97.78 functions; supplemental current
+social/Together 114 tests include former-member stop replay preserving renewed
+grants. Backend changed runtime files >=90% in all metrics. Root typecheck 9/9,
+lint 6/6 and non-native build tasks 14/14 passed. Initial unbounded competing
+runs hit two backend timeouts and a cascading mock failure; bounded rerun passed.
+Existing ActiveSession/WorkoutRating container coverage remains below per-file
+90% (81.63/75.89 and 80/78.33 statements/branches); no exclusion or lowered
+threshold introduced. New discard hook is 100% statements/functions/lines and
+97.05% branches. No Inspector trigger.
+
+[Layout evidence and limits](specs/milestones/TRAIN-TOGETHER/evidence/ui-2026-10-09/README.md)
+shows actual presenters at 320/390 widths with simulated state. Not merged,
+deployed or released; no native/prebuild/EAS/mobile build. Native QR/OS handoff,
+AirDrop, camera preview, pull gesture, push receipt and two/four-phone networking
+remain unverified. The precise original unexpected-sharing event remains
+unidentified; true background still ends local sharing and safe resume remains
+outstanding. Next: review this correction branch, deploy its backend with the
+app changes, then Brad builds and runs the recorded two-iPhone acceptance journey.
+
 ### 2026-10-07 — PR #488 athlete UI, finish scope and input/lifecycle follow-up
 
 [PER-22](https://linear.app/evans-software-solutions/issue/PER-22) /

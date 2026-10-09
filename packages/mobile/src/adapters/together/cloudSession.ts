@@ -39,6 +39,7 @@ type Mutation =
   | "visibility"
   | "finish"
   | "close"
+  | "stopSharing"
   | "review"
   | "invite"
   | "revokeInvite";
@@ -1291,6 +1292,12 @@ export class TogetherCloudController implements TogetherCloudPort {
       false,
       reviewed.retainedLocalChanges,
     );
+  }
+  async stopSharing() {
+    const { s } = this.own();
+    if (!this.options.api.stopSharing)
+      throw new Error("stop-sharing-unavailable");
+    await this.queue("stopSharing", [s.sessionId, this.options.randomUUID()]);
   }
   private async commitConflictReview(
     reviewed: ReturnType<TogetherCloudController["buildReview"]>,

@@ -933,14 +933,16 @@ describe("Together authenticated HTTP contracts", () => {
     ).toHaveLength(1);
     await expect(create()).resolves.toHaveProperty("sessionId");
   });
-  it.each(["removed", "discarded"])(
-    "a %s guest cannot revoke the current roster's renewed grants using discard",
+  it.each(["removed", "discarded", "stopped"])(
+    "a %s guest cannot revoke the current roster's renewed grants with retained exits",
     async (departure) => {
       const s = await pair();
       if (departure === "removed")
         await repo.removeParticipant(a, s.sessionId, b, key(), {
           expectedRevision: (await repo.snapshot(a, s.sessionId)).revision,
         });
+      else if (departure === "stopped")
+        await repo.stopSharing(b, s.sessionId, key());
       else await repo.discard(b, s.sessionId, key());
       const invite = await repo.invite(a, s.sessionId, key(), {
         expiresInMinutes: 15,
@@ -983,12 +985,17 @@ describe("Together authenticated HTTP contracts", () => {
       const before = await currentRoster();
       expect(before.every((p) => p.allowPartnerLogging)).toBe(true);
       const revision = (await repo.snapshot(a, s.sessionId)).revision;
-      await repo.discard(b, s.sessionId, key());
-      await repo.discard(b, s.sessionId, key());
+      if (departure === "stopped") {
+        await repo.stopSharing(b, s.sessionId, key());
+        await repo.stopSharing(b, s.sessionId, key());
+      } else {
+        await repo.discard(b, s.sessionId, key());
+        await repo.discard(b, s.sessionId, key());
+      }
       expect(await currentRoster()).toEqual(before);
       expect((await repo.snapshot(a, s.sessionId)).revision).toBe(revision);
       expect((await repo.snapshot(b, s.sessionId)).completion.status).toBe(
-        "finished_empty",
+        departure === "stopped" ? "active" : "finished_empty",
       );
     },
   );
@@ -3128,3 +3135,39 @@ describe("four concurrent seats after removal", () => {
     );
   });
 });
+
+it.each([a, b])(
+  "stop sharing keeps %s unfinished with no history and allows further own logging",
+  async (actor) => {
+    const s = await pair();
+    await run(
+      actor,
+      s.sessionId,
+      cmd(actor, s.plan.exercises[0].planExerciseId),
+    );
+    const path = `/together/sessions/${s.sessionId}/stop-sharing`;
+    expect((await http(path, null, "POST", {})).status).toBe(401);
+    expect((await http(path, c, "POST", {})).status).toBe(404);
+    const token = key();
+    expect((await http(path, actor, "POST", {}, token)).status).toBe(200);
+    expect((await http(path, actor, "POST", {}, token)).status).toBe(200);
+    expect(await db.select().from(schema.togetherJobs)).toHaveLength(0);
+    expect(await db.select().from(schema.workoutSessions)).toHaveLength(0);
+    const own = await repo.snapshot(actor, s.sessionId);
+    expect(own.completion.status).toBe("active");
+    expect(own.sharingActive).toBe(false);
+    await run(
+      actor,
+      s.sessionId,
+      cmd(actor, s.plan.exercises[0].planExerciseId, 1),
+    );
+    const after = await repo.snapshot(actor, s.sessionId);
+    expect(
+      after.participants.find((p) => p.userId === actor)?.execution
+        ?.exercises[0].sets,
+    ).toHaveLength(2);
+    const peer = await repo.snapshot(actor === a ? b : a, s.sessionId);
+    expect(peer.completion.status).toBe("active");
+    expect(peer.sharingActive).toBe(actor === b);
+  },
+);

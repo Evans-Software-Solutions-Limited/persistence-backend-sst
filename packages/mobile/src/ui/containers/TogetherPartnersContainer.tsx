@@ -1,7 +1,8 @@
+import { TogetherScannerPresenter } from "@/ui/presenters/TogetherScannerPresenter";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import QRCode from "react-native-qrcode-svg";
 import * as Clipboard from "expo-clipboard";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AppState, Share } from "react-native";
 import { View } from "@tamagui/core";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -21,8 +22,12 @@ import type {
 import type { CloudResult } from "@/domain/ports/togetherCloud.port";
 
 /** A keyed account boundary removes rendered personal data immediately on account changes. */
-export function TogetherPartnersContainer() {
-  const { api } = useAdapters();
+export function TogetherPartnersContainer({
+  header,
+  embedded = false,
+  onRefresh,
+}: { header?: ReactNode; embedded?: boolean; onRefresh?: () => void } = {}) {
+  const { api, storage } = useAdapters();
   const { session } = useAuth();
   const userId = session?.userId ?? null;
   const boundary = useRef(0);
@@ -38,6 +43,19 @@ export function TogetherPartnersContainer() {
   return (
     <PartnersAccount
       key={`${userId ?? "signed-out"}:${boundary.current}`}
+      header={header}
+      embedded={embedded}
+      onRefreshHub={onRefresh}
+      ownName={
+        userId
+          ? storage
+              .getCachedProfilePage(userId)
+              ?.payload.profile.fullName?.trim() ||
+            storage
+              .getCachedProfilePage(userId)
+              ?.payload.profile.username?.trim()
+          : undefined
+      }
       userId={userId}
       api={api.togetherSocial}
       current={() => active.current === scope}
@@ -48,10 +66,18 @@ function PartnersAccount({
   userId,
   api,
   current,
+  header,
+  embedded,
+  ownName,
+  onRefreshHub,
 }: {
   userId: string | null;
   api: TogetherSocialApi | undefined;
   current(): boolean;
+  header?: ReactNode;
+  embedded?: boolean;
+  ownName?: string;
+  onRefreshHub?: () => void;
 }) {
   const [permission, requestPermission] = useCameraPermissions();
   const [codeVisible, setCodeVisible] = useState(false);
@@ -61,12 +87,14 @@ function PartnersAccount({
       expiresAt: string;
     } | null>(null),
     [scanning, setScanning] = useState(false);
+  const reloadRef = useRef<() => Promise<void>>(async () => {});
   const scanGeneration = useRef(0),
     scanned = useRef(false);
   useEffect(() => {
     const generation = scanGeneration;
     const listener = AppState.addEventListener("change", (state) => {
-      if (state !== "active") {
+      if (state === "active") void reloadRef.current();
+      if (state === "background") {
         scanGeneration.current++;
         setScanning(false);
       }
@@ -157,11 +185,16 @@ function PartnersAccount({
       }
     }
   }
+  reloadRef.current = load;
   useEffect(() => {
     mounted.current = true;
     const version = searchVersion;
     void load();
+    const timer = setInterval(() => {
+      if (AppState.currentState === "active") void load();
+    }, 20000);
     return () => {
+      clearInterval(timer);
       mounted.current = false;
       version.current++;
     };
@@ -294,6 +327,10 @@ function PartnersAccount({
   const available = !!api && !!userId;
   return (
     <TogetherPartnersPresenter
+      header={header}
+      embedded={embedded}
+      ownName={ownName}
+      onEditProfile={() => router.push("/(app)/profile/edit" as never)}
       codeVisible={codeVisible}
       onCloseCode={() => setCodeVisible(false)}
       onShowCode={() => {
@@ -349,17 +386,25 @@ function PartnersAccount({
       }
       scanner={
         scanning ? (
-          <CameraView
-            testID="partner-code-camera"
-            style={{ height: 220 }}
-            barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
-            onBarcodeScanned={({ data }) => {
-              if (scanned.current || !live()) return;
-              scanned.current = true;
+          <TogetherScannerPresenter
+            onCancel={() => {
+              scanGeneration.current++;
               setScanning(false);
-              setCode(data);
-              void resolveCode(data);
             }}
+            camera={
+              <CameraView
+                testID="partner-code-camera"
+                style={{ flex: 1, width: "100%" }}
+                barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
+                onBarcodeScanned={({ data }) => {
+                  if (scanned.current || !live()) return;
+                  scanned.current = true;
+                  setScanning(false);
+                  setCode(data);
+                  void resolveCode(data);
+                }}
+              />
+            }
           />
         ) : undefined
       }
@@ -400,7 +445,10 @@ function PartnersAccount({
         setNotice("");
       }}
       onSearch={() => void search()}
-      onRefresh={() => void load()}
+      onRefresh={() => {
+        onRefreshHub?.();
+        void load();
+      }}
       onBack={() => router.back()}
       onSelect={(value) => {
         setReporting(false);

@@ -4,6 +4,8 @@ export type TogetherLobbyAudience = "invite-only" | "friends" | "open";
 export type TogetherTransport = "lan" | "nearby" | "hotspot-owner";
 /** Reviewed lobby state only. No credentials, signing seeds or PREV grants reach UI. */
 export interface TogetherLobbySnapshot {
+  /** Public session identity for account-bound explicit exit callbacks. */
+  sessionId?: string;
   transport?: TogetherTransport;
   phase:
     | "browsing"

@@ -1,3 +1,4 @@
+import { useDiscardWorkout } from "@/ui/hooks/useDiscardWorkout";
 import { completeTogetherSession } from "@/application/commands/session/complete-together-session.command";
 /**
  * WorkoutRatingContainer — owns the rating-screen submit. Reads the
@@ -40,6 +41,7 @@ export function WorkoutRatingContainer() {
   const session =
     (activeSession?.id === expectedId ? activeSession : null) ??
     (latest?.together && latest.id === expectedId ? latest : null);
+  const confirmDiscard = useDiscardWorkout(userId, session?.id);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const submitting = useRef(false);
   const owner = useRef(userId);
@@ -300,6 +302,7 @@ export function WorkoutRatingContainer() {
       initialNotes={session.notes ?? ""}
       onSubmit={onSubmit}
       onBack={onBack}
+      onDiscard={session.together ? confirmDiscard : undefined}
     />
   );
 }

@@ -1,3 +1,6 @@
+import { togetherInvitationLink } from "@/adapters/together/invitationLink";
+import { invitationPayload } from "@/application/together/invitation";
+import { TogetherScannerPresenter } from "@/ui/presenters/TogetherScannerPresenter";
 import { TogetherPreparingPresenter } from "@/ui/presenters/TogetherPreparingPresenter";
 import { TogetherStartRow } from "@/ui/presenters/TogetherStartRow";
 import { TogetherWorkoutRow } from "@/ui/presenters/TogetherWorkoutRow";
@@ -5,7 +8,7 @@ import { TogetherCloudContainer } from "./TogetherCloudContainer";
 import type { TogetherCloudPort } from "@/domain/ports/togetherCloud.port";
 import { TogetherPartnerPresenter } from "@/ui/presenters/TogetherPartnerPresenter";
 import { TogetherInvitePresenter } from "@/ui/presenters/TogetherInvitePresenter";
-import { Alert, AppState, Share } from "react-native";
+import { Alert, AppState, Share, Platform } from "react-native";
 import { TogetherSharingPresenter } from "@/ui/presenters/TogetherSharingPresenter";
 import type { TogetherPreviousRow } from "@/domain/ports/togetherShared.port";
 import { router } from "expo-router";
@@ -58,6 +61,7 @@ export function TogetherLobbyContainer({
   refreshPrevious,
   onAdoptPlan,
   onRestorePersonal,
+  onDiscardWorkout,
   children,
   initialHostAudience,
   allowNewSharing = true,
@@ -81,6 +85,7 @@ export function TogetherLobbyContainer({
     isCurrent: () => boolean,
   ) => Promise<readonly TogetherPreviousRow[] | null>;
   onRestorePersonal?: (draft: WorkoutSession) => void;
+  onDiscardWorkout?: () => void;
   onAdoptPlan?: (
     plan: import("@/domain/ports/togetherShared.port").TogetherSharedPlan,
     mode: "append" | "replace-empty",
@@ -182,7 +187,7 @@ export function TogetherLobbyContainer({
     return () => {
       lifetime.current++;
       hostLifetime.current++;
-      void lobby.cancel().catch(() => {});
+      // Adapter composition owns session lifetime; navigation only ends UI callbacks.
     };
   }, [accountId, lobby]);
   useEffect(() => {
@@ -399,15 +404,18 @@ export function TogetherLobbyContainer({
           onPress: () => {
             if (dialogGeneration !== generation.current) return;
             invoke(async () => {
+              const id = lobby.getSnapshot().sessionId;
               await lobby.shared!.close(mode);
               if (dialogGeneration !== generation.current) return;
-              if (localSessionId) {
-                dismiss();
+              if (id && lobby.getSnapshot().sessionId === id)
+                await lobby.cancel();
+              if (dialogGeneration !== generation.current) return;
+              dismiss();
+              if (mode === "finish_all" && localSessionId)
                 router.push({
                   pathname: "/(app)/session/rate",
                   params: { localSessionId },
                 } as never);
-              }
             });
           },
         },
@@ -449,6 +457,7 @@ export function TogetherLobbyContainer({
           setFriendsSelected(false);
         }}
         onRestorePersonal={onRestorePersonal}
+        onDiscardWorkout={onDiscardWorkout}
       >
         {children}
       </TogetherCloudContainer>
@@ -608,7 +617,14 @@ export function TogetherLobbyContainer({
           <TogetherInvitePresenter
             qr={
               <View padding={8} backgroundColor="white">
-                <QRCode value={snapshot.invitation!} size={140} />
+                <QRCode
+                  value={togetherInvitationLink({
+                    connection: "local",
+                    invitation: snapshot.invitation!,
+                    transport: snapshot.transport ?? "lan",
+                  })}
+                  size={140}
+                />
               </View>
             }
             notice={notice || snapshot.error}
@@ -617,12 +633,25 @@ export function TogetherLobbyContainer({
             personal={!workoutStatus}
             onCopy={() =>
               invoke(async () => {
-                await Clipboard.setStringAsync(snapshot.invitation!);
+                await Clipboard.setStringAsync(
+                  togetherInvitationLink({
+                    connection: "local",
+                    invitation: snapshot.invitation!,
+                    transport: snapshot.transport ?? "lan",
+                  }),
+                );
               })
             }
             onShare={() =>
               invoke(async () => {
-                await Share.share({ message: snapshot.invitation! });
+                const url = togetherInvitationLink({
+                  connection: "local",
+                  invitation: snapshot.invitation!,
+                  transport: snapshot.transport ?? "lan",
+                });
+                await Share.share(
+                  Platform.OS === "ios" ? { url } : { message: url },
+                );
               })
             }
             onSettings={() => setSettingsOpen(true)}
@@ -721,6 +750,7 @@ export function TogetherLobbyContainer({
                     })
                   }
                   onClose={confirmClose}
+                  onDiscard={onDiscardWorkout}
                 />
               )}
             {snapshot.role === "guest" &&
@@ -859,6 +889,7 @@ export function TogetherLobbyContainer({
               }}
               audience={audience}
               workoutStatus={workoutStatus}
+              onDiscard={onDiscardWorkout}
               onReview={
                 localSessionId
                   ? () => {
@@ -934,7 +965,11 @@ export function TogetherLobbyContainer({
                   setRemote(true);
                 });
               }}
-              onSelect={() => invoke(() => lobby.selectInvite(code))}
+              onSelect={() =>
+                invoke(() =>
+                  lobby.selectInvite(invitationPayload(code, "local")),
+                )
+              }
               onJoin={() => {
                 browsingIntent.current = false;
                 invoke(() => lobby.join());
@@ -942,7 +977,13 @@ export function TogetherLobbyContainer({
               onScan={scan}
               onCopy={() =>
                 invoke(async () => {
-                  await Clipboard.setStringAsync(snapshot.invitation!);
+                  await Clipboard.setStringAsync(
+                    togetherInvitationLink({
+                      connection: "local",
+                      invitation: snapshot.invitation!,
+                      transport: snapshot.transport ?? "lan",
+                    }),
+                  );
                 })
               }
               onReconnect={() => invoke(() => lobby.reconnect())}
@@ -952,23 +993,42 @@ export function TogetherLobbyContainer({
               qr={
                 snapshot.invitation ? (
                   <View padding={12} backgroundColor="white">
-                    <QRCode value={snapshot.invitation} size={180} />
+                    <QRCode
+                      value={togetherInvitationLink({
+                        connection: "local",
+                        invitation: snapshot.invitation,
+                        transport: snapshot.transport ?? "lan",
+                      })}
+                      size={180}
+                    />
                   </View>
                 ) : undefined
               }
               scanner={
                 scanning ? (
-                  <CameraView
-                    testID="together-qr-camera"
-                    style={{ height: 220 }}
-                    barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
-                    onBarcodeScanned={({ data }) => {
-                      if (scanned.current) return;
-                      scanned.current = true;
+                  <TogetherScannerPresenter
+                    onCancel={() => {
+                      generation.current++;
                       setScanning(false);
-                      setCode(data);
-                      invoke(() => lobby.selectInvite(data));
                     }}
+                    camera={
+                      <CameraView
+                        testID="together-qr-camera"
+                        style={{ flex: 1, width: "100%" }}
+                        barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
+                        onBarcodeScanned={({ data }) => {
+                          if (scanned.current) return;
+                          scanned.current = true;
+                          setScanning(false);
+                          setCode(data);
+                          invoke(() =>
+                            lobby.selectInvite(
+                              invitationPayload(data, "local"),
+                            ),
+                          );
+                        }}
+                      />
+                    }
                   />
                 ) : undefined
               }

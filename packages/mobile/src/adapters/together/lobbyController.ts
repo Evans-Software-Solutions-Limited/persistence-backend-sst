@@ -208,7 +208,11 @@ export class TogetherLobbyController implements TogetherLobbyPort {
     };
   };
   private publish(change: Partial<TogetherLobbySnapshot>) {
-    this.snapshot = { ...this.snapshot, ...change };
+    this.snapshot = {
+      ...this.snapshot,
+      ...change,
+      sessionId: this.resources?.lobby.pin.sessionId,
+    };
     this.workout.changed();
     for (const listener of this.listeners) {
       try {

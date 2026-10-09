@@ -7,11 +7,13 @@ export function TogetherFinishChoicePresenter({
   onCancel,
   onFinishAll,
   onFinishOwn,
+  onDiscard,
 }: {
   visible: boolean;
   onCancel: () => void;
   onFinishAll: () => void;
   onFinishOwn: () => void;
+  onDiscard?: () => void;
 }) {
   return (
     <BottomSheet
@@ -34,6 +36,11 @@ export function TogetherFinishChoicePresenter({
           >
             Finish just for me
           </Btn>
+          {onDiscard && (
+            <Btn full variant="ghost" tone="error" onPress={onDiscard}>
+              Discard without saving
+            </Btn>
+          )}
           <Btn full variant="ghost" onPress={onCancel}>
             Keep training
           </Btn>

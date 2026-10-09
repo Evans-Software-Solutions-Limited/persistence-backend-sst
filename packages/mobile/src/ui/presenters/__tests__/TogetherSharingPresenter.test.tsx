@@ -120,11 +120,11 @@ it("supports host removal and distinct closure choices; guests can only leave", 
   fireEvent.press(r.getAllByText("Remove from session")[1]);
   expect(p.onRemove).toHaveBeenCalledWith("b");
   fireEvent.press(r.getByText("End session for everyone"));
-  fireEvent.press(r.getByText("End sharing · save only mine"));
+  fireEvent.press(r.getByText("Stop sharing · keep my workout"));
   expect(p.onClose.mock.calls).toEqual([["finish_all"], ["save_own"]]);
   r.rerender(<TogetherSharingPresenter {...p} role="guest" />);
   expect(r.queryByText("Remove from session")).toBeNull();
-  fireEvent.press(r.getByText("Leave · review my result"));
+  fireEvent.press(r.getByText("Leave sharing · keep my workout"));
   expect(p.onClose).toHaveBeenLastCalledWith("leave");
 });
 it("removes permissions and closure actions after host or own sharing ended", () => {
@@ -147,7 +147,7 @@ it("removes permissions and closure actions after host or own sharing ended", ()
       }}
     />,
   );
-  expect(r.queryByText("Leave · review my result")).toBeNull();
+  expect(r.queryByText("Leave sharing · keep my workout")).toBeNull();
 });
 it("describes peer receipts separately from account save, including pending recipients", () => {
   const p = props();

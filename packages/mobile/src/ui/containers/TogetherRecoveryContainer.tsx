@@ -1,3 +1,4 @@
+import { useDiscardWorkout } from "@/ui/hooks/useDiscardWorkout";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ScrollView } from "react-native";
 import { View } from "@tamagui/core";
@@ -31,6 +32,7 @@ export function TogetherRecoveryContainer() {
   const [error, setError] = useState("");
   const [unavailable, setUnavailable] = useState(false);
   const insets = useSafeAreaInsets();
+  const confirmDiscard = useDiscardWorkout(userId, localSessionId);
   useEffect(() => {
     mounted.current = true;
     locked.current = false;
@@ -173,6 +175,7 @@ export function TogetherRecoveryContainer() {
           )}
           onReview={() => invoke(false)}
           onSave={() => invoke(true)}
+          onDiscard={confirmDiscard}
           onBack={() => router.back()}
           onDone={done}
         />

@@ -12,6 +12,7 @@
 
 import { fireEvent, render } from "@testing-library/react-native";
 import React from "react";
+import { Keyboard, View } from "react-native";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 import { color } from "@/ui/theme/tokens";
 import { WorkoutRatingPresenter } from "../WorkoutRatingPresenter";
@@ -94,4 +95,45 @@ it("shows the finish-all group while only submitting the current athlete's ratin
   fireEvent.press(r.getByText("Submit Workout"));
   expect(onSubmit).toHaveBeenCalledTimes(1);
   expect(onSubmit).toHaveBeenCalledWith(1, "");
+});
+
+it("offers discard separately from rating and prevents it during submission", () => {
+  const discard = jest.fn(),
+    submit = jest.fn();
+  const r = renderWithTheme(
+    <WorkoutRatingPresenter
+      onSubmit={submit}
+      onBack={noop}
+      onDiscard={discard}
+    />,
+  );
+  fireEvent.press(r.getByLabelText("Discard without saving"));
+  expect(discard).toHaveBeenCalledTimes(1);
+  expect(submit).not.toHaveBeenCalled();
+  r.rerender(
+    <WorkoutRatingPresenter
+      onSubmit={submit}
+      onBack={noop}
+      onDiscard={discard}
+      isLoading
+    />,
+  );
+  fireEvent.press(r.getByLabelText("Discard without saving"));
+  expect(discard).toHaveBeenCalledTimes(1);
+});
+
+it("dismisses the keyboard when interacting with the difficulty control", () => {
+  const dismiss = jest.spyOn(Keyboard, "dismiss");
+  const r = renderWithTheme(
+    <WorkoutRatingPresenter onSubmit={noop} onBack={noop} />,
+  );
+  const control = r
+    .UNSAFE_getAllByType(View)
+    .find((view) =>
+      String(view.props.onStartShouldSetResponder).includes("dismiss"),
+    );
+  expect(control).toBeDefined();
+  expect(control!.props.onStartShouldSetResponder()).toBe(false);
+  expect(dismiss).toHaveBeenCalled();
+  dismiss.mockRestore();
 });

@@ -1,5 +1,12 @@
 import { Text, View, useTheme } from "@tamagui/core";
-import { Image, Pressable, ScrollView, Switch, TextInput } from "react-native";
+import {
+  Image,
+  Pressable,
+  ScrollView,
+  Switch,
+  TextInput,
+  RefreshControl,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { QrCode } from "lucide-react-native";
 import { HeaderBar } from "@/ui/components/foundation/HeaderBar";
@@ -19,6 +26,10 @@ export interface PartnerRow extends SocialPerson {
   personCode?: string;
 }
 export interface TogetherPartnersPresenterProps {
+  header?: React.ReactNode;
+  embedded?: boolean;
+  ownName?: string;
+  onEditProfile?(): void;
   codeVisible: boolean;
   onCloseCode(): void;
   onShowCode(): void;
@@ -71,7 +82,7 @@ const Copy = ({ children }: { children: React.ReactNode }) => (
     {children}
   </Text>
 );
-const name = (p: SocialPerson) => p.displayName || `Account ${p.userId}`;
+const name = (p: SocialPerson) => p.displayName?.trim() || "Training partner";
 export function TogetherPartnersPresenter(p: TogetherPartnersPresenterProps) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
@@ -87,12 +98,12 @@ export function TogetherPartnersPresenter(p: TogetherPartnersPresenterProps) {
         flexDirection="row"
         gap={12}
         alignItems="center"
-        paddingVertical={14}
+        paddingVertical={16}
       >
         <View
-          width={34}
-          height={34}
-          borderRadius={17}
+          width={44}
+          height={44}
+          borderRadius={22}
           backgroundColor="$surface3"
           alignItems="center"
           justifyContent="center"
@@ -100,7 +111,7 @@ export function TogetherPartnersPresenter(p: TogetherPartnersPresenterProps) {
           {person.avatarUrl ? (
             <Image
               source={{ uri: person.avatarUrl }}
-              style={{ width: 34, height: 34, borderRadius: 17 }}
+              style={{ width: 44, height: 44, borderRadius: 22 }}
               accessibilityLabel={name(person)}
             />
           ) : (
@@ -109,7 +120,7 @@ export function TogetherPartnersPresenter(p: TogetherPartnersPresenterProps) {
             </Text>
           )}
         </View>
-        <View flex={1} alignItems="flex-start">
+        <View flex={1} alignItems="flex-start" gap={4}>
           <Text color="$text" fontFamily="$body">
             {name(person)}
           </Text>
@@ -129,33 +140,42 @@ export function TogetherPartnersPresenter(p: TogetherPartnersPresenterProps) {
   );
   return (
     <View flex={1} backgroundColor="$bg" testID="together-partners-root">
-      <View paddingTop={insets.top} flexShrink={0}>
-        <HeaderBar
-          large
-          eyebrow="Train together"
-          title="Training partners"
-          testID="together-partners-header"
-          leading={
-            <IconBtn
-              icon={<IconBack {...iconDefaults({ size: 20 })} />}
-              tone="ghost"
-              onPress={p.onBack}
-              accessibilityLabel="Go back"
-            />
-          }
-          trailing={
-            <IconBtn
-              icon={<QrCode {...iconDefaults({ size: 20 })} />}
-              tone="ghost"
-              disabled={disabled}
-              onPress={p.onShowCode}
-              accessibilityLabel="My code and QR"
-            />
-          }
-        />
-      </View>
+      {!p.embedded && (
+        <View paddingTop={insets.top} flexShrink={0}>
+          <HeaderBar
+            large
+            eyebrow="Train together"
+            title="Training partners"
+            testID="together-partners-header"
+            leading={
+              <IconBtn
+                icon={<IconBack {...iconDefaults({ size: 20 })} />}
+                tone="ghost"
+                onPress={p.onBack}
+                accessibilityLabel="Go back"
+              />
+            }
+            trailing={
+              <IconBtn
+                icon={<QrCode {...iconDefaults({ size: 20 })} />}
+                tone="ghost"
+                disabled={disabled}
+                onPress={p.onShowCode}
+                accessibilityLabel="My code and QR"
+              />
+            }
+          />
+        </View>
+      )}
       <ScrollView
         style={{ flex: 1 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={p.loading}
+            onRefresh={p.onRefresh}
+            tintColor={theme.primary.val}
+          />
+        }
         contentContainerStyle={{
           paddingHorizontal: 20,
           paddingTop: 8,
@@ -165,6 +185,43 @@ export function TogetherPartnersPresenter(p: TogetherPartnersPresenterProps) {
         testID="together-partners-scroll"
       >
         <View gap={18} testID="together-partners">
+          {p.header}
+          {p.embedded && (
+            <View
+              flexDirection="row"
+              alignItems="center"
+              justifyContent="space-between"
+            >
+              <Text fontFamily="$display" fontSize={20} color="$text">
+                Training partners
+              </Text>
+              <Btn
+                size="sm"
+                variant="ghost"
+                onPress={p.onShowCode}
+                disabled={disabled}
+              >
+                My QR
+              </Btn>
+            </View>
+          )}
+          {p.onEditProfile && (
+            <Card>
+              <View gap={8}>
+                <Text color="$text" fontFamily="$body">
+                  {p.ownName || "Add your name and photo"}
+                </Text>
+                <Copy>
+                  {p.ownName
+                    ? "Help your partners recognise you."
+                    : "Partners cannot recognise an account number. Set the name and photo you want to share."}
+                </Copy>
+                <Btn variant="ghost" onPress={p.onEditProfile}>
+                  Edit my profile
+                </Btn>
+              </View>
+            </Card>
+          )}
           <Segmented
             options={["Partners", "Add"]}
             value={p.tab}
@@ -223,7 +280,7 @@ export function TogetherPartnersPresenter(p: TogetherPartnersPresenterProps) {
                   </View>
                 </Card>
               ))}
-              <View>
+              <View gap={12}>
                 <Text fontFamily="$display" fontSize={11} color="$text3">
                   {p.friends.length} PARTNERS
                 </Text>
@@ -362,9 +419,6 @@ export function TogetherPartnersPresenter(p: TogetherPartnersPresenterProps) {
               ))}
             </>
           )}
-          <Btn variant="ghost" disabled={disabled} onPress={p.onRefresh}>
-            Refresh
-          </Btn>
         </View>
       </ScrollView>
       <BottomSheet
@@ -451,6 +505,38 @@ export function TogetherPartnersPresenter(p: TogetherPartnersPresenterProps) {
       >
         {p.selected && (
           <View gap={16}>
+            {p.selected.avatarUrl ? (
+              <Image
+                source={{ uri: p.selected.avatarUrl }}
+                style={{
+                  width: 72,
+                  height: 72,
+                  borderRadius: 36,
+                  alignSelf: "center",
+                }}
+                accessibilityLabel={name(p.selected)}
+              />
+            ) : (
+              <View
+                width={72}
+                height={72}
+                borderRadius={36}
+                backgroundColor="$surface3"
+                alignItems="center"
+                justifyContent="center"
+                alignSelf="center"
+              >
+                <Text color="$primary" fontSize={24}>
+                  {name(p.selected).slice(0, 1)}
+                </Text>
+              </View>
+            )}
+            {!p.selected.displayName?.trim() && (
+              <Copy>
+                This person has not added a display name yet. Confirm their
+                identity with them before accepting.
+              </Copy>
+            )}
             <Copy>
               Name and photo only. Being partners shares no history, body
               metrics, food or coaching in either direction.
