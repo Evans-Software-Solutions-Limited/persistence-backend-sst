@@ -44,3 +44,11 @@ backend SHA, account fixtures, connection and outcomes. Use the existing
     named/photo partner details. Test muted preference and missing push permission
     separately; those are not delivery-failure proof. Retry must not duplicate
     request rows or pushes. Set a missing name/photo via Edit my profile.
+
+QR follow-up in PR #489: check both the main invitation card and settings QR.
+Use standard and narrow phones, normal brightness, OS Camera and in-app scanner;
+verify the entire white margin is visible and the app opens the correct review.
+The signed local sample shrinks from 1,137 to 719 URL characters (36.8%);
+normal-phone QR canvas grows to 304px, with a white quiet zone and responsive
+narrow-screen sizing. Old raw links remain accepted. Native scan reliability
+is still a device acceptance check.

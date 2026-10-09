@@ -1,5 +1,25 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-09 — PER-22 / PR #489 QR density follow-up
+
+Brad requested the hard-to-scan session QR be corrected in the same PR.
+Implements `34-train-together/design.md` D13: versioned DEFLATE/base64url local
+invitation envelope, bounded incremental decoding, original signed authority
+restored before verification, legacy raw links retained. Online tokens unchanged.
+Signed open-session fixture link shrinks 1,137 → 719 characters (36.8%). All
+session QR surfaces share a responsive renderer: 304px canvas on a standard
+phone, 240px at 320px screen width, high contrast and a white quiet zone; invite
+copy now stacks above the code. Uses pinned JS-only fflate 0.8.3 (no native build).
+
+Verified: 9 mobile suites / 170 tests, including real signed credentials, tamper,
+expiry, old links, Unicode, truncated input and oversized expansion. Changed
+codec ≥98% statements/branches and 100% functions/lines; QR/invite presenters
+100% all metrics. Typecheck 9/9 and lint 6/6 passed; diff whitespace clean.
+Actual presenters inspected at 320px/390px; screenshots in Together evidence.
+Not merged/deployed. Next: review PR #489 and Brad's two-iPhone OS/in-app scanning
+acceptance at normal brightness, including invite/settings codes and app routing.
+[PER-22](https://linear.app/evans-software-solutions/issue/PER-22) remains In Progress.
+
 ### 2026-10-09 — PER-22 staging join, guided start and discard corrections
 
 [PER-22](https://linear.app/evans-software-solutions/issue/PER-22), branch

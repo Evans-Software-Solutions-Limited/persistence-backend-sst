@@ -3,7 +3,7 @@ import { invitationPayload } from "@/application/together/invitation";
 import { TogetherScannerPresenter } from "@/ui/presenters/TogetherScannerPresenter";
 import { Alert, AppState, Share, Platform } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
-import QRCode from "react-native-qrcode-svg";
+import { TogetherInvitationQr } from "@/ui/presenters/TogetherInvitationQr";
 import { TogetherInvitePresenter } from "@/ui/presenters/TogetherInvitePresenter";
 import { TogetherWorkoutRow } from "@/ui/presenters/TogetherWorkoutRow";
 import {
@@ -500,13 +500,12 @@ export function TogetherCloudContainer(p: {
           invitation ? (
             <TogetherInvitePresenter
               qr={
-                <View padding={12} backgroundColor="white">
-                  <QRCode
+                <View backgroundColor="white">
+                  <TogetherInvitationQr
                     value={togetherInvitationLink({
                       connection: "online",
                       invitation: invitation.token,
                     })}
-                    size={140}
                   />
                 </View>
               }

@@ -22,7 +22,7 @@ import {
 import { View, Text } from "@tamagui/core";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Clipboard from "expo-clipboard";
-import QRCode from "react-native-qrcode-svg";
+import { TogetherInvitationQr } from "@/ui/presenters/TogetherInvitationQr";
 import type {
   TogetherLobbyAudience,
   TogetherLobbyPort,
@@ -616,14 +616,13 @@ export function TogetherLobbyContainer({
         ) : showInvitation ? (
           <TogetherInvitePresenter
             qr={
-              <View padding={8} backgroundColor="white">
-                <QRCode
+              <View backgroundColor="white">
+                <TogetherInvitationQr
                   value={togetherInvitationLink({
                     connection: "local",
                     invitation: snapshot.invitation!,
                     transport: snapshot.transport ?? "lan",
                   })}
-                  size={140}
                 />
               </View>
             }
@@ -992,14 +991,13 @@ export function TogetherLobbyContainer({
               onDecline={(peerId) => invoke(() => lobby.decline(peerId))}
               qr={
                 snapshot.invitation ? (
-                  <View padding={12} backgroundColor="white">
-                    <QRCode
+                  <View backgroundColor="white">
+                    <TogetherInvitationQr
                       value={togetherInvitationLink({
                         connection: "local",
                         invitation: snapshot.invitation,
                         transport: snapshot.transport ?? "lan",
                       })}
-                      size={180}
                     />
                   </View>
                 ) : undefined

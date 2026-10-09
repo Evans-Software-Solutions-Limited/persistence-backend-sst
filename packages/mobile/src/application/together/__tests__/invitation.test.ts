@@ -99,3 +99,59 @@ it("rejects invalid outgoing authority", () => {
     }),
   ).toThrow();
 });
+
+it("accepts previous uncompressed app links", () => {
+  const invitation = JSON.stringify({
+    payload: { name: "Mía 🏋️" },
+    signature: "signed",
+  });
+  expect(
+    readTogetherInvitation(
+      `persistencemobile://together/join?connection=local&invitation=${encodeURIComponent(invitation)}`,
+    ).invitation,
+  ).toBe(invitation);
+});
+it("does not expand or change opaque online tokens", () => {
+  const token = "a".repeat(500);
+  expect(
+    createTogetherInvitationLink("persistencemobile", {
+      connection: "online",
+      invitation: token,
+    }),
+  ).toContain(`invitation=${token}`);
+});
+it("preserves Unicode byte-for-byte", () => {
+  const invitation = JSON.stringify({
+    workout: "Mía 🏋️ 日本語",
+    signed: "abc".repeat(300),
+  });
+  const link = createTogetherInvitationLink("persistencemobile", {
+    connection: "local",
+    invitation,
+  });
+  expect(link).toContain("invitation=z1.");
+  expect(readTogetherInvitation(link).invitation).toBe(invitation);
+});
+it.each(["z1.", "z1.***", "z1.A", "z1.AB", "z1.AAAA", "z1.AA"])(
+  "rejects malformed compact authority %s",
+  (invitation) => {
+    expect(() =>
+      readTogetherInvitation(
+        `persistencemobile://together/join?connection=local&invitation=${invitation}`,
+      ),
+    ).toThrow();
+  },
+);
+it("uses raw authority when compression is larger or UTF-8 exceeds its byte budget", () => {
+  for (const invitation of [
+    "{}",
+    '{"name":"' + "x".repeat(4000) + "🏋️".repeat(300) + '"}',
+  ]) {
+    const link = createTogetherInvitationLink("persistencemobile", {
+      connection: "local",
+      invitation,
+    });
+    expect(readTogetherInvitation(link).invitation).toBe(invitation);
+    expect(link).not.toContain("invitation=z1.");
+  }
+});
