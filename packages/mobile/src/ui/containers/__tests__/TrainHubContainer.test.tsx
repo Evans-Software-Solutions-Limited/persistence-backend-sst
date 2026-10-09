@@ -1,3 +1,9 @@
+jest.mock("@/ui/containers/TogetherHubContainer", () => ({
+  TogetherHubContainer: () => {
+    const { View } = require("react-native");
+    return <View testID="together-body" />;
+  },
+}));
 const mockTogetherGate = {
   allowed: true,
   state: "allowed" as "allowed" | "locked" | "pending" | "unavailable",
@@ -138,18 +144,15 @@ beforeEach(() => {
 });
 
 describe("TrainHubContainer", () => {
-  it("opens partner management from Train and preserves Together on return", () => {
-    activeCoaches.current = [];
+  it("embeds Together on Train and preserves the selected segment on return", () => {
     const r = renderWithTheme(<TrainHubContainer />);
     fireEvent.press(r.getByTestId("train-segment-option-Together"));
-    fireEvent.press(r.getByLabelText("Training partners"));
-    expect(mockPush).toHaveBeenCalledWith("/(app)/together/partners");
+    expect(r.getByTestId("together-body")).toBeTruthy();
     expect(useTrainSegment.getState().segment).toBe("Together");
     r.unmount();
-    const returned = renderWithTheme(<TrainHubContainer />);
-    expect(returned.getByLabelText("Training partners")).toBeTruthy();
-    fireEvent.press(returned.getByLabelText("Train together"));
-    expect(returned.getByTestId("workouts-body")).toBeTruthy();
+    expect(
+      renderWithTheme(<TrainHubContainer />).getByTestId("together-body"),
+    ).toBeTruthy();
   });
 
   it("leads with the Training overview (default segment) + no top-right action", () => {
@@ -339,29 +342,3 @@ describe("TrainHubContainer", () => {
     );
   });
 });
-
-it.each(["locked", "pending", "unavailable"] as const)(
-  "guards the Together hub for %s access but keeps partner management available",
-  (state) => {
-    mockTogetherGate.allowed = false;
-    mockTogetherGate.state = state;
-    useTrainSegment.setState({ segment: "Together", hydrated: true });
-    const r = renderWithTheme(<TrainHubContainer />);
-    expect(r.queryByLabelText("Train together")).toBeNull();
-    expect(r.getByTestId("together-access-gate")).toBeTruthy();
-    expect(r.getByLabelText("Training partners")).toBeTruthy();
-    if (state === "locked") {
-      fireEvent.press(r.getByText("View subscriptions"));
-      expect(mockTogetherGate.onUpgrade).toHaveBeenCalledTimes(1);
-      fireEvent.press(r.getByText("Check access again"));
-      expect(mockTogetherGate.retry).toHaveBeenCalledTimes(1);
-    } else if (state === "unavailable") {
-      fireEvent.press(r.getByText("Retry access check"));
-      expect(mockTogetherGate.retry).toHaveBeenCalledTimes(1);
-      expect(r.queryByText("View subscriptions")).toBeNull();
-    } else {
-      expect(r.getByText("Checking your Together access…")).toBeTruthy();
-      expect(r.queryByText("View subscriptions")).toBeNull();
-    }
-  },
-);

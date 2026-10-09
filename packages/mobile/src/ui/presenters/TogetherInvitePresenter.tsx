@@ -25,9 +25,8 @@ export function TogetherInvitePresenter(p: {
       </Text>
       <Card surface={0} pad={16} radius={16} accent="primary">
         <View gap={14}>
-          <View flexDirection="row" alignItems="center" gap={14}>
-            {p.qr}
-            <View flex={1} gap={6}>
+          <View alignItems="center" gap={14}>
+            <View gap={6} alignItems="center">
               <Text
                 color="$text3"
                 fontFamily="$body"
@@ -48,6 +47,7 @@ export function TogetherInvitePresenter(p: {
                 {p.scanInstruction ?? "Or copy and send the secure invitation."}
               </Text>
             </View>
+            {p.qr}
           </View>
           <View flexDirection="row" gap={8}>
             <View flex={1}>

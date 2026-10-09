@@ -14,6 +14,7 @@ export interface TogetherRecoveryPresenterProps {
   onSave(): void;
   onBack(): void;
   onDone(): void;
+  onDiscard?(): void;
 }
 const Copy = ({ children }: { children: React.ReactNode }) => (
   <Text fontFamily="$body" fontSize={13} lineHeight={20} color="$text2">
@@ -147,6 +148,17 @@ export function TogetherRecoveryPresenter(p: TogetherRecoveryPresenterProps) {
               onPress={p.onSave}
             >
               Save reviewed result
+            </Btn>
+          )}
+          {p.onDiscard && (
+            <Btn
+              full
+              variant="ghost"
+              tone="error"
+              disabled={p.busy}
+              onPress={p.onDiscard}
+            >
+              Discard without saving
             </Btn>
           )}
           <Copy>

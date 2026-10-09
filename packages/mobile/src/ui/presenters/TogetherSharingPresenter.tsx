@@ -16,6 +16,7 @@ export function TogetherSharingPresenter(p: {
   onSessionLogging?(enabled: boolean): void;
   onRemove?(userId: string): void;
   onConsent(userId: string, consent: TogetherSharingConsent): void;
+  onDiscard?(): void;
   onClose(mode: "finish_all" | "save_own" | "leave"): void;
 }) {
   const closed = p.snapshot.closures.some(
@@ -122,6 +123,11 @@ export function TogetherSharingPresenter(p: {
             device receives them; disconnected devices must reauthorize before
             showing private values.
           </Text>
+          {p.onDiscard && (
+            <Btn full variant="ghost" tone="error" onPress={p.onDiscard}>
+              Discard without saving
+            </Btn>
+          )}
           {p.role === "host" ? (
             <>
               <Btn
@@ -132,12 +138,12 @@ export function TogetherSharingPresenter(p: {
                 End session for everyone
               </Btn>
               <Btn full variant="outline" onPress={() => p.onClose("save_own")}>
-                End sharing · save only mine
+                Stop sharing · keep my workout
               </Btn>
             </>
           ) : (
             <Btn full variant="outline" onPress={() => p.onClose("leave")}>
-              Leave · review my result
+              Leave sharing · keep my workout
             </Btn>
           )}
         </>

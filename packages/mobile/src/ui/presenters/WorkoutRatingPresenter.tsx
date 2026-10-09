@@ -64,6 +64,7 @@ export type WorkoutRatingPresenterProps = {
   initialNotes?: string;
   onSubmit: (rating: number, notes: string) => void;
   onBack: () => void;
+  onDiscard?: () => void;
 };
 
 export function WorkoutRatingPresenter(props: WorkoutRatingPresenterProps) {
@@ -91,6 +92,16 @@ export function WorkoutRatingPresenter(props: WorkoutRatingPresenterProps) {
         >
           <Text style={styles.backLabel}>← Back</Text>
         </TouchableOpacity>
+        {props.onDiscard && (
+          <TouchableOpacity
+            onPress={props.onDiscard}
+            disabled={props.isLoading}
+            accessibilityLabel="Discard without saving"
+            testID="workout-rating-discard"
+          >
+            <Text style={{ color: color.$error }}>Discard without saving</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       <KeyboardAvoidingView
@@ -101,10 +112,8 @@ export function WorkoutRatingPresenter(props: WorkoutRatingPresenterProps) {
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
         >
-          <Text style={styles.congrats}>Congratulations! 🎉</Text>
-          <Text style={styles.subtitle}>
-            You&apos;ve completed your workout!
-          </Text>
+          <Text style={styles.congrats}>Save your workout</Text>
+          <Text style={styles.subtitle}>Review your effort before saving.</Text>
 
           {!!props.group?.length && (
             <View

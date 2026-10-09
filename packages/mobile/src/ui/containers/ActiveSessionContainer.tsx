@@ -1,3 +1,4 @@
+import { useDiscardWorkout } from "@/ui/hooks/useDiscardWorkout";
 import { useTogetherEndNavigation } from "@/ui/hooks/useTogetherEndNavigation";
 import { discardTogetherSession } from "@/application/commands/session/discard-together-session.command";
 import { useTogetherGate } from "@/ui/hooks/useTogetherGate";
@@ -729,6 +730,7 @@ export function ActiveSessionContainer() {
     router.dismiss();
   }, []);
 
+  const confirmDiscardWorkout = useDiscardWorkout(userId, session?.id);
   const [finishChoice, setFinishChoice] = useState<{
     userId: string;
     localSessionId: string;
@@ -1040,6 +1042,7 @@ export function ActiveSessionContainer() {
           )}
           localSessionId={session.id}
           getWorkout={() => storage.getActiveSession(userId)}
+          onDiscardWorkout={confirmDiscardWorkout}
           onRestorePersonal={(draft) => {
             if (draft.userId !== userId) throw new Error("account-changed");
             storage.cacheActiveSession(userId, draft);
@@ -1168,6 +1171,10 @@ export function ActiveSessionContainer() {
         onCancel={() => setFinishChoice(null)}
         onFinishAll={() => chooseFinish("finish_all")}
         onFinishOwn={() => chooseFinish("save_own")}
+        onDiscard={() => {
+          setFinishChoice(null);
+          confirmDiscardWorkout();
+        }}
       />
       {endConfirmVisible && (
         <EndConfirmDialogPresenter

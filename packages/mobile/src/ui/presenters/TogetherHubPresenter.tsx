@@ -1,130 +1,137 @@
-import { Btn } from "@/ui/components/foundation/Btn";
-import { ScrollView } from "react-native";
-import { Text, View, useTheme } from "@tamagui/core";
-import { Card } from "@/ui/components/foundation/Card";
-import { IconUsers, IconChevronR } from "@/ui/components/icons";
+import { Text, View } from "@tamagui/core";
+import { Btn, Card } from "@/ui/components/foundation";
 
-/** Train → Together entry cards from the reviewed social.jsx hub. */
-export function TogetherHubPresenter({
-  onWorkouts,
-  onPartners,
-  accessState,
-  onUpgrade,
-  onRetry,
-}: {
-  onWorkouts(): void;
-  onPartners(): void;
+/** Inline hub body sharing its scroll and refresh with the partner list. */
+export function TogetherHubPresenter(p: {
   accessState: "pending" | "allowed" | "locked" | "unavailable";
   onUpgrade(): void;
   onRetry(): void;
+  onWorkouts(): void;
+  onPartners?(): void;
+  onJoin?(): void;
+  onScan?(): void;
+  sessions?: readonly {
+    sessionId: string;
+    workoutName: string;
+    memberCount: number;
+  }[];
+  discovering?: boolean;
+  error?: string;
+  onSelect?(id: string): void;
+  activeWorkout?: boolean;
+  onResume?(): void;
 }) {
-  const theme = useTheme();
   return (
-    <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 120 }}>
-      <View gap={16}>
-        {accessState !== "allowed" && (
-          <Card testID="together-access-gate">
-            <View gap={12}>
-              <Text
-                fontFamily="$display"
-                fontSize={17}
-                fontWeight="700"
-                color="$text"
-              >
-                {accessState === "locked"
-                  ? "Train together · paid subscription"
-                  : "Train together"}
-              </Text>
-              <Text fontFamily="$body" color="$text2">
-                {accessState === "locked"
-                  ? "Every athlete needs a qualifying paid subscription. Choose a plan to start or join a Together session."
-                  : accessState === "pending"
-                    ? "Checking your Together access…"
-                    : "We couldn’t verify your Together access. Reconnect to prepare access, then try again. Your personal workout remains available."}
-              </Text>
-              {accessState === "locked" ? (
-                <View gap={8}>
-                  <Btn onPress={onUpgrade}>View subscriptions</Btn>
-                  <Btn variant="ghost" onPress={onRetry}>
-                    Check access again
+    <View gap={16} testID="together-hub-content">
+      {p.accessState !== "allowed" ? (
+        <Card testID="together-access-gate">
+          <View gap={12}>
+            <Text fontFamily="$display" fontSize={20} color="$text">
+              Train together
+            </Text>
+            <Text color="$text2" fontFamily="$body">
+              {p.accessState === "locked"
+                ? "Every athlete needs a qualifying paid subscription."
+                : p.accessState === "pending"
+                  ? "Checking your Together access…"
+                  : "We couldn’t verify your Together access. Your personal workout remains available."}
+            </Text>
+            {p.accessState === "locked" ? (
+              <>
+                <Btn onPress={p.onUpgrade}>View subscriptions</Btn>
+                <Btn variant="ghost" onPress={p.onRetry}>
+                  Check access again
+                </Btn>
+              </>
+            ) : p.accessState === "unavailable" ? (
+              <Btn onPress={p.onRetry}>Retry access check</Btn>
+            ) : null}
+          </View>
+        </Card>
+      ) : (
+        <>
+          <View gap={6}>
+            <Text fontFamily="$display" fontSize={20} color="$text">
+              Workouts to join
+            </Text>
+            <Text color="$text2" fontFamily="$body" fontSize={13}>
+              Open sessions on the same Wi-Fi or hotspot. Everyone keeps their
+              own sets.
+            </Text>
+          </View>
+          {!!p.error && (
+            <Text color="$warning" accessibilityRole="alert">
+              {p.error}
+            </Text>
+          )}
+          {p.activeWorkout ? (
+            <Card>
+              <View gap={10}>
+                <Text color="$text2">
+                  Your Together workout is already active.
+                </Text>
+                <Btn onPress={() => p.onResume?.()}>Back to my workout</Btn>
+              </View>
+            </Card>
+          ) : (
+            <>
+              {!p.sessions?.length && (
+                <Card>
+                  <Text color="$text2" fontFamily="$body">
+                    {p.discovering
+                      ? "Looking for open sessions…"
+                      : "No open sessions found. Join the host’s Wi-Fi or hotspot, or use an invitation."}
+                  </Text>
+                </Card>
+              )}
+              {p.sessions?.map((s) => (
+                <Card key={s.sessionId}>
+                  <View gap={12}>
+                    <Text color="$text" fontFamily="$display" fontSize={17}>
+                      {s.workoutName}
+                    </Text>
+                    <Text color="$text2">
+                      Verified host · {s.memberCount} of 4 athletes
+                    </Text>
+                    <Btn
+                      full
+                      variant="outline"
+                      onPress={() => p.onSelect?.(s.sessionId)}
+                    >
+                      View and join
+                    </Btn>
+                  </View>
+                </Card>
+              ))}
+              <View flexDirection="row" gap={10}>
+                <View flex={1}>
+                  <Btn full variant="outline" onPress={() => p.onJoin?.()}>
+                    Join a session
                   </Btn>
                 </View>
-              ) : accessState === "unavailable" ? (
-                <Btn onPress={onRetry}>Retry access check</Btn>
-              ) : null}
+                <View flex={1}>
+                  <Btn full variant="outline" onPress={() => p.onScan?.()}>
+                    Scan invitation
+                  </Btn>
+                </View>
+              </View>
+            </>
+          )}
+          <Card surface={1}>
+            <View gap={10}>
+              <Text fontFamily="$display" fontSize={17} color="$text">
+                Want to start your own?
+              </Text>
+              <Text color="$text2" fontSize={13}>
+                Choose a workout, decide who can join, then start sharing.
+              </Text>
+              <Btn variant="soft" onPress={p.onWorkouts}>
+                Choose a workout
+              </Btn>
             </View>
           </Card>
-        )}
-        {[
-          {
-            title: "Train together",
-            detail:
-              "Choose a workout, then start a session for up to four athletes",
-            action: onWorkouts,
-            compact: false,
-          },
-          {
-            title: "Training partners",
-            detail: "Your partners, requests and person code or QR",
-            action: onPartners,
-            compact: true,
-          },
-        ]
-          .filter(({ compact }) => compact || accessState === "allowed")
-          .map(({ title, detail, action, compact }) => (
-            <View key={title} width={compact ? "50%" : "100%"}>
-              <Card
-                surface={1}
-                pad={compact ? 13 : 16}
-                radius={compact ? 14 : 16}
-                accent={compact ? undefined : "primary"}
-                onPress={action}
-                accessibilityRole="button"
-                accessibilityLabel={title}
-              >
-                <View
-                  flexDirection={compact ? "column" : "row"}
-                  alignItems={compact ? "flex-start" : "center"}
-                  gap={compact ? 9 : 11}
-                >
-                  <View
-                    width={compact ? 17 : 34}
-                    height={compact ? 17 : 34}
-                    borderRadius={11}
-                    backgroundColor={compact ? "transparent" : "$primaryDim"}
-                    alignItems="center"
-                    justifyContent="center"
-                  >
-                    <IconUsers size={17} color={theme.primary.val} />
-                  </View>
-                  <View flex={compact ? undefined : 1}>
-                    <Text
-                      textAlign="left"
-                      fontFamily="$display"
-                      fontSize={compact ? 13 : 15}
-                      fontWeight="700"
-                      color="$text"
-                    >
-                      {title}
-                    </Text>
-                    <Text
-                      textAlign="left"
-                      fontFamily="$body"
-                      fontSize={compact ? 10.5 : 11.5}
-                      color="$text3"
-                      marginTop={2}
-                    >
-                      {detail}
-                    </Text>
-                  </View>
-                  {!compact && (
-                    <IconChevronR size={18} color={theme.text3!.val} />
-                  )}
-                </View>
-              </Card>
-            </View>
-          ))}
-      </View>
-    </ScrollView>
+        </>
+      )}
+    </View>
   );
 }

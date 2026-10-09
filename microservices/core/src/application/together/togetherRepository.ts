@@ -1997,6 +1997,72 @@ export class TogetherRepository {
       };
     });
   }
+  /** Stop collaboration only. Every athlete's unfinished result remains private. */
+  async stopSharing(actor: string, id: string, key: string) {
+    return this.transaction(actor, id, async (tx, s, ps) => {
+      const own = this.member(ps, actor);
+      return replayMutation(
+        tx,
+        actor,
+        `stop-sharing:${id}`,
+        key,
+        {},
+        async () => {
+          requireTogether(own.status === "active", "INVALID_STATE", 409);
+          if (s.state === "closed" || own.leftAt)
+            return { stopped: true as const };
+          if (actor === s.hostId)
+            await this.closeSharing(tx, s, ps, "save_own");
+          else {
+            own.leftAt = new Date();
+            own.removedFromRoster = true;
+            own.frozenPlan ??= s.plan;
+            await tx
+              .update(participants)
+              .set({
+                leftAt: own.leftAt,
+                removedFromRoster: true,
+                frozenPlan: own.frozenPlan,
+              })
+              .where(memberWhere(id, actor));
+            await tx
+              .update(participants)
+              .set({
+                allowPartnerLogging: false,
+                delegationGeneration: sql`${participants.delegationGeneration}+1`,
+                previousRecipientIds: [],
+                numbersRecipientIds: [],
+                previousConsentVersion: sql`${participants.previousConsentVersion}+1`,
+                numbersConsentVersion: sql`${participants.numbersConsentVersion}+1`,
+              })
+              .where(eq(participants.sessionId, id));
+            for (const p of ps) {
+              p.allowPartnerLogging = false;
+              p.delegationGeneration++;
+              p.previousRecipientIds = [];
+              p.numbersRecipientIds = [];
+              p.previousConsentVersion++;
+              p.numbersConsentVersion++;
+            }
+            await tx
+              .update(connections)
+              .set({ revoked: true })
+              .where(
+                and(
+                  eq(connections.sessionId, id),
+                  eq(connections.userId, actor),
+                ),
+              );
+            await tx
+              .delete(tickets)
+              .where(and(eq(tickets.sessionId, id), eq(tickets.userId, actor)));
+            await this.emit(tx, s, { type: "membership_changed" });
+          }
+          return { stopped: true as const };
+        },
+      );
+    });
+  }
   /** Explicit own discard retires membership without recording a workout result. */
   async discard(actor: string, id: string, key: string) {
     return this.transaction(actor, id, async (tx, s, ps) => {

@@ -131,13 +131,15 @@ it("hosts current workout, approves real peer IDs, copies invite and cleans up",
   await act(async () => {});
   fireEvent.press(r.getByText("Copy"));
   fireEvent.press(r.getByLabelText("Session settings"));
-  expect(mockCopy).toHaveBeenCalledWith("signed");
+  expect(mockCopy).toHaveBeenCalledWith(
+    "persistencemobile://together/join?connection=local&invitation=signed&transport=lan",
+  );
   fireEvent.press(r.getByText("Approve"));
   expect(h.lobby.approve).toHaveBeenCalledWith("p");
   fireEvent.press(r.getByText("Decline"));
   expect(h.lobby.decline).toHaveBeenCalledWith("p");
   r.unmount();
-  expect(h.lobby.cancel).toHaveBeenCalled();
+  expect(h.lobby.cancel).not.toHaveBeenCalled();
 });
 it("does not apply a camera permission reply after cancellation", async () => {
   let resolve!: (v: { granted: boolean }) => void;
@@ -1030,10 +1032,7 @@ it("confirms removal and routes an acknowledged closure to own recovery", async 
     lastDialog().find((b) => b.text === "End sharing")!.onPress!(),
   );
   expect(h.shared.close).toHaveBeenCalledWith("save_own");
-  expect(router.push).toHaveBeenCalledWith({
-    pathname: "/(app)/session/rate",
-    params: { localSessionId: "local" },
-  });
+  expect(router.push).not.toHaveBeenCalled();
 });
 it("late closure cannot navigate or cancel a newer account's lobby", async () => {
   const h = sharingHarness();
@@ -1117,7 +1116,7 @@ it("workout row opens settings and end controls while self selection restores th
   act(() => row().onSelect("a"));
   expect(r.UNSAFE_queryByType(TogetherPartnerPresenter)).toBeNull();
   act(() => row().onEnd());
-  expect(r.getByText("Leave · review my result")).toBeTruthy();
+  expect(r.getByText("Leave sharing · keep my workout")).toBeTruthy();
 });
 
 it("warms own history after local admission without gating lobby or sharing without consent", async () => {
@@ -1485,12 +1484,16 @@ it("starts and promotes the detail workout before showing the actual invitation,
   expect(h.shared.publishPlan).toHaveBeenCalledWith(plan);
   expect(mockSheet.mock.calls.at(-1)![0].title).toBe("Session is live");
   expect(r.UNSAFE_getByType("QRCode" as never).props.value).toBe(
-    "signed-real-payload",
+    "persistencemobile://together/join?connection=local&invitation=signed-real-payload&transport=lan",
   );
   fireEvent.press(r.getByText("Copy"));
   fireEvent.press(r.getByText("Share"));
-  expect(mockCopy).toHaveBeenCalledWith("signed-real-payload");
-  expect(share).toHaveBeenCalledWith({ message: "signed-real-payload" });
+  expect(mockCopy).toHaveBeenCalledWith(
+    "persistencemobile://together/join?connection=local&invitation=signed-real-payload&transport=lan",
+  );
+  expect(share).toHaveBeenCalledWith({
+    url: "persistencemobile://together/join?connection=local&invitation=signed-real-payload&transport=lan",
+  });
   fireEvent.press(r.getByText("Back to my workout"));
   expect(mockSheet.mock.calls.at(-1)![0].visible).toBe(false);
   expect(h.lobby.cancel).not.toHaveBeenCalled();

@@ -25,6 +25,7 @@ export interface TogetherLobbyPresenterProps {
   workoutStatus?: TogetherWorkoutStatus | null;
   onPromote?(): void;
   onReview?(): void;
+  onDiscard?(): void;
   onAudienceChange(value: TogetherLobbyAudience): void;
   onBrowse(): void;
   onSelectDiscovered(sessionId: string): void;
@@ -199,6 +200,11 @@ export function TogetherLobbyPresenter(p: TogetherLobbyPresenterProps) {
               result. A peer receipt does not mean your result is saved to your
               account.
             </Copy>
+            {p.onDiscard && (
+              <Btn full variant="ghost" tone="error" onPress={p.onDiscard}>
+                Discard without saving
+              </Btn>
+            )}
             {p.onReview && (
               <Btn full variant="outline" onPress={p.onReview}>
                 Review my result
@@ -337,7 +343,7 @@ export function TogetherLobbyPresenter(p: TogetherLobbyPresenterProps) {
                 <Text fontFamily="$display" fontSize={17} color="$text">
                   {lobby.workoutName}
                 </Text>
-                <Copy>Verified host · {lobby.hostUserId}</Copy>
+                <Copy>Verified host</Copy>
                 <Copy>Athletes · {lobby.memberCount} of 4 at last check</Copy>
                 <Copy>
                   Friends join deliberately. Other athletes request approval.

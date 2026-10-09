@@ -1,5 +1,27 @@
 # Train Together — requirements
 
+## Staging corrections — 9 October 2026 (PER-22)
+
+- **AC23 — Reachable join:** Together lists verified reachable open sessions and
+  accepted partners inline, with Join and Scan invitation available before a
+  personal workout exists. Link opening only selects; admission stays deliberate.
+- **AC24 — Invitation links:** session QR/Copy/Share carry a variant-specific app
+  link to invitation review. Local signed invitations and online tokens remain
+  independently validated. Invalid/expired links never erase personal work.
+- **AC25 — Explicit discard:** stopping sharing does not save or rate a workout.
+  Finish/save and confirmed discard are separate choices, including from rating
+  and unhappy-path recovery. Discard creates no completed history or statistics,
+  retires the own draft, preserves peers' work and cannot resurrect on restart.
+- **AC26 — Hub and identity:** the hub includes partners and available sessions,
+  pull-to-refresh and guided workout selection/setup. No raw IDs as names;
+  missing profile identity has a neutral fallback and an edit-profile entry.
+- **AC27 — Lifecycle and requests:** UI navigation and permission prompts do not
+  end sharing. Real background still clears transport/keys under the existing
+  contract. Partner requests atomically create an in-app notification and attempt
+  preference-gated push after commit, without duplicate notifications on retry.
+
+These are Brad's approved amendments to the reviewed Together design.
+
 ## Approved lobby scope — 1 October 2026
 
 - **AC21 — Bounded training lobbies:** hosts choose invite-only or open for join
@@ -120,3 +142,7 @@ AC1–10 remain requirements except their explicitly unresolved choices are reso
 ### Roster-scoped logging consent
 
 Partner-logging consent covers only the current session roster. Every successful admission atomically revokes existing participants' logging grants and increments their delegation generations. A newly admitted participant never inherits a prior grant. Queued commands carrying old generations remain rejected, including commands from previously authorised participants; each owner must explicitly grant logging again for the expanded roster. Existing committed sets remain unchanged.
+
+### QR scanning follow-up (PER-22)
+
+Session invitations reduce QR payload density without dropping signed authority, expiry or admission checks. All invite/settings QR displays have a larger responsive black/white code and clear white margin; old raw invitations continue to join. Validate round-trip signatures and malformed/oversized compressed input, then check OS Camera and in-app scanning on both staging iPhones.

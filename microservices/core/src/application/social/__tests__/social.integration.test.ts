@@ -14,6 +14,12 @@ import {
   vi,
 } from "vitest";
 import * as schema from "@persistence/db/schema";
+const mockDispatch = vi.hoisted(() => vi.fn(async () => {}));
+vi.mock("../../notifications/push/notificationDispatcher", () => ({
+  NotificationDispatcher: class {
+    dispatchExisting = mockDispatch;
+  },
+}));
 const holder = vi.hoisted(() => ({ db: null as unknown }));
 vi.mock("@persistence/db", async (original) => ({
   ...(await original<object>()),
@@ -75,6 +81,7 @@ const key = () => randomUUID();
 const dialect = new PgDialect();
 const tables = [
   schema.profiles,
+  schema.notifications,
   schema.friendships,
   schema.socialProfiles,
   schema.socialPersonCodes,
@@ -187,6 +194,7 @@ beforeAll(async () => {
   holder.db = db;
 });
 beforeEach(async () => {
+  mockDispatch.mockClear();
   await pg.exec(
     `truncate ${tables.map((t) => `"${getTableConfig(t).name}"`).join(",")} cascade`,
   );
@@ -959,4 +967,38 @@ describe("private person invitations", () => {
       authenticated: false,
     });
   });
+});
+
+it("commits a recipient partner-request notification and dispatches once across replay and reverse requests", async () => {
+  await social.profile(b, key(), true);
+  const token = key();
+  const result = await social.request(a, b, token);
+  await social.request(a, b, token);
+  await social.profile(a, key(), true);
+  await social.request(b, a, key());
+  const rows = await db.select().from(schema.notifications);
+  expect(rows).toHaveLength(1);
+  expect(rows[0]).toMatchObject({
+    userId: b,
+    type: "friend_request",
+    relatedEntityId: result.requestId,
+    data: { deepLink: "/(app)/together/partners" },
+  });
+  expect(mockDispatch).toHaveBeenCalledTimes(1);
+  expect(mockDispatch).toHaveBeenCalledWith(
+    b,
+    expect.objectContaining({ id: rows[0].id }),
+  );
+});
+it("does not notify for a rejected private or blocked request", async () => {
+  await expect(social.request(a, b, key())).rejects.toMatchObject({
+    code: "NOT_FOUND",
+  });
+  await social.profile(b, key(), true);
+  await social.block(b, a, key(), true);
+  await expect(social.request(a, b, key())).rejects.toMatchObject({
+    code: "FORBIDDEN",
+  });
+  expect(await db.select().from(schema.notifications)).toHaveLength(0);
+  expect(mockDispatch).not.toHaveBeenCalled();
 });

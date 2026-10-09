@@ -1,6 +1,9 @@
-import { Alert, AppState, Share } from "react-native";
+import { togetherInvitationLink } from "@/adapters/together/invitationLink";
+import { invitationPayload } from "@/application/together/invitation";
+import { TogetherScannerPresenter } from "@/ui/presenters/TogetherScannerPresenter";
+import { Alert, AppState, Share, Platform } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
-import QRCode from "react-native-qrcode-svg";
+import { TogetherInvitationQr } from "@/ui/presenters/TogetherInvitationQr";
 import { TogetherInvitePresenter } from "@/ui/presenters/TogetherInvitePresenter";
 import { TogetherWorkoutRow } from "@/ui/presenters/TogetherWorkoutRow";
 import {
@@ -151,6 +154,7 @@ export function TogetherCloudContainer(p: {
   getWorkout: () => WorkoutSession | null;
   onLocal(): void;
   onRestorePersonal?(draft: WorkoutSession): void;
+  onDiscardWorkout?(): void;
   children?: (row: ReactNode) => ReactNode;
 }) {
   const rawState = useSyncExternalStore(
@@ -279,7 +283,10 @@ export function TogetherCloudContainer(p: {
       setInvitation(null);
       throw new Error("invitation-expired");
     }
-    return invitation.token;
+    return togetherInvitationLink({
+      connection: "online",
+      invitation: invitation.token,
+    });
   };
   const prepareInvitation = async () => {
     const scope = generation.current;
@@ -300,7 +307,7 @@ export function TogetherCloudContainer(p: {
   const initialHostConsumed = useRef(false);
   useEffect(() => {
     const listener = AppState.addEventListener("change", (status) => {
-      if (status !== "active") {
+      if (status === "background") {
         initialHostConsumed.current = true;
         generation.current++;
         locked.current = false;
@@ -402,7 +409,7 @@ export function TogetherCloudContainer(p: {
           run(() => p.cloud.previous(id));
       }}
       onSettings={() => setVisible(true)}
-      onEnd={() => review()}
+      onEnd={() => setVisible(true)}
     />
   ) : (
     <View
@@ -493,8 +500,13 @@ export function TogetherCloudContainer(p: {
           invitation ? (
             <TogetherInvitePresenter
               qr={
-                <View padding={12} backgroundColor="white">
-                  <QRCode value={invitation.token} size={140} />
+                <View backgroundColor="white">
+                  <TogetherInvitationQr
+                    value={togetherInvitationLink({
+                      connection: "online",
+                      invitation: invitation.token,
+                    })}
+                  />
                 </View>
               }
               notice={notice}
@@ -505,7 +517,13 @@ export function TogetherCloudContainer(p: {
                 run(() => Clipboard.setStringAsync(liveInvitation()))
               }
               onShare={() =>
-                run(() => Share.share({ message: liveInvitation() }))
+                run(() =>
+                  Share.share(
+                    Platform.OS === "ios"
+                      ? { url: liveInvitation() }
+                      : { message: liveInvitation() },
+                  ),
+                )
               }
               onSettings={() => setInviteView(false)}
             />
@@ -571,24 +589,39 @@ export function TogetherCloudContainer(p: {
                   Scan online invitation
                 </Btn>
                 {scanning && (
-                  <CameraView
-                    testID="together-online-qr-camera"
-                    style={{ height: 220 }}
-                    barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
-                    onBarcodeScanned={({ data }) => {
-                      if (
-                        scanned.current ||
-                        scanGeneration.current !== generation.current ||
-                        !isCurrent()
-                      )
-                        return;
-                      scanned.current = true;
+                  <TogetherScannerPresenter
+                    onCancel={() => {
+                      generation.current++;
                       setScanning(false);
-                      setCode(data.trim());
-                      setNotice(
-                        "Online invitation scanned. Choose Join to request admission.",
-                      );
                     }}
+                    camera={
+                      <CameraView
+                        testID="together-online-qr-camera"
+                        style={{ flex: 1, width: "100%" }}
+                        barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
+                        onBarcodeScanned={({ data }) => {
+                          if (
+                            scanned.current ||
+                            scanGeneration.current !== generation.current ||
+                            !isCurrent()
+                          )
+                            return;
+                          scanned.current = true;
+                          setScanning(false);
+                          try {
+                            setCode(invitationPayload(data, "online"));
+                          } catch {
+                            setNotice(
+                              "This is not a valid online invitation. Try another QR or paste the link.",
+                            );
+                            return;
+                          }
+                          setNotice(
+                            "Online invitation scanned. Choose Join to request admission.",
+                          );
+                        }}
+                      />
+                    }
                   />
                 )}
               </>
@@ -619,7 +652,7 @@ export function TogetherCloudContainer(p: {
                 run(() => {
                   setScanning(false);
                   return p.cloud.join(
-                    { inviteToken: code.trim() },
+                    { inviteToken: invitationPayload(code, "online") },
                     personalDraft(),
                   );
                 })
@@ -648,7 +681,12 @@ export function TogetherCloudContainer(p: {
                   const result = await p.cloud.invite();
                   if (scope !== generation.current) return;
                   installInvitation(result);
-                  await Clipboard.setStringAsync(result.token);
+                  await Clipboard.setStringAsync(
+                    togetherInvitationLink({
+                      connection: "online",
+                      invitation: result.token,
+                    }),
+                  );
                 })
               }
               onRevoke={() =>
@@ -759,7 +797,30 @@ export function TogetherCloudContainer(p: {
                       await p.cloud.delegation(consent.logging);
                   })
                 }
-                onClose={(mode) => review(mode)}
+                onDiscard={p.onDiscardWorkout}
+                onClose={(mode) => {
+                  if (mode === "finish_all") {
+                    review(mode);
+                    return;
+                  }
+                  Alert.alert(
+                    "Stop sharing?",
+                    "Your workout stays active. Nothing is rated or saved.",
+                    [
+                      { text: "Keep sharing", style: "cancel" },
+                      {
+                        text: "Stop sharing",
+                        onPress: () =>
+                          run(async () => {
+                            if (!p.cloud.stopSharing)
+                              throw new Error("stop-sharing-unavailable");
+                            await p.cloud.stopSharing();
+                            if (isCurrent()) setVisible(false);
+                          }),
+                      },
+                    ],
+                  );
+                }}
               />
             )}
           </>

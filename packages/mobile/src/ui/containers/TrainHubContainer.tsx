@@ -1,4 +1,3 @@
-import { useTogetherGate } from "@/ui/hooks/useTogetherGate";
 import { Text, View } from "@tamagui/core";
 import { router, useFocusEffect } from "expo-router";
 import { useCallback, useEffect } from "react";
@@ -11,7 +10,7 @@ import { IconPlus } from "@/ui/components/icons";
 import { ExerciseListContainer } from "@/ui/containers/ExerciseListContainer";
 import { WorkoutsListContainer } from "@/ui/containers/WorkoutsListContainer";
 import { TrainOverviewContainer } from "@/ui/containers/TrainOverviewContainer";
-import { TogetherHubPresenter } from "@/ui/presenters/TogetherHubPresenter";
+import { TogetherHubContainer } from "./TogetherHubContainer";
 import { GymsSegmentContainer } from "@/ui/containers/GymsSegmentContainer";
 
 /**
@@ -39,7 +38,6 @@ import { GymsSegmentContainer } from "@/ui/containers/GymsSegmentContainer";
  * legacy creator + the 04.6 editor).
  */
 export function TrainHubContainer() {
-  const togetherGate = useTogetherGate();
   const segment = useTrainSegment((s) => s.segment);
   const setSegment = useTrainSegment((s) => s.setSegment);
   const consumePendingSegment = useTrainSegment((s) => s.consumePendingSegment);
@@ -171,13 +169,7 @@ export function TrainHubContainer() {
         ) : effectiveSegment === "Workouts" ? (
           <WorkoutsListContainer />
         ) : effectiveSegment === "Together" ? (
-          <TogetherHubPresenter
-            accessState={togetherGate.state}
-            onUpgrade={togetherGate.onUpgrade}
-            onRetry={togetherGate.retry}
-            onWorkouts={() => setSegment("Workouts")}
-            onPartners={() => router.push("/(app)/together/partners")}
-          />
+          <TogetherHubContainer />
         ) : effectiveSegment === "Gyms" ? (
           <GymsSegmentContainer />
         ) : (

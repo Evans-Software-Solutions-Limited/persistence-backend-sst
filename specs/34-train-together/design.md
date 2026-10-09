@@ -1,5 +1,36 @@
 # Train Together — design
 
+## D12 — Staging correction architecture, 9 October 2026
+
+`together/join` is an authenticated standalone route using the existing lobby,
+shared-plan and cloud adapters. The Train Together hub composes reachable local
+discovery and the existing partners body directly; a separate guided start route
+uses the cached workout library and existing detail/setup/start authority.
+
+Application invitation helpers normalize variant-specific custom-scheme links
+and legacy raw tokens. Expo native-intent maps `together/join`; scanners and
+paste share the parser. Selection validates authority before explicit Join.
+QR/Copy/Share emit the same link; iOS Share uses its URL field for AirDrop.
+Opening or browsing never replaces a live lobby or an existing own workout.
+
+The composition root owns adapter cancellation on sign-out/background/disposal.
+Screen unmount invalidates UI callbacks only. Camera permission inactivity is
+nonterminal. Stop sharing persists closure without navigating to rating; own
+discard uses the existing durable draft retirement command with account/workout
+guards and is exposed in finish, rating and recovery journeys.
+
+Cloud `POST /together/sessions/:id/stop-sharing` accepts only an empty body and
+an idempotency key. Host closure freezes every athlete's plan; guest departure
+retires only their sharing membership and purges grants. Neither finalizes a
+result, creates history, nor prevents continued private own logging. Replays
+cannot revoke a later roster's grants. Finish/close retain their rating/review
+contracts and discard retains its durable retirement contract.
+
+Social request creation inserts `friend_request` through NotificationRepository
+in the same actor-locked transaction. Post-commit NotificationDispatcher uses
+existing preferences/device tokens; replay does not insert or send again.
+No schema extension or new notification type is needed.
+
 ## Bounded offline PREV transfer — 5 October 2026
 
 [TRANSFER](../milestones/TRAIN-TOGETHER/TRANSFER.md) extends the approved peer
@@ -173,3 +204,9 @@ Protocol spike chooses transport/operational ADR and contract fixtures first. Ba
 ### Logging grants on admission
 
 The shared admission transaction clears `allowPartnerLogging` and increments `delegationGeneration` for all existing participants before emitting membership change. This applies equally to host-approved and accepted-friend auto-admission. Membership snapshots expose the revoked state; server authority checks reject both stale generations and new-generation commands while consent is disabled. Explicit re-grant creates a fresh generation for the current roster; old queued commands remain invalid. This is the safe boundary for the current session-wide consent model; recipient-specific delegation requires a separate contract/schema change.
+
+### D13. Scannable invitation envelope (PER-22 QR follow-up)
+
+App links retain the existing join route and connection/transport parameters. Local signed JSON may use a versioned `z1.` DEFLATE/base64url invitation value when shorter than percent-encoded raw authority. Decode exactly to the original signed bytes before adapter verification; retain raw invitation/link compatibility. Bound compressed input and decoded UTF-8 to 6,000 bytes, reject malformed/truncated/oversized envelopes, and never infer admission from decoding. Online opaque tokens remain unchanged. No network shortener or native compression dependency.
+
+All session invitation QR surfaces use a shared responsive renderer: 256px code on a normal phone, bounded to available width on narrow devices, solid black/white, 24px white quiet zone, medium error correction, no logo. Actual iPhone scanning remains staging acceptance.

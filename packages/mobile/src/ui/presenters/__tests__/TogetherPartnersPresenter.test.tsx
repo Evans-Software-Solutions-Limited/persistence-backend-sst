@@ -1,6 +1,6 @@
 import React from "react";
 import { ScrollView, StyleSheet } from "react-native";
-import { fireEvent } from "@testing-library/react-native";
+import { act, fireEvent } from "@testing-library/react-native";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 import {
   TogetherPartnersPresenter,
@@ -73,7 +73,11 @@ it("uses deliberate request decisions and actual partner profile actions", () =>
   fireEvent.press(r.getByText("Review Push"));
   expect(p.onOffer).toHaveBeenCalledWith(offer);
   fireEvent.press(r.getByLabelText("Go back"));
-  fireEvent.press(r.getByText("Refresh"));
+  act(() =>
+    r.UNSAFE_getByType(ScrollView).props.refreshControl.props.onRefresh(),
+  );
+  expect(p.onRefresh).toHaveBeenCalled();
+  expect(r.queryByText("Refresh")).toBeNull();
   fireEvent.press(r.getByLabelText("My code and QR"));
   expect(p.onShowCode).toHaveBeenCalled();
   fireEvent(
@@ -177,7 +181,8 @@ it("names anonymous profiles honestly without calling them friends", () => {
       results={[{ userId: "unknown", displayName: null, avatarUrl: null }]}
     />,
   );
-  expect(r.getByText("Account unknown")).toBeTruthy();
+  expect(r.getByText("Training partner")).toBeTruthy();
+  expect(r.queryByText(/unknown/)).toBeNull();
   expect(r.getByText("Name and photo only")).toBeTruthy();
 });
 
