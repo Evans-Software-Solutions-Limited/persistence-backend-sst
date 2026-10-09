@@ -19,6 +19,13 @@ nonterminal. Stop sharing persists closure without navigating to rating; own
 discard uses the existing durable draft retirement command with account/workout
 guards and is exposed in finish, rating and recovery journeys.
 
+Cloud `POST /together/sessions/:id/stop-sharing` accepts only an empty body and
+an idempotency key. Host closure freezes every athlete's plan; guest departure
+retires only their sharing membership and purges grants. Neither finalizes a
+result, creates history, nor prevents continued private own logging. Replays
+cannot revoke a later roster's grants. Finish/close retain their rating/review
+contracts and discard retains its durable retirement contract.
+
 Social request creation inserts `friend_request` through NotificationRepository
 in the same actor-locked transaction. Post-commit NotificationDispatcher uses
 existing preferences/device tokens; replay does not insert or send again.
