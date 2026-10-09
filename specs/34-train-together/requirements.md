@@ -1,5 +1,27 @@
 # Train Together — requirements
 
+## Staging corrections — 9 October 2026 (PER-22)
+
+- **AC23 — Reachable join:** Together lists verified reachable open sessions and
+  accepted partners inline, with Join and Scan invitation available before a
+  personal workout exists. Link opening only selects; admission stays deliberate.
+- **AC24 — Invitation links:** session QR/Copy/Share carry a variant-specific app
+  link to invitation review. Local signed invitations and online tokens remain
+  independently validated. Invalid/expired links never erase personal work.
+- **AC25 — Explicit discard:** stopping sharing does not save or rate a workout.
+  Finish/save and confirmed discard are separate choices, including from rating
+  and unhappy-path recovery. Discard creates no completed history or statistics,
+  retires the own draft, preserves peers' work and cannot resurrect on restart.
+- **AC26 — Hub and identity:** the hub includes partners and available sessions,
+  pull-to-refresh and guided workout selection/setup. No raw IDs as names;
+  missing profile identity has a neutral fallback and an edit-profile entry.
+- **AC27 — Lifecycle and requests:** UI navigation and permission prompts do not
+  end sharing. Real background still clears transport/keys under the existing
+  contract. Partner requests atomically create an in-app notification and attempt
+  preference-gated push after commit, without duplicate notifications on retry.
+
+These are Brad's approved amendments to the reviewed Together design.
+
 ## Approved lobby scope — 1 October 2026
 
 - **AC21 — Bounded training lobbies:** hosts choose invite-only or open for join

@@ -1,5 +1,29 @@
 # Train Together — design
 
+## D12 — Staging correction architecture, 9 October 2026
+
+`together/join` is an authenticated standalone route using the existing lobby,
+shared-plan and cloud adapters. The Train Together hub composes reachable local
+discovery and the existing partners body directly; a separate guided start route
+uses the cached workout library and existing detail/setup/start authority.
+
+Application invitation helpers normalize variant-specific custom-scheme links
+and legacy raw tokens. Expo native-intent maps `together/join`; scanners and
+paste share the parser. Selection validates authority before explicit Join.
+QR/Copy/Share emit the same link; iOS Share uses its URL field for AirDrop.
+Opening or browsing never replaces a live lobby or an existing own workout.
+
+The composition root owns adapter cancellation on sign-out/background/disposal.
+Screen unmount invalidates UI callbacks only. Camera permission inactivity is
+nonterminal. Stop sharing persists closure without navigating to rating; own
+discard uses the existing durable draft retirement command with account/workout
+guards and is exposed in finish, rating and recovery journeys.
+
+Social request creation inserts `friend_request` through NotificationRepository
+in the same actor-locked transaction. Post-commit NotificationDispatcher uses
+existing preferences/device tokens; replay does not insert or send again.
+No schema extension or new notification type is needed.
+
 ## Bounded offline PREV transfer — 5 October 2026
 
 [TRANSFER](../milestones/TRAIN-TOGETHER/TRANSFER.md) extends the approved peer
