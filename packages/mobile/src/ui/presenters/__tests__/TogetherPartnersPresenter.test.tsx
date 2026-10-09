@@ -213,3 +213,28 @@ it("keeps the header fixed and all three drawers outside the scrolling list, wit
     StyleSheet.flatten(r.getByTestId("together-partners-root").props.style),
   ).toEqual(expect.objectContaining({ flex: 1 }));
 });
+it("keeps an accepted outgoing partner labelled as a partner and omits the embedded profile tile", () => {
+  const p = props();
+  const r = renderWithTheme(
+    <TogetherPartnersPresenter
+      {...p}
+      embedded
+      friends={[{ ...person, outgoing: true }]}
+      requests={[]}
+      onEditProfile={jest.fn()}
+      ownName="Brad"
+      loading
+    />,
+  );
+  expect(r.queryByText("Invitation sent")).toBeNull();
+  expect(r.getByText("Training partner")).toBeTruthy();
+  expect(r.queryByText("Edit my profile")).toBeNull();
+  expect(r.getByText("My QR")).toBeTruthy();
+  expect(
+    r.UNSAFE_getByType(ScrollView).props.refreshControl.props.refreshing,
+  ).toBe(false);
+  r.rerender(<TogetherPartnersPresenter {...p} refreshing />);
+  expect(
+    r.UNSAFE_getByType(ScrollView).props.refreshControl.props.refreshing,
+  ).toBe(true);
+});

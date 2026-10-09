@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
+import { useCallback, useRef, useSyncExternalStore } from "react";
 import { router, useFocusEffect } from "expo-router";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useTogetherGate } from "@/ui/hooks/useTogetherGate";
@@ -25,74 +25,34 @@ export function TogetherHubContainer() {
   );
   const active = userId ? storage.getActiveSession(userId) : null;
   const focused = useRef(false);
-  const discovering = useRef(false);
   const owner = useRef(userId);
   owner.current = userId;
-  const browse = useCallback(() => {
-    if (
-      discovering.current ||
-      !focused.current ||
-      !gate.allowed ||
-      !userId ||
-      !lobby ||
-      active?.together ||
-      cloud?.getSnapshot().snapshot ||
-      !["idle", "browsing", "unavailable", "full"].includes(
-        lobby.getSnapshot().phase,
-      )
-    )
-      return;
-    discovering.current = true;
-    void lobby
-      .browse()
-      .catch(() => {})
-      .finally(() => {
-        discovering.current = false;
-      });
-  }, [gate.allowed, userId, lobby, cloud, active?.together]);
-  const browseRef = useRef(browse);
-  browseRef.current = browse;
   useFocusEffect(
     useCallback(() => {
       focused.current = true;
-      browseRef.current();
       return () => {
         focused.current = false;
-        if (lobby?.getSnapshot().phase === "browsing")
-          void lobby.cancel().catch(() => {});
       };
-    }, [lobby]),
+    }, []),
   );
-  useEffect(() => {
-    if (state.phase === "idle") browse();
-  }, [gate.allowed, userId, state.phase, browse]);
   const live =
     ["hosting", "joined", "reconnecting"].includes(state.phase) ||
-    !!active?.together;
+    !!active?.together ||
+    !!cloud?.getSnapshot().snapshot;
   return (
     <TogetherPartnersContainer
       embedded
-      onRefresh={browse}
       header={
         <TogetherHubPresenter
           accessState={gate.state}
           onUpgrade={gate.onUpgrade}
           onRetry={gate.retry}
           sessions={state.discovered}
-          discovering={
-            state.phase === "preparing" || state.phase === "browsing"
-          }
           error={togetherErrorCopy(state.error, state.transport)}
           activeWorkout={live}
           onResume={() => router.push("/(app)/session" as never)}
           onWorkouts={() => router.push("/(app)/together/start" as never)}
           onJoin={() => router.push("/(app)/together/join" as never)}
-          onScan={() =>
-            router.push({
-              pathname: "/(app)/together/join",
-              params: { scan: "true" },
-            } as never)
-          }
           onSelect={(id) => {
             if (
               !lobby ||

@@ -1,5 +1,27 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-09 — PER-22 TestFlight hub hierarchy/refresh follow-up
+
+Brad reports PR #489 merged and staging TestFlight released; main verified
+`49d5ede5`. Branch `codex/together-hub-staging-polish`, implements
+`34-train-together/design.md` D14. Plain Sessions/empty state, one Join entry,
+unboxed start action, whole-row session/workout choices with available duration
+and exercise previews. Embedded partners retain My QR without a profile card;
+accepted relationships override outgoing-request direction and stale requests
+and sent notices reconcile on reads. Missing names avoid repeated fallback copy.
+
+Hub never starts discovery. Explicit Join/Browse owns cancellation on blur only
+while browsing. Partner reads run on focus, focused foreground, mutations and
+user pull; removed 20-second polling. Only user pull drives RefreshControl.
+Verified 9 mobile suites / 101 tests; changed runtime files ≥90% every coverage
+metric, with Hub/WorkoutChoice presenters 100%. Root typecheck 9/9, lint 6/6
+(existing warnings), diff whitespace pass. Actual presenters reviewed at 320/390px,
+empty/populated/accepted and workout-choice evidence in Together polish folder.
+Native scrolling, transport, refresh feel and battery impact remain device checks;
+no native build/deploy/merge/Inspector trigger. Next: review follow-up PR then
+Brad's staging build verifies a quiet hub and explicit Join/Browse/Scan journey.
+[PER-22](https://linear.app/evans-software-solutions/issue/PER-22) remains In Progress.
+
 ### 2026-10-09 — PER-22 / PR #489 QR density follow-up
 
 Brad requested the hard-to-scan session QR be corrected in the same PR.

@@ -72,12 +72,12 @@ beforeEach(() => {
   });
 });
 const guide = (r: any) => {
-  fireEvent.press(r.getByText("Choose Push"));
+  fireEvent.press(r.getByLabelText("Choose Push"));
   fireEvent.press(r.getByText("Next · choose connection"));
 };
 it("requires three deliberate steps before starting the selected workout", () => {
   const r = renderWithTheme(<TogetherStartContainer />);
-  expect(r.getAllByText("Choose Push")).toHaveLength(1);
+  expect(r.getAllByLabelText("Choose Push")).toHaveLength(1);
   expect(mockStart).not.toHaveBeenCalled();
   guide(r);
   expect(mockStart).not.toHaveBeenCalled();
@@ -154,7 +154,7 @@ it("offers workout creation only when the library is empty and resets selection 
 it("does not allow unpaid or signed-out starts", () => {
   mockAllowed = false;
   const r = renderWithTheme(<TogetherStartContainer />);
-  expect(r.queryByText("Choose Push")).toBeNull();
+  expect(r.queryByLabelText("Choose Push")).toBeNull();
   mockAllowed = true;
   mockUser = null;
   r.rerender(<TogetherStartContainer />);
@@ -176,7 +176,7 @@ it("allows deliberate connection selection and navigation back through the guide
 });
 it("starts an online partner session only after choosing partners and the online connection", () => {
   const r = renderWithTheme(<TogetherStartContainer />);
-  fireEvent.press(r.getByText("Choose Push"));
+  fireEvent.press(r.getByLabelText("Choose Push"));
   fireEvent.press(r.getByText("Training partners"));
   fireEvent.press(r.getByText("Next · choose connection"));
   fireEvent.press(r.getByText("Online · internet required"));
@@ -193,7 +193,7 @@ it("starts an online partner session only after choosing partners and the online
 });
 it("selects an invite-only audience and Android host transport explicitly", () => {
   const r = renderWithTheme(<TogetherStartContainer />);
-  fireEvent.press(r.getByText("Choose Push"));
+  fireEvent.press(r.getByLabelText("Choose Push"));
   fireEvent.press(r.getByText("Private"));
   fireEvent.press(r.getByText("Next · choose connection"));
   fireEvent.press(r.getByText("This Android phone’s hotspot"));
