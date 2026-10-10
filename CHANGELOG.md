@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.27.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.26.0...persistence-v1.27.0) (2026-10-10)
+
+
+### Features
+
+* add authenticated offline Together LAN foundation ([#480](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/480)) ([29b7d65](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/29b7d659b3f99c87e5016688940aa72c23e9671d))
+* add verified same-network Together lobby browsing ([#484](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/484)) ([c6a7155](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/c6a7155576612a85bb1cc23b67395d17961aa4ea))
+* connect reviewed Together lobby to provisioned LAN admission ([#483](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/483)) ([8257b53](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/8257b532fef859dadfad929ae91fa826282f2b4b))
+* connect Together admission to durable own-workout logging ([#485](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/485)) ([bc4c34f](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/bc4c34f30752f0ae307b3f59ac35bb78ed23f0c4))
+* prepare mobile identities for offline Together ([#482](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/482)) ([97c7769](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/97c7769e549a0890ed0183528b73f2c074ea2878))
+* **together:** integrate peer workouts and recovery for testing ([#486](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/486)) ([a773d58](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/a773d5810a044e5902031d1d74cace52c1d171f2))
+
+
+### Bug Fixes
+
+* **mobile:** restore Together setup and native Nearby registration ([#488](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/488)) ([2f0df36](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/2f0df36df17df264e8730dfa0b42c5f3bb1e01c2))
+
 ## [1.26.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.25.1...persistence-v1.26.0) (2026-10-01)
 
 
