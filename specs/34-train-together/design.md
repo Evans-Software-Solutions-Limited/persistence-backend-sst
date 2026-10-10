@@ -210,3 +210,44 @@ The shared admission transaction clears `allowPartnerLogging` and increments `de
 App links retain the existing join route and connection/transport parameters. Local signed JSON may use a versioned `z1.` DEFLATE/base64url invitation value when shorter than percent-encoded raw authority. Decode exactly to the original signed bytes before adapter verification; retain raw invitation/link compatibility. Bound compressed input and decoded UTF-8 to 6,000 bytes, reject malformed/truncated/oversized envelopes, and never infer admission from decoding. Online opaque tokens remain unchanged. No network shortener or native compression dependency.
 
 All session invitation QR surfaces use a shared responsive renderer: 256px code on a normal phone, bounded to available width on narrow devices, solid black/white, 24px white quiet zone, medium error correction, no logo. Actual iPhone scanning remains staging acceptance.
+
+### D14. Staging hub hierarchy and refresh ownership (PER-22)
+
+Brad's TestFlight review supersedes the earlier hub cards: plain Sessions heading, no subtitle, noninteractive “No workouts available to you” empty copy, one Join a session entry for discovery/scan/paste, and a compact unboxed Start a workout action. Sessions and workout choices are whole-row actions with restrained metadata and chevrons; no nested full-width buttons. Partners remain inline with My QR, no own-profile card, and accepted status takes precedence over request direction.
+
+The hub subscribes to known lobby state but never starts or periodically restarts native discovery. Live network browsing is explicitly entered from Join and stops when that screen blurs while still browsing; selected/admitted/active sessions are retained. Partner data refreshes on entry, return to foreground when focused, user pull and mutations, with no polling timer. Only a user pull owns RefreshControl.refreshing; initial/foreground reads must not show the pull indicator. Accepted partners reconcile away obsolete pending requests/notices.
+
+### D15. 10 October staging corrections (PER-22 / PR #490)
+
+Friend-request notification taps use notification type to open Together partners,
+including older payloads containing a profile link; unrelated notifications retain
+their existing destinations. Apply the same rule to warm/cold push and inbox taps.
+
+Partner workouts own a safe-area-aware screen including the athlete switcher.
+Reuse active-workout exercise heading and aligned SET/PREV/REPS/KG styles; show
+the owner's plan and progress immediately, including zero sets. Numeric consent
+and PREV remain independent. A numeric grant publishes an empty current execution
+before the first logged set; it never invents previous values. Extend the existing
+shared port with `publishOwnActivity()` using the existing signed `activity`
+envelope: after setting a personal plan, publish its exercise identities and
+completed-set counts (zero initially) to admitted peers, without numeric values.
+Only empty, unskipped `activity` may use revision zero; other envelope revisions
+stay positive. Initial publication retries resend the exact signed envelope. Both
+phones require this updated app because older parsers reject revision zero.
+Keep a visible
+Sharing action beside the athlete switcher, available from session admission.
+
+Discard uses the existing centred workout confirmation visual, mounted above
+sheets at the authenticated root. Confirmation remains bound to the captured
+account/workout and is dismissed on owner unmount; it never rates or saves.
+
+Connection investigation must verify sustained encrypted heartbeat traffic and
+retain bounded authentication, frame and queue limits. Do not remove native idle
+timeouts on the assumption that no heartbeat exists. Surface an actionable
+reconnect state without losing private drafts. A foreground admitted guest gets
+one bounded automatic reconnect after a transport/heartbeat failure, using a
+fresh authenticated channel and the same signed consent/journal. Cancel this
+retry on account/lifecycle/cancellation changes. Protocol/authorization failures
+still terminate collaboration; failed recovery requires explicit retry. Private
+peer caches stay purged until fresh owner authorization. Exact event attribution requires
+device evidence. No native build or staging release is claimed by source tests.

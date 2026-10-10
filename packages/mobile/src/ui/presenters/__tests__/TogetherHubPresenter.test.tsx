@@ -16,10 +16,10 @@ it("offers reachable join, scanner and guided start even without a current worko
   const p = props(),
     r = renderWithTheme(<TogetherHubPresenter {...p} />);
   fireEvent.press(r.getByText("Join a session"));
-  fireEvent.press(r.getByText("Scan invitation"));
-  fireEvent.press(r.getByText("Choose a workout"));
+  expect(r.queryByText("Scan invitation")).toBeNull();
+  fireEvent.press(r.getByText("Choose workout"));
   expect(p.onJoin).toHaveBeenCalledTimes(1);
-  expect(p.onScan).toHaveBeenCalledTimes(1);
+  expect(p.onScan).not.toHaveBeenCalled();
   expect(p.onWorkouts).toHaveBeenCalledTimes(1);
 });
 it("shows verified available sessions without exposing host account IDs", () => {
@@ -32,10 +32,10 @@ it("shows verified available sessions without exposing host account IDs", () => 
         ]}
       />,
     );
-  fireEvent.press(r.getByText("View and join"));
+  fireEvent.press(r.getByLabelText("Join Push"));
   expect(p.onSelect).toHaveBeenCalledWith("signed-session");
   expect(r.getByText("Push")).toBeTruthy();
-  expect(r.getByText("Verified host · 2 of 4 athletes")).toBeTruthy();
+  expect(r.getByText("2 / 4 athletes")).toBeTruthy();
 });
 it("preserves an active workout rather than offering another admission", () => {
   const p = props(),
@@ -52,7 +52,7 @@ it.each(["locked", "pending", "unavailable"] as const)(
         <TogetherHubPresenter {...p} accessState={accessState} />,
       );
     expect(r.queryByText("Join a session")).toBeNull();
-    expect(r.queryByText("Choose a workout")).toBeNull();
+    expect(r.queryByText("Choose workout")).toBeNull();
     if (accessState === "locked") {
       fireEvent.press(r.getByText("View subscriptions"));
       fireEvent.press(r.getByText("Check access again"));
@@ -77,10 +77,10 @@ it("shows discovery status and failure guidance and safely handles optional acti
         onResume={undefined}
       />,
     );
-  expect(r.getByText("Looking for open sessions…")).toBeTruthy();
+  expect(r.getByText("No workouts available to you")).toBeTruthy();
   expect(r.getByText("Discovery unavailable")).toBeTruthy();
   fireEvent.press(r.getByText("Join a session"));
-  fireEvent.press(r.getByText("Scan invitation"));
+  expect(r.queryByText("Scan invitation")).toBeNull();
   r.rerender(
     <TogetherHubPresenter {...p} activeWorkout onResume={undefined} />,
   );

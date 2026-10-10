@@ -77,6 +77,7 @@ jest.mock("@/ui/hooks/useTogetherGate", () => ({
   }),
 }));
 jest.mock("expo-router", () => ({
+  useFocusEffect: (cb: any) => require("react").useEffect(cb, [cb]),
   router: {
     back: (...a: any[]) => mockRouter.back(...a),
     replace: (...a: any[]) => mockRouter.replace(...a),
@@ -419,3 +420,16 @@ it("ignores a queued Join when the screen disappears before execution", async ()
   await act(async () => {});
   expect(mockLobby.join).not.toHaveBeenCalled();
 });
+it.each(["browsing", "selected", "joined"])(
+  "stops only browsing when leaving the %s join screen",
+  async (phase) => {
+    mockState.phase = phase;
+    const r = renderWithTheme(<TogetherJoinContainer />);
+    await act(async () => {});
+    mockLobby.cancel.mockClear();
+    r.unmount();
+    expect(mockLobby.cancel).toHaveBeenCalledTimes(
+      phase === "browsing" ? 1 : 0,
+    );
+  },
+);

@@ -103,7 +103,9 @@ function resolveSchemeLink(rest: string): string {
  */
 export function resolveNotificationRoute(
   deepLink: string | null | undefined,
+  notificationType?: string | null,
 ): string {
+  if (notificationType === "friend_request") return "/(app)/together/partners";
   if (!deepLink) return HOME_ROUTE;
   const trimmed = deepLink.trim();
   if (trimmed === "") return HOME_ROUTE;

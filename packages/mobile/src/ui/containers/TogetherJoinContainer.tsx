@@ -1,7 +1,13 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { AppState, ScrollView, TextInput } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
-import { router, useLocalSearchParams } from "expo-router";
+import { router, useLocalSearchParams, useFocusEffect } from "expo-router";
 import { randomUUID } from "expo-crypto";
 import { Text, View } from "@tamagui/core";
 import { useAdapters } from "@/ui/hooks/useAdapters";
@@ -52,6 +58,15 @@ export function TogetherJoinContainer() {
   const remote = useSyncExternalStore(
     (l) => cloud?.subscribe(l) ?? (() => {}),
     () => cloud?.getSnapshot() ?? CLOUD_EMPTY,
+  );
+  useFocusEffect(
+    useCallback(
+      () => () => {
+        if (lobby?.getSnapshot().phase === "browsing")
+          void lobby.cancel().catch(() => {});
+      },
+      [lobby],
+    ),
   );
   const [connection, setConnection] = useState<"local" | "online">("local");
   const [code, setCode] = useState("");

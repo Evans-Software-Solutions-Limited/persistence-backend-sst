@@ -47,6 +47,7 @@ export interface TogetherPartnersPresenterProps {
   query: string;
   busy: boolean;
   loading: boolean;
+  refreshing?: boolean;
   available: boolean;
   error: string;
   notice: string;
@@ -124,13 +125,16 @@ export function TogetherPartnersPresenter(p: TogetherPartnersPresenterProps) {
           <Text color="$text" fontFamily="$body">
             {name(person)}
           </Text>
-          <Copy>
-            {person.outgoing
-              ? "Invitation sent"
-              : p.friends.some((f) => f.userId === person.userId)
+          {(!p.friends.some((f) => f.userId === person.userId) ||
+            !!person.displayName?.trim()) && (
+            <Copy>
+              {p.friends.some((f) => f.userId === person.userId)
                 ? "Training partner"
-                : "Name and photo only"}
-          </Copy>
+                : person.outgoing
+                  ? "Invitation sent"
+                  : "Name and photo only"}
+            </Copy>
+          )}
         </View>
         <Text fontFamily="$body" color="$text3">
           ›
@@ -171,7 +175,7 @@ export function TogetherPartnersPresenter(p: TogetherPartnersPresenterProps) {
         style={{ flex: 1 }}
         refreshControl={
           <RefreshControl
-            refreshing={p.loading}
+            refreshing={p.refreshing ?? false}
             onRefresh={p.onRefresh}
             tintColor={theme.primary.val}
           />
@@ -205,7 +209,7 @@ export function TogetherPartnersPresenter(p: TogetherPartnersPresenterProps) {
               </Btn>
             </View>
           )}
-          {p.onEditProfile && (
+          {p.onEditProfile && !p.embedded && (
             <Card>
               <View gap={8}>
                 <Text color="$text" fontFamily="$body">
@@ -285,30 +289,33 @@ export function TogetherPartnersPresenter(p: TogetherPartnersPresenterProps) {
                   {p.friends.length} PARTNERS
                 </Text>
                 {p.friends.length > 0 ? (
-                  <Card>{p.friends.map(row)}</Card>
+                  <View>{p.friends.map(row)}</View>
                 ) : (
-                  !p.loading && (
-                    <Copy>
-                      No training partners yet. Add someone deliberately to
-                      train together.
-                    </Copy>
-                  )
+                  !p.loading && <Copy>No training partners yet.</Copy>
                 )}
               </View>
-              <Copy>
-                Removing a partner hides your partner sessions from them and
-                cancels unused invites and shared plans.
-              </Copy>
-              <Card>
+              {!p.embedded && (
+                <Copy>
+                  Removing a partner hides your partner sessions from them and
+                  cancels unused invites and shared plans.
+                </Copy>
+              )}
+              <View
+                paddingVertical={12}
+                borderTopWidth={1}
+                borderColor="$border"
+              >
                 <View flexDirection="row" gap={12} alignItems="center">
                   <View flex={1}>
                     <Text fontFamily="$body" color="$text">
                       Let people find me by name
                     </Text>
-                    <Copy>
-                      Off by default. Name and photo only — nothing about your
-                      training.
-                    </Copy>
+                    {!p.embedded && (
+                      <Copy>
+                        Off by default. Name and photo only — nothing about your
+                        training.
+                      </Copy>
+                    )}
                     {p.discoverable === null && (
                       <Copy>Current preference unavailable.</Copy>
                     )}
@@ -320,12 +327,14 @@ export function TogetherPartnersPresenter(p: TogetherPartnersPresenterProps) {
                     onValueChange={p.onDiscoverable}
                   />
                 </View>
-              </Card>
-              <Copy>
-                Being partners shares no history, body metrics, food or
-                coaching. Session access never grants permission to log for
-                someone or view their previous numbers.
-              </Copy>
+              </View>
+              {!p.embedded && (
+                <Copy>
+                  Being partners shares no history, body metrics, food or
+                  coaching. Session access never grants permission to log for
+                  someone or view their previous numbers.
+                </Copy>
+              )}
               {p.offers.length > 0 && (
                 <>
                   <Text fontFamily="$body" color="$text3">

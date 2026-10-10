@@ -1,6 +1,7 @@
 import React from "react";
 import { Alert } from "react-native";
 import { renderHook, act } from "@testing-library/react-native";
+import { useDiscardConfirmation } from "@/state/discard-workout";
 import { useDiscardWorkout } from "../useDiscardWorkout";
 let mockOwn: any, mockChannel: any;
 const mockDiscard = jest.fn(),
@@ -51,6 +52,7 @@ jest.mock("@/application/commands/session", () => ({
 }));
 beforeEach(() => {
   jest.clearAllMocks();
+  useDiscardConfirmation.getState().close();
   mockLobby.getSnapshot = () => ({
     sessionId: mockChannel.sessionId,
     role: "host",
@@ -63,11 +65,7 @@ beforeEach(() => {
   mockSolo.mockReturnValue({ ok: true });
   jest.spyOn(Alert, "alert").mockImplementation(() => {});
 });
-const confirm = () =>
-  jest
-    .mocked(Alert.alert)
-    .mock.calls.at(-1)![2]!
-    .find((b) => b.text === "Discard workout")!.onPress!;
+const confirm = () => useDiscardConfirmation.getState().request!.onConfirm;
 it.each(["lan", "cloud"])(
   "discards %s durably only after explicit confirmation with no rating or history save",
   async (transport) => {

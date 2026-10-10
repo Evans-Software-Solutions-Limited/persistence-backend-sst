@@ -209,6 +209,34 @@ describe("shared plans, sealed consent and independent projections", () => {
     engines.forEach((e) => e.dispose());
     databases.forEach((db) => db.close());
   });
+  it("delivers a numeric workout before any sets without granting PREV, and retains execution on repeat plan setup", async () => {
+    await engines[1].publishOwnActivity();
+    await engines[1].publishOwnActivity(); // retry resends the exact signed zero-progress event
+    const first = engines[2].getSnapshot();
+    expect(first.athletePlans[id(2)]).toEqual(plan);
+    expect(
+      first.progress
+        .find((a) => a.userId === id(2))
+        ?.exercises.every((e) => e.completedSets === 0),
+    ).toBe(true);
+    expect(first.athletes.find((a) => a.userId === id(2))).toBeUndefined();
+    await engines[1].setConsent(id(3), { ...none, numbers: true });
+    const projection = engines[2]
+      .getSnapshot()
+      .athletes.find((a) => a.userId === id(2));
+    expect(projection).toMatchObject({ userId: id(2), revision: 0 });
+    expect(Object.keys(projection!.exercises)).toHaveLength(
+      plan.exercises.length,
+    );
+    expect(
+      Object.values(projection!.exercises).every((e) => e.sets.length === 0),
+    ).toBe(true);
+    expect(engines[2].getSnapshot().previous[id(2)]).toBeUndefined();
+    await engines[1].publishProgress(command(2));
+    const before = engines[1].getSnapshot().athletes;
+    engines[1].setOwnPlan(plan);
+    expect(engines[1].getSnapshot().athletes).toEqual(before);
+  });
   it("distributes a host-only immutable plan with independent logs, selected numbers and blind host relay", async () => {
     await engines[0].publishPlan(plan);
     expect(engines[1].getSnapshot().plan).toEqual(plan);
@@ -962,8 +990,12 @@ describe("shared plans, sealed consent and independent projections", () => {
     await host.sendShared(sent.at(-1)!);
     await pump();
     expect(engines[1].getSnapshot().plan).toEqual(plan);
+    const beforeGrant = sent.length;
     await engines[1].setConsent(id(1), { ...none, numbers: true });
-    await guest.sendShared(sent.at(-1)!);
+    for (const envelope of sent
+      .slice(beforeGrant)
+      .filter((e) => e.payload.authorId === id(2)))
+      await guest.sendShared(envelope);
     await pump();
     await guest.sendOwn(command(2));
     await guest.sendShared(sent.at(-1)!);
@@ -1123,7 +1155,7 @@ describe("shared plans, sealed consent and independent projections", () => {
     await engines[1].setConsent(id(3), { ...none, numbers: true });
     await engines[1].publishProgress(command(2));
     expect(engines[1].getSnapshot().deliveries).toEqual([
-      { recipientId: id(3), revision: 1, state: "received" },
+      { recipientId: id(3), revision: 2, state: "received" },
     ]);
     paused = true;
     await engines[1].publishProgress(command(2, 1));
@@ -1140,15 +1172,15 @@ describe("shared plans, sealed consent and independent projections", () => {
         await engines[0].setConsent(id(peer), { ...none, numbers: true });
       await engines[0].publishProgress(command(1));
       expect(engines[0].getSnapshot().deliveries).toEqual([
-        { recipientId: id(2), revision: 1, state: "received" },
-        { recipientId: id(3), revision: 1, state: "received" },
+        { recipientId: id(2), revision: 2, state: "received" },
+        { recipientId: id(3), revision: 2, state: "received" },
       ]);
       if (actor === "peer") await engines[1].close("leave");
       else if (actor === "host") await engines[0].close("finish_all");
       else await engines[0].close("leave");
       expect(engines[0].getSnapshot().deliveries).toEqual(
         actor === "peer"
-          ? [{ recipientId: id(3), revision: 1, state: "received" }]
+          ? [{ recipientId: id(3), revision: 2, state: "received" }]
           : [],
       );
     },

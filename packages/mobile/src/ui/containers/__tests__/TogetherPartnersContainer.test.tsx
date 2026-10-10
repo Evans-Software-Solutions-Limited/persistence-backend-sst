@@ -34,7 +34,10 @@ jest.mock("@/ui/hooks/useAdapters", () => ({
 jest.mock("@/ui/hooks/useAuth", () => ({
   useAuth: () => ({ session: mockUser ? { userId: mockUser } : null }),
 }));
-jest.mock("expo-router", () => ({ router: { back: jest.fn() } }));
+jest.mock("expo-router", () => ({
+  useFocusEffect: (cb: any) => require("react").useEffect(cb, [cb]),
+  router: { back: jest.fn() },
+}));
 const ok = <T,>(value: T) => ({ ok: true as const, value });
 const page = <T,>(data: T[]) => ok({ data, nextCursor: null });
 const friend = {
@@ -551,4 +554,33 @@ it("keeps a failed native share actionable in the open code drawer", async () =>
     r.getByText("Could not share the code. Copy it instead."),
   ).toBeTruthy();
   share.mockRestore();
+});
+it("does not poll partners and only the user pull drives the refresh indicator", async () => {
+  const api = setup();
+  const interval = jest.spyOn(global, "setInterval");
+  const r = renderWithTheme(<TogetherPartnersContainer />);
+  await waitFor(() => expect(props(r).loading).toBe(false));
+  expect(interval).not.toHaveBeenCalledWith(expect.any(Function), 20000);
+  expect(props(r).refreshing).toBe(false);
+  let resolve!: (value: any) => void;
+  (api.friends as jest.Mock).mockReturnValue(
+    new Promise((done) => {
+      resolve = done;
+    }),
+  );
+  act(() => props(r).onRefresh());
+  expect(props(r).refreshing).toBe(true);
+  await act(async () => resolve(page([friend])));
+  await waitFor(() => expect(props(r).refreshing).toBe(false));
+  r.unmount();
+  interval.mockRestore();
+});
+it("reconciles a stale pending request once the same person is accepted", async () => {
+  const api = setup();
+  (api.friends as jest.Mock).mockResolvedValue(
+    page([{ ...friend, initiatedBy: "u" }]),
+  );
+  const r = renderWithTheme(<TogetherPartnersContainer />);
+  await waitFor(() => expect(props(r).friends).toHaveLength(1));
+  expect(props(r).requests).toHaveLength(0);
 });

@@ -213,6 +213,21 @@ describe("NotificationsListContainer", () => {
     expect(mockPush).toHaveBeenCalledWith("/(app)/(tabs)");
   });
 
+  it("opens partner requests when a legacy friend-request inbox row links to Profile", () => {
+    const api = new InMemoryApiAdapter(),
+      storage = new InMemoryStorageAdapter();
+    storage.cacheNotifications([
+      makeNotification({
+        id: "legacy-friend",
+        type: "friend_request",
+        deepLink: "persistencemobile-staging://profile",
+      }),
+    ]);
+    const { getByTestId } = renderContainer(api, storage);
+    fireEvent.press(getByTestId("tap"));
+    expect(mockPush).toHaveBeenCalledWith("/(app)/together/partners");
+  });
+
   it("tapping a coach_brief routes to the Train hub AND primes the Training segment (M17)", async () => {
     useTrainSegment.setState({
       segment: "Workouts",

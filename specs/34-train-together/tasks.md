@@ -103,3 +103,20 @@ Earlier T0–T7 items remain historical and unchecked; use this superseding chec
 - Add bounded reversible compact local invitation encoding, preserving existing signed verification and old links.
 - Share a responsive 256px QR renderer with 24px quiet zone across all session invitation surfaces.
 - Verify payload reduction, signature-preserving admission, hostile inputs and display bounds; retain physical two-iPhone scanning acceptance.
+
+### PER-22 TestFlight hub correction
+
+- Simplify hub hierarchy, unify Join entry and improve whole-row workout/session selection.
+- Remove hub discovery and partner polling; bind live browse cleanup to Join focus and pull indicator to explicit pull.
+- Remove own-profile tile and reconcile accepted partner/request labels.
+- Review actual empty/populated/accepted layouts at standard/narrow phone widths and test refresh/lifecycle/status regressions.
+
+### 10 October staging correction (D15 / PER-22 / PR #490)
+
+- [x] Type-aware legacy friend-request routing, push/inbox regression checks.
+- [x] Partner safe area, matching workout headings/grid, visible athlete tabs/Sharing.
+- [x] Signed initial activity and numeric execution before first set; PREV independent.
+- [x] Styled root discard confirmation with account/workout/unmount guards.
+- [x] One bounded authenticated foreground reconnect; lifecycle cancellation tests.
+- [x] Ten-minute heartbeat simulation, focused coverage and phone-width layout evidence.
+- [ ] Two-phone staging acceptance and exact 09:42 disconnect attribution.

@@ -2,12 +2,18 @@ import { TogetherScannerPresenter } from "@/ui/presenters/TogetherScannerPresent
 import { CameraView, useCameraPermissions } from "expo-camera";
 import QRCode from "react-native-qrcode-svg";
 import * as Clipboard from "expo-clipboard";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { AppState, Share } from "react-native";
 import { View } from "@tamagui/core";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { randomUUID } from "expo-crypto";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
 import {
@@ -87,13 +93,14 @@ function PartnersAccount({
       expiresAt: string;
     } | null>(null),
     [scanning, setScanning] = useState(false);
+  const focused = useRef(false);
   const reloadRef = useRef<() => Promise<void>>(async () => {});
   const scanGeneration = useRef(0),
     scanned = useRef(false);
   useEffect(() => {
     const generation = scanGeneration;
     const listener = AppState.addEventListener("change", (state) => {
-      if (state === "active") void reloadRef.current();
+      if (state === "active" && focused.current) void reloadRef.current();
       if (state === "background") {
         scanGeneration.current++;
         setScanning(false);
@@ -119,6 +126,7 @@ function PartnersAccount({
   const [discoverable, setDiscoverable] = useState<boolean | null>(null),
     [busy, setBusy] = useState(false),
     [loading, setLoading] = useState(false),
+    [refreshing, setRefreshing] = useState(false),
     [error, setError] = useState(""),
     [notice, setNotice] = useState("");
   const live = () => mounted.current && current();
@@ -134,10 +142,11 @@ function PartnersAccount({
     if (!result.ok) throw result.error;
     return result.value;
   }
-  async function load() {
+  async function load(pull = false) {
     if (!api || !userId || !live() || lock.current) return;
     lock.current = true;
     setLoading(true);
+    if (pull) setRefreshing(true);
     setError("");
     try {
       // Read complete bounded server pages, never silently presenting the first page as the whole list.
@@ -169,8 +178,22 @@ function PartnersAccount({
         unwrap(api.getProfile()),
       ]);
       if (!live()) return;
-      setFriends(f.map(row));
-      setRequests(r.map(row));
+      const partners = f.map(row);
+      const pending = r
+        .filter((request) => request.status === "pending")
+        .map(row)
+        .filter(
+          (request) =>
+            !partners.some((partner) => partner.userId === request.userId),
+        );
+      setFriends(partners);
+      setRequests(pending);
+      setNotice((value) =>
+        value === "Training partner invitation sent." &&
+        !pending.some((request) => request.outgoing)
+          ? ""
+          : value,
+      );
       setOffers(o.filter((x) => !x.revoked && x.recipientId === userId));
       setDiscoverable(profile.discoverable);
     } catch {
@@ -182,6 +205,7 @@ function PartnersAccount({
       if (live()) {
         lock.current = false;
         setLoading(false);
+        setRefreshing(false);
       }
     }
   }
@@ -189,16 +213,21 @@ function PartnersAccount({
   useEffect(() => {
     mounted.current = true;
     const version = searchVersion;
-    void load();
-    const timer = setInterval(() => {
-      if (AppState.currentState === "active") void load();
-    }, 20000);
+
     return () => {
-      clearInterval(timer);
       mounted.current = false;
       version.current++;
     };
   }, [api, userId]); // eslint-disable-line react-hooks/exhaustive-deps
+  useFocusEffect(
+    useCallback(() => {
+      focused.current = true;
+      void reloadRef.current();
+      return () => {
+        focused.current = false;
+      };
+    }, [api, userId]),
+  );
   async function mutate(
     action: string,
     run: (key: string) => CloudResult<unknown>,
@@ -412,6 +441,7 @@ function PartnersAccount({
       query={query}
       busy={busy || loading}
       loading={loading}
+      refreshing={refreshing}
       available={available}
       error={
         !userId
@@ -447,7 +477,7 @@ function PartnersAccount({
       onSearch={() => void search()}
       onRefresh={() => {
         onRefreshHub?.();
-        void load();
+        void load(true);
       }}
       onBack={() => router.back()}
       onSelect={(value) => {

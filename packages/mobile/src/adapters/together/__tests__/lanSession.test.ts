@@ -594,6 +594,29 @@ describe("LAN session lifecycle with actual crypto and SQLite", () => {
     expect(guest.native.connect).toHaveBeenCalledTimes(2);
   });
 
+  it("keeps an idle foreground authenticated pair alive through ten minutes of encrypted heartbeats", async () => {
+    const host = setup(1),
+      guest = setup(2);
+    await host.session.startHost();
+    await guest.session.startDiscovery();
+    await wire(host, guest);
+    for (let i = 0; i < 60; i++) {
+      jest.advanceTimersByTime(10_000);
+      await settle();
+    }
+    expect(
+      host.events.filter(
+        (e) => e.type === "error" || e.type === "disconnected",
+      ),
+    ).toEqual([]);
+    expect(
+      guest.events.filter(
+        (e) => e.type === "error" || e.type === "disconnected",
+      ),
+    ).toEqual([]);
+    expect(host.native.send.mock.calls.length).toBeGreaterThan(120);
+  });
+
   it("requires explicit stranger approval, exposes a copy and broadcasts the expanded roster", async () => {
     const host = setup(1),
       guest = setup(2),

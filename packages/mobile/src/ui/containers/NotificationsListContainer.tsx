@@ -225,7 +225,10 @@ export function NotificationsListContainer() {
       // unknown/absent links) via the shared 09.6 resolver; a train-bound
       // link also primes the Training-segment one-shot (M17 Send-brief).
       router.push(
-        resolveAndPrimeNotificationRoute(notification.deepLink) as never,
+        resolveAndPrimeNotificationRoute(
+          notification.deepLink,
+          notification.type,
+        ) as never,
       );
     },
     [storage, router],

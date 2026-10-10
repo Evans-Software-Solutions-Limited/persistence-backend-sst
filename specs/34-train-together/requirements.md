@@ -146,3 +146,17 @@ Partner-logging consent covers only the current session roster. Every successful
 ### QR scanning follow-up (PER-22)
 
 Session invitations reduce QR payload density without dropping signed authority, expiry or admission checks. All invite/settings QR displays have a larger responsive black/white code and clear white margin; old raw invitations continue to join. Validate round-trip signatures and malformed/oversized compressed input, then check OS Camera and in-app scanning on both staging iPhones.
+
+### TestFlight hub correction (PER-22)
+
+Use Sessions and plain “No workouts available to you” without searching cards or descriptions. One Join entry provides open-session browsing and invitations. No continuous hub discovery/partner polling or automatic pull spinner. Keep My QR without a profile card; accepted partners show the accepted relationship. Present compact whole-row sessions/workout choices and an unboxed start action.
+
+### 10 October staging acceptance (PER-22)
+
+Friend-request push/inbox taps open partner requests. Partner workout headers
+respect the notch and safe area, share active-workout visual structure and show
+exercise progress before any sets, without requiring PREV consent. Athletes can
+switch workouts and open explicit numeric/PREV/logging sharing controls from the
+start. Discard confirmation matches the existing workout design and preserves
+account/workout identity guards. Verify an idle connected session and logging on
+two foreground phones; capture any disconnect code/lifecycle and retain own work.

@@ -27,6 +27,7 @@ import { color } from "@/ui/theme/tokens";
 export type EndConfirmDialogPresenterProps = {
   /** Formatted elapsed string shown in the body, e.g. "12:30". */
   elapsed: string;
+  variant?: "end" | "discard";
   /** Dismiss without ending (backdrop tap + "Keep going"). */
   onKeepGoing: () => void;
   /** Confirm ending the session without saving. */
@@ -36,6 +37,7 @@ export type EndConfirmDialogPresenterProps = {
 
 export function EndConfirmDialogPresenter({
   elapsed,
+  variant = "end",
   onKeepGoing,
   onEnd,
   testID = "end-confirm-dialog",
@@ -54,10 +56,12 @@ export function EndConfirmDialogPresenter({
         testID={testID}
       >
         <Text color="$text" fontSize={20} fontWeight="700" marginBottom={8}>
-          End workout?
+          {variant === "discard" ? "Discard workout?" : "End workout?"}
         </Text>
         <Text color="$text2" fontSize={13} marginBottom={16}>
-          {`Your progress so far (${elapsed}) won't be saved as a completed workout.`}
+          {variant === "discard"
+            ? "This workout won’t be saved. Your training partners keep their own progress."
+            : `Your progress so far (${elapsed}) won't be saved as a completed workout.`}
         </Text>
         <View flexDirection="row" gap={10}>
           <View flex={1}>
@@ -69,7 +73,7 @@ export function EndConfirmDialogPresenter({
               onPress={onKeepGoing}
               testID={`${testID}-keep-going`}
             >
-              Keep going
+              {variant === "discard" ? "Keep" : "Keep going"}
             </Btn>
           </View>
           <View flex={1}>
@@ -81,7 +85,7 @@ export function EndConfirmDialogPresenter({
               onPress={onEnd}
               testID={`${testID}-end`}
             >
-              End
+              {variant === "discard" ? "Discard" : "End"}
             </Btn>
           </View>
         </View>

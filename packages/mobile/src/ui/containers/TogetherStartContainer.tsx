@@ -1,3 +1,4 @@
+import { TogetherWorkoutChoice } from "@/ui/presenters/TogetherWorkoutChoice";
 import { useEffect, useRef, useState } from "react";
 import { ScrollView } from "react-native";
 import { router } from "expo-router";
@@ -158,25 +159,19 @@ export function TogetherStartContainer() {
                     </Text>
                   )}
                   {choices.map((w) => (
-                    <Card key={w.id}>
-                      <View gap={8}>
-                        <Text color="$text" fontFamily="$display" fontSize={17}>
-                          {w.name}
-                        </Text>
-                        <Text color="$text2">
-                          {w.exercises.length} exercises
-                        </Text>
-                        <Btn
-                          variant="outline"
-                          onPress={() => {
-                            setSelected(w.id);
-                            setStep(2);
-                          }}
-                        >
-                          Choose {w.name}
-                        </Btn>
-                      </View>
-                    </Card>
+                    <TogetherWorkoutChoice
+                      key={w.id}
+                      name={w.name}
+                      exerciseCount={w.exercises.length}
+                      minutes={w.estimatedDurationMinutes}
+                      exerciseNames={w.exercises.flatMap((e) =>
+                        e.exercise?.name ? [e.exercise.name] : [],
+                      )}
+                      onPress={() => {
+                        setSelected(w.id);
+                        setStep(2);
+                      }}
+                    />
                   ))}
                   {!choices.length && (
                     <Btn

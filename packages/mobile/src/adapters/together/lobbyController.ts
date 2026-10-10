@@ -92,6 +92,7 @@ export class TogetherLobbyController implements TogetherLobbyPort {
     getSnapshot: () => this.resources?.shared?.getSnapshot() ?? EMPTY_SHARED,
     subscribe: (listener) => this.subscribe(listener),
     setOwnPlan: (plan) => this.sharedEngine().setOwnPlan(plan),
+    publishOwnActivity: () => this.sharedEngine().publishOwnActivity(),
     publishPlan: (plan) => this.sharedEngine().publishPlan(plan),
     publishProfile: (name) => this.sharedEngine().publishProfile(name),
     setConsent: (recipient, consent) =>
@@ -126,6 +127,7 @@ export class TogetherLobbyController implements TogetherLobbyPort {
   private nativeQueue: Promise<void> = Promise.resolve();
   private timer?: ReturnType<typeof setTimeout>;
   private expiry?: ReturnType<typeof setTimeout>;
+  private reconnectTimer?: ReturnType<typeof setTimeout>;
   constructor(private readonly options: TogetherLobbyControllerOptions) {
     this.workout = new TogetherWorkoutCheckpoint(
       options.database,
@@ -258,6 +260,8 @@ export class TogetherLobbyController implements TogetherLobbyPort {
   private clearTimers() {
     clearTimeout(this.timer);
     clearTimeout(this.expiry);
+    clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = undefined;
   }
   async cancel(): Promise<void> {
     const cancelledGeneration = ++this.generation;
@@ -809,14 +813,28 @@ export class TogetherLobbyController implements TogetherLobbyPort {
       )
         this.publish({ phase: "joined", error: undefined });
     } else if (event.type === "disconnected") {
+      const admitted = ["joined", "reconnecting"].includes(this.snapshot.phase);
+      const cause = this.snapshot.error;
       this.publish({
         pending: this.snapshot.pending.filter((p) => p.peerId !== event.peerId),
       });
       if (
         !resources.lobby.isHost &&
         !["unavailable", "full"].includes(this.snapshot.phase)
-      )
-        this.publish({ phase: "reconnecting", error: "disconnected" });
+      ) {
+        this.publish({ phase: "reconnecting", error: cause ?? "disconnected" });
+        if (admitted && !this.reconnectTimer) {
+          this.reconnectTimer = setTimeout(() => {
+            this.reconnectTimer = undefined;
+            if (
+              this.current(generation) &&
+              this.resources === resources &&
+              this.snapshot.phase === "reconnecting"
+            )
+              void this.reconnect();
+          }, 1_000);
+        }
+      }
     } else if (event.type === "full" || event.type === "declined") {
       if (!resources.lobby.isHost)
         this.failure(new Error(event.type), generation);
@@ -827,6 +845,19 @@ export class TogetherLobbyController implements TogetherLobbyPort {
             (p) => p.peerId !== event.peerId,
           ),
         });
+      else if (
+        event.peerId &&
+        !resources.lobby.isHost &&
+        ["joined", "reconnecting"].includes(this.snapshot.phase) &&
+        [
+          "read_timeout",
+          "read_failed",
+          "write_timeout",
+          "write_failed",
+          "heartbeat_failed",
+        ].includes(event.code)
+      )
+        this.publish({ error: event.code });
       else this.failure(new Error(event.code), generation);
     }
   }
@@ -871,6 +902,8 @@ export class TogetherLobbyController implements TogetherLobbyPort {
     }
   }
   async reconnect(): Promise<void> {
+    clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = undefined;
     const resources = this.resources;
     if (
       !this.allowed() ||
