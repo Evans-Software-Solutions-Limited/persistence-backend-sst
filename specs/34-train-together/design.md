@@ -231,6 +231,9 @@ before the first logged set; it never invents previous values. Extend the existi
 shared port with `publishOwnActivity()` using the existing signed `activity`
 envelope: after setting a personal plan, publish its exercise identities and
 completed-set counts (zero initially) to admitted peers, without numeric values.
+Only empty, unskipped `activity` may use revision zero; other envelope revisions
+stay positive. Initial publication retries resend the exact signed envelope. Both
+phones require this updated app because older parsers reject revision zero.
 Keep a visible
 Sharing action beside the athlete switcher, available from session admission.
 

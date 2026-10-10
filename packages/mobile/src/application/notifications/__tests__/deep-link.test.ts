@@ -202,3 +202,12 @@ describe("redirectSystemPathForDeepLink", () => {
     ).toBe("/auth/callback");
   });
 });
+
+it.each([null, "persistencemobile-staging://profile", "/(app)/(tabs)/you"])(
+  "routes legacy friend requests to partners (%s)",
+  (link) => {
+    expect(resolveNotificationRoute(link, "friend_request")).toBe(
+      "/(app)/together/partners",
+    );
+  },
+);

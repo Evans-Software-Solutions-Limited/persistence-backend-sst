@@ -1,5 +1,37 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-10 — PER-22 partner workouts, notification taps and bounded recovery
+
+[PER-22](https://linear.app/evans-software-solutions/issue/PER-22), existing
+[PR #490](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/pull/490),
+implements `34-train-together/design.md` D15. Type-aware friend-request routing
+covers old Profile payloads in cold/warm pushes and inbox taps. Partner view owns
+top/bottom safe area, reuses active-workout header/exercise/grid styles, and shows
+known plan/zero progress before sets. Named athlete tabs and visible Sharing action.
+Initial signed activity publishes the plan without numbers; explicit numeric grants
+send empty execution before first set, independently of PREV/logging. Revision zero
+is allowed only for empty, unskipped activity. Retry resends the same signed event.
+Discard uses root-mounted native Modal with the existing workout confirmation;
+captured account/workout and owner-unmount guards remain intact.
+
+Admitted foreground guest transport/heartbeat failure retains authority/journal
+for one delayed fresh authenticated reconnect; account/background/cancel clear it.
+Protocol/authorization errors remain terminal and private peer caches require fresh
+owner authorization. Verified 14 suites / 357 tests; 14 targeted runtime modules
+exceed 90% all coverage metrics. Root typecheck 9/9 and lint 6/6 (existing warnings),
+whitespace pass. Ten-minute encrypted heartbeat simulation passes. Actual presenter
+layouts reviewed at 320/390px with top 54/bottom 34 insets; committed evidence in
+`specs/milestones/TRAIN-TOGETHER/evidence/ui-2026-10-10-partner`.
+
+No exact cause established for Brad's 09:42 BST / 08:42 UTC phone disconnect.
+AWS CLI/profile/CloudWatch connector unavailable locally; Lambda logs not inspected.
+The initial idle-timeout hypothesis was corrected after finding encrypted 10-second
+heartbeats; native deadlines are unchanged. Two phones need the matching updated
+app (older parsers reject zero-progress activity). Device transport, push receipt,
+Modal-over-sheet stacking and background behavior remain acceptance checks. No
+native build/deployment/release performed. Next: review PR #490, then Brad builds
+and repeats the recorded two-phone checks; PER-22 remains In Progress.
+
 ### 2026-10-09 — PER-22 TestFlight hub hierarchy/refresh follow-up
 
 Brad reports PR #489 merged and staging TestFlight released; main verified

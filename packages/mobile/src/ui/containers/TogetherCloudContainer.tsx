@@ -429,35 +429,33 @@ export function TogetherCloudContainer(p: {
   return (
     <>
       {viewing ? (
-        <View flex={1}>
-          {row}
-          <TogetherPartnerPresenter
-            key={viewing}
-            snapshot={shared}
-            ownerId={viewing}
-            accountId={p.accountId}
-            exerciseNames={names}
-            onMine={() => setViewing(null)}
-            onOperation={async (operation, observedRevision) => {
-              const owner = state.snapshot?.participants.find(
-                (x) => x.userId === viewing,
-              );
-              if (
-                !isCurrent() ||
-                !owner ||
-                !owner.numbersAvailable ||
-                !owner.allowPartnerLogging
-              )
-                throw new Error("permission-changed");
-              await p.cloud.command({
-                target: { kind: "execution", athleteId: viewing },
-                expectedVersion: observedRevision,
-                delegationGeneration: owner.delegationGeneration,
-                operation,
-              });
-            }}
-          />
-        </View>
+        <TogetherPartnerPresenter
+          togetherRow={row}
+          key={viewing}
+          snapshot={shared}
+          ownerId={viewing}
+          accountId={p.accountId}
+          exerciseNames={names}
+          onMine={() => setViewing(null)}
+          onOperation={async (operation, observedRevision) => {
+            const owner = state.snapshot?.participants.find(
+              (x) => x.userId === viewing,
+            );
+            if (
+              !isCurrent() ||
+              !owner ||
+              !owner.numbersAvailable ||
+              !owner.allowPartnerLogging
+            )
+              throw new Error("permission-changed");
+            await p.cloud.command({
+              target: { kind: "execution", athleteId: viewing },
+              expectedVersion: observedRevision,
+              delegationGeneration: owner.delegationGeneration,
+              operation,
+            });
+          }}
+        />
       ) : (
         (p.children?.(row) ?? row)
       )}

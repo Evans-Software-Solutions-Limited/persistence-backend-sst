@@ -295,3 +295,30 @@ it("maps the notification that launched the app", async () => {
     deepLink: "/session",
   });
 });
+
+it.each(["notification_type", "type"])(
+  "routes warm and cold legacy friend-request payloads using %s",
+  async (key) => {
+    const legacy = response({
+      [key]: "friend_request",
+      deeplink: "persistencemobile-staging://profile",
+    });
+    const listener = jest.fn();
+    adapter.addNotificationResponseListener(listener);
+    const callback = jest
+      .mocked(Notifications.addNotificationResponseReceivedListener)
+      .mock.calls.at(-1)![0];
+    callback(legacy);
+    expect(listener).toHaveBeenCalledWith({
+      id: legacy.notification.request.identifier,
+      deepLink: "/(app)/together/partners",
+    });
+    jest
+      .mocked(Notifications.getLastNotificationResponseAsync)
+      .mockResolvedValueOnce(legacy);
+    await expect(adapter.getLastNotificationResponse()).resolves.toEqual({
+      id: legacy.notification.request.identifier,
+      deepLink: "/(app)/together/partners",
+    });
+  },
+);

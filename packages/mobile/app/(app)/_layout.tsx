@@ -19,6 +19,7 @@ import { ScanBarcodeSheetContainer } from "../../src/ui/containers/ScanBarcodeSh
 import { SnapAISheetContainer } from "../../src/ui/containers/SnapAISheetContainer";
 import { MealprintSuggestSheetContainer } from "../../src/ui/containers/MealprintSuggestSheetContainer";
 import { MealprintPlanSheetContainer } from "../../src/ui/containers/MealprintPlanSheetContainer";
+import { DiscardWorkoutConfirmationContainer } from "../../src/ui/containers/DiscardWorkoutConfirmationContainer";
 import { ExerciseFiltersProvider } from "../../src/ui/hooks/useExerciseFilters";
 import { useAutoRetryOnUpgrade } from "../../src/ui/hooks/useAutoRetryOnUpgrade";
 import { useAutoRetryOnWorkoutLimitResolved } from "../../src/ui/hooks/useAutoRetryOnWorkoutLimitResolved";
@@ -482,6 +483,7 @@ export default function AppLayout() {
         reads useAddRecipeMenu().open. Opened from <RecipesLibraryContainer>.
       */}
       <AddRecipeMenuContainer />
+      <DiscardWorkoutConfirmationContainer />
     </ExerciseFiltersProvider>
   );
 }

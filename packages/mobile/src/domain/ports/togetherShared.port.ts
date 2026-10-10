@@ -85,6 +85,7 @@ export interface TogetherSharedPort {
   publishPlan(plan: TogetherSharedPlan): Promise<void>;
   publishProfile(displayName: string): Promise<void>;
   setOwnPlan(plan: TogetherSharedPlan): void;
+  publishOwnActivity(): Promise<void>;
   setConsent(
     recipientId: string,
     consent: TogetherSharingConsent,

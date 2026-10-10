@@ -627,6 +627,7 @@ function sharingHarness() {
   const shared: TogetherSharedPort = {
     getSnapshot: () => view,
     subscribe: () => () => {},
+    publishOwnActivity: jest.fn(async () => {}),
     publishPlan: jest.fn(async () => {}),
     publishProfile: jest.fn(async () => {}),
     setOwnPlan: jest.fn(),

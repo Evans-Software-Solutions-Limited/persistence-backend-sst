@@ -52,3 +52,22 @@ The signed local sample shrinks from 1,137 to 719 URL characters (36.8%);
 normal-phone QR canvas grows to 304px, with a white quiet zone and responsive
 narrow-screen sizing. Old raw links remain accepted. Native scan reliability
 is still a device acceptance check.
+
+10 October / PR #490 additional device checks (matching updated app on both phones):
+
+- Tap an old Profile-linked friend-request push from cold/open app and an inbox
+  row: partner requests appear first in Together partners, ready to accept.
+- View the partner immediately after admission, before either logs a set. Plan
+  exercises and zero progress appear. Share numbers with PREV off; log distinct
+  reps/kg and view each other. Enable logging separately and enter a first set
+  for the named owner. Toggle/revoke each permission and check private values.
+- Check the partner header under the notch, athlete tabs at narrow widths and
+  return to own workout without losing rows.
+- Discard from a live settings/finish/rating sheet: centred confirmation appears
+  above the sheet. Keep returns to the workout; Discard skips rating/history.
+- Keep both apps foreground and idle for ten minutes, then log sets. Induce a
+  brief network drop: guest attempts one fresh authenticated reconnect, retains
+  private draft, and re-sharing values requires current owner authorization.
+  Background/account change/cancel stops the retry. Record binary, lifecycle,
+  connection type and exact error if a drop recurs. The 09:42 BST / 08:42 UTC event
+  remains unattributed; local LAN transport itself does not run through Lambda.

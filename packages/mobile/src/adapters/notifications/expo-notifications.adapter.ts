@@ -18,6 +18,7 @@
 
 import * as Notifications from "expo-notifications";
 import Constants from "expo-constants";
+import { resolveNotificationRoute } from "@/application/notifications/deep-link";
 import { runNativePermissionRequest } from "@/lib/nativePermissionQueue";
 import type {
   LocalNotification,
@@ -36,6 +37,9 @@ function extractDeepLink(
     | undefined;
   // Tolerate both `deepLink` (handlers/spec) and `deeplink` (DB triggers).
   const deepLink = data?.deepLink ?? data?.deeplink;
+  const notificationType = data?.notification_type ?? data?.type;
+  if (notificationType === "friend_request")
+    return resolveNotificationRoute(null, notificationType);
   return typeof deepLink === "string" ? deepLink : null;
 }
 

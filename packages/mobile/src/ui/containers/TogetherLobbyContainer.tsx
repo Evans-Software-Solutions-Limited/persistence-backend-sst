@@ -286,6 +286,7 @@ export function TogetherLobbyContainer({
       if (!plan || !lobby.shared) throw new Error("workout-plan-unavailable");
       if (plan && lobby.shared) {
         lobby.shared.setOwnPlan(plan);
+        await lobby.shared.publishOwnActivity();
         await lobby.shared.publishPlan(plan);
       }
     } catch (error) {
@@ -320,6 +321,7 @@ export function TogetherLobbyContainer({
       const plan = lobby.workout.getPlan(accountId, current.id);
       if (!plan || !lobby.shared) throw new Error("workout-plan-unavailable");
       lobby.shared.setOwnPlan(plan);
+      await lobby.shared.publishOwnActivity();
       await lobby.shared.publishPlan(plan);
       if (scope === hostGeneration.current) {
         setStartFailed(false);
@@ -546,24 +548,22 @@ export function TogetherLobbyContainer({
   return (
     <>
       {viewing && sharedSnapshot && lobby.shared ? (
-        <View flex={1}>
-          {row}
-          <TogetherPartnerPresenter
-            key={`${accountId}:${viewing}`}
-            snapshot={sharedSnapshot}
-            accountId={accountId}
-            ownerId={viewing}
-            exerciseNames={exerciseNames}
-            onMine={() => setViewing(null)}
-            onOperation={(operation, observedRevision) =>
-              lobby.shared!.requestDelegatedSet(
-                viewing,
-                operation,
-                observedRevision,
-              )
-            }
-          />
-        </View>
+        <TogetherPartnerPresenter
+          togetherRow={row}
+          key={`${accountId}:${viewing}`}
+          snapshot={sharedSnapshot}
+          accountId={accountId}
+          ownerId={viewing}
+          exerciseNames={exerciseNames}
+          onMine={() => setViewing(null)}
+          onOperation={(operation, observedRevision) =>
+            lobby.shared!.requestDelegatedSet(
+              viewing,
+              operation,
+              observedRevision,
+            )
+          }
+        />
       ) : children ? (
         children(row)
       ) : (
@@ -920,6 +920,7 @@ export function TogetherLobbyContainer({
                         );
                         if (plan && lobby.shared) {
                           lobby.shared.setOwnPlan(plan);
+                          await lobby.shared.publishOwnActivity();
                           if (snapshot.role === "host")
                             await lobby.shared.publishPlan(plan);
                         }

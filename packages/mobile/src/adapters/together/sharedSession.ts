@@ -392,7 +392,7 @@ export class TogetherSharedSession implements TogetherSharedPort {
         uuid(p.authorId) &&
         (p.recipientId === "all" || uuid(p.recipientId)) &&
         integer(p.revision) &&
-        p.revision > 0 &&
+        (p.revision > 0 || p.type === "activity") &&
         [
           "plan",
           "profile",
@@ -619,6 +619,8 @@ export class TogetherSharedSession implements TogetherSharedPort {
             uuid(exercise.planExerciseId) &&
             integer(exercise.completedSets) &&
             exercise.completedSets <= 100 &&
+            (value.revision !== 0 ||
+              (exercise.completedSets === 0 && exercise.skipped === false)) &&
             typeof exercise.skipped === "boolean" &&
             body.plan.exercises.some(
               (e) => e.planExerciseId === exercise.planExerciseId,
@@ -962,6 +964,34 @@ export class TogetherSharedSession implements TogetherSharedPort {
     check(planShape(plan));
     this.bindPlan(this.ownId, plan);
   }
+  async publishOwnActivity() {
+    const plan = this.athletePlans.get(this.ownId);
+    check(plan);
+    const prior = this.latest.get(
+      scope({ authorId: this.ownId, recipientId: "all", type: "activity" }),
+    );
+    if (prior?.payload.revision === this.ownRevision) {
+      await this.options.send(prior);
+      return;
+    }
+    const projection = this.athletes.get(this.ownId);
+    await this.publish("activity", "all", {
+      plan,
+      planHash: requestHash(plan),
+      value: {
+        userId: this.ownId,
+        revision: this.ownRevision,
+        exercises: plan.exercises.map((e) => ({
+          planExerciseId: e.planExerciseId,
+          completedSets:
+            projection?.exercises[e.planExerciseId]?.sets.filter(
+              (s) => s.completed,
+            ).length ?? 0,
+          skipped: projection?.exercises[e.planExerciseId]?.skipped ?? false,
+        })),
+      },
+    });
+  }
   async publishProfile(displayName: string) {
     await this.publish("profile", "all", { displayName });
   }
@@ -976,7 +1006,7 @@ export class TogetherSharedSession implements TogetherSharedPort {
       plan: this.athletePlans.get(this.ownId) ?? null,
       executionRevision: this.ownRevision,
     });
-    if (consent.numbers && this.athletes.has(this.ownId))
+    if (consent.numbers && this.athletePlans.has(this.ownId))
       await this.sendProjection(recipientId);
   }
   private async sendProjection(recipientId: string) {
@@ -992,7 +1022,19 @@ export class TogetherSharedSession implements TogetherSharedPort {
       grantVersion: grant.version,
       planHash: requestHash(this.athletePlans.get(this.ownId)),
       plan: this.athletePlans.get(this.ownId),
-      value: this.athletes.get(this.ownId),
+      value: this.athletes.get(this.ownId) ?? {
+        userId: this.ownId,
+        revision: this.ownRevision,
+        restEndsAt: null,
+        exercises: Object.fromEntries(
+          this.athletePlans
+            .get(this.ownId)!
+            .exercises.map((e) => [
+              e.planExerciseId,
+              { exerciseId: e.exerciseId, skipped: false, sets: [] },
+            ]),
+        ),
+      },
     });
   }
   async publishProgress(command: LocalCommand) {

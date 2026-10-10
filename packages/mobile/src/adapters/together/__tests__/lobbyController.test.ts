@@ -494,6 +494,42 @@ describe("reviewed lobby coordinator, real cryptography and SQLite, simulated na
       expect(guest.native.stop).toHaveBeenCalledTimes(1);
     },
   );
+  it.each(["continue", "background", "account", "cancel"])(
+    "bounds automatic authenticated reconnect and cancels on %s",
+    async (action) => {
+      const host = setup(),
+        guest = setup(2);
+      await host.controller.host("Strength A", "friends");
+      await join(host, guest, true);
+      host.native.emit({ type: "disconnected", peerId: id(12) });
+      guest.native.emit({
+        type: "error",
+        peerId: "host",
+        code: "read_timeout",
+      });
+      guest.native.emit({ type: "disconnected", peerId: "host" });
+      expect(guest.controller.getSnapshot()).toMatchObject({
+        phase: "reconnecting",
+        error: "read_timeout",
+      });
+      const searches = guest.native.startDiscovery.mock.calls.length;
+      if (action === "background") guest.controller.setActive(false);
+      if (action === "account") guest.controller.setAccount(id(3));
+      if (action === "cancel") await guest.controller.cancel();
+      jest.advanceTimersByTime(1_000);
+      await settle();
+      expect(guest.native.startDiscovery.mock.calls.length).toBe(
+        searches + (action === "continue" ? 1 : 0),
+      );
+      if (action === "continue") {
+        jest.advanceTimersByTime(11_000);
+        await settle();
+        expect(guest.native.startDiscovery.mock.calls.length).toBe(
+          searches + 1,
+        );
+      }
+    },
+  );
   it("discovery session names cannot select or replace a signed host", async () => {
     const guest = setup(2);
     await guest.controller.selectInvite(invitation());

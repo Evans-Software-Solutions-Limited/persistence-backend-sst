@@ -1,4 +1,6 @@
 import React from "react";
+import { SafeAreaInsetsContext } from "react-native-safe-area-context";
+import { StyleSheet } from "react-native";
 import { act, fireEvent, waitFor } from "@testing-library/react-native";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 import { TogetherPartnerPresenter } from "../TogetherPartnerPresenter";
@@ -312,4 +314,61 @@ it("revision or grant changes discard old input and revoke PREV immediately", ()
   expect(r.getByTestId("set-logger-reps").props.value).toBe("8");
   expect(r.queryByTestId("set-logger-fill-previous")).toBeNull();
   expect(r.queryByText("Save set for Mia")).toBeNull();
+});
+
+it("shows the owner's plan before first progress and keeps numeric rows independent of PREV", () => {
+  const first = {
+    ...snapshot,
+    athletePlans: {
+      other: {
+        name: "Leg day",
+        exercises: [
+          {
+            planExerciseId: "slot",
+            exerciseId: "squat",
+            order: 0,
+            targetSets: 3,
+          },
+        ],
+      },
+    },
+    athletes: [],
+    grants: [],
+  };
+  const r = renderWithTheme(
+    <TogetherPartnerPresenter {...props} snapshot={first} />,
+  );
+  expect(r.getByText("Leg day")).toBeTruthy();
+  expect(r.getByText("Squat")).toBeTruthy();
+  expect(r.getByText("0 sets completed")).toBeTruthy();
+  r.rerender(
+    <TogetherPartnerPresenter
+      {...props}
+      snapshot={{
+        ...first,
+        athletes: snapshot.athletes,
+        grants: snapshot.grants,
+      }}
+    />,
+  );
+  expect(r.getByTestId("set-logger-reps").props.value).toBe("8");
+  expect(r.queryByText("55 × 7")).toBeNull();
+});
+
+it("contains the athlete row within the actual top inset and keeps bottom space", () => {
+  const r = renderWithTheme(
+    <SafeAreaInsetsContext.Provider
+      value={{ top: 54, bottom: 34, left: 0, right: 0 }}
+    >
+      <TogetherPartnerPresenter {...props} togetherRow={<React.Fragment />} />
+    </SafeAreaInsetsContext.Provider>,
+  );
+  expect(
+    StyleSheet.flatten(r.getByTestId("together-partner-safe-area").props.style)
+      .paddingTop,
+  ).toBe(54);
+  expect(
+    r.getByTestId("together-partner-view").props.contentContainerStyle
+      .paddingBottom,
+  ).toBe(58);
 });
