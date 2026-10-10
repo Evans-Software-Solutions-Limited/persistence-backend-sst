@@ -227,7 +227,11 @@ Partner workouts own a safe-area-aware screen including the athlete switcher.
 Reuse active-workout exercise heading and aligned SET/PREV/REPS/KG styles; show
 the owner's plan and progress immediately, including zero sets. Numeric consent
 and PREV remain independent. A numeric grant publishes an empty current execution
-before the first logged set; it never invents previous values. Keep a visible
+before the first logged set; it never invents previous values. Extend the existing
+shared port with `publishOwnActivity()` using the existing signed `activity`
+envelope: after setting a personal plan, publish its exercise identities and
+completed-set counts (zero initially) to admitted peers, without numeric values.
+Keep a visible
 Sharing action beside the athlete switcher, available from session admission.
 
 Discard uses the existing centred workout confirmation visual, mounted above
