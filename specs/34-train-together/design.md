@@ -216,3 +216,26 @@ All session invitation QR surfaces use a shared responsive renderer: 256px code 
 Brad's TestFlight review supersedes the earlier hub cards: plain Sessions heading, no subtitle, noninteractive “No workouts available to you” empty copy, one Join a session entry for discovery/scan/paste, and a compact unboxed Start a workout action. Sessions and workout choices are whole-row actions with restrained metadata and chevrons; no nested full-width buttons. Partners remain inline with My QR, no own-profile card, and accepted status takes precedence over request direction.
 
 The hub subscribes to known lobby state but never starts or periodically restarts native discovery. Live network browsing is explicitly entered from Join and stops when that screen blurs while still browsing; selected/admitted/active sessions are retained. Partner data refreshes on entry, return to foreground when focused, user pull and mutations, with no polling timer. Only a user pull owns RefreshControl.refreshing; initial/foreground reads must not show the pull indicator. Accepted partners reconcile away obsolete pending requests/notices.
+
+### D15. 10 October staging corrections (PER-22 / PR #490)
+
+Friend-request notification taps use notification type to open Together partners,
+including older payloads containing a profile link; unrelated notifications retain
+their existing destinations. Apply the same rule to warm/cold push and inbox taps.
+
+Partner workouts own a safe-area-aware screen including the athlete switcher.
+Reuse active-workout exercise heading and aligned SET/PREV/REPS/KG styles; show
+the owner's plan and progress immediately, including zero sets. Numeric consent
+and PREV remain independent. A numeric grant publishes an empty current execution
+before the first logged set; it never invents previous values. Keep a visible
+Sharing action beside the athlete switcher, available from session admission.
+
+Discard uses the existing centred workout confirmation visual, mounted above
+sheets at the authenticated root. Confirmation remains bound to the captured
+account/workout and is dismissed on owner unmount; it never rates or saves.
+
+Connection investigation must verify sustained encrypted heartbeat traffic and
+retain bounded authentication, frame and queue limits. Do not remove native idle
+timeouts on the assumption that no heartbeat exists. Surface an actionable
+reconnect state without losing private drafts; exact event attribution requires
+device evidence. No native build or staging release is claimed by source tests.
