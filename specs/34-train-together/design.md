@@ -241,5 +241,10 @@ account/workout and is dismissed on owner unmount; it never rates or saves.
 Connection investigation must verify sustained encrypted heartbeat traffic and
 retain bounded authentication, frame and queue limits. Do not remove native idle
 timeouts on the assumption that no heartbeat exists. Surface an actionable
-reconnect state without losing private drafts; exact event attribution requires
+reconnect state without losing private drafts. A foreground admitted guest gets
+one bounded automatic reconnect after a transport/heartbeat failure, using a
+fresh authenticated channel and the same signed consent/journal. Cancel this
+retry on account/lifecycle/cancellation changes. Protocol/authorization failures
+still terminate collaboration; failed recovery requires explicit retry. Private
+peer caches stay purged until fresh owner authorization. Exact event attribution requires
 device evidence. No native build or staging release is claimed by source tests.
