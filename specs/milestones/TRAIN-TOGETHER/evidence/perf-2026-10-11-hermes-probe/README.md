@@ -39,3 +39,35 @@ Hermes before any phone slowdown.
 
 Not measured: a physical iPhone (no code-signing identity on this Mac) and
 Android.
+
+## After D16 (F1 + F9), same simulator, same evening — native backend
+
+Build `ea27a0e1` with the `TogetherCrypto` module installed after its self-test
+(`cryptoBackend: "native"` in the reports). Three runs, first discarded;
+`simulator-iphone17-ios27-native-run2.json` and `-run3.json` are kept.
+
+| Benchmark                           | Audit desktop | Hermes noble (runs 2–3) | Hermes native (runs 2–3) | Native speed-up over noble | Native ÷ audit |
+| ----------------------------------- | ------------- | ----------------------- | ------------------------ | -------------------------- | -------------- |
+| ed25519.sign                        | 1.01 ms       | 5.586 / 5.667 ms        | 0.071 / 0.057 ms         | 88×                        | 0.06×          |
+| ed25519.verify                      | 1.00 ms       | 13.465 / 13.377 ms      | 0.040 / 0.035 ms         | 356×                       | 0.04×          |
+| x25519+sha256 key derivation        | 0.82 ms       | 11.221 / 11.308 ms      | 1.307 / 1.329 ms         | 9×                         | 1.61×          |
+| chacha20poly1305 2 KB               | 0.11 ms       | 0.774 / 0.770 ms        | 0.770 / 0.764 ms         | 1× (still noble)           | 6.97×          |
+| requestHash(4-member roster)        | 0.11 ms       | 2.614 / 2.634 ms        | 0.259 / 0.265 ms         | 10×                        | 2.38×          |
+| verifyRoster(4 members, 9 verifies) | 8.15 ms       | 135.660 / 137.956 ms    | 1.686 / 1.679 ms         | 81×                        | 0.21×          |
+| verifyRoster(2 members)             | —             | 80.852 / 81.796 ms      | 0.969 / 0.970 ms         | 84×                        | —              |
+| JSON clone 20 KB                    | —             | 0.257 / 0.291 ms        | 0.258 / 0.256 ms         | 1×                         | —              |
+| SQLite read-all + parse 4 rows      | —             | 0.133 / 0.179 ms        | 0.141 / 0.138 ms         | 1×                         | —              |
+
+Projected per-set crypto with the audit's **pre-F1** operation counts:
+4 participants sender 114 ms / receiver 34 ms (was 7.8–7.9 s / 2.6 s);
+2 participants sender 34 ms / receiver 21 ms (was 2.3 s / 1.6 s). F1 cuts the
+counts further (≤ N+3 sender verifications, ≤ 3 per receiver, 0 on unchanged
+reads), so the real per-set crypto is now a few tens of milliseconds.
+
+Remaining JavaScript costs: the Ed25519→X25519 Montgomery conversions inside key
+derivation (≈1.2 ms, now once per peer thanks to the key cache), the canonical
+JSON in `requestHash` (≈0.25 ms) and ChaCha20-Poly1305 (0.77 ms per 2 KB, nine
+seals per set at four participants ≈ 7 ms). None blocks AC4; AEAD can move to
+native later if device profiling shows it.
+
+Not yet measured: physical iPhone (signing) and Android (BouncyCastle path).
