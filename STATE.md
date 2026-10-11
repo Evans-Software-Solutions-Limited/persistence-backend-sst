@@ -1,5 +1,37 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-11 — PER-20/PER-64/PER-22 Together performance audit (read-only, Fable pass)
+
+[PER-20](https://linear.app/evans-software-solutions/issue/PER-20) ·
+[PER-64](https://linear.app/evans-software-solutions/issue/PER-64) ·
+[PER-22](https://linear.app/evans-software-solutions/issue/PER-22). Independent
+performance-first audit at merged main `15fdb992`; sense-checks the 11 October
+Opus verification pass and goes deeper on the live-update path. No runtime,
+native, deploy, migration or merge change. Linear document: https://linear.app/evans-software-solutions/document/together-performance-audit-implementation-and-performance-pass-11-0742b327c246.
+
+Desktop microbenchmark (bun/JSC, real `@noble` crypto, real `node:sqlite`,
+simulated native LAN, 6×4 workout; not device p95): one logged set at 4
+participants costs the host 56 `verifyRoster` calls (≈504 ed25519 verifies),
+380 SQL statements, 6 frames / 31 KB and converges at ≈1.0 s with zero network
+latency (0.27 s at 2 participants; 1.4 s with PREV grants); each receiver does
+19 roster verifications. `getSnapshot()` with no mutation re-verifies the roster
+and re-reads the chain 6–14 times, clones 10–20 KB and never returns the same
+reference. One peer at 1.5 s/frame delays every peer to 4.0 s (serial
+`sendShared`); a failing first peer silences later peers. Every peer event
+fires `workout.changed()` → full own-checkpoint reread (26 KB after 10 sets,
+intents retained in the row) and ActiveSession re-render; discovery's 1 s expiry
+tick invalidates subscribers every second. Online polls a full snapshot every
+5 s and never requests the deployed realtime ticket/socket.
+
+Verdict: not fit as implemented for AC4 ≤2 s p95 at 4 participants, unproven at
+2; no redesign needed — the protocol is sound, the costs are implementation
+choices. Cheapest path: verify-once-per-roster-revision + per-peer key cache;
+stable snapshot + scoped invalidation; per-peer send queues; keyed storage/undo
+log in `accept()`; payload diet; client-side realtime for Online; then device
+proof (Hermes crypto multiplier first). All Opus correctness findings confirmed
+with nuances recorded in the document; none found wrong. Next: PER-64 hot-path
+fixes with the stated acceptance criteria, then PER-20 device profiling matrix.
+
 ### 2026-10-10 — PER-22 partner workouts, notification taps and bounded recovery
 
 [PER-22](https://linear.app/evans-software-solutions/issue/PER-22), existing
