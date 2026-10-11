@@ -1,6 +1,6 @@
 # Project memory · persistence-backend-sst
 
-### 2026-10-11 — PER-20 Hermes crypto probe landed; device run blocked (no Xcode on this Mac)
+### 2026-10-11 — PER-20 Hermes crypto probe: simulator multiplier 5.6–24× (F9 native crypto required)
 
 [PER-20](https://linear.app/evans-software-solutions/issue/PER-20), branch
 `claude/vigilant-carson-8shl62` on merged main `15fdb992`. Calibrates the
@@ -38,17 +38,36 @@ AEAD 0.012–0.016 ms, `verifyRoster(4)` 3.0–3.2 ms, `verifyRoster(2)` 1.6–1
 `requestHash` 0.03 ms, clone 0.03 ms, SQLite 0.02–0.04 ms — roughly 2.5–4×
 faster than the audit's Linux desktop, so the audit figures are the comparator.
 
-Not done: no simulator or device run. This Mac has only Command Line Tools
-(`xcode-select -p` → CommandLineTools, no `/Applications/Xcode.app`, no
-CoreSimulator devices), so `bun run ios -- --configuration Release` cannot
-build. The Hermes multiplier remains unmeasured and the F9 decision stays open.
-Environment notes: mobile Jest needs real Node (CI pins Node 24); under Bun's
+Simulator run (after Brad installed Xcode 27.0 / iOS 27.0 runtime): Release
+staging build on the iPhone 17 simulator, Hermes 0.14.1 (Release, concurrent
+GC, `__DEV__` false). Three runs, first discarded; runs 2–3 ms/op versus the
+audit desktop: `ed25519.sign` 5.6 (5.6×), `ed25519.verify` 13.4 (13.4×), key
+derivation 11.3 (13.7×), AEAD 2 KB 0.77 (7.0×), `requestHash` 2.6 (23.9×),
+`verifyRoster(4)` 136–138 (16.8×), `verifyRoster(2)` 81–82, JSON clone 0.26–0.29,
+SQLite 0.13–0.18. Against Bun/JSC on the same Mac, Hermes is ≈30–80× slower on
+the crypto primitives. Projected per-set crypto at 4 participants: sender
+≈7.8–7.9 s, receiver ≈2.6 s; at 2 participants sender ≈2.3 s, receiver ≈1.6 s.
+The simulator is an optimistic lower bound for a phone. Verdict: the multiplier
+is far above the audit's 3× threshold, so F9 native ed25519/x25519 behind the
+`identity.ts` API is required in addition to F1 verify-once caching. JSON
+reports, desktop baseline and the comparison table are committed in
+`specs/milestones/TRAIN-TOGETHER/evidence/perf-2026-10-11-hermes-probe/`.
+
+Not measured: physical iPhone (cabled iPhone 16 Pro present, but Xcode has no
+Apple account or provisioning profile for the staging bundle id; the device
+build failed at signing) and Android. Build notes, all local to the gitignored
+`ios/` folder and not needed by EAS: Xcode 27 ships no Simulator.app (Expo SDK
+55 `run:ios` fails its prerequisite; built with `xcodebuild` + `simctl`); the
+iOS 27 SDK rejects pod deployment targets below 15 and marks `UIAction.subtitle`
+iOS 16+ (expo-router), so the local Podfile hook floors pods at 16.0 and the app
+target is 16.0; iOS 27 UIKit aborts any app not adopting UIScene (React Native
+0.83 does not), worked around by attaching lldb and returning from the aborting
+block. Environment: mobile Jest needs real Node (CI pins Node 24); under Bun's
 node shim `vm.SyntheticModule` exists and Jest treats `@noble/*` as ESM. Node 24
 installed via Homebrew at `/opt/homebrew/opt/node@24/bin` (not on the login
-PATH). Next: Brad installs Xcode or runs the Release build on a Mac that has
-it, signs in, opens the deep link, runs the probe three times, keeps runs two
-and three, and pastes the JSON into PER-20; then apply the ≥3× rule from the
-audit (F9 native crypto in addition to F1 at or above 3×, F1 alone below).
+PATH). Next: Brad adds his Apple account to Xcode so the cabled iPhone build can
+sign, then repeat the probe on the iPhone 16 Pro and one Android; PER-64 picks
+up F1 + F9 together.
 
 ### 2026-10-11 — PER-20/PER-64/PER-22 Together performance audit (read-only, Fable pass)
 
