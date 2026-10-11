@@ -54,6 +54,16 @@ function matchesToken(token: unknown, expected: string | undefined): boolean {
 /** Host-only admission decisions. Network discovery alone never admits anyone. */
 export class TogetherLocalLobby {
   private readonly options: LobbyOptions;
+  private readonly ownCredentialHash: string;
+  private readonly hashes = new WeakMap<object, string>();
+  /** D16: one verification per roster revision, denied-pair set and validity window. */
+  private verified?: {
+    chain: readonly Signed<OfflineRoster>[];
+    deniedKey: string;
+    validFrom: number;
+    validUntil: number;
+    members: Map<string, RosterMember>;
+  };
   constructor(
     readonly store: TogetherLocalStore,
     options: LobbyOptions,
@@ -65,6 +75,7 @@ export class TogetherLocalLobby {
       trustedKeys: { ...options.trustedKeys },
       invitedUserIds: [...new Set(options.invitedUserIds)].sort(),
     };
+    this.ownCredentialHash = requestHash(this.options.credential);
     const own = verifyCredential(
       this.options.credential,
       this.options.trustedKeys,
@@ -270,36 +281,96 @@ export class TogetherLocalLobby {
     );
   }
 
-  /** Run at every send/read: stale credentials or newly known blocks stop sharing. */
+  /**
+   * Run at every send/read: stale credentials, closure or newly known blocks
+   * stop sharing. The signed chain is verified once per revision, denied-pair
+   * set and validity window (D16); the closed flag is checked every time.
+   */
   member(peer: Signed<Credential>): RosterMember {
     this.store.assertOpen(this.options.sessionId);
     const chain = this.store.rosters(this.options.sessionId);
     const roster = chain.at(-1);
     if (!roster) throw new Error("No admitted roster");
-    verifyRoster(
-      roster,
-      this.options.trustedKeys,
-      chain.at(-2) ?? null,
-      this.options.deniedPairs(
-        roster.payload.members.map(
-          (member) => member.credential.payload.userId,
-        ),
-      ),
-      this.options.now(),
+    const members = roster.payload.members;
+    const denied = this.options.deniedPairs(
+      members.map((member) => member.credential.payload.userId),
     );
-    const own = roster.payload.members.find(
-      (m) => requestHash(m.credential) === requestHash(this.options.credential),
-    );
-    const member = roster.payload.members.find(
-      (m) => requestHash(m.credential) === requestHash(peer),
-    );
+    const deniedKey = denied
+      .map(([a, b]) => (a < b ? `${a}\n${b}` : `${b}\n${a}`))
+      .sort()
+      .join("\u0000");
+    const now = this.options.now();
+    let verified = this.verified;
+    if (
+      !verified ||
+      verified.chain !== chain ||
+      verified.deniedKey !== deniedKey ||
+      now < verified.validFrom ||
+      now >= verified.validUntil
+    ) {
+      verifyRoster(
+        roster,
+        this.options.trustedKeys,
+        chain.at(-2) ?? null,
+        denied,
+        now,
+      );
+      let validFrom = Number.NEGATIVE_INFINITY;
+      let validUntil = Number.POSITIVE_INFINITY;
+      for (const m of members) {
+        validFrom = Math.max(
+          validFrom,
+          m.credential.payload.issuedAt,
+          m.friendship?.payload.issuedAt ?? Number.NEGATIVE_INFINITY,
+        );
+        validUntil = Math.min(
+          validUntil,
+          m.credential.payload.expiresAt,
+          m.friendship?.payload.expiresAt ?? Number.POSITIVE_INFINITY,
+        );
+      }
+      verified = {
+        chain,
+        deniedKey,
+        validFrom,
+        validUntil,
+        members: new Map(members.map((m) => [requestHash(m.credential), m])),
+      };
+      this.verified = verified;
+    }
+    const own = verified.members.get(this.ownCredentialHash);
+    const member = verified.members.get(this.credentialHash(peer));
     if (!own || !member) throw new Error("Device not admitted");
     return member;
+  }
+
+  /** Hash by identity; own-credential clones short-circuit on field equality. */
+  private credentialHash(credential: Signed<Credential>): string {
+    const own = this.options.credential;
+    if (
+      credential === own ||
+      (credential.signature === own.signature &&
+        credential.payload.kind === own.payload.kind &&
+        credential.payload.keyId === own.payload.keyId &&
+        credential.payload.userId === own.payload.userId &&
+        credential.payload.deviceId === own.payload.deviceId &&
+        credential.payload.publicKey === own.payload.publicKey &&
+        credential.payload.issuedAt === own.payload.issuedAt &&
+        credential.payload.expiresAt === own.payload.expiresAt)
+    )
+      return this.ownCredentialHash;
+    let hash = this.hashes.get(credential);
+    if (!hash) {
+      hash = requestHash(credential);
+      this.hashes.set(credential, hash);
+    }
+    return hash;
   }
 
   /** Release the private signing copy when the foreground lobby ends. */
   dispose(): void {
     this.options.seed.fill(0);
+    this.verified = undefined;
   }
 
   get ownCredential(): Signed<Credential> {

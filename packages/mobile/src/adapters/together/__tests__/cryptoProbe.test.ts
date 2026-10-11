@@ -92,7 +92,11 @@ describe("Together crypto probe (PER-20 Hermes calibration)", () => {
 
     expect(report.version).toBe("together-crypto-probe-v1");
     expect(Number.isNaN(Date.parse(report.generatedAt))).toBe(false);
-    expect(report.engine).toEqual({ hermes: false, runtimeProperties: null });
+    expect(report.engine).toEqual({
+      hermes: false,
+      runtimeProperties: null,
+      cryptoBackend: "noble",
+    });
     expect(report.environment).toEqual({
       platform: "test",
       osVersion: "node",
@@ -303,7 +307,11 @@ describe("Together crypto probe (PER-20 Hermes calibration)", () => {
 
   it("detects Hermes through HermesInternal when present", () => {
     const g = globalThis as { HermesInternal?: unknown };
-    expect(detectEngine()).toEqual({ hermes: false, runtimeProperties: null });
+    expect(detectEngine()).toEqual({
+      hermes: false,
+      runtimeProperties: null,
+      cryptoBackend: "noble",
+    });
     g.HermesInternal = {
       getRuntimeProperties: () => ({ "OSS Release Version": "0.13.0" }),
     };
@@ -311,15 +319,24 @@ describe("Together crypto probe (PER-20 Hermes calibration)", () => {
       expect(detectEngine()).toEqual({
         hermes: true,
         runtimeProperties: { "OSS Release Version": "0.13.0" },
+        cryptoBackend: "noble",
       });
       g.HermesInternal = {
         getRuntimeProperties: () => {
           throw new Error("unavailable");
         },
       };
-      expect(detectEngine()).toEqual({ hermes: true, runtimeProperties: null });
+      expect(detectEngine()).toEqual({
+        hermes: true,
+        runtimeProperties: null,
+        cryptoBackend: "noble",
+      });
       g.HermesInternal = {};
-      expect(detectEngine()).toEqual({ hermes: true, runtimeProperties: null });
+      expect(detectEngine()).toEqual({
+        hermes: true,
+        runtimeProperties: null,
+        cryptoBackend: "noble",
+      });
     } finally {
       delete g.HermesInternal;
     }

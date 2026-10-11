@@ -1,7 +1,7 @@
 import { MAX_PREVIOUS_BYTES, sharedLimit } from "./sharedTransfer";
-import { ed25519, x25519 } from "@noble/curves/ed25519.js";
+import { ed25519 } from "@noble/curves/ed25519.js";
 import { chacha20poly1305 } from "@noble/ciphers/chacha.js";
-import { sha256 } from "@noble/hashes/sha2.js";
+import { getCryptoBackend } from "./security/cryptoBackend";
 import type {
   TogetherSharedPort,
   TogetherSharedPlan,
@@ -135,6 +135,8 @@ export class TogetherSharedSession implements TogetherSharedPort {
   private profiles = new Map<string, string>();
   private ownRevision = 0;
   private ownerVersions = new Map<string, number>();
+  /** D16: X25519 shared secret per peer public key, zeroed on dispose/roster change. */
+  private keys = new Map<string, Uint8Array>();
   constructor(private readonly options: TogetherSharedOptions) {
     this.seed = options.seed.slice();
     for (const row of options.lobby.store.sharedSuspensions(
@@ -268,15 +270,24 @@ export class TogetherSharedSession implements TogetherSharedPort {
   }
   private key(peerId: string) {
     const peer = this.member(peerId).credential.payload.publicKey;
+    const cached = this.keys.get(peer);
+    if (cached) return cached.slice();
     const raw = decode64(peer.split("\n")[1]).slice(12);
     const secret = ed25519.utils.toMontgomerySecret(this.seed);
     try {
-      return sha256(
-        x25519.getSharedSecret(secret, ed25519.utils.toMontgomery(raw)),
+      const crypto = getCryptoBackend();
+      const key = crypto.sha256(
+        crypto.x25519SharedSecret(secret, ed25519.utils.toMontgomery(raw)),
       );
+      this.keys.set(peer, key);
+      return key.slice();
     } finally {
       secret.fill(0);
     }
+  }
+  private clearKeys() {
+    for (const key of this.keys.values()) key.fill(0);
+    this.keys.clear();
   }
   private seal(body: unknown, p: Omit<SharedPayload, "body">) {
     if (p.recipientId === "all") return body;
@@ -1286,6 +1297,7 @@ export class TogetherSharedSession implements TogetherSharedPort {
   }
   /** Apply signed roster removal immediately, including caches relayed for other athletes. */
   rosterChanged(): void {
+    this.clearKeys();
     const roster = this.options.lobby.store.current(
       this.options.lobby.pin.sessionId,
     );
@@ -1392,6 +1404,7 @@ export class TogetherSharedSession implements TogetherSharedPort {
   dispose() {
     this.disposed = true;
     this.seed.fill(0);
+    this.clearKeys();
     this.purge();
     this.athletes.clear();
     this.athletePlans.clear();

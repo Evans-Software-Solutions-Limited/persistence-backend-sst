@@ -1,4 +1,5 @@
 import { x25519 } from "@noble/curves/ed25519.js";
+import { getCryptoBackend } from "./cryptoBackend";
 import { chacha20poly1305 } from "@noble/ciphers/chacha.js";
 import { hkdf } from "@noble/hashes/hkdf.js";
 import { sha256 } from "@noble/hashes/sha2.js";
@@ -291,7 +292,7 @@ export class LocalSecureChannel {
   private derive() {
     this.binding = requestHash({ hello: this.hello, response: this.response });
     const remote = this.options.role === "host" ? this.hello! : this.response!;
-    const shared = x25519.getSharedSecret(
+    const shared = getCryptoBackend().x25519SharedSecret(
       this.ephemeral!,
       decode64(remote.payload.ephemeral, true),
     );

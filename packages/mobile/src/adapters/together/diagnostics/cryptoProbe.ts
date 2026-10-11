@@ -10,9 +10,12 @@
  *
  * Audit: https://linear.app/evans-software-solutions/document/together-performance-audit-implementation-and-performance-pass-11-0742b327c246
  */
-import { ed25519, x25519 } from "@noble/curves/ed25519.js";
+import { ed25519 } from "@noble/curves/ed25519.js";
 import { chacha20poly1305 } from "@noble/ciphers/chacha.js";
-import { sha256 } from "@noble/hashes/sha2.js";
+import {
+  getCryptoBackend,
+  type CryptoBackendName,
+} from "../security/cryptoBackend";
 import {
   publicKeyPem,
   requestHash,
@@ -91,6 +94,8 @@ export interface ProbeEnvironment {
 export interface ProbeEngine {
   hermes: boolean;
   runtimeProperties: Record<string, string> | null;
+  /** Active Together crypto backend (D16): "native" or the pure-JS "noble" fallback. */
+  cryptoBackend: CryptoBackendName;
 }
 
 export interface ProbeOperationCounts {
@@ -341,8 +346,9 @@ export function deriveSharedKey(
 ): Uint8Array {
   const secret = ed25519.utils.toMontgomerySecret(seed);
   try {
-    return sha256(
-      x25519.getSharedSecret(
+    const crypto = getCryptoBackend();
+    return crypto.sha256(
+      crypto.x25519SharedSecret(
         secret,
         ed25519.utils.toMontgomery(rawPublicKey(peerPublicKeyPem)),
       ),
@@ -360,14 +366,16 @@ export function detectEngine(): ProbeEngine {
       };
     }
   ).HermesInternal;
-  if (!internal) return { hermes: false, runtimeProperties: null };
+  const cryptoBackend = getCryptoBackend().name;
+  if (!internal)
+    return { hermes: false, runtimeProperties: null, cryptoBackend };
   let runtimeProperties: Record<string, string> | null = null;
   try {
     runtimeProperties = internal.getRuntimeProperties?.() ?? null;
   } catch {
     runtimeProperties = null;
   }
-  return { hermes: true, runtimeProperties };
+  return { hermes: true, runtimeProperties, cryptoBackend };
 }
 
 const defaultNow = (): number =>
@@ -390,7 +398,10 @@ export async function runCryptoProbe(
   const { host, guest, roster: roster4, roster2, trusted } = fixture;
 
   // Precompute inputs so each timed loop measures one primitive only.
-  const signature = ed25519.sign(fixture.signPayload, host.seed);
+  const signature = getCryptoBackend().ed25519Sign(
+    fixture.signPayload,
+    host.seed,
+  );
   const hostPublicKey = rawPublicKey(host.credential.payload.publicKey);
   const aeadKey = deriveSharedKey(
     host.seed,
@@ -417,19 +428,17 @@ export async function runCryptoProbe(
     {
       name: "ed25519.sign",
       iterations: iterations.sign,
-      op: () => (sink = ed25519.sign(fixture.signPayload, host.seed)),
+      op: () =>
+        (sink = getCryptoBackend().ed25519Sign(fixture.signPayload, host.seed)),
     },
     {
       name: "ed25519.verify",
       iterations: iterations.verify,
       op: () => {
-        const ok = ed25519.verify(
+        const ok = getCryptoBackend().ed25519Verify(
           signature,
           fixture.signPayload,
           hostPublicKey,
-          {
-            zip215: false,
-          },
         );
         if (!ok) throw new Error("probe: ed25519.verify returned false");
         sink = ok;

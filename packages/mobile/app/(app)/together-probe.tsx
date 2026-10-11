@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-require-imports -- optional native module probed lazily. */
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Platform,
   Pressable,
@@ -17,6 +17,13 @@ import {
   type CryptoProbeReport,
   type ProbeBenchmarkName,
 } from "@/adapters/together/diagnostics/cryptoProbe";
+import {
+  getCryptoBackend,
+  installCryptoBackend,
+  installNativeTogetherCrypto,
+  nobleCryptoBackend,
+  type CryptoBackendName,
+} from "@/adapters/together/security/cryptoBackend";
 import { colorPalette } from "@/ui/theme";
 
 /**
@@ -36,6 +43,24 @@ export default function TogetherProbeScreen() {
   const [progress, setProgress] = useState("Idle");
   const [error, setError] = useState<string | null>(null);
   const running = useRef(false);
+  const [backend, setBackend] = useState<CryptoBackendName>(
+    () => getCryptoBackend().name,
+  );
+  useEffect(() => {
+    // Same installation path as the Together factories; noble stays if absent.
+    setBackend(installNativeTogetherCrypto());
+  }, []);
+  const toggleBackend = useCallback(() => {
+    if (running.current) return;
+    if (getCryptoBackend().name === "native") {
+      installCryptoBackend(nobleCryptoBackend);
+      setBackend("noble");
+    } else {
+      setBackend(installNativeTogetherCrypto(undefined, { force: true }));
+    }
+    setReport(null);
+    setProgress("Idle");
+  }, []);
 
   const run = useCallback(async () => {
     if (running.current) return;
@@ -90,8 +115,23 @@ export default function TogetherProbeScreen() {
         <Text style={styles.meta}>
           {`Engine: ${engineLabel()} · ${Platform.OS} ${String(Platform.Version)}${
             __DEV__ ? " · DEBUG build (numbers misleading)" : " · release"
-          }`}
+          } · crypto: ${backend}`}
         </Text>
+        <Pressable
+          onPress={toggleBackend}
+          style={({ pressed }) => [
+            styles.button,
+            styles.secondary,
+            pressed && styles.pressed,
+          ]}
+          testID="together-probe-backend"
+        >
+          <Text style={styles.buttonText}>
+            {backend === "native"
+              ? "Switch to noble (pure JS)"
+              : "Switch to native crypto"}
+          </Text>
+        </Pressable>
         <View style={styles.row}>
           <Pressable
             onPress={run}
@@ -185,6 +225,7 @@ const styles = StyleSheet.create({
     backgroundColor: colorPalette.info,
   },
   pressed: { opacity: 0.7 },
+  secondary: { backgroundColor: colorPalette.white, opacity: 0.85 },
   disabled: { opacity: 0.4 },
   buttonText: { color: colorPalette.black, fontWeight: "600" },
   progress: { color: colorPalette.white, fontSize: 14 },

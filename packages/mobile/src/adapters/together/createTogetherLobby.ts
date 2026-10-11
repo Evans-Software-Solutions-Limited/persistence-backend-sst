@@ -12,6 +12,9 @@ export function createTogetherLobby(
 ): TogetherLobbyPort | undefined {
   if (!enabled || !provisioning) return undefined;
   try {
+    (
+      require("./security/cryptoBackend") as typeof import("./security/cryptoBackend")
+    ).installNativeTogetherCrypto();
     const { togetherLan, togetherHotspotOwner } =
       require("../../../modules/together-lan") as typeof import("../../../modules/together-lan");
     const { togetherNearby } =

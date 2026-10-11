@@ -19,6 +19,10 @@ export function createTogetherProvisioning(
       !requireOptionalNativeModule("ExpoCrypto")
     )
       return undefined;
+    // D16: native Curve25519 when present and conformant; noble otherwise.
+    (
+      require("./security/cryptoBackend") as typeof import("./security/cryptoBackend")
+    ).installNativeTogetherCrypto();
     const secrets =
       require("expo-secure-store") as typeof import("expo-secure-store");
     const { getRandomBytes } =

@@ -1,0 +1,18 @@
+apply plugin: 'com.android.library'
+apply plugin: 'expo-module-gradle-plugin'
+
+group = 'expo.modules.togethercrypto'
+version = '0.1.0'
+
+android {
+  namespace 'expo.modules.togethercrypto'
+  defaultConfig {
+    versionCode 1
+    versionName '0.1.0'
+  }
+}
+
+dependencies {
+  // Ed25519/X25519 for minSdk 28 (java.security XDH/Ed25519 need API 33). D16 / PER-64 F9.
+  implementation 'org.bouncycastle:bcprov-jdk18on:1.80'
+}
