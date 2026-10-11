@@ -1,5 +1,55 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-11 — PER-20 Hermes crypto probe landed; device run blocked (no Xcode on this Mac)
+
+[PER-20](https://linear.app/evans-software-solutions/issue/PER-20), branch
+`claude/vigilant-carson-8shl62` on merged main `15fdb992`. Calibrates the
+[11 October performance audit](https://linear.app/evans-software-solutions/document/together-performance-audit-implementation-and-performance-pass-11-0742b327c246)
+(F9 Hermes multiplier). No Together runtime change, no dependency, no native
+module, no product UI change, no EAS/TestFlight/deploy/PR.
+
+Added `src/adapters/together/diagnostics/cryptoProbe.ts`: pure runner over the
+existing `identity.ts` exports and `@noble/*`, constant-seed 4-member signed
+roster (authority seed 77, clock 1700000000000; 4,488 B, the audit's exact
+roster size), 2-member roster for the 2-participant projection, benchmarks per
+the brief (ed25519 sign/verify ×100, x25519+sha256 as `sharedSession.key()`
+×100, chacha20poly1305 2 KB ×200, `requestHash` ×100, `verifyRoster` ×20,
+JSON clone 20 KB ×100, SQLite read-all + parse of four roster rows ×100 through
+`TogetherJournalDatabase`), `setTimeout(0)` yields, engine/platform/device
+detection, and per-set sender/receiver estimates from the audit's operation
+counts (2-participant sign/key/AEAD counts are scaled by recipient count, an
+assumption recorded in the module). Hidden route `app/(app)/together-probe.tsx`
+(Run, progress, table, Share + `console.log` of the JSON); no navigation entry;
+`+native-intent`/deep-link resolver leave `together-probe` untouched (tested).
+Scheme is per variant: `persistencemobile-staging://together-probe` on a staging
+build.
+
+Verified: new Jest suite 7/7 with real crypto and `node:sqlite` (shape, finite
+positive ms/op, tampered/re-signed/swapped consent rejected, deterministic
+fixture). Root prettier pass, typecheck 9/9, lint 6/6 (existing warnings only),
+mobile 609 suites / 8,407 tests, coverage 96.24/91.57/96.22/97.63; core 397
+files / 5,502 tests; web 80 files; scripts 240 tests. Two local-only failures
+(`withTogetherLan`, `together-nearby/plugin`) are caused by the gitignored
+prebuilt `packages/mobile/ios/` Info.plist leaking into config-plugin
+introspection on this Mac; both pass from a clean directory and are unrelated.
+Desktop baseline on this Mac (Bun 1.4.3/JSC, Apple Silicon, runs 2–3):
+`ed25519.verify` 0.25–0.33 ms, sign 0.14–0.23 ms, key derivation 0.26 ms,
+AEAD 0.012–0.016 ms, `verifyRoster(4)` 3.0–3.2 ms, `verifyRoster(2)` 1.6–1.8 ms,
+`requestHash` 0.03 ms, clone 0.03 ms, SQLite 0.02–0.04 ms — roughly 2.5–4×
+faster than the audit's Linux desktop, so the audit figures are the comparator.
+
+Not done: no simulator or device run. This Mac has only Command Line Tools
+(`xcode-select -p` → CommandLineTools, no `/Applications/Xcode.app`, no
+CoreSimulator devices), so `bun run ios -- --configuration Release` cannot
+build. The Hermes multiplier remains unmeasured and the F9 decision stays open.
+Environment notes: mobile Jest needs real Node (CI pins Node 24); under Bun's
+node shim `vm.SyntheticModule` exists and Jest treats `@noble/*` as ESM. Node 24
+installed via Homebrew at `/opt/homebrew/opt/node@24/bin` (not on the login
+PATH). Next: Brad installs Xcode or runs the Release build on a Mac that has
+it, signs in, opens the deep link, runs the probe three times, keeps runs two
+and three, and pastes the JSON into PER-20; then apply the ≥3× rule from the
+audit (F9 native crypto in addition to F1 at or above 3×, F1 alone below).
+
 ### 2026-10-11 — PER-20/PER-64/PER-22 Together performance audit (read-only, Fable pass)
 
 [PER-20](https://linear.app/evans-software-solutions/issue/PER-20) ·
