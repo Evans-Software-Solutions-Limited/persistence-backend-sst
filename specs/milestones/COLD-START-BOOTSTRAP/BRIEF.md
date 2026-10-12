@@ -114,6 +114,17 @@ repository reads inside one handler.
   tests).
 - Mobile: full suite with the coverage gate, lint 0, typecheck.
 
+## Status after the first implementation (12 October, PR #497)
+
+Everything above is built except two items kept per endpoint on purpose:
+onboarding (the provider owns a local-wins merge that must be extracted
+before a bulk write can replace it) and the Fuel warm (today, recipes, meals;
+sequential, now started only after the bootstrap settles). The freshness
+stamp is an in-memory record of what the bootstrap wrote this process
+lifetime rather than a `StoragePort` age reader: a fresh process is exactly
+the cold-start case, and it needed no schema change. The launch count on a
+device can only be measured once the endpoint is deployed to staging.
+
 ## Constraints
 
 - Container/presenter split; no UI change.
