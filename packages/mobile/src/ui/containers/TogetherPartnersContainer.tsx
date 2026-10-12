@@ -208,9 +208,17 @@ function PartnersAccount({
       transientFailures.current = 0;
     } catch (failure) {
       if (!live()) return;
-      const code = (failure as { code?: unknown } | null)?.code;
+      const { code, status } = (failure ?? {}) as {
+        code?: unknown;
+        status?: unknown;
+      };
+      // Cold start fires many requests at once; the API edge answers the
+      // overflow with 503 before the handler runs, so a 5xx is retried once.
       const transient =
-        code === "unauthorized" || code === "network" || code === "timeout";
+        code === "unauthorized" ||
+        code === "network" ||
+        code === "timeout" ||
+        (code === "server" && typeof status === "number" && status >= 500);
       if (!pull && transient && transientFailures.current === 0) {
         transientFailures.current = 1;
         clearTimeout(retryTimer.current);

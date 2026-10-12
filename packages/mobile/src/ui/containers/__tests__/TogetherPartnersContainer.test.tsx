@@ -588,9 +588,9 @@ it("reconciles a stale pending request once the same person is accepted", async 
   expect(props(r).requests).toHaveLength(0);
 });
 describe("cold-start transient failures (PER-80)", () => {
-  const transient = (code: string) => ({
+  const transient = (code: string, status?: number) => ({
     ok: false as const,
-    error: { kind: "api" as const, code, message: code },
+    error: { kind: "api" as const, code, message: code, status },
   });
   afterEach(() => jest.useRealTimers());
 
@@ -628,6 +628,24 @@ describe("cold-start transient failures (PER-80)", () => {
       await jest.advanceTimersByTimeAsync(TRANSIENT_RETRY_MS);
     });
     expect(api.friends).toHaveBeenCalledTimes(2);
+    expect(props(r).error).toMatch(/Could not refresh/);
+  });
+
+  it("retries a throttled cold start (503 at the API edge) once but not a 4xx", async () => {
+    jest.useFakeTimers();
+    const api = setup();
+    (api.friends as jest.Mock).mockResolvedValueOnce(transient("server", 503));
+    const r = renderWithTheme(<TogetherPartnersContainer />);
+    await waitFor(() => expect(api.friends).toHaveBeenCalledTimes(1));
+    expect(props(r).error).toBe("");
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(TRANSIENT_RETRY_MS);
+    });
+    await waitFor(() => expect(props(r).friends).toHaveLength(1));
+    expect(props(r).error).toBe("");
+
+    (api.friends as jest.Mock).mockResolvedValueOnce(transient("server", 400));
+    await act(async () => props(r).onRefresh());
     expect(props(r).error).toMatch(/Could not refresh/);
   });
 

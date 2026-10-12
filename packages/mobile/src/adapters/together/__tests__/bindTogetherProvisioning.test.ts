@@ -1,5 +1,8 @@
 /** @jest-environment node */
-import { bindTogetherProvisioning } from "../bindTogetherProvisioning";
+import {
+  bindTogetherProvisioning,
+  TRANSIENT_RETRY_MS,
+} from "../bindTogetherProvisioning";
 import type {
   AuthPort,
   AuthSession,
@@ -270,6 +273,60 @@ describe("Together provisioning auth/network lifecycle", () => {
       stop();
     },
   );
+});
+
+describe("transient readiness failures (PER-80)", () => {
+  const unavailable = () =>
+    fail({
+      kind: "together-provisioning" as const,
+      code: "unavailable" as const,
+    });
+  afterEach(() => jest.useRealTimers());
+
+  it("retries once after a throttled cold start and then leaves retry to the user", async () => {
+    jest.useFakeTimers();
+    const h = harness();
+    (h.provisioning.prepare as jest.Mock)
+      .mockResolvedValueOnce(unavailable())
+      .mockResolvedValueOnce(unavailable())
+      .mockResolvedValueOnce(unavailable());
+    const stop = h.start();
+    h.persisted.resolve(session("A"));
+    await tick();
+    expect(h.provisioning.prepare).toHaveBeenCalledTimes(1);
+    await jest.advanceTimersByTimeAsync(TRANSIENT_RETRY_MS);
+    expect(h.provisioning.prepare).toHaveBeenCalledTimes(2);
+    expect(h.provisioning.prepare).toHaveBeenLastCalledWith({ online: true });
+    await jest.advanceTimersByTimeAsync(TRANSIENT_RETRY_MS * 2);
+    expect(h.provisioning.prepare).toHaveBeenCalledTimes(2);
+    stop();
+  });
+
+  it("does not retry offline, after cleanup, or across an account switch", async () => {
+    jest.useFakeTimers();
+    const h = harness();
+    (h.provisioning.prepare as jest.Mock).mockResolvedValue(unavailable());
+    h.netInfo.isConnected.mockResolvedValueOnce(false);
+    const stop = h.start();
+    h.persisted.resolve(session("A"));
+    await tick();
+    expect(h.provisioning.prepare).toHaveBeenLastCalledWith({ online: false });
+    await jest.advanceTimersByTimeAsync(TRANSIENT_RETRY_MS);
+    expect(h.provisioning.prepare).toHaveBeenCalledTimes(1);
+
+    h.network(true);
+    await tick();
+    expect(h.provisioning.prepare).toHaveBeenCalledTimes(2);
+    h.event(session("B"), "SIGNED_IN");
+    await tick();
+    expect(h.provisioning.prepare).toHaveBeenCalledTimes(3);
+    await jest.advanceTimersByTimeAsync(TRANSIENT_RETRY_MS);
+    // Account A's pending retry was dropped; account B got its own single retry.
+    expect(h.provisioning.prepare).toHaveBeenCalledTimes(4);
+    stop();
+    await jest.advanceTimersByTimeAsync(TRANSIENT_RETRY_MS);
+    expect(h.provisioning.prepare).toHaveBeenCalledTimes(4);
+  });
 });
 
 it("propagates definitive refresh denial to active sharing but ignores stale account replies", async () => {
