@@ -626,6 +626,88 @@ describe("reviewed lobby coordinator, real cryptography and SQLite, simulated na
     expect(host.controller.getSnapshot().members).toEqual([]);
     expect(issued.seed.every((n) => n === 0)).toBe(true);
   });
+  it("a resuming guest keeps its roster when the first reconnect attempt fails and can still reconnect", async () => {
+    const host = setup(),
+      guest = setup(2);
+    await host.controller.host("A");
+    await join(host, guest, true);
+    expect(guest.controller.getSnapshot().phase).toBe("joined");
+    const sessionId = JSON.parse(host.controller.getSnapshot().invitation!)
+      .payload.sessionId;
+    const closed = () =>
+      guest.db
+        .prepare(
+          "SELECT count(*) AS total FROM together_local_closed WHERE account_id=?",
+        )
+        .get(id(2));
+    const peerId = guest.identity.deviceId;
+    guest.controller.setActive(false);
+    await settle();
+    expect(guest.controller.getSnapshot().phase).toBe("reconnecting");
+    // The host's radio sees the guest drop when the guest's transport stops.
+    host.native.emit({ type: "disconnected", peerId });
+    await settle();
+    guest.controller.setActive(true);
+    await settle();
+    expect(guest.controller.getSnapshot().phase).toBe("searching");
+    // The host has re-advertised but its accept is not up yet: connect rejects.
+    guest.native.connect.mockRejectedValueOnce(new Error("host_unreachable"));
+    guest.native.emit({
+      type: "discovered",
+      endpointId: "nearby",
+      lobbyId: sessionId,
+    });
+    await settle();
+    expect(guest.controller.getSnapshot()).toMatchObject({
+      phase: "reconnecting",
+      error: "host_unreachable",
+    });
+    expect(guest.controller.getSnapshot().members).toHaveLength(2);
+    expect(closed()).toEqual({ total: 0 });
+    // A native connect timeout while membership is intact is just as recoverable.
+    await guest.controller.reconnect();
+    guest.native.emit({ type: "error", code: "connect_timeout" });
+    await settle();
+    expect(guest.controller.getSnapshot()).toMatchObject({
+      phase: "reconnecting",
+      error: "connect_timeout",
+    });
+    expect(guest.controller.getSnapshot().members).toHaveLength(2);
+    expect(closed()).toEqual({ total: 0 });
+    // Reconnect readmits from the same roster once the host answers.
+    await guest.controller.reconnect();
+    guest.native.emit({
+      type: "discovered",
+      endpointId: "nearby",
+      lobbyId: sessionId,
+    });
+    await settle();
+    host.native.emit({ type: "connected", peerId, incoming: true });
+    guest.native.emit({ type: "connected", peerId: "host", incoming: false });
+    await settle();
+    expect(guest.controller.getSnapshot().phase).toBe("joined");
+    expect(guest.controller.getSnapshot().members).toHaveLength(2);
+    // A never-admitted join still fails terminally on the same rejection.
+    const stranger = setup(3);
+    await stranger.controller.selectInvite(
+      host.controller.getSnapshot().invitation!,
+    );
+    stranger.native.connect.mockRejectedValueOnce(
+      new Error("host_unreachable"),
+    );
+    await stranger.controller.join();
+    stranger.native.emit({
+      type: "discovered",
+      endpointId: "host",
+      lobbyId: sessionId,
+    });
+    await settle();
+    expect(stranger.controller.getSnapshot()).toMatchObject({
+      phase: "unavailable",
+      error: "host_unreachable",
+    });
+  });
+
   it("suspends an admitted host on background, and clears credentials on expiry and account changes", async () => {
     const value = setup();
     const issued = person(1);

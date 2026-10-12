@@ -896,9 +896,12 @@ export class TogetherLobbyController implements TogetherLobbyPort {
     if (event.type === "discovered" && this.snapshot.phase === "searching") {
       clearTimeout(this.timer);
       this.publish({ phase: "connecting" });
+      // A resuming guest commonly reaches the host before its accept is up;
+      // `recoverable` keeps the roster and falls through to `failure` for a
+      // never-admitted join (D17).
       void resources
         .session!.connect(event.endpointId, resources.request!)
-        .catch((error) => this.failure(error, generation));
+        .catch((error) => this.recoverable(error, generation));
     } else if (event.type === "approval-required") {
       if (resources.lobby.isHost && event.request)
         this.publish({
@@ -983,7 +986,7 @@ export class TogetherLobbyController implements TogetherLobbyPort {
         ].includes(event.code)
       )
         this.publish({ error: event.code });
-      else this.failure(new Error(event.code), generation);
+      else this.recoverable(new Error(event.code), generation);
     }
   }
   private failure(error: unknown, generation: number) {
