@@ -1,5 +1,46 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-12 — PER-80 slice 2: the cold-start request burst (PR #496)
+
+Brad asked why the first launch always shows "could not refresh training
+partners" and why the Together gate reads "couldn't verify your access". Two
+causes, both read from the simulator's CFNetwork log rather than guessed. On
+the simulator the gate failure is my unsigned build: `CODE_SIGNING_ALLOWED=NO`
+leaves no entitlements, the keychain read behind the Together device identity
+fails with securityd `-34018`, and the provisioning cache has never held a row.
+A signed build or a phone is needed for that path. On a phone the cause is the
+launch burst: about 29 requests to our API inside a second, eight of them
+answered `503 {"message":"Service Unavailable"}` within 50 ms, which is Lambda
+throttling at the API Gateway edge (reproduced from the Mac: 3 of 24 parallel
+requests). Staging deploys through its own IAM role and almost certainly sits
+in an account still on the default quota of 10 concurrent executions; the
+production account was raised to 1000 on 1 August (`infra/monitoring.ts`). The
+quota request for staging is Brad's, no AWS CLI on this Mac.
+
+Branch `claude/per-80-cold-start-burst` from main `8cf4bc73`, PR #496. The
+burst was mostly one endpoint requested by more than one hook instance:
+`/workouts` six times (the always-mounted workout cap gate had its own
+`useWorkouts` auto-refreshing beside Home's; `useWorkouts({ autoRefresh })`,
+the gate observes the cache), `/profile/page` twice and up to six with retries
+(root AuthGate and Home; one shared request per user across instances),
+`/notifications?unreadOnly=true` three times (badge hook, Home count hook and
+Home's first focus; `fetchUnreadCount` coalesces, first focus skipped). The API
+client now keeps at most six requests in flight (`RequestLimiter`, FIFO,
+abort-aware). Measured on the simulator Release build, same account, requests
+to our API in the 5 s after the first: 29 → 19, peak concurrent 18 → 6, 503s
+8 → 0. The remaining 19 are distinct endpoints. Verified: 621 suites / 8,468
+tests with the coverage gate (96.66 / 92.56 / 96.70 / 97.91), lint 0, typecheck.
+The retry backstops for the same symptom (partners retries a 5xx once, the
+access gate retries readiness once) are on PR #495.
+
+Proposed next slice (needs Brad's go-ahead, backend contract): one
+`GET /users/me/bootstrap?since=` returning every shell section with version
+stamps, composed from the existing read services with `Promise.allSettled`
+(the pattern `/users/me/home` already uses), written to SQLite in one
+transaction; per-screen refreshes stay per endpoint; exercise library, recipes
+and meals load when their tab opens; Together provisioning and push
+registration run after the bootstrap settles. Launch becomes one request.
+
 ### 2026-10-12 — Zero lint warnings across packages; every mobile adapter under the coverage gate
 
 Branch `claude/lint-zero-adapters-gate`, stacked on `claude/probe-gate-coverage`
