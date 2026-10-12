@@ -1,5 +1,46 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-12 — PER-80 D17: membership survives background; foreground reconnect and re-grant
+
+[PER-80](https://linear.app/evans-software-solutions/issue/PER-80) collects Brad's
+12 October staging feedback; this slice is its first two functional items plus
+two quick wins. Branch `claude/per-80-together-lifecycle` from main `8cf4bc73`
+(#493 and #494 merged). Decision D17 in `specs/34-train-together/design.md`
+supersedes "true background ends sharing".
+
+`TogetherLobbyController.setActive(false)` now suspends when the own account is
+in the durable roster: discovery and transport stop, timers clear, the snapshot
+becomes `reconnecting` with no error, and the signed roster, open local store,
+signing seed, journal and shared engine are kept. Pre-admission states still
+cancel; explicit cancel, account change and dispose stay terminal and durably
+close the session. `setActive(true)` restarts the transport over the same
+resources: the host re-advertises the same roster; a guest searches, reconnects
+over a fresh authenticated channel and is readmitted from the existing roster.
+`reconnect()` works for hosts too. Transport failures while membership is intact
+(unreachable host, native start/stop failure, read/write timeouts) stay in
+`reconnecting` with the code instead of retiring the roster; protocol and
+authorization codes remain terminal (`TERMINAL` set). The controller records
+owner-issued consents and re-issues them as fresh revisions when a member is
+readmitted (`admitted` event; host per peer via `TogetherLanSession.peerUserId`),
+so grants return past the `suspendPeer` barrier without manual re-granting.
+Partners list: one transient automatic cold-start failure (unauthorized,
+network, timeout) gets a single 4 s retry before the banner; pull and second
+failures surface. Hub empty Sessions copy now tells the user to Join or get an
+invite (hub still never discovers, D14).
+
+Verified: `lobbyController.test.ts` 70/70 including a new round trip (host
+backgrounds → resumes → guest auto-reconnects, is readmitted, host's numbers
+grant re-issued, guest sees the host's athlete again); all Together adapter and
+container suites 878 tests; partners container 28 (three new cold-start cases);
+full mobile 619 suites / 8,464 tests, coverage 96.61 / 92.52 / 96.67 / 97.89;
+typecheck, lint (0 warnings), prettier clean. Core's two 20-second timeouts under
+full-suite load recurred (entitlement-gate cases; untouched here, tracked on
+PER-80). Device: Release simulator build launched, but the Together access gate
+stays pending on the simulator (sandbox entitlements), so hosting could not be
+reached; background/foreground is proven on the simulated transport only. Next:
+Brad's two-phone run (minimise host, minimise guest, lock screen, return); then
+the discovery renewal item and the UX polish items on PER-80.
+
 ### 2026-10-12 — Zero lint warnings across packages; every mobile adapter under the coverage gate
 
 Branch `claude/lint-zero-adapters-gate`, stacked on `claude/probe-gate-coverage`
