@@ -47,34 +47,38 @@ describe("RequestLimiter", () => {
   it("never exceeds the limit when a new call lands between a release and the woken waiter", async () => {
     const limiter = new RequestLimiter(2);
     let peak = 0;
-    const track = async <T>(gate: Promise<T>) => {
+    // Work functions hand back bare promises: an async wrapper adds microtask
+    // hops and hides the interleaving this test pins down.
+    const observe = (gate: Promise<void>) => () => {
       peak = Math.max(peak, limiter.inFlight);
       return gate;
     };
     const r1 = deferred<void>();
     const r2 = deferred<void>();
+    const m = deferred<void>();
     const running = [
-      limiter.run(() => track(r1.promise)),
-      limiter.run(() => track(r2.promise)),
+      limiter.run(() => r1.promise),
+      limiter.run(() => r2.promise),
     ];
     const waiters = [
-      limiter.run(() => track(Promise.resolve("w1"))),
-      limiter.run(() => track(Promise.resolve("w2"))),
+      limiter.run(observe(Promise.resolve())),
+      limiter.run(observe(Promise.resolve())),
     ];
     await settle();
     expect(limiter.queued).toBe(2);
-    // Both running requests complete; an unrelated continuation squeezes a
-    // fresh run() between the two releases (the interleaving the review found).
-    let latecomer: Promise<string> | undefined;
+    // Release R1; an unrelated continuation calls run() before R2's release
+    // is processed; release R2. Order: R1-cont, M, R2-cont, W1-cont, W2-cont.
+    // M's work stays pending so it still holds a slot when W2 resumes.
+    let latecomer: Promise<void> | undefined;
     r1.resolve();
     void Promise.resolve().then(() => {
-      latecomer = limiter.run(() => track(Promise.resolve("m")));
+      latecomer = limiter.run(observe(m.promise));
     });
     r2.resolve();
-    await Promise.all(running);
-    await Promise.all(waiters);
-    await latecomer;
+    await Promise.all([...running, ...waiters]);
     expect(peak).toBeLessThanOrEqual(2);
+    m.resolve();
+    await latecomer;
     expect(limiter.inFlight).toBe(0);
   });
 
