@@ -30,6 +30,7 @@ import {
   optimisticUnread,
 } from "@/application/notifications/pending-reads";
 import { getNotificationsQuery } from "@/application/notifications/queries/list-notifications.query";
+import { bootstrapSettled } from "@/application/bootstrap/gate";
 import { fetchUnreadCount } from "@/application/notifications/unread-count";
 import { useAdapters } from "./useAdapters";
 import { useAuth } from "./useAuth";
@@ -52,15 +53,21 @@ export function useUnreadNotificationCount(): number {
     return optimisticUnread(cached.unreadCount, page, storage);
   });
 
-  const sync = useCallback(async () => {
-    const next = await fetchUnreadCount(api, storage);
-    if (next !== null) setCount(next);
-  }, [api, storage]);
+  const sync = useCallback(
+    async (options?: { preferBootstrapFor?: string | null }) => {
+      const next = await fetchUnreadCount(api, storage, options);
+      if (next !== null) setCount(next);
+    },
+    [api, storage],
+  );
 
-  // Mount + return-to-foreground.
+  // Mount + return-to-foreground. The mount sync waits for the cold-start
+  // bootstrap and serves its count; foreground and push always fetch.
   useEffect(() => {
     if (!userId) return;
-    void sync();
+    void bootstrapSettled(userId).then(() =>
+      sync({ preferBootstrapFor: userId }),
+    );
     const appSub = AppState.addEventListener("change", (state) => {
       if (state === "active") void sync();
     });

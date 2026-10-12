@@ -1,3 +1,8 @@
+import { bootstrapSettled } from "@/application/bootstrap/gate";
+import {
+  BOOTSTRAP_FRESH_MS,
+  recallBootstrapSection,
+} from "@/application/bootstrap/freshness";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   Habit,
@@ -139,6 +144,21 @@ function isDerivedRow(r: HabitCompletion): boolean {
   return r.id.startsWith("derived-");
 }
 
+/** The hook's own fetch wins; otherwise the bootstrap's stash for this user. */
+function derivedRows(
+  fetched: HabitCompletion[],
+  userId: string | null,
+): HabitCompletion[] {
+  if (fetched.length > 0 || !userId) return fetched;
+  return (
+    recallBootstrapSection<HabitCompletion[]>(
+      userId,
+      "habitCompletions",
+      BOOTSTRAP_FRESH_MS,
+    )?.value ?? []
+  );
+}
+
 export function useGetHabits(): HabitsState {
   const { api } = useAdapters();
   const { session } = useAuth();
@@ -167,6 +187,7 @@ export function useGetHabits(): HabitsState {
   }
 
   const res = useCachedResource<HabitCompletion[]>({
+    bootstrapSection: "habitCompletions",
     read: (storage, userId) => {
       const since = weekStartMondayISO(localDayISO());
       return {
@@ -195,12 +216,27 @@ export function useGetHabits(): HabitsState {
 
   // Fetch habit configs (fire-and-forget; non-blocking)
   useEffect(() => {
-    api.getHabitConfigs().then((result) => {
-      if (result.ok) {
-        setConfigs(result.value);
+    if (!userId) return;
+    let cancelled = false;
+    void (async () => {
+      await bootstrapSettled(userId);
+      if (cancelled) return;
+      const fresh = recallBootstrapSection<HabitConfigEntry[]>(
+        userId,
+        "habitConfig",
+        BOOTSTRAP_FRESH_MS,
+      );
+      if (fresh?.value) {
+        setConfigs(fresh.value);
+        return;
       }
-    });
-  }, [api]);
+      const result = await api.getHabitConfigs();
+      if (!cancelled && result.ok) setConfigs(result.value);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [api, userId]);
 
   // The Mon→Sun ISO window, recomputed only when the device-local day actually
   // changes (todayISO is a primitive, so ordinary re-renders are stable). Both
@@ -221,10 +257,10 @@ export function useGetHabits(): HabitsState {
   const habits = useMemo(() => {
     const realRows = (res.data ?? []).filter((r) => !isDerivedRow(r));
     return buildHabitGrid(
-      [...realRows, ...derivedRowsRef.current],
+      [...realRows, ...derivedRows(derivedRowsRef.current, userId)],
       weekDates,
       configs,
     );
-  }, [res.data, weekDates, configs]);
+  }, [res.data, weekDates, configs, userId]);
   return { ...res, habits, weekDates };
 }

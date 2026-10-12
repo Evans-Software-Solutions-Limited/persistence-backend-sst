@@ -1,5 +1,9 @@
 import type { ApiPort } from "@/domain/ports/api.port";
 import type { StoragePort } from "@/domain/ports/storage.port";
+import {
+  BOOTSTRAP_FRESH_MS,
+  recallBootstrapSection,
+} from "@/application/bootstrap/freshness";
 import { applyPendingReads, optimisticUnread } from "./pending-reads";
 
 const inFlight = new WeakMap<ApiPort, Promise<number | null>>();
@@ -15,7 +19,19 @@ const inFlight = new WeakMap<ApiPort, Promise<number | null>>();
 export function fetchUnreadCount(
   api: ApiPort,
   storage: StoragePort,
+  options: { preferBootstrapFor?: string | null } = {},
 ): Promise<number | null> {
+  // A mount-time sync right after the cold-start bootstrap serves the count
+  // the bootstrap computed; foreground and push syncs always fetch.
+  if (options.preferBootstrapFor) {
+    const fresh = recallBootstrapSection<number>(
+      options.preferBootstrapFor,
+      "notifications",
+      BOOTSTRAP_FRESH_MS,
+    );
+    if (fresh && typeof fresh.value === "number")
+      return Promise.resolve(fresh.value);
+  }
   const existing = inFlight.get(api);
   if (existing) return existing;
   const request = (async () => {

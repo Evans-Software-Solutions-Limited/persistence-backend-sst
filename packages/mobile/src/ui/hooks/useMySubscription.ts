@@ -4,6 +4,7 @@ import type { MySubscription } from "@/domain/models/subscription";
 import type { ApiError } from "@/shared/errors";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
+import { useBootstrapSettled } from "@/ui/hooks/useBootstrapSettled";
 
 /**
  * Fetch the signed-in user's current subscription via `ApiPort
@@ -47,12 +48,13 @@ export function useMySubscription(enabled = true) {
   const userId = session?.userId ?? null;
 
   const queryClient = useQueryClient();
+  const settled = useBootstrapSettled(userId);
   const [accessNowMs, setAccessNowMs] = useState(() => Date.now());
   const query = useQuery<MySubscription, ApiError>({
     queryKey: userId
       ? userSubscriptionQueryKey(userId)
       : [USER_SUBSCRIPTION_QUERY_KEY_PREFIX, "anonymous"],
-    enabled: userId !== null && enabled,
+    enabled: userId !== null && enabled && settled,
     queryFn: async () => {
       const result = await api.getMySubscription();
       if (!result.ok) throw result.error;

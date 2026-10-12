@@ -10,6 +10,7 @@ import Constants from "expo-constants";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SSTApiAdapter, getApiBaseUrl } from "@/adapters/api";
 import { createTogetherProvisioning } from "@/adapters/together/createTogetherProvisioning";
+import { bootstrapSettled } from "@/application/bootstrap/gate";
 import { bindTogetherProvisioning } from "@/adapters/together/bindTogetherProvisioning";
 import { SupabaseAuthAdapter } from "@/adapters/auth";
 import { createHealthAdapter } from "@/adapters/health";
@@ -162,6 +163,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
         adapters.netInfo,
         adapters.togetherProvisioning,
         (code) => adapters.togetherLobby?.invalidateAuthorization(code),
+        bootstrapSettled,
       ),
     [adapters],
   );

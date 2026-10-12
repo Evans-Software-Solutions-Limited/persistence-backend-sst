@@ -430,6 +430,8 @@ describe("useProfilePage", () => {
           ({ enabled }: { enabled: boolean }) => useProfilePage(enabled),
           { initialProps: { enabled: true }, wrapper: wrap(adapters) },
         );
+        // The first attempt waits one tick for the cold-start bootstrap gate.
+        await act(async () => {});
         expect(spy).toHaveBeenCalledTimes(1);
         expect(result.current.isAutoRetrying).toBe(true);
 

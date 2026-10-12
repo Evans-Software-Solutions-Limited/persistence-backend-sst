@@ -345,3 +345,43 @@ it.each([
     stop();
   },
 );
+
+describe("cold-start ordering", () => {
+  it("waits for the app shell's ready signal before preparing, and drops a stale account", async () => {
+    const h = harness();
+    let release!: () => void;
+    const ready = jest.fn(
+      (_account: string) =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+    const stop = bindTogetherProvisioning(
+      h.auth,
+      h.netInfo,
+      h.provisioning,
+      undefined,
+      ready,
+    );
+    h.persisted.resolve(session("A"));
+    await tick();
+    expect(ready).toHaveBeenCalledWith("A");
+    expect(h.provisioning.prepare).not.toHaveBeenCalled();
+    release();
+    await tick();
+    expect(h.provisioning.prepare).toHaveBeenCalledTimes(1);
+    // A switch while waiting: the old account's probe never prepares.
+    h.event(session("B"), "SIGNED_IN");
+    await tick();
+    expect(ready).toHaveBeenLastCalledWith("B");
+    const before = jest.mocked(h.provisioning.prepare).mock.calls.length;
+    h.event(session("C"), "SIGNED_IN");
+    await tick();
+    release();
+    await tick();
+    expect(jest.mocked(h.provisioning.prepare).mock.calls.length).toBe(
+      before + 1,
+    );
+    stop();
+  });
+});

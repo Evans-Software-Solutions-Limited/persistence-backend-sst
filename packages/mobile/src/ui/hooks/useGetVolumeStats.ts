@@ -12,6 +12,7 @@ export function useGetVolumeStats(
   window = "month",
 ): CachedResourceState<VolumeStats> {
   return useCachedResource<VolumeStats>({
+    bootstrapSection: "volumeStats",
     read: (storage, userId) => ({
       value: storage.getCachedVolumeStats(userId),
       isStale: true,

@@ -29,6 +29,7 @@ import { useHydrateRecentSets } from "../../src/ui/hooks/useHydrateRecentSets";
 import { useNotificationBadge } from "../../src/ui/hooks/useNotificationBadge";
 import { useNotificationDeepLink } from "../../src/ui/hooks/useNotificationDeepLink";
 import { useOfflineDataBootstrap } from "../../src/ui/hooks/useOfflineDataBootstrap";
+import { useBootstrap } from "../../src/ui/hooks/useBootstrap";
 import { useSyncWorker } from "../../src/ui/hooks/useSyncWorker";
 import { colorPalette } from "../../src/ui/theme";
 
@@ -58,6 +59,9 @@ import { colorPalette } from "../../src/ui/theme";
  * we want. Keep them here.
  */
 export default function AppLayout() {
+  // First: opens the cold-start gate that the hooks below and Home's wait on
+  // (specs/milestones/COLD-START-BOOTSTRAP/BRIEF.md).
+  useBootstrap();
   // Drain the sync queue on launch + on every foreground transition.
   // Mounted at the authenticated layout root so it runs for the entire
   // signed-in surface and unmounts cleanly on sign-out (auth boundary
