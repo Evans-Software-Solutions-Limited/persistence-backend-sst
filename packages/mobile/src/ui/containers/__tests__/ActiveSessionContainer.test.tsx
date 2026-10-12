@@ -1,24 +1,3 @@
-let mockUseRealTogetherGate = false;
-const mockTogetherGate = {
-  allowed: true,
-  state: "allowed" as "allowed" | "locked" | "pending" | "unavailable",
-  onUpgrade: jest.fn(),
-  retry: jest.fn(),
-};
-jest.mock("@/ui/hooks/useTogetherGate", () => ({
-  useTogetherGate: () =>
-    mockUseRealTogetherGate
-      ? jest.requireActual("@/ui/hooks/useTogetherGate").useTogetherGate()
-      : mockTogetherGate,
-}));
-beforeEach(() => {
-  mockUseRealTogetherGate = false;
-  mockTogetherGate.allowed = true;
-  mockTogetherGate.state = "allowed";
-  mockTogetherGate.onUpgrade.mockClear();
-  mockTogetherGate.retry.mockClear();
-});
-
 /**
  * ActiveSessionContainer tests — exercise the container/presenter
  * wiring with an in-memory storage adapter + mocked notifications. (M3.)
@@ -47,6 +26,27 @@ import {
 import { ActiveSessionPresenter } from "@/ui/presenters/ActiveSessionPresenter";
 import { useActiveWorkout } from "@/state/active-workout";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
+
+let mockUseRealTogetherGate = false;
+const mockTogetherGate = {
+  allowed: true,
+  state: "allowed" as "allowed" | "locked" | "pending" | "unavailable",
+  onUpgrade: jest.fn(),
+  retry: jest.fn(),
+};
+jest.mock("@/ui/hooks/useTogetherGate", () => ({
+  useTogetherGate: () =>
+    mockUseRealTogetherGate
+      ? jest.requireActual("@/ui/hooks/useTogetherGate").useTogetherGate()
+      : mockTogetherGate,
+}));
+beforeEach(() => {
+  mockUseRealTogetherGate = false;
+  mockTogetherGate.allowed = true;
+  mockTogetherGate.state = "allowed";
+  mockTogetherGate.onUpgrade.mockClear();
+  mockTogetherGate.retry.mockClear();
+});
 
 // M2 learning #13: cascading-async tests (findByTestId →
 // fireEvent → waitFor on storage updates that fire through the

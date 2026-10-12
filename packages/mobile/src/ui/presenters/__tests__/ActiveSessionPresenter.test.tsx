@@ -1,5 +1,5 @@
 import { fireEvent } from "@testing-library/react-native";
-import { AccessibilityInfo, StyleSheet } from "react-native";
+import { AccessibilityInfo } from "react-native";
 import React from "react";
 import {
   ActiveSessionPresenter,
@@ -275,9 +275,7 @@ describe("ActiveSessionPresenter (vertical scroll, legacy parity)", () => {
         buildExercise({ id: "se-3", sortOrder: 2 }),
       ],
     };
-    const { getByTestId } = renderWithTheme(
-      <ActiveSessionPresenter {...props} />,
-    );
+    renderWithTheme(<ActiveSessionPresenter {...props} />);
 
     // The block's row id is the superset key, but the command takes the LEAD
     // exercise — two index spaces that used to be converted twice.
@@ -486,7 +484,7 @@ describe("ActiveSessionPresenter (vertical scroll, legacy parity)", () => {
         buildExercise({ id: "se-2", sortOrder: 1 }),
       ],
     };
-    const { getByTestId, queryByTestId } = renderWithTheme(
+    const { getByTestId } = renderWithTheme(
       <ActiveSessionPresenter {...props} />,
     );
 

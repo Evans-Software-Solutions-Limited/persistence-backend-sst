@@ -23,8 +23,7 @@
 
 import type { ApiPort } from "@/domain/ports/api.port";
 import type { StoragePort } from "@/domain/ports/storage.port";
-import type { ApiError } from "@/shared/errors";
-import { ok, type Result } from "@/shared/errors";
+import { ok, type ApiError, type Result } from "@/shared/errors";
 
 export type HydrateRecentSetsDeps = {
   storage: Pick<StoragePort, "hasAnyRecentSets" | "upsertRecentSets">;

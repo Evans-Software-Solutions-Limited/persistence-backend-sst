@@ -85,6 +85,8 @@ import * as AppleAuthentication from "expo-apple-authentication";
 // eslint-disable-next-line import/first
 import AsyncStorage from "@react-native-async-storage/async-storage";
 // eslint-disable-next-line import/first
+import { AppState } from "react-native";
+// eslint-disable-next-line import/first
 import {
   SupabaseAuthAdapter,
   deriveAuthStorageKey,
@@ -1108,5 +1110,284 @@ describe("SupabaseAuthAdapter", () => {
       adapter.destroy();
       adapter.destroy(); // should not throw
     });
+  });
+});
+
+describe("SupabaseAuthAdapter error and fallback paths", () => {
+  let adapter: SupabaseAuthAdapter;
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockOnAuthStateChange.mockReturnValue({
+      data: { subscription: { unsubscribe: jest.fn() } },
+    });
+    adapter = new SupabaseAuthAdapter();
+  });
+  afterEach(() => adapter.destroy());
+
+  it("falls back to the legacy storage key when the URL has an empty first label", () => {
+    expect(deriveAuthStorageKey("https://.supabase.co")).toBe(
+      "supabase.auth.token",
+    );
+  });
+
+  it("reads every persisted-session shape and rejects non-object payloads", async () => {
+    const getItem = AsyncStorage.getItem as jest.Mock;
+    getItem.mockResolvedValueOnce("null");
+    await expect(adapter.getPersistedSession()).resolves.toBeNull();
+    getItem.mockResolvedValueOnce("5");
+    await expect(adapter.getPersistedSession()).resolves.toBeNull();
+    getItem.mockResolvedValueOnce(
+      JSON.stringify({ session: MOCK_SUPABASE_SESSION }),
+    );
+    await expect(adapter.getPersistedSession()).resolves.toEqual(
+      EXPECTED_AUTH_SESSION,
+    );
+    getItem.mockResolvedValueOnce(JSON.stringify({ currentSession: "nope" }));
+    await expect(adapter.getPersistedSession()).resolves.toBeNull();
+  });
+
+  it("starts and stops token auto-refresh with the app state", () => {
+    const spy = jest.spyOn(AppState, "addEventListener");
+    const fresh = new SupabaseAuthAdapter();
+    const handler = spy.mock.calls.at(-1)![1] as (state: string) => void;
+    handler("active");
+    expect(mockStartAutoRefresh).toHaveBeenCalledTimes(1);
+    handler("background");
+    handler("inactive");
+    expect(mockStopAutoRefresh).toHaveBeenCalledTimes(2);
+    fresh.destroy();
+    spy.mockRestore();
+  });
+
+  it("reports OAuth initiation and session failures with default messages, and non-Error throws", async () => {
+    mockSignInWithOAuth.mockResolvedValueOnce({
+      data: { url: null },
+      error: null,
+    });
+    let result = await adapter.signInWithOAuth("google");
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        kind: "auth",
+        code: "unknown",
+        message: "Failed to start OAuth flow",
+      },
+    });
+
+    mockSignInWithOAuth.mockResolvedValue({
+      data: { url: "https://supabase.co/auth/v1/authorize?provider=google" },
+      error: null,
+    });
+    const open = WebBrowser.openAuthSessionAsync as jest.Mock;
+    open.mockResolvedValue({
+      type: "success",
+      url: "persistencemobile://auth/callback#access_token=a&refresh_token=r",
+    });
+    mockSetSession.mockResolvedValueOnce({
+      data: { session: null },
+      error: null,
+    });
+    result = await adapter.signInWithOAuth("google");
+    if (result.ok) throw new Error("expected failure");
+    expect(result.error.message).toBe("Failed to set session");
+    mockSetSession.mockResolvedValueOnce({
+      data: { session: null },
+      error: { message: "rejected by Supabase" },
+    });
+    result = await adapter.signInWithOAuth("google");
+    if (result.ok) throw new Error("expected failure");
+    expect(result.error.message).toBe("rejected by Supabase");
+
+    // A redirect carrying only the access token has no usable token pair.
+    open.mockResolvedValueOnce({
+      type: "success",
+      url: "persistencemobile://auth/callback#access_token=a",
+    });
+    result = await adapter.signInWithOAuth("google");
+    expect(result.ok).toBe(false);
+
+    open.mockRejectedValueOnce("browser exploded");
+    result = await adapter.signInWithOAuth("google");
+    if (result.ok) throw new Error("expected failure");
+    expect(result.error.message).toBe("OAuth failed");
+  });
+
+  it("covers the Apple sign-in fallbacks: missing session, empty or partial names and non-Error throws", async () => {
+    const signInAsync = AppleAuthentication.signInAsync as jest.Mock;
+    signInAsync.mockResolvedValue({
+      identityToken: "apple-id-token",
+      fullName: { givenName: null, middleName: null, familyName: null },
+    });
+    mockSignInWithIdToken.mockResolvedValueOnce({
+      data: { session: null },
+      error: null,
+    });
+    let result = await adapter.signInWithApple();
+    if (result.ok) throw new Error("expected failure");
+    expect(result.error.message).toBe("Failed to sign in with Apple");
+
+    mockSignInWithIdToken.mockResolvedValue({
+      data: { session: MOCK_SUPABASE_SESSION },
+      error: null,
+    });
+    result = await adapter.signInWithApple();
+    expect(result.ok).toBe(true);
+    // All-null name parts never trigger a metadata write.
+    expect(mockUpdateUser).not.toHaveBeenCalled();
+
+    signInAsync.mockResolvedValue({
+      identityToken: "apple-id-token",
+      fullName: { givenName: null, middleName: null, familyName: "Lovelace" },
+    });
+    mockUpdateUser.mockResolvedValue({ data: {}, error: null });
+    result = await adapter.signInWithApple();
+    expect(result.ok).toBe(true);
+    expect(mockUpdateUser).toHaveBeenCalledWith({
+      data: {
+        full_name: "Lovelace",
+        given_name: undefined,
+        family_name: "Lovelace",
+      },
+    });
+
+    signInAsync.mockRejectedValueOnce("native crash");
+    result = await adapter.signInWithApple();
+    if (result.ok) throw new Error("expected failure");
+    expect(result.error.message).toBe("Sign in with Apple failed");
+  });
+
+  it("uses default messages for non-Error rejections in setSessionFromTokens and updatePassword", async () => {
+    mockSetSession.mockRejectedValueOnce("offline");
+    const session = await adapter.setSessionFromTokens("a", "r");
+    if (session.ok) throw new Error("expected failure");
+    expect(session.error).toEqual({
+      kind: "auth",
+      code: "token_expired",
+      message: "Failed to set session",
+    });
+    mockUpdateUser.mockRejectedValueOnce("offline");
+    const password = await adapter.updatePassword("new-password-123");
+    if (password.ok) throw new Error("expected failure");
+    expect(password.error.message).toBe("Failed to set password");
+  });
+
+  it("maps a session without email or expiry to empty defaults", async () => {
+    mockGetSession.mockResolvedValueOnce({
+      data: {
+        session: {
+          access_token: "t",
+          refresh_token: "r",
+          user: { id: "u" },
+        },
+      },
+      error: null,
+    });
+    await expect(adapter.getSession()).resolves.toEqual({
+      ok: true,
+      value: {
+        accessToken: "t",
+        refreshToken: "r",
+        userId: "u",
+        email: "",
+        expiresAt: 0,
+      },
+    });
+  });
+
+  it("treats a persisted token with unknown expiry as unusable until the full budget", async () => {
+    jest.useFakeTimers();
+    try {
+      mockGetSession.mockReturnValue(new Promise(() => {}));
+      (AsyncStorage.getItem as jest.Mock).mockResolvedValue(
+        JSON.stringify({ ...MOCK_SUPABASE_SESSION, expires_at: 0 }),
+      );
+      const pending = adapter.getAccessToken();
+      await jest.advanceTimersByTimeAsync(GET_ACCESS_TOKEN_TIMEOUT_MS);
+      let settled = false;
+      void pending.then(() => {
+        settled = true;
+      });
+      await Promise.resolve();
+      expect(settled).toBe(false);
+      await jest.advanceTimersByTimeAsync(GET_ACCESS_TOKEN_EXPIRED_TIMEOUT_MS);
+      await expect(pending).resolves.toBe("access-123");
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+});
+
+describe("SupabaseAuthAdapter configuration guard", () => {
+  const env = { ...process.env };
+  afterEach(() => {
+    process.env = { ...env };
+  });
+
+  function construct(
+    extra: Record<string, string>,
+    envVars: Record<string, string>,
+  ) {
+    process.env = { ...env };
+    delete process.env.EXPO_PUBLIC_SUPABASE_URL;
+    delete process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+    Object.assign(process.env, envVars);
+    // The adapter resolves its configuration at module load, so each case needs
+    // a fresh registry with its own expo-constants mock. This describe is last
+    // in the file: resetting the registry cannot affect the suites above.
+    jest.resetModules();
+    jest.doMock("expo-constants", () => ({ expoConfig: { extra } }));
+    /* eslint-disable @typescript-eslint/no-require-imports -- fresh evaluation after resetModules; a static import would reuse the cached module. */
+    const { SupabaseAuthAdapter: Isolated } =
+      require("../supabase.adapter") as typeof import("../supabase.adapter");
+    /* eslint-enable @typescript-eslint/no-require-imports */
+    try {
+      new Isolated().destroy();
+      return undefined;
+    } catch (e) {
+      return e;
+    }
+  }
+
+  it("throws a clear error when either Supabase setting is missing, naming the missing one", () => {
+    const quiet = jest.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      expect(construct({}, {})).toBeInstanceOf(Error);
+      expect(quiet).toHaveBeenLastCalledWith(
+        expect.stringContaining("Missing config"),
+        "MISSING",
+        "Key:",
+        "MISSING",
+      );
+      expect(
+        construct({}, { EXPO_PUBLIC_SUPABASE_URL: "https://x.supabase.co" }),
+      ).toBeInstanceOf(Error);
+      expect(quiet).toHaveBeenLastCalledWith(
+        expect.stringContaining("Missing config"),
+        "set",
+        "Key:",
+        "MISSING",
+      );
+      expect(
+        construct({}, { EXPO_PUBLIC_SUPABASE_ANON_KEY: "anon" }),
+      ).toBeInstanceOf(Error);
+      expect(quiet).toHaveBeenLastCalledWith(
+        expect.stringContaining("Missing config"),
+        "MISSING",
+        "Key:",
+        "set",
+      );
+      // Environment variables are a valid source when expo-constants has nothing.
+      expect(
+        construct(
+          {},
+          {
+            EXPO_PUBLIC_SUPABASE_URL: "https://x.supabase.co",
+            EXPO_PUBLIC_SUPABASE_ANON_KEY: "anon",
+          },
+        ),
+      ).toBeUndefined();
+    } finally {
+      quiet.mockRestore();
+    }
   });
 });

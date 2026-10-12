@@ -218,7 +218,8 @@ function PartnersAccount({
       mounted.current = false;
       version.current++;
     };
-  }, [api, userId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [api, userId]);
+  // The keyed account boundary remounts this component when api or userId change.
   useFocusEffect(
     useCallback(() => {
       focused.current = true;
@@ -226,7 +227,7 @@ function PartnersAccount({
       return () => {
         focused.current = false;
       };
-    }, [api, userId]),
+    }, []),
   );
   async function mutate(
     action: string,

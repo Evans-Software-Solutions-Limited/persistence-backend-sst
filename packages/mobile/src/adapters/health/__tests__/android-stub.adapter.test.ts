@@ -65,3 +65,31 @@ describe("AndroidStubHealthAdapter", () => {
     expect(status.steps).toBe("denied");
   });
 });
+
+describe("AndroidStubHealthAdapter remaining surface", () => {
+  const adapter = new AndroidStubHealthAdapter();
+
+  it("reports denied permissions and fails every remaining read and write as unavailable", async () => {
+    await expect(adapter.getPermissionStatus()).resolves.toEqual({
+      steps: "denied",
+      calories: "denied",
+      bodyWeight: "denied",
+      heartRate: "denied",
+      sleep: "denied",
+    });
+    const results = await Promise.all([
+      adapter.getStepsLastNDays(7),
+      adapter.getHeartRateLatest(),
+      adapter.getLatestBodyFat(),
+      adapter.writeBodyWeight(),
+      adapter.writeBodyFat(),
+      adapter.getSleepLastNight(),
+      adapter.writeSleep(),
+    ]);
+    for (const result of results) {
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.code).toBe("unavailable");
+    }
+    await expect(adapter.disconnect()).resolves.toBeUndefined();
+  });
+});

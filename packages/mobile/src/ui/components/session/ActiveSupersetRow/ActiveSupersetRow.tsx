@@ -26,7 +26,6 @@
  */
 
 import React, { useMemo } from "react";
-import type { ReactNode } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { ActiveSupersetExerciseRow } from "./ActiveSupersetExerciseRow";
 import {

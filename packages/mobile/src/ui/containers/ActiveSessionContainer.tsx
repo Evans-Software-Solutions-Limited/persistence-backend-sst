@@ -374,6 +374,7 @@ export function ActiveSessionContainer() {
       map[ex.id] = recent[ex.exerciseId] ?? {};
     }
     return map;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- recentSetsRevision is the cache-invalidation key for getRecentSetsByExercise, not a value read inside.
   }, [session, userId, storage, recentSetsRevision]);
 
   // Per-exercise template metadata threaded from the workout template.

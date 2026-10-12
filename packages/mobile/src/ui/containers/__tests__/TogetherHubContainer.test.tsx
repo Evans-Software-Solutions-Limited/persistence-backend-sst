@@ -40,11 +40,11 @@ jest.mock("@/ui/hooks/useTogetherGate", () => ({
 }));
 jest.mock("expo-router", () => ({
   router: { push: (...a: any[]) => mockPush(...a) },
-  useFocusEffect: (cb: any) => require("react").useEffect(cb, [cb]),
+  useFocusEffect: (cb: any) => jest.requireActual("react").useEffect(cb, [cb]),
 }));
 jest.mock("../TogetherPartnersContainer", () => ({
   TogetherPartnersContainer: ({ header, onRefresh, embedded }: any) => {
-    const { View } = require("react-native");
+    const { View } = jest.requireActual("react-native");
     return (
       <View testID="partners-inline" onRefresh={onRefresh} embedded={embedded}>
         {header}
