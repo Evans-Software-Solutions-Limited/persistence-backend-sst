@@ -24,9 +24,25 @@ owner-issued consents and re-issues them as fresh revisions when a member is
 readmitted (`admitted` event; host per peer via `TogetherLanSession.peerUserId`),
 so grants return past the `suspendPeer` barrier without manual re-granting.
 Partners list: one transient automatic cold-start failure (unauthorized,
-network, timeout) gets a single 4 s retry before the banner; pull and second
-failures surface. Hub empty Sessions copy now tells the user to Join or get an
-invite (hub still never discovers, D14).
+network, timeout, 5xx) gets a single 4 s retry before the banner; pull and
+second failures surface. Hub empty Sessions copy now tells the user to Join or
+get an invite (hub still never discovers, D14).
+
+Cold-start root cause (added later the same day, commit `22135ed2`): the
+simulator's CFNetwork log shows the app firing about twenty API requests at
+launch and the staging edge answering eight of them with
+`503 {"message":"Service Unavailable"}` inside 50 ms, i.e. Lambda throttling
+before the handler runs; reproduced from the Mac with 24 parallel unauthenticated
+requests (3 × 503). The throttled requests include the partners query and the
+Together trust/register call, so first launch showed the partners banner and
+the Together gate settled on "unavailable" with nothing retrying it. Fix in the
+app: a 5xx is treated as transient by the partners container, and
+`bindTogetherProvisioning` retries readiness once after 4 s when it fails with
+the transient `unavailable` code while online (per account; cleared on account
+switch and cleanup). Open infra question: why staging throttles at a handful of
+concurrent invocations when `infra/monitoring.ts` records the account quota as
+1000 since 1 August — check reserved concurrency on the core function and the
+account's live `ConcurrentExecutions` (no AWS CLI on this Mac).
 
 Verified: `lobbyController.test.ts` 70/70 including a new round trip (host
 backgrounds → resumes → guest auto-reconnects, is readmitted, host's numbers
@@ -35,9 +51,16 @@ container suites 878 tests; partners container 28 (three new cold-start cases);
 full mobile 619 suites / 8,464 tests, coverage 96.61 / 92.52 / 96.67 / 97.89;
 typecheck, lint (0 warnings), prettier clean. Core's two 20-second timeouts under
 full-suite load recurred (entitlement-gate cases; untouched here, tracked on
-PER-80). Device: Release simulator build launched, but the Together access gate
-stays pending on the simulator (sandbox entitlements), so hosting could not be
-reached; background/foreground is proven on the simulated transport only. Next:
+PER-80). Device: the Release simulator build was made with
+`CODE_SIGNING_ALLOWED=NO`, so it carries no entitlements and the keychain read
+behind the Together device identity fails (`securityd: -34018 "Client has
+neither application-identifier nor keychain-access-groups entitlements"`),
+which `device()` reports as `key-unavailable` and the hub shows as "We couldn't
+verify your Together access". The provisioning cache on the simulator has never
+held a row since the 11 Oct install, confirming no run got past that read. This
+is a build artefact: a signed build (Apple ID in Xcode) or a phone is needed to
+see the gate open; background/foreground is proven on the simulated transport
+only. Next:
 Brad's two-phone run (minimise host, minimise guest, lock screen, return); then
 the discovery renewal item and the UX polish items on PER-80.
 
