@@ -46,7 +46,18 @@ const EMPTY_QUERY_RESULT: WorkoutsQueryResult = {
   default: { workouts: [], quota: null, isStale: true, cached: null },
 };
 
-export function useWorkouts(): WorkoutsState {
+export type UseWorkoutsOptions = {
+  /**
+   * Refresh once on mount when any section is stale. Default true. Pass
+   * false from always-mounted observers (the workout cap gate in the app
+   * layout) so the screen that renders the lists is the only one fetching;
+   * observers still see every refresh through the storage revision.
+   */
+  autoRefresh?: boolean;
+};
+
+export function useWorkouts(options: UseWorkoutsOptions = {}): WorkoutsState {
+  const autoRefresh = options.autoRefresh ?? true;
   const { api, auth, storage } = useAdapters();
   const { session } = useAuth();
   const userId = session?.userId ?? null;
@@ -158,11 +169,12 @@ export function useWorkouts(): WorkoutsState {
       autoRefreshedForUserRef.current = null;
       return;
     }
+    if (!autoRefresh) return;
     if (autoRefreshedForUserRef.current === userId) return;
     if (!anyStale) return;
     autoRefreshedForUserRef.current = userId;
     void refresh();
-  }, [userId, anyStale, refresh]);
+  }, [userId, anyStale, refresh, autoRefresh]);
 
   // Soft re-read: bump cacheVersion so `initial` recomputes from
   // storage. Stable identity (no deps) so callers can safely list it
