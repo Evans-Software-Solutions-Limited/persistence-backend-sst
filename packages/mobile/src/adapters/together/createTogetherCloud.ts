@@ -10,6 +10,9 @@ export function createTogetherCloud(
 ): TogetherCloudPort | undefined {
   if (!enabled || !api) return undefined;
   try {
+    (
+      require("./security/cryptoBackend") as typeof import("./security/cryptoBackend")
+    ).installNativeTogetherCrypto();
     const { openDatabaseSync } =
       require("expo-sqlite") as typeof import("expo-sqlite");
     const { randomUUID } =

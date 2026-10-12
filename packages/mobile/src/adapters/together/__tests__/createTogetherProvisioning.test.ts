@@ -77,7 +77,9 @@ it.each(["ExpoSecureStore", "ExpoCrypto"])(
 );
 it("composes the verified service with isolated storage and device-only keychain writes", async () => {
   expect(create(api, "https://staging.example", true)).toBe(mockService);
-  expect(mockNative.mock.calls).toEqual([["ExpoSecureStore"], ["ExpoCrypto"]]);
+  expect(
+    mockNative.mock.calls.filter(([name]) => name !== "TogetherCrypto"),
+  ).toEqual([["ExpoSecureStore"], ["ExpoCrypto"]]);
   expect(mockOpen).toHaveBeenCalledWith("together-provisioning.db");
   expect(mockConstruct).toHaveBeenCalledTimes(1);
   const options = mockConstruct.mock.calls[0][0];

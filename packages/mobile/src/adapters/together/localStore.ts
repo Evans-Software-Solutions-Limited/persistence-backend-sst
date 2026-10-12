@@ -20,8 +20,21 @@ export interface LocalCommand {
   payload: string;
 }
 
+function deepFreeze<T>(value: T): T {
+  if (value && typeof value === "object" && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const key of Object.keys(value as object))
+      deepFreeze((value as Record<string, unknown>)[key]);
+  }
+  return value;
+}
+
 /** Immutable, account-scoped peer storage. Nothing here materializes history. */
 export class TogetherLocalStore {
+  /** Parsed roster chain per session (D16). Only this instance's commitRoster writes the table. */
+  private readonly chains = new Map<string, readonly Signed<OfflineRoster>[]>();
+  /** Closure is monotonic and written only by this instance's close(). */
+  private readonly closed = new Map<string, boolean>();
   constructor(
     private readonly db: TogetherJournalDatabase,
     readonly accountId: string,
@@ -145,14 +158,21 @@ export class TogetherLocalStore {
     });
   }
 
-  rosters(sessionId: string): Signed<OfflineRoster>[] {
-    return this.db
+  /** Frozen, cached parsed chain; callers must treat envelopes as immutable. */
+  rosters(sessionId: string): readonly Signed<OfflineRoster>[] {
+    const cached = this.chains.get(sessionId);
+    if (cached) return cached;
+    const chain = this.db
       .getAllSync<{ envelope: string }>(
         `SELECT envelope FROM together_local_rosters
          WHERE account_id = ? AND session_id = ? ORDER BY revision`,
         [this.accountId, sessionId],
       )
-      .map(({ envelope }) => JSON.parse(envelope) as Signed<OfflineRoster>);
+      .map(({ envelope }) =>
+        deepFreeze(JSON.parse(envelope) as Signed<OfflineRoster>),
+      );
+    this.chains.set(sessionId, chain);
+    return chain;
   }
 
   current(sessionId: string): Signed<OfflineRoster> | null {
@@ -197,17 +217,20 @@ export class TogetherLocalStore {
          (account_id, session_id, revision, envelope) VALUES (?, ?, ?, ?)`,
         [this.accountId, pin.sessionId, p.revision, JSON.stringify(envelope)],
       );
+      this.chains.delete(pin.sessionId);
     });
   }
 
   assertOpen(sessionId: string): void {
-    if (
-      this.db.getFirstSync(
+    let closed = this.closed.get(sessionId);
+    if (closed === undefined) {
+      closed = !!this.db.getFirstSync(
         `SELECT 1 FROM together_local_closed WHERE account_id = ? AND session_id = ?`,
         [this.accountId, sessionId],
-      )
-    )
-      throw new Error("Local sharing closed");
+      );
+      this.closed.set(sessionId, closed);
+    }
+    if (closed) throw new Error("Local sharing closed");
   }
 
   /** Local user exit is terminal for this session; no implicit resume on restart. */
@@ -216,6 +239,7 @@ export class TogetherLocalStore {
       `INSERT OR IGNORE INTO together_local_closed(account_id, session_id) VALUES (?, ?)`,
       [this.accountId, sessionId],
     );
+    this.closed.set(sessionId, true);
   }
 
   receive(ownerId: string, command: LocalCommand): void {

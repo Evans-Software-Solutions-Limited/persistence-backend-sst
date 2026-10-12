@@ -1,5 +1,161 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-11 — PER-64 D16: verify-once roster cache + native Curve25519 landed and measured
+
+[PER-64](https://linear.app/evans-software-solutions/issue/PER-64), branch
+`claude/vigilant-carson-8shl62`, commit `ea27a0e1` on top of the PER-20 probe
+commits; decision [D16](specs/34-train-together/design.md), brief
+`specs/milestones/TRAIN-TOGETHER/CRYPTO-HOTPATH-BRIEF.md`. Scopes audit
+findings F1 and F9 together after the Hermes probe showed 5.6–24× slower crypto
+than the audit desktop. No wire or verification-rule change; no PR, EAS or
+release.
+
+F1: `TogetherLocalStore` caches one frozen parsed roster chain and the
+open/closed flag per session (sole-writer invariant: one store per account per
+process, refreshed by this instance's `commitRoster`/`close`).
+`TogetherLocalLobby.member` verifies the chain once per revision, denied-pair
+set and validity window, always checks closure, caches credential hashes by
+identity and short-circuits own-credential clones. `TogetherSharedSession.key`
+caches the X25519 secret per peer public key, returns copies, zeroes on
+`dispose`/`rosterChanged`. F9: `security/cryptoBackend.ts` seam (noble default)
+and local Expo module `modules/together-crypto` (`TogetherCrypto`: CryptoKit
+on iOS, BouncyCastle `bcprov-jdk18on` 1.80 on Android, synchronous typed-array
+functions) installed from the three Together factories and the probe route only
+after a verify-based self-test (wire vector, both-direction round trip, tamper,
+S+L rejection, X25519 and SHA-256 equality). Signatures are not assumed
+deterministic anywhere (CryptoKit's signer is randomized; consents already carry
+random nonces and retries resend stored envelopes).
+
+Verified: `hotPath.test.ts` 6 tests (frozen cached chain, 0 SQL and 0
+verifications on repeated `member()`/`getSnapshot()`, re-verification on new
+revision, denied-pair change, expiry crossing and dispose, closure without
+verification, key cache copies and zeroing) and `cryptoBackend.test.ts` 5 tests
+(routing, memoised install, every fallback path, length checks). All 29 Together
+adapter suites pass (777 tests) with existing negative tests unchanged; full
+repository: mobile 611 suites / 8,418 tests, coverage 96.24/91.57/96.22/97.63,
+core 5,502, web, scripts green, root typecheck 9/9, lint 6/6, prettier clean; the
+same two local-only plugin tests fail from the prebuilt `ios/` folder. Changed
+runtime files 96–100% in every metric (`localStore` 100, `localLobby` 99/99/100/100,
+`sharedSession` 99/98/98/100, `cryptoBackend` 98/96/100/98).
+
+Measured on the Release simulator build with the native backend (runs 2–3, same
+iPhone 17 / iOS 27 / Hermes 0.14.1 as the morning probe): `ed25519.verify`
+0.035–0.040 ms (356× faster than noble on Hermes, 0.04× the audit desktop),
+sign 0.057–0.071 ms (88×), `verifyRoster(4)` 1.68 ms (81×), `verifyRoster(2)`
+0.97 ms, key derivation 1.31 ms (9×; remainder is the JS Montgomery conversion,
+now once per peer), `requestHash` 0.26 ms (10×), AEAD unchanged at 0.77 ms
+(still noble). Per-set crypto with the audit's pre-F1 counts: 4 participants
+sender 114 ms / receiver 34 ms (was 7.9 s / 2.6 s); 2 participants 34 / 21 ms
+(was 2.3 s / 1.6 s); F1 cuts the counts further. Evidence and JSON in
+`specs/milestones/TRAIN-TOGETHER/evidence/perf-2026-10-11-hermes-probe/`.
+
+Not done: end-to-end two/four-phone propagation p95 (PER-20 stamps matrix),
+physical iPhone (Xcode has no Apple account/profile) and Android (BouncyCastle
+path unexercised; needs an Android build). F2–F6 remain open in PER-64. Next:
+Brad adds his Apple account to Xcode, device + Android probe runs, then the
+PER-20 timing-stamp matrix; review the branch for a PR when Brad decides.
+
+### 2026-10-11 — PER-20 Hermes crypto probe: simulator multiplier 5.6–24× (F9 native crypto required)
+
+[PER-20](https://linear.app/evans-software-solutions/issue/PER-20), branch
+`claude/vigilant-carson-8shl62` on merged main `15fdb992`. Calibrates the
+[11 October performance audit](https://linear.app/evans-software-solutions/document/together-performance-audit-implementation-and-performance-pass-11-0742b327c246)
+(F9 Hermes multiplier). No Together runtime change, no dependency, no native
+module, no product UI change, no EAS/TestFlight/deploy/PR.
+
+Added `src/adapters/together/diagnostics/cryptoProbe.ts`: pure runner over the
+existing `identity.ts` exports and `@noble/*`, constant-seed 4-member signed
+roster (authority seed 77, clock 1700000000000; 4,488 B, the audit's exact
+roster size), 2-member roster for the 2-participant projection, benchmarks per
+the brief (ed25519 sign/verify ×100, x25519+sha256 as `sharedSession.key()`
+×100, chacha20poly1305 2 KB ×200, `requestHash` ×100, `verifyRoster` ×20,
+JSON clone 20 KB ×100, SQLite read-all + parse of four roster rows ×100 through
+`TogetherJournalDatabase`), `setTimeout(0)` yields, engine/platform/device
+detection, and per-set sender/receiver estimates from the audit's operation
+counts (2-participant sign/key/AEAD counts are scaled by recipient count, an
+assumption recorded in the module). Hidden route `app/(app)/together-probe.tsx`
+(Run, progress, table, Share + `console.log` of the JSON); no navigation entry;
+`+native-intent`/deep-link resolver leave `together-probe` untouched (tested).
+Scheme is per variant: `persistencemobile-staging://together-probe` on a staging
+build.
+
+Verified: new Jest suite 7/7 with real crypto and `node:sqlite` (shape, finite
+positive ms/op, tampered/re-signed/swapped consent rejected, deterministic
+fixture). Root prettier pass, typecheck 9/9, lint 6/6 (existing warnings only),
+mobile 609 suites / 8,407 tests, coverage 96.24/91.57/96.22/97.63; core 397
+files / 5,502 tests; web 80 files; scripts 240 tests. Two local-only failures
+(`withTogetherLan`, `together-nearby/plugin`) are caused by the gitignored
+prebuilt `packages/mobile/ios/` Info.plist leaking into config-plugin
+introspection on this Mac; both pass from a clean directory and are unrelated.
+Desktop baseline on this Mac (Bun 1.4.3/JSC, Apple Silicon, runs 2–3):
+`ed25519.verify` 0.25–0.33 ms, sign 0.14–0.23 ms, key derivation 0.26 ms,
+AEAD 0.012–0.016 ms, `verifyRoster(4)` 3.0–3.2 ms, `verifyRoster(2)` 1.6–1.8 ms,
+`requestHash` 0.03 ms, clone 0.03 ms, SQLite 0.02–0.04 ms — roughly 2.5–4×
+faster than the audit's Linux desktop, so the audit figures are the comparator.
+
+Simulator run (after Brad installed Xcode 27.0 / iOS 27.0 runtime): Release
+staging build on the iPhone 17 simulator, Hermes 0.14.1 (Release, concurrent
+GC, `__DEV__` false). Three runs, first discarded; runs 2–3 ms/op versus the
+audit desktop: `ed25519.sign` 5.6 (5.6×), `ed25519.verify` 13.4 (13.4×), key
+derivation 11.3 (13.7×), AEAD 2 KB 0.77 (7.0×), `requestHash` 2.6 (23.9×),
+`verifyRoster(4)` 136–138 (16.8×), `verifyRoster(2)` 81–82, JSON clone 0.26–0.29,
+SQLite 0.13–0.18. Against Bun/JSC on the same Mac, Hermes is ≈30–80× slower on
+the crypto primitives. Projected per-set crypto at 4 participants: sender
+≈7.8–7.9 s, receiver ≈2.6 s; at 2 participants sender ≈2.3 s, receiver ≈1.6 s.
+The simulator is an optimistic lower bound for a phone. Verdict: the multiplier
+is far above the audit's 3× threshold, so F9 native ed25519/x25519 behind the
+`identity.ts` API is required in addition to F1 verify-once caching. JSON
+reports, desktop baseline and the comparison table are committed in
+`specs/milestones/TRAIN-TOGETHER/evidence/perf-2026-10-11-hermes-probe/`.
+
+Not measured: physical iPhone (cabled iPhone 16 Pro present, but Xcode has no
+Apple account or provisioning profile for the staging bundle id; the device
+build failed at signing) and Android. Build notes, all local to the gitignored
+`ios/` folder and not needed by EAS: Xcode 27 ships no Simulator.app (Expo SDK
+55 `run:ios` fails its prerequisite; built with `xcodebuild` + `simctl`); the
+iOS 27 SDK rejects pod deployment targets below 15 and marks `UIAction.subtitle`
+iOS 16+ (expo-router), so the local Podfile hook floors pods at 16.0 and the app
+target is 16.0; iOS 27 UIKit aborts any app not adopting UIScene (React Native
+0.83 does not), worked around by attaching lldb and returning from the aborting
+block. Environment: mobile Jest needs real Node (CI pins Node 24); under Bun's
+node shim `vm.SyntheticModule` exists and Jest treats `@noble/*` as ESM. Node 24
+installed via Homebrew at `/opt/homebrew/opt/node@24/bin` (not on the login
+PATH). Next: Brad adds his Apple account to Xcode so the cabled iPhone build can
+sign, then repeat the probe on the iPhone 16 Pro and one Android; PER-64 picks
+up F1 + F9 together.
+
+### 2026-10-11 — PER-20/PER-64/PER-22 Together performance audit (read-only, Fable pass)
+
+[PER-20](https://linear.app/evans-software-solutions/issue/PER-20) ·
+[PER-64](https://linear.app/evans-software-solutions/issue/PER-64) ·
+[PER-22](https://linear.app/evans-software-solutions/issue/PER-22). Independent
+performance-first audit at merged main `15fdb992`; sense-checks the 11 October
+Opus verification pass and goes deeper on the live-update path. No runtime,
+native, deploy, migration or merge change. Linear document: https://linear.app/evans-software-solutions/document/together-performance-audit-implementation-and-performance-pass-11-0742b327c246.
+
+Desktop microbenchmark (bun/JSC, real `@noble` crypto, real `node:sqlite`,
+simulated native LAN, 6×4 workout; not device p95): one logged set at 4
+participants costs the host 56 `verifyRoster` calls (≈504 ed25519 verifies),
+380 SQL statements, 6 frames / 31 KB and converges at ≈1.0 s with zero network
+latency (0.27 s at 2 participants; 1.4 s with PREV grants); each receiver does
+19 roster verifications. `getSnapshot()` with no mutation re-verifies the roster
+and re-reads the chain 6–14 times, clones 10–20 KB and never returns the same
+reference. One peer at 1.5 s/frame delays every peer to 4.0 s (serial
+`sendShared`); a failing first peer silences later peers. Every peer event
+fires `workout.changed()` → full own-checkpoint reread (26 KB after 10 sets,
+intents retained in the row) and ActiveSession re-render; discovery's 1 s expiry
+tick invalidates subscribers every second. Online polls a full snapshot every
+5 s and never requests the deployed realtime ticket/socket.
+
+Verdict: not fit as implemented for AC4 ≤2 s p95 at 4 participants, unproven at
+2; no redesign needed — the protocol is sound, the costs are implementation
+choices. Cheapest path: verify-once-per-roster-revision + per-peer key cache;
+stable snapshot + scoped invalidation; per-peer send queues; keyed storage/undo
+log in `accept()`; payload diet; client-side realtime for Online; then device
+proof (Hermes crypto multiplier first). All Opus correctness findings confirmed
+with nuances recorded in the document; none found wrong. Next: PER-64 hot-path
+fixes with the stated acceptance criteria, then PER-20 device profiling matrix.
+
 ### 2026-10-11 — Train Together release audit (verification & architecture pass)
 
 Evidence-led, read-only audit of Train Together at merged main `15fdb992` (PR #490,

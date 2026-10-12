@@ -9,9 +9,8 @@ import {
   rosterValidator,
   friendshipValidator,
 } from "./schema";
-import { ed25519 } from "@noble/curves/ed25519.js";
-import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex } from "@noble/hashes/utils.js";
+import { getCryptoBackend } from "./cryptoBackend";
 import { encode64, decode64 } from "./encoding";
 export type {
   Signed,
@@ -41,7 +40,9 @@ export function requestHash(payload: unknown): string {
     return value;
   }
   return bytesToHex(
-    sha256(new TextEncoder().encode(JSON.stringify(canonical(payload)))),
+    getCryptoBackend().sha256(
+      new TextEncoder().encode(JSON.stringify(canonical(payload))),
+    ),
   );
 }
 
@@ -55,7 +56,7 @@ const SPKI_PREFIX = new Uint8Array([
   48, 42, 48, 5, 6, 3, 43, 101, 112, 3, 33, 0,
 ]);
 export function publicKeyPem(seed: Uint8Array): string {
-  return `-----BEGIN PUBLIC KEY-----\n${encode64(new Uint8Array([...SPKI_PREFIX, ...ed25519.getPublicKey(seed)]))}\n-----END PUBLIC KEY-----\n`;
+  return `-----BEGIN PUBLIC KEY-----\n${encode64(new Uint8Array([...SPKI_PREFIX, ...getCryptoBackend().ed25519PublicKey(seed)]))}\n-----END PUBLIC KEY-----\n`;
 }
 function parsePublicKey(pem: string): Uint8Array {
   requireTogether(
@@ -75,7 +76,10 @@ function parsePublicKey(pem: string): Uint8Array {
 export function signPayload<T>(payload: T, seed: Uint8Array): Signed<T> {
   return {
     payload,
-    signature: encode64(ed25519.sign(signatureBytes(payload), seed), true),
+    signature: encode64(
+      getCryptoBackend().ed25519Sign(signatureBytes(payload), seed),
+      true,
+    ),
   };
 }
 export function verifySignature<T>(envelope: Signed<T>, publicKey: string): T {
@@ -84,11 +88,10 @@ export function verifySignature<T>(envelope: Signed<T>, publicKey: string): T {
       envelope &&
         typeof envelope.signature === "string" &&
         /^[A-Za-z0-9_-]{86}$/.test(envelope.signature) &&
-        ed25519.verify(
+        getCryptoBackend().ed25519Verify(
           decode64(envelope.signature, true),
           signatureBytes(envelope.payload),
           parsePublicKey(publicKey),
-          { zip215: false },
         ),
       "INVALID_PROOF",
     );

@@ -1,0 +1,140 @@
+{
+  "version": "together-crypto-probe-v1",
+  "generatedAt": "2026-10-11T20:41:26.929Z",
+  "engine": {
+    "hermes": true,
+    "runtimeProperties": {
+      "Bytecode Version": 96,
+      "Builtins Frozen": false,
+      "VM Experiments": 0,
+      "Build": "Release",
+      "GC": "hades (concurrent)",
+      "OSS Release Version": "0.14.1",
+      "Debugger Enabled": false,
+      "CommonJS Modules": "None"
+    }
+  },
+  "environment": {
+    "platform": "ios",
+    "osVersion": "27.0",
+    "deviceModel": "Simulator iOS",
+    "devBuild": false
+  },
+  "fixture": {
+    "members": 4,
+    "rosterBytes": 4488,
+    "roster2Bytes": 2414,
+    "clonePayloadBytes": 20480,
+    "signPayloadBytes": 500,
+    "aeadPlaintextBytes": 2048,
+    "sqliteRowBytes": [4488, 4488, 4488, 4488]
+  },
+  "benchmarks": [
+    {
+      "name": "ed25519.sign",
+      "iterations": 100,
+      "totalMs": 566.650250017643,
+      "msPerOp": 5.6665025001764295
+    },
+    {
+      "name": "ed25519.verify",
+      "iterations": 100,
+      "totalMs": 1337.7070000171661,
+      "msPerOp": 13.377070000171662
+    },
+    {
+      "name": "x25519+sha256 key derivation",
+      "iterations": 100,
+      "totalMs": 1130.7711250185966,
+      "msPerOp": 11.307711250185967
+    },
+    {
+      "name": "chacha20poly1305 encrypt 2KB",
+      "iterations": 200,
+      "totalMs": 153.9625410437584,
+      "msPerOp": 0.769812705218792
+    },
+    {
+      "name": "requestHash(4-member roster)",
+      "iterations": 100,
+      "totalMs": 263.4166250228882,
+      "msPerOp": 2.6341662502288816
+    },
+    {
+      "name": "verifyRoster(4 members)",
+      "iterations": 20,
+      "totalMs": 2759.115750014782,
+      "msPerOp": 137.9557875007391
+    },
+    {
+      "name": "verifyRoster(2 members)",
+      "iterations": 20,
+      "totalMs": 1635.9157499670982,
+      "msPerOp": 81.79578749835491
+    },
+    {
+      "name": "JSON clone 20KB",
+      "iterations": 100,
+      "totalMs": 29.06325000524521,
+      "msPerOp": 0.2906325000524521
+    },
+    {
+      "name": "SQLite read-all + JSON.parse 4 roster rows",
+      "iterations": 100,
+      "totalMs": 17.858999967575073,
+      "msPerOp": 0.17858999967575073
+    }
+  ],
+  "estimates": [
+    {
+      "participants": 4,
+      "sender": {
+        "counts": {
+          "verifyRoster": 56,
+          "sign": 12,
+          "verify": 0,
+          "keyDerivation": 9,
+          "aead": 9
+        },
+        "rosterBenchmark": "verifyRoster(4 members)",
+        "totalMs": 7902.219845642149
+      },
+      "receiver": {
+        "counts": {
+          "verifyRoster": 19,
+          "sign": 0,
+          "verify": 1,
+          "keyDerivation": 1,
+          "aead": 1
+        },
+        "rosterBenchmark": "verifyRoster(4 members)",
+        "totalMs": 2646.6145564696194
+      }
+    },
+    {
+      "participants": 2,
+      "sender": {
+        "counts": {
+          "verifyRoster": 28,
+          "sign": 6,
+          "verify": 0,
+          "keyDerivation": 3,
+          "aead": 3
+        },
+        "rosterBenchmark": "verifyRoster(2 members)",
+        "totalMs": 2360.5136368212106
+      },
+      "receiver": {
+        "counts": {
+          "verifyRoster": 19,
+          "sign": 0,
+          "verify": 1,
+          "keyDerivation": 1,
+          "aead": 1
+        },
+        "rosterBenchmark": "verifyRoster(2 members)",
+        "totalMs": 1579.5745564243198
+      }
+    }
+  ]
+}

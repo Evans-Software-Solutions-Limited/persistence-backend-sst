@@ -251,3 +251,54 @@ retry on account/lifecycle/cancellation changes. Protocol/authorization failures
 still terminate collaboration; failed recovery requires explicit retry. Private
 peer caches stay purged until fresh owner authorization. Exact event attribution requires
 device evidence. No native build or staging release is claimed by source tests.
+
+### D16. Crypto hot path: verify once per roster revision and native Curve25519 (PER-64 F1 + F9)
+
+Evidence (11 October, PER-20): a Release Hermes build runs `ed25519.verify` at
+≈13 ms, X25519 key agreement at ≈11 ms and `verifyRoster(4)` at ≈137 ms, 5.6–24×
+slower than the audit desktop and ≈30–80× slower than JavaScriptCore on the same
+Mac. With the current re-verification pattern one logged set costs the host ≈8 s
+of crypto at four participants. Both the operation count and the per-operation
+cost must fall; neither alone meets AC4 on a phone. The wire protocol, signed
+envelopes, per-recipient sealing, host relay, durable-before-ack, `suspendPeer`
+purge and fresh-grant-on-reconnect are unchanged.
+
+**F1 — verify once per roster revision.** `TogetherLocalStore` keeps one parsed,
+deep-frozen roster chain per session and a per-session open/closed flag in
+memory; both are refreshed only by this instance's `commitRoster` and `close`,
+which are the sole writers of those tables (one store per account per process,
+created in `TogetherLobbyController.createResources`). `TogetherLocalLobby.member`
+caches the `verifyRoster` result keyed by chain identity, the sorted denied-pair
+set for the current members and a validity window (max `issuedAt`, min credential
+and friendship `expiresAt`); it re-verifies when the chain object changes, a
+denied pair appears or disappears, `now` leaves the window, or the lobby is
+disposed, and it always checks the closed flag. Commit-time verification in
+`commitRoster`, admission and explicit roster events is unchanged. Credential
+hashes used for member lookup are cached by object identity.
+`TogetherSharedSession.key` caches the derived X25519 shared secret per peer
+public key for the engine lifetime and returns copies; the cache is zeroed on
+`dispose` and on `rosterChanged`. Acceptance: with no roster change, a logged set
+at four participants performs ≤ N+3 signature verifications on the sender and ≤ 3
+on each receiver; `getSnapshot()` with no change performs 0 SQL statements and 0
+verifications; the existing negative tests (expired credential, newly known
+block, closed session, `suspendPeer` purge, fresh-grant-on-reconnect, exact retry
+immutability) pass unchanged.
+
+**F9 — native Curve25519 behind the existing API.** `security/cryptoBackend.ts`
+is the single seam for Ed25519 public key, sign and verify, X25519 shared secret
+and SHA-256. `@noble/*` remains the default and the Jest implementation. The local
+Expo module `modules/together-crypto` (`TogetherCrypto`: CryptoKit on iOS,
+BouncyCastle `bcprov-jdk18on` on Android, synchronous functions over typed
+arrays) is installed at Together composition only after a verify-based self-test
+against the checked-in wire vector, a fresh sign/verify round trip in both
+directions, a tamper rejection, an X25519 agreement equal to the reference and a
+known SHA-256 digest; any failure leaves noble installed. Signatures are not
+assumed deterministic anywhere: consents carry random nonces, retries resend the
+stored signed envelope, and idempotency compares stored envelopes or payload
+hashes (CryptoKit's Ed25519 signer is randomized). Native verifiers must reject
+S ≥ L and malformed encodings; the self-test covers the vector and tampering, the
+noble path keeps the strict wire-vector equality test. Montgomery conversions of
+Ed25519 keys stay in JavaScript and run once per peer thanks to the key cache.
+The hidden `together-probe` route reports the active backend so the multiplier is
+re-measured on device after this lands. Out of scope here: F2–F6 (snapshot
+stability, per-peer queues, `accept()` storage, payload diet, Online realtime).
