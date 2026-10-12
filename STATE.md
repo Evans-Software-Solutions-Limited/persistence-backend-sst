@@ -1,5 +1,27 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-12 — Probe gated to non-production builds; Together adapters join the coverage gate
+
+Post-merge review of PR #492 (main `f99b2696`) at Brad's request, branch
+`claude/probe-gate-coverage`. Findings and fixes: the hidden `together-probe`
+route shipped in every variant with a console dump and a runtime crypto-backend
+toggle, so it now re-exports `TogetherProbeContainer`, which redirects
+production builds to Home via `extra.appVariant` (dev builds and staging keep
+the diagnostic) and renders a pure `TogetherProbePresenter`; both have tests.
+The runner moved from `src/adapters/together/diagnostics` to
+`src/diagnostics/together`. `src/adapters/together/**` is now in Jest's
+`collectCoverageFrom`, so the riskiest mobile code sits under the 90% gate
+(it measured 98/96/99/99 before enabling). The three config-plugin tests use an
+empty temporary project root, removing the dependency on a developer's prebuilt
+`ios/` folder. Lint directives fixed in `cryptoBackend.ts` and
+`createTogetherProvisioning.ts` (mobile warnings 85 → 80).
+
+Verified: full repository 21/21 tasks; mobile 615 suites / 8,428 tests, coverage
+96.59 / 92.41 / 96.59 / 97.89; core 397 files; web 80; root typecheck 9/9, lint
+6/6, prettier clean. No runtime behaviour change outside the probe route; no
+native build. Next: review and merge the PR; then the PER-20 device probe runs
+(Apple account in Xcode, Android build) and PER-64 F2–F6.
+
 ### 2026-10-11 — PER-64 D16: verify-once roster cache + native Curve25519 landed and measured
 
 [PER-64](https://linear.app/evans-software-solutions/issue/PER-64), branch
