@@ -156,6 +156,57 @@ proof (Hermes crypto multiplier first). All Opus correctness findings confirmed
 with nuances recorded in the document; none found wrong. Next: PER-64 hot-path
 fixes with the stated acceptance criteria, then PER-20 device profiling matrix.
 
+### 2026-10-11 — Train Together release audit (verification & architecture pass)
+
+Evidence-led, read-only audit of Train Together at merged main `15fdb992` (PR #490,
+current HEAD; no later commit supersedes it). Independently re-verified the
+[11 Oct investigation](https://linear.app/evans-software-solutions/document/together-release-investigation-11-october-2026-c3597ba6ed76)
+against source and recorded the
+[verification & architecture pass](https://linear.app/evans-software-solutions/document/together-release-audit-verification-and-architecture-pass-11-october-bdda73a1e00e).
+Verdict: **release blocked**; foundations (durable journal, signed identity, scoped
+encryption, consent model) sound; lifecycle/publication/discovery/delivery/perf/UX
+seams need coordinated correction; remediation is not frontend-only.
+
+All eight reported symptoms reproduced in source with file:line evidence:
+(1) background durably closes membership — `bindTogetherLobby.ts:46` → `lobbyController.ts:258`
+→ `store.close` `:288-300` (AC27 already permits clearing transport/keys; defect is the
+extra membership close destroying resumable identity); (2) guest/join path promotes
+without `setOwnPlan`/`publishOwnActivity` (`TogetherJoinContainer.tsx:229-266`) while host
+path does (`TogetherLobbyContainer.tsx:283-289,323-324,915-923`) → `setConsent` grants with
+`plan:null` and suppresses projection (`sharedSession.ts:1002-1011`) — a **regression against
+PR #490's own D15**; (3) `suspendPeer` purge + replay barriers correct, but no auto
+re-assertion of chosen number policy on reconnect (`sharedSession.ts:1322-1369`);
+(4) discovery false-empty — `seen` never cleared on `lost` (`lobbyDiscovery.ts:184,190-194`)
+so 15s-TTL-expired hosts stay suppressed (`:18,169-173,180`); one 5s timeout aborts the whole
+browse generation (`:259,279-284`); hub never starts discovery (`TogetherHubPresenter.tsx:86`);
+(5) `sendShared` serial + throw on first failed peer (`lanSession.ts:252-274`); host-relay
+topology; (6) `getSnapshot` revalidate+clone per call returning fresh refs via
+`useActiveSession.tsx:49-50` on every `workout.changed()` (`lobbyController.ts:218,778`);
+Online 5s polling (`cloudSession.ts:339-350`) ignores existing backend `sync_required`
+infra (`infra/together.ts`, `microservices/core/src/application/together/transport.ts`);
+(7) Nearby crash hypothesis only — Swift wrapper defensive (main-thread delegates, weak
+refs, no reuse after stop); likely NearbyConnections/BoringSSL (google/nearby #2195), needs
+symbolicated stack; (8) discard affordance inconsistent across ≥5 entry points
+(`TogetherFinishChoicePresenter.tsx:41`, `TogetherAdmissionRecoveryPresenter.tsx:46`,
+`TogetherSharingPresenter.tsx:128`, `WorkoutRatingPresenter.tsx:94-99`, `ActiveSessionPresenter`).
+
+Structural: `createTogetherLobby` wires both `together-lan` + `together-nearby` into one
+controller that builds `TogetherLobbyBrowser`/`TogetherLanSession` from the selected native
+module (`lobbyController.ts:85-88,421-424,693-695`) — discovery/delivery/lifecycle defects are
+shared JS across both local transports; only the crash is Nearby-native-isolated. Minimise
+(`ActiveSessionContainer.tsx:724-731`) only `router.dismiss()`s (no cancel); freeze is a
+plausible orphan transparent-root-`Modal`/sheet composition (`app/(app)/_layout.tsx:486`) —
+unconfirmed, needs device trace.
+
+Work mapped to existing issues (no duplicate tickets): PER-64 (crash/lifecycle/discovery/
+delivery/perf), PER-22 (integration, minimise-freeze repro, publication wiring, device
+matrix), PER-60 (contract/UX amendments, consolidated discard), PER-20 (per-phase timing,
+complete realtime, p95/energy proof). Prominent dated handoff on PER-22; issue-specific
+acceptance deltas commented on PER-64/60/20. No runtime change, native build or deployment.
+Device-only gaps remain: symbolicated crash/hang, exact per-symptom transport mapping,
+latency/energy numbers. [PER-22](https://linear.app/evans-software-solutions/issue/PER-22)
+and [PER-64](https://linear.app/evans-software-solutions/issue/PER-64) remain In Progress.
+
 ### 2026-10-10 — PER-22 partner workouts, notification taps and bounded recovery
 
 [PER-22](https://linear.app/evans-software-solutions/issue/PER-22), existing
