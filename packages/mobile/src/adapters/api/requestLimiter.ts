@@ -28,8 +28,11 @@ export class RequestLimiter {
 
   async run<T>(work: () => Promise<T>, signal?: AbortSignal): Promise<T> {
     if (signal?.aborted) throw abortError();
+    // The slot is reserved synchronously, either here or inside `grant`, so a
+    // caller that lands between a release and the woken waiter's resumption
+    // cannot take the slot that was already handed to the waiter.
     if (this.active >= this.max) await this.wait(signal);
-    this.active++;
+    else this.active++;
     try {
       return await work();
     } finally {
@@ -42,6 +45,7 @@ export class RequestLimiter {
     return new Promise<void>((resolve, reject) => {
       const grant = () => {
         signal?.removeEventListener("abort", abort);
+        this.active++;
         resolve();
       };
       const abort = () => {

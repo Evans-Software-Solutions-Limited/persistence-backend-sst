@@ -44,6 +44,40 @@ describe("RequestLimiter", () => {
     expect(limiter.inFlight).toBe(0);
   });
 
+  it("never exceeds the limit when a new call lands between a release and the woken waiter", async () => {
+    const limiter = new RequestLimiter(2);
+    let peak = 0;
+    const track = async <T>(gate: Promise<T>) => {
+      peak = Math.max(peak, limiter.inFlight);
+      return gate;
+    };
+    const r1 = deferred<void>();
+    const r2 = deferred<void>();
+    const running = [
+      limiter.run(() => track(r1.promise)),
+      limiter.run(() => track(r2.promise)),
+    ];
+    const waiters = [
+      limiter.run(() => track(Promise.resolve("w1"))),
+      limiter.run(() => track(Promise.resolve("w2"))),
+    ];
+    await settle();
+    expect(limiter.queued).toBe(2);
+    // Both running requests complete; an unrelated continuation squeezes a
+    // fresh run() between the two releases (the interleaving the review found).
+    let latecomer: Promise<string> | undefined;
+    r1.resolve();
+    void Promise.resolve().then(() => {
+      latecomer = limiter.run(() => track(Promise.resolve("m")));
+    });
+    r2.resolve();
+    await Promise.all(running);
+    await Promise.all(waiters);
+    await latecomer;
+    expect(peak).toBeLessThanOrEqual(2);
+    expect(limiter.inFlight).toBe(0);
+  });
+
   it("releases the slot when the work rejects", async () => {
     const limiter = new RequestLimiter(1);
     await expect(
