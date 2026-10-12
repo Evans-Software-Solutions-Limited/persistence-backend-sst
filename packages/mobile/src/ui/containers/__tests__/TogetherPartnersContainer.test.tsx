@@ -35,7 +35,7 @@ jest.mock("@/ui/hooks/useAuth", () => ({
   useAuth: () => ({ session: mockUser ? { userId: mockUser } : null }),
 }));
 jest.mock("expo-router", () => ({
-  useFocusEffect: (cb: any) => require("react").useEffect(cb, [cb]),
+  useFocusEffect: (cb: any) => jest.requireActual("react").useEffect(cb, [cb]),
   router: { back: jest.fn() },
 }));
 const ok = <T,>(value: T) => ({ ok: true as const, value });

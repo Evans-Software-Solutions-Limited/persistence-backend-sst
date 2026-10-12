@@ -10,12 +10,12 @@ import { act, fireEvent, waitFor } from "@testing-library/react-native";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 import { AppUpdateGate } from "../AppUpdateGate";
 import { Sentry, isSentryEnabled } from "@/lib/sentry";
+import { readPolicy, fetchPolicy } from "@/adapters/appUpdate/loadPolicy";
+import { RequiredUpdatePresenter } from "../../presenters/RequiredUpdatePresenter";
 jest.mock("@/lib/sentry", () => ({
   isSentryEnabled: jest.fn(() => true),
   Sentry: { captureMessage: jest.fn() },
 }));
-import { readPolicy, fetchPolicy } from "@/adapters/appUpdate/loadPolicy";
-import { RequiredUpdatePresenter } from "../../presenters/RequiredUpdatePresenter";
 let mockNative: Record<string, unknown>;
 jest.mock("expo-constants", () => ({
   __esModule: true,

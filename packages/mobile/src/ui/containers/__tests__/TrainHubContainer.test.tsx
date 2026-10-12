@@ -1,6 +1,8 @@
+import { fireEvent, within } from "@testing-library/react-native";
+import { renderWithTheme } from "../../../../__tests__/test-utils";
 jest.mock("@/ui/containers/TogetherHubContainer", () => ({
   TogetherHubContainer: () => {
-    const { View } = require("react-native");
+    const { View } = jest.requireActual("react-native");
     return <View testID="together-body" />;
   },
 }));
@@ -20,10 +22,6 @@ beforeEach(() => {
   mockTogetherGate.retry.mockClear();
 });
 
-import { fireEvent, within } from "@testing-library/react-native";
-
-import { renderWithTheme } from "../../../../__tests__/test-utils";
-
 /**
  * TrainHubContainer tests.
  *
@@ -40,8 +38,7 @@ import { renderWithTheme } from "../../../../__tests__/test-utils";
 
 const mockPush = jest.fn();
 jest.mock("expo-router", () => {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const React = require("react");
+  const React = jest.requireActual("react");
   return {
     router: { push: (...args: unknown[]) => mockPush(...args) },
     // Run the focus callback on mount (and whenever it changes), mirroring a
@@ -52,10 +49,9 @@ jest.mock("expo-router", () => {
 });
 
 jest.mock("@/ui/containers/WorkoutsListContainer", () => {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { Text } = require("react-native");
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const React = require("react");
+  const { Text } = jest.requireActual("react-native");
+
+  const React = jest.requireActual("react");
   return {
     WorkoutsListContainer: () =>
       React.createElement(Text, { testID: "workouts-body" }, "Workouts body"),
@@ -63,10 +59,9 @@ jest.mock("@/ui/containers/WorkoutsListContainer", () => {
 });
 
 jest.mock("@/ui/containers/ExerciseListContainer", () => {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { Text } = require("react-native");
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const React = require("react");
+  const { Text } = jest.requireActual("react-native");
+
+  const React = jest.requireActual("react");
   return {
     ExerciseListContainer: () =>
       React.createElement(Text, { testID: "exercises-body" }, "Exercises body"),
@@ -74,10 +69,9 @@ jest.mock("@/ui/containers/ExerciseListContainer", () => {
 });
 
 jest.mock("@/ui/containers/TrainOverviewContainer", () => {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { Text } = require("react-native");
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const React = require("react");
+  const { Text } = jest.requireActual("react-native");
+
+  const React = jest.requireActual("react");
   return {
     TrainOverviewContainer: () =>
       React.createElement(Text, { testID: "overview-body" }, "Overview body"),
@@ -85,10 +79,9 @@ jest.mock("@/ui/containers/TrainOverviewContainer", () => {
 });
 
 jest.mock("@/ui/containers/GymsSegmentContainer", () => {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { Text } = require("react-native");
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const React = require("react");
+  const { Text } = jest.requireActual("react-native");
+
+  const React = jest.requireActual("react");
   return {
     GymsSegmentContainer: () =>
       React.createElement(Text, { testID: "gyms-body" }, "Gyms body"),

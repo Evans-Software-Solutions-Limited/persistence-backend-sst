@@ -1,19 +1,3 @@
-const mockTogetherGate = {
-  allowed: true,
-  state: "allowed" as "allowed" | "locked" | "pending" | "unavailable",
-  onUpgrade: jest.fn(),
-  retry: jest.fn(),
-};
-jest.mock("@/ui/hooks/useTogetherGate", () => ({
-  useTogetherGate: () => mockTogetherGate,
-}));
-beforeEach(() => {
-  mockTogetherGate.allowed = true;
-  mockTogetherGate.state = "allowed";
-  mockTogetherGate.onUpgrade.mockClear();
-  mockTogetherGate.retry.mockClear();
-});
-
 import { act, fireEvent, waitFor } from "@testing-library/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React from "react";
@@ -31,6 +15,22 @@ import { TogetherStartSheet } from "@/ui/presenters/TogetherStartSheet";
 import { WorkoutDetailPresenter } from "@/ui/presenters/WorkoutDetailPresenter";
 import { WorkoutDetailContainer } from "@/ui/containers/WorkoutDetailContainer";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
+
+const mockTogetherGate = {
+  allowed: true,
+  state: "allowed" as "allowed" | "locked" | "pending" | "unavailable",
+  onUpgrade: jest.fn(),
+  retry: jest.fn(),
+};
+jest.mock("@/ui/hooks/useTogetherGate", () => ({
+  useTogetherGate: () => mockTogetherGate,
+}));
+beforeEach(() => {
+  mockTogetherGate.allowed = true;
+  mockTogetherGate.state = "allowed";
+  mockTogetherGate.onUpgrade.mockClear();
+  mockTogetherGate.retry.mockClear();
+});
 
 const buildWorkout = (overrides: Partial<Workout> = {}): Workout => ({
   id: overrides.id ?? "w-1",

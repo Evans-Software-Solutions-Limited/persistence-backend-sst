@@ -225,7 +225,6 @@ export function useGetHabits(): HabitsState {
       weekDates,
       configs,
     );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [res.data, weekDates, configs]);
   return { ...res, habits, weekDates };
 }

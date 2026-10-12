@@ -1,4 +1,3 @@
-import React from "react";
 import { Alert } from "react-native";
 import { renderHook, act } from "@testing-library/react-native";
 import { useDiscardConfirmation } from "@/state/discard-workout";

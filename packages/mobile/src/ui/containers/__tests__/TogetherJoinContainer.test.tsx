@@ -77,7 +77,7 @@ jest.mock("@/ui/hooks/useTogetherGate", () => ({
   }),
 }));
 jest.mock("expo-router", () => ({
-  useFocusEffect: (cb: any) => require("react").useEffect(cb, [cb]),
+  useFocusEffect: (cb: any) => jest.requireActual("react").useEffect(cb, [cb]),
   router: {
     back: (...a: any[]) => mockRouter.back(...a),
     replace: (...a: any[]) => mockRouter.replace(...a),

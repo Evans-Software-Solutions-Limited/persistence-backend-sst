@@ -6,7 +6,7 @@
  * multiplier against the 11 October desktop audit can be measured on a real
  * build. Diagnostic only: it touches no Together runtime code, adds no
  * dependency, and the fixtures are constant-seed test identities (never real
- * credentials). The screen at `app/(app)/together-probe.tsx` drives it.
+ * credentials). `TogetherProbeContainer` drives it on non-production builds.
  *
  * Audit: https://linear.app/evans-software-solutions/document/together-performance-audit-implementation-and-performance-pass-11-0742b327c246
  */
@@ -15,7 +15,7 @@ import { chacha20poly1305 } from "@noble/ciphers/chacha.js";
 import {
   getCryptoBackend,
   type CryptoBackendName,
-} from "../security/cryptoBackend";
+} from "@/adapters/together/security/cryptoBackend";
 import {
   publicKeyPem,
   requestHash,
@@ -28,9 +28,9 @@ import {
   type RosterMember,
   type Signed,
   type TrustedKeys,
-} from "../security/identity";
-import { decode64 } from "../security/encoding";
-import type { TogetherJournalDatabase } from "../../storage/togetherJournal";
+} from "@/adapters/together/security/identity";
+import { decode64 } from "@/adapters/together/security/encoding";
+import type { TogetherJournalDatabase } from "@/adapters/storage/togetherJournal";
 
 export const CRYPTO_PROBE_VERSION = "together-crypto-probe-v1";
 

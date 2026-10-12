@@ -1,7 +1,7 @@
 # Hermes crypto probe — 11 October 2026 (PER-20, audit finding F9)
 
 Shared JSON reports from the hidden `together-probe` route
-(`src/adapters/together/diagnostics/cryptoProbe.ts`) on a **Release** staging
+(`src/diagnostics/together/cryptoProbe.ts`) on a **Release** staging
 build (`APP_VARIANT=staging`, Hermes 0.14.1, concurrent GC, `__DEV__` false)
 running on the iPhone 17 simulator, iOS 27.0, Xcode 27.0, Apple Silicon Mac.
 Run 1 was discarded as warm-up; runs 2 and 3 are kept. The simulator runs

@@ -1,13 +1,20 @@
 /** @jest-environment node */
 import { compileModsAsync } from "@expo/config-plugins";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import withTogetherLan from "../withTogetherLan";
+
+// An empty project root keeps config-plugin introspection away from any
+// prebuilt ios/ folder on the developer machine (CI never has one).
+const projectRoot = mkdtempSync(join(tmpdir(), "together-plugin-"));
 
 async function evaluate(info: Record<string, unknown> = {}) {
   const config = withTogetherLan(
     withTogetherLan({ name: "test", slug: "test", ios: { infoPlist: info } }),
   );
   return compileModsAsync(config, {
-    projectRoot: process.cwd(),
+    projectRoot,
     platforms: ["ios", "android"],
     introspect: true,
     ignoreExistingNativeFiles: true,

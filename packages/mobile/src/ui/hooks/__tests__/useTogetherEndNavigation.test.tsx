@@ -8,10 +8,9 @@ let mockFocused = true;
 jest.mock("expo-router", () => ({
   router: { push: (...a: unknown[]) => mockPush(...a) },
   useFocusEffect: (cb: () => () => void) =>
-    require("react").useEffect(
-      () => (mockFocused ? cb() : undefined),
-      [cb, mockFocused],
-    ),
+    jest
+      .requireActual("react")
+      .useEffect(() => (mockFocused ? cb() : undefined), [cb, mockFocused]),
 }));
 function setup(cloudMode = false) {
   const storage = new InMemoryStorageAdapter();

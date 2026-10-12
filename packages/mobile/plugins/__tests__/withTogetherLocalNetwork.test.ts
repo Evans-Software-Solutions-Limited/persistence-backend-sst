@@ -1,7 +1,14 @@
 /** @jest-environment node */
 import { compileModsAsync } from "@expo/config-plugins";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import withTogetherLan from "../withTogetherLan";
 import withNearby from "../../modules/together-nearby/plugin/withTogetherNearby";
+
+// An empty project root keeps config-plugin introspection away from any
+// prebuilt ios/ folder on the developer machine (CI never has one).
+const projectRoot = mkdtempSync(join(tmpdir(), "together-plugin-"));
 
 it.each([undefined, 36, 37, 38])(
   "generates local-network permission only for an explicit target >=37 (%s)",
@@ -23,7 +30,7 @@ it.each([undefined, 36, 37, 38])(
         }),
       );
       const result = await compileModsAsync(config, {
-        projectRoot: process.cwd(),
+        projectRoot,
         platforms: ["android"],
         introspect: true,
         ignoreExistingNativeFiles: true,

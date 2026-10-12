@@ -10,14 +10,14 @@ import {
   runCryptoProbe,
   type ProbeBenchmark,
   type ProbeBenchmarkName,
-} from "../diagnostics/cryptoProbe";
+} from "../cryptoProbe";
 import {
   signPayload,
   verifyRoster,
   type OfflineRoster,
   type Signed,
-} from "../security/identity";
-import type { TogetherJournalDatabase } from "../../storage/togetherJournal";
+} from "@/adapters/together/security/identity";
+import type { TogetherJournalDatabase } from "@/adapters/storage/togetherJournal";
 import { redirectSystemPathForDeepLink } from "@/application/notifications/deep-link";
 
 function adapter(db: DatabaseSync): TogetherJournalDatabase {

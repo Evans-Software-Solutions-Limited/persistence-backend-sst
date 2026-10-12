@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports -- Optional native capabilities are loaded lazily during application composition. */
 import type { DeviceSecretStore } from "./security/secureSeed";
 import type { TogetherOfflineApi } from "@/domain/ports/togetherOfflineApi.port";
 import type { TogetherProvisioningPort } from "@/domain/ports/togetherProvisioning.port";

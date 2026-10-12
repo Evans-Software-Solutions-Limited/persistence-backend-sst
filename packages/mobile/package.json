@@ -119,6 +119,9 @@
     "collectCoverageFrom": [
       "src/domain/services/**/*.ts",
       "src/application/**/*.ts",
+      "src/adapters/**/*.{ts,tsx}",
+      "!src/adapters/api/sst-api.adapter.ts",
+      "!src/adapters/storage/sqlite.adapter.ts",
       "src/state/**/*.{ts,tsx}",
       "src/ui/containers/**/*.{ts,tsx}",
       "src/ui/presenters/**/*.{ts,tsx}",

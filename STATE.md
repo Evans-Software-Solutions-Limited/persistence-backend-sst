@@ -1,5 +1,58 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-12 — Zero lint warnings across packages; every mobile adapter under the coverage gate
+
+Branch `claude/lint-zero-adapters-gate`, stacked on `claude/probe-gate-coverage`
+(PR #493). Brad asked for a zero-warning codebase and the whole adapters layer
+gated. Mobile (80 → 0 warnings), core (9 → 0) and web (3 → 0) now lint clean:
+auto-fixable import order, duplicate imports, array types and stale directives
+applied; dead imports and an unused `displayItemKey` helper removed; test-only
+`require()` calls replaced with `jest.requireActual`/`jest.requireMock`; the
+`recentSetsRevision` cache-invalidation key kept behind a documented directive;
+redundant `[api, userId]` deps dropped where the keyed account boundary already
+remounts; one auto-fix that merged a value import into `import type` corrected.
+
+Jest `collectCoverageFrom` now includes `src/adapters/**` with two named
+exclusions documented in `packages/mobile/docs/coverage-gate.md`:
+`storage/sqlite.adapter.ts` (3,962 lines, 3% covered) and
+`api/sst-api.adapter.ts` (3,263 lines, 62%). Both need dedicated test campaigns
+and must be re-included in the PR that lifts them. New tests: NetInfo adapter,
+notification and health stubs, Android health stub (all 100%); Supabase auth
+adapter 98/99/93/98 and HealthKit adapter 100/97/100/100 after error, fallback
+and configuration-guard cases. Adapter directories now: together 98/96/99/99,
+auth 98/99, health ≥ 97, notifications, purchases, netInfo 100.
+
+Verified: mobile 619 suites / 8,461 tests, coverage 96.65 / 92.57 / 96.69 /
+97.91 with the widened gate; core 397 files / 5,502 tests (two 20-second
+timeouts under full-suite load, `workoutVariationsHandlers` and the PER-20
+recovery proof, pass in isolation in 4.4 s and 2.5 s — pre-existing flakiness,
+not a change here); web 80 files; typecheck 9/9; lint 6/6 with 0 warnings;
+prettier clean. Next: review/merge #493 then this PR; schedule the two adapter
+test campaigns; Brad's 12 October staging feedback is recorded in PER-64 for
+prioritisation.
+
+### 2026-10-12 — Probe gated to non-production builds; Together adapters join the coverage gate
+
+Post-merge review of PR #492 (main `f99b2696`) at Brad's request, branch
+`claude/probe-gate-coverage`. Findings and fixes: the hidden `together-probe`
+route shipped in every variant with a console dump and a runtime crypto-backend
+toggle, so it now re-exports `TogetherProbeContainer`, which redirects
+production builds to Home via `extra.appVariant` (dev builds and staging keep
+the diagnostic) and renders a pure `TogetherProbePresenter`; both have tests.
+The runner moved from `src/adapters/together/diagnostics` to
+`src/diagnostics/together`. `src/adapters/together/**` is now in Jest's
+`collectCoverageFrom`, so the riskiest mobile code sits under the 90% gate
+(it measured 98/96/99/99 before enabling). The three config-plugin tests use an
+empty temporary project root, removing the dependency on a developer's prebuilt
+`ios/` folder. Lint directives fixed in `cryptoBackend.ts` and
+`createTogetherProvisioning.ts` (mobile warnings 85 → 80).
+
+Verified: full repository 21/21 tasks; mobile 615 suites / 8,428 tests, coverage
+96.59 / 92.41 / 96.59 / 97.89; core 397 files; web 80; root typecheck 9/9, lint
+6/6, prettier clean. No runtime behaviour change outside the probe route; no
+native build. Next: review and merge the PR; then the PER-20 device probe runs
+(Apple account in Xcode, Android build) and PER-64 F2–F6.
+
 ### 2026-10-11 — PER-64 D16: verify-once roster cache + native Curve25519 landed and measured
 
 [PER-64](https://linear.app/evans-software-solutions/issue/PER-64), branch

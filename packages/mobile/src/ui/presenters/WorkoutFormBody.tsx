@@ -1,12 +1,10 @@
 import { Text, View } from "@tamagui/core";
-import React, { useState, type ReactNode } from "react";
+import React from "react";
 import {
   AccessibilityInfo,
-  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
-  ScrollView,
   Switch,
   TextInput,
   View as RNView,
