@@ -27,6 +27,9 @@ import type {
 } from "@/domain/ports/togetherSocial.port";
 import type { CloudResult } from "@/domain/ports/togetherCloud.port";
 
+/** Delay before the single automatic retry of a transient cold-start load failure. */
+export const TRANSIENT_RETRY_MS = 4_000;
+
 /** A keyed account boundary removes rendered personal data immediately on account changes. */
 export function TogetherPartnersContainer({
   header,
@@ -97,6 +100,11 @@ function PartnersAccount({
   const reloadRef = useRef<() => Promise<void>>(async () => {});
   const scanGeneration = useRef(0),
     scanned = useRef(false);
+  // A cold start races the auth bootstrap and the first reachability probe, so
+  // an automatic load can fail transiently while the device is online. One
+  // bounded retry absorbs that; a second failure, or a user pull, surfaces.
+  const transientFailures = useRef(0),
+    retryTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => {
     const generation = scanGeneration;
     const listener = AppState.addEventListener("change", (state) => {
@@ -109,6 +117,7 @@ function PartnersAccount({
     return () => {
       generation.current++;
       listener.remove();
+      clearTimeout(retryTimer.current);
     };
   }, []);
   const mounted = useRef(false),
@@ -196,8 +205,20 @@ function PartnersAccount({
       );
       setOffers(o.filter((x) => !x.revoked && x.recipientId === userId));
       setDiscoverable(profile.discoverable);
-    } catch {
-      if (live())
+      transientFailures.current = 0;
+    } catch (failure) {
+      if (!live()) return;
+      const code = (failure as { code?: unknown } | null)?.code;
+      const transient =
+        code === "unauthorized" || code === "network" || code === "timeout";
+      if (!pull && transient && transientFailures.current === 0) {
+        transientFailures.current = 1;
+        clearTimeout(retryTimer.current);
+        retryTimer.current = setTimeout(() => {
+          retryTimer.current = undefined;
+          if (live() && focused.current) void reloadRef.current();
+        }, TRANSIENT_RETRY_MS);
+      } else
         setError(
           "Could not refresh training partners. Connect to the internet and try again.",
         );

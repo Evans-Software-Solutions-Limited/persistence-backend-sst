@@ -153,6 +153,10 @@ export class TogetherLanSession {
     }
   }
 
+  /** Verified identity behind an authenticated link; undefined until the handshake completes. */
+  peerUserId(peerId: string): string | undefined {
+    return this.links.get(peerId)?.channel.peerCredential?.payload.userId;
+  }
   pendingRequest(peerId: string): LocalJoinRequest | undefined {
     return this.links.get(peerId)?.link.pendingRequest;
   }
