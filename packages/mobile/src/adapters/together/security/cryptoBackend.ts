@@ -251,9 +251,10 @@ export function resetNativeTogetherCrypto(): void {
   installCryptoBackend(null);
 }
 
+/* eslint-disable @typescript-eslint/no-require-imports -- optional native module, same pattern as the other Together modules. */
 function defaultLoader(): TogetherCryptoNativeModule | null {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports -- optional native module, same pattern as the other Together modules.
   const { togetherCryptoNative } =
     require("../../../../modules/together-crypto") as typeof import("../../../../modules/together-crypto");
   return togetherCryptoNative;
 }
+/* eslint-enable @typescript-eslint/no-require-imports */

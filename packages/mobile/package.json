@@ -119,6 +119,7 @@
     "collectCoverageFrom": [
       "src/domain/services/**/*.ts",
       "src/application/**/*.ts",
+      "src/adapters/together/**/*.ts",
       "src/state/**/*.{ts,tsx}",
       "src/ui/containers/**/*.{ts,tsx}",
       "src/ui/presenters/**/*.{ts,tsx}",

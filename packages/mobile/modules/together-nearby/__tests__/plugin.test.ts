@@ -1,6 +1,13 @@
 /** @jest-environment node */
 import { compileModsAsync, type ExportedConfig } from "@expo/config-plugins";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import withNearby from "../plugin/withTogetherNearby";
+// An empty project root keeps config-plugin introspection away from any
+// prebuilt ios/ folder on the developer machine (CI never has one).
+const projectRoot = mkdtempSync(join(tmpdir(), "together-plugin-"));
+
 it("merges Bluetooth and Bonjour permissions without overwriting user text", async () => {
   const config = withNearby(
     withNearby({
@@ -15,7 +22,7 @@ it("merges Bluetooth and Bonjour permissions without overwriting user text", asy
     }),
   );
   const result = await compileModsAsync(config, {
-    projectRoot: process.cwd(),
+    projectRoot,
     platforms: ["ios"],
     introspect: true,
     ignoreExistingNativeFiles: true,
@@ -36,7 +43,7 @@ it("leaves Podfile registration to React Native", () => {
 it("supplies defaults without existing Info.plist values", async () => {
   const config = withNearby({ name: "fixture", slug: "fixture" });
   const result = await compileModsAsync(config, {
-    projectRoot: process.cwd(),
+    projectRoot,
     platforms: ["ios"],
     introspect: true,
     ignoreExistingNativeFiles: true,
