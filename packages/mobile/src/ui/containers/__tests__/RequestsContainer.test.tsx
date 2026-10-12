@@ -2,6 +2,9 @@ import { act, render } from "@testing-library/react-native";
 import type { RequestsPresenterProps } from "@/ui/presenters/RequestsPresenter";
 import type { ClientTrainerRelationship } from "@/domain/models/clientRelationship";
 
+import { RequestsContainer } from "@/ui/containers/RequestsContainer";
+import { useClientRelationships } from "@/ui/hooks/useClientRelationships";
+
 const mockBack = jest.fn();
 const mockReplace = jest.fn();
 const mockNav = { canGoBack: true };
@@ -43,9 +46,6 @@ jest.mock("@/ui/presenters/RequestsPresenter", () => ({
     return null;
   },
 }));
-
-import { RequestsContainer } from "@/ui/containers/RequestsContainer";
-import { useClientRelationships } from "@/ui/hooks/useClientRelationships";
 
 function props(): RequestsPresenterProps {
   if (!mockCaptured.props) throw new Error("presenter not rendered");

@@ -1414,7 +1414,7 @@ describe("SessionRepository", () => {
       };
 
       // Capture the values passed to the workoutSessions insert.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
       let capturedValues: any = null;
       const tx = makeRecordSessionTx(refreshed, { workoutsThisMonth: 1 });
       // Override insert to intercept the values object on the first
@@ -1502,7 +1502,6 @@ describe("SessionRepository", () => {
         sets: [],
       };
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let capturedValues: any = null;
       const tx = makeRecordSessionTx(refreshed, { workoutsThisMonth: 0 });
       const insertCallValues: Array<Record<string, unknown>> = [];
@@ -1578,7 +1577,6 @@ describe("SessionRepository", () => {
         sets: [],
       };
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let capturedValues: any = null;
       const tx = makeRecordSessionTx(refreshed, { workoutsThisMonth: 1 });
       const insertCallValues: Array<Record<string, unknown>> = [];
@@ -1648,7 +1646,6 @@ describe("SessionRepository", () => {
         sets: [],
       };
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let capturedValues: any = null;
       const tx = makeRecordSessionTx(refreshed, { workoutsThisMonth: 1 });
       const insertCallValues: Array<Record<string, unknown>> = [];

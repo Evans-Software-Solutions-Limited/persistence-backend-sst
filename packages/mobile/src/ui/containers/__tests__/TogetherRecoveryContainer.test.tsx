@@ -358,7 +358,7 @@ it("returns to retained local changes without clearing the active workout", asyn
   h.setReview({ ...candidate("saved"), retainedLocalChanges: true });
   const r = renderWithTheme(<TogetherRecoveryContainer />);
   fireEvent.press(r.getByText("Continue"));
-  expect(require("expo-router").router.replace).toHaveBeenCalledWith(
+  expect(jest.requireMock("expo-router").router.replace).toHaveBeenCalledWith(
     "/(app)/session",
   );
   expect(mockAdapters.storage.getLatestSession("u")?.id).toBe("local");

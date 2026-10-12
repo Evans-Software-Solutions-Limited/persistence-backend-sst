@@ -15,7 +15,6 @@
  */
 
 import React from "react";
-import type { ReactNode } from "react";
 import { Text, TouchableOpacity, View } from "react-native";
 import { Image } from "expo-image";
 import { SetLogger } from "../SetLogger";

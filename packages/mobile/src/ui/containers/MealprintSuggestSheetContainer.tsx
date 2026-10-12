@@ -2,6 +2,12 @@ import {
   addNotWantedMeals,
   MEAL_SEARCH_FULL_MESSAGE,
   type NotWantedMeal,
+  draftFromSuggestion,
+  sumKeptDraftKcal,
+  type MealprintDraft,
+  type MealSuggestion,
+  type SuggestOccasion,
+  type SuggestShape,
 } from "@/domain/models/mealprint";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as Haptics from "expo-haptics";
@@ -13,14 +19,6 @@ import { useMealSuggest } from "@/ui/hooks/useMealSuggest";
 import { useMealprintGate } from "@/ui/hooks/useMealprintGate";
 import { useMealprintPreferences } from "@/ui/hooks/useMealprintPreferences";
 import { useOnlineStatus } from "@/ui/hooks/useOnlineStatus";
-import {
-  draftFromSuggestion,
-  sumKeptDraftKcal,
-  type MealprintDraft,
-  type MealSuggestion,
-  type SuggestOccasion,
-  type SuggestShape,
-} from "@/domain/models/mealprint";
 import type { MealSlot } from "@/domain/models/nutrition";
 import {
   MealprintSuggestSheetPresenter,

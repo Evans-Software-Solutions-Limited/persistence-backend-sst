@@ -1,5 +1,13 @@
 import { renderHook, act, waitFor } from "@testing-library/react-native";
 
+import * as Linking from "expo-linking";
+import {
+  initAuthCallbackCapture,
+  clearAuthCallbackUrl,
+  useAuthCallbackUrl,
+  __resetAuthCallbackCaptureForTests,
+} from "../useAuthCallbackUrl";
+
 // Controllable expo-linking mock: capture the registered `url` listener and the
 // resolved initial URL so we can simulate cold-start (getInitialURL) and
 // warm-start (url event) delivery independently.
@@ -15,14 +23,6 @@ jest.mock("expo-linking", () => ({
     },
   ),
 }));
-
-import * as Linking from "expo-linking";
-import {
-  initAuthCallbackCapture,
-  clearAuthCallbackUrl,
-  useAuthCallbackUrl,
-  __resetAuthCallbackCaptureForTests,
-} from "../useAuthCallbackUrl";
 
 const COLD = "persistencemobile://auth/callback#access_token=a&refresh_token=b";
 const WARM =

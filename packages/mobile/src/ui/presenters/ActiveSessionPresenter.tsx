@@ -25,7 +25,6 @@ import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo, type ReactNode } from "react";
 import {
   AccessibilityInfo,
-  FlatList,
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
@@ -258,12 +257,6 @@ function buildDisplayItems(exercises: SessionExercise[]): DisplayItem[] {
     items.push({ kind: "exercise", exercise: ex });
   }
   return items;
-}
-
-function displayItemKey(item: DisplayItem) {
-  return item.kind === "exercise"
-    ? item.exercise.id
-    : `superset-${item.supersetGroup}`;
 }
 
 /**
