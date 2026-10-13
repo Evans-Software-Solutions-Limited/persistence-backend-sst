@@ -3,6 +3,7 @@ import { TogetherSharedSession } from "./sharedSession";
 import type {
   TogetherSharedPort,
   TogetherSharedSnapshot,
+  TogetherSharingConsent,
 } from "../../domain/ports/togetherShared.port";
 import type { TogetherRecoveryApi } from "../../domain/ports/togetherOfflineApi.port";
 import { encode64 } from "./security/encoding";
@@ -95,8 +96,10 @@ export class TogetherLobbyController implements TogetherLobbyPort {
     publishOwnActivity: () => this.sharedEngine().publishOwnActivity(),
     publishPlan: (plan) => this.sharedEngine().publishPlan(plan),
     publishProfile: (name) => this.sharedEngine().publishProfile(name),
-    setConsent: (recipient, consent) =>
-      this.sharedEngine().setConsent(recipient, consent),
+    setConsent: async (recipient, consent) => {
+      await this.sharedEngine().setConsent(recipient, consent);
+      this.consents.set(recipient, consent);
+    },
     publishPrevious: (recipient, rows, startedAt) =>
       this.sharedEngine().publishPrevious(recipient, rows, startedAt),
     requestDelegatedSet: (owner, operation, observedRevision) =>
@@ -118,6 +121,10 @@ export class TogetherLobbyController implements TogetherLobbyPort {
   private active = true;
   private online = false;
   private disposed = false;
+  /** Backgrounded with intact membership (PER-80): radios off, roster, seeds and engine kept. */
+  private suspended = false;
+  /** Own consent per recipient, re-issued as a fresh revision after an authenticated reconnect. */
+  private readonly consents = new Map<string, TogetherSharingConsent>();
   private generation = 0;
   private resources?: Resources;
   private selected?: LobbyInvitation;
@@ -255,7 +262,115 @@ export class TogetherLobbyController implements TogetherLobbyPort {
   setActive(active: boolean): void {
     if (this.active === active) return;
     this.active = active;
-    if (!active) void this.cancel();
+    if (!active) {
+      if (this.admitted()) void this.suspend();
+      else void this.cancel();
+    } else if (this.suspended) void this.resume();
+  }
+  /** Own account is in the durable roster, so membership must survive a background transition. */
+  private admitted(): boolean {
+    const resources = this.resources;
+    if (!resources || !this.account) return false;
+    try {
+      return !!resources.lobby.store
+        .current(resources.lobby.pin.sessionId)
+        ?.payload.members.some(
+          (member) => member.credential.payload.userId === this.account,
+        );
+    } catch {
+      return false;
+    }
+  }
+  /**
+   * Background: stop discovery and transport but keep the signed roster, the
+   * local store open, the signing seed and the shared engine. Peer links drop,
+   * so peers' private caches are purged by `suspendPeer` and every owner
+   * re-issues its grants after the authenticated reconnect (D15 fresh-grant rule).
+   */
+  private async suspend(): Promise<void> {
+    const resources = this.resources;
+    if (!resources || this.suspended) return;
+    const generation = ++this.generation;
+    this.clearTimers();
+    const browser = this.browser;
+    this.browser = undefined;
+    this.discovered.clear();
+    this.suspended = true;
+    this.publish({
+      phase: "reconnecting",
+      error: undefined,
+      pending: [],
+      discovered: undefined,
+    });
+    await this.enqueue(async () => {
+      await browser?.stop();
+      await resources.session?.stop();
+    }).catch(() => {
+      if (this.generation === generation)
+        this.publish({ error: "stop-failed" });
+    });
+  }
+  /** Foreground after suspend: a fresh authenticated transport over the same roster and consent. */
+  private async resume(): Promise<void> {
+    this.suspended = false;
+    const resources = this.resources;
+    if (!resources || !this.allowed()) return;
+    const generation = ++this.generation;
+    this.publish({ phase: "reconnecting", error: undefined });
+    await this.restart(resources, generation);
+  }
+  private async restart(resources: Resources, generation: number) {
+    try {
+      await this.enqueue(async () => {
+        await resources.session?.stop();
+      });
+      if (!this.current(generation)) return;
+      await this.start(resources, generation);
+      if (this.current(generation) && resources.lobby.isHost) {
+        this.publish({ phase: "hosting", error: undefined });
+        this.roster();
+      }
+    } catch (error) {
+      this.recoverable(error, generation);
+    }
+  }
+  /**
+   * A transport failure while membership is intact leaves the lobby
+   * reconnectable instead of retiring the roster; protocol and authorization
+   * failures remain terminal.
+   */
+  private recoverable(error: unknown, generation: number) {
+    if (!this.current(generation)) return;
+    const code = error instanceof Error ? error.message : "unavailable";
+    const resources = this.resources;
+    if (!resources || !this.admitted() || TERMINAL.has(code))
+      return this.failure(error, generation);
+    this.clearTimers();
+    this.publish({ phase: "reconnecting", error: code });
+    void this.enqueue(async () => {
+      await resources.session?.stop();
+    }).catch(() => {});
+  }
+  /** Re-issue this owner's current grants to reconnected members as fresh revisions. */
+  private async regrant(
+    resources: Resources,
+    generation: number,
+    recipientId?: string,
+  ) {
+    const shared = resources.shared;
+    if (!shared) return;
+    const members = new Set(this.snapshot.members.map((m) => m.userId));
+    for (const [recipient, consent] of this.consents) {
+      if (!members.has(recipient) || (recipientId && recipient !== recipientId))
+        continue;
+      if (!consent.numbers && !consent.prev && !consent.logging) continue;
+      try {
+        if (this.current(generation) && this.resources === resources)
+          await shared.setConsent(recipient, consent);
+      } catch {
+        if (this.current(generation)) this.publish({ error: "regrant-failed" });
+      }
+    }
   }
   private clearTimers() {
     clearTimeout(this.timer);
@@ -266,6 +381,8 @@ export class TogetherLobbyController implements TogetherLobbyPort {
   async cancel(): Promise<void> {
     const cancelledGeneration = ++this.generation;
     this.clearTimers();
+    this.suspended = false;
+    this.consents.clear();
     const resources = this.resources;
     this.resources = undefined;
     const browser = this.browser;
@@ -732,7 +849,7 @@ export class TogetherLobbyController implements TogetherLobbyPort {
       else {
         this.publish({ phase: "searching" });
         this.timer = setTimeout(
-          () => this.failure(new Error("unreachable-host"), generation),
+          () => this.recoverable(new Error("unreachable-host"), generation),
           10_000,
         );
         await session.startDiscovery();
@@ -779,9 +896,12 @@ export class TogetherLobbyController implements TogetherLobbyPort {
     if (event.type === "discovered" && this.snapshot.phase === "searching") {
       clearTimeout(this.timer);
       this.publish({ phase: "connecting" });
+      // A resuming guest commonly reaches the host before its accept is up;
+      // `recoverable` keeps the roster and falls through to `failure` for a
+      // never-admitted join (D17).
       void resources
         .session!.connect(event.endpointId, resources.request!)
-        .catch((error) => this.failure(error, generation));
+        .catch((error) => this.recoverable(error, generation));
     } else if (event.type === "approval-required") {
       if (resources.lobby.isHost && event.request)
         this.publish({
@@ -799,6 +919,14 @@ export class TogetherLobbyController implements TogetherLobbyPort {
         (m) => m.userId === this.account,
       );
       this.roster();
+      if (event.type === "admitted")
+        void this.regrant(
+          resources,
+          generation,
+          resources.lobby.isHost
+            ? resources.session?.peerUserId(event.peerId)
+            : undefined,
+        );
       if (
         !resources.lobby.isHost &&
         wasMember &&
@@ -858,7 +986,7 @@ export class TogetherLobbyController implements TogetherLobbyPort {
         ].includes(event.code)
       )
         this.publish({ error: event.code });
-      else this.failure(new Error(event.code), generation);
+      else this.recoverable(new Error(event.code), generation);
     }
   }
   private failure(error: unknown, generation: number) {
@@ -908,22 +1036,32 @@ export class TogetherLobbyController implements TogetherLobbyPort {
     if (
       !this.allowed() ||
       !resources ||
-      resources.lobby.isHost ||
+      this.suspended ||
       this.snapshot.phase !== "reconnecting"
     )
       return;
     const generation = ++this.generation;
     this.publish({ phase: "reconnecting", error: undefined });
-    try {
-      await this.enqueue(async () => {
-        await resources.session?.stop();
-      });
-      if (this.current(generation)) await this.start(resources, generation);
-    } catch (error) {
-      this.failure(error, generation);
-    }
+    await this.restart(resources, generation);
   }
 }
+
+/** Failure codes that end collaboration even when the roster is intact. */
+const TERMINAL = new Set([
+  "CREDENTIAL_EXPIRED",
+  "expired",
+  "removed-from-session",
+  "full",
+  "declined",
+  "signed-out",
+  "friendship-required",
+  "FORBIDDEN",
+  "INVALID_PROOF",
+  "INVALID_ROSTER",
+  "VERSION_CONFLICT",
+  "Together LAN is disabled",
+  "Together LAN requires a compatible native build",
+]);
 
 const EMPTY_SHARED: TogetherSharedSnapshot = {
   progress: [],
