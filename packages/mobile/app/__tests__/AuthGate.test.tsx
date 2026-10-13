@@ -116,6 +116,13 @@ jest.mock("../../src/ui/hooks/useMetaAttribution", () => ({
   useMetaAttribution: () => mockUseMetaAttribution(),
 }));
 
+// Mock useBootstrap — the cold-start bootstrap needs the adapter and query
+// providers (covered in src/ui/hooks/__tests__/useBootstrap.test.tsx).
+const mockUseBootstrap = jest.fn<void, []>();
+jest.mock("../../src/ui/hooks/useBootstrap", () => ({
+  useBootstrap: () => mockUseBootstrap(),
+}));
+
 // Mock usePushNotifications — same rationale as the bootstraps above: the
 // real hook calls useAdapters/useAuth and throws without the provider
 // plumbing (covered in src/ui/hooks/__tests__/usePushNotifications.test.tsx).
@@ -916,6 +923,27 @@ describe("PushNotificationsBootstrap (push-token wiring, 09.2)", () => {
     render(<RootLayout />);
 
     expect(mockUsePushNotifications).toHaveBeenCalledWith(true);
+  });
+});
+
+describe("ColdStartBootstrap (cold-start bootstrap wiring, PER-80)", () => {
+  it("invokes `useBootstrap()` on mount, before the other bootstraps", () => {
+    const order: string[] = [];
+    mockUseBootstrap.mockClear().mockImplementation(() => {
+      order.push("bootstrap");
+    });
+    mockUseUserModeEligibility.mockClear().mockImplementation(() => {
+      order.push("userMode");
+    });
+    mockUseAuth.mockReturnValue({ session: null, isLoading: true });
+    mockUseSegments.mockReturnValue([]);
+
+    render(<RootLayout />);
+
+    expect(order.indexOf("bootstrap")).toBeGreaterThanOrEqual(0);
+    expect(order.indexOf("bootstrap")).toBeLessThan(order.indexOf("userMode"));
+    mockUseBootstrap.mockReset();
+    mockUseUserModeEligibility.mockReset();
   });
 });
 

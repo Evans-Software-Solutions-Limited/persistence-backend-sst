@@ -93,11 +93,14 @@ export function useUnreadNotificationCount(): number {
   // clear the bell without waiting for a foreground transition.
   // The mount effect above already synced; the first focus fires in the same
   // commit, so only refocuses (returning from another screen) sync again.
-  const focusedOnceRef = useRef(false);
+  // The first focus for a user is the mount (already synced above). The
+  // callback changes when the session resolves, which re-runs this effect,
+  // so the latch is per user rather than per instance.
+  const focusedForUserRef = useRef<string | null | undefined>(undefined);
   useFocusEffect(
     useCallback(() => {
-      if (!focusedOnceRef.current) {
-        focusedOnceRef.current = true;
+      if (focusedForUserRef.current !== userId) {
+        focusedForUserRef.current = userId;
         return;
       }
       if (userId) void sync();
