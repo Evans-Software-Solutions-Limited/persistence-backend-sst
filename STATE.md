@@ -1,5 +1,36 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-13 — Cold-start bootstrap measured on device: 29 → 5 launch requests (PR #498)
+
+#495, #496 and #497 merged to main in order (squash; STATE.md conflicts kept
+every entry) and staging deployed the bootstrap from the push. Measured on the
+simulator Release build with the endpoint live, same account, caches stale:
+requests to our API in the 5 s after the first went 29 (11 Oct) → 19 (#496) →
+12 (#497 as merged) → 7 → 6 → **5**, peak concurrent 18 → 4, 503s 8 → 0.
+Table and the final request log in
+`specs/milestones/COLD-START-BOOTSTRAP/evidence/launch-2026-10-13.md`.
+
+Three fixes on `claude/per-80-bootstrap-gate-root` (PR #498) got it from 12 to
+5. The gate was opened in the `(app)` layout while AuthGate, the user-mode and
+reference-list bootstraps live in the root layout, so it moved to the first
+component inside the providers there, and `bootstrapSettled` now resolves
+after 10 s at the latest. Two requests still slipped past; the device log
+redacts URLs, so a hidden non-production **request log** screen (deep link
+`request-log`, same gate as the crypto probe, now `isDiagnosticsAllowed`;
+`SstApiAdapter.requestLog` keeps the last hundred calls, no bodies or headers)
+named them: `/subscription-tiers` at 2 ms because `useSubscriptionTiers` gates
+on a resolved user and no auth instance has resolved that early, fixed with a
+process-level cold-start flag set from the shell's first render and cleared
+when auth resolves signed out or the user's bootstrap settles; and
+`/notifications` at 79 ms because `useUnreadNotificationCount`'s focus
+callback changes when the session resolves and re-ran the focus effect past a
+per-instance first-focus latch, now per user. Both unread hooks also ignore
+iOS's launch inactive → active AppState flip. The remaining five are the
+bootstrap, onboarding and the three Fuel warm reads after the gate, which is
+what the brief keeps per endpoint. Mobile: 631 suites / 8,504 tests, coverage
+96.56 / 92.47 / 96.67 / 97.85, lint 0. Bootstrap latency: 2.1 s cold Lambda,
+0.7–1.0 s warm; three sections at a time (DB pool of four) is the lever.
+
 ### 2026-10-12 — PER-80 slice 3: one bootstrap request for the cold start (PR #497)
 
 Brad asked whether one request surfacing all the data is the better shape.
