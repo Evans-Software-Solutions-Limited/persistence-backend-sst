@@ -17,6 +17,7 @@ import {
   type CryptoBackendName,
 } from "@/adapters/together/security/cryptoBackend";
 import { HOME_ROUTE } from "@/application/notifications/deep-link";
+import { isDiagnosticsAllowed } from "@/diagnostics/allowed";
 import { TogetherProbePresenter } from "@/ui/presenters/TogetherProbePresenter";
 
 /**
@@ -24,11 +25,12 @@ import { TogetherProbePresenter } from "@/ui/presenters/TogetherProbePresenter";
  * development builds or non-production variants (`extra.appVariant` is set by
  * `app.config.ts`; unset collapses to "production", which hides it).
  */
+/** The probe shares the non-production gate with the other hidden screens. */
 export function isTogetherProbeAllowed(
   variant: unknown = Constants.expoConfig?.extra?.appVariant,
   devBuild: boolean = __DEV__,
 ): boolean {
-  return devBuild || (typeof variant === "string" && variant !== "production");
+  return isDiagnosticsAllowed(variant, devBuild);
 }
 
 /**

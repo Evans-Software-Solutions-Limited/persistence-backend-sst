@@ -1,5 +1,6 @@
 import { createCloudApis } from "@/adapters/together/cloudApi";
 import { MAX_IN_FLIGHT_REQUESTS, RequestLimiter } from "./requestLimiter";
+import { RequestLog } from "./requestLog";
 import type {
   BootstrapPayload,
   BootstrapSectionKey,
@@ -339,6 +340,8 @@ export class SSTApiAdapter implements ApiPort {
   private tokenProvider: (() => Promise<string | null>) | null = null;
   /** Cold start mounts many fetching hooks at once; see RequestLimiter. */
   private readonly limiter = new RequestLimiter(MAX_IN_FLIGHT_REQUESTS);
+  /** Last requests (method, path, status, timing); read by the hidden request-log screen. */
+  readonly requestLog = new RequestLog();
 
   /**
    * UUID → display-label lookup per reference-list kind. Populated every
@@ -444,12 +447,14 @@ export class SSTApiAdapter implements ApiPort {
       const requestSignal = signal ?? controller?.signal;
       const response = await this.limiter.run(
         () =>
-          fetch(this.buildUrl(path, params), {
-            method,
-            headers,
-            body: body ? JSON.stringify(body) : undefined,
-            signal: requestSignal,
-          }),
+          this.requestLog.track(method, path, () =>
+            fetch(this.buildUrl(path, params), {
+              method,
+              headers,
+              body: body ? JSON.stringify(body) : undefined,
+              signal: requestSignal,
+            }),
+          ),
         requestSignal,
       );
 
@@ -701,11 +706,13 @@ export class SSTApiAdapter implements ApiPort {
 
     try {
       const response = await this.limiter.run(() =>
-        fetch(this.buildUrl("/profile/avatar"), {
-          method: "POST",
-          headers,
-          body: formData,
-        }),
+        this.requestLog.track("POST", "/profile/avatar", () =>
+          fetch(this.buildUrl("/profile/avatar"), {
+            method: "POST",
+            headers,
+            body: formData,
+          }),
+        ),
       );
 
       if (!response.ok) {
@@ -2804,12 +2811,14 @@ export class SSTApiAdapter implements ApiPort {
 
       const response = await this.limiter.run(
         () =>
-          fetch(this.buildUrl(path, params), {
-            method,
-            headers,
-            body: body ? JSON.stringify(body) : undefined,
-            ...(controller ? { signal: controller.signal } : {}),
-          }),
+          this.requestLog.track(method, path, () =>
+            fetch(this.buildUrl(path, params), {
+              method,
+              headers,
+              body: body ? JSON.stringify(body) : undefined,
+              ...(controller ? { signal: controller.signal } : {}),
+            }),
+          ),
         controller?.signal,
       );
       const json = (await response.json().catch(() => null)) as T | null;
