@@ -3,7 +3,7 @@ import {
   forgetBootstrapSections,
   rememberBootstrapSection,
 } from "@/application/bootstrap/freshness";
-import { beginBootstrap } from "@/application/bootstrap/gate";
+import { beginBootstrap, endColdStart } from "@/application/bootstrap/gate";
 import { fetchUnreadCount } from "@/application/notifications/unread-count";
 import { useCachedResource } from "@/ui/hooks/useCachedResource";
 import { useGetStreaks } from "@/ui/hooks/useGetStreaks";
@@ -20,7 +20,10 @@ jest.mock("@/adapters/api", () => ({
   getApiBaseUrl: () => "https://api.test",
 }));
 
-afterEach(() => forgetBootstrapSections(USER));
+afterEach(() => {
+  forgetBootstrapSections(USER);
+  endColdStart();
+});
 
 describe("mount-time fetches respect the cold-start bootstrap", () => {
   it("useCachedResource serves a bootstrap-fresh cache without fetching", async () => {

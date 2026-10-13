@@ -12,6 +12,12 @@ const pending = new Map<
   { promise: Promise<void>; settle: () => void }
 >();
 const listeners = new Set<() => void>();
+/**
+ * Set from the app shell's very first render, before any auth instance has
+ * resolved, so hooks that fetch without a user (the tier catalog) wait too.
+ * Cleared when auth resolves signed out or when the user's bootstrap settles.
+ */
+let coldStart: { promise: Promise<void>; end: () => void } | null = null;
 
 function notify(): void {
   for (const listener of listeners) listener();
@@ -34,8 +40,27 @@ export function beginBootstrap(userId: string): () => void {
   return settle;
 }
 
+/** Marks the process as cold-starting until auth is known. Idempotent. */
+export function beginColdStart(): void {
+  if (coldStart) return;
+  let end!: () => void;
+  const promise = new Promise<void>((resolve) => {
+    end = () => {
+      if (coldStart?.end === end) coldStart = null;
+      resolve();
+      notify();
+    };
+  });
+  coldStart = { promise, end };
+  notify();
+}
+
+export function endColdStart(): void {
+  coldStart?.end();
+}
+
 export function isBootstrapPending(userId: string | null): boolean {
-  return userId !== null && pending.has(userId);
+  return coldStart !== null || (userId !== null && pending.has(userId));
 }
 
 /** Upper bound on how long a mount-time fetch waits for the bootstrap. */
@@ -47,12 +72,14 @@ export const BOOTSTRAP_WAIT_MS = 10_000;
  * can never hold a screen's own fetch hostage.
  */
 export function bootstrapSettled(userId: string | null): Promise<void> {
-  if (userId === null) return Promise.resolve();
-  const entry = pending.get(userId);
-  if (!entry) return Promise.resolve();
+  const waits: Promise<void>[] = [];
+  if (coldStart) waits.push(coldStart.promise);
+  const entry = userId === null ? undefined : pending.get(userId);
+  if (entry) waits.push(entry.promise);
+  if (waits.length === 0) return Promise.resolve();
   return new Promise<void>((resolve) => {
     const timer = setTimeout(resolve, BOOTSTRAP_WAIT_MS);
-    void entry.promise.then(() => {
+    void Promise.all(waits).then(() => {
       clearTimeout(timer);
       resolve();
     });

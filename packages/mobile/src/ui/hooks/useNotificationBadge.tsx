@@ -57,8 +57,14 @@ export function useNotificationBadge(enabled = true): void {
     void bootstrapSettled(userId).then(() =>
       sync({ preferBootstrapFor: userId }),
     );
+    // Only a true return from the background re-syncs. iOS launches apps
+    // inactive and flips them active a moment later; the mount sync above
+    // already covers that, and it waits for the cold-start bootstrap.
+    let previous = AppState.currentState;
     const appSub = AppState.addEventListener("change", (state) => {
-      if (state === "active") void sync();
+      const resumed = previous === "background" && state === "active";
+      previous = state;
+      if (resumed) void sync();
     });
     return () => appSub?.remove?.();
   }, [enabled, userId, sync]);

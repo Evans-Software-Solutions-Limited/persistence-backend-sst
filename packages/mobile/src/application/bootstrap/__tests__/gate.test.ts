@@ -1,7 +1,9 @@
 import {
   BOOTSTRAP_WAIT_MS,
   beginBootstrap,
+  beginColdStart,
   bootstrapSettled,
+  endColdStart,
   isBootstrapPending,
   subscribeBootstrapGate,
 } from "../gate";
@@ -24,9 +26,8 @@ describe("bootstrap gate", () => {
     await Promise.resolve();
     expect(done).toBe(false);
     settle();
-    // The bounded wait adds one promise hop on top of the gate's own.
-    await Promise.resolve();
-    await Promise.resolve();
+    // The bounded wait adds promise hops on top of the gate's own.
+    for (let i = 0; i < 4; i++) await Promise.resolve();
     expect(done).toBe(true);
     expect(isBootstrapPending("u1")).toBe(false);
     expect(events).toEqual([true, false]);
@@ -61,5 +62,30 @@ describe("bootstrap gate", () => {
     } finally {
       jest.useRealTimers();
     }
+  });
+
+  it("the cold-start flag holds every waiter, even without a user, until it ends", async () => {
+    beginColdStart();
+    beginColdStart();
+    expect(isBootstrapPending(null)).toBe(true);
+    expect(isBootstrapPending("anyone")).toBe(true);
+    let anonymous = false;
+    let user = false;
+    void bootstrapSettled(null).then(() => {
+      anonymous = true;
+    });
+    const settle = beginBootstrap("u-cold");
+    void bootstrapSettled("u-cold").then(() => {
+      user = true;
+    });
+    endColdStart();
+    for (let i = 0; i < 4; i++) await Promise.resolve();
+    expect(anonymous).toBe(true);
+    expect(user).toBe(false);
+    settle();
+    for (let i = 0; i < 4; i++) await Promise.resolve();
+    expect(user).toBe(true);
+    expect(isBootstrapPending(null)).toBe(false);
+    endColdStart();
   });
 });
