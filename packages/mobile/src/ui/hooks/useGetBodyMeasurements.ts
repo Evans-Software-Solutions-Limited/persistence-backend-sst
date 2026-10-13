@@ -24,6 +24,7 @@ export function useGetBodyMeasurements(
   enabled = true,
 ): CachedResourceState<BodyTrendPoint[]> {
   return useCachedResource<BodyTrendPoint[]>({
+    bootstrapSection: "bodyTrend",
     read: (storage, userId) => ({
       value: reconcilePendingBodyMeasurements(
         storage,

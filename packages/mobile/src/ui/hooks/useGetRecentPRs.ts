@@ -12,6 +12,7 @@ export function useGetRecentPRs(
   limit = 5,
 ): CachedResourceState<PersonalRecord[]> {
   return useCachedResource<PersonalRecord[]>({
+    bootstrapSection: "recentPRs",
     read: (storage, userId) => ({
       value: storage.getPersonalRecords(userId).slice(0, limit),
       isStale: true,

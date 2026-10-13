@@ -1,5 +1,12 @@
 import { createCloudApis } from "@/adapters/together/cloudApi";
 import { MAX_IN_FLIGHT_REQUESTS, RequestLimiter } from "./requestLimiter";
+import type {
+  BootstrapPayload,
+  BootstrapSectionKey,
+  BootstrapSectionResult,
+  BootstrapSections,
+  GetBootstrapParams,
+} from "@/domain/models/bootstrap";
 import {
   recoveryCandidate,
   recoveryResult,
@@ -285,6 +292,8 @@ type RequestOptions = {
  * settles inside the window.
  */
 export const DASHBOARD_REQUEST_TIMEOUT_MS = 10_000;
+/** The bootstrap composes up to sixteen reads; give it twice the dashboard budget. */
+const BOOTSTRAP_REQUEST_TIMEOUT_MS = 20_000;
 
 /** Onboarding routing cannot remain pending forever; expiry enables Retry. */
 export const ONBOARDING_REQUEST_TIMEOUT_MS = 10_000;
@@ -1482,6 +1491,112 @@ export class SSTApiAdapter implements ApiPort {
       ...res.value,
       recentPRs: res.value.recentPRs.map(normalizePersonalRecord),
     });
+  }
+
+  async getBootstrap(
+    params: GetBootstrapParams,
+  ): Promise<Result<BootstrapPayload, ApiError>> {
+    type Raw = {
+      generatedAt: string;
+      sections: Partial<
+        Record<BootstrapSectionKey, BootstrapSectionResult<unknown>>
+      >;
+    };
+    const res = await this.requestEnvelope<Raw>("/users/me/bootstrap", {
+      params: {
+        include: params.include.join(","),
+        ownerLibraryOnly: params.ownerLibraryOnly ? "true" : undefined,
+      },
+      timeoutMs: BOOTSTRAP_REQUEST_TIMEOUT_MS,
+      validateResponse: (value) =>
+        object(value, ["generatedAt", "sections"]) &&
+        typeof value.generatedAt === "string" &&
+        !!value.sections &&
+        typeof value.sections === "object",
+    });
+    if (!res.ok) return res;
+    // Each section repeats the transform its single-endpoint method applies.
+    const map = <K extends BootstrapSectionKey>(
+      key: K,
+      transform: (raw: unknown) => BootstrapSections[K],
+    ): BootstrapSectionResult<BootstrapSections[K]> | undefined => {
+      const section = res.value.sections[key];
+      if (!section) return undefined;
+      if (!section.ok) return { ok: false, error: section.error };
+      try {
+        return { ok: true, value: transform(section.value) };
+      } catch {
+        return { ok: false, error: "malformed" };
+      }
+    };
+    const workoutsSlice = (raw: unknown) => {
+      const slice = raw as {
+        workouts: ApiWorkout[];
+        total: number;
+        quota?: WorkoutQuota;
+      };
+      return {
+        workouts: slice.workouts,
+        total: slice.total,
+        quota: slice.quota ?? null,
+      };
+    };
+    const sections: BootstrapPayload["sections"] = {
+      home: map("home", (raw) => {
+        const home = raw as HomePayload;
+        return {
+          ...home,
+          recentPRs: home.recentPRs.map(normalizePersonalRecord),
+        };
+      }),
+      profile: map("profile", (raw) => raw as ProfilePageData),
+      subscription: map("subscription", (raw) => raw as MySubscription),
+      tiers: map("tiers", (raw) =>
+        (raw as WireSubscriptionTier[]).map(mapSubscriptionTier),
+      ),
+      onboarding: map("onboarding", (raw) => raw as OnboardingState | null),
+      workouts: map("workouts", (raw) => {
+        const w = raw as Record<"mine" | "assigned" | "default", unknown>;
+        return {
+          mine: workoutsSlice(w.mine),
+          assigned: workoutsSlice(w.assigned),
+          default: workoutsSlice(w.default),
+        };
+      }),
+      notifications: map("notifications", (raw) => {
+        const body = raw as ApiNotificationListResponse;
+        return {
+          notifications: (body.rows ?? []).map(mapApiNotification),
+          nextCursor: body.nextCursor ?? null,
+          unreadCount: body.unreadCount ?? 0,
+        };
+      }),
+      habitConfig: map("habitConfig", (raw) => raw as HabitConfigEntry[]),
+      habitCompletions: map(
+        "habitCompletions",
+        (raw) => raw as HabitCompletion[],
+      ),
+      streaks: map("streaks", (raw) => raw as Streak[]),
+      achievements: map("achievements", (raw) => raw as Achievement[]),
+      volumeStats: map("volumeStats", (raw) => raw as VolumeStats),
+      bodyTrend: map("bodyTrend", (raw) => raw as BodyTrendPoint[]),
+      recentPRs: map("recentPRs", (raw) =>
+        (raw as PersonalRecord[]).map(normalizePersonalRecord),
+      ),
+      muscleGroups: map("muscleGroups", (raw) => {
+        const entries = (raw as RawReferenceEntry[]).map(mapRawReferenceEntry);
+        this.populateReferenceLookup("muscle_groups", entries);
+        return entries;
+      }),
+      equipment: map("equipment", (raw) => {
+        const entries = (raw as RawReferenceEntry[]).map(mapRawReferenceEntry);
+        this.populateReferenceLookup("equipment", entries);
+        return entries;
+      }),
+    };
+    for (const key of Object.keys(sections) as BootstrapSectionKey[])
+      if (sections[key] === undefined) delete sections[key];
+    return ok({ generatedAt: res.value.generatedAt, sections });
   }
 
   async getTodayRings(): Promise<Result<Rings, ApiError>> {

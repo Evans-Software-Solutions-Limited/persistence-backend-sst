@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getApiBaseUrl } from "@/adapters/api";
+import { bootstrapSettled } from "@/application/bootstrap/gate";
 import { WORKOUT_TABLES } from "@/adapters/storage";
 import { processSyncQueue } from "@/application/commands/sync.command";
 import {
@@ -173,8 +174,16 @@ export function useWorkouts(options: UseWorkoutsOptions = {}): WorkoutsState {
     if (autoRefreshedForUserRef.current === userId) return;
     if (!anyStale) return;
     autoRefreshedForUserRef.current = userId;
-    void refresh();
-  }, [userId, anyStale, refresh, autoRefresh]);
+    void (async () => {
+      // The cold-start bootstrap writes these lists; fetch only if still stale.
+      await bootstrapSettled(userId);
+      if (latestUserIdRef.current !== userId) return;
+      const now = getWorkoutsQuery(storage, userId);
+      if (now.mine.isStale || now.assigned.isStale || now.default.isStale)
+        void refresh();
+      else setCacheVersion((v) => v + 1);
+    })();
+  }, [userId, anyStale, refresh, autoRefresh, storage]);
 
   // Soft re-read: bump cacheVersion so `initial` recomputes from
   // storage. Stable identity (no deps) so callers can safely list it

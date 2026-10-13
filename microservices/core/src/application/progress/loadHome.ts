@@ -1,0 +1,172 @@
+import type { VolumeRepository } from "../repositories/volumeRepository";
+import type { HomeReadRepository } from "../repositories/homeReadRepository";
+import type { HabitConfigRepository } from "../repositories/habitConfigRepository";
+import type { HabitRepository } from "../repositories/habitRepository";
+import type { StreakRepository } from "../repositories/streakRepository";
+import type { NutritionEntryRepository } from "../repositories/nutritionEntryRepository";
+import type { NutritionTargetRepository } from "../repositories/nutritionTargetRepository";
+import type { SleepRepository } from "../repositories/sleepRepository";
+import { buildRings } from "./rings";
+import { DEFAULT_GOAL_ACTIVE_KCAL, DEFAULT_GOAL_STEPS } from "./loadRings";
+import { weekStartISO } from "./window";
+import { addDaysISO, localDateISO } from "../streaks/period";
+import { fillWeekDays, computeDeltaPct } from "./volumeView";
+import {
+  buildHabitsGrid,
+  habitsGridWindow,
+  mergeDerivedHabitRows,
+} from "../habits/habitsView";
+import { formatSleepDuration } from "./formatSleepDuration";
+
+const RECENT_PR_LIMIT = 5;
+
+/** The repositories the Home read needs; the route and the bootstrap share it. */
+export type HomeRepositories = {
+  VolumeRepository: VolumeRepository;
+  HomeReadRepository: HomeReadRepository;
+  HabitConfigRepository: HabitConfigRepository;
+  HabitRepository: HabitRepository;
+  StreakRepository: StreakRepository;
+  NutritionEntryRepository: NutritionEntryRepository;
+  NutritionTargetRepository: NutritionTargetRepository;
+  SleepRepository: SleepRepository;
+};
+
+export type HomeData = Awaited<ReturnType<typeof loadHome>>;
+
+/**
+ * Everything `GET /users/me/home` returns, as a function of the repositories.
+ * Spec: 06-progress-goals STORY-001/002. Shared by the route and by
+ * `GET /users/me/bootstrap` so both answer identically.
+ */
+export async function loadHome(
+  ctx: HomeRepositories,
+  userId: string,
+  now: Date = new Date(),
+) {
+  const tz = await ctx.VolumeRepository.getUserTimezone(userId);
+
+  const today = localDateISO(now, tz);
+
+  // Roll indefinite-programme occurrences forward BEFORE the reads so the
+  // "Today's training" slice always has runway (specs/19-programs
+  // § Materialisation). Error-tolerant: a top-up failure must not take down
+  // the Home render — the already-materialised window still lists.
+  try {
+    await ctx.HomeReadRepository.ensureProgrammeMaterialized(userId, today);
+  } catch (err) {
+    console.error("home programme top-up failed", err);
+  }
+  // Bars + totals both span the current calendar week so `Σ bars === totalKg`
+  // (Inspector finding — a trailing 7-day window disagreed with the Mon–Sun
+  // total on any non-Sunday).
+  const thisWeekStart = weekStartISO(now, tz);
+  const thisWeekEnd = addDaysISO(thisWeekStart, 6);
+  const lastWeekStart = addDaysISO(thisWeekStart, -7);
+  const lastWeekEnd = addDaysISO(thisWeekStart, -1);
+  // The habits grid's OWN rolling window ([today-6 … today]) — distinct from
+  // the Mon–Sun collection-streak week above. Shared with buildHabitsGrid
+  // via the same helper so the derived Gym/Calories rows can never drift
+  // from the completion-based rows' window (BRIEF-7 QA-1..QA-4).
+  const habitsWindow = habitsGridWindow(now, tz);
+
+  // One fully-parallel fan-out, rather than awaiting loadRings() inside this
+  // handler: /users/me/home used to issue the identical Mon–Sun totalVolume
+  // query twice AND serialise it behind `await loadRings` on the cold-start
+  // path (Inspector finding, PR #116). `thisKg` still powers the weekly-volume
+  // card — it stopped feeding a ring when Train became daily active energy.
+  // loadRings stays for the standalone GET /users/me/today-rings; the two must
+  // be kept in step, and `homeEndpoints.test.ts` asserts they agree.
+  const [
+    steps,
+    activeKcal,
+    stepsGoal,
+    weeklyWorkoutTarget,
+    daily,
+    thisKg,
+    lastKg,
+    completed,
+    streak,
+    recentPRs,
+    completions,
+    derivedHabitRows,
+    kcal,
+    kcalTarget,
+    activeProgramme,
+    todaysTraining,
+    sleepRecord,
+  ] = await Promise.all([
+    ctx.HomeReadRepository.getTodaySteps(userId, today),
+    // Train ring: DAILY active energy, not weekly volume (see rings.ts).
+    ctx.HomeReadRepository.getTodayActiveKcal(userId, today),
+    // Move ring goal: the user's own Steps habit target where they have one.
+    ctx.HabitConfigRepository.getActiveDailyTarget(userId, "steps"),
+    // The Gym habit is the user's training plan. No Gym habit means no
+    // target — never score them against an invisible default.
+    ctx.HabitConfigRepository.getActiveTarget(userId, "gym", "weekly"),
+    ctx.VolumeRepository.dailyVolume(userId, tz, thisWeekStart, thisWeekEnd),
+    ctx.VolumeRepository.totalVolume(userId, tz, thisWeekStart, thisWeekEnd),
+    ctx.VolumeRepository.totalVolume(userId, tz, lastWeekStart, lastWeekEnd),
+    ctx.VolumeRepository.completedSessionCount(
+      userId,
+      tz,
+      thisWeekStart,
+      thisWeekEnd,
+    ),
+    ctx.HomeReadRepository.getActiveWorkoutStreakCount(userId),
+    ctx.HomeReadRepository.getRecentPRs(userId, RECENT_PR_LIMIT),
+    ctx.HabitRepository.list(userId, { windowDays: 7 }),
+    // BRIEF-7 QA-1..QA-4: Gym (count) + Calories (within_tolerance) never
+    // write a habit_completions row, so their grid tile is DERIVED straight
+    // from workout_sessions / nutrition_entries, merged below.
+    ctx.StreakRepository.getDerivedHabitGridRows(userId, habitsWindow, tz),
+    ctx.NutritionEntryRepository.sumKcalForDay(userId, today),
+    ctx.NutritionTargetRepository.get(userId).then((t) => t?.dailyKcal ?? null),
+    ctx.HomeReadRepository.getActiveProgramme(userId, today),
+    ctx.HomeReadRepository.getTodaysTraining(userId, today),
+    // specs/20-sleep-quicklog STORY-002 AC 2.5 — the same `today` basis the
+    // rest of this handler already computes (user's local wake-day).
+    ctx.SleepRepository.getForDate(userId, today),
+  ]);
+
+  const rings = buildRings({
+    steps,
+    goalSteps:
+      stepsGoal != null && stepsGoal > 0 ? stepsGoal : DEFAULT_GOAL_STEPS,
+    activeKcal,
+    goalActiveKcal: DEFAULT_GOAL_ACTIVE_KCAL,
+    fuel: kcalTarget !== null ? { consumed: kcal, target: kcalTarget } : null,
+  });
+
+  return {
+    rings,
+    micro: {
+      streak,
+      water: null,
+      strain: null,
+      sleep: formatSleepDuration(sleepRecord?.durationMinutes ?? null),
+    },
+    weeklyVolume: {
+      days: fillWeekDays(
+        daily,
+        thisWeekStart,
+        thisWeekEnd,
+        localDateISO(now, tz),
+      ),
+      totalKg: thisKg,
+      deltaPct: computeDeltaPct(thisKg, lastKg),
+      workouts: { completed, target: weeklyWorkoutTarget },
+    },
+    recentPRs,
+    habits: mergeDerivedHabitRows(
+      buildHabitsGrid(completions, now, tz),
+      derivedHabitRows,
+    ),
+    todayWorkout: [],
+    // specs/19-programs STORY-005 — the athlete Home "Your programme"
+    // card + "Today's training" section. Additive; null/[] when the
+    // client has no live plan-visible programme.
+    activeProgramme,
+    todaysTraining,
+  };
+}

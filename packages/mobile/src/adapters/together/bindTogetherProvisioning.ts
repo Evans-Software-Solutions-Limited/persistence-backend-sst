@@ -16,6 +16,8 @@ export function bindTogetherProvisioning(
   netInfo: NetInfoPort,
   provisioning: TogetherProvisioningPort | undefined,
   onAuthorizationUnavailable?: (code: string) => void,
+  /** Resolves when the app shell's cold-start work for the account is done. */
+  ready: (account: string) => Promise<void> = async () => {},
 ): () => void {
   if (!provisioning) return () => {};
   let stopped = false;
@@ -80,6 +82,9 @@ export function bindTogetherProvisioning(
     const generation = accountGeneration;
     const revision = networkRevision;
     try {
+      // Off the cold-start critical path: the bootstrap request goes first.
+      await ready(account!);
+      if (stopped || generation !== accountGeneration) return;
       const online = await netInfo.isConnected();
       if (revision === networkRevision) await prepare(online, generation);
     } catch {

@@ -19,6 +19,7 @@
 import { useCallback, useEffect } from "react";
 import { AppState } from "react-native";
 
+import { bootstrapSettled } from "@/application/bootstrap/gate";
 import { fetchUnreadCount } from "@/application/notifications/unread-count";
 import { useAdapters } from "./useAdapters";
 import { useAuth } from "./useAuth";
@@ -28,29 +29,34 @@ export function useNotificationBadge(enabled = true): void {
   const { session } = useAuth();
   const userId = session?.userId ?? null;
 
-  const sync = useCallback(async () => {
-    // Fetch the unread rows (not just the count) so the badge is computed the
-    // SAME way as the list header — via `optimisticUnread` over a real page.
-    // Trusting the cached count alone undercounts during a pending mark-all:
-    // the cache shows 0 (all flipped read), so a push that lands before the
-    // queue drains would paint the badge 0 and hide the new arrival until the
-    // next foreground drain (Inspector Brad badge undercount). Pulling the
-    // page lets `applyPendingReads` flip only the pre-mark-all rows and leave
-    // post-mark-all arrivals counted. `unreadOnly` keeps the payload tight.
-    // `fetchUnreadCount` shares one request with the Home count hook.
-    const count = await fetchUnreadCount(api, storage);
-    if (count === null) return;
-    try {
-      await notifications.setBadgeCount(count);
-    } catch {
-      // Best-effort — never block on a badge write.
-    }
-  }, [api, storage, notifications]);
+  const sync = useCallback(
+    async (options?: { preferBootstrapFor?: string | null }) => {
+      // Fetch the unread rows (not just the count) so the badge is computed the
+      // SAME way as the list header — via `optimisticUnread` over a real page.
+      // Trusting the cached count alone undercounts during a pending mark-all:
+      // the cache shows 0 (all flipped read), so a push that lands before the
+      // queue drains would paint the badge 0 and hide the new arrival until the
+      // next foreground drain (Inspector Brad badge undercount). Pulling the
+      // page lets `applyPendingReads` flip only the pre-mark-all rows and leave
+      // post-mark-all arrivals counted. `unreadOnly` keeps the payload tight.
+      // `fetchUnreadCount` shares one request with the Home count hook.
+      const count = await fetchUnreadCount(api, storage, options);
+      if (count === null) return;
+      try {
+        await notifications.setBadgeCount(count);
+      } catch {
+        // Best-effort — never block on a badge write.
+      }
+    },
+    [api, storage, notifications],
+  );
 
   // Launch + return-to-foreground.
   useEffect(() => {
     if (!enabled || !userId) return;
-    void sync();
+    void bootstrapSettled(userId).then(() =>
+      sync({ preferBootstrapFor: userId }),
+    );
     const appSub = AppState.addEventListener("change", (state) => {
       if (state === "active") void sync();
     });

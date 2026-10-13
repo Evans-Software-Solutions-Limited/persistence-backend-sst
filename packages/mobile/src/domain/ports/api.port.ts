@@ -3,6 +3,10 @@ import type { TogetherSocialApi } from "./togetherSocial.port";
 import type { TogetherOfflineApi } from "./togetherOfflineApi.port";
 import type { DashboardPayload } from "@/domain/models/dashboard";
 import type {
+  BootstrapPayload,
+  GetBootstrapParams,
+} from "@/domain/models/bootstrap";
+import type {
   CreateExerciseInput,
   Exercise,
   ExerciseCategory,
@@ -631,6 +635,13 @@ export interface ApiPort extends ReferralsPort {
   // -- Progress / Home (M4 — 06-progress-goals) --
   /** Aggregate cold-start payload (GET /users/me/home). */
   getHome(): Promise<Result<HomePayload, ApiError>>;
+  /**
+   * One request for the app shell's cold start: every section answers as its
+   * single endpoint does. Spec: specs/milestones/COLD-START-BOOTSTRAP/BRIEF.md.
+   */
+  getBootstrap(
+    params: GetBootstrapParams,
+  ): Promise<Result<BootstrapPayload, ApiError>>;
   getTodayRings(): Promise<Result<Rings, ApiError>>;
   /** `window` is an `Nd` string (default 7d). */
   getWeeklyVolume(window?: string): Promise<Result<WeeklyVolume, ApiError>>;

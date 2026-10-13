@@ -153,22 +153,48 @@ export async function refreshProfilePage(
   storage: StoragePort,
   userId: string,
 ): Promise<Result<ProfilePageData, ApiError>> {
-  const cachedAtRequestStart = JSON.stringify(
-    storage.getCachedProfilePage(userId)?.payload ?? null,
-  );
-  const queuedAtRequestStart = storage.getQueuedEntriesForEntity(
-    "profile",
-    userId,
-  );
+  const requestStart = captureProfilePageRequestStart(storage, userId);
   const result = await api.getProfilePage();
   if (!result.ok) return result;
+  return ok(applyProfilePage(storage, userId, result.value, requestStart));
+}
+
+export type ProfilePageRequestStart = {
+  cachedAtRequestStart: string;
+  queuedAtRequestStart: SyncQueueEntry[];
+};
+
+/** What a caller must capture before the request so queued edits are not lost. */
+export function captureProfilePageRequestStart(
+  storage: StoragePort,
+  userId: string,
+): ProfilePageRequestStart {
+  return {
+    cachedAtRequestStart: JSON.stringify(
+      storage.getCachedProfilePage(userId)?.payload ?? null,
+    ),
+    queuedAtRequestStart: storage.getQueuedEntriesForEntity("profile", userId),
+  };
+}
+
+/**
+ * Reconciles a server profile page against preferences queued since the
+ * request started and caches it. Shared by `refreshProfilePage`,
+ * `useProfilePage` and the cold-start bootstrap command.
+ */
+export function applyProfilePage(
+  storage: StoragePort,
+  userId: string,
+  value: ProfilePageData,
+  requestStart: ProfilePageRequestStart,
+): ProfilePageData {
   const payload = reconcilePendingProfilePreferences(
     storage,
     userId,
-    result.value,
-    cachedAtRequestStart,
-    queuedAtRequestStart,
+    value,
+    requestStart.cachedAtRequestStart,
+    requestStart.queuedAtRequestStart,
   );
   storage.cacheProfilePage(userId, payload);
-  return ok(payload);
+  return payload;
 }

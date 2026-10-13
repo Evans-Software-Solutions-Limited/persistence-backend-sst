@@ -6,6 +6,7 @@ import {
 import type { ProfilePageData } from "@/domain/models/profilePage";
 import type { ApiError } from "@/shared/errors";
 import type { ApiPort } from "@/domain/ports/api.port";
+import { bootstrapSettled } from "@/application/bootstrap/gate";
 import { useAdapters } from "./useAdapters";
 import { useAuth } from "./useAuth";
 
@@ -234,7 +235,22 @@ export function useProfilePage(enabled = true): ProfilePageState {
     // through the backoff gaps (when `isRefreshing` briefly drops) so the
     // error surface only shows once we've truly given up.
     setIsAutoRetrying(true);
-    void Promise.resolve(refresh()).then(() => {
+    const attempt = async () => {
+      // The cold-start bootstrap may write this page first; serve it if so.
+      await bootstrapSettled(state.userId);
+      if (autoFetchRef.current !== state) return;
+      const fromBootstrap = getProfilePageQuery(storage, state.userId);
+      if (!fromBootstrap.isStale && fromBootstrap.cached) {
+        setPayload(fromBootstrap.payload);
+        setIsStale(false);
+        setSyncedAt(storage.getProfilePageAge(state.userId));
+        setCacheVersion((v) => v + 1);
+        lastFetchOkRef.current = true;
+        return;
+      }
+      await refresh();
+    };
+    void attempt().then(() => {
       const s = autoFetchRef.current;
       // The sheet closed while this attempt's `refresh()` was in flight. The
       // request already happened (it can't be un-sent) and `refresh()` has
@@ -275,7 +291,7 @@ export function useProfilePage(enabled = true): ProfilePageState {
         autoAttemptRef.current();
       }, AUTO_FETCH_RETRY_BASE_MS * s.attempts);
     });
-  }, [refresh]);
+  }, [refresh, storage]);
   useEffect(() => {
     autoAttemptRef.current = autoAttempt;
   }, [autoAttempt]);

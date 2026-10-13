@@ -1,5 +1,50 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-12 — PER-80 slice 3: one bootstrap request for the cold start (PR #497)
+
+Brad asked whether one request surfacing all the data is the better shape.
+Yes, and the pattern already existed in `/users/me/home`. Brief:
+`specs/milestones/COLD-START-BOOTSTRAP/BRIEF.md`. Branch
+`claude/per-80-bootstrap`, stacked on `claude/per-80-cold-start-burst` (#496).
+
+Backend: `GET /users/me/bootstrap?include=&ownerLibraryOnly=` composes sixteen
+sections from loaders extracted out of the Home, habit-config and volume-stats
+routes (`loadHome`, `loadHabitConfig`, `loadVolumeStats`; the routes delegate,
+their tests pass unchanged) plus direct repository reads for the rest.
+`Promise.allSettled`, at most three sections in flight because the DB pool is
+four connections per container and `loadHome` alone fans out seventeen reads;
+a failing section is `{ ok: false, error }`. Mounted inside `streaksRoutes`
+(root `.use()` chain is at the TS instantiation-depth limit). Core: 400 files /
+5,514 tests, coverage 98.08 / 94.32 / 97.82 / 98.08, lint 0.
+
+Mobile: `ApiPort.getBootstrap` with the single-endpoint transforms;
+`bootstrap.command` drains the queue, asks only for stale sections, writes
+each the way its hook does (`applyWorkoutsList`, `applyProfilePage` extracted
+from the refresh helpers), seeds the subscription and tier queries and records
+what it wrote in an in-memory freshness cache (derived habit rows and the
+optimistic unread count stashed for the hooks that keep them off SQLite). A
+gate opened during the app layout's render makes the mount-time fetchers
+(`useCachedResource`, `useWorkouts`, `useProfilePage`, `useGetHabits`, both
+unread-count hooks, `useMySubscription`, `useSubscriptionTiers`) wait and then
+re-check staleness; offline, failed or signed-out runs settle it immediately;
+pull, refocus, foreground and explicit reload are unchanged. `warmOfflineData`
+skips the five Progress reads; Together provisioning waits for the shell's
+ready signal. Kept per endpoint on purpose: onboarding (provider-side merge to
+extract first) and the Fuel warm (sequential, after the gate). Mobile: 628
+suites / 8,486 tests, coverage 96.61 / 92.55 / 96.68 / 97.87, lint 0.
+
+Not yet measured on a device: the endpoint is not on staging until #497
+deploys, so the simulator before/after (29 → 19 on #496 → expected ~6) waits
+for that. Review leads fixed the same evening: #495 keeps the roster when a
+resuming guest's `connect()` rejects or times out (was closing the store);
+#496 reserves the limiter slot in `grant()` so `active` cannot exceed `max`
+(regression test fails on the old code, peak 3). CI flake on #496 was the
+subscription-rail test's 1 s wait under runner load; it now waits 5 s.
+
+Together connection methods, from the module READMEs: same Wi-Fi and a joined
+hotspot use the LAN transport on both platforms; Nearby is Google Nearby
+Connections on both iOS and Android (cross-platform by design, unproven on
+device, iOS crash open); only the explicit hotspot-owner mode is Android-only.
 ### 2026-10-12 — PER-80 slice 2: the cold-start request burst (PR #496)
 
 Brad asked why the first launch always shows "could not refresh training
@@ -104,7 +149,6 @@ see the gate open; background/foreground is proven on the simulated transport
 only. Next:
 Brad's two-phone run (minimise host, minimise guest, lock screen, return); then
 the discovery renewal item and the UX polish items on PER-80.
-
 ### 2026-10-12 — Zero lint warnings across packages; every mobile adapter under the coverage gate
 
 Branch `claude/lint-zero-adapters-gate`, stacked on `claude/probe-gate-coverage`

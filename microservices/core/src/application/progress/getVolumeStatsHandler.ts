@@ -6,13 +6,7 @@ import {
   requireAuth,
   getUser,
 } from "@persistence/api-utils/auth/supabaseAuth";
-import { localDateISO } from "../streaks/period";
-import { parseWindowKind, windowStartISO } from "./window";
-import {
-  withMusclePct,
-  adherencePct,
-  daysBetweenInclusive,
-} from "./volumeView";
+import { loadVolumeStats } from "./loadVolumeStats";
 
 /**
  * GET /users/me/volume-stats?window=month — the You/Progress VolumeStats card
@@ -31,74 +25,7 @@ export const getVolumeStatsHandler = new Elysia()
     "/users/me/volume-stats",
     async (ctx) => {
       const { sub: userId } = getUser(ctx);
-      const tz = await ctx.VolumeRepository.getUserTimezone(userId);
-      const now = new Date();
-
-      const kind = parseWindowKind(ctx.query.window);
-      const start = windowStartISO(now, kind, tz);
-      const end = localDateISO(now, tz);
-
-      // Recompute the requested window's by-muscle materialisation on every
-      // read. `workouts`/`totalKg` below are computed live from the source
-      // tables, so a stale materialised row would visibly disagree with the
-      // headline — and the cron only refreshes `month` (Inspector finding:
-      // quarter/year/lifetime would never update after their first cold write).
-      // This is the low-frequency You/Progress path, so a recompute-on-read
-      // (a small delete+insert of per-muscle rows) is cheap + always consistent.
-      //
-      // Guarded (Cluster 1a Task 2): a throw here used to 500 the WHOLE
-      // request, disappearing the You-page card entirely even though
-      // `workouts`/`totalKg` below are independently computable. Degrade
-      // instead — log and keep serving the live totals with `byMuscle: []`
-      // rather than skip the (freshly failing) by-muscle read and risk
-      // silently serving a STALE materialised row.
-      let recomputeFailed = false;
-      try {
-        await ctx.VolumeRepository.recomputeVolumeByMuscle(
-          userId,
-          tz,
-          kind,
-          start,
-          end,
-        );
-      } catch (err) {
-        recomputeFailed = true;
-        console.error("[volume-stats] recompute failed, degrading to []", {
-          userId,
-          kind,
-          error: err,
-        });
-      }
-
-      const [workouts, totalKg, byMuscleRaw, weeklyWorkoutTarget] =
-        await Promise.all([
-          ctx.VolumeRepository.completedSessionCount(userId, tz, start, end),
-          ctx.VolumeRepository.totalVolume(userId, tz, start, end),
-          recomputeFailed
-            ? Promise.resolve([])
-            : ctx.VolumeRepository.getVolumeByMuscle(userId, kind, start),
-          ctx.HabitConfigRepository.getActiveTarget(userId, "gym", "weekly"),
-        ]);
-
-      const adherence =
-        kind === "lifetime" || weeklyWorkoutTarget === null
-          ? null
-          : adherencePct(
-              workouts,
-              weeklyWorkoutTarget,
-              daysBetweenInclusive(start, end),
-            );
-
-      return {
-        data: {
-          window: kind,
-          workouts,
-          totalKg,
-          totalTonnes: Math.round(totalKg / 100) / 10,
-          adherencePct: adherence,
-          byMuscle: withMusclePct(byMuscleRaw),
-        },
-      };
+      return { data: await loadVolumeStats(ctx, userId, ctx.query.window) };
     },
     {
       query: t.Object({ window: t.Optional(t.String()) }),
