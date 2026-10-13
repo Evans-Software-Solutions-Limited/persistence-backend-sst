@@ -66,7 +66,9 @@ describe("GET /users/me/bootstrap", () => {
   it("loads every section by default with the user's id and email", async () => {
     const res = await call();
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = (await res.json()) as {
+      data: { sections: Record<string, unknown> };
+    };
     expect(Object.keys(body.data.sections)).toEqual([...BOOTSTRAP_SECTIONS]);
     const [deps, req] = loadBootstrapMock.mock.calls[0];
     expect(req).toEqual({
@@ -101,10 +103,10 @@ describe("GET /users/me/bootstrap", () => {
   it("honours include and ownerLibraryOnly", async () => {
     const res = await call("?include=home,tiers&ownerLibraryOnly=true");
     expect(res.status).toBe(200);
-    expect(Object.keys((await res.json()).data.sections)).toEqual([
-      "home",
-      "tiers",
-    ]);
+    const body = (await res.json()) as {
+      data: { sections: Record<string, unknown> };
+    };
+    expect(Object.keys(body.data.sections)).toEqual(["home", "tiers"]);
     expect(loadBootstrapMock.mock.calls[0][1]).toMatchObject({
       sections: ["home", "tiers"],
       ownerLibraryOnly: true,
