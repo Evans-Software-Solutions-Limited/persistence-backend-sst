@@ -7,6 +7,9 @@ type ProvisioningAuth = Pick<
   "getPersistedSession" | "getSession" | "onAuthStateChange"
 >;
 
+/** Delay before the single automatic retry of a transient readiness failure. */
+export const TRANSIENT_RETRY_MS = 4_000;
+
 /** Account lifecycle only; internet reachability never gates a LAN connection. */
 export function bindTogetherProvisioning(
   auth: ProvisioningAuth,
@@ -20,6 +23,8 @@ export function bindTogetherProvisioning(
   let accountGeneration = 0;
   let authRevision = 0;
   let networkRevision = 0;
+  let retried = false;
+  let retryTimer: ReturnType<typeof setTimeout> | undefined;
 
   const prepare = async (online: boolean, generation: number) => {
     if (stopped || !account || generation !== accountGeneration) return;
@@ -29,6 +34,23 @@ export function bindTogetherProvisioning(
       // defensive key copy; secrets must never land in React/query state.
       if (result.ok) result.value.seed.fill(0);
       else if (
+        result.error.code === "unavailable" &&
+        online &&
+        !retried &&
+        !stopped &&
+        generation === accountGeneration
+      ) {
+        // A cold start fires many requests at once and the API edge answers the
+        // overflow with 503. One bounded retry per account; the user's explicit
+        // "Retry access check" remains the path after that.
+        retried = true;
+        clearTimeout(retryTimer);
+        retryTimer = setTimeout(() => {
+          retryTimer = undefined;
+          if (!stopped && generation === accountGeneration)
+            void prepare(true, generation);
+        }, TRANSIENT_RETRY_MS);
+      } else if (
         !stopped &&
         generation === accountGeneration &&
         [
@@ -70,6 +92,9 @@ export function bindTogetherProvisioning(
     if (account !== userId) {
       accountGeneration++;
       account = null;
+      retried = false;
+      clearTimeout(retryTimer);
+      retryTimer = undefined;
       try {
         provisioning.setAccount(userId);
         account = userId;
@@ -110,6 +135,8 @@ export function bindTogetherProvisioning(
   return () => {
     stopped = true;
     accountGeneration++;
+    clearTimeout(retryTimer);
+    retryTimer = undefined;
     unsubscribeAuth();
     unsubscribeNetwork();
     // Cancel stale completions but permit React StrictMode to bind again to the

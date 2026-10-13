@@ -567,7 +567,7 @@ describe("reviewed lobby coordinator, real cryptography and SQLite, simulated na
       expect(value.native.startHost).not.toHaveBeenCalled();
     },
   );
-  it("keeps the admitted roster during iOS interruptions but retires it on true background", async () => {
+  it("keeps the admitted roster during iOS interruptions, suspends on true background and resumes on foreground", async () => {
     const host = setup();
     const guest = setup(2);
     const issued = person(1);
@@ -605,28 +605,123 @@ describe("reviewed lobby coordinator, real cryptography and SQLite, simulated na
     expect(host.controller.getSnapshot()).toEqual(before);
     appEvent("background");
     await settle();
-    expect(host.controller.getSnapshot().members).toEqual([]);
+    // PER-80: radios stop, but membership, the store and the signing seed are kept.
+    expect(host.controller.getSnapshot()).toMatchObject({
+      phase: "reconnecting",
+      role: "host",
+    });
+    expect(host.controller.getSnapshot().members).toHaveLength(2);
     expect(host.native.stop).toHaveBeenCalledTimes(1);
-    expect(issued.seed.every((n) => n === 0)).toBe(true);
+    expect(issued.seed.some((n) => n !== 0)).toBe(true);
     appEvent("inactive");
     appEvent("active");
     await settle();
-    // Foregrounding cannot silently resurrect terminal membership/signing keys.
-    expect(host.controller.getSnapshot().members).toEqual([]);
-    expect(host.native.startHost).toHaveBeenCalledTimes(1);
+    // Foregrounding re-hosts the same signed roster over a fresh transport.
+    expect(host.native.startHost).toHaveBeenCalledTimes(2);
+    expect(host.controller.getSnapshot()).toMatchObject({ phase: "hosting" });
+    expect(host.controller.getSnapshot().members).toHaveLength(2);
     unbind();
+    await settle();
+    // Leaving the authenticated surface is still terminal.
+    expect(host.controller.getSnapshot().members).toEqual([]);
+    expect(issued.seed.every((n) => n === 0)).toBe(true);
   });
-  it("clears credentials and native resources on expiry, background and account changes", async () => {
+  it("a resuming guest keeps its roster when the first reconnect attempt fails and can still reconnect", async () => {
+    const host = setup(),
+      guest = setup(2);
+    await host.controller.host("A");
+    await join(host, guest, true);
+    expect(guest.controller.getSnapshot().phase).toBe("joined");
+    const sessionId = JSON.parse(host.controller.getSnapshot().invitation!)
+      .payload.sessionId;
+    const closed = () =>
+      guest.db
+        .prepare(
+          "SELECT count(*) AS total FROM together_local_closed WHERE account_id=?",
+        )
+        .get(id(2));
+    const peerId = guest.identity.deviceId;
+    guest.controller.setActive(false);
+    await settle();
+    expect(guest.controller.getSnapshot().phase).toBe("reconnecting");
+    // The host's radio sees the guest drop when the guest's transport stops.
+    host.native.emit({ type: "disconnected", peerId });
+    await settle();
+    guest.controller.setActive(true);
+    await settle();
+    expect(guest.controller.getSnapshot().phase).toBe("searching");
+    // The host has re-advertised but its accept is not up yet: connect rejects.
+    guest.native.connect.mockRejectedValueOnce(new Error("host_unreachable"));
+    guest.native.emit({
+      type: "discovered",
+      endpointId: "nearby",
+      lobbyId: sessionId,
+    });
+    await settle();
+    expect(guest.controller.getSnapshot()).toMatchObject({
+      phase: "reconnecting",
+      error: "host_unreachable",
+    });
+    expect(guest.controller.getSnapshot().members).toHaveLength(2);
+    expect(closed()).toEqual({ total: 0 });
+    // A native connect timeout while membership is intact is just as recoverable.
+    await guest.controller.reconnect();
+    guest.native.emit({ type: "error", code: "connect_timeout" });
+    await settle();
+    expect(guest.controller.getSnapshot()).toMatchObject({
+      phase: "reconnecting",
+      error: "connect_timeout",
+    });
+    expect(guest.controller.getSnapshot().members).toHaveLength(2);
+    expect(closed()).toEqual({ total: 0 });
+    // Reconnect readmits from the same roster once the host answers.
+    await guest.controller.reconnect();
+    guest.native.emit({
+      type: "discovered",
+      endpointId: "nearby",
+      lobbyId: sessionId,
+    });
+    await settle();
+    host.native.emit({ type: "connected", peerId, incoming: true });
+    guest.native.emit({ type: "connected", peerId: "host", incoming: false });
+    await settle();
+    expect(guest.controller.getSnapshot().phase).toBe("joined");
+    expect(guest.controller.getSnapshot().members).toHaveLength(2);
+    // A never-admitted join still fails terminally on the same rejection.
+    const stranger = setup(3);
+    await stranger.controller.selectInvite(
+      host.controller.getSnapshot().invitation!,
+    );
+    stranger.native.connect.mockRejectedValueOnce(
+      new Error("host_unreachable"),
+    );
+    await stranger.controller.join();
+    stranger.native.emit({
+      type: "discovered",
+      endpointId: "host",
+      lobbyId: sessionId,
+    });
+    await settle();
+    expect(stranger.controller.getSnapshot()).toMatchObject({
+      phase: "unavailable",
+      error: "host_unreachable",
+    });
+  });
+
+  it("suspends an admitted host on background, and clears credentials on expiry and account changes", async () => {
     const value = setup();
     const issued = person(1);
     jest.mocked(value.provisioning.prepare).mockResolvedValue(ok(issued));
     await value.controller.host("A");
     value.controller.setActive(false);
     await settle();
-    expect(issued.seed.every((n) => n === 0)).toBe(true);
+    expect(issued.seed.some((n) => n !== 0)).toBe(true);
     expect(value.native.stop).toHaveBeenCalledTimes(1);
-    expect(value.controller.getSnapshot().phase).toBe("idle");
+    expect(value.controller.getSnapshot().phase).toBe("reconnecting");
     value.controller.setActive(true);
+    await settle();
+    expect(value.native.startHost).toHaveBeenCalledTimes(2);
+    expect(value.controller.getSnapshot().phase).toBe("hosting");
     jest.mocked(value.provisioning.prepare).mockResolvedValue(ok(person(1)));
     await value.controller.host("A");
     value.controller.setAccount(id(2));
@@ -1403,11 +1498,50 @@ describe("reviewed lobby coordinator, real cryptography and SQLite, simulated na
     ).toBe(0);
     host.controller.setActive(false);
     await settle();
-    expect(host.controller.shared.getSnapshot().athletes).toEqual([]);
+    // Suspended: peer caches are purged pending a fresh grant; own work stays.
+    expect(host.controller.getSnapshot().phase).toBe("reconnecting");
+    expect(
+      host.controller.shared
+        .getSnapshot()
+        .athletes.some((a) => a.userId === id(2)),
+    ).toBe(false);
     expect(host.controller.workout.getActive(id(1))?.notes).toBe(
       "Keep personal",
     );
-    expect(() => host.controller.shared.publishProfile("Late")).toThrow();
+    expect(host.controller.shared.getSnapshot().grants).toEqual([]);
+    // Foreground: the host re-advertises; the guest reconnects over a fresh
+    // authenticated channel, is readmitted from the same roster, and the host
+    // re-issues its numbers grant as a fresh revision beyond the barrier.
+    host.controller.setActive(true);
+    await settle();
+    expect(host.controller.getSnapshot().phase).toBe("hosting");
+    guest.native.emit({ type: "disconnected", peerId: "host" });
+    await settle();
+    expect(guest.controller.getSnapshot().phase).toBe("reconnecting");
+    jest.advanceTimersByTime(1_000);
+    await settle();
+    expect(guest.native.startDiscovery).toHaveBeenCalledTimes(2);
+    const sessionId = host.controller.getSnapshot().sessionId!;
+    guest.native.emit({
+      type: "discovered",
+      endpointId: "again",
+      lobbyId: sessionId,
+    });
+    await settle();
+    host.native.emit({ type: "connected", peerId: id(12), incoming: true });
+    guest.native.emit({ type: "connected", peerId: "host", incoming: false });
+    await settle();
+    expect(guest.controller.getSnapshot().phase).toBe("joined");
+    expect(host.controller.getSnapshot().members).toHaveLength(2);
+    expect(
+      host.controller.shared.getSnapshot().grants.map((g) => g.recipientId),
+    ).toEqual([id(2)]);
+    expect(
+      guest.controller.shared
+        .getSnapshot()
+        .athletes.some((a) => a.userId === id(1)),
+    ).toBe(true);
+    expect(guest.controller.shared.getSnapshot().profiles[id(1)]).toBe("Brad");
   });
   it("host removal becomes terminal sharing loss while both athletes retain personal results", async () => {
     const { host, guest } = await sharedPair();
