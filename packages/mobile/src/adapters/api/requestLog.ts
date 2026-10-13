@@ -24,10 +24,13 @@ export class RequestLog {
   constructor(
     private readonly capacity: number = REQUEST_LOG_CAPACITY,
     private readonly now: () => number = Date.now,
+    /** Off in production builds: nothing is recorded, `entries()` is empty. */
+    readonly enabled: boolean = true,
   ) {}
 
   start(method: string, path: string): number {
     const id = this.nextId++;
+    if (!this.enabled) return id;
     this.entries_.push({
       id,
       method,

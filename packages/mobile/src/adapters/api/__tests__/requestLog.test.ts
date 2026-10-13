@@ -75,4 +75,15 @@ describe("RequestLog", () => {
       ["/bad", null, "offline"],
     ]);
   });
+
+  it("records nothing when disabled, and track still returns the response", async () => {
+    const log = new RequestLog(10, Date.now, false);
+    expect(log.enabled).toBe(false);
+    const id = log.start("GET", "/a");
+    log.end(id, 200);
+    await expect(
+      log.track("GET", "/b", async () => ({ status: 200 })),
+    ).resolves.toEqual({ status: 200 });
+    expect(log.entries()).toEqual([]);
+  });
 });
