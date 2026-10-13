@@ -38,10 +38,25 @@ export function isBootstrapPending(userId: string | null): boolean {
   return userId !== null && pending.has(userId);
 }
 
-/** Resolves when the pending bootstrap for `userId` settles, or at once. */
+/** Upper bound on how long a mount-time fetch waits for the bootstrap. */
+export const BOOTSTRAP_WAIT_MS = 10_000;
+
+/**
+ * Resolves when the pending bootstrap for `userId` settles, at once when none
+ * is pending, and after `BOOTSTRAP_WAIT_MS` at the latest so a stalled run
+ * can never hold a screen's own fetch hostage.
+ */
 export function bootstrapSettled(userId: string | null): Promise<void> {
   if (userId === null) return Promise.resolve();
-  return pending.get(userId)?.promise ?? Promise.resolve();
+  const entry = pending.get(userId);
+  if (!entry) return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, BOOTSTRAP_WAIT_MS);
+    void entry.promise.then(() => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
 }
 
 export function subscribeBootstrapGate(listener: () => void): () => void {
