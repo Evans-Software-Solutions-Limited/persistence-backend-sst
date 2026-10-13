@@ -107,11 +107,17 @@ function renderWith(adapters: Adapters) {
   );
 }
 
+// The first rail render takes about a second on a warm Mac (RevenueCat offerings
+// resolve through the mock adapter, then the tier query settles); the CI runner
+// executes the whole monorepo suite on one box and tipped the 1 s default twice.
+const RAIL_RENDER_TIMEOUT_MS = 5_000;
+
 describe("SubscriptionSelectionContainer — rail dispatch", () => {
   it("renders the RevenueCat iOS flow (with a restore CTA, no Stripe path) when a purchases adapter is present", async () => {
     renderWith(makeAdapters(true));
-    await waitFor(() =>
-      expect(screen.getByTestId("ios-purchase-restore")).toBeTruthy(),
+    await waitFor(
+      () => expect(screen.getByTestId("ios-purchase-restore")).toBeTruthy(),
+      { timeout: RAIL_RENDER_TIMEOUT_MS },
     );
     // The Stripe Apple-Pay path is not reachable on the iOS rail (§3.1.1).
     expect(screen.queryByTestId("cancel-subscription-button")).toBeNull();
@@ -119,8 +125,10 @@ describe("SubscriptionSelectionContainer — rail dispatch", () => {
 
   it("falls back to the Stripe flow when no purchases adapter is present", async () => {
     renderWith(makeAdapters(false));
-    await waitFor(() =>
-      expect(screen.getByTestId("subscription-card-premium")).toBeTruthy(),
+    await waitFor(
+      () =>
+        expect(screen.getByTestId("subscription-card-premium")).toBeTruthy(),
+      { timeout: RAIL_RENDER_TIMEOUT_MS },
     );
     expect(screen.queryByTestId("ios-purchase-restore")).toBeNull();
   });
@@ -130,8 +138,9 @@ describe("SubscriptionSelectionContainer — rail dispatch", () => {
     Platform.OS = "android";
     try {
       renderWith(makeAdapters(true));
-      await waitFor(() =>
-        expect(screen.getByTestId("ios-purchase-restore")).toBeTruthy(),
+      await waitFor(
+        () => expect(screen.getByTestId("ios-purchase-restore")).toBeTruthy(),
+        { timeout: RAIL_RENDER_TIMEOUT_MS },
       );
     } finally {
       Platform.OS = originalOS;

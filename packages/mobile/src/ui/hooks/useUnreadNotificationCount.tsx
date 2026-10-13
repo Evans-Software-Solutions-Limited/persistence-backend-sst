@@ -21,7 +21,7 @@
  * Self-gates on a signed-in user; all reads are best-effort (never throw).
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
 import { useFocusEffect } from "expo-router";
 
@@ -30,6 +30,7 @@ import {
   optimisticUnread,
 } from "@/application/notifications/pending-reads";
 import { getNotificationsQuery } from "@/application/notifications/queries/list-notifications.query";
+import { fetchUnreadCount } from "@/application/notifications/unread-count";
 import { useAdapters } from "./useAdapters";
 import { useAuth } from "./useAuth";
 
@@ -52,14 +53,8 @@ export function useUnreadNotificationCount(): number {
   });
 
   const sync = useCallback(async () => {
-    const result = await api.getNotifications({ unreadOnly: true });
-    if (!result.ok) return;
-    const page = applyPendingReads(
-      result.value.notifications,
-      storage,
-      new Date().toISOString(),
-    );
-    setCount(optimisticUnread(result.value.unreadCount, page, storage));
+    const next = await fetchUnreadCount(api, storage);
+    if (next !== null) setCount(next);
   }, [api, storage]);
 
   // Mount + return-to-foreground.
@@ -83,8 +78,15 @@ export function useUnreadNotificationCount(): number {
 
   // Re-sync on focus — returning from the list (which marks all read) must
   // clear the bell without waiting for a foreground transition.
+  // The mount effect above already synced; the first focus fires in the same
+  // commit, so only refocuses (returning from another screen) sync again.
+  const focusedOnceRef = useRef(false);
   useFocusEffect(
     useCallback(() => {
+      if (!focusedOnceRef.current) {
+        focusedOnceRef.current = true;
+        return;
+      }
       if (userId) void sync();
     }, [userId, sync]),
   );

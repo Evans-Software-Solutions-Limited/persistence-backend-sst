@@ -1,4 +1,5 @@
 import { createCloudApis } from "@/adapters/together/cloudApi";
+import { MAX_IN_FLIGHT_REQUESTS, RequestLimiter } from "./requestLimiter";
 import {
   recoveryCandidate,
   recoveryResult,
@@ -327,6 +328,8 @@ function withDeadline<T>(
 
 export class SSTApiAdapter implements ApiPort {
   private tokenProvider: (() => Promise<string | null>) | null = null;
+  /** Cold start mounts many fetching hooks at once; see RequestLimiter. */
+  private readonly limiter = new RequestLimiter(MAX_IN_FLIGHT_REQUESTS);
 
   /**
    * UUID → display-label lookup per reference-list kind. Populated every
@@ -429,12 +432,17 @@ export class SSTApiAdapter implements ApiPort {
         }
       }
 
-      const response = await fetch(this.buildUrl(path, params), {
-        method,
-        headers,
-        body: body ? JSON.stringify(body) : undefined,
-        signal: signal ?? controller?.signal,
-      });
+      const requestSignal = signal ?? controller?.signal;
+      const response = await this.limiter.run(
+        () =>
+          fetch(this.buildUrl(path, params), {
+            method,
+            headers,
+            body: body ? JSON.stringify(body) : undefined,
+            signal: requestSignal,
+          }),
+        requestSignal,
+      );
 
       if (!response.ok) {
         const errorBody = await response.json().catch(() => null);
@@ -683,11 +691,13 @@ export class SSTApiAdapter implements ApiPort {
     }
 
     try {
-      const response = await fetch(this.buildUrl("/profile/avatar"), {
-        method: "POST",
-        headers,
-        body: formData,
-      });
+      const response = await this.limiter.run(() =>
+        fetch(this.buildUrl("/profile/avatar"), {
+          method: "POST",
+          headers,
+          body: formData,
+        }),
+      );
 
       if (!response.ok) {
         const errorBody = await response.json().catch(() => null);
@@ -2677,12 +2687,16 @@ export class SSTApiAdapter implements ApiPort {
         if (token) headers["Authorization"] = `Bearer ${token}`;
       }
 
-      const response = await fetch(this.buildUrl(path, params), {
-        method,
-        headers,
-        body: body ? JSON.stringify(body) : undefined,
-        ...(controller ? { signal: controller.signal } : {}),
-      });
+      const response = await this.limiter.run(
+        () =>
+          fetch(this.buildUrl(path, params), {
+            method,
+            headers,
+            body: body ? JSON.stringify(body) : undefined,
+            ...(controller ? { signal: controller.signal } : {}),
+          }),
+        controller?.signal,
+      );
       const json = (await response.json().catch(() => null)) as T | null;
       return ok({ status: response.status, json });
     } catch (err) {

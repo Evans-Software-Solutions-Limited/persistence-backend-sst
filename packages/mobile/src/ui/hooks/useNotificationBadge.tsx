@@ -19,10 +19,7 @@
 import { useCallback, useEffect } from "react";
 import { AppState } from "react-native";
 
-import {
-  applyPendingReads,
-  optimisticUnread,
-} from "@/application/notifications/pending-reads";
+import { fetchUnreadCount } from "@/application/notifications/unread-count";
 import { useAdapters } from "./useAdapters";
 import { useAuth } from "./useAuth";
 
@@ -40,14 +37,9 @@ export function useNotificationBadge(enabled = true): void {
     // next foreground drain (Inspector Brad badge undercount). Pulling the
     // page lets `applyPendingReads` flip only the pre-mark-all rows and leave
     // post-mark-all arrivals counted. `unreadOnly` keeps the payload tight.
-    const result = await api.getNotifications({ unreadOnly: true });
-    if (!result.ok) return;
-    const page = applyPendingReads(
-      result.value.notifications,
-      storage,
-      new Date().toISOString(),
-    );
-    const count = optimisticUnread(result.value.unreadCount, page, storage);
+    // `fetchUnreadCount` shares one request with the Home count hook.
+    const count = await fetchUnreadCount(api, storage);
+    if (count === null) return;
     try {
       await notifications.setBadgeCount(count);
     } catch {

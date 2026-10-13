@@ -5,6 +5,7 @@ import {
 } from "@/application/queries/profile-page.query";
 import type { ProfilePageData } from "@/domain/models/profilePage";
 import type { ApiError } from "@/shared/errors";
+import type { ApiPort } from "@/domain/ports/api.port";
 import { useAdapters } from "./useAdapters";
 import { useAuth } from "./useAuth";
 
@@ -58,6 +59,28 @@ export type ProfilePageState = {
  * fetch waits for a real open rather than firing on every cold launch (launch
  * fan-out reduction).
  */
+/**
+ * One `/profile/page` request per user at a time across every hook instance.
+ * The root AuthGate and HomeContainer both mount this hook in the same
+ * commit; each instance still applies the shared result to its own state.
+ */
+const sharedRequests = new Map<
+  string,
+  Promise<Awaited<ReturnType<ApiPort["getProfilePage"]>>>
+>();
+function requestProfilePage(
+  api: ApiPort,
+  userId: string,
+): Promise<Awaited<ReturnType<ApiPort["getProfilePage"]>>> {
+  const existing = sharedRequests.get(userId);
+  if (existing) return existing;
+  const request = api.getProfilePage().finally(() => {
+    if (sharedRequests.get(userId) === request) sharedRequests.delete(userId);
+  });
+  sharedRequests.set(userId, request);
+  return request;
+}
+
 export function useProfilePage(enabled = true): ProfilePageState {
   const { api, storage } = useAdapters();
   const { session } = useAuth();
@@ -144,7 +167,7 @@ export function useProfilePage(enabled = true): ProfilePageState {
           "profile",
           userId,
         );
-        const result = await api.getProfilePage();
+        const result = await requestProfilePage(api, userId);
         if (!result.ok) {
           lastFetchOkRef.current = false;
           if (latestUserIdRef.current === userId) setError(result.error);
