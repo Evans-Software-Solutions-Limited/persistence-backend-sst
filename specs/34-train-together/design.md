@@ -302,3 +302,47 @@ Ed25519 keys stay in JavaScript and run once per peer thanks to the key cache.
 The hidden `together-probe` route reports the active backend so the multiplier is
 re-measured on device after this lands. Out of scope here: F2–F6 (snapshot
 stability, per-peer queues, `accept()` storage, payload diet, Online realtime).
+
+### D17. Membership survives background; transport failures stay reconnectable (PER-80)
+
+Brad's 12 October staging feedback: minimising the app dropped the session with
+no way back, and a lobby left open was not found. Both came from the same rule:
+a background transition cancelled the lobby, disposed the shared engine, zeroed
+the seed and durably closed the local session. D15's "true background ends
+sharing" is superseded as follows.
+
+**Suspend.** When the app backgrounds and the own account is in the durable
+roster, the controller suspends instead of cancelling: discovery and transport
+stop (radios off), timers clear, the snapshot moves to `reconnecting` with no
+error, and the signed roster, open local store, signing seed, journal and shared
+engine are kept in memory. Peer links drop as before, so `suspendPeer` purges
+peers' private caches and sets the fresh-grant barriers. Pre-admission states
+(preparing, browsing, selected, searching, pending approval) still cancel.
+Explicit cancel, account change and disposal remain terminal and still close the
+session durably.
+
+**Resume.** On foreground the controller restarts the transport over the same
+resources: the host re-advertises the same session and roster; a guest searches,
+reconnects over a fresh authenticated channel and is readmitted from the existing
+roster (the host's existing-member branch, same credential and consent hashes).
+A manual `reconnect()` now works for hosts as well as guests.
+
+**Recoverable failures.** While membership is intact, a transport failure during
+resume or reconnect (unreachable host, native start or stop failure, read/write
+timeouts) publishes `reconnecting` with the failure code and keeps the resources,
+so the Reconnect action remains available. Protocol and authorization failures
+(expired or invalid credentials, removal, full or declined, forbidden pairs,
+signed-out, friendship required, version conflicts) stay terminal.
+
+**Re-grant.** The controller remembers each owner-issued consent per recipient.
+When a member is readmitted (the `admitted` event, per peer on the host, once on a
+guest), the owner re-issues its current grants as fresh revisions beyond the
+suspension barrier, so numbers, PREV and logging permissions return without a
+manual re-grant. Revoked (all-false) consents are not re-sent.
+
+**Hub and partners.** The hub's empty Sessions state now says what to do ("No
+sessions nearby yet. Tap Join a session…") rather than implying nothing exists;
+the hub still never starts discovery (D14). The partners list absorbs one
+transient automatic load failure on a cold start (unauthorized, network or
+timeout, which race the auth bootstrap and the first reachability probe) with a
+single 4-second retry; a second failure or a user pull surfaces the error.

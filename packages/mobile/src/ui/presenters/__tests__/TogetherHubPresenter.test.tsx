@@ -77,7 +77,11 @@ it("shows discovery status and failure guidance and safely handles optional acti
         onResume={undefined}
       />,
     );
-  expect(r.getByText("No workouts available to you")).toBeTruthy();
+  expect(
+    r.getByText(
+      "No sessions nearby yet. Tap Join a session to search this Wi-Fi or hotspot, or ask your partner for an invite.",
+    ),
+  ).toBeTruthy();
   expect(r.getByText("Discovery unavailable")).toBeTruthy();
   fireEvent.press(r.getByText("Join a session"));
   expect(r.queryByText("Scan invitation")).toBeNull();

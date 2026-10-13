@@ -5,7 +5,10 @@ import * as Clipboard from "expo-clipboard";
 import { act, waitFor } from "@testing-library/react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
-import { TogetherPartnersContainer } from "../TogetherPartnersContainer";
+import {
+  TogetherPartnersContainer,
+  TRANSIENT_RETRY_MS,
+} from "../TogetherPartnersContainer";
 import {
   TogetherPartnersPresenter,
   type TogetherPartnersPresenterProps,
@@ -583,4 +586,76 @@ it("reconciles a stale pending request once the same person is accepted", async 
   const r = renderWithTheme(<TogetherPartnersContainer />);
   await waitFor(() => expect(props(r).friends).toHaveLength(1));
   expect(props(r).requests).toHaveLength(0);
+});
+describe("cold-start transient failures (PER-80)", () => {
+  const transient = (code: string, status?: number) => ({
+    ok: false as const,
+    error: { kind: "api" as const, code, message: code, status },
+  });
+  afterEach(() => jest.useRealTimers());
+
+  it("retries one transient automatic failure silently and shows the partners once it succeeds", async () => {
+    jest.useFakeTimers();
+    const api = setup();
+    (api.friends as jest.Mock).mockResolvedValueOnce(transient("unauthorized"));
+    const r = renderWithTheme(<TogetherPartnersContainer />);
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect(props(r).error).toBe("");
+    expect(props(r).friends).toEqual([]);
+    expect(api.friends).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(TRANSIENT_RETRY_MS);
+    });
+    expect(api.friends).toHaveBeenCalledTimes(2);
+    expect(props(r).error).toBe("");
+    expect(props(r).friends[0].displayName).toBe("Mia");
+  });
+
+  it("surfaces the error when the retry also fails transiently", async () => {
+    jest.useFakeTimers();
+    const api = setup();
+    (api.friends as jest.Mock)
+      .mockResolvedValueOnce(transient("network"))
+      .mockResolvedValueOnce(transient("timeout"));
+    const r = renderWithTheme(<TogetherPartnersContainer />);
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect(props(r).error).toBe("");
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(TRANSIENT_RETRY_MS);
+    });
+    expect(api.friends).toHaveBeenCalledTimes(2);
+    expect(props(r).error).toMatch(/Could not refresh/);
+  });
+
+  it("retries a throttled cold start (503 at the API edge) once but not a 4xx", async () => {
+    jest.useFakeTimers();
+    const api = setup();
+    (api.friends as jest.Mock).mockResolvedValueOnce(transient("server", 503));
+    const r = renderWithTheme(<TogetherPartnersContainer />);
+    await waitFor(() => expect(api.friends).toHaveBeenCalledTimes(1));
+    expect(props(r).error).toBe("");
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(TRANSIENT_RETRY_MS);
+    });
+    await waitFor(() => expect(props(r).friends).toHaveLength(1));
+    expect(props(r).error).toBe("");
+
+    (api.friends as jest.Mock).mockResolvedValueOnce(transient("server", 400));
+    await act(async () => props(r).onRefresh());
+    expect(props(r).error).toMatch(/Could not refresh/);
+  });
+
+  it("surfaces a transient failure immediately when the user pulls to refresh", async () => {
+    const api = setup();
+    const r = renderWithTheme(<TogetherPartnersContainer />);
+    await waitFor(() => expect(props(r).loading).toBe(false));
+    (api.friends as jest.Mock).mockResolvedValueOnce(transient("network"));
+    await act(async () => props(r).onRefresh());
+    expect(props(r).error).toMatch(/Could not refresh/);
+    expect(props(r).friends[0].displayName).toBe("Mia");
+  });
 });
