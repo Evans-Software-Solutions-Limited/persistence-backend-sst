@@ -7,7 +7,10 @@
  * re-checks staleness. When no bootstrap is pending for that user the
  * promise is already resolved, so every other path behaves as before.
  */
-const pending = new Map<string, { promise: Promise<void>; settle: () => void }>();
+const pending = new Map<
+  string,
+  { promise: Promise<void>; settle: () => void }
+>();
 const listeners = new Set<() => void>();
 
 function notify(): void {
