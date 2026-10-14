@@ -37,7 +37,9 @@ socket client exists, and connection quality is then each phone's own internet.
 1. Two modes: **Nearby** (no internet needed) and **Online** (internet
    required). No mixed session and no automatic handover between them.
 2. Hotspot-owner mode is removed.
-3. Online is available for every audience, not only Training partners.
+3. Online is available for Private (invitation link or QR) and Training
+   partners. Open stays Nearby-only: an open online lobby would need the public
+   directory that is out of scope.
 4. The LAN transport stays in the codebase as the fallback behind the Nearby
    button, not as a user choice.
 
@@ -51,7 +53,9 @@ socket client exists, and connection quality is then each phone's own internet.
 - `TogetherStartContainer`, `TogetherLobbyContainer`, `WorkoutDetailContainer`
   (`TogetherConnectionChoice`) and `TogetherJoinContainer` show one choice:
   "Nearby · no internet needed" and "Online · internet required". No transport
-  picker. Online is enabled regardless of audience.
+  picker. Online is offered for Private and Training partners; choosing Open
+  returns the connection to Nearby. `TogetherCloudContainer` hosts a Private
+  online session without publishing friends visibility.
 - Default local transport is `nearby` when the native module reports
   `available`, else `lan`. The link keeps `transport=` so an older guest still
   parses it; a guest that cannot honour the transport falls back to `lan`
@@ -71,8 +75,9 @@ socket client exists, and connection quality is then each phone's own internet.
   `sync_required`. On socket error or close it reconnects with backoff and
   keeps the existing poll as the backstop, lengthened to 30–60 s while the
   socket is open and back to 5 s while it is not.
-- The socket URL reaches the app through config alongside the API base URL
-  (confirm the SST export is plumbed into `expoConfig.extra`; add it if not).
+- The socket URL needs no app config: the ticket response already carries
+  `endpoint` (`TOGETHER_WEBSOCKET_URL` on the server), and the connect route
+  takes `?ticket=` (`handleTogetherSocket`).
 - Acceptance from PER-64: online propagation p95 ≤ 2 s on staging; idle
   polling ≤ 2 requests per minute per device; the request log screen shows the
   difference.
@@ -84,6 +89,20 @@ socket client exists, and connection quality is then each phone's own internet.
 - Nothing changes on the wire. Confirm `TOGETHER_ENABLED` keeps the socket on
   only once slice 2 ships; until then the socket API is idle cost and can be
   flagged off per stage.
+
+## Status, 14 October 2026
+
+Slices 1 and 2 are implemented together on `claude/per-64-two-mode-together`.
+Slice 1 also removed the Kotlin hotspot-owner entry points and the LAN module's
+`togetherHotspotOwner` export; the invitation link rejects
+`transport=hotspot-owner`. The controller defaults to `nearby` when the module
+reports available and falls back to `lan` when a link names a transport the
+phone lacks. Slice 2's client requests one ticket per admission, refreshes on
+`sync_required`, reconnects with 1 s to 30 s backoff and polls every 45 s while
+the socket is open (5 s otherwise); a stage whose ticket route answers 503
+keeps the 5 s poll and retries the ticket with the same backoff without
+restarting the poll. Slice 3 is unchanged: staging and production keep
+`TOGETHER_ENABLED` on, so the socket is live for this client.
 
 ## Acceptance
 
