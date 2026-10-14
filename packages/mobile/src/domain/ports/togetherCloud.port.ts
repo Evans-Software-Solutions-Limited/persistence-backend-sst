@@ -185,6 +185,11 @@ export interface TogetherCloudApi {
   >;
   discard(id: string, key: string): CloudResult<{ retired: true }>;
   stopSharing?(id: string, key: string): CloudResult<{ stopped: true }>;
+  /** One-use ticket for the deployed sync-hint socket; the server answers 503 on a stage without one. */
+  realtimeTicket?(
+    id: string,
+    key: string,
+  ): CloudResult<{ ticket: string; endpoint: string; expiresAt: string }>;
   finish(
     id: string,
     key: string,

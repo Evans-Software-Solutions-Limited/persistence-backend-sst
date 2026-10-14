@@ -10,7 +10,7 @@ module.exports = function withTogetherLan(config) {
   ]);
   return withInfoPlist(config, (mod) => {
     mod.modResults.NSLocalNetworkUsageDescription ??=
-      "Find and connect to your Together training lobby on the same Wi-Fi or hotspot, even without internet.";
+      "Find and connect to nearby athletes’ Together training lobbies, even without internet.";
     mod.modResults.NSBonjourServices = [
       ...new Set([
         ...(mod.modResults.NSBonjourServices ?? []),

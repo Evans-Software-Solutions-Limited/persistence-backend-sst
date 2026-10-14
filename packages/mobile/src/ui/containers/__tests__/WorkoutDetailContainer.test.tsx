@@ -893,6 +893,22 @@ it("offers online partner discovery and explains local joining without a managem
   expect(mockRouterPush).toHaveBeenLastCalledWith(
     "/(app)/session?workoutId=w-1&togetherAudience=friends&togetherAccountId=user-1&togetherConnection=online",
   );
+  // Private can start online too; Open is nearby-only and drops the online choice.
+  fireEvent.press(r.getByTestId("together-start"));
+  fireEvent.press(r.getByText("Private"));
+  fireEvent.press(r.getByText("Online · internet required"));
+  fireEvent.press(r.getByText("Start the session"));
+  expect(mockRouterPush).toHaveBeenLastCalledWith(
+    "/(app)/session?workoutId=w-1&togetherAudience=invite-only&togetherAccountId=user-1&togetherConnection=online",
+  );
+  fireEvent.press(r.getByTestId("together-start"));
+  fireEvent.press(r.getByText("Online · internet required"));
+  fireEvent.press(r.getByText("Open nearby"));
+  expect(r.queryByText("Online · internet required")).toBeNull();
+  fireEvent.press(r.getByText("Start the session"));
+  expect(mockRouterPush).toHaveBeenLastCalledWith(
+    "/(app)/session?workoutId=w-1&togetherAudience=open&togetherAccountId=user-1",
+  );
   expect(r.queryByText("Add or manage training partners")).toBeNull();
   expect(storage.getActiveSession("user-1")).toBeNull();
 });

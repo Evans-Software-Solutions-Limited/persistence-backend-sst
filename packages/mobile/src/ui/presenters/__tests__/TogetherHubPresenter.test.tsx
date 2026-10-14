@@ -79,7 +79,7 @@ it("shows discovery status and failure guidance and safely handles optional acti
     );
   expect(
     r.getByText(
-      "No sessions nearby yet. Tap Join a session to search this Wi-Fi or hotspot, or ask your partner for an invite.",
+      "No sessions nearby yet. Tap Join a session to search nearby, or ask your partner for an invite.",
     ),
   ).toBeTruthy();
   expect(r.getByText("Discovery unavailable")).toBeTruthy();

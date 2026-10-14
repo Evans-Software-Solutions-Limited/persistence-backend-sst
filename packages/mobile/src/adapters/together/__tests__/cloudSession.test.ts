@@ -6,7 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
 import { withTogetherCloudWorkout } from "../../storage/withTogetherCloudWorkout";
 import { InMemoryStorageAdapter } from "../../storage/__tests__/in-memory-storage.adapter";
-import { TogetherCloudController } from "../cloudSession";
+import { TogetherCloudController, type CloudSocketLike } from "../cloudSession";
 import { promoteCloudDraft } from "../cloudDraft";
 import type {
   TogetherCloudApi,
@@ -2192,4 +2192,129 @@ describe("cloud authoritative personal checkpoint", () => {
       expect(api.finish).not.toHaveBeenCalled();
     },
   );
+
+  describe("online realtime socket (PER-64)", () => {
+    type Socket = CloudSocketLike & { url: string; close: jest.Mock };
+    let sockets: Socket[];
+    let ticket: jest.Mock;
+    const makeSocket = (url: string): CloudSocketLike => {
+      const socket: Socket = {
+        url,
+        onopen: null,
+        onmessage: null,
+        onclose: null,
+        onerror: null,
+        close: jest.fn(),
+      };
+      sockets.push(socket);
+      return socket;
+    };
+    const polls = () => jest.mocked(api.snapshot).mock.calls.length;
+    beforeEach(() => {
+      jest.useFakeTimers();
+      sockets = [];
+      ticket = jest.fn(async () =>
+        ok({
+          ticket: "tk",
+          endpoint: "wss://ws.example/stage",
+          expiresAt: "2026-10-14T00:01:00.000Z",
+        }),
+      );
+      (api as { realtimeTicket?: unknown }).realtimeTicket = ticket;
+      controller.dispose();
+      controller = new TogetherCloudController({
+        api,
+        db: adapter(db),
+        randomUUID,
+        socket: makeSocket,
+      });
+      controller.setAccount(userId);
+    });
+    afterEach(() => {
+      controller.dispose();
+      jest.useRealTimers();
+    });
+    it("opens one socket per admission, refreshes on sync_required and polls slowly while open", async () => {
+      await controller.hostWorkout(draft());
+      await jest.advanceTimersByTimeAsync(0);
+      expect(ticket).toHaveBeenCalledTimes(1);
+      expect(ticket).toHaveBeenCalledWith(server.sessionId, expect.any(String));
+      expect(sockets).toHaveLength(1);
+      expect(sockets[0].url).toBe("wss://ws.example/stage?ticket=tk");
+      sockets[0].onopen!();
+      const before = polls();
+      await jest.advanceTimersByTimeAsync(5000);
+      expect(polls()).toBe(before);
+      sockets[0].onmessage!({ data: '{"type":"sync_required"}' });
+      await jest.advanceTimersByTimeAsync(0);
+      expect(polls()).toBe(before + 1);
+      sockets[0].onmessage!({ data: "not json" });
+      sockets[0].onmessage!({ data: '{"type":"other"}' });
+      sockets[0].onmessage!({ data: 42 });
+      await jest.advanceTimersByTimeAsync(0);
+      expect(polls()).toBe(before + 1);
+      await jest.advanceTimersByTimeAsync(45_000);
+      expect(polls()).toBe(before + 2);
+      expect(ticket).toHaveBeenCalledTimes(1);
+      expect(sockets).toHaveLength(1);
+    });
+    it("returns to the short poll and reconnects with backoff when the socket drops", async () => {
+      await controller.hostWorkout(draft());
+      await jest.advanceTimersByTimeAsync(0);
+      sockets[0].onopen!();
+      const before = polls();
+      sockets[0].onclose!();
+      await jest.advanceTimersByTimeAsync(999);
+      expect(ticket).toHaveBeenCalledTimes(1);
+      await jest.advanceTimersByTimeAsync(1);
+      expect(ticket).toHaveBeenCalledTimes(2);
+      expect(sockets).toHaveLength(2);
+      await jest.advanceTimersByTimeAsync(4000);
+      expect(polls()).toBe(before + 1);
+      sockets[1].onerror!();
+      await jest.advanceTimersByTimeAsync(1999);
+      expect(ticket).toHaveBeenCalledTimes(2);
+      await jest.advanceTimersByTimeAsync(1);
+      expect(ticket).toHaveBeenCalledTimes(3);
+      sockets[2].onopen!();
+      sockets[2].onclose!();
+      await jest.advanceTimersByTimeAsync(1000);
+      expect(ticket).toHaveBeenCalledTimes(4);
+    });
+    it("closes the socket on cancel and never reconnects afterwards", async () => {
+      await controller.hostWorkout(draft());
+      await jest.advanceTimersByTimeAsync(0);
+      sockets[0].onopen!();
+      controller.cancel();
+      expect(sockets[0].close).toHaveBeenCalledTimes(1);
+      // Handlers are detached before close so a late close event cannot reconnect.
+      expect(sockets[0].onclose).toBeNull();
+      expect(sockets[0].onmessage).toBeNull();
+      await jest.advanceTimersByTimeAsync(60_000);
+      expect(ticket).toHaveBeenCalledTimes(1);
+      expect(sockets).toHaveLength(1);
+    });
+    it("keeps the short poll and retries the ticket with backoff when the stage has no socket", async () => {
+      ticket.mockImplementation(async () =>
+        fail({
+          kind: "api",
+          code: "server",
+          message: "unavailable",
+          togetherCode: "UNAVAILABLE",
+        }),
+      );
+      await controller.hostWorkout(draft());
+      await jest.advanceTimersByTimeAsync(0);
+      expect(ticket).toHaveBeenCalledTimes(1);
+      expect(sockets).toHaveLength(0);
+      const before = polls();
+      await jest.advanceTimersByTimeAsync(5000);
+      expect(polls()).toBe(before + 1);
+      expect(ticket).toHaveBeenCalledTimes(3);
+      controller.dispose();
+      await jest.advanceTimersByTimeAsync(60_000);
+      expect(ticket).toHaveBeenCalledTimes(3);
+      expect(polls()).toBe(before + 1);
+    });
+  });
 });

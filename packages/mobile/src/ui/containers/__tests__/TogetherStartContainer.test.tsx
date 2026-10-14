@@ -18,7 +18,7 @@ jest.mock("@/ui/hooks/useAdapters", () => ({
     storage: mockStorage,
     togetherLobby: {
       getSnapshot: () => ({ phase: mockPhase }),
-      transports: ["lan", "nearby", "hotspot-owner"],
+      transports: ["lan", "nearby"],
       selectTransport: (...a: any[]) => mockSelect(...a),
     },
     togetherCloud: {},
@@ -82,7 +82,7 @@ it("requires three deliberate steps before starting the selected workout", () =>
   guide(r);
   expect(mockStart).not.toHaveBeenCalled();
   fireEvent.press(r.getByText("Start Together session"));
-  expect(mockSelect).toHaveBeenCalledWith("lan");
+  expect(mockSelect).not.toHaveBeenCalled();
   expect(mockStart).toHaveBeenCalledWith(
     expect.objectContaining({ storage: mockStorage, userId: "u" }),
     { workout: mockWorkouts.mine.workouts[0] },
@@ -165,9 +165,10 @@ it("does not allow unpaid or signed-out starts", () => {
 it("allows deliberate connection selection and navigation back through the guide", () => {
   const r = renderWithTheme(<TogetherStartContainer />);
   guide(r);
-  fireEvent.press(r.getByText("Nearby phones"));
+  fireEvent.press(r.getByText("Nearby · no internet needed"));
   fireEvent.press(r.getByText("Start Together session"));
-  expect(mockSelect).toHaveBeenCalledWith("nearby");
+  // The controller owns the transport now; the guide never selects one.
+  expect(mockSelect).not.toHaveBeenCalled();
   fireEvent.press(r.getByText("Back"));
   expect(r.getByText("Who can join?")).toBeTruthy();
   fireEvent.press(r.getByText("Back"));
@@ -191,12 +192,38 @@ it("starts an online partner session only after choosing partners and the online
   });
   expect(mockSelect).not.toHaveBeenCalled();
 });
-it("selects an invite-only audience and Android host transport explicitly", () => {
+it("offers Online for a private audience and never a transport picker", () => {
   const r = renderWithTheme(<TogetherStartContainer />);
   fireEvent.press(r.getByLabelText("Choose Push"));
   fireEvent.press(r.getByText("Private"));
   fireEvent.press(r.getByText("Next · choose connection"));
-  fireEvent.press(r.getByText("This Android phone’s hotspot"));
+  expect(r.queryByText(/Wi-Fi|hotspot|Nearby phones/)).toBeNull();
+  fireEvent.press(r.getByText("Online · internet required"));
   fireEvent.press(r.getByText("Start Together session"));
-  expect(mockSelect).toHaveBeenCalledWith("hotspot-owner");
+  expect(mockSelect).not.toHaveBeenCalled();
+  expect(mockReplace).toHaveBeenCalledWith({
+    pathname: "/(app)/session",
+    params: {
+      togetherAccountId: "u",
+      togetherAudience: "invite-only",
+      togetherConnection: "online",
+    },
+  });
+});
+it("keeps an open audience nearby-only", () => {
+  const r = renderWithTheme(<TogetherStartContainer />);
+  fireEvent.press(r.getByLabelText("Choose Push"));
+  fireEvent.press(r.getByText("Open nearby"));
+  fireEvent.press(r.getByText("Next · choose connection"));
+  expect(r.queryByText("Online · internet required")).toBeNull();
+  expect(r.getByText("Nearby · no internet needed")).toBeTruthy();
+  fireEvent.press(r.getByText("Start Together session"));
+  expect(mockReplace).toHaveBeenCalledWith({
+    pathname: "/(app)/session",
+    params: {
+      togetherAccountId: "u",
+      togetherAudience: "open",
+      togetherConnection: "local",
+    },
+  });
 });

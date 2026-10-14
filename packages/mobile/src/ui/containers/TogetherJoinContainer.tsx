@@ -355,7 +355,7 @@ export function TogetherJoinContainer() {
                     setNotice("");
                   }}
                 >
-                  Local
+                  Nearby
                 </Btn>
                 {cloud && (
                   <Btn

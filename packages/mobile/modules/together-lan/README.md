@@ -38,11 +38,14 @@ that Network; older Android NSD may advertise the opaque service on other
 interfaces, but those interfaces cannot deliver accepted application connections.
 There is no cellular fallback or automatic local/cloud switch.
 
-Android devices acting as the hotspot owner may not expose that interface as a
-Wi-Fi Network; they currently fail with `wifi_unavailable`. Devices joined to a
-hotspot can use the Wi-Fi path. iOS hotspot-owner behavior, AP client isolation,
-IPv4/IPv6 interoperation and cross-platform service discovery require physical
-proof. Unsupported topology must remain unavailable, not silently switch routes.
+Since 14 October 2026 (PER-64) this module is not a user-facing choice: the app
+offers Nearby or Online only, and LAN is the silent fallback behind the Nearby
+button on a phone without the Nearby module. The explicit Android hotspot-owner
+mode was removed with that decision. A phone that owns a hotspot may not expose
+that interface as a Wi-Fi Network and then fails with `wifi_unavailable`; phones
+joined to a hotspot can use the Wi-Fi path. AP client isolation, IPv4/IPv6
+interoperation and cross-platform service discovery require physical proof.
+Unsupported topology must remain unavailable, not silently switch routes.
 
 ## Validation and release gate
 

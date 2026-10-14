@@ -12,10 +12,11 @@ import { useTogetherGate } from "@/ui/hooks/useTogetherGate";
 import { startSessionCommand } from "@/application/commands/session";
 import { TogetherAudienceOptions } from "@/ui/presenters/TogetherAudienceOptions";
 import { Btn, Card, HeaderBar } from "@/ui/components/foundation";
-import type {
-  TogetherLobbyAudience,
-  TogetherTransport,
-} from "@/domain/ports/togetherLobby.port";
+import type { TogetherLobbyAudience } from "@/domain/ports/togetherLobby.port";
+import {
+  NEARBY_CONNECTION_LABEL,
+  ONLINE_CONNECTION_LABEL,
+} from "@/ui/presenters/TogetherConnectionChoice";
 
 /** Guided start uses cached workouts and the same account-bound host intent as detail. */
 export function TogetherStartContainer() {
@@ -28,7 +29,6 @@ export function TogetherStartContainer() {
   const [selected, setSelected] = useState<string | null>(null);
   const [step, setStep] = useState(1);
   const [audience, setAudience] = useState<TogetherLobbyAudience>("open");
-  const [transport, setTransport] = useState<TogetherTransport>("lan");
   const [connection, setConnection] = useState<"local" | "online">("local");
   const [error, setError] = useState("");
   const locked = useRef(false);
@@ -71,7 +71,6 @@ export function TogetherStartContainer() {
         throw new Error("connection-busy");
       if (connection === "local") {
         if (!lobby) throw new Error("local-unavailable");
-        lobby.selectTransport?.(transport);
       } else if (!cloud) throw new Error("online-unavailable");
       const result = fresh
         ? { ok: true as const, value: fresh }
@@ -213,40 +212,24 @@ export function TogetherStartContainer() {
                 Connect and start
               </Text>
               <Text color="$text">{active?.name ?? chosen?.name}</Text>
-              {(lobby?.transports ?? ["lan"]).map((t) => (
-                <Btn
-                  key={t}
-                  variant={
-                    connection === "local" && transport === t
-                      ? "soft"
-                      : "outline"
-                  }
-                  onPress={() => {
-                    setConnection("local");
-                    setTransport(t);
-                  }}
-                >
-                  {t === "lan"
-                    ? "Same Wi-Fi or hotspot"
-                    : t === "nearby"
-                      ? "Nearby phones"
-                      : "This Android phone’s hotspot"}
-                </Btn>
-              ))}
-              {audience === "friends" && cloud && (
+              <Btn
+                variant={connection === "local" ? "soft" : "outline"}
+                onPress={() => setConnection("local")}
+              >
+                {NEARBY_CONNECTION_LABEL}
+              </Btn>
+              {audience !== "open" && cloud && (
                 <Btn
                   variant={connection === "online" ? "soft" : "outline"}
                   onPress={() => setConnection("online")}
                 >
-                  Online · internet required
+                  {ONLINE_CONNECTION_LABEL}
                 </Btn>
               )}
               <Text color="$text2">
                 {connection === "online"
                   ? "Partners join online or through your invitation link."
-                  : transport === "nearby"
-                    ? "Keep phones nearby and enable the requested local permissions."
-                    : "Connect every phone to the same Wi-Fi or manually enabled hotspot. Internet is not required with valid cached access."}
+                  : "Keep the phones close together and allow the requested local permissions. Internet is not required with valid cached access."}
               </Text>
               <Text color="$text2">
                 Start creates your live session. Others can then join from

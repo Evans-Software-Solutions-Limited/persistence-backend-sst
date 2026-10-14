@@ -71,6 +71,14 @@ const cases: [string, string, unknown[], string, string, unknown][] = [
   ],
   [
     "cloud",
+    "realtimeTicket",
+    [id, key],
+    `/together/sessions/${id}/realtime-ticket`,
+    "POST",
+    { ticket: "t".repeat(64), endpoint: "wss://ws.example", expiresAt: date },
+  ],
+  [
+    "cloud",
     "create",
     [key, { clientDraftId: other, plan, ownExecution: execution }],
     "/together/sessions",

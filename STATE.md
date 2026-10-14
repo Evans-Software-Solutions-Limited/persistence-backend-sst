@@ -1,5 +1,46 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-14 — Together: two connection modes and the online realtime client (PER-64, PR pending)
+
+Brad: "the connection is either offline or online, i don't want to handle a
+mix." Decision recorded on PER-60/PER-64; brief
+`specs/milestones/TRAIN-TOGETHER/TWO-MODE-BRIEF.md`; branch
+`claude/per-64-two-mode-together`. Before this the host chose a connection,
+then one of three local transports ("Same Wi-Fi or hotspot", "Nearby phones",
+Android-only "This Android phone's hotspot"), then an audience, and Online was
+offered only for Training partners; the guest had no picker and an iPhone
+scanning an Android hotspot-owner link threw `transport-unavailable`.
+
+Slice 1 collapses the UI to **Nearby · no internet needed** and **Online ·
+internet required** on Start, Lobby, Workout detail and Join. The transport
+picker is gone: `TogetherTransport` is `"lan" | "nearby"`, the controller
+defaults to `nearby` when the module reports available and silently selects
+`lan` when a link names a transport this phone lacks (the one line that
+depends on the Nearby iOS device proof is that default). Hotspot-owner is
+removed end to end (Kotlin functions, `togetherHotspotOwner`, link validation,
+copy, READMEs). Online is offered for Private and Training partners; Open stays
+Nearby-only because an open online lobby needs the public directory that is
+out of scope. `TogetherCloudContainer.initialHost` ("friends" | "private")
+replaces `initialHostFriends`, so a Private online host creates the cloud
+session and shows the invitation without publishing friends visibility. Status
+copy says "nearby"; error hints on the LAN fallback still say the same Wi-Fi is
+needed, because on that phone it is.
+
+Slice 2 wires the deployed sync-hint socket the app never used: `cloudSession`
+requests `POST /together/sessions/:id/realtime-ticket` once per admission,
+connects to the `endpoint` the ticket returns with `?ticket=`, calls
+`refresh()` on `{"type":"sync_required"}`, reconnects with 1 s → 30 s backoff
+and polls every 45 s while the socket is open, 5 s otherwise. A stage without
+a socket (ticket 503) keeps the 5 s poll; found and fixed in test: a failed
+ticket attempt must not restart the poll timer or the quick retries starve
+polling. Handlers are detached before `close()` so a late close event cannot
+reconnect. The socket factory is injectable; tests drive open/message/close.
+
+Verified: mobile typecheck, `expo lint` 0 warnings, prettier; focused Together
+suites 237 tests green; full mobile suite 631 suites / 8,513 tests, coverage
+96.53 / 92.43 / 96.65 / 97.84. Core and infra unchanged. Still Brad's: the two-phone Nearby run (iOS
+crash P0) before the Nearby default is final, and the staging online p95 check.
+
 ### 2026-10-13 — Cold-start bootstrap measured on device: 29 → 5 launch requests (PR #498)
 
 #495, #496 and #497 merged to main in order (squash; STATE.md conflicts kept

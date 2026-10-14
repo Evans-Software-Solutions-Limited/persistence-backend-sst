@@ -8,6 +8,10 @@ import { TogetherCloudContainer } from "./TogetherCloudContainer";
 import type { TogetherCloudPort } from "@/domain/ports/togetherCloud.port";
 import { TogetherPartnerPresenter } from "@/ui/presenters/TogetherPartnerPresenter";
 import { TogetherInvitePresenter } from "@/ui/presenters/TogetherInvitePresenter";
+import {
+  NEARBY_CONNECTION_LABEL,
+  ONLINE_CONNECTION_LABEL,
+} from "@/ui/presenters/TogetherConnectionChoice";
 import { Alert, AppState, Share, Platform } from "react-native";
 import { TogetherSharingPresenter } from "@/ui/presenters/TogetherSharingPresenter";
 import type { TogetherPreviousRow } from "@/domain/ports/togetherShared.port";
@@ -123,7 +127,10 @@ export function TogetherLobbyContainer({
   const [notice, setNotice] = useState("");
   const [viewing, setViewing] = useState<string | null>(null);
   const [remote, setRemote] = useState(false);
-  const [hostFriends, setHostFriends] = useState(false);
+  /** Set only by an online Start; a Browse-online entry leaves it null. */
+  const [hostOnline, setHostOnline] = useState<"friends" | "private" | null>(
+    null,
+  );
   const [friendsSelected, setFriendsSelected] = useState(false);
   const [connection, setConnection] = useState<"local" | "online">("local");
   const [scanning, setScanning] = useState(false);
@@ -180,7 +187,7 @@ export function TogetherLobbyContainer({
     setAudience("invite-only");
     setViewing(null);
     setRemote(false);
-    setHostFriends(false);
+    setHostOnline(null);
     setFriendsSelected(false);
     setConnection("local");
     browsingIntent.current = false;
@@ -344,14 +351,14 @@ export function TogetherLobbyContainer({
       onConsumeHostIntent?.();
       return;
     }
-    if (
-      initialHostAudience === "friends" &&
-      initialHostConnection === "online"
-    ) {
+    // Open is nearby-only; Private and Training partners can start online.
+    if (initialHostAudience !== "open" && initialHostConnection === "online") {
       consumedHostIntent.current = true;
       onConsumeHostIntent?.();
       if (cloud && getWorkout && !getWorkout()?.together) {
-        setHostFriends(true);
+        setHostOnline(
+          initialHostAudience === "friends" ? "friends" : "private",
+        );
         setRemote(true);
       }
       return;
@@ -449,13 +456,13 @@ export function TogetherLobbyContainer({
     return (
       <TogetherCloudContainer
         cloud={cloud}
-        initialHostFriends={hostFriends}
+        initialHost={hostOnline ?? undefined}
         accountId={accountId}
         workoutName={workoutName}
         getWorkout={getWorkout}
         onLocal={() => {
           setRemote(false);
-          setHostFriends(false);
+          setHostOnline(null);
           setFriendsSelected(false);
         }}
         onRestorePersonal={onRestorePersonal}
@@ -816,37 +823,24 @@ export function TogetherLobbyContainer({
                     <Text color="$text2" fontFamily="$body">
                       Connection
                     </Text>
-                    {(lobby.transports ?? ["lan"]).map((transport) => (
-                      <Btn
-                        key={transport}
-                        full
-                        variant={
-                          connection === "local" &&
-                          (snapshot.transport ?? "lan") === transport
-                            ? "soft"
-                            : "outline"
-                        }
-                        onPress={() => {
-                          setConnection("local");
-                          invoke(async () => lobby.selectTransport!(transport));
-                        }}
-                      >
-                        {transport === "nearby"
-                          ? "Nearby phones"
-                          : transport === "hotspot-owner"
-                            ? "This Android phone’s hotspot"
-                            : "Same Wi-Fi or hotspot"}
-                      </Btn>
-                    ))}
-                    {friendsSelected && cloud && getWorkout && (
-                      <Btn
-                        full
-                        variant={connection === "online" ? "soft" : "outline"}
-                        onPress={() => setConnection("online")}
-                      >
-                        Online · internet required
-                      </Btn>
-                    )}
+                    <Btn
+                      full
+                      variant={connection === "local" ? "soft" : "outline"}
+                      onPress={() => setConnection("local")}
+                    >
+                      {NEARBY_CONNECTION_LABEL}
+                    </Btn>
+                    {(friendsSelected || audience !== "open") &&
+                      cloud &&
+                      getWorkout && (
+                        <Btn
+                          full
+                          variant={connection === "online" ? "soft" : "outline"}
+                          onPress={() => setConnection("online")}
+                        >
+                          {ONLINE_CONNECTION_LABEL}
+                        </Btn>
+                      )}
                     {screen === "join" && cloud && getWorkout && (
                       <Btn
                         full
@@ -856,7 +850,7 @@ export function TogetherLobbyContainer({
                             const scope = generation.current;
                             await lobby.cancel();
                             if (scope !== generation.current) return;
-                            setHostFriends(false);
+                            setHostOnline(null);
                             setRemote(true);
                           })
                         }
@@ -866,10 +860,12 @@ export function TogetherLobbyContainer({
                     )}
                     <Text color="$text2" fontSize={12}>
                       {connection === "online"
-                        ? "Partners can discover this session online."
+                        ? friendsSelected
+                          ? "Training partners can find this session online, or join through your invitation."
+                          : "Partners join online through your invitation link."
                         : friendsSelected
                           ? "Only verified training partners can join. Share the code or QR; internet is not required with valid offline access."
-                          : "Nearby or directly connected phones only. Internet is not required once every athlete has valid offline access."}
+                          : "Only phones nearby can join. Internet is not required once every athlete has valid offline access."}
                     </Text>
                   </View>
                 )
@@ -930,7 +926,7 @@ export function TogetherLobbyContainer({
               }
               onAudienceChange={(value) => {
                 setFriendsSelected(false);
-                setConnection("local");
+                if (value === "open") setConnection("local");
                 setAudience(value);
               }}
               onBrowse={() => {
@@ -949,7 +945,10 @@ export function TogetherLobbyContainer({
               }}
               onCodeChange={setCode}
               onHost={() => {
-                if (!friendsSelected || connection === "local") {
+                if (
+                  connection === "local" ||
+                  (!friendsSelected && audience === "open")
+                ) {
                   void startLocalWorkout(
                     friendsSelected ? "friends" : audience,
                   );
@@ -961,7 +960,7 @@ export function TogetherLobbyContainer({
                     throw new Error("workout-changed");
                   await lobby.cancel();
                   if (scope !== generation.current) return;
-                  setHostFriends(true);
+                  setHostOnline(friendsSelected ? "friends" : "private");
                   setRemote(true);
                 });
               }}

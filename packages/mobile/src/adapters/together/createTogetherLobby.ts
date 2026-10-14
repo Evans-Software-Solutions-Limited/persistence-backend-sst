@@ -15,7 +15,7 @@ export function createTogetherLobby(
     (
       require("./security/cryptoBackend") as typeof import("./security/cryptoBackend")
     ).installNativeTogetherCrypto();
-    const { togetherLan, togetherHotspotOwner } =
+    const { togetherLan } =
       require("../../../modules/together-lan") as typeof import("../../../modules/together-lan");
     const { togetherNearby } =
       require("../../../modules/together-nearby") as typeof import("../../../modules/together-nearby");
@@ -36,7 +36,6 @@ export function createTogetherLobby(
         provisioning,
         native: togetherLan,
         nearby: togetherNearby,
-        hotspotOwner: togetherHotspotOwner,
         database: db,
         randomBytes: getRandomBytes,
         randomUUID,

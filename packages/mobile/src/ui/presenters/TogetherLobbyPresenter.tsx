@@ -50,9 +50,9 @@ const PHASE_COPY: Record<TogetherLobbySnapshot["phase"], string> = {
   idle: "",
   preparing: "Preparing your secure connection…",
   selected: "Host identity verified. Choose Join to continue.",
-  hosting: "Waiting for athletes on your Wi-Fi or hotspot.",
-  browsing: "Looking for verified open lobbies on this Wi-Fi or hotspot…",
-  searching: "Looking for this host on your Wi-Fi or hotspot…",
+  hosting: "Waiting for nearby athletes.",
+  browsing: "Looking for verified nearby open lobbies…",
+  searching: "Looking for this host nearby…",
   connecting: "Verifying the host connection…",
   "pending-approval": "Waiting for the host to approve your request.",
   joined: "Connected to the lobby. Your workout remains personal.",
@@ -65,17 +65,14 @@ export function togetherErrorCopy(
   code?: string,
   transport?: TogetherLobbySnapshot["transport"],
 ): string {
-  const nearby = transport === "nearby",
-    owner = transport === "hotspot-owner";
+  // LAN is the silent fallback on a phone without the Nearby module; its
+  // hints must still say what that phone actually needs (the same Wi-Fi).
+  const nearby = transport !== "lan";
   if (!code) return "";
   if (code === "removed-from-session")
     return "You were removed from this session. Your own workout remains on this device for personal logging and review.";
   if (code === "discovery-expired")
-    return nearby
-      ? "This nearby lobby listing has expired. Search nearby again or ask the host for an invitation. Internet is not required."
-      : owner
-        ? "This lobby listing has expired. Search this Android phone’s hotspot again or ask the host for an invitation. Internet is not required."
-        : "This lobby listing has expired. Search this network again or ask the host for an invitation. Internet is not required.";
+    return "This nearby lobby listing has expired. Search nearby again or ask the host for an invitation. Internet is not required.";
   if (code === "friendship-required")
     return "Only accepted training partners can join this session. Connect online to refresh your friendship, then try again.";
   if (code === "host-unavailable")
@@ -101,18 +98,13 @@ export function togetherErrorCopy(
   if (
     /permission|wifi|lan_unavailable|discovery|advertising|listener/i.test(code)
   )
-    if (nearby)
-      return "Check Bluetooth and nearby-device permissions on both phones, and keep them within reach. Internet is not required.";
-    else if (owner)
-      return "Check local-network permissions, turn on this Android phone’s hotspot and connect the other phones to it. Hotspot discovery may be unavailable on this device; internet is not required.";
-    else
-      return "Check local-network permissions and that both phones are on the same reachable Wi-Fi or hotspot. Internet is not required.";
+    return nearby
+      ? "Check Bluetooth and nearby-device permissions on both phones, and keep them within reach. Internet is not required."
+      : "Nearby connection is not available on this phone, so both phones need the same Wi-Fi. Check local-network permissions. Internet is not required.";
   if (/timeout|unreachable/i.test(code))
     return nearby
       ? "The host could not be reached. Keep both phones nearby with Bluetooth and nearby-device permissions enabled."
-      : owner
-        ? "The host could not be reached. Check this Android phone’s hotspot is still on and the other phone is connected to it."
-        : "The host could not be reached. Check the host is still here and both phones share the same Wi-Fi or hotspot.";
+      : "The host could not be reached. Nearby connection is not available on this phone, so check both phones share the same Wi-Fi.";
   if (/invalid|proof|signature|invite/i.test(code))
     return "This invitation could not be verified. Ask the host for a new code or QR.";
   if (/declined/i.test(code))
@@ -145,31 +137,8 @@ export function togetherWorkoutCopy(
 export function TogetherLobbyPresenter(p: TogetherLobbyPresenterProps) {
   const s = p.snapshot;
   const idle = s.phase === "idle" && !p.workoutStatus;
-  const nearby = s.transport === "nearby",
-    owner = s.transport === "hotspot-owner";
-  const place = nearby
-    ? "nearby"
-    : owner
-      ? "on this Android phone’s hotspot"
-      : "on this Wi-Fi or hotspot";
   const error = togetherErrorCopy(s.error, s.transport);
-  const phaseCopy = nearby
-    ? {
-        ...PHASE_COPY,
-        hosting: "Waiting for nearby athletes.",
-        browsing: "Looking for verified nearby open lobbies…",
-        searching: "Looking for this host nearby…",
-      }
-    : owner
-      ? {
-          ...PHASE_COPY,
-          hosting:
-            "Waiting for athletes connected to this Android phone’s hotspot.",
-          browsing:
-            "Looking for verified open lobbies on this Android phone’s hotspot…",
-          searching: "Looking for this host on this Android phone’s hotspot…",
-        }
-      : PHASE_COPY;
+  const phaseCopy = PHASE_COPY;
   return (
     <View gap={16} testID="together-lobby-content">
       {p.workoutStatus ? (
@@ -243,7 +212,6 @@ export function TogetherLobbyPresenter(p: TogetherLobbyPresenterProps) {
             trainingPartners={p.trainingPartners}
             audience={p.audience}
             onAudienceChange={p.onAudienceChange}
-            transport={s.transport}
           />
           <Copy>
             Local Training partners sessions require verified friendship. In
@@ -252,12 +220,6 @@ export function TogetherLobbyPresenter(p: TogetherLobbyPresenterProps) {
             permission to log for someone.
           </Copy>
 
-          {owner && (
-            <Copy>
-              Turn on your Android hotspot and connect the other phones to it.
-              Discovery depends on device support.
-            </Copy>
-          )}
           {p.connectionOptions}
           <Btn full onPress={p.onHost}>
             Start the session
@@ -271,11 +233,8 @@ export function TogetherLobbyPresenter(p: TogetherLobbyPresenterProps) {
       {idle && p.screen === "join" && (
         <>
           <Copy>
-            {nearby
-              ? "Enter the invitation they shared, or scan their QR. Keep both phones nearby."
-              : owner
-                ? "Enter the invitation they shared, or scan their QR. Connect the other phones to this Android phone’s hotspot."
-                : "Enter the invitation they shared, or scan their QR. Use the same Wi-Fi or hotspot."}
+            Enter the invitation they shared, or scan their QR. Keep both phones
+            nearby.
           </Copy>
           <Card>
             <View gap={12}>
@@ -313,9 +272,7 @@ export function TogetherLobbyPresenter(p: TogetherLobbyPresenterProps) {
             </View>
           </Card>
           <Btn full variant="outline" onPress={p.onBrowse}>
-            {nearby
-              ? "Find an open lobby nearby"
-              : "Find an open lobby on this network"}
+            Find an open lobby nearby
           </Btn>
           {p.scanner}
         </>
@@ -323,11 +280,8 @@ export function TogetherLobbyPresenter(p: TogetherLobbyPresenterProps) {
       {s.phase === "browsing" && (
         <View gap={12}>
           <Copy>
-            {nearby
-              ? "Only reachable nearby open lobbies appear here. Review a lobby, then choose Join separately."
-              : owner
-                ? "Only open lobbies reachable through this Android phone’s hotspot appear here. Review a lobby, then choose Join separately."
-                : "Only open lobbies on this reachable Wi-Fi or hotspot appear here. Review a lobby, then choose Join separately."}
+            Only reachable nearby open lobbies appear here. Review a lobby, then
+            choose Join separately.
           </Copy>
           {(s.discovered ?? []).length === 0 && (
             <Card>
@@ -372,7 +326,7 @@ export function TogetherLobbyPresenter(p: TogetherLobbyPresenterProps) {
             ? "Training partners only · share the code or QR"
             : s.audience === "invite-only"
               ? "Private · code or QR only"
-              : `Open · discoverable ${place}`}
+              : "Open · discoverable nearby"}
         </Copy>
       )}
       {s.selection && (

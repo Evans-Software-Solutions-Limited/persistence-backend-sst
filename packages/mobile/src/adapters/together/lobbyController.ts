@@ -48,7 +48,6 @@ export interface TogetherLobbyControllerOptions {
   provisioning: TogetherProvisioningPort;
   native: TogetherLanNative | null;
   nearby?: TogetherLanNative | null;
-  hotspotOwner?: TogetherLanNative | null;
   /** Composition supplies an environment-specific database; rows are account-scoped. */
   database: TogetherJournalDatabase;
   randomBytes(length: number): Uint8Array;
@@ -68,26 +67,26 @@ interface Resources {
 /** Foreground, explicit-action coordinator. Discovery routes bytes only after a signed pin. */
 export class TogetherLobbyController implements TogetherLobbyPort {
   readonly workout: TogetherWorkoutCheckpoint;
-  private transport: TogetherTransport = "lan";
+  /** Nearby when the module is present (PER-64 two-mode decision); LAN otherwise. */
+  private transport: TogetherTransport;
   get transports(): readonly TogetherTransport[] {
-    return [
-      "lan",
-      ...(this.options.nearby ? ["nearby" as const] : []),
-      ...(this.options.hotspotOwner ? ["hotspot-owner" as const] : []),
-    ];
+    return ["lan", ...(this.options.nearby ? ["nearby" as const] : [])];
   }
+  /**
+   * A scanned link may name a transport this phone lacks (a build without the
+   * Nearby module). LAN is the silent fallback rather than a dead end; only a
+   * change outside idle is refused.
+   */
   selectTransport(transport: TogetherTransport) {
-    if (this.snapshot.phase !== "idle" || !this.transports.includes(transport))
+    if (this.snapshot.phase !== "idle")
       throw new Error("transport-unavailable");
-    this.transport = transport;
-    this.publish({ transport });
+    this.transport = this.transports.includes(transport) ? transport : "lan";
+    this.publish({ transport: this.transport });
   }
   private native() {
     return this.transport === "nearby"
       ? (this.options.nearby ?? null)
-      : this.transport === "hotspot-owner"
-        ? (this.options.hotspotOwner ?? null)
-        : this.options.native;
+      : this.options.native;
   }
   readonly shared: TogetherSharedPort = {
     getSnapshot: () => this.resources?.shared?.getSnapshot() ?? EMPTY_SHARED,
@@ -203,8 +202,10 @@ export class TogetherLobbyController implements TogetherLobbyPort {
           }
         : undefined,
     );
+    this.transport = options.nearby ? "nearby" : "lan";
     this.snapshot = {
       phase: options.enabled ? "idle" : "disabled",
+      transport: this.transport,
       members: [],
       pending: [],
     };

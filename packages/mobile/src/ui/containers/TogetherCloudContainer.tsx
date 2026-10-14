@@ -148,7 +148,8 @@ export function cloudSharedView(
 }
 export function TogetherCloudContainer(p: {
   cloud: TogetherCloudPort;
-  initialHostFriends?: boolean;
+  /** Host online straight away: "friends" also publishes visibility to training partners. */
+  initialHost?: "friends" | "private";
   accountId: string;
   workoutName: string;
   getWorkout: () => WorkoutSession | null;
@@ -318,7 +319,7 @@ export function TogetherCloudContainer(p: {
     return () => listener.remove();
   }, []);
   useEffect(() => {
-    if (!p.initialHostFriends || initialHostConsumed.current) return;
+    if (!p.initialHost || initialHostConsumed.current) return;
     initialHostConsumed.current = true;
     setVisible(true);
     // A recovered Together checkpoint keeps its existing authority.
@@ -337,23 +338,24 @@ export function TogetherCloudContainer(p: {
         );
         return;
       }
-      try {
-        await p.cloud.visibility(
-          "friends",
-          new Date(Date.now() + 15 * 60_000).toISOString(),
-        );
-      } catch {
-        if (scope === generation.current)
-          setNotice(
-            "Your session was created, but visibility to training partners is not confirmed. Retry or use Show to training partners. Your workout is safe.",
+      if (p.initialHost === "friends")
+        try {
+          await p.cloud.visibility(
+            "friends",
+            new Date(Date.now() + 15 * 60_000).toISOString(),
           );
-      }
+        } catch {
+          if (scope === generation.current)
+            setNotice(
+              "Your session was created, but visibility to training partners is not confirmed. Retry or use Show to training partners. Your workout is safe.",
+            );
+        }
       if (scope === generation.current && isCurrent())
         await prepareInvitation();
     });
     // Consume an explicit account-bound detail-page action once.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [p.initialHostFriends]);
+  }, [p.initialHost]);
   const current = p.getWorkout();
   const resumeId =
     current?.userId === p.accountId && current.together?.transport === "cloud"

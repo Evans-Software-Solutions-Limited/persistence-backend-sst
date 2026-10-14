@@ -1,4 +1,4 @@
-# Together Nearby and explicit Android hotspot-owner source
+# Together Nearby source
 
 This is a transport for the existing signed-discovery, paid-credential and
 end-to-end authenticated Together protocol. Google endpoint names, connection
@@ -42,28 +42,6 @@ close after 30 seconds. The JS framing adapter reconstructs existing 65,536 byte
 frames in ordered <=4,096 character chunks, with a 10 second absolute assembly
 deadline. It rejects extra fields, invalid order, oversized frames and unsupported
 payload types. Framing/SDK send success is never a durable receipt.
-
-## Explicit Android hotspot-owner LAN
-
-The existing LAN module additionally exposes `startHotspotHost` and
-`startHotspotDiscovery`, wrapped by `togetherHotspotOwner`. This is opt-in for a
-hotspot the user has already enabled; it does not create/control a hotspot.
-Unlike normal Wi-Fi mode, it does not require a ConnectivityManager Wi-Fi Network.
-NSD supplies opaque local endpoint observations; arbitrary IP/port input is still
-impossible. A destination must be private/link-local and directly on the prefix
-of an up, non-loopback, non-point-to-point interface. Outbound sockets bind to
-that matching local address; their actual local/remote route is rechecked after
-connect. Inbound sockets use their actual local address and interface prefix for
-the same check. No interface name or private address alone establishes trust.
-This validates a directly connected local route, not the OS's hotspot role.
-Known cellular, VPN and other non-Wi-Fi Network addresses are excluded even when
-private. Normal LAN mode retains its existing strict Wi-Fi Network binding and never
-silently falls back to owner mode.
-
-The public LocalOnlyHotspot API supplies network credentials and reservation
-lifetime, not a usable ConnectivityManager Network. We deliberately do not create
-a hotspot and claim that this establishes the transport. OEM NSD discovery and
-routing on a manually enabled AP remain device checks.
 
 ## Evidence and remaining native gate
 
