@@ -10,13 +10,9 @@ const source = readFileSync(
   ),
   "utf8",
 );
-it("gates every LAN/hotspot entry point before native networking", () => {
-  for (const method of [
-    "startHost",
-    "startDiscovery",
-    "startHotspotHost",
-    "startHotspotDiscovery",
-  ]) {
+it("gates every LAN entry point before native networking and exposes no hotspot-owner mode", () => {
+  expect(source).not.toMatch(/Hotspot|hotspotOwner/);
+  for (const method of ["startHost", "startDiscovery"]) {
     expect(source).toMatch(
       new RegExp(`AsyncFunction\\("${method}"\\)[^\\n]*-> start\\(promise\\)`),
     );

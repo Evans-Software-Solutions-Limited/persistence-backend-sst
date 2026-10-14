@@ -83,8 +83,8 @@ export function TogetherHubPresenter(p: {
             <>
               {!p.sessions?.length && (
                 <Text color="$text2" fontFamily="$body" fontSize={13}>
-                  No sessions nearby yet. Tap Join a session to search this
-                  Wi-Fi or hotspot, or ask your partner for an invite.
+                  No sessions nearby yet. Tap Join a session to search nearby,
+                  or ask your partner for an invite.
                 </Text>
               )}
               {p.sessions?.map((session) => (

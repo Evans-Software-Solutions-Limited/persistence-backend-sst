@@ -184,7 +184,7 @@ export function WorkoutDetailContainer() {
       setTogetherOpen(false);
       router.push(
         (audience
-          ? `/(app)/session?workoutId=${encodeURIComponent(id)}&togetherAudience=${audience}&togetherAccountId=${encodeURIComponent(userId ?? "")}${audience === "friends" && togetherConnection === "online" ? "&togetherConnection=online" : ""}`
+          ? `/(app)/session?workoutId=${encodeURIComponent(id)}&togetherAudience=${audience}&togetherAccountId=${encodeURIComponent(userId ?? "")}${audience !== "open" && togetherConnection === "online" ? "&togetherConnection=online" : ""}`
           : `/(app)/session?workoutId=${id}`) as never,
       );
     },
@@ -298,9 +298,7 @@ export function WorkoutDetailContainer() {
                 togetherAudience === "friends"
                   ? "training partners"
                   : togetherAudience === "open"
-                    ? togetherLobby.getSnapshot().transport === "nearby"
-                      ? "open nearby"
-                      : "open on this network"
+                    ? "open nearby"
                     : "private"
               }
               onStart={() => setTogetherOpen(true)}
@@ -330,8 +328,7 @@ export function WorkoutDetailContainer() {
           <TogetherConnectionChoice
             value={togetherConnection}
             onChange={setTogetherConnection}
-            onlineAvailable={togetherAudience === "friends" && !!togetherCloud}
-            transport={togetherLobby?.getSnapshot().transport}
+            onlineAvailable={togetherAudience !== "open" && !!togetherCloud}
           />
         }
         visible={togetherOpen && togetherGate.allowed}
@@ -342,9 +339,9 @@ export function WorkoutDetailContainer() {
         audience={togetherAudience}
         onAudienceChange={(next) => {
           setTogetherAudience(next);
-          setTogetherConnection("local");
+          // Open is nearby-only; Private and Training partners keep the chosen connection.
+          if (next === "open") setTogetherConnection("local");
         }}
-        transport={togetherLobby?.getSnapshot().transport}
         activeWorkoutName={
           userId ? storage.getActiveSession(userId)?.name : undefined
         }

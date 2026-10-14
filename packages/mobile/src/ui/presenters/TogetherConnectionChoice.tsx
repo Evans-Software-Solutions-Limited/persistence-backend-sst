@@ -1,20 +1,19 @@
 import { Text, View } from "@tamagui/core";
 import { Card } from "@/ui/components/foundation/Card";
-import type { TogetherTransport } from "@/domain/ports/togetherLobby.port";
 
+export const NEARBY_CONNECTION_LABEL = "Nearby · no internet needed";
+export const ONLINE_CONNECTION_LABEL = "Online · internet required";
+
+/** Two modes only (PER-64, 14 Oct 2026): Nearby or Online. No same-Wi-Fi or hotspot choice. */
 export function TogetherConnectionChoice({
   value,
   onChange,
   onlineAvailable,
-  transport,
 }: {
   value: "local" | "online";
   onChange(value: "local" | "online"): void;
   onlineAvailable: boolean;
-  transport?: TogetherTransport;
 }) {
-  const localLabel =
-    transport === "nearby" ? "Nearby phones" : "Same Wi-Fi or hotspot";
   const online = onlineAvailable && value === "online";
   return (
     <View gap={8}>
@@ -29,8 +28,8 @@ export function TogetherConnectionChoice({
         >
           {(
             [
-              ["local", localLabel],
-              ["online", "Online · internet required"],
+              ["local", NEARBY_CONNECTION_LABEL],
+              ["online", ONLINE_CONNECTION_LABEL],
             ] as const
           ).map(([option, label]) => {
             const selected = value === option;
@@ -75,15 +74,13 @@ export function TogetherConnectionChoice({
         </View>
       ) : (
         <Text fontFamily="$body" fontSize={13} color="$text2">
-          {localLabel}
+          {NEARBY_CONNECTION_LABEL}
         </Text>
       )}
       <Text fontFamily="$body" fontSize={12} color="$text3">
         {online
-          ? "Your training partners can find this session online."
-          : transport === "nearby"
-            ? "Keep the phones nearby, then start the session. No internet needed with valid offline access."
-            : "Connect both phones to the same Wi-Fi or hotspot, then start the session. No internet needed with valid offline access."}
+          ? "Partners join online through your invitation, or find it as training partners."
+          : "Keep the phones close together, then start the session. No internet needed with valid offline access."}
       </Text>
     </View>
   );

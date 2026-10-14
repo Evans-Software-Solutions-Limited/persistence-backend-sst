@@ -60,25 +60,23 @@ it.each([
   "persistencemobile://together/join?connection=bad&invitation=a",
   "persistencemobile://together/join?connection=local&invitation=",
   "persistencemobile://together/join?connection=local&invitation=a&transport=bad",
+  "persistencemobile://together/join?connection=local&invitation=a&transport=hotspot-owner",
   `persistencemobile://together/join?connection=local&invitation=${"a".repeat(6001)}`,
 ])("rejects malformed or untrusted invitation %s", (value) =>
   expect(() => readTogetherInvitation(value)).toThrow(),
 );
-it.each(["nearby", "hotspot-owner"] as const)(
-  "retains %s selection",
-  (transport) => {
-    const value = {
-      connection: "local" as const,
-      invitation: "signed",
-      transport,
-    };
-    expect(
-      readTogetherInvitation(
-        createTogetherInvitationLink("persistencemobile", value),
-      ),
-    ).toEqual(value);
-  },
-);
+it.each(["nearby", "lan"] as const)("retains %s selection", (transport) => {
+  const value = {
+    connection: "local" as const,
+    invitation: "signed",
+    transport,
+  };
+  expect(
+    readTogetherInvitation(
+      createTogetherInvitationLink("persistencemobile", value),
+    ),
+  ).toEqual(value);
+});
 it("rejects invalid outgoing authority", () => {
   expect(() =>
     createTogetherInvitationLink("https", {

@@ -1,31 +1,20 @@
 import { Text, View, useTheme } from "@tamagui/core";
-import type {
-  TogetherLobbyAudience,
-  TogetherLobbySnapshot,
-} from "@/domain/ports/togetherLobby.port";
+import type { TogetherLobbyAudience } from "@/domain/ports/togetherLobby.port";
 import { Card } from "@/ui/components/foundation/Card";
 import { IconLock, IconUsers } from "@/ui/components/icons";
 
-/** Claude v2 VisRow geometry, with the approved bounded local audiences. */
+/** Claude v2 VisRow geometry, with the approved bounded local audiences. Open is nearby-only. */
 export function TogetherAudienceOptions({
   audience,
   onAudienceChange,
-  transport,
   trainingPartners,
 }: {
   trainingPartners?: { selected: boolean; onSelect(): void };
   audience: TogetherLobbyAudience;
   onAudienceChange(value: TogetherLobbyAudience): void;
-  transport?: TogetherLobbySnapshot["transport"];
 }) {
   // Both app themes define text3 in ui/theme/themes.ts.
   const theme = useTheme();
-  const nearby = transport === "nearby";
-  const place = nearby
-    ? "nearby"
-    : transport === "hotspot-owner"
-      ? "on this Android phone’s hotspot"
-      : "on this Wi-Fi or hotspot";
   return (
     <View
       gap={9}
@@ -45,12 +34,7 @@ export function TogetherAudienceOptions({
                 ] as const,
               ]
             : []),
-          [
-            "open",
-            nearby ? "Open nearby" : "Open on this network",
-            `Athletes ${place} can find it`,
-            IconUsers,
-          ],
+          ["open", "Open nearby", "Athletes nearby can find it", IconUsers],
         ] as const
       ).map(([value, title, detail, Icon]) => {
         const selected =

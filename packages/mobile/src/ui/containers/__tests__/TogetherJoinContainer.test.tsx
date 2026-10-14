@@ -387,7 +387,7 @@ it("pastes an online token from a reachable manual entry without reinterpreting 
       undefined,
     ),
   );
-  fireEvent.press(r.getByText("Local"));
+  fireEvent.press(r.getByText("Nearby"));
   expect(r.UNSAFE_getByType(TogetherLobbyPresenter)).toBeTruthy();
 });
 it("contains an unavailable adapter and does not invoke stale synchronous callbacks", async () => {

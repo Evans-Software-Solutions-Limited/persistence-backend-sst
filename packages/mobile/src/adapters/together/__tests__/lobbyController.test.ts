@@ -1660,35 +1660,32 @@ describe("reviewed lobby coordinator, real cryptography and SQLite, simulated na
     ).toHaveLength(1);
     expect(host.controller.getSnapshot().phase).toBe("idle");
   });
-  it.each(["lan", "nearby", "hotspot-owner"] as const)(
-    "selects only installed %s transport while idle",
+  it.each(["lan", "nearby"] as const)(
+    "defaults to Nearby when installed, selects %s while idle and refuses a change once started",
     async (transport) => {
-      const nearby = new Native(),
-        hotspotOwner = new Native();
-      const value = setup(1, { nearby, hotspotOwner });
-      expect(value.controller.transports).toEqual([
-        "lan",
-        "nearby",
-        "hotspot-owner",
-      ]);
+      const nearby = new Native();
+      const value = setup(1, { nearby });
+      expect(value.controller.transports).toEqual(["lan", "nearby"]);
+      expect(value.controller.getSnapshot().transport).toBe("nearby");
       value.controller.selectTransport(transport);
+      expect(value.controller.getSnapshot().transport).toBe(transport);
       await value.controller.host("A");
       expect(
-        (transport === "lan"
-          ? value.native
-          : transport === "nearby"
-            ? nearby
-            : hotspotOwner
-        ).startHost,
+        (transport === "lan" ? value.native : nearby).startHost,
       ).toHaveBeenCalled();
       expect(() => value.controller.selectTransport("lan")).toThrow(
         "transport-unavailable",
       );
-      const minimal = setup(2);
-      expect(minimal.controller.transports).toEqual(["lan"]);
-      expect(() => minimal.controller.selectTransport("nearby")).toThrow();
     },
   );
+  it("falls back to LAN silently on a phone without the Nearby module", () => {
+    const minimal = setup(2);
+    expect(minimal.controller.transports).toEqual(["lan"]);
+    expect(minimal.controller.getSnapshot().transport).toBe("lan");
+    // A scanned link naming Nearby must not dead-end this phone.
+    expect(() => minimal.controller.selectTransport("nearby")).not.toThrow();
+    expect(minimal.controller.getSnapshot().transport).toBe("lan");
+  });
   it.each(["finish_all", "save_own", "leave"] as const)(
     "signed %s immediately makes own logging local-only",
     async (mode) => {

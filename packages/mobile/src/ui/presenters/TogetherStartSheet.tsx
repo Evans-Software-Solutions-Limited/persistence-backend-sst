@@ -2,17 +2,13 @@ import type { ReactNode } from "react";
 import { Text, View } from "@tamagui/core";
 import { BottomSheet, Btn } from "@/ui/components/foundation";
 import { TogetherAudienceOptions } from "./TogetherAudienceOptions";
-import type {
-  TogetherLobbyAudience,
-  TogetherTransport,
-} from "@/domain/ports/togetherLobby.port";
+import type { TogetherLobbyAudience } from "@/domain/ports/togetherLobby.port";
 
 /** Configuration only: no personal workout or network session exists until Start. */
 export function TogetherStartSheet({
   visible,
   activeWorkoutName,
   audience,
-  transport,
   onAudienceChange,
   onStart,
   onClose,
@@ -22,7 +18,6 @@ export function TogetherStartSheet({
   activeWorkoutName?: string;
   connectionOptions?: ReactNode;
   audience: TogetherLobbyAudience;
-  transport?: TogetherTransport;
   onAudienceChange(value: TogetherLobbyAudience): void;
   onStart(): void;
   onClose(): void;
@@ -67,7 +62,6 @@ export function TogetherStartSheet({
             onSelect: () => onAudienceChange("friends"),
           }}
           onAudienceChange={onAudienceChange}
-          transport={transport}
         />
         {connectionOptions}
         <Text color="$text3" fontFamily="$body" fontSize={12}>

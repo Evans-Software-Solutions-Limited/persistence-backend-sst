@@ -737,7 +737,7 @@ it("starts a selected training-partner session once and publishes only after con
     h.publish({ phase: "active", snapshot: server });
   });
   const r = renderWithTheme(
-    <TogetherCloudContainer {...h.props} initialHostFriends />,
+    <TogetherCloudContainer {...h.props} initialHost="friends" />,
   );
   await waitFor(() => expect(h.cloud.visibility).toHaveBeenCalledTimes(1));
   expect(h.cloud.hostWorkout).toHaveBeenCalledWith(h.draft);
@@ -745,7 +745,7 @@ it("starts a selected training-partner session once and publishes only after con
     "friends",
     expect.any(String),
   );
-  r.rerender(<TogetherCloudContainer {...h.props} initialHostFriends />);
+  r.rerender(<TogetherCloudContainer {...h.props} initialHost="friends" />);
   expect(h.cloud.hostWorkout).toHaveBeenCalledTimes(1);
 });
 
@@ -755,7 +755,9 @@ it("preserves existing Together authority rather than hosting a second session",
     sessionId: "existing",
     executionId: "own",
   };
-  renderWithTheme(<TogetherCloudContainer {...h.props} initialHostFriends />);
+  renderWithTheme(
+    <TogetherCloudContainer {...h.props} initialHost="friends" />,
+  );
   expect(h.cloud.hostWorkout).not.toHaveBeenCalled();
   expect(h.cloud.visibility).not.toHaveBeenCalled();
 });
@@ -772,7 +774,7 @@ it.each(["account", "unmount", "background", "cancel", "partners"])(
     );
     const appListener = jest.spyOn(AppState, "addEventListener");
     const r = renderWithTheme(
-      <TogetherCloudContainer {...h.props} initialHostFriends />,
+      <TogetherCloudContainer {...h.props} initialHost="friends" />,
     );
     await waitFor(() => expect(h.cloud.hostWorkout).toHaveBeenCalledTimes(1));
     if (reason === "account")
@@ -780,7 +782,7 @@ it.each(["account", "unmount", "background", "cancel", "partners"])(
         <TogetherCloudContainer
           {...h.props}
           accountId="other"
-          initialHostFriends
+          initialHost="friends"
         />,
       );
     if (reason === "unmount") r.unmount();
@@ -805,7 +807,7 @@ it("reports publication failure while retaining the created session", async () =
   });
   jest.mocked(h.cloud.visibility).mockRejectedValue(new Error("offline"));
   const r = renderWithTheme(
-    <TogetherCloudContainer {...h.props} initialHostFriends />,
+    <TogetherCloudContainer {...h.props} initialHost="friends" />,
   );
   await waitFor(() =>
     expect(
@@ -819,7 +821,7 @@ it("reports publication failure while retaining the created session", async () =
 it("does not publish a training-partner session before hosting is confirmed", async () => {
   const h = setup();
   const r = renderWithTheme(
-    <TogetherCloudContainer {...h.props} initialHostFriends />,
+    <TogetherCloudContainer {...h.props} initialHost="friends" />,
   );
   await waitFor(() =>
     expect(r.getByText(/Your session has not been confirmed/)).toBeTruthy(),
@@ -837,7 +839,7 @@ it("shows the actual online invitation after confirmed Start and retries invitat
   });
   jest.mocked(h.cloud.invite).mockRejectedValueOnce(new Error("network"));
   const r = renderWithTheme(
-    <TogetherCloudContainer {...h.props} initialHostFriends />,
+    <TogetherCloudContainer {...h.props} initialHost="friends" />,
   );
   await waitFor(() =>
     expect(r.getByText("Generate new invitation")).toBeTruthy(),
@@ -924,7 +926,7 @@ it("does not publish a late generated invitation or scan after lifecycle interru
   );
   const listener = jest.spyOn(AppState, "addEventListener");
   const r = renderWithTheme(
-    <TogetherCloudContainer {...h.props} initialHostFriends />,
+    <TogetherCloudContainer {...h.props} initialHost="friends" />,
   );
   await waitFor(() => expect(h.cloud.invite).toHaveBeenCalledTimes(1));
   act(() => listener.mock.calls.at(-1)![1]("background"));
@@ -959,7 +961,7 @@ it("invalidates the single-use invitation after admission and after expiry", asy
     h.publish({ phase: "active", snapshot: server });
   });
   const r = renderWithTheme(
-    <TogetherCloudContainer {...h.props} initialHostFriends />,
+    <TogetherCloudContainer {...h.props} initialHost="friends" />,
   );
   await waitFor(() => expect(r.getByText("Scan to join")).toBeTruthy());
   act(() =>
@@ -1004,7 +1006,7 @@ it("removes the QR automatically when its server expiry is reached", async () =>
       expiresAt: new Date(Date.now() + 60_000).toISOString(),
     });
     const r = renderWithTheme(
-      <TogetherCloudContainer {...h.props} initialHostFriends />,
+      <TogetherCloudContainer {...h.props} initialHost="friends" />,
     );
     await waitFor(() => expect(r.getByText("Scan to join")).toBeTruthy());
     act(() => jest.advanceTimersByTime(60_000));

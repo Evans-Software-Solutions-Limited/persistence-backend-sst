@@ -88,17 +88,13 @@ export function readTogetherInvitation(value: string): TogetherInvitation {
     (connection !== "local" && connection !== "online") ||
     !invitation?.trim() ||
     invitation.length > 6000 ||
-    (transport && !["lan", "nearby", "hotspot-owner"].includes(transport))
+    (transport && !["lan", "nearby"].includes(transport))
   )
     throw new Error("invalid-invitation");
   return {
     connection,
     invitation: expandInvitation(invitation, connection),
-    ...(transport === "lan" ||
-    transport === "nearby" ||
-    transport === "hotspot-owner"
-      ? { transport }
-      : {}),
+    ...(transport === "lan" || transport === "nearby" ? { transport } : {}),
   };
 }
 

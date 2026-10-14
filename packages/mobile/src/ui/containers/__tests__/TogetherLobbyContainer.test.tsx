@@ -302,7 +302,7 @@ it("passes explicit audience and resets private on account change", () => {
     />,
   );
   fireEvent.press(r.getByText("Start"));
-  fireEvent.press(r.getByRole("radio", { name: "Open on this network" }));
+  fireEvent.press(r.getByRole("radio", { name: "Open nearby" }));
   fireEvent.press(r.getByText("Start the session"));
   expect(h.lobby.host).toHaveBeenLastCalledWith("Squats", "open");
   r.rerender(
@@ -327,7 +327,7 @@ it("browses, selects, and requires a separate Join; dismiss then retains admitte
   );
   fireEvent.press(r.getByText("Start"));
   fireEvent.press(r.getByText("Join"));
-  fireEvent.press(r.getByText("Find an open lobby on this network"));
+  fireEvent.press(r.getByText("Find an open lobby nearby"));
   expect(h.lobby.browse).toHaveBeenCalledTimes(1);
   h.publish({
     phase: "browsing",
@@ -361,14 +361,14 @@ it("dismiss stops an in-flight browse preparation; code fallback cancels discove
   );
   fireEvent.press(r.getByText("Start"));
   fireEvent.press(r.getByText("Join"));
-  fireEvent.press(r.getByText("Find an open lobby on this network"));
+  fireEvent.press(r.getByText("Find an open lobby nearby"));
   h.publish({ phase: "preparing" });
   act(() => mockSheet.mock.calls.at(-1)![0].onClose());
   expect(h.lobby.cancel).toHaveBeenCalledTimes(1);
   h.publish({ phase: "idle" });
   fireEvent.press(r.getByText("Start"));
   fireEvent.press(r.getByText("Join"));
-  fireEvent.press(r.getByText("Find an open lobby on this network"));
+  fireEvent.press(r.getByText("Find an open lobby nearby"));
   h.publish({ phase: "browsing" });
   fireEvent.press(r.getByText("Use a code or QR instead"));
   expect(h.lobby.cancel).toHaveBeenCalledTimes(2);
@@ -389,7 +389,7 @@ it("cancelled browsing cannot make a later host dismissal leave the lobby", asyn
   );
   fireEvent.press(r.getByText("Start"));
   fireEvent.press(r.getByText("Join"));
-  fireEvent.press(r.getByText("Find an open lobby on this network"));
+  fireEvent.press(r.getByText("Find an open lobby nearby"));
   h.publish({ phase: "browsing" });
   fireEvent.press(r.getByText("Cancel · keep training on my own"));
   expect(h.lobby.cancel).toHaveBeenCalledTimes(1);
@@ -416,7 +416,7 @@ it("starting discovery invalidates a camera permission response before preparati
   fireEvent.press(r.getByText("Start"));
   fireEvent.press(r.getByText("Join"));
   fireEvent.press(r.getByText("Scan a QR code"));
-  fireEvent.press(r.getByText("Find an open lobby on this network"));
+  fireEvent.press(r.getByText("Find an open lobby nearby"));
   await act(async () => resolve({ granted: true }));
   expect(h.lobby.browse).toHaveBeenCalledTimes(1);
   expect(r.queryByTestId("together-qr-camera")).toBeNull();
@@ -641,7 +641,7 @@ function sharingHarness() {
     ...h.lobby,
     shared,
     removeParticipant: jest.fn(async () => {}),
-    transports: ["lan", "nearby", "hotspot-owner"],
+    transports: ["lan", "nearby"],
     selectTransport: jest.fn(),
   };
   return {
@@ -676,17 +676,19 @@ function shareProps(r: ReturnType<typeof renderWithTheme>) {
 function lastDialog() {
   return jest.mocked(Alert.alert).mock.calls.at(-1)![2]!;
 }
-it("selects explicit transports and switches to remote only after local cancellation", async () => {
+it("offers only Nearby and Online, never a transport picker, and switches to remote only after local cancellation", async () => {
   const h = sharingHarness(),
     cloud = {} as TogetherCloudPort;
   const r = mountShared(h, { cloud });
   fireEvent.press(r.getByText("Start"));
-  fireEvent.press(r.getByText("Nearby phones"));
-  fireEvent.press(r.getByText("This Android phone’s hotspot"));
-  fireEvent.press(r.getByText("Same Wi-Fi or hotspot"));
-  expect(h.lobby.selectTransport).toHaveBeenNthCalledWith(1, "nearby");
-  expect(h.lobby.selectTransport).toHaveBeenNthCalledWith(2, "hotspot-owner");
-  expect(h.lobby.selectTransport).toHaveBeenNthCalledWith(3, "lan");
+  expect(r.queryByText(/Wi-Fi|hotspot|Nearby phones/)).toBeNull();
+  // Private is the default audience, so Online is offered without Training partners.
+  expect(r.getByText("Online · internet required")).toBeTruthy();
+  fireEvent.press(r.getByText("Nearby · no internet needed"));
+  expect(h.lobby.selectTransport).not.toHaveBeenCalled();
+  // Open is nearby-only: choosing it hides Online and returns to Nearby.
+  fireEvent.press(r.getByLabelText("Open nearby"));
+  expect(r.queryByText("Online · internet required")).toBeNull();
   let finish!: () => void;
   jest.mocked(h.lobby.cancel).mockReturnValueOnce(
     new Promise((r) => {
@@ -1399,7 +1401,7 @@ it("starts online training partners only after explicit connection selection", a
   fireEvent.press(r.getByText("Start the session"));
   await waitFor(() =>
     expect(mockCloud).toHaveBeenCalledWith(
-      expect.objectContaining({ cloud, initialHostFriends: true }),
+      expect.objectContaining({ cloud, initialHost: "friends" }),
     ),
   );
   expect(h.lobby.host).not.toHaveBeenCalled();
@@ -1418,7 +1420,7 @@ it("routes a training-partners detail intent independently of local credential p
   });
   await waitFor(() =>
     expect(mockCloud).toHaveBeenCalledWith(
-      expect.objectContaining({ cloud, initialHostFriends: true }),
+      expect.objectContaining({ cloud, initialHost: "friends" }),
     ),
   );
   expect(consume).toHaveBeenCalledTimes(1);
@@ -1458,7 +1460,7 @@ it("keeps online discovery available to a joiner without hosting", async () => {
   fireEvent.press(r.getByText("Browse online sessions"));
   await waitFor(() =>
     expect(mockCloud).toHaveBeenCalledWith(
-      expect.objectContaining({ cloud, initialHostFriends: false }),
+      expect.objectContaining({ cloud, initialHost: undefined }),
     ),
   );
   expect(h.lobby.host).not.toHaveBeenCalled();

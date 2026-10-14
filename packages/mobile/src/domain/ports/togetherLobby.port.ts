@@ -1,7 +1,8 @@
 import type { TogetherWorkoutPort } from "./togetherWorkout.port";
 import type { TogetherSharedPort } from "./togetherShared.port";
 export type TogetherLobbyAudience = "invite-only" | "friends" | "open";
-export type TogetherTransport = "lan" | "nearby" | "hotspot-owner";
+/** Nearby is the user-facing local mode; LAN is its silent fallback on a phone without the Nearby module. */
+export type TogetherTransport = "lan" | "nearby";
 /** Reviewed lobby state only. No credentials, signing seeds or PREV grants reach UI. */
 export interface TogetherLobbySnapshot {
   /** Public session identity for account-bound explicit exit callbacks. */
