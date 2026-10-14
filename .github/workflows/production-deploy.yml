@@ -51,6 +51,25 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: bun scripts/validate-supabase-admin.ts production
 
+      # Together mints invitation and realtime tickets with this secret and the
+      # routes answer 503 UNAVAILABLE when it is empty or shorter than 32 bytes.
+      # TOGETHER_ENABLED defaults on, so an unset secret is a broken deploy, not
+      # an optional one (14 Oct 2026: production hosted online sessions whose
+      # invitations never minted). Fail here, before any remote change.
+      - name: Validate Together token secret
+        env:
+          TOGETHER_ENABLED: ${{ vars.TOGETHER_ENABLED || 'true' }}
+          TOGETHER_TOKEN_SECRET: ${{ secrets.TOGETHER_TOKEN_SECRET }}
+        run: |
+          case "$(printf '%s' "$TOGETHER_ENABLED" | tr '[:upper:]' '[:lower:]')" in
+            false|0|off) echo "Together disabled for this deploy; secret not required."; exit 0 ;;
+          esac
+          if [ "${#TOGETHER_TOKEN_SECRET}" -lt 32 ]; then
+            echo "::error::TOGETHER_TOKEN_SECRET is unset or shorter than 32 characters in the production environment. Together invitations and realtime tickets would answer 503. Set it with: openssl rand -base64 48 | gh secret set TOGETHER_TOKEN_SECRET --env production"
+            exit 1
+          fi
+          echo "Together token secret present."
+
       # Validate before migrations or any remote configuration changes.
       - name: Validate web authentication settings
         env:
@@ -219,7 +238,7 @@ jobs:
           bunx sst secret set ExpoAccessToken "$EXPO_ACCESS_TOKEN" --stage production
           # Optional — safe to set empty; initSentry() no-ops on an empty DSN.
           bunx sst secret set SentryDsn "$SENTRY_DSN" --stage production
-          # Optional until Together rollout; remain server-only.
+          # Required while TOGETHER_ENABLED is on (validated above); remain server-only.
           bunx sst secret set TogetherTokenSecret "$TOGETHER_TOKEN_SECRET" --stage production
           bunx sst secret set TogetherOfflineAuthority "$TOGETHER_OFFLINE_AUTHORITY" --stage production
           bunx sst secret set GeoapifyApiKey "$GEOAPIFY_API_KEY" --stage production
