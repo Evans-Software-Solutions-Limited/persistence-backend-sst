@@ -2,6 +2,31 @@ import ExpoModulesCore
 import Foundation
 import NearbyConnections
 
+// Why this symbol lives here (TestFlight crash 7D536D3B, 14 October 2026).
+//
+// Nearby Connections vendors BoringSSL, whose crypto/mem.c defines `sdallocx`
+// (jemalloc's sized free) as a WEAK fallback to free(). React Native's prebuilt
+// ReactNativeDependencies.framework exports `_sdallocx` from __DATA,__common
+// (folly's jemalloc shim). At launch dyld coalesces weak definitions across
+// images and rebinds BoringSSL's call to that data address; the first
+// OPENSSL_free, inside the UKEY2 handshake when a guest requests a connection,
+// jumps into non-executable memory and the kernel kills the process
+// (EXC_BAD_ACCESS SIGKILL, "CODESIGNING 2 Invalid Page", OPENSSL_realloc
+// mem.c:153 -> ... -> UKey2Handshake::ForInitiator). Same fault as
+// google/nearby#2195 and apple/swift-nio-ssl#191.
+//
+// A STRONG definition wins over BoringSSL's weak one at static link time, so no
+// weak binding is left for dyld to rewrite. It must sit in THIS object: the
+// module class is always linked (ExpoModulesProvider references it), whereas a
+// separate C file in the static archive is never pulled because BoringSSL's own
+// object already satisfies the symbol. Verified with
+// `nm -m PersistenceStaging | grep _sdallocx` → `(__TEXT,__text) external`,
+// not `weak external`. Never mark this weak or move it out of this file.
+@_cdecl("sdallocx")
+public func togetherNearbySizedFree(_ ptr: UnsafeMutableRawPointer?, _ size: Int, _ flags: Int32) {
+  free(ptr)
+}
+
 public final class TogetherNearbyModule: Module {
   private var engine: NearbyEngine?
   public func definition() -> ModuleDefinition {

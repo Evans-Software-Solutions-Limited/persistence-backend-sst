@@ -1,5 +1,55 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-14 (evening) — Two-phone run on build 22: Nearby crash and online 503s root-caused
+
+Brad's run on the #499 staging TestFlight build (1.1.3 (22)): Nearby guest
+crashed on connect, open sessions never listed, online host ended with
+"Sharing ended · 1/4" and "Could not complete this action".
+
+**Nearby crash (TestFlight 7D536D3B).** `EXC_BAD_ACCESS (SIGKILL)`,
+`CODESIGNING 2 Invalid Page`, faulting address inside
+`ReactNativeDependencies.framework` `__DATA`; triggering thread
+`OPENSSL_realloc (mem.c:153)` → `OPENSSL_free` under
+`UKey2Handshake::ForInitiator`. Nearby's vendored BoringSSL defines `sdallocx`
+as a weak fallback to `free()`; `nm -m` on React Native's prebuilt
+`ReactNativeDependencies` shows `_sdallocx` exported from `__DATA,__common`
+(folly's jemalloc shim); dyld coalesces the weak definition onto that data
+address and the first `OPENSSL_free` executes data. Same fault as
+google/nearby#2195 and apple/swift-nio-ssl#191. Fix on
+`claude/per-64-nearby-sdallocx`: a strong `sdallocx` via `@_cdecl` in
+`modules/together-nearby/ios/TogetherNearbyModule.swift`, resolved at static
+link time. It has to be in the module's own object: a first attempt as a
+separate C file compiled into the pod produced an archive holding both the
+strong and BoringSSL's weak definition, and the app still linked the weak one
+because the C member was never pulled. Simulator Release build proof: `nm -m`
+went from `weak external _sdallocx` to `(__TEXT,__text) external _sdallocx`.
+Contract test in `native-source.test.ts`; README section. Not a Sentry-visible crash: a
+code-signing SIGKILL is not catchable. Needs a new TestFlight build. The hub's
+"open sessions" list is the local discovery result in every mode, so it was
+empty for the same reason.
+
+**Online 503s.** Brad's request log: create, snapshot, join-requests and
+visibility 200; `/invites` and `/realtime-ticket` 503. Those are the only
+routes that mint HMAC tokens; `secretToken()` answers 503 UNAVAILABLE when
+`TOGETHER_TOKEN_SECRET` is under 32 bytes. With AWS access (SSO profile
+`AdministratorAccess-…`, eu-west-2): the serving function is
+`persistence-a-staging-apicoreRoute…bdzwmfvs` (resolved through the API
+Gateway mapping for api.staging.persistence), its env has
+`TOGETHER_TOKEN_SECRET` empty, `TOGETHER_WEBSOCKET_URL` set, `TOGETHER_ENABLED`
+true, last modified 13 Oct 12:08. Neither the `staging` nor `production`
+GitHub Environment has `TOGETHER_TOKEN_SECRET`, so every deploy writes an empty
+SST secret. Fix: set the secret in both environments, redeploy; PR #500 adds a
+fail-fast validation step. SST v3 secrets are not at `/sst/<app>/<stage>/…` in
+SSM (only the passphrase is), so the Lambda env is the only readable truth.
+
+**Throttling.** Account Lambda concurrency quota is still the default 10,
+shared by five apps' staging functions in this account; the persistence core
+function logged 3 throttles at 16:18 BST during the first run. Raise
+L-B99A9384.
+
+**Tooling.** AWS CLI installed via Homebrew; `aws configure sso` done by Brad
+(session `ess-dev`, profile `AdministratorAccess-111315405717`).
+
 ### 2026-10-14 — Together: two connection modes and the online realtime client (PER-64, PR pending)
 
 Brad: "the connection is either offline or online, i don't want to handle a

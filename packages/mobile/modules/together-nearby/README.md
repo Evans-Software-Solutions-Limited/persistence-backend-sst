@@ -43,6 +43,26 @@ frames in ordered <=4,096 character chunks, with a 10 second absolute assembly
 deadline. It rejects extra fields, invalid order, oversized frames and unsupported
 payload types. Framing/SDK send success is never a durable receipt.
 
+## BoringSSL `sdallocx` and ReactNativeDependencies (fixed 14 October 2026)
+
+The first two-phone TestFlight run killed the guest the moment it requested a
+connection (crash 7D536D3B: `EXC_BAD_ACCESS (SIGKILL)`, `CODESIGNING 2 Invalid
+Page`, triggering thread in `OPENSSL_realloc` → `OPENSSL_free` under
+`UKey2Handshake::ForInitiator`, faulting address inside
+`ReactNativeDependencies.framework` `__DATA`). Nearby's vendored BoringSSL
+defines `sdallocx` as a weak fallback to `free()`; React Native's prebuilt
+dependencies framework exports `_sdallocx` from `__DATA,__common` (folly's
+jemalloc shim), and dyld's weak coalescing rebinds BoringSSL's call to that
+data address. `TogetherNearbyModule.swift` defines `sdallocx` strongly via `@_cdecl` so the
+reference is resolved at static link time and never reaches dyld. It has to be
+in the module's own object: a separate C file in the static archive is never
+pulled, because BoringSSL's object already satisfies the symbol (verified on a
+simulator build, where the archive held both and the app still linked the weak
+one). This is the
+same mitigation swift-nio-ssl applied in apple/swift-nio-ssl#191 and the crash
+reported in google/nearby#2195. `nm -m` on the built app must show
+`(__TEXT,__text) external _sdallocx`, not `weak external`.
+
 ## Evidence and remaining native gate
 
 JS framing/bridge/plugin tests exercise bounds, ordering, cancellation and

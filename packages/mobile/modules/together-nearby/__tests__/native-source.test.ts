@@ -54,3 +54,23 @@ it("captures permission requirements before prompting and tolerates destroyed co
   expect(stop).not.toContain("client.");
   expect(source).toContain("connectionsClient?.disconnectFromEndpoint(id)");
 });
+
+it("links a strong sdallocx in the always-linked module object so BoringSSL's weak fallback cannot be coalesced onto ReactNativeDependencies", () => {
+  // TestFlight crash 7D536D3B (14 Oct 2026): OPENSSL_free -> sdallocx jumped into
+  // ReactNativeDependencies.framework __DATA and the kernel killed the app with
+  // "CODESIGNING 2 Invalid Page". A separate C file in the static archive is
+  // never pulled (BoringSSL's own object satisfies the symbol), so the strong
+  // definition must be @_cdecl in the module's Swift file.
+  const source = readFileSync(
+    join(__dirname, "../ios/TogetherNearbyModule.swift"),
+    "utf8",
+  );
+  expect(source).toMatch(
+    /@_cdecl\("sdallocx"\)\npublic func \w+\(_ ptr: UnsafeMutableRawPointer\?, _ size: Int, _ flags: Int32\) \{\n\s*free\(ptr\)\n\}/,
+  );
+  const podspec = readFileSync(
+    join(__dirname, "../ios/TogetherNearby.podspec"),
+    "utf8",
+  );
+  expect(podspec).toContain("s.source_files = '**/*.swift'");
+});
