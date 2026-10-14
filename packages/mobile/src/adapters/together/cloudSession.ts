@@ -68,12 +68,68 @@ interface Durable {
   own?: CloudSnapshot;
   error?: string;
 }
+/** The subset of WebSocket the sync-hint client needs; React Native's global satisfies it. */
+export interface CloudSocketLike {
+  onopen: (() => void) | null;
+  onmessage: ((event: { data: unknown }) => void) | null;
+  onclose: (() => void) | null;
+  onerror: (() => void) | null;
+  close(): void;
+}
 export interface CloudControllerOptions {
   api: TogetherCloudApi;
   db: TogetherJournalDatabase;
   randomUUID: () => string;
   now?: () => number;
+  /** Poll interval while no sync-hint socket is open. */
   pollMs?: number;
+  /** Backstop poll interval while the socket is open (PER-64: idle ≤ 2 req/min/device). */
+  socketPollMs?: number;
+  /** Socket factory; defaults to the global WebSocket. */
+  socket?: (url: string) => CloudSocketLike;
+}
+const SOCKET_POLL_MS = 45_000;
+const SOCKET_RETRY_MAX_MS = 30_000;
+interface SocketEntry {
+  connection?: CloudSocketLike;
+  open: boolean;
+}
+/** Detach handlers first so closing never re-enters the reconnect path. */
+function closeEntry(entry: SocketEntry) {
+  const connection = entry.connection;
+  entry.connection = undefined;
+  entry.open = false;
+  if (!connection) return;
+  connection.onopen = null;
+  connection.onmessage = null;
+  connection.onclose = null;
+  connection.onerror = null;
+  try {
+    connection.close();
+  } catch {
+    /* Already closed. */
+  }
+}
+function defaultSocket(url: string): CloudSocketLike {
+  const Ctor = (
+    globalThis as { WebSocket?: new (url: string) => CloudSocketLike }
+  ).WebSocket;
+  if (!Ctor) throw new Error("cloud-socket-unavailable");
+  return new Ctor(url);
+}
+/** The server sends content-free hints only; anything else is ignored. */
+function isSyncRequired(data: unknown): boolean {
+  if (typeof data !== "string") return false;
+  try {
+    const parsed: unknown = JSON.parse(data);
+    return (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      (parsed as { type?: unknown }).type === "sync_required"
+    );
+  } catch {
+    return false;
+  }
 }
 const copy = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 const unwrap = <T>(result: Result<T, TogetherOfflineApiError>): T => {
@@ -96,6 +152,9 @@ export class TogetherCloudController implements TogetherCloudPort {
   private active = true;
   private disposed = false;
   private timer?: ReturnType<typeof setTimeout>;
+  private socket?: SocketEntry;
+  private socketTimer?: ReturnType<typeof setTimeout>;
+  private socketAttempts = 0;
   private draining?: Promise<unknown>;
   private refreshing?: Promise<void>;
   private retiring?: Promise<void>;
@@ -167,6 +226,7 @@ export class TogetherCloudController implements TogetherCloudPort {
   private reset() {
     ++this.generation;
     clearTimeout(this.timer);
+    this.closeSocket();
     this.state = empty();
     this.draining = undefined;
     this.refreshing = undefined;
@@ -343,10 +403,95 @@ export class TogetherCloudController implements TogetherCloudPort {
       this.active &&
       !this.disposed &&
       this.state.phase !== "idle"
-    )
-      this.timer = setTimeout(() => {
+    ) {
+      this.ensureSocket();
+      this.timer = setTimeout(
+        () => {
+          void this.refresh().catch(() => {});
+        },
+        this.socket?.open
+          ? (this.options.socketPollMs ?? SOCKET_POLL_MS)
+          : (this.options.pollMs ?? 5000),
+      );
+    } else this.closeSocket();
+  }
+  /**
+   * Online realtime (PER-64): one ticket per admission, the deployed socket
+   * carries `sync_required` hints only, and the poll stays as the backstop.
+   * Nothing here grants permission or carries session data.
+   */
+  private ensureSocket() {
+    if (this.socket || this.socketTimer) return;
+    if (!this.options.api.realtimeTicket || !this.load()?.sessionId) return;
+    void this.openSocket();
+  }
+  private async openSocket() {
+    const entry: SocketEntry = { open: false };
+    this.socket = entry;
+    try {
+      const context = this.context();
+      const id = this.load()?.sessionId;
+      if (!id) throw new Error("cloud-not-admitted");
+      const result = await this.options.api.realtimeTicket!(
+        id,
+        this.options.randomUUID(),
+      );
+      this.guard(context);
+      if (this.socket !== entry) return;
+      if (!result.ok)
+        throw new Error(result.error.togetherCode ?? result.error.code);
+      const { endpoint, ticket } = result.value;
+      const url = `${endpoint}${endpoint.includes("?") ? "&" : "?"}ticket=${encodeURIComponent(ticket)}`;
+      const connection = (this.options.socket ?? defaultSocket)(url);
+      entry.connection = connection;
+      connection.onopen = () => {
+        if (this.socket !== entry) return;
+        entry.open = true;
+        this.socketAttempts = 0;
+        this.schedule();
+      };
+      connection.onmessage = (event) => {
+        if (this.socket !== entry || !isSyncRequired(event.data)) return;
         void this.refresh().catch(() => {});
-      }, this.options.pollMs ?? 5000);
+      };
+      connection.onclose = () => this.socketLost(entry);
+      connection.onerror = () => this.socketLost(entry);
+    } catch {
+      this.socketLost(entry);
+    }
+  }
+  private socketLost(entry: SocketEntry) {
+    if (this.socket !== entry) return;
+    const wasOpen = entry.open;
+    this.socket = undefined;
+    closeEntry(entry);
+    if (
+      !this.account ||
+      !this.active ||
+      this.disposed ||
+      this.state.phase === "idle"
+    )
+      return;
+    const delay = Math.min(
+      SOCKET_RETRY_MAX_MS,
+      1000 * 2 ** Math.min(this.socketAttempts++, 5),
+    );
+    this.socketTimer = setTimeout(() => {
+      this.socketTimer = undefined;
+      this.ensureSocket();
+    }, delay);
+    // Back to the short poll until the socket is open again. A ticket that
+    // never produced an open socket left the short poll in place; restarting
+    // it on every quick retry would starve polling.
+    if (wasOpen) this.schedule();
+  }
+  private closeSocket() {
+    clearTimeout(this.socketTimer);
+    this.socketTimer = undefined;
+    this.socketAttempts = 0;
+    const entry = this.socket;
+    this.socket = undefined;
+    if (entry) closeEntry(entry);
   }
   private accept(snapshot: CloudSnapshot) {
     if (!cloudSnapshot(snapshot)) throw new Error("cloud-invalid-response");

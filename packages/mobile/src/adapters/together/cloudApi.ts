@@ -248,6 +248,21 @@ export function createCloudApis(
           {},
           key,
         ),
+      realtimeTicket: (id, key) =>
+        call(
+          `${session(id)}/realtime-ticket`,
+          "POST",
+          (v) =>
+            record(v) &&
+            typeof v.ticket === "string" &&
+            v.ticket.length > 0 &&
+            v.ticket.length <= 512 &&
+            typeof v.endpoint === "string" &&
+            /^wss:\/\//.test(v.endpoint) &&
+            typeof v.expiresAt === "string",
+          {},
+          key,
+        ),
       finish: (id, key, revision, leave) =>
         call(
           `${session(id)}/${leave ? "leave" : "finish"}`,
