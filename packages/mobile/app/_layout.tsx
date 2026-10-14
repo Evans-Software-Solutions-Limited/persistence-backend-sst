@@ -1,3 +1,4 @@
+import { useBootstrap } from "@/ui/hooks/useBootstrap";
 import { AppUpdateGate } from "@/ui/containers/AppUpdateGate";
 import { useEffect } from "react";
 import { Platform, View } from "react-native";
@@ -104,6 +105,18 @@ function MetaAttributionBootstrap() {
  */
 function UserModeBootstrap() {
   useUserModeEligibility();
+  return null;
+}
+
+/**
+ * Opens the cold-start gate and runs the single bootstrap request. Rendered
+ * FIRST inside the providers: every sibling below (push registration, user
+ * mode, active workout, reference lists, AuthGate's profile page) and every
+ * screen hook waits for it, so launch is one request instead of a burst
+ * (specs/milestones/COLD-START-BOOTSTRAP/BRIEF.md).
+ */
+function ColdStartBootstrap() {
+  useBootstrap();
   return null;
 }
 
@@ -451,6 +464,7 @@ function RootLayout() {
       >
         <AppUpdateGate>
           <AppProviders>
+            <ColdStartBootstrap />
             <AuthCallbackCaptureBootstrap />
             <NotificationPermissionsBootstrap />
             <MetaAttributionBootstrap />

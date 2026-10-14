@@ -68,8 +68,14 @@ export function useUnreadNotificationCount(): number {
     void bootstrapSettled(userId).then(() =>
       sync({ preferBootstrapFor: userId }),
     );
+    // Only a true return from the background re-syncs. iOS launches apps
+    // inactive and flips them active a moment later; the mount sync above
+    // already covers that, and it waits for the cold-start bootstrap.
+    let previous = AppState.currentState;
     const appSub = AppState.addEventListener("change", (state) => {
-      if (state === "active") void sync();
+      const resumed = previous === "background" && state === "active";
+      previous = state;
+      if (resumed) void sync();
     });
     return () => appSub?.remove?.();
   }, [userId, sync]);
@@ -87,11 +93,14 @@ export function useUnreadNotificationCount(): number {
   // clear the bell without waiting for a foreground transition.
   // The mount effect above already synced; the first focus fires in the same
   // commit, so only refocuses (returning from another screen) sync again.
-  const focusedOnceRef = useRef(false);
+  // The first focus for a user is the mount (already synced above). The
+  // callback changes when the session resolves, which re-runs this effect,
+  // so the latch is per user rather than per instance.
+  const focusedForUserRef = useRef<string | null | undefined>(undefined);
   useFocusEffect(
     useCallback(() => {
-      if (!focusedOnceRef.current) {
-        focusedOnceRef.current = true;
+      if (focusedForUserRef.current !== userId) {
+        focusedForUserRef.current = userId;
         return;
       }
       if (userId) void sync();

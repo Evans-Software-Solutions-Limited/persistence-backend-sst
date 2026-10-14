@@ -1,6 +1,6 @@
 import { act, renderHook, waitFor } from "@testing-library/react-native";
 import { forgetBootstrapSections } from "@/application/bootstrap/freshness";
-import { isBootstrapPending } from "@/application/bootstrap/gate";
+import { endColdStart, isBootstrapPending } from "@/application/bootstrap/gate";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { useBootstrap } from "@/ui/hooks/useBootstrap";
 import {
@@ -14,7 +14,10 @@ jest.mock("@/adapters/api", () => ({
   getApiBaseUrl: () => "https://api.test",
 }));
 
-afterEach(() => forgetBootstrapSections(BOOTSTRAP_TEST_USER));
+afterEach(() => {
+  forgetBootstrapSections(BOOTSTRAP_TEST_USER);
+  endColdStart();
+});
 
 describe("useBootstrap", () => {
   it("opens the gate during render, runs once per user and settles", async () => {
@@ -78,10 +81,18 @@ describe("useBootstrap", () => {
     warn.mockRestore();
 
     const signedOut = bootstrapAdapters(false);
-    renderHook(() => useBootstrap(), {
-      wrapper: bootstrapWrapper(signedOut.adapters),
-    });
-    await act(async () => {});
+    const seen: boolean[] = [];
+    renderHook(
+      () => {
+        useBootstrap();
+        seen.push(isBootstrapPending(null));
+      },
+      { wrapper: bootstrapWrapper(signedOut.adapters) },
+    );
+    // Pending from the first render (cold start), released once auth
+    // resolves signed out, with no request made.
+    expect(seen[0]).toBe(true);
+    await waitFor(() => expect(isBootstrapPending(null)).toBe(false));
     expect(signedOut.api.getBootstrapCalls).toHaveLength(0);
   });
 });
