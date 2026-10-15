@@ -63,6 +63,15 @@ same mitigation swift-nio-ssl applied in apple/swift-nio-ssl#191 and the crash
 reported in google/nearby#2195. `nm -m` on the built app must show
 `(__TEXT,__text) external _sdallocx`, not `weak external`.
 
+## Simulator
+
+CoreBluetooth does not exist in the iOS Simulator, so the module reports
+`available: false` there and the app takes the LAN fallback. A simulator can
+therefore host a local session over Bonjour on the Mac's network and a phone on
+the same Wi-Fi can join from the pasted link (the link carries
+`transport=lan`). The simulator cannot be a Nearby guest, scan a QR, or prove
+anything about the Nearby radio path; that remains a two-phone test.
+
 ## Evidence and remaining native gate
 
 JS framing/bridge/plugin tests exercise bounds, ordering, cancellation and

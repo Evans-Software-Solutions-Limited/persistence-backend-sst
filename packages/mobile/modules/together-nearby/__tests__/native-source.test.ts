@@ -74,3 +74,13 @@ it("links a strong sdallocx in the always-linked module object so BoringSSL's we
   );
   expect(podspec).toContain("s.source_files = '**/*.swift'");
 });
+
+it("reports Nearby unavailable in the iOS Simulator so the app takes the LAN fallback there", () => {
+  const source = readFileSync(
+    join(__dirname, "../ios/TogetherNearbyModule.swift"),
+    "utf8",
+  );
+  expect(source).toMatch(
+    /#if targetEnvironment\(simulator\)\n\s*Constants\(\["available": false\]\)\n\s*#else\n\s*Constants\(\["available": true\]\)\n\s*#endif/,
+  );
+});

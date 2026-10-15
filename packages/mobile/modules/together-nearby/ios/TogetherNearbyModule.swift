@@ -31,7 +31,15 @@ public final class TogetherNearbyModule: Module {
   private var engine: NearbyEngine?
   public func definition() -> ModuleDefinition {
     Name("TogetherNearby")
+    // CoreBluetooth does not exist in the iOS Simulator, so Nearby can neither
+    // discover nor connect there. Reporting unavailable lets the app take its
+    // LAN fallback (Bonjour over the Mac's network), which a phone on the same
+    // Wi-Fi can reach; a simulator host's link carries transport=lan.
+    #if targetEnvironment(simulator)
+    Constants(["available": false])
+    #else
     Constants(["available": true])
+    #endif
     Events("onEvent")
     AsyncFunction("startHost") { (lobby: String, promise: Promise) in
       DispatchQueue.main.async { self.start(lobby: lobby, promise: promise) }
