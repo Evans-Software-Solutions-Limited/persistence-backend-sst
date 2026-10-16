@@ -1,5 +1,59 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-16 — Phone + simulator Together run: previous-values 500 root-caused (PR #502), toggle lag, one account on two devices (PER-82)
+
+Setup. Brad's phone as guest, the iPhone 17 simulator (signed build, lldb
+UIScene workaround) hosting as a staging demo account with premium_plus
+restored. Online Private session created from the simulator: `/invites` now
+200, so the 14 Oct secret fix holds. Brad joined over Online; LAN also held for
+most of the run. Account details are on PER-64.
+
+**Previous values 500 (Sentry PERSISTENCE-BACKEND-7, 8 events; BACKEND-6 is
+the same).** `GET /together/sessions/:id/previous/:ownerId` →
+`readPreviousValues` → postgres-js `TypeError: The "string" argument must be
+of type string or an instance of Buffer or ArrayBuffer. Received an instance
+of Date`. The query compares the sql fragment `coalesce(completed_at,
+started_at)` against a JS Date. A fragment has no column mapper, and
+`drizzle-orm/postgres-js` (0.44.7, `postgres-js/driver.js`) replaces
+postgres.js's serializers for 1184/1114/… with identity functions, so the Date
+reaches the wire writer raw. The PGlite integration suite cannot see it: that
+driver serialises Dates itself. Fix: bind `${before.toISOString()}::timestamptz`.
+Regression test `previousValues.driver.test.ts` runs the real postgres-js
+driver against a stub client that records `unsafe(query, params)` and fails on
+the old code. Audited the other `sql<Date>` fragments
+(`exercisePerformanceRepository`): only `isNotNull`/aggregates, never compared
+to a Date. PR #502; needs a staging deploy, no app build.
+
+**Sharing toggle lag is client-side.** Lambda REPORT durations in the window:
+426 invocations, p50 181 ms, p90 397 ms, max 2.0 s. The three switches in
+`TogetherCloudContainer.onConsent` each enqueue a consent action; `queue()`
+drains (POST) and then refreshes the whole session before the acknowledged
+state moves the switch, and numbers → previous → logging are awaited serially.
+No optimistic state. Recorded on PER-60 (UX list, 16 Oct) and PER-64.
+
+**Cold-start QR scan.** `_layout.tsx` carries coach `?code=` invites through
+launch via `usePendingInvite`; `together/join` only has the warm deep-link map
+entry, so a scan with the app closed does not land in the join flow. Noted on
+PER-60/PER-64; part of the join-flow rework.
+
+**One account on two devices (PER-82).** Supabase allows the second session
+(rotation on, 10 s reuse). Damage is later: `SupabaseAuthAdapter.signOut()`
+uses the default `scope: "global"`, revoking every device; `useAuth` treats
+every `SIGNED_OUT` the same and `storage.clearAll()` deletes `sync_queue`, so
+a device signed out remotely loses unsynced sets; sync stays last-writer-wins
+per M13's single-active-device decision. Push tokens are per device
+(`user_devices`); Together registers a key per (user, device) and refuses host
+self-join (403). Not verified: the hosted project's "single session per user"
+toggle. Proposed order on PER-82: local-scope sign-out, keep the queue on
+server-driven sign-out, explain forced sign-outs, verify the toggle. Practical
+consequence for simulator runs: do not sign the simulator out through the app
+while a phone shares the account; reinstall the app instead.
+
+**Still open.** Nearby radio between two phones needs a TestFlight build with
+#501 (merged 14 Oct). Lambda concurrency increase on the dev account
+(L-B99A9384 → 1000) still pending with AWS Support. Staging runtime is
+nodejs20.x; the AWS SDK logs that releases after January 2027 require Node 22.
+
 ### 2026-10-14 (evening) — Two-phone run on build 22: Nearby crash and online 503s root-caused
 
 Brad's run on the #499 staging TestFlight build (1.1.3 (22)): Nearby guest
