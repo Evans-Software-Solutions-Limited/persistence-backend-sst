@@ -247,6 +247,21 @@ export function TogetherCloudContainer(p: {
         }
       });
   };
+  // Sharing switches must move on tap. They bypass `run`, which locks the sheet
+  // for the round trip and drops further taps: the controller publishes the
+  // pending intent immediately and only a definitive server rejection reverts
+  // it, which is the one case the athlete needs telling about (PER-60).
+  const fire = (action: () => Promise<unknown>) => {
+    if (!isCurrent()) return;
+    const scope = generation.current;
+    setNotice("");
+    void action().catch(() => {
+      if (scope === generation.current)
+        setNotice(
+          "Could not update sharing. The switches show your last saved choices.",
+        );
+    });
+  };
   const invitationMembers = (snapshot: TogetherCloudState["snapshot"]) =>
     (snapshot?.participants.map((member) => member.userId).sort() ?? []).join(
       ",",
@@ -768,35 +783,38 @@ export function TogetherCloudContainer(p: {
                 }}
                 sessionLogging={own.allowPartnerLogging}
                 onSessionLogging={(allowed) =>
-                  run(() => p.cloud.delegation(allowed))
+                  fire(() => p.cloud.delegation(allowed))
                 }
-                onConsent={(id, consent) =>
-                  run(async () => {
-                    const consentScope = generation.current;
-                    const next = (ids: string[] | undefined, on: boolean) =>
-                      on
-                        ? [...new Set([...(ids ?? []), id])]
-                        : (ids ?? []).filter((x) => x !== id);
-                    if (
-                      consent.numbers !==
-                      (own.numbersConsent?.recipientIds.includes(id) ?? false)
-                    )
-                      await p.cloud.numbersConsent(
+                onConsent={(id, consent) => {
+                  // `own` already reflects pending intent, so each diff is
+                  // against what the switches show. The three permissions are
+                  // independent server resources: queue every change now and
+                  // let the outbox serialise the network.
+                  const next = (ids: string[] | undefined, on: boolean) =>
+                    on
+                      ? [...new Set([...(ids ?? []), id])]
+                      : (ids ?? []).filter((x) => x !== id);
+                  if (
+                    consent.numbers !==
+                    (own.numbersConsent?.recipientIds.includes(id) ?? false)
+                  )
+                    fire(() =>
+                      p.cloud.numbersConsent(
                         next(own.numbersConsent?.recipientIds, consent.numbers),
-                      );
-                    if (consentScope !== generation.current) return;
-                    if (
-                      consent.prev !==
-                      (own.previousConsent?.recipientIds.includes(id) ?? false)
-                    )
-                      await p.cloud.previousConsent(
+                      ),
+                    );
+                  if (
+                    consent.prev !==
+                    (own.previousConsent?.recipientIds.includes(id) ?? false)
+                  )
+                    fire(() =>
+                      p.cloud.previousConsent(
                         next(own.previousConsent?.recipientIds, consent.prev),
-                      );
-                    if (consentScope !== generation.current) return;
-                    if (consent.logging !== own.allowPartnerLogging)
-                      await p.cloud.delegation(consent.logging);
-                  })
-                }
+                      ),
+                    );
+                  if (consent.logging !== own.allowPartnerLogging)
+                    fire(() => p.cloud.delegation(consent.logging));
+                }}
                 onDiscard={p.onDiscardWorkout}
                 onClose={(mode) => {
                   if (mode === "finish_all") {

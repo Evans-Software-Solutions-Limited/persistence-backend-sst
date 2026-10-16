@@ -382,12 +382,12 @@ it("surfaces command errors and wires retry, cancel, partner navigation and loca
   act(() => ui(r).onPartners());
   expect(mockPush).toHaveBeenCalledWith("/(app)/together/partners");
 });
-it("does not chain a PREV grant after the account changes during numeric consent", async () => {
+it("queues every changed permission at once without waiting on the first, and a late rejection after the account changes shows nothing", async () => {
   const h = setup(true);
-  let resolve!: () => void;
+  let reject!: (error: Error) => void;
   jest.mocked(h.cloud.numbersConsent).mockReturnValue(
-    new Promise((r) => {
-      resolve = r;
+    new Promise((_r, rej) => {
+      reject = rej;
     }),
   );
   const r = renderWithTheme(<TogetherCloudContainer {...h.props} />);
@@ -397,12 +397,38 @@ it("does not chain a PREV grant after the account changes during numeric consent
   act(() =>
     settings.onConsent("v", { numbers: true, prev: true, logging: true }),
   );
+  // Nothing awaits the in-flight numbers request: all three changes are queued
+  // on the tap, and the sheet is not locked while they settle.
+  expect(h.cloud.numbersConsent).toHaveBeenCalledWith(["v"]);
+  expect(h.cloud.previousConsent).toHaveBeenCalledWith(["v"]);
+  expect(h.cloud.delegation).toHaveBeenCalledWith(true);
+  act(() => settings.onSessionLogging!(false));
+  expect(h.cloud.delegation).toHaveBeenLastCalledWith(false);
   await act(async () => {});
   r.rerender(<TogetherCloudContainer {...h.props} accountId="other" />);
-  await act(async () => resolve());
-  expect(h.cloud.previousConsent).not.toHaveBeenCalled();
-  expect(h.cloud.delegation).not.toHaveBeenCalled();
+  await act(async () => reject(new Error("FORBIDDEN")));
+  expect(r.queryByText(/Could not update sharing/)).toBeNull();
   expect(r.queryByText("Push · 2/4 athletes")).toBeNull();
+});
+it("tells the athlete when the server definitively rejects a sharing change", async () => {
+  const h = setup(true);
+  jest
+    .mocked(h.cloud.previousConsent)
+    .mockRejectedValueOnce(new Error("FORBIDDEN"));
+  const r = renderWithTheme(<TogetherCloudContainer {...h.props} />);
+  fireEvent.press(r.getByLabelText("Together settings"));
+  const settings = r.UNSAFE_getByType(TogetherSharingPresenter)
+    .props as React.ComponentProps<typeof TogetherSharingPresenter>;
+  await act(async () =>
+    settings.onConsent("v", { numbers: false, prev: true, logging: false }),
+  );
+  expect(h.cloud.previousConsent).toHaveBeenCalledWith(["v"]);
+  expect(h.cloud.numbersConsent).not.toHaveBeenCalled();
+  expect(
+    r.getByText(
+      "Could not update sharing. The switches show your last saved choices.",
+    ),
+  ).toBeTruthy();
 });
 it("ignores stale invitation replies after unmount and resumes only a persisted cloud session", async () => {
   const h = setup(true);

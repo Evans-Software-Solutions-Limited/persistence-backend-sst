@@ -2318,3 +2318,197 @@ describe("cloud authoritative personal checkpoint", () => {
     });
   });
 });
+
+describe("sharing switches move on tap (PER-60)", () => {
+  let db: DatabaseSync,
+    api: TogetherCloudApi,
+    controller: TogetherCloudController,
+    server: CloudSnapshot;
+  const consentApi = () =>
+    jest.fn(
+      async (
+        _id: string,
+        _key: string,
+        kind: "numbers" | "previous",
+        body: { expectedVersion: number; recipientIds: string[] },
+      ): ReturnType<TogetherCloudApi["consent"]> => {
+        const field = kind === "numbers" ? "numbersConsent" : "previousConsent";
+        const current = server.participants[0][field]!;
+        if (body.expectedVersion !== current.version)
+          return fail({
+            kind: "api",
+            code: "server",
+            message: "conflict",
+            togetherCode: "VERSION_CONFLICT",
+          });
+        server.participants[0][field] = {
+          version: current.version + 1,
+          recipientIds: body.recipientIds,
+        };
+        return ok({
+          sessionId: server.sessionId,
+          ownerId: userId,
+          ...server.participants[0][field]!,
+        });
+      },
+    );
+  const own = () =>
+    controller
+      .getSnapshot()
+      .snapshot!.participants.find((p) => p.userId === userId)!;
+  beforeEach(async () => {
+    db = new DatabaseSync(":memory:");
+    server = snapshot();
+    api = {
+      create: jest.fn(async (_key, d) => {
+        server.plan = copy(d.plan);
+        server.participants[0].execution = copy(d.ownExecution);
+        return ok({
+          sessionId: server.sessionId,
+          revision: server.revision,
+          snapshot: copy(server),
+        });
+      }),
+      snapshot: jest.fn(async () => ok(copy(server))),
+      requests: jest.fn(async () => ok({ data: [], nextCursor: null })),
+      consent: consentApi(),
+      delegation: jest.fn(async (_id, _key, allowed: boolean) => {
+        server.participants[0].allowPartnerLogging = allowed;
+        server.participants[0].delegationGeneration += 1;
+        return ok({
+          generation: server.participants[0].delegationGeneration,
+          allowed,
+        });
+      }),
+    } as unknown as TogetherCloudApi;
+    controller = new TogetherCloudController({
+      api,
+      db: adapter(db),
+      randomUUID,
+    });
+    controller.setAccount(userId);
+    await controller.hostWorkout(draft());
+  });
+  afterEach(() => controller.dispose());
+
+  it("shows a consent change immediately, keeps the acknowledged version, and does not flicker through ack and refresh", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const inner = api.consent as jest.Mock;
+    api.consent = jest.fn(async (...args: unknown[]) => {
+      await gate;
+      return inner(...args);
+    }) as unknown as TogetherCloudApi["consent"];
+    const seen: string[][] = [];
+    controller.subscribe(() =>
+      seen.push([...own().numbersConsent!.recipientIds]),
+    );
+    const pending = controller.numbersConsent([other]);
+    // Synchronous: the switch has already moved while the request is still
+    // in flight, and the version is untouched until the server answers.
+    expect(own().numbersConsent).toEqual({ version: 0, recipientIds: [other] });
+    expect(controller.getSnapshot().pendingCount).toBe(1);
+    release();
+    await pending;
+    expect(own().numbersConsent).toEqual({ version: 1, recipientIds: [other] });
+    expect(controller.getSnapshot().pendingCount).toBe(0);
+    // Every published state between tap and settle showed the intent.
+    expect(seen.every((ids) => ids.includes(other))).toBe(true);
+    expect(seen.length).toBeGreaterThan(0);
+  });
+
+  it("shows a delegation change immediately and holds it between acknowledgement and the refreshed snapshot", async () => {
+    let releasePoll!: (
+      value: Awaited<ReturnType<TogetherCloudApi["snapshot"]>>,
+    ) => void;
+    (api.snapshot as jest.Mock).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          releasePoll = resolve;
+        }),
+    );
+    const pending = controller.delegation(true);
+    expect(own().allowPartnerLogging).toBe(true);
+    expect(own().delegationGeneration).toBe(0);
+    for (let i = 0; i < 20 && !releasePoll; i++) await Promise.resolve();
+    // Acknowledged by the server, refresh still in flight: the durable own
+    // checkpoint carries the acknowledgement so the switch stays on.
+    expect(api.delegation).toHaveBeenCalledTimes(1);
+    expect(controller.getSnapshot().pendingCount).toBe(0);
+    expect(own().allowPartnerLogging).toBe(true);
+    expect(own().delegationGeneration).toBe(1);
+    releasePoll(ok(copy(server)));
+    await pending;
+    expect(own().allowPartnerLogging).toBe(true);
+    expect(controller.getSnapshot().phase).toBe("active");
+  });
+
+  it("reverts the switch and reports the code when the server definitively rejects a sharing change, keeping the session usable", async () => {
+    api.consent = jest.fn(async () =>
+      fail({
+        kind: "api",
+        code: "forbidden",
+        message: "no",
+        status: 403,
+        togetherCode: "FORBIDDEN",
+      }),
+    ) as unknown as TogetherCloudApi["consent"];
+    const pending = controller.previousConsent([other]);
+    expect(own().previousConsent!.recipientIds).toEqual([other]);
+    await expect(pending).rejects.toThrow("FORBIDDEN");
+    expect(own().previousConsent).toEqual({ version: 0, recipientIds: [] });
+    expect(controller.getSnapshot().pendingCount).toBe(0);
+    expect(controller.getSnapshot().phase).toBe("active");
+    expect(controller.getSnapshot().error).toBeUndefined();
+    // The next change goes through normally.
+    api.consent = consentApi();
+    await controller.previousConsent([other]);
+    expect(own().previousConsent).toEqual({
+      version: 1,
+      recipientIds: [other],
+    });
+  });
+
+  it("keeps the intent pending through a network fault and applies it on retry", async () => {
+    const inner = api.consent as jest.Mock;
+    api.consent = jest.fn(async () =>
+      fail({ kind: "api", code: "network", message: "offline" }),
+    ) as unknown as TogetherCloudApi["consent"];
+    await expect(controller.numbersConsent([other])).rejects.toThrow("network");
+    expect(controller.getSnapshot().phase).toBe("reconnecting");
+    expect(controller.getSnapshot().pendingCount).toBe(1);
+    expect(own().numbersConsent!.recipientIds).toEqual([other]);
+    api.consent = inner as unknown as TogetherCloudApi["consent"];
+    await controller.retry();
+    expect(controller.getSnapshot().pendingCount).toBe(0);
+    expect(own().numbersConsent).toEqual({ version: 1, recipientIds: [other] });
+    expect(server.participants[0].numbersConsent!.recipientIds).toEqual([
+      other,
+    ]);
+  });
+
+  it("applies a later tap on top of an earlier pending one in the published snapshot", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const inner = api.consent as jest.Mock;
+    let first = true;
+    api.consent = jest.fn(async (...args: unknown[]) => {
+      if (first) {
+        first = false;
+        await gate;
+      }
+      return inner(...args);
+    }) as unknown as TogetherCloudApi["consent"];
+    const on = controller.numbersConsent([other]);
+    const off = controller.numbersConsent([]);
+    expect(own().numbersConsent!.recipientIds).toEqual([]);
+    expect(controller.getSnapshot().pendingCount).toBe(2);
+    release();
+    await Promise.all([on, off]);
+    expect(own().numbersConsent).toEqual({ version: 2, recipientIds: [] });
+  });
+});
