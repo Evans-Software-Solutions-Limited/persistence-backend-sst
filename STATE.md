@@ -29,7 +29,23 @@ to a Date. PR #502; needs a staging deploy, no app build.
 `TogetherCloudContainer.onConsent` each enqueue a consent action; `queue()`
 drains (POST) and then refreshes the whole session before the acknowledged
 state moves the switch, and numbers → previous → logging are awaited serially.
-No optimistic state. Recorded on PER-60 (UX list, 16 Oct) and PER-64.
+No optimistic state, and the container's `run` helper locked the sheet for the
+round trip and dropped further taps. FIXED in PR #502 (Brad: "in a system
+where the toggles should be instant, we should really need to ensure this is
+right"): the controller's `publish()` overlays pending `consent`/`delegation`
+outbox actions on the own participant of the published snapshot
+(`withIntent`), using the durable `own` checkpoint as the acknowledged base so
+the switch holds between ack and refresh; the drain now writes the delegation
+ack into that checkpoint too. A definitive 4xx on a sharing change
+(`definitiveRejection`: 4xx other than 408/429, or VERSION_CONFLICT/FORBIDDEN/
+INVALID_STATE/NOT_FOUND/INVALID_SCHEMA) drops the intent, rejects the caller
+with the code and leaves the session active; a network fault keeps the intent
+pending and goes through the existing reconnecting/retry path. The container
+fires each changed permission through a non-locking `fire` helper, so the
+three switches queue at once and a rejection shows one notice. The LAN path
+already applied consent locally before send (`sharedSession.publish` →
+`accept`), so only the cloud path changed. Five controller tests + two
+container tests; cloudSession.ts 95/90/96/97, container 93/91/94/94.
 
 **Cold-start QR scan.** `_layout.tsx` carries coach `?code=` invites through
 launch via `usePendingInvite`; `together/join` only has the warm deep-link map
