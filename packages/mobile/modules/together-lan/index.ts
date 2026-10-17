@@ -6,7 +6,9 @@ export type TogetherLanEvent =
   | { type: "connected"; peerId: string; incoming: boolean }
   | { type: "frame"; peerId: string; frame: string }
   | { type: "disconnected"; peerId: string }
-  | { type: "error"; code: string; peerId?: string };
+  | { type: "error"; code: string; peerId?: string }
+  /** SDK detail for the Together log only; never a transport event. */
+  | { type: "log"; message: string; data?: Record<string, unknown> };
 
 /** Raw, untrusted bytes. Anonymous probes carry public metadata only; admission and workout traffic require the authenticated channel. */
 export interface TogetherLanNative {

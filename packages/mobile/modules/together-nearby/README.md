@@ -63,6 +63,45 @@ same mitigation swift-nio-ssl applied in apple/swift-nio-ssl#191 and the crash
 reported in google/nearby#2195. `nm -m` on the built app must show
 `(__TEXT,__text) external _sdallocx`, not `weak external`.
 
+## Together log and real error codes (17 October 2026)
+
+The 17 October two-iPhone staging run (latest build on both phones, host on
+"Open nearby", guest scanning the QR) ended on the guest with the generic
+"Could not connect securely" line and nothing else to go on: the lobby copy
+mapped `error.message`, but Expo delivers `promise.reject(code, description)`
+as an Error whose `code` is ours and whose message is the description, so
+`connect_failed`, `connection_rejected`, `handshake_failed`, `already_started`
+and the rest all rendered identically, and no layer kept a record.
+
+- `src/adapters/together/errorCode.ts` reads `error.code` first; the lobby
+  controller uses it for every failure and the presenter has copy for the
+  connect-stage, handshake and busy-transport codes.
+- `src/diagnostics/together/togetherLog.ts` is a bounded in-memory log (400
+  entries, no frame contents, no names). `withNativeDiagnostics` wraps both
+  native modules so every call records its outcome, duration and real code and
+  every event except frames is recorded; the controller records phase changes,
+  session events and failures. Entries also go to Sentry as breadcrumbs.
+- This module emits `{"type":"log"}` events with SDK detail: advertising and
+  discovery start results with the `NSError` domain/code/description, every
+  `didFind`/`didLose`, each connection request and its verdict, verification,
+  every `ConnectionState` change, `requestConnection` failures with the
+  `NSError`, and every drop with its reason. The JS wrapper records these and
+  never forwards them to the session. A `.rejected` state now reports
+  `connection_rejected` and a link that closes before it was ready reports
+  `connection_closed`, instead of a bare disconnect.
+- On staging and development builds the lobby shows `Diagnostic: <code> ·
+<transport> transport` under the error and a **Share Together log** button
+  whenever the lobby is active. Reproduce, tap it on the failing phone (the
+  host's log is just as useful), and send the text.
+- `NSBonjourServices` now carries Nearby's exact spelling of the Wi-Fi LAN
+  Bonjour type: `_5BC3430BD1A1._tcp` (first 6 bytes of SHA-256 of the service
+  ID in `%02X`, from `connections/implementation/mediums/wifi_lan.cc`). The
+  previous lowercase entry may have been rejected by iOS local-network policy,
+  which would have left BLE as the only medium.
+
+The Android module does not emit `log` events yet; its calls and events are
+still recorded by the JS wrapper.
+
 ## Evidence and remaining native gate
 
 JS framing/bridge/plugin tests exercise bounds, ordering, cancellation and

@@ -74,3 +74,35 @@ it("links a strong sdallocx in the always-linked module object so BoringSSL's we
   );
   expect(podspec).toContain("s.source_files = '**/*.swift'");
 });
+
+it("emits SDK detail as log events, keeps NSError text in rejections and codes rejected or never-ready closures", () => {
+  const source = readFileSync(
+    join(__dirname, "../ios/TogetherNearbyModule.swift"),
+    "utf8",
+  );
+  expect(source).toContain(
+    'emit(["type": "log", "message": message, "data": data])',
+  );
+  for (const line of [
+    'self.log(self.host ? "startAdvertising failed" : "startDiscovery failed", self.detail(error))',
+    'self.log("requestConnection failed", failure)',
+    'log("didFind", ["endpointId": id, "lobbyId": lobby ?? "", "valid": valid',
+    'log("connection request refused"',
+    'log("verification", ["peerId": id, "accept": accept])',
+    'log("state \\(name)"',
+    'log("drop", ["peerId": id, "code": code ?? ""',
+  ])
+    expect(source).toContain(line);
+  expect(source).toMatch(
+    /promise\.reject\("nearby_unavailable", "Nearby could not start \(check Bluetooth and local-network permissions\): \\\(error\.localizedDescription\)"\)/,
+  );
+  expect(source).toMatch(
+    /promise\.reject\("connect_failed", "Nearby connection failed: \\\(error\.localizedDescription\)"\)/,
+  );
+  expect(source).toContain('case .rejected: drop(id, "connection_rejected")');
+  expect(source).toContain(
+    'case .disconnected: drop(id, peer.ready ? nil : "connection_closed")',
+  );
+  // Log lines never carry frame contents.
+  expect(source).not.toMatch(/log\([^\n]*"frame": frame/);
+});

@@ -798,6 +798,71 @@ describe("reviewed lobby coordinator, real cryptography and SQLite, simulated na
     await value.controller.host("C");
     expect(value.native.startHost).toHaveBeenCalledTimes(1);
   });
+  it("shows Expo's native code, not its description, and writes phases, events and failures to the Together log", async () => {
+    const record = jest.fn();
+    const guest = setup(3, { diagnostics: { record } });
+    await guest.controller.selectInvite(invitation());
+    // Expo rejects `promise.reject("connect_failed", "Nearby connection failed")`
+    // as an Error whose `code` is ours and whose message is the description.
+    guest.native.connect.mockRejectedValueOnce(
+      Object.assign(new Error("Nearby connection failed: BLE timed out"), {
+        code: "connect_failed",
+      }),
+    );
+    await guest.controller.join();
+    guest.native.emit({
+      type: "discovered",
+      endpointId: "host",
+      lobbyId: id(100),
+    });
+    await settle();
+    expect(guest.controller.getSnapshot()).toMatchObject({
+      phase: "unavailable",
+      error: "connect_failed",
+    });
+    const lines = record.mock.calls.map(
+      ([source, message]) => `${source} ${message}`,
+    );
+    expect(lines).toEqual(
+      expect.arrayContaining([
+        "lobby phase preparing",
+        "lobby phase selected",
+        "lobby phase searching",
+        "lobby session discovered",
+        "lobby phase connecting",
+        "lobby recoverable",
+        "lobby failure",
+        "lobby phase unavailable",
+      ]),
+    );
+    expect(record).toHaveBeenCalledWith("lobby", "failure", {
+      code: "connect_failed",
+      message: "Nearby connection failed: BLE timed out",
+      phase: "connecting",
+    });
+    expect(record).toHaveBeenCalledWith("lobby", "session discovered", {
+      peerId: undefined,
+      endpointId: "host",
+      code: undefined,
+      phase: "searching",
+    });
+    // Failure resets the snapshot before publishing, so the terminal line
+    // carries the code without the guest role.
+    expect(record).toHaveBeenCalledWith(
+      "lobby",
+      "phase unavailable",
+      expect.objectContaining({ error: "connect_failed" }),
+    );
+    // Unchanged snapshots never add a phase line.
+    const phases = lines.filter((line) => line === "lobby phase unavailable");
+    expect(phases).toHaveLength(1);
+    await guest.controller.cancel();
+    guest.controller.selectTransport?.("lan");
+    expect(record).toHaveBeenCalledWith("lobby", "transport", {
+      requested: "lan",
+      selected: "lan",
+    });
+  });
   it("returns honest permission/native/connection errors and isolates observer failures", async () => {
     const value = setup();
     const listener = jest.fn(() => {

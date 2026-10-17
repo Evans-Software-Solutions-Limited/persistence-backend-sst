@@ -503,6 +503,19 @@ describe("LAN session lifecycle with actual crypto and SQLite", () => {
     expect(host.native.startHost).toHaveBeenCalledWith(pin.sessionId);
   });
 
+  it("ignores native SDK log events: they belong to the Together log, not the transport", async () => {
+    const guest = setup(2);
+    await guest.session.startDiscovery();
+    guest.native.emit({
+      type: "log",
+      message: "didFind",
+      data: { valid: false },
+    });
+    await settle();
+    expect(guest.events).toEqual([]);
+    expect(guest.native.disconnect).not.toHaveBeenCalled();
+    expect(guest.native.stop).not.toHaveBeenCalled();
+  });
   it("cleans up listeners when native startup fails", async () => {
     const host = setup(1);
     host.native.startHost.mockRejectedValueOnce(new Error("permission"));
