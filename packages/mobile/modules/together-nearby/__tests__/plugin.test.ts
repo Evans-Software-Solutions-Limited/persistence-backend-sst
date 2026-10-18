@@ -48,7 +48,10 @@ it("supplies defaults without existing Info.plist values", async () => {
     introspect: true,
     ignoreExistingNativeFiles: true,
   });
-  expect(result.ios?.infoPlist?.NSBonjourServices).toHaveLength(1);
+  // Nearby's own spelling: "_%s._tcp" of the first 6 SHA-256 bytes in "%02X".
+  expect(result.ios?.infoPlist?.NSBonjourServices).toEqual([
+    "_5BC3430BD1A1._tcp",
+  ]);
   expect(result.ios?.infoPlist?.NSBluetoothAlwaysUsageDescription).toContain(
     "Together",
   );

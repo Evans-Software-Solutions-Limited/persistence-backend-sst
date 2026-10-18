@@ -27,6 +27,10 @@ export function createTogetherLobby(
       require("./security/identity") as typeof import("./security/identity");
     const { TogetherLobbyController } =
       require("./lobbyController") as typeof import("./lobbyController");
+    const { withNativeDiagnostics } =
+      require("./nativeDiagnostics") as typeof import("./nativeDiagnostics");
+    const { togetherLog } =
+      require("@/diagnostics/together/togetherLog") as typeof import("@/diagnostics/together/togetherLog");
     const db = openDatabaseSync(
       `together-lobby-${requestHash(environment)}.db`,
     );
@@ -34,9 +38,13 @@ export function createTogetherLobby(
       const controller = new TogetherLobbyController({
         enabled: true,
         provisioning,
-        native: togetherLan,
-        nearby: togetherNearby,
+        native:
+          togetherLan && withNativeDiagnostics(togetherLan, togetherLog, "lan"),
+        nearby:
+          togetherNearby &&
+          withNativeDiagnostics(togetherNearby, togetherLog, "nearby"),
         database: db,
+        diagnostics: togetherLog,
         randomBytes: getRandomBytes,
         randomUUID,
         recovery,

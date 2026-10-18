@@ -25,8 +25,14 @@ import { adoptSharedPlan } from "@/adapters/together/adoptSharedPlan";
 import type { TogetherLobbySnapshot } from "@/domain/ports/togetherLobby.port";
 import type { TogetherCloudState } from "@/domain/ports/togetherCloud.port";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { isDiagnosticsAllowed } from "@/diagnostics/allowed";
+import { shareTogetherLog } from "@/diagnostics/together/togetherLog";
 
 const noop = () => {};
+/** Staging and development only: the lobby can share the Together log. */
+const shareDiagnostics = isDiagnosticsAllowed()
+  ? () => void shareTogetherLog()
+  : undefined;
 const EMPTY: TogetherLobbySnapshot = {
   phase: "disabled",
   members: [],
@@ -517,6 +523,7 @@ export function TogetherJoinContainer() {
               }
               onApprove={noop}
               onDecline={noop}
+              onShareDiagnostics={shareDiagnostics}
               scanner={camera}
             />
           )}

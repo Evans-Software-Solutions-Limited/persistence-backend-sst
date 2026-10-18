@@ -38,6 +38,13 @@ import {
   togetherWorkoutCopy,
   type TogetherLobbyScreen,
 } from "@/ui/presenters/TogetherLobbyPresenter";
+import { isDiagnosticsAllowed } from "@/diagnostics/allowed";
+import { shareTogetherLog } from "@/diagnostics/together/togetherLog";
+
+/** Staging and development only: the lobby can share the Together log. */
+const shareDiagnostics = isDiagnosticsAllowed()
+  ? () => void shareTogetherLog()
+  : undefined;
 
 function currentPreviousRows(
   workout: WorkoutSession,
@@ -989,6 +996,7 @@ export function TogetherLobbyContainer({
               onCancel={close}
               onApprove={(peerId) => invoke(() => lobby.approve(peerId))}
               onDecline={(peerId) => invoke(() => lobby.decline(peerId))}
+              onShareDiagnostics={shareDiagnostics}
               qr={
                 snapshot.invitation ? (
                   <View backgroundColor="white">

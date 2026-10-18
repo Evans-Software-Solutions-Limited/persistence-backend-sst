@@ -23,6 +23,10 @@ jest.mock("expo-sqlite", () => {
 jest.mock("../lobbyController", () => ({
   TogetherLobbyController: mockConstruct,
 }));
+const mockLog = { record: jest.fn() };
+jest.mock("@/diagnostics/together/togetherLog", () => ({
+  togetherLog: mockLog,
+}));
 const provisioning = {} as TogetherProvisioningPort;
 let create: typeof import("../createTogetherLobby").createTogetherLobby;
 beforeEach(() => {
@@ -49,7 +53,16 @@ it("isolates environment journals and disposes once after stopping", async () =>
   expect(mockConstruct.mock.calls[0][0]).toMatchObject({
     enabled: true,
     provisioning,
+    diagnostics: mockLog,
+    nearby: null,
   });
+  // The LAN module is wrapped so every call and event reaches the Together log.
+  const native = mockConstruct.mock.calls[0][0].native;
+  expect(native).not.toBe(
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- the module registry is reset per test
+    require("../../../../modules/together-lan").togetherLan,
+  );
+  expect(typeof native.addListener).toBe("function");
   await a.dispose();
   await a.dispose();
   expect(mockDispose).toHaveBeenCalledTimes(1);
