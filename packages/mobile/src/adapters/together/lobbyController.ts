@@ -42,6 +42,8 @@ import {
   readLobbyInvitation,
   type LobbyInvitation,
 } from "./lobbyInvitation";
+import { togetherErrorCode, togetherErrorMessage } from "./errorCode";
+import type { TogetherLogSink } from "@/diagnostics/together/togetherLog";
 
 export interface TogetherLobbyControllerOptions {
   enabled?: boolean;
@@ -55,6 +57,8 @@ export interface TogetherLobbyControllerOptions {
   now?: () => number;
   deniedPairs?: () => readonly (readonly [string, string])[];
   recovery?: TogetherRecoveryApi;
+  /** Phase transitions, failures with their real codes and session events. */
+  diagnostics?: TogetherLogSink;
 }
 interface Resources {
   shared?: TogetherSharedSession;
@@ -81,6 +85,7 @@ export class TogetherLobbyController implements TogetherLobbyPort {
     if (this.snapshot.phase !== "idle")
       throw new Error("transport-unavailable");
     this.transport = this.transports.includes(transport) ? transport : "lan";
+    this.log("transport", { requested: transport, selected: this.transport });
     this.publish({ transport: this.transport });
   }
   private native() {
@@ -217,12 +222,26 @@ export class TogetherLobbyController implements TogetherLobbyPort {
       this.listeners.delete(listener);
     };
   };
+  private log(message: string, data?: Record<string, unknown>) {
+    this.options.diagnostics?.record("lobby", message, data);
+  }
   private publish(change: Partial<TogetherLobbySnapshot>) {
+    const previous = this.snapshot;
     this.snapshot = {
       ...this.snapshot,
       ...change,
       sessionId: this.resources?.lobby.pin.sessionId,
     };
+    if (
+      previous.phase !== this.snapshot.phase ||
+      previous.error !== this.snapshot.error
+    )
+      this.log(`phase ${this.snapshot.phase}`, {
+        error: this.snapshot.error,
+        role: this.snapshot.role,
+        transport: this.snapshot.transport,
+        audience: this.snapshot.audience,
+      });
     this.workout.changed();
     for (const listener of this.listeners) {
       try {
@@ -342,7 +361,12 @@ export class TogetherLobbyController implements TogetherLobbyPort {
    */
   private recoverable(error: unknown, generation: number) {
     if (!this.current(generation)) return;
-    const code = error instanceof Error ? error.message : "unavailable";
+    const code = togetherErrorCode(error);
+    this.log("recoverable", {
+      code,
+      message: togetherErrorMessage(error),
+      phase: this.snapshot.phase,
+    });
     const resources = this.resources;
     if (!resources || !this.admitted() || TERMINAL.has(code))
       return this.failure(error, generation);
@@ -893,6 +917,13 @@ export class TogetherLobbyController implements TogetherLobbyPort {
     resources: Resources,
     generation: number,
   ) {
+    if (event.type !== "receipt" && event.type !== "command")
+      this.log(`session ${event.type}`, {
+        peerId: "peerId" in event ? event.peerId : undefined,
+        endpointId: "endpointId" in event ? event.endpointId : undefined,
+        code: "code" in event ? event.code : undefined,
+        phase: this.snapshot.phase,
+      });
     if (event.type === "receipt") this.workout.changed();
     if (event.type === "discovered" && this.snapshot.phase === "searching") {
       clearTimeout(this.timer);
@@ -992,7 +1023,12 @@ export class TogetherLobbyController implements TogetherLobbyPort {
   }
   private failure(error: unknown, generation: number) {
     if (!this.current(generation)) return;
-    const code = error instanceof Error ? error.message : "unavailable";
+    const code = togetherErrorCode(error);
+    this.log("failure", {
+      code,
+      message: togetherErrorMessage(error),
+      phase: this.snapshot.phase,
+    });
     // Invalidate handlers before stopping; keep durable logs, never keep signing seeds on failure.
     const cleanup = this.cancel();
     const failedGeneration = this.generation;

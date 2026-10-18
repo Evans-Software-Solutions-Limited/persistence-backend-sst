@@ -40,6 +40,8 @@ export interface TogetherLobbyPresenterProps {
   onCancel(): void;
   onApprove(peerId: string): void;
   onDecline(peerId: string): void;
+  /** Non-production builds: shows the raw error code and shares the Together log. */
+  onShareDiagnostics?(): void;
   connectionOptions?: ReactNode;
   qr?: ReactNode;
   scanner?: ReactNode;
@@ -95,8 +97,24 @@ export function togetherErrorCopy(
     return "Together could not verify this device. Check that your phone’s date and time are automatic, then try again.";
   if (/unauthorized|ineligible/i.test(code))
     return "Together access could not be authorized. Connect to the internet and try again. Your personal workout is safe.";
+  // Connect-stage codes from the native transport (Expo surfaces them as
+  // `error.code`); each used to collapse into the generic last line.
   if (
-    /permission|wifi|lan_unavailable|discovery|advertising|listener/i.test(code)
+    /^(connect_failed|unknown_endpoint|connection_rejected|connection_closed)$/.test(
+      code,
+    )
+  )
+    return nearby
+      ? "The host was found nearby, but the connection could not be opened. Keep both phones unlocked with Together open and Bluetooth on, then try again."
+      : "The host was found, but the connection could not be opened. Check both phones share the same Wi-Fi, then try again.";
+  if (/handshake|channel_failed|protocol_failed|authentication/i.test(code))
+    return "The host was reached, but the secure handshake failed. Ask the host for a fresh invitation and try again.";
+  if (/^(already_started|not_started|cancelled)$/.test(code))
+    return "Nearby was still busy on this phone. Go back and try again.";
+  if (
+    /permission|wifi|lan_unavailable|nearby_unavailable|discovery|advertising|listener/i.test(
+      code,
+    )
   )
     return nearby
       ? "Check Bluetooth and nearby-device permissions on both phones, and keep them within reach. Internet is not required."
@@ -398,6 +416,22 @@ export function TogetherLobbyPresenter(p: TogetherLobbyPresenterProps) {
         >
           {error}
         </Text>
+      )}
+      {p.onShareDiagnostics && s.error && (
+        <Text
+          fontFamily="$body"
+          fontSize={12}
+          lineHeight={18}
+          color="$text2"
+          testID="together-diagnostic-code"
+        >
+          {`Diagnostic: ${s.error} · ${s.transport ?? "unknown"} transport`}
+        </Text>
+      )}
+      {p.onShareDiagnostics && s.phase !== "idle" && s.phase !== "disabled" && (
+        <Btn full variant="ghost" onPress={p.onShareDiagnostics}>
+          Share Together log
+        </Btn>
       )}
       {s.invitation && s.role === "host" && (
         <Card>

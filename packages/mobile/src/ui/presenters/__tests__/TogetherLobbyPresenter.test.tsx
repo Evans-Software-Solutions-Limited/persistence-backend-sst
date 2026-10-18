@@ -394,3 +394,65 @@ it("shows named athlete cards without exposing internal account IDs", () => {
     r.queryByText(/private-id|private-owner-id|private-guest-id/),
   ).toBeNull();
 });
+
+it("names connect-stage and handshake failures instead of the generic last line", () => {
+  expect(togetherErrorCopy("connect_failed", "nearby")).toMatch(
+    /found nearby, but the connection could not be opened/,
+  );
+  expect(togetherErrorCopy("connection_rejected", "lan")).toMatch(/same Wi-Fi/);
+  expect(togetherErrorCopy("unknown_endpoint")).toMatch(/could not be opened/);
+  expect(togetherErrorCopy("connection_closed")).toMatch(/could not be opened/);
+  expect(togetherErrorCopy("handshake_failed")).toMatch(
+    /secure handshake failed/,
+  );
+  expect(togetherErrorCopy("channel_failed")).toMatch(
+    /secure handshake failed/,
+  );
+  expect(togetherErrorCopy("protocol_failed")).toMatch(
+    /secure handshake failed/,
+  );
+  expect(togetherErrorCopy("authentication_timeout")).toMatch(
+    /secure handshake failed/,
+  );
+  expect(togetherErrorCopy("already_started")).toMatch(/still busy/);
+  expect(togetherErrorCopy("not_started")).toMatch(/still busy/);
+  expect(togetherErrorCopy("cancelled")).toMatch(/still busy/);
+  expect(togetherErrorCopy("nearby_unavailable", "nearby")).toMatch(
+    /Check Bluetooth and nearby-device permissions/,
+  );
+  // Existing codes keep their copy.
+  expect(togetherErrorCopy("connect_timeout", "nearby")).toMatch(
+    /could not be reached/,
+  );
+  expect(togetherErrorCopy("unreachable-host")).toMatch(/could not be reached/);
+  expect(togetherErrorCopy("something-new")).toMatch(
+    /Could not connect securely/,
+  );
+});
+it("shows the raw diagnostic code and shares the Together log only when diagnostics are offered", () => {
+  const p = props("unavailable");
+  p.snapshot.error = "connect_failed";
+  p.snapshot.transport = "nearby";
+  const hidden = renderWithTheme(<TogetherLobbyPresenter {...p} />);
+  expect(hidden.queryByTestId("together-diagnostic-code")).toBeNull();
+  expect(hidden.queryByText("Share Together log")).toBeNull();
+  hidden.unmount();
+  const onShareDiagnostics = jest.fn();
+  const r = renderWithTheme(
+    <TogetherLobbyPresenter {...p} onShareDiagnostics={onShareDiagnostics} />,
+  );
+  expect(
+    r.getByText("Diagnostic: connect_failed · nearby transport"),
+  ).toBeTruthy();
+  fireEvent.press(r.getByText("Share Together log"));
+  expect(onShareDiagnostics).toHaveBeenCalledTimes(1);
+  r.unmount();
+  const idle = renderWithTheme(
+    <TogetherLobbyPresenter
+      {...props("idle")}
+      onShareDiagnostics={onShareDiagnostics}
+    />,
+  );
+  expect(idle.queryByText("Share Together log")).toBeNull();
+  expect(idle.queryByTestId("together-diagnostic-code")).toBeNull();
+});

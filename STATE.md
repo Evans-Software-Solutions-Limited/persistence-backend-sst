@@ -1,5 +1,52 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-17 — Nearby join failed with one generic line; Together log, real error codes, Bonjour spelling (PER-64, branch `claude/per-64-nearby-diagnostics`)
+
+Brad's staging run on the latest build, both iPhones, Brad hosting "Open
+nearby", Libby scanning the QR: the open-sessions list stayed empty, the join
+showed "Looking for this host nearby…" for a couple of seconds, then
+"Together is unavailable" + "Could not connect securely". That copy is the
+`togetherErrorCopy` fallback, reachable only from the connect stage (native
+`connect` rejection, `connect_failed` event, or the post-connect handshake):
+discovery start failures and the 10 s host timeout have their own copy, so the
+guest did find the host and the connection attempt failed.
+
+Root problem for debugging: Expo surfaces `promise.reject(code, description)`
+as `{ code, message: description }` (`AsyncFunctionDefinition.swift` →
+`reject(error.code, error.description)`), the controller read `error.message`,
+and the Together path had no logging or breadcrumbs, so the real code never
+survived to the screen or anywhere else.
+
+Changes: `errorCode.ts` (code before message, thrown strings still
+"unavailable"); controller logs phase changes, session events, recoverable and
+terminal failures through an optional `diagnostics` sink; `TogetherLog`
+(bounded, no frames or names, Sentry breadcrumbs) with `withNativeDiagnostics`
+wrapping both native modules in `createTogetherLobby`; the iOS Nearby module
+emits `log` events with the `NSError` for start/connect failures, every
+`didFind`/`didLose`, connection requests, verification, every connection state
+change and every drop, keeps the `NSError` text in rejections, and reports
+`connection_rejected` / `connection_closed` instead of a bare disconnect;
+`lanSession` ignores `log` events; presenter copy for connect-stage, handshake
+and busy-transport codes; on staging/dev the lobby shows the raw code and a
+"Share Together log" button; `NSBonjourServices` now matches Nearby's
+`_5BC3430BD1A1._tcp` (uppercase, from `wifi_lan.cc` `GenerateServiceType`).
+`nm`/SDK checks: Apple Nearby at the pinned revision implements the BLE GATT
+socket connect (`ble_medium.mm` `BleMedium::Connect`), Classic Bluetooth is
+`nullptr` on Apple, and `kEnableBleL2cap` defaults off.
+
+Verified: mobile typecheck, `expo lint` clean, prettier; full mobile suite
+under Node 24 (CI's runtime) 633 suites / 8,526 tests all passing, coverage
+96.53 / 92.44 / 96.63 / 97.84. Under this container's Node 22 the untouched
+`SubscriptionSelectionContainer` suite fails 16 cases on the clean tree too:
+after the fake-timer referral block, the second real-timer render's
+subscription query resolves in 5 ms but React does not commit it until the 1 s
+`waitFor` gives up. Node-version timing, not a repo defect; the same file is
+23/23 on Node 24. Not
+verified: Swift compilation (no toolchain here) and the device run; the next
+TestFlight build is Brad's. Next action: rebuild, reproduce the same scenario,
+tap "Share Together log" on the guest (and host) and read the `nearby` lines
+around `requestConnection`.
+
 ### 2026-10-14 (evening) — Two-phone run on build 22: Nearby crash and online 503s root-caused
 
 Brad's run on the #499 staging TestFlight build (1.1.3 (22)): Nearby guest

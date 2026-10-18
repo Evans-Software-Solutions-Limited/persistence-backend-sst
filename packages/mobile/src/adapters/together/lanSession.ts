@@ -286,6 +286,8 @@ export class TogetherLanSession {
   }
 
   private handle(event: TogetherLanEvent): void {
+    // SDK detail belongs to the Together log, which records it before us.
+    if (event.type === "log") return;
     if (event.type === "discovered") {
       if (
         this.mode !== "guest" ||

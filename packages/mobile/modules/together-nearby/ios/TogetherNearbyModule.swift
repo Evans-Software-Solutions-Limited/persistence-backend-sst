@@ -78,6 +78,15 @@ private final class NearbyEngine: ConnectionManagerDelegate, AdvertiserDelegate,
   // Explicit local media; WebRTC is excluded. LAN transport remains separately selectable.
   private let mediums: Set<Medium> = [.ble, .bluetooth, .wifiLAN]
   private let emit: ([String: Any]) -> Void
+  /// SDK detail for the Together log (`type: "log"`); never a transport event.
+  private func log(_ message: String, _ data: [String: Any] = [:]) {
+    emit(["type": "log", "message": message, "data": data])
+  }
+  private func detail(_ error: Error?) -> [String: Any] {
+    guard let error else { return [:] }
+    let ns = error as NSError
+    return ["error": error.localizedDescription, "domain": ns.domain, "errorCode": ns.code]
+  }
   private var active = true
   private var host = false
   private var endpoints: [String: String] = [:]
@@ -99,24 +108,42 @@ private final class NearbyEngine: ConnectionManagerDelegate, AdvertiserDelegate,
   }
   func start(_ lobby: String?, _ promise: Promise) {
     host = lobby != nil
+    log(host ? "startAdvertising" : "startDiscovery", ["lobbyId": lobby ?? "", "mediums": "ble,bluetooth,wifiLAN"])
     let completed: (Error?) -> Void = { [weak self] error in
       DispatchQueue.main.async {
         guard let self, self.active else { promise.reject("cancelled", "Nearby stopped"); return }
-        if error != nil { self.stop(); promise.reject("nearby_unavailable", "Check Bluetooth and local-network permissions") }
-        else { promise.resolve() }
+        if let error {
+          self.log(self.host ? "startAdvertising failed" : "startDiscovery failed", self.detail(error))
+          self.stop()
+          promise.reject("nearby_unavailable", "Nearby could not start (check Bluetooth and local-network permissions): \(error.localizedDescription)")
+        } else {
+          self.log(self.host ? "advertising" : "discovering")
+          promise.resolve()
+        }
       }
     }
     if let lobby { advertiser.startAdvertising(using: Data(lobby.utf8), mediums: mediums, completionHandler: completed) }
     else { discoverer.startDiscovery(mediums: mediums, completionHandler: completed) }
   }
   func connect(_ id: String, _ promise: Promise) {
-    guard active, !host, endpoints[id] != nil, peers.isEmpty else { promise.reject("unknown_endpoint", "Unknown or busy endpoint"); return }
+    guard active, !host, endpoints[id] != nil, peers.isEmpty else {
+      log("requestConnection refused", ["endpointId": id, "active": active, "host": host, "known": endpoints[id] != nil, "peers": peers.count])
+      promise.reject("unknown_endpoint", "Unknown or busy endpoint"); return
+    }
+    log("requestConnection", ["endpointId": id, "lobbyId": endpoints[id] ?? ""])
     let peer = Peer(false); peers[id] = peer; deadline(id, peer, 10)
     discoverer.requestConnection(to: id, using: Data(), mediums: mediums) { [weak self, weak peer] error in
       DispatchQueue.main.async {
         guard let self, let peer, self.active, self.peers[id] === peer else { promise.reject("cancelled", "Nearby stopped"); return }
-        if error != nil { self.drop(id, "connect_failed"); promise.reject("connect_failed", "Nearby connection failed") }
-        else { promise.resolve() }
+        if let error {
+          var failure = self.detail(error); failure["endpointId"] = id
+          self.log("requestConnection failed", failure)
+          self.drop(id, "connect_failed")
+          promise.reject("connect_failed", "Nearby connection failed: \(error.localizedDescription)")
+        } else {
+          self.log("requestConnection accepted", ["endpointId": id])
+          promise.resolve()
+        }
       }
     }
   }
@@ -157,6 +184,7 @@ private final class NearbyEngine: ConnectionManagerDelegate, AdvertiserDelegate,
   }
   func drop(_ id: String, _ code: String? = nil) {
     guard let peer = peers.removeValue(forKey: id) else { return }
+    log("drop", ["peerId": id, "code": code ?? "", "ready": peer.ready, "incoming": peer.incoming])
     peer.timeout?.cancel(); manager.disconnect(from: id)
     if let code { emit(["type": "error", "peerId": id, "code": code]) }
     emit(["type": "disconnected", "peerId": id])
@@ -168,29 +196,49 @@ private final class NearbyEngine: ConnectionManagerDelegate, AdvertiserDelegate,
     advertiser.delegate = nil; discoverer.delegate = nil; manager.delegate = nil
   }
   func advertiser(_ advertiser: Advertiser, didReceiveConnectionRequestFrom id: EndpointID, with context: Data, connectionRequestHandler: @escaping (Bool) -> Void) {
-    guard active, host, peers.count < 8, peers[id] == nil else { connectionRequestHandler(false); return }
+    guard active, host, peers.count < 8, peers[id] == nil else {
+      log("connection request refused", ["peerId": id, "active": active, "host": host, "peers": peers.count])
+      connectionRequestHandler(false); return
+    }
+    log("connection request accepted", ["peerId": id])
     let peer = Peer(true); peers[id] = peer; deadline(id, peer, 10)
     connectionRequestHandler(true)
   }
   func discoverer(_ discoverer: Discoverer, didFind id: EndpointID, with context: Data) {
-    guard active, !host, endpoints.count < 64, let lobby = String(data: context, encoding: .utf8), UUID(uuidString: lobby)?.uuidString.lowercased() == lobby else { return }
+    let lobby = String(data: context, encoding: .utf8)
+    let valid = lobby.map { UUID(uuidString: $0)?.uuidString.lowercased() == $0 } ?? false
+    log("didFind", ["endpointId": id, "lobbyId": lobby ?? "", "valid": valid, "active": active, "host": host, "known": endpoints.count])
+    guard active, !host, endpoints.count < 64, let lobby, valid else { return }
     endpoints[id] = lobby; emit(["type": "discovered", "endpointId": id, "lobbyId": lobby])
   }
   func discoverer(_ discoverer: Discoverer, didLose id: EndpointID) {
+    log("didLose", ["endpointId": id])
     if active, endpoints.removeValue(forKey: id) != nil { emit(["type": "lost", "endpointId": id]) }
   }
   func connectionManager(_ manager: ConnectionManager, didReceive verificationCode: String, from id: EndpointID, verificationHandler: @escaping (Bool) -> Void) {
     // Transport only: signed host selection + channel above us establish identity.
-    verificationHandler(active && peers[id] != nil)
+    let accept = active && peers[id] != nil
+    log("verification", ["peerId": id, "accept": accept])
+    verificationHandler(accept)
   }
   func connectionManager(_ manager: ConnectionManager, didChangeTo state: ConnectionState, for id: EndpointID) {
+    let name: String
+    switch state {
+    case .connecting: name = "connecting"
+    case .connected: name = "connected"
+    case .disconnected: name = "disconnected"
+    case .rejected: name = "rejected"
+    }
+    log("state \(name)", ["peerId": id, "known": peers[id] != nil, "active": active])
     guard active, let peer = peers[id] else { return }
     switch state {
     case .connecting: break
     case .connected:
       guard !peer.ready else { return }; peer.ready = true; deadline(id, peer, 30)
       emit(["type": "connected", "peerId": id, "incoming": peer.incoming])
-    case .disconnected, .rejected: drop(id)
+    case .rejected: drop(id, "connection_rejected")
+    // A link that closes before it was ever ready is a failed connection, not a lost one.
+    case .disconnected: drop(id, peer.ready ? nil : "connection_closed")
     }
   }
   func connectionManager(_ manager: ConnectionManager, didReceive data: Data, withID payloadID: PayloadID, from id: EndpointID) {
@@ -209,6 +257,11 @@ private final class NearbyEngine: ConnectionManagerDelegate, AdvertiserDelegate,
   }
   func connectionManager(_ manager: ConnectionManager, didReceiveTransferUpdate update: TransferUpdate, from id: EndpointID, forPayload payloadID: PayloadID) {
     guard active else { return }
-    switch update { case .failure, .canceled: drop(id, "transfer_failed"); default: break }
+    switch update {
+    case .failure, .canceled:
+      log("transfer failed", ["peerId": id])
+      drop(id, "transfer_failed")
+    default: break
+    }
   }
 }
