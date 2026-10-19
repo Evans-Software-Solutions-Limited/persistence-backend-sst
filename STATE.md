@@ -67,6 +67,21 @@ Brad-owned setup: Stripe Prices/Coupon/promotion codes + Dashboard webhook,
 Tradedoubler ids (Program settings → Tracking set up) and binding the BLC
 code to BLC's publisher site id, stage vars, BLC logo asset.
 
+Same day, second commit: the placeholder presenter was replaced with the
+reviewed Claude Design (artifact `claude.ai/artifact/4bfwUNGaiYgyXsN11tmVKd`,
+brief on Linear PER-3). `marketing/blc/blc.css` holds the page styles on site
+tokens (new tokens `--m-success-dim`, `--m-input-bg`, `--m-seg-track`,
+`--m-seg-active`, `--m-blc` placeholder blue); `BlueLightCardPresenter` and a
+new `BlueLightCardThanksPresenter` render the design's gated/valid/invalid/
+ungated, sign-in and pending/complete/unfinished states; copy in
+`blcOffer.ts`. Design assumptions not adopted: no "Analytics" cookie row
+(site has Advertising + Affiliate only); nav/footer from `MarketingLayout`.
+Verified: web 85 files / 1,751 tests; presenter 98.43 / 100 / 97.05 / 98.33,
+thanks presenter 100; typecheck, prettier, build clean; screenshots at 1280
+and 375 in dark and light with no console errors and no horizontal scroll
+(session scratchpad `blc-shots/`). Not screenshotted: checking spinner,
+mobile sign-in and thanks-complete.
+
 ### 2026-10-17 — Nearby join failed with one generic line; Together log, real error codes, Bonjour spelling (PER-64, branch `claude/per-64-nearby-diagnostics`)
 
 Brad's staging run on the latest build, both iPhones, Brad hosting "Open

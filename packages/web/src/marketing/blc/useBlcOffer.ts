@@ -174,6 +174,10 @@ export function useBlcOffer() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [signup, setSignup] = useState(false);
+  // The design leads with Apple / Google / a sign-in link; the password form
+  // sits behind a disclosure. Creating an email account needs a password, so
+  // turning sign-up on opens it.
+  const [passwordMode, setPasswordMode] = useState(false);
   const [terms, setTerms] = useState(false);
   const [receiptEmail, setReceiptEmail] = useState("");
   const [hp, setHp] = useState("");
@@ -327,6 +331,8 @@ export function useBlcOffer() {
     setPassword("");
     setEmail("");
     setReceiptEmail("");
+    setSignup(false);
+    setPasswordMode(false);
     checkout.reset();
   }
 
@@ -441,6 +447,7 @@ export function useBlcOffer() {
     email,
     password,
     signup,
+    passwordMode,
     terms,
     receiptEmail,
     hp,
@@ -452,6 +459,7 @@ export function useBlcOffer() {
     setEmail,
     setPassword,
     setSignup,
+    setPasswordMode,
     setTerms,
     setReceiptEmail,
     setHp,

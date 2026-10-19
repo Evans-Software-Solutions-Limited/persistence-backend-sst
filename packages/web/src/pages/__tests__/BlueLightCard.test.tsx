@@ -79,12 +79,30 @@ function render(route = "/blue-light-card") {
   return renderPage(<BlueLightCard />, { route });
 }
 
+const CODE_LABEL = "Your Blue Light Card code";
+const CODE_VALID = "Code applied. Member prices are unlocked.";
+const CODE_INVALID =
+  "That code can't be used. Check it in the Blue Light Card app or contact support.";
+const SIGN_IN_HEADING = "Sign in to the account you'll use in the app";
+
+/** The code field's live status slot (`role="status"`, polite). */
+function codeStatus(): HTMLElement {
+  return document.getElementById("blc-status")!;
+}
+
 async function applyCode(code = "BLC2026") {
-  fireEvent.change(screen.getByLabelText("Blue Light Card offer code"), {
+  fireEvent.change(screen.getByLabelText(CODE_LABEL), {
     target: { value: code },
   });
   fireEvent.click(screen.getByRole("button", { name: "Apply" }));
-  await screen.findByText("Code accepted.");
+  await screen.findByText(CODE_VALID);
+}
+
+/** Reveal the password form behind the design's disclosure. */
+function usePassword() {
+  fireEvent.click(
+    screen.getByRole("button", { name: "Use a password instead" }),
+  );
 }
 
 describe("BlueLightCard", () => {
@@ -111,18 +129,31 @@ describe("BlueLightCard", () => {
       render();
       expect(
         screen.getByRole("heading", {
-          name: "This offer is for Blue Light Card members.",
+          name: "A thank-you for the people who show up.",
         }),
       ).toBeDefined();
       expect(
-        screen.getByRole("link", { name: "Go to Blue Light Card" }),
-      ).toHaveProperty("href", BLC_SITE);
+        screen.getByText(/This offer is for Blue Light Card members\./),
+      ).toBeDefined();
+      const partner = screen.getByRole("link", {
+        name: "Open this offer on Blue Light Card",
+      });
+      expect(partner).toHaveProperty("href", BLC_SITE);
+      expect(partner.getAttribute("rel")).toMatch(/noopener/);
       expect(
         screen
-          .getByRole("link", { name: "See all plans" })
+          .getByRole("link", { name: "See public plans" })
           .getAttribute("href"),
       ).toBe("/pricing");
-      expect(screen.queryByLabelText("Blue Light Card offer code")).toBeNull();
+      // The proof points stand in for the plans.
+      expect(
+        screen.getByRole("heading", { name: "Offline-first logging" }),
+      ).toBeDefined();
+      expect(
+        screen.getByText("Workouts, weight and steps flow both ways."),
+      ).toBeDefined();
+      expect(screen.queryByLabelText(CODE_LABEL)).toBeNull();
+      expect(screen.queryByTestId("blc-plan-premium")).toBeNull();
       expect(document.body.textContent).not.toMatch(/£/);
       expect(document.body.textContent).not.toMatch(/13\.59|111\.99/);
     });
@@ -131,14 +162,26 @@ describe("BlueLightCard", () => {
       stubApi();
       arriveViaAffiliate();
       render("/blue-light-card?tduid=click-1");
-      expect(screen.getByLabelText("Blue Light Card offer code")).toBeDefined();
+      expect(screen.getByLabelText(CODE_LABEL)).toBeDefined();
       expect(
         screen.getByRole("heading", {
-          name: "20% off Persistence Premium and Premium+.",
+          name: "A thank-you for the people who show up.",
         }),
       ).toBeDefined();
-      // Still no price until the code checks out.
-      expect(screen.queryByTestId("blc-plan-premium")).toBeNull();
+      expect(screen.getByText(/Apply your code below/)).toBeDefined();
+      // The cards are there but LOCKED until the code checks out.
+      expect(screen.getByTestId("blc-plan-premium").className).toMatch(
+        /blc-plan-locked/,
+      );
+      expect(
+        screen.getByRole("button", { name: "Continue with Premium" }),
+      ).toHaveProperty("disabled", true);
+      expect(
+        screen.getByRole("button", { name: "Continue with Premium+" }),
+      ).toHaveProperty("disabled", true);
+      expect(
+        screen.getAllByText("Apply your Blue Light Card code to continue."),
+      ).toHaveLength(2);
     });
 
     it("opens for a visitor who already holds the SDK cookie", () => {
@@ -146,9 +189,7 @@ describe("BlueLightCard", () => {
       document.cookie = "TRADEDOUBLER=x";
       try {
         render();
-        expect(
-          screen.getByLabelText("Blue Light Card offer code"),
-        ).toBeDefined();
+        expect(screen.getByLabelText(CODE_LABEL)).toBeDefined();
       } finally {
         document.cookie =
           "TRADEDOUBLER=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/";
@@ -176,9 +217,9 @@ describe("BlueLightCard", () => {
         .mockReturnValueOnce(false)
         .mockReturnValue(true);
       render();
-      expect(screen.queryByLabelText("Blue Light Card offer code")).toBeNull();
+      expect(screen.queryByLabelText(CODE_LABEL)).toBeNull();
       act(() => setConsent({ advertising: false, affiliate: true }));
-      expect(screen.getByLabelText("Blue Light Card offer code")).toBeDefined();
+      expect(screen.getByLabelText(CODE_LABEL)).toBeDefined();
     });
   });
 
@@ -188,10 +229,12 @@ describe("BlueLightCard", () => {
     it("checks the code, keeps it for a reload and reveals the member prices", async () => {
       const fetcher = stubApi();
       render();
-      expect(screen.getByRole("button", { name: "Apply" })).toHaveProperty(
-        "disabled",
-        true,
+      const input = screen.getByLabelText(CODE_LABEL);
+      expect(input.getAttribute("aria-describedby")).toBe(
+        "blc-help blc-status",
       );
+      expect(input.getAttribute("placeholder")).toBe("BLC-XXXX-XXXX");
+      expect(input.getAttribute("aria-invalid")).toBe("false");
       await applyCode(" BLC2026 ");
 
       const [url, init] = checkCalls(fetcher)[0] as unknown as [
@@ -219,18 +262,34 @@ describe("BlueLightCard", () => {
         "£199.99/yr",
       );
       expect(screen.getByTestId("blc-public-premium").tagName).toBe("S");
+      expect(
+        screen.getAllByText("Billed once a year. Cancel any time."),
+      ).toHaveLength(2);
+      expect(screen.getAllByText("Save 20 %")).toHaveLength(2);
+      // Unlocked: the CTAs are live and the locked note is gone.
+      expect(screen.getByTestId("blc-plan-premium").className).not.toMatch(
+        /blc-plan-locked/,
+      );
+      expect(
+        screen.getByRole("button", { name: "Continue with Premium+" }),
+      ).toHaveProperty("disabled", false);
+      expect(
+        screen.queryByText("Apply your Blue Light Card code to continue."),
+      ).toBeNull();
+      // Premium+ is the highlighted card.
+      expect(screen.getByText("Most popular").closest("article")).toBe(
+        screen.getByTestId("blc-plan-premium_plus"),
+      );
       // Features from the shared catalog, not retyped.
       expect(screen.getByText("Unlimited workouts and history")).toBeDefined();
       expect(
         screen.getByText("Loadout — equipment-aware training"),
       ).toBeDefined();
-      // Terms.
-      expect(screen.getByText("One redemption per person.")).toBeDefined();
+      // Terms, as one paragraph.
+      expect(screen.getByText("Offer terms")).toBeDefined();
       expect(
-        screen.getByText(
-          "Works in the iOS and Android app with the same account.",
-        ),
-      ).toBeDefined();
+        screen.getByText(/One redemption per person\./).textContent,
+      ).toMatch(/^For verified Blue Light Card members\. .*same account\.$/);
     });
 
     it("shows the checking state while the request is in flight", async () => {
@@ -240,18 +299,28 @@ describe("BlueLightCard", () => {
         vi.fn(() => new Promise<Response>((r) => (resolve = r))),
       );
       render();
-      fireEvent.change(screen.getByLabelText("Blue Light Card offer code"), {
+      fireEvent.change(screen.getByLabelText(CODE_LABEL), {
         target: { value: "X" },
       });
       fireEvent.click(screen.getByRole("button", { name: "Apply" }));
-      expect(screen.getByRole("button", { name: "Checking…" })).toHaveProperty(
+      expect(screen.getByRole("button", { name: "Apply" })).toHaveProperty(
         "disabled",
         true,
       );
+      expect(screen.getByLabelText(CODE_LABEL)).toHaveProperty(
+        "disabled",
+        true,
+      );
+      expect(codeStatus().textContent).toBe("Checking your code…");
+      expect(codeStatus().getAttribute("aria-live")).toBe("polite");
       await act(async () => {
         resolve(new Response(JSON.stringify({ ok: true })));
       });
-      await screen.findByText("Code accepted.");
+      await screen.findByText(CODE_VALID);
+      expect(screen.getByLabelText(CODE_LABEL)).toHaveProperty(
+        "disabled",
+        false,
+      );
     });
 
     it("gives one neutral refusal for an invalid code and forgets it", async () => {
@@ -261,31 +330,43 @@ describe("BlueLightCard", () => {
       window.sessionStorage.setItem(BLC_CODE_STORAGE_KEY, "OLD");
       render();
       // The stored code is re-checked on load and refused: forgotten.
-      expect((await screen.findByRole("alert")).textContent).toBe(
-        "That code can't be used. Check it in the Blue Light Card app or contact support.",
+      expect((await screen.findByText(CODE_INVALID)).textContent).toBe(
+        CODE_INVALID,
       );
       expect(window.sessionStorage.getItem(BLC_CODE_STORAGE_KEY)).toBeNull();
+      expect(
+        screen.getByLabelText(CODE_LABEL).getAttribute("aria-invalid"),
+      ).toBe("true");
 
-      fireEvent.change(screen.getByLabelText("Blue Light Card offer code"), {
+      fireEvent.change(screen.getByLabelText(CODE_LABEL), {
         target: { value: "NOPE" },
       });
       fireEvent.click(screen.getByRole("button", { name: "Apply" }));
-      expect((await screen.findByRole("alert")).textContent).toBe(
-        "That code can't be used. Check it in the Blue Light Card app or contact support.",
-      );
-      expect(screen.queryByTestId("blc-plan-premium")).toBeNull();
+      await screen.findByText(CODE_INVALID);
+      // Still locked, and the message lives in the polite status slot — the
+      // refusal is neutral, not an alert.
+      expect(screen.queryByRole("alert")).toBeNull();
+      expect(codeStatus().textContent).toBe(CODE_INVALID);
+      expect(
+        screen.getByRole("button", { name: "Continue with Premium" }),
+      ).toHaveProperty("disabled", true);
     });
 
     it("distinguishes a failed check (429/5xx/network) from a refused code", async () => {
       stubApi({ check: { status: 429, body: {} } });
       render();
-      fireEvent.change(screen.getByLabelText("Blue Light Card offer code"), {
+      fireEvent.change(screen.getByLabelText(CODE_LABEL), {
         target: { value: "X" },
       });
       fireEvent.click(screen.getByRole("button", { name: "Apply" }));
-      expect((await screen.findByRole("alert")).textContent).toMatch(
-        /couldn't check that code just now/,
-      );
+      expect(
+        (await screen.findByText(/couldn't check that code just now/))
+          .textContent,
+      ).toMatch(/couldn't check that code just now/);
+      // Not the code's fault, so the field is not marked invalid.
+      expect(
+        screen.getByLabelText(CODE_LABEL).getAttribute("aria-invalid"),
+      ).toBe("false");
 
       vi.stubGlobal(
         "fetch",
@@ -294,8 +375,10 @@ describe("BlueLightCard", () => {
         }),
       );
       fireEvent.click(screen.getByRole("button", { name: "Apply" }));
-      expect((await screen.findByRole("alert")).textContent).toMatch(
-        /couldn't check that code just now/,
+      await waitFor(() =>
+        expect(codeStatus().textContent).toMatch(
+          /couldn't check that code just now/,
+        ),
       );
     });
 
@@ -303,7 +386,24 @@ describe("BlueLightCard", () => {
       stubApi();
       render();
       await applyCode();
-      fireEvent.click(screen.getByRole("button", { name: "Monthly" }));
+      // One segmented control per card, both driving the same cadence.
+      const groups = screen.getAllByRole("group", { name: "Billing period" });
+      expect(groups).toHaveLength(2);
+      const monthly = screen.getAllByRole("button", { name: "Monthly" });
+      const annual = screen.getAllByRole("button", { name: "Annual" });
+      expect(annual.map((b) => b.getAttribute("aria-pressed"))).toEqual([
+        "true",
+        "true",
+      ]);
+      fireEvent.click(monthly[1]);
+      expect(monthly.map((b) => b.getAttribute("aria-pressed"))).toEqual([
+        "true",
+        "true",
+      ]);
+      expect(annual.map((b) => b.getAttribute("aria-pressed"))).toEqual([
+        "false",
+        "false",
+      ]);
       expect(screen.getByTestId("blc-public-premium").textContent).toBe(
         "£16.99/mo",
       );
@@ -316,7 +416,9 @@ describe("BlueLightCard", () => {
       expect(screen.getByTestId("blc-member-premium_plus").textContent).toBe(
         "£23.99/mo",
       );
-      expect(screen.getAllByText("Billed monthly")).toHaveLength(2);
+      expect(
+        screen.getAllByText("Billed every month. Cancel any time."),
+      ).toHaveLength(2);
     });
 
     it("shows the cancelled notice for ?cancelled=1 and keeps the code", async () => {
@@ -342,13 +444,16 @@ describe("BlueLightCard", () => {
     it("does nothing for a blank submission", async () => {
       const fetcher = stubApi();
       render();
-      fireEvent.submit(
-        screen.getByLabelText("Blue Light Card offer code").closest("form")!,
+      // Apply is enabled (the design does not grey it out) and a blank
+      // submission simply does nothing.
+      expect(screen.getByRole("button", { name: "Apply" })).toHaveProperty(
+        "disabled",
+        false,
       );
+      fireEvent.submit(screen.getByLabelText(CODE_LABEL).closest("form")!);
       await new Promise((resolve) => setTimeout(resolve, 20));
       expect(checkCalls(fetcher)).toHaveLength(0);
-      expect(screen.queryByRole("alert")).toBeNull();
-      expect(screen.queryByText("Code accepted.")).toBeNull();
+      expect(codeStatus().textContent).toBe("");
     });
 
     it("drops a stale answer when a newer check has started", async () => {
@@ -358,7 +463,7 @@ describe("BlueLightCard", () => {
         vi.fn(() => new Promise<Response>((r) => pending.push(r))),
       );
       render();
-      const field = screen.getByLabelText("Blue Light Card offer code");
+      const field = screen.getByLabelText(CODE_LABEL);
       fireEvent.change(field, { target: { value: "FIRST" } });
       fireEvent.submit(field.closest("form")!);
       fireEvent.change(field, { target: { value: "SECOND" } });
@@ -370,11 +475,11 @@ describe("BlueLightCard", () => {
           new Response(JSON.stringify({ ok: false }), { status: 400 }),
         );
       });
-      await screen.findByRole("alert");
+      await screen.findByText(CODE_INVALID);
       await act(async () => {
         pending[0](new Response(JSON.stringify({ ok: true })));
       });
-      expect(screen.queryByText("Code accepted.")).toBeNull();
+      expect(screen.queryByText(CODE_VALID)).toBeNull();
       expect(window.sessionStorage.getItem(BLC_CODE_STORAGE_KEY)).toBeNull();
     });
 
@@ -385,7 +490,7 @@ describe("BlueLightCard", () => {
       render();
       expect(await screen.findByTestId("blc-plan-premium")).toBeDefined();
       expect(
-        screen.queryByRole("heading", { name: "Sign in to Persistence" }),
+        screen.queryByRole("heading", { name: SIGN_IN_HEADING }),
       ).toBeNull();
     });
 
@@ -403,7 +508,7 @@ describe("BlueLightCard", () => {
         screen.getByRole("button", { name: "Continue with Premium" }),
       );
       expect(
-        screen.getByRole("heading", { name: "Sign in to Persistence" }),
+        screen.getByRole("heading", { name: SIGN_IN_HEADING }),
       ).toBeDefined();
     });
   });
@@ -422,10 +527,11 @@ describe("BlueLightCard", () => {
       window.sessionStorage.setItem(BLC_CODE_STORAGE_KEY, "STALE");
       render();
       expect(
-        await screen.findByRole("heading", {
-          name: "This offer is for Blue Light Card members.",
+        await screen.findByRole("link", {
+          name: "Open this offer on Blue Light Card",
         }),
       ).toBeDefined();
+      expect(screen.queryByLabelText(CODE_LABEL)).toBeNull();
     });
 
     it("restores a chosen plan and goes straight to the account step", async () => {
@@ -437,9 +543,9 @@ describe("BlueLightCard", () => {
       );
       render();
       expect(
-        await screen.findByRole("heading", { name: "Sign in to Persistence" }),
+        await screen.findByRole("heading", { name: SIGN_IN_HEADING }),
       ).toBeDefined();
-      expect(screen.getByText(/Premium\+ · £23\.99\/mo/)).toBeDefined();
+      expect(screen.getByText("Premium+ · monthly · £23.99/mo")).toBeDefined();
     });
   });
 
@@ -454,14 +560,24 @@ describe("BlueLightCard", () => {
         screen.getByRole("button", { name: "Continue with Premium+" }),
       );
       expect(
-        screen.getByRole("heading", { name: "Sign in to Persistence" }),
+        screen.getByRole("heading", { name: SIGN_IN_HEADING }),
       ).toBeDefined();
       expect(window.sessionStorage.getItem(BLC_PLAN_STORAGE_KEY)).toBe(
         "premium_plus:annual",
       );
-      expect(screen.getByText(/Premium\+ · £199\.99\/yr/)).toBeDefined();
+      expect(screen.getByText("Premium+ · annual · £199.99/yr")).toBeDefined();
+      expect(
+        screen.getByText(/cannot be moved to another one later/),
+      ).toBeDefined();
+      // The password form is behind a disclosure.
+      expect(screen.queryByLabelText("Password")).toBeNull();
+      expect(
+        screen
+          .getByRole("button", { name: "Use a password instead" })
+          .getAttribute("aria-expanded"),
+      ).toBe("false");
 
-      fireEvent.click(screen.getByRole("button", { name: "Change plan" }));
+      fireEvent.click(screen.getByRole("button", { name: "Back" }));
       expect(screen.getByTestId("blc-plan-premium")).toBeDefined();
       expect(window.sessionStorage.getItem(BLC_PLAN_STORAGE_KEY)).toBeNull();
     });
@@ -500,7 +616,13 @@ describe("BlueLightCard", () => {
       fireEvent.click(
         screen.getByRole("button", { name: "Continue with Premium" }),
       );
-      fireEvent.change(screen.getByLabelText("Account email"), {
+      usePassword();
+      expect(
+        screen
+          .getByRole("button", { name: "Send me a sign-in link" })
+          .getAttribute("aria-expanded"),
+      ).toBe("true");
+      fireEvent.change(screen.getByLabelText("Email"), {
         target: { value: "member@example.com" },
       });
       fireEvent.change(screen.getByLabelText("Password"), {
@@ -514,6 +636,7 @@ describe("BlueLightCard", () => {
         "member@example.com",
         "hunter22",
       );
+      expect(screen.getByText("Premium · annual · £111.99/yr")).toBeDefined();
       expect(
         (screen.getByLabelText("Receipt email") as HTMLInputElement).value,
       ).toBe("member@example.com");
@@ -534,7 +657,8 @@ describe("BlueLightCard", () => {
       fireEvent.click(
         screen.getByRole("button", { name: "Continue with Premium" }),
       );
-      fireEvent.change(screen.getByLabelText("Account email"), {
+      usePassword();
+      fireEvent.change(screen.getByLabelText("Email"), {
         target: { value: "member@example.com" },
       });
       fireEvent.change(screen.getByLabelText("Password"), {
@@ -597,12 +721,13 @@ describe("BlueLightCard", () => {
       fireEvent.click(
         screen.getByRole("button", { name: "Continue with Premium" }),
       );
+      usePassword();
       fireEvent.click(
         screen.getByRole("button", {
           name: "New to Persistence? Create an email account",
         }),
       );
-      fireEvent.change(screen.getByLabelText("Account email"), {
+      fireEvent.change(screen.getByLabelText("Email"), {
         target: { value: "new@example.com" },
       });
       fireEvent.change(screen.getByLabelText("Create a password"), {
@@ -647,10 +772,10 @@ describe("BlueLightCard", () => {
         screen.getByRole("button", { name: "Continue with Premium" }),
       );
       const link = screen.getByRole("button", {
-        name: "Email me a sign-in link",
+        name: "Send me a sign-in link",
       });
       expect(link).toHaveProperty("disabled", true);
-      fireEvent.change(screen.getByLabelText("Account email"), {
+      fireEvent.change(screen.getByLabelText("Email"), {
         target: { value: "member@example.com" },
       });
       fireEvent.click(link);
@@ -691,7 +816,7 @@ describe("BlueLightCard", () => {
       expect(
         await screen.findByRole("heading", { name: "Confirm your plan" }),
       ).toBeDefined();
-      expect(screen.getByText(/Premium\+ · £199\.99\/yr/)).toBeDefined();
+      expect(screen.getByText("Premium+ · annual · £199.99/yr")).toBeDefined();
       expect(JSON.parse(checkCalls(fetcher)[0][1].body as string)).toEqual({
         code: "BLC2026",
       });
@@ -866,8 +991,131 @@ describe("BlueLightCard", () => {
       fireEvent.click(screen.getByRole("button", { name: "Log out" }));
       expect(auth.signOut).toHaveBeenCalled();
       expect(
-        screen.getByRole("heading", { name: "Sign in to Persistence" }),
+        screen.getByRole("heading", { name: SIGN_IN_HEADING }),
       ).toBeDefined();
+    });
+  });
+
+  describe("the design's states", () => {
+    beforeEach(arriveViaAffiliate);
+
+    it("tabs code field → Apply → cadence toggle → plan CTA, per card", async () => {
+      stubApi();
+      render();
+      await applyCode();
+      const order = Array.from(
+        document.querySelectorAll<HTMLElement>(
+          ".blc-offer input, .blc-offer button",
+        ),
+      )
+        .filter((el) => !(el as HTMLButtonElement).disabled)
+        .map((el) => el.id || el.textContent?.trim());
+      expect(order).toEqual([
+        "blc-code",
+        "Apply",
+        "Monthly",
+        "Annual",
+        "Continue with Premium",
+        "Monthly",
+        "Annual",
+        "Continue with Premium+",
+      ]);
+      // The success tick sits beside the input, decorative only.
+      expect(
+        document.querySelector(".blc-code-tick")?.getAttribute("aria-hidden"),
+      ).toBe("true");
+    });
+
+    it("sends the sign-in link on Enter in the email field while the password form is closed, and signs in once it is open", async () => {
+      stubApi();
+      vi.mocked(auth.sendSignInLink).mockResolvedValue(undefined);
+      vi.mocked(auth.signIn).mockResolvedValue(ACCOUNT);
+      render();
+      await applyCode();
+      fireEvent.click(
+        screen.getByRole("button", { name: "Continue with Premium" }),
+      );
+      const email = screen.getByLabelText("Email");
+      // A blank/invalid address submits nothing.
+      fireEvent.submit(email.closest("form")!);
+      expect(auth.sendSignInLink).not.toHaveBeenCalled();
+      fireEvent.change(email, { target: { value: "member@example.com" } });
+      fireEvent.submit(email.closest("form")!);
+      await screen.findByText(/sign-in link is on its way/);
+      expect(auth.sendSignInLink).toHaveBeenCalledTimes(1);
+      expect(auth.signIn).not.toHaveBeenCalled();
+
+      usePassword();
+      fireEvent.change(screen.getByLabelText("Password"), {
+        target: { value: "hunter22" },
+      });
+      fireEvent.submit(email.closest("form")!);
+      expect(
+        await screen.findByRole("heading", { name: "Confirm your plan" }),
+      ).toBeDefined();
+      expect(auth.signIn).toHaveBeenCalledWith(
+        "member@example.com",
+        "hunter22",
+      );
+    });
+
+    it("closing the password disclosure drops a half-filled sign-up", async () => {
+      stubApi();
+      render();
+      await applyCode();
+      fireEvent.click(
+        screen.getByRole("button", { name: "Continue with Premium" }),
+      );
+      usePassword();
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: "New to Persistence? Create an email account",
+        }),
+      );
+      fireEvent.click(screen.getByRole("checkbox"));
+      fireEvent.click(
+        screen.getByRole("button", { name: "Send me a sign-in link" }),
+      );
+      expect(screen.queryByLabelText("Create a password")).toBeNull();
+      usePassword();
+      expect(screen.getByLabelText("Password")).toBeDefined();
+      expect(screen.queryByRole("checkbox")).toBeNull();
+    });
+
+    it("logging out resets the sign-in form to its first state", async () => {
+      stubApi();
+      vi.mocked(auth.signIn).mockResolvedValue(ACCOUNT);
+      render();
+      await applyCode();
+      fireEvent.click(
+        screen.getByRole("button", { name: "Continue with Premium" }),
+      );
+      usePassword();
+      fireEvent.change(screen.getByLabelText("Email"), {
+        target: { value: "member@example.com" },
+      });
+      fireEvent.change(screen.getByLabelText("Password"), {
+        target: { value: "hunter22" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+      await screen.findByRole("heading", { name: "Confirm your plan" });
+      fireEvent.click(screen.getByRole("button", { name: "Log out" }));
+      expect(screen.queryByLabelText("Password")).toBeNull();
+      expect((screen.getByLabelText("Email") as HTMLInputElement).value).toBe(
+        "",
+      );
+    });
+
+    it("goes back to the plans from the checkout step", async () => {
+      stubApi();
+      vi.mocked(auth.currentAccount).mockResolvedValue(ACCOUNT);
+      window.sessionStorage.setItem(BLC_CODE_STORAGE_KEY, "BLC2026");
+      window.sessionStorage.setItem(BLC_PLAN_STORAGE_KEY, "premium:annual");
+      render();
+      await screen.findByLabelText("Receipt email");
+      fireEvent.click(screen.getByRole("button", { name: "Back" }));
+      expect(screen.getByTestId("blc-plan-premium")).toBeDefined();
+      expect(window.sessionStorage.getItem(BLC_PLAN_STORAGE_KEY)).toBeNull();
     });
   });
 

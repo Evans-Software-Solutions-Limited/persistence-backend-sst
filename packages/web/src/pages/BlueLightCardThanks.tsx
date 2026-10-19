@@ -1,10 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router";
+import { useSearchParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { MarketingLayout } from "@/marketing/MarketingLayout";
 import { useSeo } from "@/marketing/seo";
-import { AppStoreCta } from "@/marketing/AppStoreCta";
-import { PlayStoreCta } from "@/marketing/PlayStoreCta";
 import { marketingApiBase } from "@/lib/marketingApiBase";
 import { trackPurchase } from "@/lib/metaPixel";
 import {
@@ -13,7 +11,18 @@ import {
   trackTradedoublerSale,
 } from "@/lib/tradedoubler";
 import { appDestination } from "@/lib/appDestination";
-import { BLC_COPY, BLC_PATH, blcPlanContentId } from "@/marketing/blc/blcOffer";
+import {
+  BLC_COPY,
+  BLC_PATH,
+  blcPlanContentId,
+  blcTierName,
+  formatBlcPrice,
+  isBlcTier,
+} from "@/marketing/blc/blcOffer";
+import {
+  BlueLightCardThanksPresenter,
+  type BlcThanksView,
+} from "@/marketing/blc/BlueLightCardThanksPresenter";
 
 interface BlcCheckoutStatus {
   status: "open" | "completed" | "expired";
@@ -132,64 +141,53 @@ export function BlueLightCardThanks() {
     }
   }, [data, sessionId]);
 
+  // Paid, not live, and the page has given up waiting: say so, and say "do
+  // not pay again". A timer rather than a render-time clock read, so the
+  // flip happens once, when the polling window lapses.
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    if (data?.status !== "completed" || data.accessReady) return;
+    const remaining = READY_POLL_WINDOW_MS - (Date.now() - openedAt);
+    const timer = window.setTimeout(
+      () => setSlow(true),
+      Math.max(0, remaining),
+    );
+    return () => window.clearTimeout(timer);
+  }, [data, openedAt]);
+
   const noSession = sessionId.length === 0;
   const unreachable = !noSession && status.isError;
-  const complete = !noSession && !unreachable && data?.status === "completed";
 
-  const heading = noSession
-    ? BLC_COPY.thanks.unfinishedHeading
-    : unreachable
-      ? BLC_COPY.thanks.unreachableHeading
-      : data?.status === "completed"
-        ? BLC_COPY.thanks.paidHeading
-        : data === undefined || data.status === "open"
-          ? BLC_COPY.thanks.pendingHeading
-          : BLC_COPY.thanks.unfinishedHeading;
-
-  const body = noSession
-    ? BLC_COPY.thanks.unfinishedBody
-    : unreachable
-      ? BLC_COPY.thanks.unreachableBody
-      : data?.status === "completed"
-        ? data.accessReady
-          ? BLC_COPY.thanks.paidReady
-          : BLC_COPY.thanks.paidPending
-        : data === undefined || data.status === "open"
-          ? BLC_COPY.thanks.pendingBody
-          : BLC_COPY.thanks.unfinishedBody;
-
-  const destination = appDestination();
+  const view: BlcThanksView = {
+    state: noSession
+      ? "unfinished"
+      : unreachable
+        ? "unreachable"
+        : data?.status === "completed"
+          ? data.accessReady
+            ? "complete"
+            : "pending"
+          : data === undefined || data.status === "open"
+            ? "pending"
+            : "unfinished",
+    slow,
+    planLine: data?.status === "completed" ? planLine(data) : "",
+    emailMasked: data?.emailMasked ?? "",
+    openAppHref: appDestination().href,
+  };
 
   return (
     <MarketingLayout>
-      <section className="founding-hero">
-        <div className="c founding-shell">
-          <span className="kicker c-accent">{BLC_COPY.thanks.kicker}</span>
-          <h1>{heading}</h1>
-          <p className="founding-intro" aria-live="polite">
-            {body}
-          </p>
-          {complete ? (
-            <>
-              <p className="founding-counter">{data.emailMasked}</p>
-              <p>
-                <a className="btn btn-fill" href={destination.href}>
-                  {BLC_COPY.thanks.openApp}
-                </a>
-              </p>
-              <div className="store-btns">
-                <AppStoreCta variant="store" />
-                <PlayStoreCta variant="store" />
-              </div>
-            </>
-          ) : null}
-          <p className="founding-terms">
-            <Link to={BLC_PATH}>{BLC_COPY.thanks.backCta}</Link>
-          </p>
-        </div>
-      </section>
+      <BlueLightCardThanksPresenter {...view} />
     </MarketingLayout>
   );
+}
+
+/** "Premium, annual, £111.99/yr" — the server's record, never the page's. */
+function planLine(data: BlcCheckoutStatus): string {
+  const name = isBlcTier(data.tier) ? blcTierName(data.tier) : data.tier;
+  const unit = data.cadence === "annual" ? BLC_COPY.perYear : BLC_COPY.perMonth;
+  return `${name}, ${data.cadence}, ${formatBlcPrice(data.amountMinor)}${unit}`;
 }
 
 export default BlueLightCardThanks;

@@ -91,7 +91,7 @@ describe("Blue Light Card routes (PER-3)", () => {
       renderPage(<App />, { route });
       expect(
         await screen.findByRole("heading", {
-          name: "This offer is for Blue Light Card members.",
+          name: "A thank-you for the people who show up.",
         }),
       ).toBeDefined();
       expect(screen.getByRole("button", { name: "Accept all" })).toBeDefined();
@@ -102,7 +102,7 @@ describe("Blue Light Card routes (PER-3)", () => {
   it("renders the thanks page at /blue-light-card/thanks", () => {
     renderPage(<App />, { route: "/blue-light-card/thanks" });
     expect(
-      screen.getByRole("heading", { name: "No payment was taken." }),
+      screen.getByRole("heading", { name: "That checkout wasn't completed." }),
     ).toBeDefined();
   });
 
