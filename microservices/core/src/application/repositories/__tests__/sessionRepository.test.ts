@@ -204,7 +204,14 @@ describe("SessionRepository", () => {
       expect(query.sql).toContain("coalesce");
       expect(query.sql).toContain(" < ");
       expect(query.params).toEqual(
-        expect.arrayContaining(["owner", "squat", "press", before]),
+        // The bound is bound as an ISO string: a raw Date in a sql template
+        // reaches postgres-js unserialised (PERSISTENCE-BACKEND-6).
+        expect.arrayContaining([
+          "owner",
+          "squat",
+          "press",
+          before.toISOString(),
+        ]),
       );
     });
 

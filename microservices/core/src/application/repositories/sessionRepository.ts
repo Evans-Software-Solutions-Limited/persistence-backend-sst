@@ -324,8 +324,12 @@ export class SessionRepository {
           filters
             ? inArray(sessionExercises.exerciseId, filters.exerciseIds)
             : undefined,
+          // A raw Date in a sql template has no column mapper, and the
+          // postgres-js driver leaves timestamp serialisation to Drizzle, so
+          // the Date would reach the wire unserialised and throw (Sentry
+          // PERSISTENCE-BACKEND-6). Bind the ISO string explicitly.
           filters
-            ? sql`coalesce(${workoutSessions.completedAt}, ${workoutSessions.startedAt}) < ${filters.before}`
+            ? sql`coalesce(${workoutSessions.completedAt}, ${workoutSessions.startedAt}) < ${filters.before.toISOString()}::timestamptz`
             : undefined,
           eq(sessionExercises.isSubstituted, false),
           isNotNull(exerciseSets.weightKg),

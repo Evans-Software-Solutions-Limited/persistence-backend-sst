@@ -595,7 +595,11 @@ export class AiJobRepository {
           // is derived-failed forever but never terminal, so it can never be
           // purged either. `claim` always sets a heartbeat, so this is
           // defence-in-depth rather than a live bug.
-          sql`(${aiJobs.heartbeatAt} IS NULL OR ${aiJobs.heartbeatAt} < ${cutoff})`,
+          // `cutoff` is bound as an ISO string: a raw Date in a sql template
+          // bypasses Drizzle's column mapper and the postgres-js driver does
+          // not serialise timestamps itself (same fault as
+          // PERSISTENCE-BACKEND-6/7).
+          sql`(${aiJobs.heartbeatAt} IS NULL OR ${aiJobs.heartbeatAt} < ${cutoff.toISOString()}::timestamptz)`,
         ),
       )
       .returning({ id: aiJobs.id });

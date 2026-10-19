@@ -823,7 +823,11 @@ describe("AiJobRepository", () => {
       expect(sql.toLowerCase()).toContain("is null");
       // Both the status and the cutoff are bound params, not inline literals.
       expect(params).toContain("running");
-      expect(params).toContainEqual(new Date(now.getTime() - STALE_AFTER_MS));
+      // The cutoff is bound as an ISO string: a raw Date in a sql template
+      // reaches postgres-js unserialised (same fault as PERSISTENCE-BACKEND-6).
+      expect(params).toContain(
+        new Date(now.getTime() - STALE_AFTER_MS).toISOString(),
+      );
     });
 
     it("STALE_AFTER_MS clears the queue's 16-minute visibility timeout", () => {
