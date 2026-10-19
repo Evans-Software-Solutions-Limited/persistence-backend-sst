@@ -1743,6 +1743,23 @@ describe("reviewed lobby coordinator, real cryptography and SQLite, simulated na
       );
     },
   );
+  it("starts on the composition's default transport when that transport is installed", async () => {
+    // iOS composition: LAN (peer-to-peer Wi-Fi) first even though Nearby exists.
+    const nearby = new Native();
+    const ios = setup(1, { nearby, defaultTransport: "lan" });
+    expect(ios.controller.transports).toEqual(["lan", "nearby"]);
+    expect(ios.controller.getSnapshot().transport).toBe("lan");
+    await ios.controller.host("A");
+    expect(ios.native.startHost).toHaveBeenCalled();
+    expect(nearby.startHost).not.toHaveBeenCalled();
+    // A scanned link can still move an idle controller to Nearby.
+    const guest = setup(2, { nearby: new Native(), defaultTransport: "lan" });
+    guest.controller.selectTransport("nearby");
+    expect(guest.controller.getSnapshot().transport).toBe("nearby");
+    // Asking for Nearby on a phone without the module is ignored, not fatal.
+    const minimal = setup(3, { defaultTransport: "nearby" });
+    expect(minimal.controller.getSnapshot().transport).toBe("lan");
+  });
   it("falls back to LAN silently on a phone without the Nearby module", () => {
     const minimal = setup(2);
     expect(minimal.controller.transports).toEqual(["lan"]);

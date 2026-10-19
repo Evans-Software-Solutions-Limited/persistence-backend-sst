@@ -69,10 +69,16 @@ public final class TogetherLanModule: Module {
     NSError(domain: "TogetherLan", code: 1, userInfo: [NSLocalizedDescriptionKey: code])
   }
 
+  // Peer-to-peer Wi-Fi (AWDL) between iPhones with no router: Apple's recommended
+  // replacement for Multipeer Connectivity, and the path Nearby Connections keeps
+  // behind a disabled flag on iOS (NEARBY-RESEARCH.md, 19 Oct 2026). Bonjour over
+  // an infrastructure network still works when both phones share one. Cellular is
+  // prohibited rather than requiring the Wi-Fi interface type, so the peer-to-peer
+  // interface is never excluded by the requirement.
   private func parameters() -> NWParameters {
     let parameters = NWParameters.tcp
-    parameters.includePeerToPeer = false
-    parameters.requiredInterfaceType = .wifi
+    parameters.includePeerToPeer = true
+    parameters.prohibitedInterfaceTypes = [.cellular]
     return parameters
   }
 

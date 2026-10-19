@@ -9,6 +9,8 @@ export function createTogetherLobby(
   environment: string,
   enabled = false,
   recovery?: TogetherRecoveryApi,
+  /** `Platform.OS`; iOS starts on the LAN module's peer-to-peer Wi-Fi (NEARBY-RESEARCH.md). */
+  platform?: string,
 ): TogetherLobbyPort | undefined {
   if (!enabled || !provisioning) return undefined;
   try {
@@ -43,6 +45,7 @@ export function createTogetherLobby(
         nearby:
           togetherNearby &&
           withNativeDiagnostics(togetherNearby, togetherLog, "nearby"),
+        defaultTransport: platform === "ios" ? "lan" : undefined,
         database: db,
         diagnostics: togetherLog,
         randomBytes: getRandomBytes,

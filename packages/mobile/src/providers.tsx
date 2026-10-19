@@ -130,6 +130,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
       getApiBaseUrl(),
       togetherEnabled,
       api.togetherOffline?.recovery,
+      Platform.OS,
     );
     const togetherCloud = createTogetherCloud(
       api.togetherCloud,

@@ -86,3 +86,20 @@ it("closes the database even when disposal fails", async () => {
   await expect(a.dispose()).rejects.toThrow("stop");
   expect(mockClose).toHaveBeenCalledTimes(1);
 });
+
+it("starts iOS on the LAN module's peer-to-peer Wi-Fi and leaves other platforms on their default", () => {
+  create(provisioning, "https://api.test", true, undefined, "ios");
+  expect(mockConstruct).toHaveBeenCalledWith(
+    expect.objectContaining({ defaultTransport: "lan" }),
+  );
+  mockConstruct.mockClear();
+  create(provisioning, "https://api.test", true, undefined, "android");
+  expect(mockConstruct).toHaveBeenCalledWith(
+    expect.objectContaining({ defaultTransport: undefined }),
+  );
+  mockConstruct.mockClear();
+  create(provisioning, "https://api.test", true);
+  expect(mockConstruct).toHaveBeenCalledWith(
+    expect.objectContaining({ defaultTransport: undefined }),
+  );
+});
