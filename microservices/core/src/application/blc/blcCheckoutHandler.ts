@@ -53,6 +53,17 @@ import {
  * the `customer.subscription.*` and `invoice.payment_*` handlers.
  */
 
+/**
+ * Stripe's "No such checkout.session" (a malformed or unknown id): a
+ * `StripeInvalidRequestError` with HTTP 404 and code `resource_missing`.
+ * Duck-typed so a mocked client and the real SDK are judged the same way.
+ */
+function isStripeNotFound(err: unknown): boolean {
+  if (typeof err !== "object" || err === null) return false;
+  const { statusCode, code } = err as { statusCode?: unknown; code?: unknown };
+  return statusCode === 404 || code === "resource_missing";
+}
+
 const RATE_WINDOW_MS = 60_000;
 const CHECKOUT_RATE_LIMIT = 10;
 const CODE_CHECK_RATE_LIMIT = 20;
@@ -395,11 +406,17 @@ export const blcCheckoutHandler = new Elysia()
           ctx.params.sessionId,
           { expand: ["subscription"] },
         );
-      } catch {
-        // A malformed or unknown id and an API blip both land here; neither
-        // is worth distinguishing for a public poll.
-        ctx.set.status = 404;
-        return { ok: false as const, error: "not_found" as const };
+      } catch (err) {
+        // Only Stripe's own "no such Checkout Session" is terminal. Anything
+        // else — a rate limit, a 5xx, a dropped connection — is a blip the
+        // thanks page retries; answering 404 here would lock a paid buyer
+        // into "we can't confirm this" until they refresh.
+        if (isStripeNotFound(err)) {
+          ctx.set.status = 404;
+          return { ok: false as const, error: "not_found" as const };
+        }
+        ctx.set.status = 503;
+        return { ok: false as const, error: "unavailable" as const };
       }
       // Only Sessions THIS rail created. Any other Checkout flow on the
       // account answers 404 rather than leaking its details.

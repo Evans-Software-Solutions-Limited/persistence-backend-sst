@@ -649,8 +649,38 @@ describe("GET /blc/checkout/:sessionId/status", () => {
   });
 
   it("404s when Stripe does not know the id", async () => {
-    stripeMocks.retrieve.mockRejectedValue(new Error("No such session"));
+    stripeMocks.retrieve.mockRejectedValue(
+      Object.assign(new Error("No such checkout.session: 'cs_nope'"), {
+        statusCode: 404,
+        code: "resource_missing",
+      }),
+    );
+    const res = await status("cs_nope");
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ ok: false, error: "not_found" });
+  });
+
+  it("404s on Stripe's resource_missing code even without a status code", async () => {
+    stripeMocks.retrieve.mockRejectedValue(
+      Object.assign(new Error("No such checkout.session"), {
+        code: "resource_missing",
+      }),
+    );
     expect((await status("cs_nope")).status).toBe(404);
+  });
+
+  it("503s, not 404s, on a transient Stripe failure so the thanks page keeps polling", async () => {
+    for (const blip of [
+      Object.assign(new Error("Too many requests"), { statusCode: 429 }),
+      Object.assign(new Error("Stripe is down"), { statusCode: 502 }),
+      new Error("socket hang up"),
+      "not even an Error",
+    ]) {
+      stripeMocks.retrieve.mockRejectedValueOnce(blip);
+      const res = await status("cs_test_1");
+      expect(res.status).toBe(503);
+      expect(await res.json()).toEqual({ ok: false, error: "unavailable" });
+    }
   });
 
   it("rate-limits a poller generously", async () => {

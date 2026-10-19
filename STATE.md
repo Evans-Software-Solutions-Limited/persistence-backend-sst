@@ -23,8 +23,10 @@ Stripe Checkout `mode: subscription`, full-price Prices by lookup key
 coupon applied via `discounts`, `subscription_data.metadata` carrying
 `supabase_user_id`, `tier_name`, `billing_cycle` (`yearly`), `channel: blc`,
 `voucher`, `tduid`), `GET /blc/checkout/:id/status` (404 unless
-`metadata.channel === "blc"`, `accessReady` = live row by
-`external_subscription_id`). `checkout.session.completed` branches on
+`metadata.channel === "blc"` or Stripe answers `resource_missing`; any other
+Stripe failure is a 503 `unavailable` so the thanks page's bounded retry keeps
+polling — inspector-brad lead on commit 1b6547d, fixed 2026-10-19;
+`accessReady` = live row by `external_subscription_id`). `checkout.session.completed` branches on
 `channel === "blc"` before the founding path: reports the sale
 server-to-server to `tbs.tradedoubler.com/report` (`orderNumber` = Session
 id, `orderValue`, `currency`, `voucher`, `tduid` when present, `validOn` =
