@@ -137,6 +137,23 @@ const unwrap = <T>(result: Result<T, TogetherOfflineApiError>): T => {
     throw new Error(result.error.togetherCode ?? result.error.code);
   return result.value;
 };
+/**
+ * A 4xx the server will answer the same way on retry, as opposed to a network
+ * fault or a throttle. Used only for sharing changes, where dropping the
+ * intent is safe: nothing else in the outbox depends on a consent write.
+ */
+const definitiveRejection = (error: TogetherOfflineApiError): boolean => {
+  const status = error.status ?? 0;
+  if (status === 408 || status === 429) return false;
+  if (status >= 400 && status < 500) return true;
+  return [
+    "VERSION_CONFLICT",
+    "FORBIDDEN",
+    "INVALID_STATE",
+    "NOT_FOUND",
+    "INVALID_SCHEMA",
+  ].includes(error.togetherCode ?? "");
+};
 const empty = (): TogetherCloudState => ({
   phase: "idle",
   requests: [],
@@ -160,7 +177,7 @@ export class TogetherCloudController implements TogetherCloudPort {
   private retiring?: Promise<void>;
   private mutationResults = new Map<
     string,
-    { done: boolean; value?: unknown }
+    { done: boolean; value?: unknown; error?: string }
   >();
   constructor(private readonly options: CloudControllerOptions) {
     options.db.execSync(
@@ -176,9 +193,10 @@ export class TogetherCloudController implements TogetherCloudPort {
   };
   private publish(change: Partial<TogetherCloudState>) {
     const stored = this.load();
+    const next = { ...this.state, ...change };
     this.state = {
-      ...this.state,
-      ...change,
+      ...next,
+      snapshot: this.withIntent(next.snapshot, stored),
       canDetachDraft:
         !!stored?.personal &&
         !stored.own &&
@@ -200,6 +218,65 @@ export class TogetherCloudController implements TogetherCloudPort {
       [account],
     );
     return row ? JSON.parse(row.payload) : null;
+  }
+  /**
+   * The published snapshot shows the athlete's own sharing choices as they
+   * intend them, not as the server last acknowledged them. The outbox is the
+   * record of intent: pending consent and delegation actions are overlaid on
+   * the acknowledged values so a switch moves on tap and stays put through the
+   * acknowledgement and the refresh that follows. Acknowledged values come
+   * from the durable `own` checkpoint, which the drain updates before the
+   * refreshed snapshot arrives, so nothing flickers in between. Versions stay
+   * acknowledged: only the server advances them (PER-60, 16 Oct 2026).
+   */
+  private withIntent(
+    snapshot: CloudSnapshot | undefined,
+    stored: Durable | null,
+  ): CloudSnapshot | undefined {
+    if (!snapshot || !stored || !this.account) return snapshot;
+    const acknowledged =
+      stored.own?.sessionId === snapshot.sessionId
+        ? stored.own.participants.find((p) => p.userId === this.account)
+        : undefined;
+    const intents = stored.pending.filter(
+      (action) =>
+        (action.method === "consent" || action.method === "delegation") &&
+        action.args[0] === snapshot.sessionId,
+    );
+    if (!acknowledged && !intents.length) return snapshot;
+    return {
+      ...snapshot,
+      participants: snapshot.participants.map((participant) => {
+        if (participant.userId !== this.account) return participant;
+        const own = { ...participant };
+        if (acknowledged) {
+          for (const key of ["numbersConsent", "previousConsent"] as const) {
+            const known = acknowledged[key];
+            if (known && known.version >= (own[key]?.version ?? 0))
+              own[key] = copy(known);
+          }
+          if (acknowledged.delegationGeneration >= own.delegationGeneration) {
+            own.allowPartnerLogging = acknowledged.allowPartnerLogging;
+            own.delegationGeneration = acknowledged.delegationGeneration;
+          }
+        }
+        for (const action of intents) {
+          if (action.method === "delegation") {
+            own.allowPartnerLogging = action.args[2] as boolean;
+            continue;
+          }
+          const key =
+            action.args[2] === "numbers" ? "numbersConsent" : "previousConsent";
+          own[key] = {
+            version: own[key]?.version ?? 0,
+            recipientIds: copy(
+              (action.args[3] as { recipientIds: string[] }).recipientIds,
+            ),
+          };
+        }
+        return own;
+      }),
+    };
   }
   private persist(value: Durable) {
     if (!this.account) throw new Error("cloud-account");
@@ -945,6 +1022,28 @@ export class TogetherCloudController implements TogetherCloudPort {
           }
           if (
             !response.ok &&
+            (next.method === "consent" || next.method === "delegation") &&
+            definitiveRejection(response.error)
+          ) {
+            // The server will never take this sharing change. Drop the intent
+            // so the switch returns to the acknowledged value, hand the code
+            // to the caller for a notice, and keep the session usable: the
+            // refresh at the end of the loop restores server truth.
+            const dropped = this.load()!;
+            if (requestHash(dropped.pending[0]) !== requestHash(next))
+              throw new Error("cloud-outbox-conflict");
+            dropped.pending.shift();
+            this.persist(dropped);
+            const droppedKey = requestHash(next);
+            if (this.mutationResults.has(droppedKey))
+              this.mutationResults.set(droppedKey, {
+                done: true,
+                error: response.error.togetherCode ?? response.error.code,
+              });
+            continue;
+          }
+          if (
+            !response.ok &&
             response.error.togetherCode === "VERSION_CONFLICT"
           ) {
             const conflicted = this.load()!;
@@ -1027,6 +1126,19 @@ export class TogetherCloudController implements TogetherCloudPort {
                 recipientIds: copy(acknowledged.recipientIds),
               };
           }
+          if (next.method === "delegation") {
+            const acknowledged = latest as {
+              generation: number;
+              allowed: boolean;
+            };
+            const owner = fresh.own?.participants.find(
+              (p) => p.userId === this.account,
+            );
+            if (owner) {
+              owner.allowPartnerLogging = acknowledged.allowed;
+              owner.delegationGeneration = acknowledged.generation;
+            }
+          }
           if (next.method === "cancelJoin") fresh.joinStatus = "rejected";
           this.persist(fresh);
           if (next.method === "create")
@@ -1081,7 +1193,10 @@ export class TogetherCloudController implements TogetherCloudPort {
         await this.drain();
         this.guard(context);
         const result = this.mutationResults.get(resultKey);
-        if (result?.done) return result.value;
+        if (result?.done) {
+          if (result.error) throw new Error(result.error);
+          return result.value;
+        }
         if (!this.load()?.pending.some((p) => requestHash(p) === resultKey))
           throw new Error("cloud-outbox-conflict");
       }

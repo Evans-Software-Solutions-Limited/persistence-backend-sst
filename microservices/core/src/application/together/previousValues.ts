@@ -68,7 +68,12 @@ export async function readPreviousValues(
         isNotNull(exerciseSets.reps),
         gte(exerciseSets.setNumber, 1),
         lte(exerciseSets.setNumber, 100),
-        lt(recordedAt, before),
+        // `recordedAt` is a sql fragment, not a column, so Drizzle has no
+        // column mapper to turn `before` into a string. The postgres-js driver
+        // replaces postgres.js's timestamp serializers with identity functions,
+        // so a raw Date here reaches the wire unserialised and throws
+        // (Sentry PERSISTENCE-BACKEND-7). Bind the ISO string explicitly.
+        lt(recordedAt, sql`${before.toISOString()}::timestamptz`),
       ),
     )
     .orderBy(
