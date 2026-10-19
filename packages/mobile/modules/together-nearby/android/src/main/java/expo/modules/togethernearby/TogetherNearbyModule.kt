@@ -13,6 +13,9 @@ import java.nio.charset.CodingErrorAction
 import java.util.UUID
 
 /** Untrusted BYTES only. Together's signed discovery and encrypted channel authenticate above this. */
+/** Pre-ready deadline for an outgoing or incoming connection; the SDK's own connect and handshake need longer than 10 s on slow radios (PER-64). */
+private const val CONNECT_DEADLINE_MS = 30_000L
+
 class TogetherNearbyModule : Module() {
   private val handler = Handler(Looper.getMainLooper())
   private val service = "uk.persistence.together.v1"
@@ -65,7 +68,7 @@ class TogetherNearbyModule : Module() {
       try {
         check(mode == "guest" && endpoints.containsKey(id) && peers.isEmpty()) { "unknown_or_busy_endpoint" }
         val token = generation
-        val peer = Peer(false); peers[id] = peer; deadline(id, peer, 10_000)
+        val peer = Peer(false); peers[id] = peer; deadline(id, peer, CONNECT_DEADLINE_MS)
         // Empty context reveals no account identity to an unverified endpoint.
         client.requestConnection(byteArrayOf(), id, lifecycle(token))
           .addOnSuccessListener { if (generation == token && peers[id] === peer) promise.resolve(null) else promise.reject("cancelled", "Nearby stopped", null) }
@@ -126,7 +129,7 @@ class TogetherNearbyModule : Module() {
       if ((incoming && (mode != "host" || peers.size >= 8 || peers.containsKey(id))) || (!incoming && peers[id] == null)) {
         client.rejectConnection(id); return
       }
-      val peer = peers[id] ?: Peer(true).also { peers[id] = it; deadline(id, it, 10_000) }
+      val peer = peers[id] ?: Peer(true).also { peers[id] = it; deadline(id, it, CONNECT_DEADLINE_MS) }
       // This accepts an untrusted transport ONLY. No credential/consent/admission is implied.
       client.acceptConnection(id, payload(token, peer)).addOnFailureListener {
         if (generation == token && peers[id] === peer) drop(id, "accept_failed")

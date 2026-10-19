@@ -55,3 +55,38 @@ it("does not bring Android 17 permission in through the library manifest on targ
   );
   expect(nearby).toContain("Build.VERSION.SDK_INT >= 37 && targetSdk >= 37");
 });
+
+// iOS: the LAN module is the peer-to-peer Wi-Fi transport (NEARBY-RESEARCH.md).
+const swift = readFileSync(
+  join(__dirname, "../ios/TogetherLanModule.swift"),
+  "utf8",
+);
+it("runs peer-to-peer Wi-Fi on iOS with cellular prohibited and no hard Wi-Fi interface requirement", () => {
+  const parameters = swift.slice(
+    swift.indexOf("private func parameters()"),
+    swift.indexOf("private func emit("),
+  );
+  expect(parameters).toContain("parameters.includePeerToPeer = true");
+  expect(parameters).toContain(
+    "parameters.prohibitedInterfaceTypes = [.cellular]",
+  );
+  expect(parameters).not.toContain("requiredInterfaceType");
+  // Every listener, browser and outbound connection shares those parameters.
+  expect(swift).toMatch(
+    /NWConnection\(to: endpoint, using: self\.parameters\(\)\)/,
+  );
+  expect(swift).toMatch(/NWListener\(using: parameters\(\)\)/);
+  expect(swift).toMatch(/NWBrowser\(for: [^\n]*using: parameters\(\)\)/);
+  expect(
+    swift.match(/using: (self\.)?parameters\(\)/g)?.length ?? 0,
+  ).toBeGreaterThanOrEqual(3);
+});
+
+it("holds a connecting peer for 30 s on both platforms, matched to the Nearby module", () => {
+  expect(swift).toContain("private let connectSeconds: Double = 30");
+  expect(swift).toContain("deadline(id, seconds: connectSeconds)");
+  expect(swift).not.toContain("deadline(id, seconds: 10)");
+  expect(source).toContain("private const val CONNECT_DEADLINE_SECONDS = 30L");
+  expect(source).toContain("deadline(id, peer, CONNECT_DEADLINE_SECONDS)");
+  expect(source).toContain("(CONNECT_DEADLINE_SECONDS * 1000).toInt()");
+});

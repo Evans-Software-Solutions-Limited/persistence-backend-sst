@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { TextInput } from "react-native";
+import { Platform, TextInput } from "react-native";
 import { Text, View } from "@tamagui/core";
 import { Btn } from "@/ui/components/foundation/Btn";
 import { Card } from "@/ui/components/foundation/Card";
@@ -66,10 +66,13 @@ const PHASE_COPY: Record<TogetherLobbySnapshot["phase"], string> = {
 export function togetherErrorCopy(
   code?: string,
   transport?: TogetherLobbySnapshot["transport"],
+  platform: string = Platform.OS,
 ): string {
-  // LAN is the silent fallback on a phone without the Nearby module; its
-  // hints must still say what that phone actually needs (the same Wi-Fi).
+  // On iOS the LAN module runs peer-to-peer Wi-Fi, so its hints ask for Wi-Fi
+  // switched on, not a shared network. On Android LAN is the fallback on a
+  // phone without the Nearby module and genuinely needs the same Wi-Fi.
   const nearby = transport !== "lan";
+  const peerToPeer = !nearby && platform === "ios";
   if (!code) return "";
   if (code === "removed-from-session")
     return "You were removed from this session. Your own workout remains on this device for personal logging and review.";
@@ -106,7 +109,9 @@ export function togetherErrorCopy(
   )
     return nearby
       ? "The host was found nearby, but the connection could not be opened. Keep both phones unlocked with Together open and Bluetooth on, then try again."
-      : "The host was found, but the connection could not be opened. Check both phones share the same Wi-Fi, then try again.";
+      : peerToPeer
+        ? "The host was found nearby, but the connection could not be opened. Keep Wi-Fi switched on and both phones unlocked with Together open, then try again."
+        : "The host was found, but the connection could not be opened. Check both phones share the same Wi-Fi, then try again.";
   if (/handshake|channel_failed|protocol_failed|authentication/i.test(code))
     return "The host was reached, but the secure handshake failed. Ask the host for a fresh invitation and try again.";
   if (/^(already_started|not_started|cancelled)$/.test(code))
@@ -118,11 +123,15 @@ export function togetherErrorCopy(
   )
     return nearby
       ? "Check Bluetooth and nearby-device permissions on both phones, and keep them within reach. Internet is not required."
-      : "Nearby connection is not available on this phone, so both phones need the same Wi-Fi. Check local-network permissions. Internet is not required.";
+      : peerToPeer
+        ? "Keep Wi-Fi switched on on both phones and allow local-network access. Joining a network is not required, and neither is internet."
+        : "Nearby connection is not available on this phone, so both phones need the same Wi-Fi. Check local-network permissions. Internet is not required.";
   if (/timeout|unreachable/i.test(code))
     return nearby
       ? "The host could not be reached. Keep both phones nearby with Bluetooth and nearby-device permissions enabled."
-      : "The host could not be reached. Nearby connection is not available on this phone, so check both phones share the same Wi-Fi.";
+      : peerToPeer
+        ? "The host could not be reached. Keep both phones within a few metres with Wi-Fi switched on, then try again."
+        : "The host could not be reached. Nearby connection is not available on this phone, so check both phones share the same Wi-Fi.";
   if (/invalid|proof|signature|invite/i.test(code))
     return "This invitation could not be verified. Ask the host for a new code or QR.";
   if (/declined/i.test(code))

@@ -50,6 +50,13 @@ export interface TogetherLobbyControllerOptions {
   provisioning: TogetherProvisioningPort;
   native: TogetherLanNative | null;
   nearby?: TogetherLanNative | null;
+  /**
+   * Transport the "Nearby" button starts with. Composition passes "lan" on
+   * iOS, where the LAN module runs peer-to-peer Wi-Fi with no router and the
+   * Nearby SDK is left with BLE GATT only (NEARBY-RESEARCH.md). Defaults to
+   * Nearby when its module is present, LAN otherwise.
+   */
+  defaultTransport?: TogetherTransport;
   /** Composition supplies an environment-specific database; rows are account-scoped. */
   database: TogetherJournalDatabase;
   randomBytes(length: number): Uint8Array;
@@ -69,9 +76,11 @@ interface Resources {
   request?: LocalJoinRequest;
 }
 /** Foreground, explicit-action coordinator. Discovery routes bytes only after a signed pin. */
+/** Time to find the host after a join starts; BLE scanning can take well over 10 s (PER-64). */
+export const SEARCH_DEADLINE_MS = 30_000;
 export class TogetherLobbyController implements TogetherLobbyPort {
   readonly workout: TogetherWorkoutCheckpoint;
-  /** Nearby when the module is present (PER-64 two-mode decision); LAN otherwise. */
+  /** `defaultTransport` when installed; else Nearby when present, LAN otherwise. */
   private transport: TogetherTransport;
   get transports(): readonly TogetherTransport[] {
     return ["lan", ...(this.options.nearby ? ["nearby" as const] : [])];
@@ -207,7 +216,13 @@ export class TogetherLobbyController implements TogetherLobbyPort {
           }
         : undefined,
     );
-    this.transport = options.nearby ? "nearby" : "lan";
+    this.transport =
+      options.defaultTransport &&
+      this.transports.includes(options.defaultTransport)
+        ? options.defaultTransport
+        : options.nearby
+          ? "nearby"
+          : "lan";
     this.snapshot = {
       phase: options.enabled ? "idle" : "disabled",
       transport: this.transport,
@@ -875,7 +890,7 @@ export class TogetherLobbyController implements TogetherLobbyPort {
         this.publish({ phase: "searching" });
         this.timer = setTimeout(
           () => this.recoverable(new Error("unreachable-host"), generation),
-          10_000,
+          SEARCH_DEADLINE_MS,
         );
         await session.startDiscovery();
       }
