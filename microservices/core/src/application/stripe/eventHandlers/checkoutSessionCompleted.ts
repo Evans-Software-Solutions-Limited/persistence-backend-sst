@@ -9,6 +9,10 @@ import { FoundingGrantRepository } from "../../repositories/foundingGrantReposit
 import { FoundingGrantService } from "../../founding/foundingGrantService";
 import { FOUNDING_WEB_ACTOR_ID } from "../../founding/foundingOffer";
 import { RESEND_NOTIFICATION_TO, sendEmail } from "../../leads/resendClient";
+import {
+  handleBlcCheckoutCompleted,
+  isBlcCheckoutSession,
+} from "../../blc/blcCheckoutCompleted";
 
 /**
  * `checkout.session.completed` (and `checkout.session.async_payment_succeeded`,
@@ -42,6 +46,14 @@ export async function handleCheckoutSessionCompleted(
   event: Stripe.Event,
 ): Promise<void> {
   const session = event.data.object as Stripe.Checkout.Session;
+
+  // The Blue Light Card rail stamps `channel: "blc"` on its Sessions. It is a
+  // subscription, not a founding grant, so it never touches the founding
+  // tables below — the row is created by `customer.subscription.created`.
+  if (isBlcCheckoutSession(session)) {
+    await handleBlcCheckoutCompleted(session);
+    return;
+  }
 
   // Async payment methods complete later via `checkout.session.async_payment_
   // succeeded`; an unpaid completion is not a purchase.

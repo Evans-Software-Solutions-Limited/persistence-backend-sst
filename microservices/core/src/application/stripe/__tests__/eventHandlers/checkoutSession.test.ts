@@ -66,6 +66,15 @@ vi.mock("../../../leads/resendClient", () => ({
   RESEND_NOTIFICATION_TO: "admin@example.test",
 }));
 
+const tradedoublerMock = vi.hoisted(() =>
+  vi.fn<(...args: unknown[]) => Promise<unknown>>(async () => ({
+    skipped: true,
+  })),
+);
+vi.mock("../../../tradedoubler/reportSale", () => ({
+  reportTradedoublerSale: tradedoublerMock,
+}));
+
 import { handleCheckoutSessionCompleted } from "../../eventHandlers/checkoutSessionCompleted";
 import { handleCheckoutSessionExpired } from "../../eventHandlers/checkoutSessionExpired";
 
@@ -844,5 +853,75 @@ describe("handleCheckoutSessionExpired", () => {
     await expect(
       handleCheckoutSessionExpired(event("checkout.session.expired", {})),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe("handleCheckoutSessionCompleted — Blue Light Card Sessions", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    tradedoublerMock.mockResolvedValue({
+      skipped: false,
+      ok: true,
+      status: 200,
+    });
+    checkoutMocks.claimForCompletion.mockResolvedValue(CLAIMED);
+    priorGrant.mockResolvedValue(null);
+    grantMock.mockResolvedValue({
+      ok: true,
+      result: { grantId: "grant-1", status: "pending" },
+    });
+  });
+
+  it("reports the sale and the conversion, and never touches the founding tables", async () => {
+    await handleCheckoutSessionCompleted(
+      event("checkout.session.completed", {
+        id: "cs_blc_1",
+        amount_total: 11199,
+        subscription: "sub_blc_1",
+        metadata: {
+          channel: "blc",
+          tier: "premium_plus",
+          cadence: "monthly",
+          voucher: "BLC-TEST",
+          tduid: "td_1",
+          event_id: "evt-blc-1",
+          marketing_consent: "true",
+        },
+      } as Partial<Stripe.Checkout.Session>),
+    );
+    expect(tradedoublerMock).toHaveBeenCalledWith({
+      orderNumber: "cs_blc_1",
+      orderValueMinor: 11199,
+      currency: "GBP",
+      voucher: "BLC-TEST",
+      tduid: "td_1",
+    });
+    expect(emitEventMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "purchase",
+        eventId: "evt-blc-1",
+        properties: expect.objectContaining({
+          channel: "blc",
+          tier: "premium_plus",
+          cadence: "monthly",
+        }),
+      }),
+    );
+    // A subscription, not a founding grant.
+    expect(checkoutMocks.claimForCompletion).not.toHaveBeenCalled();
+    expect(checkoutMocks.recoverPaidReservation).not.toHaveBeenCalled();
+    expect(grantMock).not.toHaveBeenCalled();
+    expect(auditMock).not.toHaveBeenCalled();
+  });
+
+  it("leaves a founding Session on the founding path", async () => {
+    await handleCheckoutSessionCompleted(
+      event("checkout.session.completed", {
+        metadata: { tier: "premium", months: "6" },
+      }),
+    );
+    expect(tradedoublerMock).not.toHaveBeenCalled();
+    expect(checkoutMocks.claimForCompletion).toHaveBeenCalledWith("cs_test_1");
+    expect(grantMock).toHaveBeenCalled();
   });
 });

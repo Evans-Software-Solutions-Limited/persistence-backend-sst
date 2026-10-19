@@ -16,6 +16,9 @@
 // founders' rate. Public values — they are what an ad links to. Unset in a
 // stage means no offer CTA renders there, which is the correct state until a
 // code has been redeemed end to end and confirmed server-side.
+// `VITE_TRADEDOUBLER_ORG_ID` / `VITE_TRADEDOUBLER_PROGRAM_ID` /
+// `VITE_TRADEDOUBLER_SALE_EVENT_ID` (PER-3, Blue Light Card): the affiliate
+// network's public tag ids. Unset → the landing tag and sale report no-op.
 interface ImportMetaEnv {
   readonly VITE_SUPABASE_URL?: string;
   readonly VITE_SUPABASE_ANON_KEY?: string;
@@ -24,4 +27,7 @@ interface ImportMetaEnv {
   readonly VITE_MARKETING_EDGE_URL?: string;
   readonly VITE_STORE_OFFER_IOS_URL?: string;
   readonly VITE_STORE_OFFER_ANDROID_URL?: string;
+  readonly VITE_TRADEDOUBLER_ORG_ID?: string;
+  readonly VITE_TRADEDOUBLER_PROGRAM_ID?: string;
+  readonly VITE_TRADEDOUBLER_SALE_EVENT_ID?: string;
 }

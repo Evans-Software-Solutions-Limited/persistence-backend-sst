@@ -263,4 +263,13 @@ jobs:
           # environment variables, not secrets. Unset ⇒ no offer CTA renders.
           VITE_STORE_OFFER_IOS_URL: ${{ vars.VITE_STORE_OFFER_IOS_URL }}
           VITE_STORE_OFFER_ANDROID_URL: ${{ vars.VITE_STORE_OFFER_ANDROID_URL }}
+          # Blue Light Card web subscription rail (PER-3). Identifiers, not
+          # secrets: the Stripe Coupon the member codes must belong to, and
+          # Tradedoubler's organisation / sale-event ids for the server-side
+          # conversion report. Unset ⇒ every code is refused and the report
+          # is a logged no-op. Read by infra/api.ts into the API Lambda env.
+          BLC_STRIPE_COUPON_ID: ${{ vars.BLC_STRIPE_COUPON_ID }}
+          TRADEDOUBLER_ORGANIZATION_ID: ${{ vars.TRADEDOUBLER_ORGANIZATION_ID }}
+          TRADEDOUBLER_SALE_EVENT_ID: ${{ vars.TRADEDOUBLER_SALE_EVENT_ID }}
+          TRADEDOUBLER_VALID_ON_DAYS: ${{ vars.TRADEDOUBLER_VALID_ON_DAYS }}
         run: bunx sst deploy --stage staging

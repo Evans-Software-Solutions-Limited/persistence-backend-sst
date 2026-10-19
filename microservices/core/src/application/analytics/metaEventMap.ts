@@ -78,6 +78,25 @@ export function foundingPlanContentId(
   return FOUNDING_PLAN_CONTENT_IDS[`${tier}:${months}`];
 }
 
+/**
+ * The page a web checkout event happened on. Two rails share the
+ * `checkout_started` / `purchase` names: the founding offer (the default, and
+ * every row that predates the `channel` property) and the Blue Light Card
+ * subscription, which stamps `channel: "blc"`. The BLC rail sends no
+ * `months`, so `commerceData()` falls back to money alone for it — a BLC
+ * annual subscription must not be reported to Meta as the founding 12-month
+ * plan.
+ */
+function checkoutPaths(properties: Record<string, unknown>): {
+  start: string;
+  thanks: string;
+} {
+  if (properties.channel === "blc") {
+    return { start: "/blue-light-card", thanks: "/blue-light-card/thanks" };
+  }
+  return { start: "/founding", thanks: "/founding/thanks" };
+}
+
 interface MetaEventSkeleton {
   eventName: MetaStandardEventName;
   customData?: Record<string, unknown>;
@@ -154,7 +173,7 @@ function skeletonsFor(
         {
           eventName: "InitiateCheckout",
           customData: commerceData(),
-          sourcePath: "/founding",
+          sourcePath: checkoutPaths(properties).start,
         },
       ];
     // A one-off fixed-term purchase. Purchase ONLY — no `Subscribe`, unlike
@@ -166,7 +185,7 @@ function skeletonsFor(
         {
           eventName: "Purchase",
           customData: commerceData(),
-          sourcePath: "/founding/thanks",
+          sourcePath: checkoutPaths(properties).thanks,
         },
       ];
     case "store_click":

@@ -561,12 +561,19 @@ export function Privacy() {
           anywhere. Everything else is optional and off until you opt in.
         </p>
         <p>
-          The one optional category today is <strong>advertising</strong>: with
+          There are two optional categories. <strong>Advertising</strong>: with
           your consent we set a Meta (Facebook) cookie &mdash; <code>_fbp</code>
           , plus <code>_fbc</code> if you arrive from one of our adverts &mdash;
           so we can measure whether our advertising brings people to
           Persistence. Meta Platforms Ireland Limited is the third party
-          involved, and this data is shared with Meta.
+          involved, and this data is shared with Meta.{" "}
+          <strong>Affiliate measurement</strong>: if you arrive from a partner
+          such as Blue Light Card and consent, Tradedoubler sets a cookie (
+          <code>TRADEDOUBLER</code>) on our site so that the partner can be
+          credited for a sign-up that came from them. Tradedoubler AB is the
+          third party involved; it receives an anonymous click identifier and
+          the fact and value of a purchase, never your name or your training,
+          food or health data.
         </p>
         <p>
           We ask first. On the cookie banner you can <strong>Accept all</strong>

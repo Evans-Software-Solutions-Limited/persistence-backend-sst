@@ -37,6 +37,7 @@ import { aiEquipmentScanHandler } from "./loadout/scan/aiEquipmentScanHandler";
 // nesting adds no prefix and no ordering risk.
 import { leadsRoutes } from "./leads/leadsRoutes";
 import { foundingCheckoutHandler } from "./founding/checkout/foundingCheckoutHandler";
+import { blcCheckoutHandler } from "./blc/blcCheckoutHandler";
 // `GET /sessions/recent-sets` — the server source for the mobile "Previous"
 // hint cache (fresh-install hydration). Unrelated to loadout, but nested here
 // for the SAME reason as `leadsRoutes` above: the api.ts root `.use()` chain is
@@ -75,6 +76,9 @@ export const loadoutRoutes = new Elysia()
   // TS2589 reason as `leadsRoutes`, and it declares absolute paths so nesting
   // adds no prefix.
   .use(foundingCheckoutHandler)
+  // Blue Light Card web subscription checkout. Same TS2589 reason, same
+  // absolute-path argument as the founding handler above.
+  .use(blcCheckoutHandler)
   // Recent-sets hydration (see the import comment for why this lives here).
   .use(sessionsRecentSetsHandler)
   .use(experiencePolishRoutes);
