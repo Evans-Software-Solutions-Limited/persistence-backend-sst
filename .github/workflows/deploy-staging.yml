@@ -263,6 +263,14 @@ jobs:
           # environment variables, not secrets. Unset ⇒ no offer CTA renders.
           VITE_STORE_OFFER_IOS_URL: ${{ vars.VITE_STORE_OFFER_IOS_URL }}
           VITE_STORE_OFFER_ANDROID_URL: ${{ vars.VITE_STORE_OFFER_ANDROID_URL }}
+          # Tradedoubler browser tag for the Blue Light Card page (PER-3):
+          # organisation, programme and sale-event ids, read by infra/web.ts
+          # into the site build. Identifiers, not secrets. Unset ⇒ the tag and
+          # the browser-side sale call are no-ops (server-side reporting still
+          # runs from the Stripe webhook).
+          VITE_TRADEDOUBLER_ORG_ID: ${{ vars.VITE_TRADEDOUBLER_ORG_ID }}
+          VITE_TRADEDOUBLER_PROGRAM_ID: ${{ vars.VITE_TRADEDOUBLER_PROGRAM_ID }}
+          VITE_TRADEDOUBLER_SALE_EVENT_ID: ${{ vars.VITE_TRADEDOUBLER_SALE_EVENT_ID }}
           # Blue Light Card web subscription rail (PER-3). Identifiers, not
           # secrets: the Stripe Coupon the member codes must belong to, and
           # Tradedoubler's organisation / sale-event ids for the server-side
