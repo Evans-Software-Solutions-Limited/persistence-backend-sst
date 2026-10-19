@@ -9,6 +9,8 @@ import { TogetherSharedSession } from "../sharedSession";
 import { TogetherLocalStore, LocalCommand } from "../localStore";
 import { TogetherLocalLobby, LocalJoinRequest } from "../localLobby";
 import {
+  AUTHENTICATION_DEADLINE_MS,
+  CONNECT_DEADLINE_MS,
   TogetherLanSession,
   LanSessionEvent,
   LanSessionOptions,
@@ -302,7 +304,7 @@ describe("LAN session lifecycle with actual crypto and SQLite", () => {
     await expect(guest.session.connect("new", request())).rejects.toThrow(
       "busy",
     );
-    jest.advanceTimersByTime(10_000);
+    jest.advanceTimersByTime(CONNECT_DEADLINE_MS);
     await settle();
     expect(guest.events).toContainEqual({
       type: "error",
@@ -568,7 +570,7 @@ describe("LAN session lifecycle with actual crypto and SQLite", () => {
     await expect(guest.session.connect("2", request())).rejects.toThrow(
       "endpoint",
     );
-    jest.advanceTimersByTime(10_000);
+    jest.advanceTimersByTime(CONNECT_DEADLINE_MS);
     await settle();
     expect(guest.events).toContainEqual({
       type: "error",
@@ -682,7 +684,7 @@ describe("LAN session lifecycle with actual crypto and SQLite", () => {
     host.native.emit({ type: "frame", peerId: "unknown", frame: "secret" });
     expect(host.native.disconnect).toHaveBeenCalledWith("8");
     expect(host.native.disconnect).toHaveBeenCalledWith("wrong");
-    jest.advanceTimersByTime(10_000);
+    jest.advanceTimersByTime(AUTHENTICATION_DEADLINE_MS);
     await settle();
     expect(host.events).toContainEqual({
       type: "error",

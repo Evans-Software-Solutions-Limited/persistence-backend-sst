@@ -292,10 +292,21 @@ it("keeps LAN-fallback error hints honest about the same Wi-Fi while nearby hint
     /Bluetooth and nearby-device/,
   );
   expect(togetherErrorCopy("timeout", "nearby")).toMatch(/both phones nearby/);
-  expect(togetherErrorCopy("permission-denied", "lan")).toMatch(
+  expect(togetherErrorCopy("permission-denied", "lan", "android")).toMatch(
     /Nearby connection is not available on this phone, so both phones need the same Wi-Fi/,
   );
-  expect(togetherErrorCopy("timeout", "lan")).toMatch(/share the same Wi-Fi/);
+  expect(togetherErrorCopy("timeout", "lan", "android")).toMatch(
+    /share the same Wi-Fi/,
+  );
+  // iOS LAN is peer-to-peer Wi-Fi: Wi-Fi on, no network, no "same Wi-Fi".
+  for (const code of ["permission-denied", "timeout", "connect_failed"]) {
+    const copy = togetherErrorCopy(code, "lan", "ios");
+    expect(copy).toMatch(/Wi-Fi switched on/);
+    expect(copy).not.toMatch(/same Wi-Fi/);
+  }
+  expect(togetherErrorCopy("connect_failed", "lan", "android")).toMatch(
+    /same Wi-Fi/,
+  );
   expect(togetherErrorCopy("permission-denied")).toMatch(
     /Bluetooth and nearby-device/,
   );
@@ -399,7 +410,12 @@ it("names connect-stage and handshake failures instead of the generic last line"
   expect(togetherErrorCopy("connect_failed", "nearby")).toMatch(
     /found nearby, but the connection could not be opened/,
   );
-  expect(togetherErrorCopy("connection_rejected", "lan")).toMatch(/same Wi-Fi/);
+  expect(togetherErrorCopy("connection_rejected", "lan", "android")).toMatch(
+    /same Wi-Fi/,
+  );
+  expect(togetherErrorCopy("connection_rejected", "lan", "ios")).toMatch(
+    /Wi-Fi switched on/,
+  );
   expect(togetherErrorCopy("unknown_endpoint")).toMatch(/could not be opened/);
   expect(togetherErrorCopy("connection_closed")).toMatch(/could not be opened/);
   expect(togetherErrorCopy("handshake_failed")).toMatch(

@@ -9,6 +9,9 @@ public final class TogetherLanModule: Module {
   private var endpoints: [String: NWEndpoint] = [:]
   private var peers: [String: Peer] = [:]
   private let serviceType = "_persist-tg._tcp"
+  /// Pre-ready deadline for a connection; peer-to-peer Wi-Fi brings the interface
+  /// up before the TCP connect, so it matches the Nearby module's 30 s (PER-64).
+  private let connectSeconds: Double = 30
 
   private final class Peer {
     let connection: NWConnection
@@ -69,10 +72,16 @@ public final class TogetherLanModule: Module {
     NSError(domain: "TogetherLan", code: 1, userInfo: [NSLocalizedDescriptionKey: code])
   }
 
+  // Peer-to-peer Wi-Fi (AWDL) between iPhones with no router: Apple's recommended
+  // replacement for Multipeer Connectivity, and the path Nearby Connections keeps
+  // behind a disabled flag on iOS (NEARBY-RESEARCH.md, 19 Oct 2026). Bonjour over
+  // an infrastructure network still works when both phones share one. Cellular is
+  // prohibited rather than requiring the Wi-Fi interface type, so the peer-to-peer
+  // interface is never excluded by the requirement.
   private func parameters() -> NWParameters {
     let parameters = NWParameters.tcp
-    parameters.includePeerToPeer = false
-    parameters.requiredInterfaceType = .wifi
+    parameters.includePeerToPeer = true
+    parameters.prohibitedInterfaceTypes = [.cellular]
     return parameters
   }
 
@@ -135,7 +144,7 @@ public final class TogetherLanModule: Module {
     let id = UUID().uuidString
     let peer = Peer(connection)
     peers[id] = peer
-    deadline(id, seconds: 10)
+    deadline(id, seconds: connectSeconds)
     connection.stateUpdateHandler = { [weak self, weak peer] state in
       guard let self, let peer, self.peers[id] === peer else { return }
       switch state {

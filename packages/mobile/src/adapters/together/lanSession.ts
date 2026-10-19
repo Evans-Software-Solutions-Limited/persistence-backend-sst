@@ -52,6 +52,16 @@ export interface LanSessionOptions {
 }
 
 /** Foreground LAN lifecycle only. No UI mounting, account switching or cloud fallback. */
+/**
+ * Guest connect deadline, from `connect()` until the native `connected` event.
+ * Sits above every native pre-ready deadline (30 s in all four modules) so a
+ * native failure surfaces with its real code before this generic one; the
+ * natives themselves sit above the Nearby SDK's 12 s BLE connect plus its
+ * UKEY2 handshake and the host's accept (PER-64, 19 Oct 2026).
+ */
+export const CONNECT_DEADLINE_MS = 35_000;
+/** From `connected` until the authenticated handshake completes; the credential exchange is a few KB, slow over BLE GATT. */
+export const AUTHENTICATION_DEADLINE_MS = 20_000;
 export class TogetherLanSession {
   private mode?: "host" | "guest";
   private generation = 0;
@@ -139,7 +149,7 @@ export class TogetherLanSession {
       void this.stop().catch(() =>
         this.emit({ type: "error", code: "stop_failed" }),
       );
-    }, 10_000);
+    }, CONNECT_DEADLINE_MS);
     const generation = this.generation;
     try {
       await this.options.native!.connect(endpointId);
@@ -444,7 +454,7 @@ export class TogetherLanSession {
         processing: Promise.resolve(),
         deadline: setTimeout(
           () => this.fail(event.peerId, "authentication_timeout"),
-          10_000,
+          AUTHENTICATION_DEADLINE_MS,
         ),
       };
       this.links.set(event.peerId, connection);

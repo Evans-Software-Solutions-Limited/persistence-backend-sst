@@ -37,7 +37,9 @@ that a chosen physical hotspot carried its bytes. The Google Android SDK chooses
 its available media; no Internet capability check gates starting the session.
 
 BYTES-only native payloads are capped at 32,768 bytes, 8 peers, 64 observed endpoints,
-16 queued sends, 60 packets/second and 10 second connect/write deadlines; idle peers
+16 queued sends, 60 packets/second, a 30 second pre-ready connect deadline (the
+SDK's own BLE connect allows 12 s before the UKEY2 handshake and the host's
+accept; 10 s dropped healthy slow links) and 10 second write deadlines; idle peers
 close after 30 seconds. The JS framing adapter reconstructs existing 65,536 byte
 frames in ordered <=4,096 character chunks, with a 10 second absolute assembly
 deadline. It rejects extra fields, invalid order, oversized frames and unsupported

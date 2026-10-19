@@ -19,8 +19,10 @@ Each frame is a four-byte unsigned big-endian UTF-8 byte length followed by that
 many bytes. Both implementations reject zero, lengths above 65,536 and invalid
 UTF-8 before delivering an event. Reads handle fragmentation. Per transport:
 8 pending/connected peers and 64 observed endpoints; per peer: 16 queued writes
-and 60 inbound frames/second. Writes preserve ordering. Connection/write deadlines
-are 10 seconds; one absolute 30-second receive deadline spans a whole frame,
+and 60 inbound frames/second. Writes preserve ordering. The pre-ready connection
+deadline is 30 seconds (peer-to-peer Wi-Fi brings the interface up before the
+TCP connect; matched to the Nearby module) and write deadlines are 10 seconds;
+one absolute 30-second receive deadline spans a whole frame,
 including a partial header/body. Authenticated upper layers must complete their
 handshake promptly and send encrypted heartbeats before the idle deadline.
 Android discovery resolution also times out after 10 seconds. `stop` unregisters
@@ -29,7 +31,11 @@ callbacks; module destruction additionally shuts down Android executors.
 
 ## Network policy
 
-Apple Network.framework requires Wi-Fi and disables peer-to-peer interfaces.
+Apple Network.framework runs with `includePeerToPeer = true`: two iPhones connect
+over peer-to-peer Wi-Fi (AWDL) with no router, and over Bonjour on an
+infrastructure network when both share one. Wi-Fi must be switched on; joining a
+network is not required. Cellular is prohibited. On iOS this module is the
+default "Nearby" transport (see `specs/milestones/TRAIN-TOGETHER/NEARBY-RESEARCH.md`).
 Android selects an existing `TRANSPORT_WIFI` Network without requiring Internet
 capability, binds outbound sockets to it, and rejects off-link resolved addresses.
 The dual-stack Android listener accepts only connections addressed to that Wi-Fi
