@@ -1013,8 +1013,15 @@ it("invalidates the single-use invitation after admission and after expiry", asy
   });
   await waitFor(() => expect(r.getByText("Scan to join")).toBeTruthy());
   expect(h.cloud.hostWorkout).toHaveBeenCalledTimes(1);
+  // The QR appears on the invitation's own commit, one microtask before the
+  // regenerate action releases `run`'s lock. A Copy pressed in that gap is
+  // dropped by design, so flush the release before pressing (CI hit the gap
+  // on PR #505's run; it never reproduces locally).
+  await act(async () => {});
   const now = jest.spyOn(Date, "now").mockReturnValue(Date.now() + 120_000);
-  fireEvent.press(r.getByText("Copy"));
+  await act(async () => {
+    fireEvent.press(r.getByText("Copy"));
+  });
   await waitFor(() => expect(r.queryByText("Scan to join")).toBeNull());
   expect(mockCopy).not.toHaveBeenCalledWith("new-invite");
   now.mockRestore();
