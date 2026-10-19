@@ -76,6 +76,8 @@ interface Resources {
   request?: LocalJoinRequest;
 }
 /** Foreground, explicit-action coordinator. Discovery routes bytes only after a signed pin. */
+/** Time to find the host after a join starts; BLE scanning can take well over 10 s (PER-64). */
+export const SEARCH_DEADLINE_MS = 30_000;
 export class TogetherLobbyController implements TogetherLobbyPort {
   readonly workout: TogetherWorkoutCheckpoint;
   /** `defaultTransport` when installed; else Nearby when present, LAN otherwise. */
@@ -888,7 +890,7 @@ export class TogetherLobbyController implements TogetherLobbyPort {
         this.publish({ phase: "searching" });
         this.timer = setTimeout(
           () => this.recoverable(new Error("unreachable-host"), generation),
-          10_000,
+          SEARCH_DEADLINE_MS,
         );
         await session.startDiscovery();
       }

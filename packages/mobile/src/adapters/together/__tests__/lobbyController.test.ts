@@ -9,6 +9,7 @@ import type {
 import { DatabaseSync } from "node:sqlite";
 import { randomBytes, randomUUID } from "node:crypto";
 import {
+  SEARCH_DEADLINE_MS,
   TogetherLobbyController,
   type TogetherLobbyControllerOptions,
 } from "../lobbyController";
@@ -540,7 +541,7 @@ describe("reviewed lobby coordinator, real cryptography and SQLite, simulated na
       lobbyId: id(999),
     });
     expect(guest.native.connect).not.toHaveBeenCalled();
-    jest.advanceTimersByTime(10001);
+    jest.advanceTimersByTime(SEARCH_DEADLINE_MS + 1);
     await settle();
     expect(guest.controller.getSnapshot()).toMatchObject({
       phase: "unavailable",
@@ -1075,7 +1076,7 @@ describe("reviewed lobby coordinator, real cryptography and SQLite, simulated na
       host.controller.getSnapshot().invitation!,
     );
     await guest.controller.join();
-    jest.advanceTimersByTime(10001);
+    jest.advanceTimersByTime(SEARCH_DEADLINE_MS + 1);
     await settle();
     expect(guest.controller.getSnapshot().error).toBe("unreachable-host");
     guest.native.startDiscovery.mockClear();

@@ -106,3 +106,27 @@ it("emits SDK detail as log events, keeps NSError text in rejections and codes r
   // Log lines never carry frame contents.
   expect(source).not.toMatch(/log\([^\n]*"frame": frame/);
 });
+
+it("holds a connecting peer for 30 s on both platforms, above the SDK's 12 s BLE connect plus handshake", () => {
+  const swiftSource = readFileSync(
+    join(__dirname, "../ios/TogetherNearbyModule.swift"),
+    "utf8",
+  );
+  const kotlinSource = readFileSync(
+    join(
+      __dirname,
+      "../android/src/main/java/expo/modules/togethernearby/TogetherNearbyModule.kt",
+    ),
+    "utf8",
+  );
+  expect(swiftSource).toContain("private let connectSeconds: Double = 30");
+  expect(
+    swiftSource.match(/deadline\(id, peer, connectSeconds\)/g)?.length,
+  ).toBe(2);
+  expect(swiftSource).not.toMatch(/deadline\(id, peer, 10\)/);
+  expect(kotlinSource).toContain(
+    "private const val CONNECT_DEADLINE_MS = 30_000L",
+  );
+  expect(kotlinSource.match(/CONNECT_DEADLINE_MS\)/g)?.length).toBe(2);
+  expect(kotlinSource).not.toMatch(/deadline\(id, (peer|it), 10_000\)/);
+});

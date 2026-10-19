@@ -9,6 +9,9 @@ public final class TogetherLanModule: Module {
   private var endpoints: [String: NWEndpoint] = [:]
   private var peers: [String: Peer] = [:]
   private let serviceType = "_persist-tg._tcp"
+  /// Pre-ready deadline for a connection; peer-to-peer Wi-Fi brings the interface
+  /// up before the TCP connect, so it matches the Nearby module's 30 s (PER-64).
+  private let connectSeconds: Double = 30
 
   private final class Peer {
     let connection: NWConnection
@@ -141,7 +144,7 @@ public final class TogetherLanModule: Module {
     let id = UUID().uuidString
     let peer = Peer(connection)
     peers[id] = peer
-    deadline(id, seconds: 10)
+    deadline(id, seconds: connectSeconds)
     connection.stateUpdateHandler = { [weak self, weak peer] state in
       guard let self, let peer, self.peers[id] === peer else { return }
       switch state {

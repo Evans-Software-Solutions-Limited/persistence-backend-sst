@@ -81,3 +81,12 @@ it("runs peer-to-peer Wi-Fi on iOS with cellular prohibited and no hard Wi-Fi in
     swift.match(/using: (self\.)?parameters\(\)/g)?.length ?? 0,
   ).toBeGreaterThanOrEqual(3);
 });
+
+it("holds a connecting peer for 30 s on both platforms, matched to the Nearby module", () => {
+  expect(swift).toContain("private let connectSeconds: Double = 30");
+  expect(swift).toContain("deadline(id, seconds: connectSeconds)");
+  expect(swift).not.toContain("deadline(id, seconds: 10)");
+  expect(source).toContain("private const val CONNECT_DEADLINE_SECONDS = 30L");
+  expect(source).toContain("deadline(id, peer, CONNECT_DEADLINE_SECONDS)");
+  expect(source).toContain("(CONNECT_DEADLINE_SECONDS * 1000).toInt()");
+});

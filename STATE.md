@@ -43,8 +43,22 @@ Wi-Fi switched on (no network needed), Android LAN keeps "same Wi-Fi". Tests:
 Swift source contract in `together-lan/__tests__/native-source.test.ts`,
 controller default-transport test, factory platform test, presenter copy
 tests. 32 Together suites / 887 tests pass; typecheck, lint, prettier clean.
-Not changed yet: the 10 s deadlines and the mixed-pair (iPhone + Android, no
-shared Wi-Fi) policy, both pending Brad's call on PER-64.
+**Deadlines, same branch (Brad: "fix the deadlines too").** Every pre-ready
+connect deadline was 10 s while the Nearby SDK's own BLE connect allows 12 s
+before the UKEY2 handshake and the host's accept. Now 30 s in all four native
+modules (`connectSeconds` in both Swift modules, `CONNECT_DEADLINE_MS` /
+`CONNECT_DEADLINE_SECONDS` in both Kotlin modules, Android LAN's
+`socket.connect` timeout included), `CONNECT_DEADLINE_MS = 35_000` in
+`lanSession.ts` so a native failure always surfaces with its real code first,
+`AUTHENTICATION_DEADLINE_MS = 20_000` for the credential exchange after
+`connected`, and `SEARCH_DEADLINE_MS = 30_000` in `lobbyController.ts` for
+finding the host after a join starts. Write (10 s) and ready-read (30 s)
+deadlines unchanged. Source contracts in both modules' `native-source.test.ts`.
+**Mixed pair: not a case.** Brad: "the connection is either online or offline,
+if the session is offline, then the user connects via nearby. we should never
+have a mixed pair." No special handling; an Android phone joining an iPhone's
+offline session uses its LAN module, which needs a shared Wi-Fi, and that is
+the honest limit rather than a third path.
 
 **Test for Brad.** Build this to both iPhones; host and guest with Wi-Fi
 switched on and neither joined to a network; Together → Nearby on both. The
