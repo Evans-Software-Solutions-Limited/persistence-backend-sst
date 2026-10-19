@@ -87,6 +87,10 @@ private final class NearbyEngine: ConnectionManagerDelegate, AdvertiserDelegate,
     let ns = error as NSError
     return ["error": error.localizedDescription, "domain": ns.domain, "errorCode": ns.code]
   }
+  /// Pre-ready deadline for an outgoing or incoming connection. The SDK's own BLE
+  /// connect allows 12 s before the UKEY2 handshake and the host's accept even
+  /// start; 10 s here dropped healthy slow links as `read_timeout` (PER-64).
+  private let connectSeconds: Double = 30
   private var active = true
   private var host = false
   private var endpoints: [String: String] = [:]
@@ -131,7 +135,7 @@ private final class NearbyEngine: ConnectionManagerDelegate, AdvertiserDelegate,
       promise.reject("unknown_endpoint", "Unknown or busy endpoint"); return
     }
     log("requestConnection", ["endpointId": id, "lobbyId": endpoints[id] ?? ""])
-    let peer = Peer(false); peers[id] = peer; deadline(id, peer, 10)
+    let peer = Peer(false); peers[id] = peer; deadline(id, peer, connectSeconds)
     discoverer.requestConnection(to: id, using: Data(), mediums: mediums) { [weak self, weak peer] error in
       DispatchQueue.main.async {
         guard let self, let peer, self.active, self.peers[id] === peer else { promise.reject("cancelled", "Nearby stopped"); return }
@@ -201,7 +205,7 @@ private final class NearbyEngine: ConnectionManagerDelegate, AdvertiserDelegate,
       connectionRequestHandler(false); return
     }
     log("connection request accepted", ["peerId": id])
-    let peer = Peer(true); peers[id] = peer; deadline(id, peer, 10)
+    let peer = Peer(true); peers[id] = peer; deadline(id, peer, connectSeconds)
     connectionRequestHandler(true)
   }
   func discoverer(_ discoverer: Discoverer, didFind id: EndpointID, with context: Data) {

@@ -30,6 +30,9 @@ import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 
 /** No identity/authentication here. Consumers must use the signed encrypted channel. */
+/** Pre-ready deadline for an outbound connection, matched to the Nearby module's 30 s (PER-64). */
+private const val CONNECT_DEADLINE_SECONDS = 30L
+
 class TogetherLanModule : Module() {
   private val control = ScheduledThreadPoolExecutor(1).apply {
     removeOnCancelPolicy = true
@@ -302,10 +305,10 @@ class TogetherLanModule : Module() {
     if (!peerSlots.tryAcquire()) { socket.close(); error("peer_limit") }
     val id = UUID.randomUUID().toString()
     val peer = Peer(socket); peers[id] = peer
-    deadline(id, peer, 10)
+    deadline(id, peer, CONNECT_DEADLINE_SECONDS)
     io.execute {
       try {
-        socket.connect(InetSocketAddress(info.host, info.port), 10_000)
+        socket.connect(InetSocketAddress(info.host, info.port), (CONNECT_DEADLINE_SECONDS * 1000).toInt())
         post { if (peers[id] === peer) ready(id, peer, false) }
       } catch (_: Exception) { post { if (peers[id] === peer) drop(id, "connect_failed") } }
     }

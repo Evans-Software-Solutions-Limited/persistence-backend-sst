@@ -84,6 +84,70 @@ and 375 in dark and light with no console errors and no horizontal scroll
 (session scratchpad `blc-shots/`). Not screenshotted: checking spinner,
 mobile sign-in and thanks-complete.
 
+### 2026-10-19 — Nearby on iOS: BLE GATT was the only radio left; iPhone-to-iPhone moves to peer-to-peer Wi-Fi in our LAN module (PER-64, PR pending)
+
+The 19 Oct two-iPhone run on the #501/#502/#503 build ended on the guest with
+`connect_failed · nearby transport`: discovery succeeded, `requestConnection`
+failed. Brad's Together log added nothing beyond that, so the cause was read
+from the pinned SDK (`google/nearby` `8b96295`, upstream `main` at 9 Oct adds
+no iOS BLE change), Google's tracker and Apple's forums. Research brief:
+`specs/milestones/TRAIN-TOGETHER/NEARBY-RESEARCH.md` (PR #506).
+
+**Why it fails.** On Apple the Nearby SDK stubs out Bluetooth classic, Wi-Fi
+Direct and hotspot host (upstream `4f4c36caa`); AWDL is implemented
+(`awdl.mm` = Network.framework with `includePeerToPeer`) but behind
+`kEnableAwdl = false` with no public toggle (`GNCFlags` exposes Wi-Fi Aware
+only); BLE L2CAP is behind `kEnableBleL2cap = false`. Two iPhones off a shared
+Wi-Fi therefore get exactly one data medium, BLE over a GATT socket
+(`ble_medium.mm`, 12 s internal connect timeout). Google's maintainers call
+BLE on iOS slow, only recently default-enabled and unverified, and say fully
+offline iOS↔Android "most likely won't be possible" (#1619, #2447). Our own
+connect deadlines (Swift `deadline(id, peer, 10)` and JS `connectDeadline`
+10 s) are shorter than the SDK's 12 s, so a slow healthy BLE link would be
+dropped by us as `read_timeout` anyway. Bonjour caches endpoints for ~2 min
+after an advertiser leaves (#2472): a source of ghost hub entries.
+
+**Not Multipeer.** Apple DTS calls Multipeer Connectivity effectively
+deprecated and the iOS 26 reports (Wi-Fi on but joined to nothing,
+`.connecting` → `.notConnected`, up to 20 retries, AWDL torn down early) are
+the gym case. Apple's promoted path is Network.framework with
+`includePeerToPeer = true` and Bonjour.
+
+**Change (this branch, `claude/per-64-ios-peer-to-peer-wifi`).**
+`modules/together-lan/ios/TogetherLanModule.swift` is already that API; #480
+had pinned it to infrastructure (`includePeerToPeer = false`,
+`requiredInterfaceType = .wifi`). Now `includePeerToPeer = true` and
+`prohibitedInterfaceTypes = [.cellular]`, shared by listener, browser and
+outbound `NWConnection`. `TogetherLobbyController` gains `defaultTransport`;
+`createTogetherLobby` passes `"lan"` when `Platform.OS === "ios"` (wired from
+`providers.tsx`), so the "Nearby · no internet needed" button starts iPhones on
+peer-to-peer Wi-Fi while a scanned link can still select Nearby and Android is
+unchanged. `togetherErrorCopy` takes the platform: LAN hints on iOS ask for
+Wi-Fi switched on (no network needed), Android LAN keeps "same Wi-Fi". Tests:
+Swift source contract in `together-lan/__tests__/native-source.test.ts`,
+controller default-transport test, factory platform test, presenter copy
+tests. 32 Together suites / 887 tests pass; typecheck, lint, prettier clean.
+**Deadlines, same branch (Brad: "fix the deadlines too").** Every pre-ready
+connect deadline was 10 s while the Nearby SDK's own BLE connect allows 12 s
+before the UKEY2 handshake and the host's accept. Now 30 s in all four native
+modules (`connectSeconds` in both Swift modules, `CONNECT_DEADLINE_MS` /
+`CONNECT_DEADLINE_SECONDS` in both Kotlin modules, Android LAN's
+`socket.connect` timeout included), `CONNECT_DEADLINE_MS = 35_000` in
+`lanSession.ts` so a native failure always surfaces with its real code first,
+`AUTHENTICATION_DEADLINE_MS = 20_000` for the credential exchange after
+`connected`, and `SEARCH_DEADLINE_MS = 30_000` in `lobbyController.ts` for
+finding the host after a join starts. Write (10 s) and ready-read (30 s)
+deadlines unchanged. Source contracts in both modules' `native-source.test.ts`.
+**Mixed pair: not a case.** Brad: "the connection is either online or offline,
+if the session is offline, then the user connects via nearby. we should never
+have a mixed pair." No special handling; an Android phone joining an iPhone's
+offline session uses its LAN module, which needs a shared Wi-Fi, and that is
+the honest limit rather than a third path.
+
+**Test for Brad.** Build this to both iPhones; host and guest with Wi-Fi
+switched on and neither joined to a network; Together → Nearby on both. The
+Together log's `lan` lines now describe the peer-to-peer path.
+
 ### 2026-10-17 — Nearby join failed with one generic line; Together log, real error codes, Bonjour spelling (PER-64, branch `claude/per-64-nearby-diagnostics`)
 
 Brad's staging run on the latest build, both iPhones, Brad hosting "Open
