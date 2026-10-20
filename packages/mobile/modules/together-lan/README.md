@@ -35,7 +35,7 @@ Apple Network.framework runs with `includePeerToPeer = true`: two iPhones connec
 over peer-to-peer Wi-Fi (AWDL) with no router, and over Bonjour on an
 infrastructure network when both share one. Wi-Fi must be switched on; joining a
 network is not required. Cellular is prohibited. On iOS this module is the
-default "Nearby" transport (see `specs/milestones/TRAIN-TOGETHER/NEARBY-RESEARCH.md`).
+default "Nearby" transport.
 Android selects an existing `TRANSPORT_WIFI` Network without requiring Internet
 capability, binds outbound sockets to it, and rejects off-link resolved addresses.
 The dual-stack Android listener accepts only connections addressed to that Wi-Fi
