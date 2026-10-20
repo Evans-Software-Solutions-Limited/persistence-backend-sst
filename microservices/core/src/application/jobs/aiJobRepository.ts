@@ -324,6 +324,9 @@ export class AiJobRepository {
    */
   async claim(jobId: string): Promise<AiJob | null> {
     const db = getDb();
+    // Every time bound in a sql template below is bound as an ISO string: a
+    // template parameter has no column mapper and the postgres-js driver does
+    // not serialise Dates itself (PERSISTENCE-BACKEND-6/7).
     const fenceCutoff = new Date(Date.now() - CLAIM_FENCE_MS);
     const rows = await db
       .update(aiJobs)
@@ -346,7 +349,7 @@ export class AiJobRepository {
               ${aiJobs.status} = 'running'
               AND (
                 ${aiJobs.heartbeatAt} IS NULL
-                OR ${aiJobs.heartbeatAt} < ${fenceCutoff}
+                OR ${aiJobs.heartbeatAt} < ${fenceCutoff.toISOString()}::timestamptz
               )
             )
           )`,
@@ -534,12 +537,12 @@ export class AiJobRepository {
               ${aiJobs.status} = 'running'
               AND (
                 ${aiJobs.heartbeatAt} IS NULL
-                OR ${aiJobs.heartbeatAt} < ${runningCutoff}
+                OR ${aiJobs.heartbeatAt} < ${runningCutoff.toISOString()}::timestamptz
               )
             )
             OR (
               ${aiJobs.status} = 'queued'
-              AND ${aiJobs.updatedAt} < ${queuedCutoff}
+              AND ${aiJobs.updatedAt} < ${queuedCutoff.toISOString()}::timestamptz
             )
           )`,
         ),
@@ -595,7 +598,11 @@ export class AiJobRepository {
           // is derived-failed forever but never terminal, so it can never be
           // purged either. `claim` always sets a heartbeat, so this is
           // defence-in-depth rather than a live bug.
-          sql`(${aiJobs.heartbeatAt} IS NULL OR ${aiJobs.heartbeatAt} < ${cutoff})`,
+          // `cutoff` is bound as an ISO string: a raw Date in a sql template
+          // bypasses Drizzle's column mapper and the postgres-js driver does
+          // not serialise timestamps itself (same fault as
+          // PERSISTENCE-BACKEND-6/7).
+          sql`(${aiJobs.heartbeatAt} IS NULL OR ${aiJobs.heartbeatAt} < ${cutoff.toISOString()}::timestamptz)`,
         ),
       )
       .returning({ id: aiJobs.id });
