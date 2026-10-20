@@ -53,10 +53,15 @@ const securityHeaders = new aws.cloudfront.ResponseHeadersPolicy(
         //    allows the challenge iframe, both from challenges.cloudflare.com.
         //    (There was no `frame-src` before; without it the iframe would fall
         //    back to `default-src 'self'` and be blocked.)
+        //  - Tradedoubler (PER-3, Blue Light Card): `script-src` loads tr_sdk.js
+        //    from svht.tradedoubler.com; the sale report renders a tracking
+        //    iframe from tbs.tradedoubler.com (`frame-src`), whose beacons are
+        //    covered by `connect-src` (via `webConnectSrcOrigins`) and the
+        //    existing `img-src https:`.
         // `${marketingEdgeOrigin}` adds the marketing-edge CloudFront origin to
         // connect-src on named stages (the website POSTs /leads + /store-click
         // there); it is `""` on dev, leaving connect-src as it was.
-        contentSecurityPolicy: $interpolate`default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; frame-src https://challenges.cloudflare.com; script-src 'self' https://connect.facebook.net https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self'; connect-src ${webConnectSrc} ${coreAPI.url} ${marketingEdgeOrigin}; form-action 'self'; upgrade-insecure-requests`,
+        contentSecurityPolicy: $interpolate`default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; frame-src https://challenges.cloudflare.com https://tbs.tradedoubler.com; script-src 'self' https://connect.facebook.net https://challenges.cloudflare.com https://svht.tradedoubler.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self'; connect-src ${webConnectSrc} ${coreAPI.url} ${marketingEdgeOrigin}; form-action 'self'; upgrade-insecure-requests`,
       },
     },
     customHeadersConfig: {
@@ -247,5 +252,15 @@ export const frontend = new sst.aws.StaticSite("web", {
     VITE_STORE_OFFER_IOS_URL: process.env.VITE_STORE_OFFER_IOS_URL ?? "",
     VITE_STORE_OFFER_ANDROID_URL:
       process.env.VITE_STORE_OFFER_ANDROID_URL ?? "",
+    // Tradedoubler affiliate tag ids (PER-3, Blue Light Card member offer).
+    // PUBLIC — they sit in the vendor's own landing snippet on every affiliate
+    // site. Empty/unset makes the landing tag and the browser-side sale report
+    // no-op, so a stage without them builds and serves normally; the server
+    // reports the sale from its own secret regardless.
+    VITE_TRADEDOUBLER_ORG_ID: process.env.VITE_TRADEDOUBLER_ORG_ID ?? "",
+    VITE_TRADEDOUBLER_PROGRAM_ID:
+      process.env.VITE_TRADEDOUBLER_PROGRAM_ID ?? "",
+    VITE_TRADEDOUBLER_SALE_EVENT_ID:
+      process.env.VITE_TRADEDOUBLER_SALE_EVENT_ID ?? "",
   },
 });

@@ -10,6 +10,8 @@ import Terms from "./pages/Terms";
 import DeleteAccount from "./pages/DeleteAccount";
 import OrganisationAdmin from "./pages/OrganisationAdmin";
 import FoundingThanks from "./pages/FoundingThanks";
+import BlueLightCard from "./pages/BlueLightCard";
+import BlueLightCardThanks from "./pages/BlueLightCardThanks";
 import FoundingAccess from "./founding/FoundingAccess";
 import RedeemPage from "./redemption/RedeemPage";
 import { RedemptionBoundary } from "./redemption/RedemptionBoundary";
@@ -36,6 +38,7 @@ import {
   teardownMetaPixel,
   trackPageView,
 } from "./lib/metaPixel";
+import { initTradedoubler, teardownTradedoubler } from "./lib/tradedoubler";
 import { hasConsent, subscribe } from "./lib/consent";
 
 const queryClient = new QueryClient();
@@ -54,6 +57,26 @@ function MetaConsentEffect() {
     return subscribe((choices) => {
       if (choices.advertising) initMetaPixel();
       else teardownMetaPixel();
+    });
+  }, []);
+  return null;
+}
+
+/**
+ * The same bridge for the `affiliate` category → the Tradedoubler landing tag
+ * (PER-3). On mount it loads the tag only for a visitor who has ALREADY opted
+ * in; it then reacts to live changes — loading on grant, and on withdrawal
+ * telling the SDK (`tracking-consent: false`), expiring its `TRADEDOUBLER`
+ * cookie and dropping the stored `tduid`. `initTradedoubler` self-guards on
+ * consent and on the ids being configured, so a stage without them is a clean
+ * no-op. Renders nothing.
+ */
+function TradedoublerConsentEffect() {
+  useEffect(() => {
+    if (hasConsent("affiliate")) initTradedoubler();
+    return subscribe((choices) => {
+      if (choices.affiliate) initTradedoubler();
+      else teardownTradedoubler();
     });
   }, []);
   return null;
@@ -94,6 +117,7 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider defaultTheme="dark">
         <MetaConsentEffect />
+        <TradedoublerConsentEffect />
         <PageViewTracker />
         <Routes>
           <Route path="/" element={<Home />} />
@@ -113,6 +137,19 @@ function App() {
             }
           />
           <Route path="/founding/thanks" element={<FoundingThanks />} />
+          {/*
+           * Blue Light Card member offer (PER-3). Reached only through the
+           * affiliate link (or a code the visitor already holds), so all three
+           * are noindex and NOT in public/sitemap.xml. `/callback` is where the
+           * Supabase OAuth / email-link sign-in returns to; the page strips the
+           * auth code from the address bar itself.
+           */}
+          <Route path="/blue-light-card" element={<BlueLightCard />} />
+          <Route path="/blue-light-card/callback" element={<BlueLightCard />} />
+          <Route
+            path="/blue-light-card/thanks"
+            element={<BlueLightCardThanks />}
+          />
           <Route path="/delete-account" element={<DeleteAccount />} />
           {/*
            * Campaign landing routes (spec-30 R3.4): all render Home, and each

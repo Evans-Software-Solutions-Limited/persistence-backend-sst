@@ -482,3 +482,72 @@ describe("event_source_url (Meta requires it for action_source: website)", () =>
     }
   });
 });
+
+describe("the Blue Light Card rail shares the checkout event names", () => {
+  it("points a BLC checkout at /blue-light-card and its purchase at the thanks page", () => {
+    const [checkout] = mapPendingToMetaEvents(
+      pending({
+        eventName: "checkout_started",
+        properties: {
+          marketing_consent: true,
+          fbp: "fb.1.1.x",
+          channel: "blc",
+          tier: "premium",
+          cadence: "annual",
+          value: 111.99,
+          currency: "GBP",
+        },
+      }),
+    );
+    const [purchase] = mapPendingToMetaEvents(
+      pending({
+        eventName: "purchase",
+        properties: {
+          marketing_consent: true,
+          fbp: "fb.1.1.x",
+          channel: "blc",
+          tier: "premium",
+          cadence: "annual",
+          value: 111.99,
+          currency: "GBP",
+        },
+      }),
+    );
+    expect(checkout!.event_source_url).toBe(
+      "https://persistence.evans-software-solutions.com/blue-light-card",
+    );
+    expect(purchase!.event_source_url).toBe(
+      "https://persistence.evans-software-solutions.com/blue-light-card/thanks",
+    );
+  });
+
+  it("sends the money alone — a BLC annual plan is NOT the founding 12-month product", () => {
+    const [purchase] = mapPendingToMetaEvents(
+      pending({
+        eventName: "purchase",
+        properties: {
+          marketing_consent: true,
+          fbp: "fb.1.1.x",
+          channel: "blc",
+          tier: "premium",
+          cadence: "annual",
+          value: 111.99,
+          currency: "GBP",
+        },
+      }),
+    );
+    expect(purchase!.custom_data).toEqual({ value: 111.99, currency: "GBP" });
+  });
+
+  it("keeps the founding paths for rows with no channel", () => {
+    const [purchase] = mapPendingToMetaEvents(
+      pending({
+        eventName: "purchase",
+        properties: { marketing_consent: true, fbp: "fb.1.1.x" },
+      }),
+    );
+    expect(purchase!.event_source_url).toBe(
+      "https://persistence.evans-software-solutions.com/founding/thanks",
+    );
+  });
+});

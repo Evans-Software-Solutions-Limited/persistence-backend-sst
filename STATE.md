@@ -1,5 +1,89 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-19 — Blue Light Card web offer: Stripe subscription rail, Tradedoubler reporting, gated page (PER-3, branch `claude/per-3-blc-web-offer`)
+
+Brad chose to price the Blue Light Card (BLC) member offer on the web rather
+than through Apple offer codes (Linear PER-2: a 20 % discount via Apple nets
+~£5.35 on a £13.59 month after Apple, commission and network fees; via web
+Stripe ~£10.60, above today's £9.91 full-price in-app net). Review, margin
+model, gating/tracking design and the Claude Design brief live in Linear
+project "Awin / Blue Light Card discovery" (document "Blue Light Card via
+Tradedoubler Grow — review, economics and recommendation"); no partnership
+spec is kept in the repo. spec-29 AC 3.1a records the partner-offer web rail
+as the exception to "individual tiers are IAP-only".
+
+Backend (`application/blc/`, `application/tradedoubler/`): `POST
+/blc/code/check` (public, rate-limited, neutral `invalid_code`), `POST
+/blc/checkout` (Bearer JWT, honeypot + Turnstile + rate limit as founding;
+promotion code must belong to the coupon in `BLC_STRIPE_COUPON_ID`; refuses
+admin/coach/soft-deleted accounts and any live paid `user_subscriptions` row;
+Stripe Checkout `mode: subscription`, full-price Prices by lookup key
+`web_premium_monthly` 1699 / `web_premium_annual` 13999 /
+`web_premium_plus_monthly` 2999 / `web_premium_plus_annual` 24999 with the
+coupon applied via `discounts`, `subscription_data.metadata` carrying
+`supabase_user_id`, `tier_name`, `billing_cycle` (`yearly`), `channel: blc`,
+`voucher`, `tduid`), `GET /blc/checkout/:id/status` (404 unless
+`metadata.channel === "blc"` or Stripe answers `resource_missing`; any other
+Stripe failure is a 503 `unavailable` so the thanks page's bounded retry keeps
+polling — inspector-brad lead on commit 1b6547d, fixed 2026-10-19;
+`accessReady` = live row by `external_subscription_id`). `checkout.session.completed` branches on
+`channel === "blc"` before the founding path: reports the sale
+server-to-server to `tbs.tradedoubler.com/report` (`orderNumber` = Session
+id, `orderValue`, `currency`, `voucher`, `tduid` when present, `validOn` =
++14 days, 5 s timeout, never throws; failure → `[stripe:alert]
+blc_checkout.tradedoubler_report_failed`) and emits `purchase` with the
+browser's event id. `subscriptionCreated` now normalises
+`annual|year|yearly` → `yearly` (the read side returned `null` for `annual`).
+`metaEventMap` gives BLC events `/blue-light-card` source URLs and sends money
+only, never founding `content_ids`. Mounted in `loadoutRoutes.ts` (api.ts is
+at the TS2589 ceiling). `maskEmail` extracted to `shared/`. Env (plain
+config, `infra/api.ts` + both deploy workflows): `BLC_STRIPE_COUPON_ID`,
+`TRADEDOUBLER_ORGANIZATION_ID`, `TRADEDOUBLER_SALE_EVENT_ID`,
+`TRADEDOUBLER_VALID_ON_DAYS`. `ADMIN_CAMPAIGN_SLUGS` gained `blc`.
+
+Web: consent category `affiliate` (`CONSENT_VERSION` 3, key
+`persistence.consent.v3`, banner row "Affiliate measurement", Privacy page
+paragraph updated — wording for Brad's approval); `lib/tradedoubler.ts`
+(consent-gated landing tag, `tduid` stored only with consent,
+`tracking-consent false` + cookie clear on withdrawal, browser sale tag);
+CSP `script-src` + `svht.tradedoubler.com`, `connect-src`/`frame-src` +
+`tbs.tradedoubler.com`; `CAMPAIGNS.blc`; `/blue-light-card` (container
+`useBlcOffer` + plain presenter on existing marketing classes: ungated
+without `tduid`/cookie/code, code check, plan cards with member prices,
+sign-in re-authored on founding `auth.ts` with a parameterised return path
+`/blue-light-card/callback`, checkout via `useBlcCheckout` mirroring
+founding incl. Meta `InitiateCheckout` dedupe), `/blue-light-card/thanks`
+(status polling, Meta `Purchase` with the server event id, Tradedoubler sale
+tag once). `index.html` JSON-LD Premium 12.99 → 16.99. Build env
+`VITE_TRADEDOUBLER_ORG_ID` / `PROGRAM_ID` / `SALE_EVENT_ID`.
+
+Verified: prettier clean; typecheck 9/9; lint 6/6; core `CI=1` 407 files /
+5,629 tests, coverage 98.11 / 94.35 / 97.85 / 98.11 (blc dir 99.65 / 95.56 /
+100 / 99.65); web 85 files / 1,743 tests, 96.51 / 93.75 / 96.34 / 97.23; web
+build OK. Not verified: anything against real Stripe (that `discounts` +
+`consent_collection` + `expires_at` are accepted together in subscription
+mode; `payment_status: paid` on the completed Session), the live Tradedoubler
+SDK/endpoint, Supabase redirect allow-list for `/blue-light-card/callback`,
+and the presenter is a placeholder until the Claude Design pass returns.
+Brad-owned setup: Stripe Prices/Coupon/promotion codes + Dashboard webhook,
+Tradedoubler ids (Program settings → Tracking set up) and binding the BLC
+code to BLC's publisher site id, stage vars, BLC logo asset.
+
+Same day, second commit: the placeholder presenter was replaced with the
+reviewed Claude Design (artifact `claude.ai/artifact/4bfwUNGaiYgyXsN11tmVKd`,
+brief on Linear PER-3). `marketing/blc/blc.css` holds the page styles on site
+tokens (new tokens `--m-success-dim`, `--m-input-bg`, `--m-seg-track`,
+`--m-seg-active`, `--m-blc` placeholder blue); `BlueLightCardPresenter` and a
+new `BlueLightCardThanksPresenter` render the design's gated/valid/invalid/
+ungated, sign-in and pending/complete/unfinished states; copy in
+`blcOffer.ts`. Design assumptions not adopted: no "Analytics" cookie row
+(site has Advertising + Affiliate only); nav/footer from `MarketingLayout`.
+Verified: web 85 files / 1,751 tests; presenter 98.43 / 100 / 97.05 / 98.33,
+thanks presenter 100; typecheck, prettier, build clean; screenshots at 1280
+and 375 in dark and light with no console errors and no horizontal scroll
+(session scratchpad `blc-shots/`). Not screenshotted: checking spinner,
+mobile sign-in and thanks-complete.
+
 ### 2026-10-19 — Nearby on iOS: BLE GATT was the only radio left; iPhone-to-iPhone moves to peer-to-peer Wi-Fi in our LAN module (PER-64, PR pending)
 
 The 19 Oct two-iPhone run on the #501/#502/#503 build ended on the guest with

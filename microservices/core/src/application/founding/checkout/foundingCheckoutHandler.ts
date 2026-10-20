@@ -13,6 +13,7 @@ import { FoundingCheckoutRepository } from "../../repositories/foundingCheckoutR
 import { ReferralRepository } from "../../repositories/referralRepository";
 import { resolveFoundingPrice } from "./foundingPrices";
 import { webOrigin } from "../../../shared/webOrigin";
+import { maskEmail } from "../../../shared/maskEmail";
 import { FoundingGrantRepository } from "../../repositories/foundingGrantRepository";
 import {
   FOUNDING_CHECKOUT_TTL_MS,
@@ -102,33 +103,11 @@ export interface CheckoutRefusal {
 }
 
 /**
- * Mask an address for the thanks page: `sam•••@ex•••••.test`.
- *
- * The status endpoint is public and keyed only by a Session id that travels in
- * a URL, so it must confirm "we have your payment" without handing the address
- * to anyone who gets hold of that link.
- *
- * The kept prefix scales with length rather than being a fixed two characters:
- * `jo@company.com` would otherwise be printed in full, which is no masking at
- * all for exactly the short addresses most likely to be someone's name. The
- * domain is masked too, keeping only its first characters and its public
- * suffix — a rare domain identifies a person nearly as well as their name.
+ * Re-exported for the founding status route and its tests; the implementation
+ * moved to `shared/maskEmail.ts` when the Blue Light Card checkout needed the
+ * same masking for its own public status endpoint.
  */
-function maskPart(value: string, keep: number): string {
-  const head = value.slice(0, Math.min(keep, Math.max(0, value.length - 1)));
-  return `${head}${"•".repeat(Math.max(1, value.length - head.length))}`;
-}
-
-export function maskEmail(email: string): string {
-  const [local = "", domain = ""] = email.split("@");
-  const dot = domain.lastIndexOf(".");
-  const [name, suffix] =
-    dot > 0 ? [domain.slice(0, dot), domain.slice(dot)] : [domain, ""];
-  return `${maskPart(local, Math.min(3, Math.floor(local.length / 2)))}@${maskPart(
-    name,
-    2,
-  )}${suffix}`;
-}
+export { maskEmail };
 
 /**
  * What to do with an open hold this address already has.
