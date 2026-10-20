@@ -67,6 +67,37 @@ describe("time bounds bound inside sql templates reach postgres-js as strings", 
     );
   });
 
+  it("AiJobRepository.claim binds the claim fence as an ISO string", async () => {
+    const before = Date.now();
+    const claimed = await new AiJobRepository().claim("j1");
+    expect(claimed).toBeNull();
+    expect(calls).toHaveLength(1);
+    expect(calls[0].query).toContain("heartbeat_at");
+    expect(calls[0].params.some((p) => p instanceof Date)).toBe(false);
+    const iso = calls[0].params.find(
+      (p) => typeof p === "string" && /^\d{4}-\d{2}-\d{2}T.*Z$/.test(p),
+    ) as string;
+    expect(new Date(iso).getTime()).toBeLessThan(before);
+  });
+
+  it("AiJobRepository.failIfStale binds both staleness cutoffs as ISO strings", async () => {
+    const now = new Date("2026-10-20T12:00:00.000Z");
+    const failed = await new AiJobRepository().failIfStale(
+      "j1",
+      { code: "stale", message: "stale", retryable: false },
+      now,
+    );
+    expect(failed).toBe(false);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].params.some((p) => p instanceof Date)).toBe(false);
+    const isos = calls[0].params.filter(
+      (p) => typeof p === "string" && /^\d{4}-\d{2}-\d{2}T.*Z$/.test(p),
+    ) as string[];
+    expect(isos).toHaveLength(2);
+    for (const iso of isos)
+      expect(new Date(iso).getTime()).toBeLessThan(now.getTime());
+  });
+
   it("AiJobRepository.markStaleRunning binds the heartbeat cutoff as an ISO string", async () => {
     const now = new Date("2026-10-19T12:00:00.000Z");
     const reaped = await new AiJobRepository().markStaleRunning(now);
