@@ -39,6 +39,39 @@ AWS authorizers run at connect rather than on every later message; Supabase
 caches channel policies. See [AWS authorization](https://docs.aws.amazon.com/apigateway/latest/developerguide/apigateway-websocket-api-lambda-auth.html)
 and [Supabase authorization](https://supabase.com/docs/guides/realtime/authorization).
 
+## Local transport by platform
+
+The "Nearby · no internet needed" mode is one button with a transport chosen
+by platform, not one SDK everywhere. A session is either online or offline;
+an offline session is joined over Nearby. There is no mixed-pair path.
+
+| Pair                      | Transport                                                                           | Why                                                                                                                                                                                                                                                                                                                                                 |
+| ------------------------- | ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| iPhone ↔ iPhone           | `together-lan` (Network.framework, `includePeerToPeer = true`, cellular prohibited) | Peer-to-peer Wi-Fi (AWDL) needs no router. It is the API Apple promotes in place of Multipeer Connectivity, and the same path the Nearby SDK keeps behind a disabled flag on iOS. Bonjour over infrastructure Wi-Fi still works when both phones share a network. Wi-Fi must be switched on; joining a network is not required.                     |
+| Android ↔ Android         | `together-nearby` (Google Nearby Connections, P2P_STAR)                             | Bluetooth classic, Wi-Fi Direct and hotspot upgrades are mature on Android.                                                                                                                                                                                                                                                                         |
+| iPhone ↔ Android, offline | Not designed for                                                                    | On Apple the Nearby SDK stubs out Bluetooth classic, Wi-Fi Direct and hotspot host, and keeps AWDL and BLE L2CAP behind flags with no public toggle, leaving BLE GATT only; Google's maintainers do not promise it. An Android phone joining an iPhone's offline session uses its LAN module and so needs a shared Wi-Fi. That is the stated limit. |
+
+Constraints that follow:
+
+- Every pre-ready connect deadline is 30 s in the four native modules and
+  35 s in `lanSession` (above the natives, so a native failure surfaces with
+  its real code first). The Nearby SDK's own BLE connect allows 12 s before the
+  UKEY2 handshake and the host's accept; 10 s dropped healthy slow links. The
+  authenticated handshake after `connected` has 20 s; finding the host after a
+  join starts has 30 s. Write (10 s) and ready-read (30 s) deadlines are
+  separate and unchanged.
+- A Bonjour-cached endpoint can outlive its advertiser by its TTL (about two
+  minutes), so a hub listing is not proof the host is still there.
+- Multipeer Connectivity is not an option: Apple calls it effectively
+  deprecated, and its iOS 26 failures (Wi-Fi on but joined to nothing,
+  connecting then dropped) are the gym case.
+
+Evidence and dates live in `STATE.md` (19 October 2026) and PER-64. Sources:
+the pinned `google/nearby` source (`nearby_connections_feature_flags.h`,
+`p2p_cluster_pcp_handler.cc`, `internal/platform/implementation/apple/`),
+google/nearby #1619, #2447, #2472, Apple Developer Forums threads 803339 and
+769043, and Apple's "Building a custom peer-to-peer protocol" sample.
+
 ## Reused infrastructure
 
 - Existing Supabase JWT verification establishes the actor. Body IDs only select

@@ -7,7 +7,8 @@ The 19 Oct two-iPhone run on the #501/#502/#503 build ended on the guest with
 failed. Brad's Together log added nothing beyond that, so the cause was read
 from the pinned SDK (`google/nearby` `8b96295`, upstream `main` at 9 Oct adds
 no iOS BLE change), Google's tracker and Apple's forums. Research brief:
-`specs/milestones/TRAIN-TOGETHER/NEARBY-RESEARCH.md` (PR #506).
+the decision is recorded undated in `TRANSPORT-ADR.md` § Local transport by
+platform; the dated investigation was not kept as a file (PR #506 closed).
 
 **Why it fails.** On Apple the Nearby SDK stubs out Bluetooth classic, Wi-Fi
 Direct and hotspot host (upstream `4f4c36caa`); AWDL is implemented

@@ -9,7 +9,7 @@ export function createTogetherLobby(
   environment: string,
   enabled = false,
   recovery?: TogetherRecoveryApi,
-  /** `Platform.OS`; iOS starts on the LAN module's peer-to-peer Wi-Fi (NEARBY-RESEARCH.md). */
+  /** `Platform.OS`; iOS starts on the LAN module's peer-to-peer Wi-Fi (TRANSPORT-ADR § Local transport by platform). */
   platform?: string,
 ): TogetherLobbyPort | undefined {
   if (!enabled || !provisioning) return undefined;

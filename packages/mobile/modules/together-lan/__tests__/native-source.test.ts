@@ -56,7 +56,7 @@ it("does not bring Android 17 permission in through the library manifest on targ
   expect(nearby).toContain("Build.VERSION.SDK_INT >= 37 && targetSdk >= 37");
 });
 
-// iOS: the LAN module is the peer-to-peer Wi-Fi transport (NEARBY-RESEARCH.md).
+// iOS: the LAN module is the peer-to-peer Wi-Fi transport (TRANSPORT-ADR § Local transport by platform).
 const swift = readFileSync(
   join(__dirname, "../ios/TogetherLanModule.swift"),
   "utf8",
