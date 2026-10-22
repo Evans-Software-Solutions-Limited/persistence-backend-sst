@@ -6,6 +6,10 @@ import {
 } from "@persistence/api-utils/auth/supabaseAuth";
 import type { RecordSessionInput } from "../../repositories/sessionRepository";
 import { recordClientSessionOnBehalf } from "./recordClientSession";
+import {
+  weightKgSchema,
+  distanceMetersSchema,
+} from "../../sessions/sets/setValueSchemas";
 
 /**
  * POST /trainers/me/clients/:clientId/sessions/record — a coach BULK-RECORDS a
@@ -107,12 +111,10 @@ export const trainersMeRecordClientSessionHandler = new Elysia()
               t.Object({
                 setNumber: t.Number(),
                 reps: t.Optional(t.Union([t.Number(), t.Null()])),
-                weightKg: t.Optional(
-                  t.Union([t.String(), t.Number(), t.Null()]),
-                ),
+                weightKg: t.Optional(t.Union([weightKgSchema, t.Null()])),
                 durationSeconds: t.Optional(t.Union([t.Number(), t.Null()])),
                 distanceMeters: t.Optional(
-                  t.Union([t.String(), t.Number(), t.Null()]),
+                  t.Union([distanceMetersSchema, t.Null()]),
                 ),
                 rpe: t.Optional(t.Union([t.Number(), t.Null()])),
                 restAfterSeconds: t.Optional(t.Union([t.Number(), t.Null()])),

@@ -115,6 +115,32 @@ describe("SetsCreateHandler", () => {
     expect(data.data).toHaveProperty("id");
   });
 
+  // Sentry PERSISTENCE-BACKEND-8: `weight_kg` numeric(6,2) / `distance_meters`
+  // numeric(8,2). Oversized values 422 at the validator instead of reaching
+  // Postgres as a `numeric field overflow` 500.
+  it.each([
+    ["weightKg above numeric(6,2)", { weightKg: 10000 }],
+    ["weightKg string above numeric(6,2)", { weightKg: "12345.6" }],
+    ["negative weightKg", { weightKg: -0.5 }],
+    ["distanceMeters above numeric(8,2)", { distanceMeters: 1000000 }],
+    ["distanceMeters non-numeric string", { distanceMeters: "far" }],
+  ])("should 422 %s without touching the repository", async (_label, body) => {
+    const { setsCreateHandler } = await import("../setsCreateHandler");
+    const response = await setsCreateHandler.handle(
+      new Request("http://localhost/sessions/s1/exercises/se-1/sets", {
+        method: "POST",
+        body: JSON.stringify({ reps: 10, ...body }),
+        headers: {
+          authorization: "Bearer token",
+          "Content-Type": "application/json",
+        },
+      }),
+    );
+    expect(response.status).toBe(422);
+    expect(mocks.getById).not.toHaveBeenCalled();
+    expect(mocks.addSet).not.toHaveBeenCalled();
+  });
+
   it("should handle all optional set parameters", async () => {
     mocks.getById.mockResolvedValue({
       id: "s1",
