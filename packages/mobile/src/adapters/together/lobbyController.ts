@@ -53,7 +53,7 @@ export interface TogetherLobbyControllerOptions {
   /**
    * Transport the "Nearby" button starts with. Composition passes "lan" on
    * iOS, where the LAN module runs peer-to-peer Wi-Fi with no router and the
-   * Nearby SDK is left with BLE GATT only (NEARBY-RESEARCH.md). Defaults to
+   * Nearby SDK is left with BLE GATT only (PER-64). Defaults to
    * Nearby when its module is present, LAN otherwise.
    */
   defaultTransport?: TogetherTransport;
