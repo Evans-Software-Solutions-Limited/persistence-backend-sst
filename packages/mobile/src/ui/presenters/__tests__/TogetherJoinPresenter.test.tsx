@@ -41,7 +41,9 @@ it("shows the found rows with the right verification line and action per kind", 
   const r = renderWithTheme(<TogetherJoinPresenter {...p} />);
   expect(r.getByText("Join a session")).toBeTruthy();
   expect(r.getByText("Sessions you can join")).toBeTruthy();
-  expect(r.getByText("Pull down to refresh")).toBeTruthy();
+  // Canvas: the refresh hint is itself a 44pt tap target that searches again.
+  fireEvent.press(r.getByText("Pull down to refresh"));
+  expect(p.onRefresh).toHaveBeenCalledTimes(1);
   expect(r.getByText("Verified partner · Nearby")).toBeTruthy();
   expect(r.getByText("Nearby · Kai lets you in")).toBeTruthy();
   expect(r.getByText("Online · internet required")).toBeTruthy();

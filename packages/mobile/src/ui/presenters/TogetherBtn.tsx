@@ -5,13 +5,15 @@ import { Text, View } from "@tamagui/core";
 /**
  * The canvas `.btn` family for the Together screens (PER-60): 52pt primary,
  * `soft` (primary dim), `ghost` (primary outline) and `quiet` (surface2 with a
- * hairline); `sm` is the 44pt row action with a 10pt radius.
+ * hairline); `md` is the same button at 44pt (canvas `.btn` with `height:44px`:
+ * code card, empty and failed states, the Wi-Fi sheet); `sm` is the 44pt row
+ * action with a 10pt radius and a 13pt label.
  */
 export function TogetherBtn(p: {
   children: string;
   onPress(): void;
   variant?: "primary" | "soft" | "ghost" | "quiet";
-  size?: "lg" | "sm";
+  size?: "lg" | "md" | "sm";
   icon?: ReactNode;
   disabled?: boolean;
   /** Stretch to the row (canvas `width:100%`); `sm` hugs its label unless set. */
@@ -44,7 +46,7 @@ export function TogetherBtn(p: {
       })}
     >
       <View
-        height={sm ? 44 : 52}
+        height={sm || p.size === "md" ? 44 : 52}
         paddingHorizontal={sm ? 16 : 20}
         borderRadius={sm ? 10 : 14}
         borderWidth={1}

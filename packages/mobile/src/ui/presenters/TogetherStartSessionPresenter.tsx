@@ -41,7 +41,7 @@ export function TogetherStartSessionPresenter(p: {
         style={{ flex: 1 }}
         contentContainerStyle={{
           paddingHorizontal: 20,
-          paddingTop: 8,
+          paddingTop: 0,
           gap: 14,
         }}
       >
@@ -52,6 +52,7 @@ export function TogetherStartSessionPresenter(p: {
             fontFamily="$display"
             fontWeight="800"
             fontSize={32}
+            lineHeight={38}
             letterSpacing={-1}
             color="$text"
           >
@@ -75,11 +76,17 @@ export function TogetherStartSessionPresenter(p: {
                 fontFamily="$display"
                 fontWeight="600"
                 fontSize={16}
+                lineHeight={18}
                 color="$text"
               >
                 {p.workoutName}
               </Text>
-              <Text fontFamily="$body" fontSize={12} color="$text3">
+              <Text
+                fontFamily="$body"
+                fontSize={12}
+                lineHeight={17}
+                color="$text3"
+              >
                 {p.workoutMeta}
               </Text>
             </View>
@@ -124,6 +131,7 @@ export function TogetherStartSessionPresenter(p: {
         <Text
           fontFamily="$body"
           fontSize={12}
+          lineHeight={17}
           color="$text3"
           textAlign="center"
         >

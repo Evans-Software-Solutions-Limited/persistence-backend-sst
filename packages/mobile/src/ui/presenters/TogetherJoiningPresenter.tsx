@@ -25,16 +25,15 @@ export function TogetherJoiningPresenter(p: {
   const asking = p.step === "ask";
   const online = p.connection === "online";
   const item = (state: "done" | "active" | "todo", text: string) => (
-    <View flexDirection="row" alignItems="center" gap={6} minHeight={20}>
+    <View flexDirection="row" alignItems="center" gap={6}>
       {state === "done" ? (
         <IconCheck {...iconDefaults({ size: 16 })} color={color.$success} />
       ) : state === "active" ? (
-        <LoadingSpinner size="sm" accessibilityLabel="Searching" />
+        <LoadingSpinner size="xs" accessibilityLabel="Searching" />
       ) : (
         <View
-          width={14}
-          height={14}
-          marginHorizontal={1}
+          width={16}
+          height={16}
           borderRadius={99}
           borderWidth={1.5}
           borderColor="$text4"
@@ -43,6 +42,7 @@ export function TogetherJoiningPresenter(p: {
       <Text
         fontFamily="$body"
         fontSize={12}
+        lineHeight={17}
         color={
           state === "done"
             ? "$success"
@@ -96,6 +96,7 @@ export function TogetherJoiningPresenter(p: {
           fontFamily="$display"
           fontWeight="700"
           fontSize={22}
+          lineHeight={28}
           letterSpacing={-0.5}
           color="$text"
           textAlign="center"

@@ -28,7 +28,7 @@ export function TogetherWorkoutRow(p: {
   const statusColor =
     p.tone === "live" ? "$success" : p.tone === "warn" ? "$ember" : "$text2";
   return (
-    <View paddingHorizontal={16} paddingTop={8} testID="together-workout-row">
+    <View paddingHorizontal={16} testID="together-workout-row">
       <View
         minHeight={44}
         flexDirection="row"
@@ -79,6 +79,7 @@ export function TogetherWorkoutRow(p: {
             color={statusColor}
             fontFamily="$body"
             fontSize={12}
+            lineHeight={16}
             numberOfLines={2}
           >
             {p.status}

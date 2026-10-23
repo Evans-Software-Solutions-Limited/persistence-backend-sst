@@ -22,6 +22,14 @@ const RING: Record<TogetherAvatarTone, string> = {
   neutral: color.$border2,
 };
 
+/** Canvas `.sa` / `.av` initials: 10pt at 22, 11pt at 26–28, 13pt at 36, a third of the size above that. */
+export function togetherInitialsSize(size: number): number {
+  if (size <= 22) return 10;
+  if (size <= 28) return 11;
+  if (size <= 36) return 13;
+  return Math.round(size / 3);
+}
+
 export function togetherInitials(name: string): string {
   return name
     .trim()
@@ -62,7 +70,7 @@ export function TogetherAthleteAvatar(p: {
       <Text
         fontFamily="$display"
         fontWeight="600"
-        fontSize={neutral ? Math.round(size * 0.36) : size * 0.42}
+        fontSize={togetherInitialsSize(size)}
         style={{ color: neutral ? color.$text : ring }}
       >
         {togetherInitials(p.name)}

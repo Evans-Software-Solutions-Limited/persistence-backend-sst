@@ -12,7 +12,7 @@ export function TogetherStartRow({
   onStart(): void;
 }) {
   return (
-    <View paddingHorizontal={16} paddingTop={8} testID="together-workout-row">
+    <View paddingHorizontal={16} testID="together-workout-row">
       <View
         flexDirection="row"
         alignItems="center"
@@ -26,7 +26,13 @@ export function TogetherStartRow({
         backgroundColor="$surface"
       >
         <IconUsers size={16} color={color.$text2} />
-        <Text flex={1} fontFamily="$body" fontSize={12} color="$text3">
+        <Text
+          flex={1}
+          fontFamily="$body"
+          fontSize={12}
+          lineHeight={16}
+          color="$text3"
+        >
           <Text fontFamily="$display" fontWeight="600" color="$text">
             Train together
           </Text>

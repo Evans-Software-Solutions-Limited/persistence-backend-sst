@@ -752,7 +752,8 @@ export function TogetherLobbyContainer({
                     : "Train together"
         }
         eyebrow={showInvitation ? undefined : "TRAIN TOGETHER"}
-        height={showInvitation ? "default" : "tall"}
+        height={showInvitation ? 55 : "tall"}
+        contentPadding={showInvitation ? { top: 4, bottom: 28 } : undefined}
         footer={
           startingSession ? (
             <Btn full variant="outline" onPress={close}>

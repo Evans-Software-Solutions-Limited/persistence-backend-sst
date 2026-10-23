@@ -70,6 +70,12 @@ export type BottomSheetProps = {
   footer?: ReactNode;
   /** Fixed controls (for example wheel pickers) can own their gestures. */
   scrollable?: boolean;
+  /**
+   * Body padding above the first child and below the last (default 20 / 40,
+   * both over the bottom inset). The Together sheets (PER-60) sit 4pt under
+   * the handle and end 28pt below their own button, as the canvas draws them.
+   */
+  contentPadding?: { top?: number; bottom?: number };
   testID?: string;
 };
 
@@ -116,6 +122,7 @@ export function BottomSheet({
   children,
   footer,
   scrollable = true,
+  contentPadding,
   testID,
 }: BottomSheetProps) {
   const ref = useRef<GorhomBottomSheet>(null);
@@ -133,6 +140,8 @@ export function BottomSheet({
   // throws without a provider) so the sheet still renders in tests / any tree
   // mounted outside a SafeAreaProvider — falls back to 0.
   const bottomInset = useContext(SafeAreaInsetsContext)?.bottom ?? 0;
+  const padTop = contentPadding?.top ?? 20;
+  const padBottom = (contentPadding?.bottom ?? 40) + bottomInset;
 
   // The sheet body needs an EXPLICIT height. `flex: 1` here does not work:
   // gorhom's content view (`BottomSheetContent`) applies its height through an
@@ -343,7 +352,8 @@ export function BottomSheet({
             // twice would leave a dead band of scroll above it.
             contentContainerStyle={{
               padding: 20,
-              paddingBottom: footer ? 24 : 40 + bottomInset,
+              paddingTop: padTop,
+              paddingBottom: footer ? 24 : padBottom,
             }}
             keyboardShouldPersistTaps="handled"
           >
@@ -353,7 +363,8 @@ export function BottomSheet({
           <View
             flex={1}
             padding={20}
-            paddingBottom={footer ? 24 : 40 + bottomInset}
+            paddingTop={padTop}
+            paddingBottom={footer ? 24 : padBottom}
             testID="bottom-sheet-static-body"
           >
             {children}

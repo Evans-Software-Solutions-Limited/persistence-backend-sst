@@ -43,6 +43,7 @@ export function TogetherInvitePresenter(p: {
           fontFamily="$display"
           fontWeight="700"
           fontSize={22}
+          lineHeight={28}
           letterSpacing={-0.5}
           color="$text"
         >
@@ -77,6 +78,7 @@ export function TogetherInvitePresenter(p: {
         <Text
           fontFamily="$body"
           fontSize={12}
+          lineHeight={17}
           color="$primary"
           accessibilityLiveRegion="polite"
         >
@@ -89,6 +91,7 @@ export function TogetherInvitePresenter(p: {
         <Text
           fontFamily="$body"
           fontSize={12}
+          lineHeight={17}
           color="$warning"
           textAlign="center"
           accessibilityLiveRegion="polite"

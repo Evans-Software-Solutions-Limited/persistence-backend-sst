@@ -547,9 +547,12 @@ export function TogetherCloudContainer(p: {
             : "TRAIN TOGETHER"
         }
         height={
+          inviteView && state.phase === "active" && invitation ? 55 : "tall"
+        }
+        contentPadding={
           inviteView && state.phase === "active" && invitation
-            ? "default"
-            : "tall"
+            ? { top: 4, bottom: 28 }
+            : undefined
         }
       >
         {inviteView &&

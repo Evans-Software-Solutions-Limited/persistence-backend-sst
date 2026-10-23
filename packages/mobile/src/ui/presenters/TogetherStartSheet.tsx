@@ -34,15 +34,9 @@ export function TogetherStartSheet(p: {
     <BottomSheet
       visible={p.visible}
       onClose={p.onClose}
-      height="tall"
+      height={p.wifiOff ? 66 : 59}
+      contentPadding={{ top: 4, bottom: 28 }}
       testID="together-start-sheet"
-      footer={
-        !p.wifiOff ? (
-          <TogetherBtn disabled={p.busy} onPress={p.onStart}>
-            Start the session
-          </TogetherBtn>
-        ) : undefined
-      }
     >
       <View gap={14}>
         <View flexDirection="row" alignItems="flex-start" gap={12}>
@@ -51,6 +45,7 @@ export function TogetherStartSheet(p: {
               fontFamily="$display"
               fontWeight="700"
               fontSize={22}
+              lineHeight={28}
               letterSpacing={-0.5}
               color="$text"
             >
@@ -85,7 +80,7 @@ export function TogetherStartSheet(p: {
           onChange={p.onAudienceChange}
         />
         {p.wifiOff && (
-          <View gap={8}>
+          <View gap={14}>
             <View
               flexDirection="row"
               gap={10}
@@ -112,8 +107,7 @@ export function TogetherStartSheet(p: {
             <View flexDirection="row" gap={8}>
               <View flex={1}>
                 <TogetherBtn
-                  size="sm"
-                  full
+                  size="md"
                   variant="quiet"
                   onPress={() => p.onOpenSettings?.()}
                 >
@@ -122,8 +116,7 @@ export function TogetherStartSheet(p: {
               </View>
               <View flex={1}>
                 <TogetherBtn
-                  size="sm"
-                  full
+                  size="md"
                   variant="soft"
                   onPress={() => p.onRetry?.()}
                 >
@@ -137,11 +130,17 @@ export function TogetherStartSheet(p: {
           <Text
             fontFamily="$body"
             fontSize={12}
+            lineHeight={17}
             color="$warning"
             accessibilityRole="alert"
           >
             {p.notice}
           </Text>
+        )}
+        {!p.wifiOff && (
+          <TogetherBtn disabled={p.busy} onPress={p.onStart}>
+            Start the session
+          </TogetherBtn>
         )}
       </View>
     </BottomSheet>

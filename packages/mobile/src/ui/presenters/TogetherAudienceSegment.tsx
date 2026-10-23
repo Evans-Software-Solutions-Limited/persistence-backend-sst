@@ -21,7 +21,7 @@ export function TogetherAudienceSegment(p: {
     ["open", "Open nearby"],
   ];
   return (
-    <View gap={8}>
+    <View gap={14}>
       <View
         flexDirection="row"
         gap={4}
@@ -56,6 +56,7 @@ export function TogetherAudienceSegment(p: {
                   fontFamily="$display"
                   fontWeight="600"
                   fontSize={12}
+                  lineHeight={14}
                   textAlign="center"
                   color={disabled ? "$text4" : on ? "$text" : "$text3"}
                 >

@@ -1,6 +1,6 @@
 import { ScrollView } from "react-native";
 import { Text, View } from "@tamagui/core";
-import { Globe, Link2, Radio } from "lucide-react-native";
+import { Link2 } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Card, ScreenGlow } from "@/ui/components/foundation";
 import { TogetherBackButton } from "./TogetherBackButton";
@@ -60,7 +60,7 @@ export function TogetherJoinConsentPresenter(p: {
         style={{ flex: 1 }}
         contentContainerStyle={{
           paddingHorizontal: 20,
-          paddingTop: 8,
+          paddingTop: 0,
           gap: 16,
         }}
       >
@@ -131,22 +131,25 @@ export function TogetherJoinConsentPresenter(p: {
                   {p.workoutName}
                 </Text>
                 {p.memberCount !== undefined && (
-                  <Text fontFamily="$body" fontSize={12} color="$text3">
+                  <Text
+                    fontFamily="$body"
+                    fontSize={12}
+                    lineHeight={17}
+                    color="$text3"
+                  >
                     {p.memberCount} of 4
                   </Text>
                 )}
               </View>
             </View>
-            <View flexDirection="row" alignItems="center" gap={6}>
-              {online ? (
-                <Globe size={16} color={color.$text2} strokeWidth={1.75} />
-              ) : (
-                <Radio size={16} color={color.$text2} strokeWidth={1.75} />
-              )}
-              <Text fontFamily="$body" fontSize={12} color="$text2">
-                {online ? ONLINE_CONNECTION_LABEL : NEARBY_CONNECTION_LABEL}
-              </Text>
-            </View>
+            <Text
+              fontFamily="$body"
+              fontSize={12}
+              lineHeight={17}
+              color="$text2"
+            >
+              {online ? ONLINE_CONNECTION_LABEL : NEARBY_CONNECTION_LABEL}
+            </Text>
           </View>
         </Card>
         <Card surface={0}>
@@ -188,6 +191,7 @@ export function TogetherJoinConsentPresenter(p: {
         <Text
           fontFamily="$body"
           fontSize={12}
+          lineHeight={17}
           color="$text3"
           textAlign="center"
         >

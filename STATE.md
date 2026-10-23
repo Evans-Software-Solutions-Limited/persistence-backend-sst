@@ -73,8 +73,30 @@ consent, joining, pick-workout and session-setup screens, the Train hub root
 (so every Train segment, not only Together) and the active-session root (so the
 Together strip and solo workout share it). Evidence re-captured at 440 × 920.
 
-**Verified.** Mobile Jest 639 suites / 8,547 tests, coverage
-96.15 / 92.12 / 96.03 / 97.54 (gate 90); typecheck clean; `expo lint` 0
+**Box-by-box audit (same day, after Brad's second review: "you've still not
+fixed the spacing").** The stylesheet audit could not see the real bug because
+the values in code were right; every PR 1 screen was therefore measured element
+by element against a static render of the live canvas artboards (`Main`,
+`Start`, `StartIdle`) in the screenshot harness, then re-measured after the
+fix. Root cause: `Card` sets `padding` as a Tamagui prop, which wins over a
+`style` padding, so every list card (hub, join, pick) rendered with zero inset
+(avatar flush left, Join flush right). `Card` now takes `padX` / `padY`. Also
+fixed in the pass: 12 pt copy at a 16 pt line height (canvas 17); the 44 pt
+code / empty / failed / Wi-Fi buttons styled as the small row action instead of
+the canvas `.btn` (`TogetherBtn size="md"`: 15 pt label, 14 pt radius); the
+Start sheet's pinned footer (the canvas sheet ends on its own button, 14 above
+and 28 below; `BottomSheet` gained `contentPadding`, the Together sheets size to
+the canvas at 59 / 66 / 55 %); the strip 8 pt too low under the header; avatar
+initials (`togetherInitialsSize`: 10 / 11 / 13 / 24); the 22 pt and 32 pt
+titles without their line heights; "Pull down to refresh" as a 44 pt tap
+target; the segment copy gap; the 16 pt spinner and step marks. After the fix
+the hub, join (all states), consent, joining, pick, setup, the Start sheet and
+the strip match the canvas within 1–2 px. Canvas content the data cannot draw
+yet is listed on PER-60 (consent "The plan" rows and start time, workout name on
+Online rows, the 7-character session code, the row 4 settings controls).
+
+**Verified.** Mobile Jest 640 suites / 8,553 tests, coverage
+96.15 / 92.13 / 96.03 / 97.54 (gate 90); typecheck clean; `expo lint` 0
 errors; prettier clean. New presenter tests cover every join/sheet state
 (hidden and empty included); container tests cover search-on-open, the 30 s
 stop keeping results, refresh, link/row selection, consent → connecting →

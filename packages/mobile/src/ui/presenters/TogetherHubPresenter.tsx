@@ -118,7 +118,7 @@ export function TogetherHubPresenter(p: {
       }
       contentContainerStyle={{
         paddingHorizontal: 20,
-        paddingTop: 8,
+        paddingTop: 4,
         paddingBottom: insets.bottom + 140,
         gap: 16,
       }}
@@ -192,11 +192,7 @@ export function TogetherHubPresenter(p: {
               </View>
             </Card>
           ) : (
-            <Card
-              surface={0}
-              pad={0}
-              style={{ paddingHorizontal: 16, paddingVertical: 4 }}
-            >
+            <Card surface={0} padX={16} padY={4}>
               {row(
                 "start",
                 true,
@@ -230,17 +226,14 @@ export function TogetherHubPresenter(p: {
                 color="$warning"
                 fontFamily="$body"
                 fontSize={12}
+                lineHeight={17}
                 accessibilityRole="alert"
               >
                 {p.partnersError}
               </Text>
             )}
             {p.partners.length > 0 ? (
-              <Card
-                surface={0}
-                pad={0}
-                style={{ paddingHorizontal: 16, paddingVertical: 4 }}
-              >
+              <Card surface={0} padX={16} padY={4}>
                 {p.partners.map((partner, i) =>
                   row(
                     partner.userId,

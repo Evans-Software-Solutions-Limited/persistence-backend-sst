@@ -4,6 +4,7 @@ import { renderWithTheme } from "../../../../__tests__/test-utils";
 import {
   TogetherAthleteAvatar,
   togetherInitials,
+  togetherInitialsSize,
 } from "../TogetherAthleteAvatar";
 import { TogetherPill } from "../TogetherPill";
 it("builds initials and renders the ring tone, selection and press", () => {
@@ -49,4 +50,12 @@ it("the pill is a 32pt neutral or primary control that respects disabled", () =>
   expect(r.getByLabelText("Close").props.accessibilityState.disabled).toBe(
     true,
   );
+});
+
+it("sizes initials like the canvas: 10 at 22, 11 at 26–28, 13 at 36, a third above that", () => {
+  expect(togetherInitialsSize(22)).toBe(10);
+  expect(togetherInitialsSize(26)).toBe(11);
+  expect(togetherInitialsSize(28)).toBe(11);
+  expect(togetherInitialsSize(36)).toBe(13);
+  expect(togetherInitialsSize(72)).toBe(24);
 });

@@ -48,7 +48,7 @@ export function TogetherPickWorkoutPresenter(p: {
 }) {
   const insets = useSafeAreaInsets();
   const list = (items: readonly TogetherWorkoutOption[]) => (
-    <Card surface={0} pad={0} style={{ paddingHorizontal: 16 }}>
+    <Card surface={0} padX={16} padY={4}>
       {items.map((w, i) => (
         <Pressable
           key={w.id}
@@ -75,7 +75,12 @@ export function TogetherPickWorkoutPresenter(p: {
               >
                 {w.name}
               </Text>
-              <Text fontFamily="$body" fontSize={12} color="$text3">
+              <Text
+                fontFamily="$body"
+                fontSize={12}
+                lineHeight={17}
+                color="$text3"
+              >
                 {w.meta}
               </Text>
             </View>
@@ -98,7 +103,7 @@ export function TogetherPickWorkoutPresenter(p: {
         style={{ flex: 1 }}
         contentContainerStyle={{
           paddingHorizontal: 20,
-          paddingTop: 8,
+          paddingTop: 0,
           paddingBottom: insets.bottom + 30,
           gap: 14,
         }}
@@ -110,6 +115,7 @@ export function TogetherPickWorkoutPresenter(p: {
             fontFamily="$display"
             fontWeight="800"
             fontSize={32}
+            lineHeight={38}
             letterSpacing={-1}
             color="$text"
           >

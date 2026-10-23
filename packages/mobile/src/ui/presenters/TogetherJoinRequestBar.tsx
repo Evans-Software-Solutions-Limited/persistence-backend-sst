@@ -31,11 +31,12 @@ export function TogetherJoinRequestBar(p: {
             fontFamily="$display"
             fontWeight="600"
             fontSize={13}
+            lineHeight={18}
             color="$text"
           >
             {p.name} wants to join
           </Text>
-          <Text fontFamily="$body" fontSize={12} color="$text3">
+          <Text fontFamily="$body" fontSize={12} lineHeight={17} color="$text3">
             Not a training partner
           </Text>
         </View>

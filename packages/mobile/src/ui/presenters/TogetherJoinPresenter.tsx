@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { RefreshControl, ScrollView, TextInput } from "react-native";
+import { Pressable, RefreshControl, ScrollView, TextInput } from "react-native";
 import { Text, View, useTheme } from "@tamagui/core";
 import { Globe, QrCode, Radio, ShieldCheck } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -58,11 +58,12 @@ export function TogetherJoinPresenter(p: {
   const insets = useSafeAreaInsets();
   const searching = p.search === "searching";
   const stat = (icon: ReactNode, text: string, tint?: string) => (
-    <View flexDirection="row" alignItems="center" gap={6} minHeight={20}>
+    <View flexDirection="row" alignItems="center" gap={6}>
       {icon}
       <Text
         fontFamily="$body"
         fontSize={12}
+        lineHeight={17}
         style={tint ? { color: tint } : undefined}
         color="$text3"
       >
@@ -100,7 +101,7 @@ export function TogetherJoinPresenter(p: {
           >
             {r.title}
           </Text>
-          <Text fontFamily="$body" fontSize={12} color="$text3">
+          <Text fontFamily="$body" fontSize={12} lineHeight={17} color="$text3">
             {r.subtitle}
           </Text>
           {r.kind === "partner-nearby" &&
@@ -137,7 +138,7 @@ export function TogetherJoinPresenter(p: {
             {action}
           </TogetherBtn>
         ) : (
-          <Text fontFamily="$body" fontSize={12} color="$text3">
+          <Text fontFamily="$body" fontSize={12} lineHeight={17} color="$text3">
             Full
           </Text>
         )}
@@ -158,7 +159,7 @@ export function TogetherJoinPresenter(p: {
         style={{ flex: 1 }}
         contentContainerStyle={{
           paddingHorizontal: 20,
-          paddingTop: 8,
+          paddingTop: 0,
           paddingBottom: insets.bottom + 30,
           gap: 16,
         }}
@@ -228,8 +229,7 @@ export function TogetherJoinPresenter(p: {
             <View flexDirection="row" gap={8}>
               <View flex={1}>
                 <TogetherBtn
-                  size="sm"
-                  full
+                  size="md"
                   variant="quiet"
                   disabled={!p.code.trim() || p.busy}
                   onPress={p.onContinue}
@@ -239,8 +239,7 @@ export function TogetherJoinPresenter(p: {
               </View>
               <View flex={1.3}>
                 <TogetherBtn
-                  size="sm"
-                  full
+                  size="md"
                   variant="ghost"
                   disabled={p.busy}
                   icon={
@@ -279,23 +278,36 @@ export function TogetherJoinPresenter(p: {
           <TogetherEyebrow>Sessions you can join</TogetherEyebrow>
           {searching &&
             stat(
-              <LoadingSpinner size="sm" accessibilityLabel="Searching" />,
+              <LoadingSpinner size="xs" accessibilityLabel="Searching" />,
               `Searching nearby · ${clock}`,
             )}
           {p.search === "found" && (
-            <Text fontFamily="$body" fontSize={12} color="$text3">
-              Pull down to refresh
-            </Text>
+            // Canvas: a 44pt tap target that also searches again, so the row grows to 44.
+            <Pressable
+              onPress={p.onRefresh}
+              accessibilityRole="button"
+              accessibilityLabel="Search again"
+              style={{ minHeight: 44, justifyContent: "center" }}
+            >
+              <Text
+                fontFamily="$body"
+                fontSize={12}
+                lineHeight={17}
+                color="$text3"
+              >
+                Pull down to refresh
+              </Text>
+            </Pressable>
           )}
         </View>
         {searching && (
           <View gap={8} accessibilityLiveRegion="polite">
             {p.rows.length > 0 ? (
-              <Card surface={0} pad={0} style={{ paddingHorizontal: 16 }}>
+              <Card surface={0} padX={16} padY={4}>
                 {p.rows.map((r, i) => row(r, i === 0))}
               </Card>
             ) : (
-              <Card surface={0} pad={0} style={{ paddingHorizontal: 16 }}>
+              <Card surface={0} padX={16} padY={4}>
                 {[0, 1].map((i) => (
                   <View
                     key={i}
@@ -332,22 +344,23 @@ export function TogetherJoinPresenter(p: {
                 ))}
               </Card>
             )}
-            <Text fontFamily="$body" fontSize={12} color="$text3">
+            <Text
+              fontFamily="$body"
+              fontSize={12}
+              lineHeight={17}
+              color="$text3"
+            >
               Stops by itself after 30 seconds.
             </Text>
           </View>
         )}
         {p.search === "found" && (
-          <Card surface={0} pad={0} style={{ paddingHorizontal: 16 }}>
+          <Card surface={0} padX={16} padY={4}>
             {p.rows.map((r, i) => row(r, i === 0))}
           </Card>
         )}
         {p.search === "empty" && (
-          <Card
-            surface={0}
-            pad={0}
-            style={{ paddingVertical: 24, paddingHorizontal: 20 }}
-          >
+          <Card surface={0} pad={0} padX={20} padY={24}>
             <View alignItems="center" gap={10}>
               <View
                 width={48}
@@ -380,7 +393,7 @@ export function TogetherJoinPresenter(p: {
                 Searched for 30 seconds. Ask the host to show their QR. Scanning
                 it works even when a search doesn’t.
               </Text>
-              <TogetherBtn size="sm" full variant="soft" onPress={p.onRefresh}>
+              <TogetherBtn size="md" variant="soft" onPress={p.onRefresh}>
                 Search again
               </TogetherBtn>
             </View>
@@ -428,8 +441,7 @@ export function TogetherJoinPresenter(p: {
                 <View flexDirection="row" gap={8}>
                   <View flex={1}>
                     <TogetherBtn
-                      size="sm"
-                      full
+                      size="md"
                       variant="quiet"
                       onPress={p.onOpenSettings}
                     >
@@ -437,12 +449,7 @@ export function TogetherJoinPresenter(p: {
                     </TogetherBtn>
                   </View>
                   <View flex={1}>
-                    <TogetherBtn
-                      size="sm"
-                      full
-                      variant="soft"
-                      onPress={p.onRefresh}
-                    >
+                    <TogetherBtn size="md" variant="soft" onPress={p.onRefresh}>
                       Try again
                     </TogetherBtn>
                   </View>
@@ -450,11 +457,16 @@ export function TogetherJoinPresenter(p: {
               </View>
             </Card>
             {p.rows.length > 0 && (
-              <Card surface={0} pad={0} style={{ paddingHorizontal: 16 }}>
+              <Card surface={0} padX={16} padY={4}>
                 {p.rows.map((r, i) => row(r, i === 0))}
               </Card>
             )}
-            <Text fontFamily="$body" fontSize={12} color="$text3">
+            <Text
+              fontFamily="$body"
+              fontSize={12}
+              lineHeight={17}
+              color="$text3"
+            >
               Online sessions from partners still show when you have internet.
             </Text>
           </View>
@@ -462,11 +474,16 @@ export function TogetherJoinPresenter(p: {
         {p.search === "unavailable" && (
           <View gap={8}>
             {p.rows.length > 0 && (
-              <Card surface={0} pad={0} style={{ paddingHorizontal: 16 }}>
+              <Card surface={0} padX={16} padY={4}>
                 {p.rows.map((r, i) => row(r, i === 0))}
               </Card>
             )}
-            <Text fontFamily="$body" fontSize={12} color="$text3">
+            <Text
+              fontFamily="$body"
+              fontSize={12}
+              lineHeight={17}
+              color="$text3"
+            >
               Nearby search is not available on this phone. Scan the host’s QR
               or use their code.
             </Text>
