@@ -63,11 +63,18 @@ ghost · quiet) and `TogetherBackButton` (44 pt, 10 pt radius) replace the
 foundation `Btn`/`IconBtn` where the canvas differs; list avatars use the
 neutral `.av` style; the code field is 48 pt mono with a 2 px tracking;
 screen gaps are 16 (join, consent) and 14 (create); footers end at 30 pt; the
-invite QR is 200 pt in a 14 pt white box. No gradient exists in the canvas
-source for these rows (every phone is flat `bg`).
+invite QR is 200 pt in a 14 pt white box. Brad then pointed out the glow the
+first fidelity pass had missed: the live canvas version paints every phone with
+`radial-gradient(90% 40% at 50% 12%, primary 9%, transparent 70%)` over `bg`
+(an earlier saved copy of the canvas had no such rule, which is why the first
+pass reported none). That is now the foundation `ScreenGlow` primitive, an
+absolute `react-native-svg` ellipse behind the content, placed on the join,
+consent, joining, pick-workout and session-setup screens, the Train hub root
+(so every Train segment, not only Together) and the active-session root (so the
+Together strip and solo workout share it). Evidence re-captured at 440 × 920.
 
-**Verified.** Mobile Jest 638 suites / 8,545 tests, coverage
-96.13 / 92.09 / 96.03 / 97.54 (gate 90); typecheck clean; `expo lint` 0
+**Verified.** Mobile Jest 639 suites / 8,547 tests, coverage
+96.15 / 92.12 / 96.03 / 97.54 (gate 90); typecheck clean; `expo lint` 0
 errors; prettier clean. New presenter tests cover every join/sheet state
 (hidden and empty included); container tests cover search-on-open, the 30 s
 stop keeping results, refresh, link/row selection, consent → connecting →

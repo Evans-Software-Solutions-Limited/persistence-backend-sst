@@ -1,6 +1,6 @@
 import { Text, View } from "@tamagui/core";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Card } from "@/ui/components/foundation";
+import { Card, ScreenGlow } from "@/ui/components/foundation";
 import { TogetherBtn } from "./TogetherBtn";
 import { IconCheck, iconDefaults } from "@/ui/components/icons";
 import { TogetherAthleteAvatar } from "./TogetherAthleteAvatar";
@@ -62,6 +62,7 @@ export function TogetherJoiningPresenter(p: {
       paddingTop={insets.top}
       testID="together-joining"
     >
+      <ScreenGlow />
       <View
         flex={1}
         alignItems="center"

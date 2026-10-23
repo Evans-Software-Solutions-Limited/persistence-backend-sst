@@ -1,7 +1,7 @@
 import { Pressable, ScrollView } from "react-native";
 import { Text, View } from "@tamagui/core";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Card } from "@/ui/components/foundation";
+import { Card, ScreenGlow } from "@/ui/components/foundation";
 import { TogetherBackButton } from "./TogetherBackButton";
 import { TogetherBtn } from "./TogetherBtn";
 import { TogetherEyebrow } from "./TogetherEyebrow";
@@ -93,6 +93,7 @@ export function TogetherPickWorkoutPresenter(p: {
       paddingTop={insets.top}
       testID="together-pick-workout"
     >
+      <ScreenGlow />
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={{

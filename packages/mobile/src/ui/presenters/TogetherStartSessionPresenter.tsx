@@ -1,6 +1,7 @@
 import { ScrollView } from "react-native";
 import { Text, View } from "@tamagui/core";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { ScreenGlow } from "@/ui/components/foundation";
 import { TogetherBackButton } from "./TogetherBackButton";
 import { TogetherBtn } from "./TogetherBtn";
 import { TogetherAudienceOptions } from "./TogetherAudienceOptions";
@@ -35,6 +36,7 @@ export function TogetherStartSessionPresenter(p: {
       paddingTop={insets.top}
       testID="together-start-session"
     >
+      <ScreenGlow />
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={{

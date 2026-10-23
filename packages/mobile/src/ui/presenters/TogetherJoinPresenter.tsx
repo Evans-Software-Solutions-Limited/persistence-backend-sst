@@ -3,7 +3,7 @@ import { RefreshControl, ScrollView, TextInput } from "react-native";
 import { Text, View, useTheme } from "@tamagui/core";
 import { Globe, QrCode, Radio, ShieldCheck } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Card } from "@/ui/components/foundation";
+import { Card, ScreenGlow } from "@/ui/components/foundation";
 import { IconSearch, IconWifiOff, iconDefaults } from "@/ui/components/icons";
 import { TogetherBackButton } from "./TogetherBackButton";
 import { TogetherBtn } from "./TogetherBtn";
@@ -153,6 +153,7 @@ export function TogetherJoinPresenter(p: {
       paddingTop={insets.top}
       testID="together-join-screen"
     >
+      <ScreenGlow />
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={{

@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useTrainSegment } from "@/ui/hooks/useTrainSegment";
 import { useClientRelationships } from "@/ui/hooks/useClientRelationships";
-import { Btn, Segmented } from "@/ui/components/foundation";
+import { Btn, ScreenGlow, Segmented } from "@/ui/components/foundation";
 import { IconPlus } from "@/ui/components/icons";
 import { ExerciseListContainer } from "@/ui/containers/ExerciseListContainer";
 import { WorkoutsListContainer } from "@/ui/containers/WorkoutsListContainer";
@@ -93,6 +93,7 @@ export function TrainHubContainer() {
 
   return (
     <View flex={1} paddingTop={insets.top} testID="train-hub">
+      <ScreenGlow />
       {/* Hub header — inline flex-end row (prototype-hubs.jsx:15–33). */}
       <View
         testID="train-header"

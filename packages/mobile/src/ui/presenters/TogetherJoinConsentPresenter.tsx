@@ -2,7 +2,7 @@ import { ScrollView } from "react-native";
 import { Text, View } from "@tamagui/core";
 import { Globe, Link2, Radio } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Card } from "@/ui/components/foundation";
+import { Card, ScreenGlow } from "@/ui/components/foundation";
 import { TogetherBackButton } from "./TogetherBackButton";
 import { TogetherBtn } from "./TogetherBtn";
 import { IconCheck, IconEyeOff } from "@/ui/components/icons";
@@ -55,6 +55,7 @@ export function TogetherJoinConsentPresenter(p: {
       paddingTop={insets.top}
       testID="together-join-consent"
     >
+      <ScreenGlow />
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={{

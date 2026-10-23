@@ -22,6 +22,7 @@
  */
 
 import { Ionicons } from "@expo/vector-icons";
+import { ScreenGlow } from "@/ui/components/foundation";
 import React, { useMemo, type ReactNode } from "react";
 import {
   AccessibilityInfo,
@@ -471,6 +472,7 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
       style={[styles.container, { paddingTop: insets.top }]}
       testID="active-session-screen"
     >
+      <ScreenGlow />
       {/* SetLogger TextInputs sit inside the ScrollView; without an
           explicit KeyboardAvoidingView wrapper the keyboard slides over
           the active weight/reps field and the user can't see what they're
