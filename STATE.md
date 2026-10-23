@@ -17,8 +17,9 @@ identifiable from telemetry.
 
 Fix (backend only, mobile input caps deferred): shared `weightKgSchema` /
 `distanceMetersSchema` in `sessions/sets/setValueSchemas.ts` — numbers
-`0..9999.99` / `0..999999.99`, strings bounded by integer-digit count with
-the fraction open (Postgres rounds scale, overflows only on precision) —
+`0..9999.99` / `0..999999.99`, strings bounded to the column's integer digits
+AND two-digit scale (Postgres rounds before the precision check, so
+"9999.995" carries to 10000.00 — Inspector Brad lead on #510) —
 applied to self + on-behalf `sessions/record`, set create and set update.
 Oversized input is now a 422 at the edge (permanent to the sync queue on the
 first attempt) and the repository never opens a transaction for it. Together

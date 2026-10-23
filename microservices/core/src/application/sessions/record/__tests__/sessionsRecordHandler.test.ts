@@ -315,7 +315,19 @@ describe("sessionsRecordHandler", () => {
       ["negative weightKg", { weightKg: -1 }],
       ["weightKg with a non-numeric string", { weightKg: "heavy" }],
       ["empty weightKg string", { weightKg: "" }],
+      [
+        "weightKg string that rounds across the precision cap",
+        { weightKg: "9999.995" },
+      ],
+      [
+        "weightKg string with three decimals (column scale is 2)",
+        { weightKg: "9999.999" },
+      ],
       ["distanceMeters above numeric(8,2)", { distanceMeters: 1000000 }],
+      [
+        "distanceMeters string that rounds across the precision cap",
+        { distanceMeters: "999999.995" },
+      ],
       [
         "distanceMeters string above numeric(8,2)",
         { distanceMeters: "1000000.5" },
@@ -329,9 +341,10 @@ describe("sessionsRecordHandler", () => {
 
     it.each([
       ["weightKg at the column maximum", { weightKg: 9999.99 }],
+      ["weightKg string at the column maximum", { weightKg: "9999.99" }],
       [
-        "weightKg string with extra scale (Postgres rounds)",
-        { weightKg: "9999.999" },
+        "weightKg number with extra scale under the maximum",
+        { weightKg: 123.456 },
       ],
       [
         "fractional weightKg string without a leading digit",

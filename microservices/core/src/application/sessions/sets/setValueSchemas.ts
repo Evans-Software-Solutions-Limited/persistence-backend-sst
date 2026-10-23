@@ -13,17 +13,21 @@ import { t } from "elysia";
  *
  * Validating here turns that into a 422 at the edge: the queue classifies
  * it as permanent on the first attempt and the repository never opens a
- * transaction for a row Postgres cannot store. Extra decimal places are
- * fine — `apply_typmod` rounds scale and only overflows on precision — so
- * the string patterns bound the integer digits and leave the fraction
- * open. Every route that writes these columns shares these schemas:
- * self + on-behalf `sessions/record`, and set create/update.
+ * transaction for a row Postgres cannot store.
+ *
+ * Strings are bounded to the column scale (two fractional digits) as well
+ * as its integer digits. Postgres rounds to scale BEFORE it checks
+ * precision, and the carry can cross into the integer part — "9999.995"
+ * rounds to 10000.00 and overflows numeric(6,2) exactly like 35532 did
+ * (Inspector Brad, PR #510). Numbers are already safe through `maximum`.
+ * Every route that writes these columns shares these schemas: self +
+ * on-behalf `sessions/record`, and set create/update.
  */
 export const WEIGHT_KG_MAX = 9999.99;
 export const DISTANCE_METERS_MAX = 999999.99;
 
-const WEIGHT_KG_PATTERN = "^(?:\\d{1,4}(?:\\.\\d+)?|\\.\\d+)$";
-const DISTANCE_METERS_PATTERN = "^(?:\\d{1,6}(?:\\.\\d+)?|\\.\\d+)$";
+const WEIGHT_KG_PATTERN = "^(?:\\d{1,4}(?:\\.\\d{1,2})?|\\.\\d{1,2})$";
+const DISTANCE_METERS_PATTERN = "^(?:\\d{1,6}(?:\\.\\d{1,2})?|\\.\\d{1,2})$";
 
 export const weightKgSchema = t.Union([
   t.Number({ minimum: 0, maximum: WEIGHT_KG_MAX }),
