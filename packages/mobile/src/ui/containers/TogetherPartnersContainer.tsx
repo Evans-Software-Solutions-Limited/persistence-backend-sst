@@ -18,6 +18,7 @@ import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
 import {
   TogetherPartnersPresenter,
+  type PartnerOnlineSession,
   type PartnerRow,
 } from "@/ui/presenters/TogetherPartnersPresenter";
 import type {
@@ -30,12 +31,34 @@ import type { CloudResult } from "@/domain/ports/togetherCloud.port";
 /** Delay before the single automatic retry of a transient cold-start load failure. */
 export const TRANSIENT_RETRY_MS = 4_000;
 
+/** "July" for a partnership accepted this year, "July 2025" otherwise; undefined when unknown. */
+export function partnersSince(
+  acceptedAt: string | undefined,
+  now = new Date(),
+): string | undefined {
+  if (!acceptedAt) return undefined;
+  const date = new Date(acceptedAt);
+  if (Number.isNaN(date.getTime())) return undefined;
+  const month = date.toLocaleDateString("en-GB", { month: "long" });
+  return date.getFullYear() === now.getFullYear()
+    ? month
+    : `${month} ${date.getFullYear()}`;
+}
+
 /** A keyed account boundary removes rendered personal data immediately on account changes. */
 export function TogetherPartnersContainer({
   header,
   embedded = false,
   onRefresh,
-}: { header?: ReactNode; embedded?: boolean; onRefresh?: () => void } = {}) {
+  onlineSessions,
+  onJoinOnline,
+}: {
+  header?: ReactNode;
+  embedded?: boolean;
+  onRefresh?: () => void;
+  onlineSessions?: readonly PartnerOnlineSession[];
+  onJoinOnline?: (sessionId: string) => void;
+} = {}) {
   const { api, storage } = useAdapters();
   const { session } = useAuth();
   const userId = session?.userId ?? null;
@@ -55,6 +78,8 @@ export function TogetherPartnersContainer({
       header={header}
       embedded={embedded}
       onRefreshHub={onRefresh}
+      onlineSessions={onlineSessions}
+      onJoinOnline={onJoinOnline}
       ownName={
         userId
           ? storage
@@ -79,6 +104,8 @@ function PartnersAccount({
   embedded,
   ownName,
   onRefreshHub,
+  onlineSessions,
+  onJoinOnline,
 }: {
   userId: string | null;
   api: TogetherSocialApi | undefined;
@@ -87,6 +114,8 @@ function PartnersAccount({
   embedded?: boolean;
   ownName?: string;
   onRefreshHub?: () => void;
+  onlineSessions?: readonly PartnerOnlineSession[];
+  onJoinOnline?: (sessionId: string) => void;
 }) {
   const [permission, requestPermission] = useCameraPermissions();
   const [codeVisible, setCodeVisible] = useState(false);
@@ -145,6 +174,7 @@ function PartnersAccount({
     avatarUrl: r.person?.avatarUrl ?? null,
     requestId: r.id,
     outgoing: r.initiatedBy === userId,
+    since: partnersSince(r.status === "accepted" ? r.updatedAt : undefined),
   });
   async function unwrap<T>(promise: CloudResult<T>): Promise<T> {
     const result = await promise;
@@ -388,6 +418,8 @@ function PartnersAccount({
     <TogetherPartnersPresenter
       header={header}
       embedded={embedded}
+      onlineSessions={onlineSessions}
+      onJoinOnline={onJoinOnline}
       ownName={ownName}
       onEditProfile={() => router.push("/(app)/profile/edit" as never)}
       codeVisible={codeVisible}

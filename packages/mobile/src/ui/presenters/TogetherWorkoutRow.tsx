@@ -1,83 +1,97 @@
 import { Text, View } from "@tamagui/core";
-import { TogetherAthleteAvatar } from "./TogetherAthleteAvatar";
-import { Btn } from "@/ui/components/foundation/Btn";
-import { Pressable, ScrollView } from "react-native";
+import {
+  TogetherAthleteAvatar,
+  TOGETHER_PARTNER_TONES,
+} from "./TogetherAthleteAvatar";
+import { TogetherPill } from "./TogetherPill";
+import { IconSettings, iconDefaults } from "@/ui/components/icons";
+
+/**
+ * The slim Together strip above the active workout (canvas rows 1b, 2, 3):
+ * avatars · status · Invite (host) · End or Leave · settings cog.
+ */
 export function TogetherWorkoutRow(p: {
   members: readonly { userId: string; name: string }[];
   selectedId: string;
+  accountId?: string;
   status: string;
+  /** Tints the status line and dot; "live" is success, "warn" is ember. */
+  tone?: "live" | "warn" | "muted";
   onSelect(id: string): void;
   onSettings(): void;
+  onInvite?(): void;
   onEnd(): void;
+  endLabel?: string;
 }) {
+  const me = p.accountId ?? p.selectedId;
+  let seat = 0;
+  const statusColor =
+    p.tone === "live" ? "$success" : p.tone === "warn" ? "$ember" : "$text2";
   return (
-    <View backgroundColor="$surface" testID="together-workout-row">
+    <View paddingHorizontal={16} paddingTop={8} testID="together-workout-row">
       <View
         minHeight={44}
         flexDirection="row"
         alignItems="center"
         gap={8}
-        paddingHorizontal={16}
+        paddingVertical={8}
+        paddingHorizontal={10}
+        borderRadius={14}
+        borderWidth={1}
+        borderColor="$border"
+        backgroundColor="$surface"
       >
-        <Text flex={1} color="$text2" fontFamily="$body" fontSize={11}>
-          {p.status}
-        </Text>
-        <Btn
-          size="sm"
-          variant="ghost"
-          accessibilityLabel="Together settings"
-          onPress={p.onSettings}
+        <View
+          flexDirection="row"
+          gap={6}
+          accessibilityRole="tablist"
+          accessibilityLabel="Whose workout"
         >
-          Sharing
-        </Btn>
-        <Btn size="sm" variant="ghost" onPress={p.onEnd}>
-          End
-        </Btn>
-      </View>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{
-          paddingHorizontal: 16,
-          gap: 8,
-          paddingBottom: 8,
-        }}
-      >
-        {p.members.map((m) => (
-          <Pressable
-            key={m.userId}
-            onPress={() => p.onSelect(m.userId)}
-            accessibilityRole="button"
-            accessibilityLabel={`View ${m.name}’s workout`}
-            accessibilityState={{ selected: m.userId === p.selectedId }}
-          >
-            <View
-              minHeight={44}
-              flexDirection="row"
-              alignItems="center"
-              gap={8}
-              paddingHorizontal={10}
-              borderRadius={12}
-              borderWidth={1}
-              borderColor={m.userId === p.selectedId ? "$primary" : "$border"}
-              backgroundColor={
-                m.userId === p.selectedId ? "$primaryDim" : "$surface"
-              }
-            >
+          {p.members.map((m) => {
+            const mine = m.userId === me;
+            const tone = mine
+              ? "primary"
+              : TOGETHER_PARTNER_TONES[seat++ % TOGETHER_PARTNER_TONES.length];
+            return (
               <TogetherAthleteAvatar
+                key={m.userId}
                 name={m.name}
+                tone={tone}
                 selected={m.userId === p.selectedId}
+                accessibilityRole="tab"
+                accessibilityLabel={mine ? "My workout" : `${m.name}’s workout`}
+                onPress={() => p.onSelect(m.userId)}
               />
-              <Text
-                color={m.userId === p.selectedId ? "$primary" : "$text2"}
-                fontSize={12}
-              >
-                {m.name}
-              </Text>
-            </View>
-          </Pressable>
-        ))}
-      </ScrollView>
+            );
+          })}
+        </View>
+        <View flex={1} flexDirection="row" alignItems="center" gap={6}>
+          {p.tone === "live" && (
+            <View
+              width={6}
+              height={6}
+              borderRadius={99}
+              backgroundColor="$success"
+            />
+          )}
+          <Text
+            flex={1}
+            color={statusColor}
+            fontFamily="$body"
+            fontSize={12}
+            numberOfLines={2}
+          >
+            {p.status}
+          </Text>
+        </View>
+        {p.onInvite && <TogetherPill onPress={p.onInvite}>Invite</TogetherPill>}
+        <TogetherPill onPress={p.onEnd}>{p.endLabel ?? "End"}</TogetherPill>
+        <TogetherPill
+          onPress={p.onSettings}
+          accessibilityLabel="Together settings"
+          icon={<IconSettings {...iconDefaults({ size: 16 })} />}
+        />
+      </View>
     </View>
   );
 }

@@ -1,113 +1,111 @@
 import type { ReactNode } from "react";
 import { Text, View } from "@tamagui/core";
 import { Btn } from "@/ui/components/foundation/Btn";
-import { Card } from "@/ui/components/foundation/Card";
+import { IconX, iconDefaults } from "@/ui/components/icons";
+import { TogetherPill } from "./TogetherPill";
+import {
+  NEARBY_CONNECTION_LABEL,
+  ONLINE_CONNECTION_LABEL,
+} from "./TogetherConnectionChoice";
+import type { TogetherLobbyAudience } from "@/domain/ports/togetherLobby.port";
 
-/** Reviewed v2 invite card; the QR contains the actual authenticated invitation. */
+export function togetherInviteLine(
+  connection: "local" | "online",
+  audience?: TogetherLobbyAudience,
+): string {
+  const mode =
+    connection === "online" ? ONLINE_CONNECTION_LABEL : NEARBY_CONNECTION_LABEL;
+  return audience === "invite-only"
+    ? `${mode} · only people with this QR`
+    : `${mode} · training partners join straight in`;
+}
+
+/** Canvas rows 1b/1c "Invite people": the QR is the authenticated invitation; Share sends it. */
 export function TogetherInvitePresenter(p: {
   qr: ReactNode;
+  connection: "local" | "online";
+  audience?: TogetherLobbyAudience;
   notice?: string;
-  scanInstruction?: string;
-  pendingCount: number;
-  personal: boolean;
-  friendsOnly?: boolean;
-  onCopy(): void;
+  pendingCount?: number;
+  busy?: boolean;
   onShare(): void;
-  onSettings(): void;
+  onClose(): void;
 }) {
   return (
-    <View gap={12}>
-      <Text color="$text2" fontFamily="$body" fontSize={13}>
-        {p.friendsOnly
-          ? "Only accepted training partners can use this invitation and choose to join."
-          : "Share this invitation. Accepted training partners choose to join; anyone else needs your approval."}{" "}
-        Up to four athletes, each with qualifying paid access.
+    <View gap={14} alignItems="center">
+      <View
+        alignSelf="stretch"
+        flexDirection="row"
+        alignItems="center"
+        justifyContent="space-between"
+      >
+        <Text
+          fontFamily="$display"
+          fontWeight="700"
+          fontSize={22}
+          letterSpacing={-0.5}
+          color="$text"
+        >
+          Invite people
+        </Text>
+        <TogetherPill
+          onPress={p.onClose}
+          accessibilityLabel="Close"
+          icon={<IconX {...iconDefaults({ size: 16 })} />}
+        />
+      </View>
+      <View
+        padding={14}
+        borderRadius={14}
+        backgroundColor="white"
+        accessibilityRole="image"
+        accessibilityLabel="Session QR code"
+      >
+        {p.qr}
+      </View>
+      <Text
+        fontFamily="$body"
+        fontSize={12}
+        lineHeight={17}
+        color="$text3"
+        textAlign="center"
+      >
+        {togetherInviteLine(p.connection, p.audience)}
       </Text>
-      <Card surface={0} pad={16} radius={16} accent="primary">
-        <View gap={14}>
-          <View alignItems="center" gap={14}>
-            <View gap={6} alignItems="center">
-              <Text
-                color="$text3"
-                fontFamily="$body"
-                fontSize={10}
-                letterSpacing={1}
-              >
-                SESSION INVITATION
-              </Text>
-              <Text
-                color="$primary"
-                fontFamily="$display"
-                fontWeight="600"
-                fontSize={19}
-              >
-                Scan to join
-              </Text>
-              <Text color="$text3" fontFamily="$body" fontSize={11}>
-                {p.scanInstruction ?? "Or copy and send the secure invitation."}
-              </Text>
-            </View>
-            {p.qr}
-          </View>
-          <View flexDirection="row" gap={8}>
-            <View flex={1}>
-              <Btn full variant="soft" onPress={p.onCopy}>
-                Copy
-              </Btn>
-            </View>
-            <View flex={1}>
-              <Btn full variant="soft" onPress={p.onShare}>
-                Share
-              </Btn>
-            </View>
-          </View>
-        </View>
-      </Card>
+      {!!p.pendingCount && (
+        <Text
+          fontFamily="$body"
+          fontSize={12}
+          color="$primary"
+          accessibilityLiveRegion="polite"
+        >
+          {p.pendingCount === 1
+            ? "1 person is waiting for you to let them in"
+            : `${p.pendingCount} people are waiting for you to let them in`}
+        </Text>
+      )}
       {!!p.notice && (
-        <Text color="$text2" accessibilityLiveRegion="polite">
+        <Text
+          fontFamily="$body"
+          fontSize={12}
+          color="$warning"
+          textAlign="center"
+          accessibilityLiveRegion="polite"
+        >
           {p.notice}
         </Text>
       )}
-      {p.personal && (
-        <Text color="$text2" fontFamily="$body" fontSize={12}>
-          Your workout is still personal. Open settings to share your current
-          workout while keeping your logged sets.
-        </Text>
-      )}
-      <Card
-        surface={1}
-        pad={13}
-        radius={12}
-        onPress={p.onSettings}
-        accessibilityRole="button"
-        accessibilityLabel="Session settings"
-      >
-        <View gap={5}>
-          <Text
-            color="$text"
-            fontFamily="$display"
-            fontSize={14}
-            fontWeight="600"
-          >
-            Session settings
-          </Text>
-          <Text color="$text3" fontFamily="$body" fontSize={12}>
-            My workout, sharing permissions and people
-          </Text>
-          {p.pendingCount > 0 && (
-            <Text
-              color="$primary"
-              fontFamily="$body"
-              fontSize={12}
-              accessibilityLiveRegion="polite"
-            >
-              {p.pendingCount}{" "}
-              {p.pendingCount === 1 ? "athlete waiting" : "athletes waiting"}{" "}
-              for approval
-            </Text>
-          )}
-        </View>
-      </Card>
+      <View alignSelf="stretch">
+        <Btn
+          full
+          size="lg"
+          variant="soft"
+          disabled={p.busy}
+          onPress={p.onShare}
+        >
+          Share code
+        </Btn>
+      </View>
     </View>
   );
 }

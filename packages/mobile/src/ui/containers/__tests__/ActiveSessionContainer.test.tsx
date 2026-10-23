@@ -382,7 +382,7 @@ describe("ActiveSessionContainer", () => {
         expect(r.getByTestId("together-workout-row")).toBeTruthy();
         fireEvent.press(r.getByText("Start"));
         fireEvent.press(r.getByText("Start the session"));
-        expect(host).toHaveBeenCalledWith("Quick Workout", "invite-only");
+        expect(host).toHaveBeenCalledWith("Quick Workout", "friends");
       }
       expect(storage.getActiveSession("user-1")?.status).toBe("in_progress");
       r.unmount();

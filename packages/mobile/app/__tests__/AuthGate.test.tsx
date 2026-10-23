@@ -166,6 +166,8 @@ import RootLayout from "../_layout";
 // eslint-disable-next-line import/first
 import { usePendingInvite } from "../../src/state/pending-invite";
 // eslint-disable-next-line import/first
+import { usePendingTogetherJoin } from "../../src/state/pending-together-join";
+// eslint-disable-next-line import/first
 import { usePasswordRecovery } from "../../src/state/password-recovery";
 // eslint-disable-next-line import/first
 import * as Notifications from "expo-notifications";
@@ -698,6 +700,100 @@ describe("AuthGate", () => {
     );
     // Stash survives — redeemed after the user restores their account.
     expect(usePendingInvite.getState().pendingCode).toBe("AB23CD");
+  });
+});
+
+describe("AuthGate — Together join link through sign-in (PER-60 cold start)", () => {
+  afterEach(() => usePendingTogetherJoin.getState().reset());
+  beforeEach(() => {
+    jest.clearAllMocks();
+    usePendingTogetherJoin.getState().reset();
+    usePendingInvite.getState().reset();
+    usePasswordRecovery.getState().reset();
+    mockUseProfilePage.mockReturnValue({
+      payload: null,
+      error: undefined,
+      refresh: jest.fn(),
+    });
+    mockUseOptionalOnboarding.mockReturnValue({
+      state: { status: "completed", currentPage: "recommendation" },
+      isLoading: false,
+    });
+  });
+
+  it("stashes a together/join link before the sign-in redirect when nobody is signed in", async () => {
+    mockUseAuth.mockReturnValue({ session: null, isLoading: false });
+    mockUseSegments.mockReturnValue(["(app)", "together", "join"]);
+    mockUseGlobalSearchParams.mockReturnValue({
+      connection: "local",
+      invitation: "z1.abc",
+      transport: "nearby",
+    });
+    render(<RootLayout />);
+    await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalledWith("/(auth)/sign-in");
+    });
+    expect(usePendingTogetherJoin.getState().pending).toEqual({
+      connection: "local",
+      invitation: "z1.abc",
+      transport: "nearby",
+    });
+  });
+
+  it("does NOT stash a malformed link or one on another screen", async () => {
+    mockUseAuth.mockReturnValue({ session: null, isLoading: false });
+    mockUseSegments.mockReturnValue(["(app)", "together", "join"]);
+    mockUseGlobalSearchParams.mockReturnValue({
+      connection: "carrier-pigeon",
+      invitation: "x",
+    });
+    const r = render(<RootLayout />);
+    await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalledWith("/(auth)/sign-in");
+    });
+    expect(usePendingTogetherJoin.getState().pending).toBeNull();
+    mockUseSegments.mockReturnValue(["(app)", "together", "partners"]);
+    mockUseGlobalSearchParams.mockReturnValue({
+      connection: "online",
+      invitation: "tok",
+    });
+    r.rerender(<RootLayout />);
+    await waitFor(() => expect(mockReplace).toHaveBeenCalled());
+    expect(usePendingTogetherJoin.getState().pending).toBeNull();
+  });
+
+  it("sends a signed-in user back to the join screen and peeks rather than clears", async () => {
+    usePendingTogetherJoin.getState().setPending({
+      connection: "online",
+      invitation: "tok en",
+    });
+    mockUseAuth.mockReturnValue({
+      session: SIGNED_IN_SESSION,
+      isLoading: false,
+    });
+    mockUseSegments.mockReturnValue(["(auth)"]);
+    render(<RootLayout />);
+    await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalledWith(
+        "/(app)/together/join?connection=online&invitation=tok%20en",
+      );
+    });
+    expect(usePendingTogetherJoin.getState().pending).not.toBeNull();
+  });
+
+  it("leaves the join screen alone once the user is on it", async () => {
+    usePendingTogetherJoin.getState().setPending({
+      connection: "local",
+      invitation: "x",
+    });
+    mockUseAuth.mockReturnValue({
+      session: SIGNED_IN_SESSION,
+      isLoading: false,
+    });
+    mockUseSegments.mockReturnValue(["(app)", "together", "join"]);
+    render(<RootLayout />);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(mockReplace).not.toHaveBeenCalled();
   });
 });
 

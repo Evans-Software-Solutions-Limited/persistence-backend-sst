@@ -6,6 +6,7 @@ import { CameraView, useCameraPermissions } from "expo-camera";
 import { TogetherInvitationQr } from "@/ui/presenters/TogetherInvitationQr";
 import { TogetherInvitePresenter } from "@/ui/presenters/TogetherInvitePresenter";
 import { TogetherWorkoutRow } from "@/ui/presenters/TogetherWorkoutRow";
+import { TogetherJoinRequestBar } from "@/ui/presenters/TogetherJoinRequestBar";
 import {
   useEffect,
   useRef,
@@ -406,28 +407,78 @@ export function TogetherCloudContainer(p: {
       params: { localSessionId: current?.id, mode },
     } as never);
   };
+  const hosting = state.snapshot?.hostId === p.accountId;
+  const members = state.snapshot?.participants.length ?? 0;
+  const status =
+    state.phase === "reconnecting"
+      ? {
+          status: "Reconnecting · your sets are kept on this device",
+          tone: "warn" as const,
+        }
+      : state.snapshot && !state.snapshot.sharingActive
+        ? {
+            status: "Sharing ended · continue your workout",
+            tone: "muted" as const,
+          }
+        : members > 1
+          ? { status: `In sync · ${members} training`, tone: "live" as const }
+          : {
+              status: `Waiting for people · ${members} of 4`,
+              tone: "muted" as const,
+            };
   const row = state.snapshot ? (
-    <TogetherWorkoutRow
-      members={state.snapshot.participants.map((x, i) => ({
-        userId: x.userId,
-        name:
-          x.userId === p.accountId
-            ? "Me"
-            : (x.displayName ?? `Athlete ${i + 1}`),
-      }))}
-      selectedId={viewing ?? p.accountId}
-      status={state.phase === "active" ? "Connected" : state.phase}
-      onSelect={(id) => {
-        setViewing(id === p.accountId ? null : id);
-        if (
-          state.snapshot?.participants.find((x) => x.userId === id)
-            ?.previousValuesAvailable
-        )
-          run(() => p.cloud.previous(id));
-      }}
-      onSettings={() => setVisible(true)}
-      onEnd={() => setVisible(true)}
-    />
+    <>
+      <TogetherWorkoutRow
+        members={state.snapshot.participants.map((x, i) => ({
+          userId: x.userId,
+          name:
+            x.userId === p.accountId
+              ? "Me"
+              : (x.displayName ?? `Athlete ${i + 1}`),
+        }))}
+        selectedId={viewing ?? p.accountId}
+        accountId={p.accountId}
+        status={status.status}
+        tone={status.tone}
+        onSelect={(id) => {
+          setViewing(id === p.accountId ? null : id);
+          if (
+            state.snapshot?.participants.find((x) => x.userId === id)
+              ?.previousValuesAvailable
+          )
+            run(() => p.cloud.previous(id));
+        }}
+        onInvite={
+          hosting && state.snapshot.sharingActive
+            ? () => {
+                setVisible(true);
+                if (invitation) setInviteView(true);
+                else run(prepareInvitation);
+              }
+            : undefined
+        }
+        onSettings={() => {
+          setInviteView(false);
+          setVisible(true);
+        }}
+        endLabel={hosting ? "End" : "Leave"}
+        onEnd={() => {
+          setInviteView(false);
+          setVisible(true);
+        }}
+      />
+      {hosting &&
+        state.snapshot.sharingActive &&
+        state.requests.map((r) => (
+          <TogetherJoinRequestBar
+            key={r.requestId}
+            name={r.displayName ?? "Someone"}
+            busy={busy || members >= 4}
+            onAdmit={() => run(() => p.cloud.decide(r.requestId, "approve"))}
+            onDeny={() => run(() => p.cloud.decide(r.requestId, "reject"))}
+          />
+        ))}
+    </>
   ) : (
     <View
       minHeight={44}
@@ -487,26 +538,18 @@ export function TogetherCloudContainer(p: {
         }}
         title={
           inviteView && state.phase === "active" && invitation
-            ? "Session is live"
+            ? undefined
             : "Train together"
         }
-        eyebrow="TRAIN TOGETHER"
-        height="tall"
-        footer={
-          inviteView ? (
-            <Btn
-              full
-              variant="soft"
-              onPress={() => {
-                generation.current++;
-                locked.current = false;
-                setBusy(false);
-                setVisible(false);
-              }}
-            >
-              Back to my workout
-            </Btn>
-          ) : undefined
+        eyebrow={
+          inviteView && state.phase === "active" && invitation
+            ? undefined
+            : "TRAIN TOGETHER"
+        }
+        height={
+          inviteView && state.phase === "active" && invitation
+            ? "default"
+            : "tall"
         }
       >
         {inviteView &&
@@ -515,22 +558,24 @@ export function TogetherCloudContainer(p: {
           invitation ? (
             <TogetherInvitePresenter
               qr={
-                <View backgroundColor="white">
-                  <TogetherInvitationQr
-                    value={togetherInvitationLink({
-                      connection: "online",
-                      invitation: invitation.token,
-                    })}
-                  />
-                </View>
+                <TogetherInvitationQr
+                  value={togetherInvitationLink({
+                    connection: "online",
+                    invitation: invitation.token,
+                  })}
+                />
               }
+              connection="online"
+              audience={p.initialHost === "private" ? "invite-only" : "friends"}
               notice={notice}
-              scanInstruction="Scan from Online join, or copy and send the invitation."
               pendingCount={state.requests.length}
-              personal={false}
-              onCopy={() =>
-                run(() => Clipboard.setStringAsync(liveInvitation()))
-              }
+              busy={busy}
+              onClose={() => {
+                generation.current++;
+                locked.current = false;
+                setBusy(false);
+                setVisible(false);
+              }}
               onShare={() =>
                 run(() =>
                   Share.share(
@@ -540,7 +585,6 @@ export function TogetherCloudContainer(p: {
                   ),
                 )
               }
-              onSettings={() => setInviteView(false)}
             />
           ) : (
             <View gap={16}>

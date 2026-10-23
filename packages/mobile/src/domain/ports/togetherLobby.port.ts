@@ -29,6 +29,8 @@ export interface TogetherLobbySnapshot {
     workoutName: string;
     memberCount: number;
   }[];
+  /** True while the nearby radio is scanning; `browsing` with it false lists the last results (PER-60). */
+  searching?: boolean;
   error?: string;
   role?: "host" | "guest";
   invitation?: string;

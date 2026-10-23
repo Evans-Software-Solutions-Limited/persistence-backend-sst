@@ -8,13 +8,13 @@ import { TogetherCloudContainer } from "./TogetherCloudContainer";
 import type { TogetherCloudPort } from "@/domain/ports/togetherCloud.port";
 import { TogetherPartnerPresenter } from "@/ui/presenters/TogetherPartnerPresenter";
 import { TogetherInvitePresenter } from "@/ui/presenters/TogetherInvitePresenter";
-import {
-  NEARBY_CONNECTION_LABEL,
-  ONLINE_CONNECTION_LABEL,
-} from "@/ui/presenters/TogetherConnectionChoice";
-import { Alert, AppState, Share, Platform } from "react-native";
+import { TogetherStartSheet } from "@/ui/presenters/TogetherStartSheet";
+import { TogetherJoinRequestBar } from "@/ui/presenters/TogetherJoinRequestBar";
+import { useTogetherSettings } from "@/state/together-settings";
+import { Alert, AppState, Linking, Share, Platform } from "react-native";
 import { TogetherSharingPresenter } from "@/ui/presenters/TogetherSharingPresenter";
 import type { TogetherPreviousRow } from "@/domain/ports/togetherShared.port";
+import type { TogetherWorkoutStatus } from "@/domain/ports/togetherWorkout.port";
 import { router } from "expo-router";
 import {
   useEffect,
@@ -35,6 +35,7 @@ import type { WorkoutSession } from "@/domain/models/session";
 import { BottomSheet, Btn } from "@/ui/components/foundation";
 import {
   TogetherLobbyPresenter,
+  togetherErrorCopy,
   togetherWorkoutCopy,
   type TogetherLobbyScreen,
 } from "@/ui/presenters/TogetherLobbyPresenter";
@@ -45,6 +46,30 @@ import { shareTogetherLog } from "@/diagnostics/together/togetherLog";
 const shareDiagnostics = isDiagnosticsAllowed()
   ? () => void shareTogetherLog()
   : undefined;
+
+/** Native failure codes that mean the radio or its permission is off (canvas 1b "Can't host nearby"). */
+const RADIO_OFF =
+  /permission|wifi|lan_unavailable|nearby_unavailable|discovery|advertising|listener/i;
+/** "keeps your 4 logged sets" on the solo strip; "your sets stay yours" before any set. */
+export function startRowDetail(workout: WorkoutSession | null | undefined) {
+  const logged = workout?.exercises.reduce((n, e) => n + e.sets.length, 0) ?? 0;
+  return logged
+    ? `keeps your ${logged} logged ${logged === 1 ? "set" : "sets"}`
+    : "your sets stay yours";
+}
+/** The strip's status line: who is here and whether it is in sync. */
+export function liveStatus(
+  members: number,
+  sharing: TogetherWorkoutStatus["sharing"] | undefined,
+): { status: string; tone: "live" | "warn" | "muted" } {
+  if (sharing === "reconnecting" || sharing === "paused")
+    return { status: togetherWorkoutCopy(sharing), tone: "warn" };
+  if (sharing === "local-only")
+    return { status: togetherWorkoutCopy(sharing), tone: "muted" };
+  return members > 1
+    ? { status: `In sync · ${members} training`, tone: "live" }
+    : { status: `Waiting for people · ${members} of 4`, tone: "muted" };
+}
 
 function currentPreviousRows(
   workout: WorkoutSession,
@@ -121,11 +146,15 @@ export function TogetherLobbyContainer({
     [shared],
   );
   const sharedSnapshot = shared?.getSnapshot();
-  const [audience, setAudience] =
-    useState<TogetherLobbyAudience>("invite-only");
+  const defaults = useTogetherSettings();
+  const [audience, setAudience] = useState<TogetherLobbyAudience>(
+    defaults.audience === "friends" ? "invite-only" : defaults.audience,
+  );
   const browsingIntent = useRef(false);
   const [screen, setScreen] = useState<TogetherLobbyScreen>("start");
   const [visible, setVisible] = useState(false);
+  /** Canvas row 1b: the one sheet opened by Start on the solo strip. */
+  const [startOpen, setStartOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [startingWorkout, setStartingWorkout] = useState(false);
   const [startFailed, setStartFailed] = useState(false);
@@ -138,8 +167,12 @@ export function TogetherLobbyContainer({
   const [hostOnline, setHostOnline] = useState<"friends" | "private" | null>(
     null,
   );
-  const [friendsSelected, setFriendsSelected] = useState(false);
-  const [connection, setConnection] = useState<"local" | "online">("local");
+  const [friendsSelected, setFriendsSelected] = useState(
+    defaults.audience === "friends",
+  );
+  const [connection, setConnection] = useState<"local" | "online">(
+    defaults.connection,
+  );
   const [scanning, setScanning] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
   const generation = useRef(0);
@@ -191,12 +224,10 @@ export function TogetherLobbyContainer({
     setCode("");
     setNotice("");
     setSettingsOpen(false);
-    setAudience("invite-only");
+    setStartOpen(false);
     setViewing(null);
     setRemote(false);
     setHostOnline(null);
-    setFriendsSelected(false);
-    setConnection("local");
     browsingIntent.current = false;
     return () => {
       lifetime.current++;
@@ -204,9 +235,24 @@ export function TogetherLobbyContainer({
       // Adapter composition owns session lifetime; navigation only ends UI callbacks.
     };
   }, [accountId, lobby]);
+  // Presets come from Together settings for this account; the sheet changes them per session only.
+  useEffect(() => {
+    if (defaults.userId !== accountId) {
+      void defaults.rehydrate(accountId);
+      return;
+    }
+    setConnection(defaults.connection);
+    setFriendsSelected(defaults.audience === "friends");
+    setAudience(
+      defaults.audience === "friends" ? "invite-only" : defaults.audience,
+    );
+    // Rehydrate is the store's own one-shot per account.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [defaults.userId, defaults.connection, defaults.audience, accountId]);
   useEffect(() => {
     const listener = AppState.addEventListener("change", (state) => {
       if (state === "background") {
+        setStartOpen(false);
         hostGeneration.current++;
         setStartingWorkout(false);
         consumedHostIntent.current = true;
@@ -498,7 +544,19 @@ export function TogetherLobbyContainer({
     !settingsOpen &&
     !startingWorkout &&
     !startFailed;
-  const row =
+  const live = liveStatus(snapshot.members.length, workoutStatus?.sharing);
+  const requests =
+    snapshot.role === "host" && snapshot.phase === "hosting"
+      ? snapshot.pending.map((request) => (
+          <TogetherJoinRequestBar
+            key={request.peerId}
+            name={sharedSnapshot?.profiles[request.userId] ?? "Someone"}
+            onAdmit={() => invoke(() => lobby.approve(request.peerId))}
+            onDeny={() => invoke(() => lobby.decline(request.peerId))}
+          />
+        ))
+      : null;
+  const strip =
     workoutStatus && snapshot.members.length ? (
       <TogetherWorkoutRow
         members={snapshot.members.map((m, i) => ({
@@ -509,12 +567,23 @@ export function TogetherLobbyContainer({
               : (sharedSnapshot?.profiles[m.userId] ?? `Athlete ${i + 1}`),
         }))}
         selectedId={viewing ?? accountId}
-        status={togetherWorkoutCopy(workoutStatus.sharing)}
+        accountId={accountId}
+        status={live.status}
+        tone={live.tone}
         onSelect={(id) => setViewing(id === accountId ? null : id)}
+        onInvite={
+          snapshot.role === "host" && snapshot.invitation
+            ? () => {
+                setSettingsOpen(false);
+                setVisible(true);
+              }
+            : undefined
+        }
         onSettings={() => {
           setSettingsOpen(true);
           setVisible(true);
         }}
+        endLabel={snapshot.role === "host" ? "End" : "Leave"}
         onEnd={() => {
           setSettingsOpen(true);
           setScreen("start");
@@ -523,11 +592,8 @@ export function TogetherLobbyContainer({
       />
     ) : snapshot.phase === "idle" && !workoutStatus ? (
       <TogetherStartRow
-        detail="your sets stay yours"
-        onStart={() => {
-          setScreen("start");
-          setVisible(true);
-        }}
+        detail={startRowDetail(getWorkout?.())}
+        onStart={() => setStartOpen(true)}
       />
     ) : (
       <View
@@ -554,13 +620,89 @@ export function TogetherLobbyContainer({
             setVisible(true);
           }}
         >
-          {" "}
-          {snapshot.phase === "idle" && !workoutStatus ? "Start" : "Open"}{" "}
+          Open
         </Btn>
       </View>
     );
+  const row = requests?.length ? (
+    <>
+      {strip}
+      {requests}
+    </>
+  ) : (
+    strip
+  );
+  const startFromSheet = () => {
+    const selectedAudience: TogetherLobbyAudience = friendsSelected
+      ? "friends"
+      : audience;
+    if (connection === "local" || selectedAudience === "open") {
+      const scope = hostGeneration.current + 1;
+      void startLocalWorkout(selectedAudience).then(() => {
+        if (scope !== hostGeneration.current) return;
+        if (lobby.getSnapshot().phase === "hosting") {
+          setStartOpen(false);
+          setSettingsOpen(false);
+          setVisible(true);
+        }
+      });
+      return;
+    }
+    setStartOpen(false);
+    invoke(async () => {
+      const scope = generation.current;
+      if (!cloud || !getWorkout || getWorkout()?.together)
+        throw new Error("workout-changed");
+      await lobby.cancel();
+      if (scope !== generation.current) return;
+      setHostOnline(friendsSelected ? "friends" : "private");
+      setRemote(true);
+    });
+  };
+  const hostFailure =
+    startOpen && snapshot.phase === "unavailable" ? snapshot.error : undefined;
+  const wifiOff = !!hostFailure && RADIO_OFF.test(hostFailure);
   return (
     <>
+      <TogetherStartSheet
+        visible={startOpen && snapshot.phase !== "hosting"}
+        onClose={() => {
+          setStartOpen(false);
+          if (snapshot.phase === "unavailable")
+            void lobby.cancel().catch(() => {});
+        }}
+        connection={connection}
+        onConnectionChange={(value) => {
+          setConnection(value);
+          if (value === "online" && !friendsSelected && audience === "open") {
+            setFriendsSelected(true);
+          }
+        }}
+        onlineAvailable={!!cloud && !!getWorkout}
+        audience={friendsSelected ? "friends" : audience}
+        onAudienceChange={(value) => {
+          if (connection === "online" && value === "open") return;
+          setFriendsSelected(value === "friends");
+          if (value !== "friends") setAudience(value);
+        }}
+        wifiOff={wifiOff}
+        onOpenSettings={() =>
+          void Linking.openSettings().catch(() => undefined)
+        }
+        onRetry={() => {
+          void lobby.cancel().catch(() => {});
+          setNotice("");
+        }}
+        busy={startingWorkout}
+        notice={
+          hostFailure && !wifiOff
+            ? togetherErrorCopy(hostFailure, snapshot.transport)
+            : startOpen
+              ? notice
+              : undefined
+        }
+        onStart={startFromSheet}
+      />
       {viewing && sharedSnapshot && lobby.shared ? (
         <TogetherPartnerPresenter
           togetherRow={row}
@@ -600,27 +742,21 @@ export function TogetherLobbyContainer({
           startingSession
             ? "Starting Together"
             : showInvitation
-              ? "Session is live"
+              ? undefined
               : settingsOpen && snapshot.phase === "hosting"
                 ? "Together settings"
                 : snapshot.phase === "selected"
                   ? "Join this workout"
                   : screen === "join"
                     ? "Join a session"
-                    : snapshot.phase === "idle" && !workoutStatus
-                      ? "Who can join?"
-                      : "Train together"
+                    : "Train together"
         }
-        eyebrow="TRAIN TOGETHER"
-        height="tall"
+        eyebrow={showInvitation ? undefined : "TRAIN TOGETHER"}
+        height={showInvitation ? "default" : "tall"}
         footer={
           startingSession ? (
             <Btn full variant="outline" onPress={close}>
               Cancel · keep my workout
-            </Btn>
-          ) : showInvitation ? (
-            <Btn full onPress={dismiss}>
-              Back to my workout
             </Btn>
           ) : undefined
         }
@@ -630,31 +766,19 @@ export function TogetherLobbyContainer({
         ) : showInvitation ? (
           <TogetherInvitePresenter
             qr={
-              <View backgroundColor="white">
-                <TogetherInvitationQr
-                  value={togetherInvitationLink({
-                    connection: "local",
-                    invitation: snapshot.invitation!,
-                    transport: snapshot.transport ?? "lan",
-                  })}
-                />
-              </View>
+              <TogetherInvitationQr
+                value={togetherInvitationLink({
+                  connection: "local",
+                  invitation: snapshot.invitation!,
+                  transport: snapshot.transport ?? "lan",
+                })}
+              />
             }
+            connection="local"
+            audience={snapshot.audience}
             notice={notice || snapshot.error}
             pendingCount={snapshot.pending.length}
-            friendsOnly={snapshot.audience === "friends"}
-            personal={!workoutStatus}
-            onCopy={() =>
-              invoke(async () => {
-                await Clipboard.setStringAsync(
-                  togetherInvitationLink({
-                    connection: "local",
-                    invitation: snapshot.invitation!,
-                    transport: snapshot.transport ?? "lan",
-                  }),
-                );
-              })
-            }
+            onClose={dismiss}
             onShare={() =>
               invoke(async () => {
                 const url = togetherInvitationLink({
@@ -667,7 +791,6 @@ export function TogetherLobbyContainer({
                 );
               })
             }
-            onSettings={() => setSettingsOpen(true)}
           />
         ) : (
           <>
@@ -822,61 +945,6 @@ export function TogetherLobbyContainer({
                 ...sharedSnapshot?.profiles,
                 [accountId]: displayName ?? "You",
               }}
-              connectionOptions={
-                snapshot.phase === "idle" &&
-                !workoutStatus &&
-                lobby.selectTransport && (
-                  <View gap={8}>
-                    <Text color="$text2" fontFamily="$body">
-                      Connection
-                    </Text>
-                    <Btn
-                      full
-                      variant={connection === "local" ? "soft" : "outline"}
-                      onPress={() => setConnection("local")}
-                    >
-                      {NEARBY_CONNECTION_LABEL}
-                    </Btn>
-                    {(friendsSelected || audience !== "open") &&
-                      cloud &&
-                      getWorkout && (
-                        <Btn
-                          full
-                          variant={connection === "online" ? "soft" : "outline"}
-                          onPress={() => setConnection("online")}
-                        >
-                          {ONLINE_CONNECTION_LABEL}
-                        </Btn>
-                      )}
-                    {screen === "join" && cloud && getWorkout && (
-                      <Btn
-                        full
-                        variant="outline"
-                        onPress={() =>
-                          invoke(async () => {
-                            const scope = generation.current;
-                            await lobby.cancel();
-                            if (scope !== generation.current) return;
-                            setHostOnline(null);
-                            setRemote(true);
-                          })
-                        }
-                      >
-                        Browse online sessions
-                      </Btn>
-                    )}
-                    <Text color="$text2" fontSize={12}>
-                      {connection === "online"
-                        ? friendsSelected
-                          ? "Training partners can find this session online, or join through your invitation."
-                          : "Partners join online through your invitation link."
-                        : friendsSelected
-                          ? "Only verified training partners can join. Share the code or QR; internet is not required with valid offline access."
-                          : "Only phones nearby can join. Internet is not required once every athlete has valid offline access."}
-                    </Text>
-                  </View>
-                )
-              }
               snapshot={snapshot}
               screen={screen}
               code={code}

@@ -9,6 +9,7 @@ import type {
 import { DatabaseSync } from "node:sqlite";
 import { randomBytes, randomUUID } from "node:crypto";
 import {
+  BROWSE_DEADLINE_MS,
   SEARCH_DEADLINE_MS,
   TogetherLobbyController,
   type TogetherLobbyControllerOptions,
@@ -1414,6 +1415,54 @@ describe("reviewed lobby coordinator, real cryptography and SQLite, simulated na
     await denied.controller.browse();
     await probe(host, denied, "denied");
     expect(denied.controller.getSnapshot().discovered).toEqual([]);
+  });
+  it("stops the radio 30 s after a search starts but keeps what it found selectable (PER-60)", async () => {
+    const host = setup(),
+      guest = setup(2);
+    await host.controller.host("Open workout", "open");
+    await guest.controller.browse();
+    expect(guest.controller.getSnapshot()).toMatchObject({
+      phase: "browsing",
+      searching: true,
+    });
+    const sessionId = await probe(host, guest);
+    expect(guest.native.stop).not.toHaveBeenCalled();
+    jest.advanceTimersByTime(BROWSE_DEADLINE_MS);
+    await settle();
+    expect(guest.native.stop).toHaveBeenCalledTimes(1);
+    expect(guest.controller.getSnapshot()).toMatchObject({
+      phase: "browsing",
+      searching: false,
+      discovered: [expect.objectContaining({ sessionId })],
+    });
+    // A late discovery after the stop is not probed.
+    guest.native.emit({
+      type: "discovered",
+      endpointId: "late",
+      lobbyId: id(101),
+    });
+    await settle();
+    expect(guest.native.connect).toHaveBeenCalledTimes(1);
+    await guest.controller.selectDiscovered(sessionId);
+    expect(guest.controller.getSnapshot().phase).toBe("selected");
+    // A fresh search starts the radio again with an empty list.
+    await guest.controller.browse();
+    expect(guest.controller.getSnapshot()).toMatchObject({
+      phase: "browsing",
+      searching: true,
+      discovered: [],
+    });
+  });
+  it("does not fire the browse deadline after the search was cancelled", async () => {
+    const guest = setup(2);
+    await guest.controller.browse();
+    await guest.controller.cancel();
+    const stops = guest.native.stop.mock.calls.length;
+    jest.advanceTimersByTime(BROWSE_DEADLINE_MS);
+    await settle();
+    expect(guest.native.stop).toHaveBeenCalledTimes(stops);
+    expect(guest.controller.getSnapshot()).toMatchObject({ phase: "idle" });
+    expect(guest.controller.getSnapshot().searching).toBeUndefined();
   });
   it("ends a timed-out browse generation before a late connection can be attributed to another endpoint", async () => {
     const guest = setup(2);

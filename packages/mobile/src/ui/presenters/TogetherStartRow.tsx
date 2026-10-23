@@ -1,6 +1,6 @@
 import { Text, View } from "@tamagui/core";
 import { IconUsers } from "@/ui/components/icons";
-import { Btn } from "@/ui/components/foundation/Btn";
+import { TogetherPill } from "./TogetherPill";
 import { color } from "@/ui/theme/tokens";
 
 /** Reviewed entry.jsx: the same slim activation strip before and during a workout. */
@@ -12,48 +12,31 @@ export function TogetherStartRow({
   onStart(): void;
 }) {
   return (
-    <View
-      flexDirection="row"
-      alignItems="center"
-      gap={10}
-      paddingVertical={8}
-      paddingHorizontal={14}
-      borderTopWidth={1}
-      borderColor="$border"
-      backgroundColor="$surface"
-      testID="together-workout-row"
-    >
+    <View paddingHorizontal={16} paddingTop={8} testID="together-workout-row">
       <View
-        width={26}
-        height={26}
-        borderRadius={99}
-        backgroundColor="$primaryDim"
+        flexDirection="row"
         alignItems="center"
-        justifyContent="center"
+        gap={8}
+        minHeight={44}
+        paddingVertical={8}
+        paddingHorizontal={10}
+        borderRadius={14}
+        borderWidth={1}
+        borderColor="$border"
+        backgroundColor="$surface"
       >
-        <IconUsers size={14} color={color.$primary} />
-      </View>
-      <Text
-        flex={1}
-        fontFamily="$display"
-        fontSize={12.5}
-        fontWeight="600"
-        color="$text"
-      >
-        Train together
-        <Text
-          fontFamily="$body"
-          fontSize={11.5}
-          fontWeight="400"
-          color="$text3"
-        >
-          {" "}
-          · {detail}
+        <IconUsers size={16} color={color.$text2} />
+        <Text flex={1} fontFamily="$body" fontSize={12} color="$text3">
+          <Text fontFamily="$display" fontWeight="600" color="$text">
+            Train together
+          </Text>
+          {" · "}
+          {detail}
         </Text>
-      </Text>
-      <Btn size="sm" variant="soft" onPress={onStart} testID="together-start">
-        Start
-      </Btn>
+        <TogetherPill tone="primary" onPress={onStart} testID="together-start">
+          Start
+        </TogetherPill>
+      </View>
     </View>
   );
 }

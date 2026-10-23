@@ -1,5 +1,83 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-23 — Together UX pass PR 1: join, hub and create (PER-60, branch `claude/per-60-together-join-hub-create`)
+
+First of four UI PRs implementing the signed-off journey design
+([canvas](https://claude.ai/artifact/VBc4WTCmYuT5uJ1V6GyqSM) rows 1, 1b, 1c;
+decisions on [PER-60](https://linear.app/evans-software-solutions/issue/PER-60)).
+Mobile only, no backend change.
+
+**Hub.** `TogetherHubPresenter` is Start a session / Join a session over the
+reviewed partner list; the passive nearby list, "No sessions nearby yet" copy
+and "Choose workout" are gone. `TogetherHubContainer` no longer reads
+`discovered`; it loads partners' Online sessions (`cloud.friends()`, bounded
+page walk in `loadPartnerSessions`) on focus and pull-to-refresh and passes
+them to `TogetherPartnersPresenter`, where a hosting partner's row reads
+"Training now · n of 4 · Online" with Join (Full at 4). Partner rows show
+"Partners since <month>" from the accepted relationship's `updatedAt`.
+
+**Join.** `TogetherJoinContainer` rebuilt on pure presenters:
+`TogetherJoinPresenter` (code + scan card; Sessions you can join with
+searching / found / nothing found / can't search / unavailable), `TogetherJoinConsentPresenter`
+("Join this workout", cold-start note, Join and start / Ask <host> and start)
+and `TogetherJoiningPresenter` (Connecting / Waiting for <host> to let you in).
+Opening the screen starts `lobby.browse()`; `lobbyController.browse()` now
+stops the radio after `BROWSE_DEADLINE_MS` (30 s) and keeps the results
+listed (`snapshot.searching` false, phase stays `browsing`, selection still
+allowed; a stale listing is refused at `selectDiscovered` as before).
+Pull-to-refresh searches again; leaving the screen cancels a search. No mode
+choice: the link, QR or row carries Nearby or Online. Joining adopts the
+plan automatically (append over logged sets, replace an empty draft) and
+opens the workout. `together/join` links are carried through sign-in by
+`usePendingTogetherJoin` (AuthGate stash + redirect, mirroring coach invites)
+and cleared by the join screen.
+
+**Create.** `useTogetherSettings` (per-account AsyncStorage defaults:
+Nearby + Training partners; the settings screen and hub cog land in PR 4)
+presets `TogetherStartSheet` (row 1b: How you connect radios, Who can join
+segment with Open nearby disabled under Online, Wi-Fi-off state with Open
+Settings / Try again) opened by Start on the solo strip inside
+`TogetherLobbyContainer`; a local start that reaches `hosting` opens the
+invite sheet once (`TogetherInvitePresenter`: QR, mode line, Share code);
+Online hands over to `TogetherCloudContainer` as before. The strip
+(`TogetherWorkoutRow`) is avatars as tabs (primary / info / success / gold
+rings) · status ("Waiting for people · 1 of 4", "In sync · N training") ·
+Invite (host) · End or Leave · settings cog; a non-partner request renders
+`TogetherJoinRequestBar` (Let in / No) under it, for Nearby and Online.
+`TogetherStartContainer` is Pick a workout (today's programme first, from
+`useGetHome`) → Start a shared session (`TogetherStartSessionPresenter`,
+mode and audience asked once; an open solo workout skips the picker and
+keeps its sets). The workout-detail Start row pushes that screen with the
+workout selected. `TogetherLobbyPresenter`'s in-session join branch is no
+longer reachable; it stays for the hosting/sharing states until PRs 3–4.
+
+**Verified.** Mobile Jest 638 suites / 8,545 tests, coverage
+96.13 / 92.09 / 96.03 / 97.54 (gate 90); typecheck clean; `expo lint` 0
+errors; prettier clean. New presenter tests cover every join/sheet state
+(hidden and empty included); container tests cover search-on-open, the 30 s
+stop keeping results, refresh, link/row selection, consent → connecting →
+admitted → plan adopted, cancel, cold-start stash, Wi-Fi failure, hub Online
+sessions, start presets and the detail route; `lobbyController` has deadline
+cases; AuthGate has the together/join stash cases. Screenshots of every
+changed screen (real presenters through React Native Web + Tamagui, dark
+theme, Geist, 402×874) are in
+`specs/milestones/TRAIN-TOGETHER/evidence/ui-2026-10-23-per60-pr1/` for
+comparison with the canvas phones; the harness lives in the session
+scratchpad, not the repo.
+
+**Not verified / flagged on PER-60.** Nothing on a device or simulator
+(the unsigned simulator build cannot open the Together gate, see memory).
+The invite screenshot shows a blank QR (react-native-qrcode-svg does not
+render in jsdom). Canvas differences carried as assumptions: no short
+session code exists (the field takes a link or code; the invite sheet has
+no 7-character code); nearby discovery carries the host's user id only, so
+non-partners show the workout name; the consent card omits "The plan" rows
+(the plan arrives after admission); "Can't search / host nearby" come from
+the native discovery/advertising failure codes, not a radio-state API;
+partners' Online rows have no workout name. `TogetherLobbyContainer`
+whole-file coverage is 80 % statements after the rework (the retained
+hosting/sharing paths); the aggregate gate holds.
+
 ### 2026-10-22 — Set weight/distance bounded at the validator after a prod numeric overflow (Sentry PERSISTENCE-BACKEND-8, branch `claude/set-value-bounds-backend`)
 
 Prod `POST /sessions/record` 500'd three times 20:40–20:50 UTC with Postgres

@@ -1,9 +1,12 @@
 import React from "react";
-import { AppState } from "react-native";
+import { AppState, Linking } from "react-native";
 import { act, fireEvent, waitFor } from "@testing-library/react-native";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
-import { TogetherJoinContainer } from "../TogetherJoinContainer";
-import { TogetherLobbyPresenter } from "../../presenters/TogetherLobbyPresenter";
+import {
+  TogetherJoinContainer,
+  togetherSearchFailure,
+} from "../TogetherJoinContainer";
+import { usePendingTogetherJoin } from "@/state/pending-together-join";
 let mockHasLobby = true,
   mockHasCloud = true;
 let mockUser = "u",
@@ -17,45 +20,66 @@ const mockRouter = { back: jest.fn(), replace: jest.fn() },
 const mockStorage = {
   getActiveSession: jest.fn(() => mockActive),
   cacheActiveSession: jest.fn(),
-  getCachedExercises: () => [],
+  getCachedExercises: () => [
+    { id: "33333333-3333-4333-8333-333333333333", name: "Squat" },
+  ],
+};
+const listeners = new Set<() => void>();
+const publish = (change: any) =>
+  act(() => {
+    mockState = { ...mockState, ...change };
+    listeners.forEach((l) => l());
+  });
+const cloudListeners = new Set<() => void>();
+const publishCloud = (change: any) =>
+  act(() => {
+    mockCloudState = { ...mockCloudState, ...change };
+    cloudListeners.forEach((l) => l());
+  });
+const plan = {
+  name: "Push",
+  exercises: [
+    {
+      planExerciseId: "22222222-2222-4222-8222-222222222222",
+      exerciseId: "33333333-3333-4333-8333-333333333333",
+      order: 0,
+      targetSets: 1,
+    },
+  ],
 };
 const mockLobby: any = {
   getSnapshot: () => mockState,
-  subscribe: () => () => {},
+  subscribe: (l: () => void) => {
+    listeners.add(l);
+    return () => listeners.delete(l);
+  },
   cancel: jest.fn(async () => {}),
   selectTransport: jest.fn(),
   selectInvite: jest.fn(async () => {}),
   join: jest.fn(async () => {}),
   browse: jest.fn(async () => {}),
   selectDiscovered: jest.fn(async () => {}),
-  reconnect: jest.fn(async () => {}),
   workout: { promote: jest.fn(async () => {}) },
-  shared: {
-    getSnapshot: () => ({
-      plan: {
-        name: "Push",
-        exercises: [
-          {
-            planExerciseId: "22222222-2222-4222-8222-222222222222",
-            exerciseId: "33333333-3333-4333-8333-333333333333",
-            order: 0,
-            targetSets: 1,
-          },
-        ],
-      },
-    }),
-  },
+  shared: { getSnapshot: () => ({ plan }) },
 };
-const mockCloudDraft = jest.fn();
+const mockFriends = jest.fn();
+const mockSocialFriends = jest.fn();
 const mockCloud: any = {
   getSnapshot: () => mockCloudState,
-  subscribe: () => () => {},
+  subscribe: (l: () => void) => {
+    cloudListeners.add(l);
+    return () => cloudListeners.delete(l);
+  },
   join: jest.fn(async () => {}),
-  readDraft: () => mockCloudDraft(),
+  cancelJoin: jest.fn(async () => {}),
+  cancel: jest.fn(),
+  readDraft: jest.fn(() => ({ id: "own-draft", userId: "u" })),
+  friends: (cursor?: string) => mockFriends(cursor),
 };
 jest.mock("@/ui/hooks/useAdapters", () => ({
   useAdapters: () => ({
     storage: mockStorage,
+    api: { togetherSocial: { friends: (c?: string) => mockSocialFriends(c) } },
     togetherLobby: mockHasLobby ? mockLobby : undefined,
     togetherCloud: mockHasCloud ? mockCloud : undefined,
   }),
@@ -97,17 +121,41 @@ const mockStart = jest.fn();
 jest.mock("@/application/commands/session", () => ({
   startSessionCommand: (...args: any[]) => mockStart(...args),
 }));
+const page = (data: any[]) => ({ ok: true, value: { data, nextCursor: null } });
+const partner = (userId: string, displayName: string) => ({
+  id: `r-${userId}`,
+  userId: "u",
+  friendId: userId,
+  initiatedBy: userId,
+  status: "accepted",
+  createdAt: "2026-07-01",
+  updatedAt: "2026-07-01",
+  person: { userId, displayName, avatarUrl: null },
+});
+const discovered = (
+  sessionId: string,
+  hostUserId: string,
+  memberCount = 1,
+) => ({
+  sessionId,
+  hostUserId,
+  workoutName: "Lower Body B",
+  memberCount,
+});
 beforeEach(() => {
   jest.clearAllMocks();
+  usePendingTogetherJoin.getState().reset();
   mockHasLobby = true;
   mockHasCloud = true;
   jest
     .spyOn(AppState, "addEventListener")
     .mockImplementation(() => ({ remove: jest.fn() }));
+  jest.spyOn(Linking, "openSettings").mockResolvedValue(undefined);
   mockUser = "u";
   mockParams = {};
   mockActive = null;
   mockAllowed = true;
+  mockId = 0;
   mockState = { phase: "idle", members: [], pending: [] };
   mockCloudState = {
     phase: "idle",
@@ -115,321 +163,337 @@ beforeEach(() => {
     previous: {},
     pendingCount: 0,
   };
-  mockCloudDraft.mockReturnValue(null);
-  mockRequest.mockResolvedValue({ granted: true });
+  mockLobby.browse.mockImplementation(async () => {
+    publish({ phase: "browsing", searching: true, discovered: [] });
+  });
+  mockLobby.selectDiscovered.mockImplementation(async (id: string) => {
+    const row = (mockState.discovered ?? []).find(
+      (d: any) => d.sessionId === id,
+    );
+    publish({
+      phase: "selected",
+      selection: { hostUserId: row.hostUserId, workoutName: row.workoutName },
+    });
+  });
+  mockLobby.selectInvite.mockImplementation(async () => {
+    publish({
+      phase: "selected",
+      selection: { hostUserId: "brad", workoutName: "Lower Body B" },
+    });
+  });
+  mockLobby.cancel.mockImplementation(async () => {
+    publish({
+      phase: "idle",
+      discovered: undefined,
+      selection: undefined,
+      searching: undefined,
+    });
+  });
+  mockSocialFriends.mockResolvedValue(
+    page([partner("brad", "Brad Evans"), partner("tom", "Tom Vance")]),
+  );
+  mockFriends.mockResolvedValue(page([]));
   mockStart.mockReturnValue({
     ok: true,
     value: {
       id: "new-own",
       userId: "u",
       status: "in_progress",
+      startedAt: "2026-10-23T09:00:00Z",
       exercises: [],
-      name: "Workout",
     },
   });
 });
-const lobbyProps = (r: any) => r.UNSAFE_getByType(TogetherLobbyPresenter).props;
-it("opens a signed OS invitation for review without joining or creating a workout", async () => {
-  mockParams = { connection: "local", invitation: "signed", transport: "lan" };
+
+it("searches as soon as it opens, lists verified partners, non-partners and full sessions, and stops at 30 s keeping the results", async () => {
   const r = renderWithTheme(<TogetherJoinContainer />);
-  await waitFor(() =>
-    expect(mockLobby.selectInvite).toHaveBeenCalledWith("signed"),
-  );
-  expect(mockLobby.join).not.toHaveBeenCalled();
-  expect(mockStart).not.toHaveBeenCalled();
-  act(() => lobbyProps(r).onJoin());
-  await waitFor(() => expect(mockLobby.join).toHaveBeenCalledTimes(1));
-  r.unmount();
-  expect(mockLobby.cancel).not.toHaveBeenCalled();
-});
-it("preserves an existing live workout on an incoming invitation", async () => {
-  mockActive = { id: "own", together: { transport: "lan" } };
-  mockParams = { connection: "local", invitation: "signed" };
-  const r = renderWithTheme(<TogetherJoinContainer />);
-  await act(async () => {});
-  expect(mockLobby.selectInvite).not.toHaveBeenCalled();
-  expect(mockStorage.cacheActiveSession).not.toHaveBeenCalled();
-  fireEvent.press(r.getByText("Back to my workout"));
-  expect(mockRouter.replace).toHaveBeenCalledWith("/(app)/session");
-});
-it("shows a bounded real camera and ignores duplicate QR callbacks", async () => {
-  const r = renderWithTheme(<TogetherJoinContainer />);
-  act(() => lobbyProps(r).onScan());
-  await waitFor(() =>
-    expect(r.getByTestId("together-join-camera")).toBeTruthy(),
-  );
-  const scan = r.getByTestId("together-join-camera").props.onBarcodeScanned;
-  act(() => {
-    scan({
-      data: "persistencemobile://together/join?connection=local&invitation=signed",
-    });
-    scan({ data: "ignored" });
+  await waitFor(() => expect(mockLobby.browse).toHaveBeenCalledTimes(1));
+  expect(r.getByText(/Searching nearby/)).toBeTruthy();
+  publish({
+    discovered: [
+      discovered("s-brad", "brad", 3),
+      discovered("s-kai", "kai"),
+      discovered("s-lena", "lena", 4),
+    ],
   });
-  await waitFor(() => expect(mockLobby.selectInvite).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(r.getByText("Brad Evans")).toBeTruthy());
+  expect(r.getByText("Lower Body B · 3 of 4")).toBeTruthy();
+  expect(r.getByText("Verified partner · Nearby")).toBeTruthy();
+  expect(r.getByLabelText("Ask to join Lower Body B")).toBeTruthy();
+  expect(r.getByText("Full · 4 of 4")).toBeTruthy();
+  // The controller stops the radio; the list stays, with pull-to-refresh offered.
+  publish({ searching: false });
+  expect(r.getByText("Pull down to refresh")).toBeTruthy();
+  expect(r.queryByText(/Searching nearby/)).toBeNull();
+  // Pull-to-refresh searches again.
+  await act(async () =>
+    r
+      .getByTestId("together-join-scroll")
+      .props.refreshControl.props.onRefresh(),
+  );
+  expect(mockLobby.browse).toHaveBeenCalledTimes(2);
+  // Leaving the screen cancels a search; a selection is kept.
+  r.unmount();
+  expect(mockLobby.cancel).toHaveBeenCalled();
+});
+it("says nothing found after a search with no results and can't search when the radio is off", async () => {
+  const r = renderWithTheme(<TogetherJoinContainer />);
+  await waitFor(() => expect(mockLobby.browse).toHaveBeenCalled());
+  publish({ searching: false });
+  expect(r.getByText("No sessions nearby")).toBeTruthy();
+  fireEvent.press(r.getByText("Search again"));
+  expect(mockLobby.browse).toHaveBeenCalledTimes(2);
+  publish({
+    phase: "unavailable",
+    error: "nearby_unavailable",
+    searching: undefined,
+  });
+  expect(r.getByText("Can’t search nearby")).toBeTruthy();
+  expect(r.getByText(/Wi-Fi is off/)).toBeTruthy();
+  fireEvent.press(r.getByText("Open Settings"));
+  expect(Linking.openSettings).toHaveBeenCalledTimes(1);
+  expect(togetherSearchFailure("expired")).toMatch(
+    /offline access has expired/,
+  );
+  expect(togetherSearchFailure("discovery_failed")).toMatch(/Wi-Fi is off/);
+});
+it("joins a verified partner's nearby session: consent → connecting → admitted → plan adopted → workout", async () => {
+  const r = renderWithTheme(<TogetherJoinContainer />);
+  await waitFor(() => expect(mockLobby.browse).toHaveBeenCalled());
+  publish({ discovered: [discovered("s-brad", "brad", 3)] });
+  await waitFor(() => expect(r.getByText("Brad Evans")).toBeTruthy());
+  fireEvent.press(r.getByLabelText("Join Brad Evans"));
+  await waitFor(() => expect(r.getByText("Join this workout")).toBeTruthy());
+  expect(mockLobby.selectDiscovered).toHaveBeenCalledWith("s-brad");
+  expect(r.getByText("Brad’s session")).toBeTruthy();
+  expect(r.getByText("3 of 4")).toBeTruthy();
   expect(mockLobby.join).not.toHaveBeenCalled();
-  expect(r.queryByTestId("together-join-camera")).toBeNull();
+  fireEvent.press(r.getByText("Join and start"));
+  await waitFor(() => expect(mockLobby.join).toHaveBeenCalledTimes(1));
+  publish({ phase: "searching" });
+  expect(r.getByText("Connecting to Brad’s phone")).toBeTruthy();
+  publish({ phase: "joined" });
+  await waitFor(() =>
+    expect(mockRouter.replace).toHaveBeenCalledWith("/(app)/session"),
+  );
+  expect(mockStart).toHaveBeenCalled();
+  expect(mockLobby.workout.promote).toHaveBeenCalledWith(
+    expect.objectContaining({
+      name: "Push",
+      exercises: [expect.objectContaining({ exerciseName: "Squat" })],
+    }),
+  );
+  expect(mockStorage.cacheActiveSession).toHaveBeenCalled();
+  expect(mockReread).toHaveBeenCalled();
 });
-it.each(["background", "account", "unmount"])(
-  "ignores permission approval after %s",
-  async (reason) => {
-    let resolve!: (v: any) => void;
-    mockRequest.mockReturnValue(new Promise((r) => (resolve = r)));
-    const listener = jest.spyOn(AppState, "addEventListener");
-    const r = renderWithTheme(<TogetherJoinContainer />);
-    act(() => lobbyProps(r).onScan());
-    if (reason === "account") {
-      mockUser = "other";
-      r.rerender(<TogetherJoinContainer />);
-    } else if (reason === "unmount") r.unmount();
-    else act(() => listener.mock.calls.at(-1)![1]("background"));
-    await act(async () => resolve({ granted: true }));
-    if (reason !== "unmount")
-      expect(r.queryByTestId("together-join-camera")).toBeNull();
-    r.unmount();
-    listener.mockRestore();
-  },
-);
-it("keeps permission inactivity nonterminal and gives denial a paste fallback", async () => {
-  mockRequest.mockResolvedValue({ granted: false });
+it("a non-partner asks to join and waits for the host; cancel returns to the list", async () => {
   const r = renderWithTheme(<TogetherJoinContainer />);
-  act(() => lobbyProps(r).onScan());
-  await waitFor(() => expect(lobbyProps(r).notice).toContain("paste"));
-  expect(r.queryByTestId("together-join-camera")).toBeNull();
+  await waitFor(() => expect(mockLobby.browse).toHaveBeenCalled());
+  publish({ discovered: [discovered("s-kai", "kai")] });
+  await waitFor(() =>
+    expect(r.getByLabelText("Ask to join Lower Body B")).toBeTruthy(),
+  );
+  fireEvent.press(r.getByLabelText("Ask to join Lower Body B"));
+  await waitFor(() =>
+    expect(r.getByText("Ask the host and start")).toBeTruthy(),
+  );
+  fireEvent.press(r.getByText("Ask the host and start"));
+  await waitFor(() => expect(mockLobby.join).toHaveBeenCalled());
+  publish({ phase: "pending-approval" });
+  expect(r.getByText("Waiting for the host to let you in")).toBeTruthy();
+  fireEvent.press(r.getByText("Cancel"));
+  await waitFor(() => expect(mockLobby.cancel).toHaveBeenCalled());
+  await waitFor(() => expect(r.getByText("Join a session")).toBeTruthy());
+  expect(mockLobby.browse).toHaveBeenCalledTimes(2);
 });
-it("requires deliberate online Join after link selection", async () => {
-  mockParams = { connection: "online", invitation: "online-token" };
+it("a refused or full join comes back to the list with the reason", async () => {
   const r = renderWithTheme(<TogetherJoinContainer />);
-  await act(async () => {});
-  expect(mockCloud.join).not.toHaveBeenCalled();
-  fireEvent.press(r.getByText("Join"));
+  await waitFor(() => expect(mockLobby.browse).toHaveBeenCalled());
+  publish({ discovered: [discovered("s-brad", "brad")] });
+  await waitFor(() => expect(r.getByText("Brad Evans")).toBeTruthy());
+  fireEvent.press(r.getByLabelText("Join Brad Evans"));
+  await waitFor(() => expect(r.getByText("Join and start")).toBeTruthy());
+  fireEvent.press(r.getByText("Join and start"));
+  await waitFor(() => expect(mockLobby.join).toHaveBeenCalled());
+  publish({ phase: "full", error: "full" });
+  await waitFor(() => expect(r.getByText("Join a session")).toBeTruthy());
+  expect(r.getByText(/This lobby is full|Could not connect/)).toBeTruthy();
+});
+it("a cold-start link lands on Join this workout, clears the stash, and never joins by itself", async () => {
+  usePendingTogetherJoin
+    .getState()
+    .setPending({ connection: "local", invitation: "signed" });
+  mockParams = {
+    connection: "local",
+    invitation: "signed",
+    transport: "nearby",
+  };
+  const r = renderWithTheme(<TogetherJoinContainer />);
+  await waitFor(() => expect(r.getByText("Join this workout")).toBeTruthy());
+  expect(usePendingTogetherJoin.getState().pending).toBeNull();
+  expect(mockLobby.selectTransport).toHaveBeenCalledWith("nearby");
+  expect(mockLobby.selectInvite).toHaveBeenCalledWith("signed");
+  expect(mockLobby.browse).not.toHaveBeenCalled();
+  expect(mockLobby.join).not.toHaveBeenCalled();
+  await waitFor(() =>
+    expect(r.getByText(/Opened from Brad’s QR/)).toBeTruthy(),
+  );
+  fireEvent.press(r.getByLabelText("Back"));
+  await waitFor(() => expect(mockLobby.cancel).toHaveBeenCalled());
+  expect(mockLobby.browse).not.toHaveBeenCalled();
+});
+it("a pasted online link and a scanned QR select without a mode choice; camera denial keeps paste", async () => {
+  const r = renderWithTheme(<TogetherJoinContainer />);
+  await waitFor(() => expect(mockLobby.browse).toHaveBeenCalled());
+  expect(r.queryByText("Nearby")).toBeNull();
+  expect(r.queryByText("Online")).toBeNull();
+  mockRequest.mockResolvedValueOnce({ granted: false });
+  fireEvent.press(r.getByText("Scan a QR code"));
+  await waitFor(() =>
+    expect(r.getByText(/Camera permission is needed/)).toBeTruthy(),
+  );
+  fireEvent.changeText(
+    r.getByLabelText("Session code"),
+    "persistencemobile://together/join?connection=online&invitation=tok",
+  );
+  fireEvent.press(r.getByText("Continue"));
+  await waitFor(() => expect(r.getByText("Join this workout")).toBeTruthy());
+  expect(r.getByText("Online · internet required")).toBeTruthy();
+  expect(mockLobby.selectInvite).not.toHaveBeenCalled();
+  fireEvent.press(r.getByText("Ask the host and start"));
   await waitFor(() =>
     expect(mockCloud.join).toHaveBeenCalledWith(
-      { inviteToken: "online-token" },
+      { inviteToken: "tok" },
       undefined,
     ),
   );
+  publishCloud({ phase: "pending-approval" });
+  expect(r.getByText("Waiting for the host to let you in")).toBeTruthy();
+  publishCloud({ phase: "active", snapshot: { sessionId: "c" } });
+  await waitFor(() =>
+    expect(mockRouter.replace).toHaveBeenCalledWith("/(app)/session"),
+  );
+  expect(mockStorage.cacheActiveSession).toHaveBeenCalledWith("u", {
+    id: "own-draft",
+    userId: "u",
+  });
 });
-it("promotes a separately chosen shared workout only after admission", async () => {
-  mockState = { phase: "joined", members: [{ userId: "u" }], pending: [] };
+it("scans a QR once and selects it; a malformed scan reports without creating a workout", async () => {
+  mockRequest.mockResolvedValue({ granted: true });
   const r = renderWithTheme(<TogetherJoinContainer />);
-  fireEvent.press(r.getByText("Use shared workout"));
-  await waitFor(() =>
-    expect(mockLobby.workout.promote).toHaveBeenCalledWith(
-      expect.objectContaining({ id: "new-own", name: "Push" }),
-    ),
-  );
-  expect(mockRouter.replace).toHaveBeenCalledWith("/(app)/session");
-});
-it("rejects retained callbacks after an account changes and blocks unpaid admission", async () => {
-  const r = renderWithTheme(<TogetherJoinContainer />),
-    old = lobbyProps(r);
-  mockUser = "other";
-  r.rerender(<TogetherJoinContainer />);
-  act(() => old.onJoin());
-  expect(mockLobby.join).not.toHaveBeenCalled();
-  mockAllowed = false;
-  r.rerender(<TogetherJoinContainer />);
-  expect(r.getByText("View subscriptions")).toBeTruthy();
-});
-it("reports malformed scans without creating a workout", async () => {
-  const r = renderWithTheme(<TogetherJoinContainer />);
-  act(() => lobbyProps(r).onScan());
-  await waitFor(() =>
-    expect(r.getByTestId("together-join-camera")).toBeTruthy(),
-  );
-  act(() =>
-    r
-      .getByTestId("together-join-camera")
-      .props.onBarcodeScanned({ data: "https://bad" }),
-  );
-  await waitFor(() =>
-    expect(lobbyProps(r).notice).toContain("Could not connect"),
-  );
+  await waitFor(() => expect(mockLobby.browse).toHaveBeenCalled());
+  fireEvent.press(r.getByText("Scan a QR code"));
+  const camera = await r.findByTestId("together-join-camera");
+  act(() => {
+    camera.props.onBarcodeScanned({ data: "not a link ://" });
+    camera.props.onBarcodeScanned({ data: "duplicate" });
+  });
+  await waitFor(() => expect(r.getByText(/Could not connect/)).toBeTruthy());
   expect(mockStart).not.toHaveBeenCalled();
-});
-it("supports manual review, discovery, reconnect and deliberate lobby cancellation", async () => {
-  const r = renderWithTheme(<TogetherJoinContainer />);
-  act(() => lobbyProps(r).onCodeChange("signed"));
-  act(() => lobbyProps(r).onSelect());
-  await waitFor(() =>
-    expect(mockLobby.selectInvite).toHaveBeenCalledWith("signed"),
-  );
-  await act(async () => lobbyProps(r).onBrowse());
-  await act(async () => lobbyProps(r).onSelectDiscovered("verified"));
-  await act(async () => lobbyProps(r).onReconnect());
-  await act(async () => lobbyProps(r).onUseInvitation());
-  expect(mockLobby.browse).toHaveBeenCalled();
-  expect(mockLobby.selectDiscovered).toHaveBeenCalledWith("verified");
-  expect(mockLobby.reconnect).toHaveBeenCalled();
-  await act(async () => lobbyProps(r).onCancel());
-  expect(mockRouter.back).toHaveBeenCalled();
-});
-it("cancels an opened camera and keeps permission inactivity nonterminal", async () => {
-  const listener = jest.spyOn(AppState, "addEventListener");
-  const r = renderWithTheme(<TogetherJoinContainer />);
-  act(() => lobbyProps(r).onScan());
-  await waitFor(() =>
-    expect(r.getByTestId("together-join-camera")).toBeTruthy(),
-  );
-  act(() => listener.mock.calls.at(-1)![1]("inactive"));
-  expect(r.getByTestId("together-join-camera")).toBeTruthy();
-  fireEvent.press(r.getByText("Cancel scanning"));
-  expect(r.queryByTestId("together-join-camera")).toBeNull();
-  fireEvent.press(r.getByText("Back"));
-  expect(mockRouter.back).toHaveBeenCalled();
-  r.unmount();
-  listener.mockRestore();
-});
-it("opens the camera from the hub scan route without admitting", async () => {
-  mockParams = { scan: "true" };
-  const r = renderWithTheme(<TogetherJoinContainer />);
-  await waitFor(() =>
-    expect(r.getByTestId("together-join-camera")).toBeTruthy(),
-  );
-  expect(mockLobby.join).not.toHaveBeenCalled();
-});
-it("does not select an invitation after cancellation switches accounts", async () => {
-  mockState = { phase: "browsing", members: [], pending: [] };
-  let release!: () => void;
-  mockLobby.cancel.mockReturnValueOnce(new Promise<void>((r) => (release = r)));
-  const r = renderWithTheme(<TogetherJoinContainer />);
-  act(() => lobbyProps(r).onCodeChange("signed"));
-  act(() => lobbyProps(r).onSelect());
-  await act(async () => {});
-  mockUser = "other";
-  r.rerender(<TogetherJoinContainer />);
-  await act(async () => release());
   expect(mockLobby.selectInvite).not.toHaveBeenCalled();
 });
-it("can keep its existing workout or append an admitted shared plan with sets preserved", async () => {
-  mockState = { phase: "joined", members: [{ userId: "u" }], pending: [] };
+it("joins a partner's Online session from the hub and from the list", async () => {
+  mockFriends.mockResolvedValue(
+    page([
+      {
+        sessionId: "s-tom",
+        host: { userId: "tom", displayName: "Tom Vance", avatarUrl: null },
+        occupancy: 2,
+        expiresAt: "x",
+      },
+    ]),
+  );
+  mockParams = { session: "s-tom", connection: "online" };
+  const r = renderWithTheme(<TogetherJoinContainer />);
+  await waitFor(() => expect(r.getByText("Join this workout")).toBeTruthy());
+  expect(r.getByText("Tom’s session")).toBeTruthy();
+  expect(r.getByText("2 of 4")).toBeTruthy();
+  fireEvent.press(r.getByText("Join and start"));
+  await waitFor(() =>
+    expect(mockCloud.join).toHaveBeenCalledWith(
+      { sessionId: "s-tom" },
+      undefined,
+    ),
+  );
+  fireEvent.press(r.getByText("Cancel"));
+  await waitFor(() => expect(mockCloud.cancel).toHaveBeenCalled());
+  await waitFor(() => expect(r.getByText("Join a session")).toBeTruthy());
+  await waitFor(() =>
+    expect(r.getByText("Online · internet required")).toBeTruthy(),
+  );
+  fireEvent.press(r.getByLabelText("Join Tom Vance"));
+  await waitFor(() => expect(r.getByText("Join this workout")).toBeTruthy());
+});
+it("an unknown hub session reports instead of joining", async () => {
+  mockParams = { session: "gone", connection: "online" };
+  const r = renderWithTheme(<TogetherJoinContainer />);
+  await waitFor(() =>
+    expect(r.getByText(/no longer available to join/)).toBeTruthy(),
+  );
+  expect(mockCloud.join).not.toHaveBeenCalled();
+});
+it("preserves an existing live workout and gates unpaid access", async () => {
+  mockActive = { together: { sessionId: "s" } };
+  const r = renderWithTheme(<TogetherJoinContainer />);
+  expect(r.getByText(/You already have a live session/)).toBeTruthy();
+  expect(mockLobby.browse).not.toHaveBeenCalled();
+  fireEvent.press(r.getByText("Back to my workout"));
+  expect(mockRouter.replace).toHaveBeenCalledWith("/(app)/session");
+  mockActive = null;
+  mockAllowed = false;
+  r.rerender(<TogetherJoinContainer />);
+  expect(r.getByText(/qualifying paid subscription/)).toBeTruthy();
+  fireEvent.press(r.getByText("Back"));
+  expect(mockRouter.back).toHaveBeenCalled();
+});
+it("keeps logged sets and appends the plan when a solo workout is open", async () => {
   mockActive = {
     id: "own",
     userId: "u",
+    name: "Mine",
     status: "in_progress",
+    startedAt: "2026-10-23T09:00:00Z",
     exercises: [
-      { id: "old-exercise", sets: [{ id: "old-set" }], sortOrder: 0 },
+      { id: "slot", exerciseId: "x", sortOrder: 0, sets: [{ id: "set" }] },
     ],
   };
+  mockStorage.getActiveSession.mockReturnValue(mockActive);
   const r = renderWithTheme(<TogetherJoinContainer />);
-  fireEvent.press(r.getByText("Keep my own workout"));
-  await waitFor(() =>
-    expect(mockLobby.workout.promote).toHaveBeenCalledWith(mockActive),
-  );
-  await act(async () => {});
-  fireEvent.press(r.getByText("Add shared plan to my workout"));
-  await waitFor(() =>
-    expect(mockStorage.cacheActiveSession).toHaveBeenCalledWith(
-      "u",
-      expect.objectContaining({
-        exercises: expect.arrayContaining([mockActive.exercises[0]]),
-      }),
-    ),
-  );
+  await waitFor(() => expect(mockLobby.browse).toHaveBeenCalled());
+  publish({ discovered: [discovered("s-brad", "brad")] });
+  await waitFor(() => expect(r.getByText("Brad Evans")).toBeTruthy());
+  fireEvent.press(r.getByLabelText("Join Brad Evans"));
+  await waitFor(() => expect(r.getByText("Join and start")).toBeTruthy());
+  fireEvent.press(r.getByText("Join and start"));
+  await waitFor(() => expect(mockLobby.join).toHaveBeenCalled());
+  publish({ phase: "joined" });
+  await waitFor(() => expect(mockLobby.workout.promote).toHaveBeenCalled());
   expect(mockStart).not.toHaveBeenCalled();
-  await act(async () => {});
-  fireEvent.press(r.getByText("Leave lobby"));
-  await waitFor(() => expect(mockRouter.back).toHaveBeenCalled());
+  const promoted = mockLobby.workout.promote.mock.calls[0][0];
+  expect(promoted.name).toBe("Mine");
+  expect(promoted.exercises).toHaveLength(2);
+  expect(promoted.exercises[0].sets).toHaveLength(1);
 });
-it.each(["withClient", "retrospectiveCompletedAt"])(
-  "preserves incompatible %s drafts after admission",
-  async (field) => {
-    mockState = { phase: "joined", members: [{ userId: "u" }], pending: [] };
-    mockActive = {
-      id: "own",
-      userId: "u",
-      status: "in_progress",
-      exercises: [],
-      [field]: true,
-    };
-    const r = renderWithTheme(<TogetherJoinContainer />);
-    fireEvent.press(r.getByText("Use shared workout"));
-    await waitFor(() => expect(r.getByText(/Could not connect/)).toBeTruthy());
-    expect(mockLobby.workout.promote).not.toHaveBeenCalled();
-  },
-);
-it("creates and caches only its own cloud draft after admission and reports pending approval", async () => {
-  mockParams = { connection: "online", invitation: "token" };
-  const r = renderWithTheme(<TogetherJoinContainer />);
-  await act(async () => {});
-  const own = {
-    id: "cloud-own",
-    userId: "u",
-    status: "in_progress",
-    exercises: [],
-  };
-  mockCloudDraft.mockReturnValue(own);
-  fireEvent.press(r.getByText("Join"));
-  await waitFor(() =>
-    expect(mockStorage.cacheActiveSession).toHaveBeenCalledWith("u", own),
-  );
-  mockCloudState = { ...mockCloudState, phase: "pending-approval" };
-  r.rerender(<TogetherJoinContainer />);
-  expect(r.getByText(/Waiting for the host/)).toBeTruthy();
-  mockCloudState = {
-    ...mockCloudState,
-    phase: "active",
-    snapshot: { sessionId: "live" },
-  };
-  r.rerender(<TogetherJoinContainer />);
-  await act(async () => {});
-  fireEvent.press(r.getByText("Open my workout"));
-  expect(mockRouter.replace).toHaveBeenCalledWith("/(app)/session");
-});
-it("pastes an online token from a reachable manual entry without reinterpreting it as local", async () => {
-  const r = renderWithTheme(<TogetherJoinContainer />);
-  fireEvent.press(r.getByText("Online"));
-  fireEvent.changeText(r.getByLabelText("Invitation link or code"), "token");
-  fireEvent.press(r.getByText("Join"));
-  await waitFor(() =>
-    expect(mockCloud.join).toHaveBeenCalledWith(
-      { inviteToken: "token" },
-      undefined,
-    ),
-  );
-  fireEvent.press(r.getByText("Nearby"));
-  expect(r.UNSAFE_getByType(TogetherLobbyPresenter)).toBeTruthy();
-});
-it("contains an unavailable adapter and does not invoke stale synchronous callbacks", async () => {
+it("works without native discovery: no search, code and Online rows only", async () => {
   mockHasLobby = false;
-  mockHasCloud = false;
   const r = renderWithTheme(<TogetherJoinContainer />);
-  act(() => lobbyProps(r).onCodeChange("signed"));
-  await act(async () => lobbyProps(r).onSelect());
-  expect(lobbyProps(r).notice).toContain("Could not connect");
-  r.unmount();
-  expect(mockLobby.selectInvite).not.toHaveBeenCalled();
+  await waitFor(() =>
+    expect(r.getByText(/Nearby search is not available/)).toBeTruthy(),
+  );
+  expect(mockSocialFriends).toHaveBeenCalled();
 });
-it("leaves an admitted lobby deliberately and contains missing-plan and changed-workout failures", async () => {
-  mockState = { phase: "joined", members: [{ userId: "u" }], pending: [] };
+it("ignores a late selection after the account changes", async () => {
+  let resolve!: () => void;
+  mockLobby.selectDiscovered.mockReturnValue(
+    new Promise<void>((r) => (resolve = r)),
+  );
   const r = renderWithTheme(<TogetherJoinContainer />);
-  await act(async () => fireEvent.press(r.getByText("Leave lobby")));
-  expect(mockLobby.cancel).toHaveBeenCalled();
-  expect(mockRouter.back).toHaveBeenCalled();
-  mockStart.mockReturnValue({ ok: false });
-  await act(async () => fireEvent.press(r.getByText("Use shared workout")));
-  expect(r.getByText(/Could not connect/)).toBeTruthy();
-  expect(mockLobby.workout.promote).not.toHaveBeenCalled();
+  await waitFor(() => expect(mockLobby.browse).toHaveBeenCalled());
+  publish({ discovered: [discovered("s-brad", "brad")] });
+  await waitFor(() => expect(r.getByText("Brad Evans")).toBeTruthy());
+  fireEvent.press(r.getByLabelText("Join Brad Evans"));
+  mockUser = "other";
+  r.rerender(<TogetherJoinContainer />);
+  await act(async () => resolve());
+  expect(r.queryByText("Join this workout")).toBeNull();
 });
-it("ignores a queued Join when the screen disappears before execution", async () => {
-  const r = renderWithTheme(<TogetherJoinContainer />);
-  act(() => {
-    lobbyProps(r).onJoin();
-    r.unmount();
-  });
-  await act(async () => {});
-  expect(mockLobby.join).not.toHaveBeenCalled();
-});
-it.each(["browsing", "selected", "joined"])(
-  "stops only browsing when leaving the %s join screen",
-  async (phase) => {
-    mockState.phase = phase;
-    const r = renderWithTheme(<TogetherJoinContainer />);
-    await act(async () => {});
-    mockLobby.cancel.mockClear();
-    r.unmount();
-    expect(mockLobby.cancel).toHaveBeenCalledTimes(
-      phase === "browsing" ? 1 : 0,
-    );
-  },
-);

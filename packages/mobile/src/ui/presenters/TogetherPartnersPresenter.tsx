@@ -24,6 +24,14 @@ export interface PartnerRow extends SocialPerson {
   requestId?: string;
   outgoing?: boolean;
   personCode?: string;
+  /** "July" — the month the partnership was accepted, for "Partners since". */
+  since?: string;
+}
+/** A partner's live Online session (canvas row 1): shown on their row with Join. */
+export interface PartnerOnlineSession {
+  sessionId: string;
+  hostUserId: string;
+  occupancy: number;
 }
 export interface TogetherPartnersPresenterProps {
   header?: React.ReactNode;
@@ -77,6 +85,8 @@ export interface TogetherPartnersPresenterProps {
   onDiscoverable(value: boolean): void;
   onOffer(value: TemplateOffer | null): void;
   onCopy(id: string): void;
+  onlineSessions?: readonly PartnerOnlineSession[];
+  onJoinOnline?(sessionId: string): void;
 }
 const Copy = ({ children }: { children: React.ReactNode }) => (
   <Text fontFamily="$body" fontSize={13} lineHeight={18} color="$text2">
@@ -88,60 +98,84 @@ export function TogetherPartnersPresenter(p: TogetherPartnersPresenterProps) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const disabled = p.busy || !p.available;
-  const row = (person: PartnerRow) => (
-    <Pressable
-      key={person.userId}
-      accessibilityRole="button"
-      accessibilityLabel={`View ${name(person)}`}
-      onPress={() => p.onSelect(person)}
-    >
-      <View
-        flexDirection="row"
-        gap={12}
-        alignItems="center"
-        paddingVertical={16}
+  const row = (person: PartnerRow) => {
+    const partner = p.friends.some((f) => f.userId === person.userId);
+    const live = partner
+      ? p.onlineSessions?.find((s) => s.hostUserId === person.userId)
+      : undefined;
+    const full = !!live && live.occupancy >= 4;
+    return (
+      <Pressable
+        key={person.userId}
+        accessibilityRole="button"
+        accessibilityLabel={`View ${name(person)}`}
+        onPress={() => p.onSelect(person)}
       >
         <View
-          width={44}
-          height={44}
-          borderRadius={22}
-          backgroundColor="$surface3"
+          flexDirection="row"
+          gap={12}
           alignItems="center"
-          justifyContent="center"
+          paddingVertical={16}
         >
-          {person.avatarUrl ? (
-            <Image
-              source={{ uri: person.avatarUrl }}
-              style={{ width: 44, height: 44, borderRadius: 22 }}
-              accessibilityLabel={name(person)}
-            />
+          <View
+            width={44}
+            height={44}
+            borderRadius={22}
+            backgroundColor="$surface3"
+            alignItems="center"
+            justifyContent="center"
+          >
+            {person.avatarUrl ? (
+              <Image
+                source={{ uri: person.avatarUrl }}
+                style={{ width: 44, height: 44, borderRadius: 22 }}
+                accessibilityLabel={name(person)}
+              />
+            ) : (
+              <Text fontFamily="$body" color="$primary">
+                {name(person).slice(0, 1)}
+              </Text>
+            )}
+          </View>
+          <View flex={1} alignItems="flex-start" gap={4}>
+            <Text color="$text" fontFamily="$body">
+              {name(person)}
+            </Text>
+            {live ? (
+              <Copy>{`Training now · ${live.occupancy} of 4 · Online`}</Copy>
+            ) : (
+              (!partner || !!person.displayName?.trim()) && (
+                <Copy>
+                  {partner
+                    ? person.since
+                      ? `Partners since ${person.since}`
+                      : "Training partner"
+                    : person.outgoing
+                      ? "Invitation sent"
+                      : "Name and photo only"}
+                </Copy>
+              )
+            )}
+          </View>
+          {live && p.onJoinOnline ? (
+            <Btn
+              size="sm"
+              variant="soft"
+              disabled={disabled || full}
+              accessibilityLabel={`Join ${name(person)}`}
+              onPress={() => p.onJoinOnline!(live.sessionId)}
+            >
+              {full ? "Full" : "Join"}
+            </Btn>
           ) : (
-            <Text fontFamily="$body" color="$primary">
-              {name(person).slice(0, 1)}
+            <Text fontFamily="$body" color="$text3">
+              ›
             </Text>
           )}
         </View>
-        <View flex={1} alignItems="flex-start" gap={4}>
-          <Text color="$text" fontFamily="$body">
-            {name(person)}
-          </Text>
-          {(!p.friends.some((f) => f.userId === person.userId) ||
-            !!person.displayName?.trim()) && (
-            <Copy>
-              {p.friends.some((f) => f.userId === person.userId)
-                ? "Training partner"
-                : person.outgoing
-                  ? "Invitation sent"
-                  : "Name and photo only"}
-            </Copy>
-          )}
-        </View>
-        <Text fontFamily="$body" color="$text3">
-          ›
-        </Text>
-      </View>
-    </Pressable>
-  );
+      </Pressable>
+    );
+  };
   return (
     <View flex={1} backgroundColor="$bg" testID="together-partners-root">
       {!p.embedded && (
@@ -196,8 +230,15 @@ export function TogetherPartnersPresenter(p: TogetherPartnersPresenterProps) {
               alignItems="center"
               justifyContent="space-between"
             >
-              <Text fontFamily="$display" fontSize={20} color="$text">
-                Training partners
+              <Text
+                fontFamily="$display"
+                fontSize={10.5}
+                fontWeight="600"
+                letterSpacing={1.7}
+                textTransform="uppercase"
+                color="$text3"
+              >
+                {`Training partners · ${p.friends.length}`}
               </Text>
               <Btn
                 size="sm"
@@ -285,13 +326,21 @@ export function TogetherPartnersPresenter(p: TogetherPartnersPresenterProps) {
                 </Card>
               ))}
               <View gap={12}>
-                <Text fontFamily="$display" fontSize={11} color="$text3">
-                  {p.friends.length} PARTNERS
-                </Text>
+                {!p.embedded && (
+                  <Text fontFamily="$display" fontSize={11} color="$text3">
+                    {p.friends.length} PARTNERS
+                  </Text>
+                )}
                 {p.friends.length > 0 ? (
                   <View>{p.friends.map(row)}</View>
                 ) : (
                   !p.loading && <Copy>No training partners yet.</Copy>
+                )}
+                {p.embedded && (
+                  <Copy>
+                    A partner’s session shows here when it’s Online. Nearby
+                    sessions show in Join a session, after a search.
+                  </Copy>
                 )}
               </View>
               {!p.embedded && (

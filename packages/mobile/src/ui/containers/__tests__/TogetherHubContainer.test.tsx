@@ -1,8 +1,10 @@
-import { TogetherHubPresenter } from "../../presenters/TogetherHubPresenter";
 import React from "react";
-import { act, waitFor, fireEvent } from "@testing-library/react-native";
+import { act, fireEvent, waitFor } from "@testing-library/react-native";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
-import { TogetherHubContainer } from "../TogetherHubContainer";
+import {
+  TogetherHubContainer,
+  loadPartnerSessions,
+} from "../TogetherHubContainer";
 let mockHasLobby = true;
 let mockUser = "u",
   mockAllowed = true,
@@ -12,19 +14,23 @@ let mockUser = "u",
 const mockPush = jest.fn(),
   mockBrowse = jest.fn(),
   mockCancel = jest.fn(),
-  mockSelect = jest.fn();
+  mockFriends = jest.fn();
 const mockLobby = {
   getSnapshot: () => mockSnapshot,
   subscribe: () => () => {},
   browse: () => mockBrowse(),
   cancel: () => mockCancel(),
-  selectDiscovered: (id: string) => mockSelect(id),
+  selectDiscovered: jest.fn(),
+};
+const mockCloud = {
+  getSnapshot: () => ({ snapshot: mockRemote }),
+  friends: (cursor?: string) => mockFriends(cursor),
 };
 jest.mock("@/ui/hooks/useAdapters", () => ({
   useAdapters: () => ({
     storage: { getActiveSession: () => mockActive },
     togetherLobby: mockHasLobby ? mockLobby : undefined,
-    togetherCloud: { getSnapshot: () => ({ snapshot: mockRemote }) },
+    togetherCloud: mockCloud,
   }),
 }));
 jest.mock("@/ui/hooks/useAuth", () => ({
@@ -42,16 +48,40 @@ jest.mock("expo-router", () => ({
   router: { push: (...a: any[]) => mockPush(...a) },
   useFocusEffect: (cb: any) => jest.requireActual("react").useEffect(cb, [cb]),
 }));
+const mockPartners = jest.fn();
 jest.mock("../TogetherPartnersContainer", () => ({
-  TogetherPartnersContainer: ({ header, onRefresh, embedded }: any) => {
-    const { View } = jest.requireActual("react-native");
+  TogetherPartnersContainer: (props: any) => {
+    mockPartners(props);
+    const { View, Pressable, Text } = jest.requireActual("react-native");
     return (
-      <View testID="partners-inline" onRefresh={onRefresh} embedded={embedded}>
-        {header}
+      <View testID="partners-inline">
+        {props.header}
+        {props.onlineSessions?.map((s: any) => (
+          <Pressable
+            key={s.sessionId}
+            accessibilityLabel={`Join ${s.hostUserId}`}
+            onPress={() => props.onJoinOnline?.(s.sessionId)}
+          >
+            <Text>{`${s.hostUserId} ${s.occupancy}`}</Text>
+          </Pressable>
+        ))}
+        <Pressable accessibilityLabel="refresh" onPress={props.onRefresh}>
+          <Text>refresh</Text>
+        </Pressable>
       </View>
     );
   },
 }));
+const page = (data: any[], nextCursor: string | null = null) => ({
+  ok: true,
+  value: { data, nextCursor },
+});
+const live = (sessionId: string, userId: string, occupancy = 2) => ({
+  sessionId,
+  host: { userId, displayName: null, avatarUrl: null },
+  occupancy,
+  expiresAt: "2026-10-23T12:00:00Z",
+});
 beforeEach(() => {
   jest.clearAllMocks();
   mockHasLobby = true;
@@ -59,99 +89,76 @@ beforeEach(() => {
   mockAllowed = true;
   mockActive = null;
   mockRemote = null;
-  mockSnapshot = {
-    phase: "idle",
-    members: [],
-    pending: [],
-    discovered: [{ sessionId: "live", workoutName: "Push", memberCount: 2 }],
-  };
-  mockBrowse.mockImplementation(async () => {
-    mockSnapshot = { ...mockSnapshot, phase: "browsing" };
-  });
-  mockCancel.mockResolvedValue(undefined);
-  mockSelect.mockImplementation(async () => {
-    mockSnapshot = { ...mockSnapshot, phase: "selected" };
-  });
+  mockSnapshot = { phase: "idle", members: [], pending: [] };
+  mockFriends.mockResolvedValue(page([live("s1", "tom")]));
 });
-it("composes sessions and partners with one Join entry and no automatic discovery", async () => {
+it("composes Start and Join without any discovery, and loads partners' Online sessions on focus", async () => {
   const r = renderWithTheme(<TogetherHubContainer />);
   expect(mockBrowse).not.toHaveBeenCalled();
-  expect(r.getByTestId("partners-inline").props.embedded).toBe(true);
-  fireEvent.press(r.getByText("Join a session"));
+  expect(mockPartners.mock.calls.at(-1)![0].embedded).toBe(true);
+  fireEvent.press(r.getByLabelText("Join a session"));
   expect(mockPush).toHaveBeenLastCalledWith("/(app)/together/join");
-  fireEvent.press(r.getByText("Choose workout"));
+  fireEvent.press(r.getByLabelText("Start a session"));
   expect(mockPush).toHaveBeenLastCalledWith("/(app)/together/start");
-  expect(r.getByTestId("partners-inline").props.onRefresh).toBeUndefined();
+  await waitFor(() => expect(r.getByText("tom 2")).toBeTruthy());
   expect(mockBrowse).not.toHaveBeenCalled();
+  fireEvent.press(r.getByLabelText("Join tom"));
+  expect(mockPush).toHaveBeenLastCalledWith({
+    pathname: "/(app)/together/join",
+    params: { session: "s1", connection: "online" },
+  });
+  mockFriends.mockResolvedValue(page([live("s2", "mia", 4)]));
+  fireEvent.press(r.getByLabelText("refresh"));
+  await waitFor(() => expect(r.getByText("mia 4")).toBeTruthy());
+  expect(mockFriends).toHaveBeenCalledTimes(2);
 });
-it("selects a verified discovery without automatic admission and preserves it on route blur", async () => {
-  const r = renderWithTheme(<TogetherHubContainer />);
-  await act(async () => {});
-  fireEvent.press(r.getByLabelText("Join Push"));
-  await waitFor(() =>
-    expect(mockPush).toHaveBeenCalledWith("/(app)/together/join"),
-  );
-  expect(mockSelect).toHaveBeenCalledWith("live");
-  r.unmount();
-  expect(mockCancel).not.toHaveBeenCalled();
-});
-it.each(["workout", "cloud", "locked"])(
-  "does not start discovery over %s authority",
-  (reason) => {
+it.each(["workout", "cloud", "lobby", "locked"])(
+  "hides partner sessions and never searches while %s authority exists or access is denied",
+  async (reason) => {
     if (reason === "workout") mockActive = { together: { transport: "lan" } };
     if (reason === "cloud") mockRemote = { sessionId: "live" };
+    if (reason === "lobby") mockSnapshot = { ...mockSnapshot, phase: "joined" };
     if (reason === "locked") mockAllowed = false;
     const r = renderWithTheme(<TogetherHubContainer />);
+    await act(async () => {});
     expect(mockBrowse).not.toHaveBeenCalled();
-    expect(r.getByTestId("partners-inline")).toBeTruthy();
+    expect(r.queryByText("tom 2")).toBeNull();
+    if (reason !== "locked") {
+      fireEvent.press(r.getByText("Back to my workout"));
+      expect(mockPush).toHaveBeenCalledWith("/(app)/session");
+    } else expect(mockFriends).not.toHaveBeenCalled();
   },
 );
-it("ignores a late selection after account change", async () => {
-  let resolve!: () => void;
-  mockSelect.mockReturnValue(new Promise<void>((r) => (resolve = r)));
+it("ignores a late partner-session reply after the account changed and tolerates a failed load", async () => {
+  let resolve!: (v: any) => void;
+  mockFriends.mockReturnValueOnce(new Promise((r) => (resolve = r)));
   const r = renderWithTheme(<TogetherHubContainer />);
-  await act(async () => {});
-  fireEvent.press(r.getByLabelText("Join Push"));
   mockUser = "other";
+  mockFriends.mockRejectedValue(new Error("offline"));
   r.rerender(<TogetherHubContainer />);
-  await act(async () => resolve());
-  expect(mockPush).not.toHaveBeenCalled();
-  r.unmount();
-  expect(mockCancel).not.toHaveBeenCalled();
+  await act(async () => resolve(page([live("s1", "tom")])));
+  expect(r.queryByText("tom 2")).toBeNull();
+  expect(r.getByLabelText("Join a session")).toBeTruthy();
 });
-it("resumes own work and contains expired session selection", async () => {
-  mockActive = { together: { transport: "lan" } };
-  const r = renderWithTheme(<TogetherHubContainer />);
-  fireEvent.press(r.getByText("Back to my workout"));
-  expect(mockPush).toHaveBeenCalledWith("/(app)/session");
-  mockActive = null;
-  mockBrowse.mockRejectedValue(new Error("permission"));
-  r.rerender(<TogetherHubContainer />);
-  await act(async () => {});
-  mockSelect.mockRejectedValue(new Error("expired"));
-  fireEvent.press(r.getByLabelText("Join Push"));
-  await act(async () => {});
-});
-it("keeps an offline partner hub usable when native discovery is unavailable", async () => {
+it("keeps the hub usable without native discovery", async () => {
   mockHasLobby = false;
   const r = renderWithTheme(<TogetherHubContainer />);
-  expect(r.getByText("Join a session")).toBeTruthy();
-  r.unmount();
-  expect(mockBrowse).not.toHaveBeenCalled();
-  mockHasLobby = true;
-  mockCancel.mockRejectedValue(new Error("native"));
-  const next = renderWithTheme(<TogetherHubContainer />);
-  await act(async () => {});
-  next.unmount();
-  await act(async () => {});
+  await waitFor(() => expect(r.getByText("tom 2")).toBeTruthy());
+  expect(r.getByLabelText("Start a session")).toBeTruthy();
 });
-it("does not own discovery cleanup and refuses a session row without a native adapter", async () => {
-  mockSnapshot.phase = "browsing";
-  mockHasLobby = false;
-  const r = renderWithTheme(<TogetherHubContainer />);
-  act(() => r.UNSAFE_getByType(TogetherHubPresenter).props.onSelect("live"));
-  await act(async () => {});
-  r.unmount();
-  expect(mockSelect).not.toHaveBeenCalled();
-  expect(mockCancel).not.toHaveBeenCalled();
+it("walks every page of partners' sessions and refuses a looping cursor", async () => {
+  mockFriends
+    .mockResolvedValueOnce(page([live("s1", "tom")], "next"))
+    .mockResolvedValueOnce(page([live("s2", "mia")]));
+  await expect(loadPartnerSessions(mockCloud as any)).resolves.toEqual([
+    { sessionId: "s1", hostUserId: "tom", occupancy: 2 },
+    { sessionId: "s2", hostUserId: "mia", occupancy: 2 },
+  ]);
+  expect(mockFriends).toHaveBeenLastCalledWith("next");
+  mockFriends.mockResolvedValue(page([live("s1", "tom")], "loop"));
+  await expect(loadPartnerSessions(mockCloud as any)).resolves.toHaveLength(10);
+  mockFriends.mockResolvedValue({ ok: false, error: { code: "network" } });
+  await expect(loadPartnerSessions(mockCloud as any)).rejects.toEqual({
+    code: "network",
+  });
 });

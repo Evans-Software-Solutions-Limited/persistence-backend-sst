@@ -120,83 +120,47 @@ it("hosts current workout, approves real peer IDs, copies invite and cleans up",
     />,
   );
   fireEvent.press(r.getByText("Start"));
+  // Presets from Together settings: Nearby and Training partners (canvas 1b).
+  expect(
+    r.getByRole("radio", { name: "Partners" }).props.accessibilityState.checked,
+  ).toBe(true);
   fireEvent.press(r.getByText("Start the session"));
-  expect(h.lobby.host).toHaveBeenCalledWith("Squats", "invite-only");
-  h.publish({
-    phase: "hosting",
-    role: "host",
-    invitation: "signed",
-    pending: [{ userId: "g", peerId: "p" }],
-  });
+  expect(h.lobby.host).toHaveBeenCalledWith("Squats", "friends");
   await act(async () => {});
-  fireEvent.press(r.getByText("Copy"));
-  fireEvent.press(r.getByLabelText("Session settings"));
-  expect(mockCopy).toHaveBeenCalledWith(
-    "persistencemobile://together/join?connection=local&invitation=signed&transport=lan",
+  const share = jest
+    .spyOn(Share, "share")
+    .mockResolvedValue({ action: "sharedAction" });
+  jest.mocked(h.lobby.host).mockImplementation(async () => {
+    h.publish({
+      phase: "hosting",
+      role: "host",
+      audience: "friends",
+      invitation: "signed",
+    });
+  });
+  h.publish({ phase: "idle" });
+  fireEvent.press(r.getByText("Start"));
+  await act(async () => fireEvent.press(r.getByText("Start the session")));
+  // The invite sheet opens once after start, with the mode on it.
+  await waitFor(() => expect(r.getByText("Invite people")).toBeTruthy());
+  expect(
+    r.getByText(/Nearby · no internet needed · training partners join/),
+  ).toBeTruthy();
+  fireEvent.press(r.getByText("Share code"));
+  await waitFor(() =>
+    expect(share).toHaveBeenCalledWith({
+      url: "persistencemobile://together/join?connection=local&invitation=signed&transport=lan",
+    }),
   );
-  fireEvent.press(r.getByText("Approve"));
+  // A non-partner's request is a Let in / No bar under the strip.
+  h.publish({ pending: [{ userId: "g", peerId: "p" }] });
+  fireEvent.press(r.getByText("Let in"));
   expect(h.lobby.approve).toHaveBeenCalledWith("p");
-  fireEvent.press(r.getByText("Decline"));
+  fireEvent.press(r.getByText("No"));
   expect(h.lobby.decline).toHaveBeenCalledWith("p");
+  share.mockRestore();
   r.unmount();
   expect(h.lobby.cancel).not.toHaveBeenCalled();
-});
-it("does not apply a camera permission reply after cancellation", async () => {
-  let resolve!: (v: { granted: boolean }) => void;
-  mockRequest.mockReturnValue(new Promise((r) => (resolve = r)));
-  const h = harness();
-  const r = renderWithTheme(
-    <TogetherLobbyContainer
-      lobby={h.lobby}
-      workoutName="Squats"
-      accountId="a"
-    />,
-  );
-  fireEvent.press(r.getByText("Start"));
-  fireEvent.press(r.getByText("Join"));
-  fireEvent.press(r.getByText("Scan a QR code"));
-  fireEvent.press(r.getByText("Cancel · keep training on my own"));
-  await act(async () => resolve({ granted: true }));
-  fireEvent.press(r.getByText("Start"));
-  fireEvent.press(r.getByText("Join"));
-  expect(r.queryByTestId("together-qr-camera")).toBeNull();
-  expect(h.lobby.selectInvite).not.toHaveBeenCalled();
-});
-it("camera denial allows paste; scanning verifies once, then join requires consent", async () => {
-  mockRequest.mockResolvedValueOnce({ granted: false });
-  const h = harness();
-  const r = renderWithTheme(
-    <TogetherLobbyContainer
-      lobby={h.lobby}
-      workoutName="Squats"
-      accountId="a"
-    />,
-  );
-  fireEvent.press(r.getByText("Start"));
-  fireEvent.press(r.getByText("Join"));
-  fireEvent.press(r.getByText("Scan a QR code"));
-  await waitFor(() =>
-    expect(r.getByText(/Paste the invitation instead/)).toBeTruthy(),
-  );
-  fireEvent.changeText(r.getByLabelText("Session invitation"), "signed");
-  fireEvent.press(r.getByText("Continue"));
-  expect(h.lobby.selectInvite).toHaveBeenCalledWith("signed");
-  expect(h.lobby.join).not.toHaveBeenCalled();
-  mockRequest.mockResolvedValueOnce({ granted: true });
-  fireEvent.press(r.getByText("Scan a QR code"));
-  const camera = await r.findByTestId("together-qr-camera");
-  act(() => {
-    camera.props.onBarcodeScanned({ data: "qr-invite" });
-    camera.props.onBarcodeScanned({ data: "duplicate" });
-  });
-  expect(h.lobby.selectInvite).toHaveBeenLastCalledWith("qr-invite");
-  expect(h.lobby.selectInvite).toHaveBeenCalledTimes(2);
-  h.publish({ phase: "selected" });
-  fireEvent.press(r.getByText("Join the lobby"));
-  expect(h.lobby.join).toHaveBeenCalledTimes(1);
-  h.publish({ phase: "reconnecting" });
-  fireEvent.press(r.getByText("Reconnect"));
-  expect(h.lobby.reconnect).toHaveBeenCalledTimes(1);
 });
 it("account replacement clears input; late failures cannot reappear", async () => {
   let reject!: (e: Error) => void;
@@ -254,44 +218,6 @@ it("dismissing the root sheet preserves admission; explicit Leave terminates it"
   h.publish({ phase: "disabled" });
   expect(r.getByTestId("workout-header")).toBeTruthy();
 });
-it("background invalidates idle scanning and delayed camera permission", async () => {
-  let lifecycle!: (state: AppStateStatus) => void;
-  const subscription = jest
-    .spyOn(AppState, "addEventListener")
-    .mockImplementation((_, listener) => {
-      lifecycle = listener;
-      return { remove: jest.fn() };
-    });
-  let resolve!: (v: { granted: boolean }) => void;
-  mockRequest.mockResolvedValueOnce({ granted: true });
-  const h = harness();
-  const r = renderWithTheme(
-    <TogetherLobbyContainer
-      lobby={h.lobby}
-      workoutName="Squats"
-      accountId="a"
-    />,
-  );
-  fireEvent.press(r.getByText("Start"));
-  fireEvent.press(r.getByText("Join"));
-  fireEvent.press(r.getByText("Scan a QR code"));
-  await r.findByTestId("together-qr-camera");
-  act(() => lifecycle("background"));
-  expect(r.queryByTestId("together-qr-camera")).toBeNull();
-  act(() => lifecycle("active"));
-  fireEvent.press(r.getByText("Start"));
-  fireEvent.press(r.getByText("Join"));
-  mockRequest.mockReturnValueOnce(new Promise((r) => (resolve = r)));
-  fireEvent.press(r.getByText("Scan a QR code"));
-  act(() => lifecycle("background"));
-  await act(async () => resolve({ granted: true }));
-  act(() => lifecycle("active"));
-  fireEvent.press(r.getByText("Start"));
-  fireEvent.press(r.getByText("Join"));
-  expect(r.queryByTestId("together-qr-camera")).toBeNull();
-  r.unmount();
-  subscription.mockRestore();
-});
 it("passes explicit audience and resets private on account change", () => {
   const h = harness();
   const r = renderWithTheme(
@@ -314,114 +240,8 @@ it("passes explicit audience and resets private on account change", () => {
   );
   fireEvent.press(r.getByText("Start"));
   fireEvent.press(r.getByText("Start the session"));
-  expect(h.lobby.host).toHaveBeenLastCalledWith("Squats", "invite-only");
+  expect(h.lobby.host).toHaveBeenLastCalledWith("Squats", "friends");
 });
-it("browses, selects, and requires a separate Join; dismiss then retains admitted lobby", () => {
-  const h = harness();
-  const r = renderWithTheme(
-    <TogetherLobbyContainer
-      lobby={h.lobby}
-      workoutName="Squats"
-      accountId="a"
-    />,
-  );
-  fireEvent.press(r.getByText("Start"));
-  fireEvent.press(r.getByText("Join"));
-  fireEvent.press(r.getByText("Find an open lobby nearby"));
-  expect(h.lobby.browse).toHaveBeenCalledTimes(1);
-  h.publish({
-    phase: "browsing",
-    discovered: [
-      {
-        sessionId: "s",
-        hostUserId: "h",
-        workoutName: "Pull day",
-        memberCount: 1,
-      },
-    ],
-  });
-  fireEvent.press(r.getByText("View lobby"));
-  expect(h.lobby.selectDiscovered).toHaveBeenCalledWith("s");
-  expect(h.lobby.join).not.toHaveBeenCalled();
-  h.publish({ phase: "selected" });
-  fireEvent.press(r.getByText("Join the lobby"));
-  expect(h.lobby.join).toHaveBeenCalledTimes(1);
-  h.publish({ phase: "joined" });
-  act(() => mockSheet.mock.calls.at(-1)![0].onClose());
-  expect(h.lobby.cancel).not.toHaveBeenCalled();
-});
-it("dismiss stops an in-flight browse preparation; code fallback cancels discovery", () => {
-  const h = harness();
-  const r = renderWithTheme(
-    <TogetherLobbyContainer
-      lobby={h.lobby}
-      workoutName="Squats"
-      accountId="a"
-    />,
-  );
-  fireEvent.press(r.getByText("Start"));
-  fireEvent.press(r.getByText("Join"));
-  fireEvent.press(r.getByText("Find an open lobby nearby"));
-  h.publish({ phase: "preparing" });
-  act(() => mockSheet.mock.calls.at(-1)![0].onClose());
-  expect(h.lobby.cancel).toHaveBeenCalledTimes(1);
-  h.publish({ phase: "idle" });
-  fireEvent.press(r.getByText("Start"));
-  fireEvent.press(r.getByText("Join"));
-  fireEvent.press(r.getByText("Find an open lobby nearby"));
-  h.publish({ phase: "browsing" });
-  fireEvent.press(r.getByText("Use a code or QR instead"));
-  expect(h.lobby.cancel).toHaveBeenCalledTimes(2);
-  h.publish({ phase: "idle" });
-  expect(r.getByLabelText("Session invitation")).toBeTruthy();
-  act(() => mockSheet.mock.calls.at(-1)![0].onClose());
-  expect(h.lobby.cancel).toHaveBeenCalledTimes(2);
-});
-
-it("cancelled browsing cannot make a later host dismissal leave the lobby", async () => {
-  const h = harness();
-  const r = renderWithTheme(
-    <TogetherLobbyContainer
-      lobby={h.lobby}
-      workoutName="Squats"
-      accountId="a"
-    />,
-  );
-  fireEvent.press(r.getByText("Start"));
-  fireEvent.press(r.getByText("Join"));
-  fireEvent.press(r.getByText("Find an open lobby nearby"));
-  h.publish({ phase: "browsing" });
-  fireEvent.press(r.getByText("Cancel · keep training on my own"));
-  expect(h.lobby.cancel).toHaveBeenCalledTimes(1);
-  h.publish({ phase: "idle" });
-  fireEvent.press(r.getByText("Start"));
-  fireEvent.press(r.getByText("Start the session"));
-  h.publish({ phase: "hosting" });
-  await act(async () => {});
-  act(() => mockSheet.mock.calls.at(-1)![0].onClose());
-  expect(h.lobby.cancel).toHaveBeenCalledTimes(1);
-});
-
-it("starting discovery invalidates a camera permission response before preparation settles", async () => {
-  const h = harness();
-  let resolve!: (value: { granted: boolean }) => void;
-  mockRequest.mockReturnValue(new Promise((r) => (resolve = r)));
-  const r = renderWithTheme(
-    <TogetherLobbyContainer
-      lobby={h.lobby}
-      workoutName="Squats"
-      accountId="a"
-    />,
-  );
-  fireEvent.press(r.getByText("Start"));
-  fireEvent.press(r.getByText("Join"));
-  fireEvent.press(r.getByText("Scan a QR code"));
-  fireEvent.press(r.getByText("Find an open lobby nearby"));
-  await act(async () => resolve({ granted: true }));
-  expect(h.lobby.browse).toHaveBeenCalledTimes(1);
-  expect(r.queryByTestId("together-qr-camera")).toBeNull();
-});
-
 function workoutHarness() {
   const h = harness();
   const listeners = new Set<() => void>();
@@ -495,10 +315,9 @@ it("promotes only on consent using the fresh workout and shows durable receipt u
       getWorkout={getWorkout}
     />,
   );
-  fireEvent.press(r.getByText("Start"));
   h.publish({ phase: "pending-approval" });
+  fireEvent.press(r.getByText("Open"));
   expect(r.queryByText("Use my workout in Together")).toBeNull();
-  expect(getWorkout).not.toHaveBeenCalled();
   h.publish({ phase: "joined" });
   expect(h.workout.promote).not.toHaveBeenCalled();
   fireEvent.press(r.getByText("Use my workout in Together"));
@@ -546,8 +365,8 @@ it("rejects a changed personal workout and explains unsupported promotion withou
       getWorkout={getWorkout}
     />,
   );
-  fireEvent.press(r.getByText("Start"));
   h.publish({ phase: "hosting" });
+  fireEvent.press(r.getByText("Open"));
   fireEvent.press(r.getByText("Use my workout in Together"));
   await r.findByText(/Could not complete this action/);
   expect(h.workout.promote).not.toHaveBeenCalled();
@@ -681,22 +500,27 @@ it("offers only Nearby and Online, never a transport picker, and switches to rem
     cloud = {} as TogetherCloudPort;
   const r = mountShared(h, { cloud });
   fireEvent.press(r.getByText("Start"));
-  expect(r.queryByText(/Wi-Fi|hotspot|Nearby phones/)).toBeNull();
-  // Private is the default audience, so Online is offered without Training partners.
+  expect(r.queryByText(/hotspot|same Wi-Fi/)).toBeNull();
   expect(r.getByText("Online · internet required")).toBeTruthy();
   fireEvent.press(r.getByText("Nearby · no internet needed"));
   expect(h.lobby.selectTransport).not.toHaveBeenCalled();
-  // Open is nearby-only: choosing it hides Online and returns to Nearby.
-  fireEvent.press(r.getByLabelText("Open nearby"));
-  expect(r.queryByText("Online · internet required")).toBeNull();
+  // Open nearby is Nearby-only: under Online it is disabled, never silently kept.
+  fireEvent.press(r.getByRole("radio", { name: "Open nearby" }));
+  fireEvent.press(r.getByText("Online · internet required"));
+  expect(
+    r.getByRole("radio", { name: "Open nearby" }).props.accessibilityState
+      .disabled,
+  ).toBe(true);
+  expect(
+    r.getByRole("radio", { name: "Partners" }).props.accessibilityState.checked,
+  ).toBe(true);
+  expect(r.getByText(/Open nearby works only with Nearby/)).toBeTruthy();
   let finish!: () => void;
   jest.mocked(h.lobby.cancel).mockReturnValueOnce(
     new Promise((r) => {
       finish = r;
     }),
   );
-  fireEvent.press(r.getByLabelText("Training partners"));
-  fireEvent.press(r.getByText("Online · internet required"));
   fireEvent.press(r.getByText("Start the session"));
   expect(mockCloud).not.toHaveBeenCalled();
   await act(async () => finish());
@@ -704,7 +528,7 @@ it("offers only Nearby and Online, never a transport picker, and switches to rem
     expect.objectContaining({ cloud, accountId: "a" }),
   );
   act(() => mockCloud.mock.calls.at(-1)![0].onLocal());
-  expect(r.getByText("Start the session")).toBeTruthy();
+  expect(r.getByText("Start")).toBeTruthy();
 });
 it("late cancellation cannot switch another account to the remote flow", async () => {
   const h = sharingHarness(),
@@ -717,7 +541,7 @@ it("late cancellation cannot switch another account to the remote flow", async (
   );
   const r = mountShared(h, { cloud });
   fireEvent.press(r.getByText("Start"));
-  fireEvent.press(r.getByLabelText("Training partners"));
+  fireEvent.press(r.getByRole("radio", { name: "Partners" }));
   fireEvent.press(r.getByText("Online · internet required"));
   fireEvent.press(r.getByText("Start the session"));
   r.rerender(
@@ -763,7 +587,6 @@ it("scopes PREV publication to explicit recipient, current owner and workout sta
       },
     ]);
   const r = mountShared(h, { getPrevious });
-  fireEvent.press(r.getByText("Start"));
   h.publish({
     phase: "hosting",
     role: "host",
@@ -772,6 +595,7 @@ it("scopes PREV publication to explicit recipient, current owner and workout sta
       { userId: "other", host: false },
     ],
   });
+  fireEvent.press(r.getByText("Open"));
   await act(async () =>
     shareProps(r).onConsent("other", {
       numbers: false,
@@ -809,8 +633,8 @@ it("does not publish PREV after a delayed grant crosses accounts", async () => {
   );
   const getPrevious = jest.fn(() => []);
   const r = mountShared(h, { getPrevious });
-  fireEvent.press(r.getByText("Start"));
   h.publish({ phase: "hosting", role: "host" });
+  fireEvent.press(r.getByText("Open"));
   act(() =>
     shareProps(r).onConsent("other", {
       numbers: true,
@@ -838,8 +662,8 @@ it("never reads PREV from a draft belonging to another account", async () => {
     getWorkout: () => ({ ...personal(), userId: "b" }),
     getPrevious,
   });
-  fireEvent.press(r.getByText("Start"));
   h.publish({ phase: "hosting", role: "host" });
+  fireEvent.press(r.getByText("Open"));
   await act(async () =>
     shareProps(r).onConsent("other", {
       numbers: false,
@@ -861,8 +685,8 @@ it("adopts an offered plan deliberately and never offers replacement over logged
   const h = sharingHarness(),
     onAdoptPlan = jest.fn();
   const r = mountShared(h, { onAdoptPlan });
-  fireEvent.press(r.getByText("Start"));
   h.publish({ phase: "joined", role: "guest" });
+  fireEvent.press(r.getByText("Open"));
   expect(onAdoptPlan).not.toHaveBeenCalled();
   fireEvent.press(r.getByText("Add their plan to mine"));
   expect(onAdoptPlan).toHaveBeenLastCalledWith(plan, "append");
@@ -912,8 +736,8 @@ it("promotes and publishes only the current host plan; guests keep their own pla
   const h = sharingHarness();
   jest.mocked(h.workout.getPlan).mockReturnValue(plan);
   const r = mountShared(h);
-  fireEvent.press(r.getByText("Start"));
   h.publish({ phase: "hosting", role: "host" });
+  fireEvent.press(r.getByText("Open"));
   await act(async () =>
     fireEvent.press(r.getByText("Use my workout in Together")),
   );
@@ -936,8 +760,8 @@ it("does not publish an old account's plan after delayed promotion", async () =>
   );
   jest.mocked(h.workout.getPlan).mockReturnValue(plan);
   const r = mountShared(h);
-  fireEvent.press(r.getByText("Start"));
   h.publish({ phase: "hosting", role: "host" });
+  fireEvent.press(r.getByText("Open"));
   fireEvent.press(r.getByText("Use my workout in Together"));
   r.rerender(
     <TogetherLobbyContainer
@@ -965,7 +789,7 @@ it("partner view delegates only the displayed revision and returns to own workou
     ],
   });
   h.update("active");
-  fireEvent.press(r.getByLabelText("View Mia’s workout"));
+  fireEvent.press(r.getByLabelText("Mia’s workout"));
   expect(r.queryByTestId("personal-workout")).toBeNull();
   const p = r.UNSAFE_getByType(TogetherPartnerPresenter)
     .props as React.ComponentProps<typeof TogetherPartnerPresenter>;
@@ -977,14 +801,13 @@ it("partner view delegates only the displayed revision and returns to own workou
   );
   act(() => p.onMine());
   expect(r.getByTestId("personal-workout")).toBeTruthy();
-  fireEvent.press(r.getByLabelText("View Mia’s workout"));
+  fireEvent.press(r.getByLabelText("Mia’s workout"));
   h.publish({ members: [{ userId: "a", host: false }] });
   expect(r.getByTestId("personal-workout")).toBeTruthy();
 });
 it("destructive dialogs are generation-bound and do nothing when dismissed", async () => {
   const h = sharingHarness();
   const r = mountShared(h);
-  fireEvent.press(r.getByText("Start"));
   h.publish({
     phase: "hosting",
     role: "host",
@@ -993,6 +816,7 @@ it("destructive dialogs are generation-bound and do nothing when dismissed", asy
       { userId: "other", host: false },
     ],
   });
+  fireEvent.press(r.getByText("Open"));
   act(() => shareProps(r).onRemove!("other"));
   expect(h.lobby.removeParticipant).not.toHaveBeenCalled();
   const oldRemove = lastDialog().find((b) => b.text === "Remove")!;
@@ -1015,7 +839,6 @@ it("destructive dialogs are generation-bound and do nothing when dismissed", asy
 it("confirms removal and routes an acknowledged closure to own recovery", async () => {
   const h = sharingHarness();
   const r = mountShared(h);
-  fireEvent.press(r.getByText("Start"));
   h.publish({
     phase: "hosting",
     role: "host",
@@ -1024,6 +847,7 @@ it("confirms removal and routes an acknowledged closure to own recovery", async 
       { userId: "other", host: false },
     ],
   });
+  fireEvent.press(r.getByText("Open"));
   act(() => shareProps(r).onRemove!("other"));
   await act(async () =>
     lastDialog().find((b) => b.text === "Remove")!.onPress!(),
@@ -1046,8 +870,8 @@ it("late closure cannot navigate or cancel a newer account's lobby", async () =>
     }),
   );
   const r = mountShared(h);
-  fireEvent.press(r.getByText("Start"));
   h.publish({ phase: "hosting", role: "host" });
+  fireEvent.press(r.getByText("Open"));
   act(() => shareProps(r).onClose("finish_all"));
   act(() => lastDialog().find((b) => b.text === "End sharing")!.onPress!());
   r.rerender(
@@ -1080,8 +904,8 @@ it("late closure cannot navigate or cancel a newer account's lobby", async () =>
 it("explicit leave signals shared closure before cancelling; review and partner navigation dismiss locally", async () => {
   const h = sharingHarness();
   const r = mountShared(h);
-  fireEvent.press(r.getByText("Start"));
   h.publish({ phase: "joined", role: "guest" });
+  fireEvent.press(r.getByText("Open"));
   await act(async () =>
     fireEvent.press(r.getByText("Leave lobby · keep my workout")),
   );
@@ -1112,6 +936,10 @@ it("workout row opens settings and end controls while self selection restores th
   });
   h.update("active");
   const row = () => r.UNSAFE_getByType(TogetherWorkoutRow).props;
+  // A guest's strip: Leave, the settings cog, no Invite.
+  expect(row().endLabel).toBe("Leave");
+  expect(row().onInvite).toBeUndefined();
+  expect(row().status).toBe("In sync · 2 training");
   act(() => row().onSettings());
   expect(r.getByText("Training partners")).toBeTruthy();
   act(() => row().onSelect("b"));
@@ -1129,7 +957,6 @@ it("warms own history after local admission without gating lobby or sharing with
     [() => boolean]
   >(async () => []);
   const r = mountShared(h, { refreshPrevious });
-  fireEvent.press(r.getByText("Start"));
   h.publish({ phase: "hosting", role: "host" });
   await act(async () => {});
   expect(refreshPrevious).toHaveBeenCalledTimes(1);
@@ -1162,8 +989,8 @@ it.each(["current", "revoked", "regranted", "workout", "unmounted"])(
       getPrevious: () => [],
       getWorkout: () => workout,
     });
-    fireEvent.press(r.getByText("Start"));
     h.publish({ phase: "hosting", role: "host" });
+    fireEvent.press(r.getByText("Open"));
     await act(async () => {});
     let resolve!: (rows: readonly TogetherPreviousRow[]) => void;
     refreshPrevious.mockImplementation(
@@ -1241,8 +1068,8 @@ it("omits skipped PREV in cached and refreshed publication, using the current wo
     getPrevious: () => rows,
     refreshPrevious,
   });
-  fireEvent.press(r.getByText("Start"));
   h.publish({ phase: "hosting", role: "host" });
+  fireEvent.press(r.getByText("Open"));
   await act(async () => {});
   let resolve!: (value: readonly TogetherPreviousRow[]) => void;
   refreshPrevious.mockImplementation(
@@ -1396,7 +1223,7 @@ it("starts online training partners only after explicit connection selection", a
     cloud = {} as TogetherCloudPort;
   const r = mountShared(h, { cloud });
   fireEvent.press(r.getByText("Start"));
-  fireEvent.press(r.getByLabelText("Training partners"));
+  fireEvent.press(r.getByRole("radio", { name: "Partners" }));
   fireEvent.press(r.getByText("Online · internet required"));
   fireEvent.press(r.getByText("Start the session"));
   await waitFor(() =>
@@ -1431,7 +1258,7 @@ it("hosts partners locally by default without contacting cloud", async () => {
   const h = sharingHarness();
   const r = mountShared(h, { cloud: {} as TogetherCloudPort });
   fireEvent.press(r.getByText("Start"));
-  fireEvent.press(r.getByLabelText("Training partners"));
+  fireEvent.press(r.getByRole("radio", { name: "Partners" }));
   fireEvent.press(r.getByText("Start the session"));
   expect(h.lobby.host).toHaveBeenCalledWith("Mine", "friends");
   expect(mockCloud).not.toHaveBeenCalled();
@@ -1451,21 +1278,6 @@ it("waits for credentials then hosts local partner detail intent", () => {
   expect(mockCloud).not.toHaveBeenCalled();
 });
 
-it("keeps online discovery available to a joiner without hosting", async () => {
-  const h = sharingHarness();
-  const cloud = {} as TogetherCloudPort;
-  const r = mountShared(h, { cloud });
-  fireEvent.press(r.getByText("Start"));
-  fireEvent.press(r.getByText("Join"));
-  fireEvent.press(r.getByText("Browse online sessions"));
-  await waitFor(() =>
-    expect(mockCloud).toHaveBeenCalledWith(
-      expect.objectContaining({ cloud, initialHost: undefined }),
-    ),
-  );
-  expect(h.lobby.host).not.toHaveBeenCalled();
-});
-
 it("starts and promotes the detail workout before showing the actual invitation, and Back preserves it", async () => {
   const h = sharingHarness();
   jest.mocked(h.workout.getPlan).mockReturnValue(plan);
@@ -1473,6 +1285,7 @@ it("starts and promotes the detail workout before showing the actual invitation,
     h.publish({
       phase: "hosting",
       role: "host",
+      audience: "invite-only",
       invitation: "signed-real-payload",
     });
   });
@@ -1480,28 +1293,33 @@ it("starts and promotes the detail workout before showing the actual invitation,
     .spyOn(Share, "share")
     .mockResolvedValue({ action: "sharedAction" });
   const r = mountShared(h, { initialHostAudience: "invite-only" });
-  await waitFor(() => expect(r.getByText("Scan to join")).toBeTruthy());
+  await waitFor(() => expect(r.getByText("Invite people")).toBeTruthy());
   expect(h.workout.promote).toHaveBeenCalledWith(
     expect.objectContaining({ id: "local", userId: "a" }),
   );
   expect(h.shared.publishPlan).toHaveBeenCalledWith(plan);
-  expect(mockSheet.mock.calls.at(-1)![0].title).toBe("Session is live");
+  expect(mockSheet.mock.calls.at(-1)![0].title).toBeUndefined();
   expect(r.UNSAFE_getByType("QRCode" as never).props.value).toBe(
     "persistencemobile://together/join?connection=local&invitation=signed-real-payload&transport=lan",
   );
-  fireEvent.press(r.getByText("Copy"));
-  fireEvent.press(r.getByText("Share"));
-  expect(mockCopy).toHaveBeenCalledWith(
-    "persistencemobile://together/join?connection=local&invitation=signed-real-payload&transport=lan",
-  );
+  expect(
+    r.getByText("Nearby · no internet needed · only people with this QR"),
+  ).toBeTruthy();
+  fireEvent.press(r.getByText("Share code"));
   expect(share).toHaveBeenCalledWith({
     url: "persistencemobile://together/join?connection=local&invitation=signed-real-payload&transport=lan",
   });
-  fireEvent.press(r.getByText("Back to my workout"));
+  fireEvent.press(r.getByLabelText("Close"));
   expect(mockSheet.mock.calls.at(-1)![0].visible).toBe(false);
   expect(h.lobby.cancel).not.toHaveBeenCalled();
-  fireEvent.press(r.getByText("Open"));
-  fireEvent.press(r.getByLabelText("Session settings"));
+  // The strip: Invite reopens the invitation, the cog opens settings.
+  h.update("active");
+  h.publish({ members: [{ userId: "a", host: true }] });
+  const row = () => r.UNSAFE_getByType(TogetherWorkoutRow).props;
+  expect(row().status).toBe("Waiting for people · 1 of 4");
+  act(() => row().onInvite());
+  expect(r.getByText("Invite people")).toBeTruthy();
+  act(() => row().onSettings());
   expect(mockSheet.mock.calls.at(-1)![0].title).toBe("Together settings");
   expect(r.getByText("Show session invitation")).toBeTruthy();
   share.mockRestore();
@@ -1533,11 +1351,10 @@ it.each(["hosting-fails", "promotion-fails", "cancelled"])(
       act(() => mockSheet.mock.calls.at(-1)![0].onClose());
       await act(async () => release());
     } else await act(async () => {});
-    expect(r.queryByText("Scan to join")).toBeNull();
+    expect(r.queryByText("Invite people")).toBeNull();
     if (outcome === "cancelled")
       expect(mockSheet.mock.calls.at(-1)![0].visible).toBe(false);
-    else
-      expect(mockSheet.mock.calls.at(-1)![0].title).not.toBe("Session is live");
+    else expect(mockSheet.mock.calls.at(-1)![0].title).toBe("Train together");
     if (outcome !== "promotion-fails")
       expect(h.workout.promote).not.toHaveBeenCalled();
   },
@@ -1557,9 +1374,9 @@ it("retries failed host plan publication after promotion without hosting or prom
   await waitFor(() =>
     expect(r.getByText("Retry sharing my workout")).toBeTruthy(),
   );
-  expect(r.queryByText("Scan to join")).toBeNull();
+  expect(r.queryByText("Invite people")).toBeNull();
   fireEvent.press(r.getByText("Retry sharing my workout"));
-  await waitFor(() => expect(r.getByText("Scan to join")).toBeTruthy());
+  await waitFor(() => expect(r.getByText("Invite people")).toBeTruthy());
   expect(h.lobby.host).toHaveBeenCalledTimes(1);
   expect(h.workout.promote).toHaveBeenCalledTimes(1);
   expect(h.shared.publishPlan).toHaveBeenCalledTimes(2);
@@ -1627,9 +1444,9 @@ it("keeps one startup screen across host cleanup, credentials and workout promot
   await waitFor(() => expect(h.workout.promote).toHaveBeenCalledTimes(1));
   expect(mockSheet.mock.calls.at(-1)![0].title).toBe("Starting Together");
   expect(r.queryByText("Use my workout in Together")).toBeNull();
-  expect(r.queryByText("Scan to join")).toBeNull();
+  expect(r.queryByText("Invite people")).toBeNull();
   await act(async () => finishPromotion());
-  await waitFor(() => expect(r.getByText("Scan to join")).toBeTruthy());
+  await waitFor(() => expect(r.getByText("Invite people")).toBeTruthy());
   expect(h.lobby.host).toHaveBeenCalledTimes(1);
 });
 
@@ -1695,5 +1512,5 @@ it("preserves permission interruption during hosting until the workout and plan 
   await act(async () => finishHost());
   await waitFor(() => expect(h.workout.promote).toHaveBeenCalledTimes(1));
   expect(h.shared.publishPlan).toHaveBeenCalledWith(plan);
-  expect(r.getByText("Scan to join")).toBeTruthy();
+  expect(r.getByText("Invite people")).toBeTruthy();
 });

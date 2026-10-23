@@ -314,7 +314,7 @@ it("keeps LAN-fallback error hints honest about the same Wi-Fi while nearby hint
     const p = props("idle");
     p.snapshot.transport = transport;
     const r = renderWithTheme(<TogetherLobbyPresenter {...p} />);
-    expect(r.getByText("Athletes nearby can find it")).toBeTruthy();
+    expect(r.getByText("Anyone near you can ask to join")).toBeTruthy();
     expect(r.getByText("Open nearby")).toBeTruthy();
     expect(r.queryByText(/Android|hotspot|Wi-Fi/)).toBeNull();
     r.unmount();

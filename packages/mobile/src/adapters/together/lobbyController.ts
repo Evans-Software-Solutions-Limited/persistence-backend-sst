@@ -78,6 +78,8 @@ interface Resources {
 /** Foreground, explicit-action coordinator. Discovery routes bytes only after a signed pin. */
 /** Time to find the host after a join starts; BLE scanning can take well over 10 s (PER-64). */
 export const SEARCH_DEADLINE_MS = 30_000;
+/** Join a session searches on open and stops by itself after this long, keeping what it found (PER-60). */
+export const BROWSE_DEADLINE_MS = 30_000;
 export class TogetherLobbyController implements TogetherLobbyPort {
   readonly workout: TogetherWorkoutCheckpoint;
   /** `defaultTransport` when installed; else Nearby when present, LAN otherwise. */
@@ -146,6 +148,7 @@ export class TogetherLobbyController implements TogetherLobbyPort {
   private identity?: ReadyIdentity;
   private nativeQueue: Promise<void> = Promise.resolve();
   private timer?: ReturnType<typeof setTimeout>;
+  private browseTimer?: ReturnType<typeof setTimeout>;
   private expiry?: ReturnType<typeof setTimeout>;
   private reconnectTimer?: ReturnType<typeof setTimeout>;
   constructor(private readonly options: TogetherLobbyControllerOptions) {
@@ -414,6 +417,7 @@ export class TogetherLobbyController implements TogetherLobbyPort {
   }
   private clearTimers() {
     clearTimeout(this.timer);
+    clearTimeout(this.browseTimer);
     clearTimeout(this.expiry);
     clearTimeout(this.reconnectTimer);
     this.reconnectTimer = undefined;
@@ -603,11 +607,26 @@ export class TogetherLobbyController implements TogetherLobbyPort {
         onError: (code) => this.failure(new Error(code), generation),
       });
       this.browser = browser;
-      this.publish({ phase: "browsing", role: "guest", discovered: [] });
+      this.publish({
+        phase: "browsing",
+        role: "guest",
+        discovered: [],
+        searching: true,
+      });
       this.watchExpiry(identity, Infinity, generation);
       await this.enqueue(async () => {
         if (this.current(generation)) await browser.start();
       });
+      if (!this.current(generation) || this.browser !== browser) return;
+      // The radio stops by itself; verified results stay listed until the
+      // next search or selection, and a stale one is refused at selection.
+      this.browseTimer = setTimeout(() => {
+        if (!this.current(generation) || this.browser !== browser) return;
+        this.browser = undefined;
+        this.log("browse deadline", { found: this.discovered.size });
+        this.publish({ searching: false });
+        void this.enqueue(() => browser.stop()).catch(() => {});
+      }, BROWSE_DEADLINE_MS);
     } catch (error) {
       this.failure(error, generation);
     }
