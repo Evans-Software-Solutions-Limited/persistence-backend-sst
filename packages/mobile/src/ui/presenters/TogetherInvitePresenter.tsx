@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Text, View } from "@tamagui/core";
-import { Btn } from "@/ui/components/foundation/Btn";
+import { TogetherBtn } from "./TogetherBtn";
 import { IconX, iconDefaults } from "@/ui/components/icons";
 import { TogetherPill } from "./TogetherPill";
 import {
@@ -58,6 +58,7 @@ export function TogetherInvitePresenter(p: {
         padding={14}
         borderRadius={14}
         backgroundColor="white"
+        overflow="hidden"
         accessibilityRole="image"
         accessibilityLabel="Session QR code"
       >
@@ -96,15 +97,9 @@ export function TogetherInvitePresenter(p: {
         </Text>
       )}
       <View alignSelf="stretch">
-        <Btn
-          full
-          size="lg"
-          variant="soft"
-          disabled={p.busy}
-          onPress={p.onShare}
-        >
+        <TogetherBtn variant="soft" disabled={p.busy} onPress={p.onShare}>
           Share code
-        </Btn>
+        </TogetherBtn>
       </View>
     </View>
   );

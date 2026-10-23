@@ -1,8 +1,8 @@
-import { Pressable, ScrollView } from "react-native";
+import { ScrollView } from "react-native";
 import { Text, View } from "@tamagui/core";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Btn, IconBtn } from "@/ui/components/foundation";
-import { IconBack, iconDefaults } from "@/ui/components/icons";
+import { TogetherBackButton } from "./TogetherBackButton";
+import { TogetherBtn } from "./TogetherBtn";
 import { TogetherAudienceOptions } from "./TogetherAudienceOptions";
 import {
   TogetherConnectionChoice,
@@ -43,13 +43,7 @@ export function TogetherStartSessionPresenter(p: {
           gap: 14,
         }}
       >
-        <IconBtn
-          icon={<IconBack {...iconDefaults({ size: 20 })} />}
-          tone="neutral"
-          size={44}
-          onPress={p.onBack}
-          accessibilityLabel="Back"
-        />
+        <TogetherBackButton onPress={p.onBack} />
         <View gap={6}>
           <TogetherEyebrow>Start a shared session</TogetherEyebrow>
           <Text
@@ -62,11 +56,7 @@ export function TogetherStartSessionPresenter(p: {
             Train together
           </Text>
         </View>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`Workout: ${p.workoutName}. Change`}
-          onPress={p.onChangeWorkout}
-        >
+        <View accessibilityLabel={`Workout: ${p.workoutName}`}>
           <View
             flexDirection="row"
             alignItems="center"
@@ -91,9 +81,14 @@ export function TogetherStartSessionPresenter(p: {
                 {p.workoutMeta}
               </Text>
             </View>
-            <TogetherPill onPress={p.onChangeWorkout}>Change</TogetherPill>
+            <TogetherPill
+              onPress={p.onChangeWorkout}
+              accessibilityLabel="Change workout"
+            >
+              Change
+            </TogetherPill>
           </View>
-        </Pressable>
+        </View>
         <TogetherEyebrow>How you connect</TogetherEyebrow>
         <TogetherConnectionChoice
           value={p.connection}
@@ -120,10 +115,8 @@ export function TogetherStartSessionPresenter(p: {
       <View
         paddingHorizontal={20}
         paddingTop={12}
-        paddingBottom={insets.bottom + 12}
+        paddingBottom={Math.max(insets.bottom, 30)}
         gap={10}
-        borderTopWidth={1}
-        borderColor="$border"
         backgroundColor="$bg"
       >
         <Text
@@ -134,9 +127,9 @@ export function TogetherStartSessionPresenter(p: {
         >
           Starts {p.workoutName} now. Up to 4 people.
         </Text>
-        <Btn full size="lg" disabled={p.busy} onPress={p.onStart}>
+        <TogetherBtn disabled={p.busy} onPress={p.onStart}>
           Start workout together
-        </Btn>
+        </TogetherBtn>
       </View>
     </View>
   );

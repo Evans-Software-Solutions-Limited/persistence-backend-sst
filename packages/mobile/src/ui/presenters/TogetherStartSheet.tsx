@@ -1,5 +1,6 @@
 import { Text, View } from "@tamagui/core";
-import { BottomSheet, Btn } from "@/ui/components/foundation";
+import { BottomSheet } from "@/ui/components/foundation";
+import { TogetherBtn } from "./TogetherBtn";
 import { IconWifiOff, IconX, iconDefaults } from "@/ui/components/icons";
 import { TogetherAudienceSegment } from "./TogetherAudienceSegment";
 import {
@@ -37,9 +38,9 @@ export function TogetherStartSheet(p: {
       testID="together-start-sheet"
       footer={
         !p.wifiOff ? (
-          <Btn full size="lg" disabled={p.busy} onPress={p.onStart}>
+          <TogetherBtn disabled={p.busy} onPress={p.onStart}>
             Start the session
-          </Btn>
+          </TogetherBtn>
         ) : undefined
       }
     >
@@ -110,19 +111,24 @@ export function TogetherStartSheet(p: {
             </View>
             <View flexDirection="row" gap={8}>
               <View flex={1}>
-                <Btn
+                <TogetherBtn
+                  size="sm"
                   full
-                  variant="outline"
-                  tone="primary"
+                  variant="quiet"
                   onPress={() => p.onOpenSettings?.()}
                 >
                   Open Settings
-                </Btn>
+                </TogetherBtn>
               </View>
               <View flex={1}>
-                <Btn full variant="soft" onPress={() => p.onRetry?.()}>
+                <TogetherBtn
+                  size="sm"
+                  full
+                  variant="soft"
+                  onPress={() => p.onRetry?.()}
+                >
                   Try again
-                </Btn>
+                </TogetherBtn>
               </View>
             </View>
           </View>

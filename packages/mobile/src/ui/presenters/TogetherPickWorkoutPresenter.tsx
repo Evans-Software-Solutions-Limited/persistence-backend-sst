@@ -1,8 +1,9 @@
 import { Pressable, ScrollView } from "react-native";
 import { Text, View } from "@tamagui/core";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Btn, Card, IconBtn } from "@/ui/components/foundation";
-import { IconBack, iconDefaults } from "@/ui/components/icons";
+import { Card } from "@/ui/components/foundation";
+import { TogetherBackButton } from "./TogetherBackButton";
+import { TogetherBtn } from "./TogetherBtn";
 import { TogetherEyebrow } from "./TogetherEyebrow";
 
 export interface TogetherWorkoutOption {
@@ -101,13 +102,7 @@ export function TogetherPickWorkoutPresenter(p: {
           gap: 14,
         }}
       >
-        <IconBtn
-          icon={<IconBack {...iconDefaults({ size: 20 })} />}
-          tone="neutral"
-          size={44}
-          onPress={p.onBack}
-          accessibilityLabel="Back"
-        />
+        <TogetherBackButton onPress={p.onBack} />
         <View gap={6}>
           <TogetherEyebrow>Start a shared session</TogetherEyebrow>
           <Text
@@ -143,7 +138,9 @@ export function TogetherPickWorkoutPresenter(p: {
                   ? "Loading your workouts…"
                   : "No workouts available. Create a workout first."}
               </Text>
-              {!p.loading && <Btn onPress={p.onCreate}>Create a workout</Btn>}
+              {!p.loading && (
+                <TogetherBtn onPress={p.onCreate}>Create a workout</TogetherBtn>
+              )}
             </View>
           </Card>
         )}

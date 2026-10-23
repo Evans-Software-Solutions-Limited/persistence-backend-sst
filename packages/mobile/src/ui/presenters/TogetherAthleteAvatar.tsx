@@ -2,8 +2,13 @@ import { Pressable } from "react-native";
 import { Text, View } from "@tamagui/core";
 import { color } from "@/ui/theme/tokens";
 
-/** Me is primary; partners take the info, success and gold rings in seat order (PER-60). */
-export type TogetherAvatarTone = "primary" | "info" | "success" | "gold";
+/** Me is primary; partners take the info, success and gold rings in seat order (PER-60). `neutral` is the canvas `.av` (list rows). */
+export type TogetherAvatarTone =
+  | "primary"
+  | "info"
+  | "success"
+  | "gold"
+  | "neutral";
 export const TOGETHER_PARTNER_TONES: readonly TogetherAvatarTone[] = [
   "info",
   "success",
@@ -14,6 +19,7 @@ const RING: Record<TogetherAvatarTone, string> = {
   info: color.$info,
   success: color.$success,
   gold: color.$gold,
+  neutral: color.$border2,
 };
 
 export function togetherInitials(name: string): string {
@@ -37,16 +43,18 @@ export function TogetherAthleteAvatar(p: {
   accessibilityRole?: "button" | "tab";
 }) {
   const size = p.size ?? 26;
-  const ring = RING[p.tone ?? "primary"];
+  const tone = p.tone ?? "primary";
+  const neutral = tone === "neutral";
+  const ring = RING[tone];
   const face = (
     <View
       width={size}
       height={size}
       borderRadius={999}
       flexShrink={0}
-      borderWidth={1.5}
+      borderWidth={neutral ? 1 : 1.5}
       style={{ borderColor: ring }}
-      backgroundColor="$surface"
+      backgroundColor={neutral ? "$surface3" : "$surface"}
       alignItems="center"
       justifyContent="center"
       testID="together-athlete-avatar"
@@ -54,8 +62,8 @@ export function TogetherAthleteAvatar(p: {
       <Text
         fontFamily="$display"
         fontWeight="600"
-        fontSize={size * 0.42}
-        style={{ color: ring }}
+        fontSize={neutral ? Math.round(size * 0.36) : size * 0.42}
+        style={{ color: neutral ? color.$text : ring }}
       >
         {togetherInitials(p.name)}
       </Text>

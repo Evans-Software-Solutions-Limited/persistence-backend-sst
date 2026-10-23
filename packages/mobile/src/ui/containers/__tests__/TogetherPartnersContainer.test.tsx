@@ -37,8 +37,10 @@ jest.mock("@/ui/hooks/useAdapters", () => ({
 jest.mock("@/ui/hooks/useAuth", () => ({
   useAuth: () => ({ session: mockUser ? { userId: mockUser } : null }),
 }));
+let mockParams: Record<string, string> = {};
 jest.mock("expo-router", () => ({
   useFocusEffect: (cb: any) => jest.requireActual("react").useEffect(cb, [cb]),
+  useLocalSearchParams: () => mockParams,
   router: { back: jest.fn() },
 }));
 const ok = <T,>(value: T) => ({ ok: true as const, value });
@@ -658,4 +660,24 @@ describe("cold-start transient failures (PER-80)", () => {
     expect(props(r).error).toMatch(/Could not refresh/);
     expect(props(r).friends[0].displayName).toBe("Mia");
   });
+});
+
+it("opens the code sheet with the code prepared when arriving from the hub's My code button (PER-60)", async () => {
+  mockParams = { code: "1" };
+  try {
+    setup();
+    jest.mocked(mockApi!.personCode).mockResolvedValue(
+      ok({
+        code: "ABCDEFGHIJKLMNOPQRSTUVWXYZ012345",
+        expiresAt: "2026-11-01T00:00:00Z",
+      }),
+    );
+    const r = renderWithTheme(<TogetherPartnersContainer />);
+    await waitFor(() =>
+      expect(r.getByText("ABCDEFGHIJKLMNOPQRSTUVWXYZ012345")).toBeTruthy(),
+    );
+    expect(mockApi!.personCode).toHaveBeenCalledTimes(1);
+  } finally {
+    mockParams = {};
+  }
 });

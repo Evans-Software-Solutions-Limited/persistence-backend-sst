@@ -51,6 +51,21 @@ keeps its sets). The workout-detail Start row pushes that screen with the
 workout selected. `TogetherLobbyPresenter`'s in-session join branch is no
 longer reachable; it stays for the hosting/sharing states until PRs 3–4.
 
+**Fidelity pass (same day, after Brad's review of the first screenshots).**
+Every row 1/1b/1c screen was re-measured against the canvas stylesheet
+(`.body`, `.card`, `.lrow`, `.av`, `.btn`, `.ibtn`, `.input`, `.opt`, `.seg`,
+`.strip`): the hub now renders the canvas Training partners card itself
+(`TogetherHubContainer` loads partners and their Online sessions; the
+reviewed partner screen is unchanged and reached from a row or the My code
+button, which the Train hub chrome shows for the Together segment in place of
+the duplicate segment title); new `TogetherBtn` (52/44 pt primary · soft ·
+ghost · quiet) and `TogetherBackButton` (44 pt, 10 pt radius) replace the
+foundation `Btn`/`IconBtn` where the canvas differs; list avatars use the
+neutral `.av` style; the code field is 48 pt mono with a 2 px tracking;
+screen gaps are 16 (join, consent) and 14 (create); footers end at 30 pt; the
+invite QR is 200 pt in a 14 pt white box. No gradient exists in the canvas
+source for these rows (every phone is flat `bg`).
+
 **Verified.** Mobile Jest 638 suites / 8,545 tests, coverage
 96.13 / 92.09 / 96.03 / 97.54 (gate 90); typecheck clean; `expo lint` 0
 errors; prettier clean. New presenter tests cover every join/sheet state
@@ -67,8 +82,7 @@ scratchpad, not the repo.
 
 **Not verified / flagged on PER-60.** Nothing on a device or simulator
 (the unsigned simulator build cannot open the Together gate, see memory).
-The invite screenshot shows a blank QR (react-native-qrcode-svg does not
-render in jsdom). Canvas differences carried as assumptions: no short
+Canvas differences carried as assumptions: no short
 session code exists (the field takes a link or code; the invite sheet has
 no 7-character code); nearby discovery carries the host's user id only, so
 non-partners show the workout name; the consent card omits "The plan" rows

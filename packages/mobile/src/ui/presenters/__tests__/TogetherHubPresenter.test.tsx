@@ -2,6 +2,16 @@ import React from "react";
 import { fireEvent } from "@testing-library/react-native";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 import { TogetherHubPresenter } from "../TogetherHubPresenter";
+const partners = [
+  { userId: "tom", name: "Tom Vance", live: { sessionId: "s1", occupancy: 2 } },
+  { userId: "brad", name: "Brad Evans", since: "July" },
+  { userId: "ines", name: "Inés Marco" },
+  {
+    userId: "lena",
+    name: "Lena Ford",
+    live: { sessionId: "s2", occupancy: 4 },
+  },
+];
 const props = () => ({
   accessState: "allowed" as const,
   onUpgrade: jest.fn(),
@@ -9,8 +19,13 @@ const props = () => ({
   onStart: jest.fn(),
   onJoin: jest.fn(),
   onResume: jest.fn(),
+  partners,
+  onPartner: jest.fn(),
+  onJoinOnline: jest.fn(),
+  refreshing: false,
+  onRefresh: jest.fn(),
 });
-it("shows Start and Join rows only, with no nearby list (canvas row 1)", () => {
+it("shows Start and Join rows, the partners card with Online sessions, and the footnote (canvas row 1)", () => {
   const p = props(),
     r = renderWithTheme(<TogetherHubPresenter {...p} />);
   expect(r.getByText("Train together")).toBeTruthy();
@@ -19,18 +34,44 @@ it("shows Start and Join rows only, with no nearby list (canvas row 1)", () => {
   fireEvent.press(r.getByLabelText("Join a session"));
   expect(p.onStart).toHaveBeenCalledTimes(1);
   expect(p.onJoin).toHaveBeenCalledTimes(1);
-  expect(r.getByText("Pick a workout, then Nearby or Online")).toBeTruthy();
+  expect(r.getByText("Training partners · 4")).toBeTruthy();
+  expect(r.getByText("Training now · 2 of 4 · Online")).toBeTruthy();
+  expect(r.getByText("Partners since July")).toBeTruthy();
+  expect(r.getByText("Training partner")).toBeTruthy();
+  fireEvent.press(r.getByLabelText("Join Tom Vance"));
+  expect(p.onJoinOnline).toHaveBeenCalledWith("s1");
   expect(
-    r.getByText("Scan a QR, enter a code, or find one nearby"),
+    r.getByLabelText("Join Lena Ford").props.accessibilityState.disabled,
+  ).toBe(true);
+  expect(r.getByText("Full")).toBeTruthy();
+  fireEvent.press(r.getByLabelText("View Brad Evans"));
+  expect(p.onPartner).toHaveBeenCalledWith("brad");
+  expect(
+    r.getByText(/A partner’s session shows here when it’s Online/),
   ).toBeTruthy();
   expect(r.queryByText(/No sessions nearby/)).toBeNull();
-  expect(r.queryByText(/athletes/)).toBeNull();
+  expect(
+    r.getByTestId("together-hub-content").props.refreshControl.props.onRefresh,
+  ).toBe(p.onRefresh);
+});
+it("explains an empty partner list and a partner-load error", () => {
+  const r = renderWithTheme(
+    <TogetherHubPresenter
+      {...props()}
+      partners={[]}
+      partnersError="Could not refresh training partners."
+    />,
+  );
+  expect(r.getByText("Training partners · 0")).toBeTruthy();
+  expect(r.getByText(/No training partners yet/)).toBeTruthy();
+  expect(r.getByText("Could not refresh training partners.")).toBeTruthy();
 });
 it("preserves an active workout rather than offering another start or join", () => {
   const p = props(),
     r = renderWithTheme(<TogetherHubPresenter {...p} activeWorkout />);
   expect(r.queryByLabelText("Join a session")).toBeNull();
   expect(r.queryByLabelText("Start a session")).toBeNull();
+  expect(r.queryByLabelText("Join Tom Vance")).toBeNull();
   fireEvent.press(r.getByText("Back to my workout"));
   expect(p.onResume).toHaveBeenCalled();
   r.rerender(

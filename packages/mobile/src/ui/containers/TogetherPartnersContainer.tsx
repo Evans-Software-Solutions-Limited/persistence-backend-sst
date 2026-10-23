@@ -13,12 +13,11 @@ import { AppState, Share } from "react-native";
 import { View } from "@tamagui/core";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { randomUUID } from "expo-crypto";
-import { router, useFocusEffect } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
 import {
   TogetherPartnersPresenter,
-  type PartnerOnlineSession,
   type PartnerRow,
 } from "@/ui/presenters/TogetherPartnersPresenter";
 import type {
@@ -31,34 +30,12 @@ import type { CloudResult } from "@/domain/ports/togetherCloud.port";
 /** Delay before the single automatic retry of a transient cold-start load failure. */
 export const TRANSIENT_RETRY_MS = 4_000;
 
-/** "July" for a partnership accepted this year, "July 2025" otherwise; undefined when unknown. */
-export function partnersSince(
-  acceptedAt: string | undefined,
-  now = new Date(),
-): string | undefined {
-  if (!acceptedAt) return undefined;
-  const date = new Date(acceptedAt);
-  if (Number.isNaN(date.getTime())) return undefined;
-  const month = date.toLocaleDateString("en-GB", { month: "long" });
-  return date.getFullYear() === now.getFullYear()
-    ? month
-    : `${month} ${date.getFullYear()}`;
-}
-
 /** A keyed account boundary removes rendered personal data immediately on account changes. */
 export function TogetherPartnersContainer({
   header,
   embedded = false,
   onRefresh,
-  onlineSessions,
-  onJoinOnline,
-}: {
-  header?: ReactNode;
-  embedded?: boolean;
-  onRefresh?: () => void;
-  onlineSessions?: readonly PartnerOnlineSession[];
-  onJoinOnline?: (sessionId: string) => void;
-} = {}) {
+}: { header?: ReactNode; embedded?: boolean; onRefresh?: () => void } = {}) {
   const { api, storage } = useAdapters();
   const { session } = useAuth();
   const userId = session?.userId ?? null;
@@ -78,8 +55,6 @@ export function TogetherPartnersContainer({
       header={header}
       embedded={embedded}
       onRefreshHub={onRefresh}
-      onlineSessions={onlineSessions}
-      onJoinOnline={onJoinOnline}
       ownName={
         userId
           ? storage
@@ -104,8 +79,6 @@ function PartnersAccount({
   embedded,
   ownName,
   onRefreshHub,
-  onlineSessions,
-  onJoinOnline,
 }: {
   userId: string | null;
   api: TogetherSocialApi | undefined;
@@ -114,11 +87,11 @@ function PartnersAccount({
   embedded?: boolean;
   ownName?: string;
   onRefreshHub?: () => void;
-  onlineSessions?: readonly PartnerOnlineSession[];
-  onJoinOnline?: (sessionId: string) => void;
 }) {
   const [permission, requestPermission] = useCameraPermissions();
-  const [codeVisible, setCodeVisible] = useState(false);
+  // `?code=1` (the hub's My code button, PER-60) opens the code sheet on arrival.
+  const params = useLocalSearchParams<{ code?: string }>();
+  const [codeVisible, setCodeVisible] = useState(params.code === "1");
   const [code, setCode] = useState(""),
     [ownCode, setOwnCode] = useState<{
       code: string;
@@ -174,7 +147,6 @@ function PartnersAccount({
     avatarUrl: r.person?.avatarUrl ?? null,
     requestId: r.id,
     outgoing: r.initiatedBy === userId,
-    since: partnersSince(r.status === "accepted" ? r.updatedAt : undefined),
   });
   async function unwrap<T>(promise: CloudResult<T>): Promise<T> {
     const result = await promise;
@@ -288,6 +260,22 @@ function PartnersAccount({
       };
     }, []),
   );
+  // Arriving from the hub's My code button: once the first load has released
+  // the mutation lock, prepare the code the way the button would, so the open
+  // sheet is not left on "Preparing".
+  const [codeRequested, setCodeRequested] = useState(params.code === "1");
+  useEffect(() => {
+    if (!codeRequested || loading || lock.current || !api || !userId) return;
+    setCodeRequested(false);
+    void mutate(
+      "person-code",
+      (key) => api.personCode(key),
+      "Your code is ready.",
+      (value) => setOwnCode(value as { code: string; expiresAt: string }),
+    );
+    // `mutate` is a stable component-scope function declaration.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [codeRequested, loading, api, userId]);
   async function mutate(
     action: string,
     run: (key: string) => CloudResult<unknown>,
@@ -418,8 +406,6 @@ function PartnersAccount({
     <TogetherPartnersPresenter
       header={header}
       embedded={embedded}
-      onlineSessions={onlineSessions}
-      onJoinOnline={onJoinOnline}
       ownName={ownName}
       onEditProfile={() => router.push("/(app)/profile/edit" as never)}
       codeVisible={codeVisible}

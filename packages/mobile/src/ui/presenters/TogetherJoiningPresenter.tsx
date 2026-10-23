@@ -1,6 +1,7 @@
 import { Text, View } from "@tamagui/core";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Btn, Card } from "@/ui/components/foundation";
+import { Card } from "@/ui/components/foundation";
+import { TogetherBtn } from "./TogetherBtn";
 import { IconCheck, iconDefaults } from "@/ui/components/icons";
 import { TogetherAthleteAvatar } from "./TogetherAthleteAvatar";
 import { TogetherEyebrow } from "./TogetherEyebrow";
@@ -77,7 +78,11 @@ export function TogetherJoiningPresenter(p: {
           alignItems="center"
           justifyContent="center"
         >
-          <TogetherAthleteAvatar name={p.hostName ?? "?"} size={72} />
+          <TogetherAthleteAvatar
+            name={p.hostName ?? "?"}
+            size={72}
+            tone="neutral"
+          />
         </View>
         <TogetherEyebrow>
           {asking
@@ -131,20 +136,11 @@ export function TogetherJoiningPresenter(p: {
       <View
         paddingHorizontal={20}
         paddingTop={12}
-        paddingBottom={insets.bottom + 12}
-        borderTopWidth={1}
-        borderColor="$border"
+        paddingBottom={Math.max(insets.bottom, 30)}
       >
-        <Btn
-          full
-          size="lg"
-          variant="outline"
-          tone="primary"
-          disabled={p.busy}
-          onPress={p.onCancel}
-        >
+        <TogetherBtn variant="quiet" disabled={p.busy} onPress={p.onCancel}>
           Cancel
-        </Btn>
+        </TogetherBtn>
       </View>
     </View>
   );

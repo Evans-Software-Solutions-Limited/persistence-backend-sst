@@ -35,10 +35,13 @@ import {
 import { startSessionCommand } from "@/application/commands/session";
 import { adoptSharedPlan } from "@/adapters/together/adoptSharedPlan";
 import { usePendingTogetherJoin } from "@/state/pending-together-join";
-import { loadPartnerSessions } from "./TogetherHubContainer";
+import {
+  loadPartnerSessions,
+  loadPartners,
+  type PartnerOnlineSession,
+} from "./TogetherHubContainer";
 import type { TogetherLobbySnapshot } from "@/domain/ports/togetherLobby.port";
 import type { TogetherCloudState } from "@/domain/ports/togetherCloud.port";
-import type { PartnerOnlineSession } from "@/ui/presenters/TogetherPartnersPresenter";
 
 const EMPTY: TogetherLobbySnapshot = {
   phase: "disabled",
@@ -213,28 +216,18 @@ export function TogetherJoinContainer() {
       });
   };
   /** Partners by id, for names and the verified-partner row; a failure leaves names blank. */
-  const loadPartners = useCallback(() => {
+  const loadPartnerNames = useCallback(() => {
     const social = api.togetherSocial;
     if (!social || !userId) return;
     const isCurrent = current(scope.current, generation.current);
-    void (async () => {
-      const map: Record<string, Partner> = {};
-      let cursor: string | undefined;
-      for (let page = 0; page < 10; page++) {
-        const result = await social.friends(cursor);
-        if (!result.ok) return;
-        for (const r of result.value.data) {
-          if (r.status !== "accepted") continue;
-          const id = r.userId === userId ? r.friendId : r.userId;
-          map[id] = {
-            name: r.person?.displayName?.trim() || "Training partner",
-          };
-        }
-        if (!result.value.nextCursor) break;
-        cursor = result.value.nextCursor;
-      }
-      if (isCurrent()) setPartners(map);
-    })().catch(() => {});
+    void loadPartners(social, userId)
+      .then((list) => {
+        if (isCurrent())
+          setPartners(
+            Object.fromEntries(list.map((p) => [p.userId, { name: p.name }])),
+          );
+      })
+      .catch(() => {});
   }, [api.togetherSocial, userId]);
   const loadOnline = useCallback(() => {
     if (!cloud || !userId) return;
@@ -251,7 +244,7 @@ export function TogetherJoinContainer() {
       if (!userId || !gate.allowed || blocked) return;
       setSearched(true);
       setNotice("");
-      loadPartners();
+      loadPartnerNames();
       loadOnline();
       if (!lobby) return;
       const isCurrent = current(scope.current, generation.current);
@@ -263,7 +256,7 @@ export function TogetherJoinContainer() {
           if (isCurrent() && pull) setRefreshing(false);
         });
     },
-    [userId, gate.allowed, blocked, lobby, loadPartners, loadOnline],
+    [userId, gate.allowed, blocked, lobby, loadPartnerNames, loadOnline],
   );
   const searchRef = useRef(search);
   searchRef.current = search;
@@ -323,7 +316,7 @@ export function TogetherJoinContainer() {
     incoming.current = key;
     usePendingTogetherJoin.getState().clear();
     setCold(true);
-    loadPartners();
+    loadPartnerNames();
     const link = `persistencemobile://together/join?connection=${params.connection ?? "local"}&invitation=${encodeURIComponent(params.invitation)}${params.transport ? `&transport=${params.transport}` : ""}`;
     run((isCurrent) => select(link, isCurrent));
     // Explicit incoming selection once per link/account; never automatic Join.
@@ -341,7 +334,7 @@ export function TogetherJoinContainer() {
     const key = `session:${params.session}`;
     if (incoming.current === key) return;
     incoming.current = key;
-    loadPartners();
+    loadPartnerNames();
     const sessionId = params.session;
     run(async (isCurrent) => {
       if (blocked) throw new Error("workout-already-sharing");

@@ -1,4 +1,7 @@
 import { Text, View } from "@tamagui/core";
+import { Pressable } from "react-native";
+import { QrCode } from "lucide-react-native";
+import { color } from "@/ui/theme/tokens";
 import { router, useFocusEffect } from "expo-router";
 import { useCallback, useEffect } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -112,17 +115,46 @@ export function TrainHubContainer() {
           >
             TRAIN
           </Text>
-          <Text
-            fontFamily="$display"
-            fontWeight="700"
-            fontSize={32}
-            letterSpacing={-0.96}
-            color="$text"
-          >
-            {effectiveSegment}
-          </Text>
+          {/* The Together hub carries its own title ("Train together", canvas
+              row 1), so the chrome keeps only the eyebrow there. */}
+          {effectiveSegment !== "Together" && (
+            <Text
+              fontFamily="$display"
+              fontWeight="700"
+              fontSize={32}
+              letterSpacing={-0.96}
+              color="$text"
+            >
+              {effectiveSegment}
+            </Text>
+          )}
         </View>
-        {effectiveSegment === "Exercises" ? (
+        {effectiveSegment === "Together" ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="My code"
+            onPress={() =>
+              router.push({
+                pathname: "/(app)/together/partners",
+                params: { code: "1" },
+              } as never)
+            }
+            style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}
+          >
+            <View
+              width={44}
+              height={44}
+              borderRadius={10}
+              backgroundColor="$surface2"
+              borderWidth={1}
+              borderColor="$border"
+              alignItems="center"
+              justifyContent="center"
+            >
+              <QrCode size={20} color={color.$text2} strokeWidth={1.75} />
+            </View>
+          </Pressable>
+        ) : effectiveSegment === "Exercises" ? (
           <Btn
             variant="soft"
             tone="primary"

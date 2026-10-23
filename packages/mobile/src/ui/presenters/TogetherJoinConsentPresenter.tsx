@@ -2,13 +2,10 @@ import { ScrollView } from "react-native";
 import { Text, View } from "@tamagui/core";
 import { Globe, Link2, Radio } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Btn, Card, IconBtn } from "@/ui/components/foundation";
-import {
-  IconBack,
-  IconCheck,
-  IconEyeOff,
-  iconDefaults,
-} from "@/ui/components/icons";
+import { Card } from "@/ui/components/foundation";
+import { TogetherBackButton } from "./TogetherBackButton";
+import { TogetherBtn } from "./TogetherBtn";
+import { IconCheck, IconEyeOff } from "@/ui/components/icons";
 import { TogetherAthleteAvatar } from "./TogetherAthleteAvatar";
 import { TogetherEyebrow } from "./TogetherEyebrow";
 import {
@@ -63,26 +60,20 @@ export function TogetherJoinConsentPresenter(p: {
         contentContainerStyle={{
           paddingHorizontal: 20,
           paddingTop: 8,
-          gap: 14,
+          gap: 16,
         }}
       >
-        <IconBtn
-          icon={<IconBack {...iconDefaults({ size: 20 })} />}
-          tone="neutral"
-          size={44}
-          onPress={p.onBack}
-          accessibilityLabel="Back"
-        />
+        <TogetherBackButton onPress={p.onBack} />
         {p.cold && (
           <View
             flexDirection="row"
             gap={10}
             alignItems="flex-start"
-            padding={10}
-            paddingHorizontal={12}
-            borderRadius={12}
+            paddingVertical={12}
+            paddingHorizontal={14}
+            borderRadius={14}
             borderWidth={1}
-            borderColor="$primary"
+            style={{ borderColor: "rgba(34,211,238,0.35)" }}
             backgroundColor="$primaryDim"
           >
             <Link2 size={16} color={color.$primary} strokeWidth={1.75} />
@@ -106,6 +97,7 @@ export function TogetherJoinConsentPresenter(p: {
             fontFamily="$display"
             fontWeight="800"
             fontSize={32}
+            lineHeight={38}
             letterSpacing={-1}
             color="$text"
           >
@@ -122,7 +114,7 @@ export function TogetherJoinConsentPresenter(p: {
                       <TogetherAthleteAvatar
                         name={name}
                         size={28}
-                        tone={i === 0 ? "primary" : "info"}
+                        tone="neutral"
                       />
                     </View>
                   ),
@@ -188,10 +180,8 @@ export function TogetherJoinConsentPresenter(p: {
       <View
         paddingHorizontal={20}
         paddingTop={12}
-        paddingBottom={insets.bottom + 12}
+        paddingBottom={Math.max(insets.bottom, 30)}
         gap={10}
-        borderTopWidth={1}
-        borderColor="$border"
         backgroundColor="$bg"
       >
         <Text
@@ -202,11 +192,11 @@ export function TogetherJoinConsentPresenter(p: {
         >
           Joining starts your workout on this plan.
         </Text>
-        <Btn full size="lg" disabled={p.busy} onPress={p.onJoin}>
+        <TogetherBtn disabled={p.busy} onPress={p.onJoin}>
           {p.requiresApproval
             ? `Ask ${first ?? "the host"} and start`
             : "Join and start"}
-        </Btn>
+        </TogetherBtn>
       </View>
     </View>
   );

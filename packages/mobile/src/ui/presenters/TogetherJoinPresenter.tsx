@@ -3,13 +3,10 @@ import { RefreshControl, ScrollView, TextInput } from "react-native";
 import { Text, View, useTheme } from "@tamagui/core";
 import { Globe, QrCode, Radio, ShieldCheck } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Btn, Card, IconBtn } from "@/ui/components/foundation";
-import {
-  IconBack,
-  IconSearch,
-  IconWifiOff,
-  iconDefaults,
-} from "@/ui/components/icons";
+import { Card } from "@/ui/components/foundation";
+import { IconSearch, IconWifiOff, iconDefaults } from "@/ui/components/icons";
+import { TogetherBackButton } from "./TogetherBackButton";
+import { TogetherBtn } from "./TogetherBtn";
 import { TogetherAthleteAvatar } from "./TogetherAthleteAvatar";
 import { TogetherEyebrow } from "./TogetherEyebrow";
 import { LoadingSpinner } from "@/ui/components/LoadingSpinner";
@@ -92,7 +89,7 @@ export function TogetherJoinPresenter(p: {
         <TogetherAthleteAvatar
           name={r.title}
           size={36}
-          tone={r.kind === "online" ? "info" : "primary"}
+          tone={r.kind === "online" ? "info" : "neutral"}
         />
         <View flex={1} gap={2}>
           <Text
@@ -130,16 +127,15 @@ export function TogetherJoinPresenter(p: {
             )}
         </View>
         {action ? (
-          <Btn
+          <TogetherBtn
             size="sm"
-            variant={r.kind === "nearby" ? "outline" : "soft"}
-            tone="primary"
+            variant={r.kind === "nearby" ? "quiet" : "soft"}
             disabled={p.busy}
             accessibilityLabel={`${action} ${r.title}`}
             onPress={() => p.onSelect(r.id)}
           >
             {action}
-          </Btn>
+          </TogetherBtn>
         ) : (
           <Text fontFamily="$body" fontSize={12} color="$text3">
             Full
@@ -163,7 +159,7 @@ export function TogetherJoinPresenter(p: {
           paddingHorizontal: 20,
           paddingTop: 8,
           paddingBottom: insets.bottom + 30,
-          gap: 14,
+          gap: 16,
         }}
         keyboardShouldPersistTaps="handled"
         refreshControl={
@@ -177,19 +173,14 @@ export function TogetherJoinPresenter(p: {
         }
         testID="together-join-scroll"
       >
-        <IconBtn
-          icon={<IconBack {...iconDefaults({ size: 20 })} />}
-          tone="neutral"
-          size={44}
-          onPress={p.onBack}
-          accessibilityLabel="Back"
-        />
+        <TogetherBackButton onPress={p.onBack} />
         <View gap={6}>
           <TogetherEyebrow>Train together</TogetherEyebrow>
           <Text
             fontFamily="$display"
             fontWeight="800"
             fontSize={32}
+            lineHeight={38}
             letterSpacing={-1}
             color="$text"
           >
@@ -205,6 +196,7 @@ export function TogetherJoinPresenter(p: {
               fontFamily="$display"
               fontWeight="600"
               fontSize={14}
+              lineHeight={18}
               color="$text"
             >
               Session code
@@ -220,31 +212,35 @@ export function TogetherJoinPresenter(p: {
               placeholder="Paste the code or link"
               placeholderTextColor={color.$text4}
               style={{
-                height: 44,
-                paddingHorizontal: 12,
+                height: 48,
+                paddingHorizontal: 14,
                 color: color.$text,
                 backgroundColor: color.$surface3,
-                borderRadius: 12,
+                borderWidth: 1,
+                borderColor: color.$border2,
+                borderRadius: 10,
                 fontFamily: "Geist Mono",
-                fontSize: 14,
+                fontSize: 16,
+                letterSpacing: 2,
               }}
             />
             <View flexDirection="row" gap={8}>
               <View flex={1}>
-                <Btn
+                <TogetherBtn
+                  size="sm"
                   full
-                  variant="outline"
-                  tone="primary"
+                  variant="quiet"
                   disabled={!p.code.trim() || p.busy}
                   onPress={p.onContinue}
                 >
                   Continue
-                </Btn>
+                </TogetherBtn>
               </View>
               <View flex={1.3}>
-                <Btn
+                <TogetherBtn
+                  size="sm"
                   full
-                  variant="soft"
+                  variant="ghost"
                   disabled={p.busy}
                   icon={
                     <QrCode
@@ -256,7 +252,7 @@ export function TogetherJoinPresenter(p: {
                   onPress={p.onScan}
                 >
                   Scan a QR code
-                </Btn>
+                </TogetherBtn>
               </View>
             </View>
             {p.scanner}
@@ -346,8 +342,12 @@ export function TogetherJoinPresenter(p: {
           </Card>
         )}
         {p.search === "empty" && (
-          <Card surface={0}>
-            <View alignItems="center" gap={10} paddingVertical={8}>
+          <Card
+            surface={0}
+            pad={0}
+            style={{ paddingVertical: 24, paddingHorizontal: 20 }}
+          >
+            <View alignItems="center" gap={10}>
               <View
                 width={48}
                 height={48}
@@ -379,17 +379,15 @@ export function TogetherJoinPresenter(p: {
                 Searched for 30 seconds. Ask the host to show their QR. Scanning
                 it works even when a search doesn’t.
               </Text>
-              <View alignSelf="stretch">
-                <Btn full variant="soft" onPress={p.onRefresh}>
-                  Search again
-                </Btn>
-              </View>
+              <TogetherBtn size="sm" full variant="soft" onPress={p.onRefresh}>
+                Search again
+              </TogetherBtn>
             </View>
           </Card>
         )}
         {p.search === "failed" && (
           <View gap={8}>
-            <Card surface={0} accent="ember">
+            <Card surface={0} style={{ borderColor: "rgba(251,146,60,0.35)" }}>
               <View gap={12}>
                 <View flexDirection="row" gap={12} alignItems="flex-start">
                   <View
@@ -428,19 +426,24 @@ export function TogetherJoinPresenter(p: {
                 </View>
                 <View flexDirection="row" gap={8}>
                   <View flex={1}>
-                    <Btn
+                    <TogetherBtn
+                      size="sm"
                       full
-                      variant="outline"
-                      tone="primary"
+                      variant="quiet"
                       onPress={p.onOpenSettings}
                     >
                       Open Settings
-                    </Btn>
+                    </TogetherBtn>
                   </View>
                   <View flex={1}>
-                    <Btn full variant="soft" onPress={p.onRefresh}>
+                    <TogetherBtn
+                      size="sm"
+                      full
+                      variant="soft"
+                      onPress={p.onRefresh}
+                    >
                       Try again
-                    </Btn>
+                    </TogetherBtn>
                   </View>
                 </View>
               </View>
