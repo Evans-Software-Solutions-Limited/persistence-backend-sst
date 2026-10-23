@@ -1,5 +1,40 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-22 — Set weight/distance bounded at the validator after a prod numeric overflow (Sentry PERSISTENCE-BACKEND-8, branch `claude/set-value-bounds-backend`)
+
+Prod `POST /sessions/record` 500'd three times 20:40–20:50 UTC with Postgres
+`22003 numeric field overflow` on the `exercise_sets` insert. The Lambda's
+CloudWatch `[api:error]` line carries the bound params: set 3, 9 reps,
+`weight_kg = 35532` — a fat-fingered weight against `numeric(6,2)` (max
+9999.99; `distance_meters` is `numeric(8,2)`, max 999999.99). No validator
+bounded either column, so the row reached Postgres, the 500 was classified
+retryable by the mobile sync queue, the 3-attempt budget burned in ten
+minutes, and the session is stranded in that user's `/sync-failed`. Mobile
+Sentry PERSISTENCE-MOBILE-2 fired at the same second (device, city and app
+build are on that event); the app never calls `setUser`, the backend attaches
+no user context, and the transaction rolled back, so the account is not
+identifiable from telemetry.
+
+Fix (backend only, mobile input caps deferred): shared `weightKgSchema` /
+`distanceMetersSchema` in `sessions/sets/setValueSchemas.ts` — numbers
+`0..9999.99` / `0..999999.99`, strings bounded to the column's integer digits
+AND two-digit scale (Postgres rounds before the precision check, so
+"9999.995" carries to 10000.00 — Inspector Brad lead on #510) —
+applied to self + on-behalf `sessions/record`, set create and set update.
+Oversized input is now a 422 at the edge (permanent to the sync queue on the
+first attempt) and the repository never opens a transaction for it. Together
+already bounds `weightKg` in `together/types.ts`. Same class of gap remains on
+the int4 set columns (`reps`, `duration_seconds`, `rest_after_seconds`) and
+the `rpe` 1–10 CHECK.
+
+Verified: prettier clean; typecheck + lint clean; build 14/14; core `CI=1`
+408 files, coverage 98.11 / 94.35 / 97.85 / 98.11; new cases on all four
+handler test files (oversized / negative / non-numeric / empty → 422 with the
+repository untouched; boundary values still 201/200). Not verified: against
+a real Postgres; the mobile `/sync-failed` entry for that user still needs
+the set edited and re-sent once this deploys. PERSISTENCE-BACKEND-6/-7 are the
+previous-values failure already fixed by #502/#505 and can be resolved.
+
 ### 2026-10-19 — Blue Light Card web offer: Stripe subscription rail, Tradedoubler reporting, gated page (PER-3, branch `claude/per-3-blc-web-offer`)
 
 Brad chose to price the Blue Light Card (BLC) member offer on the web rather

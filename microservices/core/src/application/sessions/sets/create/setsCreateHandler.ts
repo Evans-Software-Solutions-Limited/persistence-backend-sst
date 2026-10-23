@@ -5,6 +5,7 @@ import {
   requireAuth,
   getUser,
 } from "@persistence/api-utils/auth/supabaseAuth";
+import { weightKgSchema, distanceMetersSchema } from "../setValueSchemas";
 
 export const setsCreateHandler = new Elysia()
   .derive(async ({ headers }) => ({
@@ -92,9 +93,9 @@ export const setsCreateHandler = new Elysia()
       body: t.Object({
         setNumber: t.Optional(t.Number()),
         reps: t.Optional(t.Number()),
-        weightKg: t.Optional(t.Union([t.String(), t.Number()])),
+        weightKg: t.Optional(weightKgSchema),
         durationSeconds: t.Optional(t.Number()),
-        distanceMeters: t.Optional(t.Union([t.String(), t.Number()])),
+        distanceMeters: t.Optional(distanceMetersSchema),
         rpe: t.Optional(t.Number()),
         restAfterSeconds: t.Optional(t.Number()),
         isPersonalRecord: t.Optional(t.Boolean()),
