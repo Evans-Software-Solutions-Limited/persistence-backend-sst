@@ -28,21 +28,13 @@ it("Together settings shows the defaults, the sharing switches, find-by-name and
   expect(p.onAudience).toHaveBeenCalledWith("invite-only");
   // No explanatory copy under the segment on this page.
   expect(r.queryByText(/join straight in/)).toBeNull();
-  fireEvent(r.getByLabelText("Default: show my numbers"), "valueChange", false);
+  fireEvent.press(r.getByLabelText("Default: show my numbers"));
   expect(p.onSharing).toHaveBeenCalledWith("numbers", false);
-  fireEvent(
-    r.getByLabelText("Default: let others fill in my sets"),
-    "valueChange",
-    true,
-  );
+  fireEvent.press(r.getByLabelText("Default: let others fill in my sets"));
   expect(p.onSharing).toHaveBeenCalledWith("logging", true);
   expect(r.getByText("With everyone in the session")).toBeTruthy();
   expect(r.getByText("Off. Your code and QR work either way.")).toBeTruthy();
-  fireEvent(
-    r.getByLabelText("Let people find me by name"),
-    "valueChange",
-    true,
-  );
+  fireEvent.press(r.getByLabelText("Let people find me by name"));
   expect(p.onDiscoverable).toHaveBeenCalledWith(true);
   expect(r.getByText("3")).toBeTruthy();
   expect(r.getByText("2")).toBeTruthy();
@@ -68,9 +60,10 @@ it("while the profile and counts load it shows placeholders, and a notice is an 
   expect(r.queryByLabelText("Let people find me by name")).toBeNull();
   expect(r.getAllByText("…")).toHaveLength(3);
   expect(r.getByRole("alert")).toBeTruthy();
-  expect(r.getByLabelText("Default: show my numbers").props.disabled).toBe(
-    true,
-  );
+  expect(
+    r.getByLabelText("Default: show my numbers").props.accessibilityState
+      .disabled,
+  ).toBe(true);
 });
 
 it("Blocked people lists everyone with Unblock, and says when nobody is blocked", () => {

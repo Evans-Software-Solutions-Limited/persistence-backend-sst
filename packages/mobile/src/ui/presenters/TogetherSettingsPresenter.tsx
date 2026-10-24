@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Pressable, ScrollView, Switch } from "react-native";
+import { Pressable, ScrollView } from "react-native";
 import { Text, View } from "@tamagui/core";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Card, ScreenGlow } from "@/ui/components/foundation";
@@ -7,6 +7,7 @@ import { IconChevronR } from "@/ui/components/icons";
 import { TogetherAudienceSegment } from "./TogetherAudienceSegment";
 import { TogetherBackButton } from "./TogetherBackButton";
 import { TogetherEyebrow } from "./TogetherEyebrow";
+import { TogetherSwitch } from "./TogetherSwitch";
 import type { TogetherLobbyAudience } from "@/domain/ports/togetherLobby.port";
 import type { TogetherSharingDefaults } from "@/state/together-settings";
 import { color } from "@/ui/theme/tokens";
@@ -88,13 +89,11 @@ export function TogetherSettingsPresenter(p: {
     value: boolean,
     onChange: (value: boolean) => void,
   ) => (
-    <Switch
+    <TogetherSwitch
       accessibilityLabel={label}
       value={value}
       disabled={p.busy}
       onValueChange={onChange}
-      trackColor={{ true: color.$primary, false: color.$surface3 }}
-      thumbColor={color.$text}
     />
   );
   const count = (n: number | null) => (

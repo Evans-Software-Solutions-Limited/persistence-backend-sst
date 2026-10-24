@@ -87,15 +87,11 @@ it("loads the profile and the counts, edits the stored defaults, and toggles fin
   await waitFor(() =>
     expect(useTogetherSettings.getState().audience).toBe("open"),
   );
-  fireEvent(r.getByLabelText("Default: show my numbers"), "valueChange", false);
+  fireEvent.press(r.getByLabelText("Default: show my numbers"));
   await waitFor(() =>
     expect(useTogetherSettings.getState().sharing.numbers).toBe(false),
   );
-  fireEvent(
-    r.getByLabelText("Let people find me by name"),
-    "valueChange",
-    true,
-  );
+  fireEvent.press(r.getByLabelText("Let people find me by name"));
   await waitFor(() =>
     expect(r.getByText("On. Your code and QR work either way.")).toBeTruthy(),
   );
@@ -123,11 +119,7 @@ it("a refused profile change flips the switch back and says so; failed counts st
     expect(r.getByLabelText("Let people find me by name")).toBeTruthy(),
   );
   expect(r.getAllByText("…")).toHaveLength(2);
-  fireEvent(
-    r.getByLabelText("Let people find me by name"),
-    "valueChange",
-    true,
-  );
+  fireEvent.press(r.getByLabelText("Let people find me by name"));
   await waitFor(() => expect(r.getByRole("alert")).toBeTruthy());
   expect(r.getByText("Off. Your code and QR work either way.")).toBeTruthy();
 });

@@ -116,10 +116,16 @@ Together settings: store v2 adds sharing defaults (numbers on, previous on,
 fill-in off), applied once per newcomer in local and Online sessions (and to
 everyone on a fresh join); new `/(app)/together/settings` and
 `/(app)/together/blocked` screens; the hub gets the canvas settings button.
-Not done: the live in-session card on the settings page (row 4 phone 4).
+Not done: the live in-session card on the settings page (row 4 phone 4). Brad's
+follow-up review (same morning): the settings switches are now
+`TogetherSwitch`, the canvas `.sw` control drawn in tokens (51 × 31, 27 pt
+thumb) instead of the platform `Switch`, so they read as toggles everywhere;
+and the screenshot harness now pins the 58 pt status-bar inset the device
+gives `useSafeAreaInsets`, so the evidence shows the canvas safe band instead
+of the back button on the top edge. The app code already used the inset.
 
 **Verified.** Mobile Jest 643 suites / 8,577 tests, coverage
-96.13 / 92.06 / 96.05 / 97.54 (gate 90); core unit 408 files / 5,667 tests,
+96.13 / 92.05 / 96.05 / 97.54 (gate 90); core unit 408 files / 5,667 tests,
 coverage 98.1 / 94.33 / 97.74 / 98.1 with the session-code migration applied
 in every harness; typecheck clean; `expo lint` 0
 errors; prettier clean. New presenter tests cover every join/sheet state
