@@ -157,9 +157,15 @@ or used link shows nothing to someone who cannot join. Fourth sweep of
 path, so one host leaving before Nearby reported it lost ended the whole
 search; a failed refresh now drops that host's row only and the search
 carries on, while an unreachable first contact still ends the generation.
+Fifth sweep of a7bd036 (1 lead, fixed): a refresh probe that timed out or
+was lost unbound left its native socket trying for up to 30 s, and a late
+`connected` could bind to the next host's probe and knock that host off the
+list; the slot now stays reserved after an abandoned refresh probe until
+the late connection arrives and is dropped, or the native connect deadline
+passes. A rejected connect leaves no socket and moves on at once.
 
 **Verified.** Mobile Jest 643 suites / 8,589 tests, coverage
-96.13 / 92.07 / 96.06 / 97.55 (gate 90); core unit 408 files / 5,667 tests,
+96.14 / 92.07 / 96.06 / 97.55 (gate 90); core unit 408 files / 5,667 tests,
 coverage 98.1 / 94.32 / 97.74 / 98.1 with the session-code migration applied
 in every harness; typecheck clean; `expo lint` 0
 errors; prettier clean. New presenter tests cover every join/sheet state

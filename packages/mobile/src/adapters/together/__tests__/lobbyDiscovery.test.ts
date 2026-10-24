@@ -5,6 +5,7 @@ import {
   readProbe,
   readSummary,
   signSummary,
+  NATIVE_CONNECT_DEADLINE,
   REFRESH_MARGIN,
   SUMMARY_TTL,
 } from "../lobbyDiscovery";
@@ -428,7 +429,7 @@ describe("bounded anonymous network browser lifecycle", () => {
     jest.mocked(native.connect).mockRejectedValueOnce(new Error("gone"));
     jest.advanceTimersByTime(1000);
     await settle();
-    // A's failure dropped A alone and moved straight on to B.
+    // A's rejection left no socket behind: A is dropped and B probed at once.
     expect(native.connect).toHaveBeenCalledTimes(4);
     expect(
       jest
@@ -440,15 +441,46 @@ describe("bounded anonymous network browser lifecycle", () => {
     expect(changes).toHaveBeenLastCalledWith([
       expect.objectContaining({ workoutName: "Host B" }),
     ]);
+    // B's refresh times out: B is dropped, but its socket may still connect,
+    // so the slot stays reserved and a newly found host C waits.
     jest.advanceTimersByTime(5000);
     await settle();
     expect(errors).not.toHaveBeenCalled();
     expect(changes).toHaveBeenLastCalledWith([]);
+    emit({ type: "discovered", endpointId: "c", lobbyId: pin.sessionId });
+    await settle();
+    expect(native.connect).toHaveBeenCalledTimes(4);
+    // B's late connection is dropped, never bound to C's probe, and frees the slot.
+    connect("late-b");
+    await settle();
+    expect(native.disconnect).toHaveBeenLastCalledWith("late-b");
+    expect(native.send).not.toHaveBeenCalledWith("late-b", expect.anything());
+    expect(native.connect).toHaveBeenCalledTimes(5);
+    expect(native.connect).toHaveBeenLastCalledWith("c");
+    connect("pc");
+    reply("pc", pin, "Host C");
+    emit({ type: "disconnected", peerId: "pc" });
+    await settle();
+    expect(changes).toHaveBeenLastCalledWith([
+      expect.objectContaining({ workoutName: "Host C" }),
+    ]);
+    // Without a late connection the slot frees itself at the native deadline.
+    clock += SUMMARY_TTL - REFRESH_MARGIN;
+    jest.advanceTimersByTime(1000);
+    await settle();
+    expect(native.connect).toHaveBeenCalledTimes(6);
+    jest.advanceTimersByTime(5000);
+    emit({ type: "discovered", endpointId: "d", lobbyId: pin.sessionId });
+    await settle();
+    expect(native.connect).toHaveBeenCalledTimes(6);
+    jest.advanceTimersByTime(NATIVE_CONNECT_DEADLINE);
+    await settle();
+    expect(native.connect).toHaveBeenCalledTimes(7);
+    expect(native.connect).toHaveBeenLastCalledWith("d");
+    expect(errors).not.toHaveBeenCalled();
     // The only stop so far is the swap at the top of this test: the search runs on.
     expect(native.stop).toHaveBeenCalledTimes(1);
     // A first-contact probe that cannot be reached still ends the generation.
-    emit({ type: "discovered", endpointId: "c", lobbyId: pin.sessionId });
-    await settle();
     jest.advanceTimersByTime(5000);
     expect(errors).toHaveBeenCalledWith("unreachable-host");
   });
