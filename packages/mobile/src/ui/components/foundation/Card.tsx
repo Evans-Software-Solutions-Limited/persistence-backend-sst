@@ -26,6 +26,9 @@ export type CardProps = {
   surface?: 0 | 1 | 2;
   /** Padding. Default 16. */
   pad?: number;
+  /** Horizontal / vertical padding overrides. A `style` padding cannot do this: the `padding` prop wins over `style` in Tamagui. */
+  padX?: number;
+  padY?: number;
   /** Border radius. Default 14. */
   radius?: number;
   /** Adds a coloured glow ring + shadow. */
@@ -47,6 +50,8 @@ const SURFACE_TOKENS = ["$surface", "$surface2", "$surface3"] as const;
 export function Card({
   surface = 1,
   pad = 16,
+  padX,
+  padY,
   radius = 14,
   glow,
   accent,
@@ -99,6 +104,8 @@ export function Card({
       borderWidth={1}
       borderRadius={radius}
       padding={pad}
+      {...(padX !== undefined ? { paddingHorizontal: padX } : {})}
+      {...(padY !== undefined ? { paddingVertical: padY } : {})}
       position="relative"
       style={{ ...glowStyle, ...(style ?? {}) }}
       // a11y forwarded explicitly (STORY-005 AC 5.4) — only when not pressable;

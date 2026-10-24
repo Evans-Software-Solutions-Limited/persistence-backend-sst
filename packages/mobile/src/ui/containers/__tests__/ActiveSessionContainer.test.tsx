@@ -364,7 +364,11 @@ describe("ActiveSessionContainer", () => {
         await waitFor(() => expect(host).toHaveBeenCalledTimes(1));
       }
       if (mode === "detail" || mode === "staggered-auth") {
-        expect(host).toHaveBeenCalledWith("Push Day", "open");
+        expect(host).toHaveBeenCalledWith(
+          "Push Day",
+          "open",
+          expect.objectContaining({ plan: expect.any(Array) }),
+        );
         expect(host).toHaveBeenCalledTimes(1);
         expect(mockRouterSetParams).toHaveBeenCalledWith({
           togetherAudience: undefined,
@@ -382,7 +386,11 @@ describe("ActiveSessionContainer", () => {
         expect(r.getByTestId("together-workout-row")).toBeTruthy();
         fireEvent.press(r.getByText("Start"));
         fireEvent.press(r.getByText("Start the session"));
-        expect(host).toHaveBeenCalledWith("Quick Workout", "invite-only");
+        expect(host).toHaveBeenCalledWith(
+          "Quick Workout",
+          "friends",
+          expect.objectContaining({ plan: [] }),
+        );
       }
       expect(storage.getActiveSession("user-1")?.status).toBe("in_progress");
       r.unmount();

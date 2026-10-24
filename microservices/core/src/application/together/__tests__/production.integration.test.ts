@@ -165,6 +165,16 @@ beforeAll(async () => {
       "utf8",
     ),
   );
+  // Idempotent, so applied twice like the others.
+  const codeMigration = readFileSync(
+    new URL(
+      "../../../../../../supabase/migrations/20261023120000_together_session_code.sql",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  await pg.exec(codeMigration);
+  await pg.exec(codeMigration);
   db = drizzle(pg, { schema });
   holder.db = db;
 });
@@ -732,6 +742,100 @@ describe("production Together persistence and recovery", () => {
     await expect(
       repo.discovery(b, { audience: "nearby", placeId: "geoapify:place" }),
     ).rejects.toMatchObject({ status: 403 });
+  });
+  it("gives every session a code; discovery and preview carry the workout, start and plan; the code joins (PER-60)", async () => {
+    // A custom exercise name has no limit; the plan row is clamped to the 120
+    // characters the app accepts so one host cannot break partners' pages.
+    await db
+      .update(schema.exercises)
+      .set({ name: ` ${"Bulgarian split squat ".repeat(8)}` })
+      .where(eq(schema.exercises.id, exercise));
+    const s = await create();
+    await db
+      .update(schema.exercises)
+      .set({ name: "Squat" })
+      .where(eq(schema.exercises.id, exercise));
+    expect(s.code).toMatch(/^[A-HJ-NP-Z2-9]{6}$/);
+    expect((await repo.snapshot(a, s.sessionId)).code).toBe(s.code);
+    await repo.visibility(a, s.sessionId, key(), {
+      audience: "friends",
+      expiresAt: new Date(Date.now() + 60000).toISOString(),
+    });
+    await db
+      .insert(schema.friendships)
+      .values({ userId: a, friendId: b, status: "accepted", initiatedBy: a });
+    const [row] = (await repo.discovery(b, { audience: "friends" })).data;
+    expect(row).toMatchObject({
+      sessionId: s.sessionId,
+      workoutName: "Session",
+      plan: [{ name: expect.any(String), sets: 3, reps: null }],
+    });
+    expect(row.plan[0].name).toHaveLength(120);
+    expect(row.plan[0].name.startsWith("Bulgarian")).toBe(true);
+    expect(Number.isFinite(Date.parse(row.startedAt))).toBe(true);
+    // A non-partner previews by code: enough to consent, nothing more.
+    expect(await repo.preview(c, { code: s.code! })).toMatchObject({
+      sessionId: s.sessionId,
+      workoutName: "Session",
+      occupancy: 1,
+      partner: false,
+      host: { userId: a },
+      plan: [{ sets: 3 }],
+    });
+    await expect(repo.preview(c, { code: "ZZZZZZ" })).rejects.toMatchObject({
+      status: 404,
+    });
+    await expect(repo.preview(a, { code: s.code! })).rejects.toMatchObject({
+      status: 404,
+    });
+    await expect(repo.preview(c, {})).rejects.toMatchObject({ status: 400 });
+    const invite = await repo.invite(a, s.sessionId, key(), {
+      expiresInMinutes: 15,
+    });
+    // The session is friends-only, so its invite follows join's rules: a
+    // forwarded link shows a non-partner nothing (inspector lead).
+    await expect(
+      repo.preview(c, { inviteToken: invite.token }),
+    ).rejects.toMatchObject({ status: 410 });
+    expect(await repo.preview(b, { inviteToken: invite.token })).toMatchObject({
+      sessionId: s.sessionId,
+      partner: true,
+    });
+    await expect(
+      repo.preview(c, { inviteToken: "not-a-token-at-all" }),
+    ).rejects.toMatchObject({ status: 410 });
+    // Once the invite is used, only the person who used it can still preview it.
+    await db
+      .update(schema.togetherInvites)
+      .set({ consumed: true })
+      .where(eq(schema.togetherInvites.sessionId, s.sessionId));
+    await expect(
+      repo.preview(b, { inviteToken: invite.token }),
+    ).rejects.toMatchObject({ status: 410 });
+    // The code is a credential: partners join straight in, others wait.
+    expect(
+      await repo.requestJoin(b, key(), {
+        code: s.code!,
+        consentVersion: "together-v1",
+        consentAccepted: true,
+      }),
+    ).toMatchObject({ status: "approved", sessionId: s.sessionId });
+    // Members who are not the host never see the code.
+    expect((await repo.snapshot(b, s.sessionId)).code).toBeNull();
+    expect(
+      await repo.requestJoin(c, key(), {
+        code: s.code!,
+        consentVersion: "together-v1",
+        consentAccepted: true,
+      }),
+    ).toMatchObject({ status: "pending", sessionId: s.sessionId });
+    await expect(
+      repo.requestJoin(c, key(), {
+        code: "ZZZZZZ",
+        consentVersion: "together-v1",
+        consentAccepted: true,
+      }),
+    ).rejects.toMatchObject({ status: 404 });
   });
   it("visibility and discovery restrict friends/private, cursor scope and nearby place selection", async () => {
     const s = await create();
@@ -1326,6 +1430,15 @@ describe("remaining recovery and migration boundaries", () => {
       readFileSync(
         new URL(
           "../../../../../../supabase/migrations/20261001133310_together_previous_consent.sql",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+    );
+    await pg.exec(
+      readFileSync(
+        new URL(
+          "../../../../../../supabase/migrations/20261023120000_together_session_code.sql",
           import.meta.url,
         ),
         "utf8",

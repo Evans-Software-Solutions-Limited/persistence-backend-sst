@@ -14,13 +14,26 @@ import {
 } from "./security/identity";
 import { object, uuid } from "./security/schema";
 import { encode64 } from "./security/encoding";
+import { isHostDetails } from "./planDetails";
+import type {
+  TogetherHostDetails,
+  TogetherPlanRow,
+} from "../../domain/ports/togetherLobby.port";
 
 export const SUMMARY_TTL = 15_000;
+/** A verified host is probed again this long before its summary expires, so it stays listed while the search runs. */
+export const REFRESH_MARGIN = 5_000;
+/** How long the native socket keeps trying after `connect` returns (Android and iOS both use 30 s). */
+export const NATIVE_CONNECT_DEADLINE = 30_000;
 export interface LobbySummary extends HostPin {
   kind: "together-summary-v1";
   audience: "open";
   workoutName: string;
   memberCount: number;
+  /** PER-60: start time, plan rows and the session code; absent from older hosts. */
+  startedAt?: number;
+  plan?: readonly TogetherPlanRow[];
+  code?: string;
   credential: Signed<Credential>;
   nonce: string;
   expiresAt: number;
@@ -47,6 +60,7 @@ export function signSummary(
   memberCount: number,
   nonce: string,
   now: number,
+  details?: TogetherHostDetails & { code: string },
 ): string {
   verifyCredential(identity.credential, identity.trustedKeys, now);
   return JSON.stringify(
@@ -57,6 +71,13 @@ export function signSummary(
         audience: "open",
         workoutName,
         memberCount,
+        ...(details
+          ? {
+              startedAt: details.startedAt,
+              plan: details.plan,
+              code: details.code,
+            }
+          : {}),
         credential: identity.credential,
         nonce,
         expiresAt: Math.min(
@@ -79,18 +100,22 @@ export function readSummary(
   const envelope: unknown = JSON.parse(frame);
   if (
     !object(envelope, ["payload", "signature"]) ||
-    !object(envelope.payload, [
-      "kind",
-      "sessionId",
-      "hostUserId",
-      "hostDeviceId",
-      "audience",
-      "workoutName",
-      "memberCount",
-      "credential",
-      "nonce",
-      "expiresAt",
-    ])
+    !object(
+      envelope.payload,
+      [
+        "kind",
+        "sessionId",
+        "hostUserId",
+        "hostDeviceId",
+        "audience",
+        "workoutName",
+        "memberCount",
+        "credential",
+        "nonce",
+        "expiresAt",
+      ],
+      ["startedAt", "plan", "code"],
+    )
   )
     throw new Error("invalid-summary");
   const p = envelope.payload;
@@ -108,7 +133,8 @@ export function readSummary(
     (p.memberCount as number) > 4 ||
     !Number.isSafeInteger(p.expiresAt) ||
     (p.expiresAt as number) <= now ||
-    (p.expiresAt as number) > now + SUMMARY_TTL
+    (p.expiresAt as number) > now + SUMMARY_TTL ||
+    !isHostDetails(p)
   )
     throw new Error("invalid-summary");
   const identity = verifyCredential(
@@ -141,17 +167,33 @@ export class TogetherLobbyBrowser {
   private running = false;
   private finishing = false;
   private seen = new Set<string>();
-  private queue: { endpointId: string; sessionId: string }[] = [];
+  private queue: {
+    endpointId: string;
+    sessionId: string;
+    refresh?: boolean;
+  }[] = [];
   private summaries = new Map<string, LobbySummary>();
+  /** Endpoints queued for a refresh probe; cleared when a new summary lands or the host is lost. */
+  private refreshing = new Set<string>();
   private active?: {
     endpointId: string;
     sessionId: string;
     nonce: string;
     peerId?: string;
+    /** A re-probe of a listed host: its failure drops that row only. */
+    refresh?: boolean;
   };
   private deadline?: ReturnType<typeof setTimeout>;
   private expiry?: ReturnType<typeof setInterval>;
   private stopping?: Promise<void>;
+  /**
+   * An abandoned refresh probe whose native socket may still connect: the
+   * slot stays reserved until that late connection arrives (and is dropped)
+   * or the native deadline passes, so it can never bind to another host's probe.
+   */
+  private reserved?: ReturnType<typeof setTimeout>;
+  /** Sockets this browser closed itself; their closing events say nothing about a probe. */
+  private discarded = new Set<string>();
   constructor(private readonly options: BrowserOptions) {}
   async start() {
     this.running = true;
@@ -167,9 +209,28 @@ export class TogetherLobbyBrowser {
     }
   }
   private publish() {
-    for (const [endpoint, summary] of this.summaries)
-      if (summary.expiresAt <= this.options.now())
+    const now = this.options.now();
+    for (const [endpoint, summary] of this.summaries) {
+      if (summary.expiresAt <= now) {
         this.summaries.delete(endpoint);
+        this.refreshing.delete(endpoint);
+      } else if (
+        summary.expiresAt - now <= REFRESH_MARGIN &&
+        !this.refreshing.has(endpoint) &&
+        this.active?.endpointId !== endpoint
+      ) {
+        // Summaries live 15 s and a search runs 30 s: probe the host again
+        // before its summary lapses, or every host found early drops off
+        // the list before the search ends.
+        this.refreshing.add(endpoint);
+        this.queue.push({
+          endpointId: endpoint,
+          sessionId: summary.sessionId,
+          refresh: true,
+        });
+        this.next();
+      }
+    }
     this.options.onChange([...this.summaries.values()]);
   }
   private event(event: TogetherLanEvent) {
@@ -192,20 +253,24 @@ export class TogetherLobbyBrowser {
         (item) => item.endpointId !== event.endpointId,
       );
       this.summaries.delete(event.endpointId);
+      this.refreshing.delete(event.endpointId);
       this.publish();
       const active = this.active;
       if (active?.endpointId === event.endpointId) {
         // A bound socket can be closed independently. An unbound connection
         // must end this generation because native connected events lack endpoint IDs.
         if (active.peerId) void this.finish(active);
-        else this.fatal("unreachable-host");
+        else this.unreachable(active, true);
       }
     } else if (event.type === "connected") {
       const active = this.active;
       if (!active || active.peerId || event.incoming) {
+        this.discarded.add(event.peerId);
         void this.options.native
           .disconnect(event.peerId)
           .catch(() => this.fatal("disconnect-failed"));
+        // The abandoned probe's socket has finally connected: the slot is free.
+        if (!active && !event.incoming && this.reserved) this.release();
         return;
       }
       active.peerId = event.peerId;
@@ -221,6 +286,7 @@ export class TogetherLobbyBrowser {
       const active = this.active;
       if (!active || active.peerId !== event.peerId) return;
       try {
+        this.refreshing.delete(active.endpointId);
         this.summaries.set(
           active.endpointId,
           readSummary(
@@ -238,16 +304,18 @@ export class TogetherLobbyBrowser {
       void this.finish(active);
     } else if (event.type === "disconnected") {
       if (this.active?.peerId === event.peerId) void this.finish(this.active);
+      else this.strayClosure(event.peerId, true);
     } else if (event.type === "error") {
       // Android reports normal remote EOF as read_failed before disconnected.
       // Peer-scoped closure must not erase verified hosts or poison a later probe.
       if (event.peerId) {
         if (this.active?.peerId === event.peerId) void this.finish(this.active);
+        else this.strayClosure(event.peerId, false);
       } else this.fatal(event.code);
     }
   }
   private next() {
-    if (!this.running || this.active || this.finishing) return;
+    if (!this.running || this.active || this.finishing || this.reserved) return;
     const endpoint = this.queue.shift();
     if (!endpoint) return;
     const active = {
@@ -256,10 +324,62 @@ export class TogetherLobbyBrowser {
     };
     this.active = active;
     // No endpoint correlation exists on connected: timeout ends the entire generation.
-    this.deadline = setTimeout(() => this.fatal("unreachable-host"), 5000);
+    this.deadline = setTimeout(() => this.unreachable(active, true), 5000);
     void this.options.native.connect(endpoint.endpointId).catch(() => {
-      if (this.active === active) this.fatal("unreachable-host");
+      // A rejected connect left no socket behind.
+      if (this.active === active) this.unreachable(active, false);
     });
+  }
+  /**
+   * A first-contact probe that cannot reach its host ends the generation, as
+   * above. A refresh probe only drops that host's row: a host that left
+   * before Nearby reported it lost must not end the whole search (PER-60).
+   * While its native socket may still be trying, the slot stays reserved so
+   * a late connection cannot attach to the next host's probe.
+   */
+  private unreachable(
+    active: NonNullable<TogetherLobbyBrowser["active"]>,
+    socketPending: boolean,
+  ) {
+    if (this.active !== active) return;
+    if (!active.refresh) {
+      this.fatal("unreachable-host");
+      return;
+    }
+    this.summaries.delete(active.endpointId);
+    this.refreshing.delete(active.endpointId);
+    this.options.onChange([...this.summaries.values()]);
+    if (socketPending) {
+      clearTimeout(this.deadline);
+      this.active = undefined;
+      this.reserved = setTimeout(() => this.release(), NATIVE_CONNECT_DEADLINE);
+      return;
+    }
+    void this.finish(active);
+  }
+  /**
+   * A closing event for a socket that is not the bound probe. Sockets this
+   * browser closed itself are expected. Any other one is an outbound connect
+   * that failed fast (a host that closed the app before Nearby reported it
+   * lost): it ends a reservation, or fails the unbound probe without the
+   * 5 s wait, since no socket is left behind (PER-60).
+   */
+  private strayClosure(peerId: string, closed: boolean) {
+    if (this.discarded.has(peerId)) {
+      if (closed) this.discarded.delete(peerId);
+      return;
+    }
+    // Android sends error then disconnected for one failure: count it once.
+    if (!closed) this.discarded.add(peerId);
+    const active = this.active;
+    if (!active) {
+      if (this.reserved) this.release();
+    } else if (!active.peerId) this.unreachable(active, false);
+  }
+  private release() {
+    clearTimeout(this.reserved);
+    this.reserved = undefined;
+    this.next();
   }
   private async finish(active: NonNullable<TogetherLobbyBrowser["active"]>) {
     if (this.active !== active) return;
@@ -287,9 +407,13 @@ export class TogetherLobbyBrowser {
     this.running = false;
     this.subscription?.remove();
     clearTimeout(this.deadline);
+    clearTimeout(this.reserved);
+    this.reserved = undefined;
+    this.discarded.clear();
     clearInterval(this.expiry);
     this.queue = [];
     this.summaries.clear();
+    this.refreshing.clear();
     this.active = undefined;
     this.stopping = this.options.native.stop();
     await this.stopping;

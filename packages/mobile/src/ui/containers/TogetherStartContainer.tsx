@@ -1,61 +1,115 @@
-import { TogetherWorkoutChoice } from "@/ui/presenters/TogetherWorkoutChoice";
-import { useEffect, useRef, useState } from "react";
-import { ScrollView } from "react-native";
-import { router } from "expo-router";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { router, useLocalSearchParams } from "expo-router";
 import { randomUUID } from "expo-crypto";
-import { Text, View } from "@tamagui/core";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { useWorkouts } from "@/ui/hooks/useWorkouts";
+import { useGetHome } from "@/ui/hooks/useGetHome";
 import { useTogetherGate } from "@/ui/hooks/useTogetherGate";
 import { startSessionCommand } from "@/application/commands/session";
-import { TogetherAudienceOptions } from "@/ui/presenters/TogetherAudienceOptions";
-import { Btn, Card, HeaderBar } from "@/ui/components/foundation";
-import type { TogetherLobbyAudience } from "@/domain/ports/togetherLobby.port";
+import { useTogetherSettings } from "@/state/together-settings";
 import {
-  NEARBY_CONNECTION_LABEL,
-  ONLINE_CONNECTION_LABEL,
-} from "@/ui/presenters/TogetherConnectionChoice";
+  TogetherPickWorkoutPresenter,
+  type TogetherWorkoutOption,
+} from "@/ui/presenters/TogetherPickWorkoutPresenter";
+import { TogetherStartSessionPresenter } from "@/ui/presenters/TogetherStartSessionPresenter";
+import { Btn, Card } from "@/ui/components/foundation";
+import { Text, View } from "@tamagui/core";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import type { TogetherLobbyAudience } from "@/domain/ports/togetherLobby.port";
+import type { TogetherConnection } from "@/ui/presenters/TogetherConnectionChoice";
 
-/** Guided start uses cached workouts and the same account-bound host intent as detail. */
+export function workoutMeta(
+  exerciseCount: number,
+  minutes?: number | null,
+): string {
+  const exercises = `${exerciseCount} ${exerciseCount === 1 ? "exercise" : "exercises"}`;
+  return minutes && minutes > 0
+    ? `${exercises} · about ${minutes} min`
+    : exercises;
+}
+
+/** Canvas row 1c: Pick a workout → Start a shared session; mode and audience asked once, preset from settings. */
 export function TogetherStartContainer() {
   const { storage, togetherLobby: lobby, togetherCloud: cloud } = useAdapters();
   const { session: auth } = useAuth();
   const userId = auth?.userId;
   const gate = useTogetherGate();
   const workouts = useWorkouts();
+  const home = useGetHome();
   const insets = useSafeAreaInsets();
-  const [selected, setSelected] = useState<string | null>(null);
-  const [step, setStep] = useState(1);
-  const [audience, setAudience] = useState<TogetherLobbyAudience>("open");
-  const [connection, setConnection] = useState<"local" | "online">("local");
+  const params = useLocalSearchParams<{ workoutId?: string }>();
+  const settings = useTogetherSettings();
+  const [selected, setSelected] = useState<string | null>(
+    params.workoutId ?? null,
+  );
+  const [step, setStep] = useState<"pick" | "setup">(
+    params.workoutId ? "setup" : "pick",
+  );
+  const [audience, setAudience] = useState<TogetherLobbyAudience>(
+    settings.audience,
+  );
+  const [connection, setConnection] = useState<TogetherConnection>(
+    settings.connection,
+  );
   const [error, setError] = useState("");
   const locked = useRef(false);
   const owner = useRef(userId);
   owner.current = userId;
   useEffect(() => {
-    setSelected(null);
-    setStep(1);
-    setAudience("open");
-    setConnection("local");
-    setError("");
+    if (userId && settings.userId !== userId) void settings.rehydrate(userId);
+    // The store rehydrates once per account.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
-  const choices = [
-    ...new Map(
-      [
-        ...workouts.mine.workouts,
-        ...workouts.assigned.workouts,
-        ...workouts.default.workouts,
-      ]
-        .filter((w) => w.variationKind !== "loadout")
-        .map((w) => [w.id, w]),
-    ).values(),
-  ];
+  // Presets follow the settings once they have loaded for this account.
+  useEffect(() => {
+    if (settings.userId !== userId) return;
+    setAudience(settings.audience);
+    setConnection(settings.connection);
+  }, [settings.userId, settings.audience, settings.connection, userId]);
+  useEffect(() => {
+    setSelected(params.workoutId ?? null);
+    setStep(params.workoutId ? "setup" : "pick");
+    setError("");
+  }, [userId, params.workoutId]);
+  const choices = useMemo(
+    () => [
+      ...new Map(
+        [
+          ...workouts.mine.workouts,
+          ...workouts.assigned.workouts,
+          ...workouts.default.workouts,
+        ]
+          .filter((w) => w.variationKind !== "loadout")
+          .map((w) => [w.id, w]),
+      ).values(),
+    ],
+    [
+      workouts.mine.workouts,
+      workouts.assigned.workouts,
+      workouts.default.workouts,
+    ],
+  );
+  const todayIds = useMemo(
+    () => new Set((home.data?.todaysTraining ?? []).map((t) => t.workoutId)),
+    [home.data?.todaysTraining],
+  );
+  const option = (w: (typeof choices)[number]): TogetherWorkoutOption => ({
+    id: w.id,
+    name: w.name,
+    meta: workoutMeta(w.exercises.length, w.estimatedDurationMinutes),
+  });
+  const today = choices.filter((w) => todayIds.has(w.id)).map(option);
+  const others = choices.filter((w) => !todayIds.has(w.id)).map(option);
   const chosen = choices.find((w) => w.id === selected);
   const active = userId ? storage.getActiveSession(userId) : null;
+  const continuing =
+    !!active &&
+    !active.together &&
+    !active.withClient &&
+    !active.retrospectiveCompletedAt;
   const start = () => {
-    if (!userId || !gate.allowed || locked.current || (!chosen && !active))
+    if (!userId || !gate.allowed || locked.current || (!chosen && !continuing))
       return;
     locked.current = true;
     try {
@@ -96,156 +150,91 @@ export function TogetherStartContainer() {
       locked.current = false;
     }
   };
-  return (
-    <View flex={1} backgroundColor="$bg" paddingTop={insets.top}>
-      <HeaderBar
-        title="Start Together"
-        leading={
-          <Btn
-            variant="ghost"
-            onPress={() => (step > 1 ? setStep(step - 1) : router.back())}
-          >
-            Back
-          </Btn>
+  if (!gate.allowed) {
+    const lockedOut = gate.state === "locked";
+    return (
+      <View
+        flex={1}
+        backgroundColor="$bg"
+        paddingTop={insets.top}
+        padding={20}
+        gap={16}
+      >
+        <Card surface={0}>
+          <View gap={12}>
+            <Text color="$text2" fontFamily="$body">
+              {lockedOut
+                ? "Every athlete needs a qualifying paid subscription."
+                : "Checking your Together access…"}
+            </Text>
+            <Btn onPress={lockedOut ? gate.onUpgrade : gate.retry}>
+              {lockedOut ? "View subscriptions" : "Check access"}
+            </Btn>
+            <Btn variant="ghost" onPress={() => router.back()}>
+              Back
+            </Btn>
+          </View>
+        </Card>
+      </View>
+    );
+  }
+  const online = connection === "online";
+  // An open solo workout is the workout: there is nothing to pick.
+  if ((step === "setup" || continuing) && (chosen || continuing)) {
+    // Planned sets start as empty rows; only completed rows count as logged.
+    const loggedSets =
+      active?.exercises.reduce(
+        (n, e) => n + e.sets.filter((s) => s.isCompleted).length,
+        0,
+      ) ?? 0;
+    return (
+      <TogetherStartSessionPresenter
+        workoutName={continuing ? active!.name : chosen!.name}
+        workoutMeta={
+          continuing
+            ? loggedSets
+              ? `Your current workout · keeps your ${loggedSets} logged ${loggedSets === 1 ? "set" : "sets"}`
+              : "Your current workout"
+            : workoutMeta(
+                chosen!.exercises.length,
+                chosen!.estimatedDurationMinutes,
+              )
+        }
+        onChangeWorkout={() => {
+          if (continuing) router.back();
+          else setStep("pick");
+        }}
+        connection={connection}
+        onConnectionChange={(next) => {
+          setConnection(next);
+          if (next === "online" && audience === "open") setAudience("friends");
+        }}
+        onlineAvailable={!!cloud}
+        audience={audience}
+        onAudienceChange={(next) => {
+          if (online && next === "open") return;
+          setAudience(next);
+        }}
+        notice={error}
+        onStart={start}
+        onBack={() =>
+          continuing || params.workoutId ? router.back() : setStep("pick")
         }
       />
-      <ScrollView
-        contentContainerStyle={{
-          padding: 20,
-          paddingBottom: insets.bottom + 24,
-        }}
-      >
-        <View gap={16}>
-          <Text fontFamily="$body" color="$primary">
-            STEP {step} OF 3
-          </Text>
-          {!gate.allowed ? (
-            <>
-              <Text color="$text2">
-                {gate.state === "locked"
-                  ? "Every athlete needs a qualifying paid subscription."
-                  : "Checking your Together access…"}
-              </Text>
-              <Btn
-                onPress={gate.state === "locked" ? gate.onUpgrade : gate.retry}
-              >
-                Check access
-              </Btn>
-            </>
-          ) : step === 1 ? (
-            <>
-              <Text fontFamily="$display" fontSize={24} color="$text">
-                Choose your workout
-              </Text>
-              {active ? (
-                <Card>
-                  <View gap={10}>
-                    <Text color="$text">{active.name}</Text>
-                    <Text color="$text2">
-                      Continue your current workout. Your logged sets stay in
-                      place.
-                    </Text>
-                    <Btn onPress={() => setStep(2)}>Use my current workout</Btn>
-                  </View>
-                </Card>
-              ) : (
-                <>
-                  {!choices.length && (
-                    <Text color="$text2">
-                      {workouts.isRefreshing
-                        ? "Loading your workouts…"
-                        : "No workouts available. Create a workout first."}
-                    </Text>
-                  )}
-                  {choices.map((w) => (
-                    <TogetherWorkoutChoice
-                      key={w.id}
-                      name={w.name}
-                      exerciseCount={w.exercises.length}
-                      minutes={w.estimatedDurationMinutes}
-                      exerciseNames={w.exercises.flatMap((e) =>
-                        e.exercise?.name ? [e.exercise.name] : [],
-                      )}
-                      onPress={() => {
-                        setSelected(w.id);
-                        setStep(2);
-                      }}
-                    />
-                  ))}
-                  {!choices.length && (
-                    <Btn
-                      onPress={() =>
-                        router.push("/(app)/workouts/create" as never)
-                      }
-                    >
-                      Create a workout
-                    </Btn>
-                  )}
-                </>
-              )}
-            </>
-          ) : step === 2 ? (
-            <>
-              <Text fontFamily="$display" fontSize={24} color="$text">
-                Who can join?
-              </Text>
-              <TogetherAudienceOptions
-                audience={audience}
-                onAudienceChange={(a) => {
-                  setAudience(a);
-                  setConnection("local");
-                }}
-                trainingPartners={{
-                  selected: audience === "friends",
-                  onSelect: () => setAudience("friends"),
-                }}
-              />
-              <Text color="$text2">
-                Up to four athletes. Joining never shares previous values or
-                grants permission to log for someone.
-              </Text>
-              <Btn onPress={() => setStep(3)}>Next · choose connection</Btn>
-            </>
-          ) : (
-            <>
-              <Text fontFamily="$display" fontSize={24} color="$text">
-                Connect and start
-              </Text>
-              <Text color="$text">{active?.name ?? chosen?.name}</Text>
-              <Btn
-                variant={connection === "local" ? "soft" : "outline"}
-                onPress={() => setConnection("local")}
-              >
-                {NEARBY_CONNECTION_LABEL}
-              </Btn>
-              {audience !== "open" && cloud && (
-                <Btn
-                  variant={connection === "online" ? "soft" : "outline"}
-                  onPress={() => setConnection("online")}
-                >
-                  {ONLINE_CONNECTION_LABEL}
-                </Btn>
-              )}
-              <Text color="$text2">
-                {connection === "online"
-                  ? "Partners join online or through your invitation link."
-                  : "Keep the phones close together and allow the requested local permissions. Internet is not required with valid cached access."}
-              </Text>
-              <Text color="$text2">
-                Start creates your live session. Others can then join from
-                Together or scan your invitation. Each athlete logs and saves
-                their own workout.
-              </Text>
-              <Btn onPress={start}>Start Together session</Btn>
-            </>
-          )}
-          {!!error && (
-            <Text color="$warning" accessibilityRole="alert">
-              {error}
-            </Text>
-          )}
-        </View>
-      </ScrollView>
-    </View>
+    );
+  }
+  return (
+    <TogetherPickWorkoutPresenter
+      today={today}
+      others={others}
+      selectedId={selected}
+      loading={workouts.isRefreshing}
+      onSelect={(id) => {
+        setSelected(id);
+        setStep("setup");
+      }}
+      onCreate={() => router.push("/(app)/workouts/create" as never)}
+      onBack={() => router.back()}
+    />
   );
 }

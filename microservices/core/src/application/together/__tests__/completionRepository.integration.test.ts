@@ -175,6 +175,15 @@ beforeAll(async () => {
       "utf8",
     ),
   );
+  await pg.exec(
+    readFileSync(
+      new URL(
+        "../../../../../../supabase/migrations/20261023120000_together_session_code.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
   db = drizzle(pg, {
     schema,
     logger: {

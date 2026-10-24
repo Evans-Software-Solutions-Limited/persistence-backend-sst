@@ -33,6 +33,8 @@ export interface TogetherSocialApi {
   ): CloudResult<{ discoverable: boolean }>;
   people(query: string, cursor?: string): CloudResult<CloudPage<SocialPerson>>;
   friends(cursor?: string): CloudResult<CloudPage<SocialRelationship>>;
+  /** People this account has blocked (Together settings, PER-60). */
+  blocked(cursor?: string): CloudResult<CloudPage<SocialPerson>>;
   requests(cursor?: string): CloudResult<CloudPage<SocialRelationship>>;
   request(
     key: string,

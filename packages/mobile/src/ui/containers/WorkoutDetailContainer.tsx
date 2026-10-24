@@ -1,10 +1,8 @@
 import { useTogetherGate } from "@/ui/hooks/useTogetherGate";
-import { TogetherConnectionChoice } from "@/ui/presenters/TogetherConnectionChoice";
 import { TogetherStartRow } from "@/ui/presenters/TogetherStartRow";
-import { TogetherStartSheet } from "@/ui/presenters/TogetherStartSheet";
 import type { TogetherLobbyAudience } from "@/domain/ports/togetherLobby.port";
 import { router, useLocalSearchParams } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import {
   deriveDominantEquipment,
   deriveWorkoutMuscles,
@@ -47,24 +45,10 @@ import { AdaptiveSuiteRouteGuard } from "@/ui/components/subscription/AdaptiveSu
 export function WorkoutDetailContainer() {
   const params = useLocalSearchParams<{ id?: string }>();
   const workoutId = params.id ?? null;
-  const { storage, togetherLobby, togetherCloud } = useAdapters();
+  const { storage, togetherLobby } = useAdapters();
   const togetherGate = useTogetherGate();
-  const [togetherOpen, setTogetherOpen] = useState(false);
-  const [togetherConnection, setTogetherConnection] = useState<
-    "local" | "online"
-  >("local");
-  const [togetherAudience, setTogetherAudience] =
-    useState<TogetherLobbyAudience>("invite-only");
   const { session } = useAuth();
   const userId = session?.userId ?? null;
-  useEffect(() => {
-    setTogetherOpen(false);
-    setTogetherConnection("local");
-    setTogetherAudience("invite-only");
-  }, [userId, workoutId]);
-  useEffect(() => {
-    if (!togetherGate.allowed) setTogetherOpen(false);
-  }, [togetherGate.allowed]);
   const weightUnit = useProfilePage().payload?.profile.weightUnit ?? "kg";
 
   const detail = useWorkout(workoutId);
@@ -181,10 +165,11 @@ export function WorkoutDetailContainer() {
         totalCapGate.onLocked();
         return;
       }
-      setTogetherOpen(false);
+      // Together starts from Start a shared session with this workout selected
+      // (PER-60 default): mode and audience are asked there, preset from settings.
       router.push(
         (audience
-          ? `/(app)/session?workoutId=${encodeURIComponent(id)}&togetherAudience=${audience}&togetherAccountId=${encodeURIComponent(userId ?? "")}${audience !== "open" && togetherConnection === "online" ? "&togetherConnection=online" : ""}`
+          ? `/(app)/together/start?workoutId=${encodeURIComponent(id)}`
           : `/(app)/session?workoutId=${id}`) as never,
       );
     },
@@ -194,7 +179,6 @@ export function WorkoutDetailContainer() {
       openLoadoutUpsell,
       totalCapGate,
       userId,
-      togetherConnection,
       togetherGate.allowed,
     ],
   );
@@ -294,14 +278,10 @@ export function WorkoutDetailContainer() {
         togetherEntry={
           togetherLobby && togetherGate.allowed ? (
             <TogetherStartRow
-              detail={
-                togetherAudience === "friends"
-                  ? "training partners"
-                  : togetherAudience === "open"
-                    ? "open nearby"
-                    : "private"
-              }
-              onStart={() => setTogetherOpen(true)}
+              detail="Nearby or Online"
+              onStart={() => {
+                if (workout) onStartWorkout(workout.id, "friends");
+              }}
             />
           ) : undefined
         }
@@ -322,29 +302,6 @@ export function WorkoutDetailContainer() {
         loadoutVariations={loadoutGate.allowed ? variations.variations : []}
         onOpenLoadout={onOpenLoadout}
         onOpenVariation={isLoadoutWorkout ? undefined : onOpenVariation}
-      />
-      <TogetherStartSheet
-        connectionOptions={
-          <TogetherConnectionChoice
-            value={togetherConnection}
-            onChange={setTogetherConnection}
-            onlineAvailable={togetherAudience !== "open" && !!togetherCloud}
-          />
-        }
-        visible={togetherOpen && togetherGate.allowed}
-        onClose={() => setTogetherOpen(false)}
-        onStart={() => {
-          if (workout) onStartWorkout(workout.id, togetherAudience);
-        }}
-        audience={togetherAudience}
-        onAudienceChange={(next) => {
-          setTogetherAudience(next);
-          // Open is nearby-only; Private and Training partners keep the chosen connection.
-          if (next === "open") setTogetherConnection("local");
-        }}
-        activeWorkoutName={
-          userId ? storage.getActiveSession(userId)?.name : undefined
-        }
       />
       {/* The upsell belongs to, and is layered within, its owning screen. */}
       <LoadoutUpsellSheet

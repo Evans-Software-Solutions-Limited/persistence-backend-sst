@@ -127,6 +127,11 @@ export const socialHandler = new Elysia()
     (c) => repo.list(getUser(c).sub, "pending", c.query.limit, c.query.cursor),
     { query: socialPageQuery },
   )
+  .get(
+    "/social/blocks",
+    (c) => repo.blocked(getUser(c).sub, c.query.limit, c.query.cursor),
+    { query: socialPageQuery },
+  )
   .post(
     "/social/requests",
     async (c) => ({

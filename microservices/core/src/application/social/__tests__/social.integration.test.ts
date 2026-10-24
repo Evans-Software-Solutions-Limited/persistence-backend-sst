@@ -190,6 +190,15 @@ beforeAll(async () => {
       "utf8",
     ),
   );
+  await pg.exec(
+    await readFile(
+      new URL(
+        "../../../../../../supabase/migrations/20261023120000_together_session_code.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
   db = drizzle(pg, { schema });
   holder.db = db;
 });
@@ -312,11 +321,14 @@ describe("production social persistence", () => {
     expect(await withActors([a, b], (tx) => areFriends(tx, a, b))).toBe(false);
     await friends();
     await social.block(b, a, key(), true);
+    expect((await social.blocked(b)).data.map((p) => p.userId)).toEqual([a]);
+    expect((await social.blocked(a)).data).toEqual([]);
     expect(await withActors([a, b], (tx) => canInteract(tx, a, b))).toBe(false);
     await expect(social.request(a, b, key())).rejects.toMatchObject({
       status: 403,
     });
     await social.block(b, a, key(), false);
+    expect((await social.blocked(b)).data).toEqual([]);
     expect(await withActors([a, b], (tx) => canInteract(tx, a, b))).toBe(true);
     expect(await withActors([a, b], (tx) => areFriends(tx, a, b))).toBe(false);
     await expect(social.block(a, a, key(), true)).rejects.toMatchObject({

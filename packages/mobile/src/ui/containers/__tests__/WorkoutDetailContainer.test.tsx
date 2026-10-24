@@ -11,7 +11,6 @@ import { fail, ok } from "@/shared/errors";
 import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import { useLoadoutFlow } from "@/state/loadout-flow";
-import { TogetherStartSheet } from "@/ui/presenters/TogetherStartSheet";
 import { WorkoutDetailPresenter } from "@/ui/presenters/WorkoutDetailPresenter";
 import { WorkoutDetailContainer } from "@/ui/containers/WorkoutDetailContainer";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
@@ -265,20 +264,11 @@ describe("WorkoutDetailContainer", () => {
         withAdapters(adapters, <WorkoutDetailContainer />),
       );
       await r.findByText("Bench Press");
+      // PER-60: the row opens Start a shared session with this workout selected;
+      // nothing is created or replaced here, whether or not a workout is open.
       fireEvent.press(r.getByTestId("together-start"));
-      expect(r.getByText("Who can join?")).toBeTruthy();
-      if (existing)
-        expect(
-          r.getByText(/You already have an active workout: Evening Squats/),
-        ).toBeTruthy();
-      expect(storage.getActiveSession("user-1")).toEqual(active);
-      expect(mockRouterPush).not.toHaveBeenCalled();
-      fireEvent.press(r.getByText("Cancel"));
-      expect(mockRouterPush).not.toHaveBeenCalled();
-      fireEvent.press(r.getByTestId("together-start"));
-      fireEvent.press(r.getByText("Start the session"));
       expect(mockRouterPush).toHaveBeenCalledWith(
-        "/(app)/session?workoutId=w-1&togetherAudience=invite-only&togetherAccountId=user-1",
+        "/(app)/together/start?workoutId=w-1",
       );
       expect(storage.getActiveSession("user-1")).toEqual(active);
     },
@@ -381,7 +371,7 @@ describe("WorkoutDetailContainer", () => {
 
     const adapters = makeAdapters(api, storage);
     adapters.togetherLobby = togetherLobby();
-    const { getByTestId, getByText, findByText } = renderWithTheme(
+    const { getByTestId, findByText } = renderWithTheme(
       withAdapters(adapters, <WorkoutDetailContainer />),
     );
     await findByText("Bench Press");
@@ -397,7 +387,6 @@ describe("WorkoutDetailContainer", () => {
     });
     mockRouterPush.mockClear();
     fireEvent.press(getByTestId("together-start"));
-    fireEvent.press(getByText("Start the session"));
     expect(mockRouterPush).toHaveBeenCalledTimes(1);
     expect(mockRouterPush).toHaveBeenCalledWith("/(app)/workout-limit-locked");
     expect(storage.getActiveSession("user-1")).toBeNull();
@@ -874,41 +863,12 @@ it("offers online partner discovery and explains local joining without a managem
   adapters.togetherCloud = {} as NonNullable<Adapters["togetherCloud"]>;
   const r = renderWithTheme(withAdapters(adapters, <WorkoutDetailContainer />));
   await r.findByText("Bench Press");
+  expect(r.getByText(/Nearby or Online/)).toBeTruthy();
   fireEvent.press(r.getByTestId("together-start"));
-  expect(
-    r.getByText("Train with your accepted training partners"),
-  ).toBeTruthy();
-  expect(
-    r.getByText(/No internet needed with valid offline access/),
-  ).toBeTruthy();
-  fireEvent.press(r.getByText("Training partners"));
-  fireEvent.press(r.getByText("Start the session"));
-  expect(mockRouterPush).toHaveBeenCalledWith(
-    "/(app)/session?workoutId=w-1&togetherAudience=friends&togetherAccountId=user-1",
-  );
-  expect(storage.getActiveSession("user-1")).toBeNull();
-  fireEvent.press(r.getByTestId("together-start"));
-  fireEvent.press(r.getByText("Online · internet required"));
-  fireEvent.press(r.getByText("Start the session"));
   expect(mockRouterPush).toHaveBeenLastCalledWith(
-    "/(app)/session?workoutId=w-1&togetherAudience=friends&togetherAccountId=user-1&togetherConnection=online",
+    "/(app)/together/start?workoutId=w-1",
   );
-  // Private can start online too; Open is nearby-only and drops the online choice.
-  fireEvent.press(r.getByTestId("together-start"));
-  fireEvent.press(r.getByText("Private"));
-  fireEvent.press(r.getByText("Online · internet required"));
-  fireEvent.press(r.getByText("Start the session"));
-  expect(mockRouterPush).toHaveBeenLastCalledWith(
-    "/(app)/session?workoutId=w-1&togetherAudience=invite-only&togetherAccountId=user-1&togetherConnection=online",
-  );
-  fireEvent.press(r.getByTestId("together-start"));
-  fireEvent.press(r.getByText("Online · internet required"));
-  fireEvent.press(r.getByText("Open nearby"));
-  expect(r.queryByText("Online · internet required")).toBeNull();
-  fireEvent.press(r.getByText("Start the session"));
-  expect(mockRouterPush).toHaveBeenLastCalledWith(
-    "/(app)/session?workoutId=w-1&togetherAudience=open&togetherAccountId=user-1",
-  );
+  expect(r.queryByText("Start the session")).toBeNull();
   expect(r.queryByText("Add or manage training partners")).toBeNull();
   expect(storage.getActiveSession("user-1")).toBeNull();
 });
@@ -950,13 +910,14 @@ it("closes setup and rejects its action when paid access is lost", async () => {
   const r = renderWithTheme(tree());
   await r.findByText("Bench Press");
   fireEvent.press(r.getByTestId("together-start"));
-  expect(r.getByText("Who can join?")).toBeTruthy();
+  expect(mockRouterPush).toHaveBeenCalledWith(
+    "/(app)/together/start?workoutId=w-1",
+  );
+  mockRouterPush.mockClear();
   mockTogetherGate.allowed = false;
   mockTogetherGate.state = "locked";
   r.rerender(tree());
   expect(r.queryByTestId("together-start")).toBeNull();
-  expect(r.UNSAFE_getByType(TogetherStartSheet).props.visible).toBe(false);
-  act(() => r.UNSAFE_getByType(TogetherStartSheet).props.onStart());
   expect(mockRouterPush).not.toHaveBeenCalled();
   expect(storage.getActiveSession("user-1")).toBeNull();
 });

@@ -236,9 +236,12 @@ export function TogetherLobbyPresenter(p: TogetherLobbyPresenterProps) {
             Your logged sets stay yours.
           </Copy>
           <TogetherAudienceOptions
-            trainingPartners={p.trainingPartners}
-            audience={p.audience}
-            onAudienceChange={p.onAudienceChange}
+            audience={p.trainingPartners?.selected ? "friends" : p.audience}
+            onAudienceChange={(value) =>
+              value === "friends"
+                ? p.trainingPartners?.onSelect()
+                : p.onAudienceChange(value)
+            }
           />
           <Copy>
             Local Training partners sessions require verified friendship. In

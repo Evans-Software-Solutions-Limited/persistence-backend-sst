@@ -1,69 +1,68 @@
-import { Text, View, useTheme } from "@tamagui/core";
+import { Pressable } from "react-native";
+import { Text, View } from "@tamagui/core";
 import type { TogetherLobbyAudience } from "@/domain/ports/togetherLobby.port";
-import { Card } from "@/ui/components/foundation/Card";
-import { IconLock, IconUsers } from "@/ui/components/icons";
 
-/** Claude v2 VisRow geometry, with the approved bounded local audiences. Open is nearby-only. */
+/** Canvas row 1c "Who can join" list. Open nearby is Nearby-only, so Online disables it. */
 export function TogetherAudienceOptions({
   audience,
+  online = false,
   onAudienceChange,
-  trainingPartners,
 }: {
-  trainingPartners?: { selected: boolean; onSelect(): void };
   audience: TogetherLobbyAudience;
+  online?: boolean;
   onAudienceChange(value: TogetherLobbyAudience): void;
 }) {
-  // Both app themes define text3 in ui/theme/themes.ts.
-  const theme = useTheme();
+  const options: [TogetherLobbyAudience, string, string][] = [
+    ["invite-only", "Private", "Code or QR only"],
+    [
+      "friends",
+      "Training partners",
+      "Partners join straight in. Others use the code.",
+    ],
+    [
+      "open",
+      "Open nearby",
+      online
+        ? "Nearby only. Pick Nearby to use it."
+        : "Anyone near you can ask to join",
+    ],
+  ];
   return (
     <View
-      gap={9}
+      gap={8}
       accessibilityRole="radiogroup"
-      accessibilityLabel="Who can join?"
+      accessibilityLabel="Who can join"
     >
-      {(
-        [
-          ["invite-only", "Private", "Code or QR only", IconLock],
-          ...(trainingPartners
-            ? [
-                [
-                  "friends",
-                  "Training partners",
-                  "Train with your accepted training partners",
-                  IconUsers,
-                ] as const,
-              ]
-            : []),
-          ["open", "Open nearby", "Athletes nearby can find it", IconUsers],
-        ] as const
-      ).map(([value, title, detail, Icon]) => {
-        const selected =
-          value === "friends"
-            ? trainingPartners?.selected
-            : !trainingPartners?.selected && audience === value;
+      {options.map(([value, title, detail]) => {
+        const disabled = online && value === "open";
+        const selected = audience === value && !disabled;
         return (
-          <Card
+          <Pressable
             key={value}
-            surface={1}
-            pad={13}
-            radius={12}
-            onPress={() =>
-              value === "friends"
-                ? trainingPartners?.onSelect()
-                : onAudienceChange(value)
-            }
+            disabled={disabled}
+            onPress={() => onAudienceChange(value)}
             accessibilityRole="radio"
             accessibilityLabel={title}
-            accessibilityState={{ checked: selected }}
-            accent={selected ? "primary" : undefined}
+            accessibilityState={{ checked: selected, disabled }}
           >
-            <View flexDirection="row" alignItems="center" gap={11}>
+            <View
+              flexDirection="row"
+              alignItems="flex-start"
+              gap={12}
+              padding={14}
+              borderRadius={14}
+              borderWidth={1}
+              borderColor={selected ? "$primary" : "$border"}
+              backgroundColor={selected ? "$primaryDim" : "$surface2"}
+              opacity={disabled ? 0.5 : 1}
+            >
               <View
-                width={16}
-                height={16}
-                borderRadius={8}
+                width={18}
+                height={18}
+                marginTop={1}
+                borderRadius={9}
                 borderWidth={1.5}
-                borderColor={selected ? "$primary" : "$border3"}
+                borderColor={selected ? "$primary" : "$text4"}
                 alignItems="center"
                 justifyContent="center"
               >
@@ -76,32 +75,26 @@ export function TogetherAudienceOptions({
                   />
                 )}
               </View>
-              <Icon
-                size={16}
-                color={selected ? theme.primary.val : theme.text3!.val}
-              />
-              <View flex={1}>
+              <View flex={1} gap={2}>
                 <Text
                   fontFamily="$display"
-                  fontSize={14}
-                  lineHeight={18}
                   fontWeight="600"
-                  color="$text"
+                  fontSize={14}
+                  color={disabled ? "$text3" : "$text"}
                 >
                   {title}
                 </Text>
                 <Text
                   fontFamily="$body"
-                  fontSize={11.5}
-                  lineHeight={15}
+                  fontSize={12}
+                  lineHeight={17}
                   color="$text3"
-                  marginTop={2}
                 >
                   {detail}
                 </Text>
               </View>
             </View>
-          </Card>
+          </Pressable>
         );
       })}
     </View>

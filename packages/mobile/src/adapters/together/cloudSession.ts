@@ -1416,6 +1416,12 @@ export class TogetherCloudController implements TogetherCloudPort {
     this.guard(context);
     return result;
   }
+  async preview(selector: { inviteToken?: string; code?: string }) {
+    const context = this.context();
+    const result = await this.options.api.preview(selector);
+    this.guard(context);
+    return result;
+  }
   async prepareReview() {
     return this.buildReview();
   }
