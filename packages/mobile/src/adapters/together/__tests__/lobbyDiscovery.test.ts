@@ -383,6 +383,75 @@ describe("bounded anonymous network browser lifecycle", () => {
     expect(native.connect).toHaveBeenCalledTimes(2);
     expect(errors).not.toHaveBeenCalled();
   });
+  it("a refresh probe that fails drops only that host's row; the search carries on (inspector lead)", async () => {
+    let clock = now;
+    await browser.stop();
+    browser = new TogetherLobbyBrowser({
+      native,
+      trustedKeys,
+      randomBytes,
+      now: () => clock,
+      onChange: changes,
+      onError: errors,
+    });
+    await browser.start();
+    const other = { ...pin, sessionId: id(4) };
+    const reply = (peerId: string, who: typeof pin, name: string) =>
+      emit({
+        type: "frame",
+        peerId,
+        frame: signSummary(
+          who,
+          identity,
+          name,
+          1,
+          JSON.parse(jest.mocked(native.send).mock.calls.at(-1)![1]).nonce,
+          clock,
+        ),
+      });
+    discover("a");
+    emit({ type: "discovered", endpointId: "b", lobbyId: other.sessionId });
+    connect("pa");
+    reply("pa", pin, "Host A");
+    emit({ type: "disconnected", peerId: "pa" });
+    await settle();
+    connect("pb");
+    reply("pb", other, "Host B");
+    emit({ type: "disconnected", peerId: "pb" });
+    await settle();
+    expect(changes).toHaveBeenLastCalledWith([
+      expect.objectContaining({ workoutName: "Host A" }),
+      expect.objectContaining({ workoutName: "Host B" }),
+    ]);
+    // Both come up for refresh; A's connect is rejected, B's times out.
+    clock = now + SUMMARY_TTL - REFRESH_MARGIN;
+    jest.mocked(native.connect).mockRejectedValueOnce(new Error("gone"));
+    jest.advanceTimersByTime(1000);
+    await settle();
+    // A's failure dropped A alone and moved straight on to B.
+    expect(native.connect).toHaveBeenCalledTimes(4);
+    expect(
+      jest
+        .mocked(native.connect)
+        .mock.calls.slice(2)
+        .map((c) => c[0]),
+    ).toEqual(["a", "b"]);
+    expect(errors).not.toHaveBeenCalled();
+    expect(changes).toHaveBeenLastCalledWith([
+      expect.objectContaining({ workoutName: "Host B" }),
+    ]);
+    jest.advanceTimersByTime(5000);
+    await settle();
+    expect(errors).not.toHaveBeenCalled();
+    expect(changes).toHaveBeenLastCalledWith([]);
+    // The only stop so far is the swap at the top of this test: the search runs on.
+    expect(native.stop).toHaveBeenCalledTimes(1);
+    // A first-contact probe that cannot be reached still ends the generation.
+    emit({ type: "discovered", endpointId: "c", lobbyId: pin.sessionId });
+    await settle();
+    jest.advanceTimersByTime(5000);
+    expect(errors).toHaveBeenCalledWith("unreachable-host");
+  });
   it("losing an unbound probe stops the generation so a late connection cannot become the next host", async () => {
     await browser.start();
     discover("lost");

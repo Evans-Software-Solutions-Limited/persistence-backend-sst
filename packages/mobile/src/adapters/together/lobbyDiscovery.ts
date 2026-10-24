@@ -165,7 +165,11 @@ export class TogetherLobbyBrowser {
   private running = false;
   private finishing = false;
   private seen = new Set<string>();
-  private queue: { endpointId: string; sessionId: string }[] = [];
+  private queue: {
+    endpointId: string;
+    sessionId: string;
+    refresh?: boolean;
+  }[] = [];
   private summaries = new Map<string, LobbySummary>();
   /** Endpoints queued for a refresh probe; cleared when a new summary lands or the host is lost. */
   private refreshing = new Set<string>();
@@ -174,6 +178,8 @@ export class TogetherLobbyBrowser {
     sessionId: string;
     nonce: string;
     peerId?: string;
+    /** A re-probe of a listed host: its failure drops that row only. */
+    refresh?: boolean;
   };
   private deadline?: ReturnType<typeof setTimeout>;
   private expiry?: ReturnType<typeof setInterval>;
@@ -207,7 +213,11 @@ export class TogetherLobbyBrowser {
         // before its summary lapses, or every host found early drops off
         // the list before the search ends.
         this.refreshing.add(endpoint);
-        this.queue.push({ endpointId: endpoint, sessionId: summary.sessionId });
+        this.queue.push({
+          endpointId: endpoint,
+          sessionId: summary.sessionId,
+          refresh: true,
+        });
         this.next();
       }
     }
@@ -240,7 +250,7 @@ export class TogetherLobbyBrowser {
         // A bound socket can be closed independently. An unbound connection
         // must end this generation because native connected events lack endpoint IDs.
         if (active.peerId) void this.finish(active);
-        else this.fatal("unreachable-host");
+        else this.unreachable(active);
       }
     } else if (event.type === "connected") {
       const active = this.active;
@@ -299,10 +309,26 @@ export class TogetherLobbyBrowser {
     };
     this.active = active;
     // No endpoint correlation exists on connected: timeout ends the entire generation.
-    this.deadline = setTimeout(() => this.fatal("unreachable-host"), 5000);
+    this.deadline = setTimeout(() => this.unreachable(active), 5000);
     void this.options.native.connect(endpoint.endpointId).catch(() => {
-      if (this.active === active) this.fatal("unreachable-host");
+      if (this.active === active) this.unreachable(active);
     });
+  }
+  /**
+   * A first-contact probe that cannot reach its host ends the generation, as
+   * above. A refresh probe only drops that host's row: a host that left
+   * before Nearby reported it lost must not end the whole search (PER-60).
+   */
+  private unreachable(active: NonNullable<TogetherLobbyBrowser["active"]>) {
+    if (this.active !== active) return;
+    if (!active.refresh) {
+      this.fatal("unreachable-host");
+      return;
+    }
+    this.summaries.delete(active.endpointId);
+    this.refreshing.delete(active.endpointId);
+    this.options.onChange([...this.summaries.values()]);
+    void this.finish(active);
   }
   private async finish(active: NonNullable<TogetherLobbyBrowser["active"]>) {
     if (this.active !== active) return;

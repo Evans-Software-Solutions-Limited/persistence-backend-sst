@@ -152,10 +152,14 @@ within 15 s; the browser now re-probes a host 5 s before its summary lapses
 while searching, and after the deadline the controller drops rows as they
 expire instead of listing an unjoinable session. `preview` now applies the
 same invite rules as `requestJoin` (consumed, friends-only), so a forwarded
-or used link shows nothing to someone who cannot join.
+or used link shows nothing to someone who cannot join. Fourth sweep of
+16dfaca (1 lead, fixed): a refresh probe shared the first-contact fail-fast
+path, so one host leaving before Nearby reported it lost ended the whole
+search; a failed refresh now drops that host's row only and the search
+carries on, while an unreachable first contact still ends the generation.
 
-**Verified.** Mobile Jest 643 suites / 8,588 tests, coverage
-96.14 / 92.07 / 96.06 / 97.55 (gate 90); core unit 408 files / 5,667 tests,
+**Verified.** Mobile Jest 643 suites / 8,589 tests, coverage
+96.13 / 92.07 / 96.06 / 97.55 (gate 90); core unit 408 files / 5,667 tests,
 coverage 98.1 / 94.32 / 97.74 / 98.1 with the session-code migration applied
 in every harness; typecheck clean; `expo lint` 0
 errors; prettier clean. New presenter tests cover every join/sheet state
