@@ -944,9 +944,13 @@ export function ActiveSessionContainer() {
     }
     return true;
   };
-  const renderPresenter = (togetherRow?: ReactNode) => (
+  const renderPresenter = (
+    togetherRow?: ReactNode,
+    partnerView?: ReactNode,
+  ) => (
     <ActiveSessionPresenter
       togetherRow={togetherRow}
+      partnerView={partnerView}
       sessionName={session.name}
       startedAt={session.startedAt}
       exercises={session.exercises}

@@ -75,6 +75,34 @@ describe("ActiveSessionPresenter (vertical scroll, legacy parity)", () => {
     expect(props.onAddExercise).toHaveBeenCalledTimes(1);
   });
 
+  it("a partner's view replaces your list and Finish, keeping the header and strip (PER-60 row 2)", () => {
+    const { Text } = jest.requireActual("react-native");
+    const { getByTestId, queryByTestId, getByText, rerender } = renderWithTheme(
+      <ActiveSessionPresenter
+        {...baseProps}
+        togetherRow={<Text>strip</Text>}
+        partnerView={<Text>Mia’s workout</Text>}
+      />,
+    );
+    expect(getByTestId("active-session-partner-list")).toBeTruthy();
+    expect(getByTestId("session-header")).toBeTruthy();
+    expect(getByText("strip")).toBeTruthy();
+    expect(getByText("Mia’s workout")).toBeTruthy();
+    expect(queryByTestId("session-exercise-se-1")).toBeNull();
+    expect(queryByTestId("active-session-finish")).toBeNull();
+    fireEvent.press(getByTestId("session-minimize"));
+    expect(baseProps.onMinimize).toHaveBeenCalledTimes(1);
+    rerender(
+      <ActiveSessionPresenter
+        {...baseProps}
+        togetherRow={<Text>strip</Text>}
+      />,
+    );
+    expect(queryByTestId("active-session-partner-list")).toBeNull();
+    expect(getByTestId("session-exercise-se-1")).toBeTruthy();
+    expect(getByTestId("active-session-finish")).toBeTruthy();
+  });
+
   it("stacks every exercise vertically (no pager / tab-strip)", () => {
     const props = {
       ...baseProps,

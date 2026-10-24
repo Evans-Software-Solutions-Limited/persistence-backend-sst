@@ -1,5 +1,61 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-24 — Together UX pass PR 2: partner view (PER-60, branch `claude/per-60-together-partner-view`)
+
+Second of four UI PRs ([canvas](https://claude.ai/artifact/VBc4WTCmYuT5uJ1V6GyqSM)
+row 2, `Partner.dc.html`; brief and plan on
+[PER-60](https://linear.app/evans-software-solutions/issue/PER-60), 24 Oct).
+Mobile only, no backend change.
+
+**What changed.** The strip avatars are the tabs between your workout and
+each partner's ("Show my workout" / "Show <name>’s workout", selected state,
+26 pt faces with 9 pt hit slop = 44 pt). A partner's workout no longer
+replaces the screen: `TogetherLobbyContainer` / `TogetherCloudContainer`
+call `children(row, partnerView)` and `ActiveSessionPresenter` swaps its
+list for `partnerView` (same `SessionHeader` and strip, no Finish button),
+so your own avatar is the only way back. `TogetherPartnerPresenter` is
+rebuilt on `SessionExerciseCard` + `SetLogger`: per plan exercise the logged
+sets, then an empty row for every planned set (`targetSets`), plus rows the
+viewer adds; exercises outside the plan are appended. Fill-in on
+(`togetherPartnerAccess`: numbers grant + fill-in grant + a live revision;
+Online also checks `allowPartnerLogging`): rows are editable at once and a
+set is sent (`upsertSet`, against the shown revision) when reps and kg are
+both filled and a field blurs, or Prev is tapped; drafts drop when the
+logged values or the grant version change. Partner rows carry the canvas
+status dot (saved · sending · not sent · not logged). Numbers private: the
+canvas card and per-exercise progress bars in the partner's ring colour.
+Info bar under the strip on every partner view (`$infoDim` / `$infoBorder`
+tokens added). New optional props, unused by the solo path:
+`SessionExerciseCard` `partner` / `readOnly` / `caption` /
+`syncStateBySetId` / `onCommitSet` (and `onTapExercise` optional);
+`SetLogger` `syncState` / `onCommit`. The Log-for / Mine / Save set for /
+Add set for / Back to my workout code and its tests are gone.
+
+**Canvas differences (listed on PER-60):** copy uses names, not the canvas's
+"her"/"He"; no delete × on a partner's set (Nearby delegation accepts
+`upsertSet` only); no rest button on a partner's exercise; status dots on
+partner rows only (own rows unchanged); the caption is "N sets" (the shared
+plan has no rep range); a partner without a display name reads "Training
+partner" in the bar while the Online strip says "Athlete N".
+
+**Verified.** Mobile Jest 643 suites / 8,601 tests, coverage
+96.15 / 92.07 / 96.02 / 97.56 (gate 90); `TogetherPartnerPresenter` 98.4 %
+statements, `SessionExerciseCard` / `SetLogger` 100 %. `bun run typecheck`
+clean, `expo lint` 0 errors, prettier clean. Presenter tests cover own view
+(ActiveSessionPresenter swap), partner editable, read-only with numbers,
+private, no previous values, planned-only rows, sending / not sent / retry,
+Add set, revocation mid-edit. Container tests (Nearby and Online): select a
+partner and return by your own avatar, edit a partner's planned set, refusal
+and locked rows when fill-in is revoked mid-view. Screenshots in
+`specs/milestones/TRAIN-TOGETHER/evidence/ui-2026-10-24-per60-pr2/`: app
+(PR 1 harness, 440 × 920 dark, 58 pt band) next to canvas crops (the
+artboard template expanded statically and shot with headless Chrome, since
+the canvas page needs a claude.ai sign-in) and the v2 screen from main.
+Phone 3 (Mia · added sets, sending / not-sent dots) is interaction state:
+covered by tests, no screenshot.
+
+**Not verified.** Nothing on a device or simulator.
+
 ### 2026-10-23 — Together UX pass PR 1: join, hub and create (PER-60, branch `claude/per-60-together-join-hub-create`)
 
 First of four UI PRs implementing the signed-off journey design

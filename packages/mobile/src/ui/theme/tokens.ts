@@ -82,6 +82,8 @@ export const color = {
   $error: "#F87171",
   $errorDim: "rgba(248,113,113,0.12)",
   $info: "#60A5FA",
+  $infoDim: "rgba(96,165,250,0.12)",
+  $infoBorder: "rgba(96,165,250,0.35)",
 } as const;
 
 // ────────────────────────────────────────────────────────────

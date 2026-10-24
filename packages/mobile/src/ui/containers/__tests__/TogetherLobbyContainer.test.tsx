@@ -17,6 +17,7 @@ import type {
   TogetherLobbySnapshot,
 } from "@/domain/ports/togetherLobby.port";
 import { router } from "expo-router";
+import * as Crypto from "expo-crypto";
 import { TogetherSharingPresenter } from "@/ui/presenters/TogetherSharingPresenter";
 import { TogetherPartnerPresenter } from "@/ui/presenters/TogetherPartnerPresenter";
 import { TogetherWorkoutRow } from "@/ui/presenters/TogetherWorkoutRow";
@@ -783,7 +784,12 @@ it("partner view delegates only the displayed revision and returns to own workou
   const h = sharingHarness();
   const r = mountShared(h, {
     displayName: "Brad",
-    children: (row) => <View testID="personal-workout">{row}</View>,
+    children: (row, partnerView) => (
+      <View testID={partnerView ? "partner-screen" : "personal-workout"}>
+        {row}
+        {partnerView}
+      </View>
+    ),
   });
   h.publish({
     phase: "joined",
@@ -793,21 +799,144 @@ it("partner view delegates only the displayed revision and returns to own workou
     ],
   });
   h.update("active");
-  fireEvent.press(r.getByLabelText("Mia’s workout"));
+  fireEvent.press(r.getByLabelText("Show Mia’s workout"));
   expect(r.queryByTestId("personal-workout")).toBeNull();
+  // The strip stays: the partner's workout renders inside the active screen.
+  expect(r.getByTestId("partner-screen")).toBeTruthy();
+  expect(r.getByTestId("together-workout-row")).toBeTruthy();
   const p = r.UNSAFE_getByType(TogetherPartnerPresenter)
     .props as React.ComponentProps<typeof TogetherPartnerPresenter>;
+  expect(p.tone).toBe("info");
+  expect(p.editable).toBe(false);
   await act(async () => p.onOperation({ type: "upsertSet" }, 7));
   expect(h.shared.requestDelegatedSet).toHaveBeenCalledWith(
     "other",
     { type: "upsertSet" },
     7,
   );
-  act(() => p.onMine());
+  // Your own avatar is the only way back.
+  expect(r.queryByText("Back to my workout")).toBeNull();
+  expect(r.queryByText("Mine")).toBeNull();
+  fireEvent.press(r.getByLabelText("Show my workout"));
   expect(r.getByTestId("personal-workout")).toBeTruthy();
-  fireEvent.press(r.getByLabelText("Mia’s workout"));
+  fireEvent.press(r.getByLabelText("Show Mia’s workout"));
   h.publish({ members: [{ userId: "a", host: false }] });
   expect(r.getByTestId("personal-workout")).toBeTruthy();
+});
+it("fill-in edits a Nearby partner's planned set at once, and a revoked grant locks the rows mid-view", async () => {
+  const uuid = jest.spyOn(Crypto, "randomUUID").mockReturnValue("row-2");
+  const h = sharingHarness();
+  const grant = (logging: boolean, version: number) => [
+    {
+      ownerId: "other",
+      recipientId: "a",
+      version,
+      consent: { numbers: true, prev: true, logging },
+    },
+  ];
+  h.setShared({
+    athletePlans: {
+      other: {
+        name: "Lower Body B",
+        exercises: [
+          {
+            planExerciseId: "slot",
+            exerciseId: "squat",
+            order: 0,
+            targetSets: 2,
+          },
+        ],
+      },
+    },
+    athletes: [
+      {
+        userId: "other",
+        revision: 4,
+        restEndsAt: null,
+        exercises: {
+          slot: {
+            exerciseId: "squat",
+            skipped: false,
+            sets: [{ setId: "s1", reps: 8, weightKg: 60, completed: true }],
+          },
+        },
+      },
+    ],
+    previous: {
+      other: [
+        {
+          exerciseId: "squat",
+          setNumber: 2,
+          reps: 8,
+          weightKg: 57.5,
+          recordedAt: 1,
+        },
+      ],
+    },
+    grants: grant(true, 1),
+  });
+  let refuse!: (error: Error) => void;
+  jest
+    .mocked(h.shared.requestDelegatedSet)
+    .mockResolvedValueOnce(undefined)
+    .mockImplementationOnce(
+      () => new Promise<void>((_, reject) => (refuse = reject)),
+    );
+  const r = mountShared(h, {
+    displayName: "Brad",
+    exerciseNames: { squat: "Squat" },
+    children: (row, partnerView) => (
+      <>
+        {row}
+        {partnerView}
+      </>
+    ),
+  });
+  h.publish({
+    phase: "joined",
+    members: [
+      { userId: "a", host: false },
+      { userId: "other", host: true },
+    ],
+  });
+  h.update("active");
+  fireEvent.press(r.getByLabelText("Show Mia’s workout"));
+  expect(r.getByText("Logging for Mia · changes Mia’s record")).toBeTruthy();
+  const reps = () => r.getAllByTestId("set-logger-reps");
+  expect(reps().map((input) => input.props.value)).toEqual(["8", ""]);
+  expect(reps()[1]!.props.editable).toBe(true);
+  // Prev on the planned row is Mia's own value; tapping it logs the set for her.
+  fireEvent.press(r.getByText("8 reps • 57.5 kg"));
+  await waitFor(() =>
+    expect(h.shared.requestDelegatedSet).toHaveBeenCalledWith(
+      "other",
+      {
+        type: "upsertSet",
+        planExerciseId: "slot",
+        set: {
+          setId: expect.any(String),
+          reps: 8,
+          weightKg: 57.5,
+          completed: true,
+        },
+      },
+      4,
+    ),
+  );
+  // A second edit is in flight when Mia turns fill-in off.
+  fireEvent.changeText(reps()[0]!, "9");
+  fireEvent(reps()[0]!, "blur");
+  expect(h.shared.requestDelegatedSet).toHaveBeenCalledTimes(2);
+  act(() => h.setShared({ grants: grant(false, 2) }));
+  await act(async () => refuse(new Error("permission-changed")));
+  expect(r.getByText("Mia · read-only. Fill-in is off.")).toBeTruthy();
+  expect(reps().every((input) => input.props.editable === false)).toBe(true);
+  expect(reps()[0]!.props.value).toBe("8");
+  expect(r.getByTestId("set-logger-sync-notsent")).toBeTruthy();
+  expect(r.getByText(/could not be sent to Mia/)).toBeTruthy();
+  fireEvent(reps()[0]!, "blur");
+  expect(h.shared.requestDelegatedSet).toHaveBeenCalledTimes(2);
+  uuid.mockRestore();
 });
 it("destructive dialogs are generation-bound and do nothing when dismissed", async () => {
   const h = sharingHarness();

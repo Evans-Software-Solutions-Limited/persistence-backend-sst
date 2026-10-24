@@ -33,6 +33,22 @@ export const styles = {
     color: color.$text2,
     textAlign: "left" as const,
   },
+  // Partner rows: canvas `.sn` — a 6pt status dot, 5pt gap, then the number.
+  setNumberWithDot: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 5,
+  },
+  setNumberText: {
+    fontFamily: GEIST_MONO_FAMILY,
+    fontSize: 13,
+    color: color.$text2,
+  },
+  syncDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 9999,
+  },
   // PREV — flexible column, tap-to-fill. Centred within its column (value +
   // empty "—") to match the centred REPS/KG fields.
   previousContainer: {

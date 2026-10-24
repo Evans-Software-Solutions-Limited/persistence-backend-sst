@@ -4,10 +4,16 @@ import { invitationPayload } from "@/application/together/invitation";
 import { TogetherScannerPresenter } from "@/ui/presenters/TogetherScannerPresenter";
 import { TogetherPreparingPresenter } from "@/ui/presenters/TogetherPreparingPresenter";
 import { TogetherStartRow } from "@/ui/presenters/TogetherStartRow";
-import { TogetherWorkoutRow } from "@/ui/presenters/TogetherWorkoutRow";
+import {
+  TogetherWorkoutRow,
+  togetherMemberTone,
+} from "@/ui/presenters/TogetherWorkoutRow";
 import { TogetherCloudContainer } from "./TogetherCloudContainer";
 import type { TogetherCloudPort } from "@/domain/ports/togetherCloud.port";
-import { TogetherPartnerPresenter } from "@/ui/presenters/TogetherPartnerPresenter";
+import {
+  TogetherPartnerPresenter,
+  togetherPartnerAccess,
+} from "@/ui/presenters/TogetherPartnerPresenter";
 import { TogetherInvitePresenter } from "@/ui/presenters/TogetherInvitePresenter";
 import { TogetherStartSheet } from "@/ui/presenters/TogetherStartSheet";
 import { TogetherJoinRequestBar } from "@/ui/presenters/TogetherJoinRequestBar";
@@ -135,7 +141,8 @@ export function TogetherLobbyContainer({
     plan: import("@/domain/ports/togetherShared.port").TogetherSharedPlan,
     mode: "append" | "replace-empty",
   ) => void;
-  children?: (row: ReactNode) => ReactNode;
+  /** `partnerView` is set while a partner's avatar is selected on the strip. */
+  children?: (row: ReactNode, partnerView?: ReactNode) => ReactNode;
 }) {
   const snapshot = useSyncExternalStore(
     (listener) => lobby.subscribe(listener),
@@ -738,6 +745,27 @@ export function TogetherLobbyContainer({
   ) : (
     strip
   );
+  const partnerView =
+    viewing && sharedSnapshot && lobby.shared ? (
+      <TogetherPartnerPresenter
+        key={`${accountId}:${viewing}`}
+        snapshot={sharedSnapshot}
+        accountId={accountId}
+        ownerId={viewing}
+        exerciseNames={exerciseNames}
+        tone={togetherMemberTone(snapshot.members, accountId, viewing)}
+        editable={
+          togetherPartnerAccess(sharedSnapshot, viewing, accountId).editable
+        }
+        onOperation={(operation, observedRevision) =>
+          lobby.shared!.requestDelegatedSet(
+            viewing,
+            operation,
+            observedRevision,
+          )
+        }
+      />
+    ) : undefined;
   const startFromSheet = () => {
     const selectedAudience: TogetherLobbyAudience = friendsSelected
       ? "friends"
@@ -809,27 +837,13 @@ export function TogetherLobbyContainer({
         }
         onStart={startFromSheet}
       />
-      {viewing && sharedSnapshot && lobby.shared ? (
-        <TogetherPartnerPresenter
-          togetherRow={row}
-          key={`${accountId}:${viewing}`}
-          snapshot={sharedSnapshot}
-          accountId={accountId}
-          ownerId={viewing}
-          exerciseNames={exerciseNames}
-          onMine={() => setViewing(null)}
-          onOperation={(operation, observedRevision) =>
-            lobby.shared!.requestDelegatedSet(
-              viewing,
-              operation,
-              observedRevision,
-            )
-          }
-        />
-      ) : children ? (
-        children(row)
+      {children ? (
+        children(row, partnerView)
       ) : (
-        row
+        <>
+          {row}
+          {partnerView}
+        </>
       )}
       <BottomSheet
         visible={visible}
