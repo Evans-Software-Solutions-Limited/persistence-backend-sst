@@ -13,11 +13,13 @@ import {
   type LobbySummary,
 } from "./lobbyDiscovery";
 import type {
+  TogetherHostDetails,
   TogetherLobbyAudience,
   TogetherLobbyPort,
   TogetherLobbySnapshot,
   TogetherTransport,
 } from "../../domain/ports/togetherLobby.port";
+import { newSessionCode, normaliseSessionCode } from "./planDetails";
 import type {
   ReadyIdentity,
   TogetherProvisioningPort,
@@ -78,6 +80,8 @@ interface Resources {
 /** Foreground, explicit-action coordinator. Discovery routes bytes only after a signed pin. */
 /** Time to find the host after a join starts; BLE scanning can take well over 10 s (PER-64). */
 export const SEARCH_DEADLINE_MS = 30_000;
+/** Join a session searches on open and stops by itself after this long, keeping what it found (PER-60). */
+export const BROWSE_DEADLINE_MS = 30_000;
 export class TogetherLobbyController implements TogetherLobbyPort {
   readonly workout: TogetherWorkoutCheckpoint;
   /** `defaultTransport` when installed; else Nearby when present, LAN otherwise. */
@@ -141,11 +145,16 @@ export class TogetherLobbyController implements TogetherLobbyPort {
   private generation = 0;
   private resources?: Resources;
   private selected?: LobbyInvitation;
+  /** What this host advertises besides the workout name (PER-60). */
+  private hostDetails?: TogetherHostDetails & { code: string };
   private browser?: TogetherLobbyBrowser;
   private discovered = new Map<string, LobbySummary>();
   private identity?: ReadyIdentity;
   private nativeQueue: Promise<void> = Promise.resolve();
   private timer?: ReturnType<typeof setTimeout>;
+  private browseTimer?: ReturnType<typeof setTimeout>;
+  /** After the radio stops, drops listed rows as their summaries expire (PER-60). */
+  private pruneTimer?: ReturnType<typeof setInterval>;
   private expiry?: ReturnType<typeof setTimeout>;
   private reconnectTimer?: ReturnType<typeof setTimeout>;
   constructor(private readonly options: TogetherLobbyControllerOptions) {
@@ -414,6 +423,8 @@ export class TogetherLobbyController implements TogetherLobbyPort {
   }
   private clearTimers() {
     clearTimeout(this.timer);
+    clearTimeout(this.browseTimer);
+    clearInterval(this.pruneTimer);
     clearTimeout(this.expiry);
     clearTimeout(this.reconnectTimer);
     this.reconnectTimer = undefined;
@@ -505,12 +516,18 @@ export class TogetherLobbyController implements TogetherLobbyPort {
   async host(
     workoutName: string,
     audience: TogetherLobbyAudience = "invite-only",
+    details?: TogetherHostDetails,
   ): Promise<void> {
     const generation = await this.begin();
     if (generation === undefined) return;
     try {
       const identity = await this.prepare(generation);
       if (!identity) return;
+      this.hostDetails = {
+        startedAt: details?.startedAt ?? this.now(),
+        plan: details?.plan ?? [],
+        code: newSessionCode(this.options.randomBytes),
+      };
       const pin = {
         sessionId: this.options.randomUUID(),
         hostUserId: identity.credential.payload.userId,
@@ -526,6 +543,7 @@ export class TogetherLobbyController implements TogetherLobbyPort {
         identity.credential,
         identity.seed,
         { audience, ...(invitationToken ? { invitationToken } : {}) },
+        this.hostDetails,
       );
       const resources = this.createResources(
         pin,
@@ -538,9 +556,12 @@ export class TogetherLobbyController implements TogetherLobbyPort {
         role: "host",
         audience,
         invitation,
+        invitationCode: this.hostDetails.code,
         selection: {
           hostUserId: pin.hostUserId,
           workoutName: workoutName.trim(),
+          startedAt: this.hostDetails.startedAt,
+          plan: this.hostDetails.plan,
         },
       });
       await this.start(resources, generation);
@@ -589,28 +610,72 @@ export class TogetherLobbyController implements TogetherLobbyPort {
           for (const summary of summaries)
             if (!this.deniedHost(summary.hostUserId))
               this.discovered.set(summary.sessionId, summary);
-          this.publish({
-            discovered: [...this.discovered.values()].map(
-              ({ sessionId, hostUserId, workoutName, memberCount }) => ({
-                sessionId,
-                hostUserId,
-                workoutName,
-                memberCount,
-              }),
-            ),
-          });
+          this.publish({ discovered: this.discoveredRows() });
         },
         onError: (code) => this.failure(new Error(code), generation),
       });
       this.browser = browser;
-      this.publish({ phase: "browsing", role: "guest", discovered: [] });
+      this.publish({
+        phase: "browsing",
+        role: "guest",
+        discovered: [],
+        searching: true,
+      });
       this.watchExpiry(identity, Infinity, generation);
       await this.enqueue(async () => {
         if (this.current(generation)) await browser.start();
       });
+      if (!this.current(generation) || this.browser !== browser) return;
+      // The radio stops by itself; verified results stay listed while their
+      // summaries are fresh and drop off as they expire, so the list never
+      // offers a session that can no longer be joined.
+      this.browseTimer = setTimeout(() => {
+        if (!this.current(generation) || this.browser !== browser) return;
+        this.browser = undefined;
+        this.log("browse deadline", { found: this.discovered.size });
+        this.publish({ searching: false });
+        void this.enqueue(() => browser.stop()).catch(() => {});
+        clearInterval(this.pruneTimer);
+        this.pruneTimer = setInterval(() => {
+          if (!this.current(generation)) {
+            clearInterval(this.pruneTimer);
+            return;
+          }
+          const now = this.now();
+          let changed = false;
+          for (const [sessionId, summary] of this.discovered)
+            if (summary.expiresAt <= now) {
+              this.discovered.delete(sessionId);
+              changed = true;
+            }
+          if (changed) this.publish({ discovered: this.discoveredRows() });
+          if (!this.discovered.size) clearInterval(this.pruneTimer);
+        }, 1000);
+      }, BROWSE_DEADLINE_MS);
     } catch (error) {
       this.failure(error, generation);
     }
+  }
+  private discoveredRows() {
+    return [...this.discovered.values()].map(
+      ({
+        sessionId,
+        hostUserId,
+        workoutName,
+        memberCount,
+        startedAt,
+        plan,
+        code,
+      }) => ({
+        sessionId,
+        hostUserId,
+        workoutName,
+        memberCount,
+        ...(startedAt !== undefined ? { startedAt } : {}),
+        ...(plan ? { plan } : {}),
+        ...(code ? { code } : {}),
+      }),
+    );
   }
   async selectDiscovered(sessionId: string): Promise<void> {
     const summary = this.discovered.get(sessionId);
@@ -648,6 +713,11 @@ export class TogetherLobbyController implements TogetherLobbyPort {
         hostDeviceId: summary.hostDeviceId,
         credential: summary.credential,
         workoutName: summary.workoutName,
+        ...(summary.startedAt !== undefined
+          ? { startedAt: summary.startedAt }
+          : {}),
+        ...(summary.plan ? { plan: summary.plan } : {}),
+        ...(summary.code ? { code: summary.code } : {}),
       };
       this.discovered.clear();
       this.publish({
@@ -657,6 +727,10 @@ export class TogetherLobbyController implements TogetherLobbyPort {
         selection: {
           hostUserId: summary.hostUserId,
           workoutName: summary.workoutName,
+          ...(summary.startedAt !== undefined
+            ? { startedAt: summary.startedAt }
+            : {}),
+          ...(summary.plan ? { plan: summary.plan } : {}),
         },
       });
       this.watchExpiry(
@@ -691,6 +765,10 @@ export class TogetherLobbyController implements TogetherLobbyPort {
         selection: {
           hostUserId: selected.hostUserId,
           workoutName: selected.workoutName,
+          ...(selected.startedAt !== undefined
+            ? { startedAt: selected.startedAt }
+            : {}),
+          ...(selected.plan ? { plan: selected.plan } : {}),
         },
       });
       this.watchExpiry(
@@ -701,6 +779,15 @@ export class TogetherLobbyController implements TogetherLobbyPort {
     } catch (error) {
       this.failure(error, generation);
     }
+  }
+  /** A typed code resolves against what the search found; nothing leaves the phone (PER-60). */
+  async selectCode(code: string): Promise<void> {
+    const wanted = normaliseSessionCode(code);
+    const hit = wanted
+      ? [...this.discovered.values()].find((s) => s.code === wanted)
+      : undefined;
+    if (!hit) throw new Error("code-not-found");
+    await this.selectDiscovered(hit.sessionId);
   }
   async join(): Promise<void> {
     if (
@@ -872,6 +959,7 @@ export class TogetherLobbyController implements TogetherLobbyPort {
               .payload.members.length,
             nonce,
             this.now(),
+            this.hostDetails,
           );
         },
         onEvent: (event) => {

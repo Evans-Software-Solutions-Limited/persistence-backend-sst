@@ -114,6 +114,35 @@ describe("BottomSheet", () => {
     },
   );
 
+  it("contentPadding sets the body's top and bottom padding (Together sheets: 4 under the handle, 28 below the button)", () => {
+    const { getByTestId } = renderWithTheme(
+      <BottomSheet
+        visible
+        onClose={() => undefined}
+        scrollable={false}
+        contentPadding={{ top: 4, bottom: 28 }}
+      >
+        <Text>x</Text>
+      </BottomSheet>,
+    );
+    const flat = StyleSheet.flatten(
+      getByTestId("bottom-sheet-static-body").props.style,
+    );
+    const plain = renderWithTheme(
+      <BottomSheet visible onClose={() => undefined} scrollable={false}>
+        <Text>x</Text>
+      </BottomSheet>,
+    );
+    const base = StyleSheet.flatten(
+      plain.getByTestId("bottom-sheet-static-body").props.style,
+    );
+    expect(flat.paddingTop).toBe(4);
+    expect(base.paddingTop).toBe(20);
+    // Both sit over the same bottom inset; only the 40 → 28 differs.
+    expect(base.paddingBottom - flat.paddingBottom).toBe(12);
+    expect(flat.paddingLeft).toBe(20);
+  });
+
   it("renders the sheet container via the gorhom mock when visible", () => {
     const { getByTestId } = renderWithTheme(
       <BottomSheet

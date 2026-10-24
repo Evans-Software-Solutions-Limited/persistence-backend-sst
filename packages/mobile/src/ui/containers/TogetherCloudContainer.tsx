@@ -6,6 +6,7 @@ import { CameraView, useCameraPermissions } from "expo-camera";
 import { TogetherInvitationQr } from "@/ui/presenters/TogetherInvitationQr";
 import { TogetherInvitePresenter } from "@/ui/presenters/TogetherInvitePresenter";
 import { TogetherWorkoutRow } from "@/ui/presenters/TogetherWorkoutRow";
+import { TogetherJoinRequestBar } from "@/ui/presenters/TogetherJoinRequestBar";
 import {
   useEffect,
   useRef,
@@ -27,6 +28,7 @@ import type {
   TogetherPreviousRow,
 } from "@/domain/ports/togetherShared.port";
 import { TogetherCloudPresenter } from "@/ui/presenters/TogetherCloudPresenter";
+import { useTogetherSettings } from "@/state/together-settings";
 import { TogetherSharingPresenter } from "@/ui/presenters/TogetherSharingPresenter";
 import { TogetherPartnerPresenter } from "@/ui/presenters/TogetherPartnerPresenter";
 export function cloudSharedView(
@@ -394,6 +396,89 @@ export function TogetherCloudContainer(p: {
   const own = state.snapshot?.participants.find(
     (x) => x.userId === p.accountId,
   );
+  // The stored sharing defaults apply to each person who joins an Online session
+  // (canvas row 4, PER-60): once per newcomer, and once to everyone already in
+  // when this account has not logged or granted anything yet.
+  const sharingDefaults = useTogetherSettings((s) => s.sharing);
+  // The grants must come from this account's stored settings, not the shipped
+  // ones the store holds before `rehydrate` has read storage.
+  const settingsReady = useTogetherSettings(
+    (s) => s.userId === p.accountId && s.hydrated,
+  );
+  const settingsOwner = useTogetherSettings((s) => s.userId);
+  useEffect(() => {
+    if (p.accountId && settingsOwner !== p.accountId)
+      void useTogetherSettings.getState().rehydrate(p.accountId);
+  }, [p.accountId, settingsOwner]);
+  const defaultGranted = useRef<{
+    session?: string;
+    ids: Set<string>;
+    logging: boolean;
+  }>({ ids: new Set(), logging: false });
+  const participantIds = (state.snapshot?.participants ?? [])
+    .map((x) => x.userId)
+    .join(",");
+  useEffect(() => {
+    const s = state.snapshot;
+    if (state.phase !== "active" || !s || !own || !settingsReady) return;
+    const g = defaultGranted.current;
+    const firstSight = g.session !== s.sessionId;
+    if (firstSight) {
+      g.session = s.sessionId;
+      g.ids = new Set();
+      g.logging = false;
+    }
+    // A revoke leaves the list empty but bumps its version: that is a choice
+    // this account has made, so a remount must not grant over it.
+    const untouched =
+      own.ownRevision === 0 &&
+      !(own.numbersConsent?.version ?? 0) &&
+      !(own.previousConsent?.version ?? 0) &&
+      !(own.numbersConsent?.recipientIds.length ?? 0) &&
+      !(own.previousConsent?.recipientIds.length ?? 0);
+    const fresh = s.participants
+      .map((x) => x.userId)
+      .filter((id) => id !== p.accountId && !g.ids.has(id));
+    for (const id of fresh) g.ids.add(id);
+    const grantTo = firstSight && !untouched ? [] : fresh;
+    if (grantTo.length) {
+      if (sharingDefaults.numbers)
+        fire(() =>
+          p.cloud.numbersConsent([
+            ...new Set([
+              ...(own.numbersConsent?.recipientIds ?? []),
+              ...grantTo,
+            ]),
+          ]),
+        );
+      if (sharingDefaults.previous)
+        fire(() =>
+          p.cloud.previousConsent([
+            ...new Set([
+              ...(own.previousConsent?.recipientIds ?? []),
+              ...grantTo,
+            ]),
+          ]),
+        );
+    }
+    if (
+      sharingDefaults.logging &&
+      !g.logging &&
+      !own.allowPartnerLogging &&
+      (!firstSight || untouched)
+    ) {
+      g.logging = true;
+      fire(() => p.cloud.delegation(true));
+    }
+    // fire and own are per render; the roster string drives the effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    state.phase,
+    state.snapshot?.sessionId,
+    participantIds,
+    sharingDefaults,
+    settingsReady,
+  ]);
   const names = Object.fromEntries(
     (state.snapshot?.participants ?? []).flatMap((x) =>
       Object.entries(x.exerciseCatalog).map(([id, value]) => [id, value.name]),
@@ -406,28 +491,78 @@ export function TogetherCloudContainer(p: {
       params: { localSessionId: current?.id, mode },
     } as never);
   };
+  const hosting = state.snapshot?.hostId === p.accountId;
+  const members = state.snapshot?.participants.length ?? 0;
+  const status =
+    state.phase === "reconnecting"
+      ? {
+          status: "Reconnecting · your sets are kept on this device",
+          tone: "warn" as const,
+        }
+      : state.snapshot && !state.snapshot.sharingActive
+        ? {
+            status: "Sharing ended · continue your workout",
+            tone: "muted" as const,
+          }
+        : members > 1
+          ? { status: `In sync · ${members} training`, tone: "live" as const }
+          : {
+              status: `Waiting for people · ${members} of 4`,
+              tone: "muted" as const,
+            };
   const row = state.snapshot ? (
-    <TogetherWorkoutRow
-      members={state.snapshot.participants.map((x, i) => ({
-        userId: x.userId,
-        name:
-          x.userId === p.accountId
-            ? "Me"
-            : (x.displayName ?? `Athlete ${i + 1}`),
-      }))}
-      selectedId={viewing ?? p.accountId}
-      status={state.phase === "active" ? "Connected" : state.phase}
-      onSelect={(id) => {
-        setViewing(id === p.accountId ? null : id);
-        if (
-          state.snapshot?.participants.find((x) => x.userId === id)
-            ?.previousValuesAvailable
-        )
-          run(() => p.cloud.previous(id));
-      }}
-      onSettings={() => setVisible(true)}
-      onEnd={() => setVisible(true)}
-    />
+    <>
+      <TogetherWorkoutRow
+        members={state.snapshot.participants.map((x, i) => ({
+          userId: x.userId,
+          name:
+            x.userId === p.accountId
+              ? "Me"
+              : (x.displayName ?? `Athlete ${i + 1}`),
+        }))}
+        selectedId={viewing ?? p.accountId}
+        accountId={p.accountId}
+        status={status.status}
+        tone={status.tone}
+        onSelect={(id) => {
+          setViewing(id === p.accountId ? null : id);
+          if (
+            state.snapshot?.participants.find((x) => x.userId === id)
+              ?.previousValuesAvailable
+          )
+            run(() => p.cloud.previous(id));
+        }}
+        onInvite={
+          hosting && state.snapshot.sharingActive
+            ? () => {
+                setVisible(true);
+                if (invitation) setInviteView(true);
+                else run(prepareInvitation);
+              }
+            : undefined
+        }
+        onSettings={() => {
+          setInviteView(false);
+          setVisible(true);
+        }}
+        endLabel={hosting ? "End" : "Leave"}
+        onEnd={() => {
+          setInviteView(false);
+          setVisible(true);
+        }}
+      />
+      {hosting &&
+        state.snapshot.sharingActive &&
+        state.requests.map((r) => (
+          <TogetherJoinRequestBar
+            key={r.requestId}
+            name={r.displayName ?? "Someone"}
+            busy={busy || members >= 4}
+            onAdmit={() => run(() => p.cloud.decide(r.requestId, "approve"))}
+            onDeny={() => run(() => p.cloud.decide(r.requestId, "reject"))}
+          />
+        ))}
+    </>
   ) : (
     <View
       minHeight={44}
@@ -487,26 +622,21 @@ export function TogetherCloudContainer(p: {
         }}
         title={
           inviteView && state.phase === "active" && invitation
-            ? "Session is live"
+            ? undefined
             : "Train together"
         }
-        eyebrow="TRAIN TOGETHER"
-        height="tall"
-        footer={
-          inviteView ? (
-            <Btn
-              full
-              variant="soft"
-              onPress={() => {
-                generation.current++;
-                locked.current = false;
-                setBusy(false);
-                setVisible(false);
-              }}
-            >
-              Back to my workout
-            </Btn>
-          ) : undefined
+        eyebrow={
+          inviteView && state.phase === "active" && invitation
+            ? undefined
+            : "TRAIN TOGETHER"
+        }
+        height={
+          inviteView && state.phase === "active" && invitation ? 55 : "tall"
+        }
+        contentPadding={
+          inviteView && state.phase === "active" && invitation
+            ? { top: 4, bottom: 28 }
+            : undefined
         }
       >
         {inviteView &&
@@ -515,22 +645,25 @@ export function TogetherCloudContainer(p: {
           invitation ? (
             <TogetherInvitePresenter
               qr={
-                <View backgroundColor="white">
-                  <TogetherInvitationQr
-                    value={togetherInvitationLink({
-                      connection: "online",
-                      invitation: invitation.token,
-                    })}
-                  />
-                </View>
+                <TogetherInvitationQr
+                  value={togetherInvitationLink({
+                    connection: "online",
+                    invitation: invitation.token,
+                  })}
+                />
               }
+              connection="online"
+              audience={p.initialHost === "private" ? "invite-only" : "friends"}
+              code={state.snapshot?.code ?? undefined}
               notice={notice}
-              scanInstruction="Scan from Online join, or copy and send the invitation."
               pendingCount={state.requests.length}
-              personal={false}
-              onCopy={() =>
-                run(() => Clipboard.setStringAsync(liveInvitation()))
-              }
+              busy={busy}
+              onClose={() => {
+                generation.current++;
+                locked.current = false;
+                setBusy(false);
+                setVisible(false);
+              }}
               onShare={() =>
                 run(() =>
                   Share.share(
@@ -540,7 +673,6 @@ export function TogetherCloudContainer(p: {
                   ),
                 )
               }
-              onSettings={() => setInviteView(false)}
             />
           ) : (
             <View gap={16}>

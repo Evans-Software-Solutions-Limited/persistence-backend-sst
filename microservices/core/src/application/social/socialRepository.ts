@@ -292,6 +292,35 @@ export const socialRepository = {
       };
     });
   },
+  /** The people this account has blocked, newest id last (PER-60 Together settings). */
+  blocked(actor: string, limit = 20, cursor?: string) {
+    return withActors([actor], async (tx) => {
+      const scope = "blocks";
+      const rows = await tx
+        .select({
+          userId: profiles.id,
+          displayName: profiles.fullName,
+          avatarUrl: profiles.avatarUrl,
+        })
+        .from(socialBlocks)
+        .innerJoin(profiles, eq(profiles.id, socialBlocks.subjectId))
+        .where(
+          and(
+            eq(socialBlocks.actorId, actor),
+            gt(socialBlocks.subjectId, pagePosition(actor, scope, cursor)),
+          ),
+        )
+        .orderBy(socialBlocks.subjectId)
+        .limit(limit + 1);
+      return {
+        data: rows.slice(0, limit),
+        nextCursor:
+          rows.length > limit
+            ? nextPage(actor, scope, rows[limit - 1].userId)
+            : null,
+      };
+    });
+  },
   async request(
     actor: string,
     target: string,

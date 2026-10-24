@@ -12,7 +12,12 @@ import {
   requireAuth,
 } from "@persistence/api-utils/auth/supabaseAuth";
 import { TogetherRepository } from "./togetherRepository";
-import { TogetherError, withActors, enforceRateLimit } from "./shared";
+import {
+  TogetherError,
+  withActors,
+  enforceRateLimit,
+  SESSION_CODE_PATTERN,
+} from "./shared";
 import {
   uuidSchema,
   planSchema,
@@ -209,6 +214,21 @@ export const togetherRoutes = new Elysia({ name: "togetherRoutes" })
       }),
     },
   )
+  .get(
+    "/together/preview",
+    async (c) => ({
+      data: await repository.preview(getUser(c).sub, {
+        inviteToken: c.query.inviteToken,
+        code: c.query.code,
+      }),
+    }),
+    {
+      query: t.Object({
+        inviteToken: t.Optional(t.String({ minLength: 20, maxLength: 200 })),
+        code: t.Optional(t.String({ pattern: SESSION_CODE_PATTERN })),
+      }),
+    },
+  )
   .get("/together/sessions/active", (c) => repository.active(getUser(c).sub))
   .get(
     "/together/sessions/:id",
@@ -313,6 +333,12 @@ export const togetherRoutes = new Elysia({ name: "togetherRoutes" })
       body: t.Union([
         t.Object({
           inviteToken: t.String({ minLength: 20, maxLength: 200 }),
+          consentVersion: t.Literal("together-v1"),
+          consentAccepted: t.Literal(true),
+          startedAt: t.Optional(t.String({ format: "date-time" })),
+        }),
+        t.Object({
+          code: t.String({ pattern: SESSION_CODE_PATTERN }),
           consentVersion: t.Literal("together-v1"),
           consentAccepted: t.Literal(true),
           startedAt: t.Optional(t.String({ format: "date-time" })),

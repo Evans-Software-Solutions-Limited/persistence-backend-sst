@@ -1,4 +1,5 @@
 import type { WorkoutSession } from "../models/session";
+import type { TogetherPlanRow } from "./togetherLobby.port";
 import type { Result } from "../../shared/errors/result";
 import type {
   TogetherOfflineApiError,
@@ -38,6 +39,8 @@ export interface CloudSnapshot {
   sharingActive: boolean;
   continuation: "solo" | null;
   hostId: string | null;
+  /** The session code; present for the host only (PER-60). */
+  code?: string | null;
   revision: number;
   planVersion: number;
   plan: CloudPlan;
@@ -86,9 +89,31 @@ export interface CloudPage<T> {
   data: T[];
   nextCursor: string | null;
 }
-export type CloudJoin = ({ sessionId: string } | { inviteToken: string }) & {
+export type CloudJoin = (
+  | { sessionId: string }
+  | { inviteToken: string }
+  /** The six-character session code typed on Join a session (PER-60). */
+  | { code: string }
+) & {
   startedAt?: string;
 };
+/** What a joiner sees before consenting to an Online session (PER-60). */
+export interface CloudPreview {
+  sessionId: string;
+  audience: string;
+  host: {
+    userId: string;
+    displayName: string | null;
+    avatarUrl: string | null;
+  };
+  occupancy: number;
+  /** True when the host is a training partner: joining needs no approval. */
+  partner: boolean;
+  expiresAt: string;
+  workoutName: string;
+  startedAt: string;
+  plan: TogetherPlanRow[];
+}
 export type CloudResult<T> = Promise<Result<T, TogetherOfflineApiError>>;
 export interface TogetherCloudApi {
   create(
@@ -181,8 +206,16 @@ export interface TogetherCloudApi {
       };
       occupancy: number;
       expiresAt: string;
+      workoutName: string;
+      startedAt: string;
+      plan: TogetherPlanRow[];
     }>
   >;
+  /** Preview an Online session from a pasted invite link or a typed code before consenting. */
+  preview(selector: {
+    inviteToken?: string;
+    code?: string;
+  }): CloudResult<CloudPreview>;
   discard(id: string, key: string): CloudResult<{ retired: true }>;
   stopSharing?(id: string, key: string): CloudResult<{ stopped: true }>;
   /** One-use ticket for the deployed sync-hint socket; the server answers 503 on a stage without one. */
@@ -271,6 +304,10 @@ export interface TogetherCloudPort {
   previous(ownerId: string): Promise<void>;
   visibility(audience: "private" | "friends", expiresAt: string): Promise<void>;
   friends(cursor?: string): ReturnType<TogetherCloudApi["friends"]>;
+  /** Preview an Online session from a pasted link or a typed code before consenting (PER-60). */
+  preview(
+    selector: Parameters<TogetherCloudApi["preview"]>[0],
+  ): ReturnType<TogetherCloudApi["preview"]>;
   prepareReview(): Promise<{
     plan: CloudPlan;
     execution: CloudExecution;

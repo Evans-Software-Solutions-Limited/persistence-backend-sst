@@ -13,7 +13,7 @@ import { AppState, Share } from "react-native";
 import { View } from "@tamagui/core";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { randomUUID } from "expo-crypto";
-import { router, useFocusEffect } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
 import {
@@ -89,7 +89,9 @@ function PartnersAccount({
   onRefreshHub?: () => void;
 }) {
   const [permission, requestPermission] = useCameraPermissions();
-  const [codeVisible, setCodeVisible] = useState(false);
+  // `?code=1` (the hub's My code button, PER-60) opens the code sheet on arrival.
+  const params = useLocalSearchParams<{ code?: string }>();
+  const [codeVisible, setCodeVisible] = useState(params.code === "1");
   const [code, setCode] = useState(""),
     [ownCode, setOwnCode] = useState<{
       code: string;
@@ -258,6 +260,22 @@ function PartnersAccount({
       };
     }, []),
   );
+  // Arriving from the hub's My code button: once the first load has released
+  // the mutation lock, prepare the code the way the button would, so the open
+  // sheet is not left on "Preparing".
+  const [codeRequested, setCodeRequested] = useState(params.code === "1");
+  useEffect(() => {
+    if (!codeRequested || loading || lock.current || !api || !userId) return;
+    setCodeRequested(false);
+    void mutate(
+      "person-code",
+      (key) => api.personCode(key),
+      "Your code is ready.",
+      (value) => setOwnCode(value as { code: string; expiresAt: string }),
+    );
+    // `mutate` is a stable component-scope function declaration.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [codeRequested, loading, api, userId]);
   async function mutate(
     action: string,
     run: (key: string) => CloudResult<unknown>,

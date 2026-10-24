@@ -68,6 +68,8 @@ export const togetherSessions = pgTable(
     planVersion: integer("plan_version").notNull().default(1),
     plan: jsonb("plan").$type<TogetherPlan>().notNull(),
     audience: text("audience").notNull().default("private"),
+    /** Six-character join code shown under the host's QR (PER-60); unique while the session is active. */
+    code: text("code"),
     placeId: text("place_id"),
     placeLabel: text("place_label"),
     expiresAt: at("expires_at").notNull(),
@@ -82,6 +84,9 @@ export const togetherSessions = pgTable(
       t.clientDraftId,
     ),
     index("together_sessions_discovery_idx").on(t.audience, t.expiresAt),
+    uniqueIndex("together_sessions_code_idx")
+      .on(t.code)
+      .where(sql`${t.state} = 'active'`),
   ],
 );
 export const togetherParticipants = pgTable(

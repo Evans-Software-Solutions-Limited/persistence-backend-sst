@@ -141,6 +141,14 @@ describe("TrainHubContainer", () => {
     const r = renderWithTheme(<TrainHubContainer />);
     fireEvent.press(r.getByTestId("train-segment-option-Together"));
     expect(r.getByTestId("together-body")).toBeTruthy();
+    // Canvas row 1 hub chrome: My code, then Together settings (PER-60).
+    fireEvent.press(r.getByLabelText("My code"));
+    expect(mockPush).toHaveBeenLastCalledWith({
+      pathname: "/(app)/together/partners",
+      params: { code: "1" },
+    });
+    fireEvent.press(r.getByLabelText("Together settings"));
+    expect(mockPush).toHaveBeenLastCalledWith("/(app)/together/settings");
     expect(useTrainSegment.getState().segment).toBe("Together");
     r.unmount();
     expect(

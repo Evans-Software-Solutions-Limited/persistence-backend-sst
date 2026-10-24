@@ -21,6 +21,7 @@ import type {
   CloudSnapshot,
 } from "@/domain/ports/togetherCloud.port";
 import type { WorkoutSession } from "@/domain/models/session";
+import { useTogetherSettings } from "@/state/together-settings";
 const mockCameraPermission = jest.fn();
 jest.mock("expo-camera", () => ({
   useCameraPermissions: () => [null, mockCameraPermission],
@@ -150,6 +151,9 @@ function setup(active = false) {
             host: { userId: "friend", displayName: "Mia", avatarUrl: null },
             occupancy: 2,
             expiresAt: new Date(Date.now() + 900_000).toISOString(),
+            workoutName: "Push A",
+            startedAt: new Date().toISOString(),
+            plan: [],
           },
         ],
         nextCursor: null,
@@ -287,6 +291,9 @@ it("does not apply a late friend lookup or chained consent to another account", 
             },
             occupancy: 2,
             expiresAt: new Date(Date.now() + 900_000).toISOString(),
+            workoutName: "Push A",
+            startedAt: new Date().toISOString(),
+            plan: [],
           },
         ],
         nextCursor: null,
@@ -347,7 +354,7 @@ it("keeps partner values scoped and hides all private state while reconnecting",
 it("selects partner views and sends edits against the revision actually displayed", async () => {
   const h = setup(true);
   const r = renderWithTheme(<TogetherCloudContainer {...h.props} />);
-  fireEvent.press(r.getByLabelText("View Athlete 2’s workout"));
+  fireEvent.press(r.getByLabelText("Athlete 2’s workout"));
   await act(async () => {});
   expect(h.cloud.previous).toHaveBeenCalledWith("v");
   const partner = r.UNSAFE_getByType(TogetherPartnerPresenter);
@@ -652,7 +659,7 @@ it("uses guest controls and keeps revoked partner edits and missing join drafts 
   );
   expect(h.cloud.numbersConsent).toHaveBeenCalledWith(["u"]);
   expect(h.cloud.previousConsent).toHaveBeenCalledWith(["u"]);
-  fireEvent.press(r.getByLabelText("View Athlete 1’s workout"));
+  fireEvent.press(r.getByLabelText("Athlete 1’s workout"));
   const partner = r.UNSAFE_getByType(TogetherPartnerPresenter).props;
   await expect(
     partner.onOperation({ type: "rest", restEndsAt: null }, 1),
@@ -678,7 +685,7 @@ it("does not revoke absent invitations or reissue unchanged grants; selects Mine
   expect(h.cloud.numbersConsent).not.toHaveBeenCalled();
   expect(h.cloud.previousConsent).not.toHaveBeenCalled();
   expect(h.cloud.delegation).not.toHaveBeenCalled();
-  fireEvent.press(r.getByLabelText("View Me’s workout"));
+  fireEvent.press(r.getByLabelText("My workout"));
   expect(h.cloud.previous).not.toHaveBeenCalled();
   expect(r.queryByTestId("together-partner-view")).toBeNull();
 });
@@ -873,40 +880,40 @@ it("shows the actual online invitation after confirmed Start and retries invitat
   await waitFor(() =>
     expect(r.getByText(/invitation is not ready/)).toBeTruthy(),
   );
-  expect(r.queryByText("Scan to join")).toBeNull();
+  expect(r.queryByText("Invite people")).toBeNull();
   await act(async () => {
     fireEvent.press(r.getByText("Generate new invitation"));
   });
-  await waitFor(() => expect(r.getByText("Scan to join")).toBeTruthy());
+  await waitFor(() => expect(r.getByText("Invite people")).toBeTruthy());
   expect(h.cloud.hostWorkout).toHaveBeenCalledTimes(1);
   expect(h.cloud.invite).toHaveBeenCalledTimes(2);
   expect(r.UNSAFE_getByType(QRCode).props.value).toBe(
     "persistencemobile://together/join?connection=online&invitation=invite",
   );
-  expect(r.getByText(/Scan from Online join/)).toBeTruthy();
-  fireEvent.press(r.getByText("Copy"));
-  await waitFor(() =>
-    expect(mockCopy).toHaveBeenCalledWith(
-      "persistencemobile://together/join?connection=online&invitation=invite",
+  expect(
+    r.getByText(
+      "Online · internet required · training partners join straight in",
     ),
-  );
+  ).toBeTruthy();
   const share = jest
     .spyOn(Share, "share")
     .mockResolvedValue({ action: Share.sharedAction });
-  fireEvent.press(r.getByText("Share"));
+  fireEvent.press(r.getByText("Share code"));
   await waitFor(() =>
     expect(share).toHaveBeenCalledWith({
       url: "persistencemobile://together/join?connection=online&invitation=invite",
     }),
   );
   share.mockRestore();
-  fireEvent.press(r.getByText("Back to my workout"));
-  expect(r.queryByText("Scan to join")).toBeNull();
+  fireEvent.press(r.getByLabelText("Close"));
+  expect(r.queryByText("Invite people")).toBeNull();
   expect(h.cloud.getSnapshot().phase).toBe("active");
   expect(h.cloud.cancel).not.toHaveBeenCalled();
+  // The strip: Invite reopens the invitation; the cog opens settings.
+  fireEvent.press(r.getByText("Invite"));
+  expect(r.getByText("Invite people")).toBeTruthy();
   fireEvent.press(r.getByLabelText("Together settings"));
-  expect(r.getByText("Scan to join")).toBeTruthy();
-  fireEvent.press(r.getByText("Session settings"));
+  expect(r.queryByText("Invite people")).toBeNull();
   expect(ui(r)).toBeDefined();
 });
 it("scans an online token but requires a deliberate Join and handles camera denial", async () => {
@@ -989,7 +996,7 @@ it("invalidates the single-use invitation after admission and after expiry", asy
   const r = renderWithTheme(
     <TogetherCloudContainer {...h.props} initialHost="friends" />,
   );
-  await waitFor(() => expect(r.getByText("Scan to join")).toBeTruthy());
+  await waitFor(() => expect(r.getByText("Invite people")).toBeTruthy());
   act(() =>
     h.publish({
       snapshot: {
@@ -1001,7 +1008,7 @@ it("invalidates the single-use invitation after admission and after expiry", asy
       },
     }),
   );
-  await waitFor(() => expect(r.queryByText("Scan to join")).toBeNull());
+  await waitFor(() => expect(r.queryByText("Invite people")).toBeNull());
   expect(r.getByText("Generate new invitation")).toBeTruthy();
   jest.mocked(h.cloud.invite).mockResolvedValue({
     tokenId: "next",
@@ -1011,19 +1018,23 @@ it("invalidates the single-use invitation after admission and after expiry", asy
   await act(async () => {
     fireEvent.press(r.getByText("Generate new invitation"));
   });
-  await waitFor(() => expect(r.getByText("Scan to join")).toBeTruthy());
+  await waitFor(() => expect(r.getByText("Invite people")).toBeTruthy());
   expect(h.cloud.hostWorkout).toHaveBeenCalledTimes(1);
   // The QR appears on the invitation's own commit, one microtask before the
-  // regenerate action releases `run`'s lock. A Copy pressed in that gap is
+  // regenerate action releases `run`'s lock. A Share pressed in that gap is
   // dropped by design, so flush the release before pressing (CI hit the gap
   // on PR #505's run; it never reproduces locally).
   await act(async () => {});
   const now = jest.spyOn(Date, "now").mockReturnValue(Date.now() + 120_000);
+  const share = jest
+    .spyOn(Share, "share")
+    .mockResolvedValue({ action: Share.sharedAction });
   await act(async () => {
-    fireEvent.press(r.getByText("Copy"));
+    fireEvent.press(r.getByText("Share code"));
   });
-  await waitFor(() => expect(r.queryByText("Scan to join")).toBeNull());
-  expect(mockCopy).not.toHaveBeenCalledWith("new-invite");
+  await waitFor(() => expect(r.queryByText("Invite people")).toBeNull());
+  expect(share).not.toHaveBeenCalled();
+  share.mockRestore();
   now.mockRestore();
 });
 it("removes the QR automatically when its server expiry is reached", async () => {
@@ -1041,13 +1052,113 @@ it("removes the QR automatically when its server expiry is reached", async () =>
     const r = renderWithTheme(
       <TogetherCloudContainer {...h.props} initialHost="friends" />,
     );
-    await waitFor(() => expect(r.getByText("Scan to join")).toBeTruthy());
+    await waitFor(() => expect(r.getByText("Invite people")).toBeTruthy());
     act(() => jest.advanceTimersByTime(60_000));
-    expect(r.queryByText("Scan to join")).toBeNull();
+    expect(r.queryByText("Invite people")).toBeNull();
     expect(r.getByText("Generate new invitation")).toBeTruthy();
     expect(h.cloud.invite).toHaveBeenCalledTimes(1);
     r.unmount();
   } finally {
     jest.useRealTimers();
   }
+});
+
+it("applies the stored sharing defaults to newcomers in an Online session, and to everyone on a fresh join (PER-60)", async () => {
+  useTogetherSettings.setState({
+    userId: "u",
+    hydrated: true,
+    rehydrate: jest.fn(async () => {}),
+  });
+  const h = setup(true);
+  const r = renderWithTheme(<TogetherCloudContainer {...h.props} />);
+  await act(async () => {});
+  // Already logging (ownRevision 1): the people already in are left as they are.
+  expect(h.cloud.numbersConsent).not.toHaveBeenCalled();
+  const newcomer = { ...server.participants[1], userId: "w" };
+  act(() =>
+    h.publish({
+      snapshot: {
+        ...h.state().snapshot!,
+        participants: [...h.state().snapshot!.participants, newcomer],
+      },
+    }),
+  );
+  await act(async () => {});
+  expect(h.cloud.numbersConsent).toHaveBeenCalledWith(["w"]);
+  expect(h.cloud.previousConsent).toHaveBeenCalledWith(["w"]);
+  expect(h.cloud.delegation).not.toHaveBeenCalled();
+  r.unmount();
+  // A fresh join (nothing logged or granted yet) shares with everyone, and
+  // fill-in follows the default too.
+  useTogetherSettings.setState({
+    userId: "u",
+    hydrated: true,
+    sharing: { numbers: true, previous: false, logging: true },
+  });
+  const fresh = setup(true);
+  fresh.state().snapshot!.participants[0].ownRevision = 0;
+  renderWithTheme(<TogetherCloudContainer {...fresh.props} />);
+  await act(async () => {});
+  expect(fresh.cloud.numbersConsent).toHaveBeenCalledWith(["v"]);
+  expect(fresh.cloud.previousConsent).not.toHaveBeenCalled();
+  expect(fresh.cloud.delegation).toHaveBeenCalledWith(true);
+  useTogetherSettings.getState().reset();
+});
+
+it("does not re-share numbers an athlete revoked before logging when the screen remounts (inspector lead)", async () => {
+  useTogetherSettings.setState({
+    userId: "u",
+    hydrated: true,
+    rehydrate: jest.fn(async () => {}),
+    sharing: { numbers: true, previous: true, logging: true },
+  });
+  const h = setup(true);
+  const own = h.state().snapshot!.participants[0];
+  own.ownRevision = 0;
+  // Both lists are empty, but their versions show the athlete switched them off.
+  own.numbersConsent = { version: 2, recipientIds: [] };
+  own.previousConsent = { version: 1, recipientIds: [] };
+  const r = renderWithTheme(<TogetherCloudContainer {...h.props} />);
+  await act(async () => {});
+  expect(h.cloud.numbersConsent).not.toHaveBeenCalled();
+  expect(h.cloud.previousConsent).not.toHaveBeenCalled();
+  expect(h.cloud.delegation).not.toHaveBeenCalled();
+  // A newcomer still gets the defaults: that is a new person, not a redo.
+  const newcomer = { ...server.participants[1], userId: "w" };
+  act(() =>
+    h.publish({
+      snapshot: {
+        ...h.state().snapshot!,
+        participants: [...h.state().snapshot!.participants, newcomer],
+      },
+    }),
+  );
+  await act(async () => {});
+  expect(h.cloud.numbersConsent).toHaveBeenCalledWith(["w"]);
+  expect(h.cloud.previousConsent).toHaveBeenCalledWith(["w"]);
+  r.unmount();
+  useTogetherSettings.getState().reset();
+});
+
+it("grants nothing until this account's settings have been read (inspector lead 1)", async () => {
+  const rehydrate = jest.fn(async () => {});
+  useTogetherSettings.setState({ userId: null, hydrated: false, rehydrate });
+  const h = setup(true);
+  h.state().snapshot!.participants[0].ownRevision = 0;
+  renderWithTheme(<TogetherCloudContainer {...h.props} />);
+  await act(async () => {});
+  expect(rehydrate).toHaveBeenCalledWith("u");
+  expect(h.cloud.numbersConsent).not.toHaveBeenCalled();
+  // The read lands with "Show my numbers" off: only previous values go out.
+  act(() =>
+    useTogetherSettings.setState({
+      userId: "u",
+      hydrated: true,
+      sharing: { numbers: false, previous: true, logging: false },
+    }),
+  );
+  await act(async () => {});
+  expect(h.cloud.numbersConsent).not.toHaveBeenCalled();
+  expect(h.cloud.previousConsent).toHaveBeenCalledWith(["v"]);
+  useTogetherSettings.getState().reset();
 });

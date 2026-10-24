@@ -1,5 +1,203 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-23 — Together UX pass PR 1: join, hub and create (PER-60, branch `claude/per-60-together-join-hub-create`)
+
+First of four UI PRs implementing the signed-off journey design
+([canvas](https://claude.ai/artifact/VBc4WTCmYuT5uJ1V6GyqSM) rows 1, 1b, 1c;
+decisions on [PER-60](https://linear.app/evans-software-solutions/issue/PER-60)).
+Mobile only, no backend change.
+
+**Hub.** `TogetherHubPresenter` is Start a session / Join a session over the
+reviewed partner list; the passive nearby list, "No sessions nearby yet" copy
+and "Choose workout" are gone. `TogetherHubContainer` no longer reads
+`discovered`; it loads partners' Online sessions (`cloud.friends()`, bounded
+page walk in `loadPartnerSessions`) on focus and pull-to-refresh and passes
+them to `TogetherPartnersPresenter`, where a hosting partner's row reads
+"Training now · n of 4 · Online" with Join (Full at 4). Partner rows show
+"Partners since <month>" from the accepted relationship's `updatedAt`.
+
+**Join.** `TogetherJoinContainer` rebuilt on pure presenters:
+`TogetherJoinPresenter` (code + scan card; Sessions you can join with
+searching / found / nothing found / can't search / unavailable), `TogetherJoinConsentPresenter`
+("Join this workout", cold-start note, Join and start / Ask <host> and start)
+and `TogetherJoiningPresenter` (Connecting / Waiting for <host> to let you in).
+Opening the screen starts `lobby.browse()`; `lobbyController.browse()` now
+stops the radio after `BROWSE_DEADLINE_MS` (30 s) and keeps the results
+listed (`snapshot.searching` false, phase stays `browsing`, selection still
+allowed; a stale listing is refused at `selectDiscovered` as before).
+Pull-to-refresh searches again; leaving the screen cancels a search. No mode
+choice: the link, QR or row carries Nearby or Online. Joining adopts the
+plan automatically (append over logged sets, replace an empty draft) and
+opens the workout. `together/join` links are carried through sign-in by
+`usePendingTogetherJoin` (AuthGate stash + redirect, mirroring coach invites)
+and cleared by the join screen.
+
+**Create.** `useTogetherSettings` (per-account AsyncStorage defaults:
+Nearby + Training partners; the settings screen and hub cog land in PR 4)
+presets `TogetherStartSheet` (row 1b: How you connect radios, Who can join
+segment with Open nearby disabled under Online, Wi-Fi-off state with Open
+Settings / Try again) opened by Start on the solo strip inside
+`TogetherLobbyContainer`; a local start that reaches `hosting` opens the
+invite sheet once (`TogetherInvitePresenter`: QR, mode line, Share code);
+Online hands over to `TogetherCloudContainer` as before. The strip
+(`TogetherWorkoutRow`) is avatars as tabs (primary / info / success / gold
+rings) · status ("Waiting for people · 1 of 4", "In sync · N training") ·
+Invite (host) · End or Leave · settings cog; a non-partner request renders
+`TogetherJoinRequestBar` (Let in / No) under it, for Nearby and Online.
+`TogetherStartContainer` is Pick a workout (today's programme first, from
+`useGetHome`) → Start a shared session (`TogetherStartSessionPresenter`,
+mode and audience asked once; an open solo workout skips the picker and
+keeps its sets). The workout-detail Start row pushes that screen with the
+workout selected. `TogetherLobbyPresenter`'s in-session join branch is no
+longer reachable; it stays for the hosting/sharing states until PRs 3–4.
+
+**Fidelity pass (same day, after Brad's review of the first screenshots).**
+Every row 1/1b/1c screen was re-measured against the canvas stylesheet
+(`.body`, `.card`, `.lrow`, `.av`, `.btn`, `.ibtn`, `.input`, `.opt`, `.seg`,
+`.strip`): the hub now renders the canvas Training partners card itself
+(`TogetherHubContainer` loads partners and their Online sessions; the
+reviewed partner screen is unchanged and reached from a row or the My code
+button, which the Train hub chrome shows for the Together segment in place of
+the duplicate segment title); new `TogetherBtn` (52/44 pt primary · soft ·
+ghost · quiet) and `TogetherBackButton` (44 pt, 10 pt radius) replace the
+foundation `Btn`/`IconBtn` where the canvas differs; list avatars use the
+neutral `.av` style; the code field is 48 pt mono with a 2 px tracking;
+screen gaps are 16 (join, consent) and 14 (create); footers end at 30 pt; the
+invite QR is 200 pt in a 14 pt white box. Brad then pointed out the glow the
+first fidelity pass had missed: the live canvas version paints every phone with
+`radial-gradient(90% 40% at 50% 12%, primary 9%, transparent 70%)` over `bg`
+(an earlier saved copy of the canvas had no such rule, which is why the first
+pass reported none). That is now the foundation `ScreenGlow` primitive, an
+absolute `react-native-svg` ellipse behind the content, placed on the join,
+consent, joining, pick-workout and session-setup screens, the Train hub root
+(so every Train segment, not only Together) and the active-session root (so the
+Together strip and solo workout share it). Evidence re-captured at 440 × 920.
+
+**Box-by-box audit (same day, after Brad's second review: "you've still not
+fixed the spacing").** The stylesheet audit could not see the real bug because
+the values in code were right; every PR 1 screen was therefore measured element
+by element against a static render of the live canvas artboards (`Main`,
+`Start`, `StartIdle`) in the screenshot harness, then re-measured after the
+fix. Root cause: `Card` sets `padding` as a Tamagui prop, which wins over a
+`style` padding, so every list card (hub, join, pick) rendered with zero inset
+(avatar flush left, Join flush right). `Card` now takes `padX` / `padY`. Also
+fixed in the pass: 12 pt copy at a 16 pt line height (canvas 17); the 44 pt
+code / empty / failed / Wi-Fi buttons styled as the small row action instead of
+the canvas `.btn` (`TogetherBtn size="md"`: 15 pt label, 14 pt radius); the
+Start sheet's pinned footer (the canvas sheet ends on its own button, 14 above
+and 28 below; `BottomSheet` gained `contentPadding`, the Together sheets size to
+the canvas at 59 / 66 / 55 %); the strip 8 pt too low under the header; avatar
+initials (`togetherInitialsSize`: 10 / 11 / 13 / 24); the 22 pt and 32 pt
+titles without their line heights; "Pull down to refresh" as a 44 pt tap
+target; the segment copy gap; the 16 pt spinner and step marks. After the fix
+the hub, join (all states), consent, joining, pick, setup, the Start sheet and
+the strip match the canvas within 1–2 px. Canvas content the data cannot draw
+yet is listed on PER-60 (consent "The plan" rows and start time, workout name on
+Online rows, the 7-character session code, the row 4 settings controls).
+
+**The four data gaps, done on this PR (2026-10-24, Brad: "I want them done
+on this PR so we don't lose them").** Core: `GET /together/discovery` returns
+`workoutName`, `startedAt` and `plan` rows (host exercise definitions, target
+sets × reps); new `GET /together/preview` (invite token or code, discovery
+rate limit; own / ended / unknown → 404); `together_sessions.code` (migration
+`20261023120000_together_session_code` + rollback, unique while active,
+minted on create from an alphabet without 0/O/1/I, returned on create and in
+the host's snapshot only); `POST /together/join-requests` takes `{ code }` as
+a credential (partners auto-admit, others pend); `GET /social/blocks`. Mobile:
+`planDetails.ts` (code mint/normalise/format, plan rows from the live workout,
+`startedAgo`); the signed Nearby summary and invitation carry `startedAt`,
+`plan` and `code` (optional on read, strict when present); `host()` takes the
+details, `selectCode()` resolves a typed code against discovered hosts; the
+Join container tries Nearby first, then `cloud.preview({ code })`, and joins
+Online with `{ code }`; a pasted Online link previews into the consent card.
+Consent shows "N of 4 · started 18 minutes ago" and "The plan"; the invite
+sheet shows the code in 28 pt mono; hub and Join rows carry the workout name.
+Together settings: store v2 adds sharing defaults (numbers on, previous on,
+fill-in off), applied once per newcomer in local and Online sessions (and to
+everyone on a fresh join); new `/(app)/together/settings` and
+`/(app)/together/blocked` screens; the hub gets the canvas settings button.
+Not done: the live in-session card on the settings page (row 4 phone 4). Brad's
+follow-up review (same morning): the settings switches are now
+`TogetherSwitch`, the canvas `.sw` control drawn in tokens (51 × 31, 27 pt
+thumb) instead of the platform `Switch`, so they read as toggles everywhere;
+and the screenshot harness now pins the 58 pt status-bar inset the device
+gives `useSafeAreaInsets`, so the evidence shows the canvas safe band instead
+of the back button on the top edge. The app code already used the inset. Inspector Brad's sweep of 9464a7f (5 leads, all fixed): the default
+sharing grants read the store before `rehydrate` had loaded the account's
+record, so the shipped "numbers on" could be granted against a stored "off";
+the store now carries `hydrated`, the Lobby and Cloud containers grant only
+when `userId === account && hydrated` (Cloud rehydrates itself), and the
+settings screen rehydrates and holds its switches until the read lands. A
+cold-start QR left the pending link stashed when the Together gate was
+locked, so AuthGate bounced the user back to the join screen; the stash is
+consumed on landing regardless of the gate. Picking an expired Nearby row
+(`discovery-expired`) matched the radio-off regex and showed "Wi-Fi is off";
+selection errors now keep the list usable with "That session is no longer
+nearby. Search again." Second sweep of 9d83d98 (3 leads, all fixed):
+cancelling a pending Online join ran the lobby branch first because the
+join screen's own nearby search leaves the lobby browsing, so the server
+request was never withdrawn and a host could still let in someone who had
+walked away; `cancelJoin` now runs first when the request is pending. The
+Online default-grant "untouched" check ignored consent versions, so an
+athlete who revoked numbers before logging had them re-granted on remount;
+a non-zero consent version now counts as a choice. "keeps your N logged
+sets" counted the empty planned rows the session service creates; both
+strips count completed sets only. Third sweep of 55a3306 (3 leads, all
+fixed): a custom exercise name over 120 characters failed the mobile row
+schema and so blanked every partner's whole discovery page and the preview;
+the server now clamps plan-row names to 120. Nearby summaries live 15 s but
+the browser probed each host once, so a host found early dropped off before
+the 30 s search ended and anything left after the radio stopped went stale
+within 15 s; the browser now re-probes a host 5 s before its summary lapses
+while searching, and after the deadline the controller drops rows as they
+expire instead of listing an unjoinable session. `preview` now applies the
+same invite rules as `requestJoin` (consumed, friends-only), so a forwarded
+or used link shows nothing to someone who cannot join. Fourth sweep of
+16dfaca (1 lead, fixed): a refresh probe shared the first-contact fail-fast
+path, so one host leaving before Nearby reported it lost ended the whole
+search; a failed refresh now drops that host's row only and the search
+carries on, while an unreachable first contact still ends the generation.
+Fifth sweep of a7bd036 (1 lead, fixed): a refresh probe that timed out or
+was lost unbound left its native socket trying for up to 30 s, and a late
+`connected` could bind to the next host's probe and knock that host off the
+list; the slot now stays reserved after an abandoned refresh probe until
+the late connection arrives and is dropped, or the native connect deadline
+passes. A rejected connect leaves no socket and moves on at once. Sixth
+sweep of e8eb58e (1 lead, fixed): a reservation only ended on a late
+`connected` or the 30 s deadline, so a socket that failed fast (host closed
+the app) still froze probing; a closing event for a socket the browser did
+not close itself now frees the reservation, or fails an unbound probe at
+once without the 5 s wait. Android's error-then-disconnected pair counts
+once.
+
+**Verified.** Mobile Jest 643 suites / 8,590 tests, coverage
+96.14 / 92.07 / 96.06 / 97.55 (gate 90); core unit 408 files / 5,667 tests,
+coverage 98.1 / 94.32 / 97.74 / 98.1 with the session-code migration applied
+in every harness; typecheck clean; `expo lint` 0
+errors; prettier clean. New presenter tests cover every join/sheet state
+(hidden and empty included); container tests cover search-on-open, the 30 s
+stop keeping results, refresh, link/row selection, consent → connecting →
+admitted → plan adopted, cancel, cold-start stash, Wi-Fi failure, hub Online
+sessions, start presets and the detail route; `lobbyController` has deadline
+cases; AuthGate has the together/join stash cases. Screenshots of every
+changed screen (real presenters through React Native Web + Tamagui, dark
+theme, Geist, 402×874) are in
+`specs/milestones/TRAIN-TOGETHER/evidence/ui-2026-10-23-per60-pr1/` for
+comparison with the canvas phones; the harness lives in the session
+scratchpad, not the repo.
+
+**Not verified / flagged on PER-60.** Nothing on a device or simulator
+(the unsigned simulator build cannot open the Together gate, see memory).
+Canvas differences carried as assumptions: no short
+session code exists (the field takes a link or code; the invite sheet has
+no 7-character code); nearby discovery carries the host's user id only, so
+non-partners show the workout name; the consent card omits "The plan" rows
+(the plan arrives after admission); "Can't search / host nearby" come from
+the native discovery/advertising failure codes, not a radio-state API;
+partners' Online rows have no workout name. `TogetherLobbyContainer`
+whole-file coverage is 80 % statements after the rework (the retained
+hosting/sharing paths); the aggregate gate holds.
+
 ### 2026-10-22 — Set weight/distance bounded at the validator after a prod numeric overflow (Sentry PERSISTENCE-BACKEND-8, branch `claude/set-value-bounds-backend`)
 
 Prod `POST /sessions/record` 500'd three times 20:40–20:50 UTC with Postgres
