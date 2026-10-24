@@ -8,7 +8,10 @@ import {
 } from "react-native";
 import { act, fireEvent, waitFor } from "@testing-library/react-native";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
-import { TogetherLobbyContainer } from "../TogetherLobbyContainer";
+import {
+  TogetherLobbyContainer,
+  startRowDetail,
+} from "../TogetherLobbyContainer";
 import type {
   TogetherLobbyPort,
   TogetherLobbySnapshot,
@@ -1639,4 +1642,42 @@ it("a guest landing already joined grants nothing until the settings are read (i
     logging: false,
   });
   useTogetherSettings.getState().reset();
+});
+
+it("the solo strip counts completed sets, not the empty planned rows (inspector lead)", () => {
+  const set = (isCompleted: boolean) =>
+    ({
+      id: "s",
+      isCompleted,
+    }) as unknown as WorkoutSession["exercises"][number]["sets"][number];
+  const workout = (sets: boolean[][]) =>
+    ({
+      exercises: sets.map((rows) => ({ sets: rows.map(set) })),
+    }) as unknown as WorkoutSession;
+  // Push A, 2 × 3 planned and nothing logged yet.
+  expect(
+    startRowDetail(
+      workout([
+        [false, false, false],
+        [false, false, false],
+      ]),
+    ),
+  ).toBe("your sets stay yours");
+  expect(
+    startRowDetail(
+      workout([
+        [true, false, false],
+        [false, false, false],
+      ]),
+    ),
+  ).toBe("keeps your 1 logged set");
+  expect(
+    startRowDetail(
+      workout([
+        [true, true, false],
+        [true, false, false],
+      ]),
+    ),
+  ).toBe("keeps your 3 logged sets");
+  expect(startRowDetail(null)).toBe("your sets stay yours");
 });

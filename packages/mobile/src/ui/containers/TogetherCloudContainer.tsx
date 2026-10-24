@@ -428,8 +428,12 @@ export function TogetherCloudContainer(p: {
       g.ids = new Set();
       g.logging = false;
     }
+    // A revoke leaves the list empty but bumps its version: that is a choice
+    // this account has made, so a remount must not grant over it.
     const untouched =
       own.ownRevision === 0 &&
+      !(own.numbersConsent?.version ?? 0) &&
+      !(own.previousConsent?.version ?? 0) &&
       !(own.numbersConsent?.recipientIds.length ?? 0) &&
       !(own.previousConsent?.recipientIds.length ?? 0);
     const fresh = s.participants

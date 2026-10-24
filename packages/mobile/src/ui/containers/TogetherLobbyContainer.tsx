@@ -56,7 +56,12 @@ const RADIO_OFF =
   /permission|wifi|lan_unavailable|nearby_unavailable|discovery|advertising|listener/i;
 /** "keeps your 4 logged sets" on the solo strip; "your sets stay yours" before any set. */
 export function startRowDetail(workout: WorkoutSession | null | undefined) {
-  const logged = workout?.exercises.reduce((n, e) => n + e.sets.length, 0) ?? 0;
+  // A session starts with an empty row per planned set; only completed rows are logged.
+  const logged =
+    workout?.exercises.reduce(
+      (n, e) => n + e.sets.filter((s) => s.isCompleted).length,
+      0,
+    ) ?? 0;
   return logged
     ? `keeps your ${logged} logged ${logged === 1 ? "set" : "sets"}`
     : "your sets stay yours";

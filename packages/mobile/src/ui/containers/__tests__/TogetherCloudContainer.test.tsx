@@ -1105,6 +1105,41 @@ it("applies the stored sharing defaults to newcomers in an Online session, and t
   useTogetherSettings.getState().reset();
 });
 
+it("does not re-share numbers an athlete revoked before logging when the screen remounts (inspector lead)", async () => {
+  useTogetherSettings.setState({
+    userId: "u",
+    hydrated: true,
+    rehydrate: jest.fn(async () => {}),
+    sharing: { numbers: true, previous: true, logging: true },
+  });
+  const h = setup(true);
+  const own = h.state().snapshot!.participants[0];
+  own.ownRevision = 0;
+  // Both lists are empty, but their versions show the athlete switched them off.
+  own.numbersConsent = { version: 2, recipientIds: [] };
+  own.previousConsent = { version: 1, recipientIds: [] };
+  const r = renderWithTheme(<TogetherCloudContainer {...h.props} />);
+  await act(async () => {});
+  expect(h.cloud.numbersConsent).not.toHaveBeenCalled();
+  expect(h.cloud.previousConsent).not.toHaveBeenCalled();
+  expect(h.cloud.delegation).not.toHaveBeenCalled();
+  // A newcomer still gets the defaults: that is a new person, not a redo.
+  const newcomer = { ...server.participants[1], userId: "w" };
+  act(() =>
+    h.publish({
+      snapshot: {
+        ...h.state().snapshot!,
+        participants: [...h.state().snapshot!.participants, newcomer],
+      },
+    }),
+  );
+  await act(async () => {});
+  expect(h.cloud.numbersConsent).toHaveBeenCalledWith(["w"]);
+  expect(h.cloud.previousConsent).toHaveBeenCalledWith(["w"]);
+  r.unmount();
+  useTogetherSettings.getState().reset();
+});
+
 it("grants nothing until this account's settings have been read (inspector lead 1)", async () => {
   const rehydrate = jest.fn(async () => {});
   useTogetherSettings.setState({ userId: null, hydrated: false, rehydrate });

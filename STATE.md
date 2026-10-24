@@ -133,7 +133,16 @@ locked, so AuthGate bounced the user back to the join screen; the stash is
 consumed on landing regardless of the gate. Picking an expired Nearby row
 (`discovery-expired`) matched the radio-off regex and showed "Wi-Fi is off";
 selection errors now keep the list usable with "That session is no longer
-nearby. Search again."
+nearby. Search again." Second sweep of 9d83d98 (3 leads, all fixed):
+cancelling a pending Online join ran the lobby branch first because the
+join screen's own nearby search leaves the lobby browsing, so the server
+request was never withdrawn and a host could still let in someone who had
+walked away; `cancelJoin` now runs first when the request is pending. The
+Online default-grant "untouched" check ignored consent versions, so an
+athlete who revoked numbers before logging had them re-granted on remount;
+a non-zero consent version now counts as a choice. "keeps your N logged
+sets" counted the empty planned rows the session service creates; both
+strips count completed sets only.
 
 **Verified.** Mobile Jest 643 suites / 8,583 tests, coverage
 96.14 / 92.07 / 96.05 / 97.55 (gate 90); core unit 408 files / 5,667 tests,

@@ -567,9 +567,12 @@ export function TogetherJoinContainer() {
       setJoining(false);
       setTarget(null);
       setCold(false);
-      if (was?.kind === "local" || lobby?.getSnapshot().phase !== "idle")
+      // The nearby search is always running behind an Online target, so the
+      // pending server request must be withdrawn first or the host could
+      // still let in someone who walked away (PER-60 inspector lead).
+      if (remote.phase === "pending-approval") await cloud?.cancelJoin();
+      else if (was?.kind === "local" || lobby?.getSnapshot().phase !== "idle")
         await lobby?.cancel();
-      else if (remote.phase === "pending-approval") await cloud?.cancelJoin();
       else cloud?.cancel();
       if (!isCurrent()) return;
       if (thenSearch) searchRef.current();

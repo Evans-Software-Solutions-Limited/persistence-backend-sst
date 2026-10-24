@@ -181,8 +181,12 @@ export function TogetherStartContainer() {
   const online = connection === "online";
   // An open solo workout is the workout: there is nothing to pick.
   if ((step === "setup" || continuing) && (chosen || continuing)) {
+    // Planned sets start as empty rows; only completed rows count as logged.
     const loggedSets =
-      active?.exercises.reduce((n, e) => n + e.sets.length, 0) ?? 0;
+      active?.exercises.reduce(
+        (n, e) => n + e.sets.filter((s) => s.isCompleted).length,
+        0,
+      ) ?? 0;
     return (
       <TogetherStartSessionPresenter
         workoutName={continuing ? active!.name : chosen!.name}

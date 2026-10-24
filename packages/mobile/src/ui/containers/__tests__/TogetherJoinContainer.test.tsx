@@ -391,6 +391,27 @@ it("a pasted online link and a scanned QR select without a mode choice; camera d
     userId: "u",
   });
 });
+it("cancelling a pending Online join withdraws the request even while the nearby search runs (inspector lead)", async () => {
+  const r = renderWithTheme(<TogetherJoinContainer />);
+  await waitFor(() => expect(mockLobby.browse).toHaveBeenCalled());
+  // The join screen's own search leaves the lobby browsing behind the Online target.
+  publish({ phase: "browsing", discovered: [] });
+  fireEvent.changeText(
+    r.getByLabelText("Session code"),
+    "persistencemobile://together/join?connection=online&invitation=tok",
+  );
+  fireEvent.press(r.getByText("Continue"));
+  await waitFor(() => expect(r.getByText("Join this workout")).toBeTruthy());
+  fireEvent.press(r.getByText("Ask the host and start"));
+  await waitFor(() => expect(mockCloud.join).toHaveBeenCalled());
+  publishCloud({ phase: "pending-approval" });
+  expect(r.getByText("Waiting for the host to let you in")).toBeTruthy();
+  fireEvent.press(r.getByText("Cancel"));
+  await waitFor(() => expect(mockCloud.cancelJoin).toHaveBeenCalledTimes(1));
+  expect(mockLobby.cancel).not.toHaveBeenCalled();
+  expect(mockCloud.cancel).not.toHaveBeenCalled();
+  await waitFor(() => expect(r.getByText("Join a session")).toBeTruthy());
+});
 it("scans a QR once and selects it; a malformed scan reports without creating a workout", async () => {
   mockRequest.mockResolvedValue({ granted: true });
   const r = renderWithTheme(<TogetherJoinContainer />);

@@ -168,7 +168,11 @@ it("continues an open solo workout, keeping its logged sets, without creating an
     id: "own",
     userId: "u",
     name: "Evening Squats",
-    exercises: [{ sets: [{}, {}] }, { sets: [{}] }],
+    // Five planned rows, three completed: the planned empties are not "logged".
+    exercises: [
+      { sets: [{ isCompleted: true }, { isCompleted: true }, {}] },
+      { sets: [{ isCompleted: true }, {}] },
+    ],
   };
   const r = renderWithTheme(<TogetherStartContainer />);
   await act(async () => {});
