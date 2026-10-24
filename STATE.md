@@ -144,8 +144,8 @@ a non-zero consent version now counts as a choice. "keeps your N logged
 sets" counted the empty planned rows the session service creates; both
 strips count completed sets only.
 
-**Verified.** Mobile Jest 643 suites / 8,583 tests, coverage
-96.14 / 92.07 / 96.05 / 97.55 (gate 90); core unit 408 files / 5,667 tests,
+**Verified.** Mobile Jest 643 suites / 8,586 tests, coverage
+96.14 / 92.07 / 96.06 / 97.55 (gate 90); core unit 408 files / 5,667 tests,
 coverage 98.1 / 94.33 / 97.74 / 98.1 with the session-code migration applied
 in every harness; typecheck clean; `expo lint` 0
 errors; prettier clean. New presenter tests cover every join/sheet state
