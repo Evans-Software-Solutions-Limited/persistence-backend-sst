@@ -1497,6 +1497,39 @@ describe("reviewed lobby coordinator, real cryptography and SQLite, simulated na
       discovered: [],
     });
   });
+  it("drops listed rows as their summaries expire once the radio has stopped (inspector lead)", async () => {
+    let clock = now;
+    const host = setup(),
+      guest = setup(2, { now: () => clock });
+    await host.controller.host("Open workout", "open");
+    await guest.controller.browse();
+    const sessionId = await probe(host, guest);
+    jest.advanceTimersByTime(BROWSE_DEADLINE_MS);
+    await settle();
+    expect(guest.controller.getSnapshot()).toMatchObject({
+      searching: false,
+      discovered: [expect.objectContaining({ sessionId })],
+    });
+    // Still fresh: still listed and selectable.
+    clock += 5000;
+    jest.advanceTimersByTime(1000);
+    expect(guest.controller.getSnapshot().discovered).toHaveLength(1);
+    // Lapsed: gone from the list, so it can no longer be picked.
+    clock += 11000;
+    jest.advanceTimersByTime(1000);
+    expect(guest.controller.getSnapshot()).toMatchObject({
+      phase: "browsing",
+      searching: false,
+      discovered: [],
+    });
+    await guest.controller.selectDiscovered(sessionId);
+    expect(guest.controller.getSnapshot().phase).toBe("browsing");
+    // The prune stops itself once the list is empty: a later tick changes nothing.
+    const spy = jest.fn();
+    guest.controller.subscribe(spy);
+    jest.advanceTimersByTime(5000);
+    expect(spy).not.toHaveBeenCalled();
+  });
   it("does not fire the browse deadline after the search was cancelled", async () => {
     const guest = setup(2);
     await guest.controller.browse();

@@ -5,6 +5,8 @@ import {
   readProbe,
   readSummary,
   signSummary,
+  REFRESH_MARGIN,
+  SUMMARY_TTL,
 } from "../lobbyDiscovery";
 import { publicKeyPem, signPayload } from "../security/identity";
 import { encode64 } from "../security/encoding";
@@ -321,6 +323,65 @@ describe("bounded anonymous network browser lifecycle", () => {
     ]);
     expect(errors).not.toHaveBeenCalled();
     expect(native.stop).not.toHaveBeenCalled();
+  });
+  it("probes a verified host again before its summary expires so it stays listed through a 30 s search (inspector lead)", async () => {
+    let clock = now;
+    await browser.stop();
+    browser = new TogetherLobbyBrowser({
+      native,
+      trustedKeys,
+      randomBytes,
+      now: () => clock,
+      onChange: changes,
+      onError: errors,
+    });
+    await browser.start();
+    discover("one");
+    connect("p1");
+    const reply = (peerId: string) =>
+      emit({
+        type: "frame",
+        peerId,
+        frame: signSummary(
+          pin,
+          identity,
+          "Strength",
+          1,
+          JSON.parse(jest.mocked(native.send).mock.calls.at(-1)![1]).nonce,
+          clock,
+        ),
+      });
+    reply("p1");
+    emit({ type: "disconnected", peerId: "p1" });
+    await settle();
+    expect(native.connect).toHaveBeenCalledTimes(1);
+    // Under the refresh margin nothing happens; inside it the host is probed again, once.
+    clock = now + SUMMARY_TTL - REFRESH_MARGIN - 1000;
+    jest.advanceTimersByTime(1000);
+    expect(native.connect).toHaveBeenCalledTimes(1);
+    clock = now + SUMMARY_TTL - REFRESH_MARGIN;
+    jest.advanceTimersByTime(1000);
+    expect(native.connect).toHaveBeenCalledTimes(2);
+    expect(native.connect).toHaveBeenLastCalledWith("one");
+    jest.advanceTimersByTime(1000);
+    expect(native.connect).toHaveBeenCalledTimes(2);
+    connect("p2");
+    reply("p2");
+    emit({ type: "disconnected", peerId: "p2" });
+    await settle();
+    // The refreshed summary outlives the first one's expiry.
+    clock = now + SUMMARY_TTL + 1000;
+    jest.advanceTimersByTime(1000);
+    expect(changes).toHaveBeenLastCalledWith([
+      expect.objectContaining({ workoutName: "Strength" }),
+    ]);
+    // A lost host is not refreshed; an expired one is dropped.
+    emit({ type: "lost", endpointId: "one" });
+    expect(changes).toHaveBeenLastCalledWith([]);
+    clock += 2 * SUMMARY_TTL;
+    jest.advanceTimersByTime(1000);
+    expect(native.connect).toHaveBeenCalledTimes(2);
+    expect(errors).not.toHaveBeenCalled();
   });
   it("losing an unbound probe stops the generation so a late connection cannot become the next host", async () => {
     await browser.start();

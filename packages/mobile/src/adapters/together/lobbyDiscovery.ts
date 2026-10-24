@@ -21,6 +21,8 @@ import type {
 } from "../../domain/ports/togetherLobby.port";
 
 export const SUMMARY_TTL = 15_000;
+/** A verified host is probed again this long before its summary expires, so it stays listed while the search runs. */
+export const REFRESH_MARGIN = 5_000;
 export interface LobbySummary extends HostPin {
   kind: "together-summary-v1";
   audience: "open";
@@ -165,6 +167,8 @@ export class TogetherLobbyBrowser {
   private seen = new Set<string>();
   private queue: { endpointId: string; sessionId: string }[] = [];
   private summaries = new Map<string, LobbySummary>();
+  /** Endpoints queued for a refresh probe; cleared when a new summary lands or the host is lost. */
+  private refreshing = new Set<string>();
   private active?: {
     endpointId: string;
     sessionId: string;
@@ -189,9 +193,24 @@ export class TogetherLobbyBrowser {
     }
   }
   private publish() {
-    for (const [endpoint, summary] of this.summaries)
-      if (summary.expiresAt <= this.options.now())
+    const now = this.options.now();
+    for (const [endpoint, summary] of this.summaries) {
+      if (summary.expiresAt <= now) {
         this.summaries.delete(endpoint);
+        this.refreshing.delete(endpoint);
+      } else if (
+        summary.expiresAt - now <= REFRESH_MARGIN &&
+        !this.refreshing.has(endpoint) &&
+        this.active?.endpointId !== endpoint
+      ) {
+        // Summaries live 15 s and a search runs 30 s: probe the host again
+        // before its summary lapses, or every host found early drops off
+        // the list before the search ends.
+        this.refreshing.add(endpoint);
+        this.queue.push({ endpointId: endpoint, sessionId: summary.sessionId });
+        this.next();
+      }
+    }
     this.options.onChange([...this.summaries.values()]);
   }
   private event(event: TogetherLanEvent) {
@@ -214,6 +233,7 @@ export class TogetherLobbyBrowser {
         (item) => item.endpointId !== event.endpointId,
       );
       this.summaries.delete(event.endpointId);
+      this.refreshing.delete(event.endpointId);
       this.publish();
       const active = this.active;
       if (active?.endpointId === event.endpointId) {
@@ -243,6 +263,7 @@ export class TogetherLobbyBrowser {
       const active = this.active;
       if (!active || active.peerId !== event.peerId) return;
       try {
+        this.refreshing.delete(active.endpointId);
         this.summaries.set(
           active.endpointId,
           readSummary(
@@ -312,6 +333,7 @@ export class TogetherLobbyBrowser {
     clearInterval(this.expiry);
     this.queue = [];
     this.summaries.clear();
+    this.refreshing.clear();
     this.active = undefined;
     this.stopping = this.options.native.stop();
     await this.stopping;

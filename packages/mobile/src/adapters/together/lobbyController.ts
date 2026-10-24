@@ -153,6 +153,8 @@ export class TogetherLobbyController implements TogetherLobbyPort {
   private nativeQueue: Promise<void> = Promise.resolve();
   private timer?: ReturnType<typeof setTimeout>;
   private browseTimer?: ReturnType<typeof setTimeout>;
+  /** After the radio stops, drops listed rows as their summaries expire (PER-60). */
+  private pruneTimer?: ReturnType<typeof setInterval>;
   private expiry?: ReturnType<typeof setTimeout>;
   private reconnectTimer?: ReturnType<typeof setTimeout>;
   constructor(private readonly options: TogetherLobbyControllerOptions) {
@@ -422,6 +424,7 @@ export class TogetherLobbyController implements TogetherLobbyPort {
   private clearTimers() {
     clearTimeout(this.timer);
     clearTimeout(this.browseTimer);
+    clearInterval(this.pruneTimer);
     clearTimeout(this.expiry);
     clearTimeout(this.reconnectTimer);
     this.reconnectTimer = undefined;
@@ -607,27 +610,7 @@ export class TogetherLobbyController implements TogetherLobbyPort {
           for (const summary of summaries)
             if (!this.deniedHost(summary.hostUserId))
               this.discovered.set(summary.sessionId, summary);
-          this.publish({
-            discovered: [...this.discovered.values()].map(
-              ({
-                sessionId,
-                hostUserId,
-                workoutName,
-                memberCount,
-                startedAt,
-                plan,
-                code,
-              }) => ({
-                sessionId,
-                hostUserId,
-                workoutName,
-                memberCount,
-                ...(startedAt !== undefined ? { startedAt } : {}),
-                ...(plan ? { plan } : {}),
-                ...(code ? { code } : {}),
-              }),
-            ),
-          });
+          this.publish({ discovered: this.discoveredRows() });
         },
         onError: (code) => this.failure(new Error(code), generation),
       });
@@ -643,18 +626,56 @@ export class TogetherLobbyController implements TogetherLobbyPort {
         if (this.current(generation)) await browser.start();
       });
       if (!this.current(generation) || this.browser !== browser) return;
-      // The radio stops by itself; verified results stay listed until the
-      // next search or selection, and a stale one is refused at selection.
+      // The radio stops by itself; verified results stay listed while their
+      // summaries are fresh and drop off as they expire, so the list never
+      // offers a session that can no longer be joined.
       this.browseTimer = setTimeout(() => {
         if (!this.current(generation) || this.browser !== browser) return;
         this.browser = undefined;
         this.log("browse deadline", { found: this.discovered.size });
         this.publish({ searching: false });
         void this.enqueue(() => browser.stop()).catch(() => {});
+        clearInterval(this.pruneTimer);
+        this.pruneTimer = setInterval(() => {
+          if (!this.current(generation)) {
+            clearInterval(this.pruneTimer);
+            return;
+          }
+          const now = this.now();
+          let changed = false;
+          for (const [sessionId, summary] of this.discovered)
+            if (summary.expiresAt <= now) {
+              this.discovered.delete(sessionId);
+              changed = true;
+            }
+          if (changed) this.publish({ discovered: this.discoveredRows() });
+          if (!this.discovered.size) clearInterval(this.pruneTimer);
+        }, 1000);
       }, BROWSE_DEADLINE_MS);
     } catch (error) {
       this.failure(error, generation);
     }
+  }
+  private discoveredRows() {
+    return [...this.discovered.values()].map(
+      ({
+        sessionId,
+        hostUserId,
+        workoutName,
+        memberCount,
+        startedAt,
+        plan,
+        code,
+      }) => ({
+        sessionId,
+        hostUserId,
+        workoutName,
+        memberCount,
+        ...(startedAt !== undefined ? { startedAt } : {}),
+        ...(plan ? { plan } : {}),
+        ...(code ? { code } : {}),
+      }),
+    );
   }
   async selectDiscovered(sessionId: string): Promise<void> {
     const summary = this.discovered.get(sessionId);

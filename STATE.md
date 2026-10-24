@@ -142,11 +142,21 @@ Online default-grant "untouched" check ignored consent versions, so an
 athlete who revoked numbers before logging had them re-granted on remount;
 a non-zero consent version now counts as a choice. "keeps your N logged
 sets" counted the empty planned rows the session service creates; both
-strips count completed sets only.
+strips count completed sets only. Third sweep of 55a3306 (3 leads, all
+fixed): a custom exercise name over 120 characters failed the mobile row
+schema and so blanked every partner's whole discovery page and the preview;
+the server now clamps plan-row names to 120. Nearby summaries live 15 s but
+the browser probed each host once, so a host found early dropped off before
+the 30 s search ended and anything left after the radio stopped went stale
+within 15 s; the browser now re-probes a host 5 s before its summary lapses
+while searching, and after the deadline the controller drops rows as they
+expire instead of listing an unjoinable session. `preview` now applies the
+same invite rules as `requestJoin` (consumed, friends-only), so a forwarded
+or used link shows nothing to someone who cannot join.
 
-**Verified.** Mobile Jest 643 suites / 8,586 tests, coverage
+**Verified.** Mobile Jest 643 suites / 8,588 tests, coverage
 96.14 / 92.07 / 96.06 / 97.55 (gate 90); core unit 408 files / 5,667 tests,
-coverage 98.1 / 94.33 / 97.74 / 98.1 with the session-code migration applied
+coverage 98.1 / 94.32 / 97.74 / 98.1 with the session-code migration applied
 in every harness; typecheck clean; `expo lint` 0
 errors; prettier clean. New presenter tests cover every join/sheet state
 (hidden and empty included); container tests cover search-on-open, the 30 s

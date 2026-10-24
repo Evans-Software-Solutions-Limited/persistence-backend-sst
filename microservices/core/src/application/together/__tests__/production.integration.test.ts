@@ -744,7 +744,17 @@ describe("production Together persistence and recovery", () => {
     ).rejects.toMatchObject({ status: 403 });
   });
   it("gives every session a code; discovery and preview carry the workout, start and plan; the code joins (PER-60)", async () => {
+    // A custom exercise name has no limit; the plan row is clamped to the 120
+    // characters the app accepts so one host cannot break partners' pages.
+    await db
+      .update(schema.exercises)
+      .set({ name: ` ${"Bulgarian split squat ".repeat(8)}` })
+      .where(eq(schema.exercises.id, exercise));
     const s = await create();
+    await db
+      .update(schema.exercises)
+      .set({ name: "Squat" })
+      .where(eq(schema.exercises.id, exercise));
     expect(s.code).toMatch(/^[A-HJ-NP-Z2-9]{6}$/);
     expect((await repo.snapshot(a, s.sessionId)).code).toBe(s.code);
     await repo.visibility(a, s.sessionId, key(), {
@@ -760,6 +770,8 @@ describe("production Together persistence and recovery", () => {
       workoutName: "Session",
       plan: [{ name: expect.any(String), sets: 3, reps: null }],
     });
+    expect(row.plan[0].name).toHaveLength(120);
+    expect(row.plan[0].name.startsWith("Bulgarian")).toBe(true);
     expect(Number.isFinite(Date.parse(row.startedAt))).toBe(true);
     // A non-partner previews by code: enough to consent, nothing more.
     expect(await repo.preview(c, { code: s.code! })).toMatchObject({
@@ -780,12 +792,25 @@ describe("production Together persistence and recovery", () => {
     const invite = await repo.invite(a, s.sessionId, key(), {
       expiresInMinutes: 15,
     });
-    expect(await repo.preview(c, { inviteToken: invite.token })).toMatchObject({
+    // The session is friends-only, so its invite follows join's rules: a
+    // forwarded link shows a non-partner nothing (inspector lead).
+    await expect(
+      repo.preview(c, { inviteToken: invite.token }),
+    ).rejects.toMatchObject({ status: 410 });
+    expect(await repo.preview(b, { inviteToken: invite.token })).toMatchObject({
       sessionId: s.sessionId,
-      partner: false,
+      partner: true,
     });
     await expect(
       repo.preview(c, { inviteToken: "not-a-token-at-all" }),
+    ).rejects.toMatchObject({ status: 410 });
+    // Once the invite is used, only the person who used it can still preview it.
+    await db
+      .update(schema.togetherInvites)
+      .set({ consumed: true })
+      .where(eq(schema.togetherInvites.sessionId, s.sessionId));
+    await expect(
+      repo.preview(b, { inviteToken: invite.token }),
     ).rejects.toMatchObject({ status: 410 });
     // The code is a credential: partners join straight in, others wait.
     expect(

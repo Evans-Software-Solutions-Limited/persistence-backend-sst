@@ -937,7 +937,12 @@ export class TogetherRepository {
         .sort((x, y) => x.order - y.order)
         .slice(0, 20)
         .map((e) => ({
-          name: host?.exerciseDefinitions[e.exerciseId]?.name ?? "Exercise",
+          // Custom names have no length limit; the mobile schema allows 120
+          // characters per row, so clamp here where the schema is owned.
+          name:
+            host?.exerciseDefinitions[e.exerciseId]?.name
+              ?.trim()
+              .slice(0, 120) || "Exercise",
           sets: e.targetSets,
           reps: e.targetReps ?? null,
         })),
@@ -956,6 +961,7 @@ export class TogetherRepository {
     return withActors([actor], async (tx) => {
       await enforceRateLimit(tx, actor, "discovery");
       let s: Session | undefined;
+      let consumedInvite = false;
       if (selector.inviteToken) {
         const [invite] = await tx
           .select()
@@ -973,6 +979,16 @@ export class TogetherRepository {
           .select()
           .from(sessions)
           .where(eq(sessions.id, invite.sessionId));
+        // The same rules as requestJoin: a friends-only invite for a
+        // non-partner must not show the session either.
+        requireTogether(
+          invite.audience !== "friends" ||
+            !s?.hostId ||
+            (await areFriends(tx, actor, s.hostId)),
+          "INVITE_EXPIRED",
+          410,
+        );
+        consumedInvite = invite.consumed;
       } else {
         requireTogether(selector.code, "INVALID_SCHEMA", 400);
         [s] = await tx
@@ -987,6 +1003,12 @@ export class TogetherRepository {
         .select()
         .from(participants)
         .where(eq(participants.sessionId, s.id));
+      // A consumed invite only still works for the person who used it.
+      requireTogether(
+        !consumedInvite || ps.some((p) => p.userId === actor && !p.leftAt),
+        "INVITE_EXPIRED",
+        410,
+      );
       requireTogether(
         (await this.live(tx, s, ps)) &&
           (await canInteract(tx, actor, s.hostId)),
