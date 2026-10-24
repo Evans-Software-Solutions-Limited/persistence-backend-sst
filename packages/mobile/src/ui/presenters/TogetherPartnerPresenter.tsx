@@ -1,5 +1,5 @@
 import { randomUUID } from "expo-crypto";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Text, View } from "@tamagui/core";
 import { SessionExerciseCard } from "@/ui/components/session/SessionExerciseCard";
 import type { SetSyncState } from "@/ui/components/session/SetLogger";
@@ -81,6 +81,10 @@ export function togetherPartnerExercises(p: {
   exerciseNames: Readonly<Record<string, string>>;
   added: Readonly<Record<string, number>>;
   rowId(planExerciseId: string, index: number): string;
+  /** Empty rows the viewer is using (a draft or a send); they keep their place. */
+  keep?(setId: string): boolean;
+  /** Ids already minted for an exercise, so kept rows past the first few are found. */
+  minted?(planExerciseId: string): number;
 }): PartnerExercise[] {
   const plan = p.snapshot.athletePlans[p.ownerId];
   const planned = [...(plan?.exercises ?? [])].sort(
@@ -115,12 +119,26 @@ export function togetherPartnerExercises(p: {
       slot.targetSets + (p.added[slot.planExerciseId] ?? 0),
       logged.length,
     );
-    const empty: PartnerRow[] = [];
-    for (let i = 0; empty.length < total - logged.length; i++) {
-      const setId = p.rowId(slot.planExerciseId, i);
-      if (!logged.some((row) => row.setId === setId))
-        empty.push({ setId, reps: null, weightKg: null, logged: false });
+    // When the partner logs a set of their own, an untouched empty row goes,
+    // never the one the viewer is typing into.
+    const want = total - logged.length;
+    const free: string[] = [];
+    const pool = (i: number) => p.rowId(slot.planExerciseId, i);
+    const known = p.minted?.(slot.planExerciseId) ?? 0;
+    for (let i = 0; free.length < want || i < known; i++) {
+      const setId = pool(i);
+      if (!logged.some((row) => row.setId === setId) && !free.includes(setId))
+        free.push(setId);
     }
+    const kept = free.filter((id) => p.keep?.(id));
+    const spare = free.filter((id) => !p.keep?.(id));
+    const chosen = new Set([
+      ...kept,
+      ...spare.slice(0, Math.max(0, want - kept.length)),
+    ]);
+    const empty: PartnerRow[] = free
+      .filter((id) => chosen.has(id))
+      .map((setId) => ({ setId, reps: null, weightKg: null, logged: false }));
     return {
       planExerciseId: slot.planExerciseId,
       exerciseId,
@@ -159,14 +177,36 @@ export function TogetherPartnerPresenter(p: {
   // Copy uses the first name, never a pronoun (we don't know anyone's).
   const first = profile ? profile.split(/\s+/)[0]! : owner;
   const ids = useRef<Record<string, string[]>>({});
-  const sending = useRef(new Set<string>());
+  /** One set per partner in flight; the rest wait for its echo (lead: stale revisions). */
+  const inflight = useRef<{
+    setId: string;
+    reps: number;
+    weightKg: number;
+    revision: number;
+    token: number;
+  } | null>(null);
+  const queue = useRef<{ setId: string; planExerciseId: string }[]>([]);
+  const tokens = useRef(0);
   const [added, setAdded] = useState<Record<string, number>>({});
-  const [drafts, setDrafts] = useState<Record<string, Draft>>({});
+  const [drafts, setDraftState] = useState<Record<string, Draft>>({});
+  // Delivery reads drafts between renders (an echo, then the next send).
+  const draftsRef = useRef(drafts);
+  draftsRef.current = drafts;
+  const setDrafts = (
+    next: (all: Record<string, Draft>) => Record<string, Draft>,
+  ) => {
+    draftsRef.current = next(draftsRef.current);
+    setDraftState(draftsRef.current);
+  };
   const [delivery, setDelivery] = useState<Record<string, SetSyncState>>({});
   const [error, setError] = useState("");
   const rowId = (planExerciseId: string, index: number) => {
     const pool = (ids.current[planExerciseId] ??= []);
-    while (pool.length <= index) pool.push(randomUUID());
+    while (pool.length <= index) {
+      const id = randomUUID();
+      // Row ids key the rows; never let a repeat collapse two of them.
+      pool.push(pool.includes(id) ? `${id}-${pool.length}` : id);
+    }
     return pool[index]!;
   };
   const bar = (text: string) => (
@@ -197,6 +237,57 @@ export function TogetherPartnerPresenter(p: {
       </View>
     </View>
   );
+
+  const projection = access.projection;
+  const pumpRef = useRef<() => void>(() => {});
+  const fail = (setId: string) => {
+    setDelivery((all) => ({ ...all, [setId]: "notsent" }));
+    setError(
+      `That set could not be sent to ${first}. Check the connection and that fill-in is still on, then try again.`,
+    );
+  };
+  const echoKey = projection
+    ? `${projection.revision}:${JSON.stringify(projection.exercises)}`
+    : "";
+  useEffect(() => {
+    const sent = inflight.current;
+    if (sent && projection) {
+      const echoed = Object.values(projection.exercises)
+        .flatMap((e) => e.sets)
+        .find((set) => set.setId === sent.setId);
+      const landed =
+        !!echoed &&
+        echoed.reps === sent.reps &&
+        echoed.weightKg === sent.weightKg;
+      if (landed) {
+        inflight.current = null;
+        const base = valuesKey(sent);
+        setDelivery((all) => {
+          const { [sent.setId]: _saved, ...rest } = all;
+          return rest;
+        });
+        // A correction typed while this was sending stays on screen and is
+        // sent next (it is queued if it was committed).
+        setDrafts((all) => {
+          const draft = all[sent.setId];
+          return draft && valuesKey(draft) !== base
+            ? { ...all, [sent.setId]: { ...draft, base } }
+            : all;
+        });
+      } else if (echoed || projection.revision > sent.revision) {
+        // The owner moved on without applying it: rejected as stale.
+        inflight.current = null;
+        fail(sent.setId);
+      }
+    }
+    if (!editable && queue.current.length) {
+      for (const q of queue.current) fail(q.setId);
+      queue.current = [];
+    }
+    pumpRef.current();
+    // The projection's content and the grant drive delivery.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [echoKey, editable]);
 
   if (!access.numbers) {
     const plan = p.snapshot.athletePlans[p.ownerId];
@@ -319,7 +410,6 @@ export function TogetherPartnerPresenter(p: {
     );
   }
 
-  const projection = access.projection;
   const exercises = togetherPartnerExercises({
     snapshot: p.snapshot,
     ownerId: p.ownerId,
@@ -327,10 +417,12 @@ export function TogetherPartnerPresenter(p: {
     exerciseNames: p.exerciseNames,
     added,
     rowId,
+    keep: (setId) => !!drafts[setId] || !!delivery[setId],
+    minted: (planExerciseId) => ids.current[planExerciseId]?.length ?? 0,
   });
   /** The value shown in a row: a live draft, else what the partner logged. */
   const shown = (row: PartnerRow): PartnerRow => {
-    const draft = drafts[row.setId];
+    const draft = draftsRef.current[row.setId];
     return editable &&
       draft &&
       draft.base === (row.logged ? valuesKey(row) : "") &&
@@ -358,6 +450,70 @@ export function TogetherPartnerPresenter(p: {
     }));
     return next;
   };
+  const rowOf = (setId: string) => {
+    for (const e of exercises)
+      for (const row of e.rows)
+        if (row.setId === setId)
+          return { row, planExerciseId: e.planExerciseId };
+    return null;
+  };
+  /** Sends the next queued set against the revision on screen now. */
+  const pump = () => {
+    while (
+      !inflight.current &&
+      queue.current.length &&
+      editable &&
+      projection
+    ) {
+      const next = queue.current.shift()!;
+      const found = rowOf(next.setId);
+      const values = found && shown(found.row);
+      if (
+        !found ||
+        !values ||
+        values.reps === null ||
+        values.weightKg === null ||
+        (found.row.logged && valuesKey(values) === valuesKey(found.row))
+      ) {
+        setDelivery((all) => {
+          const { [next.setId]: _done, ...rest } = all;
+          return rest;
+        });
+        continue;
+      }
+      const token = ++tokens.current;
+      inflight.current = {
+        setId: next.setId,
+        reps: values.reps,
+        weightKg: values.weightKg,
+        revision: projection.revision,
+        token,
+      };
+      setDelivery((all) => ({ ...all, [next.setId]: "sending" }));
+      void p
+        .onOperation(
+          {
+            type: "upsertSet",
+            planExerciseId: next.planExerciseId,
+            set: {
+              setId: next.setId,
+              reps: values.reps,
+              weightKg: values.weightKg,
+              completed: true,
+            },
+          },
+          projection.revision,
+        )
+        // Resolving only means it was handed over (Nearby publishes an intent
+        // the owner may still reject); "saved" waits for the echo below.
+        .catch(() => {
+          if (inflight.current?.token !== token) return;
+          inflight.current = null;
+          fail(next.setId);
+          pumpRef.current();
+        });
+    }
+  };
   const send = (
     planExerciseId: string,
     row: PartnerRow,
@@ -365,36 +521,19 @@ export function TogetherPartnerPresenter(p: {
   ) => {
     if (!editable || !projection) return;
     if (values.reps === null || values.weightKg === null) return;
-    if (row.logged && valuesKey(values) === valuesKey(row)) return;
-    if (sending.current.has(row.setId)) return;
-    sending.current.add(row.setId);
+    if (
+      row.logged &&
+      valuesKey(values) === valuesKey(row) &&
+      inflight.current?.setId !== row.setId
+    )
+      return;
     setError("");
+    if (!queue.current.some((q) => q.setId === row.setId))
+      queue.current.push({ setId: row.setId, planExerciseId });
     setDelivery((all) => ({ ...all, [row.setId]: "sending" }));
-    void p
-      .onOperation(
-        {
-          type: "upsertSet",
-          planExerciseId,
-          set: {
-            setId: row.setId,
-            reps: values.reps,
-            weightKg: values.weightKg,
-            completed: true,
-          },
-        },
-        projection.revision,
-      )
-      .then(
-        () => setDelivery((all) => ({ ...all, [row.setId]: "saved" })),
-        () => {
-          setDelivery((all) => ({ ...all, [row.setId]: "notsent" }));
-          setError(
-            `That set could not be sent to ${first}. Check the connection and that fill-in is still on, then try again.`,
-          );
-        },
-      )
-      .finally(() => sending.current.delete(row.setId));
+    pump();
   };
+  pumpRef.current = pump;
   const caption = (e: PartnerExercise) => {
     const n = Math.max(e.targetSets, e.rows.length);
     return e.skipped ? "Skipped" : `${n} ${n === 1 ? "set" : "sets"}`;

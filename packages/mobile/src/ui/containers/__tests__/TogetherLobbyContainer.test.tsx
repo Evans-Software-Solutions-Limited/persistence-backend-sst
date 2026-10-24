@@ -923,10 +923,40 @@ it("fill-in edits a Nearby partner's planned set at once, and a revoked grant lo
       4,
     ),
   );
+  // Mia's projection echoes it; only then does the next edit go, at her new revision.
+  const echoed = h.shared.getSnapshot().athletes[0]!;
+  act(() =>
+    h.setShared({
+      athletes: [
+        {
+          ...echoed,
+          revision: 5,
+          exercises: {
+            slot: {
+              ...echoed.exercises.slot!,
+              sets: [
+                ...echoed.exercises.slot!.sets,
+                { setId: "row-2", reps: 8, weightKg: 57.5, completed: true },
+              ],
+            },
+          },
+        },
+      ],
+    }),
+  );
   // A second edit is in flight when Mia turns fill-in off.
   fireEvent.changeText(reps()[0]!, "9");
   fireEvent(reps()[0]!, "blur");
   expect(h.shared.requestDelegatedSet).toHaveBeenCalledTimes(2);
+  expect(h.shared.requestDelegatedSet).toHaveBeenLastCalledWith(
+    "other",
+    {
+      type: "upsertSet",
+      planExerciseId: "slot",
+      set: { setId: "s1", reps: 9, weightKg: 60, completed: true },
+    },
+    5,
+  );
   act(() => h.setShared({ grants: grant(false, 2) }));
   await act(async () => refuse(new Error("permission-changed")));
   expect(r.getByText("Mia · read-only. Fill-in is off.")).toBeTruthy();

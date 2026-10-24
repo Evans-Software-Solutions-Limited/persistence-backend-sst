@@ -1,5 +1,5 @@
 import React from "react";
-import { act, fireEvent, waitFor } from "@testing-library/react-native";
+import { act, fireEvent, waitFor, within } from "@testing-library/react-native";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 import {
   TogetherPartnerPresenter,
@@ -104,6 +104,42 @@ const render = (snapshot: TogetherSharedSnapshot, editable?: boolean) =>
       onOperation={onOperation}
     />,
   );
+const S = (setId: string, reps: number, weightKg: number) => ({
+  setId,
+  reps,
+  weightKg,
+  completed: true,
+});
+/** Mia's projection at `revision` with extra squat sets after her two. */
+const withSquat = (revision: number, extra: ReturnType<typeof S>[]) => {
+  const next = base();
+  const athlete = next.athletes[0]!;
+  const squat = athlete.exercises["squat-slot"]!;
+  return {
+    ...next,
+    athletes: [
+      {
+        ...athlete,
+        revision,
+        exercises: {
+          ...athlete.exercises,
+          "squat-slot": { ...squat, sets: [...squat.sets, ...extra] },
+        },
+      },
+    ],
+  };
+};
+const view = (snapshot: TogetherSharedSnapshot) => (
+  <TogetherPartnerPresenter
+    snapshot={snapshot}
+    ownerId="mia"
+    accountId="me"
+    exerciseNames={names}
+    tone="info"
+    editable={togetherPartnerAccess(snapshot, "mia", "me").editable}
+    onOperation={onOperation}
+  />
+);
 beforeEach(() => {
   jest.clearAllMocks();
   mockMinted = 0;
@@ -221,9 +257,93 @@ it("sends a planned row once reps and kg are filled and the field loses focus", 
     5,
   );
   expect(r.getByTestId("set-logger-sync-sending")).toBeTruthy();
+  // Handed over is not saved: the dot waits for Mia's projection to echo it.
   await act(async () => resolve());
+  expect(r.getByTestId("set-logger-sync-sending")).toBeTruthy();
+  r.rerender(view(withSquat(6, [S("new-1", 8, 65)])));
   expect(r.queryByTestId("set-logger-sync-sending")).toBeNull();
   expect(r.getAllByTestId("set-logger-sync-saved")).toHaveLength(3);
+});
+
+it("a set the owner skipped as stale shows Not sent, never Saved", async () => {
+  const r = render(base());
+  fireEvent.changeText(r.getAllByTestId("set-logger-reps")[2]!, "8");
+  fireEvent.changeText(r.getAllByTestId("set-logger-weight")[2]!, "65");
+  fireEvent(r.getAllByTestId("set-logger-weight")[2]!, "blur");
+  await act(async () => {});
+  // Mia logged her own set first: the revision moved on without ours.
+  r.rerender(view(withSquat(6, [S("hers", 8, 62.5)])));
+  expect(r.getByTestId("set-logger-sync-notsent")).toBeTruthy();
+  // Only her three logged squat sets are Saved; ours is not.
+  expect(r.getAllByTestId("set-logger-sync-saved")).toHaveLength(3);
+  expect(r.getByText(/That set could not be sent to Mia/)).toBeTruthy();
+  expect(
+    r.getAllByTestId("set-logger-weight").map((i) => i.props.value),
+  ).toContain("65");
+});
+
+it("quick successive sets go one at a time, each against the revision after the last echo", async () => {
+  const r = render(base());
+  const reps = () => r.getAllByTestId("set-logger-reps");
+  const kg = () => r.getAllByTestId("set-logger-weight");
+  fireEvent.changeText(reps()[2]!, "8");
+  fireEvent.changeText(kg()[2]!, "65");
+  fireEvent(kg()[2]!, "blur");
+  fireEvent.changeText(reps()[3]!, "7");
+  fireEvent.changeText(kg()[3]!, "65");
+  fireEvent(kg()[3]!, "blur");
+  await act(async () => {});
+  expect(onOperation).toHaveBeenCalledTimes(1);
+  expect(r.getAllByTestId("set-logger-sync-sending")).toHaveLength(2);
+  r.rerender(view(withSquat(6, [S("new-1", 8, 65)])));
+  await act(async () => {});
+  expect(onOperation).toHaveBeenCalledTimes(2);
+  expect(onOperation).toHaveBeenLastCalledWith(
+    {
+      type: "upsertSet",
+      planExerciseId: "squat-slot",
+      set: { setId: "new-2", reps: 7, weightKg: 65, completed: true },
+    },
+    6,
+  );
+});
+
+it("a correction made while the set is sending is sent after the echo, not dropped", async () => {
+  const r = render(base());
+  const kg = () => r.getAllByTestId("set-logger-weight")[2]!;
+  fireEvent.changeText(r.getAllByTestId("set-logger-reps")[2]!, "8");
+  fireEvent.changeText(kg(), "60");
+  fireEvent(kg(), "blur");
+  fireEvent.changeText(kg(), "65");
+  fireEvent(kg(), "blur");
+  await act(async () => {});
+  expect(onOperation).toHaveBeenCalledTimes(1);
+  r.rerender(view(withSquat(6, [S("new-1", 8, 60)])));
+  await act(async () => {});
+  expect(r.getAllByTestId("set-logger-weight")[2]!.props.value).toBe("65");
+  expect(onOperation).toHaveBeenCalledTimes(2);
+  expect(onOperation).toHaveBeenLastCalledWith(
+    {
+      type: "upsertSet",
+      planExerciseId: "squat-slot",
+      set: { setId: "new-1", reps: 8, weightKg: 65, completed: true },
+    },
+    6,
+  );
+  expect(r.getByTestId("set-logger-sync-sending")).toBeTruthy();
+});
+
+it("the row being typed into stays when the partner logs a set of their own", () => {
+  const r = render(base());
+  // Fourth squat row = the second planned one (pool id new-2).
+  fireEvent.changeText(r.getAllByTestId("set-logger-reps")[3]!, "6");
+  r.rerender(view(withSquat(6, [S("hers", 8, 62.5)])));
+  const squat = r.getByTestId("session-exercise-squat-slot");
+  const values = within(squat)
+    .getAllByTestId("set-logger-reps")
+    .map((input) => input.props.value);
+  // 3 logged + the row being edited; the untouched empty row is the one that went.
+  expect(values).toEqual(["8", "8", "8", "6"]);
 });
 
 it("an unchanged logged set is not re-sent; a changed one is, against the shown revision", async () => {

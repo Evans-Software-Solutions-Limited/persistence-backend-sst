@@ -54,6 +54,22 @@ the canvas page needs a claude.ai sign-in) and the v2 screen from main.
 Phone 3 (Mia · added sets, sending / not-sent dots) is interaction state:
 covered by tests, no screenshot.
 
+Inspector Brad's sweep of 487378a (3 leads, all fixed): Nearby
+`requestDelegatedSet` resolves once the intent is published, and the owner
+rejects it later if its revision moved on, so a quick second set could show
+a green Saved dot for a value the partner never got. A partner set is now
+"Sending" until the projection echoes that set id with the sent values,
+and "Not sent" when the revision advances without it; only one set per
+partner is in flight, the rest queue and go out against the revision after
+the echo. A correction typed while a set was sending was dropped when the
+echo replaced the draft; the draft is now re-based on the echo and its
+queued commit sent next. Empty rows always took the first pool ids, so a
+partner logging their own set unmounted the row being typed into; rows with
+a draft or a delivery state keep their place and an untouched row goes
+instead (row ids are also made unique if `randomUUID` ever repeats). Mobile
+Jest after the fixes: 643 suites / 8,605 tests, coverage
+96.14 / 92.08 / 96.01 / 97.55.
+
 **Not verified.** Nothing on a device or simulator.
 
 ### 2026-10-23 — Together UX pass PR 1: join, hub and create (PER-60, branch `claude/per-60-together-join-hub-create`)
