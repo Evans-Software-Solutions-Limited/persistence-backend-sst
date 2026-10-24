@@ -162,9 +162,15 @@ was lost unbound left its native socket trying for up to 30 s, and a late
 `connected` could bind to the next host's probe and knock that host off the
 list; the slot now stays reserved after an abandoned refresh probe until
 the late connection arrives and is dropped, or the native connect deadline
-passes. A rejected connect leaves no socket and moves on at once.
+passes. A rejected connect leaves no socket and moves on at once. Sixth
+sweep of e8eb58e (1 lead, fixed): a reservation only ended on a late
+`connected` or the 30 s deadline, so a socket that failed fast (host closed
+the app) still froze probing; a closing event for a socket the browser did
+not close itself now frees the reservation, or fails an unbound probe at
+once without the 5 s wait. Android's error-then-disconnected pair counts
+once.
 
-**Verified.** Mobile Jest 643 suites / 8,589 tests, coverage
+**Verified.** Mobile Jest 643 suites / 8,590 tests, coverage
 96.14 / 92.07 / 96.06 / 97.55 (gate 90); core unit 408 files / 5,667 tests,
 coverage 98.1 / 94.32 / 97.74 / 98.1 with the session-code migration applied
 in every harness; typecheck clean; `expo lint` 0

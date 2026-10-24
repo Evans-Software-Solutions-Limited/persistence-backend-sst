@@ -192,6 +192,8 @@ export class TogetherLobbyBrowser {
    * or the native deadline passes, so it can never bind to another host's probe.
    */
   private reserved?: ReturnType<typeof setTimeout>;
+  /** Sockets this browser closed itself; their closing events say nothing about a probe. */
+  private discarded = new Set<string>();
   constructor(private readonly options: BrowserOptions) {}
   async start() {
     this.running = true;
@@ -263,6 +265,7 @@ export class TogetherLobbyBrowser {
     } else if (event.type === "connected") {
       const active = this.active;
       if (!active || active.peerId || event.incoming) {
+        this.discarded.add(event.peerId);
         void this.options.native
           .disconnect(event.peerId)
           .catch(() => this.fatal("disconnect-failed"));
@@ -301,11 +304,13 @@ export class TogetherLobbyBrowser {
       void this.finish(active);
     } else if (event.type === "disconnected") {
       if (this.active?.peerId === event.peerId) void this.finish(this.active);
+      else this.strayClosure(event.peerId, true);
     } else if (event.type === "error") {
       // Android reports normal remote EOF as read_failed before disconnected.
       // Peer-scoped closure must not erase verified hosts or poison a later probe.
       if (event.peerId) {
         if (this.active?.peerId === event.peerId) void this.finish(this.active);
+        else this.strayClosure(event.peerId, false);
       } else this.fatal(event.code);
     }
   }
@@ -352,6 +357,25 @@ export class TogetherLobbyBrowser {
     }
     void this.finish(active);
   }
+  /**
+   * A closing event for a socket that is not the bound probe. Sockets this
+   * browser closed itself are expected. Any other one is an outbound connect
+   * that failed fast (a host that closed the app before Nearby reported it
+   * lost): it ends a reservation, or fails the unbound probe without the
+   * 5 s wait, since no socket is left behind (PER-60).
+   */
+  private strayClosure(peerId: string, closed: boolean) {
+    if (this.discarded.has(peerId)) {
+      if (closed) this.discarded.delete(peerId);
+      return;
+    }
+    // Android sends error then disconnected for one failure: count it once.
+    if (!closed) this.discarded.add(peerId);
+    const active = this.active;
+    if (!active) {
+      if (this.reserved) this.release();
+    } else if (!active.peerId) this.unreachable(active, false);
+  }
   private release() {
     clearTimeout(this.reserved);
     this.reserved = undefined;
@@ -385,6 +409,7 @@ export class TogetherLobbyBrowser {
     clearTimeout(this.deadline);
     clearTimeout(this.reserved);
     this.reserved = undefined;
+    this.discarded.clear();
     clearInterval(this.expiry);
     this.queue = [];
     this.summaries.clear();

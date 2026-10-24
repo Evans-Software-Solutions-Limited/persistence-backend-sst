@@ -464,25 +464,90 @@ describe("bounded anonymous network browser lifecycle", () => {
     expect(changes).toHaveBeenLastCalledWith([
       expect.objectContaining({ workoutName: "Host C" }),
     ]);
-    // Without a late connection the slot frees itself at the native deadline.
+    // The late socket's own closing event (we disconnected it) changes nothing.
+    emit({ type: "disconnected", peerId: "late-b" });
+    await settle();
+    expect(native.connect).toHaveBeenCalledTimes(5);
+    // C's refresh connect fails fast (a host that closed the app): its
+    // stray closing event fails the probe at once, with no 5 s wait and no
+    // reservation, so a newly found host D is probed straight away.
     clock += SUMMARY_TTL - REFRESH_MARGIN;
     jest.advanceTimersByTime(1000);
     await settle();
     expect(native.connect).toHaveBeenCalledTimes(6);
-    jest.advanceTimersByTime(5000);
+    expect(native.connect).toHaveBeenLastCalledWith("c");
     emit({ type: "discovered", endpointId: "d", lobbyId: pin.sessionId });
+    emit({ type: "error", peerId: "c-sock", code: "connect_failed" });
+    emit({ type: "disconnected", peerId: "c-sock" });
     await settle();
-    expect(native.connect).toHaveBeenCalledTimes(6);
-    jest.advanceTimersByTime(NATIVE_CONNECT_DEADLINE);
-    await settle();
+    expect(changes).toHaveBeenLastCalledWith([]);
     expect(native.connect).toHaveBeenCalledTimes(7);
     expect(native.connect).toHaveBeenLastCalledWith("d");
     expect(errors).not.toHaveBeenCalled();
-    // The only stop so far is the swap at the top of this test: the search runs on.
-    expect(native.stop).toHaveBeenCalledTimes(1);
-    // A first-contact probe that cannot be reached still ends the generation.
+    connect("pd");
+    reply("pd", pin, "Host D");
+    emit({ type: "disconnected", peerId: "pd" });
+    await settle();
+    // D's refresh times out and is reserved; the socket then fails late,
+    // which frees the slot before the native deadline.
+    clock += SUMMARY_TTL - REFRESH_MARGIN;
+    jest.advanceTimersByTime(1000);
+    await settle();
+    expect(native.connect).toHaveBeenCalledTimes(8);
+    jest.advanceTimersByTime(5000);
+    emit({ type: "discovered", endpointId: "e", lobbyId: pin.sessionId });
+    await settle();
+    expect(native.connect).toHaveBeenCalledTimes(8);
+    emit({ type: "disconnected", peerId: "d-sock" });
+    await settle();
+    expect(native.connect).toHaveBeenCalledTimes(9);
+    expect(native.connect).toHaveBeenLastCalledWith("e");
+    // Without any late event the slot frees itself at the native deadline.
     jest.advanceTimersByTime(5000);
     expect(errors).toHaveBeenCalledWith("unreachable-host");
+  });
+  it("a reserved slot frees itself at the native connect deadline when nothing is heard", async () => {
+    let clock = now;
+    await browser.stop();
+    browser = new TogetherLobbyBrowser({
+      native,
+      trustedKeys,
+      randomBytes,
+      now: () => clock,
+      onChange: changes,
+      onError: errors,
+    });
+    await browser.start();
+    discover("a");
+    connect("pa");
+    emit({
+      type: "frame",
+      peerId: "pa",
+      frame: signSummary(
+        pin,
+        identity,
+        "Host A",
+        1,
+        JSON.parse(jest.mocked(native.send).mock.calls.at(-1)![1]).nonce,
+        clock,
+      ),
+    });
+    emit({ type: "disconnected", peerId: "pa" });
+    await settle();
+    clock += SUMMARY_TTL - REFRESH_MARGIN;
+    jest.advanceTimersByTime(1000);
+    await settle();
+    expect(native.connect).toHaveBeenCalledTimes(2);
+    jest.advanceTimersByTime(5000);
+    emit({ type: "discovered", endpointId: "b", lobbyId: pin.sessionId });
+    await settle();
+    expect(native.connect).toHaveBeenCalledTimes(2);
+    jest.advanceTimersByTime(NATIVE_CONNECT_DEADLINE);
+    await settle();
+    expect(native.connect).toHaveBeenCalledTimes(3);
+    expect(native.connect).toHaveBeenLastCalledWith("b");
+    expect(errors).not.toHaveBeenCalled();
+    expect(native.stop).toHaveBeenCalledTimes(1);
   });
   it("losing an unbound probe stops the generation so a late connection cannot become the next host", async () => {
     await browser.start();
