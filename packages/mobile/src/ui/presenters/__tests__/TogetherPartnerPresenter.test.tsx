@@ -2,6 +2,7 @@ import React from "react";
 import { act, fireEvent, waitFor, within } from "@testing-library/react-native";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 import {
+  PARTNER_SET_TIMEOUT_MS,
   TogetherPartnerPresenter,
   togetherPartnerAccess,
 } from "../TogetherPartnerPresenter";
@@ -540,4 +541,72 @@ it("private partner with no plan yet says so", () => {
   const r = render(base({ grants: [], athletePlans: {}, profiles: {} }));
   expect(r.getByText("Training partner · numbers private")).toBeTruthy();
   expect(r.getByText("Waiting for Training partner’s plan.")).toBeTruthy();
+});
+
+/** Fills planned squat row `i` (0-based over all rows) and blurs it. */
+const fill = (
+  r: ReturnType<typeof render>,
+  i: number,
+  reps: string,
+  kg: string,
+) => {
+  fireEvent.changeText(r.getAllByTestId("set-logger-reps")[i]!, reps);
+  fireEvent.changeText(r.getAllByTestId("set-logger-weight")[i]!, kg);
+  fireEvent(r.getAllByTestId("set-logger-weight")[i]!, "blur");
+};
+const withGrant = (
+  snapshot: TogetherSharedSnapshot,
+  version: number,
+): TogetherSharedSnapshot => ({
+  ...snapshot,
+  grants: [{ ...snapshot.grants[0]!, version }],
+});
+
+it("a grant change that keeps fill-in on keeps what you typed", () => {
+  const r = render(base());
+  fireEvent.changeText(r.getAllByTestId("set-logger-reps")[2]!, "6");
+  r.rerender(view(withGrant(base(), 3)));
+  expect(r.getAllByTestId("set-logger-reps")[2]!.props.value).toBe("6");
+});
+
+it("a set in flight when the partner changes the grant is Not sent, and the queue moves on", async () => {
+  const r = render(base());
+  fill(r, 2, "8", "65");
+  fill(r, 3, "7", "65");
+  await act(async () => {});
+  expect(onOperation).toHaveBeenCalledTimes(1);
+  // Nearby drops intents sent under the old grant without moving the revision.
+  r.rerender(view(withGrant(base(), 3)));
+  await act(async () => {});
+  expect(r.getByTestId("set-logger-sync-notsent")).toBeTruthy();
+  expect(onOperation).toHaveBeenCalledTimes(2);
+  expect(onOperation).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      set: expect.objectContaining({ setId: "new-2", reps: 7 }),
+    }),
+    5,
+  );
+});
+
+it("a set nobody applies or rejects times out as Not sent; a late echo still turns it Saved", async () => {
+  jest.useFakeTimers();
+  try {
+    const r = render(base());
+    fill(r, 2, "8", "65");
+    fill(r, 3, "7", "65");
+    await act(async () => {});
+    expect(onOperation).toHaveBeenCalledTimes(1);
+    act(() => jest.advanceTimersByTime(PARTNER_SET_TIMEOUT_MS - 1));
+    expect(r.queryByTestId("set-logger-sync-notsent")).toBeNull();
+    act(() => jest.advanceTimersByTime(1));
+    expect(r.getByTestId("set-logger-sync-notsent")).toBeTruthy();
+    expect(r.getByText(/That set could not be sent to Mia/)).toBeTruthy();
+    // The stuck set no longer holds back the next one.
+    await act(async () => {});
+    expect(onOperation).toHaveBeenCalledTimes(2);
+    r.rerender(view(withSquat(5, [S("new-1", 8, 65)])));
+    expect(r.queryByTestId("set-logger-sync-notsent")).toBeNull();
+  } finally {
+    jest.useRealTimers();
+  }
 });

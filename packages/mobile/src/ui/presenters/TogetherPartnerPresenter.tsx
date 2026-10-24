@@ -64,8 +64,10 @@ type Draft = {
   weightKg: number | null;
   /** Logged values when the edit began; a draft over a changed set is dropped. */
   base: string;
-  grantVersion: number;
 };
+
+/** A handed-over set the partner neither applies nor rejects in this long is Not sent. */
+export const PARTNER_SET_TIMEOUT_MS = 15_000;
 
 const valuesKey = (row: { reps: number | null; weightKg: number | null }) =>
   `${row.reps ?? ""}|${row.weightKg ?? ""}`;
@@ -183,8 +185,16 @@ export function TogetherPartnerPresenter(p: {
     reps: number;
     weightKg: number;
     revision: number;
+    grantVersion: number;
     token: number;
   } | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const settle = () => {
+    inflight.current = null;
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
+  };
+  useEffect(() => () => settle(), []);
   const queue = useRef<{ setId: string; planExerciseId: string }[]>([]);
   const tokens = useRef(0);
   const [added, setAdded] = useState<Record<string, number>>({});
@@ -240,7 +250,11 @@ export function TogetherPartnerPresenter(p: {
 
   const projection = access.projection;
   const pumpRef = useRef<() => void>(() => {});
-  const fail = (setId: string) => {
+  /** Values of each send that ended Not sent, to recognise a late echo. */
+  const failedSends = useRef<Record<string, string>>({});
+  const fail = (setId: string, sent?: string) => {
+    if (sent) failedSends.current[setId] = sent;
+    else delete failedSends.current[setId];
     setDelivery((all) => ({ ...all, [setId]: "notsent" }));
     setError(
       `That set could not be sent to ${first}. Check the connection and that fill-in is still on, then try again.`,
@@ -260,7 +274,7 @@ export function TogetherPartnerPresenter(p: {
         echoed.reps === sent.reps &&
         echoed.weightKg === sent.weightKg;
       if (landed) {
-        inflight.current = null;
+        settle();
         const base = valuesKey(sent);
         setDelivery((all) => {
           const { [sent.setId]: _saved, ...rest } = all;
@@ -274,20 +288,48 @@ export function TogetherPartnerPresenter(p: {
             ? { ...all, [sent.setId]: { ...draft, base } }
             : all;
         });
-      } else if (echoed || projection.revision > sent.revision) {
-        // The owner moved on without applying it: rejected as stale.
-        inflight.current = null;
-        fail(sent.setId);
+      } else if (
+        echoed ||
+        projection.revision > sent.revision ||
+        sent.grantVersion !== access.grantVersion
+      ) {
+        // The owner moved on without applying it (stale), or changed what we
+        // may do, which makes them drop intents sent under the old grant.
+        settle();
+        fail(sent.setId, valuesKey(sent));
       }
     }
-    if (!editable && queue.current.length) {
+    if (!editable) {
       for (const q of queue.current) fail(q.setId);
       queue.current = [];
+      // Fill-in is gone: nothing typed for the partner survives it.
+      if (Object.keys(draftsRef.current).length) setDrafts(() => ({}));
+    }
+    // A set marked Not sent that did land after all (a late echo) is saved.
+    if (projection) {
+      const logged = new Map(
+        Object.values(projection.exercises)
+          .flatMap((e) => e.sets)
+          .map((set) => [set.setId, valuesKey(set)]),
+      );
+      setDelivery((all) => {
+        const late = Object.keys(all).filter(
+          (id) =>
+            all[id] === "notsent" &&
+            failedSends.current[id] !== undefined &&
+            logged.get(id) === failedSends.current[id],
+        );
+        for (const id of late) delete failedSends.current[id];
+        if (!late.length) return all;
+        const next = { ...all };
+        for (const id of late) delete next[id];
+        return next;
+      });
     }
     pumpRef.current();
     // The projection's content and the grant drive delivery.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [echoKey, editable]);
+  }, [echoKey, editable, access.grantVersion]);
 
   if (!access.numbers) {
     const plan = p.snapshot.athletePlans[p.ownerId];
@@ -425,8 +467,7 @@ export function TogetherPartnerPresenter(p: {
     const draft = draftsRef.current[row.setId];
     return editable &&
       draft &&
-      draft.base === (row.logged ? valuesKey(row) : "") &&
-      draft.grantVersion === access.grantVersion
+      draft.base === (row.logged ? valuesKey(row) : "")
       ? { ...row, reps: draft.reps, weightKg: draft.weightKg }
       : row;
   };
@@ -445,7 +486,6 @@ export function TogetherPartnerPresenter(p: {
       [row.setId]: {
         ...next,
         base: row.logged ? valuesKey(row) : "",
-        grantVersion: access.grantVersion,
       },
     }));
     return next;
@@ -482,13 +522,23 @@ export function TogetherPartnerPresenter(p: {
         continue;
       }
       const token = ++tokens.current;
+      const sentKey = valuesKey(values);
       inflight.current = {
         setId: next.setId,
         reps: values.reps,
         weightKg: values.weightKg,
         revision: projection.revision,
+        grantVersion: access.grantVersion,
         token,
       };
+      // Nearby can drop an intent without moving the revision; never let one
+      // stuck set hold back every later one.
+      timer.current = setTimeout(() => {
+        if (inflight.current?.token !== token) return;
+        settle();
+        fail(next.setId, sentKey);
+        pumpRef.current();
+      }, PARTNER_SET_TIMEOUT_MS);
       setDelivery((all) => ({ ...all, [next.setId]: "sending" }));
       void p
         .onOperation(
@@ -508,7 +558,7 @@ export function TogetherPartnerPresenter(p: {
         // the owner may still reject); "saved" waits for the echo below.
         .catch(() => {
           if (inflight.current?.token !== token) return;
-          inflight.current = null;
+          settle();
           fail(next.setId);
           pumpRef.current();
         });

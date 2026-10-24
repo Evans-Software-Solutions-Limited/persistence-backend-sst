@@ -65,7 +65,9 @@ export function cloudSharedView(
       grants.push({
         ownerId: p.userId,
         recipientId: accountId,
-        version: p.ownRevision,
+        // Moves only when the partner changes fill-in, not on every set they
+        // (or we) log, so it marks a permission change (PER-60).
+        version: p.delegationGeneration,
         consent: {
           numbers: p.numbersAvailable,
           prev: p.previousValuesAvailable,

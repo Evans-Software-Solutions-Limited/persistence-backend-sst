@@ -68,7 +68,17 @@ partner logging their own set unmounted the row being typed into; rows with
 a draft or a delivery state keep their place and an untouched row goes
 instead (row ids are also made unique if `randomUUID` ever repeats). Mobile
 Jest after the fixes: 643 suites / 8,605 tests, coverage
-96.14 / 92.08 / 96.01 / 97.55.
+96.14 / 92.08 / 96.01 / 97.55. Second sweep of 28211ee (2 leads, both fixed):
+Online's partner grant `version` was the partner's `ownRevision`, so every
+echo (ours included) changed it and drafts bound to it vanished: a queued
+set or a correction was silently dropped. Drafts no longer carry the grant
+version (they are cleared when fill-in is lost) and Online's partner grant
+version is `delegationGeneration`. A Nearby intent the owner drops without
+moving its revision (grant version mismatch, failed consume) left the set
+Sending and blocked the queue; a set in flight now ends Not sent when the
+grant version changes or after `PARTNER_SET_TIMEOUT_MS` (15 s), and a late
+echo of exactly the sent values turns it Saved. Mobile Jest 643 / 8,609,
+coverage 96.15 / 92.08 / 96.02 / 97.56.
 
 **Not verified.** Nothing on a device or simulator.
 

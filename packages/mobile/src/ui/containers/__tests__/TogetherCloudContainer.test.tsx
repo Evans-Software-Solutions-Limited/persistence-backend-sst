@@ -425,6 +425,48 @@ it("Online partner tab: planned rows editable at once, own avatar returns, a rev
   fireEvent.press(r.getByLabelText("Show my workout"));
   expect(r.getByTestId("own-workout")).toBeTruthy();
 });
+it("Online: a set queued behind one in flight is sent after its echo, though the echo bumps the partner's revision", async () => {
+  const h = setup(true);
+  h.state().snapshot!.plan.exercises[0]!.targetSets = 3;
+  const r = renderWithTheme(<TogetherCloudContainer {...h.props} />);
+  fireEvent.press(r.getByLabelText("Show Athlete 2’s workout"));
+  await act(async () => {});
+  const reps = () => r.getAllByTestId("set-logger-reps");
+  const kg = () => r.getAllByTestId("set-logger-weight");
+  fireEvent.changeText(reps()[1]!, "8");
+  fireEvent.changeText(kg()[1]!, "62.5");
+  fireEvent(kg()[1]!, "blur");
+  fireEvent.changeText(reps()[2]!, "7");
+  fireEvent.changeText(kg()[2]!, "62.5");
+  fireEvent(kg()[2]!, "blur");
+  await act(async () => {});
+  expect(h.cloud.command).toHaveBeenCalledTimes(1);
+  const sent = jest.mocked(h.cloud.command).mock.calls[0]![0] as unknown as {
+    operation: { set: { setId: string } };
+  };
+  // The server applies it: the partner's revision moves from 3 to 4.
+  const next = structuredClone(h.state().snapshot!);
+  const partner = next.participants[1]!;
+  partner.ownRevision = 4;
+  partner.execution!.exercises[0]!.sets.push({
+    setId: sent.operation.set.setId,
+    reps: 8,
+    weightKg: 62.5,
+    completed: true,
+  });
+  act(() => h.publish({ snapshot: next }));
+  await act(async () => {});
+  expect(h.cloud.command).toHaveBeenCalledTimes(2);
+  expect(h.cloud.command).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      expectedVersion: 4,
+      operation: expect.objectContaining({
+        set: expect.objectContaining({ reps: 7, weightKg: 62.5 }),
+      }),
+    }),
+  );
+  expect(reps().map((input) => input.props.value)).toEqual(["8", "8", "7"]);
+});
 it("surfaces command errors and wires retry, cancel, partner navigation and local choice", async () => {
   const h = setup();
   jest.mocked(h.cloud.hostWorkout).mockRejectedValue(new Error("subscription"));
