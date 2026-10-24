@@ -16,7 +16,7 @@ export interface TogetherHubPartner {
   /** "July" — shown as "Partners since July". */
   since?: string;
   /** Set while the partner hosts an Online session. */
-  live?: { sessionId: string; occupancy: number };
+  live?: { sessionId: string; occupancy: number; workoutName?: string };
 }
 
 /** Canvas row 1 hub: title, Start / Join card, Training partners card, footnote. No nearby list. */
@@ -245,7 +245,7 @@ export function TogetherHubPresenter(p: {
                     />,
                     partner.name,
                     partner.live && !p.activeWorkout
-                      ? `Training now · ${partner.live.occupancy} of 4 · Online`
+                      ? `Training now · ${partner.live.workoutName ? `${partner.live.workoutName} · ` : ""}${partner.live.occupancy} of 4 · Online`
                       : partner.since
                         ? `Partners since ${partner.since}`
                         : "Training partner",

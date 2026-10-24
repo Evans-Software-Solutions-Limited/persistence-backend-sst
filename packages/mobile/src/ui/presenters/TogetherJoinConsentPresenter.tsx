@@ -13,6 +13,8 @@ import {
   ONLINE_CONNECTION_LABEL,
 } from "./TogetherConnectionChoice";
 import { color } from "@/ui/theme/tokens";
+import type { TogetherPlanRow } from "@/domain/ports/togetherLobby.port";
+import { planRowLabel, startedAgo } from "@/adapters/together/planDetails";
 
 /** Canvas row 1 "Join this workout": one consent screen for a code, QR, row or cold start. */
 export function TogetherJoinConsentPresenter(p: {
@@ -20,6 +22,12 @@ export function TogetherJoinConsentPresenter(p: {
   hostName?: string;
   workoutName: string;
   memberCount?: number;
+  /** Epoch ms the host started; shown as "started 18 minutes ago". */
+  startedAt?: number;
+  /** The host's plan, one row per exercise (canvas "The plan"). */
+  plan?: readonly TogetherPlanRow[];
+  /** Clock for the relative time; tests pin it. */
+  now?: number;
   faces?: readonly string[];
   connection: "local" | "online";
   /** Opened from a QR with the app closed. */
@@ -130,14 +138,23 @@ export function TogetherJoinConsentPresenter(p: {
                 >
                   {p.workoutName}
                 </Text>
-                {p.memberCount !== undefined && (
+                {(p.memberCount !== undefined || p.startedAt !== undefined) && (
                   <Text
                     fontFamily="$body"
                     fontSize={12}
                     lineHeight={17}
                     color="$text3"
                   >
-                    {p.memberCount} of 4
+                    {[
+                      p.memberCount !== undefined
+                        ? `${p.memberCount} of 4`
+                        : "",
+                      p.startedAt !== undefined
+                        ? startedAgo(p.startedAt, p.now)
+                        : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
                   </Text>
                 )}
               </View>
@@ -150,6 +167,39 @@ export function TogetherJoinConsentPresenter(p: {
             >
               {online ? ONLINE_CONNECTION_LABEL : NEARBY_CONNECTION_LABEL}
             </Text>
+            {!!p.plan?.length && (
+              <>
+                <TogetherEyebrow>The plan</TogetherEyebrow>
+                {p.plan.map((row, i) => (
+                  <View
+                    key={`${row.name}-${i}`}
+                    flexDirection="row"
+                    justifyContent="space-between"
+                    gap={12}
+                    testID="together-plan-row"
+                  >
+                    <Text
+                      flex={1}
+                      fontFamily="$body"
+                      fontSize={13}
+                      lineHeight={17}
+                      color="$text2"
+                      numberOfLines={1}
+                    >
+                      {row.name}
+                    </Text>
+                    <Text
+                      fontFamily="$mono"
+                      fontSize={13}
+                      lineHeight={17}
+                      color="$text3"
+                    >
+                      {planRowLabel(row)}
+                    </Text>
+                  </View>
+                ))}
+              </>
+            )}
           </View>
         </Card>
         <Card surface={0}>

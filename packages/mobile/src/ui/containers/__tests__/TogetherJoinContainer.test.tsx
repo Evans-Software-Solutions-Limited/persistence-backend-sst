@@ -56,6 +56,7 @@ const mockLobby: any = {
   cancel: jest.fn(async () => {}),
   selectTransport: jest.fn(),
   selectInvite: jest.fn(async () => {}),
+  selectCode: jest.fn(async () => {}),
   join: jest.fn(async () => {}),
   browse: jest.fn(async () => {}),
   selectDiscovered: jest.fn(async () => {}),
@@ -75,6 +76,18 @@ const mockCloud: any = {
   cancel: jest.fn(),
   readDraft: jest.fn(() => ({ id: "own-draft", userId: "u" })),
   friends: (cursor?: string) => mockFriends(cursor),
+  preview: jest.fn(),
+};
+const preview = {
+  sessionId: "s-kai",
+  audience: "friends",
+  host: { userId: "kai", displayName: "Kai Anand", avatarUrl: null },
+  occupancy: 2,
+  partner: false,
+  expiresAt: "x",
+  workoutName: "Push A",
+  startedAt: new Date(Date.now() - 18 * 60_000).toISOString(),
+  plan: [{ name: "Bench Press", sets: 4, reps: 8 }],
 };
 jest.mock("@/ui/hooks/useAdapters", () => ({
   useAdapters: () => ({
@@ -400,6 +413,9 @@ it("joins a partner's Online session from the hub and from the list", async () =
         host: { userId: "tom", displayName: "Tom Vance", avatarUrl: null },
         occupancy: 2,
         expiresAt: "x",
+        workoutName: "Push A",
+        startedAt: "2026-10-23T11:30:00Z",
+        plan: [{ name: "Bench Press", sets: 4, reps: 8 }],
       },
     ]),
   );
@@ -407,7 +423,9 @@ it("joins a partner's Online session from the hub and from the list", async () =
   const r = renderWithTheme(<TogetherJoinContainer />);
   await waitFor(() => expect(r.getByText("Join this workout")).toBeTruthy());
   expect(r.getByText("Tom’s session")).toBeTruthy();
-  expect(r.getByText("2 of 4")).toBeTruthy();
+  expect(r.getByText(/^2 of 4 · started/)).toBeTruthy();
+  expect(r.getByText("Push A")).toBeTruthy();
+  expect(r.getByText("4 × 8")).toBeTruthy();
   fireEvent.press(r.getByText("Join and start"));
   await waitFor(() =>
     expect(mockCloud.join).toHaveBeenCalledWith(
@@ -496,4 +514,101 @@ it("ignores a late selection after the account changes", async () => {
   r.rerender(<TogetherJoinContainer />);
   await act(async () => resolve());
   expect(r.queryByText("Join this workout")).toBeNull();
+});
+
+it("a typed code that a nearby host advertised selects it without the internet (PER-60)", async () => {
+  mockLobby.selectCode.mockImplementation(async () => {
+    publish({
+      phase: "selected",
+      selection: {
+        hostUserId: "h",
+        workoutName: "Push A",
+        startedAt: Date.now() - 60_000,
+        plan: [{ name: "Squat", sets: 3, reps: 5 }],
+      },
+    });
+  });
+  const r = renderWithTheme(<TogetherJoinContainer />);
+  await waitFor(() => expect(mockLobby.browse).toHaveBeenCalled());
+  publish({
+    discovered: [
+      {
+        sessionId: "d1",
+        hostUserId: "h",
+        workoutName: "Push A",
+        memberCount: 1,
+        code: "4KQ928",
+      },
+    ],
+  });
+  fireEvent.changeText(r.getByLabelText("Session code"), "4kq-928");
+  fireEvent.press(r.getByText("Continue"));
+  await waitFor(() => expect(r.getByText("Join this workout")).toBeTruthy());
+  expect(mockLobby.selectCode).toHaveBeenCalledWith("4KQ928");
+  expect(mockCloud.preview).not.toHaveBeenCalled();
+  expect(r.getByText("Push A")).toBeTruthy();
+  expect(r.getByText("The plan")).toBeTruthy();
+  expect(r.getByText("3 × 5")).toBeTruthy();
+  expect(r.getByText(/started 1 minute ago/)).toBeTruthy();
+});
+it("a typed code nobody nearby answers to is previewed Online, then joins with the code (PER-60)", async () => {
+  mockCloud.preview.mockResolvedValue({ ok: true, value: preview });
+  const r = renderWithTheme(<TogetherJoinContainer />);
+  await waitFor(() => expect(mockLobby.browse).toHaveBeenCalled());
+  fireEvent.changeText(r.getByLabelText("Session code"), "4KQ-928");
+  fireEvent.press(r.getByText("Continue"));
+  await waitFor(() => expect(r.getByText("Join this workout")).toBeTruthy());
+  expect(mockLobby.selectCode).not.toHaveBeenCalled();
+  expect(mockCloud.preview).toHaveBeenCalledWith({ code: "4KQ928" });
+  expect(r.getByText("Kai’s session")).toBeTruthy();
+  expect(r.getByText("Push A")).toBeTruthy();
+  expect(r.getByText("2 of 4 · started 18 minutes ago")).toBeTruthy();
+  expect(r.getByText("4 × 8")).toBeTruthy();
+  expect(r.getByText("Online · internet required")).toBeTruthy();
+  fireEvent.press(r.getByText("Ask Kai and start"));
+  await waitFor(() => expect(mockCloud.join).toHaveBeenCalled());
+  expect(mockCloud.join.mock.calls[0][0]).toEqual({ code: "4KQ928" });
+});
+it("a code the backend cannot find, or cannot be checked offline, says so (PER-60)", async () => {
+  mockCloud.preview.mockResolvedValueOnce({
+    ok: false,
+    error: { kind: "api", code: "not_found", message: "no" },
+  });
+  const r = renderWithTheme(<TogetherJoinContainer />);
+  await waitFor(() => expect(mockLobby.browse).toHaveBeenCalled());
+  fireEvent.changeText(r.getByLabelText("Session code"), "ZZZ-ZZZ");
+  fireEvent.press(r.getByText("Continue"));
+  await waitFor(() =>
+    expect(r.getByText(/Couldn’t find that code/)).toBeTruthy(),
+  );
+  mockCloud.preview.mockResolvedValueOnce({
+    ok: false,
+    error: { kind: "api", code: "network", message: "offline" },
+  });
+  fireEvent.press(r.getByText("Continue"));
+  await waitFor(() =>
+    expect(r.getByText(/No internet to check that code/)).toBeTruthy(),
+  );
+  expect(r.queryByText("Join this workout")).toBeNull();
+});
+it("a pasted Online link fills the consent card in from the preview (PER-60)", async () => {
+  mockCloud.preview.mockResolvedValue({
+    ok: true,
+    value: { ...preview, partner: true },
+  });
+  const r = renderWithTheme(<TogetherJoinContainer />);
+  await waitFor(() => expect(mockLobby.browse).toHaveBeenCalled());
+  fireEvent.changeText(
+    r.getByLabelText("Session code"),
+    "persistencemobile://together/join?connection=online&invitation=tok",
+  );
+  fireEvent.press(r.getByText("Continue"));
+  await waitFor(() => expect(r.getByText("Kai’s session")).toBeTruthy());
+  expect(mockCloud.preview).toHaveBeenCalledWith({ inviteToken: "tok" });
+  expect(r.getByText("Push A")).toBeTruthy();
+  expect(r.getByText("Bench Press")).toBeTruthy();
+  // A partner joins straight in.
+  fireEvent.press(r.getByText("Join and start"));
+  await waitFor(() => expect(mockCloud.join).toHaveBeenCalled());
+  expect(mockCloud.join.mock.calls[0][0]).toEqual({ inviteToken: "tok" });
 });

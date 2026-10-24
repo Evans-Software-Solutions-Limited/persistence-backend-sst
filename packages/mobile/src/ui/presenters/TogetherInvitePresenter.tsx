@@ -8,6 +8,7 @@ import {
   ONLINE_CONNECTION_LABEL,
 } from "./TogetherConnectionChoice";
 import type { TogetherLobbyAudience } from "@/domain/ports/togetherLobby.port";
+import { formatSessionCode } from "@/adapters/together/planDetails";
 
 export function togetherInviteLine(
   connection: "local" | "online",
@@ -23,6 +24,8 @@ export function togetherInviteLine(
 /** Canvas rows 1b/1c "Invite people": the QR is the authenticated invitation; Share sends it. */
 export function TogetherInvitePresenter(p: {
   qr: ReactNode;
+  /** The six-character session code, read aloud or typed on Join a session. */
+  code?: string;
   connection: "local" | "online";
   audience?: TogetherLobbyAudience;
   notice?: string;
@@ -65,6 +68,21 @@ export function TogetherInvitePresenter(p: {
       >
         {p.qr}
       </View>
+      {!!p.code && (
+        <Text
+          fontFamily="$mono"
+          fontWeight="600"
+          fontSize={28}
+          lineHeight={36}
+          letterSpacing={3}
+          color="$text"
+          textAlign="center"
+          accessibilityLabel={`Session code ${p.code.split("").join(" ")}`}
+          testID="together-session-code"
+        >
+          {formatSessionCode(p.code)}
+        </Text>
+      )}
       <Text
         fontFamily="$body"
         fontSize={12}

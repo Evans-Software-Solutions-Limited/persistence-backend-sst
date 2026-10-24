@@ -24,6 +24,7 @@ import type {
 } from "@/domain/ports/togetherShared.port";
 import type { TogetherCloudPort } from "@/domain/ports/togetherCloud.port";
 import type { WorkoutSession } from "@/domain/models/session";
+import { useTogetherSettings } from "@/state/together-settings";
 const mockCloud = jest.fn();
 jest.mock("../TogetherCloudContainer", () => ({
   TogetherCloudContainer: (props: unknown) => {
@@ -1260,7 +1261,11 @@ it("hosts partners locally by default without contacting cloud", async () => {
   fireEvent.press(r.getByText("Start"));
   fireEvent.press(r.getByRole("radio", { name: "Partners" }));
   fireEvent.press(r.getByText("Start the session"));
-  expect(h.lobby.host).toHaveBeenCalledWith("Mine", "friends");
+  // The open workout's plan and start ride in the advert (PER-60).
+  expect(h.lobby.host).toHaveBeenCalledWith("Mine", "friends", {
+    startedAt: expect.any(Number),
+    plan: [{ name: "Squat", sets: 1, reps: null }],
+  });
   expect(mockCloud).not.toHaveBeenCalled();
 });
 it("waits for credentials then hosts local partner detail intent", () => {
@@ -1273,7 +1278,11 @@ it("waits for credentials then hosts local partner detail intent", () => {
   });
   expect(h.lobby.host).not.toHaveBeenCalled();
   h.publish({ phase: "idle" });
-  expect(h.lobby.host).toHaveBeenCalledWith("Mine", "friends");
+  expect(h.lobby.host).toHaveBeenCalledWith(
+    "Mine",
+    "friends",
+    expect.objectContaining({ plan: [{ name: "Squat", sets: 1, reps: null }] }),
+  );
   expect(consume).toHaveBeenCalledTimes(1);
   expect(mockCloud).not.toHaveBeenCalled();
 });
@@ -1513,4 +1522,82 @@ it("preserves permission interruption during hosting until the workout and plan 
   await waitFor(() => expect(h.workout.promote).toHaveBeenCalledTimes(1));
   expect(h.shared.publishPlan).toHaveBeenCalledWith(plan);
   expect(r.getByText("Invite people")).toBeTruthy();
+});
+
+it("applies the stored sharing defaults once to each person who joins a local session (PER-60)", async () => {
+  const h = sharingHarness();
+  const r = mountShared(h);
+  // Mounting rehydrates the store for the account; the defaults under test go in after.
+  await act(async () => {});
+  useTogetherSettings.setState({
+    sharing: { numbers: false, previous: true, logging: true },
+  });
+  h.publish({
+    phase: "hosting",
+    role: "host",
+    members: [{ userId: "a", host: true }],
+  });
+  expect(h.shared.setConsent).not.toHaveBeenCalled();
+  h.publish({
+    members: [
+      { userId: "a", host: true },
+      { userId: "other", host: false },
+    ],
+  });
+  await act(async () => {});
+  expect(h.shared.setConsent).toHaveBeenCalledTimes(1);
+  expect(h.shared.setConsent).toHaveBeenCalledWith("other", {
+    numbers: false,
+    prev: true,
+    logging: true,
+  });
+  // The same member again, or one already granted by hand, is left alone.
+  h.publish({
+    members: [
+      { userId: "a", host: true },
+      { userId: "other", host: false },
+    ],
+  });
+  await act(async () => {});
+  expect(h.shared.setConsent).toHaveBeenCalledTimes(1);
+  h.setShared({
+    grants: [
+      {
+        ownerId: "a",
+        recipientId: "third",
+        version: 1,
+        consent: { numbers: false, prev: false, logging: false },
+      },
+    ],
+  });
+  h.publish({
+    members: [
+      { userId: "a", host: true },
+      { userId: "other", host: false },
+      { userId: "third", host: false },
+    ],
+  });
+  await act(async () => {});
+  expect(h.shared.setConsent).toHaveBeenCalledTimes(1);
+  r.unmount();
+  useTogetherSettings.getState().reset();
+});
+it("sharing defaults that share nothing grant nothing (PER-60)", async () => {
+  const h = sharingHarness();
+  mountShared(h);
+  await act(async () => {});
+  useTogetherSettings.setState({
+    sharing: { numbers: false, previous: false, logging: false },
+  });
+  h.publish({
+    phase: "joined",
+    role: "guest",
+    members: [
+      { userId: "host", host: true },
+      { userId: "a", host: false },
+    ],
+  });
+  await act(async () => {});
+  expect(h.shared.setConsent).not.toHaveBeenCalled();
+  useTogetherSettings.getState().reset();
 });

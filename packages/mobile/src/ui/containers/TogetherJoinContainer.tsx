@@ -40,8 +40,15 @@ import {
   loadPartners,
   type PartnerOnlineSession,
 } from "./TogetherHubContainer";
-import type { TogetherLobbySnapshot } from "@/domain/ports/togetherLobby.port";
-import type { TogetherCloudState } from "@/domain/ports/togetherCloud.port";
+import type {
+  TogetherLobbySnapshot,
+  TogetherPlanRow,
+} from "@/domain/ports/togetherLobby.port";
+import type {
+  CloudPreview,
+  TogetherCloudState,
+} from "@/domain/ports/togetherCloud.port";
+import { normaliseSessionCode } from "@/adapters/together/planDetails";
 
 const EMPTY: TogetherLobbySnapshot = {
   phase: "disabled",
@@ -73,14 +80,30 @@ type Target =
       hostUserId: string;
       workoutName: string;
       memberCount?: number;
+      startedAt?: number;
+      plan?: readonly TogetherPlanRow[];
     }
   | {
       kind: "online-session";
       sessionId: string;
       hostUserId: string;
       occupancy: number;
+      workoutName?: string;
+      startedAt?: string;
+      plan?: readonly TogetherPlanRow[];
     }
-  | { kind: "online-invite"; token: string };
+  /** A pasted Online link; the preview arrives while the consent card is up. */
+  | { kind: "online-invite"; token: string; preview?: CloudPreview }
+  /** A typed code no nearby host answered to, resolved by the backend (PER-60). */
+  | { kind: "online-code"; code: string; preview: CloudPreview };
+
+/** Copy for a typed code (PER-60). Nearby needs a search first, Online needs internet. */
+const CODE_COPY: Record<string, string> = {
+  "code-not-found":
+    "Couldn’t find that code. Nearby sessions show after a search, Online ones need internet. Ask the host to show their QR.",
+  "code-offline":
+    "No internet to check that code. Nearby sessions show after a search; otherwise ask the host to show their QR.",
+};
 
 /** Canvas row 1: Join a session → Join this workout → Joining → the workout. */
 export function TogetherJoinContainer() {
@@ -204,7 +227,7 @@ export function TogetherJoinContainer() {
         setNotice(
           code === "workout-already-sharing"
             ? "You already have a live session. Your workout has been kept."
-            : togetherCloudErrorCopy(code) || failure,
+            : CODE_COPY[code] || togetherCloudErrorCopy(code) || failure,
         );
         setJoining(false);
       })
@@ -282,6 +305,36 @@ export function TogetherJoinContainer() {
   );
   const select = async (text: string, isCurrent: () => boolean) => {
     if (blocked) throw new Error("workout-already-sharing");
+    const typed = normaliseSessionCode(text);
+    if (typed) {
+      setCode(text);
+      setScanning(false);
+      // A nearby host advertises its code: no internet needed when the search found it.
+      if (
+        lobby?.selectCode &&
+        (lobby.getSnapshot().discovered ?? []).some((d) => d.code === typed)
+      ) {
+        await lobby.selectCode(typed);
+        if (!isCurrent()) return;
+        const selected = lobby.getSnapshot();
+        if (selected.phase === "selected" && selected.selection) {
+          setCold(false);
+          setTarget(localTarget(selected.selection));
+          return;
+        }
+        if (selected.error) throw new Error(selected.error);
+      }
+      if (!cloud) throw new Error("code-not-found");
+      const preview = await cloud.preview({ code: typed });
+      if (!isCurrent()) return;
+      if (!preview.ok)
+        throw new Error(
+          preview.error.code === "network" ? "code-offline" : "code-not-found",
+        );
+      setCold(false);
+      setTarget({ kind: "online-code", code: typed, preview: preview.value });
+      return;
+    }
     const value = text.includes("://")
       ? readTogetherInvitation(text)
       : { connection: "local" as const, invitation: text };
@@ -289,7 +342,20 @@ export function TogetherJoinContainer() {
     setScanning(false);
     if (value.connection === "online") {
       if (!cloud) throw new Error("online-unavailable");
-      setTarget({ kind: "online-invite", token: value.invitation });
+      const token = value.invitation;
+      setTarget({ kind: "online-invite", token });
+      // The consent card fills in as the preview lands; a miss keeps the generic card.
+      void cloud
+        .preview({ inviteToken: invitationPayload(token, "online") })
+        .then((result) => {
+          if (!isCurrent() || !result.ok) return;
+          setTarget((t) =>
+            t?.kind === "online-invite" && t.token === token
+              ? { ...t, preview: result.value }
+              : t,
+          );
+        })
+        .catch(() => {});
       return;
     }
     if (!lobby) throw new Error("local-unavailable");
@@ -301,11 +367,7 @@ export function TogetherJoinContainer() {
     if (!isCurrent()) return;
     const selected = lobby.getSnapshot();
     if (selected.phase === "selected" && selected.selection)
-      setTarget({
-        kind: "local",
-        hostUserId: selected.selection.hostUserId,
-        workoutName: selected.selection.workoutName,
-      });
+      setTarget(localTarget(selected.selection));
     else if (selected.error) throw new Error(selected.error);
   };
   // A link from the OS (cold start, or a QR scanned by the camera app).
@@ -475,7 +537,9 @@ export function TogetherJoinContainer() {
       await cloud.join(
         target.kind === "online-session"
           ? { sessionId: target.sessionId }
-          : { inviteToken: invitationPayload(target.token, "online") },
+          : target.kind === "online-code"
+            ? { code: target.code }
+            : { inviteToken: invitationPayload(target.token, "online") },
         draft ?? undefined,
       );
       if (!isCurrent()) return;
@@ -579,25 +643,47 @@ export function TogetherJoinContainer() {
   }
   if (target) {
     const host = hostName(target, partners);
+    const preview =
+      target.kind === "online-invite" || target.kind === "online-code"
+        ? target.preview
+        : undefined;
     const partner =
       target.kind === "online-session" ||
-      (target.kind === "local" && !!partners[target.hostUserId]);
+      (target.kind === "local" && !!partners[target.hostUserId]) ||
+      !!preview?.partner;
+    const startedAt =
+      target.kind === "local"
+        ? target.startedAt
+        : target.kind === "online-session"
+          ? target.startedAt
+          : preview?.startedAt;
     return (
       <TogetherJoinConsentPresenter
         hostName={host}
         workoutName={
           target.kind === "local"
             ? target.workoutName
-            : target.kind === "online-session" && host
-              ? `${host}’s workout`
-              : "Shared workout"
+            : target.kind === "online-session"
+              ? (target.workoutName ??
+                (host ? `${host}’s workout` : "Shared workout"))
+              : (preview?.workoutName ?? "Shared workout")
         }
         memberCount={
           target.kind === "online-session"
             ? target.occupancy
             : target.kind === "local"
               ? target.memberCount
-              : undefined
+              : preview?.occupancy
+        }
+        startedAt={
+          typeof startedAt === "string"
+            ? Date.parse(startedAt) || undefined
+            : startedAt
+        }
+        plan={
+          target.kind === "local" || target.kind === "online-session"
+            ? target.plan
+            : preview?.plan
         }
         connection={connection}
         cold={cold}
@@ -630,7 +716,9 @@ export function TogetherJoinContainer() {
       return {
         id: s.sessionId,
         title: name,
-        subtitle: full ? `Full · ${s.occupancy} of 4` : `${s.occupancy} of 4`,
+        subtitle: full
+          ? `Full · ${s.occupancy} of 4`
+          : `${s.workoutName} · ${s.occupancy} of 4`,
         kind: full ? "full" : "online",
       };
     }),
@@ -680,9 +768,7 @@ export function TogetherJoinContainer() {
           );
           setCold(false);
           setTarget({
-            kind: "local",
-            hostUserId: selected.selection.hostUserId,
-            workoutName: selected.selection.workoutName,
+            ...localTarget(selected.selection),
             memberCount: row?.memberCount,
           });
         });
@@ -698,6 +784,21 @@ function hostName(
   target: Target,
   partners: Record<string, Partner>,
 ): string | undefined {
-  if (target.kind === "online-invite") return undefined;
+  if (target.kind === "online-invite" || target.kind === "online-code")
+    return target.preview?.host.displayName ?? undefined;
   return partners[target.hostUserId]?.name;
+}
+/** A selected Nearby session as the consent card's target. */
+function localTarget(
+  selection: NonNullable<TogetherLobbySnapshot["selection"]>,
+): Extract<Target, { kind: "local" }> {
+  return {
+    kind: "local",
+    hostUserId: selection.hostUserId,
+    workoutName: selection.workoutName,
+    ...(selection.startedAt !== undefined
+      ? { startedAt: selection.startedAt }
+      : {}),
+    ...(selection.plan ? { plan: selection.plan } : {}),
+  };
 }

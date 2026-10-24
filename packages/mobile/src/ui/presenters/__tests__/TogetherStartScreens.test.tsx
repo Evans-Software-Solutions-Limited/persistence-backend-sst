@@ -146,10 +146,13 @@ it("Invite people shows the QR, the mode line and Share, and names who is waitin
     onClose: jest.fn(),
   };
   const r = renderWithTheme(
-    <TogetherInvitePresenter {...p} audience="friends" />,
+    <TogetherInvitePresenter {...p} audience="friends" code="4KQ928" />,
   );
   expect(r.getByText("Invite people")).toBeTruthy();
   expect(r.getByLabelText("Session QR code")).toBeTruthy();
+  // The code under the QR, read aloud digit by digit for a screen reader.
+  expect(r.getByText("4KQ-928")).toBeTruthy();
+  expect(r.getByLabelText("Session code 4 K Q 9 2 8")).toBeTruthy();
   expect(
     r.getByText(
       "Nearby · no internet needed · training partners join straight in",

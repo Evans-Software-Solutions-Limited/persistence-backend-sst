@@ -34,6 +34,7 @@ describe("useTogetherSettings", () => {
     expect(TOGETHER_DEFAULTS).toEqual({
       connection: "local",
       audience: "friends",
+      sharing: { numbers: true, previous: true, logging: false },
     });
     expect(useTogetherSettings.getState()).toMatchObject({
       ...TOGETHER_DEFAULTS,
@@ -42,6 +43,7 @@ describe("useTogetherSettings", () => {
   });
 
   it("rehydrates a saved record for the account and keeps defaults for a missing or corrupt one", async () => {
+    // A v1 record (before sharing defaults) still reads, with the shipped sharing.
     await AsyncStorage.setItem(
       "persistence.together.defaults.v1:u",
       JSON.stringify({ connection: "online", audience: "invite-only" }),
@@ -51,6 +53,21 @@ describe("useTogetherSettings", () => {
       userId: "u",
       connection: "online",
       audience: "invite-only",
+      sharing: TOGETHER_DEFAULTS.sharing,
+    });
+    await AsyncStorage.setItem(
+      "persistence.together.defaults.v2:v",
+      JSON.stringify({
+        connection: "local",
+        audience: "open",
+        sharing: { numbers: false, previous: true, logging: true },
+      }),
+    );
+    await useTogetherSettings.getState().rehydrate("v");
+    expect(useTogetherSettings.getState().sharing).toEqual({
+      numbers: false,
+      previous: true,
+      logging: true,
     });
     await useTogetherSettings.getState().rehydrate("nobody");
     expect(useTogetherSettings.getState()).toMatchObject({
@@ -87,26 +104,41 @@ describe("useTogetherSettings", () => {
     await useTogetherSettings.getState().setDefaults({ audience: "open" });
     expect(
       JSON.parse(
-        (await AsyncStorage.getItem("persistence.together.defaults.v1:u"))!,
+        (await AsyncStorage.getItem("persistence.together.defaults.v2:u"))!,
       ),
-    ).toEqual({ connection: "local", audience: "open" });
+    ).toEqual({
+      connection: "local",
+      audience: "open",
+      sharing: TOGETHER_DEFAULTS.sharing,
+    });
+    await useTogetherSettings
+      .getState()
+      .setDefaults({ sharing: { logging: true } });
+    expect(useTogetherSettings.getState().sharing).toEqual({
+      numbers: true,
+      previous: true,
+      logging: true,
+    });
     await useTogetherSettings.getState().setDefaults({ connection: "online" });
     expect(useTogetherSettings.getState()).toMatchObject({
       connection: "online",
       audience: "friends",
     });
+    const sharing = TOGETHER_DEFAULTS.sharing;
     expect(
-      normaliseTogetherDefaults({ connection: "online", audience: "open" }),
-    ).toEqual({
-      connection: "online",
-      audience: "friends",
-    });
+      normaliseTogetherDefaults({
+        connection: "online",
+        audience: "open",
+        sharing,
+      }),
+    ).toEqual({ connection: "online", audience: "friends", sharing });
     expect(
-      normaliseTogetherDefaults({ connection: "local", audience: "open" }),
-    ).toEqual({
-      connection: "local",
-      audience: "open",
-    });
+      normaliseTogetherDefaults({
+        connection: "local",
+        audience: "open",
+        sharing,
+      }),
+    ).toEqual({ connection: "local", audience: "open", sharing });
   });
 
   it("does not persist without an account and survives a storage failure", async () => {

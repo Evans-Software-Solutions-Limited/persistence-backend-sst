@@ -60,6 +60,34 @@ describe("strict signed pre-admission summary protocol", () => {
     ])
       expect(readProbe(invalid)).toBeUndefined();
   });
+  it("carries the start, plan rows and session code when the host sends them, and rejects malformed ones (PER-60)", () => {
+    const details = {
+      startedAt: now - 5000,
+      plan: [{ name: "Squat", sets: 3, reps: 5 }],
+      code: "4KQ928",
+    };
+    expect(
+      readSummary(
+        signSummary(pin, identity, "Strength", 1, nonce, now, details),
+        pin.sessionId,
+        nonce,
+        trustedKeys,
+        now,
+      ),
+    ).toMatchObject(details);
+    expect(() =>
+      readSummary(
+        signSummary(pin, identity, "Strength", 1, nonce, now, {
+          ...details,
+          plan: [{ name: "Squat", sets: 0, reps: 5 }],
+        }),
+        pin.sessionId,
+        nonce,
+        trustedKeys,
+        now,
+      ),
+    ).toThrow("invalid-summary");
+  });
   it("checks issuer, identity, nonce, signature, session, bounds and strict fields", () => {
     expect(
       readSummary(frame(), pin.sessionId, nonce, trustedKeys, now),

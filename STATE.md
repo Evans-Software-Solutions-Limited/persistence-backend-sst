@@ -95,8 +95,33 @@ the strip match the canvas within 1–2 px. Canvas content the data cannot draw
 yet is listed on PER-60 (consent "The plan" rows and start time, workout name on
 Online rows, the 7-character session code, the row 4 settings controls).
 
-**Verified.** Mobile Jest 640 suites / 8,553 tests, coverage
-96.15 / 92.13 / 96.03 / 97.54 (gate 90); typecheck clean; `expo lint` 0
+**The four data gaps, done on this PR (2026-10-24, Brad: "I want them done
+on this PR so we don't lose them").** Core: `GET /together/discovery` returns
+`workoutName`, `startedAt` and `plan` rows (host exercise definitions, target
+sets × reps); new `GET /together/preview` (invite token or code, discovery
+rate limit; own / ended / unknown → 404); `together_sessions.code` (migration
+`20261023120000_together_session_code` + rollback, unique while active,
+minted on create from an alphabet without 0/O/1/I, returned on create and in
+the host's snapshot only); `POST /together/join-requests` takes `{ code }` as
+a credential (partners auto-admit, others pend); `GET /social/blocks`. Mobile:
+`planDetails.ts` (code mint/normalise/format, plan rows from the live workout,
+`startedAgo`); the signed Nearby summary and invitation carry `startedAt`,
+`plan` and `code` (optional on read, strict when present); `host()` takes the
+details, `selectCode()` resolves a typed code against discovered hosts; the
+Join container tries Nearby first, then `cloud.preview({ code })`, and joins
+Online with `{ code }`; a pasted Online link previews into the consent card.
+Consent shows "N of 4 · started 18 minutes ago" and "The plan"; the invite
+sheet shows the code in 28 pt mono; hub and Join rows carry the workout name.
+Together settings: store v2 adds sharing defaults (numbers on, previous on,
+fill-in off), applied once per newcomer in local and Online sessions (and to
+everyone on a fresh join); new `/(app)/together/settings` and
+`/(app)/together/blocked` screens; the hub gets the canvas settings button.
+Not done: the live in-session card on the settings page (row 4 phone 4).
+
+**Verified.** Mobile Jest 643 suites / 8,577 tests, coverage
+96.13 / 92.06 / 96.05 / 97.54 (gate 90); core unit 408 files / 5,667 tests,
+coverage 98.1 / 94.33 / 97.74 / 98.1 with the session-code migration applied
+in every harness; typecheck clean; `expo lint` 0
 errors; prettier clean. New presenter tests cover every join/sheet state
 (hidden and empty included); container tests cover search-on-open, the 30 s
 stop keeping results, refresh, link/row selection, consent → connecting →

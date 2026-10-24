@@ -15,6 +15,7 @@ import {
   previous,
   flag,
   idField,
+  planRows,
 } from "./cloudSchema";
 import { uuid, integer } from "./security/schema";
 import { recoveryPlan, recoveryResult } from "./recoverySchema";
@@ -228,10 +229,30 @@ export function createCloudApis(
             person(v.host) &&
             integer(v.occupancy) &&
             v.occupancy < 4 &&
-            typeof v.expiresAt === "string",
+            typeof v.expiresAt === "string" &&
+            typeof v.workoutName === "string" &&
+            typeof v.startedAt === "string" &&
+            planRows(v.plan),
           cursor,
           { audience: "friends" },
         ),
+      preview: (selector) =>
+        envelope("/together/preview", {
+          method: "GET",
+          params: { inviteToken: selector.inviteToken, code: selector.code },
+          timeoutMs: 15_000,
+          validateResponse: (v) =>
+            record(v) &&
+            uuid(v.sessionId) &&
+            person(v.host) &&
+            integer(v.occupancy) &&
+            typeof v.partner === "boolean" &&
+            typeof v.audience === "string" &&
+            typeof v.expiresAt === "string" &&
+            typeof v.workoutName === "string" &&
+            typeof v.startedAt === "string" &&
+            planRows(v.plan),
+        }),
       discard: (id, key) =>
         call(
           `${session(id)}/discard`,
@@ -312,6 +333,7 @@ export function createCloudApis(
           key,
         ),
       people: (q, cursor) => paged("/social/people", person, cursor, { q }),
+      blocked: (cursor) => paged("/social/blocks", person, cursor),
       friends: (cursor) =>
         paged(
           "/social/friends",

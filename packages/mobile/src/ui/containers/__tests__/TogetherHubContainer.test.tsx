@@ -62,6 +62,9 @@ const live = (sessionId: string, userId: string, occupancy = 2) => ({
   host: { userId, displayName: null, avatarUrl: null },
   occupancy,
   expiresAt: "2026-10-23T12:00:00Z",
+  workoutName: "Push A",
+  startedAt: "2026-10-23T11:30:00Z",
+  plan: [{ name: "Bench Press", sets: 4, reps: 8 }],
 });
 const partner = (
   userId: string,
@@ -103,7 +106,7 @@ it("composes Start and Join without any discovery, and shows partners with their
   fireEvent.press(r.getByLabelText("Start a session"));
   expect(mockPush).toHaveBeenLastCalledWith("/(app)/together/start");
   await waitFor(() =>
-    expect(r.getByText("Training now · 2 of 4 · Online")).toBeTruthy(),
+    expect(r.getByText("Training now · Push A · 2 of 4 · Online")).toBeTruthy(),
   );
   expect(r.getByText("Training partners · 2")).toBeTruthy();
   expect(r.queryByText("Pending")).toBeNull();
@@ -122,7 +125,7 @@ it("composes Start and Join without any discovery, and shows partners with their
       .props.refreshControl.props.onRefresh(),
   );
   await waitFor(() =>
-    expect(r.getByText("Training now · 4 of 4 · Online")).toBeTruthy(),
+    expect(r.getByText("Training now · Push A · 4 of 4 · Online")).toBeTruthy(),
   );
   expect(mockSocialFriends).toHaveBeenCalledTimes(2);
 });
@@ -177,8 +180,13 @@ it("walks every page of partners and sessions, refuses looping cursors, and name
     .mockResolvedValueOnce(page([live("s1", "tom")], "next"))
     .mockResolvedValueOnce(page([live("s2", "mia")]));
   await expect(loadPartnerSessions(mockCloud as any)).resolves.toEqual([
-    { sessionId: "s1", hostUserId: "tom", occupancy: 2 },
-    { sessionId: "s2", hostUserId: "mia", occupancy: 2 },
+    expect.objectContaining({
+      sessionId: "s1",
+      hostUserId: "tom",
+      occupancy: 2,
+      workoutName: "Push A",
+    }),
+    expect.objectContaining({ sessionId: "s2", hostUserId: "mia" }),
   ]);
   expect(mockFriends).toHaveBeenLastCalledWith("next");
   mockFriends.mockResolvedValue(page([live("s1", "tom")], "loop"));

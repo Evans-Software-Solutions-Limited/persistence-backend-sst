@@ -68,6 +68,7 @@ function setup() {
     ),
     getProfile: jest.fn(async () => ok({ discoverable: false })),
     profile: jest.fn(async () => ok({ discoverable: true })),
+    blocked: jest.fn(async () => ok({ data: [], nextCursor: null })),
     friends: jest.fn(async () => page([friend])),
     requests: jest.fn(async () =>
       page([{ ...friend, id: "pending", status: "pending" as const }]),

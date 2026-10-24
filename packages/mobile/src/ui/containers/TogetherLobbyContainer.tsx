@@ -1,4 +1,5 @@
 import { togetherInvitationLink } from "@/adapters/together/invitationLink";
+import { hostDetailsFrom } from "@/adapters/together/planDetails";
 import { invitationPayload } from "@/application/together/invitation";
 import { TogetherScannerPresenter } from "@/ui/presenters/TogetherScannerPresenter";
 import { TogetherPreparingPresenter } from "@/ui/presenters/TogetherPreparingPresenter";
@@ -13,7 +14,10 @@ import { TogetherJoinRequestBar } from "@/ui/presenters/TogetherJoinRequestBar";
 import { useTogetherSettings } from "@/state/together-settings";
 import { Alert, AppState, Linking, Share, Platform } from "react-native";
 import { TogetherSharingPresenter } from "@/ui/presenters/TogetherSharingPresenter";
-import type { TogetherPreviousRow } from "@/domain/ports/togetherShared.port";
+import type {
+  TogetherPreviousRow,
+  TogetherSharingConsent,
+} from "@/domain/ports/togetherShared.port";
 import type { TogetherWorkoutStatus } from "@/domain/ports/togetherWorkout.port";
 import { router } from "expo-router";
 import {
@@ -310,6 +314,91 @@ export function TogetherLobbyContainer({
         );
     });
   };
+  /** Grants (or revokes) what one person in the session may see; previous values are published right after. */
+  const grantConsent = (recipient: string, consent: TogetherSharingConsent) =>
+    invoke(async () => {
+      const consentGeneration = generation.current;
+      const request = (consentRequests.current.get(recipient) ?? 0) + 1;
+      consentRequests.current.set(recipient, request);
+      const shared = lobby.shared!;
+      const stillCurrent = () =>
+        consentGeneration === generation.current &&
+        lobby.shared === shared &&
+        consentRequests.current.get(recipient) === request;
+      await shared.setConsent(recipient, consent);
+      if (!stillCurrent()) return;
+      const current = getWorkout?.();
+      if (consent.prev && current?.userId === accountId && getPrevious) {
+        const grantVersion = shared
+          .getSnapshot()
+          .grants.find(
+            (g) => g.ownerId === accountId && g.recipientId === recipient,
+          )?.version;
+        await shared.publishPrevious(
+          recipient,
+          currentPreviousRows(current, getPrevious()),
+          Date.parse(current.startedAt),
+        );
+        if (!stillCurrent() || !refreshPrevious) return;
+        const rows = await refreshPrevious(stillCurrent);
+        if (rows === null) return;
+        const fresh = getWorkout?.();
+        if (
+          !stillCurrent() ||
+          fresh?.id !== current.id ||
+          fresh.userId !== accountId ||
+          fresh.startedAt !== current.startedAt
+        )
+          return;
+        const grant = shared
+          .getSnapshot()
+          .grants.find(
+            (g) => g.ownerId === accountId && g.recipientId === recipient,
+          );
+        if (!grant?.consent.prev || grant.version !== grantVersion) return;
+        await shared.publishPrevious(
+          recipient,
+          currentPreviousRows(fresh, rows),
+          Date.parse(current.startedAt),
+        );
+      }
+    });
+  // The stored sharing defaults apply once to each person who joins (canvas row 4, PER-60).
+  const defaultGranted = useRef(new Set<string>());
+  useEffect(() => {
+    if (snapshot.phase !== "hosting" && snapshot.phase !== "joined") {
+      defaultGranted.current.clear();
+      return;
+    }
+    if (!lobby.shared || !accountId) return;
+    const consent: TogetherSharingConsent = {
+      numbers: defaults.sharing.numbers,
+      prev: defaults.sharing.previous,
+      logging: defaults.sharing.logging,
+    };
+    const grants = lobby.shared.getSnapshot().grants;
+    for (const m of snapshot.members) {
+      if (m.userId === accountId || defaultGranted.current.has(m.userId))
+        continue;
+      defaultGranted.current.add(m.userId);
+      if (
+        grants.some(
+          (g) => g.ownerId === accountId && g.recipientId === m.userId,
+        ) ||
+        (!consent.numbers && !consent.prev && !consent.logging)
+      )
+        continue;
+      grantConsent(m.userId, consent);
+    }
+    // grantConsent is recreated each render; the members list drives the effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    snapshot.phase,
+    snapshot.members,
+    accountId,
+    lobby.shared,
+    defaults.sharing,
+  ]);
   const startLocalWorkout = async (selectedAudience: TogetherLobbyAudience) => {
     const scope = ++hostGeneration.current;
     const draft = getWorkout?.();
@@ -327,7 +416,10 @@ export function TogetherLobbyContainer({
           (localSessionId && draft.id !== localSessionId))
       )
         throw new Error("workout-changed");
-      await lobby.host(workoutName, selectedAudience);
+      // The plan and start time ride in the advert when a workout is open.
+      await (draft
+        ? lobby.host(workoutName, selectedAudience, hostDetailsFrom(draft))
+        : lobby.host(workoutName, selectedAudience));
       if (scope !== hostGeneration.current) return;
       const hosted = lobby.getSnapshot();
       if (hosted.phase !== "hosting" || hosted.role !== "host") return;
@@ -777,6 +869,7 @@ export function TogetherLobbyContainer({
             }
             connection="local"
             audience={snapshot.audience}
+            code={snapshot.invitationCode}
             notice={notice || snapshot.error}
             pendingCount={snapshot.pending.length}
             onClose={dismiss}
@@ -824,68 +917,7 @@ export function TogetherLobbyContainer({
                   onRemove={
                     lobby.removeParticipant ? confirmRemoval : undefined
                   }
-                  onConsent={(recipient, consent) =>
-                    invoke(async () => {
-                      const consentGeneration = generation.current;
-                      const request =
-                        (consentRequests.current.get(recipient) ?? 0) + 1;
-                      consentRequests.current.set(recipient, request);
-                      const shared = lobby.shared!;
-                      const stillCurrent = () =>
-                        consentGeneration === generation.current &&
-                        lobby.shared === shared &&
-                        consentRequests.current.get(recipient) === request;
-                      await shared.setConsent(recipient, consent);
-                      if (!stillCurrent()) return;
-                      const current = getWorkout?.();
-                      if (
-                        consent.prev &&
-                        current?.userId === accountId &&
-                        getPrevious
-                      ) {
-                        const grantVersion = shared
-                          .getSnapshot()
-                          .grants.find(
-                            (g) =>
-                              g.ownerId === accountId &&
-                              g.recipientId === recipient,
-                          )?.version;
-                        await shared.publishPrevious(
-                          recipient,
-                          currentPreviousRows(current, getPrevious()),
-                          Date.parse(current.startedAt),
-                        );
-                        if (!stillCurrent() || !refreshPrevious) return;
-                        const rows = await refreshPrevious(stillCurrent);
-                        if (rows === null) return;
-                        const fresh = getWorkout?.();
-                        if (
-                          !stillCurrent() ||
-                          fresh?.id !== current.id ||
-                          fresh.userId !== accountId ||
-                          fresh.startedAt !== current.startedAt
-                        )
-                          return;
-                        const grant = shared
-                          .getSnapshot()
-                          .grants.find(
-                            (g) =>
-                              g.ownerId === accountId &&
-                              g.recipientId === recipient,
-                          );
-                        if (
-                          !grant?.consent.prev ||
-                          grant.version !== grantVersion
-                        )
-                          return;
-                        await shared.publishPrevious(
-                          recipient,
-                          currentPreviousRows(fresh, rows),
-                          Date.parse(current.startedAt),
-                        );
-                      }
-                    })
-                  }
+                  onConsent={grantConsent}
                   onClose={confirmClose}
                   onDiscard={onDiscardWorkout}
                 />

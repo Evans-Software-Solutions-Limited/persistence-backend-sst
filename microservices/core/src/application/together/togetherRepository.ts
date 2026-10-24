@@ -28,6 +28,7 @@ import {
   requestHash,
   type TogetherTx,
   TogetherError,
+  newSessionCode,
 } from "./shared";
 import { canInteract, areFriends } from "../social/socialRepository";
 import type { TogetherCommand } from "./types";
@@ -304,6 +305,8 @@ export class TogetherRepository {
       sharingActive: shared,
       continuation: !shared && own.status === "active" ? "solo" : null,
       hostId: s.hostId,
+      /** Only the host shares the code (PER-60). */
+      code: s.hostId === actor ? (s.code ?? null) : null,
       revision: s.revision,
       planVersion: s.planVersion,
       plan: shared ? s.plan : (own.frozenPlan ?? s.plan),
@@ -533,6 +536,18 @@ export class TogetherRepository {
                 await this.definitions(tx, [e.substituteExerciseId], [actor]),
               );
           }
+          // PER-60: a six-character join code, unique among active sessions.
+          let code = newSessionCode();
+          for (let attempt = 0; attempt < 5; attempt++) {
+            const [taken] = await tx
+              .select({ id: sessions.id })
+              .from(sessions)
+              .where(
+                and(eq(sessions.code, code), eq(sessions.state, "active")),
+              );
+            if (!taken) break;
+            code = newSessionCode();
+          }
           const [s] = await tx
             .insert(sessions)
             .values({
@@ -540,6 +555,7 @@ export class TogetherRepository {
               clientDraftId: body.clientDraftId,
               promotionHash: hashTogether(body),
               plan: body.plan,
+              code,
               expiresAt: new Date(Date.now() + 4 * 3600000),
             })
             .returning();
@@ -570,6 +586,7 @@ export class TogetherRepository {
         .where(eq(participants.sessionId, result.sessionId));
       return {
         sessionId: session.id,
+        code: session.code,
         revision: session.revision,
         snapshot: await this.snapshotIn(tx, session, members, actor),
       };
@@ -765,6 +782,8 @@ export class TogetherRepository {
     key: string,
     body: {
       inviteToken?: string;
+      /** The six-character session code (PER-60): a credential like an invite. */
+      code?: string;
       sessionId?: string;
       consentVersion: "together-v1";
       consentAccepted: true;
@@ -784,7 +803,15 @@ export class TogetherRepository {
           .from(invites)
           .where(eq(invites.tokenHash, hashTogether(body.inviteToken)))
       : [];
-    const id = invite?.sessionId ?? body.sessionId;
+    const [coded] = body.code
+      ? await getDb()
+          .select({ id: sessions.id })
+          .from(sessions)
+          .where(
+            and(eq(sessions.code, body.code), eq(sessions.state, "active")),
+          )
+      : [];
+    const id = invite?.sessionId ?? coded?.id ?? body.sessionId;
     requireTogether(id, "NOT_FOUND", 404);
     return this.transaction(actor, id, async (tx, s, ps) => {
       requireTogether(
@@ -818,6 +845,14 @@ export class TogetherRepository {
               ps.some((p) => p.userId === actor && !p.leftAt)),
           "INVITE_EXPIRED",
           410,
+        );
+      } else if (body.code) {
+        // The code is the secret: it opens private and friends-only sessions;
+        // non-partners still wait for the host (approval below).
+        requireTogether(
+          s.code === body.code && s.state === "active",
+          "NOT_FOUND",
+          404,
         );
       } else {
         requireTogether(
@@ -890,6 +925,91 @@ export class TogetherRepository {
         },
       );
       return { ...joined, sessionId: id };
+    });
+  }
+  /** Workout name, start and plan rows for the consent card (PER-60). */
+  private planRows(s: Session, ps: Participant[]) {
+    const host = ps.find((p) => p.userId === s.hostId);
+    return {
+      workoutName: s.plan.name,
+      startedAt: (host?.originalStartedAt ?? s.createdAt).toISOString(),
+      plan: [...s.plan.exercises]
+        .sort((x, y) => x.order - y.order)
+        .slice(0, 20)
+        .map((e) => ({
+          name: host?.exerciseDefinitions[e.exerciseId]?.name ?? "Exercise",
+          sets: e.targetSets,
+          reps: e.targetReps ?? null,
+        })),
+    };
+  }
+  /**
+   * What a joiner sees before consenting (PER-60): the host, the workout, who
+   * is in and the plan, for a pasted invite link or a typed session code.
+   * Rate limited with discovery; a code or token that resolves to nothing, an
+   * ended session or your own session is simply not found.
+   */
+  async preview(
+    actor: string,
+    selector: { inviteToken?: string; code?: string },
+  ) {
+    return withActors([actor], async (tx) => {
+      await enforceRateLimit(tx, actor, "discovery");
+      let s: Session | undefined;
+      if (selector.inviteToken) {
+        const [invite] = await tx
+          .select()
+          .from(invites)
+          .where(eq(invites.tokenHash, hashTogether(selector.inviteToken)));
+        requireTogether(
+          invite &&
+            !invite.revoked &&
+            !invite.revokedFor.includes(actor) &&
+            invite.expiresAt > new Date(),
+          "INVITE_EXPIRED",
+          410,
+        );
+        [s] = await tx
+          .select()
+          .from(sessions)
+          .where(eq(sessions.id, invite.sessionId));
+      } else {
+        requireTogether(selector.code, "INVALID_SCHEMA", 400);
+        [s] = await tx
+          .select()
+          .from(sessions)
+          .where(
+            and(eq(sessions.code, selector.code), eq(sessions.state, "active")),
+          );
+      }
+      requireTogether(s && s.hostId && s.hostId !== actor, "NOT_FOUND", 404);
+      const ps = await tx
+        .select()
+        .from(participants)
+        .where(eq(participants.sessionId, s.id));
+      requireTogether(
+        (await this.live(tx, s, ps)) &&
+          (await canInteract(tx, actor, s.hostId)),
+        "NOT_FOUND",
+        404,
+      );
+      const [host] = await tx
+        .select({
+          userId: profiles.id,
+          displayName: profiles.fullName,
+          avatarUrl: profiles.avatarUrl,
+        })
+        .from(profiles)
+        .where(eq(profiles.id, s.hostId));
+      return {
+        sessionId: s.id,
+        audience: s.audience,
+        host,
+        occupancy: ps.filter((p) => !p.removedFromRoster).length,
+        partner: await areFriends(tx, actor, s.hostId),
+        expiresAt: s.expiresAt,
+        ...this.planRows(s, ps),
+      };
     });
   }
   async joinStatus(actor: string, requestId: string) {
@@ -1682,6 +1802,7 @@ export class TogetherRepository {
             displayName: p.fullName,
             avatarUrl: p.avatarUrl,
           },
+          ...this.planRows(s, ps),
           placeId: s.placeId,
           placeLabel: s.placeLabel,
           expiresAt: s.expiresAt,

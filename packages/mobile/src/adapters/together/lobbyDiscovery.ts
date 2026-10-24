@@ -14,6 +14,11 @@ import {
 } from "./security/identity";
 import { object, uuid } from "./security/schema";
 import { encode64 } from "./security/encoding";
+import { isHostDetails } from "./planDetails";
+import type {
+  TogetherHostDetails,
+  TogetherPlanRow,
+} from "../../domain/ports/togetherLobby.port";
 
 export const SUMMARY_TTL = 15_000;
 export interface LobbySummary extends HostPin {
@@ -21,6 +26,10 @@ export interface LobbySummary extends HostPin {
   audience: "open";
   workoutName: string;
   memberCount: number;
+  /** PER-60: start time, plan rows and the session code; absent from older hosts. */
+  startedAt?: number;
+  plan?: readonly TogetherPlanRow[];
+  code?: string;
   credential: Signed<Credential>;
   nonce: string;
   expiresAt: number;
@@ -47,6 +56,7 @@ export function signSummary(
   memberCount: number,
   nonce: string,
   now: number,
+  details?: TogetherHostDetails & { code: string },
 ): string {
   verifyCredential(identity.credential, identity.trustedKeys, now);
   return JSON.stringify(
@@ -57,6 +67,13 @@ export function signSummary(
         audience: "open",
         workoutName,
         memberCount,
+        ...(details
+          ? {
+              startedAt: details.startedAt,
+              plan: details.plan,
+              code: details.code,
+            }
+          : {}),
         credential: identity.credential,
         nonce,
         expiresAt: Math.min(
@@ -79,18 +96,22 @@ export function readSummary(
   const envelope: unknown = JSON.parse(frame);
   if (
     !object(envelope, ["payload", "signature"]) ||
-    !object(envelope.payload, [
-      "kind",
-      "sessionId",
-      "hostUserId",
-      "hostDeviceId",
-      "audience",
-      "workoutName",
-      "memberCount",
-      "credential",
-      "nonce",
-      "expiresAt",
-    ])
+    !object(
+      envelope.payload,
+      [
+        "kind",
+        "sessionId",
+        "hostUserId",
+        "hostDeviceId",
+        "audience",
+        "workoutName",
+        "memberCount",
+        "credential",
+        "nonce",
+        "expiresAt",
+      ],
+      ["startedAt", "plan", "code"],
+    )
   )
     throw new Error("invalid-summary");
   const p = envelope.payload;
@@ -108,7 +129,8 @@ export function readSummary(
     (p.memberCount as number) > 4 ||
     !Number.isSafeInteger(p.expiresAt) ||
     (p.expiresAt as number) <= now ||
-    (p.expiresAt as number) > now + SUMMARY_TTL
+    (p.expiresAt as number) > now + SUMMARY_TTL ||
+    !isHostDetails(p)
   )
     throw new Error("invalid-summary");
   const identity = verifyCredential(

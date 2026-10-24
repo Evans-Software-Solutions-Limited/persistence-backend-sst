@@ -211,7 +211,7 @@ export function TogetherJoinPresenter(p: {
               maxLength={12000}
               accessibilityLabel="Session code"
               testID="together-code"
-              placeholder="Paste the code or link"
+              placeholder="4KQ-928"
               placeholderTextColor={color.$text4}
               style={{
                 height: 48,

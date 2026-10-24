@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { getDb, type Db } from "@persistence/db";
 import {
@@ -157,4 +157,22 @@ export async function enforceRateLimit(
         attempts: active ? row.attempts + 1 : 1,
       },
     });
+}
+
+/**
+ * Session join codes (PER-60): six characters from an alphabet without 0/O, 1/I
+ * so they survive being read aloud or typed from a phone across the gym. Shown
+ * as `4KQ-928`; stored and compared without the dash, upper case.
+ */
+export const SESSION_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+export const SESSION_CODE_PATTERN = "^[A-HJ-NP-Z2-9]{6}$";
+export function newSessionCode(
+  random: (length: number) => Uint8Array = (length) =>
+    new Uint8Array(randomBytes(length)),
+): string {
+  const bytes = random(6);
+  let code = "";
+  for (let i = 0; i < 6; i++)
+    code += SESSION_CODE_ALPHABET[bytes[i]! % SESSION_CODE_ALPHABET.length];
+  return code;
 }

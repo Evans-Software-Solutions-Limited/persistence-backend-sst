@@ -1316,6 +1316,50 @@ describe("reviewed lobby coordinator, real cryptography and SQLite, simulated na
     await settle();
     expect(guest.controller.getSnapshot().phase).toBe("joined");
   });
+  it("advertises the start, plan and a session code; a typed code selects the discovered host (PER-60)", async () => {
+    const host = setup(),
+      guest = setup(2);
+    const plan = [{ name: "Squat", sets: 3, reps: 5 }];
+    await host.controller.host("Open workout", "open", {
+      startedAt: now - 60_000,
+      plan,
+    });
+    const hosted = host.controller.getSnapshot();
+    expect(hosted.invitationCode).toMatch(/^[A-HJ-NP-Z2-9]{6}$/);
+    expect(hosted.selection).toMatchObject({ startedAt: now - 60_000, plan });
+    expect(JSON.parse(hosted.invitation!).payload).toMatchObject({
+      code: hosted.invitationCode,
+      startedAt: now - 60_000,
+      plan,
+    });
+    await guest.controller.browse();
+    const sessionId = await probe(host, guest);
+    expect(guest.controller.getSnapshot().discovered).toEqual([
+      expect.objectContaining({
+        sessionId,
+        code: hosted.invitationCode,
+        startedAt: now - 60_000,
+        plan,
+      }),
+    ]);
+    await expect(guest.controller.selectCode("ZZZ-ZZZ")).rejects.toThrow(
+      "code-not-found",
+    );
+    expect(guest.controller.getSnapshot().phase).toBe("browsing");
+    await guest.controller.selectCode(
+      `${hosted.invitationCode!.slice(0, 3).toLowerCase()}-${hosted.invitationCode!.slice(3)}`,
+    );
+    expect(guest.controller.getSnapshot()).toMatchObject({
+      phase: "selected",
+      selection: { hostUserId: id(1), startedAt: now - 60_000, plan },
+    });
+    const other = setup(3);
+    await other.controller.selectInvite(hosted.invitation!);
+    expect(other.controller.getSnapshot().selection).toMatchObject({
+      startedAt: now - 60_000,
+      plan,
+    });
+  });
   it("friends hosts reveal no public summary and reject missing friendship before connecting", async () => {
     const host = setup(),
       guest = setup(2);

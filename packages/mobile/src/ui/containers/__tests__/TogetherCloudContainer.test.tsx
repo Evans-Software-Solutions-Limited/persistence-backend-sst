@@ -21,6 +21,7 @@ import type {
   CloudSnapshot,
 } from "@/domain/ports/togetherCloud.port";
 import type { WorkoutSession } from "@/domain/models/session";
+import { useTogetherSettings } from "@/state/together-settings";
 const mockCameraPermission = jest.fn();
 jest.mock("expo-camera", () => ({
   useCameraPermissions: () => [null, mockCameraPermission],
@@ -150,6 +151,9 @@ function setup(active = false) {
             host: { userId: "friend", displayName: "Mia", avatarUrl: null },
             occupancy: 2,
             expiresAt: new Date(Date.now() + 900_000).toISOString(),
+            workoutName: "Push A",
+            startedAt: new Date().toISOString(),
+            plan: [],
           },
         ],
         nextCursor: null,
@@ -287,6 +291,9 @@ it("does not apply a late friend lookup or chained consent to another account", 
             },
             occupancy: 2,
             expiresAt: new Date(Date.now() + 900_000).toISOString(),
+            workoutName: "Push A",
+            startedAt: new Date().toISOString(),
+            plan: [],
           },
         ],
         nextCursor: null,
@@ -1054,4 +1061,39 @@ it("removes the QR automatically when its server expiry is reached", async () =>
   } finally {
     jest.useRealTimers();
   }
+});
+
+it("applies the stored sharing defaults to newcomers in an Online session, and to everyone on a fresh join (PER-60)", async () => {
+  const h = setup(true);
+  const r = renderWithTheme(<TogetherCloudContainer {...h.props} />);
+  await act(async () => {});
+  // Already logging (ownRevision 1): the people already in are left as they are.
+  expect(h.cloud.numbersConsent).not.toHaveBeenCalled();
+  const newcomer = { ...server.participants[1], userId: "w" };
+  act(() =>
+    h.publish({
+      snapshot: {
+        ...h.state().snapshot!,
+        participants: [...h.state().snapshot!.participants, newcomer],
+      },
+    }),
+  );
+  await act(async () => {});
+  expect(h.cloud.numbersConsent).toHaveBeenCalledWith(["w"]);
+  expect(h.cloud.previousConsent).toHaveBeenCalledWith(["w"]);
+  expect(h.cloud.delegation).not.toHaveBeenCalled();
+  r.unmount();
+  // A fresh join (nothing logged or granted yet) shares with everyone, and
+  // fill-in follows the default too.
+  useTogetherSettings.setState({
+    sharing: { numbers: true, previous: false, logging: true },
+  });
+  const fresh = setup(true);
+  fresh.state().snapshot!.participants[0].ownRevision = 0;
+  renderWithTheme(<TogetherCloudContainer {...fresh.props} />);
+  await act(async () => {});
+  expect(fresh.cloud.numbersConsent).toHaveBeenCalledWith(["v"]);
+  expect(fresh.cloud.previousConsent).not.toHaveBeenCalled();
+  expect(fresh.cloud.delegation).toHaveBeenCalledWith(true);
+  useTogetherSettings.getState().reset();
 });

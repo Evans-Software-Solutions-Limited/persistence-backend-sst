@@ -1,6 +1,6 @@
 import { Text, View } from "@tamagui/core";
 import { Pressable } from "react-native";
-import { QrCode } from "lucide-react-native";
+import { QrCode, Settings } from "lucide-react-native";
 import { color } from "@/ui/theme/tokens";
 import { router, useFocusEffect } from "expo-router";
 import { useCallback, useEffect } from "react";
@@ -131,30 +131,58 @@ export function TrainHubContainer() {
           )}
         </View>
         {effectiveSegment === "Together" ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="My code"
-            onPress={() =>
-              router.push({
-                pathname: "/(app)/together/partners",
-                params: { code: "1" },
-              } as never)
-            }
-            style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}
-          >
-            <View
-              width={44}
-              height={44}
-              borderRadius={10}
-              backgroundColor="$surface2"
-              borderWidth={1}
-              borderColor="$border"
-              alignItems="center"
-              justifyContent="center"
-            >
-              <QrCode size={20} color={color.$text2} strokeWidth={1.75} />
-            </View>
-          </Pressable>
+          // Canvas row 1 hub: My code, then Together settings (44pt, 8 apart).
+          <View flexDirection="row" gap={8}>
+            {(
+              [
+                [
+                  "My code",
+                  <QrCode
+                    key="qr"
+                    size={20}
+                    color={color.$text2}
+                    strokeWidth={1.75}
+                  />,
+                  () =>
+                    router.push({
+                      pathname: "/(app)/together/partners",
+                      params: { code: "1" },
+                    } as never),
+                ],
+                [
+                  "Together settings",
+                  <Settings
+                    key="cog"
+                    size={20}
+                    color={color.$text2}
+                    strokeWidth={1.75}
+                  />,
+                  () => router.push("/(app)/together/settings" as never),
+                ],
+              ] as const
+            ).map(([label, icon, onPress]) => (
+              <Pressable
+                key={label}
+                accessibilityRole="button"
+                accessibilityLabel={label}
+                onPress={onPress}
+                style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}
+              >
+                <View
+                  width={44}
+                  height={44}
+                  borderRadius={10}
+                  backgroundColor="$surface2"
+                  borderWidth={1}
+                  borderColor="$border"
+                  alignItems="center"
+                  justifyContent="center"
+                >
+                  {icon}
+                </View>
+              </Pressable>
+            ))}
+          </View>
         ) : effectiveSegment === "Exercises" ? (
           <Btn
             variant="soft"

@@ -14,6 +14,9 @@ export function TogetherAudienceSegment(p: {
   value: TogetherLobbyAudience;
   online: boolean;
   onChange(value: TogetherLobbyAudience): void;
+  /** The explanatory line under the segment; the settings page has none (canvas row 4). */
+  copy?: boolean;
+  accessibilityLabel?: string;
 }) {
   const options: [TogetherLobbyAudience, string][] = [
     ["invite-only", "Private"],
@@ -29,7 +32,7 @@ export function TogetherAudienceSegment(p: {
         borderRadius={12}
         backgroundColor="$surface2"
         accessibilityRole="radiogroup"
-        accessibilityLabel="Who can join"
+        accessibilityLabel={p.accessibilityLabel ?? "Who can join"}
       >
         {options.map(([value, label]) => {
           const disabled = p.online && value === "open";
@@ -67,10 +70,12 @@ export function TogetherAudienceSegment(p: {
           );
         })}
       </View>
-      <Text fontFamily="$body" fontSize={12} lineHeight={17} color="$text3">
-        {AUDIENCE_COPY[p.value]}
-        {p.online ? " Open nearby works only with Nearby." : ""}
-      </Text>
+      {p.copy !== false && (
+        <Text fontFamily="$body" fontSize={12} lineHeight={17} color="$text3">
+          {AUDIENCE_COPY[p.value]}
+          {p.online ? " Open nearby works only with Nearby." : ""}
+        </Text>
+      )}
     </View>
   );
 }

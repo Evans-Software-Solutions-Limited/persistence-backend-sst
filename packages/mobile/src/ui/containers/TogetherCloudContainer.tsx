@@ -28,6 +28,7 @@ import type {
   TogetherPreviousRow,
 } from "@/domain/ports/togetherShared.port";
 import { TogetherCloudPresenter } from "@/ui/presenters/TogetherCloudPresenter";
+import { useTogetherSettings } from "@/state/together-settings";
 import { TogetherSharingPresenter } from "@/ui/presenters/TogetherSharingPresenter";
 import { TogetherPartnerPresenter } from "@/ui/presenters/TogetherPartnerPresenter";
 export function cloudSharedView(
@@ -395,6 +396,69 @@ export function TogetherCloudContainer(p: {
   const own = state.snapshot?.participants.find(
     (x) => x.userId === p.accountId,
   );
+  // The stored sharing defaults apply to each person who joins an Online session
+  // (canvas row 4, PER-60): once per newcomer, and once to everyone already in
+  // when this account has not logged or granted anything yet.
+  const sharingDefaults = useTogetherSettings((s) => s.sharing);
+  const defaultGranted = useRef<{
+    session?: string;
+    ids: Set<string>;
+    logging: boolean;
+  }>({ ids: new Set(), logging: false });
+  const participantIds = (state.snapshot?.participants ?? [])
+    .map((x) => x.userId)
+    .join(",");
+  useEffect(() => {
+    const s = state.snapshot;
+    if (state.phase !== "active" || !s || !own) return;
+    const g = defaultGranted.current;
+    const firstSight = g.session !== s.sessionId;
+    if (firstSight) {
+      g.session = s.sessionId;
+      g.ids = new Set();
+      g.logging = false;
+    }
+    const untouched =
+      own.ownRevision === 0 &&
+      !(own.numbersConsent?.recipientIds.length ?? 0) &&
+      !(own.previousConsent?.recipientIds.length ?? 0);
+    const fresh = s.participants
+      .map((x) => x.userId)
+      .filter((id) => id !== p.accountId && !g.ids.has(id));
+    for (const id of fresh) g.ids.add(id);
+    const grantTo = firstSight && !untouched ? [] : fresh;
+    if (grantTo.length) {
+      if (sharingDefaults.numbers)
+        fire(() =>
+          p.cloud.numbersConsent([
+            ...new Set([
+              ...(own.numbersConsent?.recipientIds ?? []),
+              ...grantTo,
+            ]),
+          ]),
+        );
+      if (sharingDefaults.previous)
+        fire(() =>
+          p.cloud.previousConsent([
+            ...new Set([
+              ...(own.previousConsent?.recipientIds ?? []),
+              ...grantTo,
+            ]),
+          ]),
+        );
+    }
+    if (
+      sharingDefaults.logging &&
+      !g.logging &&
+      !own.allowPartnerLogging &&
+      (!firstSight || untouched)
+    ) {
+      g.logging = true;
+      fire(() => p.cloud.delegation(true));
+    }
+    // fire and own are per render; the roster string drives the effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.phase, state.snapshot?.sessionId, participantIds, sharingDefaults]);
   const names = Object.fromEntries(
     (state.snapshot?.participants ?? []).flatMap((x) =>
       Object.entries(x.exerciseCatalog).map(([id, value]) => [id, value.name]),
@@ -570,6 +634,7 @@ export function TogetherCloudContainer(p: {
               }
               connection="online"
               audience={p.initialHost === "private" ? "invite-only" : "friends"}
+              code={state.snapshot?.code ?? undefined}
               notice={notice}
               pendingCount={state.requests.length}
               busy={busy}

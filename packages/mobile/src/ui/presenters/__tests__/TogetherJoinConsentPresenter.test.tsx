@@ -30,6 +30,35 @@ it("Join this workout shows the session, the mode and the three consent lines", 
   expect(base.onJoin).toHaveBeenCalledTimes(1);
   expect(base.onBack).toHaveBeenCalledTimes(1);
 });
+it("shows the host's plan and when they started (PER-60)", () => {
+  const now = Date.parse("2026-10-23T12:00:00Z");
+  const r = renderWithTheme(
+    <TogetherJoinConsentPresenter
+      {...base}
+      startedAt={now - 18 * 60_000}
+      now={now}
+      plan={[
+        { name: "Barbell Back Squat", sets: 4, reps: 6 },
+        { name: "Walking Lunge", sets: 3, reps: null },
+      ]}
+    />,
+  );
+  expect(r.getByText("3 of 4 · started 18 minutes ago")).toBeTruthy();
+  expect(r.getByText("The plan")).toBeTruthy();
+  expect(r.getAllByTestId("together-plan-row")).toHaveLength(2);
+  expect(r.getByText("Barbell Back Squat")).toBeTruthy();
+  expect(r.getByText("4 × 6")).toBeTruthy();
+  expect(r.getByText("3 sets")).toBeTruthy();
+  r.rerender(
+    <TogetherJoinConsentPresenter
+      {...base}
+      memberCount={undefined}
+      plan={[]}
+    />,
+  );
+  expect(r.queryByText("The plan")).toBeNull();
+  expect(r.queryByText(/of 4/)).toBeNull();
+});
 it("a cold start says where it came from; a non-partner asks the host; online names internet", () => {
   const r = renderWithTheme(
     <TogetherJoinConsentPresenter

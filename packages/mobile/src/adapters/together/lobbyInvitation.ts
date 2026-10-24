@@ -8,11 +8,20 @@ import {
 } from "./security/identity";
 import { object, uuid } from "./security/schema";
 import type { HostPin } from "./localStore";
+import { isHostDetails } from "./planDetails";
+import type {
+  TogetherHostDetails,
+  TogetherPlanRow,
+} from "../../domain/ports/togetherLobby.port";
 export interface LobbyInvitation extends HostPin {
   kind: "together-invitation-v1" | "together-invitation-v2";
   audience?: "invite-only" | "friends" | "open";
   invitationToken?: string;
   workoutName: string;
+  /** PER-60: start time, plan rows and the session code; absent from older hosts. */
+  startedAt?: number;
+  plan?: readonly TogetherPlanRow[];
+  code?: string;
   credential: Signed<Credential>;
 }
 export function createLobbyInvitation(
@@ -24,6 +33,7 @@ export function createLobbyInvitation(
     audience: "invite-only" | "friends" | "open";
     invitationToken?: string;
   },
+  details?: TogetherHostDetails & { code: string },
 ): string {
   if (!workoutName.trim() || workoutName.length > 100)
     throw new Error("invalid-workout-name");
@@ -34,6 +44,13 @@ export function createLobbyInvitation(
         ...policy,
         ...pin,
         workoutName: workoutName.trim(),
+        ...(details
+          ? {
+              startedAt: details.startedAt,
+              plan: details.plan,
+              code: details.code,
+            }
+          : {}),
         credential,
       },
       seed,
@@ -52,24 +69,28 @@ export function readLobbyInvitation(
     !object(envelope, ["payload", "signature"]) ||
     !envelope.payload ||
     typeof envelope.payload !== "object" ||
-    !object(envelope.payload, [
-      "kind",
-      "sessionId",
-      "hostUserId",
-      "hostDeviceId",
-      "workoutName",
-      "credential",
-      ...((envelope.payload as Record<string, unknown>).kind ===
-      "together-invitation-v2"
-        ? [
-            "audience",
-            ...((envelope.payload as Record<string, unknown>).audience ===
-            "invite-only"
-              ? ["invitationToken"]
-              : []),
-          ]
-        : []),
-    ])
+    !object(
+      envelope.payload,
+      [
+        "kind",
+        "sessionId",
+        "hostUserId",
+        "hostDeviceId",
+        "workoutName",
+        "credential",
+        ...((envelope.payload as Record<string, unknown>).kind ===
+        "together-invitation-v2"
+          ? [
+              "audience",
+              ...((envelope.payload as Record<string, unknown>).audience ===
+              "invite-only"
+                ? ["invitationToken"]
+                : []),
+            ]
+          : []),
+      ],
+      ["startedAt", "plan", "code"],
+    )
   )
     throw new Error("invalid-invitation");
   const p = envelope.payload;
@@ -87,7 +108,8 @@ export function readLobbyInvitation(
     ![p.sessionId, p.hostUserId, p.hostDeviceId].every(uuid) ||
     typeof p.workoutName !== "string" ||
     !p.workoutName.trim() ||
-    p.workoutName.length > 100
+    p.workoutName.length > 100 ||
+    !isHostDetails(p)
   )
     throw new Error("invalid-invitation");
   const identity = verifyCredential(

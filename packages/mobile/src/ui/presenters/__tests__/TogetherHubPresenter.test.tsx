@@ -3,7 +3,11 @@ import { fireEvent } from "@testing-library/react-native";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 import { TogetherHubPresenter } from "../TogetherHubPresenter";
 const partners = [
-  { userId: "tom", name: "Tom Vance", live: { sessionId: "s1", occupancy: 2 } },
+  {
+    userId: "tom",
+    name: "Tom Vance",
+    live: { sessionId: "s1", occupancy: 2, workoutName: "Push A" },
+  },
   { userId: "brad", name: "Brad Evans", since: "July" },
   { userId: "ines", name: "Inés Marco" },
   {
@@ -35,7 +39,7 @@ it("shows Start and Join rows, the partners card with Online sessions, and the f
   expect(p.onStart).toHaveBeenCalledTimes(1);
   expect(p.onJoin).toHaveBeenCalledTimes(1);
   expect(r.getByText("Training partners · 4")).toBeTruthy();
-  expect(r.getByText("Training now · 2 of 4 · Online")).toBeTruthy();
+  expect(r.getByText("Training now · Push A · 2 of 4 · Online")).toBeTruthy();
   expect(r.getByText("Partners since July")).toBeTruthy();
   expect(r.getByText("Training partner")).toBeTruthy();
   fireEvent.press(r.getByLabelText("Join Tom Vance"));

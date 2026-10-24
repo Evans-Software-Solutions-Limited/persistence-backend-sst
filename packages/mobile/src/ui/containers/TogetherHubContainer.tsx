@@ -13,7 +13,10 @@ import {
   TogetherHubPresenter,
   type TogetherHubPartner,
 } from "@/ui/presenters/TogetherHubPresenter";
-import type { TogetherLobbySnapshot } from "@/domain/ports/togetherLobby.port";
+import type {
+  TogetherLobbySnapshot,
+  TogetherPlanRow,
+} from "@/domain/ports/togetherLobby.port";
 import type { TogetherCloudPort } from "@/domain/ports/togetherCloud.port";
 import type { TogetherSocialApi } from "@/domain/ports/togetherSocial.port";
 const EMPTY: TogetherLobbySnapshot = {
@@ -25,6 +28,9 @@ export interface PartnerOnlineSession {
   sessionId: string;
   hostUserId: string;
   occupancy: number;
+  workoutName: string;
+  startedAt: string;
+  plan: TogetherPlanRow[];
 }
 /** Bounded page walk of partners' Online sessions; never presents the first page as the whole list. */
 export async function loadPartnerSessions(
@@ -40,6 +46,9 @@ export async function loadPartnerSessions(
         sessionId: f.sessionId,
         hostUserId: f.host.userId,
         occupancy: f.occupancy,
+        workoutName: f.workoutName,
+        startedAt: f.startedAt,
+        plan: f.plan,
       });
     if (!result.value.nextCursor) break;
     cursor = result.value.nextCursor;
@@ -143,6 +152,7 @@ export function TogetherHubContainer() {
                   live: {
                     sessionId: session.sessionId,
                     occupancy: session.occupancy,
+                    workoutName: session.workoutName,
                   },
                 }
               : partner;

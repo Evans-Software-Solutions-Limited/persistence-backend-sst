@@ -76,6 +76,20 @@ export const page = (v: unknown, check: (row: unknown) => boolean) =>
   v.data.length <= 50 &&
   v.data.every(check) &&
   (v.nextCursor === null || typeof v.nextCursor === "string");
+/** Plan rows for the consent card: name, planned sets, planned reps (PER-60). */
+export const planRows = (v: unknown) =>
+  Array.isArray(v) &&
+  v.length <= 20 &&
+  v.every(
+    (row) =>
+      record(row) &&
+      typeof row.name === "string" &&
+      row.name.length > 0 &&
+      row.name.length <= 120 &&
+      integer(row.sets) &&
+      (row.sets as number) >= 1 &&
+      (row.reps === null || integer(row.reps)),
+  );
 export const person = (v: unknown) =>
   record(v) &&
   uuid(v.userId) &&
