@@ -55,7 +55,7 @@ jobs:
           persist-credentials: false
 
       - id: review
-        uses: BradleyEvans96/inspector-brad@v1
+        uses: Evans-Software-Solutions-Limited/inspector-brad@v1
         with:
           oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
