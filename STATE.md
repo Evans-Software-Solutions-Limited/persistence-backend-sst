@@ -122,10 +122,21 @@ follow-up review (same morning): the settings switches are now
 thumb) instead of the platform `Switch`, so they read as toggles everywhere;
 and the screenshot harness now pins the 58 pt status-bar inset the device
 gives `useSafeAreaInsets`, so the evidence shows the canvas safe band instead
-of the back button on the top edge. The app code already used the inset.
+of the back button on the top edge. The app code already used the inset. Inspector Brad's sweep of 9464a7f (5 leads, all fixed): the default
+sharing grants read the store before `rehydrate` had loaded the account's
+record, so the shipped "numbers on" could be granted against a stored "off";
+the store now carries `hydrated`, the Lobby and Cloud containers grant only
+when `userId === account && hydrated` (Cloud rehydrates itself), and the
+settings screen rehydrates and holds its switches until the read lands. A
+cold-start QR left the pending link stashed when the Together gate was
+locked, so AuthGate bounced the user back to the join screen; the stash is
+consumed on landing regardless of the gate. Picking an expired Nearby row
+(`discovery-expired`) matched the radio-off regex and showed "Wi-Fi is off";
+selection errors now keep the list usable with "That session is no longer
+nearby. Search again."
 
-**Verified.** Mobile Jest 643 suites / 8,577 tests, coverage
-96.13 / 92.05 / 96.05 / 97.54 (gate 90); core unit 408 files / 5,667 tests,
+**Verified.** Mobile Jest 643 suites / 8,583 tests, coverage
+96.14 / 92.07 / 96.05 / 97.55 (gate 90); core unit 408 files / 5,667 tests,
 coverage 98.1 / 94.33 / 97.74 / 98.1 with the session-code migration applied
 in every harness; typecheck clean; `expo lint` 0
 errors; prettier clean. New presenter tests cover every join/sheet state

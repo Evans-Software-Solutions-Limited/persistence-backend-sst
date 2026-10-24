@@ -370,7 +370,14 @@ export function TogetherLobbyContainer({
       defaultGranted.current.clear();
       return;
     }
-    if (!lobby.shared || !accountId) return;
+    // Only this account's stored settings count, once they have been read.
+    if (
+      !lobby.shared ||
+      !accountId ||
+      defaults.userId !== accountId ||
+      !defaults.hydrated
+    )
+      return;
     const consent: TogetherSharingConsent = {
       numbers: defaults.sharing.numbers,
       prev: defaults.sharing.previous,
@@ -398,6 +405,8 @@ export function TogetherLobbyContainer({
     accountId,
     lobby.shared,
     defaults.sharing,
+    defaults.userId,
+    defaults.hydrated,
   ]);
   const startLocalWorkout = async (selectedAudience: TogetherLobbyAudience) => {
     const scope = ++hostGeneration.current;

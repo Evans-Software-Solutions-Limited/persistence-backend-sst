@@ -83,6 +83,12 @@ export function normaliseTogetherDefaults(
 export interface TogetherSettingsState extends TogetherDefaults {
   /** The account the current values belong to; null before rehydrate. */
   userId: string | null;
+  /**
+   * True once the stored record for `userId` has been read (or found absent).
+   * Until then the values are the shipped defaults, not the athlete's, so
+   * nothing that acts on them (default sharing grants) may run.
+   */
+  hydrated: boolean;
   rehydrate: (userId: string) => Promise<void>;
   setDefaults: (
     next: Partial<Omit<TogetherDefaults, "sharing">> & {
@@ -96,8 +102,9 @@ export const useTogetherSettings = create<TogetherSettingsState>(
   (set, get) => ({
     ...TOGETHER_DEFAULTS,
     userId: null,
+    hydrated: false,
     rehydrate: async (userId) => {
-      set({ ...TOGETHER_DEFAULTS, userId });
+      set({ ...TOGETHER_DEFAULTS, userId, hydrated: false });
       try {
         const raw =
           (await AsyncStorage.getItem(key(userId))) ??
@@ -108,6 +115,7 @@ export const useTogetherSettings = create<TogetherSettingsState>(
       } catch {
         // A corrupt or missing record keeps the shipped defaults.
       }
+      if (get().userId === userId) set({ hydrated: true });
     },
     setDefaults: async (next) => {
       const { userId } = get();
@@ -124,6 +132,6 @@ export const useTogetherSettings = create<TogetherSettingsState>(
         // The in-memory value is already applied; persistence is best effort.
       }
     },
-    reset: () => set({ ...TOGETHER_DEFAULTS, userId: null }),
+    reset: () => set({ ...TOGETHER_DEFAULTS, userId: null, hydrated: false }),
   }),
 );

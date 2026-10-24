@@ -32,6 +32,13 @@ export function TogetherSettingsContainer() {
   const social = api.togetherSocial;
   const userId = useAuth().session?.userId ?? null;
   const settings = useTogetherSettings();
+  // The store rehydrates once per account; until it has, the switches would
+  // show the shipped defaults and an edit would be dropped.
+  useEffect(() => {
+    if (userId && settings.userId !== userId) void settings.rehydrate(userId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
+  const settingsReady = settings.userId === userId && settings.hydrated;
   const [discoverable, setDiscoverable] = useState<boolean | null>(null);
   const [partnersCount, setPartnersCount] = useState<number | null>(null);
   const [blockedCount, setBlockedCount] = useState<number | null>(null);
@@ -98,7 +105,7 @@ export function TogetherSettingsContainer() {
       blockedCount={blockedCount}
       onPartners={() => router.push("/(app)/together/partners" as never)}
       onBlocked={() => router.push("/(app)/together/blocked" as never)}
-      busy={busy}
+      busy={busy || !settingsReady}
       notice={notice}
       onBack={() => router.back()}
     />

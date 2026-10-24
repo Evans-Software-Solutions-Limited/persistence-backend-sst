@@ -612,3 +612,43 @@ it("a pasted Online link fills the consent card in from the preview (PER-60)", a
   await waitFor(() => expect(mockCloud.join).toHaveBeenCalled());
   expect(mockCloud.join.mock.calls[0][0]).toEqual({ inviteToken: "tok" });
 });
+
+it("a gated user arriving from a cold-start QR is not sent back to the join screen forever (inspector lead 4)", async () => {
+  mockAllowed = false;
+  usePendingTogetherJoin
+    .getState()
+    .setPending({ connection: "local", invitation: "signed" });
+  mockParams = { connection: "local", invitation: "signed" };
+  const r = renderWithTheme(<TogetherJoinContainer />);
+  expect(r.getByText(/qualifying paid subscription/)).toBeTruthy();
+  await waitFor(() =>
+    expect(usePendingTogetherJoin.getState().pending).toBeNull(),
+  );
+  expect(mockLobby.selectInvite).not.toHaveBeenCalled();
+});
+it("a row that expired before it was picked says so and offers Search again, not Wi-Fi (inspector lead 5)", async () => {
+  mockLobby.selectDiscovered.mockImplementationOnce(async () => {
+    publish({
+      phase: "unavailable",
+      error: "discovery-expired",
+      discovered: [],
+    });
+  });
+  const r = renderWithTheme(<TogetherJoinContainer />);
+  await waitFor(() => expect(mockLobby.browse).toHaveBeenCalled());
+  publish({
+    discovered: [
+      {
+        sessionId: "d1",
+        hostUserId: "h",
+        workoutName: "Push A",
+        memberCount: 1,
+      },
+    ],
+  });
+  fireEvent.press(r.getByLabelText("Ask to join Push A"));
+  await waitFor(() => expect(r.getByText(/no longer nearby/)).toBeTruthy());
+  expect(r.queryByText(/Wi-Fi is off/)).toBeNull();
+  expect(r.getByText("Search again")).toBeTruthy();
+  expect(togetherSearchFailure("discovery-expired")).not.toMatch(/Wi-Fi/);
+});

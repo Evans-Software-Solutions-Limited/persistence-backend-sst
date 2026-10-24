@@ -400,6 +400,16 @@ export function TogetherCloudContainer(p: {
   // (canvas row 4, PER-60): once per newcomer, and once to everyone already in
   // when this account has not logged or granted anything yet.
   const sharingDefaults = useTogetherSettings((s) => s.sharing);
+  // The grants must come from this account's stored settings, not the shipped
+  // ones the store holds before `rehydrate` has read storage.
+  const settingsReady = useTogetherSettings(
+    (s) => s.userId === p.accountId && s.hydrated,
+  );
+  const settingsOwner = useTogetherSettings((s) => s.userId);
+  useEffect(() => {
+    if (p.accountId && settingsOwner !== p.accountId)
+      void useTogetherSettings.getState().rehydrate(p.accountId);
+  }, [p.accountId, settingsOwner]);
   const defaultGranted = useRef<{
     session?: string;
     ids: Set<string>;
@@ -410,7 +420,7 @@ export function TogetherCloudContainer(p: {
     .join(",");
   useEffect(() => {
     const s = state.snapshot;
-    if (state.phase !== "active" || !s || !own) return;
+    if (state.phase !== "active" || !s || !own || !settingsReady) return;
     const g = defaultGranted.current;
     const firstSight = g.session !== s.sessionId;
     if (firstSight) {
@@ -458,7 +468,13 @@ export function TogetherCloudContainer(p: {
     }
     // fire and own are per render; the roster string drives the effect.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.phase, state.snapshot?.sessionId, participantIds, sharingDefaults]);
+  }, [
+    state.phase,
+    state.snapshot?.sessionId,
+    participantIds,
+    sharingDefaults,
+    settingsReady,
+  ]);
   const names = Object.fromEntries(
     (state.snapshot?.participants ?? []).flatMap((x) =>
       Object.entries(x.exerciseCatalog).map(([id, value]) => [id, value.name]),

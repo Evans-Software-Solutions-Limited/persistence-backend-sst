@@ -1,5 +1,5 @@
 import React from "react";
-import { fireEvent, waitFor } from "@testing-library/react-native";
+import { act, fireEvent, waitFor } from "@testing-library/react-native";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 import {
   TogetherSettingsContainer,
@@ -171,4 +171,34 @@ it("the blocked screen reports a failed load and a refused unblock", async () =>
     expect(again.getByText(/Could not unblock/)).toBeTruthy(),
   );
   expect(again.getByText("Alex Mori")).toBeTruthy();
+});
+
+it("rehydrates the store for the account and holds the switches until it has read (inspector lead 3)", async () => {
+  const rehydrate = jest.fn(async () => {});
+  useTogetherSettings.setState({ userId: null, hydrated: false, rehydrate });
+  const r = renderWithTheme(<TogetherSettingsContainer />);
+  await waitFor(() => expect(rehydrate).toHaveBeenCalledWith("u"));
+  expect(
+    r.getByLabelText("Default: show my numbers").props.accessibilityState
+      .disabled,
+  ).toBe(true);
+  fireEvent.press(r.getByLabelText("Default: show my numbers"));
+  expect(useTogetherSettings.getState().sharing.numbers).toBe(true);
+  act(() =>
+    useTogetherSettings.setState({
+      userId: "u",
+      hydrated: true,
+      sharing: { numbers: false, previous: true, logging: false },
+    }),
+  );
+  await waitFor(() =>
+    expect(
+      r.getByLabelText("Default: show my numbers").props.accessibilityState
+        .disabled,
+    ).toBe(false),
+  );
+  expect(
+    r.getByLabelText("Default: show my numbers").props.accessibilityState
+      .checked,
+  ).toBe(false);
 });

@@ -1530,6 +1530,8 @@ it("applies the stored sharing defaults once to each person who joins a local se
   // Mounting rehydrates the store for the account; the defaults under test go in after.
   await act(async () => {});
   useTogetherSettings.setState({
+    userId: "a",
+    hydrated: true,
     sharing: { numbers: false, previous: true, logging: true },
   });
   h.publish({
@@ -1584,9 +1586,11 @@ it("applies the stored sharing defaults once to each person who joins a local se
 });
 it("sharing defaults that share nothing grant nothing (PER-60)", async () => {
   const h = sharingHarness();
-  mountShared(h);
+  const r = mountShared(h);
   await act(async () => {});
   useTogetherSettings.setState({
+    userId: "a",
+    hydrated: true,
     sharing: { numbers: false, previous: false, logging: false },
   });
   h.publish({
@@ -1599,5 +1603,40 @@ it("sharing defaults that share nothing grant nothing (PER-60)", async () => {
   });
   await act(async () => {});
   expect(h.shared.setConsent).not.toHaveBeenCalled();
+  r.unmount();
+  useTogetherSettings.getState().reset();
+});
+
+it("a guest landing already joined grants nothing until the settings are read (inspector lead 2)", async () => {
+  // A previous test's still-mounted container may have started a real
+  // rehydrate for "a"; its completion is ignored once the account is cleared.
+  useTogetherSettings.getState().reset();
+  useTogetherSettings.setState({ rehydrate: jest.fn(async () => {}) });
+  const h = sharingHarness();
+  h.publish({
+    phase: "joined",
+    role: "guest",
+    members: [
+      { userId: "host", host: true },
+      { userId: "a", host: false },
+    ],
+  });
+  mountShared(h);
+  await act(async () => {});
+  expect(h.shared.setConsent).not.toHaveBeenCalled();
+  act(() =>
+    useTogetherSettings.setState({
+      userId: "a",
+      hydrated: true,
+      sharing: { numbers: false, previous: true, logging: false },
+    }),
+  );
+  await act(async () => {});
+  expect(h.shared.setConsent).toHaveBeenCalledTimes(1);
+  expect(h.shared.setConsent).toHaveBeenCalledWith("host", {
+    numbers: false,
+    prev: true,
+    logging: false,
+  });
   useTogetherSettings.getState().reset();
 });

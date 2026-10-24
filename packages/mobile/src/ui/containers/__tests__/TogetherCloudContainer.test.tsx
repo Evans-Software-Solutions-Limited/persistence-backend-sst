@@ -1064,6 +1064,11 @@ it("removes the QR automatically when its server expiry is reached", async () =>
 });
 
 it("applies the stored sharing defaults to newcomers in an Online session, and to everyone on a fresh join (PER-60)", async () => {
+  useTogetherSettings.setState({
+    userId: "u",
+    hydrated: true,
+    rehydrate: jest.fn(async () => {}),
+  });
   const h = setup(true);
   const r = renderWithTheme(<TogetherCloudContainer {...h.props} />);
   await act(async () => {});
@@ -1086,6 +1091,8 @@ it("applies the stored sharing defaults to newcomers in an Online session, and t
   // A fresh join (nothing logged or granted yet) shares with everyone, and
   // fill-in follows the default too.
   useTogetherSettings.setState({
+    userId: "u",
+    hydrated: true,
     sharing: { numbers: true, previous: false, logging: true },
   });
   const fresh = setup(true);
@@ -1095,5 +1102,28 @@ it("applies the stored sharing defaults to newcomers in an Online session, and t
   expect(fresh.cloud.numbersConsent).toHaveBeenCalledWith(["v"]);
   expect(fresh.cloud.previousConsent).not.toHaveBeenCalled();
   expect(fresh.cloud.delegation).toHaveBeenCalledWith(true);
+  useTogetherSettings.getState().reset();
+});
+
+it("grants nothing until this account's settings have been read (inspector lead 1)", async () => {
+  const rehydrate = jest.fn(async () => {});
+  useTogetherSettings.setState({ userId: null, hydrated: false, rehydrate });
+  const h = setup(true);
+  h.state().snapshot!.participants[0].ownRevision = 0;
+  renderWithTheme(<TogetherCloudContainer {...h.props} />);
+  await act(async () => {});
+  expect(rehydrate).toHaveBeenCalledWith("u");
+  expect(h.cloud.numbersConsent).not.toHaveBeenCalled();
+  // The read lands with "Show my numbers" off: only previous values go out.
+  act(() =>
+    useTogetherSettings.setState({
+      userId: "u",
+      hydrated: true,
+      sharing: { numbers: false, previous: true, logging: false },
+    }),
+  );
+  await act(async () => {});
+  expect(h.cloud.numbersConsent).not.toHaveBeenCalled();
+  expect(h.cloud.previousConsent).toHaveBeenCalledWith(["v"]);
   useTogetherSettings.getState().reset();
 });

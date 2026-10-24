@@ -164,4 +164,22 @@ describe("useTogetherSettings", () => {
       userId: null,
     });
   });
+  it("marks the record hydrated only once storage has been read, and reset clears it", async () => {
+    expect(useTogetherSettings.getState().hydrated).toBe(false);
+    const pending = useTogetherSettings.getState().rehydrate("u");
+    expect(useTogetherSettings.getState()).toMatchObject({
+      userId: "u",
+      hydrated: false,
+    });
+    await pending;
+    expect(useTogetherSettings.getState().hydrated).toBe(true);
+    // A rehydrate that lost the account race never marks the other account hydrated.
+    const stale = useTogetherSettings.getState().rehydrate("v");
+    useTogetherSettings.getState().reset();
+    await stale;
+    expect(useTogetherSettings.getState()).toMatchObject({
+      userId: null,
+      hydrated: false,
+    });
+  });
 });

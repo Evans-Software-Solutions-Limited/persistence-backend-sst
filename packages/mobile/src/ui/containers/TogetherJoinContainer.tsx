@@ -64,8 +64,15 @@ const CLOUD_EMPTY: TogetherCloudState = {
 /** Native failure codes that mean the radio or its permission is off, not a bad session. */
 const RADIO_OFF =
   /permission|wifi|lan_unavailable|nearby_unavailable|discovery|advertising|listener/i;
+/** Selecting a row or code can fail on its own; the radio is fine and the list stays usable. */
+const SELECTION_ERRORS = new Set([
+  "discovery-expired",
+  "host-unavailable",
+  "own-invitation",
+  "code-not-found",
+]);
 export function togetherSearchFailure(code: string): string {
-  return RADIO_OFF.test(code)
+  return RADIO_OFF.test(code) && !SELECTION_ERRORS.has(code)
     ? "Wi-Fi is off. Turn it on in Settings. You don’t need to join a network."
     : togetherErrorCopy(code);
 }
@@ -99,6 +106,8 @@ type Target =
 
 /** Copy for a typed code (PER-60). Nearby needs a search first, Online needs internet. */
 const CODE_COPY: Record<string, string> = {
+  "discovery-expired": "That session is no longer nearby. Search again.",
+  "host-unavailable": "That session is no longer available. Search again.",
   "code-not-found":
     "Couldn’t find that code. Nearby sessions show after a search, Online ones need internet. Ask the host to show their QR.",
   "code-offline":
@@ -370,6 +379,11 @@ export function TogetherJoinContainer() {
       setTarget(localTarget(selected.selection));
     else if (selected.error) throw new Error(selected.error);
   };
+  // Landing here with an account consumes the stashed link, whatever the gate
+  // says: otherwise a gated user who leaves is sent straight back by AuthGate.
+  useEffect(() => {
+    if (userId && params.invitation) usePendingTogetherJoin.getState().clear();
+  }, [userId, params.invitation]);
   // A link from the OS (cold start, or a QR scanned by the camera app).
   useEffect(() => {
     if (!userId || !gate.allowed || !params.invitation) return;
@@ -723,8 +737,14 @@ export function TogetherJoinContainer() {
       };
     }),
   ];
+  const selectionFailed =
+    snapshot.phase === "unavailable" &&
+    !!snapshot.error &&
+    SELECTION_ERRORS.has(snapshot.error);
   const failedCode =
-    snapshot.phase === "unavailable" && snapshot.error ? snapshot.error : null;
+    snapshot.phase === "unavailable" && snapshot.error && !selectionFailed
+      ? snapshot.error
+      : null;
   const state: TogetherJoinSearch = !lobby
     ? "unavailable"
     : searching
@@ -733,7 +753,7 @@ export function TogetherJoinContainer() {
         ? "failed"
         : rows.length
           ? "found"
-          : searched && snapshot.phase === "browsing"
+          : searched && (snapshot.phase === "browsing" || selectionFailed)
             ? "empty"
             : "searching";
   return (
