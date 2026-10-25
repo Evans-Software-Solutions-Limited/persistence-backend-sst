@@ -785,3 +785,29 @@ it("a failed correction stops showing Not sent once Mia changes that set herself
   expect(r.queryByText(/could not be sent/)).toBeNull();
   expect(r.getAllByTestId("set-logger-reps")[0]!.props.value).toBe("10");
 });
+
+it("a consent event that purges Mia's projection for a moment keeps drafts and the queue", async () => {
+  const r = render(base());
+  fill(r, 2, "8", "65");
+  fill(r, 3, "7", "65");
+  fireEvent.changeText(r.getAllByTestId("set-logger-reps")[5]!, "10");
+  await act(async () => {});
+  expect(onOperation).toHaveBeenCalledTimes(1);
+  // Mia toggles Prev: the new grant arrives before her projection does.
+  const consentOnly = withGrant(base({ athletes: [] }), 3);
+  r.rerender(view(consentOnly));
+  await act(async () => {});
+  r.rerender(view(withGrant(base(), 3)));
+  await act(async () => {});
+  // The set sent under the old grant was dropped by Mia's phone: Not sent.
+  // The queued one goes under the new grant, and the typed row is still there.
+  expect(r.getByTestId("set-logger-sync-notsent")).toBeTruthy();
+  expect(onOperation).toHaveBeenCalledTimes(2);
+  expect(onOperation).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      set: expect.objectContaining({ setId: "new-2", reps: 7, weightKg: 65 }),
+    }),
+    5,
+  );
+  expect(r.getAllByTestId("set-logger-reps")[5]!.props.value).toBe("10");
+});

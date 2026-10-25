@@ -107,7 +107,12 @@ line is now derived from any row showing Not sent, so a late echo that
 clears the last one clears the line. While fill-in is on, a Not sent dot
 whose typed values are no longer shown (the partner changed that set
 since) is dropped. Mobile Jest 643 / 8,620, coverage
-96.15 / 92.07 / 96.02 / 97.56.
+96.15 / 92.07 / 96.02 / 97.56. Sixth sweep of cec600e (1 lead, fixed):
+a Nearby consent event purges the partner's projection before the new one
+arrives, so for one snapshot the grant was in view with no projection and
+read as revoked, wiping drafts and failing queued sets. Revocation now
+follows the grant itself (numbers or fill-in off, or the container's gate),
+not whether the projection has landed. Mobile Jest 643 / 8,621.
 
 **Not verified.** Nothing on a device or simulator.
 

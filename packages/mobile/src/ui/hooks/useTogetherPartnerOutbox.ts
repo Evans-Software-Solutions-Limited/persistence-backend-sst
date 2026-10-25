@@ -246,13 +246,20 @@ export function useTogetherPartnerOutbox(p: {
         }
       }
       // Fill-in is gone only when the partner's grant is in view and says so.
-      // While their data is merely hidden (Online reconnecting), drafts stay
-      // and the queue waits; the in-flight set still has its timeout.
-      const { snapshot, accountId } = latest.current;
-      const grantInView = !!snapshot?.grants.some(
+      // While their data is merely hidden (Online reconnecting) or their
+      // projection is still in transit after a consent event (Nearby purges it
+      // first), drafts stay and the queue waits; the in-flight set keeps its
+      // timeout.
+      const { snapshot, accountId, canLog } = latest.current;
+      const grant = snapshot?.grants.find(
         (g) => g.ownerId === ownerId && g.recipientId === accountId,
       );
-      if (!a?.editable && grantInView) {
+      if (
+        grant &&
+        (!grant.consent.numbers ||
+          !grant.consent.logging ||
+          !(canLog?.(ownerId) ?? true))
+      ) {
         for (const q of o.queue) fail(o, q.setId);
         o.queue = [];
         o.drafts = {};
