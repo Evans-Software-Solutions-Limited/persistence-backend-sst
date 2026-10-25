@@ -98,7 +98,16 @@ grant change or the timeout end a send now. Every blur commits, so a row
 with only reps queued, showed Sending and cleared an earlier Not sent line;
 incomplete rows are not queued. Partner state outlived its session; the
 outbox now resets when the snapshot goes away or the account or session id
-changes. Mobile Jest 643 / 8,617, coverage 96.14 / 92.06 / 96.01 / 97.56.
+changes. Mobile Jest 643 / 8,617, coverage 96.14 / 92.06 / 96.01 / 97.56. Fifth sweep of d0a1a6d (3 leads, all fixed): an Online reconnect hides
+every partner's grant and numbers, which the outbox read as fill-in revoked,
+deleting drafts and failing queued sets; drafts now clear only when the
+partner's grant is in view and fill-in is off, and while their data is
+hidden the queue waits (the in-flight set keeps its timeout). The error
+line is now derived from any row showing Not sent, so a late echo that
+clears the last one clears the line. While fill-in is on, a Not sent dot
+whose typed values are no longer shown (the partner changed that set
+since) is dropped. Mobile Jest 643 / 8,620, coverage
+96.15 / 92.07 / 96.02 / 97.56.
 
 **Not verified.** Nothing on a device or simulator.
 

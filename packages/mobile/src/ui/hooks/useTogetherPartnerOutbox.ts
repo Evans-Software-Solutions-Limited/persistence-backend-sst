@@ -44,7 +44,6 @@ type Owner = {
   added: Record<string, number>;
   drafts: Record<string, TogetherPartnerDraft>;
   delivery: Record<string, SetSyncState>;
-  failed: boolean;
   queue: { setId: string; planExerciseId: string }[];
   inflight: {
     setId: string;
@@ -63,7 +62,6 @@ const fresh = (): Owner => ({
   added: {},
   drafts: {},
   delivery: {},
-  failed: false,
   queue: [],
   inflight: null,
   timer: null,
@@ -127,7 +125,6 @@ export function useTogetherPartnerOutbox(p: {
     if (sent) o.failedSends[setId] = sent;
     else delete o.failedSends[setId];
     o.delivery = { ...o.delivery, [setId]: "notsent" };
-    o.failed = true;
   };
   const clear = (o: Owner, setId: string) => {
     const { [setId]: _gone, ...rest } = o.delivery;
@@ -248,10 +245,16 @@ export function useTogetherPartnerOutbox(p: {
           fail(o, sent.setId, base);
         }
       }
-      if (!a?.editable) {
+      // Fill-in is gone only when the partner's grant is in view and says so.
+      // While their data is merely hidden (Online reconnecting), drafts stay
+      // and the queue waits; the in-flight set still has its timeout.
+      const { snapshot, accountId } = latest.current;
+      const grantInView = !!snapshot?.grants.some(
+        (g) => g.ownerId === ownerId && g.recipientId === accountId,
+      );
+      if (!a?.editable && grantInView) {
         for (const q of o.queue) fail(o, q.setId);
         o.queue = [];
-        // Fill-in is gone: nothing typed for the partner survives it.
         o.drafts = {};
       }
       // A set marked Not sent that did land after all (a late echo) is saved.
@@ -271,6 +274,21 @@ export function useTogetherPartnerOutbox(p: {
           }
         }
       }
+      // A Not sent dot whose typed values are no longer shown (the partner
+      // changed that set since) points at nothing the viewer can retry.
+      if (a?.editable)
+        for (const [setId, state] of Object.entries(o.delivery)) {
+          if (state !== "notsent") continue;
+          const logged = loggedSet(ownerId, setId);
+          const draft = o.drafts[setId];
+          if (
+            !draft ||
+            draft.base !== (logged ? togetherValuesKey(logged) : "")
+          ) {
+            delete o.failedSends[setId];
+            clear(o, setId);
+          }
+        }
       pump(ownerId);
       if (JSON.stringify([o.delivery, o.drafts, o.inflight]) !== before)
         changed = true;
@@ -291,7 +309,8 @@ export function useTogetherPartnerOutbox(p: {
     return {
       drafts: o.drafts,
       delivery: o.delivery,
-      failed: o.failed,
+      // The error line lasts exactly as long as a row shows Not sent.
+      failed: Object.values(o.delivery).includes("notsent"),
       added: o.added,
       rowId: (planExerciseId, index) => {
         const pool = (o.ids[planExerciseId] ??= []);
@@ -312,7 +331,6 @@ export function useTogetherPartnerOutbox(p: {
         // A row with only reps or only kg is not a set yet (every blur commits).
         const draft = o.drafts[setId];
         if (draft && (draft.reps === null || draft.weightKg === null)) return;
-        o.failed = false;
         if (!o.queue.some((q) => q.setId === setId))
           o.queue.push({ setId, planExerciseId });
         o.delivery = { ...o.delivery, [setId]: "sending" };

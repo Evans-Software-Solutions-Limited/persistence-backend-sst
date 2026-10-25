@@ -524,6 +524,24 @@ it("Online: a set queued for a partner is still sent after you switch back to yo
     }),
   );
 });
+it("Online: a brief reconnect keeps what you typed for a partner", async () => {
+  const h = setup(true);
+  const r = renderWithTheme(<TogetherCloudContainer {...h.props} />);
+  fireEvent.press(r.getByLabelText("Show Athlete 2’s workout"));
+  await act(async () => {});
+  fireEvent.changeText(r.getAllByTestId("set-logger-reps")[1]!, "8");
+  const active = structuredClone(h.state().snapshot!);
+  // A poll times out: the session hides partners' numbers and fill-in.
+  const hidden = structuredClone(active);
+  hidden.participants[1]!.numbersAvailable = false;
+  hidden.participants[1]!.allowPartnerLogging = false;
+  act(() => h.publish({ phase: "reconnecting", snapshot: hidden }));
+  await act(async () => {});
+  act(() => h.publish({ phase: "active", snapshot: active }));
+  await act(async () => {});
+  expect(r.getAllByTestId("set-logger-reps")[1]!.props.value).toBe("8");
+  expect(r.queryByTestId("set-logger-sync-notsent")).toBeNull();
+});
 it("surfaces command errors and wires retry, cancel, partner navigation and local choice", async () => {
   const h = setup();
   jest.mocked(h.cloud.hostWorkout).mockRejectedValue(new Error("subscription"));

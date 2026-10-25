@@ -604,6 +604,8 @@ it("a set nobody applies or rejects times out as Not sent; a late echo still tur
     expect(onOperation).toHaveBeenCalledTimes(2);
     r.rerender(view(withSquat(5, [S("new-1", 8, 65)])));
     expect(r.queryByTestId("set-logger-sync-notsent")).toBeNull();
+    // Nothing is left to retry, so the "try again" line goes with the dot.
+    expect(r.queryByText(/could not be sent/)).toBeNull();
   } finally {
     jest.useRealTimers();
   }
@@ -738,4 +740,48 @@ it("leaving the session clears added rows, dots and errors before the next one",
   expect(r.queryByTestId("set-logger-sync-notsent")).toBeNull();
   expect(r.queryByText(/could not be sent/)).toBeNull();
   expect(r.getAllByTestId("set-logger-reps")[2]!.props.value).toBe("");
+});
+
+it("while Mia's data is hidden (a reconnect) drafts stay and the queue waits", async () => {
+  const r = render(base());
+  fill(r, 2, "8", "65");
+  fill(r, 3, "7", "65");
+  fireEvent.changeText(r.getAllByTestId("set-logger-reps")[5]!, "10");
+  await act(async () => {});
+  expect(onOperation).toHaveBeenCalledTimes(1);
+  // Reconnecting: no grant and no projection for Mia in view.
+  r.rerender(view(base({ grants: [], athletes: [] })));
+  await act(async () => {});
+  expect(r.queryByTestId("set-logger-sync-notsent")).toBeNull();
+  // Back, and the first set landed meanwhile.
+  r.rerender(view(withSquat(6, [S("new-1", 8, 65)])));
+  await act(async () => {});
+  expect(onOperation).toHaveBeenCalledTimes(2);
+  expect(onOperation).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      set: expect.objectContaining({ setId: "new-2", reps: 7, weightKg: 65 }),
+    }),
+    6,
+  );
+  expect(r.getAllByTestId("set-logger-reps")[5]!.props.value).toBe("10");
+  expect(r.queryByText(/could not be sent/)).toBeNull();
+});
+
+it("a failed correction stops showing Not sent once Mia changes that set herself", async () => {
+  const r = render(base());
+  fireEvent.changeText(r.getAllByTestId("set-logger-reps")[0]!, "9");
+  fireEvent(r.getAllByTestId("set-logger-reps")[0]!, "blur");
+  await act(async () => {});
+  // Mia logs her own set first: the correction is stale.
+  r.rerender(view(withSquat(6, [S("hers", 8, 62.5)])));
+  await act(async () => {});
+  expect(r.getByTestId("set-logger-sync-notsent")).toBeTruthy();
+  // Then Mia edits s1 to 10 × 60 on her phone.
+  const edited = withSquat(7, [S("hers", 8, 62.5)]);
+  edited.athletes[0]!.exercises["squat-slot"]!.sets[0] = S("s1", 10, 60);
+  r.rerender(view(edited));
+  await act(async () => {});
+  expect(r.queryByTestId("set-logger-sync-notsent")).toBeNull();
+  expect(r.queryByText(/could not be sent/)).toBeNull();
+  expect(r.getAllByTestId("set-logger-reps")[0]!.props.value).toBe("10");
 });
