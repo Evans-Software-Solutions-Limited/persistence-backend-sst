@@ -99,17 +99,19 @@ const onOperation = jest.fn<Promise<void>, [Record<string, unknown>, number]>(
  * Mia's tab is selected (`shown`), so sets outlive the view.
  */
 function Harness(h: {
-  snapshot: TogetherSharedSnapshot;
+  snapshot: TogetherSharedSnapshot | null;
   editable?: boolean;
   shown?: boolean;
+  sessionId?: string;
 }) {
   const outbox = useTogetherPartnerOutbox({
     snapshot: h.snapshot,
     accountId: "me",
+    sessionId: h.sessionId ?? "session-1",
     canLog: () => h.editable ?? true,
     send: (_owner, operation, revision) => onOperation(operation, revision),
   });
-  if (h.shown === false) return null;
+  if (h.shown === false || !h.snapshot) return null;
   return (
     <TogetherPartnerPresenter
       snapshot={h.snapshot}
@@ -676,4 +678,64 @@ it("one ADD SET tap adds a row even when the partner logged past the plan", () =
   expect(rdl().getAllByTestId("set-logger-reps")).toHaveLength(4);
   fireEvent.press(rdl().getByTestId("session-exercise-add-set"));
   expect(rdl().getAllByTestId("set-logger-reps")).toHaveLength(5);
+});
+
+it("a correction to a logged set stays Sending through unrelated snapshot changes", async () => {
+  const r = render(base());
+  fireEvent.changeText(r.getAllByTestId("set-logger-reps")[0]!, "9");
+  fireEvent(r.getAllByTestId("set-logger-reps")[0]!, "blur");
+  fill(r, 2, "8", "65");
+  await act(async () => {});
+  expect(onOperation).toHaveBeenCalledTimes(1);
+  // Someone else moves (Tom logs a set); Mia's revision and grant are unchanged.
+  const other = base();
+  r.rerender(
+    view({
+      ...other,
+      athletes: [
+        ...other.athletes,
+        { userId: "tom", revision: 3, restEndsAt: null, exercises: {} },
+      ],
+    }),
+  );
+  await act(async () => {});
+  expect(r.queryByTestId("set-logger-sync-notsent")).toBeNull();
+  expect(r.queryByText(/could not be sent/)).toBeNull();
+  // The queued set still waits: it must not go against revision 5 again.
+  expect(onOperation).toHaveBeenCalledTimes(1);
+  expect(r.getAllByTestId("set-logger-sync-sending")).toHaveLength(2);
+});
+
+it("a row with only reps typed is not queued, and leaves an earlier Not sent line alone", async () => {
+  onOperation.mockRejectedValueOnce(new Error("network"));
+  const r = render(base());
+  fill(r, 2, "8", "65");
+  await waitFor(() =>
+    expect(r.getByText(/could not be sent to Mia/)).toBeTruthy(),
+  );
+  fill(r, 3, "7", "65");
+  await act(async () => {});
+  expect(onOperation).toHaveBeenCalledTimes(2);
+  // Set 3 is in flight; reps only on the next row, then a blur.
+  fireEvent.changeText(r.getAllByTestId("set-logger-reps")[5]!, "10");
+  fireEvent(r.getAllByTestId("set-logger-reps")[5]!, "blur");
+  expect(r.getAllByTestId("set-logger-sync-sending")).toHaveLength(1);
+  expect(r.getByTestId("set-logger-sync-notsent")).toBeTruthy();
+});
+
+it("leaving the session clears added rows, dots and errors before the next one", async () => {
+  onOperation.mockRejectedValueOnce(new Error("network"));
+  const r = render(base());
+  fireEvent.press(r.getAllByTestId("session-exercise-add-set")[0]!);
+  fill(r, 2, "8", "65");
+  await waitFor(() =>
+    expect(r.getByTestId("set-logger-sync-notsent")).toBeTruthy(),
+  );
+  expect(r.getAllByTestId("set-logger-reps")).toHaveLength(8);
+  r.rerender(<Harness snapshot={null} />);
+  r.rerender(<Harness snapshot={base()} sessionId="session-2" />);
+  expect(r.getAllByTestId("set-logger-reps")).toHaveLength(7);
+  expect(r.queryByTestId("set-logger-sync-notsent")).toBeNull();
+  expect(r.queryByText(/could not be sent/)).toBeNull();
+  expect(r.getAllByTestId("set-logger-reps")[2]!.props.value).toBe("");
 });

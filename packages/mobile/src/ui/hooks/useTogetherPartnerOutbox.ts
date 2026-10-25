@@ -80,6 +80,8 @@ const fresh = (): Owner => ({
 export function useTogetherPartnerOutbox(p: {
   snapshot: TogetherSharedSnapshot | null;
   accountId: string;
+  /** The Together session; state never carries over to another one. */
+  sessionId?: string;
   /** An extra gate from the container (Online: the partner allows fill-in). */
   canLog?(ownerId: string): boolean;
   send(
@@ -92,10 +94,12 @@ export function useTogetherPartnerOutbox(p: {
   const owners = useRef(new Map<string, Owner>());
   const latest = useRef(p);
   latest.current = p;
-  // Another account on this phone never inherits the last one's sets.
-  const account = useRef(p.accountId);
-  if (account.current !== p.accountId) {
-    account.current = p.accountId;
+  // Another account, another session or none at all never inherits the
+  // last one's rows, dots or queued sets.
+  const identity = p.snapshot ? `${p.accountId}|${p.sessionId ?? ""}` : null;
+  const current = useRef(identity);
+  if (current.current !== identity) {
+    current.current = identity;
     for (const o of owners.current.values()) {
       o.inflight = null;
       if (o.timer) clearTimeout(o.timer);
@@ -233,7 +237,8 @@ export function useTogetherPartnerOutbox(p: {
             o.drafts = rest;
           }
         } else if (
-          echoed ||
+          // Old values still showing is normal before a correction lands; only
+          // a revision move or a grant change (or the timeout) ends the send.
           a.projection.revision > sent.revision ||
           sent.grantVersion !== a.grantVersion
         ) {
@@ -304,6 +309,9 @@ export function useTogetherPartnerOutbox(p: {
       },
       commit: (setId, planExerciseId) => {
         if (!access(ownerId)?.editable) return;
+        // A row with only reps or only kg is not a set yet (every blur commits).
+        const draft = o.drafts[setId];
+        if (draft && (draft.reps === null || draft.weightKg === null)) return;
         o.failed = false;
         if (!o.queue.some((q) => q.setId === setId))
           o.queue.push({ setId, planExerciseId });

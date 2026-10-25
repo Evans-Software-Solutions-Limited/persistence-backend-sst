@@ -90,7 +90,15 @@ it now records them like the timeout. A draft that landed as typed stayed
 hidden and could resurface if the partner removed or reverted the set; it
 is deleted on the echo. ADD SET counted toward `targetSets`, so a partner
 logged past the plan cost a dead tap; added rows now go on top of what is
-on screen. Mobile Jest 643 / 8,614, coverage 96.14 / 92.05 / 96.01 / 97.55.
+on screen. Mobile Jest 643 / 8,614, coverage 96.14 / 92.05 / 96.01 / 97.55. Fourth sweep of 53f8e3a (3 leads, all fixed): a correction to a logged
+set failed as soon as any unrelated snapshot change ran the echo check
+(the old values still showing is normal before it lands), then the next
+queued set went out against the same revision; only a revision move, a
+grant change or the timeout end a send now. Every blur commits, so a row
+with only reps queued, showed Sending and cleared an earlier Not sent line;
+incomplete rows are not queued. Partner state outlived its session; the
+outbox now resets when the snapshot goes away or the account or session id
+changes. Mobile Jest 643 / 8,617, coverage 96.14 / 92.06 / 96.01 / 97.56.
 
 **Not verified.** Nothing on a device or simulator.
 

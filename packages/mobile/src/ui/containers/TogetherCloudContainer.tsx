@@ -409,6 +409,7 @@ export function TogetherCloudContainer(p: {
   const partnerOutbox = useTogetherPartnerOutbox({
     snapshot: shared,
     accountId: p.accountId,
+    sessionId: state.snapshot?.sessionId,
     canLog: (id) => !!partner(id)?.allowPartnerLogging,
     send: async (id, operation, observedRevision) => {
       const owner = partner(id);

@@ -184,6 +184,7 @@ export function TogetherLobbyContainer({
   const partnerOutbox = useTogetherPartnerOutbox({
     snapshot: shared ? (sharedSnapshot ?? null) : null,
     accountId,
+    sessionId: snapshot.sessionId,
     send: (ownerId, operation, observedRevision) =>
       shared
         ? shared.requestDelegatedSet(ownerId, operation, observedRevision)
