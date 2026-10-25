@@ -2,10 +2,13 @@ import React from "react";
 import { act, fireEvent, waitFor, within } from "@testing-library/react-native";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 import {
-  PARTNER_SET_TIMEOUT_MS,
   TogetherPartnerPresenter,
   togetherPartnerAccess,
 } from "../TogetherPartnerPresenter";
+import {
+  PARTNER_SET_TIMEOUT_MS,
+  useTogetherPartnerOutbox,
+} from "@/ui/hooks/useTogetherPartnerOutbox";
 import type { TogetherSharedSnapshot } from "@/domain/ports/togetherShared.port";
 
 let mockMinted = 0;
@@ -91,20 +94,39 @@ const names = { squat: "Barbell Back Squat", rdl: "Romanian Deadlift" };
 const onOperation = jest.fn<Promise<void>, [Record<string, unknown>, number]>(
   async () => {},
 );
-const render = (snapshot: TogetherSharedSnapshot, editable?: boolean) =>
-  renderWithTheme(
+/**
+ * What a container does: owns the outbox and mounts the view only while
+ * Mia's tab is selected (`shown`), so sets outlive the view.
+ */
+function Harness(h: {
+  snapshot: TogetherSharedSnapshot;
+  editable?: boolean;
+  shown?: boolean;
+}) {
+  const outbox = useTogetherPartnerOutbox({
+    snapshot: h.snapshot,
+    accountId: "me",
+    canLog: () => h.editable ?? true,
+    send: (_owner, operation, revision) => onOperation(operation, revision),
+  });
+  if (h.shown === false) return null;
+  return (
     <TogetherPartnerPresenter
-      snapshot={snapshot}
+      snapshot={h.snapshot}
       ownerId="mia"
       accountId="me"
       exerciseNames={names}
       tone="info"
       editable={
-        editable ?? togetherPartnerAccess(snapshot, "mia", "me").editable
+        (h.editable ?? true) &&
+        togetherPartnerAccess(h.snapshot, "mia", "me").editable
       }
-      onOperation={onOperation}
-    />,
+      outbox={outbox("mia")}
+    />
   );
+}
+const render = (snapshot: TogetherSharedSnapshot, editable?: boolean) =>
+  renderWithTheme(<Harness snapshot={snapshot} editable={editable} />);
 const S = (setId: string, reps: number, weightKg: number) => ({
   setId,
   reps,
@@ -130,16 +152,8 @@ const withSquat = (revision: number, extra: ReturnType<typeof S>[]) => {
     ],
   };
 };
-const view = (snapshot: TogetherSharedSnapshot) => (
-  <TogetherPartnerPresenter
-    snapshot={snapshot}
-    ownerId="mia"
-    accountId="me"
-    exerciseNames={names}
-    tone="info"
-    editable={togetherPartnerAccess(snapshot, "mia", "me").editable}
-    onOperation={onOperation}
-  />
+const view = (snapshot: TogetherSharedSnapshot, shown?: boolean) => (
+  <Harness snapshot={snapshot} shown={shown} />
 );
 beforeEach(() => {
   jest.clearAllMocks();
@@ -408,32 +422,24 @@ it("Add set adds an empty row; a sent extra row keeps the count", () => {
   const logged = base();
   const rdl = logged.athletes[0]!.exercises["rdl-slot"]!;
   r.rerender(
-    <TogetherPartnerPresenter
-      snapshot={{
-        ...logged,
-        athletes: [
-          {
-            ...logged.athletes[0]!,
-            revision: 6,
-            exercises: {
-              ...logged.athletes[0]!.exercises,
-              "rdl-slot": {
-                ...rdl,
-                sets: [
-                  { setId: "new-6", reps: 10, weightKg: 45, completed: true },
-                ],
-              },
+    view({
+      ...logged,
+      athletes: [
+        {
+          ...logged.athletes[0]!,
+          revision: 6,
+          exercises: {
+            ...logged.athletes[0]!.exercises,
+            "rdl-slot": {
+              ...rdl,
+              sets: [
+                { setId: "new-6", reps: 10, weightKg: 45, completed: true },
+              ],
             },
           },
-        ],
-      }}
-      ownerId="mia"
-      accountId="me"
-      exerciseNames={names}
-      tone="info"
-      editable
-      onOperation={onOperation}
-    />,
+        },
+      ],
+    }),
   );
   expect(r.getAllByTestId("set-logger-reps")).toHaveLength(8);
   expect(r.getAllByTestId("set-logger-sync-saved")).toHaveLength(3);
@@ -458,17 +464,7 @@ it("the container's grant wins: editable false keeps rows read-only even with fi
 it("a revoked grant mid-edit drops the draft and locks the rows", () => {
   const r = render(base());
   fireEvent.changeText(r.getAllByTestId("set-logger-reps")[0]!, "99");
-  r.rerender(
-    <TogetherPartnerPresenter
-      snapshot={base({ grants: consent(true, false, false) })}
-      ownerId="mia"
-      accountId="me"
-      exerciseNames={names}
-      tone="info"
-      editable={false}
-      onOperation={onOperation}
-    />,
-  );
+  r.rerender(view(base({ grants: consent(true, false, false) })));
   const reps = r.getAllByTestId("set-logger-reps")[0]!;
   expect(reps.props.value).toBe("8");
   expect(reps.props.editable).toBe(false);
@@ -609,4 +605,75 @@ it("a set nobody applies or rejects times out as Not sent; a late echo still tur
   } finally {
     jest.useRealTimers();
   }
+});
+
+it("a queued set keeps going while you look at your own workout, and is Saved when you come back", async () => {
+  const r = render(base());
+  fill(r, 2, "8", "65");
+  fill(r, 3, "7", "65");
+  await act(async () => {});
+  expect(onOperation).toHaveBeenCalledTimes(1);
+  // Back to my own workout: Mia's view unmounts, the container's outbox stays.
+  r.rerender(view(base(), false));
+  expect(r.queryByTestId("together-partner-view")).toBeNull();
+  r.rerender(view(withSquat(6, [S("new-1", 8, 65)]), false));
+  await act(async () => {});
+  expect(onOperation).toHaveBeenCalledTimes(2);
+  expect(onOperation).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      set: expect.objectContaining({ setId: "new-2", reps: 7, weightKg: 65 }),
+    }),
+    6,
+  );
+  r.rerender(view(withSquat(7, [S("new-1", 8, 65), S("new-2", 7, 65)]), false));
+  await act(async () => {});
+  r.rerender(view(withSquat(7, [S("new-1", 8, 65), S("new-2", 7, 65)])));
+  expect(r.queryByTestId("set-logger-sync-sending")).toBeNull();
+  expect(r.getAllByTestId("set-logger-sync-saved")).toHaveLength(4);
+});
+
+it("a send refused on a network error that lands on the retry turns Saved", async () => {
+  onOperation.mockRejectedValueOnce(new Error("network"));
+  const r = render(base());
+  fill(r, 2, "8", "65");
+  await waitFor(() =>
+    expect(r.getByTestId("set-logger-sync-notsent")).toBeTruthy(),
+  );
+  // The Online outbox retries on reconnect and the set lands.
+  r.rerender(view(withSquat(6, [S("new-1", 8, 65)])));
+  await act(async () => {});
+  expect(r.queryByTestId("set-logger-sync-notsent")).toBeNull();
+  expect(r.getAllByTestId("set-logger-sync-saved")).toHaveLength(3);
+});
+
+it("a set that landed leaves no draft behind: if the partner removes it, the row comes back empty", async () => {
+  const r = render(base());
+  fill(r, 2, "8", "65");
+  await act(async () => {});
+  r.rerender(view(withSquat(6, [S("new-1", 8, 65)])));
+  await act(async () => {});
+  // Mia deletes that set on her phone.
+  r.rerender(view(withSquat(7, [])));
+  await act(async () => {});
+  const squat = within(r.getByTestId("session-exercise-squat-slot"));
+  expect(
+    squat.getAllByTestId("set-logger-reps").map((input) => input.props.value),
+  ).toEqual(["8", "8", "", ""]);
+  expect(squat.getAllByTestId("set-logger-sync-none")).toHaveLength(2);
+});
+
+it("one ADD SET tap adds a row even when the partner logged past the plan", () => {
+  // Plan has 3 RDL sets; Mia has logged 4.
+  const snapshot = base();
+  snapshot.athletes[0]!.exercises["rdl-slot"]!.sets = [
+    S("r1", 10, 45),
+    S("r2", 10, 45),
+    S("r3", 10, 45),
+    S("r4", 10, 45),
+  ];
+  const r = render(snapshot);
+  const rdl = () => within(r.getByTestId("session-exercise-rdl-slot"));
+  expect(rdl().getAllByTestId("set-logger-reps")).toHaveLength(4);
+  fireEvent.press(rdl().getByTestId("session-exercise-add-set"));
+  expect(rdl().getAllByTestId("set-logger-reps")).toHaveLength(5);
 });

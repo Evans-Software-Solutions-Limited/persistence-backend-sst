@@ -37,6 +37,7 @@ import {
   TogetherPartnerPresenter,
   togetherPartnerAccess,
 } from "@/ui/presenters/TogetherPartnerPresenter";
+import { useTogetherPartnerOutbox } from "@/ui/hooks/useTogetherPartnerOutbox";
 export function cloudSharedView(
   state: TogetherCloudState,
   accountId: string,
@@ -402,6 +403,30 @@ export function TogetherCloudContainer(p: {
     };
   }, [resumeId, attachedId, p.cloud]);
   const shared = cloudSharedView(state, p.accountId);
+  const partner = (id: string) =>
+    state.snapshot?.participants.find((x) => x.userId === id);
+  // Fill-in for partners outlives their view (see useTogetherPartnerOutbox).
+  const partnerOutbox = useTogetherPartnerOutbox({
+    snapshot: shared,
+    accountId: p.accountId,
+    canLog: (id) => !!partner(id)?.allowPartnerLogging,
+    send: async (id, operation, observedRevision) => {
+      const owner = partner(id);
+      if (
+        !isCurrent() ||
+        !owner ||
+        !owner.numbersAvailable ||
+        !owner.allowPartnerLogging
+      )
+        throw new Error("permission-changed");
+      await p.cloud.command({
+        target: { kind: "execution", athleteId: id },
+        expectedVersion: observedRevision,
+        delegationGeneration: owner.delegationGeneration,
+        operation,
+      });
+    },
+  });
   const own = state.snapshot?.participants.find(
     (x) => x.userId === p.accountId,
   );
@@ -532,28 +557,10 @@ export function TogetherCloudContainer(p: {
         viewing,
       )}
       editable={
-        !!state.snapshot?.participants.find((x) => x.userId === viewing)
-          ?.allowPartnerLogging &&
+        !!partner(viewing)?.allowPartnerLogging &&
         togetherPartnerAccess(shared, viewing, p.accountId).editable
       }
-      onOperation={async (operation, observedRevision) => {
-        const owner = state.snapshot?.participants.find(
-          (x) => x.userId === viewing,
-        );
-        if (
-          !isCurrent() ||
-          !owner ||
-          !owner.numbersAvailable ||
-          !owner.allowPartnerLogging
-        )
-          throw new Error("permission-changed");
-        await p.cloud.command({
-          target: { kind: "execution", athleteId: viewing },
-          expectedVersion: observedRevision,
-          delegationGeneration: owner.delegationGeneration,
-          operation,
-        });
-      }}
+      outbox={partnerOutbox(viewing)}
     />
   ) : undefined;
   const row = state.snapshot ? (

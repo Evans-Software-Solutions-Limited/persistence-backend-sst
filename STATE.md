@@ -78,7 +78,19 @@ moving its revision (grant version mismatch, failed consume) left the set
 Sending and blocked the queue; a set in flight now ends Not sent when the
 grant version changes or after `PARTNER_SET_TIMEOUT_MS` (15 s), and a late
 echo of exactly the sent values turns it Saved. Mobile Jest 643 / 8,609,
-coverage 96.15 / 92.08 / 96.02 / 97.56.
+coverage 96.15 / 92.08 / 96.02 / 97.56. Third sweep of 555997b (4 leads, all fixed): a
+queued set died with the partner view when the viewer tapped back to their
+own workout (the queue lived in the presenter); the delivery engine
+(drafts, queue, in-flight set, timeout, failed sends, added rows, row ids)
+is now `useTogetherPartnerOutbox`, owned by the Lobby and Cloud containers
+for every partner, so the presenter is pure and sets keep going across tab
+switches (reset on an account change). A send refused on a network error
+kept no sent values, so an Online outbox retry that landed stayed Not sent;
+it now records them like the timeout. A draft that landed as typed stayed
+hidden and could resurface if the partner removed or reverted the set; it
+is deleted on the echo. ADD SET counted toward `targetSets`, so a partner
+logged past the plan cost a dead tap; added rows now go on top of what is
+on screen. Mobile Jest 643 / 8,614, coverage 96.14 / 92.05 / 96.01 / 97.55.
 
 **Not verified.** Nothing on a device or simulator.
 

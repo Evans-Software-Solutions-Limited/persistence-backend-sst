@@ -14,6 +14,7 @@ import {
   TogetherPartnerPresenter,
   togetherPartnerAccess,
 } from "@/ui/presenters/TogetherPartnerPresenter";
+import { useTogetherPartnerOutbox } from "@/ui/hooks/useTogetherPartnerOutbox";
 import { TogetherInvitePresenter } from "@/ui/presenters/TogetherInvitePresenter";
 import { TogetherStartSheet } from "@/ui/presenters/TogetherStartSheet";
 import { TogetherJoinRequestBar } from "@/ui/presenters/TogetherJoinRequestBar";
@@ -178,6 +179,16 @@ export function TogetherLobbyContainer({
   const [code, setCode] = useState("");
   const [notice, setNotice] = useState("");
   const [viewing, setViewing] = useState<string | null>(null);
+  // Fill-in for partners outlives their view: switching back to your own
+  // workout or to another partner never drops a queued set.
+  const partnerOutbox = useTogetherPartnerOutbox({
+    snapshot: shared ? (sharedSnapshot ?? null) : null,
+    accountId,
+    send: (ownerId, operation, observedRevision) =>
+      shared
+        ? shared.requestDelegatedSet(ownerId, operation, observedRevision)
+        : Promise.reject(new Error("permission-changed")),
+  });
   const [remote, setRemote] = useState(false);
   /** Set only by an online Start; a Browse-online entry leaves it null. */
   const [hostOnline, setHostOnline] = useState<"friends" | "private" | null>(
@@ -757,13 +768,7 @@ export function TogetherLobbyContainer({
         editable={
           togetherPartnerAccess(sharedSnapshot, viewing, accountId).editable
         }
-        onOperation={(operation, observedRevision) =>
-          lobby.shared!.requestDelegatedSet(
-            viewing,
-            operation,
-            observedRevision,
-          )
-        }
+        outbox={partnerOutbox(viewing)}
       />
     ) : undefined;
   const startFromSheet = () => {

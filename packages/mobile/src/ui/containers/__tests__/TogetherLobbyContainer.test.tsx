@@ -808,12 +808,13 @@ it("partner view delegates only the displayed revision and returns to own workou
     .props as React.ComponentProps<typeof TogetherPartnerPresenter>;
   expect(p.tone).toBe("info");
   expect(p.editable).toBe(false);
-  await act(async () => p.onOperation({ type: "upsertSet" }, 7));
-  expect(h.shared.requestDelegatedSet).toHaveBeenCalledWith(
-    "other",
-    { type: "upsertSet" },
-    7,
-  );
+  // No numbers or fill-in from Mia yet: a commit goes nowhere.
+  act(() => {
+    p.outbox.edit("x", { reps: 5, weightKg: 50 }, "");
+    p.outbox.commit("x", "slot");
+  });
+  await act(async () => {});
+  expect(h.shared.requestDelegatedSet).not.toHaveBeenCalled();
   // Your own avatar is the only way back.
   expect(r.queryByText("Back to my workout")).toBeNull();
   expect(r.queryByText("Mine")).toBeNull();

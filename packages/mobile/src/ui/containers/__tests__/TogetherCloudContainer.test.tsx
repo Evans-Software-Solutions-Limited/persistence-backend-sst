@@ -357,15 +357,20 @@ it("selects partner views and sends edits against the revision actually displaye
   fireEvent.press(r.getByLabelText("Show Athlete 2’s workout"));
   await act(async () => {});
   expect(h.cloud.previous).toHaveBeenCalledWith("v");
-  const partner = r.UNSAFE_getByType(TogetherPartnerPresenter);
-  await act(async () =>
-    partner.props.onOperation({ type: "rest", restEndsAt: null }, 3),
-  );
+  // The planned second set, logged for the partner.
+  fireEvent.changeText(r.getAllByTestId("set-logger-reps")[1]!, "8");
+  fireEvent.changeText(r.getAllByTestId("set-logger-weight")[1]!, "62.5");
+  fireEvent(r.getAllByTestId("set-logger-weight")[1]!, "blur");
+  await act(async () => {});
   expect(h.cloud.command).toHaveBeenCalledWith({
     target: { kind: "execution", athleteId: "v" },
     expectedVersion: 3,
     delegationGeneration: 2,
-    operation: { type: "rest", restEndsAt: null },
+    operation: {
+      type: "upsertSet",
+      planExerciseId: "slot",
+      set: { setId: "uuid", reps: 8, weightKg: 62.5, completed: true },
+    },
   });
   act(() => h.publish({ phase: "reconnecting" }));
   expect(r.queryByTestId("set-logger-reps")).toBeNull();
@@ -418,9 +423,12 @@ it("Online partner tab: planned rows editable at once, own avatar returns, a rev
   expect(reps().every((input) => input.props.editable === false)).toBe(true);
   const partner = r.UNSAFE_getByType(TogetherPartnerPresenter).props;
   expect(partner.editable).toBe(false);
-  await expect(partner.onOperation({ type: "upsertSet" }, 3)).rejects.toThrow(
-    "permission-changed",
-  );
+  // Nothing can be queued for a partner who turned fill-in off.
+  act(() => {
+    partner.outbox.edit("late", { reps: 5, weightKg: 50 }, "");
+    partner.outbox.commit("late", "slot");
+  });
+  await act(async () => {});
   expect(h.cloud.command).toHaveBeenCalledTimes(1);
   fireEvent.press(r.getByLabelText("Show my workout"));
   expect(r.getByTestId("own-workout")).toBeTruthy();
@@ -466,6 +474,55 @@ it("Online: a set queued behind one in flight is sent after its echo, though the
     }),
   );
   expect(reps().map((input) => input.props.value)).toEqual(["8", "8", "7"]);
+});
+it("Online: a set queued for a partner is still sent after you switch back to your own workout", async () => {
+  const h = setup(true);
+  h.state().snapshot!.plan.exercises[0]!.targetSets = 3;
+  const r = renderWithTheme(
+    <TogetherCloudContainer {...h.props}>
+      {(row, partnerView) => (
+        <>
+          {row}
+          {partnerView ?? <Text testID="own-workout">own</Text>}
+        </>
+      )}
+    </TogetherCloudContainer>,
+  );
+  fireEvent.press(r.getByLabelText("Show Athlete 2’s workout"));
+  await act(async () => {});
+  const fillRow = (i: number, reps: string) => {
+    fireEvent.changeText(r.getAllByTestId("set-logger-reps")[i]!, reps);
+    fireEvent.changeText(r.getAllByTestId("set-logger-weight")[i]!, "62.5");
+    fireEvent(r.getAllByTestId("set-logger-weight")[i]!, "blur");
+  };
+  fillRow(1, "8");
+  fillRow(2, "7");
+  await act(async () => {});
+  expect(h.cloud.command).toHaveBeenCalledTimes(1);
+  fireEvent.press(r.getByLabelText("Show my workout"));
+  expect(r.getByTestId("own-workout")).toBeTruthy();
+  const sent = jest.mocked(h.cloud.command).mock.calls[0]![0] as unknown as {
+    operation: { set: { setId: string } };
+  };
+  const next = structuredClone(h.state().snapshot!);
+  next.participants[1]!.ownRevision = 4;
+  next.participants[1]!.execution!.exercises[0]!.sets.push({
+    setId: sent.operation.set.setId,
+    reps: 8,
+    weightKg: 62.5,
+    completed: true,
+  });
+  act(() => h.publish({ snapshot: next }));
+  await act(async () => {});
+  expect(h.cloud.command).toHaveBeenCalledTimes(2);
+  expect(h.cloud.command).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      expectedVersion: 4,
+      operation: expect.objectContaining({
+        set: expect.objectContaining({ reps: 7 }),
+      }),
+    }),
+  );
 });
 it("surfaces command errors and wires retry, cancel, partner navigation and local choice", async () => {
   const h = setup();
@@ -756,9 +813,13 @@ it("uses guest controls and keeps revoked partner edits and missing join drafts 
   expect(h.cloud.previousConsent).toHaveBeenCalledWith(["u"]);
   fireEvent.press(r.getByLabelText("Show Athlete 1’s workout"));
   const partner = r.UNSAFE_getByType(TogetherPartnerPresenter).props;
-  await expect(
-    partner.onOperation({ type: "rest", restEndsAt: null }, 1),
-  ).rejects.toThrow("permission-changed");
+  // The host has not turned on fill-in: nothing is sent.
+  expect(partner.editable).toBe(false);
+  act(() => {
+    partner.outbox.edit("x", { reps: 5, weightKg: 50 }, "");
+    partner.outbox.commit("x", "slot");
+  });
+  await act(async () => {});
   expect(h.cloud.command).not.toHaveBeenCalled();
   await act(async () => ui(r).onJoin());
   expect(h.cloud.join).not.toHaveBeenCalled();

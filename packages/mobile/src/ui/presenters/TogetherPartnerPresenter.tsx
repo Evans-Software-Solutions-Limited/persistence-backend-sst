@@ -1,5 +1,3 @@
-import { randomUUID } from "expo-crypto";
-import { useEffect, useRef, useState } from "react";
 import { Text, View } from "@tamagui/core";
 import { SessionExerciseCard } from "@/ui/components/session/SessionExerciseCard";
 import type { SetSyncState } from "@/ui/components/session/SetLogger";
@@ -11,39 +9,17 @@ import type {
   TogetherSharedSnapshot,
 } from "@/domain/ports/togetherShared.port";
 import {
+  togetherValuesKey as valuesKey,
+  type TogetherPartnerOutbox,
+} from "@/ui/hooks/useTogetherPartnerOutbox";
+import { togetherPartnerAccess } from "./togetherPartnerAccess";
+import {
   TogetherAthleteAvatar,
   togetherToneColor,
   type TogetherAvatarTone,
 } from "./TogetherAthleteAvatar";
 
-/** What the viewer may see and do on one partner's workout (PER-60). */
-export function togetherPartnerAccess(
-  snapshot: TogetherSharedSnapshot,
-  ownerId: string,
-  accountId: string,
-): {
-  numbers: boolean;
-  prev: boolean;
-  editable: boolean;
-  grantVersion: number;
-  projection?: TogetherAthleteProjection;
-} {
-  const grant = snapshot.grants.find(
-    (g) => g.ownerId === ownerId && g.recipientId === accountId,
-  );
-  const numbers = !!grant?.consent.numbers;
-  const projection = numbers
-    ? snapshot.athletes.find((a) => a.userId === ownerId)
-    : undefined;
-  return {
-    numbers,
-    prev: numbers && !!grant?.consent.prev,
-    // Fill-in needs the numbers grant, the fill-in grant and a revision to write against.
-    editable: !!projection && !!grant?.consent.logging,
-    grantVersion: grant?.version ?? 0,
-    projection,
-  };
-}
+export { togetherPartnerAccess };
 
 type PartnerRow = {
   setId: string;
@@ -59,19 +35,6 @@ type PartnerExercise = {
   skipped: boolean;
   rows: PartnerRow[];
 };
-type Draft = {
-  reps: number | null;
-  weightKg: number | null;
-  /** Logged values when the edit began; a draft over a changed set is dropped. */
-  base: string;
-};
-
-/** A handed-over set the partner neither applies nor rejects in this long is Not sent. */
-export const PARTNER_SET_TIMEOUT_MS = 15_000;
-
-const valuesKey = (row: { reps: number | null; weightKg: number | null }) =>
-  `${row.reps ?? ""}|${row.weightKg ?? ""}`;
-
 /**
  * The partner's exercises in plan order: logged sets first, then an empty row
  * for every planned set not logged yet, plus the rows the viewer added.
@@ -117,10 +80,10 @@ export function togetherPartnerExercises(p: {
       weightKg: set.weightKg,
       logged: true,
     }));
-    const total = Math.max(
-      slot.targetSets + (p.added[slot.planExerciseId] ?? 0),
-      logged.length,
-    );
+    // Added rows go on top of what is on screen, even past the plan.
+    const total =
+      Math.max(slot.targetSets, logged.length) +
+      (p.added[slot.planExerciseId] ?? 0);
     // When the partner logs a set of their own, an untouched empty row goes,
     // never the one the viewer is typing into.
     const want = total - logged.length;
@@ -167,10 +130,8 @@ export function TogetherPartnerPresenter(p: {
   tone: TogetherAvatarTone;
   /** From the partner's delegation grant (`togetherPartnerAccess`). */
   editable: boolean;
-  onOperation(
-    operation: Record<string, unknown>,
-    observedRevision: number,
-  ): Promise<void>;
+  /** This partner's fill-in state, owned by the container (`useTogetherPartnerOutbox`). */
+  outbox: TogetherPartnerOutbox;
 }) {
   const access = togetherPartnerAccess(p.snapshot, p.ownerId, p.accountId);
   const editable = p.editable && access.editable;
@@ -178,47 +139,7 @@ export function TogetherPartnerPresenter(p: {
   const owner = profile || "Training partner";
   // Copy uses the first name, never a pronoun (we don't know anyone's).
   const first = profile ? profile.split(/\s+/)[0]! : owner;
-  const ids = useRef<Record<string, string[]>>({});
-  /** One set per partner in flight; the rest wait for its echo (lead: stale revisions). */
-  const inflight = useRef<{
-    setId: string;
-    reps: number;
-    weightKg: number;
-    revision: number;
-    grantVersion: number;
-    token: number;
-  } | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const settle = () => {
-    inflight.current = null;
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = null;
-  };
-  useEffect(() => () => settle(), []);
-  const queue = useRef<{ setId: string; planExerciseId: string }[]>([]);
-  const tokens = useRef(0);
-  const [added, setAdded] = useState<Record<string, number>>({});
-  const [drafts, setDraftState] = useState<Record<string, Draft>>({});
-  // Delivery reads drafts between renders (an echo, then the next send).
-  const draftsRef = useRef(drafts);
-  draftsRef.current = drafts;
-  const setDrafts = (
-    next: (all: Record<string, Draft>) => Record<string, Draft>,
-  ) => {
-    draftsRef.current = next(draftsRef.current);
-    setDraftState(draftsRef.current);
-  };
-  const [delivery, setDelivery] = useState<Record<string, SetSyncState>>({});
-  const [error, setError] = useState("");
-  const rowId = (planExerciseId: string, index: number) => {
-    const pool = (ids.current[planExerciseId] ??= []);
-    while (pool.length <= index) {
-      const id = randomUUID();
-      // Row ids key the rows; never let a repeat collapse two of them.
-      pool.push(pool.includes(id) ? `${id}-${pool.length}` : id);
-    }
-    return pool[index]!;
-  };
+  const { drafts, delivery } = p.outbox;
   const bar = (text: string) => (
     <View paddingHorizontal={16} marginTop={-8}>
       <View
@@ -249,87 +170,6 @@ export function TogetherPartnerPresenter(p: {
   );
 
   const projection = access.projection;
-  const pumpRef = useRef<() => void>(() => {});
-  /** Values of each send that ended Not sent, to recognise a late echo. */
-  const failedSends = useRef<Record<string, string>>({});
-  const fail = (setId: string, sent?: string) => {
-    if (sent) failedSends.current[setId] = sent;
-    else delete failedSends.current[setId];
-    setDelivery((all) => ({ ...all, [setId]: "notsent" }));
-    setError(
-      `That set could not be sent to ${first}. Check the connection and that fill-in is still on, then try again.`,
-    );
-  };
-  const echoKey = projection
-    ? `${projection.revision}:${JSON.stringify(projection.exercises)}`
-    : "";
-  useEffect(() => {
-    const sent = inflight.current;
-    if (sent && projection) {
-      const echoed = Object.values(projection.exercises)
-        .flatMap((e) => e.sets)
-        .find((set) => set.setId === sent.setId);
-      const landed =
-        !!echoed &&
-        echoed.reps === sent.reps &&
-        echoed.weightKg === sent.weightKg;
-      if (landed) {
-        settle();
-        const base = valuesKey(sent);
-        setDelivery((all) => {
-          const { [sent.setId]: _saved, ...rest } = all;
-          return rest;
-        });
-        // A correction typed while this was sending stays on screen and is
-        // sent next (it is queued if it was committed).
-        setDrafts((all) => {
-          const draft = all[sent.setId];
-          return draft && valuesKey(draft) !== base
-            ? { ...all, [sent.setId]: { ...draft, base } }
-            : all;
-        });
-      } else if (
-        echoed ||
-        projection.revision > sent.revision ||
-        sent.grantVersion !== access.grantVersion
-      ) {
-        // The owner moved on without applying it (stale), or changed what we
-        // may do, which makes them drop intents sent under the old grant.
-        settle();
-        fail(sent.setId, valuesKey(sent));
-      }
-    }
-    if (!editable) {
-      for (const q of queue.current) fail(q.setId);
-      queue.current = [];
-      // Fill-in is gone: nothing typed for the partner survives it.
-      if (Object.keys(draftsRef.current).length) setDrafts(() => ({}));
-    }
-    // A set marked Not sent that did land after all (a late echo) is saved.
-    if (projection) {
-      const logged = new Map(
-        Object.values(projection.exercises)
-          .flatMap((e) => e.sets)
-          .map((set) => [set.setId, valuesKey(set)]),
-      );
-      setDelivery((all) => {
-        const late = Object.keys(all).filter(
-          (id) =>
-            all[id] === "notsent" &&
-            failedSends.current[id] !== undefined &&
-            logged.get(id) === failedSends.current[id],
-        );
-        for (const id of late) delete failedSends.current[id];
-        if (!late.length) return all;
-        const next = { ...all };
-        for (const id of late) delete next[id];
-        return next;
-      });
-    }
-    pumpRef.current();
-    // The projection's content and the grant drive delivery.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [echoKey, editable, access.grantVersion]);
 
   if (!access.numbers) {
     const plan = p.snapshot.athletePlans[p.ownerId];
@@ -457,14 +297,14 @@ export function TogetherPartnerPresenter(p: {
     ownerId: p.ownerId,
     projection,
     exerciseNames: p.exerciseNames,
-    added,
-    rowId,
+    added: p.outbox.added,
+    rowId: p.outbox.rowId,
     keep: (setId) => !!drafts[setId] || !!delivery[setId],
-    minted: (planExerciseId) => ids.current[planExerciseId]?.length ?? 0,
+    minted: p.outbox.minted,
   });
   /** The value shown in a row: a live draft, else what the partner logged. */
   const shown = (row: PartnerRow): PartnerRow => {
-    const draft = draftsRef.current[row.setId];
+    const draft = drafts[row.setId];
     return editable &&
       draft &&
       draft.base === (row.logged ? valuesKey(row) : "")
@@ -476,114 +316,16 @@ export function TogetherPartnerPresenter(p: {
     patch: Partial<Pick<ExerciseSet, "reps" | "weightKg">>,
   ) => {
     const current = shown(row);
-    const next = {
-      reps: patch.reps !== undefined ? patch.reps : current.reps,
-      weightKg:
-        patch.weightKg !== undefined ? patch.weightKg : current.weightKg,
-    };
-    setDrafts((all) => ({
-      ...all,
-      [row.setId]: {
-        ...next,
-        base: row.logged ? valuesKey(row) : "",
+    p.outbox.edit(
+      row.setId,
+      {
+        reps: patch.reps !== undefined ? patch.reps : current.reps,
+        weightKg:
+          patch.weightKg !== undefined ? patch.weightKg : current.weightKg,
       },
-    }));
-    return next;
+      row.logged ? valuesKey(row) : "",
+    );
   };
-  const rowOf = (setId: string) => {
-    for (const e of exercises)
-      for (const row of e.rows)
-        if (row.setId === setId)
-          return { row, planExerciseId: e.planExerciseId };
-    return null;
-  };
-  /** Sends the next queued set against the revision on screen now. */
-  const pump = () => {
-    while (
-      !inflight.current &&
-      queue.current.length &&
-      editable &&
-      projection
-    ) {
-      const next = queue.current.shift()!;
-      const found = rowOf(next.setId);
-      const values = found && shown(found.row);
-      if (
-        !found ||
-        !values ||
-        values.reps === null ||
-        values.weightKg === null ||
-        (found.row.logged && valuesKey(values) === valuesKey(found.row))
-      ) {
-        setDelivery((all) => {
-          const { [next.setId]: _done, ...rest } = all;
-          return rest;
-        });
-        continue;
-      }
-      const token = ++tokens.current;
-      const sentKey = valuesKey(values);
-      inflight.current = {
-        setId: next.setId,
-        reps: values.reps,
-        weightKg: values.weightKg,
-        revision: projection.revision,
-        grantVersion: access.grantVersion,
-        token,
-      };
-      // Nearby can drop an intent without moving the revision; never let one
-      // stuck set hold back every later one.
-      timer.current = setTimeout(() => {
-        if (inflight.current?.token !== token) return;
-        settle();
-        fail(next.setId, sentKey);
-        pumpRef.current();
-      }, PARTNER_SET_TIMEOUT_MS);
-      setDelivery((all) => ({ ...all, [next.setId]: "sending" }));
-      void p
-        .onOperation(
-          {
-            type: "upsertSet",
-            planExerciseId: next.planExerciseId,
-            set: {
-              setId: next.setId,
-              reps: values.reps,
-              weightKg: values.weightKg,
-              completed: true,
-            },
-          },
-          projection.revision,
-        )
-        // Resolving only means it was handed over (Nearby publishes an intent
-        // the owner may still reject); "saved" waits for the echo below.
-        .catch(() => {
-          if (inflight.current?.token !== token) return;
-          settle();
-          fail(next.setId);
-          pumpRef.current();
-        });
-    }
-  };
-  const send = (
-    planExerciseId: string,
-    row: PartnerRow,
-    values: { reps: number | null; weightKg: number | null },
-  ) => {
-    if (!editable || !projection) return;
-    if (values.reps === null || values.weightKg === null) return;
-    if (
-      row.logged &&
-      valuesKey(values) === valuesKey(row) &&
-      inflight.current?.setId !== row.setId
-    )
-      return;
-    setError("");
-    if (!queue.current.some((q) => q.setId === row.setId))
-      queue.current.push({ setId: row.setId, planExerciseId });
-    setDelivery((all) => ({ ...all, [row.setId]: "sending" }));
-    pump();
-  };
-  pumpRef.current = pump;
   const caption = (e: PartnerExercise) => {
     const n = Math.max(e.targetSets, e.rows.length);
     return e.skipped ? "Skipped" : `${n} ${n === 1 ? "set" : "sets"}`;
@@ -648,23 +390,17 @@ export function TogetherPartnerPresenter(p: {
               restSeconds={0}
               syncStateBySetId={sync}
               onCommitSet={(setId) => {
-                const row = e.rows.find((r) => r.setId === setId);
-                if (row) send(e.planExerciseId, row, shown(row));
+                if (editable) p.outbox.commit(setId, e.planExerciseId);
               }}
               onUpdateSet={(setId, patch) => {
                 const row = e.rows.find((r) => r.setId === setId);
                 if (!row || !editable) return;
+                edit(row, patch);
                 // Prev fills both values at once and sends straight away.
                 if (patch.reps != null && patch.weightKg != null)
-                  send(e.planExerciseId, row, edit(row, patch));
-                else edit(row, patch);
+                  p.outbox.commit(setId, e.planExerciseId);
               }}
-              onLogSet={() =>
-                setAdded((all) => ({
-                  ...all,
-                  [e.planExerciseId]: (all[e.planExerciseId] ?? 0) + 1,
-                }))
-              }
+              onLogSet={() => p.outbox.addRow(e.planExerciseId)}
               onRemoveSet={() => {}}
               onOpenNotes={() => {}}
               onSubstitute={() => {}}
@@ -678,7 +414,7 @@ export function TogetherPartnerPresenter(p: {
             {`Waiting for ${first}’s plan.`}
           </Text>
         )}
-        {!!error && (
+        {p.outbox.failed && (
           <Text
             color="$error"
             fontFamily="$body"
@@ -686,7 +422,7 @@ export function TogetherPartnerPresenter(p: {
             lineHeight={17}
             accessibilityLiveRegion="polite"
           >
-            {error}
+            {`That set could not be sent to ${first}. Check the connection and that fill-in is still on, then try again.`}
           </Text>
         )}
       </View>
