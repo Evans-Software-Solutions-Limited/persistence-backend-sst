@@ -811,3 +811,15 @@ it("a consent event that purges Mia's projection for a moment keeps drafts and t
   );
   expect(r.getAllByTestId("set-logger-reps")[5]!.props.value).toBe("10");
 });
+
+it("focusing and leaving a row without typing never shows Sending", async () => {
+  const r = render(base());
+  fill(r, 2, "8", "65");
+  await act(async () => {});
+  expect(r.getAllByTestId("set-logger-sync-sending")).toHaveLength(1);
+  // Tap into Mia's saved set 1 and an empty planned row, type nothing, leave.
+  fireEvent(r.getAllByTestId("set-logger-reps")[0]!, "blur");
+  fireEvent(r.getAllByTestId("set-logger-weight")[3]!, "blur");
+  expect(r.getAllByTestId("set-logger-sync-sending")).toHaveLength(1);
+  expect(r.getAllByTestId("set-logger-sync-saved")).toHaveLength(2);
+});

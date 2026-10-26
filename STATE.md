@@ -112,7 +112,14 @@ a Nearby consent event purges the partner's projection before the new one
 arrives, so for one snapshot the grant was in view with no projection and
 read as revoked, wiping drafts and failing queued sets. Revocation now
 follows the grant itself (numbers or fill-in off, or the container's gate),
-not whether the projection has landed. Mobile Jest 643 / 8,621.
+not whether the projection has landed. Mobile Jest 643 / 8,621. Seventh
+sweep of b4356d6 (2 leads, both fixed): the Online partner view could
+outlive the strip (snapshot cleared after a failed resume) or the partner
+(they left), leaving no avatar to get back to your own workout or Finish;
+it now renders only while that partner is in the snapshot and the
+selection resets when they are gone. A focus-and-blur with nothing typed
+queued the row and showed Sending; a commit without a draft is ignored.
+Mobile Jest 643 / 8,623, coverage 96.15 / 92.07 / 96.02 / 97.56.
 
 **Not verified.** Nothing on a device or simulator.
 

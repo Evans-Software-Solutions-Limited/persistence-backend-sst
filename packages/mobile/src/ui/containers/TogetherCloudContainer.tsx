@@ -405,6 +405,10 @@ export function TogetherCloudContainer(p: {
   const shared = cloudSharedView(state, p.accountId);
   const partner = (id: string) =>
     state.snapshot?.participants.find((x) => x.userId === id);
+  const present = viewing ? !!partner(viewing) : true;
+  useEffect(() => {
+    if (!present) setViewing(null);
+  }, [present]);
   // Fill-in for partners outlives their view (see useTogetherPartnerOutbox).
   const partnerOutbox = useTogetherPartnerOutbox({
     snapshot: shared,
@@ -545,25 +549,28 @@ export function TogetherCloudContainer(p: {
               status: `Waiting for people · ${members} of 4`,
               tone: "muted" as const,
             };
-  const partnerView = viewing ? (
-    <TogetherPartnerPresenter
-      key={viewing}
-      snapshot={shared}
-      ownerId={viewing}
-      accountId={p.accountId}
-      exerciseNames={names}
-      tone={togetherMemberTone(
-        state.snapshot?.participants ?? [],
-        p.accountId,
-        viewing,
-      )}
-      editable={
-        !!partner(viewing)?.allowPartnerLogging &&
-        togetherPartnerAccess(shared, viewing, p.accountId).editable
-      }
-      outbox={partnerOutbox(viewing)}
-    />
-  ) : undefined;
+  // Your own avatar is the only way back, so a partner view never outlives
+  // the strip (snapshot cleared) or the partner (they left the session).
+  const partnerView =
+    viewing && partner(viewing) ? (
+      <TogetherPartnerPresenter
+        key={viewing}
+        snapshot={shared}
+        ownerId={viewing}
+        accountId={p.accountId}
+        exerciseNames={names}
+        tone={togetherMemberTone(
+          state.snapshot?.participants ?? [],
+          p.accountId,
+          viewing,
+        )}
+        editable={
+          !!partner(viewing)?.allowPartnerLogging &&
+          togetherPartnerAccess(shared, viewing, p.accountId).editable
+        }
+        outbox={partnerOutbox(viewing)}
+      />
+    ) : undefined;
   const row = state.snapshot ? (
     <>
       <TogetherWorkoutRow

@@ -337,7 +337,8 @@ export function useTogetherPartnerOutbox(p: {
         if (!access(ownerId)?.editable) return;
         // A row with only reps or only kg is not a set yet (every blur commits).
         const draft = o.drafts[setId];
-        if (draft && (draft.reps === null || draft.weightKg === null)) return;
+        // Nothing typed (a focus and blur) is not a set either.
+        if (!draft || draft.reps === null || draft.weightKg === null) return;
         if (!o.queue.some((q) => q.setId === setId))
           o.queue.push({ setId, planExerciseId });
         o.delivery = { ...o.delivery, [setId]: "sending" };

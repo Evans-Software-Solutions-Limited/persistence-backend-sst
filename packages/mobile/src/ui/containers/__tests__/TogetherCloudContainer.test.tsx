@@ -542,6 +542,40 @@ it("Online: a brief reconnect keeps what you typed for a partner", async () => {
   expect(r.getAllByTestId("set-logger-reps")[1]!.props.value).toBe("8");
   expect(r.queryByTestId("set-logger-sync-notsent")).toBeNull();
 });
+it("Online: the partner view closes when the partner leaves or the session snapshot is lost", async () => {
+  const h = setup(true);
+  const r = renderWithTheme(
+    <TogetherCloudContainer {...h.props}>
+      {(row, partnerView) => (
+        <>
+          {row}
+          {partnerView ?? <Text testID="own-workout">own</Text>}
+        </>
+      )}
+    </TogetherCloudContainer>,
+  );
+  fireEvent.press(r.getByLabelText("Show Athlete 2’s workout"));
+  await act(async () => {});
+  expect(r.queryByTestId("own-workout")).toBeNull();
+  // The partner leaves the session.
+  const left = structuredClone(h.state().snapshot!);
+  left.participants = left.participants.filter((x) => x.userId !== "v");
+  act(() => h.publish({ snapshot: left }));
+  expect(r.getByTestId("own-workout")).toBeTruthy();
+  expect(r.queryByTestId("together-partner-view")).toBeNull();
+  // Back in, then the snapshot is lost (backgrounded, reconnect failed): no
+  // strip, so the partner view must not stay either.
+  act(() => h.publish({ snapshot: structuredClone(server) }));
+  fireEvent.press(r.getByLabelText("Show Athlete 2’s workout"));
+  await act(async () => {});
+  expect(r.queryByTestId("own-workout")).toBeNull();
+  act(() => h.publish({ phase: "unavailable", snapshot: undefined }));
+  expect(r.getByTestId("own-workout")).toBeTruthy();
+  // When the session comes back, you are on your own workout, not dropped
+  // back into the partner's.
+  act(() => h.publish({ phase: "active", snapshot: structuredClone(server) }));
+  expect(r.getByTestId("own-workout")).toBeTruthy();
+});
 it("surfaces command errors and wires retry, cancel, partner navigation and local choice", async () => {
   const h = setup();
   jest.mocked(h.cloud.hostWorkout).mockRejectedValue(new Error("subscription"));
