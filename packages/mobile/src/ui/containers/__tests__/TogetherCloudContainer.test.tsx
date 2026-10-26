@@ -576,6 +576,19 @@ it("Online: the partner view closes when the partner leaves or the session snaps
   act(() => h.publish({ phase: "active", snapshot: structuredClone(server) }));
   expect(r.getByTestId("own-workout")).toBeTruthy();
 });
+it("Online: backgrounding for a moment keeps what you typed for a partner", async () => {
+  const h = setup(true);
+  const r = renderWithTheme(<TogetherCloudContainer {...h.props} />);
+  fireEvent.press(r.getByLabelText("Show Athlete 2’s workout"));
+  await act(async () => {});
+  fireEvent.changeText(r.getAllByTestId("set-logger-reps")[1]!, "8");
+  // setActive(false) resets the session state; the resume reattaches it.
+  act(() => h.publish({ phase: "idle", snapshot: undefined }));
+  act(() => h.publish({ phase: "active", snapshot: structuredClone(server) }));
+  fireEvent.press(r.getByLabelText("Show Athlete 2’s workout"));
+  await act(async () => {});
+  expect(r.getAllByTestId("set-logger-reps")[1]!.props.value).toBe("8");
+});
 it("surfaces command errors and wires retry, cancel, partner navigation and local choice", async () => {
   const h = setup();
   jest.mocked(h.cloud.hostWorkout).mockRejectedValue(new Error("subscription"));

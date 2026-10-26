@@ -107,7 +107,8 @@ function Harness(h: {
   const outbox = useTogetherPartnerOutbox({
     snapshot: h.snapshot,
     accountId: "me",
-    sessionId: h.sessionId ?? "session-1",
+    // No snapshot, no session id: what Online passes while backgrounded.
+    sessionId: h.snapshot ? (h.sessionId ?? "session-1") : undefined,
     canLog: () => h.editable ?? true,
     send: (_owner, operation, revision) => onOperation(operation, revision),
   });
@@ -822,4 +823,26 @@ it("focusing and leaving a row without typing never shows Sending", async () => 
   fireEvent(r.getAllByTestId("set-logger-weight")[3]!, "blur");
   expect(r.getAllByTestId("set-logger-sync-sending")).toHaveLength(1);
   expect(r.getAllByTestId("set-logger-sync-saved")).toHaveLength(2);
+});
+
+it("a moment in the background (no snapshot, same session after) keeps drafts and the queue", async () => {
+  const r = render(base());
+  fill(r, 2, "8", "65");
+  fill(r, 3, "7", "65");
+  fireEvent.changeText(r.getAllByTestId("set-logger-reps")[5]!, "10");
+  await act(async () => {});
+  expect(onOperation).toHaveBeenCalledTimes(1);
+  r.rerender(<Harness snapshot={null} />);
+  await act(async () => {});
+  // Resumed into the same session, where the first set has landed.
+  r.rerender(view(withSquat(6, [S("new-1", 8, 65)])));
+  await act(async () => {});
+  expect(onOperation).toHaveBeenCalledTimes(2);
+  expect(onOperation).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      set: expect.objectContaining({ setId: "new-2", reps: 7, weightKg: 65 }),
+    }),
+    6,
+  );
+  expect(r.getAllByTestId("set-logger-reps")[5]!.props.value).toBe("10");
 });

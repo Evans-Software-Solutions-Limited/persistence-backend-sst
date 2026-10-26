@@ -92,12 +92,17 @@ export function useTogetherPartnerOutbox(p: {
   const owners = useRef(new Map<string, Owner>());
   const latest = useRef(p);
   latest.current = p;
-  // Another account, another session or none at all never inherits the
-  // last one's rows, dots or queued sets.
-  const identity = p.snapshot ? `${p.accountId}|${p.sessionId ?? ""}` : null;
-  const current = useRef(identity);
-  if (current.current !== identity) {
-    current.current = identity;
+  // Another account or another session never inherits the last one's rows,
+  // dots or queued sets. A gap with no snapshot inside the same session (an
+  // Online backgrounding clears it until the resume reattaches) is not a new
+  // session: the queue waits and drafts stay.
+  const scope = useRef({ account: p.accountId, session: p.sessionId });
+  const nextSession = p.sessionId || scope.current.session;
+  if (
+    scope.current.account !== p.accountId ||
+    nextSession !== scope.current.session
+  ) {
+    scope.current = { account: p.accountId, session: nextSession };
     for (const o of owners.current.values()) {
       o.inflight = null;
       if (o.timer) clearTimeout(o.timer);

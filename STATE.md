@@ -119,7 +119,11 @@ outlive the strip (snapshot cleared after a failed resume) or the partner
 it now renders only while that partner is in the snapshot and the
 selection resets when they are gone. A focus-and-blur with nothing typed
 queued the row and showed Sending; a commit without a draft is ignored.
-Mobile Jest 643 / 8,623, coverage 96.15 / 92.07 / 96.02 / 97.56.
+Mobile Jest 643 / 8,623, coverage 96.15 / 92.07 / 96.02 / 97.56. Eighth sweep of 76d3d11 (1 lead, fixed): Online clears its
+snapshot on any AppState change away from active (a notification shade
+swipe), so the outbox's session reset fired twice and dropped drafts and
+queued sets inside the same session; it now resets only on an account
+change or a different non-empty session id. Mobile Jest 643 / 8,625.
 
 **Not verified.** Nothing on a device or simulator.
 
