@@ -334,9 +334,9 @@ it("promotes only on consent using the fresh workout and shows durable receipt u
   h.update("local-only");
   expect(r.queryByText("Start the session")).toBeNull();
   expect(r.queryByText("Join")).toBeNull();
-  expect(
-    r.getByText(/My workout · Sharing ended · continue your workout/),
-  ).toBeTruthy();
+  // Sharing has ended: an ordinary solo workout, no Together row (row 3).
+  expect(r.queryByText(/My workout ·/)).toBeNull();
+  expect(r.queryByTestId("together-workout-row")).toBeNull();
   r.rerender(
     <TogetherLobbyContainer
       lobby={h.lobby}
@@ -1087,7 +1087,7 @@ it("explicit leave signals shared closure before cancelling; review and partner 
   expect(router.push).toHaveBeenLastCalledWith("/(app)/together/partners");
 });
 
-it("workout row opens settings and end controls while self selection restores the personal view", () => {
+it("workout row opens settings and the leave sheet while self selection restores the personal view", () => {
   const h = sharingHarness();
   const r = mountShared(h);
   h.publish({
@@ -1110,8 +1110,9 @@ it("workout row opens settings and end controls while self selection restores th
   expect(r.UNSAFE_getByType(TogetherPartnerPresenter)).toBeTruthy();
   act(() => row().onSelect("a"));
   expect(r.UNSAFE_queryByType(TogetherPartnerPresenter)).toBeNull();
+  // Leave opens row 3's sheet, not the settings.
   act(() => row().onEnd());
-  expect(r.getByText("Leave sharing · keep my workout")).toBeTruthy();
+  expect(r.getByText("Leave the host’s session?")).toBeTruthy();
 });
 
 it("warms own history after local admission without gating lobby or sharing without consent", async () => {
@@ -1840,4 +1841,281 @@ it("the solo strip counts completed sets, not the empty planned rows (inspector 
     ),
   ).toBe("keeps your 3 logged sets");
   expect(startRowDetail(null)).toBe("your sets stay yours");
+});
+
+const doneSet = (id: string) => ({
+  id,
+  sessionExerciseId: "squat-slot",
+  setNumber: 1,
+  weightKg: 60,
+  reps: 8,
+  rpe: null,
+  durationSeconds: null,
+  distanceMeters: null,
+  isCompleted: true,
+  completedAt: null,
+});
+const withSets = (n: number): WorkoutSession => {
+  const w = personal();
+  return {
+    ...w,
+    exercises: [
+      {
+        ...w.exercises[0]!,
+        sets: Array.from({ length: n }, (_, i) => doneSet(`d${i}`)),
+      },
+    ],
+  };
+};
+const leaveRow = (r: ReturnType<typeof renderWithTheme>) =>
+  r.UNSAFE_getByType(TogetherWorkoutRow).props;
+
+describe("leaving and ending (canvas row 3)", () => {
+  it("a guest's Leave is one sentence and two buttons, then an ordinary solo workout with a toast", async () => {
+    const h = sharingHarness();
+    h.setShared({ profiles: { host: "Brad", other: "Mia" } });
+    const r = mountShared(h, { getWorkout: () => withSets(6) });
+    h.publish({
+      phase: "joined",
+      role: "guest",
+      sessionId: "s1",
+      members: [
+        { userId: "host", host: true },
+        { userId: "a", host: false },
+        { userId: "other", host: false },
+      ],
+    });
+    h.update("active");
+    act(() => leaveRow(r).onEnd());
+    expect(r.getByText("Leave Brad’s session?")).toBeTruthy();
+    expect(
+      r.getByText(
+        "Your workout carries on here with your 6 logged sets. Brad and Mia keep training.",
+      ),
+    ).toBeTruthy();
+    expect(r.queryByTestId("together-leave-unsent")).toBeNull();
+    // Stay keeps the session; nothing is sent.
+    fireEvent.press(r.getByTestId("together-leave-stay"));
+    expect(r.queryByText("Leave Brad’s session?")).toBeNull();
+    expect(h.shared.close).not.toHaveBeenCalled();
+    act(() => leaveRow(r).onEnd());
+    await act(async () =>
+      fireEvent.press(r.getByTestId("together-leave-confirm")),
+    );
+    expect(h.shared.close).toHaveBeenCalledWith("leave");
+    expect(h.lobby.cancel).toHaveBeenCalled();
+    expect(
+      r.getByText("You left Brad’s session. Your 6 sets are here."),
+    ).toBeTruthy();
+    // The workout is no longer shared: no strip, no "Sharing ended" row.
+    h.update("local-only");
+    expect(r.UNSAFE_queryByType(TogetherWorkoutRow)).toBeNull();
+    expect(r.queryByText(/My workout ·/)).toBeNull();
+    expect(r.getByTestId("together-toast")).toBeTruthy();
+  });
+
+  it("the host's End lets everyone carry on solo", async () => {
+    const h = sharingHarness();
+    const r = mountShared(h, { getWorkout: () => withSets(1) });
+    h.publish({
+      phase: "hosting",
+      role: "host",
+      sessionId: "s1",
+      members: [
+        { userId: "a", host: true },
+        { userId: "other", host: false },
+      ],
+    });
+    h.update("active");
+    expect(leaveRow(r).endLabel).toBe("End");
+    act(() => leaveRow(r).onEnd());
+    expect(r.getByText("End the live session?")).toBeTruthy();
+    expect(
+      r.getByText(
+        "Everyone keeps their own workout and carries on solo. Nobody new can join.",
+      ),
+    ).toBeTruthy();
+    expect(r.getByText("Keep it live")).toBeTruthy();
+    await act(async () => fireEvent.press(r.getByText("End session")));
+    expect(h.shared.close).toHaveBeenCalledWith("save_own");
+    expect(h.lobby.cancel).toHaveBeenCalled();
+    expect(
+      r.getByText("Live session ended. Your workout carries on."),
+    ).toBeTruthy();
+  });
+
+  it("a failed leave keeps the workout and says so", async () => {
+    const h = sharingHarness();
+    jest.mocked(h.shared.close).mockRejectedValueOnce(new Error("offline"));
+    const r = mountShared(h, { getWorkout: () => withSets(0) });
+    h.publish({
+      phase: "joined",
+      role: "guest",
+      sessionId: "s1",
+      members: [
+        { userId: "other", host: true },
+        { userId: "a", host: false },
+      ],
+    });
+    h.update("active");
+    act(() => leaveRow(r).onEnd());
+    expect(
+      r.getByText("Your workout carries on here. Mia keeps training."),
+    ).toBeTruthy();
+    await act(async () =>
+      fireEvent.press(r.getByTestId("together-leave-confirm")),
+    );
+    expect(h.lobby.cancel).not.toHaveBeenCalled();
+    expect(
+      r.getByText(
+        "Could not leave the session. Your workout is safe. Try again.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("a partner hears once when the host ends the session, but not for an old closure", () => {
+    const h = sharingHarness();
+    h.setShared({
+      profiles: { other: "Brad" },
+      closures: [{ userId: "gone", mode: "leave" }],
+    });
+    const r = mountShared(h);
+    h.publish({
+      phase: "joined",
+      role: "guest",
+      sessionId: "s1",
+      members: [
+        { userId: "other", host: true },
+        { userId: "a", host: false },
+      ],
+    });
+    h.update("active");
+    expect(r.queryByTestId("together-toast")).toBeNull();
+    // Another guest leaving is not the host ending.
+    act(() =>
+      h.setShared({
+        closures: [
+          { userId: "gone", mode: "leave" },
+          { userId: "c", mode: "leave" },
+        ],
+      }),
+    );
+    expect(r.queryByTestId("together-toast")).toBeNull();
+    act(() =>
+      h.setShared({
+        closures: [
+          { userId: "gone", mode: "leave" },
+          { userId: "c", mode: "leave" },
+          { userId: "other", mode: "save_own" },
+        ],
+      }),
+    );
+    expect(
+      r.getByText("Brad ended the live session. Your workout carries on."),
+    ).toBeTruthy();
+    h.update("local-only");
+    expect(r.UNSAFE_queryByType(TogetherWorkoutRow)).toBeNull();
+  });
+
+  it("a recovering workout keeps its row so its review stays reachable", () => {
+    const h = workoutHarness();
+    const r = renderWithTheme(
+      <TogetherLobbyContainer
+        lobby={h.lobby}
+        workoutName="Squats"
+        accountId="a"
+        localSessionId="local"
+        getWorkout={() => personal()}
+      />,
+    );
+    h.update("local-only");
+    jest.mocked(h.workout.status).mockReturnValue({
+      sessionId: "s",
+      executionId: "e",
+      localSessionId: "local",
+      sharing: "local-only",
+      receivedCount: 0,
+      pendingCount: 0,
+      recovery: "review",
+    });
+    h.publish({});
+    expect(r.getByText(/My workout · Sharing ended/)).toBeTruthy();
+  });
+
+  it("warns about sets still on their way to a partner", async () => {
+    const h = sharingHarness();
+    h.setShared({
+      athletePlans: {
+        other: {
+          name: "Lower Body B",
+          exercises: [
+            {
+              planExerciseId: "slot",
+              exerciseId: "squat",
+              order: 0,
+              targetSets: 2,
+            },
+          ],
+        },
+      },
+      athletes: [
+        {
+          userId: "other",
+          revision: 4,
+          restEndsAt: null,
+          exercises: {
+            slot: {
+              exerciseId: "squat",
+              skipped: false,
+              sets: [{ setId: "s1", reps: 8, weightKg: 60, completed: true }],
+            },
+          },
+        },
+      ],
+      grants: [
+        {
+          ownerId: "other",
+          recipientId: "a",
+          version: 1,
+          consent: { numbers: true, prev: true, logging: true },
+        },
+      ],
+    });
+    // The set never lands.
+    jest
+      .mocked(h.shared.requestDelegatedSet)
+      .mockImplementation(() => new Promise<void>(() => {}));
+    const r = mountShared(h, {
+      exerciseNames: { squat: "Squat" },
+      children: (row, partnerView) => (
+        <>
+          {row}
+          {partnerView}
+        </>
+      ),
+    });
+    h.publish({
+      phase: "joined",
+      role: "guest",
+      sessionId: "s1",
+      members: [
+        { userId: "a", host: false },
+        { userId: "other", host: true },
+      ],
+    });
+    h.update("active");
+    fireEvent.press(r.getByLabelText("Show Mia’s workout"));
+    const reps = r.getAllByTestId("set-logger-reps");
+    fireEvent.changeText(reps[0]!, "9");
+    fireEvent(reps[0]!, "blur");
+    await waitFor(() =>
+      expect(h.shared.requestDelegatedSet).toHaveBeenCalled(),
+    );
+    act(() => leaveRow(r).onEnd());
+    expect(
+      r.getByText(
+        "1 set hasn’t reached Mia yet. If you leave now, it won’t be sent.",
+      ),
+    ).toBeTruthy();
+  });
 });

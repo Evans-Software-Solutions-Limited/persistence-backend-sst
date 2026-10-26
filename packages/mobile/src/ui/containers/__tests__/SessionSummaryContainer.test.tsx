@@ -134,6 +134,19 @@ jest.mock("expo-router", () => {
   };
 });
 
+async function renderSummary(storage: InMemoryStorageAdapter) {
+  const q = renderWithTheme(
+    <AdapterProvider adapters={makeAdapters(new InMemoryApiAdapter(), storage)}>
+      <SessionSummaryContainer />
+    </AdapterProvider>,
+  );
+  // The pager sizes itself before it draws a page.
+  fireEvent(await q.findByTestId("summary-pages"), "layout", {
+    nativeEvent: { layout: { width: 400, height: 600 } },
+  });
+  return q;
+}
+
 describe("SessionSummaryContainer", () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -144,139 +157,52 @@ describe("SessionSummaryContainer", () => {
     jest.restoreAllMocks();
   });
 
-  it("renders the legacy 3-stat strip (Workouts Completed / Records Hit / Total Volume)", async () => {
-    const api = new InMemoryApiAdapter();
+  it("builds the pages from the finished session and the exercise library", async () => {
     const storage = new InMemoryStorageAdapter();
     seedActive(storage);
-
-    const { findByTestId } = renderWithTheme(
-      <AdapterProvider adapters={makeAdapters(api, storage)}>
-        <SessionSummaryContainer />
-      </AdapterProvider>,
-    );
-
-    expect(await findByTestId("summary-stat-workouts-this-month")).toBeTruthy();
-    expect(await findByTestId("summary-stat-records-hit")).toBeTruthy();
-    expect(await findByTestId("summary-stat-total-volume")).toBeTruthy();
-  });
-
-  it("summarises only completed cardio metrics and supports time-only cardio", async () => {
-    const api = new InMemoryApiAdapter();
-    const storage = new InMemoryStorageAdapter();
-    seedActive(storage);
-    const active = storage.getActiveSession("user-1");
-    expect(active).not.toBeNull();
-    storage.cacheActiveSession("user-1", {
-      ...active!,
-      exercises: [
-        {
-          ...active!.exercises[0],
-          category: "cardio",
-          sets: [
-            {
-              ...active!.exercises[0].sets[0],
-              weightKg: null,
-              reps: null,
-              durationSeconds: 1_500,
-              distanceMeters: null,
-              isCompleted: true,
-            },
-            {
-              ...active!.exercises[0].sets[0],
-              id: "incomplete-distance",
-              durationSeconds: null,
-              distanceMeters: 10_000,
-              isCompleted: false,
-            },
-          ],
-        },
-        {
-          ...active!.exercises[0],
-          id: "se-jump",
-          exerciseId: "ex-jump",
-          category: "plyometric",
-          sets: [
-            {
-              ...active!.exercises[0].sets[0],
-              id: "jump-set",
-              sessionExerciseId: "se-jump",
-              weightKg: null,
-              reps: 5,
-              durationSeconds: null,
-              distanceMeters: 2.5,
-              isCompleted: true,
-            },
-          ],
-        },
-      ],
-    });
-
-    const { findByText, findByTestId, queryByText } = renderWithTheme(
-      <AdapterProvider adapters={makeAdapters(api, storage)}>
-        <SessionSummaryContainer />
-      </AdapterProvider>,
-    );
-
-    expect(await findByText("0.00 km")).toBeTruthy();
-    expect(
-      (await findByTestId("summary-cardio-duration")).props.children.join(""),
-    ).toBe("Time 25:00");
-    expect(queryByText("0 kg")).toBeNull();
-    expect(queryByText("10.00 km")).toBeNull();
-  });
-
-  it("predicts a PR locally when the session beats the cached previous best (pre-server, no previousValue arrow)", async () => {
-    // seedActive uses 120 kg × 5 reps. Post-PR-3 the predictor only
-    // emits a `Xrm` candidate when reps matches the legacy ladder
-    // EXACTLY (1/3/5/10), and only surfaces a PR when a prior exists
-    // (skip-first-occurrence). So we seed a 5rm prior, expect a 5rm
-    // PR to render. A 1rm prior would no longer surface anything
-    // here — the previous test's 1rm assertion was relying on the
-    // Epley path the PR is removing.
-    const api = new InMemoryApiAdapter();
-    const storage = new InMemoryStorageAdapter();
-    seedActive(storage);
-    storage.cachePersonalRecords("user-1", [
-      {
-        id: "pr-prev",
-        userId: "user-1",
-        exerciseId: "ex-bench",
-        exerciseName: "Bench Press",
-        recordType: "5rm",
-        value: 100,
-        achievedAt: "2026-04-01T00:00:00.000Z",
-        sessionId: "old",
-        setId: null,
-      },
+    // Cached exercises carry catalogue UUIDs; the reference list names them.
+    storage.cacheReferenceList("muscle_groups", [
+      { id: "uuid-chest", name: "chest", displayName: "Chest" },
+      { id: "uuid-triceps", name: "triceps", displayName: "Triceps" },
     ]);
+    storage.cacheExercises([
+      {
+        id: "ex-bench",
+        name: "Bench Press",
+        description: null,
+        instructions: null,
+        category: "strength",
+        difficulty: "intermediate",
+        primaryMuscleGroups: ["uuid-chest" as never],
+        secondaryMuscleGroups: ["uuid-triceps" as never],
+        equipment: [],
+      } as never,
+    ]);
+    const q = await renderSummary(storage);
+    expect(q.getByText("600")).toBeTruthy();
+    expect(q.getByText("Push Day · 5 May")).toBeTruthy();
+    expect(
+      q.getByLabelText("Muscles worked: chest 67%, triceps 33%"),
+    ).toBeTruthy();
+    expect(q.getByText("1×5")).toBeTruthy();
+    // No server response yet: no records page, no month count.
+    expect(q.queryByTestId("summary-page-records")).toBeNull();
+    expect(q.queryByText(/this month/)).toBeNull();
+  });
 
-    const { findByTestId, queryByText } = renderWithTheme(
-      <AdapterProvider adapters={makeAdapters(api, storage)}>
-        <SessionSummaryContainer />
-      </AdapterProvider>,
-    );
-
-    // Local prediction surfaces the section + card.
-    expect(await findByTestId("summary-pr-section")).toBeTruthy();
-    expect(await findByTestId("summary-pr-ex-bench-5rm")).toBeTruthy();
-    // Local prediction has previousValue=null → no arrow rendered.
-    expect(queryByText("→")).toBeNull();
+  it("hides Muscles worked when the exercise is not in the library", async () => {
+    const storage = new InMemoryStorageAdapter();
+    seedActive(storage);
+    const q = await renderSummary(storage);
+    expect(q.queryByTestId("summary-page-muscles")).toBeNull();
   });
 
   it("ignores a cached server response whose localSessionId doesn't match the current snapshot (Inspector Brad PR #62 regression)", async () => {
-    // The high-severity stale-cache leak: sync worker FIFO drain
-    // can transiently write a prior session's response into the
-    // slot before the current session's response overwrites it. If
-    // the container poll fires in that window without the id guard,
-    // the current Summary screen permanently renders the prior
-    // session's PRs + workoutsThisMonth.
-    const api = new InMemoryApiAdapter();
+    // The sync worker's FIFO drain can briefly leave a prior session's
+    // response in the slot. Without the id guard the summary would show
+    // that session's records and month count for good.
     const storage = new InMemoryStorageAdapter();
-    seedActive(storage); // Active session id = "local-1"
-
-    // Cache slot pre-populated with a DIFFERENT session's response —
-    // simulates the transient FIFO-drain window where session A's
-    // response landed before session B's.
+    seedActive(storage);
     storage.cacheRecordResponse("user-1", {
       localSessionId: "local-PRIOR-SESSION",
       personalRecords: [
@@ -292,24 +218,9 @@ describe("SessionSummaryContainer", () => {
       workoutsThisMonth: 99,
       cachedAt: "2026-05-12T00:00:00.000Z",
     });
-
-    const { findByTestId, queryByText } = renderWithTheme(
-      <AdapterProvider adapters={makeAdapters(api, storage)}>
-        <SessionSummaryContainer />
-      </AdapterProvider>,
-    );
-
-    await findByTestId("session-summary-screen");
-    // The prior session's payload must NOT surface. No arrow (id
-    // guard rejected the cache hit), no "99 total workouts" in the
-    // subtitle, no "999.0 kg" PR.
-    expect(queryByText("→")).toBeNull();
-    expect(queryByText("999.0 kg")).toBeNull();
-    expect(
-      queryByText(
-        "You've completed 99 workouts this month. Keep the momentum going!",
-      ),
-    ).toBeNull();
+    const q = await renderSummary(storage);
+    expect(q.queryByTestId("summary-page-records")).toBeNull();
+    expect(q.queryByText("99 workouts this month")).toBeNull();
   });
 
   it("clears the record-response cache on cacheActiveSession when starting a NEW session (belt-and-braces)", () => {
@@ -368,29 +279,11 @@ describe("SessionSummaryContainer", () => {
     void api;
   });
 
-  it("swaps to the server PR shape (with previousValue + arrow) once the sync worker writes the cache slot", async () => {
-    // The cache-and-subscribe contract end-to-end: container mounts
-    // with local prediction (no arrow), poll picks up the cached
-    // server response, re-renders with the legacy before→after arrow
-    // and the real workoutsThisMonth in both the subtitle + the
-    // stat tile.
-    const api = new InMemoryApiAdapter();
+  it("adds the records page and the month count once the server response lands", async () => {
     const storage = new InMemoryStorageAdapter();
     seedActive(storage);
-
-    const { findByTestId, queryByText, findByText } = renderWithTheme(
-      <AdapterProvider adapters={makeAdapters(api, storage)}>
-        <SessionSummaryContainer />
-      </AdapterProvider>,
-    );
-
-    // Pre-server: em-dash on the Workouts this month tile, no arrow
-    // on PR rows. Wait for the mount + first poll tick to settle.
-    expect(await findByTestId("session-summary-screen")).toBeTruthy();
-    expect(queryByText("→")).toBeNull();
-
-    // Sync worker fires (simulated): cache slot written with the
-    // augmented response.
+    const q = await renderSummary(storage);
+    expect(q.queryByTestId("summary-page-records")).toBeNull();
     storage.cacheRecordResponse("user-1", {
       localSessionId: "local-1",
       personalRecords: [
@@ -406,96 +299,88 @@ describe("SessionSummaryContainer", () => {
       workoutsThisMonth: 12,
       cachedAt: "2026-05-05T10:30:01.000Z",
     });
-
-    // Poll picks up the cache slot — subtitle gets the count, tile
-    // gets 12, PR card now shows the arrow.
-    expect(
-      await findByText(
-        "You've completed 12 workouts this month. Keep the momentum going!",
-      ),
-    ).toBeTruthy();
-    expect(await findByText("→")).toBeTruthy();
-    expect(await findByText("120.0 kg")).toBeTruthy();
-    expect(await findByText("137.4 kg")).toBeTruthy();
+    expect(await q.findByText("12 workouts this month")).toBeTruthy();
+    expect(q.getByText("New personal record")).toBeTruthy();
+    expect(q.getByText("137.4")).toBeTruthy();
+    expect(q.getByText("1 rep max · was 120 kg")).toBeTruthy();
+    // Workout details marks the record set.
+    fireEvent.press(q.getByTestId("summary-details"));
+    expect(await q.findByTestId("workout-details-screen")).toBeTruthy();
+    expect(q.getByText("120 kg ★")).toBeTruthy();
   });
 
-  it("Continue tap clears the local row and dismisses the modal stack (the rating screen already fired completeSessionCommand)", async () => {
-    const api = new InMemoryApiAdapter();
-    const storage = new InMemoryStorageAdapter();
-    // Seed a finalized row — by the time the user lands on the
-    // summary screen, /session/rate has already flipped the row to
-    // status=completed and queued the bulk-record flush.
-    storage.cacheActiveSession("user-1", {
-      id: "local-1",
-      userId: "user-1",
-      workoutId: "wk-1",
-      name: "Push Day",
-      status: "completed",
-      startedAt: "2026-05-05T10:00:00.000Z",
-      completedAt: "2026-05-05T10:30:00.000Z",
-      notes: null,
-      exercises: [],
+  it("shows the effort and who trained together from the rating screen's params", async () => {
+    mockUseLocalSearchParams.mockReturnValue({
+      rating: "8",
+      together: JSON.stringify({
+        self: "Mia",
+        names: ["Brad", "Tom"],
+        connection: "Nearby",
+      }),
     });
-
-    const { findByTestId } = renderWithTheme(
-      <AdapterProvider adapters={makeAdapters(api, storage)}>
-        <SessionSummaryContainer />
-      </AdapterProvider>,
-    );
-
-    fireEvent.press(await findByTestId("summary-save-button"));
-    // No NEW recordSession enqueue — the rating screen already did
-    // that; summary just retires the local row.
-    expect(storage.getPendingMutations()).toHaveLength(0);
-    expect(storage.getLatestSession("user-1")).toBeNull();
-    expect(mockRouterDismissAll).toHaveBeenCalledTimes(1);
-  });
-
-  it("save-only screen has no Discard button (legacy parity: discard is an Alert on the active screen)", async () => {
-    const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
     seedActive(storage);
-
-    const { queryByTestId, findByTestId } = renderWithTheme(
-      <AdapterProvider adapters={makeAdapters(api, storage)}>
-        <SessionSummaryContainer />
-      </AdapterProvider>,
-    );
-
-    expect(await findByTestId("summary-save-button")).toBeTruthy();
-    // No discard / keep-logging variants — the entire discard flow
-    // lives in the ActiveSession Alert.alert per legacy.
-    expect(queryByTestId("summary-discard-button")).toBeNull();
-    expect(queryByTestId("summary-keep-button")).toBeNull();
-    expect(queryByTestId("summary-confirm-discard-button")).toBeNull();
-    expect(queryByTestId("summary-discard-warning")).toBeNull();
+    const q = await renderSummary(storage);
+    expect(q.getByText("Effort 8/10 · Hard")).toBeTruthy();
+    expect(q.getByText("With Brad and Tom")).toBeTruthy();
+    fireEvent.press(q.getByTestId("summary-details"));
+    expect(await q.findByText(/Hard 8\/10 · with Brad, Tom/)).toBeTruthy();
+    fireEvent.press(q.getByTestId("workout-details-back"));
+    expect(await q.findByTestId("session-summary-screen")).toBeTruthy();
   });
 
-  it("Close button clears the local row and dismisses the modal stack", async () => {
-    const api = new InMemoryApiAdapter();
+  it.each([
+    [{ rating: "11", together: "{not json" }],
+    [
+      {
+        rating: "x",
+        together: JSON.stringify({
+          self: "Mia",
+          names: [1],
+          connection: "Nearby",
+        }),
+      },
+    ],
+    [
+      {
+        together: JSON.stringify({
+          self: "Mia",
+          names: ["Brad"],
+          connection: "Radio",
+        }),
+      },
+    ],
+  ])("ignores malformed params %#", async (params) => {
+    mockUseLocalSearchParams.mockReturnValue(params as Record<string, string>);
     const storage = new InMemoryStorageAdapter();
-    storage.cacheActiveSession("user-1", {
-      id: "local-1",
-      userId: "user-1",
-      workoutId: "wk-1",
-      name: "Push Day",
-      status: "completed",
-      startedAt: "2026-05-05T10:00:00.000Z",
-      completedAt: "2026-05-05T10:30:00.000Z",
-      notes: null,
-      exercises: [],
-    });
-
-    const { findByTestId } = renderWithTheme(
-      <AdapterProvider adapters={makeAdapters(api, storage)}>
-        <SessionSummaryContainer />
-      </AdapterProvider>,
-    );
-
-    fireEvent.press(await findByTestId("session-summary-close"));
-    expect(storage.getLatestSession("user-1")).toBeNull();
-    expect(mockRouterDismissAll).toHaveBeenCalledTimes(1);
+    seedActive(storage);
+    const q = await renderSummary(storage);
+    expect(q.queryByTestId("summary-effort")).toBeNull();
+    expect(q.queryByTestId("summary-page-together")).toBeNull();
   });
+
+  it.each(["summary-continue", "session-summary-close"])(
+    "%s clears the local row and dismisses the modal stack (the rating screen already recorded it)",
+    async (button) => {
+      const storage = new InMemoryStorageAdapter();
+      storage.cacheActiveSession("user-1", {
+        id: "local-1",
+        userId: "user-1",
+        workoutId: "wk-1",
+        name: "Push Day",
+        status: "completed",
+        startedAt: "2026-05-05T10:00:00.000Z",
+        completedAt: "2026-05-05T10:30:00.000Z",
+        notes: null,
+        exercises: [],
+      });
+      const q = await renderSummary(storage);
+      fireEvent.press(q.getByTestId(button));
+      expect(storage.getPendingMutations()).toHaveLength(0);
+      expect(storage.getLatestSession("user-1")).toBeNull();
+      expect(mockRouterDismissAll).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it("renders nothing when no active session exists (race guard)", () => {
     const api = new InMemoryApiAdapter();

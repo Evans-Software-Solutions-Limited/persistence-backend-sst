@@ -21,6 +21,8 @@ import { useActiveSession } from "@/ui/hooks/useActiveSession";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { WorkoutRatingPresenter } from "@/ui/presenters/WorkoutRatingPresenter";
+import type { SummaryTogether } from "@/ui/presenters/SessionSummaryPresenter";
+import type { Adapters } from "@/shared/types";
 
 export function WorkoutRatingContainer() {
   const { storage, auth, togetherLobby, togetherCloud } = useAdapters();
@@ -69,6 +71,25 @@ export function WorkoutRatingContainer() {
       if (!userId || submitting.current) return;
       submitting.current = true;
       setIsSubmitting(true);
+      // The summary shows the effort and who trained together; the live
+      // session closes on the way there, so both travel as route params.
+      const summary = {
+        pathname: "/(app)/session/summary",
+        params: {
+          rating: String(rating),
+          ...(session?.together
+            ? (() => {
+                const together = togetherRoster(
+                  userId,
+                  session.together.transport === "cloud",
+                  togetherLobby,
+                  togetherCloud,
+                );
+                return together ? { together: JSON.stringify(together) } : {};
+              })()
+            : {}),
+        },
+      } as never;
       if (session?.together) {
         const isCurrent = () =>
           mounted.current &&
@@ -144,7 +165,7 @@ export function WorkoutRatingContainer() {
             if (saved.status === "cancelled") {
               storage.clearActiveSession(userId);
               router.dismissAll();
-            } else router.replace("/(app)/session/summary" as never);
+            } else router.replace(summary);
           })
           .catch((error: unknown) => {
             if (!isCurrent()) return;
@@ -226,7 +247,7 @@ export function WorkoutRatingContainer() {
         if (withClient) {
           goCoachHome();
         } else {
-          router.replace("/(app)/session/summary" as never);
+          router.replace(summary);
         }
         return;
       }
@@ -255,7 +276,7 @@ export function WorkoutRatingContainer() {
       }
       // Replace (not push) so the back stack doesn't accumulate
       // /rate → /summary indefinitely if the user re-finishes.
-      router.replace("/(app)/session/summary" as never);
+      router.replace(summary);
     },
     [userId, session, storage, auth, togetherLobby, togetherCloud, params.mode],
   );
@@ -305,4 +326,41 @@ export function WorkoutRatingContainer() {
       onDiscard={session.together ? confirmDiscard : undefined}
     />
   );
+}
+
+/** Everyone else in the live session, in seat order, for the summary's last page. */
+export function togetherRoster(
+  userId: string,
+  online: boolean,
+  lobby: Adapters["togetherLobby"],
+  cloud: Adapters["togetherCloud"],
+): SummaryTogether | null {
+  if (online) {
+    const people = cloud?.getSnapshot().snapshot?.participants ?? [];
+    const others = people.filter((p) => p.userId !== userId);
+    if (!others.length) return null;
+    return {
+      self: people.find((p) => p.userId === userId)?.displayName ?? "Me",
+      names: others.map(
+        (p) => p.displayName ?? `Athlete ${people.indexOf(p) + 1}`,
+      ),
+      connection: "Online",
+    };
+  }
+  const members = lobby?.getSnapshot().members ?? [];
+  const others = members.filter((m) => m.userId !== userId);
+  if (!others.length) return null;
+  let profiles: Readonly<Record<string, string>> = {};
+  try {
+    profiles = lobby?.shared?.getSnapshot().profiles ?? {};
+  } catch {
+    // A disposed engine has no names left; seats still read.
+  }
+  return {
+    self: profiles[userId] ?? "Me",
+    names: others.map(
+      (m) => profiles[m.userId] ?? `Athlete ${members.indexOf(m) + 1}`,
+    ),
+    connection: "Nearby",
+  };
 }

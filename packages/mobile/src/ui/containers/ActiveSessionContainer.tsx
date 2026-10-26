@@ -1176,10 +1176,6 @@ export function ActiveSessionContainer() {
         onCancel={() => setFinishChoice(null)}
         onFinishAll={() => chooseFinish("finish_all")}
         onFinishOwn={() => chooseFinish("save_own")}
-        onDiscard={() => {
-          setFinishChoice(null);
-          confirmDiscardWorkout();
-        }}
       />
       {endConfirmVisible && (
         <EndConfirmDialogPresenter

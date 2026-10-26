@@ -1,56 +1,63 @@
 import { Text, View } from "@tamagui/core";
-import { BottomSheet, Btn } from "@/ui/components/foundation";
+import { BottomSheet } from "@/ui/components/foundation";
+import { TogetherBtn } from "./TogetherBtn";
+import { TogetherEyebrow } from "./TogetherEyebrow";
 
-/** Host chooses the session scope; each athlete still rates their own result. */
+/**
+ * Canvas row 3b phone 1: the host's Finish workout is two choices and
+ * nothing else. Each athlete still rates and saves their own result;
+ * discarding stays where solo has it, on the rating screen.
+ */
 export function TogetherFinishChoicePresenter({
   visible,
   onCancel,
   onFinishAll,
   onFinishOwn,
-  onDiscard,
 }: {
   visible: boolean;
   onCancel: () => void;
   onFinishAll: () => void;
   onFinishOwn: () => void;
-  onDiscard?: () => void;
 }) {
   return (
     <BottomSheet
       visible={visible}
       onClose={onCancel}
-      eyebrow="TRAIN TOGETHER"
-      title="Finish workout?"
-      height="peek"
+      height={33}
+      contentPadding={{ top: 4, bottom: 28 }}
       testID="together-finish-choice"
-      footer={
-        <View gap={12}>
-          <Btn full onPress={onFinishAll} testID="together-finish-all">
+    >
+      <View gap={14}>
+        <View gap={6}>
+          <TogetherEyebrow>Train together</TogetherEyebrow>
+          <Text
+            fontFamily="$display"
+            fontWeight="700"
+            fontSize={22}
+            lineHeight={28}
+            letterSpacing={-0.5}
+            color="$text"
+            accessibilityRole="header"
+          >
+            Finish workout?
+          </Text>
+          <Text fontFamily="$body" fontSize={14} lineHeight={21} color="$text2">
+            Everyone rates and saves their own result.
+          </Text>
+        </View>
+        <View gap={10}>
+          <TogetherBtn onPress={onFinishAll} testID="together-finish-all">
             Finish for all
-          </Btn>
-          <Btn
-            full
-            variant="outline"
+          </TogetherBtn>
+          <TogetherBtn
+            variant="ghost"
             onPress={onFinishOwn}
             testID="together-finish-own"
           >
             Finish just for me
-          </Btn>
-          {onDiscard && (
-            <Btn full variant="ghost" tone="error" onPress={onDiscard}>
-              Discard without saving
-            </Btn>
-          )}
-          <Btn full variant="ghost" onPress={onCancel}>
-            Keep training
-          </Btn>
+          </TogetherBtn>
         </View>
-      }
-    >
-      <Text color="$text2" fontSize={14} lineHeight={21}>
-        Finish for everyone, or finish your own workout and let the others keep
-        training. Each athlete rates and saves their own result.
-      </Text>
+      </View>
     </BottomSheet>
   );
 }

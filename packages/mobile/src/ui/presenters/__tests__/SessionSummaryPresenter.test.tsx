@@ -1,313 +1,420 @@
 /**
- * SessionSummaryPresenter tests — Phase 3b legacy port.
- *
- * The presenter consumes a pre-merged display shape from
- * `SessionSummaryContainer` (server data wins for `personalRecords`
- * + `workoutsThisMonth`; local fills `totalVolume`). These tests
- * exercise the rendering layer directly with both
- * "pre-server-response" (`workoutsThisMonth: null`, PRs without
- * `previousValue`) and "post-server-response" (real count, PRs with
- * `previousValue`) prop shapes.
+ * SessionSummaryPresenter — the finish pages (PER-60 canvas row 3c).
+ * Every page, its hidden and empty cases, one record vs several, and solo
+ * vs Together page counts.
  */
 
+import { fireEvent } from "@testing-library/react-native";
 import React from "react";
-import { SessionSummaryPresenter } from "../SessionSummaryPresenter";
-import type { SummaryPersonalRecord } from "@/ui/containers/SessionSummaryContainer";
+import type { ExerciseSet, WorkoutSession } from "@/domain/models/session";
+import {
+  buildWorkoutSummary,
+  muscleShare,
+  type MuscleShare,
+  type SummaryRecord,
+} from "@/domain/services/workoutSummary";
+import {
+  SessionSummaryPresenter,
+  type SessionSummaryPresenterProps,
+} from "../SessionSummaryPresenter";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 
+let seq = 0;
+const set = (
+  weightKg: number | null,
+  reps: number | null,
+  extra: Partial<ExerciseSet> = {},
+): ExerciseSet => ({
+  id: `set-${++seq}`,
+  sessionExerciseId: "x",
+  setNumber: 1,
+  weightKg,
+  reps,
+  rpe: null,
+  durationSeconds: null,
+  distanceMeters: null,
+  isCompleted: true,
+  completedAt: null,
+  ...extra,
+});
+
+const workout = (
+  exercises: { name: string; sets: ExerciseSet[] }[],
+): WorkoutSession => ({
+  id: "local-1",
+  userId: "u1",
+  workoutId: null,
+  name: "Lower Body B",
+  status: "completed",
+  startedAt: "2026-10-23T12:00:00.000Z",
+  completedAt: "2026-10-23T12:52:00.000Z",
+  notes: null,
+  exercises: exercises.map((e, i) => ({
+    id: `se-${i}`,
+    sessionId: "local-1",
+    exerciseId: `ex-${i}`,
+    exerciseName: e.name,
+    sortOrder: i,
+    supersetGroup: null,
+    isSubstituted: false,
+    originalExerciseId: null,
+    notes: null,
+    sets: e.sets,
+  })),
+});
+
+const lowerBody = workout([
+  { name: "Barbell Back Squat", sets: [set(60, 8), set(65, 7)] },
+  { name: "Romanian Deadlift", sets: [set(45, 10)] },
+]);
+const model = buildWorkoutSummary(lowerBody, 3120);
+const worked = muscleShare([
+  { primary: ["quadriceps"], secondary: ["glutes"], completedSets: 2 },
+  { primary: ["hamstrings"], secondary: ["glutes"], completedSets: 1 },
+]);
+
+const record = (
+  exerciseName: string,
+  overrides: Partial<SummaryRecord> = {},
+): SummaryRecord => ({
+  exerciseId: exerciseName,
+  exerciseName,
+  recordType: "max_weight",
+  newValue: 65,
+  previousValue: 62.5,
+  ...overrides,
+});
+
 const handlers = {
-  onSave: jest.fn(),
+  onDetails: jest.fn(),
+  onContinue: jest.fn(),
   onClose: jest.fn(),
 };
 
-const baseProps = {
-  totalVolume: 0,
-  recordsHit: 0,
-  workoutsThisMonth: null as number | null,
-  personalRecords: [] as SummaryPersonalRecord[],
-  ...handlers,
-};
+function renderSummary(over: Partial<SessionSummaryPresenterProps> = {}) {
+  const utils = renderWithTheme(
+    <SessionSummaryPresenter
+      model={model}
+      muscles={worked}
+      records={[]}
+      workoutsThisMonth={null}
+      rating={null}
+      {...handlers}
+      {...over}
+    />,
+  );
+  // The pager sizes itself to the space between the top bar and the buttons.
+  fireEvent(utils.getByTestId("summary-pages"), "layout", {
+    nativeEvent: { layout: { width: 400, height: 600 } },
+  });
+  return utils;
+}
 
-describe("SessionSummaryPresenter — Phase 3b legacy port", () => {
-  beforeEach(() => {
-    handlers.onSave.mockClear();
-    handlers.onClose.mockClear();
+const pageIds = (q: ReturnType<typeof renderSummary>) =>
+  q.queryAllByTestId(/^summary-page-/).map((n) => n.props.testID);
+
+beforeEach(() => jest.clearAllMocks());
+
+describe("page counts", () => {
+  it("shows four pages for a solo workout with no record", () => {
+    const q = renderSummary();
+    expect(pageIds(q)).toEqual([
+      "summary-page-totals",
+      "summary-page-muscles",
+      "summary-page-exercises",
+      "summary-page-volume",
+    ]);
+    expect(q.queryAllByTestId(/^summary-dot-/)).toHaveLength(4);
   });
 
-  it("renders the legacy 'Workout Complete!' title + close button", () => {
-    const { getByText, getByTestId } = renderWithTheme(
-      <SessionSummaryPresenter {...baseProps} />,
-    );
-    expect(getByText("Workout Complete!")).toBeTruthy();
-    expect(getByTestId("session-summary-close")).toBeTruthy();
+  it("shows six pages for a Together workout with a record", () => {
+    const q = renderSummary({
+      records: [record("Barbell Back Squat")],
+      together: {
+        self: "Mia",
+        names: ["Brad", "Tom", "Inés"],
+        connection: "Nearby",
+      },
+    });
+    expect(pageIds(q)).toHaveLength(6);
+    expect(q.getByLabelText("Trained together, page 6 of 6")).toBeTruthy();
   });
 
-  it("subtitle shows N workouts this month and pluralises correctly post-server", () => {
-    const { getByText, rerender } = renderWithTheme(
-      <SessionSummaryPresenter {...baseProps} workoutsThisMonth={1} />,
+  it("hides Muscles worked when no exercise has muscle groups", () => {
+    const q = renderSummary({ muscles: muscleShare([]) });
+    expect(q.queryByTestId("summary-page-muscles")).toBeNull();
+    expect(q.queryByTestId("muscle-map")).toBeNull();
+  });
+
+  it("hides Volume by exercise for a bodyweight-only workout", () => {
+    const q = renderSummary({
+      model: buildWorkoutSummary(
+        workout([{ name: "Push-up", sets: [set(null, 20)] }]),
+        600,
+      ),
+    });
+    expect(q.queryByTestId("summary-page-volume")).toBeNull();
+  });
+
+  it("hides Trained together when nobody else was in the session", () => {
+    const q = renderSummary({
+      together: { self: "Mia", names: [], connection: "Online" },
+    });
+    expect(q.queryByTestId("summary-page-together")).toBeNull();
+  });
+
+  it("does not render the pager before it has a size", () => {
+    const q = renderWithTheme(
+      <SessionSummaryPresenter
+        model={model}
+        muscles={worked}
+        records={[]}
+        workoutsThisMonth={null}
+        rating={null}
+        {...handlers}
+      />,
     );
+    fireEvent(q.getByTestId("summary-pages"), "layout", {
+      nativeEvent: { layout: { width: 0, height: 0 } },
+    });
+    expect(q.queryByTestId("summary-carousel")).toBeNull();
+  });
+});
+
+describe("Totals", () => {
+  it("leads with volume, then sets, reps, duration, effort and the month", () => {
+    const q = renderSummary({ rating: 8, workoutsThisMonth: 9 });
+    expect(q.getByText("Workout complete")).toBeTruthy();
+    expect(q.getByText("Lower Body B · 23 Oct")).toBeTruthy();
+    expect(q.getByText("1,385")).toBeTruthy();
+    expect(q.getByText("kg")).toBeTruthy();
+    expect(q.getByText("3")).toBeTruthy();
+    expect(q.getByText("25")).toBeTruthy();
+    expect(q.getByText("52 min")).toBeTruthy();
+    expect(q.getByText("Effort 8/10 · Hard")).toBeTruthy();
+    expect(q.getByText("9 workouts this month")).toBeTruthy();
+  });
+
+  it("drops effort and the month count until they are known", () => {
+    const q = renderSummary();
+    expect(q.queryByTestId("summary-effort")).toBeNull();
+    expect(q.queryByText(/this month/)).toBeNull();
+  });
+
+  it("says workout in the singular", () => {
     expect(
-      getByText(
-        "You've completed 1 workout this month. Keep the momentum going!",
+      renderSummary({ workoutsThisMonth: 1 }).getByText("1 workout this month"),
+    ).toBeTruthy();
+  });
+
+  it("shows pounds for an imperial athlete", () => {
+    const q = renderSummary({ weightUnit: "lb" });
+    expect(q.getByText("3,053")).toBeTruthy();
+    expect(q.getAllByText("lb").length).toBeGreaterThan(0);
+  });
+
+  it("leads a cardio-only workout with distance", () => {
+    const run = buildWorkoutSummary(
+      workout([
+        {
+          name: "Run",
+          sets: [
+            set(null, null, { distanceMeters: 5200, durationSeconds: 1500 }),
+          ],
+        },
+      ]),
+      1500,
+    );
+    const q = renderSummary({ model: run, muscles: muscleShare([]) });
+    expect(q.getByText("5.2")).toBeTruthy();
+    expect(q.getByText("km")).toBeTruthy();
+    const miles = renderSummary({
+      model: run,
+      muscles: muscleShare([]),
+      weightUnit: "lb",
+    });
+    expect(miles.getByText("3.2")).toBeTruthy();
+    expect(miles.getByText("mi")).toBeTruthy();
+  });
+});
+
+describe("Muscles worked", () => {
+  it("labels the map with the top muscles and lists them with set counts", () => {
+    const q = renderSummary();
+    expect(
+      q.getByLabelText("Muscles worked: quads 44%, glutes 33%, hamstrings 22%"),
+    ).toBeTruthy();
+    expect(q.getByText("Quads · 2 sets")).toBeTruthy();
+    expect(q.getByText("Hamstrings · 1 set")).toBeTruthy();
+    // Glutes was only ever secondary: no set count.
+    expect(q.getByText("Glutes")).toBeTruthy();
+  });
+
+  it("shows fewer than three muscles when fewer were worked", () => {
+    const one: MuscleShare = muscleShare([
+      { primary: ["chest"], secondary: [], completedSets: 3 },
+    ]);
+    const q = renderSummary({ muscles: one });
+    expect(q.getByText("100%")).toBeTruthy();
+    expect(q.getByText("Chest · 3 sets")).toBeTruthy();
+  });
+});
+
+describe("Exercises and Volume", () => {
+  const many = buildWorkoutSummary(
+    workout(
+      Array.from({ length: 8 }, (_, i) => ({
+        name: `Exercise ${i + 1}`,
+        sets: [set(10 * (i + 1), 10), set(10 * (i + 1), 10)],
+      })),
+    ),
+    3120,
+  );
+
+  it("lists completed exercises with sets × reps", () => {
+    const q = renderSummary();
+    expect(q.getByText("23 Oct · 52 min")).toBeTruthy();
+    expect(q.getByText("01")).toBeTruthy();
+    expect(q.getByText("2×8")).toBeTruthy();
+    expect(q.getByText("1×10")).toBeTruthy();
+    expect(q.queryByText(/more · see Workout details/)).toBeNull();
+  });
+
+  it("shows six exercises and five volumes, the rest in Workout details", () => {
+    const q = renderSummary({ model: many });
+    expect(q.getByText("06")).toBeTruthy();
+    expect(q.queryByText("07")).toBeNull();
+    expect(q.getByText("+2 more · see Workout details")).toBeTruthy();
+    expect(q.getByText("+3 more · see Workout details")).toBeTruthy();
+    // Volume is largest first.
+    expect(q.getByText("1,600 kg")).toBeTruthy();
+    expect(q.queryByText("300 kg")).toBeNull();
+    fireEvent.press(q.getByText("+3 more · see Workout details"));
+    expect(handlers.onDetails).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("Personal records", () => {
+  it("uses the hero layout for one record", () => {
+    const q = renderSummary({ records: [record("Barbell Back Squat")] });
+    expect(q.getByText("New personal record")).toBeTruthy();
+    expect(q.getByText("65")).toBeTruthy();
+    expect(q.getByText("Max weight · was 62.5 kg")).toBeTruthy();
+    expect(q.getByLabelText("Personal records, page 5 of 5")).toBeTruthy();
+  });
+
+  it("omits 'was' when there is no previous value", () => {
+    const q = renderSummary({
+      records: [
+        record("Walking Lunge", {
+          recordType: "max_reps",
+          newValue: 12,
+          previousValue: null,
+        }),
+      ],
+    });
+    expect(q.getByText("12")).toBeTruthy();
+    expect(q.getByText("reps")).toBeTruthy();
+    expect(q.getByText("Max reps")).toBeTruthy();
+  });
+
+  it("lists two or three records without a more line", () => {
+    const q = renderSummary({
+      records: [
+        record("Barbell Back Squat"),
+        record("Glute Drive", { newValue: 70, previousValue: 65 }),
+      ],
+    });
+    expect(q.getByText("2 new personal records")).toBeTruthy();
+    expect(q.getByText("65 kg")).toBeTruthy();
+    expect(q.getByText("Max weight · was 65 kg")).toBeTruthy();
+    expect(q.queryByText(/more · see Workout details/)).toBeNull();
+  });
+
+  it("lists three of several and sends the rest to Workout details", () => {
+    const q = renderSummary({
+      records: [
+        record("Barbell Back Squat"),
+        record("Glute Drive", { newValue: 70, previousValue: 65 }),
+        record("Leg Extension", {
+          recordType: "1rm",
+          newValue: 63,
+          previousValue: 60,
+        }),
+        record("Walking Lunge", {
+          recordType: "max_reps",
+          newValue: 12,
+          previousValue: 10,
+        }),
+      ],
+    });
+    expect(q.getByText("4 new personal records")).toBeTruthy();
+    expect(q.getByText("1 rep max · was 60 kg")).toBeTruthy();
+    expect(q.queryByText("Walking Lunge")).toBeNull();
+    fireEvent.press(q.getByText("+1 more · see Workout details"));
+    expect(handlers.onDetails).toHaveBeenCalled();
+  });
+});
+
+describe("Trained together", () => {
+  it("names everyone else, the mode and the duration", () => {
+    const q = renderSummary({
+      together: {
+        self: "Mia",
+        names: ["Brad", "Tom", "Inés"],
+        connection: "Nearby",
+      },
+    });
+    expect(q.getByText("With Brad, Tom and Inés")).toBeTruthy();
+    expect(q.getByText("Lower Body B · Nearby · 52 min")).toBeTruthy();
+    expect(q.getByText("M")).toBeTruthy();
+    expect(q.getByText("I")).toBeTruthy();
+    expect(
+      q.getByText(
+        "Everyone saved their own workout. Only names are shared here.",
       ),
     ).toBeTruthy();
-
-    rerender(<SessionSummaryPresenter {...baseProps} workoutsThisMonth={7} />);
-    expect(
-      getByText(
-        "You've completed 7 workouts this month. Keep the momentum going!",
-      ),
-    ).toBeTruthy();
   });
 
-  it("subtitle falls back to 'Keep the momentum going!' pre-server (workoutsThisMonth=null)", () => {
-    const { getByText } = renderWithTheme(
-      <SessionSummaryPresenter {...baseProps} workoutsThisMonth={null} />,
-    );
-    expect(getByText("Keep the momentum going!")).toBeTruthy();
+  it("reads naturally with one partner", () => {
+    const q = renderSummary({
+      together: { self: "Mia", names: ["Brad"], connection: "Online" },
+    });
+    expect(q.getByText("With Brad")).toBeTruthy();
+    expect(q.getByText("Lower Body B · Online · 52 min")).toBeTruthy();
+  });
+});
+
+describe("navigation", () => {
+  it("moves with the dots and with a tap on the page, wrapping at the end", () => {
+    const q = renderSummary();
+    const selected = () =>
+      q
+        .queryAllByTestId(/^summary-dot-/)
+        .filter((d) => d.props.accessibilityState?.selected)
+        .map((d) => d.props.testID);
+    expect(selected()).toEqual(["summary-dot-totals"]);
+    fireEvent.press(q.getByTestId("summary-dot-volume"));
+    expect(selected()).toEqual(["summary-dot-volume"]);
+    fireEvent.press(q.getByTestId("summary-page-volume"));
+    expect(selected()).toEqual(["summary-dot-totals"]);
+    fireEvent.press(q.getByTestId("summary-page-totals"));
+    expect(selected()).toEqual(["summary-dot-muscles"]);
   });
 
-  it("Workouts this month tile shows an em-dash pre-server, the real count post-server", () => {
-    const { getByText, rerender, queryByText } = renderWithTheme(
-      <SessionSummaryPresenter {...baseProps} workoutsThisMonth={null} />,
-    );
-    expect(getByText("—")).toBeTruthy();
-
-    rerender(<SessionSummaryPresenter {...baseProps} workoutsThisMonth={12} />);
-    // Em-dash is replaced; "12" appears as the tile's value.
-    expect(queryByText("—")).toBeNull();
-    expect(getByText("12")).toBeTruthy();
+  it("opens on a chosen page, clamped to the pages there are", () => {
+    const q = renderSummary({ initialPage: 9 });
+    const dot = q.getByTestId("summary-dot-volume");
+    expect(dot.props.accessibilityState).toEqual({ selected: true });
   });
 
-  it("Total Volume tile renders the legacy formatter (tonnes when ≥ 1000kg)", () => {
-    const { getByText, rerender } = renderWithTheme(
-      <SessionSummaryPresenter {...baseProps} totalVolume={2500} />,
-    );
-    expect(getByText("2.5 t")).toBeTruthy();
-
-    rerender(<SessionSummaryPresenter {...baseProps} totalVolume={500} />);
-    expect(getByText("500 kg")).toBeTruthy();
-
-    rerender(<SessionSummaryPresenter {...baseProps} totalVolume={0} />);
-    expect(getByText("0 kg")).toBeTruthy();
-  });
-
-  it("shows cardio distance, time and optional environment metadata", () => {
-    const { getByText, getByTestId } = renderWithTheme(
-      <SessionSummaryPresenter
-        {...baseProps}
-        totalDistanceMeters={5_000}
-        durationSeconds={1_500}
-        hasCardioActivity
-        activityEnvironment="outdoor"
-        locationName="Victoria Park"
-      />,
-    );
-
-    expect(getByText("5.00 km")).toBeTruthy();
-    expect(getByTestId("summary-cardio-duration").props.children.join("")).toBe(
-      "Time 25:00",
-    );
-    expect(getByText("OUTDOOR · Victoria Park")).toBeTruthy();
-  });
-
-  it("PR section header is the legacy 'Personal Records Hit! 🏆'", () => {
-    const pr: SummaryPersonalRecord = {
-      exerciseId: "ex-bench",
-      exerciseName: "Bench Press",
-      recordType: "1rm",
-      newValue: 137.4,
-      previousValue: 120,
-    };
-    const { getByText } = renderWithTheme(
-      <SessionSummaryPresenter
-        {...baseProps}
-        recordsHit={1}
-        personalRecords={[pr]}
-      />,
-    );
-    expect(getByText("Personal Records Hit! 🏆")).toBeTruthy();
-  });
-
-  it("renders PR card with previous→new arrow + strikethrough when previousValue is set", () => {
-    const pr: SummaryPersonalRecord = {
-      exerciseId: "ex-bench",
-      exerciseName: "Bench Press",
-      recordType: "1rm",
-      newValue: 137.4,
-      previousValue: 120,
-    };
-    const { getByText } = renderWithTheme(
-      <SessionSummaryPresenter
-        {...baseProps}
-        recordsHit={1}
-        personalRecords={[pr]}
-      />,
-    );
-    expect(getByText("Bench Press")).toBeTruthy();
-    expect(getByText("1 Rep Max")).toBeTruthy();
-    expect(getByText("120.0 kg")).toBeTruthy();
-    expect(getByText("→")).toBeTruthy();
-    expect(getByText("137.4 kg")).toBeTruthy();
-  });
-
-  it("renders PR card without the arrow when previousValue is null (pre-server local prediction)", () => {
-    const pr: SummaryPersonalRecord = {
-      exerciseId: "ex-bench",
-      exerciseName: "Bench Press",
-      recordType: "1rm",
-      newValue: 137.4,
-      previousValue: null,
-    };
-    const { getByText, queryByText } = renderWithTheme(
-      <SessionSummaryPresenter
-        {...baseProps}
-        recordsHit={1}
-        personalRecords={[pr]}
-      />,
-    );
-    expect(getByText("137.4 kg")).toBeTruthy();
-    expect(queryByText("→")).toBeNull();
-  });
-
-  it("max_volume PR renders with kg suffix (Phase 3b broadened detection)", () => {
-    const pr: SummaryPersonalRecord = {
-      exerciseId: "ex-bench",
-      exerciseName: "Bench Press",
-      recordType: "max_volume",
-      newValue: 800,
-      previousValue: 600,
-    };
-    const { getByText } = renderWithTheme(
-      <SessionSummaryPresenter
-        {...baseProps}
-        recordsHit={1}
-        personalRecords={[pr]}
-      />,
-    );
-    expect(getByText("Max Volume")).toBeTruthy();
-    expect(getByText("800.0 kg")).toBeTruthy();
-    expect(getByText("600.0 kg")).toBeTruthy();
-  });
-
-  it("max_reps PR renders with reps suffix (dimensionless count)", () => {
-    const pr: SummaryPersonalRecord = {
-      exerciseId: "ex-row",
-      exerciseName: "Row",
-      recordType: "max_reps",
-      newValue: 18,
-      previousValue: null,
-    };
-    const { getByText, queryByText } = renderWithTheme(
-      <SessionSummaryPresenter
-        {...baseProps}
-        recordsHit={1}
-        personalRecords={[pr]}
-      />,
-    );
-    expect(getByText("Max Reps")).toBeTruthy();
-    expect(getByText("18 reps")).toBeTruthy();
-    expect(queryByText("18 kg")).toBeNull();
-  });
-
-  it("best_time + longest_distance PRs render with seconds + metres units (Inspector Brad PR #62 regression — no kg fallthrough)", () => {
-    // Pre-fix, `formatPRValue` had an "everything-else → kg" branch,
-    // so a 45-second time PR rendered as "45.0 kg". Whitelist-style
-    // switch with no default fixes that. Server PR detection
-    // doesn't emit these record types today, but the type union
-    // accepts them and a future enum migration could unblock the
-    // server side — the presenter is now honest regardless.
-    const timePR: SummaryPersonalRecord = {
-      exerciseId: "ex-sprint",
-      exerciseName: "100m Sprint",
-      recordType: "best_time",
-      newValue: 12.4,
-      previousValue: 14.1,
-    };
-    const distancePR: SummaryPersonalRecord = {
-      exerciseId: "ex-run",
-      exerciseName: "Run",
-      recordType: "longest_distance",
-      newValue: 5200,
-      previousValue: 4800,
-    };
-    const { getByText, queryByText, rerender } = renderWithTheme(
-      <SessionSummaryPresenter
-        {...baseProps}
-        recordsHit={1}
-        personalRecords={[timePR]}
-      />,
-    );
-    expect(getByText("12.4 s")).toBeTruthy();
-    expect(getByText("14.1 s")).toBeTruthy();
-    expect(queryByText("12.4 kg")).toBeNull();
-    expect(queryByText("14.1 kg")).toBeNull();
-
-    rerender(
-      <SessionSummaryPresenter
-        {...baseProps}
-        recordsHit={1}
-        personalRecords={[distancePR]}
-      />,
-    );
-    expect(getByText("5200.0 m")).toBeTruthy();
-    expect(getByText("4800.0 m")).toBeTruthy();
-    expect(queryByText("5200.0 kg")).toBeNull();
-  });
-
-  it("hides the PR section entirely when personalRecords is empty", () => {
-    const { queryByTestId } = renderWithTheme(
-      <SessionSummaryPresenter {...baseProps} recordsHit={0} />,
-    );
-    expect(queryByTestId("summary-pr-section")).toBeNull();
-  });
-
-  it("Continue button always reads 'Continue' (no View Achievements gate in V2)", () => {
-    const { getByText } = renderWithTheme(
-      <SessionSummaryPresenter {...baseProps} />,
-    );
-    expect(getByText("Continue")).toBeTruthy();
-  });
-
-  it("weightUnit='lb' converts the Total Volume tile + weight-type PR values", () => {
-    const pr: SummaryPersonalRecord = {
-      exerciseId: "ex-bench",
-      exerciseName: "Bench Press",
-      recordType: "1rm",
-      newValue: 100,
-      previousValue: null,
-    };
-    const { getByText } = renderWithTheme(
-      <SessionSummaryPresenter
-        {...baseProps}
-        totalVolume={500}
-        recordsHit={1}
-        personalRecords={[pr]}
-        weightUnit="lb"
-      />,
-    );
-    // 500 kg -> 1102.3 lb rounded to a whole number by formatVolume's lb branch.
-    expect(getByText("1,102 lb")).toBeTruthy();
-    // 100 kg -> 220.5 lb via formatWeight (1dp).
-    expect(getByText("220.5 lb")).toBeTruthy();
-  });
-
-  it("weightUnit='lb' does not affect max_reps/best_time/longest_distance PR units", () => {
-    const pr: SummaryPersonalRecord = {
-      exerciseId: "ex-row",
-      exerciseName: "Row",
-      recordType: "max_reps",
-      newValue: 18,
-      previousValue: null,
-    };
-    const { getByText } = renderWithTheme(
-      <SessionSummaryPresenter
-        {...baseProps}
-        recordsHit={1}
-        personalRecords={[pr]}
-        weightUnit="lb"
-      />,
-    );
-    expect(getByText("18 reps")).toBeTruthy();
+  it("wires close, details and continue", () => {
+    const q = renderSummary();
+    fireEvent.press(q.getByTestId("session-summary-close"));
+    fireEvent.press(q.getByTestId("summary-details"));
+    fireEvent.press(q.getByTestId("summary-continue"));
+    expect(handlers.onClose).toHaveBeenCalledTimes(1);
+    expect(handlers.onDetails).toHaveBeenCalledTimes(1);
+    expect(handlers.onContinue).toHaveBeenCalledTimes(1);
   });
 });

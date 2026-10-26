@@ -38,6 +38,17 @@ import {
   togetherPartnerAccess,
 } from "@/ui/presenters/TogetherPartnerPresenter";
 import { useTogetherPartnerOutbox } from "@/ui/hooks/useTogetherPartnerOutbox";
+import { useTogetherToast } from "@/ui/hooks/useTogetherToast";
+import {
+  ENDED_COPY,
+  LEAVE_FAILED_COPY,
+  TogetherLeaveSheet,
+  hostEndedCopy,
+  leftCopy,
+  loggedSets,
+  unsentFor,
+} from "@/ui/presenters/TogetherLeaveSheet";
+import { TogetherToast } from "@/ui/presenters/TogetherToast";
 export function cloudSharedView(
   state: TogetherCloudState,
   accountId: string,
@@ -190,6 +201,9 @@ export function TogetherCloudContainer(p: {
     [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false),
     [viewing, setViewing] = useState<string | null>(null);
+  /** Canvas row 3: the strip's Leave or End sheet. */
+  const [leaveOpen, setLeaveOpen] = useState(false);
+  const [toast, showToast] = useTogetherToast();
   const [, requestCameraPermission] = useCameraPermissions();
   const [scanning, setScanning] = useState(false);
   const scanned = useRef(false);
@@ -218,6 +232,7 @@ export function TogetherCloudContainer(p: {
     setInviteView(false);
     setScanning(false);
     setViewing(null);
+    setLeaveOpen(false);
     return () => {
       lifetime.current++;
     };
@@ -532,6 +547,76 @@ export function TogetherCloudContainer(p: {
   };
   const hosting = state.snapshot?.hostId === p.accountId;
   const members = state.snapshot?.participants.length ?? 0;
+  // Once sharing stops the snapshot lists only this athlete, so the host's
+  // name is remembered from when it was live.
+  const hostNameSeen = useRef<{ session?: string; name?: string }>({});
+  const hostParticipant = state.snapshot?.participants.find(
+    (x) => x.userId === state.snapshot?.hostId,
+  );
+  if (state.snapshot && hostParticipant?.displayName)
+    hostNameSeen.current = {
+      session: state.snapshot.sessionId,
+      name: hostParticipant.displayName,
+    };
+  const hostName =
+    hostParticipant?.displayName ??
+    (hostNameSeen.current.session === state.snapshot?.sessionId
+      ? hostNameSeen.current.name
+      : undefined) ??
+    "the host";
+  // Canvas row 3: after leaving, or once the host has ended it, this is an
+  // ordinary solo workout with no Together chrome.
+  const soloAgain =
+    !!state.snapshot &&
+    !state.snapshot.sharingActive &&
+    state.snapshot.continuation === "solo";
+  // A partner hears once when the host ends the session (it closes with
+  // their own workout still running); leaving yourself says so on its own.
+  const leftSession = useRef<string | null>(null);
+  const liveSeen = useRef<{ session?: string; live: boolean }>({
+    live: false,
+  });
+  useEffect(() => {
+    const s = state.snapshot;
+    if (!s) return;
+    if (liveSeen.current.session !== s.sessionId) {
+      liveSeen.current = { session: s.sessionId, live: s.sharingActive };
+      return;
+    }
+    if (s.sharingActive) {
+      liveSeen.current.live = true;
+      return;
+    }
+    if (!liveSeen.current.live) return;
+    liveSeen.current.live = false;
+    if (
+      s.state === "closed" &&
+      s.continuation === "solo" &&
+      s.hostId !== p.accountId &&
+      leftSession.current !== s.sessionId
+    )
+      showToast(hostEndedCopy(hostName));
+  });
+  /** Leave (guest) or End (host): stop sharing and carry on solo. */
+  const leave = () => {
+    const s = state.snapshot;
+    if (!s || !isCurrent()) return;
+    const host = s.hostId === p.accountId;
+    const logged = loggedSets(p.getWorkout());
+    const name = hostName;
+    setLeaveOpen(false);
+    leftSession.current = s.sessionId;
+    void (async () => {
+      if (!p.cloud.stopSharing) throw new Error("stop-sharing-unavailable");
+      await p.cloud.stopSharing();
+      if (!isCurrent()) return;
+      setViewing(null);
+      showToast(host ? ENDED_COPY : leftCopy(name, logged));
+    })().catch(() => {
+      leftSession.current = null;
+      if (isCurrent()) showToast(LEAVE_FAILED_COPY);
+    });
+  };
   const status =
     state.phase === "reconnecting"
       ? {
@@ -552,7 +637,7 @@ export function TogetherCloudContainer(p: {
   // Your own avatar is the only way back, so a partner view never outlives
   // the strip (snapshot cleared) or the partner (they left the session).
   const partnerView =
-    viewing && partner(viewing) ? (
+    !soloAgain && viewing && partner(viewing) ? (
       <TogetherPartnerPresenter
         key={viewing}
         snapshot={shared}
@@ -571,7 +656,7 @@ export function TogetherCloudContainer(p: {
         outbox={partnerOutbox(viewing)}
       />
     ) : undefined;
-  const row = state.snapshot ? (
+  const row = soloAgain ? null : state.snapshot ? (
     <>
       <TogetherWorkoutRow
         members={state.snapshot.participants.map((x, i) => ({
@@ -607,10 +692,7 @@ export function TogetherCloudContainer(p: {
           setVisible(true);
         }}
         endLabel={hosting ? "End" : "Leave"}
-        onEnd={() => {
-          setInviteView(false);
-          setVisible(true);
-        }}
+        onEnd={() => setLeaveOpen(true)}
       />
       {hosting &&
         state.snapshot.sharingActive &&
@@ -649,6 +731,22 @@ export function TogetherCloudContainer(p: {
           {partnerView}
         </>
       )}
+      <TogetherLeaveSheet
+        visible={leaveOpen && !soloAgain && !!state.snapshot}
+        role={hosting ? "host" : "guest"}
+        hostName={hostName}
+        others={(state.snapshot?.participants ?? [])
+          .filter((x) => x.userId !== p.accountId)
+          .map((x, i) => x.displayName ?? `Athlete ${i + 1}`)}
+        loggedSets={loggedSets(p.getWorkout())}
+        unsent={unsentFor(
+          partnerOutbox.unsent(),
+          (id) => partner(id)?.displayName ?? "your partner",
+        )}
+        onStay={() => setLeaveOpen(false)}
+        onConfirm={leave}
+      />
+      <TogetherToast message={toast} />
       <BottomSheet
         visible={visible}
         onClose={() => {
