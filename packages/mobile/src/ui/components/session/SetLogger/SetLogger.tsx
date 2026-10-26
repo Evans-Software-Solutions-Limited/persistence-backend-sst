@@ -32,9 +32,23 @@ import {
   parseDurationInput,
 } from "@/shared/utils/activityUnits";
 
+/** Delivery of a set logged for someone else (PER-60 partner view). */
+export type SetSyncState = "saved" | "sending" | "notsent" | "none";
+
+const SYNC_DOT: Record<SetSyncState, { color: string; label: string }> = {
+  saved: { color: color.$success, label: "Saved" },
+  sending: { color: color.$primary, label: "Sending" },
+  notsent: { color: color.$ember, label: "Not sent" },
+  none: { color: color.$surface3, label: "Not logged" },
+};
+
 export type SetLoggerProps = {
   readOnly?: boolean;
   hideRemove?: boolean;
+  /** Draws the canvas status dot beside the set number. Absent on your own sets. */
+  syncState?: SetSyncState;
+  /** Called when reps or weight loses focus. */
+  onCommit?: () => void;
   set: ExerciseSet;
   /** 1-based display position. */
   setNumber: number;
@@ -156,7 +170,22 @@ export function SetLogger(props: SetLoggerProps) {
 
   return (
     <View style={styles.row} testID={`set-logger-${props.set.id}`}>
-      <Text style={styles.setNumber}>{props.setNumber}</Text>
+      {props.syncState ? (
+        <View style={[styles.setNumber, styles.setNumberWithDot]}>
+          <View
+            style={[
+              styles.syncDot,
+              { backgroundColor: SYNC_DOT[props.syncState].color },
+            ]}
+            accessibilityRole="image"
+            accessibilityLabel={SYNC_DOT[props.syncState].label}
+            testID={`set-logger-sync-${props.syncState}`}
+          />
+          <Text style={styles.setNumberText}>{props.setNumber}</Text>
+        </View>
+      ) : (
+        <Text style={styles.setNumber}>{props.setNumber}</Text>
+      )}
 
       {props.previous ? (
         <TouchableOpacity
@@ -197,6 +226,7 @@ export function SetLogger(props: SetLoggerProps) {
         }}
         onBlur={() => {
           durationInputFocusedRef.current = false;
+          props.onCommit?.();
           if (trackingMode === "cardio") {
             setDuration(formatDurationInput(props.set.durationSeconds));
           }
@@ -234,6 +264,7 @@ export function SetLogger(props: SetLoggerProps) {
         }}
         onBlur={() => {
           distanceInputFocusedRef.current = false;
+          props.onCommit?.();
           if (trackingMode === "strength") return;
           if (props.set.distanceMeters == null) {
             setDistance("");

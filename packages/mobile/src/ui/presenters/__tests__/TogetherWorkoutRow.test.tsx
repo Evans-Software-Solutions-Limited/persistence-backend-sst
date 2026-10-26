@@ -1,7 +1,7 @@
 import React from "react";
 import { fireEvent } from "@testing-library/react-native";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
-import { TogetherWorkoutRow } from "../TogetherWorkoutRow";
+import { TogetherWorkoutRow, togetherMemberTone } from "../TogetherWorkoutRow";
 import { TogetherStartRow } from "../TogetherStartRow";
 const members = [
   { userId: "me", name: "Brad Evans" },
@@ -25,10 +25,10 @@ it("renders avatars as tabs, the status line, Invite, End and the settings cog (
   expect(r.getByText("MO")).toBeTruthy();
   expect(r.getByText("TV")).toBeTruthy();
   expect(r.getByText(p.status)).toBeTruthy();
-  const mine = r.getByLabelText("My workout");
+  const mine = r.getByLabelText("Show my workout");
   expect(mine.props.accessibilityRole).toBe("tab");
   expect(mine.props.accessibilityState.selected).toBe(true);
-  fireEvent.press(r.getByLabelText("Mia Osei’s workout"));
+  fireEvent.press(r.getByLabelText("Show Mia Osei’s workout"));
   expect(p.onSelect).toHaveBeenCalledWith("mia");
   fireEvent.press(r.getByText("Invite"));
   expect(p.onInvite).toHaveBeenCalledTimes(1);
@@ -55,11 +55,12 @@ it("shows Leave for a guest, a live dot when in sync, and no Invite without a ha
   expect(r.queryByText("Invite")).toBeNull();
   expect(r.queryByText("End")).toBeNull();
   expect(
-    r.getByLabelText("Mia Osei’s workout").props.accessibilityState.selected,
+    r.getByLabelText("Show Mia Osei’s workout").props.accessibilityState
+      .selected,
   ).toBe(true);
-  expect(r.getByLabelText("My workout").props.accessibilityState.selected).toBe(
-    false,
-  );
+  expect(
+    r.getByLabelText("Show my workout").props.accessibilityState.selected,
+  ).toBe(false);
 });
 it("the solo strip names the kept sets and Start opens the sheet", () => {
   const onStart = jest.fn();
@@ -70,4 +71,24 @@ it("the solo strip names the kept sets and Start opens the sheet", () => {
   expect(r.getByText("Train together")).toBeTruthy();
   fireEvent.press(r.getByTestId("together-start"));
   expect(onStart).toHaveBeenCalledTimes(1);
+});
+it("partner tones follow roster order without me; tabs are 44pt targets (row 2)", () => {
+  expect(togetherMemberTone(members, "me", "me")).toBe("primary");
+  expect(togetherMemberTone(members, "me", "mia")).toBe("info");
+  expect(togetherMemberTone(members, "me", "tom")).toBe("success");
+  expect(togetherMemberTone(members, "mia", "me")).toBe("info");
+  expect(togetherMemberTone(members, "me", "gone")).toBe("info");
+  const r = renderWithTheme(
+    <TogetherWorkoutRow
+      members={members}
+      selectedId="me"
+      accountId="me"
+      status="In sync · 3 training"
+      onSelect={() => {}}
+      onSettings={() => {}}
+      onEnd={() => {}}
+    />,
+  );
+  // 26pt face + 9pt slop each side.
+  expect(r.getByLabelText("Show Tom Vance’s workout").props.hitSlop).toBe(9);
 });

@@ -5,7 +5,10 @@ import { Alert, AppState, Share, Platform } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { TogetherInvitationQr } from "@/ui/presenters/TogetherInvitationQr";
 import { TogetherInvitePresenter } from "@/ui/presenters/TogetherInvitePresenter";
-import { TogetherWorkoutRow } from "@/ui/presenters/TogetherWorkoutRow";
+import {
+  TogetherWorkoutRow,
+  togetherMemberTone,
+} from "@/ui/presenters/TogetherWorkoutRow";
 import { TogetherJoinRequestBar } from "@/ui/presenters/TogetherJoinRequestBar";
 import {
   useEffect,
@@ -30,7 +33,11 @@ import type {
 import { TogetherCloudPresenter } from "@/ui/presenters/TogetherCloudPresenter";
 import { useTogetherSettings } from "@/state/together-settings";
 import { TogetherSharingPresenter } from "@/ui/presenters/TogetherSharingPresenter";
-import { TogetherPartnerPresenter } from "@/ui/presenters/TogetherPartnerPresenter";
+import {
+  TogetherPartnerPresenter,
+  togetherPartnerAccess,
+} from "@/ui/presenters/TogetherPartnerPresenter";
+import { useTogetherPartnerOutbox } from "@/ui/hooks/useTogetherPartnerOutbox";
 export function cloudSharedView(
   state: TogetherCloudState,
   accountId: string,
@@ -59,7 +66,9 @@ export function cloudSharedView(
       grants.push({
         ownerId: p.userId,
         recipientId: accountId,
-        version: p.ownRevision,
+        // Moves only when the partner changes fill-in, not on every set they
+        // (or we) log, so it marks a permission change (PER-60).
+        version: p.delegationGeneration,
         consent: {
           numbers: p.numbersAvailable,
           prev: p.previousValuesAvailable,
@@ -158,7 +167,8 @@ export function TogetherCloudContainer(p: {
   onLocal(): void;
   onRestorePersonal?(draft: WorkoutSession): void;
   onDiscardWorkout?(): void;
-  children?: (row: ReactNode) => ReactNode;
+  /** `partnerView` is set while a partner's avatar is selected on the strip. */
+  children?: (row: ReactNode, partnerView?: ReactNode) => ReactNode;
 }) {
   const rawState = useSyncExternalStore(
     (l) => p.cloud.subscribe(l),
@@ -393,6 +403,35 @@ export function TogetherCloudContainer(p: {
     };
   }, [resumeId, attachedId, p.cloud]);
   const shared = cloudSharedView(state, p.accountId);
+  const partner = (id: string) =>
+    state.snapshot?.participants.find((x) => x.userId === id);
+  const present = viewing ? !!partner(viewing) : true;
+  useEffect(() => {
+    if (!present) setViewing(null);
+  }, [present]);
+  // Fill-in for partners outlives their view (see useTogetherPartnerOutbox).
+  const partnerOutbox = useTogetherPartnerOutbox({
+    snapshot: shared,
+    accountId: p.accountId,
+    sessionId: state.snapshot?.sessionId,
+    canLog: (id) => !!partner(id)?.allowPartnerLogging,
+    send: async (id, operation, observedRevision) => {
+      const owner = partner(id);
+      if (
+        !isCurrent() ||
+        !owner ||
+        !owner.numbersAvailable ||
+        !owner.allowPartnerLogging
+      )
+        throw new Error("permission-changed");
+      await p.cloud.command({
+        target: { kind: "execution", athleteId: id },
+        expectedVersion: observedRevision,
+        delegationGeneration: owner.delegationGeneration,
+        operation,
+      });
+    },
+  });
   const own = state.snapshot?.participants.find(
     (x) => x.userId === p.accountId,
   );
@@ -510,6 +549,28 @@ export function TogetherCloudContainer(p: {
               status: `Waiting for people · ${members} of 4`,
               tone: "muted" as const,
             };
+  // Your own avatar is the only way back, so a partner view never outlives
+  // the strip (snapshot cleared) or the partner (they left the session).
+  const partnerView =
+    viewing && partner(viewing) ? (
+      <TogetherPartnerPresenter
+        key={viewing}
+        snapshot={shared}
+        ownerId={viewing}
+        accountId={p.accountId}
+        exerciseNames={names}
+        tone={togetherMemberTone(
+          state.snapshot?.participants ?? [],
+          p.accountId,
+          viewing,
+        )}
+        editable={
+          !!partner(viewing)?.allowPartnerLogging &&
+          togetherPartnerAccess(shared, viewing, p.accountId).editable
+        }
+        outbox={partnerOutbox(viewing)}
+      />
+    ) : undefined;
   const row = state.snapshot ? (
     <>
       <TogetherWorkoutRow
@@ -580,36 +641,13 @@ export function TogetherCloudContainer(p: {
   );
   return (
     <>
-      {viewing ? (
-        <TogetherPartnerPresenter
-          togetherRow={row}
-          key={viewing}
-          snapshot={shared}
-          ownerId={viewing}
-          accountId={p.accountId}
-          exerciseNames={names}
-          onMine={() => setViewing(null)}
-          onOperation={async (operation, observedRevision) => {
-            const owner = state.snapshot?.participants.find(
-              (x) => x.userId === viewing,
-            );
-            if (
-              !isCurrent() ||
-              !owner ||
-              !owner.numbersAvailable ||
-              !owner.allowPartnerLogging
-            )
-              throw new Error("permission-changed");
-            await p.cloud.command({
-              target: { kind: "execution", athleteId: viewing },
-              expectedVersion: observedRevision,
-              delegationGeneration: owner.delegationGeneration,
-              operation,
-            });
-          }}
-        />
+      {p.children ? (
+        p.children(row, partnerView)
       ) : (
-        (p.children?.(row) ?? row)
+        <>
+          {row}
+          {partnerView}
+        </>
       )}
       <BottomSheet
         visible={visible}

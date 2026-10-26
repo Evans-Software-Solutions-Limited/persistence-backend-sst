@@ -1,5 +1,132 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-24 — Together UX pass PR 2: partner view (PER-60, branch `claude/per-60-together-partner-view`)
+
+Second of four UI PRs ([canvas](https://claude.ai/artifact/VBc4WTCmYuT5uJ1V6GyqSM)
+row 2, `Partner.dc.html`; brief and plan on
+[PER-60](https://linear.app/evans-software-solutions/issue/PER-60), 24 Oct).
+Mobile only, no backend change.
+
+**What changed.** The strip avatars are the tabs between your workout and
+each partner's ("Show my workout" / "Show <name>’s workout", selected state,
+26 pt faces with 9 pt hit slop = 44 pt). A partner's workout no longer
+replaces the screen: `TogetherLobbyContainer` / `TogetherCloudContainer`
+call `children(row, partnerView)` and `ActiveSessionPresenter` swaps its
+list for `partnerView` (same `SessionHeader` and strip, no Finish button),
+so your own avatar is the only way back. `TogetherPartnerPresenter` is
+rebuilt on `SessionExerciseCard` + `SetLogger`: per plan exercise the logged
+sets, then an empty row for every planned set (`targetSets`), plus rows the
+viewer adds; exercises outside the plan are appended. Fill-in on
+(`togetherPartnerAccess`: numbers grant + fill-in grant + a live revision;
+Online also checks `allowPartnerLogging`): rows are editable at once and a
+set is sent (`upsertSet`, against the shown revision) when reps and kg are
+both filled and a field blurs, or Prev is tapped; drafts drop when the
+logged values or the grant version change. Partner rows carry the canvas
+status dot (saved · sending · not sent · not logged). Numbers private: the
+canvas card and per-exercise progress bars in the partner's ring colour.
+Info bar under the strip on every partner view (`$infoDim` / `$infoBorder`
+tokens added). New optional props, unused by the solo path:
+`SessionExerciseCard` `partner` / `readOnly` / `caption` /
+`syncStateBySetId` / `onCommitSet` (and `onTapExercise` optional);
+`SetLogger` `syncState` / `onCommit`. The Log-for / Mine / Save set for /
+Add set for / Back to my workout code and its tests are gone.
+
+**Canvas differences (listed on PER-60):** copy uses names, not the canvas's
+"her"/"He"; no delete × on a partner's set (Nearby delegation accepts
+`upsertSet` only); no rest button on a partner's exercise; status dots on
+partner rows only (own rows unchanged); the caption is "N sets" (the shared
+plan has no rep range); a partner without a display name reads "Training
+partner" in the bar while the Online strip says "Athlete N".
+
+**Verified.** Mobile Jest 643 suites / 8,601 tests, coverage
+96.15 / 92.07 / 96.02 / 97.56 (gate 90); `TogetherPartnerPresenter` 98.4 %
+statements, `SessionExerciseCard` / `SetLogger` 100 %. `bun run typecheck`
+clean, `expo lint` 0 errors, prettier clean. Presenter tests cover own view
+(ActiveSessionPresenter swap), partner editable, read-only with numbers,
+private, no previous values, planned-only rows, sending / not sent / retry,
+Add set, revocation mid-edit. Container tests (Nearby and Online): select a
+partner and return by your own avatar, edit a partner's planned set, refusal
+and locked rows when fill-in is revoked mid-view. Screenshots in
+`specs/milestones/TRAIN-TOGETHER/evidence/ui-2026-10-24-per60-pr2/`: app
+(PR 1 harness, 440 × 920 dark, 58 pt band) next to canvas crops (the
+artboard template expanded statically and shot with headless Chrome, since
+the canvas page needs a claude.ai sign-in) and the v2 screen from main.
+Phone 3 (Mia · added sets, sending / not-sent dots) is interaction state:
+covered by tests, no screenshot.
+
+Inspector Brad's sweep of 487378a (3 leads, all fixed): Nearby
+`requestDelegatedSet` resolves once the intent is published, and the owner
+rejects it later if its revision moved on, so a quick second set could show
+a green Saved dot for a value the partner never got. A partner set is now
+"Sending" until the projection echoes that set id with the sent values,
+and "Not sent" when the revision advances without it; only one set per
+partner is in flight, the rest queue and go out against the revision after
+the echo. A correction typed while a set was sending was dropped when the
+echo replaced the draft; the draft is now re-based on the echo and its
+queued commit sent next. Empty rows always took the first pool ids, so a
+partner logging their own set unmounted the row being typed into; rows with
+a draft or a delivery state keep their place and an untouched row goes
+instead (row ids are also made unique if `randomUUID` ever repeats). Mobile
+Jest after the fixes: 643 suites / 8,605 tests, coverage
+96.14 / 92.08 / 96.01 / 97.55. Second sweep of 28211ee (2 leads, both fixed):
+Online's partner grant `version` was the partner's `ownRevision`, so every
+echo (ours included) changed it and drafts bound to it vanished: a queued
+set or a correction was silently dropped. Drafts no longer carry the grant
+version (they are cleared when fill-in is lost) and Online's partner grant
+version is `delegationGeneration`. A Nearby intent the owner drops without
+moving its revision (grant version mismatch, failed consume) left the set
+Sending and blocked the queue; a set in flight now ends Not sent when the
+grant version changes or after `PARTNER_SET_TIMEOUT_MS` (15 s), and a late
+echo of exactly the sent values turns it Saved. Mobile Jest 643 / 8,609,
+coverage 96.15 / 92.08 / 96.02 / 97.56. Third sweep of 555997b (4 leads, all fixed): a
+queued set died with the partner view when the viewer tapped back to their
+own workout (the queue lived in the presenter); the delivery engine
+(drafts, queue, in-flight set, timeout, failed sends, added rows, row ids)
+is now `useTogetherPartnerOutbox`, owned by the Lobby and Cloud containers
+for every partner, so the presenter is pure and sets keep going across tab
+switches (reset on an account change). A send refused on a network error
+kept no sent values, so an Online outbox retry that landed stayed Not sent;
+it now records them like the timeout. A draft that landed as typed stayed
+hidden and could resurface if the partner removed or reverted the set; it
+is deleted on the echo. ADD SET counted toward `targetSets`, so a partner
+logged past the plan cost a dead tap; added rows now go on top of what is
+on screen. Mobile Jest 643 / 8,614, coverage 96.14 / 92.05 / 96.01 / 97.55. Fourth sweep of 53f8e3a (3 leads, all fixed): a correction to a logged
+set failed as soon as any unrelated snapshot change ran the echo check
+(the old values still showing is normal before it lands), then the next
+queued set went out against the same revision; only a revision move, a
+grant change or the timeout end a send now. Every blur commits, so a row
+with only reps queued, showed Sending and cleared an earlier Not sent line;
+incomplete rows are not queued. Partner state outlived its session; the
+outbox now resets when the snapshot goes away or the account or session id
+changes. Mobile Jest 643 / 8,617, coverage 96.14 / 92.06 / 96.01 / 97.56. Fifth sweep of d0a1a6d (3 leads, all fixed): an Online reconnect hides
+every partner's grant and numbers, which the outbox read as fill-in revoked,
+deleting drafts and failing queued sets; drafts now clear only when the
+partner's grant is in view and fill-in is off, and while their data is
+hidden the queue waits (the in-flight set keeps its timeout). The error
+line is now derived from any row showing Not sent, so a late echo that
+clears the last one clears the line. While fill-in is on, a Not sent dot
+whose typed values are no longer shown (the partner changed that set
+since) is dropped. Mobile Jest 643 / 8,620, coverage
+96.15 / 92.07 / 96.02 / 97.56. Sixth sweep of cec600e (1 lead, fixed):
+a Nearby consent event purges the partner's projection before the new one
+arrives, so for one snapshot the grant was in view with no projection and
+read as revoked, wiping drafts and failing queued sets. Revocation now
+follows the grant itself (numbers or fill-in off, or the container's gate),
+not whether the projection has landed. Mobile Jest 643 / 8,621. Seventh
+sweep of b4356d6 (2 leads, both fixed): the Online partner view could
+outlive the strip (snapshot cleared after a failed resume) or the partner
+(they left), leaving no avatar to get back to your own workout or Finish;
+it now renders only while that partner is in the snapshot and the
+selection resets when they are gone. A focus-and-blur with nothing typed
+queued the row and showed Sending; a commit without a draft is ignored.
+Mobile Jest 643 / 8,623, coverage 96.15 / 92.07 / 96.02 / 97.56. Eighth sweep of 76d3d11 (1 lead, fixed): Online clears its
+snapshot on any AppState change away from active (a notification shade
+swipe), so the outbox's session reset fired twice and dropped drafts and
+queued sets inside the same session; it now resets only on an account
+change or a different non-empty session id. Mobile Jest 643 / 8,625.
+
+**Not verified.** Nothing on a device or simulator.
+
 ### 2026-10-23 — Together UX pass PR 1: join, hub and create (PER-60, branch `claude/per-60-together-join-hub-create`)
 
 First of four UI PRs implementing the signed-off journey design

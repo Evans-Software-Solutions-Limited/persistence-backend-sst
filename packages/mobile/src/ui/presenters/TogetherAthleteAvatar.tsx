@@ -22,6 +22,10 @@ const RING: Record<TogetherAvatarTone, string> = {
   neutral: color.$border2,
 };
 
+export function togetherToneColor(tone: TogetherAvatarTone): string {
+  return RING[tone];
+}
+
 /** Canvas `.sa` / `.av` initials: 10pt at 22, 11pt at 26–28, 13pt at 36, a third of the size above that. */
 export function togetherInitialsSize(size: number): number {
   if (size <= 22) return 10;

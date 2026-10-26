@@ -2,13 +2,30 @@ import { Text, View } from "@tamagui/core";
 import {
   TogetherAthleteAvatar,
   TOGETHER_PARTNER_TONES,
+  type TogetherAvatarTone,
 } from "./TogetherAthleteAvatar";
 import { TogetherPill } from "./TogetherPill";
 import { IconSettings, iconDefaults } from "@/ui/components/icons";
 
+/** Me is primary; partners take info, success and gold in roster order. */
+export function togetherMemberTone(
+  members: readonly { userId: string }[],
+  accountId: string,
+  userId: string,
+): TogetherAvatarTone {
+  if (userId === accountId) return "primary";
+  const seat = members
+    .filter((m) => m.userId !== accountId)
+    .findIndex((m) => m.userId === userId);
+  return TOGETHER_PARTNER_TONES[
+    Math.max(0, seat) % TOGETHER_PARTNER_TONES.length
+  ]!;
+}
+
 /**
  * The slim Together strip above the active workout (canvas rows 1b, 2, 3):
- * avatars · status · Invite (host) · End or Leave · settings cog.
+ * avatars · status · Invite (host) · End or Leave · settings cog. The
+ * avatars are the tabs between your workout and each partner's (row 2).
  */
 export function TogetherWorkoutRow(p: {
   members: readonly { userId: string; name: string }[];
@@ -24,7 +41,6 @@ export function TogetherWorkoutRow(p: {
   endLabel?: string;
 }) {
   const me = p.accountId ?? p.selectedId;
-  let seat = 0;
   const statusColor =
     p.tone === "live" ? "$success" : p.tone === "warn" ? "$ember" : "$text2";
   return (
@@ -49,17 +65,16 @@ export function TogetherWorkoutRow(p: {
         >
           {p.members.map((m) => {
             const mine = m.userId === me;
-            const tone = mine
-              ? "primary"
-              : TOGETHER_PARTNER_TONES[seat++ % TOGETHER_PARTNER_TONES.length];
             return (
               <TogetherAthleteAvatar
                 key={m.userId}
                 name={m.name}
-                tone={tone}
+                tone={togetherMemberTone(p.members, me, m.userId)}
                 selected={m.userId === p.selectedId}
                 accessibilityRole="tab"
-                accessibilityLabel={mine ? "My workout" : `${m.name}’s workout`}
+                accessibilityLabel={
+                  mine ? "Show my workout" : `Show ${m.name}’s workout`
+                }
                 onPress={() => p.onSelect(m.userId)}
               />
             );

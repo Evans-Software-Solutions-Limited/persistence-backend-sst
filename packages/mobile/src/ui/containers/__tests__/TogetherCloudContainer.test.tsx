@@ -4,7 +4,7 @@ import { TogetherCloudController } from "../../../adapters/together/cloudSession
 import { fail } from "@/shared/errors/result";
 import React from "react";
 import QRCode from "react-native-qrcode-svg";
-import { Alert, AppState, Share } from "react-native";
+import { Alert, AppState, Share, Text } from "react-native";
 import { act, fireEvent, waitFor } from "@testing-library/react-native";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 import {
@@ -354,23 +354,240 @@ it("keeps partner values scoped and hides all private state while reconnecting",
 it("selects partner views and sends edits against the revision actually displayed", async () => {
   const h = setup(true);
   const r = renderWithTheme(<TogetherCloudContainer {...h.props} />);
-  fireEvent.press(r.getByLabelText("Athlete 2’s workout"));
+  fireEvent.press(r.getByLabelText("Show Athlete 2’s workout"));
   await act(async () => {});
   expect(h.cloud.previous).toHaveBeenCalledWith("v");
-  const partner = r.UNSAFE_getByType(TogetherPartnerPresenter);
-  await act(async () =>
-    partner.props.onOperation({ type: "rest", restEndsAt: null }, 3),
-  );
+  // The planned second set, logged for the partner.
+  fireEvent.changeText(r.getAllByTestId("set-logger-reps")[1]!, "8");
+  fireEvent.changeText(r.getAllByTestId("set-logger-weight")[1]!, "62.5");
+  fireEvent(r.getAllByTestId("set-logger-weight")[1]!, "blur");
+  await act(async () => {});
   expect(h.cloud.command).toHaveBeenCalledWith({
     target: { kind: "execution", athleteId: "v" },
     expectedVersion: 3,
     delegationGeneration: 2,
-    operation: { type: "rest", restEndsAt: null },
+    operation: {
+      type: "upsertSet",
+      planExerciseId: "slot",
+      set: { setId: "uuid", reps: 8, weightKg: 62.5, completed: true },
+    },
   });
   act(() => h.publish({ phase: "reconnecting" }));
   expect(r.queryByTestId("set-logger-reps")).toBeNull();
-  fireEvent.press(r.getByText("Mine"));
+  fireEvent.press(r.getByLabelText("Show my workout"));
   expect(r.queryByTestId("together-partner-view")).toBeNull();
+});
+it("Online partner tab: planned rows editable at once, own avatar returns, a revoked grant refuses mid-view", async () => {
+  const h = setup(true);
+  const r = renderWithTheme(
+    <TogetherCloudContainer {...h.props}>
+      {(row, partnerView) => (
+        <>
+          {row}
+          {partnerView ?? <Text testID="own-workout">own</Text>}
+        </>
+      )}
+    </TogetherCloudContainer>,
+  );
+  expect(r.getByTestId("own-workout")).toBeTruthy();
+  fireEvent.press(r.getByLabelText("Show Athlete 2’s workout"));
+  await act(async () => {});
+  expect(r.queryByTestId("own-workout")).toBeNull();
+  expect(r.getByText("Squat")).toBeTruthy();
+  const reps = () => r.getAllByTestId("set-logger-reps");
+  // One logged set and one planned (targetSets 2), both editable straight away.
+  expect(reps().map((input) => input.props.value)).toEqual(["8", ""]);
+  expect(reps()[1]!.props.editable).toBe(true);
+  fireEvent.changeText(reps()[1]!, "8");
+  fireEvent.changeText(r.getAllByTestId("set-logger-weight")[1]!, "62.5");
+  fireEvent(reps()[1]!, "blur");
+  await waitFor(() =>
+    expect(h.cloud.command).toHaveBeenCalledWith({
+      target: { kind: "execution", athleteId: "v" },
+      expectedVersion: 3,
+      delegationGeneration: 2,
+      operation: {
+        type: "upsertSet",
+        planExerciseId: "slot",
+        set: { setId: "uuid", reps: 8, weightKg: 62.5, completed: true },
+      },
+    }),
+  );
+  // The partner turns fill-in off while the view is open.
+  const off = structuredClone(h.state().snapshot!);
+  off.participants[1]!.allowPartnerLogging = false;
+  act(() => h.publish({ snapshot: off }));
+  expect(
+    r.getByText("Training partner · read-only. Fill-in is off."),
+  ).toBeTruthy();
+  expect(reps().every((input) => input.props.editable === false)).toBe(true);
+  const partner = r.UNSAFE_getByType(TogetherPartnerPresenter).props;
+  expect(partner.editable).toBe(false);
+  // Nothing can be queued for a partner who turned fill-in off.
+  act(() => {
+    partner.outbox.edit("late", { reps: 5, weightKg: 50 }, "");
+    partner.outbox.commit("late", "slot");
+  });
+  await act(async () => {});
+  expect(h.cloud.command).toHaveBeenCalledTimes(1);
+  fireEvent.press(r.getByLabelText("Show my workout"));
+  expect(r.getByTestId("own-workout")).toBeTruthy();
+});
+it("Online: a set queued behind one in flight is sent after its echo, though the echo bumps the partner's revision", async () => {
+  const h = setup(true);
+  h.state().snapshot!.plan.exercises[0]!.targetSets = 3;
+  const r = renderWithTheme(<TogetherCloudContainer {...h.props} />);
+  fireEvent.press(r.getByLabelText("Show Athlete 2’s workout"));
+  await act(async () => {});
+  const reps = () => r.getAllByTestId("set-logger-reps");
+  const kg = () => r.getAllByTestId("set-logger-weight");
+  fireEvent.changeText(reps()[1]!, "8");
+  fireEvent.changeText(kg()[1]!, "62.5");
+  fireEvent(kg()[1]!, "blur");
+  fireEvent.changeText(reps()[2]!, "7");
+  fireEvent.changeText(kg()[2]!, "62.5");
+  fireEvent(kg()[2]!, "blur");
+  await act(async () => {});
+  expect(h.cloud.command).toHaveBeenCalledTimes(1);
+  const sent = jest.mocked(h.cloud.command).mock.calls[0]![0] as unknown as {
+    operation: { set: { setId: string } };
+  };
+  // The server applies it: the partner's revision moves from 3 to 4.
+  const next = structuredClone(h.state().snapshot!);
+  const partner = next.participants[1]!;
+  partner.ownRevision = 4;
+  partner.execution!.exercises[0]!.sets.push({
+    setId: sent.operation.set.setId,
+    reps: 8,
+    weightKg: 62.5,
+    completed: true,
+  });
+  act(() => h.publish({ snapshot: next }));
+  await act(async () => {});
+  expect(h.cloud.command).toHaveBeenCalledTimes(2);
+  expect(h.cloud.command).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      expectedVersion: 4,
+      operation: expect.objectContaining({
+        set: expect.objectContaining({ reps: 7, weightKg: 62.5 }),
+      }),
+    }),
+  );
+  expect(reps().map((input) => input.props.value)).toEqual(["8", "8", "7"]);
+});
+it("Online: a set queued for a partner is still sent after you switch back to your own workout", async () => {
+  const h = setup(true);
+  h.state().snapshot!.plan.exercises[0]!.targetSets = 3;
+  const r = renderWithTheme(
+    <TogetherCloudContainer {...h.props}>
+      {(row, partnerView) => (
+        <>
+          {row}
+          {partnerView ?? <Text testID="own-workout">own</Text>}
+        </>
+      )}
+    </TogetherCloudContainer>,
+  );
+  fireEvent.press(r.getByLabelText("Show Athlete 2’s workout"));
+  await act(async () => {});
+  const fillRow = (i: number, reps: string) => {
+    fireEvent.changeText(r.getAllByTestId("set-logger-reps")[i]!, reps);
+    fireEvent.changeText(r.getAllByTestId("set-logger-weight")[i]!, "62.5");
+    fireEvent(r.getAllByTestId("set-logger-weight")[i]!, "blur");
+  };
+  fillRow(1, "8");
+  fillRow(2, "7");
+  await act(async () => {});
+  expect(h.cloud.command).toHaveBeenCalledTimes(1);
+  fireEvent.press(r.getByLabelText("Show my workout"));
+  expect(r.getByTestId("own-workout")).toBeTruthy();
+  const sent = jest.mocked(h.cloud.command).mock.calls[0]![0] as unknown as {
+    operation: { set: { setId: string } };
+  };
+  const next = structuredClone(h.state().snapshot!);
+  next.participants[1]!.ownRevision = 4;
+  next.participants[1]!.execution!.exercises[0]!.sets.push({
+    setId: sent.operation.set.setId,
+    reps: 8,
+    weightKg: 62.5,
+    completed: true,
+  });
+  act(() => h.publish({ snapshot: next }));
+  await act(async () => {});
+  expect(h.cloud.command).toHaveBeenCalledTimes(2);
+  expect(h.cloud.command).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      expectedVersion: 4,
+      operation: expect.objectContaining({
+        set: expect.objectContaining({ reps: 7 }),
+      }),
+    }),
+  );
+});
+it("Online: a brief reconnect keeps what you typed for a partner", async () => {
+  const h = setup(true);
+  const r = renderWithTheme(<TogetherCloudContainer {...h.props} />);
+  fireEvent.press(r.getByLabelText("Show Athlete 2’s workout"));
+  await act(async () => {});
+  fireEvent.changeText(r.getAllByTestId("set-logger-reps")[1]!, "8");
+  const active = structuredClone(h.state().snapshot!);
+  // A poll times out: the session hides partners' numbers and fill-in.
+  const hidden = structuredClone(active);
+  hidden.participants[1]!.numbersAvailable = false;
+  hidden.participants[1]!.allowPartnerLogging = false;
+  act(() => h.publish({ phase: "reconnecting", snapshot: hidden }));
+  await act(async () => {});
+  act(() => h.publish({ phase: "active", snapshot: active }));
+  await act(async () => {});
+  expect(r.getAllByTestId("set-logger-reps")[1]!.props.value).toBe("8");
+  expect(r.queryByTestId("set-logger-sync-notsent")).toBeNull();
+});
+it("Online: the partner view closes when the partner leaves or the session snapshot is lost", async () => {
+  const h = setup(true);
+  const r = renderWithTheme(
+    <TogetherCloudContainer {...h.props}>
+      {(row, partnerView) => (
+        <>
+          {row}
+          {partnerView ?? <Text testID="own-workout">own</Text>}
+        </>
+      )}
+    </TogetherCloudContainer>,
+  );
+  fireEvent.press(r.getByLabelText("Show Athlete 2’s workout"));
+  await act(async () => {});
+  expect(r.queryByTestId("own-workout")).toBeNull();
+  // The partner leaves the session.
+  const left = structuredClone(h.state().snapshot!);
+  left.participants = left.participants.filter((x) => x.userId !== "v");
+  act(() => h.publish({ snapshot: left }));
+  expect(r.getByTestId("own-workout")).toBeTruthy();
+  expect(r.queryByTestId("together-partner-view")).toBeNull();
+  // Back in, then the snapshot is lost (backgrounded, reconnect failed): no
+  // strip, so the partner view must not stay either.
+  act(() => h.publish({ snapshot: structuredClone(server) }));
+  fireEvent.press(r.getByLabelText("Show Athlete 2’s workout"));
+  await act(async () => {});
+  expect(r.queryByTestId("own-workout")).toBeNull();
+  act(() => h.publish({ phase: "unavailable", snapshot: undefined }));
+  expect(r.getByTestId("own-workout")).toBeTruthy();
+  // When the session comes back, you are on your own workout, not dropped
+  // back into the partner's.
+  act(() => h.publish({ phase: "active", snapshot: structuredClone(server) }));
+  expect(r.getByTestId("own-workout")).toBeTruthy();
+});
+it("Online: backgrounding for a moment keeps what you typed for a partner", async () => {
+  const h = setup(true);
+  const r = renderWithTheme(<TogetherCloudContainer {...h.props} />);
+  fireEvent.press(r.getByLabelText("Show Athlete 2’s workout"));
+  await act(async () => {});
+  fireEvent.changeText(r.getAllByTestId("set-logger-reps")[1]!, "8");
+  // setActive(false) resets the session state; the resume reattaches it.
+  act(() => h.publish({ phase: "idle", snapshot: undefined }));
+  act(() => h.publish({ phase: "active", snapshot: structuredClone(server) }));
+  fireEvent.press(r.getByLabelText("Show Athlete 2’s workout"));
+  await act(async () => {});
+  expect(r.getAllByTestId("set-logger-reps")[1]!.props.value).toBe("8");
 });
 it("surfaces command errors and wires retry, cancel, partner navigation and local choice", async () => {
   const h = setup();
@@ -659,11 +876,15 @@ it("uses guest controls and keeps revoked partner edits and missing join drafts 
   );
   expect(h.cloud.numbersConsent).toHaveBeenCalledWith(["u"]);
   expect(h.cloud.previousConsent).toHaveBeenCalledWith(["u"]);
-  fireEvent.press(r.getByLabelText("Athlete 1’s workout"));
+  fireEvent.press(r.getByLabelText("Show Athlete 1’s workout"));
   const partner = r.UNSAFE_getByType(TogetherPartnerPresenter).props;
-  await expect(
-    partner.onOperation({ type: "rest", restEndsAt: null }, 1),
-  ).rejects.toThrow("permission-changed");
+  // The host has not turned on fill-in: nothing is sent.
+  expect(partner.editable).toBe(false);
+  act(() => {
+    partner.outbox.edit("x", { reps: 5, weightKg: 50 }, "");
+    partner.outbox.commit("x", "slot");
+  });
+  await act(async () => {});
   expect(h.cloud.command).not.toHaveBeenCalled();
   await act(async () => ui(r).onJoin());
   expect(h.cloud.join).not.toHaveBeenCalled();
@@ -685,7 +906,7 @@ it("does not revoke absent invitations or reissue unchanged grants; selects Mine
   expect(h.cloud.numbersConsent).not.toHaveBeenCalled();
   expect(h.cloud.previousConsent).not.toHaveBeenCalled();
   expect(h.cloud.delegation).not.toHaveBeenCalled();
-  fireEvent.press(r.getByLabelText("My workout"));
+  fireEvent.press(r.getByLabelText("Show my workout"));
   expect(h.cloud.previous).not.toHaveBeenCalled();
   expect(r.queryByTestId("together-partner-view")).toBeNull();
 });
