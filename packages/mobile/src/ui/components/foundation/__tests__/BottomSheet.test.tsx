@@ -307,3 +307,25 @@ describe("BottomSheet", () => {
     expect(queryByTestId("gorhom-bottom-sheet")).toBeTruthy();
   });
 });
+
+describe("height=content", () => {
+  it("sizes the sheet to its body with gorhom's dynamic sizing and no snap point", () => {
+    const r = renderWithTheme(
+      <BottomSheet
+        visible
+        onClose={() => {}}
+        height="content"
+        contentPadding={{ top: 4, bottom: 28 }}
+        testID="fit-sheet"
+      >
+        <Text>Leave Brad’s session?</Text>
+      </BottomSheet>,
+    );
+    const sheet = r.UNSAFE_getByType(GorhomBottomSheet);
+    expect(sheet.props.enableDynamicSizing).toBe(true);
+    expect(sheet.props.snapPoints).toBeUndefined();
+    expect(r.getByText("Leave Brad’s session?")).toBeTruthy();
+    expect(r.queryByTestId("bottom-sheet-static-body")).toBeNull();
+    expect(r.UNSAFE_queryByType(BottomSheetScrollView)).toBeNull();
+  });
+});

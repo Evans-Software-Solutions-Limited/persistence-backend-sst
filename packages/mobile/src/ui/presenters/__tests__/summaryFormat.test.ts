@@ -1,6 +1,11 @@
 import { tint } from "@/ui/theme/tint";
 import {
+  buildWorkoutSummary,
+  muscleShare,
+} from "@/domain/services/workoutSummary";
+import {
   clock,
+  summaryShareText,
   listNames,
   minutes,
   recordText,
@@ -64,5 +69,63 @@ describe("summaryFormat", () => {
 
   it("tints a token", () => {
     expect(tint("#22D3EE", 0.25)).toBe("rgba(34,211,238,0.25)");
+  });
+});
+
+describe("summaryShareText", () => {
+  const model = buildWorkoutSummary(
+    {
+      id: "l",
+      userId: "u",
+      workoutId: null,
+      name: "Run",
+      status: "completed",
+      startedAt: "2026-10-23T12:00:00.000Z",
+      completedAt: null,
+      notes: null,
+      exercises: [
+        {
+          id: "e",
+          sessionId: "l",
+          exerciseId: "run",
+          exerciseName: "Run",
+          sortOrder: 0,
+          supersetGroup: null,
+          isSubstituted: false,
+          originalExerciseId: null,
+          notes: null,
+          sets: [
+            {
+              id: "s",
+              sessionExerciseId: "e",
+              setNumber: 1,
+              weightKg: null,
+              reps: null,
+              rpe: null,
+              durationSeconds: 600,
+              distanceMeters: 2000,
+              isCompleted: true,
+              completedAt: null,
+            },
+          ],
+        },
+      ],
+    },
+    600,
+  );
+  const base = {
+    model,
+    muscles: muscleShare([]),
+    records: [],
+    rating: null,
+    unit: "kg" as const,
+  };
+  it("names a set with neither weight nor reps by its number", () => {
+    expect(summaryShareText("details", base)).toContain("Run: set 1");
+  });
+  it("still reads without a roster", () => {
+    expect(summaryShareText("together", base)).toContain(
+      "Trained together with \nRun · 23 Oct · 10 min",
+    );
   });
 });

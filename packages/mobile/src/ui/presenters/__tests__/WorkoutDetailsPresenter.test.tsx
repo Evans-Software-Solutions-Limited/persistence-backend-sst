@@ -74,6 +74,7 @@ const model = buildWorkoutSummary(session, 3128, [
 describe("WorkoutDetailsPresenter", () => {
   it("shows the header line, the totals strip and every set", () => {
     const onBack = jest.fn();
+    const onShare = jest.fn();
     const q = renderWithTheme(
       <WorkoutDetailsPresenter
         model={model}
@@ -81,6 +82,7 @@ describe("WorkoutDetailsPresenter", () => {
         rating={8}
         partners={["Brad", "Tom", "Inés"]}
         onBack={onBack}
+        onShare={onShare}
       />,
     );
     expect(q.getByText("Lower Body B")).toBeTruthy();
@@ -101,6 +103,16 @@ describe("WorkoutDetailsPresenter", () => {
     expect(q.getByText("240 kg")).toBeTruthy();
     fireEvent.press(q.getByTestId("workout-details-back"));
     expect(onBack).toHaveBeenCalled();
+    fireEvent.press(q.getByTestId("workout-details-share"));
+    expect(onShare).toHaveBeenCalledWith(
+      [
+        "Lower Body B · 23 Oct · 52 min",
+        "1,175 kg · 4 sets · 39 reps",
+        "Barbell Back Squat: 60×8, 65×7",
+        "Walking Lunge: 12, 20×12",
+        "Logged with Persistence",
+      ].join("\n"),
+    );
   });
 
   it("leaves out what it does not know, and converts to pounds", () => {
@@ -111,6 +123,7 @@ describe("WorkoutDetailsPresenter", () => {
         rating={null}
         weightUnit="lb"
         onBack={jest.fn()}
+        onShare={jest.fn()}
       />,
     );
     expect(q.getByText("52:08 · 23 Oct")).toBeTruthy();

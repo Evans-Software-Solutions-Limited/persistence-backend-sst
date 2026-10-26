@@ -11,14 +11,23 @@
 import { ScrollView, StyleSheet } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text, View } from "@tamagui/core";
-import type { WorkoutSummaryModel } from "@/domain/services/workoutSummary";
+import {
+  muscleShare,
+  type WorkoutSummaryModel,
+} from "@/domain/services/workoutSummary";
 import { weightInUnit, type WeightUnit } from "@/shared/utils";
 import { ScreenGlow } from "@/ui/components/foundation/ScreenGlow";
-import { IconChevronL } from "@/ui/components/icons";
+import { IconChevronL, IconShareUp } from "@/ui/components/icons";
 import { color } from "@/ui/theme/tokens";
 import { tint } from "@/ui/theme/tint";
 import { RoundButton } from "./SessionSummaryPresenter";
-import { clock, shortDate, volumeText, weightText } from "./summaryFormat";
+import {
+  clock,
+  shortDate,
+  summaryShareText,
+  volumeText,
+  weightText,
+} from "./summaryFormat";
 import { getDifficultyMessage } from "./WorkoutRatingPresenter";
 
 export type WorkoutDetailsPresenterProps = {
@@ -29,9 +38,12 @@ export type WorkoutDetailsPresenterProps = {
   partners?: readonly string[];
   weightUnit?: WeightUnit;
   onBack(): void;
+  /** Shares the whole workout as text (`summaryShareText`). */
+  onShare(text: string): void;
 };
 
 const COLUMNS = [34, 1.2, 0.8, 0.8, 1] as const;
+const NO_MUSCLES = muscleShare([]);
 
 export function WorkoutDetailsPresenter(p: WorkoutDetailsPresenterProps) {
   const insets = useSafeAreaInsets();
@@ -53,13 +65,34 @@ export function WorkoutDetailsPresenter(p: WorkoutDetailsPresenterProps) {
       testID="workout-details-screen"
     >
       <ScreenGlow />
-      <View flexDirection="row" paddingHorizontal={16}>
+      <View
+        flexDirection="row"
+        justifyContent="space-between"
+        paddingHorizontal={16}
+      >
         <RoundButton
           label="Back to summary"
           onPress={p.onBack}
           testID="workout-details-back"
         >
           <IconChevronL size={20} color={color.$text} />
+        </RoundButton>
+        <RoundButton
+          label="Share workout"
+          onPress={() =>
+            p.onShare(
+              summaryShareText("details", {
+                model: m,
+                muscles: NO_MUSCLES,
+                records: [],
+                rating: p.rating,
+                unit,
+              }),
+            )
+          }
+          testID="workout-details-share"
+        >
+          <IconShareUp size={20} color={color.$text} />
         </RoundButton>
       </View>
       <ScrollView

@@ -16,7 +16,6 @@ import Carousel, {
   type ICarouselInstance,
 } from "react-native-reanimated-carousel";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Path, Svg } from "react-native-svg";
 import { Text, View } from "@tamagui/core";
 import type {
   MuscleShare,
@@ -31,7 +30,8 @@ import {
   activityDistanceUnit,
 } from "@/shared/utils/activityUnits";
 import { ScreenGlow } from "@/ui/components/foundation/ScreenGlow";
-import { IconMedal, IconX } from "@/ui/components/icons";
+import { IconMedal, IconShareUp, IconX } from "@/ui/components/icons";
+import { PLogoMark } from "@/ui/components/brand/PLogoMark";
 import { MuscleMap } from "@/ui/components/summary/MuscleMap";
 import { color } from "@/ui/theme/tokens";
 import { tint } from "@/ui/theme/tint";
@@ -42,6 +42,7 @@ import {
   recordText,
   recordValue,
   shortDate,
+  summaryShareText,
   volumeText,
 } from "./summaryFormat";
 import {
@@ -76,6 +77,8 @@ export type SessionSummaryPresenterProps = {
   onDetails(): void;
   onContinue(): void;
   onClose(): void;
+  /** Shares the page on screen; the text comes from `summaryShareText`. */
+  onShare(text: string): void;
 };
 
 const PAGE_TITLE: Record<SummaryPage, string> = {
@@ -157,6 +160,24 @@ export function SessionSummaryPresenter(p: SessionSummaryPresenterProps) {
           testID="session-summary-close"
         >
           <IconX size={20} color={color.$text} />
+        </RoundButton>
+        <RoundButton
+          label="Share this page"
+          onPress={() =>
+            p.onShare(
+              summaryShareText(pages[current]!, {
+                model: p.model,
+                muscles: p.muscles,
+                records: p.records,
+                rating: p.rating,
+                together: p.together,
+                unit,
+              }),
+            )
+          }
+          testID="session-summary-share"
+        >
+          <IconShareUp size={20} color={color.$text} />
         </RoundButton>
       </View>
       <View
@@ -283,25 +304,17 @@ function OutlineBtn(p: { children: string; onPress(): void; testID?: string }) {
   );
 }
 
-/** Canvas `.brand`: the P mark and "Persistence". */
-function Brand({ left }: { left?: boolean }) {
+/** Canvas `.brand`: the P mark and "Persistence", centred on every page. */
+function Brand() {
   return (
     <View
       flexDirection="row"
       alignItems="center"
+      justifyContent="center"
       gap={6}
-      justifyContent={left ? "flex-start" : "center"}
+      alignSelf="stretch"
     >
-      <Svg width={16} height={16} viewBox="0 0 24 24">
-        <Path
-          d="M6 20V4h7a5 5 0 0 1 0 10H6"
-          fill="none"
-          stroke={color.$primary}
-          strokeWidth={2.4}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </Svg>
+      <PLogoMark size={16} />
       <Text
         fontFamily="$display"
         fontWeight="600"
@@ -543,7 +556,7 @@ function Exercises(p: { model: WorkoutSummaryModel; onDetails(): void }) {
   const rest = p.model.exercises.length - rows.length;
   return (
     <View alignSelf="stretch">
-      <Brand left />
+      <Brand />
       <Text
         marginTop={22}
         fontFamily="$display"
@@ -620,7 +633,7 @@ function Volume(p: {
   const rest = p.model.volume.length - rows.length;
   return (
     <View alignSelf="stretch">
-      <Brand left />
+      <Brand />
       <Track left marginTop={24}>
         Volume by exercise
       </Track>
@@ -722,7 +735,7 @@ function Records(p: {
   const rest = p.records.length - rows.length;
   return (
     <View alignSelf="stretch">
-      <Brand left />
+      <Brand />
       <Track left gold marginTop={28}>
         {`${p.records.length} new personal records`}
       </Track>

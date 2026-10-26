@@ -4,7 +4,12 @@
  */
 
 import type { RecordType } from "@/domain/models/record";
-import type { SummaryRecord } from "@/domain/services/workoutSummary";
+import type {
+  MuscleShare,
+  SummaryPage,
+  SummaryRecord,
+  WorkoutSummaryModel,
+} from "@/domain/services/workoutSummary";
 import type { WeightUnit } from "@/shared/utils";
 import { volumeInUnit, weightInUnit } from "@/shared/utils";
 
@@ -82,4 +87,82 @@ export const recordText = (
 export function listNames(names: readonly string[]): string {
   if (names.length <= 1) return names[0] ?? "";
   return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
+/**
+ * What Share sends for one summary page, as text: the system share sheet
+ * carries it today; sharing the page as an image needs a native build.
+ */
+export function summaryShareText(
+  page: SummaryPage | "details",
+  p: {
+    model: WorkoutSummaryModel;
+    muscles: MuscleShare;
+    records: readonly SummaryRecord[];
+    rating: number | null;
+    together?: { names: readonly string[]; connection: string } | null;
+    unit: WeightUnit;
+  },
+): string {
+  const m = p.model;
+  const head = `${m.name} · ${shortDate(m.startedAt)} · ${minutes(m.durationSeconds)}`;
+  const kg = (v: number) => `${volumeText(v, p.unit)} ${p.unit}`;
+  const lines: string[] = [];
+  switch (page) {
+    case "totals":
+      lines.push(
+        `Workout complete: ${head}`,
+        `${kg(m.volumeKg)} · ${m.sets} sets · ${m.reps} reps`,
+      );
+      if (p.rating != null) lines.push(`Effort ${p.rating}/10`);
+      break;
+    case "muscles":
+      lines.push(head, p.muscles.accessibilityLabel);
+      break;
+    case "exercises":
+      lines.push(head, ...m.exercises.map((e) => `${e.name} ${e.setsLabel}`));
+      break;
+    case "volume":
+      lines.push(
+        `Volume by exercise: ${head}`,
+        ...m.volume.map((v) => `${v.name} ${kg(v.volumeKg)}`),
+      );
+      break;
+    case "records":
+      lines.push(
+        p.records.length === 1
+          ? "New personal record"
+          : `${p.records.length} new personal records`,
+        ...p.records.map(
+          (r) =>
+            `${r.exerciseName}: ${RECORD_LABEL[r.recordType]} ${recordText(r, r.newValue, p.unit)}`,
+        ),
+      );
+      break;
+    case "together":
+      lines.push(
+        `Trained together with ${listNames(p.together?.names ?? [])}`,
+        `${head} · ${p.together?.connection ?? ""}`.replace(/ · $/, ""),
+      );
+      break;
+    case "details":
+      lines.push(
+        head,
+        `${kg(m.volumeKg)} · ${m.sets} sets · ${m.reps} reps`,
+        ...m.exercises.map(
+          (e) =>
+            `${e.name}: ${e.sets
+              .map((s) =>
+                s.weightKg != null && s.reps != null
+                  ? `${weightText(s.weightKg, p.unit)}×${s.reps}`
+                  : s.reps != null
+                    ? `${s.reps}`
+                    : `set ${s.n}`,
+              )
+              .join(", ")}`,
+        ),
+      );
+      break;
+  }
+  return [...lines, "Logged with Persistence"].join("\n");
 }

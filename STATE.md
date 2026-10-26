@@ -68,6 +68,30 @@ summary params and malformed params. Screenshots (PR 1/2 harness, 440 × 920
 dark, 58 pt band, onLayout shimmed for the pager) next to canvas crops in
 `specs/milestones/TRAIN-TOGETHER/evidence/ui-2026-10-26-per60-pr3/`.
 
+**Brad's review (26 Oct, same day).** (1) The first screenshots faked the
+drawer: the harness mocked gorhom flat and I drew a frame round it. The
+harness now draws gorhom the way `BottomSheet` configures it (0.6 backdrop,
+24pt top radius, handle, snap height or content), and was also missing RN
+Web's `position:absolute` rule, so the backdrop and the Finish button fell out
+of place; and it now renders the reorderable list's rows (jsdom reports no row
+heights). The leave and finish sheets use a new `BottomSheet`
+`height="content"` (gorhom dynamic sizing) instead of guessed percentages,
+which would have clipped on small phones. (2) Every exercise row had an opaque
+`$bg` block (`dragBlock`, from #429), which cut the screen glow off behind
+the list: it is now opaque only while a drag has collapsed the rows. (3) The
+upper back shading on the leg-day muscle page came from muscle groups I
+invented for the harness (Romanian deadlift with `back` secondary, which the
+`n3b_shade` slug map sends to upper and lower back); the fixture is now
+legs-only. (4) The Persistence mark is the real logo (`PLogoMark`, the app
+icon's paths, shared with `PLogoDrawLoader`) and centred on all six pages.
+(5) Share is on every page and on Workout details, sharing the page as text
+through React Native's `Share`; sharing it as an image needs
+`react-native-view-shot` + `expo-sharing` and a native build:
+[PER-99](https://linear.app/evans-software-solutions/issue/PER-99).
+The active workout's own header and Finish button are the shipped port and
+still differ from the canvas phone (not changed here). Mobile Jest after the review: 649 suites / 8,696 tests, coverage
+96.2 / 92.14 / 96.11 / 97.6; tsc, lint, prettier clean.
+
 **Not verified.** Nothing on a device or simulator: the carousel's gestures and
 the body map on native are untested.
 

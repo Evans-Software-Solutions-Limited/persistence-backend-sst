@@ -8,6 +8,7 @@
 
 import { fireEvent, waitFor } from "@testing-library/react-native";
 import React from "react";
+import { Share } from "react-native";
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
 import type { AuthSession } from "@/domain/ports/auth.port";
@@ -381,6 +382,25 @@ describe("SessionSummaryContainer", () => {
       expect(mockRouterDismissAll).toHaveBeenCalledTimes(1);
     },
   );
+
+  it("shares the page and the workout details through the system sheet", async () => {
+    const share = jest
+      .spyOn(Share, "share")
+      .mockResolvedValue({ action: "sharedAction" });
+    const storage = new InMemoryStorageAdapter();
+    seedActive(storage);
+    const q = await renderSummary(storage);
+    fireEvent.press(q.getByTestId("session-summary-share"));
+    expect(share).toHaveBeenLastCalledWith({
+      message: expect.stringContaining("Workout complete: Push Day"),
+    });
+    fireEvent.press(q.getByTestId("summary-details"));
+    share.mockRejectedValueOnce(new Error("dismissed"));
+    fireEvent.press(await q.findByTestId("workout-details-share"));
+    expect(share).toHaveBeenLastCalledWith({
+      message: expect.stringContaining("Bench Press: 120×5"),
+    });
+  });
 
   it("renders nothing when no active session exists (race guard)", () => {
     const api = new InMemoryApiAdapter();

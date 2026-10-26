@@ -76,7 +76,7 @@ export function TogetherLeaveSheet(p: {
     <BottomSheet
       visible={p.visible}
       onClose={p.onStay}
-      height={unsent ? 35 : 27}
+      height="content"
       contentPadding={{ top: 4, bottom: 28 }}
       testID="together-leave-sheet"
     >

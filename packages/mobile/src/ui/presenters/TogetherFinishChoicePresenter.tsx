@@ -23,7 +23,7 @@ export function TogetherFinishChoicePresenter({
     <BottomSheet
       visible={visible}
       onClose={onCancel}
-      height={33}
+      height="content"
       contentPadding={{ top: 4, bottom: 28 }}
       testID="together-finish-choice"
     >

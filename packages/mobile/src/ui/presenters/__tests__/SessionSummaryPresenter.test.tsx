@@ -89,6 +89,7 @@ const handlers = {
   onDetails: jest.fn(),
   onContinue: jest.fn(),
   onClose: jest.fn(),
+  onShare: jest.fn(),
 };
 
 function renderSummary(over: Partial<SessionSummaryPresenterProps> = {}) {
@@ -416,5 +417,64 @@ describe("navigation", () => {
     expect(handlers.onClose).toHaveBeenCalledTimes(1);
     expect(handlers.onDetails).toHaveBeenCalledTimes(1);
     expect(handlers.onContinue).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("brand and share", () => {
+  it("puts the P mark and Persistence at the centre of every page", () => {
+    const q = renderSummary({
+      records: [record("Barbell Back Squat"), record("Glute Drive")],
+      together: { self: "Mia", names: ["Brad"], connection: "Nearby" },
+    });
+    expect(
+      q.getAllByTestId("p-logo-mark", { includeHiddenElements: true }),
+    ).toHaveLength(6);
+    expect(q.getAllByText("Persistence")).toHaveLength(6);
+  });
+
+  it("shares the page on screen as text", () => {
+    const q = renderSummary({
+      rating: 8,
+      records: [record("Barbell Back Squat")],
+      together: { self: "Mia", names: ["Brad", "Tom"], connection: "Nearby" },
+    });
+    const shared = () => handlers.onShare.mock.calls.at(-1)![0] as string;
+    fireEvent.press(q.getByTestId("session-summary-share"));
+    expect(shared()).toBe(
+      "Workout complete: Lower Body B · 23 Oct · 52 min\n1,385 kg · 3 sets · 25 reps\nEffort 8/10\nLogged with Persistence",
+    );
+    fireEvent.press(q.getByTestId("summary-dot-muscles"));
+    fireEvent.press(q.getByTestId("session-summary-share"));
+    expect(shared()).toContain("Muscles worked: quads 44%");
+    fireEvent.press(q.getByTestId("summary-dot-exercises"));
+    fireEvent.press(q.getByTestId("session-summary-share"));
+    expect(shared()).toContain("Barbell Back Squat 2×8");
+    fireEvent.press(q.getByTestId("summary-dot-volume"));
+    fireEvent.press(q.getByTestId("session-summary-share"));
+    expect(shared()).toContain("Romanian Deadlift 450 kg");
+    fireEvent.press(q.getByTestId("summary-dot-records"));
+    fireEvent.press(q.getByTestId("session-summary-share"));
+    expect(shared()).toContain(
+      "New personal record\nBarbell Back Squat: Max weight 65 kg",
+    );
+    fireEvent.press(q.getByTestId("summary-dot-together"));
+    fireEvent.press(q.getByTestId("session-summary-share"));
+    expect(shared()).toContain(
+      "Trained together with Brad and Tom\nLower Body B · 23 Oct · 52 min · Nearby",
+    );
+  });
+
+  it("shares several records and a workout without an effort", () => {
+    const q = renderSummary({
+      records: [record("Barbell Back Squat"), record("Glute Drive")],
+      initialPage: 4,
+    });
+    fireEvent.press(q.getByTestId("session-summary-share"));
+    expect(handlers.onShare.mock.calls.at(-1)![0]).toContain(
+      "2 new personal records",
+    );
+    fireEvent.press(q.getByTestId("summary-dot-totals"));
+    fireEvent.press(q.getByTestId("session-summary-share"));
+    expect(handlers.onShare.mock.calls.at(-1)![0]).not.toContain("Effort");
   });
 });

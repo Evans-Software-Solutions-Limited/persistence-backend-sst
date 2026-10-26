@@ -24,6 +24,7 @@ import { hydrateTogetherCompletionSummary } from "@/adapters/together/hydrateCom
  *       Legacy reference: persistence-mobile/components/workouts/WorkoutSummaryScreen/WorkoutSummaryScreen.tsx
  */
 
+import { Share } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { calculateSummary } from "@/domain/services/sessionService";
@@ -219,6 +220,12 @@ export function SessionSummaryContainer() {
     router.dismissAll();
   }, [userId, storage]);
 
+  // Text through the system share sheet; an image of the page needs
+  // react-native-view-shot + expo-sharing, a native build (PER-99).
+  const share = (message: string) => {
+    void Share.share({ message }).catch(() => {});
+  };
+
   if (!snapshot || snapshot.userId !== userId || !model) {
     // Race: user navigated to /summary before any session existed. Bounce.
     return null;
@@ -233,6 +240,7 @@ export function SessionSummaryContainer() {
         partners={together?.names}
         weightUnit={weightUnit}
         onBack={() => setView("pages")}
+        onShare={share}
       />
     );
   return (
@@ -247,6 +255,7 @@ export function SessionSummaryContainer() {
       onDetails={() => setView("details")}
       onContinue={onContinue}
       onClose={onContinue}
+      onShare={share}
     />
   );
 }
