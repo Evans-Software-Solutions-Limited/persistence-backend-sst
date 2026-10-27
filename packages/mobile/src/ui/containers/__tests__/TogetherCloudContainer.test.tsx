@@ -23,6 +23,7 @@ import type {
 import type { WorkoutSession } from "@/domain/models/session";
 import { useTogetherSettings } from "@/state/together-settings";
 import { rosterSeen, forgetRoster } from "@/ui/state/togetherRosterSeen";
+import { forgetVisibilitySent } from "@/ui/state/togetherVisibilitySent";
 const mockCameraPermission = jest.fn();
 jest.mock("expo-camera", () => ({
   useCameraPermissions: () => [null, mockCameraPermission],
@@ -193,6 +194,7 @@ const ui = (r: ReturnType<typeof renderWithTheme>) =>
     typeof TogetherCloudPresenter
   >;
 beforeEach(() => {
+  forgetVisibilitySent();
   jest
     .spyOn(AppState, "addEventListener")
     .mockImplementation(() => ({ remove: jest.fn() }));
@@ -675,6 +677,21 @@ it("Who can join starts Private until Partners is actually sent, and a new sessi
     h.publish({ snapshot: { ...h.state().snapshot!, sessionId: "next" } }),
   );
   expect(audience()).toBe("invite-only");
+});
+it("keeps Who can join through a minimise and reopen of the session screen", async () => {
+  const h = setup(true);
+  const first = renderWithTheme(<TogetherCloudContainer {...h.props} />);
+  await act(async () =>
+    first
+      .UNSAFE_getByType(TogetherSharingPresenter)
+      .props.audience.onChange("friends"),
+  );
+  // Minimise unmounts the screen; reopening mounts a fresh one.
+  first.unmount();
+  const again = renderWithTheme(<TogetherCloudContainer {...h.props} />);
+  expect(
+    again.UNSAFE_getByType(TogetherSharingPresenter).props.audience?.value,
+  ).toBe("friends");
 });
 it("queues every changed permission at once without waiting on the first, and a late rejection after the account changes shows nothing", async () => {
   const h = setup(true);

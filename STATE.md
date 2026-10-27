@@ -82,6 +82,13 @@ it. (2) With nobody else in the session the switches flipped and snapped back
 yet. Everyone who joins starts with your defaults." instead of the switches.
 Each new test fails on the old code.
 
+**Inspector Brad (27 Oct, sweep on `8fa5c05`).** One medium lead: Who can
+join lived in the Online container's state, which minimise unmounts, so on
+reopening it read Private while the server still listed the session to
+partners. It now lives in `ui/state/togetherVisibilitySent.ts`, keyed by
+session (like `togetherRosterSeen`); memory only, so after a restart it reads
+Private until the host sends again. The new test fails on the old code.
+
 **Not verified.** Nothing on a device or simulator.
 
 ### 2026-10-26 — Together UX pass PR 3: leaving, ending and finishing (PER-60, branch `claude/per-60-together-finish`)
