@@ -89,6 +89,21 @@ partners. It now lives in `ui/state/togetherVisibilitySent.ts`, keyed by
 session (like `togetherRosterSeen`); memory only, so after a restart it reads
 Private until the host sends again. The new test fails on the old code.
 
+**Inspector Brad (27 Oct, sweep on `6cb2d73`).** (1, high) The server's
+`visibility()` wrote `body.expiresAt` over `sessions.expiresAt`, which is the
+session's own lifetime (`live()` revokes collaboration once it passes), so
+every 15-minute visibility send, including the existing start-as-Partners
+call and "Show to training partners", ended the Online session 15 minutes
+later. **Backend:** `visibility()` no longer touches `expiresAt` (still
+validated for compatibility); new PGlite test. **Mobile:** Partners now lasts
+the session (no 15-minute lapse), and the app sends the server's 4-hour cap
+less 10 minutes so an older server extends rather than cuts the session; the
+button copy drops "for 15 minutes". Needs a core deploy to fix sessions from
+older app builds. (2, low) `useTogetherSharing` ignored a superseded write's
+success but not its failure, so undoing a tap could raise a "switched back"
+notice; failures from a replaced tap are now ignored. Each new test fails on
+the old code.
+
 **Not verified.** Nothing on a device or simulator.
 
 ### 2026-10-26 — Together UX pass PR 3: leaving, ending and finishing (PER-60, branch `claude/per-60-together-finish`)

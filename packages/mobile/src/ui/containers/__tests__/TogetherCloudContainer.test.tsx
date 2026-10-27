@@ -632,33 +632,21 @@ it("surfaces command errors and wires retry, cancel, partner navigation and loca
   act(() => ui(r).onPartners());
   expect(mockPush).toHaveBeenCalledWith("/(app)/together/partners");
 });
-it("Partners lapses back to Private when the server's 15 minutes run out, and choosing it again renews it", async () => {
-  jest.useFakeTimers();
-  try {
-    const h = setup(true);
-    const r = renderWithTheme(
-      <TogetherCloudContainer {...h.props} initialHost="friends" />,
-    );
-    await act(async () => {});
-    const audience = () =>
-      r.UNSAFE_getByType(TogetherSharingPresenter).props.audience?.value;
-    expect(audience()).toBe("friends");
-    expect(h.cloud.visibility).toHaveBeenCalledWith(
-      "friends",
-      expect.any(String),
-    );
-    act(() => jest.advanceTimersByTime(15 * 60_000));
-    expect(audience()).toBe("invite-only");
-    // Choosing Partners again renews it.
-    await act(async () => {
-      r.UNSAFE_getByType(TogetherSharingPresenter).props.audience.onChange(
-        "friends",
-      );
-    });
-    expect(audience()).toBe("friends");
-  } finally {
-    jest.useRealTimers();
-  }
+it("Partners lasts the session, and the expiry sent never cuts the session short", async () => {
+  const h = setup(true);
+  const r = renderWithTheme(
+    <TogetherCloudContainer {...h.props} initialHost="friends" />,
+  );
+  await act(async () => {});
+  const audience = () =>
+    r.UNSAFE_getByType(TogetherSharingPresenter).props.audience?.value;
+  expect(audience()).toBe("friends");
+  // Older servers wrote this over the session's lifetime: never 15 minutes.
+  const sent = Date.parse(
+    jest.mocked(h.cloud.visibility).mock.calls.at(-1)![1] as string,
+  );
+  expect(sent).toBeGreaterThan(Date.now() + 3.5 * 3600_000);
+  expect(sent).toBeLessThanOrEqual(Date.now() + 4 * 3600_000);
 });
 it("Who can join starts Private until Partners is actually sent, and a new session starts Private again", async () => {
   const h = setup(true);

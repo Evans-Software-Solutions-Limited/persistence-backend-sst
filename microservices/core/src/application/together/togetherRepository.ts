@@ -1731,13 +1731,15 @@ export class TogetherRepository {
           const selected = body.placeId
             ? await placesRepository.resolve(body.placeId)
             : null;
+          // `expiresAt` is the session's own lifetime (live() revokes
+          // collaboration once it passes), not a listing window: changing
+          // who can find the session must never shorten it (PER-60).
           await tx
             .update(sessions)
             .set({
               placeLabel: selected?.label ?? null,
               audience: body.audience,
               placeId: body.placeId ?? null,
-              expiresAt,
             })
             .where(eq(sessions.id, id));
           await this.emit(tx, s, { type: "visibility_changed" });

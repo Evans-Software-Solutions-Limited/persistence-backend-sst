@@ -3,16 +3,11 @@
  *
  * The snapshot doesn't carry visibility, and minimising the workout unmounts
  * the session screen, so the host's choice is kept here, per session, the way
- * `togetherRosterSeen` keeps the roster. Partners lapses after the server's
- * 15 minutes. Memory only: after a restart the segment reads Private until the
- * host sends again.
+ * `togetherRosterSeen` keeps the roster. It lasts the session. Memory only:
+ * after a restart the segment reads Private until the host sends again.
  */
 
-export type TogetherVisibility = {
-  value: "invite-only" | "friends";
-  /** When the server stops listing the session to partners; null for Private. */
-  until: number | null;
-};
+export type TogetherVisibility = { value: "invite-only" | "friends" };
 
 const sent = new Map<string, TogetherVisibility>();
 

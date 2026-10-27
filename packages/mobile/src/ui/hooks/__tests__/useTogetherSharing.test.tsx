@@ -104,3 +104,17 @@ it("ignores writes that settle after unmount, and does nothing with no session",
     empty.result.current.change({ key: "numbers", value: true }),
   ).not.toThrow();
 });
+
+it("a superseded write's failure raises no notice", async () => {
+  const first = deferred();
+  const writes = [first.promise, Promise.resolve()];
+  const current = source({ write: jest.fn(() => writes.shift()!) });
+  const { result } = renderHook(() => useTogetherSharing(current));
+  act(() => result.current.change({ key: "previous", value: true }));
+  await act(async () =>
+    result.current.change({ key: "previous", value: false }),
+  );
+  // The first write fails after the second has undone it.
+  await act(async () => first.reject(new Error("grant revoked")));
+  expect(result.current.state?.refused).toBeNull();
+});

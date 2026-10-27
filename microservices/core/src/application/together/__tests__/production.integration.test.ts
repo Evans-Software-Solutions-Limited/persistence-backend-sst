@@ -716,6 +716,24 @@ describe("production Together persistence and recovery", () => {
     ).toMatchObject({ status: "finished_empty" });
     expect((await repo.snapshot(a, s.sessionId)).state).toBe("closed");
   });
+  it("changing who can join never shortens the session's own lifetime (PER-60)", async () => {
+    const s = await create();
+    const lifetime = async () =>
+      (
+        await db
+          .select({ expiresAt: schema.togetherSessions.expiresAt })
+          .from(schema.togetherSessions)
+          .where(eq(schema.togetherSessions.id, s.sessionId))
+      )[0]!.expiresAt.getTime();
+    const before = await lifetime();
+    for (const audience of ["friends", "private"] as const)
+      await repo.visibility(a, s.sessionId, key(), {
+        audience,
+        expiresAt: new Date(Date.now() + 60000).toISOString(),
+      });
+    expect(await lifetime()).toBe(before);
+    expect(before).toBeGreaterThan(Date.now() + 3 * 3600000);
+  });
   it("allows friends-only discovery while venue directory stays disabled", async () => {
     vi.stubEnv("TOGETHER_DISCOVERY_ENABLED", "false");
     const s = await create();

@@ -63,8 +63,9 @@ export function useTogetherSharing(source: TogetherSharingSource | null): {
         if (mounted.current && request === latest.current) setOptimistic(null);
       },
       () => {
-        if (!mounted.current) return;
-        if (request === latest.current) setOptimistic(null);
+        // A newer tap replaced this one: its failure is not news.
+        if (!mounted.current || request !== latest.current) return;
+        setOptimistic(null);
         setRefused({ sessionId, refusal: refusalFor(c), change: c });
       },
     );

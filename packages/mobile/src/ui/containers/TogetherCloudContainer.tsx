@@ -180,8 +180,13 @@ export function cloudSharedView(
       : [],
   };
 }
-/** How long the server keeps an Online session visible to training partners. */
-const VISIBLE_FOR = 15 * 60_000;
+/**
+ * The `expiresAt` sent with Who can join. The server's 4-hour cap, less a
+ * margin for clock skew. Older servers wrote it over the session's own
+ * lifetime, so it must never be short: sending 15 minutes ended the session
+ * 15 minutes later. Current servers ignore it (PER-60).
+ */
+const VISIBLE_FOR = 4 * 3600_000 - 10 * 60_000;
 
 export function TogetherCloudContainer(p: {
   cloud: TogetherCloudPort;
@@ -221,37 +226,19 @@ export function TogetherCloudContainer(p: {
   /** Canvas row 4: the strip's settings cog. */
   const [sharingOpen, setSharingOpen] = useState(false);
   // Who can join, as the host last sent it for this session (kept outside
-  // this screen, which unmounts on minimise). Partners lapses back to Private
-  // after the server's 15 minutes; a session nothing was sent for is Private.
+  // this screen, which unmounts on minimise). It lasts the session; a session
+  // nothing was sent for is Private.
   const [, refreshVisibility] = useReducer((n: number) => n + 1, 0);
-  const hostVisibility = visibilitySent(state.snapshot?.sessionId);
-  const visibleUntil = hostVisibility?.until ?? null;
-  useEffect(() => {
-    if (visibleUntil === null) return;
-    const timer = setTimeout(
-      refreshVisibility,
-      Math.max(0, visibleUntil - Date.now()),
-    );
-    return () => clearTimeout(timer);
-  }, [visibleUntil]);
   const hostAudience =
-    !hostVisibility ||
-    (hostVisibility.until !== null && Date.now() >= hostVisibility.until)
-      ? "invite-only"
-      : hostVisibility.value;
+    visibilitySent(state.snapshot?.sessionId)?.value ?? "invite-only";
   /** Sends who can join; a failed send stays queued in the outbox and goes on reconnect. */
   const sendVisibility = (value: "invite-only" | "friends") => {
-    const until = Date.now() + VISIBLE_FOR;
     const sessionId = p.cloud.getSnapshot().snapshot?.sessionId;
-    if (sessionId)
-      rememberVisibilitySent(sessionId, {
-        value,
-        until: value === "friends" ? until : null,
-      });
+    if (sessionId) rememberVisibilitySent(sessionId, { value });
     refreshVisibility();
     return p.cloud.visibility(
       value === "friends" ? "friends" : "private",
-      new Date(until).toISOString(),
+      new Date(Date.now() + VISIBLE_FOR).toISOString(),
     );
   };
   const [toast, showToast] = useTogetherToast();
@@ -833,9 +820,9 @@ export function TogetherCloudContainer(p: {
             ? {
                 value: hostAudience,
                 online: true,
-                // Tapping the current value sends it again, which renews
-                // Partners for another 15 minutes or retries a failed send.
-                // A rejection leaves the change queued, so nothing reverts.
+                // Tapping the current value sends it again, which retries a
+                // failed send. A rejection leaves the change queued, so
+                // nothing reverts.
                 onChange: (value) => {
                   if (value === "open") return;
                   sendVisibility(value).catch(() => {});
