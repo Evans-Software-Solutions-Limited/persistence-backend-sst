@@ -109,6 +109,14 @@ and the details share text reads them. Each new test fails on the old code.
 Mobile Jest 649 suites / 8,704 tests, coverage 96.21 / 92.15 / 96.12 / 97.61;
 tsc and lint clean. No screen in the evidence set changed.
 
+**Inspector Brad (27 Oct, sweep on `7d8069e`).** The five fixes above held;
+one low lead. The server stores sets under its own ids, so `recordSetIds`
+nearly always falls back, and it ranked 1/3/5/10RM records by Epley: 100 × 3
+and 90 × 8 starred the 8-rep set for the 3RM. The fallback now matches the
+server's `repMaxTypeForReps` (exactly N reps, ranked by weight), and a record
+no completed set could have earned gets no star. The new test fails on the old
+code.
+
 **Not verified.** Nothing on a device or simulator: the carousel's gestures and
 the body map on native are untested.
 

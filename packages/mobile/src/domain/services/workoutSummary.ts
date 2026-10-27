@@ -187,7 +187,18 @@ export type WorkoutSummaryModel = {
 
 const isDone = (set: ExerciseSet) => set.isCompleted;
 
-/** Which set each record came from: the named set, else the set with the best value. */
+const REP_MAX_REPS: Partial<Record<RecordType, number>> = {
+  "1rm": 1,
+  "3rm": 3,
+  "5rm": 5,
+  "10rm": 10,
+};
+
+/**
+ * Which set each record came from: the named set, else the set with the best
+ * value. The server stores sets under its own ids, so the fallback is the
+ * usual path; a record no set could have earned gets no star.
+ */
 export function recordSetIds(
   session: WorkoutSession,
   records: readonly SummaryRecord[],
@@ -216,11 +227,15 @@ export function recordSetIds(
         case "longest_distance":
           return s.distanceMeters ?? 0;
         default:
-          return estimateOneRepMax(s.weightKg ?? 0, s.reps ?? 0) ?? 0;
+          // The server awards an N-rep max only to a set of exactly N reps,
+          // valued by its weight (`repMaxTypeForReps`).
+          return s.reps === REP_MAX_REPS[record.recordType]
+            ? (s.weightKg ?? 0)
+            : 0;
       }
     };
     const best = sets.reduce((a, b) => (metric(b) > metric(a) ? b : a));
-    ids.add(best.id);
+    if (metric(best) > 0) ids.add(best.id);
   }
   return ids;
 }

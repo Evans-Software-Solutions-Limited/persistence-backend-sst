@@ -370,11 +370,28 @@ describe("recordSetIds", () => {
     expect(pick(rec("lift", "max_weight", "missing"))).toEqual([heavy.id]);
     expect(pick(rec("lift", "max_reps"))).toEqual([many.id]);
     expect(pick(rec("lift", "max_volume"))).toEqual([big.id]);
-    expect(pick(rec("lift", "1rm"))).toEqual([big.id]);
+    expect(pick(rec("lift", "10rm"))).toEqual([big.id]);
     expect(pick(rec("run", "best_time"))).toEqual([long.id]);
     expect(pick(rec("run", "longest_distance"))).toEqual([far.id]);
-    expect(pick(rec("run", "5rm"))).toEqual([long.id]);
+    expect(pick(rec("run", "5rm"))).toEqual([]);
     expect(pick(rec("gone", "max_weight"))).toEqual([]);
+  });
+
+  it("stars a rep max on the set with exactly those reps, not the best estimate", () => {
+    // 90 × 8 estimates ~114 kg against 100 × 3's ~110 kg, but only the
+    // triple can hold the 3RM, and only the single the 1RM.
+    const triple = set(100, 3);
+    const eight = set(90, 8);
+    const single = set(100, 1);
+    const five = set(90, 5);
+    const pick = (sets: ExerciseSet[], type: "1rm" | "3rm" | "5rm") => [
+      ...recordSetIds(session([{ exerciseId: "b", name: "Bench", sets }]), [
+        rec("b", type),
+      ]),
+    ];
+    expect(pick([triple, eight], "3rm")).toEqual([triple.id]);
+    expect(pick([single, five], "1rm")).toEqual([single.id]);
+    expect(pick([triple, eight], "5rm")).toEqual([]);
   });
 });
 
