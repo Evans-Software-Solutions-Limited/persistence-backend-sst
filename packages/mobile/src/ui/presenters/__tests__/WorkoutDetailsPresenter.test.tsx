@@ -192,6 +192,57 @@ describe("WorkoutDetailsPresenter", () => {
     expect(text(runCard)).not.toContain("0 kg");
     const plank = q.getByTestId("workout-details-exercise-se-plank");
     expect(text(plank)).toEqual(expect.arrayContaining(["1:00"]));
+    expect(text(runCard).some((c) => c.includes("★"))).toBe(false);
+  });
+
+  it("stars a cardio record in gold: the fastest timed distance", () => {
+    const cardio = (
+      id: string,
+      durationSeconds: number,
+      distanceMeters: number,
+    ) => ({
+      ...set(id, null, null),
+      durationSeconds,
+      distanceMeters,
+    });
+    const model = buildWorkoutSummary(
+      {
+        ...session,
+        exercises: [
+          {
+            ...session.exercises[0]!,
+            id: "se-run",
+            exerciseId: "run",
+            exerciseName: "Run",
+            notes: null,
+            sets: [cardio("slow", 900, 3000), cardio("fast", 600, 3000)],
+          },
+        ],
+      },
+      1500,
+      [
+        {
+          exerciseId: "run",
+          exerciseName: "Run",
+          recordType: "best_time",
+          newValue: 600,
+          previousValue: 640,
+          setId: "server-id",
+        },
+      ],
+    );
+    const q = renderWithTheme(
+      <WorkoutDetailsPresenter
+        model={model}
+        recordsCount={1}
+        rating={null}
+        onBack={jest.fn()}
+        onShare={jest.fn()}
+      />,
+    );
+    const star = q.getByText("10:00 ★");
+    expect(JSON.stringify(star.props.style)).toContain(color.$gold);
+    expect(q.getByText("15:00")).toBeTruthy();
   });
 });
 

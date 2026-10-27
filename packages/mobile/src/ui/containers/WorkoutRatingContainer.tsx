@@ -22,7 +22,7 @@ import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { WorkoutRatingPresenter } from "@/ui/presenters/WorkoutRatingPresenter";
 import type { SummaryTogether } from "@/ui/presenters/SessionSummaryPresenter";
-import { cloudRosterSeen } from "@/ui/state/togetherRosterSeen";
+import { rosterSeen } from "@/ui/state/togetherRosterSeen";
 import type { Adapters } from "@/shared/types";
 
 export function WorkoutRatingContainer() {
@@ -345,9 +345,7 @@ export function togetherRoster(
   if (online) {
     const live = cloud?.getSnapshot().snapshot?.participants ?? [];
     const people =
-      live.length > 1 || !sessionId
-        ? live
-        : (cloudRosterSeen(sessionId) ?? live);
+      live.length > 1 || !sessionId ? live : (rosterSeen(sessionId) ?? live);
     const others = people.filter((p) => p.userId !== userId);
     if (!others.length) return null;
     return {
@@ -359,6 +357,19 @@ export function togetherRoster(
     };
   }
   const members = lobby?.getSnapshot().members ?? [];
+  if (members.length < 2) {
+    // Leave or End cancelled the lobby: use the seats seen while it was live.
+    const seen = sessionId ? rosterSeen(sessionId) : null;
+    const others = seen?.filter((p) => p.userId !== userId) ?? [];
+    if (!seen || !others.length) return null;
+    return {
+      self: seen.find((p) => p.userId === userId)?.displayName ?? "Me",
+      names: others.map(
+        (p) => p.displayName ?? `Athlete ${seen.indexOf(p) + 1}`,
+      ),
+      connection: "Nearby",
+    };
+  }
   const others = members.filter((m) => m.userId !== userId);
   if (!others.length) return null;
   let profiles: Readonly<Record<string, string>> = {};

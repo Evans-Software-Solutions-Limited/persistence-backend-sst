@@ -117,6 +117,18 @@ server's `repMaxTypeForReps` (exactly N reps, ranked by weight), and a record
 no completed set could have earned gets no star. The new test fails on the old
 code.
 
+**Inspector Brad (27 Oct, sweep on `90048f2`).** Two low leads. (1) Nearby
+Leave or End cancels the lobby, which empties its seats, so the summary lost
+Trained together. `togetherRosterSeen` now holds either transport's roster:
+`TogetherLobbyContainer` records the seats and published names while the
+lobby is hosting, joined or reconnecting, and `togetherRoster` falls back to
+them for the same session (`cloudRosterSeen` is now `rosterSeen`). (2) Cardio
+records never got a ★ (`TimedSets` didn't pass `record`), and `best_time` ranked
+the longest duration. It now takes the shortest duration among sets that
+covered a distance, matching the server's `candidatesForSets` and
+`isBetterRecordValue`, and the Time cell turns gold with ★. Each new test
+fails on the old code.
+
 **Not verified.** Nothing on a device or simulator: the carousel's gestures and
 the body map on native are untested.
 

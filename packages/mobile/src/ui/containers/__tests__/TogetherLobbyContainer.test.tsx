@@ -29,6 +29,7 @@ import type {
 import type { TogetherCloudPort } from "@/domain/ports/togetherCloud.port";
 import type { WorkoutSession } from "@/domain/models/session";
 import { useTogetherSettings } from "@/state/together-settings";
+import { forgetRoster, rosterSeen } from "@/ui/state/togetherRosterSeen";
 const mockCloud = jest.fn();
 jest.mock("../TogetherCloudContainer", () => ({
   TogetherCloudContainer: (props: unknown) => {
@@ -1872,6 +1873,7 @@ const leaveRow = (r: ReturnType<typeof renderWithTheme>) =>
 
 describe("leaving and ending (canvas row 3)", () => {
   it("a guest's Leave is one sentence and two buttons, then an ordinary solo workout with a toast", async () => {
+    forgetRoster();
     const h = sharingHarness();
     h.setShared({ profiles: { host: "Brad", other: "Mia" } });
     const r = mountShared(h, { getWorkout: () => withSets(6) });
@@ -1904,6 +1906,12 @@ describe("leaving and ending (canvas row 3)", () => {
     );
     expect(h.shared.close).toHaveBeenCalledWith("leave");
     expect(h.lobby.cancel).toHaveBeenCalled();
+    // The cancelled lobby has no seats left; the summary reads these instead.
+    expect(rosterSeen("s1")).toEqual([
+      { userId: "host", displayName: "Brad" },
+      { userId: "a", displayName: null },
+      { userId: "other", displayName: "Mia" },
+    ]);
     expect(
       r.getByText("You left Brad’s session. Your 6 sets are here."),
     ).toBeTruthy();

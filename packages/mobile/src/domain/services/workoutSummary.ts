@@ -222,8 +222,12 @@ export function recordSetIds(
           return s.reps ?? 0;
         case "max_volume":
           return (s.weightKg ?? 0) * (s.reps ?? 0);
+        // The server only times sets that covered a distance, and the
+        // fastest wins (`isBetterRecordValue`), so rank by 1 / duration.
         case "best_time":
-          return s.durationSeconds ?? 0;
+          return s.distanceMeters && s.durationSeconds
+            ? 1 / s.durationSeconds
+            : 0;
         case "longest_distance":
           return s.distanceMeters ?? 0;
         default:

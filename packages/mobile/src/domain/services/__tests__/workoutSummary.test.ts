@@ -371,10 +371,34 @@ describe("recordSetIds", () => {
     expect(pick(rec("lift", "max_reps"))).toEqual([many.id]);
     expect(pick(rec("lift", "max_volume"))).toEqual([big.id]);
     expect(pick(rec("lift", "10rm"))).toEqual([big.id]);
-    expect(pick(rec("run", "best_time"))).toEqual([long.id]);
+    // Fastest wins, and only sets that covered a distance are timed.
+    expect(pick(rec("run", "best_time"))).toEqual([far.id]);
     expect(pick(rec("run", "longest_distance"))).toEqual([far.id]);
     expect(pick(rec("run", "5rm"))).toEqual([]);
     expect(pick(rec("gone", "max_weight"))).toEqual([]);
+  });
+
+  it("stars the fastest timed distance for best time, never a slower or untimed set", () => {
+    const slow = set(null, null, {
+      durationSeconds: 1500,
+      distanceMeters: 5000,
+    });
+    const fast = set(null, null, {
+      durationSeconds: 1300,
+      distanceMeters: 5000,
+    });
+    const plank = set(null, null, {
+      durationSeconds: 60,
+      distanceMeters: null,
+    });
+    const s = session([
+      { exerciseId: "run", name: "Run", sets: [slow, plank, fast] },
+    ]);
+    expect([...recordSetIds(s, [rec("run", "best_time")])]).toEqual([fast.id]);
+    const untimed = session([
+      { exerciseId: "run", name: "Run", sets: [plank] },
+    ]);
+    expect([...recordSetIds(untimed, [rec("run", "best_time")])]).toEqual([]);
   });
 
   it("stars a rep max on the set with exactly those reps, not the best estimate", () => {

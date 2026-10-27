@@ -12,8 +12,9 @@ import {
 } from "@/ui/containers/WorkoutRatingContainer";
 import { useActiveWorkout } from "@/state/active-workout";
 import {
-  forgetCloudRoster,
+  forgetRoster,
   rememberCloudRoster,
+  rememberNearbyRoster,
 } from "@/ui/state/togetherRosterSeen";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 
@@ -613,7 +614,7 @@ describe("togetherRoster", () => {
   });
 
   it("falls back to the roster seen live once an Online session has closed", () => {
-    forgetCloudRoster();
+    forgetRoster();
     rememberCloudRoster({
       sessionId: "together-1",
       participants: [
@@ -674,5 +675,47 @@ describe("togetherRoster", () => {
       connection: "Nearby",
     });
     expect(togetherRoster("user-1", false, undefined, undefined)).toBeNull();
+  });
+
+  it("falls back to the seats seen live once Leave or End cancelled the lobby", () => {
+    forgetRoster();
+    rememberNearbyRoster(
+      "nearby-1",
+      [{ userId: "host" }, { userId: "user-1" }, { userId: "p3" }],
+      { host: "Brad", "user-1": "Mia" },
+    );
+    const cancelled = {
+      getSnapshot: () => ({ members: [] }),
+      shared: undefined,
+    } as unknown as Adapters["togetherLobby"];
+    expect(
+      togetherRoster("user-1", false, cancelled, undefined, "nearby-1"),
+    ).toEqual({
+      self: "Mia",
+      names: ["Brad", "Athlete 3"],
+      connection: "Nearby",
+    });
+    expect(
+      togetherRoster("user-1", false, cancelled, undefined, "nearby-2"),
+    ).toBeNull();
+    expect(togetherRoster("user-1", false, cancelled, undefined)).toBeNull();
+    // Only seats with someone else in them are kept.
+    rememberNearbyRoster("nearby-3", [{ userId: "user-1" }]);
+    rememberNearbyRoster(undefined, [{ userId: "a" }, { userId: "b" }]);
+    expect(
+      togetherRoster("user-1", false, cancelled, undefined, "nearby-1"),
+    ).toEqual({
+      self: "Mia",
+      names: ["Brad", "Athlete 3"],
+      connection: "Nearby",
+    });
+    rememberNearbyRoster("nearby-4", [{ userId: "a" }, { userId: "b" }]);
+    expect(
+      togetherRoster("user-1", false, cancelled, undefined, "nearby-4"),
+    ).toEqual({
+      self: "Me",
+      names: ["Athlete 1", "Athlete 2"],
+      connection: "Nearby",
+    });
   });
 });

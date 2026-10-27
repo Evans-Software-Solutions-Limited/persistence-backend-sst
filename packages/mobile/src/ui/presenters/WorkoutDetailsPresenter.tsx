@@ -282,9 +282,10 @@ function TimedSets(p: { exercise: DetailsExercise; unit: WeightUnit }) {
       {p.exercise.sets.map((s) => (
         <Row
           key={s.id}
+          record={s.isRecord}
           cells={[
             String(s.n),
-            s.durationSeconds != null ? clock(s.durationSeconds) : "—",
+            `${s.durationSeconds != null ? clock(s.durationSeconds) : "—"}${s.isRecord ? " ★" : ""}`,
             s.distanceMeters != null
               ? distanceText(s.distanceMeters, p.unit)
               : "—",

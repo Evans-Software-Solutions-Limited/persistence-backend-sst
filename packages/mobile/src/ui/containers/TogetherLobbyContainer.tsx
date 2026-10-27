@@ -25,6 +25,7 @@ import {
   loggedSets,
   unsentFor,
 } from "@/ui/presenters/TogetherLeaveSheet";
+import { rememberNearbyRoster } from "@/ui/state/togetherRosterSeen";
 import { TogetherToast } from "@/ui/presenters/TogetherToast";
 import { TogetherInvitePresenter } from "@/ui/presenters/TogetherInvitePresenter";
 import { TogetherStartSheet } from "@/ui/presenters/TogetherStartSheet";
@@ -639,6 +640,14 @@ export function TogetherLobbyContainer({
         );
     }
   });
+  // Leave and End cancel the lobby, which empties its seats: keep the roster
+  // for the summary's Trained together page.
+  if (["hosting", "joined", "reconnecting"].includes(snapshot.phase))
+    rememberNearbyRoster(
+      snapshot.sessionId,
+      snapshot.members,
+      sharedSnapshot?.profiles,
+    );
   const hostMember = snapshot.members.find((m) => m.host);
   const hostName =
     (hostMember && sharedSnapshot?.profiles[hostMember.userId]) ?? "the host";
