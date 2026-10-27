@@ -227,14 +227,12 @@ export function TogetherCloudContainer(p: {
     until: number | null;
   } | null>(null);
   const [, lapse] = useReducer((n: number) => n + 1, 0);
+  const visibleUntil = hostVisibility?.until ?? null;
   useEffect(() => {
-    if (!hostVisibility || hostVisibility.until === null) return;
-    const timer = setTimeout(
-      lapse,
-      Math.max(0, hostVisibility.until - Date.now()),
-    );
+    if (visibleUntil === null) return;
+    const timer = setTimeout(lapse, Math.max(0, visibleUntil - Date.now()));
     return () => clearTimeout(timer);
-  }, [hostVisibility?.until]);
+  }, [visibleUntil]);
   const hostAudience =
     !hostVisibility ||
     hostVisibility.sessionId !== state.snapshot?.sessionId ||
