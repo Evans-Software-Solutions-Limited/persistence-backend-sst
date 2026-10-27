@@ -92,6 +92,23 @@ The active workout's own header and Finish button are the shipped port and
 still differ from the canvas phone (not changed here). Mobile Jest after the review: 649 suites / 8,696 tests, coverage
 96.2 / 92.14 / 96.11 / 97.6; tsc, lint, prettier clean.
 
+**Inspector Brad (27 Oct, `e435cdf1`).** Fixed both leads from the sweep on
+`a2da879` and the three open notes from the earlier sweep. (1) `resolveMuscles`
+read raw `muscle_groups.name` values, which are capitalised in the catalogue
+(`Chest`, `Hip Flexors`, `Abs`), so with no cached labels the Muscles page
+vanished; names and labels now go through `MUSCLE_GROUP_CATALOGUE_NAME`
+reversed (`Abs` → `core`), plus `Obliques` → `core` and `Lower Back` → `back`.
+(2) The pager keeps the page by kind, not index, and `scrollTo`s when records
+land and insert a page. (3) Online guests kept no roster after the host's
+Finish for all (a closed snapshot lists only the caller): the Online container
+records the live roster (`ui/state/togetherRosterSeen.ts`, memory only) and
+`togetherRoster` falls back to it for the same session. (4) `unsentFor` counts
+only partners still in the session, so the warning can't name "Athlete 0".
+(5) Workout details shows Time / Distance for exercises with no weight or reps,
+and the details share text reads them. Each new test fails on the old code.
+Mobile Jest 649 suites / 8,704 tests, coverage 96.21 / 92.15 / 96.12 / 97.61;
+tsc and lint clean. No screen in the evidence set changed.
+
 **Not verified.** Nothing on a device or simulator: the carousel's gestures and
 the body map on native are untested.
 
