@@ -17,8 +17,11 @@ export interface TogetherSharingSource {
   sessionId: string;
   people: SharingPerson[];
   base: SharingBase;
-  /** Rejects when the session refuses the change. */
-  write(target: SharingBase): Promise<void>;
+  /**
+   * Rejects when the session refuses the change. `before` is what the
+   * switches showed, so a write touches only what the tap changed.
+   */
+  write(target: SharingBase, before: SharingBase): Promise<void>;
 }
 
 /**
@@ -55,7 +58,7 @@ export function useTogetherSharing(source: TogetherSharingSource | null): {
     const request = ++latest.current;
     setOptimistic({ sessionId, base: target });
     setRefused(null);
-    source.write(target).then(
+    source.write(target, shown).then(
       () => {
         if (mounted.current && request === latest.current) setOptimistic(null);
       },

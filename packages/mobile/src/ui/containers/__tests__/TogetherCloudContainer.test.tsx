@@ -270,17 +270,20 @@ it("wires host invitations, join requests, who can join and every-partner sharin
     expect.any(String),
   );
   expect(settings().audience?.value).toBe("friends");
-  // Open nearby is Nearby-only, and choosing the current value sends nothing.
+  // Open nearby is Nearby-only.
   await act(async () => settings().audience!.onChange("open"));
-  await act(async () => settings().audience!.onChange("friends"));
   expect(h.cloud.visibility).toHaveBeenCalledTimes(1);
+  // Tapping the value it shows sends it again: Partners for another 15 minutes.
+  await act(async () => settings().audience!.onChange("friends"));
+  expect(h.cloud.visibility).toHaveBeenCalledTimes(2);
+  // A failed send stays queued for reconnect, so the segment keeps the choice.
   jest.mocked(h.cloud.visibility).mockRejectedValueOnce(new Error("offline"));
   await act(async () => settings().audience!.onChange("invite-only"));
   expect(h.cloud.visibility).toHaveBeenLastCalledWith(
     "private",
     expect.any(String),
   );
-  expect(settings().audience?.value).toBe("friends");
+  expect(settings().audience?.value).toBe("invite-only");
   act(() => settings().onDone());
   expect(settings().visible).toBe(false);
 });
@@ -626,6 +629,34 @@ it("surfaces command errors and wires retry, cancel, partner navigation and loca
   fireEvent.press(r.getByText("Open"));
   act(() => ui(r).onPartners());
   expect(mockPush).toHaveBeenCalledWith("/(app)/together/partners");
+});
+it("Partners lapses back to Private when the server's 15 minutes run out, and choosing it again renews it", async () => {
+  jest.useFakeTimers();
+  try {
+    const h = setup(true);
+    const r = renderWithTheme(
+      <TogetherCloudContainer {...h.props} initialHost="friends" />,
+    );
+    await act(async () => {});
+    const audience = () =>
+      r.UNSAFE_getByType(TogetherSharingPresenter).props.audience?.value;
+    expect(audience()).toBe("friends");
+    expect(h.cloud.visibility).toHaveBeenCalledWith(
+      "friends",
+      expect.any(String),
+    );
+    act(() => jest.advanceTimersByTime(15 * 60_000));
+    expect(audience()).toBe("invite-only");
+    // Choosing Partners again renews it.
+    await act(async () => {
+      r.UNSAFE_getByType(TogetherSharingPresenter).props.audience.onChange(
+        "friends",
+      );
+    });
+    expect(audience()).toBe("friends");
+  } finally {
+    jest.useRealTimers();
+  }
 });
 it("queues every changed permission at once without waiting on the first, and a late rejection after the account changes shows nothing", async () => {
   const h = setup(true);

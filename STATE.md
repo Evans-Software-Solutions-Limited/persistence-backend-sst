@@ -58,6 +58,20 @@ revert), invite and request bar from the strip. Screens: harness shots next
 to canvas crops for all five phones in
 `specs/milestones/TRAIN-TOGETHER/evidence/ui-2026-10-27-per60-pr4/`.
 
+**Inspector Brad (27 Oct, sweep on `ab7087f`).** Three medium leads. (1) The
+switches read on only when every partner held the grant, so a newcomer given
+the stored defaults (numbers on) sat behind a switch reading Off, and the next
+chip tap rewrote every recipient's numbers to the shown value, silently
+revoking it. Each switch now reads on while anyone holds the grant, and
+`nearbySharingWrites`/`cloudSharingWrites` take what was shown (`before`) and
+change only what the tap changed; the hook passes it. (2) Online "Who can join"
+reverted when `visibility` rejected, but the outbox keeps that action queued
+and sends it on reconnect (visibility is never dropped), so it no longer
+reverts. (3) The segment was a guess seeded once: it now records when Partners
+was sent and lapses to Private after the server's 15 minutes, every send
+(start, the main sheet's button, the segment) updates it, and tapping the shown
+value sends it again to renew or retry. Each new test fails on the old code.
+
 **Not verified.** Nothing on a device or simulator.
 
 ### 2026-10-26 — Together UX pass PR 3: leaving, ending and finishing (PER-60, branch `claude/per-60-together-finish`)

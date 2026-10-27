@@ -600,12 +600,13 @@ export function TogetherLobbyContainer({
           sessionId: snapshot.sessionId,
           people,
           base: nearbySharingBase(sharedSnapshot.grants, accountId, people),
-          write: async (target) => {
+          write: async (target, before) => {
             const writes = nearbySharingWrites(
               lobby.shared!.getSnapshot().grants,
               accountId,
               people,
               target,
+              before,
             );
             await Promise.all(
               writes.map((w) => applyConsent(w.recipientId, w.consent)),

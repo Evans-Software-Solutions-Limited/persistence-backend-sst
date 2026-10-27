@@ -3,9 +3,11 @@
  * and the previous-value recipients. Both transports reduce to this model, so
  * the in-session sheet and Together settings' live card behave the same.
  *
- * The switches speak for everyone in the session: Show my numbers and Let
- * others fill in my sets read on only when they are on for everyone; Share
- * previous values reads on while anyone is picked, and the chips narrow it.
+ * The switches speak for everyone in the session. Each reads on while anyone
+ * holds that grant, so a grant the joining defaults gave a newcomer never sits
+ * behind a switch that says Off; turning a switch off revokes it for everyone,
+ * on grants it to everyone, and the chips narrow previous values. A write only
+ * touches what the tap changed, so a chip never rewrites anyone's numbers.
  */
 
 import type { TogetherSharingConsent } from "@/domain/ports/togetherShared.port";
@@ -166,27 +168,37 @@ export function nearbySharingBase(
 ): SharingBase {
   const each = people.map((p) => grantFor(grants, accountId, p.userId));
   return {
-    numbers: each.length > 0 && each.every((c) => c.numbers),
-    logging: each.length > 0 && each.every((c) => c.logging),
+    numbers: each.some((c) => c.numbers),
+    logging: each.some((c) => c.logging),
     previous: Object.fromEntries(
       people.map((p, i) => [p.userId, each[i]!.prev]),
     ),
   };
 }
 
-/** The per-recipient grants that differ from what the target asks for. */
+/**
+ * The per-recipient grants a tap changes: only the parts that differ between
+ * what was shown (`before`) and the target; everything else stays as granted.
+ */
 export function nearbySharingWrites(
   grants: readonly Grant[],
   accountId: string,
   people: readonly SharingPerson[],
   target: SharingBase,
+  before: SharingBase,
 ): { recipientId: string; consent: TogetherSharingConsent }[] {
   return people.flatMap((p) => {
     const current = grantFor(grants, accountId, p.userId);
+    const id = p.userId;
     const consent = {
-      numbers: target.numbers,
-      prev: !!target.previous[p.userId],
-      logging: target.logging,
+      numbers:
+        target.numbers === before.numbers ? current.numbers : target.numbers,
+      prev:
+        !!target.previous[id] === !!before.previous[id]
+          ? current.prev
+          : !!target.previous[id],
+      logging:
+        target.logging === before.logging ? current.logging : target.logging,
     };
     return current.numbers === consent.numbers &&
       current.prev === consent.prev &&
@@ -211,8 +223,7 @@ export function cloudSharingBase(
   const numbers = own.numbersConsent?.recipientIds ?? [];
   const previous = own.previousConsent?.recipientIds ?? [];
   return {
-    numbers:
-      people.length > 0 && people.every((p) => numbers.includes(p.userId)),
+    numbers: people.some((p) => numbers.includes(p.userId)),
     logging: own.allowPartnerLogging,
     previous: Object.fromEntries(
       people.map((p) => [p.userId, previous.includes(p.userId)]),
@@ -223,16 +234,35 @@ export function cloudSharingBase(
 const sameIds = (a: readonly string[], b: readonly string[]) =>
   a.length === b.length && a.every((id) => b.includes(id));
 
-/** The three server calls a target needs; unchanged ones are left out. */
+/**
+ * The server calls a tap needs: only what differs between what was shown
+ * (`before`) and the target; untouched recipients keep their grants.
+ */
 export function cloudSharingWrites(
   own: CloudOwn,
   people: readonly SharingPerson[],
   target: SharingBase,
+  before: SharingBase,
 ): { numbers?: string[]; previous?: string[]; logging?: boolean } {
-  const numbers = target.numbers ? people.map((p) => p.userId) : [];
-  const previous = people
-    .filter((p) => target.previous[p.userId])
-    .map((p) => p.userId);
+  const granted = own.numbersConsent?.recipientIds ?? [];
+  const numbers =
+    target.numbers === before.numbers
+      ? [...granted]
+      : target.numbers
+        ? people.map((p) => p.userId)
+        : [];
+  const previous = [
+    ...(own.previousConsent?.recipientIds ?? []).filter(
+      (id) => !people.some((p) => p.userId === id),
+    ),
+    ...people
+      .filter((p) =>
+        !!target.previous[p.userId] === !!before.previous[p.userId]
+          ? (own.previousConsent?.recipientIds ?? []).includes(p.userId)
+          : target.previous[p.userId],
+      )
+      .map((p) => p.userId),
+  ];
   return {
     ...(sameIds(numbers, own.numbersConsent?.recipientIds ?? [])
       ? {}

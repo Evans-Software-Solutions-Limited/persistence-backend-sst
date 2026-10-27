@@ -13,6 +13,7 @@ import { TogetherJoinRequestBar } from "@/ui/presenters/TogetherJoinRequestBar";
 import {
   useEffect,
   useRef,
+  useReducer,
   useState,
   useSyncExternalStore,
   type ReactNode,
@@ -175,6 +176,9 @@ export function cloudSharedView(
       : [],
   };
 }
+/** How long the server keeps an Online session visible to training partners. */
+const VISIBLE_FOR = 15 * 60_000;
+
 export function TogetherCloudContainer(p: {
   cloud: TogetherCloudPort;
   /** Host online straight away: "friends" also publishes visibility to training partners. */
@@ -212,10 +216,41 @@ export function TogetherCloudContainer(p: {
   const [leaveOpen, setLeaveOpen] = useState(false);
   /** Canvas row 4: the strip's settings cog. */
   const [sharingOpen, setSharingOpen] = useState(false);
-  /** Who can join, as the host last set it; the server's visibility lasts 15 minutes. */
-  const [hostAudience, setHostAudience] = useState<"invite-only" | "friends">(
-    p.initialHost === "friends" ? "friends" : "invite-only",
+  /**
+   * Who can join, as the host last sent it. The snapshot doesn't carry it, and
+   * the server's Partners visibility lapses after 15 minutes, when the segment
+   * goes back to Private.
+   */
+  const [hostVisibility, setHostVisibility] = useState<{
+    value: "invite-only" | "friends";
+    until: number | null;
+  }>(() =>
+    p.initialHost === "friends"
+      ? { value: "friends", until: Date.now() + VISIBLE_FOR }
+      : { value: "invite-only", until: null },
   );
+  const [, lapse] = useReducer((n: number) => n + 1, 0);
+  useEffect(() => {
+    if (hostVisibility.until === null) return;
+    const timer = setTimeout(
+      lapse,
+      Math.max(0, hostVisibility.until - Date.now()),
+    );
+    return () => clearTimeout(timer);
+  }, [hostVisibility.until]);
+  const hostAudience =
+    hostVisibility.until !== null && Date.now() >= hostVisibility.until
+      ? "invite-only"
+      : hostVisibility.value;
+  /** Sends who can join; a failed send stays queued in the outbox and goes on reconnect. */
+  const sendVisibility = (value: "invite-only" | "friends") => {
+    const until = Date.now() + VISIBLE_FOR;
+    setHostVisibility({ value, until: value === "friends" ? until : null });
+    return p.cloud.visibility(
+      value === "friends" ? "friends" : "private",
+      new Date(until).toISOString(),
+    );
+  };
   const [toast, showToast] = useTogetherToast();
   const [, requestCameraPermission] = useCameraPermissions();
   const [scanning, setScanning] = useState(false);
@@ -396,10 +431,7 @@ export function TogetherCloudContainer(p: {
       }
       if (p.initialHost === "friends")
         try {
-          await p.cloud.visibility(
-            "friends",
-            new Date(Date.now() + 15 * 60_000).toISOString(),
-          );
+          await sendVisibility("friends");
         } catch {
           if (scope === generation.current)
             setNotice(
@@ -495,8 +527,8 @@ export function TogetherCloudContainer(p: {
           sessionId: state.snapshot.sessionId,
           people,
           base: cloudSharingBase(own, people),
-          write: async (target) => {
-            const w = cloudSharingWrites(own, people, target);
+          write: async (target, before) => {
+            const w = cloudSharingWrites(own, people, target, before);
             await Promise.all([
               ...(w.numbers ? [p.cloud.numbersConsent(w.numbers)] : []),
               ...(w.previous ? [p.cloud.previousConsent(w.previous)] : []),
@@ -798,19 +830,12 @@ export function TogetherCloudContainer(p: {
             ? {
                 value: hostAudience,
                 online: true,
+                // Tapping the current value sends it again, which renews
+                // Partners for another 15 minutes or retries a failed send.
+                // A rejection leaves the change queued, so nothing reverts.
                 onChange: (value) => {
-                  if (value === "open" || value === hostAudience) return;
-                  const before = hostAudience;
-                  const scope = generation.current;
-                  setHostAudience(value);
-                  p.cloud
-                    .visibility(
-                      value === "friends" ? "friends" : "private",
-                      new Date(Date.now() + 15 * 60_000).toISOString(),
-                    )
-                    .catch(() => {
-                      if (scope === generation.current) setHostAudience(before);
-                    });
+                  if (value === "open") return;
+                  sendVisibility(value).catch(() => {});
                 },
               }
             : undefined
@@ -1101,14 +1126,7 @@ export function TogetherCloudContainer(p: {
                 setVisible(false);
                 router.push("/(app)/together/partners" as never);
               }}
-              onVisible={() =>
-                run(() =>
-                  p.cloud.visibility(
-                    "friends",
-                    new Date(Date.now() + 15 * 60_000).toISOString(),
-                  ),
-                )
-              }
+              onVisible={() => run(() => sendVisibility("friends"))}
             />
           </>
         )}

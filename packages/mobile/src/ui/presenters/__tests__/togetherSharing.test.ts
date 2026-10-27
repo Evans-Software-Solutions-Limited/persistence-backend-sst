@@ -90,33 +90,69 @@ describe("switches for everyone", () => {
 });
 
 describe("Nearby grants", () => {
+  // Brad and Tom hold numbers and fill-in; Inés joined later with none.
   const grants = [grant("b", true, true, true), grant("t", true, false, true)];
-  it("reads the switches from every partner's grant", () => {
+  it("reads a switch on while anyone holds the grant", () => {
     expect(nearbySharingBase(grants, "me", people)).toEqual({
-      numbers: false,
-      logging: false,
-      previous: { b: true, t: false, i: false },
-    });
-    expect(nearbySharingBase(grants, "me", people.slice(0, 2))).toMatchObject({
       numbers: true,
       logging: true,
+      previous: { b: true, t: false, i: false },
     });
     expect(nearbySharingBase([], "me", [])).toMatchObject({
       numbers: false,
       logging: false,
     });
   });
-  it("writes only the grants that change", () => {
+  it("shows a newcomer's default grant instead of hiding it behind Off", () => {
+    // Numbers turned off for Brad in the session, then Inés joined and the
+    // stored defaults granted her numbers.
+    const after = [
+      grant("b", false, false, false),
+      grant("i", true, false, false),
+    ];
+    expect(nearbySharingBase(after, "me", people).numbers).toBe(true);
+  });
+  it("turns a switch off or on for everyone", () => {
+    const before = nearbySharingBase(grants, "me", people);
     expect(
-      nearbySharingWrites(grants, "me", people, {
-        numbers: true,
-        logging: true,
-        previous: { b: true },
-      }),
+      nearbySharingWrites(
+        grants,
+        "me",
+        people,
+        { ...before, numbers: false },
+        before,
+      ),
+    ).toEqual([
+      {
+        recipientId: "b",
+        consent: { numbers: false, prev: true, logging: true },
+      },
+      {
+        recipientId: "t",
+        consent: { numbers: false, prev: false, logging: true },
+      },
+    ]);
+    const off = { ...before, logging: false, numbers: false };
+    expect(
+      nearbySharingWrites([], "me", people, { ...off, logging: true }, off).map(
+        (w) => w.recipientId,
+      ),
+    ).toEqual(["b", "t", "i"]);
+  });
+  it("a chip changes only that person's previous values, never anyone's numbers", () => {
+    const before = nearbySharingBase(grants, "me", people);
+    expect(
+      nearbySharingWrites(
+        grants,
+        "me",
+        people,
+        { ...before, previous: { ...before.previous, i: true } },
+        before,
+      ),
     ).toEqual([
       {
         recipientId: "i",
-        consent: { numbers: true, prev: false, logging: true },
+        consent: { numbers: false, prev: true, logging: false },
       },
     ]);
   });
@@ -125,10 +161,10 @@ describe("Nearby grants", () => {
 describe("Online consent", () => {
   const own = {
     allowPartnerLogging: true,
-    numbersConsent: { recipientIds: ["b", "t", "i", "gone"] },
-    previousConsent: { recipientIds: ["t"] },
+    numbersConsent: { recipientIds: ["b", "gone"] },
+    previousConsent: { recipientIds: ["t", "gone"] },
   };
-  it("reads the switches from the recipient lists", () => {
+  it("reads a switch on while anyone holds the grant", () => {
     expect(cloudSharingBase(own, people)).toEqual({
       numbers: true,
       logging: true,
@@ -139,20 +175,32 @@ describe("Online consent", () => {
       previous: {},
     });
   });
-  it("sends only the calls that change", () => {
+  it("sends only what the tap changed", () => {
+    const before = cloudSharingBase(own, people);
+    // A chip: previous values for Inés, nobody's numbers rewritten.
     expect(
-      cloudSharingWrites(own, people, {
-        numbers: true,
-        logging: true,
-        previous: { t: true },
-      }),
+      cloudSharingWrites(
+        own,
+        people,
+        { ...before, previous: { ...before.previous, i: true } },
+        before,
+      ),
+    ).toEqual({ previous: ["gone", "t", "i"] });
+    // Numbers off revokes everyone; fill-in is one flag.
+    expect(
+      cloudSharingWrites(own, people, { ...before, numbers: false }, before),
+    ).toEqual({ numbers: [] });
+    expect(
+      cloudSharingWrites(own, people, { ...before, logging: false }, before),
+    ).toEqual({ logging: false });
+    const none = cloudSharingBase({ allowPartnerLogging: false }, people);
+    expect(
+      cloudSharingWrites(
+        { allowPartnerLogging: false },
+        people,
+        { ...none, numbers: true },
+        none,
+      ),
     ).toEqual({ numbers: ["b", "t", "i"] });
-    expect(
-      cloudSharingWrites({ allowPartnerLogging: false }, people, {
-        numbers: false,
-        logging: true,
-        previous: { b: true, i: true },
-      }),
-    ).toEqual({ previous: ["b", "i"], logging: true });
   });
 });

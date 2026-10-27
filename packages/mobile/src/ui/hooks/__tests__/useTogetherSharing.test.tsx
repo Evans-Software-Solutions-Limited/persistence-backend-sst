@@ -31,7 +31,7 @@ it("moves a switch on tap and holds it until the write settles", async () => {
   let current = source({ write: jest.fn(() => write.promise) });
   const { result, rerender } = renderHook(() => useTogetherSharing(current));
   act(() => result.current.change({ key: "numbers", value: true }));
-  expect(current.write).toHaveBeenCalledWith({ ...none, numbers: true });
+  expect(current.write).toHaveBeenCalledWith({ ...none, numbers: true }, none);
   expect(result.current.state?.numbers).toBe(true);
   // Acknowledged: the grants now say so.
   current = { ...current, base: { ...none, numbers: true } };

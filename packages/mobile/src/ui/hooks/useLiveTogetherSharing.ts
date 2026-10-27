@@ -84,7 +84,7 @@ export function useLiveTogetherSharing(p: {
       sessionId: lobby.sessionId,
       people,
       base: nearbySharingBase(sharedSnapshot.grants, userId, people),
-      write: async (target) => {
+      write: async (target, before) => {
         const workout = () => p.storage.getActiveSession(userId);
         await Promise.all(
           nearbySharingWrites(
@@ -92,6 +92,7 @@ export function useLiveTogetherSharing(p: {
             userId,
             people,
             target,
+            before,
           ).map((w) =>
             applyNearbyConsent({
               shared,
@@ -141,8 +142,8 @@ export function useLiveTogetherSharing(p: {
         sessionId: cloud.sessionId,
         people,
         base: cloudSharingBase(own, people),
-        write: async (target) => {
-          const w = cloudSharingWrites(own, people, target);
+        write: async (target, before) => {
+          const w = cloudSharingWrites(own, people, target, before);
           await Promise.all([
             ...(w.numbers ? [cloudPort.numbersConsent(w.numbers)] : []),
             ...(w.previous ? [cloudPort.previousConsent(w.previous)] : []),
