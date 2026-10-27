@@ -6,13 +6,14 @@ import { Text, View } from "@tamagui/core";
  * The canvas `.btn` family for the Together screens (PER-60): 52pt primary,
  * `soft` (primary dim), `ghost` (primary outline) and `quiet` (surface2 with a
  * hairline); `md` is the same button at 44pt (canvas `.btn` with `height:44px`:
- * code card, empty and failed states, the Wi-Fi sheet); `sm` is the 44pt row
+ * code card, empty and failed states, the Wi-Fi sheet); `ember` is the
+ * orange confirm that leaves or ends a live session (row 3); `sm` is the 44pt row
  * action with a 10pt radius and a 13pt label.
  */
 export function TogetherBtn(p: {
   children: string;
   onPress(): void;
-  variant?: "primary" | "soft" | "ghost" | "quiet";
+  variant?: "primary" | "soft" | "ghost" | "quiet" | "ember";
   size?: "lg" | "md" | "sm";
   icon?: ReactNode;
   disabled?: boolean;
@@ -28,6 +29,7 @@ export function TogetherBtn(p: {
     soft: { bg: "$primaryDim", text: "$primary", border: "transparent" },
     ghost: { bg: "transparent", text: "$primary", border: "$primary" },
     quiet: { bg: "$surface2", text: "$text2", border: "$border2" },
+    ember: { bg: "$ember", text: "$bg", border: "transparent" },
   }[variant];
   return (
     <Pressable

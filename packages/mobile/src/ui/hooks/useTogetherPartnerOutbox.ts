@@ -31,6 +31,14 @@ export type TogetherPartnerOutbox = {
   addRow(planExerciseId: string): void;
 };
 
+/** Every partner's outbox, plus what has not reached them (canvas row 3's leave warning). */
+export type TogetherPartnerOutboxes = ((
+  ownerId: string,
+) => TogetherPartnerOutbox) & {
+  /** Sets still sending or not sent, per partner. */
+  unsent(): { ownerId: string; count: number }[];
+};
+
 /** A handed-over set the partner neither applies nor rejects in this long is Not sent. */
 export const PARTNER_SET_TIMEOUT_MS = 15_000;
 
@@ -87,7 +95,7 @@ export function useTogetherPartnerOutbox(p: {
     operation: Record<string, unknown>,
     observedRevision: number,
   ): Promise<void>;
-}): (ownerId: string) => TogetherPartnerOutbox {
+}): TogetherPartnerOutboxes {
   const [, rerender] = useReducer((n: number) => n + 1, 0);
   const owners = useRef(new Map<string, Owner>());
   const latest = useRef(p);
@@ -316,7 +324,7 @@ export function useTogetherPartnerOutbox(p: {
     [],
   );
 
-  return (ownerId) => {
+  const outbox = (ownerId: string): TogetherPartnerOutbox => {
     const o = state(ownerId);
     return {
       drafts: o.drafts,
@@ -359,4 +367,13 @@ export function useTogetherPartnerOutbox(p: {
       },
     };
   };
+  return Object.assign(outbox, {
+    unsent: () =>
+      [...owners.current.entries()].flatMap(([ownerId, o]) => {
+        const count = Object.values(o.delivery).filter(
+          (d) => d === "sending" || d === "notsent",
+        ).length;
+        return count ? [{ ownerId, count }] : [];
+      }),
+  });
 }

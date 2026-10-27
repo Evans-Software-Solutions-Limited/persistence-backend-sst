@@ -665,7 +665,10 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
             }
             renderItem={(row, { index, isCompact }: ReorderableRenderProps) => (
               <View
-                style={styles.dragBlock}
+                // Opaque only while a drag has collapsed the rows, so a lifted
+                // row covers the ones beneath it. At rest the screen glow shows
+                // through, as on the canvas (PER-60).
+                style={isCompact ? styles.dragBlock : undefined}
                 testID={`active-session-drag-block-${index + 1}`}
               >
                 {isCompact ? (

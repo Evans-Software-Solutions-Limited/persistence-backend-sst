@@ -38,7 +38,7 @@ import { SemiCircleSlider } from "@/ui/components/workouts/SemiCircleSlider";
 const MIN_RATING = 1;
 const MAX_RATING = 10;
 
-const getDifficultyMessage = (rating: number): string => {
+export const getDifficultyMessage = (rating: number): string => {
   if (rating <= 2) return "Too Easy";
   if (rating <= 4) return "Easy";
   if (rating <= 6) return "Moderate";
@@ -50,7 +50,7 @@ const getDifficultyMessage = (rating: number): string => {
 // RPE_BAND_TONES): easy → $success, moderate → $info, hard → $warning,
 // veryHard → $ember, maximal → $error. Band boundaries preserved from the
 // legacy port (1-2 / 3-4 / 5-6 / 7-8 / 9-10).
-const getDifficultyColor = (rating: number): string => {
+export const getDifficultyColor = (rating: number): string => {
   if (rating <= 2) return color.$success;
   if (rating <= 4) return color.$info;
   if (rating <= 6) return color.$warning;

@@ -814,3 +814,39 @@ if (!process.env.DEBUG_TESTS) {
     originalWarn(...args);
   });
 }
+
+// The finish pages' pager (PER-60 row 3c). Swipes are native gestures, so
+// tests render every page in a row and drive the pager through its props:
+// `scrollTo` lands on a page the way a swipe's `onSnapToItem` does.
+jest.mock("react-native-reanimated-carousel", () => {
+  const React = require("react");
+  const { View } = require("react-native");
+  const Carousel = React.forwardRef(
+    (
+      p: {
+        data: unknown[];
+        renderItem(info: { item: unknown; index: number }): unknown;
+        onSnapToItem?(index: number): void;
+        onConfigurePanGesture?(gesture: unknown): void;
+      },
+      ref: unknown,
+    ) => {
+      React.useImperativeHandle(ref, () => ({
+        scrollTo: ({ index }: { index: number }) => p.onSnapToItem?.(index),
+      }));
+      p.onConfigurePanGesture?.({ activeOffsetX: () => undefined });
+      return React.createElement(
+        View,
+        { testID: "summary-carousel" },
+        p.data.map((item, index) =>
+          React.createElement(
+            View,
+            { key: index },
+            p.renderItem({ item, index }),
+          ),
+        ),
+      );
+    },
+  );
+  return { __esModule: true, default: Carousel };
+});

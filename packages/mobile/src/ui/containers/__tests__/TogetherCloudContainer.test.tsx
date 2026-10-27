@@ -22,6 +22,7 @@ import type {
 } from "@/domain/ports/togetherCloud.port";
 import type { WorkoutSession } from "@/domain/models/session";
 import { useTogetherSettings } from "@/state/together-settings";
+import { rosterSeen, forgetRoster } from "@/ui/state/togetherRosterSeen";
 const mockCameraPermission = jest.fn();
 jest.mock("expo-camera", () => ({
   useCameraPermissions: () => [null, mockCameraPermission],
@@ -733,7 +734,7 @@ it("does not remove someone after the removal dialog account has changed", async
   expect(h.cloud.remove).toHaveBeenCalledWith("v");
   alert.mockRestore();
 });
-it("ends from the workout strip through review and clears revoked per-recipient consent", async () => {
+it("clears revoked per-recipient consent from the settings sheet", async () => {
   const h = setup(true);
   h.state().snapshot!.participants[0].numbersConsent = {
     version: 1,
@@ -744,7 +745,7 @@ it("ends from the workout strip through review and clears revoked per-recipient 
     recipientIds: ["v"],
   };
   const r = renderWithTheme(<TogetherCloudContainer {...h.props} />);
-  fireEvent.press(r.getByText("End"));
+  fireEvent.press(r.getByLabelText("Together settings"));
   expect(mockPush).not.toHaveBeenCalled();
   expect(r.UNSAFE_getByType(TogetherSharingPresenter)).toBeTruthy();
   await act(async () =>
@@ -1382,4 +1383,136 @@ it("grants nothing until this account's settings have been read (inspector lead 
   expect(h.cloud.numbersConsent).not.toHaveBeenCalled();
   expect(h.cloud.previousConsent).toHaveBeenCalledWith(["v"]);
   useTogetherSettings.getState().reset();
+});
+
+describe("leaving and ending Online (canvas row 3)", () => {
+  const guest = () => {
+    const h = setup(true);
+    h.state().snapshot!.participants[0]!.displayName = "Brad";
+    h.state().snapshot!.participants[1]!.userId = "v";
+    const props = {
+      ...h.props,
+      accountId: "v",
+      getWorkout: () => ({ ...h.draft, userId: "v" }),
+    };
+    return { ...h, props };
+  };
+  const ended = (h: ReturnType<typeof setup>, state: "closed" | "active") =>
+    act(() =>
+      h.publish({
+        snapshot: {
+          ...h.state().snapshot!,
+          state,
+          sharingActive: false,
+          continuation: "solo",
+          participants: h
+            .state()
+            .snapshot!.participants.filter((x) => x.userId === "v"),
+        },
+      }),
+    );
+
+  it("remembers the live roster for the summary after the session closes", () => {
+    forgetRoster();
+    const h = guest();
+    const id = h.state().snapshot!.sessionId;
+    renderWithTheme(<TogetherCloudContainer {...h.props} />);
+    ended(h, "closed");
+    expect(rosterSeen(id)?.map((p) => p.userId)).toEqual(
+      expect.arrayContaining(["v", h.state().snapshot!.hostId]),
+    );
+    expect(rosterSeen("another-session")).toBeNull();
+  });
+
+  it("the host's End stops sharing for everyone and the strip goes", async () => {
+    const h = setup(true);
+    const stop = jest.fn(async () => {});
+    (h.cloud as { stopSharing?: () => Promise<void> }).stopSharing = stop;
+    const r = renderWithTheme(<TogetherCloudContainer {...h.props} />);
+    fireEvent.press(r.getByText("End"));
+    expect(r.getByText("End the live session?")).toBeTruthy();
+    await act(async () => fireEvent.press(r.getByText("End session")));
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(
+      r.getByText("Live session ended. Your workout carries on."),
+    ).toBeTruthy();
+    act(() =>
+      h.publish({
+        snapshot: {
+          ...h.state().snapshot!,
+          state: "closed",
+          sharingActive: false,
+          continuation: "solo",
+        },
+      }),
+    );
+    expect(r.queryByText("End")).toBeNull();
+    expect(r.queryByText(/Sharing ended/)).toBeNull();
+  });
+
+  it("a guest's Leave keeps their workout and does not read as the host ending", async () => {
+    const h = guest();
+    const stop = jest.fn(async () => {});
+    (h.cloud as { stopSharing?: () => Promise<void> }).stopSharing = stop;
+    const r = renderWithTheme(<TogetherCloudContainer {...h.props} />);
+    fireEvent.press(r.getByText("Leave"));
+    expect(r.getByText("Leave Brad’s session?")).toBeTruthy();
+    expect(
+      r.getByText("Your workout carries on here. Brad keeps training."),
+    ).toBeTruthy();
+    await act(async () =>
+      fireEvent.press(r.getByTestId("together-leave-confirm")),
+    );
+    expect(stop).toHaveBeenCalled();
+    expect(
+      r.getByText("You left Brad’s session. Your workout carries on."),
+    ).toBeTruthy();
+    ended(h, "active");
+    expect(r.queryByText(/ended the live session/)).toBeNull();
+    expect(r.queryByText("Leave")).toBeNull();
+  });
+
+  it("a partner hears when the host ends it, with the host's name kept from when it was live", () => {
+    const h = guest();
+    const r = renderWithTheme(<TogetherCloudContainer {...h.props} />);
+    ended(h, "closed");
+    expect(
+      r.getByText("Brad ended the live session. Your workout carries on."),
+    ).toBeTruthy();
+    expect(r.queryByText("Leave")).toBeNull();
+  });
+
+  it("being removed is not the host ending", () => {
+    const h = guest();
+    const r = renderWithTheme(<TogetherCloudContainer {...h.props} />);
+    ended(h, "active");
+    expect(r.queryByTestId("together-toast")).toBeNull();
+  });
+
+  it("a session already over when the screen opens says nothing", () => {
+    const h = guest();
+    ended(h, "closed");
+    const r = renderWithTheme(<TogetherCloudContainer {...h.props} />);
+    expect(r.queryByTestId("together-toast")).toBeNull();
+    expect(r.queryByText("Leave")).toBeNull();
+  });
+
+  it("a failed leave keeps the session and says so", async () => {
+    const h = guest();
+    const r = renderWithTheme(<TogetherCloudContainer {...h.props} />);
+    fireEvent.press(r.getByText("Leave"));
+    fireEvent.press(r.getByTestId("together-leave-stay"));
+    expect(r.queryByText("Leave Brad’s session?")).toBeNull();
+    fireEvent.press(r.getByText("Leave"));
+    await act(async () =>
+      fireEvent.press(r.getByTestId("together-leave-confirm")),
+    );
+    expect(
+      r.getByText(
+        "Could not leave the session. Your workout is safe. Try again.",
+      ),
+    ).toBeTruthy();
+    // Still live: the strip stays.
+    expect(r.getByText("Leave")).toBeTruthy();
+  });
 });

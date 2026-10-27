@@ -1,5 +1,137 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-26 — Together UX pass PR 3: leaving, ending and finishing (PER-60, branch `claude/per-60-together-finish`)
+
+Third of four UI PRs ([canvas](https://claude.ai/artifact/VBc4WTCmYuT5uJ1V6GyqSM)
+rows 3, 3b, 3c: `Leave`, `Finish`, `Summary`; plan and canvas differences on
+[PER-60](https://linear.app/evans-software-solutions/issue/PER-60), 26 Oct).
+Mobile only, no backend change. One JS-only dependency added:
+`react-native-body-highlighter` 3.2.0 (MIT, react-native-svg; also in the Jest
+transform list).
+
+**Row 3.** The strip's Leave (guest) / End (host) opens `TogetherLeaveSheet`
+(one sentence, Stay / Leave or Keep it live / End session, `TogetherBtn`
+`ember` confirm) instead of the lobby settings sheet. Nearby: Leave sends the
+`leave` closure, End `save_own`, then `lobby.cancel()`; Online: both call
+`stopSharing` (the server ends sharing for everyone when the host calls it).
+The unsent line counts sets still sending / not sent in
+`useTogetherPartnerOutbox` (new `unsent()`). Afterwards the workout is plain
+solo: Nearby `sharing: "local-only"` without a recovery state, or Online
+`continuation: "solo"`, renders no Together row; a recovering workout keeps its
+row so review stays reachable. `TogetherToast` (3.5 s, `useTogetherToast`)
+says "You left Brad’s session. Your 6 sets are here." / "Live session ended…";
+partners get "Brad ended the live session…" when the host's `save_own`
+closure arrives (Nearby, closures seen at mount are ignored) or an Online
+snapshot moves from live to `state: "closed"` + `continuation: "solo"` (being
+removed keeps `state: "active"`, so it doesn't read as the host ending; the
+host's name is remembered because a closed snapshot lists only you).
+
+**Row 3b.** `TogetherFinishChoicePresenter` is the canvas sheet: "Finish
+workout?", one line, Finish for all / Finish just for me (discard and Keep
+training removed). Rating and discard screens unchanged; routing unchanged.
+
+**Row 3c.** `SessionSummaryPresenter` is the full-screen pager on
+`react-native-reanimated-carousel` (sideways pan only via
+`activeOffsetX`): Totals, Muscles worked, Exercises (6), Volume (top 5),
+Personal records (hero for one, list of 3 + "more"), Trained together; pages
+without data are hidden (`summaryPages`). `WorkoutDetailsPresenter` is its own
+scroll-down view of the same `WorkoutSummaryModel` (so history can open it):
+totals strip, per-exercise Set/Weight/Reps/1RM/Vol, notes, record sets gold ★.
+Pure logic in `domain/services/workoutSummary.ts`: `muscleShare` (n3b_shade:
+primary 1.0 / secondary 0.5 per completed set, share %, levels at
+0.75/0.5/0.25, slug map, a11y label), `resolveMuscles` (cached exercises carry
+catalogue UUIDs: mapped through the `muscle_groups` reference list, labels as
+fallback), `buildWorkoutSummary`, `recordSetIds` (server `setId`, else best
+set). `MuscleMap` draws both figures, unworked regions `$bodyMapIdle` (new
+token #2A2F3F), head `$surface4`, hair hidden. Records come from the server
+response only. The rating container passes `rating` and the Together roster
+(`togetherRoster`) to the summary as route params, since the live session has
+closed by then. Share is not built (needs a native build).
+
+**Canvas differences (on PER-60):** no Start row after leaving (a
+Together-bound workout cannot host again); the unsent sentence says the set
+won't be sent rather than "stays in your workout"; no Share button; cardio-only
+Totals leads with distance; 1RM shows "—" above 10 reps (`estimateOneRepMax`)
+where the canvas extrapolates; long muscle legends wrap instead of truncating.
+
+**Verified.** Mobile Jest 649 suites / 8,689 tests, coverage
+96.2 / 92.14 / 96.1 / 97.6 (gate 90); new files 93–100 %. `tsc` clean,
+`expo lint` 0 errors, prettier clean. Unit: `muscleShare`, slug map, bands,
+`resolveMuscles`, `recordSetIds`, `summaryPages` (4 solo pages, 6 Together +
+record, hidden pages). Presenters: every summary page, hidden/empty, one vs
+several records, lb, cardio, dots/tap navigation; both sheets with and without
+unsent sets; finish choice is two buttons. Containers: Nearby and Online
+leave, end, failure, host-ended partner toast (and not on removal or an old
+closure), recovering row kept, unsent warning from a real queued fill-in;
+finish for all / guest finishes own (existing, plus two-button assertion);
+summary params and malformed params. Screenshots (PR 1/2 harness, 440 × 920
+dark, 58 pt band, onLayout shimmed for the pager) next to canvas crops in
+`specs/milestones/TRAIN-TOGETHER/evidence/ui-2026-10-26-per60-pr3/`.
+
+**Brad's review (26 Oct, same day).** (1) The first screenshots faked the
+drawer: the harness mocked gorhom flat and I drew a frame round it. The
+harness now draws gorhom the way `BottomSheet` configures it (0.6 backdrop,
+24pt top radius, handle, snap height or content), and was also missing RN
+Web's `position:absolute` rule, so the backdrop and the Finish button fell out
+of place; and it now renders the reorderable list's rows (jsdom reports no row
+heights). The leave and finish sheets use a new `BottomSheet`
+`height="content"` (gorhom dynamic sizing) instead of guessed percentages,
+which would have clipped on small phones. (2) Every exercise row had an opaque
+`$bg` block (`dragBlock`, from #429), which cut the screen glow off behind
+the list: it is now opaque only while a drag has collapsed the rows. (3) The
+upper back shading on the leg-day muscle page came from muscle groups I
+invented for the harness (Romanian deadlift with `back` secondary, which the
+`n3b_shade` slug map sends to upper and lower back); the fixture is now
+legs-only. (4) The Persistence mark is the real logo (`PLogoMark`, the app
+icon's paths, shared with `PLogoDrawLoader`) and centred on all six pages.
+(5) Share is on every page and on Workout details, sharing the page as text
+through React Native's `Share`; sharing it as an image needs
+`react-native-view-shot` + `expo-sharing` and a native build:
+[PER-99](https://linear.app/evans-software-solutions/issue/PER-99).
+The active workout's own header and Finish button are the shipped port and
+still differ from the canvas phone (not changed here). Mobile Jest after the review: 649 suites / 8,696 tests, coverage
+96.2 / 92.14 / 96.11 / 97.6; tsc, lint, prettier clean.
+
+**Inspector Brad (27 Oct, `e435cdf1`).** Fixed both leads from the sweep on
+`a2da879` and the three open notes from the earlier sweep. (1) `resolveMuscles`
+read raw `muscle_groups.name` values, which are capitalised in the catalogue
+(`Chest`, `Hip Flexors`, `Abs`), so with no cached labels the Muscles page
+vanished; names and labels now go through `MUSCLE_GROUP_CATALOGUE_NAME`
+reversed (`Abs` → `core`), plus `Obliques` → `core` and `Lower Back` → `back`.
+(2) The pager keeps the page by kind, not index, and `scrollTo`s when records
+land and insert a page. (3) Online guests kept no roster after the host's
+Finish for all (a closed snapshot lists only the caller): the Online container
+records the live roster (`ui/state/togetherRosterSeen.ts`, memory only) and
+`togetherRoster` falls back to it for the same session. (4) `unsentFor` counts
+only partners still in the session, so the warning can't name "Athlete 0".
+(5) Workout details shows Time / Distance for exercises with no weight or reps,
+and the details share text reads them. Each new test fails on the old code.
+Mobile Jest 649 suites / 8,704 tests, coverage 96.21 / 92.15 / 96.12 / 97.61;
+tsc and lint clean. No screen in the evidence set changed.
+
+**Inspector Brad (27 Oct, sweep on `7d8069e`).** The five fixes above held;
+one low lead. The server stores sets under its own ids, so `recordSetIds`
+nearly always falls back, and it ranked 1/3/5/10RM records by Epley: 100 × 3
+and 90 × 8 starred the 8-rep set for the 3RM. The fallback now matches the
+server's `repMaxTypeForReps` (exactly N reps, ranked by weight), and a record
+no completed set could have earned gets no star. The new test fails on the old
+code.
+
+**Inspector Brad (27 Oct, sweep on `90048f2`).** Two low leads. (1) Nearby
+Leave or End cancels the lobby, which empties its seats, so the summary lost
+Trained together. `togetherRosterSeen` now holds either transport's roster:
+`TogetherLobbyContainer` records the seats and published names while the
+lobby is hosting, joined or reconnecting, and `togetherRoster` falls back to
+them for the same session (`cloudRosterSeen` is now `rosterSeen`). (2) Cardio
+records never got a ★ (`TimedSets` didn't pass `record`), and `best_time` ranked
+the longest duration. It now takes the shortest duration among sets that
+covered a distance, matching the server's `candidatesForSets` and
+`isBetterRecordValue`, and the Time cell turns gold with ★. Each new test
+fails on the old code.
+
+**Not verified.** Nothing on a device or simulator: the carousel's gestures and
+the body map on native are untested.
+
 ### 2026-10-24 — Together UX pass PR 2: partner view (PER-60, branch `claude/per-60-together-partner-view`)
 
 Second of four UI PRs ([canvas](https://claude.ai/artifact/VBc4WTCmYuT5uJ1V6GyqSM)

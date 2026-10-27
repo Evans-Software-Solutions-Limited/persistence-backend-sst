@@ -2365,6 +2365,10 @@ describe("Together finish scope", () => {
     async (choice) => {
       const { r, storage } = await setupFinish();
       expect(mockRouterPush).not.toHaveBeenCalled();
+      // Canvas row 3b: two choices and nothing else.
+      expect(r.getByText("Finish workout?")).toBeTruthy();
+      expect(r.queryByText("Discard without saving")).toBeNull();
+      expect(r.queryByText("Keep training")).toBeNull();
       fireEvent.press(r.getByTestId(`together-finish-${choice}`));
       expect(mockRouterPush).toHaveBeenCalledWith({
         pathname: "/(app)/session/rate",

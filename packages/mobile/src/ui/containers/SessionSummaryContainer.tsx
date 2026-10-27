@@ -8,20 +8,13 @@ import { hydrateTogetherCompletionSummary } from "@/adapters/together/hydrateCom
  * `WorkoutRatingContainer` has already fired
  * `completeSessionCommand`, so `getActiveSession` would return null.
  *
- * Two-phase render (Phase 3b "α cache-and-subscribe"):
- *
- *   1. Mount: build a LOCAL prediction summary via
- *      `calculateSummary` + `detectPersonalRecords` against the
- *      cached `personal_records` slice. The screen is interactive
- *      immediately; no network blocking.
- *
- *   2. Poll the `record_responses` cache slot every 500ms until the
- *      sync worker drains `POST /sessions/record` and writes the
- *      augmented response (PRs with `previousValue` + the
- *      `workoutsThisMonth` count). When it lands, the merged summary
- *      swaps the local PR list for the server-canonical one and the
- *      "Workouts this month" tile + subtitle copy go from placeholder
- *      to real number. Poll stops once captured.
+ * Renders the finish pages (PER-60 canvas row 3c) from the snapshot at
+ * once: totals, exercises and volume from `buildWorkoutSummary`, muscles
+ * from the cached exercise library. It then polls the `record_responses`
+ * cache slot every 500ms until the sync worker drains `POST
+ * /sessions/record`; the response adds the records page and the
+ * "workouts this month" line. Workout details is a second view of the
+ * same model.
  *
  * The Discard flow does NOT route through this screen — that's a
  * native `Alert.alert` on the active-session screen per legacy
@@ -31,13 +24,18 @@ import { hydrateTogetherCompletionSummary } from "@/adapters/together/hydrateCom
  *       Legacy reference: persistence-mobile/components/workouts/WorkoutSummaryScreen/WorkoutSummaryScreen.tsx
  */
 
-import { router } from "expo-router";
+import { Share } from "react-native";
+import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { calculateSummary } from "@/domain/services/sessionService";
 import {
-  calculateSummary,
-  detectPersonalRecords,
-} from "@/domain/services/sessionService";
-import type { SessionSummary, WorkoutSession } from "@/domain/models/session";
+  buildWorkoutSummary,
+  muscleShare,
+  resolveMuscles,
+  sessionMuscleInputs,
+  type SummaryRecord,
+} from "@/domain/services/workoutSummary";
+import type { WorkoutSession } from "@/domain/models/session";
 import type {
   RecordResponseSummary,
   RecordResponseSummaryPR,
@@ -45,17 +43,11 @@ import type {
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { useProfilePage } from "@/ui/hooks/useProfilePage";
-import { SessionSummaryPresenter } from "@/ui/presenters/SessionSummaryPresenter";
-
-const EMPTY_SUMMARY: SessionSummary = {
-  duration: 0,
-  totalVolume: 0,
-  exercisesCompleted: 0,
-  totalExercises: 0,
-  setsCompleted: 0,
-  totalSets: 0,
-  personalRecords: [],
-};
+import {
+  SessionSummaryPresenter,
+  type SummaryTogether,
+} from "@/ui/presenters/SessionSummaryPresenter";
+import { WorkoutDetailsPresenter } from "@/ui/presenters/WorkoutDetailsPresenter";
 
 // How often to recheck the cache slot for the bulk-record response.
 // 500ms keeps the swap perceptually-instant on a normal connection
@@ -70,6 +62,15 @@ export function SessionSummaryContainer() {
   const currentUser = useRef(userId);
   currentUser.current = userId;
   const weightUnit = useProfilePage().payload?.profile.weightUnit ?? "kg";
+  // The rating screen hands over the effort and, for Together, the roster:
+  // by now the live session has closed, so neither can be read back.
+  const params = useLocalSearchParams<{ rating?: string; together?: string }>();
+  const rating = parseRating(params.rating);
+  const together = useMemo(
+    () => parseTogether(params.together),
+    [params.together],
+  );
+  const [view, setView] = useState<"pages" | "details">("pages");
 
   // Snapshot the latest session as soon as auth resolves. We hold
   // it in state so `clearActiveSession` (called from Continue) can
@@ -123,44 +124,6 @@ export function SessionSummaryContainer() {
     return () => clearInterval(id);
   }, [userId, snapshot, serverData, storage]);
 
-  const generateId = useCallback(
-    () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    [],
-  );
-
-  // Local prediction — runs against the cached `personal_records`
-  // slice. The Summary screen renders this immediately on mount so
-  // there's no "blank during sync" flash on a slow network.
-  const localSummary = useMemo<SessionSummary>(() => {
-    if (!snapshot || !userId) return EMPTY_SUMMARY;
-    const base = calculateSummary(snapshot);
-    const previousRecords = storage.getPersonalRecords(userId);
-    const personalRecords = detectPersonalRecords(
-      snapshot,
-      previousRecords,
-      { userId, now: new Date().toISOString() },
-      generateId,
-    );
-    return { ...base, personalRecords };
-  }, [snapshot, userId, storage, generateId]);
-
-  // Merge local + server into the presenter's display shape. Server
-  // wins for `personalRecords` (carries `previousValue` for the
-  // before→after arrow) + `workoutsThisMonth`; local fills the
-  // duration / totalVolume which the server doesn't surface (they're
-  // session-scoped, computable client-side).
-  const displayPersonalRecords = useMemo<SummaryPersonalRecord[]>(() => {
-    if (serverData) {
-      return serverData.personalRecords.map(fromServerPR);
-    }
-    // Pre-server fallback: local prediction renders without the
-    // before→after arrow because we don't know `previousValue` until
-    // the server tells us. Legacy WorkoutSummaryScreen handles the
-    // same null case at line 83-91 — falls through to just the new
-    // value.
-    return localSummary.personalRecords.map(fromLocalPR);
-  }, [serverData, localSummary]);
-
   useEffect(() => {
     const historyId = snapshot?.together?.historyId;
     if (
@@ -202,55 +165,54 @@ export function SessionSummaryContainer() {
     };
   }, [api, storage, userId, snapshot, serverData]);
 
-  const workoutsThisMonth = serverData?.workoutsThisMonth ?? null;
-  const recordsHit = displayPersonalRecords.length;
-  const hasCardioActivity = useMemo(
-    () =>
-      (snapshot?.exercises ?? []).some(
-        (exercise) =>
-          exercise.category === "cardio" &&
-          exercise.sets.some(
-            (set) =>
-              set.isCompleted &&
-              ((set.durationSeconds ?? 0) > 0 || (set.distanceMeters ?? 0) > 0),
-          ),
-      ),
-    [snapshot?.exercises],
+  // `n3b_cards` §5: records come from the server summary only; the page
+  // stays hidden until the response lands.
+  const records = useMemo<SummaryRecord[]>(
+    () => serverData?.personalRecords.map(fromServerPR) ?? [],
+    [serverData],
   );
-  const totalDistanceMeters = useMemo(
+  const model = useMemo(
     () =>
-      (snapshot?.exercises ?? []).reduce(
-        (sessionTotal, exercise) =>
-          exercise.category === "cardio"
-            ? sessionTotal +
-              exercise.sets.reduce(
-                (exerciseTotal, set) =>
-                  exerciseTotal +
-                  (set.isCompleted ? (set.distanceMeters ?? 0) : 0),
-                0,
-              )
-            : sessionTotal,
-        0,
-      ),
-    [snapshot?.exercises],
+      snapshot
+        ? buildWorkoutSummary(
+            snapshot,
+            calculateSummary(snapshot).duration,
+            records,
+          )
+        : null,
+    [snapshot, records],
   );
-  const totalActivityDurationSeconds = useMemo(
-    () =>
-      (snapshot?.exercises ?? []).reduce(
-        (sessionTotal, exercise) =>
-          exercise.category === "cardio"
-            ? sessionTotal +
-              exercise.sets.reduce(
-                (exerciseTotal, set) =>
-                  exerciseTotal +
-                  (set.isCompleted ? (set.durationSeconds ?? 0) : 0),
-                0,
-              )
-            : sessionTotal,
-        0,
+  const muscles = useMemo(() => {
+    if (!snapshot) return muscleShare([]);
+    const byId = new Map(
+      storage.getCachedExercises().map((e) => [e.id, e] as const),
+    );
+    // Cached exercises carry catalogue UUIDs; the reference list names them.
+    const names = new Map(
+      (storage.getCachedReferenceList("muscle_groups")?.entries ?? []).map(
+        (entry) => [entry.id, entry.name] as const,
       ),
-    [snapshot?.exercises],
-  );
+    );
+    return muscleShare(
+      sessionMuscleInputs(snapshot, (exerciseId) => {
+        const e = byId.get(exerciseId);
+        return e
+          ? {
+              primary: resolveMuscles(
+                e.primaryMuscleGroups,
+                e.primaryMuscleGroupLabels,
+                names,
+              ),
+              secondary: resolveMuscles(
+                e.secondaryMuscleGroups,
+                e.secondaryMuscleGroupLabels,
+                names,
+              ),
+            }
+          : null;
+      }),
+    );
+  }, [snapshot, storage]);
 
   const onContinue = useCallback(() => {
     if (!userId) return;
@@ -258,73 +220,76 @@ export function SessionSummaryContainer() {
     router.dismissAll();
   }, [userId, storage]);
 
-  const onClose = useCallback(() => {
-    if (!userId) return;
-    storage.clearActiveSession(userId);
-    router.dismissAll();
-  }, [userId, storage]);
+  // Text through the system share sheet; an image of the page needs
+  // react-native-view-shot + expo-sharing, a native build (PER-99).
+  const share = (message: string) => {
+    void Share.share({ message }).catch(() => {});
+  };
 
-  if (!snapshot || snapshot.userId !== userId) {
+  if (!snapshot || snapshot.userId !== userId || !model) {
     // Race: user navigated to /summary before any session existed. Bounce.
     return null;
   }
 
+  if (view === "details")
+    return (
+      <WorkoutDetailsPresenter
+        model={model}
+        recordsCount={records.length}
+        rating={rating}
+        partners={together?.names}
+        weightUnit={weightUnit}
+        onBack={() => setView("pages")}
+        onShare={share}
+      />
+    );
   return (
     <SessionSummaryPresenter
-      totalVolume={localSummary.totalVolume}
-      personalRecords={displayPersonalRecords}
-      recordsHit={recordsHit}
-      workoutsThisMonth={workoutsThisMonth}
+      model={model}
+      muscles={muscles}
+      records={records}
+      workoutsThisMonth={serverData?.workoutsThisMonth ?? null}
+      rating={rating}
       weightUnit={weightUnit}
-      durationSeconds={
-        hasCardioActivity ? totalActivityDurationSeconds : localSummary.duration
-      }
-      totalDistanceMeters={totalDistanceMeters}
-      hasCardioActivity={hasCardioActivity}
-      activityEnvironment={snapshot.activityEnvironment ?? null}
-      locationName={snapshot.locationName ?? null}
-      onSave={onContinue}
-      onClose={onClose}
+      together={together}
+      onDetails={() => setView("details")}
+      onContinue={onContinue}
+      onClose={onContinue}
+      onShare={share}
     />
   );
 }
 
-/**
- * Display-tier PR row consumed by the presenter. Distinct from the
- * domain `PersonalRecord` because (a) we don't need `id` / `userId` /
- * `achievedAt` / `sessionId` here, and (b) `previousValue` is null
- * during the local-prediction phase — there's no baseline to render
- * until the server response lands.
- */
-export type SummaryPersonalRecord = {
-  exerciseId: string;
-  exerciseName: string;
-  recordType: RecordResponseSummaryPR["recordType"];
-  newValue: number;
-  previousValue: number | null;
-};
+function parseRating(raw: string | undefined): number | null {
+  const n = Number(raw);
+  return raw && Number.isInteger(n) && n >= 1 && n <= 10 ? n : null;
+}
 
-function fromServerPR(pr: RecordResponseSummaryPR): SummaryPersonalRecord {
+/** The roster the rating screen passed on; anything malformed is no roster. */
+function parseTogether(raw: string | undefined): SummaryTogether | null {
+  if (!raw) return null;
+  try {
+    const v = JSON.parse(raw) as Partial<SummaryTogether>;
+    if (
+      typeof v.self === "string" &&
+      Array.isArray(v.names) &&
+      v.names.every((n) => typeof n === "string") &&
+      (v.connection === "Nearby" || v.connection === "Online")
+    )
+      return { self: v.self, names: v.names, connection: v.connection };
+  } catch {
+    // fall through
+  }
+  return null;
+}
+
+function fromServerPR(pr: RecordResponseSummaryPR): SummaryRecord {
   return {
     exerciseId: pr.exerciseId,
     exerciseName: pr.exerciseName,
     recordType: pr.recordType,
     newValue: pr.newValue,
     previousValue: pr.previousValue,
-  };
-}
-
-function fromLocalPR(pr: {
-  exerciseId: string;
-  exerciseName: string;
-  recordType: RecordResponseSummaryPR["recordType"];
-  value: number;
-}): SummaryPersonalRecord {
-  return {
-    exerciseId: pr.exerciseId,
-    exerciseName: pr.exerciseName,
-    recordType: pr.recordType,
-    newValue: pr.value,
-    previousValue: null,
+    setId: pr.setId,
   };
 }

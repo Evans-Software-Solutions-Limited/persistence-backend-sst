@@ -6,8 +6,16 @@ import type { AuthSession } from "@/domain/ports/auth.port";
 import { ok } from "@/shared/errors";
 import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
-import { WorkoutRatingContainer } from "@/ui/containers/WorkoutRatingContainer";
+import {
+  togetherRoster,
+  WorkoutRatingContainer,
+} from "@/ui/containers/WorkoutRatingContainer";
 import { useActiveWorkout } from "@/state/active-workout";
+import {
+  forgetRoster,
+  rememberCloudRoster,
+  rememberNearbyRoster,
+} from "@/ui/state/togetherRosterSeen";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 
 function makeAdapters(storage: InMemoryStorageAdapter): Adapters {
@@ -182,7 +190,10 @@ describe("WorkoutRatingContainer", () => {
     expect(payload.userNotes).toBe("Felt strong on bench");
     // Replace, not push — so the back stack doesn't accumulate
     // /rate → /summary on subsequent finishes.
-    expect(mockRouterReplace).toHaveBeenCalledWith("/(app)/session/summary");
+    expect(mockRouterReplace).toHaveBeenCalledWith({
+      pathname: "/(app)/session/summary",
+      params: { rating: "7" },
+    });
   });
 
   it("Submit with empty notes sends userNotes=null", async () => {
@@ -271,7 +282,9 @@ describe("WorkoutRatingContainer", () => {
 
     // Routing must happen even though the fetch failed.
     await waitFor(() => {
-      expect(mockRouterReplace).toHaveBeenCalledWith("/(app)/session/summary");
+      expect(mockRouterReplace).toHaveBeenCalledWith(
+        expect.objectContaining({ pathname: "/(app)/session/summary" }),
+      );
     });
     // Entry stays in pendingMutations for the next drain attempt.
     expect(
@@ -412,7 +425,9 @@ it("Together submit saves its own result, rating and closes the pointer before s
   fireEvent.press(r.getByTestId("workout-rating-submit"));
   fireEvent.press(r.getByTestId("workout-rating-submit"));
   await waitFor(() =>
-    expect(mockRouterReplace).toHaveBeenCalledWith("/(app)/session/summary"),
+    expect(mockRouterReplace).toHaveBeenCalledWith(
+      expect.objectContaining({ pathname: "/(app)/session/summary" }),
+    ),
   );
   expect(finish).toHaveBeenCalledTimes(1);
   expect(end).toHaveBeenCalledTimes(1);
@@ -563,8 +578,144 @@ it("replays a persisted finish-all closure after its failed delivery before leav
   expect(cancel).not.toHaveBeenCalled();
   acknowledge();
   await waitFor(() =>
-    expect(mockRouterReplace).toHaveBeenCalledWith("/(app)/session/summary"),
+    expect(mockRouterReplace).toHaveBeenCalledWith(
+      expect.objectContaining({ pathname: "/(app)/session/summary" }),
+    ),
   );
   expect(cancel).toHaveBeenCalledTimes(1);
   r.unmount();
+});
+
+describe("togetherRoster", () => {
+  it("names Online partners in seat order, with a fallback for no display name", () => {
+    const cloud = {
+      getSnapshot: () => ({
+        snapshot: {
+          participants: [
+            { userId: "host", displayName: "Brad" },
+            { userId: "user-1", displayName: "Mia" },
+            { userId: "p3", displayName: null },
+          ],
+        },
+      }),
+    } as unknown as Adapters["togetherCloud"];
+    expect(togetherRoster("user-1", true, undefined, cloud)).toEqual({
+      self: "Mia",
+      names: ["Brad", "Athlete 3"],
+      connection: "Online",
+    });
+    const alone = {
+      getSnapshot: () => ({
+        snapshot: { participants: [{ userId: "user-1", displayName: null }] },
+      }),
+    } as unknown as Adapters["togetherCloud"];
+    expect(togetherRoster("user-1", true, undefined, alone)).toBeNull();
+    expect(togetherRoster("user-1", true, undefined, undefined)).toBeNull();
+  });
+
+  it("falls back to the roster seen live once an Online session has closed", () => {
+    forgetRoster();
+    rememberCloudRoster({
+      sessionId: "together-1",
+      participants: [
+        { userId: "host", displayName: "Brad" },
+        { userId: "user-1", displayName: "Mia" },
+      ],
+    } as never);
+    const closed = {
+      getSnapshot: () => ({
+        snapshot: { participants: [{ userId: "user-1", displayName: "Mia" }] },
+      }),
+    } as unknown as Adapters["togetherCloud"];
+    expect(
+      togetherRoster("user-1", true, undefined, closed, "together-1"),
+    ).toEqual({ self: "Mia", names: ["Brad"], connection: "Online" });
+    expect(
+      togetherRoster("user-1", true, undefined, closed, "together-2"),
+    ).toBeNull();
+    rememberCloudRoster({ sessionId: "solo", participants: [] } as never);
+    rememberCloudRoster(undefined);
+    expect(
+      togetherRoster("user-1", true, undefined, closed, "together-1"),
+    ).toEqual({ self: "Mia", names: ["Brad"], connection: "Online" });
+  });
+
+  it("names Nearby partners from their profiles, and seats when the engine is gone", () => {
+    const lobby = (profiles: () => Record<string, string>) =>
+      ({
+        getSnapshot: () => ({
+          members: [{ userId: "host" }, { userId: "user-1" }, { userId: "p3" }],
+        }),
+        shared: { getSnapshot: () => ({ profiles: profiles() }) },
+      }) as unknown as Adapters["togetherLobby"];
+    expect(
+      togetherRoster(
+        "user-1",
+        false,
+        lobby(() => ({ host: "Brad", "user-1": "Mia" })),
+        undefined,
+      ),
+    ).toEqual({
+      self: "Mia",
+      names: ["Brad", "Athlete 3"],
+      connection: "Nearby",
+    });
+    expect(
+      togetherRoster(
+        "user-1",
+        false,
+        lobby(() => {
+          throw new Error("disposed");
+        }),
+        undefined,
+      ),
+    ).toEqual({
+      self: "Me",
+      names: ["Athlete 1", "Athlete 3"],
+      connection: "Nearby",
+    });
+    expect(togetherRoster("user-1", false, undefined, undefined)).toBeNull();
+  });
+
+  it("falls back to the seats seen live once Leave or End cancelled the lobby", () => {
+    forgetRoster();
+    rememberNearbyRoster(
+      "nearby-1",
+      [{ userId: "host" }, { userId: "user-1" }, { userId: "p3" }],
+      { host: "Brad", "user-1": "Mia" },
+    );
+    const cancelled = {
+      getSnapshot: () => ({ members: [] }),
+      shared: undefined,
+    } as unknown as Adapters["togetherLobby"];
+    expect(
+      togetherRoster("user-1", false, cancelled, undefined, "nearby-1"),
+    ).toEqual({
+      self: "Mia",
+      names: ["Brad", "Athlete 3"],
+      connection: "Nearby",
+    });
+    expect(
+      togetherRoster("user-1", false, cancelled, undefined, "nearby-2"),
+    ).toBeNull();
+    expect(togetherRoster("user-1", false, cancelled, undefined)).toBeNull();
+    // Only seats with someone else in them are kept.
+    rememberNearbyRoster("nearby-3", [{ userId: "user-1" }]);
+    rememberNearbyRoster(undefined, [{ userId: "a" }, { userId: "b" }]);
+    expect(
+      togetherRoster("user-1", false, cancelled, undefined, "nearby-1"),
+    ).toEqual({
+      self: "Mia",
+      names: ["Brad", "Athlete 3"],
+      connection: "Nearby",
+    });
+    rememberNearbyRoster("nearby-4", [{ userId: "a" }, { userId: "b" }]);
+    expect(
+      togetherRoster("user-1", false, cancelled, undefined, "nearby-4"),
+    ).toEqual({
+      self: "Me",
+      names: ["Athlete 1", "Athlete 2"],
+      connection: "Nearby",
+    });
+  });
 });

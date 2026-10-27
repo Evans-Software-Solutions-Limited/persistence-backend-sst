@@ -15,6 +15,18 @@ import {
   togetherPartnerAccess,
 } from "@/ui/presenters/TogetherPartnerPresenter";
 import { useTogetherPartnerOutbox } from "@/ui/hooks/useTogetherPartnerOutbox";
+import { useTogetherToast } from "@/ui/hooks/useTogetherToast";
+import {
+  ENDED_COPY,
+  LEAVE_FAILED_COPY,
+  TogetherLeaveSheet,
+  hostEndedCopy,
+  leftCopy,
+  loggedSets,
+  unsentFor,
+} from "@/ui/presenters/TogetherLeaveSheet";
+import { rememberNearbyRoster } from "@/ui/state/togetherRosterSeen";
+import { TogetherToast } from "@/ui/presenters/TogetherToast";
 import { TogetherInvitePresenter } from "@/ui/presenters/TogetherInvitePresenter";
 import { TogetherStartSheet } from "@/ui/presenters/TogetherStartSheet";
 import { TogetherJoinRequestBar } from "@/ui/presenters/TogetherJoinRequestBar";
@@ -63,12 +75,7 @@ const RADIO_OFF =
   /permission|wifi|lan_unavailable|nearby_unavailable|discovery|advertising|listener/i;
 /** "keeps your 4 logged sets" on the solo strip; "your sets stay yours" before any set. */
 export function startRowDetail(workout: WorkoutSession | null | undefined) {
-  // A session starts with an empty row per planned set; only completed rows are logged.
-  const logged =
-    workout?.exercises.reduce(
-      (n, e) => n + e.sets.filter((s) => s.isCompleted).length,
-      0,
-    ) ?? 0;
+  const logged = loggedSets(workout);
   return logged
     ? `keeps your ${logged} logged ${logged === 1 ? "set" : "sets"}`
     : "your sets stay yours";
@@ -179,6 +186,9 @@ export function TogetherLobbyContainer({
   const [code, setCode] = useState("");
   const [notice, setNotice] = useState("");
   const [viewing, setViewing] = useState<string | null>(null);
+  /** Canvas row 3: the strip's Leave or End sheet. */
+  const [leaveOpen, setLeaveOpen] = useState(false);
+  const [toast, showToast] = useTogetherToast();
   // Fill-in for partners outlives their view: switching back to your own
   // workout or to another partner never drops a queued set.
   const partnerOutbox = useTogetherPartnerOutbox({
@@ -253,6 +263,7 @@ export function TogetherLobbyContainer({
     setNotice("");
     setSettingsOpen(false);
     setStartOpen(false);
+    setLeaveOpen(false);
     setViewing(null);
     setRemote(false);
     setHostOnline(null);
@@ -609,6 +620,59 @@ export function TogetherLobbyContainer({
       ],
     );
   };
+  // A partner hears once when the host ends the session for everyone (their
+  // `save_own` closure); closures already there when this mounts are old news.
+  const announced = useRef<{ session?: string; seen: Set<string> }>({
+    seen: new Set(),
+  });
+  useEffect(() => {
+    const session = snapshot.sessionId ?? undefined;
+    if (!session || !sharedSnapshot) return;
+    const first = announced.current.session !== session;
+    if (first) announced.current = { session, seen: new Set() };
+    for (const closure of sharedSnapshot.closures) {
+      const key = `${closure.userId}:${closure.mode}`;
+      if (announced.current.seen.has(key)) continue;
+      announced.current.seen.add(key);
+      if (!first && closure.mode === "save_own" && closure.userId !== accountId)
+        showToast(
+          hostEndedCopy(sharedSnapshot.profiles[closure.userId] ?? "The host"),
+        );
+    }
+  });
+  // Leave and End cancel the lobby, which empties its seats: keep the roster
+  // for the summary's Trained together page.
+  if (["hosting", "joined", "reconnecting"].includes(snapshot.phase))
+    rememberNearbyRoster(
+      snapshot.sessionId,
+      snapshot.members,
+      sharedSnapshot?.profiles,
+    );
+  const hostMember = snapshot.members.find((m) => m.host);
+  const hostName =
+    (hostMember && sharedSnapshot?.profiles[hostMember.userId]) ?? "the host";
+  const partnerName = (id: string) =>
+    sharedSnapshot?.profiles[id] ??
+    `Athlete ${snapshot.members.findIndex((m) => m.userId === id) + 1}`;
+  /** Leave (guest) or End (host): close our side, stop the lobby, carry on solo. */
+  const leave = () => {
+    const host = snapshot.role === "host";
+    const logged = loggedSets(getWorkout?.());
+    const name = hostName;
+    const scope = generation.current;
+    setLeaveOpen(false);
+    void (async () => {
+      const id = lobby.getSnapshot().sessionId;
+      await lobby.shared?.close(host ? "save_own" : "leave");
+      if (scope !== generation.current) return;
+      if (id && lobby.getSnapshot().sessionId === id) await lobby.cancel();
+      if (scope !== generation.current) return;
+      setViewing(null);
+      showToast(host ? ENDED_COPY : leftCopy(name, logged));
+    })().catch(() => {
+      if (scope === generation.current) showToast(LEAVE_FAILED_COPY);
+    });
+  };
   const scan = () => {
     const current = generation.current;
     invoke(async () => {
@@ -650,7 +714,19 @@ export function TogetherLobbyContainer({
       </TogetherCloudContainer>
     );
   if (snapshot.phase === "disabled" || (!allowNewSharing && !workoutStatus))
-    return children?.(null) ?? null;
+    return (
+      <>
+        {children?.(null) ?? null}
+        <TogetherToast message={toast} />
+      </>
+    );
+  // Canvas row 3: once you have left, or the session has ended, this is an
+  // ordinary solo workout. A workout still being recovered keeps its row,
+  // which is the way to its review.
+  const soloAgain =
+    workoutStatus?.sharing === "local-only" &&
+    !workoutStatus.recovery &&
+    !workoutStatus.recoveryError;
   // A host start traverses idle cleanup, credential preparation and promotion.
   // Keep one cancellable screen until the complete start action settles.
   const startingSession =
@@ -681,74 +757,69 @@ export function TogetherLobbyContainer({
           />
         ))
       : null;
-  const strip =
-    workoutStatus && snapshot.members.length ? (
-      <TogetherWorkoutRow
-        members={snapshot.members.map((m, i) => ({
-          userId: m.userId,
-          name:
-            m.userId === accountId
-              ? (displayName ?? "Me")
-              : (sharedSnapshot?.profiles[m.userId] ?? `Athlete ${i + 1}`),
-        }))}
-        selectedId={viewing ?? accountId}
-        accountId={accountId}
-        status={live.status}
-        tone={live.tone}
-        onSelect={(id) => setViewing(id === accountId ? null : id)}
-        onInvite={
-          snapshot.role === "host" && snapshot.invitation
-            ? () => {
-                setSettingsOpen(false);
-                setVisible(true);
-              }
-            : undefined
-        }
-        onSettings={() => {
-          setSettingsOpen(true);
-          setVisible(true);
-        }}
-        endLabel={snapshot.role === "host" ? "End" : "Leave"}
-        onEnd={() => {
-          setSettingsOpen(true);
+  const strip = soloAgain ? null : workoutStatus && snapshot.members.length ? (
+    <TogetherWorkoutRow
+      members={snapshot.members.map((m, i) => ({
+        userId: m.userId,
+        name:
+          m.userId === accountId
+            ? (displayName ?? "Me")
+            : (sharedSnapshot?.profiles[m.userId] ?? `Athlete ${i + 1}`),
+      }))}
+      selectedId={viewing ?? accountId}
+      accountId={accountId}
+      status={live.status}
+      tone={live.tone}
+      onSelect={(id) => setViewing(id === accountId ? null : id)}
+      onInvite={
+        snapshot.role === "host" && snapshot.invitation
+          ? () => {
+              setSettingsOpen(false);
+              setVisible(true);
+            }
+          : undefined
+      }
+      onSettings={() => {
+        setSettingsOpen(true);
+        setVisible(true);
+      }}
+      endLabel={snapshot.role === "host" ? "End" : "Leave"}
+      onEnd={() => setLeaveOpen(true)}
+    />
+  ) : snapshot.phase === "idle" && !workoutStatus ? (
+    <TogetherStartRow
+      detail={startRowDetail(getWorkout?.())}
+      onStart={() => setStartOpen(true)}
+    />
+  ) : (
+    <View
+      minHeight={44}
+      flexDirection="row"
+      alignItems="center"
+      gap={8}
+      paddingHorizontal={16}
+      backgroundColor="$surface"
+      testID="together-workout-row"
+    >
+      <Text flex={1} fontFamily="$body" fontSize={12} color="$text2">
+        {workoutStatus
+          ? `My workout · ${togetherWorkoutCopy(workoutStatus.sharing)}`
+          : snapshot.phase === "idle"
+            ? "Train together · your sets stay yours"
+            : "Together · lobby"}
+      </Text>
+      <Btn
+        size="sm"
+        variant="soft"
+        onPress={() => {
           setScreen("start");
           setVisible(true);
         }}
-      />
-    ) : snapshot.phase === "idle" && !workoutStatus ? (
-      <TogetherStartRow
-        detail={startRowDetail(getWorkout?.())}
-        onStart={() => setStartOpen(true)}
-      />
-    ) : (
-      <View
-        minHeight={44}
-        flexDirection="row"
-        alignItems="center"
-        gap={8}
-        paddingHorizontal={16}
-        backgroundColor="$surface"
-        testID="together-workout-row"
       >
-        <Text flex={1} fontFamily="$body" fontSize={12} color="$text2">
-          {workoutStatus
-            ? `My workout · ${togetherWorkoutCopy(workoutStatus.sharing)}`
-            : snapshot.phase === "idle"
-              ? "Train together · your sets stay yours"
-              : "Together · lobby"}
-        </Text>
-        <Btn
-          size="sm"
-          variant="soft"
-          onPress={() => {
-            setScreen("start");
-            setVisible(true);
-          }}
-        >
-          Open
-        </Btn>
-      </View>
-    );
+        Open
+      </Btn>
+    </View>
+  );
   const row = requests?.length ? (
     <>
       {strip}
@@ -758,7 +829,7 @@ export function TogetherLobbyContainer({
     strip
   );
   const partnerView =
-    viewing && sharedSnapshot && lobby.shared ? (
+    !soloAgain && viewing && sharedSnapshot && lobby.shared ? (
       <TogetherPartnerPresenter
         key={`${accountId}:${viewing}`}
         snapshot={sharedSnapshot}
@@ -851,6 +922,23 @@ export function TogetherLobbyContainer({
           {partnerView}
         </>
       )}
+      <TogetherLeaveSheet
+        visible={leaveOpen && !soloAgain && !!workoutStatus}
+        role={snapshot.role === "host" ? "host" : "guest"}
+        hostName={hostName}
+        others={snapshot.members
+          .filter((m) => m.userId !== accountId)
+          .map((m) => partnerName(m.userId))}
+        loggedSets={loggedSets(getWorkout?.())}
+        unsent={unsentFor(
+          partnerOutbox.unsent(),
+          partnerName,
+          snapshot.members.map((m) => m.userId),
+        )}
+        onStay={() => setLeaveOpen(false)}
+        onConfirm={leave}
+      />
+      <TogetherToast message={toast} />
       <BottomSheet
         visible={visible}
         onClose={() => {
