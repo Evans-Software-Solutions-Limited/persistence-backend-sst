@@ -16,6 +16,9 @@ import {
   type TogetherSharingState,
 } from "./togetherSharing";
 
+export const NOBODY_YET =
+  "Nobody else is here yet. Everyone who joins starts with your defaults.";
+
 const SUB = {
   numbers:
     "Off: partners see your progress through the plan, not weights or reps.",
@@ -113,6 +116,15 @@ export function TogetherSharingRows(p: {
 }) {
   const sheet = p.variant === "sheet";
   const label = (text: string) => (sheet ? text : `${text} in this session`);
+  // Nobody to share with yet: switches would have nothing to grant.
+  if (!p.state.recipients.length)
+    return (
+      <View paddingVertical={12} testID="together-sharing-nobody">
+        <Text fontFamily="$body" fontSize={12} lineHeight={17} color="$text3">
+          {NOBODY_YET}
+        </Text>
+      </View>
+    );
   return (
     <>
       <Row

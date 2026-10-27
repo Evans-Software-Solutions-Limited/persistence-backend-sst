@@ -128,3 +128,15 @@ it("says sharing has ended when there is no live session", () => {
   ).toBeTruthy();
   expect(r.queryByText("What you share")).toBeNull();
 });
+
+it("with nobody else in the session, explains the defaults instead of switches that can't stay on", () => {
+  const p = props();
+  p.state = sharingState({ numbers: false, logging: false, previous: {} }, []);
+  const r = renderWithTheme(<TogetherSharingPresenter {...p} />);
+  expect(
+    r.getByText(
+      "Nobody else is here yet. Everyone who joins starts with your defaults.",
+    ),
+  ).toBeTruthy();
+  expect(r.queryByLabelText("Show my numbers")).toBeNull();
+});

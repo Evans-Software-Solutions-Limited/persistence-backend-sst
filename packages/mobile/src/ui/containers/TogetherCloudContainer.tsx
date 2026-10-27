@@ -217,35 +217,38 @@ export function TogetherCloudContainer(p: {
   /** Canvas row 4: the strip's settings cog. */
   const [sharingOpen, setSharingOpen] = useState(false);
   /**
-   * Who can join, as the host last sent it. The snapshot doesn't carry it, and
-   * the server's Partners visibility lapses after 15 minutes, when the segment
-   * goes back to Private.
+   * Who can join, as the host last sent it for this session. The snapshot
+   * doesn't carry it, so only a send sets Partners; it lapses back to Private
+   * after the server's 15 minutes, and a new session starts Private.
    */
   const [hostVisibility, setHostVisibility] = useState<{
+    sessionId: string | undefined;
     value: "invite-only" | "friends";
     until: number | null;
-  }>(() =>
-    p.initialHost === "friends"
-      ? { value: "friends", until: Date.now() + VISIBLE_FOR }
-      : { value: "invite-only", until: null },
-  );
+  } | null>(null);
   const [, lapse] = useReducer((n: number) => n + 1, 0);
   useEffect(() => {
-    if (hostVisibility.until === null) return;
+    if (!hostVisibility || hostVisibility.until === null) return;
     const timer = setTimeout(
       lapse,
       Math.max(0, hostVisibility.until - Date.now()),
     );
     return () => clearTimeout(timer);
-  }, [hostVisibility.until]);
+  }, [hostVisibility?.until]);
   const hostAudience =
-    hostVisibility.until !== null && Date.now() >= hostVisibility.until
+    !hostVisibility ||
+    hostVisibility.sessionId !== state.snapshot?.sessionId ||
+    (hostVisibility.until !== null && Date.now() >= hostVisibility.until)
       ? "invite-only"
       : hostVisibility.value;
   /** Sends who can join; a failed send stays queued in the outbox and goes on reconnect. */
   const sendVisibility = (value: "invite-only" | "friends") => {
     const until = Date.now() + VISIBLE_FOR;
-    setHostVisibility({ value, until: value === "friends" ? until : null });
+    setHostVisibility({
+      sessionId: p.cloud.getSnapshot().snapshot?.sessionId,
+      value,
+      until: value === "friends" ? until : null,
+    });
     return p.cloud.visibility(
       value === "friends" ? "friends" : "private",
       new Date(until).toISOString(),
@@ -282,6 +285,7 @@ export function TogetherCloudContainer(p: {
     setViewing(null);
     setLeaveOpen(false);
     setSharingOpen(false);
+    setHostVisibility(null);
     return () => {
       lifetime.current++;
     };

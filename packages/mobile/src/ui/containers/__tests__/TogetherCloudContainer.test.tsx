@@ -658,6 +658,24 @@ it("Partners lapses back to Private when the server's 15 minutes run out, and ch
     jest.useRealTimers();
   }
 });
+it("Who can join starts Private until Partners is actually sent, and a new session starts Private again", async () => {
+  const h = setup(true);
+  const r = renderWithTheme(<TogetherCloudContainer {...h.props} />);
+  const audience = () =>
+    r.UNSAFE_getByType(TogetherSharingPresenter).props.audience?.value;
+  // Nothing was sent: Private, whatever the host meant to choose.
+  expect(audience()).toBe("invite-only");
+  await act(async () =>
+    r
+      .UNSAFE_getByType(TogetherSharingPresenter)
+      .props.audience.onChange("friends"),
+  );
+  expect(audience()).toBe("friends");
+  act(() =>
+    h.publish({ snapshot: { ...h.state().snapshot!, sessionId: "next" } }),
+  );
+  expect(audience()).toBe("invite-only");
+});
 it("queues every changed permission at once without waiting on the first, and a late rejection after the account changes shows nothing", async () => {
   const h = setup(true);
   let reject!: (error: Error) => void;

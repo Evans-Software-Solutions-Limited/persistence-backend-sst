@@ -72,6 +72,16 @@ was sent and lapses to Private after the server's 15 minutes, every send
 (start, the main sheet's button, the segment) updates it, and tapping the shown
 value sends it again to renew or retry. Each new test fails on the old code.
 
+**Inspector Brad (27 Oct, sweep on `2375688`).** The three fixes above held;
+two low leads. (1) Who can join was seeded Partners from `initialHost` before
+anything was sent (a recovered or unconfirmed start never sends) and outlived
+the session. It now starts Private, only `sendVisibility` sets Partners, the
+choice is keyed to the session it was sent for, and an account change clears
+it. (2) With nobody else in the session the switches flipped and snapped back
+(nothing to grant). The drawer and the live card now say "Nobody else is here
+yet. Everyone who joins starts with your defaults." instead of the switches.
+Each new test fails on the old code.
+
 **Not verified.** Nothing on a device or simulator.
 
 ### 2026-10-26 — Together UX pass PR 3: leaving, ending and finishing (PER-60, branch `claude/per-60-together-finish`)
