@@ -153,7 +153,7 @@ describe("row 3 copy", () => {
 
   it("totals unsent sets across partners", () => {
     const name = (id: string) => ({ m: "Mia", t: "Tom" })[id]!;
-    expect(unsentFor([], name)).toBeNull();
+    expect(unsentFor([], name, ["m"])).toBeNull();
     expect(
       unsentFor(
         [
@@ -161,8 +161,22 @@ describe("row 3 copy", () => {
           { ownerId: "t", count: 1 },
         ],
         name,
+        ["m", "t"],
       ),
     ).toEqual({ count: 3, names: ["Mia", "Tom"] });
+  });
+
+  it("leaves out partners who are no longer in the session", () => {
+    const name = (id: string) => ({ m: "Mia" })[id] ?? "Athlete 0";
+    const rows = [
+      { ownerId: "m", count: 1 },
+      { ownerId: "gone", count: 2 },
+    ];
+    expect(unsentFor(rows, name, ["m"])).toEqual({
+      count: 1,
+      names: ["Mia"],
+    });
+    expect(unsentFor(rows.slice(1), name, ["m"])).toBeNull();
   });
 });
 

@@ -444,7 +444,7 @@ describe("summaryPages", () => {
 describe("resolveMuscles", () => {
   it("reads enum keys, catalogue UUIDs and display labels", () => {
     const names = new Map([
-      ["uuid-chest", "chest"],
+      ["uuid-chest", "Chest"],
       ["uuid-odd", "neck"],
     ]);
     expect(
@@ -468,5 +468,27 @@ describe("resolveMuscles", () => {
     expect(
       resolveMuscles(["uuid-x"], undefined, new Map([["uuid-x", "lats"]])),
     ).toEqual(["lats"]);
+  });
+
+  it("reads the real catalogue's capitalised names without labels", () => {
+    const names = new Map([
+      ["u1", "Chest"],
+      ["u2", "Hip Flexors"],
+      ["u3", "Abs"],
+      ["u4", "Lower Back"],
+      ["u5", "Full Body"],
+    ]);
+    expect(resolveMuscles(["u1", "u2", "u3", "u4", "u5"], [], names)).toEqual([
+      "chest",
+      "hip_flexors",
+      "core",
+      "back",
+    ]);
+  });
+
+  it("reads catalogue names in the labels, including Abs and Obliques", () => {
+    expect(
+      resolveMuscles(["u1", "u2"], ["Abs", "Obliques"], new Map()),
+    ).toEqual(["core"]);
   });
 });

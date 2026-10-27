@@ -22,6 +22,7 @@ import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { WorkoutRatingPresenter } from "@/ui/presenters/WorkoutRatingPresenter";
 import type { SummaryTogether } from "@/ui/presenters/SessionSummaryPresenter";
+import { cloudRosterSeen } from "@/ui/state/togetherRosterSeen";
 import type { Adapters } from "@/shared/types";
 
 export function WorkoutRatingContainer() {
@@ -84,6 +85,7 @@ export function WorkoutRatingContainer() {
                   session.together.transport === "cloud",
                   togetherLobby,
                   togetherCloud,
+                  session.together.sessionId,
                 );
                 return together ? { together: JSON.stringify(together) } : {};
               })()
@@ -328,15 +330,24 @@ export function WorkoutRatingContainer() {
   );
 }
 
-/** Everyone else in the live session, in seat order, for the summary's last page. */
+/**
+ * Everyone else in the session, in seat order, for the summary's last page.
+ * Online, a closed session lists only this athlete, so the roster seen
+ * while it was live stands in.
+ */
 export function togetherRoster(
   userId: string,
   online: boolean,
   lobby: Adapters["togetherLobby"],
   cloud: Adapters["togetherCloud"],
+  sessionId?: string,
 ): SummaryTogether | null {
   if (online) {
-    const people = cloud?.getSnapshot().snapshot?.participants ?? [];
+    const live = cloud?.getSnapshot().snapshot?.participants ?? [];
+    const people =
+      live.length > 1 || !sessionId
+        ? live
+        : (cloudRosterSeen(sessionId) ?? live);
     const others = people.filter((p) => p.userId !== userId);
     if (!others.length) return null;
     return {

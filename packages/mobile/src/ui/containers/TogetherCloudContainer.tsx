@@ -39,6 +39,7 @@ import {
 } from "@/ui/presenters/TogetherPartnerPresenter";
 import { useTogetherPartnerOutbox } from "@/ui/hooks/useTogetherPartnerOutbox";
 import { useTogetherToast } from "@/ui/hooks/useTogetherToast";
+import { rememberCloudRoster } from "@/ui/state/togetherRosterSeen";
 import {
   ENDED_COPY,
   LEAVE_FAILED_COPY,
@@ -550,6 +551,8 @@ export function TogetherCloudContainer(p: {
   // Once sharing stops the snapshot lists only this athlete, so the host's
   // name is remembered from when it was live.
   const hostNameSeen = useRef<{ session?: string; name?: string }>({});
+  // The summary's Trained together page needs the roster after it closes.
+  if (state.snapshot?.sharingActive) rememberCloudRoster(state.snapshot);
   const hostParticipant = state.snapshot?.participants.find(
     (x) => x.userId === state.snapshot?.hostId,
   );
@@ -742,6 +745,7 @@ export function TogetherCloudContainer(p: {
         unsent={unsentFor(
           partnerOutbox.unsent(),
           (id) => partner(id)?.displayName ?? "your partner",
+          (state.snapshot?.participants ?? []).map((x) => x.userId),
         )}
         onStay={() => setLeaveOpen(false)}
         onConfirm={leave}

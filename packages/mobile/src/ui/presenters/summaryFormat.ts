@@ -12,6 +12,10 @@ import type {
 } from "@/domain/services/workoutSummary";
 import type { WeightUnit } from "@/shared/utils";
 import { volumeInUnit, weightInUnit } from "@/shared/utils";
+import {
+  activityDistanceFromMeters,
+  activityDistanceUnit,
+} from "@/shared/utils/activityUnits";
 
 /** Canvas wording: "Max weight", "1 rep max", "Max reps". */
 export const RECORD_LABEL: Record<RecordType, string> = {
@@ -36,6 +40,12 @@ export const volumeText = (kg: number, unit: WeightUnit) =>
 /** "62.5" in the athlete's unit. */
 export const weightText = (kg: number, unit: WeightUnit) =>
   number(weightInUnit(kg, unit));
+
+/** "2.0 km", or miles for an imperial athlete. */
+export function distanceText(meters: number, unit: WeightUnit): string {
+  const units = unit === "lb" ? "imperial" : "metric";
+  return `${activityDistanceFromMeters(meters, units).toFixed(1)} ${activityDistanceUnit(units)}`;
+}
 
 /** "1:05" or "1:02:08". */
 export function clock(seconds: number): string {
@@ -157,7 +167,15 @@ export function summaryShareText(
                   ? `${weightText(s.weightKg, p.unit)}×${s.reps}`
                   : s.reps != null
                     ? `${s.reps}`
-                    : `set ${s.n}`,
+                    : s.distanceMeters != null || s.durationSeconds != null
+                      ? [
+                          s.distanceMeters != null &&
+                            distanceText(s.distanceMeters, p.unit),
+                          s.durationSeconds != null && clock(s.durationSeconds),
+                        ]
+                          .filter(Boolean)
+                          .join(" in ")
+                      : `set ${s.n}`,
               )
               .join(", ")}`,
         ),

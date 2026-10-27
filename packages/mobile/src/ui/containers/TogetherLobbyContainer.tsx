@@ -921,7 +921,11 @@ export function TogetherLobbyContainer({
           .filter((m) => m.userId !== accountId)
           .map((m) => partnerName(m.userId))}
         loggedSets={loggedSets(getWorkout?.())}
-        unsent={unsentFor(partnerOutbox.unsent(), partnerName)}
+        unsent={unsentFor(
+          partnerOutbox.unsent(),
+          partnerName,
+          snapshot.members.map((m) => m.userId),
+        )}
         onStay={() => setLeaveOpen(false)}
         onConfirm={leave}
       />

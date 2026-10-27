@@ -163,7 +163,7 @@ describe("SessionSummaryContainer", () => {
     seedActive(storage);
     // Cached exercises carry catalogue UUIDs; the reference list names them.
     storage.cacheReferenceList("muscle_groups", [
-      { id: "uuid-chest", name: "chest", displayName: "Chest" },
+      { id: "uuid-chest", name: "Chest", displayName: "Chest" },
       { id: "uuid-triceps", name: "triceps", displayName: "Triceps" },
     ]);
     storage.cacheExercises([

@@ -5,6 +5,7 @@ import {
 } from "@/domain/services/workoutSummary";
 import {
   clock,
+  distanceText,
   summaryShareText,
   listNames,
   minutes,
@@ -120,8 +121,66 @@ describe("summaryShareText", () => {
     rating: null,
     unit: "kg" as const,
   };
-  it("names a set with neither weight nor reps by its number", () => {
-    expect(summaryShareText("details", base)).toContain("Run: set 1");
+  it("reads a cardio set as distance and time", () => {
+    expect(summaryShareText("details", base)).toContain("Run: 2.0 km in 10:00");
+  });
+  it("reads a timed set as its time, and an empty one by its number", () => {
+    const blank = buildWorkoutSummary(
+      {
+        name: "Run",
+        startedAt: model.startedAt,
+        id: "l",
+        userId: "u",
+        workoutId: null,
+        status: "completed",
+        completedAt: null,
+        notes: null,
+        exercises: [
+          {
+            id: "e",
+            sessionId: "l",
+            exerciseId: "run",
+            exerciseName: "Run",
+            sortOrder: 0,
+            supersetGroup: null,
+            isSubstituted: false,
+            originalExerciseId: null,
+            notes: null,
+            sets: [
+              {
+                id: "s",
+                sessionExerciseId: "e",
+                setNumber: 1,
+                weightKg: null,
+                reps: null,
+                rpe: null,
+                durationSeconds: 90,
+                distanceMeters: null,
+                isCompleted: true,
+                completedAt: null,
+              },
+              {
+                id: "s2",
+                sessionExerciseId: "e",
+                setNumber: 2,
+                weightKg: null,
+                reps: null,
+                rpe: null,
+                durationSeconds: null,
+                distanceMeters: null,
+                isCompleted: true,
+                completedAt: null,
+              },
+            ],
+          },
+        ],
+      },
+      90,
+    );
+    expect(summaryShareText("details", { ...base, model: blank })).toContain(
+      "Run: 1:30, set 2",
+    );
+    expect(distanceText(1609.344, "lb")).toBe("1.0 mi");
   });
   it("still reads without a roster", () => {
     expect(summaryShareText("together", base)).toContain(

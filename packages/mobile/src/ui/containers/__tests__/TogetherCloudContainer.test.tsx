@@ -22,6 +22,10 @@ import type {
 } from "@/domain/ports/togetherCloud.port";
 import type { WorkoutSession } from "@/domain/models/session";
 import { useTogetherSettings } from "@/state/together-settings";
+import {
+  cloudRosterSeen,
+  forgetCloudRoster,
+} from "@/ui/state/togetherRosterSeen";
 const mockCameraPermission = jest.fn();
 jest.mock("expo-camera", () => ({
   useCameraPermissions: () => [null, mockCameraPermission],
@@ -1410,6 +1414,18 @@ describe("leaving and ending Online (canvas row 3)", () => {
         },
       }),
     );
+
+  it("remembers the live roster for the summary after the session closes", () => {
+    forgetCloudRoster();
+    const h = guest();
+    const id = h.state().snapshot!.sessionId;
+    renderWithTheme(<TogetherCloudContainer {...h.props} />);
+    ended(h, "closed");
+    expect(cloudRosterSeen(id)?.map((p) => p.userId)).toEqual(
+      expect.arrayContaining(["v", h.state().snapshot!.hostId]),
+    );
+    expect(cloudRosterSeen("another-session")).toBeNull();
+  });
 
   it("the host's End stops sharing for everyone and the strip goes", async () => {
     const h = setup(true);

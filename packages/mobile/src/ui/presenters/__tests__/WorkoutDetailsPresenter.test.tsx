@@ -130,4 +130,76 @@ describe("WorkoutDetailsPresenter", () => {
     expect(q.getByText("132.3 lb")).toBeTruthy();
     expect(q.queryByText(/with /)).toBeNull();
   });
+
+  it("shows time and distance for a run or a row instead of dashes", () => {
+    const cardio = (
+      id: string,
+      durationSeconds: number | null,
+      distanceMeters: number | null,
+    ) => ({ ...set(id, null, null), durationSeconds, distanceMeters });
+    const exercise = (
+      id: string,
+      name: string,
+      sets: ExerciseSet[],
+    ): WorkoutSession["exercises"][number] => ({
+      ...session.exercises[0]!,
+      id,
+      exerciseId: id,
+      exerciseName: name,
+      notes: null,
+      sets,
+    });
+    const run = buildWorkoutSummary(
+      {
+        ...session,
+        exercises: [
+          exercise("se-run", "Run", [
+            cardio("r1", 600, 2000),
+            cardio("r2", 330, null),
+          ]),
+          exercise("se-plank", "Plank", [cardio("p1", 60, null)]),
+        ],
+      },
+      1200,
+    );
+    const q = renderWithTheme(
+      <WorkoutDetailsPresenter
+        model={run}
+        recordsCount={0}
+        rating={null}
+        onBack={jest.fn()}
+        onShare={jest.fn()}
+      />,
+    );
+    const runCard = q.getByTestId("workout-details-exercise-se-run");
+    const text = (node: typeof runCard) =>
+      q
+        .getAllByText(/./)
+        .filter((t) => isInside(t, node))
+        .map((t) => t.props.children)
+        .filter((c) => typeof c === "string");
+    expect(text(runCard)).toEqual(
+      expect.arrayContaining([
+        "Time",
+        "Distance",
+        "10:00",
+        "2.0 km",
+        "5:30",
+        "—",
+      ]),
+    );
+    expect(text(runCard)).not.toContain("Weight");
+    expect(text(runCard)).not.toContain("0 kg");
+    const plank = q.getByTestId("workout-details-exercise-se-plank");
+    expect(text(plank)).toEqual(expect.arrayContaining(["1:00"]));
+  });
 });
+
+function isInside(node: { parent: unknown }, root: unknown): boolean {
+  let n = node.parent as { parent: unknown } | null;
+  while (n) {
+    if (n === root) return true;
+    n = n.parent as { parent: unknown } | null;
+  }
+  return false;
+}

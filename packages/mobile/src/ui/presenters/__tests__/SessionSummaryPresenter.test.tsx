@@ -403,6 +403,35 @@ describe("navigation", () => {
     expect(selected()).toEqual(["summary-dot-muscles"]);
   });
 
+  it("keeps the page on screen when the records land and add a page", () => {
+    const together = {
+      self: "Mia",
+      names: ["Brad"],
+      connection: "Nearby" as const,
+    };
+    const props = {
+      model,
+      muscles: worked,
+      workoutsThisMonth: null,
+      rating: null,
+      together,
+      ...handlers,
+    };
+    const q = renderSummary({ together });
+    fireEvent.press(q.getByTestId("summary-dot-together"));
+    q.rerender(
+      <SessionSummaryPresenter {...props} records={[record("Squat")]} />,
+    );
+    expect(pageIds(q)).toContain("summary-page-records");
+    expect(
+      q.getByTestId("summary-dot-together").props.accessibilityState,
+    ).toEqual({ selected: true });
+    fireEvent.press(q.getByTestId("session-summary-share"));
+    expect(handlers.onShare.mock.calls[0]![0]).toMatch(
+      /^Trained together with Brad/,
+    );
+  });
+
   it("opens on a chosen page, clamped to the pages there are", () => {
     const q = renderSummary({ initialPage: 9 });
     const dot = q.getByTestId("summary-dot-volume");

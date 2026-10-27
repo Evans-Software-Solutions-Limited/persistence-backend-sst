@@ -26,13 +26,19 @@ export function leftCopy(hostName: string, logged: number) {
 export const ENDED_COPY = "Live session ended. Your workout carries on.";
 export const hostEndedCopy = (hostName: string) =>
   `${hostName} ended the live session. Your workout carries on.`;
-/** The leave warning's count and names, from the partner outbox. */
+/**
+ * The leave warning's count and names, from the partner outbox. Only
+ * partners still in the session count: a set typed for someone who has
+ * left can never reach them, so leaving loses nothing.
+ */
 export function unsentFor(
   rows: readonly { ownerId: string; count: number }[],
   name: (id: string) => string,
+  present: readonly string[],
 ) {
-  const count = rows.reduce((n, r) => n + r.count, 0);
-  return count ? { count, names: rows.map((r) => name(r.ownerId)) } : null;
+  const here = rows.filter((r) => present.includes(r.ownerId));
+  const count = here.reduce((n, r) => n + r.count, 0);
+  return count ? { count, names: here.map((r) => name(r.ownerId)) } : null;
 }
 export const LEAVE_FAILED_COPY =
   "Could not leave the session. Your workout is safe. Try again.";

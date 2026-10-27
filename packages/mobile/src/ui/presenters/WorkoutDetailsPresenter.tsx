@@ -23,6 +23,7 @@ import { tint } from "@/ui/theme/tint";
 import { RoundButton } from "./SessionSummaryPresenter";
 import {
   clock,
+  distanceText,
   shortDate,
   summaryShareText,
   volumeText,
@@ -214,24 +215,32 @@ export function WorkoutDetailsPresenter(p: WorkoutDetailsPresenterProps) {
               </Text>
             )}
             <View marginTop={8}>
-              <Row header cells={["Set", "Weight", "Reps", "1RM", "Vol"]} />
-              {e.sets.map((s) => (
-                <Row
-                  key={s.id}
-                  record={s.isRecord}
-                  cells={[
-                    String(s.n),
-                    s.weightKg != null
-                      ? `${weightText(s.weightKg, unit)} ${unit}${s.isRecord ? " ★" : ""}`
-                      : "—",
-                    s.reps != null ? String(s.reps) : "—",
-                    s.oneRepMaxKg != null
-                      ? String(Math.round(weightInUnit(s.oneRepMaxKg, unit)))
-                      : "—",
-                    volumeText(s.volumeKg, unit),
-                  ]}
-                />
-              ))}
+              {isTimed(e) ? (
+                <TimedSets exercise={e} unit={unit} />
+              ) : (
+                <>
+                  <Row header cells={["Set", "Weight", "Reps", "1RM", "Vol"]} />
+                  {e.sets.map((s) => (
+                    <Row
+                      key={s.id}
+                      record={s.isRecord}
+                      cells={[
+                        String(s.n),
+                        s.weightKg != null
+                          ? `${weightText(s.weightKg, unit)} ${unit}${s.isRecord ? " ★" : ""}`
+                          : "—",
+                        s.reps != null ? String(s.reps) : "—",
+                        s.oneRepMaxKg != null
+                          ? String(
+                              Math.round(weightInUnit(s.oneRepMaxKg, unit)),
+                            )
+                          : "—",
+                        volumeText(s.volumeKg, unit),
+                      ]}
+                    />
+                  ))}
+                </>
+              )}
             </View>
             <Text
               marginTop={10}
@@ -242,12 +251,47 @@ export function WorkoutDetailsPresenter(p: WorkoutDetailsPresenterProps) {
               lineHeight={18}
               color="$text"
             >
-              {`${volumeText(e.volumeKg, unit)} ${unit}`}
+              {isTimed(e)
+                ? exerciseDistance(e, unit)
+                : `${volumeText(e.volumeKg, unit)} ${unit}`}
             </Text>
           </View>
         ))}
       </ScrollView>
     </View>
+  );
+}
+
+type DetailsExercise = WorkoutSummaryModel["exercises"][number];
+
+/** A run or a row: no set has weight or reps, so time and distance stand in. */
+const isTimed = (e: DetailsExercise) =>
+  e.sets.every((s) => s.weightKg == null && s.reps == null);
+
+/** The total distance, or the total time when nothing was measured. */
+function exerciseDistance(e: DetailsExercise, unit: WeightUnit) {
+  const meters = e.sets.reduce((n, s) => n + (s.distanceMeters ?? 0), 0);
+  if (meters) return distanceText(meters, unit);
+  return clock(e.sets.reduce((n, s) => n + (s.durationSeconds ?? 0), 0));
+}
+
+function TimedSets(p: { exercise: DetailsExercise; unit: WeightUnit }) {
+  return (
+    <>
+      <Row header cells={["Set", "Time", "Distance"]} />
+      {p.exercise.sets.map((s) => (
+        <Row
+          key={s.id}
+          cells={[
+            String(s.n),
+            s.durationSeconds != null ? clock(s.durationSeconds) : "—",
+            s.distanceMeters != null
+              ? distanceText(s.distanceMeters, p.unit)
+              : "—",
+          ]}
+        />
+      ))}
+    </>
   );
 }
 

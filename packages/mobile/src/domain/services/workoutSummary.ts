@@ -11,6 +11,7 @@ import type { MuscleGroup } from "@/domain/models/exercise";
 import { MUSCLE_GROUPS, MUSCLE_GROUP_LABELS } from "@/domain/models/exercise";
 import type { RecordType } from "@/domain/models/record";
 import type { ExerciseSet, WorkoutSession } from "@/domain/models/session";
+import { MUSCLE_GROUP_CATALOGUE_NAME } from "./exerciseCatalogue";
 import { estimateOneRepMax } from "./oneRepMax";
 
 /** Body-map regions in `react-native-body-highlighter`. */
@@ -302,12 +303,30 @@ const BY_LABEL = new Map(
     k,
   ]),
 );
+/**
+ * Catalogue row name → app muscle, lowercased. Built from the save path's
+ * `MUSCLE_GROUP_CATALOGUE_NAME` so `Abs` reads back as `core`; the two rows
+ * the app has no muscle for shade their nearest one (`Obliques` sits in
+ * `core`'s body-map regions, `Lower Back` in `back`'s). `Full Body` has none.
+ */
+const BY_CATALOGUE_NAME = new Map<string, MuscleGroup>([
+  ...Object.entries(MUSCLE_GROUP_CATALOGUE_NAME).flatMap(([k, name]) =>
+    name ? [[name.toLowerCase(), k as MuscleGroup] as const] : [],
+  ),
+  ["obliques", "core"],
+  ["lower back", "back"],
+]);
+const byName = (name: string | undefined) => {
+  const key = name?.trim().toLowerCase();
+  return key ? BY_CATALOGUE_NAME.get(key) : undefined;
+};
 
 /**
  * An exercise's muscle groups as app muscles. Cached exercises carry the
  * backend's catalogue UUIDs; `names` maps them through the cached
- * `muscle_groups` reference list, and the display labels stand in when that
- * list hasn't been fetched ("Hip Flexors" → `hip_flexors`).
+ * `muscle_groups` reference list (catalogue names, "Hip Flexors" →
+ * `hip_flexors`), and the display labels stand in when that list hasn't
+ * been fetched.
  */
 export function resolveMuscles(
   values: readonly string[],
@@ -318,7 +337,8 @@ export function resolveMuscles(
     const label = labels?.[i]?.trim().toLowerCase();
     const candidates = [
       value,
-      names.get(value),
+      byName(names.get(value)),
+      byName(label),
       label?.replace(/\s+/g, "_"),
       label && BY_LABEL.get(label),
     ];

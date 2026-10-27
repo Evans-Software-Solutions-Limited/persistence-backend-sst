@@ -11,6 +11,10 @@ import {
   WorkoutRatingContainer,
 } from "@/ui/containers/WorkoutRatingContainer";
 import { useActiveWorkout } from "@/state/active-workout";
+import {
+  forgetCloudRoster,
+  rememberCloudRoster,
+} from "@/ui/state/togetherRosterSeen";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 
 function makeAdapters(storage: InMemoryStorageAdapter): Adapters {
@@ -606,6 +610,33 @@ describe("togetherRoster", () => {
     } as unknown as Adapters["togetherCloud"];
     expect(togetherRoster("user-1", true, undefined, alone)).toBeNull();
     expect(togetherRoster("user-1", true, undefined, undefined)).toBeNull();
+  });
+
+  it("falls back to the roster seen live once an Online session has closed", () => {
+    forgetCloudRoster();
+    rememberCloudRoster({
+      sessionId: "together-1",
+      participants: [
+        { userId: "host", displayName: "Brad" },
+        { userId: "user-1", displayName: "Mia" },
+      ],
+    } as never);
+    const closed = {
+      getSnapshot: () => ({
+        snapshot: { participants: [{ userId: "user-1", displayName: "Mia" }] },
+      }),
+    } as unknown as Adapters["togetherCloud"];
+    expect(
+      togetherRoster("user-1", true, undefined, closed, "together-1"),
+    ).toEqual({ self: "Mia", names: ["Brad"], connection: "Online" });
+    expect(
+      togetherRoster("user-1", true, undefined, closed, "together-2"),
+    ).toBeNull();
+    rememberCloudRoster({ sessionId: "solo", participants: [] } as never);
+    rememberCloudRoster(undefined);
+    expect(
+      togetherRoster("user-1", true, undefined, closed, "together-1"),
+    ).toEqual({ self: "Mia", names: ["Brad"], connection: "Online" });
   });
 
   it("names Nearby partners from their profiles, and seats when the engine is gone", () => {

@@ -10,7 +10,7 @@
  * Share (top right on the canvas) needs a native build and lands later.
  */
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Pressable, StyleSheet } from "react-native";
 import Carousel, {
   type ICarouselInstance,
@@ -102,16 +102,25 @@ export function SessionSummaryPresenter(p: SessionSummaryPresenterProps) {
     records: p.records,
     together: !!p.together?.names.length,
   });
-  const [index, setIndex] = useState(
-    Math.min(p.initialPage ?? 0, pages.length - 1),
+  // The page on screen is kept by kind, not position: the server's records
+  // land after the pages first draw and insert a page before Together.
+  const [selected, setSelected] = useState<SummaryPage>(
+    () => pages[Math.min(p.initialPage ?? 0, pages.length - 1)]!,
   );
   const [size, setSize] = useState<{ width: number; height: number } | null>(
     null,
   );
   const carousel = useRef<ICarouselInstance>(null);
-  const current = Math.min(index, pages.length - 1);
+  const current = Math.max(0, pages.indexOf(selected));
+  const pagesKey = pages.join();
+  const drawn = useRef(pagesKey);
+  useEffect(() => {
+    if (drawn.current === pagesKey) return;
+    drawn.current = pagesKey;
+    carousel.current?.scrollTo({ index: current, animated: false });
+  }, [pagesKey, current]);
   const go = (i: number) => {
-    setIndex(i);
+    setSelected(pages[i]!);
     carousel.current?.scrollTo({ index: i, animated: true });
   };
   const unit = p.weightUnit ?? "kg";
@@ -196,7 +205,7 @@ export function SessionSummaryPresenter(p: SessionSummaryPresenterProps) {
             data={pages}
             loop={false}
             defaultIndex={current}
-            onSnapToItem={setIndex}
+            onSnapToItem={(i) => setSelected(pages[i]!)}
             onConfigurePanGesture={(g) => {
               // Sideways only: a vertical drag never moves the pages.
               g.activeOffsetX([-10, 10]);
