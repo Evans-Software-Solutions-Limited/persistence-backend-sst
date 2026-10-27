@@ -38,6 +38,12 @@ import {
   togetherPartnerAccess,
 } from "@/ui/presenters/TogetherPartnerPresenter";
 import { useTogetherPartnerOutbox } from "@/ui/hooks/useTogetherPartnerOutbox";
+import { useTogetherSharing } from "@/ui/hooks/useTogetherSharing";
+import {
+  cloudSharingBase,
+  cloudSharingWrites,
+  sharingPeople,
+} from "@/ui/presenters/togetherSharing";
 import { useTogetherToast } from "@/ui/hooks/useTogetherToast";
 import { rememberCloudRoster } from "@/ui/state/togetherRosterSeen";
 import {
@@ -204,6 +210,12 @@ export function TogetherCloudContainer(p: {
     [viewing, setViewing] = useState<string | null>(null);
   /** Canvas row 3: the strip's Leave or End sheet. */
   const [leaveOpen, setLeaveOpen] = useState(false);
+  /** Canvas row 4: the strip's settings cog. */
+  const [sharingOpen, setSharingOpen] = useState(false);
+  /** Who can join, as the host last set it; the server's visibility lasts 15 minutes. */
+  const [hostAudience, setHostAudience] = useState<"invite-only" | "friends">(
+    p.initialHost === "friends" ? "friends" : "invite-only",
+  );
   const [toast, showToast] = useTogetherToast();
   const [, requestCameraPermission] = useCameraPermissions();
   const [scanning, setScanning] = useState(false);
@@ -234,6 +246,7 @@ export function TogetherCloudContainer(p: {
     setScanning(false);
     setViewing(null);
     setLeaveOpen(false);
+    setSharingOpen(false);
     return () => {
       lifetime.current++;
     };
@@ -450,6 +463,50 @@ export function TogetherCloudContainer(p: {
   });
   const own = state.snapshot?.participants.find(
     (x) => x.userId === p.accountId,
+  );
+  const confirmRemoval = (id: string) => {
+    const dialogGeneration = generation.current;
+    Alert.alert(
+      "Remove athlete?",
+      "They keep their own workout. Other athletes can continue this session.",
+      [
+        { text: "Keep training", style: "cancel" },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: () => {
+            if (dialogGeneration === generation.current)
+              run(() => p.cloud.remove(id));
+          },
+        },
+      ],
+    );
+  };
+  // Canvas row 4: the cog's three switches, for everyone else in the session.
+  // `own` already carries pending intent, so a switch holds through the ack.
+  const people = sharingPeople(
+    state.snapshot?.participants ?? [],
+    p.accountId,
+    (id, seat) => partner(id)?.displayName ?? `Athlete ${seat + 1}`,
+  );
+  const sharing = useTogetherSharing(
+    state.snapshot?.sharingActive && own
+      ? {
+          sessionId: state.snapshot.sessionId,
+          people,
+          base: cloudSharingBase(own, people),
+          write: async (target) => {
+            const w = cloudSharingWrites(own, people, target);
+            await Promise.all([
+              ...(w.numbers ? [p.cloud.numbersConsent(w.numbers)] : []),
+              ...(w.previous ? [p.cloud.previousConsent(w.previous)] : []),
+              ...(w.logging !== undefined
+                ? [p.cloud.delegation(w.logging)]
+                : []),
+            ]);
+          },
+        }
+      : null,
   );
   // The stored sharing defaults apply to each person who joins an Online session
   // (canvas row 4, PER-60): once per newcomer, and once to everyone already in
@@ -690,10 +747,7 @@ export function TogetherCloudContainer(p: {
               }
             : undefined
         }
-        onSettings={() => {
-          setInviteView(false);
-          setVisible(true);
-        }}
+        onSettings={() => setSharingOpen(true)}
         endLabel={hosting ? "End" : "Leave"}
         onEnd={() => setLeaveOpen(true)}
       />
@@ -734,6 +788,36 @@ export function TogetherCloudContainer(p: {
           {partnerView}
         </>
       )}
+      <TogetherSharingPresenter
+        visible={sharingOpen && !!state.snapshot?.sharingActive}
+        state={sharing.state}
+        onChange={sharing.change}
+        removable={state.snapshot?.hostId === p.accountId ? people : undefined}
+        audience={
+          state.snapshot?.hostId === p.accountId
+            ? {
+                value: hostAudience,
+                online: true,
+                onChange: (value) => {
+                  if (value === "open" || value === hostAudience) return;
+                  const before = hostAudience;
+                  const scope = generation.current;
+                  setHostAudience(value);
+                  p.cloud
+                    .visibility(
+                      value === "friends" ? "friends" : "private",
+                      new Date(Date.now() + 15 * 60_000).toISOString(),
+                    )
+                    .catch(() => {
+                      if (scope === generation.current) setHostAudience(before);
+                    });
+                },
+              }
+            : undefined
+        }
+        onRemove={confirmRemoval}
+        onDone={() => setSharingOpen(false)}
+      />
       <TogetherLeaveSheet
         visible={leaveOpen && !soloAgain && !!state.snapshot}
         role={hosting ? "host" : "guest"}
@@ -1026,93 +1110,6 @@ export function TogetherCloudContainer(p: {
                 )
               }
             />
-            {state.snapshot && own && (
-              <TogetherSharingPresenter
-                snapshot={shared}
-                accountId={p.accountId}
-                members={state.snapshot.participants.map((x) => ({
-                  userId: x.userId,
-                  host: x.userId === state.snapshot!.hostId,
-                }))}
-                role={state.snapshot.hostId === p.accountId ? "host" : "guest"}
-                onRemove={(id) => {
-                  const dialogGeneration = generation.current;
-                  Alert.alert(
-                    "Remove athlete?",
-                    "They keep their own workout. Other athletes can continue this session.",
-                    [
-                      { text: "Keep training", style: "cancel" },
-                      {
-                        text: "Remove",
-                        style: "destructive",
-                        onPress: () => {
-                          if (dialogGeneration === generation.current)
-                            run(() => p.cloud.remove(id));
-                        },
-                      },
-                    ],
-                  );
-                }}
-                sessionLogging={own.allowPartnerLogging}
-                onSessionLogging={(allowed) =>
-                  fire(() => p.cloud.delegation(allowed))
-                }
-                onConsent={(id, consent) => {
-                  // `own` already reflects pending intent, so each diff is
-                  // against what the switches show. The three permissions are
-                  // independent server resources: queue every change now and
-                  // let the outbox serialise the network.
-                  const next = (ids: string[] | undefined, on: boolean) =>
-                    on
-                      ? [...new Set([...(ids ?? []), id])]
-                      : (ids ?? []).filter((x) => x !== id);
-                  if (
-                    consent.numbers !==
-                    (own.numbersConsent?.recipientIds.includes(id) ?? false)
-                  )
-                    fire(() =>
-                      p.cloud.numbersConsent(
-                        next(own.numbersConsent?.recipientIds, consent.numbers),
-                      ),
-                    );
-                  if (
-                    consent.prev !==
-                    (own.previousConsent?.recipientIds.includes(id) ?? false)
-                  )
-                    fire(() =>
-                      p.cloud.previousConsent(
-                        next(own.previousConsent?.recipientIds, consent.prev),
-                      ),
-                    );
-                  if (consent.logging !== own.allowPartnerLogging)
-                    fire(() => p.cloud.delegation(consent.logging));
-                }}
-                onDiscard={p.onDiscardWorkout}
-                onClose={(mode) => {
-                  if (mode === "finish_all") {
-                    review(mode);
-                    return;
-                  }
-                  Alert.alert(
-                    "Stop sharing?",
-                    "Your workout stays active. Nothing is rated or saved.",
-                    [
-                      { text: "Keep sharing", style: "cancel" },
-                      {
-                        text: "Stop sharing",
-                        onPress: () =>
-                          run(async () => {
-                            if (!p.cloud.stopSharing)
-                              throw new Error("stop-sharing-unavailable");
-                            await p.cloud.stopSharing();
-                            if (isCurrent()) setVisible(false);
-                          }),
-                      },
-                    ],
-                  );
-                }}
-              />
-            )}
           </>
         )}
       </BottomSheet>

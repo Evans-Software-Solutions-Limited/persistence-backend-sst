@@ -1,5 +1,65 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-27 — Together UX pass PR 4: sharing and settings (PER-60, branch `claude/per-60-together-sharing`)
+
+Canvas row 4 (`Sharing.dc.html`, five phones). Last PR of the Together UX
+pass. Mobile only; no backend change, no native build.
+
+**What changed.** The strip's settings cog opens one drawer on both
+transports (`TogetherSharingPresenter`, rebuilt): "Together settings", "This
+session only…", three `TogetherSwitch` rows (Show my numbers, Share previous
+values, Let others fill in my sets) with the canvas sub-lines, recipient chips
+under previous values, one orange notice when the session refuses a change,
+and Done. The switches speak for everyone in the session: numbers and fill-in
+read on only when on for every partner; previous values reads on while anyone
+is picked. The old per-partner cards, delivery debug lines, explainer,
+Discard and close-mode buttons are gone from the cog (Leave/End/Finish live on
+the strip since PR 3). Together settings gains the live card ("Now · Brad's
+session", "Ends with the session", previous values summarised) while a
+session is live; it writes to the session, never the defaults.
+
+**Shape.** `ui/presenters/togetherSharing.ts` is the pure model: both
+transports reduce to `SharingBase` (`nearbySharingBase`/`Writes` over
+per-recipient grants; `cloudSharingBase`/`Writes` over recipient lists plus
+the session fill-in flag). `useTogetherSharing` shows a change at once, holds
+it until its write settles, and shows the notice only when the switch went
+back (`holds`): an Online write that rejects while the change stays queued
+offline is not a refusal. `useLiveTogetherSharing` reads the live session from
+the adapters, so the settings card works while the workout is minimised.
+Nearby consent plus previous-value publishing moved out of the lobby container
+into `application/together/nearbyConsent.ts` (`applyNearbyConsent`), shared by
+the container and the card. Online host gets "Who can join" (Private /
+Partners) through the existing `visibility` call, which replaces the old
+"Show to training partners for 15 minutes" button.
+
+**Canvas differences (on PER-60):** no "Who can join" for Nearby (changing it
+mid-session touches invitation/admission rules in the transport); the host
+keeps "Remove" per partner (a safety control the canvas omits); unticking
+every chip turns previous values off ("Nobody picked" can't be told apart from
+off on either transport). Lost from the in-session UI with the old cog sheet:
+Online "Revoke this invitation" and "Retry connection", and the Nearby lobby
+sheet's extras (training partners link, diagnostics share) for guests; the
+lobby and invite sheets are still reached from Invite.
+
+Profile › Train together: no entry left in source; Together settings is
+reached only from the Train hub cog. The `together/partners` deep link is
+unchanged.
+
+**Verified.** Mobile Jest 652 suites / 8,730 tests, coverage
+96.21 / 92.19 / 96.11 / 97.6 (gate 90). `tsc`, `expo lint`, prettier clean.
+Unit: model (people, base/writes per transport, change, holds, refusal copy,
+summary); hook (hold, refusal, queued-not-refused, latest-wins, session change,
+unmount); live hook (Nearby with previous values, no workout, not live, Online
+host/guest/stopped). Presenters: every phone, chips, refusal, host extras,
+ended. Containers: Nearby PREV scoping, cross-account and refresh guards
+through the new sheet, removal, cog open/Done; Online every-partner writes,
+refusal notice, late rejection after account change, Who can join (and its
+revert), invite and request bar from the strip. Screens: harness shots next
+to canvas crops for all five phones in
+`specs/milestones/TRAIN-TOGETHER/evidence/ui-2026-10-27-per60-pr4/`.
+
+**Not verified.** Nothing on a device or simulator.
+
 ### 2026-10-26 — Together UX pass PR 3: leaving, ending and finishing (PER-60, branch `claude/per-60-together-finish`)
 
 Third of four UI PRs ([canvas](https://claude.ai/artifact/VBc4WTCmYuT5uJ1V6GyqSM)

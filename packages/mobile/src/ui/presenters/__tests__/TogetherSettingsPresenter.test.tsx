@@ -3,6 +3,7 @@ import { fireEvent } from "@testing-library/react-native";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 import { TogetherSettingsPresenter } from "../TogetherSettingsPresenter";
 import { TogetherBlockedPresenter } from "../TogetherBlockedPresenter";
+import { sharingState } from "../togetherSharing";
 
 const props = () => ({
   audience: "friends" as const,
@@ -16,6 +17,47 @@ const props = () => ({
   onPartners: jest.fn(),
   onBlocked: jest.fn(),
   onBack: jest.fn(),
+});
+
+it("phone 4: a live session gets its own card above the defaults, writing to the session", () => {
+  const onChange = jest.fn();
+  const p = {
+    ...props(),
+    live: {
+      title: "Brad’s session",
+      state: sharingState(
+        { numbers: true, logging: false, previous: { b: true, i: true } },
+        [
+          { userId: "b", name: "Brad", tone: "info" as const },
+          { userId: "t", name: "Tom", tone: "success" as const },
+          { userId: "i", name: "Inés", tone: "gold" as const },
+        ],
+      ),
+      onChange,
+    },
+  };
+  const r = renderWithTheme(<TogetherSettingsPresenter {...p} />);
+  expect(r.getByText("NOW · BRAD’S SESSION")).toBeTruthy();
+  expect(r.getByText("Ends with the session")).toBeTruthy();
+  expect(r.getByText("To Brad and Inés")).toBeTruthy();
+  expect(
+    r.getByLabelText("Show my numbers in this session").props.accessibilityState
+      .checked,
+  ).toBe(true);
+  fireEvent.press(
+    r.getByLabelText("Let others fill in my sets in this session"),
+  );
+  expect(onChange).toHaveBeenCalledWith({ key: "logging", value: true });
+  fireEvent.press(r.getByLabelText("Share previous values in this session"));
+  expect(onChange).toHaveBeenLastCalledWith({ key: "previous", value: false });
+  // The card has no chips; the defaults below are untouched.
+  expect(r.queryByLabelText("Share previous values with Brad")).toBeNull();
+  expect(p.onSharing).not.toHaveBeenCalled();
+});
+
+it("phone 5: no card while nothing is live", () => {
+  const r = renderWithTheme(<TogetherSettingsPresenter {...props()} />);
+  expect(r.queryByTestId("together-settings-live")).toBeNull();
 });
 
 it("Together settings shows the defaults, the sharing switches, find-by-name and the two lists (canvas row 4)", () => {
