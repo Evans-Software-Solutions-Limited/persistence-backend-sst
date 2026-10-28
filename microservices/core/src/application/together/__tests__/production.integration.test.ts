@@ -716,6 +716,17 @@ describe("production Together persistence and recovery", () => {
     ).toMatchObject({ status: "finished_empty" });
     expect((await repo.snapshot(a, s.sessionId)).state).toBe("closed");
   });
+  it("the host's snapshot reports who can join; a partner's does not (PER-60)", async () => {
+    const s = await pair();
+    const host = await repo.snapshot(a, s.sessionId);
+    expect(["private", "friends"]).toContain(host.audience);
+    await repo.visibility(a, s.sessionId, key(), {
+      audience: "friends",
+      expiresAt: new Date(Date.now() + 60000).toISOString(),
+    });
+    expect((await repo.snapshot(a, s.sessionId)).audience).toBe("friends");
+    expect((await repo.snapshot(b, s.sessionId)).audience).toBeNull();
+  });
   it("changing who can join never shortens the session's own lifetime (PER-60)", async () => {
     const s = await create();
     const lifetime = async () =>

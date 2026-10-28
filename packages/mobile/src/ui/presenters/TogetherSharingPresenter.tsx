@@ -185,7 +185,7 @@ export function TogetherSharingPresenter(p: {
   onChange(change: SharingChange): void;
   /** The host's "Who can join"; left out where the session can't change it. */
   audience?: {
-    value: TogetherLobbyAudience;
+    value: TogetherLobbyAudience | undefined;
     online: boolean;
     onChange(value: TogetherLobbyAudience): void;
   };

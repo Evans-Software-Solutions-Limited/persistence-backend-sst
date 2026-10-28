@@ -226,12 +226,19 @@ export function TogetherCloudContainer(p: {
   const [leaveOpen, setLeaveOpen] = useState(false);
   /** Canvas row 4: the strip's settings cog. */
   const [sharingOpen, setSharingOpen] = useState(false);
-  // Who can join, as the host last sent it for this session (kept outside
-  // this screen, which unmounts on minimise). It lasts the session; a session
-  // nothing was sent for is Private.
+  // Who can join: what the host last sent for this session (kept outside
+  // this screen, which unmounts on minimise, and ahead of a queued send), else
+  // what the server reports. Unknown (an older server, after a restart) shows
+  // no choice rather than claiming Private.
   const [, refreshVisibility] = useReducer((n: number) => n + 1, 0);
+  const reported = state.snapshot?.audience;
   const hostAudience =
-    visibilitySent(state.snapshot?.sessionId)?.value ?? "invite-only";
+    visibilitySent(state.snapshot?.sessionId)?.value ??
+    (reported === "friends"
+      ? "friends"
+      : reported === "private"
+        ? "invite-only"
+        : undefined);
   /** Sends who can join; a failed send stays queued in the outbox and goes on reconnect. */
   const sendVisibility = (value: "invite-only" | "friends") => {
     const sessionId = p.cloud.getSnapshot().snapshot?.sessionId;

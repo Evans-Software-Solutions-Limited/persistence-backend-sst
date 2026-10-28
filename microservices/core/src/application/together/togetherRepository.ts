@@ -307,6 +307,8 @@ export class TogetherRepository {
       hostId: s.hostId,
       /** Only the host shares the code (PER-60). */
       code: s.hostId === actor ? (s.code ?? null) : null,
+      /** Who can join, for the host's settings after a restart (PER-60). */
+      audience: s.hostId === actor ? s.audience : null,
       revision: s.revision,
       planVersion: s.planVersion,
       plan: shared ? s.plan : (own.frozenPlan ?? s.plan),

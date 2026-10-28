@@ -41,6 +41,8 @@ export interface CloudSnapshot {
   hostId: string | null;
   /** The session code; present for the host only (PER-60). */
   code?: string | null;
+  /** Who can join, for the host only; older servers leave it out (PER-60). */
+  audience?: "private" | "friends" | "nearby" | null;
   revision: number;
   planVersion: number;
   plan: CloudPlan;

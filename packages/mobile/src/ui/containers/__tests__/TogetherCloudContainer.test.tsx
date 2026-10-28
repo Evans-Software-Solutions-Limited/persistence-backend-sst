@@ -265,7 +265,7 @@ it("wires host invitations, join requests, who can join and every-partner sharin
   expect(h.cloud.previousConsent).toHaveBeenCalledWith(["v"]);
   await act(async () => settings().onChange({ key: "logging", value: true }));
   expect(h.cloud.delegation).toHaveBeenCalledWith(true);
-  expect(settings().audience?.value).toBe("invite-only");
+  expect(settings().audience?.value).toBeUndefined();
   await act(async () => settings().audience!.onChange("friends"));
   expect(h.cloud.visibility).toHaveBeenCalledWith(
     "friends",
@@ -650,13 +650,13 @@ it("Partners lasts the session, and the expiry sent never cuts the session short
   expect(sent).toBeGreaterThan(Date.now() + 1.9 * 3600_000);
   expect(sent).toBeLessThanOrEqual(Date.now() + 2 * 3600_000);
 });
-it("Who can join starts Private until Partners is actually sent, and a new session starts Private again", async () => {
+it("Who can join claims nothing until Partners is actually sent, and a new session starts unknown again", async () => {
   const h = setup(true);
   const r = renderWithTheme(<TogetherCloudContainer {...h.props} />);
   const audience = () =>
     r.UNSAFE_getByType(TogetherSharingPresenter).props.audience?.value;
-  // Nothing was sent: Private, whatever the host meant to choose.
-  expect(audience()).toBe("invite-only");
+  // Nothing was sent and the server said nothing: no choice is claimed.
+  expect(audience()).toBeUndefined();
   await act(async () =>
     r
       .UNSAFE_getByType(TogetherSharingPresenter)
@@ -666,7 +666,7 @@ it("Who can join starts Private until Partners is actually sent, and a new sessi
   act(() =>
     h.publish({ snapshot: { ...h.state().snapshot!, sessionId: "next" } }),
   );
-  expect(audience()).toBe("invite-only");
+  expect(audience()).toBeUndefined();
 });
 it("keeps Who can join through a minimise and reopen of the session screen", async () => {
   const h = setup(true);
@@ -682,6 +682,23 @@ it("keeps Who can join through a minimise and reopen of the session screen", asy
   expect(
     again.UNSAFE_getByType(TogetherSharingPresenter).props.audience?.value,
   ).toBe("friends");
+});
+it("after a restart, Who can join reads the server's answer, and shows no choice when there is none", () => {
+  // Nothing sent from this run of the app (beforeEach clears it).
+  const h = setup(true);
+  const r = renderWithTheme(<TogetherCloudContainer {...h.props} />);
+  const audience = () =>
+    r.UNSAFE_getByType(TogetherSharingPresenter).props.audience?.value;
+  // An older server says nothing: no segment is claimed.
+  expect(audience()).toBeUndefined();
+  act(() =>
+    h.publish({ snapshot: { ...h.state().snapshot!, audience: "friends" } }),
+  );
+  expect(audience()).toBe("friends");
+  act(() =>
+    h.publish({ snapshot: { ...h.state().snapshot!, audience: "private" } }),
+  );
+  expect(audience()).toBe("invite-only");
 });
 it("queues every changed permission at once without waiting on the first, and a late rejection after the account changes shows nothing", async () => {
   const h = setup(true);

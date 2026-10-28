@@ -115,6 +115,15 @@ clock up to 2 hours off either way and which keeps a session at least 2 hours
 there. New PGlite assertions (6 h ahead, 1 h behind accepted; non-date 400)
 fail on the old code.
 
+**Inspector Brad (28 Oct, sweep on `9db2acb`).** One low lead: after a
+restart the in-memory `visibilitySent` was empty, so the Online segment
+claimed Private while the server still listed the session to partners. The
+host's snapshot now carries `audience` (`TogetherRepository.snapshot`, null
+for partners; the client schema accepts it absent for older servers). The
+segment reads the host's own send first (it can be ahead of a queued send),
+then the server's `audience`, and shows no selection when neither is known
+instead of claiming Private. New PGlite and app tests fail on the old code.
+
 **Not verified.** Nothing on a device or simulator.
 
 ### 2026-10-26 — Together UX pass PR 3: leaving, ending and finishing (PER-60, branch `claude/per-60-together-finish`)

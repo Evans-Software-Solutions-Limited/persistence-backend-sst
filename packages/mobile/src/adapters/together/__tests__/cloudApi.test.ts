@@ -479,6 +479,11 @@ describe("authenticated Together cloud/social API contracts", () => {
       ).toBe(false);
     },
   );
+  it("accepts who can join on the host's snapshot, and older servers without it (PER-60)", () => {
+    for (const audience of [undefined, null, "private", "friends", "nearby"])
+      expect(cloudSnapshot({ ...snapshot, audience })).toBe(true);
+    expect(cloudSnapshot({ ...snapshot, audience: "everyone" })).toBe(false);
+  });
   it("validates consent-scoped numeric visibility and bounded PREV data", () => {
     expect(cloudSnapshot(snapshot)).toBe(true);
     const denied = structuredClone(snapshot) as any;
