@@ -135,6 +135,15 @@ on another switch and the switch went back silently. It now tracks the newest
 tap per switch (chips share previous values') and skips only when that same
 switch was tapped again. Each new test fails on the old code.
 
+**Inspector Brad (28 Oct, sweep on `c67ae9c`).** One low lead:
+`visibility()` read "refused" from the action having left `pending`, but an
+accepted action leaves it too, so an accepted send whose closing refresh
+failed was called refused and the segment fell back to the stale audience.
+`queue()` now returns a settled action's own result when a later step of the
+drain fails, and the drop branch marks a refused visibility
+`cloud-visibility-refused` explicitly, so `visibility()` is a plain queue call
+again. New controller test fails on the old code.
+
 **Not verified.** Nothing on a device or simulator.
 
 ### 2026-10-26 — Together UX pass PR 3: leaving, ending and finishing (PER-60, branch `claude/per-60-together-finish`)

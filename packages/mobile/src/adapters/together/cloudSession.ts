@@ -1040,7 +1040,10 @@ export class TogetherCloudController implements TogetherCloudPort {
             if (this.mutationResults.has(droppedKey))
               this.mutationResults.set(droppedKey, {
                 done: true,
-                error: response.error.togetherCode ?? response.error.code,
+                error:
+                  next.method === "visibility"
+                    ? "cloud-visibility-refused"
+                    : (response.error.togetherCode ?? response.error.code),
               });
             continue;
           }
@@ -1192,7 +1195,14 @@ export class TogetherCloudController implements TogetherCloudPort {
       // A running drain may already be refreshing after its outbox loop. Its
       // completion does not acknowledge an action appended during that refresh.
       for (;;) {
-        await this.drain();
+        try {
+          await this.drain();
+        } catch (error) {
+          // A later step failed (the closing refresh, or an action queued
+          // after this one); if this action already settled, its own result
+          // stands rather than the drain's error.
+          if (!this.mutationResults.get(resultKey)?.done) throw error;
+        }
         this.guard(context);
         const result = this.mutationResults.get(resultKey);
         if (result?.done) {
@@ -1411,19 +1421,11 @@ export class TogetherCloudController implements TogetherCloudPort {
    */
   async visibility(audience: "private" | "friends", expiresAt: string) {
     const { s } = this.own();
-    const key = this.options.randomUUID();
-    try {
-      await this.queue("visibility", [
-        s.sessionId,
-        key,
-        { audience, expiresAt },
-      ]);
-    } catch (error) {
-      const queued = this.load()?.pending.some(
-        (a) => a.method === "visibility" && a.args[1] === key,
-      );
-      throw queued ? error : new Error("cloud-visibility-refused");
-    }
+    await this.queue("visibility", [
+      s.sessionId,
+      this.options.randomUUID(),
+      { audience, expiresAt },
+    ]);
   }
   async friends(cursor?: string) {
     const context = this.context();

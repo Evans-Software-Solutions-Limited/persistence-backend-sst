@@ -2495,6 +2495,21 @@ describe("sharing switches move on tap (PER-60)", () => {
     expect(controller.getSnapshot().pendingCount).toBe(1);
   });
 
+  it("an accepted Who can join is not called refused when the refresh after it fails (PER-60)", async () => {
+    api.visibility = jest.fn(async () => ok({ revision: 1 }));
+    const snapshot = api.snapshot;
+    api.snapshot = jest.fn(async () =>
+      fail({ kind: "api", code: "network", message: "offline" }),
+    ) as unknown as TogetherCloudApi["snapshot"];
+    // The server took it; only the closing refresh failed.
+    await expect(
+      controller.visibility("friends", new Date().toISOString()),
+    ).resolves.toBeUndefined();
+    expect(api.visibility).toHaveBeenCalled();
+    expect(controller.getSnapshot().pendingCount).toBe(0);
+    api.snapshot = snapshot;
+  });
+
   it("keeps the intent pending through a network fault and applies it on retry", async () => {
     const inner = api.consent as jest.Mock;
     api.consent = jest.fn(async () =>
