@@ -124,6 +124,17 @@ segment reads the host's own send first (it can be ahead of a queued send),
 then the server's `audience`, and shows no selection when neither is known
 instead of claiming Private. New PGlite and app tests fail on the old code.
 
+**Inspector Brad (28 Oct, sweep on `1336cfe`).** (1, medium) A definitively
+refused Who can join kept showing, and in fact the outbox never dropped a
+refused `visibility` (only consent and delegation), so a 4xx also blocked the
+queue. The controller now drops it like consent and `visibility()` rejects
+`cloud-visibility-refused` (any other rejection means still queued); the app
+forgets that send so the server's audience shows again. (2, low) The hook
+skipped any superseded failure, so a refusal was lost when the newer tap was
+on another switch and the switch went back silently. It now tracks the newest
+tap per switch (chips share previous values') and skips only when that same
+switch was tapped again. Each new test fails on the old code.
+
 **Not verified.** Nothing on a device or simulator.
 
 ### 2026-10-26 — Together UX pass PR 3: leaving, ending and finishing (PER-60, branch `claude/per-60-together-finish`)

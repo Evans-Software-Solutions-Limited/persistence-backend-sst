@@ -118,3 +118,19 @@ it("a superseded write's failure raises no notice", async () => {
   await act(async () => first.reject(new Error("grant revoked")));
   expect(result.current.state?.refused).toBeNull();
 });
+
+it("a refusal still shows when the next tap was on another switch", async () => {
+  const numbers = deferred();
+  const writes = [numbers.promise, Promise.resolve()];
+  const current = source({ write: jest.fn(() => writes.shift()!) });
+  const { result } = renderHook(() => useTogetherSharing(current));
+  act(() => result.current.change({ key: "numbers", value: true }));
+  await act(async () => result.current.change({ key: "logging", value: true }));
+  await act(async () => numbers.reject(new Error("FORBIDDEN")));
+  // Fill-in went through; numbers went back, and says so.
+  expect(result.current.state?.numbers).toBe(false);
+  expect(result.current.state?.refused).toEqual({
+    key: "numbers",
+    wanted: true,
+  });
+});

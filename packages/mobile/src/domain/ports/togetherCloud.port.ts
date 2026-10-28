@@ -304,6 +304,7 @@ export interface TogetherCloudPort {
   numbersConsent(recipientIds: string[]): Promise<void>;
   previousConsent(recipientIds: string[]): Promise<void>;
   previous(ownerId: string): Promise<void>;
+  /** Rejects `cloud-visibility-refused` when refused for good; otherwise it stays queued. */
   visibility(audience: "private" | "friends", expiresAt: string): Promise<void>;
   friends(cursor?: string): ReturnType<TogetherCloudApi["friends"]>;
   /** Preview an Online session from a pasted link or a typed code before consenting (PER-60). */

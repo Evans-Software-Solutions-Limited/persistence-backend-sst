@@ -42,6 +42,8 @@ export function useTogetherSharing(source: TogetherSharingSource | null): {
     change: SharingChange;
   } | null>(null);
   const latest = useRef(0);
+  /** The newest tap per switch (the chips share Share previous values'). */
+  const latestFor = useRef(new Map<string, number>());
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
@@ -56,6 +58,8 @@ export function useTogetherSharing(source: TogetherSharingSource | null): {
   const change = (c: SharingChange) => {
     const target = applySharingChange(shown, source.people, c);
     const request = ++latest.current;
+    const group = "recipient" in c ? "previous" : c.key;
+    latestFor.current.set(group, request);
     setOptimistic({ sessionId, base: target });
     setRefused(null);
     source.write(target, shown).then(
@@ -63,9 +67,11 @@ export function useTogetherSharing(source: TogetherSharingSource | null): {
         if (mounted.current && request === latest.current) setOptimistic(null);
       },
       () => {
-        // A newer tap replaced this one: its failure is not news.
-        if (!mounted.current || request !== latest.current) return;
-        setOptimistic(null);
+        if (!mounted.current) return;
+        if (request === latest.current) setOptimistic(null);
+        // A newer tap on the same switch replaced this one: not news. A tap
+        // on another switch didn't resend this change, so it still counts.
+        if (latestFor.current.get(group) !== request) return;
         setRefused({ sessionId, refusal: refusalFor(c), change: c });
       },
     );

@@ -41,6 +41,7 @@ import {
 import { useTogetherPartnerOutbox } from "@/ui/hooks/useTogetherPartnerOutbox";
 import { useTogetherSharing } from "@/ui/hooks/useTogetherSharing";
 import {
+  forgetVisibilitySentFor,
   rememberVisibilitySent,
   visibilitySent,
 } from "@/ui/state/togetherVisibilitySent";
@@ -239,15 +240,32 @@ export function TogetherCloudContainer(p: {
       : reported === "private"
         ? "invite-only"
         : undefined);
-  /** Sends who can join; a failed send stays queued in the outbox and goes on reconnect. */
+  /**
+   * Sends who can join. Offline, the send stays queued and the host's choice
+   * shows; refused for good, it's forgotten so the server's answer shows.
+   */
   const sendVisibility = (value: "invite-only" | "friends") => {
     const sessionId = p.cloud.getSnapshot().snapshot?.sessionId;
-    if (sessionId) rememberVisibilitySent(sessionId, { value });
+    const sent = { value };
+    if (sessionId) rememberVisibilitySent(sessionId, sent);
     refreshVisibility();
-    return p.cloud.visibility(
-      value === "friends" ? "friends" : "private",
-      new Date(Date.now() + VISIBLE_FOR).toISOString(),
-    );
+    return p.cloud
+      .visibility(
+        value === "friends" ? "friends" : "private",
+        new Date(Date.now() + VISIBLE_FOR).toISOString(),
+      )
+      .catch((error: unknown) => {
+        if (
+          sessionId &&
+          error instanceof Error &&
+          error.message === "cloud-visibility-refused" &&
+          visibilitySent(sessionId) === sent
+        ) {
+          forgetVisibilitySentFor(sessionId);
+          refreshVisibility();
+        }
+        throw error;
+      });
   };
   const [toast, showToast] = useTogetherToast();
   const [, requestCameraPermission] = useCameraPermissions();
@@ -829,8 +847,8 @@ export function TogetherCloudContainer(p: {
                 value: hostAudience,
                 online: true,
                 // Tapping the current value sends it again, which retries a
-                // failed send. A rejection leaves the change queued, so
-                // nothing reverts.
+                // failed send. An offline failure stays queued; a refusal
+                // shows the server's answer again (sendVisibility).
                 onChange: (value) => {
                   if (value === "open") return;
                   sendVisibility(value).catch(() => {});

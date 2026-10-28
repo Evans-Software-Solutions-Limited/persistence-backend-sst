@@ -700,6 +700,22 @@ it("after a restart, Who can join reads the server's answer, and shows no choice
   );
   expect(audience()).toBe("invite-only");
 });
+it("a refused Who can join gives way to the server's answer; an offline one keeps the choice", async () => {
+  const h = setup(true);
+  h.state().snapshot!.audience = "private";
+  const r = renderWithTheme(<TogetherCloudContainer {...h.props} />);
+  const audience = () =>
+    r.UNSAFE_getByType(TogetherSharingPresenter).props.audience;
+  expect(audience().value).toBe("invite-only");
+  jest
+    .mocked(h.cloud.visibility)
+    .mockRejectedValueOnce(new Error("cloud-visibility-refused"));
+  await act(async () => audience().onChange("friends"));
+  expect(audience().value).toBe("invite-only");
+  jest.mocked(h.cloud.visibility).mockRejectedValueOnce(new Error("network"));
+  await act(async () => audience().onChange("friends"));
+  expect(audience().value).toBe("friends");
+});
 it("queues every changed permission at once without waiting on the first, and a late rejection after the account changes shows nothing", async () => {
   const h = setup(true);
   let reject!: (error: Error) => void;

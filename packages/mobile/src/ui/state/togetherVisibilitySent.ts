@@ -18,6 +18,11 @@ export function rememberVisibilitySent(
   sent.set(sessionId, visibility);
 }
 
+/** Forgets a send the server refused, so its own answer shows again. */
+export function forgetVisibilitySentFor(sessionId: string) {
+  sent.delete(sessionId);
+}
+
 /** What was last sent for this session, or null. */
 export function visibilitySent(
   sessionId: string | undefined,

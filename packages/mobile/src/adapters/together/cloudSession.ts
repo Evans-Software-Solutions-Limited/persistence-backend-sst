@@ -1022,7 +1022,9 @@ export class TogetherCloudController implements TogetherCloudPort {
           }
           if (
             !response.ok &&
-            (next.method === "consent" || next.method === "delegation") &&
+            (next.method === "consent" ||
+              next.method === "delegation" ||
+              next.method === "visibility") &&
             definitiveRejection(response.error)
           ) {
             // The server will never take this sharing change. Drop the intent
@@ -1402,13 +1404,26 @@ export class TogetherCloudController implements TogetherCloudPort {
       throw new Error("cloud-previous-stale");
     this.publish({ previous: { ...this.state.previous, [ownerId]: result } });
   }
+  /**
+   * Rejects with `cloud-visibility-refused` when the server refused it for
+   * good (the action is dropped, as consent is); any other rejection leaves
+   * it queued for reconnect (PER-60).
+   */
   async visibility(audience: "private" | "friends", expiresAt: string) {
     const { s } = this.own();
-    await this.queue("visibility", [
-      s.sessionId,
-      this.options.randomUUID(),
-      { audience, expiresAt },
-    ]);
+    const key = this.options.randomUUID();
+    try {
+      await this.queue("visibility", [
+        s.sessionId,
+        key,
+        { audience, expiresAt },
+      ]);
+    } catch (error) {
+      const queued = this.load()?.pending.some(
+        (a) => a.method === "visibility" && a.args[1] === key,
+      );
+      throw queued ? error : new Error("cloud-visibility-refused");
+    }
   }
   async friends(cursor?: string) {
     const context = this.context();

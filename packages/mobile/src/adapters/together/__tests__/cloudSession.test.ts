@@ -2471,6 +2471,30 @@ describe("sharing switches move on tap (PER-60)", () => {
     });
   });
 
+  it("drops a refused Who can join and says so, but keeps an offline one queued (PER-60)", async () => {
+    api.visibility = jest.fn(async () =>
+      fail({
+        kind: "api",
+        code: "forbidden",
+        message: "no",
+        status: 403,
+        togetherCode: "FORBIDDEN",
+      }),
+    ) as unknown as TogetherCloudApi["visibility"];
+    await expect(
+      controller.visibility("friends", new Date().toISOString()),
+    ).rejects.toThrow("cloud-visibility-refused");
+    expect(controller.getSnapshot().pendingCount).toBe(0);
+    expect(controller.getSnapshot().phase).toBe("active");
+    api.visibility = jest.fn(async () =>
+      fail({ kind: "api", code: "network", message: "offline" }),
+    ) as unknown as TogetherCloudApi["visibility"];
+    await expect(
+      controller.visibility("friends", new Date().toISOString()),
+    ).rejects.toThrow("network");
+    expect(controller.getSnapshot().pendingCount).toBe(1);
+  });
+
   it("keeps the intent pending through a network fault and applies it on retry", async () => {
     const inner = api.consent as jest.Mock;
     api.consent = jest.fn(async () =>
