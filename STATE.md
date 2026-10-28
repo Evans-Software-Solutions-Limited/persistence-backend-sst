@@ -144,6 +144,16 @@ drain fails, and the drop branch marks a refused visibility
 `cloud-visibility-refused` explicitly, so `visibility()` is a plain queue call
 again. New controller test fails on the old code.
 
+**Inspector Brad (28 Oct, sweep on `506074c`).** One medium lead: a send
+queued offline and refused on reconnect was dropped by the background drain
+with nobody listening, so the remembered choice kept showing. The in-memory
+`togetherVisibilitySent` store is gone. The controller now publishes
+`pendingVisibility` from the persisted outbox (the last queued `visibility`,
+as consent's intent is overlaid), and the segment shows that, else the
+server's `audience`, else no choice. It survives minimise and restart, and a
+change dropped later leaves nothing behind. New controller assertions fail on
+the old code.
+
 **Not verified.** Nothing on a device or simulator.
 
 ### 2026-10-26 — Together UX pass PR 3: leaving, ending and finishing (PER-60, branch `claude/per-60-together-finish`)

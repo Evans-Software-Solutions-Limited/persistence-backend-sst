@@ -13,7 +13,6 @@ import { TogetherJoinRequestBar } from "@/ui/presenters/TogetherJoinRequestBar";
 import {
   useEffect,
   useRef,
-  useReducer,
   useState,
   useSyncExternalStore,
   type ReactNode,
@@ -40,11 +39,6 @@ import {
 } from "@/ui/presenters/TogetherPartnerPresenter";
 import { useTogetherPartnerOutbox } from "@/ui/hooks/useTogetherPartnerOutbox";
 import { useTogetherSharing } from "@/ui/hooks/useTogetherSharing";
-import {
-  forgetVisibilitySentFor,
-  rememberVisibilitySent,
-  visibilitySent,
-} from "@/ui/state/togetherVisibilitySent";
 import {
   cloudSharingBase,
   cloudSharingWrites,
@@ -227,46 +221,23 @@ export function TogetherCloudContainer(p: {
   const [leaveOpen, setLeaveOpen] = useState(false);
   /** Canvas row 4: the strip's settings cog. */
   const [sharingOpen, setSharingOpen] = useState(false);
-  // Who can join: what the host last sent for this session (kept outside
-  // this screen, which unmounts on minimise, and ahead of a queued send), else
-  // what the server reports. Unknown (an older server, after a restart) shows
-  // no choice rather than claiming Private.
-  const [, refreshVisibility] = useReducer((n: number) => n + 1, 0);
-  const reported = state.snapshot?.audience;
+  // Who can join: a change still in the outbox (persisted, so it survives a
+  // minimise or restart), else what the server reports. A change the server
+  // drops later leaves nothing behind. Unknown (an older server) shows no
+  // choice rather than claiming Private.
+  const shownAudience = state.pendingVisibility ?? state.snapshot?.audience;
   const hostAudience =
-    visibilitySent(state.snapshot?.sessionId)?.value ??
-    (reported === "friends"
+    shownAudience === "friends"
       ? "friends"
-      : reported === "private"
+      : shownAudience === "private"
         ? "invite-only"
-        : undefined);
-  /**
-   * Sends who can join. Offline, the send stays queued and the host's choice
-   * shows; refused for good, it's forgotten so the server's answer shows.
-   */
-  const sendVisibility = (value: "invite-only" | "friends") => {
-    const sessionId = p.cloud.getSnapshot().snapshot?.sessionId;
-    const sent = { value };
-    if (sessionId) rememberVisibilitySent(sessionId, sent);
-    refreshVisibility();
-    return p.cloud
-      .visibility(
-        value === "friends" ? "friends" : "private",
-        new Date(Date.now() + VISIBLE_FOR).toISOString(),
-      )
-      .catch((error: unknown) => {
-        if (
-          sessionId &&
-          error instanceof Error &&
-          error.message === "cloud-visibility-refused" &&
-          visibilitySent(sessionId) === sent
-        ) {
-          forgetVisibilitySentFor(sessionId);
-          refreshVisibility();
-        }
-        throw error;
-      });
-  };
+        : undefined;
+  /** Sends who can join; offline, it stays queued and still shows. */
+  const sendVisibility = (value: "invite-only" | "friends") =>
+    p.cloud.visibility(
+      value === "friends" ? "friends" : "private",
+      new Date(Date.now() + VISIBLE_FOR).toISOString(),
+    );
   const [toast, showToast] = useTogetherToast();
   const [, requestCameraPermission] = useCameraPermissions();
   const [scanning, setScanning] = useState(false);
@@ -846,9 +817,8 @@ export function TogetherCloudContainer(p: {
             ? {
                 value: hostAudience,
                 online: true,
-                // Tapping the current value sends it again, which retries a
-                // failed send. An offline failure stays queued; a refusal
-                // shows the server's answer again (sendVisibility).
+                // Tapping the current value sends it again. Offline it stays
+                // queued and shows; refused, the server's answer shows.
                 onChange: (value) => {
                   if (value === "open") return;
                   sendVisibility(value).catch(() => {});

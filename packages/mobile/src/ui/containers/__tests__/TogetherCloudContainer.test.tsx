@@ -23,7 +23,6 @@ import type {
 import type { WorkoutSession } from "@/domain/models/session";
 import { useTogetherSettings } from "@/state/together-settings";
 import { rosterSeen, forgetRoster } from "@/ui/state/togetherRosterSeen";
-import { forgetVisibilitySent } from "@/ui/state/togetherVisibilitySent";
 const mockCameraPermission = jest.fn();
 jest.mock("expo-camera", () => ({
   useCameraPermissions: () => [null, mockCameraPermission],
@@ -167,7 +166,11 @@ function setup(active = false) {
     numbersConsent: jest.fn(async () => {}),
     previousConsent: jest.fn(async () => {}),
     delegation: jest.fn(async () => {}),
-    visibility: jest.fn(async () => {}),
+    // Accepted at once: the refreshed snapshot reports the new audience.
+    visibility: jest.fn(async (audience: "private" | "friends") => {
+      if (state.snapshot)
+        publish({ snapshot: { ...state.snapshot, audience } });
+    }),
   } as unknown as TogetherCloudPort;
   const draft: WorkoutSession = {
     id: "local",
@@ -194,7 +197,6 @@ const ui = (r: ReturnType<typeof renderWithTheme>) =>
     typeof TogetherCloudPresenter
   >;
 beforeEach(() => {
-  forgetVisibilitySent();
   jest
     .spyOn(AppState, "addEventListener")
     .mockImplementation(() => ({ remove: jest.fn() }));
@@ -275,11 +277,14 @@ it("wires host invitations, join requests, who can join and every-partner sharin
   // Open nearby is Nearby-only.
   await act(async () => settings().audience!.onChange("open"));
   expect(h.cloud.visibility).toHaveBeenCalledTimes(1);
-  // Tapping the value it shows sends it again: Partners for another 15 minutes.
+  // Tapping the value it shows sends it again.
   await act(async () => settings().audience!.onChange("friends"));
   expect(h.cloud.visibility).toHaveBeenCalledTimes(2);
-  // A failed send stays queued for reconnect, so the segment keeps the choice.
-  jest.mocked(h.cloud.visibility).mockRejectedValueOnce(new Error("offline"));
+  // Offline the change stays in the outbox, which the controller reports.
+  jest.mocked(h.cloud.visibility).mockImplementationOnce(async () => {
+    h.publish({ pendingVisibility: "private" });
+    throw new Error("offline");
+  });
   await act(async () => settings().audience!.onChange("invite-only"));
   expect(h.cloud.visibility).toHaveBeenLastCalledWith(
     "private",
@@ -664,7 +669,9 @@ it("Who can join claims nothing until Partners is actually sent, and a new sessi
   );
   expect(audience()).toBe("friends");
   act(() =>
-    h.publish({ snapshot: { ...h.state().snapshot!, sessionId: "next" } }),
+    h.publish({
+      snapshot: { ...h.state().snapshot!, sessionId: "next", audience: null },
+    }),
   );
   expect(audience()).toBeUndefined();
 });
@@ -700,7 +707,7 @@ it("after a restart, Who can join reads the server's answer, and shows no choice
   );
   expect(audience()).toBe("invite-only");
 });
-it("a refused Who can join gives way to the server's answer; an offline one keeps the choice", async () => {
+it("a refused Who can join gives way to the server's answer; one queued offline still shows, and one dropped later leaves nothing behind", async () => {
   const h = setup(true);
   h.state().snapshot!.audience = "private";
   const r = renderWithTheme(<TogetherCloudContainer {...h.props} />);
@@ -712,9 +719,16 @@ it("a refused Who can join gives way to the server's answer; an offline one keep
     .mockRejectedValueOnce(new Error("cloud-visibility-refused"));
   await act(async () => audience().onChange("friends"));
   expect(audience().value).toBe("invite-only");
-  jest.mocked(h.cloud.visibility).mockRejectedValueOnce(new Error("network"));
+  // Offline: still in the outbox, so the host's choice shows.
+  jest.mocked(h.cloud.visibility).mockImplementationOnce(async () => {
+    h.publish({ pendingVisibility: "friends" });
+    throw new Error("network");
+  });
   await act(async () => audience().onChange("friends"));
   expect(audience().value).toBe("friends");
+  // On reconnect the server refuses it and the outbox drops it.
+  act(() => h.publish({ pendingVisibility: undefined }));
+  expect(audience().value).toBe("invite-only");
 });
 it("queues every changed permission at once without waiting on the first, and a late rejection after the account changes shows nothing", async () => {
   const h = setup(true);

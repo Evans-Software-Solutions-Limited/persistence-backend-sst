@@ -284,7 +284,15 @@ export class TogetherCloudController implements TogetherCloudPort {
       "INSERT INTO together_cloud_workout(account_id,payload) VALUES (?,?) ON CONFLICT(account_id) DO UPDATE SET payload=excluded.payload",
       [this.account, JSON.stringify(value)],
     );
-    this.publish({ pendingCount: value.pending.length });
+    const visibility = value.pending
+      .filter((a) => a.method === "visibility")
+      .at(-1);
+    this.publish({
+      pendingCount: value.pending.length,
+      pendingVisibility: visibility
+        ? (visibility.args[2] as { audience: "private" | "friends" }).audience
+        : undefined,
+    });
   }
   private context() {
     if (!this.account || !this.active || this.disposed)

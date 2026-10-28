@@ -270,6 +270,11 @@ export interface TogetherCloudState {
   requests: CloudRequest[];
   previous: Record<string, CloudPrevious>;
   pendingCount: number;
+  /**
+   * Who can join, while a change to it is still in the outbox: the host's
+   * intent wins until the server answers, as consent's does (PER-60).
+   */
+  pendingVisibility?: "private" | "friends";
   error?: string;
 }
 export interface TogetherCloudPort {

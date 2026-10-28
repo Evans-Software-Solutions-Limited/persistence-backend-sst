@@ -2493,6 +2493,21 @@ describe("sharing switches move on tap (PER-60)", () => {
       controller.visibility("friends", new Date().toISOString()),
     ).rejects.toThrow("network");
     expect(controller.getSnapshot().pendingCount).toBe(1);
+    // Queued, so the host's choice is what the controller reports.
+    expect(controller.getSnapshot().pendingVisibility).toBe("friends");
+    // Refused on reconnect: dropped, and nothing of it is left to show.
+    api.visibility = jest.fn(async () =>
+      fail({
+        kind: "api",
+        code: "forbidden",
+        message: "no",
+        status: 403,
+        togetherCode: "FORBIDDEN",
+      }),
+    ) as unknown as TogetherCloudApi["visibility"];
+    await controller.retry().catch(() => {});
+    expect(controller.getSnapshot().pendingCount).toBe(0);
+    expect(controller.getSnapshot().pendingVisibility).toBeUndefined();
   });
 
   it("an accepted Who can join is not called refused when the refresh after it fails (PER-60)", async () => {
