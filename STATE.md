@@ -104,6 +104,17 @@ success but not its failure, so undoing a tap could raise a "switched back"
 notice; failures from a replaced tap are now ignored. Each new test fails on
 the old code.
 
+**Inspector Brad (28 Oct, sweep on `e9e324d`).** One medium lead: the app's
+near-4-hour `expiresAt` left 10 minutes of slack against the server's
+`<= now + 4h` check, so a phone clock 10+ minutes fast got 400 on every Who
+can join send, and a rejected `visibility` is never dropped from the outbox
+(it blocks what's queued behind it and the session goes unavailable). The
+server now only checks `expiresAt` is a date, since it no longer stores it;
+the app sends now + 2 hours, which an undeployed server still accepts for a
+clock up to 2 hours off either way and which keeps a session at least 2 hours
+there. New PGlite assertions (6 h ahead, 1 h behind accepted; non-date 400)
+fail on the old code.
+
 **Not verified.** Nothing on a device or simulator.
 
 ### 2026-10-26 — Together UX pass PR 3: leaving, ending and finishing (PER-60, branch `claude/per-60-together-finish`)

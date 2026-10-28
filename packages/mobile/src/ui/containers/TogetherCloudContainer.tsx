@@ -181,12 +181,13 @@ export function cloudSharedView(
   };
 }
 /**
- * The `expiresAt` sent with Who can join. The server's 4-hour cap, less a
- * margin for clock skew. Older servers wrote it over the session's own
- * lifetime, so it must never be short: sending 15 minutes ended the session
- * 15 minutes later. Current servers ignore it (PER-60).
+ * The `expiresAt` sent with Who can join. Current servers only check it is a
+ * date. Older ones wrote it over the session's own lifetime (so 15 minutes
+ * ended the session) and rejected anything past their clock plus 4 hours or
+ * before it: two hours keeps a session at least that long there and tolerates
+ * a phone clock up to two hours off either way (PER-60).
  */
-const VISIBLE_FOR = 4 * 3600_000 - 10 * 60_000;
+const VISIBLE_FOR = 2 * 3600_000;
 
 export function TogetherCloudContainer(p: {
   cloud: TogetherCloudPort;

@@ -733,6 +733,20 @@ describe("production Together persistence and recovery", () => {
       });
     expect(await lifetime()).toBe(before);
     expect(before).toBeGreaterThan(Date.now() + 3 * 3600000);
+    // The value isn't stored, so a phone clock hours fast or slow still works;
+    // only something that isn't a date is refused.
+    for (const offset of [6 * 3600000, -3600000])
+      await repo.visibility(a, s.sessionId, key(), {
+        audience: "friends",
+        expiresAt: new Date(Date.now() + offset).toISOString(),
+      });
+    await expect(
+      repo.visibility(a, s.sessionId, key(), {
+        audience: "friends",
+        expiresAt: "soon",
+      }),
+    ).rejects.toMatchObject({ status: 400 });
+    expect(await lifetime()).toBe(before);
   });
   it("allows friends-only discovery while venue directory stays disabled", async () => {
     vi.stubEnv("TOGETHER_DISCOVERY_ENABLED", "false");

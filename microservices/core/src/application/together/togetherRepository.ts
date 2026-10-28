@@ -1703,10 +1703,11 @@ export class TogetherRepository {
         403,
       );
       await assertTogetherPaid(tx, actor);
-      const expiresAt = new Date(body.expiresAt);
+      // Kept in the body for older apps but no longer stored (see below), so
+      // only its shape is checked: bounds against the server clock would
+      // reject a phone whose clock runs fast or slow (PER-60).
       requireTogether(
-        expiresAt > new Date() &&
-          expiresAt.getTime() <= Date.now() + 4 * 3600000,
+        Number.isFinite(Date.parse(body.expiresAt)),
         "INVALID_SCHEMA",
         400,
       );
