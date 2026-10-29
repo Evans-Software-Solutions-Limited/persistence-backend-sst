@@ -56,6 +56,26 @@ it("puts a refused switch back with one notice", async () => {
   });
 });
 
+it("drops the notice once the sheet is dismissed, and a later refusal shows again (inspector lead)", async () => {
+  const current = source({
+    write: jest.fn(async () => {
+      throw new Error("FORBIDDEN");
+    }),
+  });
+  const { result } = renderHook(() => useTogetherSharing(current));
+  await act(async () => result.current.change({ key: "logging", value: true }));
+  expect(result.current.state?.refused).not.toBeNull();
+  // Done: the switch is still off, but the notice has been seen.
+  act(() => result.current.dismiss());
+  expect(result.current.state?.logging).toBe(false);
+  expect(result.current.state?.refused).toBeNull();
+  await act(async () => result.current.change({ key: "numbers", value: true }));
+  expect(result.current.state?.refused).toEqual({
+    key: "numbers",
+    wanted: true,
+  });
+});
+
 it("shows no notice for a failed write that still holds, such as a queued offline change", async () => {
   let current = source({
     write: jest.fn(async () => {

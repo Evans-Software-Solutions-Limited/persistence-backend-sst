@@ -31,6 +31,8 @@ export interface TogetherSharingSource {
 export function useTogetherSharing(source: TogetherSharingSource | null): {
   state: TogetherSharingState | null;
   change(change: SharingChange): void;
+  /** The sheet closed: its notice has been seen. */
+  dismiss(): void;
 } {
   const [optimistic, setOptimistic] = useState<{
     sessionId: string;
@@ -51,7 +53,8 @@ export function useTogetherSharing(source: TogetherSharingSource | null): {
       mounted.current = false;
     };
   }, []);
-  if (!source) return { state: null, change: () => {} };
+  const dismiss = () => setRefused(null);
+  if (!source) return { state: null, change: () => {}, dismiss };
   const sessionId = source.sessionId;
   const shown =
     optimistic?.sessionId === sessionId ? optimistic.base : source.base;
@@ -88,5 +91,6 @@ export function useTogetherSharing(source: TogetherSharingSource | null): {
       wentBack ? refused.refusal : null,
     ),
     change,
+    dismiss,
   };
 }

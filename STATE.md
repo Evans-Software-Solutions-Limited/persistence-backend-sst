@@ -186,6 +186,16 @@ a new `alone` flag (nobody at all). When everyone else has finished, numbers
 and previous values can still be switched off but not on (there is nobody to
 grant to); fill-in stays live. Both tests fail on the old code.
 
+**Inspector Brad (29 Oct, sweep on `d2f6a4e`).** (1, medium) An Online
+athlete who had finished their own workout still got Together settings' live
+card while the session shared on for others, and every tap was refused
+(`scopedConsent` and `delegation` both need the actor `active`).
+`useLiveTogetherSharing` now treats an Online session as live only while this
+athlete's own status is `active`. (2, low) The refusal notice outlived Done and
+came back on every open; `useTogetherSharing` now exposes `dismiss()`, which
+both containers call from the sheet's Done/close. Both tests fail on the old
+code.
+
 **Not verified.** Nothing on a device or simulator.
 
 ### 2026-10-26 — Together UX pass PR 3: leaving, ending and finishing (PER-60, branch `claude/per-60-together-finish`)

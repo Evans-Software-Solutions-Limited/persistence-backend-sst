@@ -124,7 +124,9 @@ export function useLiveTogetherSharing(p: {
     };
   } else if (userId && cloud?.sharingActive) {
     const own = cloud.participants.find((x) => x.userId === userId);
-    if (own) {
+    // Finished their own workout: the server refuses every change from now on,
+    // though the session still shares for those training.
+    if (own?.status === "active") {
       const people = sharingPeople(
         cloud.participants,
         userId,

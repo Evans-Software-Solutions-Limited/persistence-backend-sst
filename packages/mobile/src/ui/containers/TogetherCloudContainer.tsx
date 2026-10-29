@@ -831,7 +831,10 @@ export function TogetherCloudContainer(p: {
             : undefined
         }
         onRemove={confirmRemoval}
-        onDone={() => setSharingOpen(false)}
+        onDone={() => {
+          setSharingOpen(false);
+          sharing.dismiss();
+        }}
       />
       <TogetherLeaveSheet
         visible={leaveOpen && !soloAgain && !!state.snapshot}

@@ -210,6 +210,7 @@ it("reads a live Online session and writes recipient lists", async () => {
       participants: [
         {
           userId: "me",
+          status: "active",
           allowPartnerLogging: false,
           numbersConsent: { version: 0, recipientIds: [] },
           previousConsent: { version: 0, recipientIds: [] },
@@ -251,6 +252,29 @@ it("reads a live Online session and writes recipient lists", async () => {
     cloud.set({
       ...cloud.get(),
       snapshot: { ...cloud.get().snapshot!, hostId: "v" },
+    }),
+  );
+  expect(result.current?.title).toBe("Mia’s session");
+  // Once this athlete has finished their own workout the server refuses every
+  // change, even while the session shares on for the others: no card.
+  const training = cloud.get().snapshot!.participants;
+  act(() =>
+    cloud.set({
+      ...cloud.get(),
+      snapshot: {
+        ...cloud.get().snapshot!,
+        participants: [
+          { ...training[0]!, status: "saved" },
+          ...training.slice(1),
+        ],
+      },
+    }),
+  );
+  expect(result.current).toBeNull();
+  act(() =>
+    cloud.set({
+      ...cloud.get(),
+      snapshot: { ...cloud.get().snapshot!, participants: training },
     }),
   );
   expect(result.current?.title).toBe("Mia’s session");

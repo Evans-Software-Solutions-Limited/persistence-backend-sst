@@ -889,7 +889,10 @@ export function TogetherLobbyContainer({
         onChange={sharing.change}
         removable={snapshot.role === "host" ? people : undefined}
         onRemove={lobby.removeParticipant ? confirmRemoval : undefined}
-        onDone={() => setSharingOpen(false)}
+        onDone={() => {
+          setSharingOpen(false);
+          sharing.dismiss();
+        }}
       />
       <TogetherLeaveSheet
         visible={leaveOpen && !soloAgain && !!workoutStatus}
