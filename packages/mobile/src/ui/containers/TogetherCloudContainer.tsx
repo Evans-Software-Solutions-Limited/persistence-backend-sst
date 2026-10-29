@@ -571,25 +571,29 @@ export function TogetherCloudContainer(p: {
       .map((x) => x.userId)
       .filter((id) => id !== p.accountId && !g.ids.has(id));
     for (const id of fresh) g.ids.add(id);
-    const grantTo = firstSight && !untouched ? [] : fresh;
+    // The server refuses a list naming anyone not still training, so the
+    // grants only ever name partners who are (finished ones keep a seat).
+    const training = new Set(
+      s.participants.filter((x) => x.status === "active").map((x) => x.userId),
+    );
+    const grantTo = (firstSight && !untouched ? [] : fresh).filter((id) =>
+      training.has(id),
+    );
+    const withNewcomers = (granted: readonly string[] = []) => [
+      ...new Set([...granted.filter((id) => training.has(id)), ...grantTo]),
+    ];
     if (grantTo.length) {
       if (sharingDefaults.numbers)
         fire(() =>
-          p.cloud.numbersConsent([
-            ...new Set([
-              ...(own.numbersConsent?.recipientIds ?? []),
-              ...grantTo,
-            ]),
-          ]),
+          p.cloud.numbersConsent(
+            withNewcomers(own.numbersConsent?.recipientIds),
+          ),
         );
       if (sharingDefaults.previous)
         fire(() =>
-          p.cloud.previousConsent([
-            ...new Set([
-              ...(own.previousConsent?.recipientIds ?? []),
-              ...grantTo,
-            ]),
-          ]),
+          p.cloud.previousConsent(
+            withNewcomers(own.previousConsent?.recipientIds),
+          ),
         );
     }
     if (

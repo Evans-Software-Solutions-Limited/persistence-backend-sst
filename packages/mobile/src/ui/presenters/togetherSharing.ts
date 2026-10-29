@@ -51,7 +51,10 @@ export interface TogetherSharingState {
   numbers: boolean;
   previous: boolean;
   logging: boolean;
+  /** Partners still training, who can be granted something new. */
   recipients: (SharingPerson & { on: boolean })[];
+  /** Nobody else in the session at all, finished or not. */
+  alone: boolean;
   refused: SharingRefusal | null;
 }
 
@@ -87,6 +90,7 @@ export function sharingState(
     logging: base.logging,
     previous: people.some((p) => base.previous[p.userId]),
     recipients,
+    alone: !people.length,
     refused,
   };
 }

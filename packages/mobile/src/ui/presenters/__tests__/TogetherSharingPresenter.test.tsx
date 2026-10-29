@@ -129,6 +129,31 @@ it("says sharing has ended when there is no live session", () => {
   expect(r.queryByText("What you share")).toBeNull();
 });
 
+it("when every partner has finished, keeps the switches and offers only what can still change (inspector lead)", () => {
+  const p = props();
+  // Inés finished with your numbers still shared; Omar finished with nothing.
+  const done = [
+    { userId: "ines", name: "Inés", tone: "info" as const, finished: true },
+    { userId: "omar", name: "Omar", tone: "success" as const, finished: true },
+  ];
+  p.state = sharingState({ numbers: true, logging: false, previous: {} }, done);
+  const r = renderWithTheme(<TogetherSharingPresenter {...p} />);
+  expect(r.queryByTestId("together-sharing-nobody")).toBeNull();
+  // Numbers can still be switched off; nothing new can be granted, so the
+  // previous-values switch can't be turned on. Fill-in is this account's own.
+  const numbers = r.getByLabelText("Show my numbers");
+  expect(numbers.props.accessibilityState.disabled).toBe(false);
+  expect(
+    r.getByLabelText("Share previous values").props.accessibilityState.disabled,
+  ).toBe(true);
+  expect(
+    r.getByLabelText("Let others fill in my sets").props.accessibilityState
+      .disabled,
+  ).toBe(false);
+  fireEvent.press(numbers);
+  expect(p.onChange).toHaveBeenCalledWith({ key: "numbers", value: false });
+});
+
 it("with nobody else in the session, explains the defaults instead of switches that can't stay on", () => {
   const p = props();
   p.state = sharingState({ numbers: false, logging: false, previous: {} }, []);

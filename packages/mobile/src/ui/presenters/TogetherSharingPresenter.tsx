@@ -117,7 +117,7 @@ export function TogetherSharingRows(p: {
   const sheet = p.variant === "sheet";
   const label = (text: string) => (sheet ? text : `${text} in this session`);
   // Nobody to share with yet: switches would have nothing to grant.
-  if (!p.state.recipients.length)
+  if (p.state.alone)
     return (
       <View paddingVertical={12} testID="together-sharing-nobody">
         <Text fontFamily="$body" fontSize={12} lineHeight={17} color="$text3">
@@ -125,6 +125,9 @@ export function TogetherSharingRows(p: {
         </Text>
       </View>
     );
+  // Everyone else has finished: what is shared can still be switched off,
+  // but there is nobody left to grant anything new to.
+  const locked = (on: boolean) => !on && !p.state.recipients.length;
   return (
     <>
       <Row
@@ -135,6 +138,7 @@ export function TogetherSharingRows(p: {
         <TogetherSwitch
           accessibilityLabel={label("Show my numbers")}
           value={p.state.numbers}
+          disabled={locked(p.state.numbers)}
           onValueChange={(value) => p.onChange({ key: "numbers", value })}
         />
       </Row>
@@ -145,6 +149,7 @@ export function TogetherSharingRows(p: {
         <TogetherSwitch
           accessibilityLabel={label("Share previous values")}
           value={p.state.previous}
+          disabled={locked(p.state.previous)}
           onValueChange={(value) => p.onChange({ key: "previous", value })}
         />
       </Row>

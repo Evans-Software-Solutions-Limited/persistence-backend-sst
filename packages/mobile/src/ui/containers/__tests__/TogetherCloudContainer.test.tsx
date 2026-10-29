@@ -1470,6 +1470,49 @@ it("applies the stored sharing defaults to newcomers in an Online session, and t
   useTogetherSettings.getState().reset();
 });
 
+it("leaves finished partners out of the joining defaults, so the server takes the grant (inspector lead)", async () => {
+  useTogetherSettings.setState({
+    userId: "u",
+    hydrated: true,
+    rehydrate: jest.fn(async () => {}),
+    sharing: { numbers: true, previous: true, logging: false },
+  });
+  // A fresh join where v has already saved and w is still training.
+  const h = setup(true);
+  const snap = h.state().snapshot!;
+  snap.participants[0].ownRevision = 0;
+  snap.participants[1].status = "saved";
+  snap.participants.push({ ...server.participants[1], userId: "w" });
+  const r = renderWithTheme(<TogetherCloudContainer {...h.props} />);
+  await act(async () => {});
+  expect(h.cloud.numbersConsent).toHaveBeenCalledWith(["w"]);
+  expect(h.cloud.previousConsent).toHaveBeenCalledWith(["w"]);
+  // Someone joins later: the list keeps w and adds x, never the finished v,
+  // even though an earlier grant still names v.
+  jest.mocked(h.cloud.numbersConsent).mockClear();
+  jest.mocked(h.cloud.previousConsent).mockClear();
+  const own = h.state().snapshot!.participants[0];
+  own.ownRevision = 1;
+  own.numbersConsent = { version: 1, recipientIds: ["v", "w"] };
+  own.previousConsent = { version: 1, recipientIds: ["v", "w"] };
+  act(() =>
+    h.publish({
+      snapshot: {
+        ...h.state().snapshot!,
+        participants: [
+          ...h.state().snapshot!.participants,
+          { ...server.participants[1], userId: "x" },
+        ],
+      },
+    }),
+  );
+  await act(async () => {});
+  expect(h.cloud.numbersConsent).toHaveBeenCalledWith(["w", "x"]);
+  expect(h.cloud.previousConsent).toHaveBeenCalledWith(["w", "x"]);
+  r.unmount();
+  useTogetherSettings.getState().reset();
+});
+
 it("does not re-share numbers an athlete revoked before logging when the screen remounts (inspector lead)", async () => {
   useTogetherSettings.setState({
     userId: "u",

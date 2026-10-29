@@ -175,6 +175,17 @@ the previous-values list sent only ever names partners still training, and it
 is sent only when the tap changed previous values. Nearby has no status and
 is unchanged. New model tests fail on the old code.
 
+**Inspector Brad (29 Oct, sweep on `99fecad`).** (1, medium) The joining
+defaults effect in `TogetherCloudContainer` still granted to every new
+participant and kept any finished partner already on the list, so a late
+joiner's defaults were refused whole. Both the newcomers and the existing
+list are now filtered to participants with `status === "active"`. (2, low) With
+every partner finished, `recipients` was empty and the sheet and live card said
+"Nobody else is here yet", hiding the switches. The empty state now comes from
+a new `alone` flag (nobody at all). When everyone else has finished, numbers
+and previous values can still be switched off but not on (there is nobody to
+grant to); fill-in stays live. Both tests fail on the old code.
+
 **Not verified.** Nothing on a device or simulator.
 
 ### 2026-10-26 — Together UX pass PR 3: leaving, ending and finishing (PER-60, branch `claude/per-60-together-finish`)
