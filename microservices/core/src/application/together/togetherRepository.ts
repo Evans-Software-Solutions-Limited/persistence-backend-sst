@@ -1,5 +1,5 @@
 import { createHmac } from "node:crypto";
-import { and, eq, inArray, gt, asc, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, gt, asc, isNull, or, sql } from "drizzle-orm";
 import { getDb } from "@persistence/db/client";
 import {
   togetherSessions as sessions,
@@ -309,6 +309,8 @@ export class TogetherRepository {
       code: s.hostId === actor ? (s.code ?? null) : null,
       /** Who can join, for the host's settings after a restart (PER-60). */
       audience: s.hostId === actor ? s.audience : null,
+      /** When the session ends, sent back as the host's listing deadline (PER-60). */
+      endsAt: s.hostId === actor ? s.expiresAt.toISOString() : null,
       revision: s.revision,
       planVersion: s.planVersion,
       plan: shared ? s.plan : (own.frozenPlan ?? s.plan),
@@ -1705,8 +1707,7 @@ export class TogetherRepository {
         403,
       );
       await assertTogetherPaid(tx, actor);
-      // Kept in the body for older apps but no longer stored (see below), so
-      // only its shape is checked: bounds against the server clock would
+      // Only its shape is checked: bounds against the server clock would
       // reject a phone whose clock runs fast or slow (PER-60).
       requireTogether(
         Number.isFinite(Date.parse(body.expiresAt)),
@@ -1735,14 +1736,19 @@ export class TogetherRepository {
             ? await placesRepository.resolve(body.placeId)
             : null;
           // `expiresAt` is the session's own lifetime (live() revokes
-          // collaboration once it passes), not a listing window: changing
+          // collaboration once it passes), so the deadline sent here only
+          // ends the listing (older apps offered "for 15 minutes"): changing
           // who can find the session must never shorten it (PER-60).
+          const listedUntil = new Date(
+            Math.min(Date.parse(body.expiresAt), s.expiresAt.getTime()),
+          );
           await tx
             .update(sessions)
             .set({
               placeLabel: selected?.label ?? null,
               audience: body.audience,
               placeId: body.placeId ?? null,
+              listedUntil,
             })
             .where(eq(sessions.id, id));
           await this.emit(tx, s, { type: "visibility_changed" });
@@ -1793,6 +1799,10 @@ export class TogetherRepository {
             eq(sessions.state, "active"),
             eq(sessions.collaborationRevoked, false),
             gt(sessions.expiresAt, new Date()),
+            or(
+              isNull(sessions.listedUntil),
+              gt(sessions.listedUntil, new Date()),
+            ),
             ...(query.placeId ? [eq(sessions.placeId, query.placeId)] : []),
           ),
         )
@@ -1832,7 +1842,8 @@ export class TogetherRepository {
           ...this.planRows(s, ps),
           placeId: s.placeId,
           placeLabel: s.placeLabel,
-          expiresAt: s.expiresAt,
+          // When the listing ends, as before PER-60 split it from the lifetime.
+          expiresAt: s.listedUntil ?? s.expiresAt,
           occupancy: ps.filter((p) => !p.removedFromRoster).length,
         });
         if (data.length >= (query.limit ?? 20)) break;

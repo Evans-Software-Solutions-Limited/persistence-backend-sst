@@ -654,6 +654,19 @@ it("Partners lasts the session, and the expiry sent never cuts the session short
   // even when this phone's clock runs up to two hours fast.
   expect(sent).toBeGreaterThan(Date.now() + 1.9 * 3600_000);
   expect(sent).toBeLessThanOrEqual(Date.now() + 2 * 3600_000);
+  // A current server says when the session ends: the listing lasts that long,
+  // whatever this phone's clock says (inspector lead).
+  const endsAt = new Date(Date.now() + 3.5 * 3600_000).toISOString();
+  act(() => h.publish({ snapshot: { ...h.state().snapshot!, endsAt } }));
+  await act(async () =>
+    r
+      .UNSAFE_getByType(TogetherSharingPresenter)
+      .props.audience.onChange("invite-only"),
+  );
+  expect(jest.mocked(h.cloud.visibility).mock.calls.at(-1)).toEqual([
+    "private",
+    endsAt,
+  ]);
 });
 it("Who can join claims nothing until Partners is actually sent, and a new session starts unknown again", async () => {
   const h = setup(true);

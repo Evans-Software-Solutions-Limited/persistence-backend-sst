@@ -55,6 +55,26 @@ it("phone 4: a live session gets its own card above the defaults, writing to the
   expect(p.onSharing).not.toHaveBeenCalled();
 });
 
+it("a change the session refused gets the same notice under the card (inspector lead)", () => {
+  const p = {
+    ...props(),
+    live: {
+      title: "Your session",
+      state: sharingState(
+        { numbers: false, logging: false, previous: {} },
+        [{ userId: "b", name: "Brad", tone: "info" as const }],
+        { key: "logging", wanted: true },
+      ),
+      onChange: jest.fn(),
+    },
+  };
+  const r = renderWithTheme(<TogetherSettingsPresenter {...p} />);
+  expect(r.getByTestId("together-sharing-refused")).toBeTruthy();
+  p.live.state = { ...p.live.state, refused: null };
+  r.rerender(<TogetherSettingsPresenter {...p} />);
+  expect(r.queryByTestId("together-sharing-refused")).toBeNull();
+});
+
 it("phone 5: no card while nothing is live", () => {
   const r = renderWithTheme(<TogetherSettingsPresenter {...props()} />);
   expect(r.queryByTestId("together-settings-live")).toBeNull();

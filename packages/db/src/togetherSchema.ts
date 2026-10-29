@@ -73,6 +73,8 @@ export const togetherSessions = pgTable(
     placeId: text("place_id"),
     placeLabel: text("place_label"),
     expiresAt: at("expires_at").notNull(),
+    /** Discovery listing deadline (PER-60), capped at `expiresAt`; null lists until the session ends. */
+    listedUntil: at("listed_until"),
     collaborationRevoked: boolean("collaboration_revoked")
       .notNull()
       .default(false),

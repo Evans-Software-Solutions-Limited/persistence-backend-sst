@@ -43,6 +43,8 @@ export interface CloudSnapshot {
   code?: string | null;
   /** Who can join, for the host only; older servers leave it out (PER-60). */
   audience?: "private" | "friends" | "nearby" | null;
+  /** When the session ends, for the host only; older servers leave it out (PER-60). */
+  endsAt?: string | null;
   revision: number;
   planVersion: number;
   plan: CloudPlan;

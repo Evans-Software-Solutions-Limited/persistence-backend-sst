@@ -175,6 +175,15 @@ beforeAll(async () => {
   );
   await pg.exec(codeMigration);
   await pg.exec(codeMigration);
+  const listedMigration = readFileSync(
+    new URL(
+      "../../../../../../supabase/migrations/20261029120000_together_listed_until.sql",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  await pg.exec(listedMigration);
+  await pg.exec(listedMigration);
   db = drizzle(pg, { schema });
   holder.db = db;
 });
@@ -726,6 +735,16 @@ describe("production Together persistence and recovery", () => {
     });
     expect((await repo.snapshot(a, s.sessionId)).audience).toBe("friends");
     expect((await repo.snapshot(b, s.sessionId)).audience).toBeNull();
+    // The host also gets when the session ends, in the server's own clock, to
+    // send back as the listing deadline (inspector lead).
+    const [row] = await db
+      .select({ expiresAt: schema.togetherSessions.expiresAt })
+      .from(schema.togetherSessions)
+      .where(eq(schema.togetherSessions.id, s.sessionId));
+    expect((await repo.snapshot(a, s.sessionId)).endsAt).toBe(
+      row!.expiresAt.toISOString(),
+    );
+    expect((await repo.snapshot(b, s.sessionId)).endsAt).toBeNull();
   });
   it("changing who can join never shortens the session's own lifetime (PER-60)", async () => {
     const s = await create();
@@ -758,6 +777,46 @@ describe("production Together persistence and recovery", () => {
       }),
     ).rejects.toMatchObject({ status: 400 });
     expect(await lifetime()).toBe(before);
+  });
+  it("an older app's time-boxed listing ends on time, without ending the session (inspector lead)", async () => {
+    const s = await create();
+    await db
+      .insert(schema.friendships)
+      .values({ userId: a, friendId: b, status: "accepted", initiatedBy: a });
+    const listed = async () =>
+      (await repo.discovery(b, { audience: "friends" })).data.map(
+        (x) => x.sessionId,
+      );
+    // Apps before PER-60 offered "for 15 minutes" and sent that deadline.
+    await repo.visibility(a, s.sessionId, key(), {
+      audience: "friends",
+      expiresAt: new Date(Date.now() + 15 * 60000).toISOString(),
+    });
+    expect(await listed()).toEqual([s.sessionId]);
+    const [row] = (await repo.discovery(b, { audience: "friends" })).data;
+    expect(Date.parse(String(row!.expiresAt))).toBeLessThanOrEqual(
+      Date.now() + 15 * 60000,
+    );
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(Date.now() + 16 * 60000);
+      expect(await listed()).toEqual([]);
+      // The session itself carries on: partners can still be in it.
+      expect((await repo.snapshot(a, s.sessionId)).state).toBe("active");
+    } finally {
+      vi.useRealTimers();
+    }
+    // A deadline past the session's own end is capped at it.
+    await repo.visibility(a, s.sessionId, key(), {
+      audience: "friends",
+      expiresAt: new Date(Date.now() + 48 * 3600000).toISOString(),
+    });
+    const [capped] = await db
+      .select()
+      .from(schema.togetherSessions)
+      .where(eq(schema.togetherSessions.id, s.sessionId));
+    expect(capped!.listedUntil!.getTime()).toBe(capped!.expiresAt.getTime());
+    expect(await listed()).toEqual([s.sessionId]);
   });
   it("allows friends-only discovery while venue directory stays disabled", async () => {
     vi.stubEnv("TOGETHER_DISCOVERY_ENABLED", "false");
@@ -1482,6 +1541,15 @@ describe("remaining recovery and migration boundaries", () => {
       readFileSync(
         new URL(
           "../../../../../../supabase/migrations/20261023120000_together_session_code.sql",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+    );
+    await pg.exec(
+      readFileSync(
+        new URL(
+          "../../../../../../supabase/migrations/20261029120000_together_listed_until.sql",
           import.meta.url,
         ),
         "utf8",

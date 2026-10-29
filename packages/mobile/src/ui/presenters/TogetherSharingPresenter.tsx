@@ -13,6 +13,7 @@ import {
   refusedCopy,
   type SharingChange,
   type SharingPerson,
+  type SharingRefusal,
   type TogetherSharingState,
 } from "./togetherSharing";
 
@@ -184,6 +185,42 @@ export function TogetherSharingRows(p: {
  * Three switches that move on tap, recipient chips under previous values, one
  * notice when the session refuses a change, and Done.
  */
+/** The orange notice for a change the session refused; the switch is back. */
+export function TogetherSharingRefused(p: { refusal: SharingRefusal }) {
+  return (
+    <View
+      flexDirection="row"
+      gap={10}
+      alignItems="flex-start"
+      paddingVertical={10}
+      paddingHorizontal={12}
+      borderRadius={12}
+      borderWidth={1}
+      borderColor="$ember"
+      backgroundColor="$emberDim"
+      accessibilityRole="alert"
+      testID="together-sharing-refused"
+    >
+      <View
+        width={6}
+        height={6}
+        borderRadius={999}
+        backgroundColor="$ember"
+        marginTop={6}
+      />
+      <Text
+        flex={1}
+        fontFamily="$body"
+        fontSize={12}
+        lineHeight={17}
+        color="$text2"
+      >
+        {refusedCopy(p.refusal)}
+      </Text>
+    </View>
+  );
+}
+
 export function TogetherSharingPresenter(p: {
   visible: boolean;
   state: TogetherSharingState | null;
@@ -235,36 +272,7 @@ export function TogetherSharingPresenter(p: {
               />
             </Card>
             {p.state.refused && (
-              <View
-                flexDirection="row"
-                gap={10}
-                alignItems="flex-start"
-                paddingVertical={10}
-                paddingHorizontal={12}
-                borderRadius={12}
-                borderWidth={1}
-                borderColor="$ember"
-                backgroundColor="$emberDim"
-                accessibilityRole="alert"
-                testID="together-sharing-refused"
-              >
-                <View
-                  width={6}
-                  height={6}
-                  borderRadius={999}
-                  backgroundColor="$ember"
-                  marginTop={6}
-                />
-                <Text
-                  flex={1}
-                  fontFamily="$body"
-                  fontSize={12}
-                  lineHeight={17}
-                  color="$text2"
-                >
-                  {refusedCopy(p.state.refused)}
-                </Text>
-              </View>
+              <TogetherSharingRefused refusal={p.state.refused} />
             )}
             {p.audience && (
               <>

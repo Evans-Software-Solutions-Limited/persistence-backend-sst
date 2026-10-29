@@ -176,11 +176,12 @@ export function cloudSharedView(
   };
 }
 /**
- * The `expiresAt` sent with Who can join. Current servers only check it is a
- * date. Older ones wrote it over the session's own lifetime (so 15 minutes
- * ended the session) and rejected anything past their clock plus 4 hours or
- * before it: two hours keeps a session at least that long there and tolerates
- * a phone clock up to two hours off either way (PER-60).
+ * The `expiresAt` sent with Who can join when the server doesn't say when the
+ * session ends. Current servers send `endsAt` and list the session until the
+ * deadline sent. Older ones wrote it over the session's own lifetime (so 15
+ * minutes ended the session) and rejected anything past their clock plus 4
+ * hours or before it: two hours keeps a session at least that long there and
+ * tolerates a phone clock up to two hours off either way (PER-60).
  */
 const VISIBLE_FOR = 2 * 3600_000;
 
@@ -236,7 +237,8 @@ export function TogetherCloudContainer(p: {
   const sendVisibility = (value: "invite-only" | "friends") =>
     p.cloud.visibility(
       value === "friends" ? "friends" : "private",
-      new Date(Date.now() + VISIBLE_FOR).toISOString(),
+      state.snapshot?.endsAt ??
+        new Date(Date.now() + VISIBLE_FOR).toISOString(),
     );
   const [toast, showToast] = useTogetherToast();
   const [, requestCameraPermission] = useCameraPermissions();

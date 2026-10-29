@@ -196,6 +196,23 @@ came back on every open; `useTogetherSharing` now exposes `dismiss()`, which
 both containers call from the sheet's Done/close. Both tests fail on the old
 code.
 
+**Inspector Brad (29 Oct, sweep on `9392d2e`).** (1, medium, backend) Once
+`visibility()` stopped writing `expiresAt`, nothing ended the listing for apps
+built before PER-60 ("for 15 minutes"), so a session stayed in friends/venue
+discovery until it ended. New nullable column `together_sessions.listed_until`
+(migration `20261029120000_together_listed_until.sql`, idempotent, with a
+rollback): `visibility()` stores the deadline sent, capped at the session's
+`expiresAt`, and `discovery()` lists only while it is null or in the future,
+returning it as the listing's `expiresAt`. The session's own lifetime is still
+untouched. The host's snapshot now also carries `endsAt` (the session's
+`expiresAt`, server clock; null for partners), and the app sends that back as
+the deadline so the new Who can join lists for the whole session without
+trusting the phone clock; against a server without `endsAt` it falls back to
+now + 2h. (2, low) The Together settings live card now shows the same refusal
+notice as the sheet (`TogetherSharingRefused`, extracted). The card's hook
+state goes with the screen, so leaving clears it. Needs the migration and a
+core deploy before the app relies on `endsAt`.
+
 **Not verified.** Nothing on a device or simulator.
 
 ### 2026-10-26 — Together UX pass PR 3: leaving, ending and finishing (PER-60, branch `claude/per-60-together-finish`)

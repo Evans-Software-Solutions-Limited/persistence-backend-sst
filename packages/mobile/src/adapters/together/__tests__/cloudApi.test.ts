@@ -483,6 +483,10 @@ describe("authenticated Together cloud/social API contracts", () => {
     for (const audience of [undefined, null, "private", "friends", "nearby"])
       expect(cloudSnapshot({ ...snapshot, audience })).toBe(true);
     expect(cloudSnapshot({ ...snapshot, audience: "everyone" })).toBe(false);
+    for (const endsAt of [undefined, null, "2026-10-29T12:00:00.000Z"])
+      expect(cloudSnapshot({ ...snapshot, endsAt })).toBe(true);
+    for (const endsAt of ["later", 1793287354000])
+      expect(cloudSnapshot({ ...snapshot, endsAt })).toBe(false);
   });
   it("validates consent-scoped numeric visibility and bounded PREV data", () => {
     expect(cloudSnapshot(snapshot)).toBe(true);

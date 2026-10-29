@@ -12,7 +12,10 @@ import type { TogetherLobbyAudience } from "@/domain/ports/togetherLobby.port";
 import type { TogetherSharingDefaults } from "@/state/together-settings";
 import { color } from "@/ui/theme/tokens";
 import { tint } from "@/ui/theme/tint";
-import { TogetherSharingRows } from "./TogetherSharingPresenter";
+import {
+  TogetherSharingRefused,
+  TogetherSharingRows,
+} from "./TogetherSharingPresenter";
 import type { SharingChange, TogetherSharingState } from "./togetherSharing";
 
 /**
@@ -189,6 +192,9 @@ export function TogetherSettingsPresenter(p: {
                 variant="card"
               />
             </View>
+            {p.live.state.refused && (
+              <TogetherSharingRefused refusal={p.live.state.refused} />
+            )}
           </View>
         )}
         <View gap={8}>
