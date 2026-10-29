@@ -56,9 +56,7 @@ export async function handleSubscriptionCreated(
   // longer exists). Defensive default; metadata is normally set by our
   // outbound subscription-create path.
   const tierName = subscription.metadata?.tier_name ?? "free";
-  const billingCycle = normaliseMetadataBillingCycle(
-    subscription.metadata?.billing_cycle,
-  );
+  const billingCycle = subscription.metadata?.billing_cycle ?? "monthly";
 
   try {
     await repo.insert({
@@ -98,26 +96,5 @@ export async function handleSubscriptionCreated(
       return;
     }
     throw err;
-  }
-}
-
-/**
- * `user_subscriptions.billing_cycle` is read back through
- * `normaliseBillingCycle`, which accepts only `monthly` | `yearly` and turns
- * anything else into `null` — so a row written as `annual` would show the app
- * no cycle at all. The web rails say "annual"; map the synonyms here and keep
- * the historical `monthly` default for metadata that carries nothing.
- */
-export function normaliseMetadataBillingCycle(
-  value: string | undefined,
-): "monthly" | "yearly" {
-  switch ((value ?? "").trim().toLowerCase()) {
-    case "yearly":
-    case "annual":
-    case "annually":
-    case "year":
-      return "yearly";
-    default:
-      return "monthly";
   }
 }

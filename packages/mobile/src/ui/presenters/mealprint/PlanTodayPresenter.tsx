@@ -9,10 +9,6 @@
  * state and a per-meal Log/Swap action.
  */
 
-import {
-  MealSwapFeedback,
-  type MealSwapFeedbackProps,
-} from "./MealSwapFeedback";
 import { Pressable } from "react-native";
 import { Text, View } from "@tamagui/core";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -44,7 +40,6 @@ export type PlanTodayProps = {
   readonly loggingMealId: string | null;
   readonly onSwapMeal: (meal: PlanMeal) => void;
   readonly swappingMealId: string | null;
-  readonly swapFeedback?: MealSwapFeedbackProps;
   /**
    * The message for the most recent swap-or-replace failure (429 swap
    * ceiling, 402/422/503 swap, 400/422/404/409 replace) — `null` when there
@@ -78,7 +73,6 @@ export function PlanTodayPresenter({
   loggingMealId,
   onSwapMeal,
   swappingMealId,
-  swapFeedback,
   actionFailure,
   onDeletePlan,
   deleting,
@@ -163,7 +157,7 @@ export function PlanTodayPresenter({
         </View>
       ) : (
         <View flex={1} padding={16} gap={16}>
-          {actionFailure && !swapFeedback ? (
+          {actionFailure ? (
             <View
               padding={12}
               borderRadius={12}
@@ -299,7 +293,7 @@ export function PlanTodayPresenter({
                       <View flexDirection="row" gap={6}>
                         <Pressable
                           onPress={() => onSwapMeal(meal)}
-                          disabled={swappingMealId !== null}
+                          disabled={swappingMealId === meal.id}
                           testID={`plan-today-swap-${meal.id}`}
                           accessibilityRole="button"
                           accessibilityLabel={`Swap ${meal.label}`}
@@ -328,9 +322,7 @@ export function PlanTodayPresenter({
                         </Pressable>
                         <Pressable
                           onPress={() => onLogMeal(meal)}
-                          disabled={
-                            loggingMealId === meal.id || swappingMealId !== null
-                          }
+                          disabled={loggingMealId === meal.id}
                           testID={`plan-today-log-${meal.id}`}
                           accessibilityRole="button"
                           accessibilityLabel={`Log ${meal.label}`}
@@ -364,9 +356,6 @@ export function PlanTodayPresenter({
                       </View>
                     )}
                   </View>
-                  {swapFeedback?.mealId === meal.id ? (
-                    <MealSwapFeedback {...swapFeedback} />
-                  ) : null}
                 </Card>
               );
             })}

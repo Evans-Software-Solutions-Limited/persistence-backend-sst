@@ -1,11 +1,4 @@
 import type { DashboardPayload } from "@/domain/models/dashboard";
-import type {
-  BootstrapPayload,
-  BootstrapSectionKey,
-  BootstrapSectionResult,
-  BootstrapSections,
-  GetBootstrapParams,
-} from "@/domain/models/bootstrap";
 import type { AppliedReferral } from "@/domain/models/referral";
 import type {
   CreateExerciseInput,
@@ -1266,71 +1259,6 @@ export class InMemoryApiAdapter implements ApiPort {
       activeProgramme: this.nextActiveProgramme,
       todaysTraining: this.nextTodaysTraining,
     });
-  }
-  public getBootstrapCalls: GetBootstrapParams[] = [];
-  async getBootstrap(
-    params: GetBootstrapParams,
-  ): Promise<Result<BootstrapPayload, ApiError>> {
-    this.getBootstrapCalls.push(params);
-    if (this.shouldFail) return fail(this.failError);
-    const include = new Set(params.include);
-    const section = async <K extends BootstrapSectionKey>(
-      key: K,
-      load: () => Promise<Result<BootstrapSections[K], ApiError>>,
-    ): Promise<BootstrapSectionResult<BootstrapSections[K]> | undefined> => {
-      if (!include.has(key)) return undefined;
-      const result = await load();
-      return result.ok
-        ? { ok: true, value: result.value }
-        : { ok: false, error: result.error.message };
-    };
-    const slice = async (type: "mine" | "assigned" | "default") => {
-      const result = await this.getWorkouts({
-        type,
-        ownerLibraryOnly: type === "mine" ? params.ownerLibraryOnly : undefined,
-      });
-      if (!result.ok) throw result.error;
-      return result.value;
-    };
-    const sections: BootstrapPayload["sections"] = {
-      home: await section("home", () => this.getHome()),
-      profile: await section("profile", () => this.getProfilePage()),
-      subscription: await section("subscription", () =>
-        this.getMySubscription(),
-      ),
-      tiers: await section("tiers", () => this.getSubscriptionTiers()),
-      onboarding: await section("onboarding", () => this.getOnboarding()),
-      workouts: await section("workouts", async () =>
-        ok({
-          mine: await slice("mine"),
-          assigned: await slice("assigned"),
-          default: await slice("default"),
-        }),
-      ),
-      notifications: await section("notifications", () =>
-        this.getNotifications({ unreadOnly: true }),
-      ),
-      habitConfig: await section("habitConfig", () => this.getHabitConfigs()),
-      habitCompletions: await section("habitCompletions", () =>
-        this.getHabitCompletions({ window: "7d", includeDerived: true }),
-      ),
-      streaks: await section("streaks", () => this.getStreaks()),
-      achievements: await section("achievements", () => this.getAchievements()),
-      volumeStats: await section("volumeStats", () =>
-        this.getVolumeStats("month"),
-      ),
-      bodyTrend: await section("bodyTrend", () => this.getBodyTrend("30d")),
-      recentPRs: await section("recentPRs", () => this.getRecentPRs(20)),
-      muscleGroups: await section("muscleGroups", () =>
-        this.getReferenceList("muscle_groups"),
-      ),
-      equipment: await section("equipment", () =>
-        this.getReferenceList("equipment"),
-      ),
-    };
-    for (const key of Object.keys(sections) as BootstrapSectionKey[])
-      if (sections[key] === undefined) delete sections[key];
-    return ok({ generatedAt: new Date().toISOString(), sections });
   }
   async getTodayRings() {
     return this.mayFail<Rings>(this.nextRings);

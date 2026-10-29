@@ -25,8 +25,8 @@ jest.mock("@/ui/hooks/useLoadoutGate", () => ({
  */
 const mockSavedGymsMounted = jest.fn();
 jest.mock("@/ui/containers/SavedGymsContainer", () => {
-  const { Text } = jest.requireActual("react-native");
-  const React_ = jest.requireActual("react");
+  const { Text } = require("react-native");
+  const React_ = require("react");
   return {
     __esModule: true,
     SavedGymsContainer: () => {

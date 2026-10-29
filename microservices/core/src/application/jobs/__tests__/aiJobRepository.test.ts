@@ -454,14 +454,9 @@ describe("AiJobRepository", () => {
         /"(heartbeat_at|updated_at|created_at|started_at|finished_at)"\s*=/,
       );
       expect(params).toContain("j1");
-      // Both cutoffs are bound as ISO strings: a raw sql template passes the
-      // JS value through, and the postgres-js driver would reject a Date.
-      expect(params.some((p) => p instanceof Date)).toBe(false);
-      expect(params).toContain(
-        new Date(now.getTime() - STALE_AFTER_MS).toISOString(),
-      );
-      expect(params).toContain(
-        new Date(now.getTime() - QUEUED_STALE_AFTER_MS).toISOString(),
+      expect(params).toContainEqual(new Date(now.getTime() - STALE_AFTER_MS));
+      expect(params).toContainEqual(
+        new Date(now.getTime() - QUEUED_STALE_AFTER_MS),
       );
     });
 
@@ -591,15 +586,10 @@ describe("AiJobRepository", () => {
       expect(lower).toContain("invocations");
       expect(lower).toContain("max_invocations");
       expect(params).toContain("j1");
-      // The fence cutoff is bound as a parameter, as an ISO string: a raw
-      // `sql` template passes the JS value through with no column mapper, and
-      // the postgres-js driver rejects a Date (PERSISTENCE-BACKEND-6/7).
-      expect(params.some((p) => p instanceof Date)).toBe(false);
-      expect(
-        params.some(
-          (p) => typeof p === "string" && /^\d{4}-\d{2}-\d{2}T.*Z$/.test(p),
-        ),
-      ).toBe(true);
+      // The fence cutoff is bound as a parameter. Note it arrives as a Date:
+      // a raw `sql` template passes the JS value through, where `lt()` would
+      // have serialised it to an ISO string first.
+      expect(params.some((p) => p instanceof Date)).toBe(true);
     });
 
     it("the fence cutoff is CLAIM_FENCE_MS in the past — and far shorter than STALE_AFTER_MS", async () => {
@@ -614,11 +604,8 @@ describe("AiJobRepository", () => {
       const after = Date.now();
 
       const { params } = renderSql(whereSpy.mock.calls[0][0]);
-      // Bound as an ISO string, never a Date (PERSISTENCE-BACKEND-6/7).
-      const cutoff = params.find(
-        (p) => typeof p === "string" && /^\d{4}-\d{2}-\d{2}T.*Z$/.test(p),
-      ) as string;
-      const cutoffMs = new Date(cutoff).getTime();
+      const cutoff = params.find((p) => p instanceof Date) as Date;
+      const cutoffMs = cutoff.getTime();
       expect(cutoffMs).toBeGreaterThanOrEqual(before - CLAIM_FENCE_MS - 50);
       expect(cutoffMs).toBeLessThanOrEqual(after - CLAIM_FENCE_MS + 50);
     });
@@ -836,11 +823,7 @@ describe("AiJobRepository", () => {
       expect(sql.toLowerCase()).toContain("is null");
       // Both the status and the cutoff are bound params, not inline literals.
       expect(params).toContain("running");
-      // The cutoff is bound as an ISO string: a raw Date in a sql template
-      // reaches postgres-js unserialised (same fault as PERSISTENCE-BACKEND-6).
-      expect(params).toContain(
-        new Date(now.getTime() - STALE_AFTER_MS).toISOString(),
-      );
+      expect(params).toContainEqual(new Date(now.getTime() - STALE_AFTER_MS));
     });
 
     it("STALE_AFTER_MS clears the queue's 16-minute visibility timeout", () => {

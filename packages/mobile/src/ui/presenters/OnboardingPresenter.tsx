@@ -2,7 +2,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Image } from "expo-image";
 import { Pressable, ScrollView } from "react-native";
 import { Text, View } from "@tamagui/core";
-import type { OnboardingBenefit } from "@/domain/services/onboardingBenefits";
 
 import { Btn, HeaderBar, IconBtn } from "@/ui/components/foundation";
 import {
@@ -75,7 +74,7 @@ export const TRAINING_ONBOARDING_OPTIONS: readonly IntentOption[] = [
  */
 export const ACCOUNT_ONLY_CONFIRMATION_COPY = {
   eyebrow: "YOU'RE ALL SET",
-  title: "Your membership is ready",
+  title: "Your access is ready",
   bodyWithExpiry: (tierDisplayName: string, expiresAtLabel: string) =>
     `Your ${tierDisplayName} access is active until ${expiresAtLabel}.`,
   bodyWithoutExpiry: (tierDisplayName: string) =>
@@ -644,12 +643,10 @@ export function OnboardingIntentPresenter({
 export function OnboardingAccountConfirmationPresenter({
   tierDisplayName,
   expiresAt,
-  benefits,
   onContinue,
 }: {
   tierDisplayName: string;
   expiresAt: string | null;
-  benefits: readonly OnboardingBenefit[];
   onContinue: () => void;
 }) {
   const insets = useSafeAreaInsets();
@@ -670,6 +667,7 @@ export function OnboardingAccountConfirmationPresenter({
       <ScrollView
         contentContainerStyle={{
           flexGrow: 1,
+          justifyContent: "center",
           padding: 24,
         }}
       >
@@ -722,49 +720,6 @@ export function OnboardingAccountConfirmationPresenter({
               )
             : ACCOUNT_ONLY_CONFIRMATION_COPY.bodyWithoutExpiry(tierDisplayName)}
         </Text>
-        <Text
-          color="$text2"
-          fontSize={14}
-          lineHeight={21}
-          textAlign="center"
-          marginTop={12}
-        >
-          Here’s what’s included to make your next step easier.
-        </Text>
-        <View gap={12} marginTop={24}>
-          {benefits.map((benefit) => (
-            <View
-              key={benefit.title}
-              backgroundColor="$surface"
-              borderRadius={16}
-              padding={16}
-              flexDirection="row"
-              gap={12}
-            >
-              <View paddingTop={2}>
-                <IconCheck size={20} color="#22D3EE" />
-              </View>
-              <View flex={1} gap={4}>
-                <Text
-                  color="$text"
-                  fontFamily="$body"
-                  fontSize={16}
-                  fontWeight="700"
-                >
-                  {benefit.title}
-                </Text>
-                <Text
-                  color="$text2"
-                  fontFamily="$body"
-                  fontSize={14}
-                  lineHeight={21}
-                >
-                  {benefit.description}
-                </Text>
-              </View>
-            </View>
-          ))}
-        </View>
       </ScrollView>
       <StickyActions>
         <Btn

@@ -160,8 +160,6 @@ export const coreRoute = coreAPI.route("$default", {
   ],
   environment: {
     ...togetherEnvironment,
-    APP_MIN_IOS_VERSION: process.env.APP_MIN_IOS_VERSION || "1.1.3",
-    APP_MIN_ANDROID_VERSION: process.env.APP_MIN_ANDROID_VERSION || "1.1.3",
     DATABASE_URL: databaseUrl.value,
     SUPABASE_URL: supabaseUrl,
     // Supabase service-role key — server-side only. Used exclusively by
@@ -214,21 +212,6 @@ export const coreRoute = coreAPI.route("$default", {
     // (spec-30 WS3). OPTIONAL + fail-safe: empty = verification skipped (forms
     // behave as before). Set before the forms are publicly linked.
     TURNSTILE_SECRET: turnstileSecret.value,
-    // Blue Light Card web subscription rail (PER-3). Plain stage config, not
-    // secrets: a Stripe Coupon id and Tradedoubler's organisation / event ids
-    // are identifiers, not credentials. All OPTIONAL + fail-safe — an empty
-    // coupon id makes `/blc/checkout` refuse every code (`invalid_code`), and
-    // empty Tradedoubler ids make the conversion report a logged no-op, so a
-    // stage without them still deploys and runs. Set per-stage in the deploy
-    // workflows' environment; the Stripe Prices themselves are found by
-    // lookup key (`web_premium_*`) against `STRIPE_SECRET_KEY`.
-    BLC_STRIPE_COUPON_ID: process.env.BLC_STRIPE_COUPON_ID ?? "",
-    TRADEDOUBLER_ORGANIZATION_ID:
-      process.env.TRADEDOUBLER_ORGANIZATION_ID ?? "",
-    TRADEDOUBLER_SALE_EVENT_ID: process.env.TRADEDOUBLER_SALE_EVENT_ID ?? "",
-    // Days after the sale on which Tradedoubler may approve it (`validOn`) —
-    // the 14-day refund window. Defaults to 14 in `tradedoubler/reportSale.ts`.
-    TRADEDOUBLER_VALID_ON_DAYS: process.env.TRADEDOUBLER_VALID_ON_DAYS ?? "",
     // AI Tier B model ids (M9.5). Plain deploy-time config, not secrets —
     // Bedrock auth is IAM (see `permissions` above), so there's nothing
     // sensitive here. Defaults match `nutrition/services/aiEstimation.ts`;

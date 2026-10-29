@@ -154,17 +154,7 @@ export function useActiveWorkoutRehydration(
             // just restored from AsyncStorage, so withClient survives here.
             const onBehalfClientId =
               useActiveWorkout.getState().active?.withClient?.id ?? null;
-            const result = cancelSessionCommand(
-              { storage, userId },
-              { onBehalfClientId },
-            );
-            if (
-              !result.ok &&
-              result.error.kind === "together_completion_pending"
-            ) {
-              Alert.alert("Workout saved on this device", result.error.message);
-              return;
-            }
+            cancelSessionCommand({ storage, userId }, { onBehalfClientId });
             void useActiveWorkout.getState().end();
           },
         });

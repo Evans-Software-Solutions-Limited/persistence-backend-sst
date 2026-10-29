@@ -15,9 +15,10 @@
  */
 
 import React from "react";
+import type { ReactNode } from "react";
 import { Text, TouchableOpacity, View } from "react-native";
 import { Image } from "expo-image";
-import { SetLogger, type SetSyncState } from "../SetLogger";
+import { SetLogger } from "../SetLogger";
 import { styles } from "./styles";
 import {
   IconDumbbell,
@@ -77,27 +78,13 @@ export type SessionExerciseCardProps = {
   onOpenNotes: () => void;
   onSubstitute: () => void;
   onRemoveExercise: () => void;
-  /** Absent: the name is not a link (a partner's exercise). */
-  onTapExercise?: () => void;
+  onTapExercise: () => void;
   onStartRest: () => void;
-  onSkip?: () => void;
   reorderPosition?: number;
   reorderTotal?: number;
   onMove?: (direction: -1 | 1) => void;
   /** Inside a `ReorderableList`: the grip says it can be dragged. */
   draggable?: boolean;
-  /**
-   * Someone else's exercise (PER-60 partner view): no notes, substitute,
-   * remove, rest or per-set remove, which act on your own workout only.
-   */
-  partner?: boolean;
-  /** Partner view without fill-in: values shown, nothing editable or added. */
-  readOnly?: boolean;
-  /** Replaces the "{N} sets × reps" caption. */
-  caption?: string;
-  /** Partner rows: delivery state per set id. */
-  syncStateBySetId?: Readonly<Record<string, SetSyncState>>;
-  onCommitSet?: (setId: string) => void;
 };
 
 const formatRepsLabel = (
@@ -122,28 +109,9 @@ export function SessionExerciseCard(props: SessionExerciseCardProps) {
     trackingMode === "cardio" && props.targetDurationSeconds != null
       ? formatDurationInput(props.targetDurationSeconds)
       : repsLabel;
-  const hasDescription =
-    props.caption != null || (props.targetSets != null && targetLabel != null);
+  const hasDescription = props.targetSets != null && targetLabel != null;
   const hasNotes =
     props.exercise.notes != null && props.exercise.notes.length > 0;
-
-  const title = (
-    <>
-      <View style={styles.exerciseTitleRow}>
-        <Text style={styles.exerciseName} numberOfLines={2}>
-          {props.exercise.exerciseName}
-        </Text>
-      </View>
-      {hasDescription && (
-        <View style={styles.exerciseTitleRow}>
-          <Text style={styles.exerciseDescription} numberOfLines={2}>
-            {props.caption ??
-              `${props.targetSets} ${props.targetSets === 1 ? "set" : "sets"} × ${targetLabel}`}
-          </Text>
-        </View>
-      )}
-    </>
-  );
 
   return (
     <View
@@ -176,50 +144,56 @@ export function SessionExerciseCard(props: SessionExerciseCardProps) {
           </View>
         )}
 
-        {props.onTapExercise ? (
-          <TouchableOpacity
-            onPress={props.onTapExercise}
-            style={styles.exerciseInfo}
-            testID="session-exercise-tap"
-            accessibilityLabel={`Open ${props.exercise.exerciseName} details`}
-          >
-            {title}
-          </TouchableOpacity>
-        ) : (
-          <View style={styles.exerciseInfo}>{title}</View>
-        )}
-
-        {!props.partner && (
-          <View style={styles.exerciseActions}>
-            <TouchableOpacity
-              onPress={props.onOpenNotes}
-              style={styles.actionButton}
-              testID="session-exercise-notes"
-              accessibilityLabel={hasNotes ? "Edit notes" : "Add notes"}
-            >
-              <IconNote
-                size={15}
-                color={hasNotes ? color.$primary : color.$text3}
-              />
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={props.onSubstitute}
-              style={styles.actionButton}
-              testID="session-exercise-substitute"
-              accessibilityLabel="Substitute exercise"
-            >
-              <IconSwap size={15} color={color.$text3} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={props.onRemoveExercise}
-              style={styles.actionButton}
-              testID="session-exercise-remove"
-              accessibilityLabel="Remove exercise"
-            >
-              <IconTrash size={15} color={color.$error} />
-            </TouchableOpacity>
+        <TouchableOpacity
+          onPress={props.onTapExercise}
+          style={styles.exerciseInfo}
+          testID="session-exercise-tap"
+          accessibilityLabel={`Open ${props.exercise.exerciseName} details`}
+        >
+          <View style={styles.exerciseTitleRow}>
+            <Text style={styles.exerciseName} numberOfLines={2}>
+              {props.exercise.exerciseName}
+            </Text>
           </View>
-        )}
+          {hasDescription && (
+            <View style={styles.exerciseTitleRow}>
+              <Text style={styles.exerciseDescription} numberOfLines={2}>
+                {props.targetSets} {props.targetSets === 1 ? "set" : "sets"} ×{" "}
+                {targetLabel}
+              </Text>
+            </View>
+          )}
+        </TouchableOpacity>
+
+        <View style={styles.exerciseActions}>
+          <TouchableOpacity
+            onPress={props.onOpenNotes}
+            style={styles.actionButton}
+            testID="session-exercise-notes"
+            accessibilityLabel={hasNotes ? "Edit notes" : "Add notes"}
+          >
+            <IconNote
+              size={15}
+              color={hasNotes ? color.$primary : color.$text3}
+            />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={props.onSubstitute}
+            style={styles.actionButton}
+            testID="session-exercise-substitute"
+            accessibilityLabel="Substitute exercise"
+          >
+            <IconSwap size={15} color={color.$text3} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={props.onRemoveExercise}
+            style={styles.actionButton}
+            testID="session-exercise-remove"
+            accessibilityLabel="Remove exercise"
+          >
+            <IconTrash size={15} color={color.$error} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={styles.columnHeaders}>
@@ -256,14 +230,6 @@ export function SessionExerciseCard(props: SessionExerciseCardProps) {
           return (
             <SetLogger
               key={set.id}
-              readOnly={props.readOnly}
-              hideRemove={props.partner}
-              syncState={props.syncStateBySetId?.[set.id]}
-              onCommit={
-                props.onCommitSet
-                  ? () => props.onCommitSet?.(set.id)
-                  : undefined
-              }
               set={set}
               setNumber={idx + 1}
               previous={previousForSet}
@@ -284,44 +250,28 @@ export function SessionExerciseCard(props: SessionExerciseCardProps) {
           );
         })}
 
-        {props.onSkip && !props.partner && (
+        <View style={styles.buttonsContainer}>
           <TouchableOpacity
-            onPress={props.onSkip}
-            accessibilityLabel={
-              props.exercise.skipped ? "Resume exercise" : "Skip exercise"
-            }
+            onPress={props.onLogSet}
+            style={styles.footerButton}
+            testID="session-exercise-add-set"
+            accessibilityLabel="Add a new set"
           >
+            <IconPlus size={12} color={color.$primary} strokeWidth={2.5} />
+            <Text style={styles.footerButtonText}>ADD SET</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={props.onStartRest}
+            style={styles.footerButton}
+            testID="session-exercise-start-rest"
+            accessibilityLabel={`Start ${props.restSeconds} second rest timer`}
+          >
+            <IconTimer size={12} color={color.$primary} />
             <Text style={styles.footerButtonText}>
-              {props.exercise.skipped ? "SKIPPED · RESUME" : "SKIP EXERCISE"}
+              {props.restSeconds}S REST
             </Text>
           </TouchableOpacity>
-        )}
-        {!props.readOnly && (
-          <View style={styles.buttonsContainer}>
-            <TouchableOpacity
-              onPress={props.onLogSet}
-              style={styles.footerButton}
-              testID="session-exercise-add-set"
-              accessibilityLabel="Add a new set"
-            >
-              <IconPlus size={12} color={color.$primary} strokeWidth={2.5} />
-              <Text style={styles.footerButtonText}>ADD SET</Text>
-            </TouchableOpacity>
-            {!props.partner && (
-              <TouchableOpacity
-                onPress={props.onStartRest}
-                style={styles.footerButton}
-                testID="session-exercise-start-rest"
-                accessibilityLabel={`Start ${props.restSeconds} second rest timer`}
-              >
-                <IconTimer size={12} color={color.$primary} />
-                <Text style={styles.footerButtonText}>
-                  {props.restSeconds}S REST
-                </Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        )}
+        </View>
       </View>
     </View>
   );

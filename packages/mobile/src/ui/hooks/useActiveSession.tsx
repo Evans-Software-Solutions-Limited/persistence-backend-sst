@@ -16,7 +16,7 @@
  *       specs/milestones/M3-active-session/EXECUTION_PLAN.md § 2 Commit 7
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { WorkoutSession } from "@/domain/models/session";
 import { useAdapters } from "./useAdapters";
 import { useAuth } from "./useAuth";
@@ -24,13 +24,12 @@ import { useAuth } from "./useAuth";
 export type UseActiveSession = {
   session: WorkoutSession | null;
   userId: string | null;
-  authLoading: boolean;
   rereadCache: () => void;
 };
 
 export function useActiveSession(): UseActiveSession {
-  const { storage, togetherLobby, togetherCloud } = useAdapters();
-  const { session: authSession, isLoading: authLoading } = useAuth();
+  const { storage } = useAdapters();
+  const { session: authSession } = useAuth();
   const userId = authSession?.userId ?? null;
 
   const [cacheVersion, setCacheVersion] = useState(0);
@@ -45,15 +44,5 @@ export function useActiveSession(): UseActiveSession {
     setCacheVersion((v) => v + 1);
   }, []);
 
-  useEffect(
-    () => togetherLobby?.workout?.subscribe(rereadCache),
-    [togetherLobby, rereadCache],
-  );
-
-  useEffect(
-    () => togetherCloud?.subscribe(rereadCache),
-    [togetherCloud, rereadCache],
-  );
-
-  return { session, userId, authLoading, rereadCache };
+  return { session, userId, rereadCache };
 }

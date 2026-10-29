@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { router } from "expo-router";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
@@ -12,9 +12,6 @@ import {
 import { localDayISO } from "@/shared/utils";
 import {
   computePlanAdherence,
-  addNotWantedMeals,
-  MEAL_SEARCH_FULL_MESSAGE,
-  type NotWantedMeal,
   planAcceptMealInputFromGenerated,
   type PlanMeal,
 } from "@/domain/models/mealprint";
@@ -81,34 +78,10 @@ export function PlanTodayContainer() {
   const swap = usePlanSwap();
   const replace = useReplacePlanMeal();
 
-  const notWantedRef = useRef<NotWantedMeal[]>([]);
-  const generatedMealsRef = useRef(new Map<string, NotWantedMeal>());
   const [loggingMealId, setLoggingMealId] = useState<string | null>(null);
   const [swappingMealId, setSwappingMealId] = useState<string | null>(null);
-  const [feedbackId, setFeedbackId] = useState<string | null>(null);
-  const [swapSteer, setSwapSteer] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [actionFailure, setActionFailure] = useState<string | null>(null);
-
-  useEffect(() => {
-    notWantedRef.current = [];
-    generatedMealsRef.current.clear();
-    setFeedbackId(null);
-    setSwapSteer("");
-    setActionFailure(null);
-  }, [activePlan.data?.id, userId, today]);
-
-  useEffect(() => {
-    if (
-      feedbackId !== null &&
-      !activePlan.data?.meals.some(
-        (meal) => meal.id === feedbackId && meal.state !== "logged",
-      )
-    ) {
-      setFeedbackId(null);
-      setSwapSteer("");
-    }
-  }, [feedbackId, activePlan.data]);
 
   const onBack = useCallback(() => {
     router.back();
@@ -140,26 +113,10 @@ export function PlanTodayContainer() {
   );
 
   const { run: runSwap, reset: resetSwap } = swap;
-  const onGenerateSwap = useCallback(
+  const onSwapMeal = useCallback(
     (meal: PlanMeal) => {
       const plan = activePlan.data;
-      if (!plan || swappingMealId !== null || meal.state === "logged") return;
-      const generated = generatedMealsRef.current.get(meal.id);
-      const rejected =
-        generated?.name === meal.label
-          ? generated
-          : {
-              name: meal.label,
-              ingredients: (meal.items ?? [])
-                .map((item) => storage.getCachedFoodById(item.foodId)?.name)
-                .filter((name): name is string => !!name),
-            };
-      const history = addNotWantedMeals(notWantedRef.current, [rejected]);
-      if (!history) {
-        setActionFailure(MEAL_SEARCH_FULL_MESSAGE);
-        return;
-      }
-      notWantedRef.current = history;
+      if (!plan) return;
       setActionFailure(null);
       setSwappingMealId(meal.id);
       const held = plan.meals
@@ -174,7 +131,6 @@ export function PlanTodayContainer() {
           { kcal: 0, proteinG: 0, carbsG: 0, fatG: 0 },
         );
       void runSwap({
-        notWantedMeals: history,
         dayTarget: {
           kcal: plan.targetKcal,
           proteinG: plan.targetProteinG,
@@ -184,25 +140,9 @@ export function PlanTodayContainer() {
         heldTotals: held,
         logSlot: meal.logSlot,
         mealsPerDay: plan.mealsPerDay,
-        steer: swapSteer.trim() || undefined,
       });
     },
-    [activePlan, storage, runSwap, swappingMealId, swapSteer],
-  );
-
-  const onSwapMeal = useCallback(
-    (meal: PlanMeal) => {
-      if (
-        !activePlan.data ||
-        swappingMealId !== null ||
-        meal.state === "logged"
-      )
-        return;
-      setFeedbackId(meal.id);
-      setSwapSteer("");
-      setActionFailure(null);
-    },
-    [activePlan.data, swappingMealId],
+    [activePlan, runSwap],
   );
 
   // Mirror a swap failure (429 ceiling, 402 entitlement, 422/503/generic —
@@ -231,25 +171,15 @@ export function PlanTodayContainer() {
     const mealId = swappingMealId;
     if (!plan || !mealId) return;
     if (swap.stage === "ready" && swap.result?.meal) {
-      const generated = {
-        name: swap.result.meal.name,
-        ingredients: swap.result.meal.items.map((item) => item.name),
-      };
       void runReplace(
         plan.id,
         mealId,
         planAcceptMealInputFromGenerated(swap.result.meal),
       ).then((updated) => {
-        if (updated) {
-          generatedMealsRef.current.set(mealId, generated);
-          activePlan.reload();
-          setFeedbackId(null);
-        }
+        if (updated) activePlan.reload();
         setSwappingMealId(null);
       });
     } else {
-      if (swap.stage === "ready")
-        setActionFailure("No replacement matched. Try different feedback.");
       setSwappingMealId(null);
     }
     resetSwap();
@@ -290,30 +220,6 @@ export function PlanTodayContainer() {
       loggingMealId={loggingMealId}
       onSwapMeal={onSwapMeal}
       swappingMealId={swappingMealId}
-      swapFeedback={
-        feedbackId === null
-          ? undefined
-          : {
-              mealId: feedbackId,
-              value: swapSteer,
-              onChange: setSwapSteer,
-              onGenerate: () => {
-                const meal = activePlan.data?.meals.find(
-                  (item) => item.id === feedbackId,
-                );
-                if (meal) onGenerateSwap(meal);
-              },
-              onCancel: () => {
-                if (swappingMealId === null) {
-                  setFeedbackId(null);
-                  setSwapSteer("");
-                  setActionFailure(null);
-                }
-              },
-              busy: swappingMealId !== null,
-              error: actionFailure,
-            }
-      }
       actionFailure={actionFailure}
       onDeletePlan={() => void onDeletePlan()}
       deleting={deleting}

@@ -1,11 +1,4 @@
-import type { TogetherCloudApi } from "./togetherCloud.port";
-import type { TogetherSocialApi } from "./togetherSocial.port";
-import type { TogetherOfflineApi } from "./togetherOfflineApi.port";
 import type { DashboardPayload } from "@/domain/models/dashboard";
-import type {
-  BootstrapPayload,
-  GetBootstrapParams,
-} from "@/domain/models/bootstrap";
 import type {
   CreateExerciseInput,
   Exercise,
@@ -156,10 +149,6 @@ import type {
  * covers the foundation endpoints.
  */
 export interface ApiPort extends ReferralsPort {
-  /** Optional until all environments support offline Together provisioning. */
-  togetherOffline?: TogetherOfflineApi;
-  togetherCloud?: TogetherCloudApi;
-  togetherSocial?: TogetherSocialApi;
   /** Health check */
   healthCheck(): Promise<Result<{ status: string }, ApiError>>;
 
@@ -265,10 +254,7 @@ export interface ApiPort extends ReferralsPort {
   getSessions(
     params?: PaginationParams,
   ): Promise<Result<ApiSession[], ApiError>>;
-  getSession(
-    id: string,
-    options?: { summary?: boolean },
-  ): Promise<Result<ApiSession, ApiError>>;
+  getSession(id: string): Promise<Result<ApiSession, ApiError>>;
   createSession(
     data: CreateSessionInput,
   ): Promise<Result<ApiSession, ApiError>>;
@@ -283,14 +269,10 @@ export interface ApiPort extends ReferralsPort {
    * cache. `GET /sessions/recent-sets` (user-scoped). Lets a fresh install
    * (new phone / App Store install after TestFlight / reinstall) hydrate its
    * empty `recent_sets` cache so previous-set hints appear without re-logging
-   * every lift. Together optionally supplies relevant exercises and the
-   * original workout start; its refresh merges without replacing newer local
-   * entries. Unfiltered bootstrap hydration still runs only for an empty cache.
+   * every lift. The client only calls this when the local cache is empty (see
+   * `hydrateRecentSetsCommand`), so it never clobbers fresher offline entries.
    */
-  getRecentSets(params?: {
-    exerciseIds: readonly string[];
-    before: string;
-  }): Promise<Result<RecentSetEntry[], ApiError>>;
+  getRecentSets(): Promise<Result<RecentSetEntry[], ApiError>>;
 
   /**
    * M3: app-launch resume detection. Returns the user's most recent
@@ -635,13 +617,6 @@ export interface ApiPort extends ReferralsPort {
   // -- Progress / Home (M4 — 06-progress-goals) --
   /** Aggregate cold-start payload (GET /users/me/home). */
   getHome(): Promise<Result<HomePayload, ApiError>>;
-  /**
-   * One request for the app shell's cold start: every section answers as its
-   * single endpoint does. Spec: specs/milestones/COLD-START-BOOTSTRAP/BRIEF.md.
-   */
-  getBootstrap(
-    params: GetBootstrapParams,
-  ): Promise<Result<BootstrapPayload, ApiError>>;
   getTodayRings(): Promise<Result<Rings, ApiError>>;
   /** `window` is an `Nd` string (default 7d). */
   getWeeklyVolume(window?: string): Promise<Result<WeeklyVolume, ApiError>>;
@@ -2136,8 +2111,6 @@ export type GetWorkoutsResult = {
 };
 
 export type ApiSession = {
-  personalRecords?: readonly import("./storage.port").RecordResponseSummaryPR[];
-  workoutsThisMonth?: number | null;
   id: string;
   userId: string;
   workoutId: string | null;

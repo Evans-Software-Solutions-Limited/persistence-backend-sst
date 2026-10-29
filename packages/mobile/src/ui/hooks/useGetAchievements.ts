@@ -16,7 +16,6 @@ export function useGetAchievements(
   enabled = true,
 ): CachedResourceState<Achievement[]> {
   return useCachedResource<Achievement[]>({
-    bootstrapSection: "achievements",
     read: (storage, userId) => ({
       value: storage.getCachedAchievements(userId),
       isStale: true,

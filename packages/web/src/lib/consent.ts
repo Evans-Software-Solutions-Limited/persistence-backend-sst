@@ -10,11 +10,9 @@
  * the visitor was never shown. Strictly-necessary cookies (theme, Turnstile) are
  * always allowed and are NOT represented here.
  *
- * Today there are two non-essential categories: `advertising` (the Meta Pixel)
- * and `affiliate` (the Tradedoubler landing tag + `TRADEDOUBLER` cookie, which
- * lets Blue Light Card count the sign-ups it sent us). Adding e.g. `analytics`
- * later is just a new key on `ConsentChoices` + a row in the banner's Manage
- * panel — and a `CONSENT_VERSION` bump (below).
+ * Today there is one non-essential category, `advertising` (the Meta Pixel).
+ * Adding e.g. `analytics` later is just a new key on `ConsentChoices` + a row in
+ * the banner's Manage panel — and a `CONSENT_VERSION` bump (below).
  *
  * ─── The version is the scope-creep guard ───
  *
@@ -31,14 +29,11 @@
  */
 
 /** Non-essential consent categories. Extend this as new cookies are added. */
-export type ConsentCategory = "advertising" | "affiliate";
+export type ConsentCategory = "advertising";
 
 export interface ConsentChoices {
   /** Meta Pixel (`_fbp`/`_fbc`) — ad-conversion measurement. */
   advertising: boolean;
-  /** Tradedoubler (`TRADEDOUBLER` cookie, stored `tduid`) — affiliate
-   *  measurement for the Blue Light Card member offer. */
-  affiliate: boolean;
 }
 
 /**
@@ -46,20 +41,16 @@ export interface ConsentChoices {
  * stored consent from an earlier version and re-prompts, so a newly-added cookie
  * is never silently covered by an older, narrower "Accept".
  */
-export const CONSENT_VERSION = 3;
+export const CONSENT_VERSION = 2;
 
-// The key suffix tracks the version: a v2 record (advertising only) must read
-// as undecided under v3, which the `v` check below already guarantees — the
-// separate key simply keeps the old record from being misread at all.
-const STORAGE_KEY = "persistence.consent.v3";
+const STORAGE_KEY = "persistence.consent.v2";
 
 /** All non-essential categories off — the safe default and failure state. */
-const NONE: ConsentChoices = { advertising: false, affiliate: false };
+const NONE: ConsentChoices = { advertising: false };
 
 interface StoredConsent {
   v: number;
   advertising: boolean;
-  affiliate: boolean;
 }
 
 type Listener = (choices: ConsentChoices) => void;
@@ -76,10 +67,7 @@ function readStored(): ConsentChoices | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<StoredConsent> | null;
     if (!parsed || parsed.v !== CONSENT_VERSION) return null;
-    return {
-      advertising: parsed.advertising === true,
-      affiliate: parsed.affiliate === true,
-    };
+    return { advertising: parsed.advertising === true };
   } catch {
     return null;
   }
@@ -110,17 +98,13 @@ export function setConsent(choices: ConsentChoices): void {
   const value: StoredConsent = {
     v: CONSENT_VERSION,
     advertising: choices.advertising === true,
-    affiliate: choices.affiliate === true,
   };
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(value));
   } catch {
     // ignore — private mode / disabled storage; the notify below still runs.
   }
-  const emitted: ConsentChoices = {
-    advertising: value.advertising,
-    affiliate: value.affiliate,
-  };
+  const emitted: ConsentChoices = { advertising: value.advertising };
   for (const fn of listeners) fn(emitted);
 }
 
@@ -133,13 +117,13 @@ export function subscribe(fn: Listener): () => void {
 }
 
 /**
- * Expire the named cookies on the current host and on each parent domain (a
- * third-party tag sets its cookie on the registrable domain, e.g.
- * `.evans-software-solutions.com`, so a host-only delete would miss it). Used
- * when a category's consent is withdrawn — an injected script can't be
- * unloaded, so clearing its cookies is how "withdrawal" is enforced.
+ * Expire Meta's `_fbp` and `_fbc` cookies on the current host and on each parent
+ * domain (the pixel sets them on the registrable domain, e.g.
+ * `.evans-software-solutions.com`, so a host-only delete would miss them). Used
+ * when advertising consent is withdrawn — the script itself can't be unloaded
+ * once injected, so clearing its cookies is how "withdrawal" is enforced.
  */
-function expireCookies(names: readonly string[]): void {
+export function clearMetaCookies(): void {
   if (typeof document === "undefined" || typeof location === "undefined")
     return;
   const past = "Thu, 01 Jan 1970 00:00:00 GMT";
@@ -149,7 +133,7 @@ function expireCookies(names: readonly string[]): void {
   for (let i = 0; i < parts.length - 1; i++) {
     domainAttrs.push(`; Domain=.${parts.slice(i).join(".")}`);
   }
-  for (const name of names) {
+  for (const name of ["_fbp", "_fbc"]) {
     for (const domain of domainAttrs) {
       try {
         document.cookie = `${name}=; Path=/; Expires=${past}${domain}`;
@@ -158,16 +142,4 @@ function expireCookies(names: readonly string[]): void {
       }
     }
   }
-}
-
-/** Expire Meta's `_fbp` and `_fbc` — advertising consent withdrawn. */
-export function clearMetaCookies(): void {
-  expireCookies(["_fbp", "_fbc"]);
-}
-
-/** Expire Tradedoubler's `TRADEDOUBLER` cookie — affiliate consent withdrawn.
- *  The stored `tduid` is cleared by `teardownTradedoubler` in
- *  `lib/tradedoubler.ts`, which owns that key. */
-export function clearTradedoublerCookies(): void {
-  expireCookies(["TRADEDOUBLER"]);
 }

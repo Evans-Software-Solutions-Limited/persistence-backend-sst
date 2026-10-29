@@ -1,6 +1,4 @@
-import { useBootstrap } from "@/ui/hooks/useBootstrap";
-import { AppUpdateGate } from "@/ui/containers/AppUpdateGate";
-import { useEffect, useMemo } from "react";
+import { useEffect } from "react";
 import { Platform, View } from "react-native";
 import {
   Slot,
@@ -19,11 +17,6 @@ import { useActiveWorkoutRehydration } from "../src/ui/hooks/useActiveWorkoutReh
 import { useAuth } from "../src/ui/hooks/useAuth";
 import { useProfilePage } from "../src/ui/hooks/useProfilePage";
 import { usePendingInvite } from "../src/state/pending-invite";
-import {
-  pendingTogetherJoinRoute,
-  usePendingTogetherJoin,
-  type PendingTogetherJoin,
-} from "../src/state/pending-together-join";
 import { usePasswordRecovery } from "../src/state/password-recovery";
 import { useNotificationPermissions } from "../src/ui/hooks/useNotificationPermissions";
 import { useReferenceListBootstrap } from "@/ui/hooks/useReferenceListBootstrap";
@@ -114,18 +107,6 @@ function UserModeBootstrap() {
 }
 
 /**
- * Opens the cold-start gate and runs the single bootstrap request. Rendered
- * FIRST inside the providers: every sibling below (push registration, user
- * mode, active workout, reference lists, AuthGate's profile page) and every
- * screen hook waits for it, so launch is one request instead of a burst
- * (specs/milestones/COLD-START-BOOTSTRAP/BRIEF.md).
- */
-function ColdStartBootstrap() {
-  useBootstrap();
-  return null;
-}
-
-/**
  * Registers the device push token after auth resolves + refreshes the
  * notifications cache when a push arrives while foregrounded (09.2).
  * Sibling to the other bootstraps — push delivery and auth are
@@ -206,9 +187,6 @@ function AuthGate() {
   const params = useGlobalSearchParams<{
     code?: string;
     onboarding?: string;
-    connection?: string;
-    invitation?: string;
-    transport?: string;
   }>();
   // `AppProviders` owns this context in production. The optional read keeps
   // this routing component independently testable when AppProviders is mocked
@@ -237,27 +215,6 @@ function AuthGate() {
   const inRestoreAccountScreen =
     inAppGroup && segmentName === "restore-account";
   const inAcceptInviteScreen = inAppGroup && segmentName === "accept-invite";
-  // A Together QR scanned with the app closed lands on
-  // /(app)/together/join?connection=…&invitation=… (PER-60 cold start). It is
-  // carried through sign-in the same way as a coach invite.
-  const inTogetherJoinScreen =
-    inAppGroup &&
-    segmentName === "together" &&
-    (segments as readonly string[])[2] === "join";
-  const togetherJoinLink = useMemo<PendingTogetherJoin | null>(() => {
-    const { connection, invitation, transport } = params;
-    if (
-      typeof invitation !== "string" ||
-      invitation === "" ||
-      (connection !== "local" && connection !== "online")
-    )
-      return null;
-    return {
-      connection,
-      invitation,
-      ...(transport === "lan" || transport === "nearby" ? { transport } : {}),
-    };
-  }, [params]);
   const inSetNewPasswordScreen =
     inAuthGroup && segmentName === "set-new-password";
   const onboardingState = onboarding?.state ?? null;
@@ -324,12 +281,6 @@ function AuthGate() {
       );
       return;
     }
-    // Same peek-not-clear rule: the join screen owns clearing the stash.
-    const pendingTogetherJoin = usePendingTogetherJoin.getState().pending;
-    if (session && pendingTogetherJoin && !inTogetherJoinScreen) {
-      router.replace(pendingTogetherJoinRoute(pendingTogetherJoin) as Href);
-      return;
-    }
 
     if (
       session &&
@@ -338,8 +289,7 @@ function AuthGate() {
       !inOnboardingGroup &&
       !inOnboardingPurchaseFlow &&
       !inSetNewPasswordScreen &&
-      !inAcceptInviteScreen &&
-      !inTogetherJoinScreen
+      !inAcceptInviteScreen
     ) {
       const page = onboarding?.state?.currentPage ?? "welcome";
       router.replace(`/(onboarding)/${page}` as Href);
@@ -372,9 +322,6 @@ function AuthGate() {
       if (inAppGroup && segmentName === "accept-invite" && inviteCode) {
         usePendingInvite.getState().setPendingCode(inviteCode);
       }
-      if (inTogetherJoinScreen && togetherJoinLink) {
-        usePendingTogetherJoin.getState().setPending(togetherJoinLink);
-      }
       router.replace("/(auth)/sign-in");
     }
   }, [
@@ -392,8 +339,6 @@ function AuthGate() {
     params.onboarding,
     segmentName,
     inAcceptInviteScreen,
-    inTogetherJoinScreen,
-    togetherJoinLink,
     inAppGroup,
     inAuthGroup,
     inOnboardingGroup,
@@ -416,7 +361,6 @@ function AuthGate() {
     !onAuthCallback &&
     !inRestoreAccountScreen &&
     !inAcceptInviteScreen &&
-    !inTogetherJoinScreen &&
     !inSetNewPasswordScreen;
 
   const priorityRedirectPending =
@@ -424,9 +368,7 @@ function AuthGate() {
     ((deletedAt != null && !inRestoreAccountScreen) ||
       (usePasswordRecovery.getState().pending && !inSetNewPasswordScreen) ||
       (usePendingInvite.getState().pendingCode !== null &&
-        !inAcceptInviteScreen) ||
-      (usePendingTogetherJoin.getState().pending !== null &&
-        !inTogetherJoinScreen));
+        !inAcceptInviteScreen));
   const onboardingUnavailable =
     session !== null &&
     onboardingState === null &&
@@ -506,20 +448,17 @@ function RootLayout() {
           })
         }
       >
-        <AppUpdateGate>
-          <AppProviders>
-            <ColdStartBootstrap />
-            <AuthCallbackCaptureBootstrap />
-            <NotificationPermissionsBootstrap />
-            <MetaAttributionBootstrap />
-            <PushNotificationsBootstrap />
-            <UserModeBootstrap />
-            <ActiveWorkoutBootstrap />
-            <PurchasesIdentityBootstrap />
-            <ReferenceListBootstrap />
-            <AuthGate />
-          </AppProviders>
-        </AppUpdateGate>
+        <AppProviders>
+          <AuthCallbackCaptureBootstrap />
+          <NotificationPermissionsBootstrap />
+          <MetaAttributionBootstrap />
+          <PushNotificationsBootstrap />
+          <UserModeBootstrap />
+          <ActiveWorkoutBootstrap />
+          <PurchasesIdentityBootstrap />
+          <ReferenceListBootstrap />
+          <AuthGate />
+        </AppProviders>
       </ErrorBoundary>
     </GestureHandlerRootView>
   );

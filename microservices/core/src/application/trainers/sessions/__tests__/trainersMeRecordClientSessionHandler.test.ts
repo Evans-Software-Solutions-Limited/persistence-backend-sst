@@ -81,46 +81,6 @@ describe("trainersMeRecordClientSessionHandler", () => {
     expect(recordClientSessionOnBehalf).not.toHaveBeenCalled();
   });
 
-  // Shares the self route's weight/distance bounds (Sentry
-  // PERSISTENCE-BACKEND-8): numeric(6,2) / numeric(8,2) on `exercise_sets`.
-  it.each([
-    ["weightKg above numeric(6,2)", { weightKg: 10000 }],
-    ["distanceMeters above numeric(8,2)", { distanceMeters: "1000000" }],
-  ])("422s %s before delegating", async (_label, set) => {
-    const { trainersMeRecordClientSessionHandler } =
-      await import("../trainersMeRecordClientSessionHandler");
-    const res = await trainersMeRecordClientSessionHandler.handle(
-      post("client-1", {
-        ...validBody,
-        exercises: [
-          {
-            ...validBody.exercises[0],
-            sets: [{ ...validBody.exercises[0].sets[0], ...set }],
-          },
-        ],
-      }),
-    );
-    expect(res.status).toBe(422);
-    expect(recordClientSessionOnBehalf).not.toHaveBeenCalled();
-  });
-
-  it("accepts a set at the weight column maximum", async () => {
-    const { trainersMeRecordClientSessionHandler } =
-      await import("../trainersMeRecordClientSessionHandler");
-    const res = await trainersMeRecordClientSessionHandler.handle(
-      post("client-1", {
-        ...validBody,
-        exercises: [
-          {
-            ...validBody.exercises[0],
-            sets: [{ setNumber: 1, reps: 1, weightKg: "9999.99" }],
-          },
-        ],
-      }),
-    );
-    expect(res.status).toBe(201);
-  });
-
   it("maps a denied verdict to its status/body", async () => {
     recordClientSessionOnBehalf.mockResolvedValue({
       ok: false,

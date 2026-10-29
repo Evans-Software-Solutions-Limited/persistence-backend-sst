@@ -160,7 +160,6 @@ describe("useNotificationBadge", () => {
       .filter((c) => c[0] === "change")
       .at(-1)?.[1] as (s: string) => void;
     await act(async () => {
-      change("background");
       change("active");
       await new Promise((r) => setTimeout(r, 0));
     });
@@ -259,34 +258,6 @@ describe("useNotificationBadge", () => {
       await new Promise((r) => setTimeout(r, 0));
     });
     expect(notifications.badgeCounts).toEqual([]);
-  });
-
-  it("does not treat the launch's inactive → active flip as a return from the background", async () => {
-    const api = new InMemoryApiAdapter();
-    const storage = new InMemoryStorageAdapter();
-    const notifications = new StubNotifications();
-    const spy = jest.spyOn(api, "getNotifications");
-    const addSpy = jest.spyOn(AppState, "addEventListener");
-    renderHook(() => useNotificationBadge(true), {
-      wrapper: wrapperFor(makeAdapters(api, storage, notifications, SESSION)),
-    });
-    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
-    const change = addSpy.mock.calls
-      .filter((c) => c[0] === "change")
-      .at(-1)?.[1] as (s: string) => void;
-    await act(async () => {
-      change("inactive");
-      change("active");
-      await new Promise((r) => setTimeout(r, 0));
-    });
-    expect(spy).toHaveBeenCalledTimes(1);
-    await act(async () => {
-      change("background");
-      change("active");
-      await new Promise((r) => setTimeout(r, 0));
-    });
-    expect(spy).toHaveBeenCalledTimes(2);
-    addSpy.mockRestore();
   });
 
   it("ignores AppState transitions other than 'active'", async () => {

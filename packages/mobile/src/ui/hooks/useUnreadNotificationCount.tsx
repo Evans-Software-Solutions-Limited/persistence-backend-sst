@@ -21,7 +21,7 @@
  * Self-gates on a signed-in user; all reads are best-effort (never throw).
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { AppState } from "react-native";
 import { useFocusEffect } from "expo-router";
 
@@ -30,8 +30,6 @@ import {
   optimisticUnread,
 } from "@/application/notifications/pending-reads";
 import { getNotificationsQuery } from "@/application/notifications/queries/list-notifications.query";
-import { bootstrapSettled } from "@/application/bootstrap/gate";
-import { fetchUnreadCount } from "@/application/notifications/unread-count";
 import { useAdapters } from "./useAdapters";
 import { useAuth } from "./useAuth";
 
@@ -53,29 +51,23 @@ export function useUnreadNotificationCount(): number {
     return optimisticUnread(cached.unreadCount, page, storage);
   });
 
-  const sync = useCallback(
-    async (options?: { preferBootstrapFor?: string | null }) => {
-      const next = await fetchUnreadCount(api, storage, options);
-      if (next !== null) setCount(next);
-    },
-    [api, storage],
-  );
+  const sync = useCallback(async () => {
+    const result = await api.getNotifications({ unreadOnly: true });
+    if (!result.ok) return;
+    const page = applyPendingReads(
+      result.value.notifications,
+      storage,
+      new Date().toISOString(),
+    );
+    setCount(optimisticUnread(result.value.unreadCount, page, storage));
+  }, [api, storage]);
 
-  // Mount + return-to-foreground. The mount sync waits for the cold-start
-  // bootstrap and serves its count; foreground and push always fetch.
+  // Mount + return-to-foreground.
   useEffect(() => {
     if (!userId) return;
-    void bootstrapSettled(userId).then(() =>
-      sync({ preferBootstrapFor: userId }),
-    );
-    // Only a true return from the background re-syncs. iOS launches apps
-    // inactive and flips them active a moment later; the mount sync above
-    // already covers that, and it waits for the cold-start bootstrap.
-    let previous = AppState.currentState;
+    void sync();
     const appSub = AppState.addEventListener("change", (state) => {
-      const resumed = previous === "background" && state === "active";
-      previous = state;
-      if (resumed) void sync();
+      if (state === "active") void sync();
     });
     return () => appSub?.remove?.();
   }, [userId, sync]);
@@ -91,18 +83,8 @@ export function useUnreadNotificationCount(): number {
 
   // Re-sync on focus — returning from the list (which marks all read) must
   // clear the bell without waiting for a foreground transition.
-  // The mount effect above already synced; the first focus fires in the same
-  // commit, so only refocuses (returning from another screen) sync again.
-  // The first focus for a user is the mount (already synced above). The
-  // callback changes when the session resolves, which re-runs this effect,
-  // so the latch is per user rather than per instance.
-  const focusedForUserRef = useRef<string | null | undefined>(undefined);
   useFocusEffect(
     useCallback(() => {
-      if (focusedForUserRef.current !== userId) {
-        focusedForUserRef.current = userId;
-        return;
-      }
       if (userId) void sync();
     }, [userId, sync]),
   );

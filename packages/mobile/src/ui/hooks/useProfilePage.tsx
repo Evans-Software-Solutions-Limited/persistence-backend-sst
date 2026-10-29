@@ -5,8 +5,6 @@ import {
 } from "@/application/queries/profile-page.query";
 import type { ProfilePageData } from "@/domain/models/profilePage";
 import type { ApiError } from "@/shared/errors";
-import type { ApiPort } from "@/domain/ports/api.port";
-import { bootstrapSettled } from "@/application/bootstrap/gate";
 import { useAdapters } from "./useAdapters";
 import { useAuth } from "./useAuth";
 
@@ -60,28 +58,6 @@ export type ProfilePageState = {
  * fetch waits for a real open rather than firing on every cold launch (launch
  * fan-out reduction).
  */
-/**
- * One `/profile/page` request per user at a time across every hook instance.
- * The root AuthGate and HomeContainer both mount this hook in the same
- * commit; each instance still applies the shared result to its own state.
- */
-const sharedRequests = new Map<
-  string,
-  Promise<Awaited<ReturnType<ApiPort["getProfilePage"]>>>
->();
-function requestProfilePage(
-  api: ApiPort,
-  userId: string,
-): Promise<Awaited<ReturnType<ApiPort["getProfilePage"]>>> {
-  const existing = sharedRequests.get(userId);
-  if (existing) return existing;
-  const request = api.getProfilePage().finally(() => {
-    if (sharedRequests.get(userId) === request) sharedRequests.delete(userId);
-  });
-  sharedRequests.set(userId, request);
-  return request;
-}
-
 export function useProfilePage(enabled = true): ProfilePageState {
   const { api, storage } = useAdapters();
   const { session } = useAuth();
@@ -168,7 +144,7 @@ export function useProfilePage(enabled = true): ProfilePageState {
           "profile",
           userId,
         );
-        const result = await requestProfilePage(api, userId);
+        const result = await api.getProfilePage();
         if (!result.ok) {
           lastFetchOkRef.current = false;
           if (latestUserIdRef.current === userId) setError(result.error);
@@ -235,22 +211,7 @@ export function useProfilePage(enabled = true): ProfilePageState {
     // through the backoff gaps (when `isRefreshing` briefly drops) so the
     // error surface only shows once we've truly given up.
     setIsAutoRetrying(true);
-    const attempt = async () => {
-      // The cold-start bootstrap may write this page first; serve it if so.
-      await bootstrapSettled(state.userId);
-      if (autoFetchRef.current !== state) return;
-      const fromBootstrap = getProfilePageQuery(storage, state.userId);
-      if (!fromBootstrap.isStale && fromBootstrap.cached) {
-        setPayload(fromBootstrap.payload);
-        setIsStale(false);
-        setSyncedAt(storage.getProfilePageAge(state.userId));
-        setCacheVersion((v) => v + 1);
-        lastFetchOkRef.current = true;
-        return;
-      }
-      await refresh();
-    };
-    void attempt().then(() => {
+    void Promise.resolve(refresh()).then(() => {
       const s = autoFetchRef.current;
       // The sheet closed while this attempt's `refresh()` was in flight. The
       // request already happened (it can't be un-sent) and `refresh()` has
@@ -291,7 +252,7 @@ export function useProfilePage(enabled = true): ProfilePageState {
         autoAttemptRef.current();
       }, AUTO_FETCH_RETRY_BASE_MS * s.attempts);
     });
-  }, [refresh, storage]);
+  }, [refresh]);
   useEffect(() => {
     autoAttemptRef.current = autoAttempt;
   }, [autoAttempt]);

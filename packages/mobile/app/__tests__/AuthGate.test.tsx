@@ -116,13 +116,6 @@ jest.mock("../../src/ui/hooks/useMetaAttribution", () => ({
   useMetaAttribution: () => mockUseMetaAttribution(),
 }));
 
-// Mock useBootstrap — the cold-start bootstrap needs the adapter and query
-// providers (covered in src/ui/hooks/__tests__/useBootstrap.test.tsx).
-const mockUseBootstrap = jest.fn<void, []>();
-jest.mock("../../src/ui/hooks/useBootstrap", () => ({
-  useBootstrap: () => mockUseBootstrap(),
-}));
-
 // Mock usePushNotifications — same rationale as the bootstraps above: the
 // real hook calls useAdapters/useAuth and throws without the provider
 // plumbing (covered in src/ui/hooks/__tests__/usePushNotifications.test.tsx).
@@ -165,8 +158,6 @@ import { render, waitFor } from "@testing-library/react-native";
 import RootLayout from "../_layout";
 // eslint-disable-next-line import/first
 import { usePendingInvite } from "../../src/state/pending-invite";
-// eslint-disable-next-line import/first
-import { usePendingTogetherJoin } from "../../src/state/pending-together-join";
 // eslint-disable-next-line import/first
 import { usePasswordRecovery } from "../../src/state/password-recovery";
 // eslint-disable-next-line import/first
@@ -703,100 +694,6 @@ describe("AuthGate", () => {
   });
 });
 
-describe("AuthGate — Together join link through sign-in (PER-60 cold start)", () => {
-  afterEach(() => usePendingTogetherJoin.getState().reset());
-  beforeEach(() => {
-    jest.clearAllMocks();
-    usePendingTogetherJoin.getState().reset();
-    usePendingInvite.getState().reset();
-    usePasswordRecovery.getState().reset();
-    mockUseProfilePage.mockReturnValue({
-      payload: null,
-      error: undefined,
-      refresh: jest.fn(),
-    });
-    mockUseOptionalOnboarding.mockReturnValue({
-      state: { status: "completed", currentPage: "recommendation" },
-      isLoading: false,
-    });
-  });
-
-  it("stashes a together/join link before the sign-in redirect when nobody is signed in", async () => {
-    mockUseAuth.mockReturnValue({ session: null, isLoading: false });
-    mockUseSegments.mockReturnValue(["(app)", "together", "join"]);
-    mockUseGlobalSearchParams.mockReturnValue({
-      connection: "local",
-      invitation: "z1.abc",
-      transport: "nearby",
-    });
-    render(<RootLayout />);
-    await waitFor(() => {
-      expect(mockReplace).toHaveBeenCalledWith("/(auth)/sign-in");
-    });
-    expect(usePendingTogetherJoin.getState().pending).toEqual({
-      connection: "local",
-      invitation: "z1.abc",
-      transport: "nearby",
-    });
-  });
-
-  it("does NOT stash a malformed link or one on another screen", async () => {
-    mockUseAuth.mockReturnValue({ session: null, isLoading: false });
-    mockUseSegments.mockReturnValue(["(app)", "together", "join"]);
-    mockUseGlobalSearchParams.mockReturnValue({
-      connection: "carrier-pigeon",
-      invitation: "x",
-    });
-    const r = render(<RootLayout />);
-    await waitFor(() => {
-      expect(mockReplace).toHaveBeenCalledWith("/(auth)/sign-in");
-    });
-    expect(usePendingTogetherJoin.getState().pending).toBeNull();
-    mockUseSegments.mockReturnValue(["(app)", "together", "partners"]);
-    mockUseGlobalSearchParams.mockReturnValue({
-      connection: "online",
-      invitation: "tok",
-    });
-    r.rerender(<RootLayout />);
-    await waitFor(() => expect(mockReplace).toHaveBeenCalled());
-    expect(usePendingTogetherJoin.getState().pending).toBeNull();
-  });
-
-  it("sends a signed-in user back to the join screen and peeks rather than clears", async () => {
-    usePendingTogetherJoin.getState().setPending({
-      connection: "online",
-      invitation: "tok en",
-    });
-    mockUseAuth.mockReturnValue({
-      session: SIGNED_IN_SESSION,
-      isLoading: false,
-    });
-    mockUseSegments.mockReturnValue(["(auth)"]);
-    render(<RootLayout />);
-    await waitFor(() => {
-      expect(mockReplace).toHaveBeenCalledWith(
-        "/(app)/together/join?connection=online&invitation=tok%20en",
-      );
-    });
-    expect(usePendingTogetherJoin.getState().pending).not.toBeNull();
-  });
-
-  it("leaves the join screen alone once the user is on it", async () => {
-    usePendingTogetherJoin.getState().setPending({
-      connection: "local",
-      invitation: "x",
-    });
-    mockUseAuth.mockReturnValue({
-      session: SIGNED_IN_SESSION,
-      isLoading: false,
-    });
-    mockUseSegments.mockReturnValue(["(app)", "together", "join"]);
-    render(<RootLayout />);
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(mockReplace).not.toHaveBeenCalled();
-  });
-});
-
 describe("AuthGate — soft-delete restore gate (Cluster 2b)", () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -1019,27 +916,6 @@ describe("PushNotificationsBootstrap (push-token wiring, 09.2)", () => {
     render(<RootLayout />);
 
     expect(mockUsePushNotifications).toHaveBeenCalledWith(true);
-  });
-});
-
-describe("ColdStartBootstrap (cold-start bootstrap wiring, PER-80)", () => {
-  it("invokes `useBootstrap()` on mount, before the other bootstraps", () => {
-    const order: string[] = [];
-    mockUseBootstrap.mockClear().mockImplementation(() => {
-      order.push("bootstrap");
-    });
-    mockUseUserModeEligibility.mockClear().mockImplementation(() => {
-      order.push("userMode");
-    });
-    mockUseAuth.mockReturnValue({ session: null, isLoading: true });
-    mockUseSegments.mockReturnValue([]);
-
-    render(<RootLayout />);
-
-    expect(order.indexOf("bootstrap")).toBeGreaterThanOrEqual(0);
-    expect(order.indexOf("bootstrap")).toBeLessThan(order.indexOf("userMode"));
-    mockUseBootstrap.mockReset();
-    mockUseUserModeEligibility.mockReset();
   });
 });
 

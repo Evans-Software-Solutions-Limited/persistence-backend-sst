@@ -112,7 +112,7 @@ function harness<T>(
     return <Text>probe</Text>;
   }
   const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false, gcTime: Infinity } },
+    defaultOptions: { queries: { retry: false } },
   });
   const utils = render(
     <QueryClientProvider client={queryClient}>
@@ -916,7 +916,7 @@ describe("useSetMealprintPreferences — edge paths", () => {
     });
 
     const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false, gcTime: Infinity } },
+      defaultOptions: { queries: { retry: false } },
     });
     render(
       <QueryClientProvider client={queryClient}>

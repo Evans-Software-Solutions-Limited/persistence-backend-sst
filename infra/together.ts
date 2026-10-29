@@ -2,14 +2,12 @@ import {
   databaseUrl,
   sentryDsn,
   togetherTokenSecret,
-  togetherOfflineAuthority,
   geoapifyApiKey,
 } from "./secrets";
 import { supabaseUrl } from "./domains";
-import { togetherEnabledForDeployment } from "./togetherFlag";
 
-// Enabled for release. Explicit false remains an operational rollback switch.
-const enabled = togetherEnabledForDeployment(process.env.TOGETHER_ENABLED);
+// Explicit stage rollout. Defining this code does not activate a provider or deploy.
+const enabled = process.env.TOGETHER_ENABLED === "true";
 export const togetherSocket = enabled
   ? new sst.aws.ApiGatewayWebSocket("TogetherSocket", {
       accessLog: { retention: "1 week" },
@@ -42,7 +40,6 @@ export const togetherEnvironment = {
   TOGETHER_MANAGEMENT_ENDPOINT: togetherSocket?.managementEndpoint ?? "",
   TOGETHER_QUEUE_URL: togetherQueue?.url ?? "",
   TOGETHER_TOKEN_SECRET: togetherTokenSecret.value,
-  TOGETHER_OFFLINE_AUTHORITY: togetherOfflineAuthority.value,
   GEOAPIFY_API_KEY: geoapifyApiKey.value,
 };
 const environment = {

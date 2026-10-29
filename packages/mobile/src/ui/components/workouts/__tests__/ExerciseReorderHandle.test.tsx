@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+import { View } from "react-native";
 import { fireEvent } from "@testing-library/react-native";
 import { ExerciseReorderHandle } from "../ExerciseReorderHandle";
 import { renderWithTheme } from "../../../../../__tests__/test-utils";

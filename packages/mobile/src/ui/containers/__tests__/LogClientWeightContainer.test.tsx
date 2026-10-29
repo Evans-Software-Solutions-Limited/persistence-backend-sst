@@ -5,8 +5,6 @@ import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import type { LogClientWeightProps } from "@/ui/presenters/LogClientWeightPresenter";
 
-import { LogClientWeightContainer } from "@/ui/containers/LogClientWeightContainer";
-
 const mockBack = jest.fn();
 const mockParams: { id?: string; name?: string } = {
   id: "client-1",
@@ -24,6 +22,8 @@ jest.mock("@/ui/presenters/LogClientWeightPresenter", () => ({
     return null;
   },
 }));
+
+import { LogClientWeightContainer } from "@/ui/containers/LogClientWeightContainer";
 
 function props(): LogClientWeightProps {
   if (!mockCaptured.props) throw new Error("presenter not rendered");

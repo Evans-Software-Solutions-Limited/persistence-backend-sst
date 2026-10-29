@@ -1,11 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
 
 import { getApiBaseUrl } from "@/adapters/api";
-import { bootstrapSettled } from "@/application/bootstrap/gate";
-import {
-  BOOTSTRAP_FRESH_MS,
-  recallBootstrapSection,
-} from "@/application/bootstrap/freshness";
 import { processSyncQueue } from "@/application/commands/sync.command";
 import {
   getExercisesQuery,
@@ -109,17 +104,12 @@ export async function warmOfflineData({
     if (result.ok && !shouldStop()) storage.cacheMeals(userId, result.value);
   });
 
-  // Streaks, achievements, volume stats, body trend and recent PRs are
-  // written by the cold-start bootstrap (specs/milestones/COLD-START-BOOTSTRAP).
   await run(async () => {
-    if (recallBootstrapSection(userId, "streaks", BOOTSTRAP_FRESH_MS)) return;
     const result = await api.getStreaks();
     if (result.ok && !shouldStop()) storage.cacheStreaks(userId, result.value);
   });
 
   await run(async () => {
-    if (recallBootstrapSection(userId, "achievements", BOOTSTRAP_FRESH_MS))
-      return;
     const result = await api.getAchievements();
     if (result.ok && !shouldStop()) {
       storage.cacheAchievements(userId, result.value);
@@ -127,8 +117,6 @@ export async function warmOfflineData({
   });
 
   await run(async () => {
-    if (recallBootstrapSection(userId, "volumeStats", BOOTSTRAP_FRESH_MS))
-      return;
     const result = await api.getVolumeStats("month");
     if (result.ok && !shouldStop()) {
       storage.cacheVolumeStats(userId, result.value);
@@ -136,7 +124,6 @@ export async function warmOfflineData({
   });
 
   await run(async () => {
-    if (recallBootstrapSection(userId, "bodyTrend", BOOTSTRAP_FRESH_MS)) return;
     const result = await api.getBodyTrend("30d");
     if (result.ok && !shouldStop()) {
       storage.cacheBodyTrend(userId, result.value);
@@ -144,7 +131,6 @@ export async function warmOfflineData({
   });
 
   await run(async () => {
-    if (recallBootstrapSection(userId, "recentPRs", BOOTSTRAP_FRESH_MS)) return;
     const result = await api.getRecentPRs(20);
     if (result.ok && !shouldStop()) {
       storage.cachePersonalRecords(userId, result.value);
@@ -172,9 +158,6 @@ export function useOfflineDataBootstrap(): void {
 
       const promise = (async () => {
         if (!(await netInfo.isConnected()) || shouldStop()) return;
-        // Never compete with the single cold-start request.
-        await bootstrapSettled(activeUserId);
-        if (shouldStop()) return;
         await warmOfflineData({
           api,
           auth,

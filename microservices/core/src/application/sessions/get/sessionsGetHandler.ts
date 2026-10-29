@@ -18,10 +18,7 @@ export const sessionsGetHandler = new Elysia()
       const { sub: userId } = getUser(ctx);
       const { sessionId } = ctx.params;
 
-      const session =
-        ctx.query.summary === "true"
-          ? await ctx.SessionRepository.getRecordedSummary(sessionId, userId)
-          : await ctx.SessionRepository.getById(sessionId, userId);
+      const session = await ctx.SessionRepository.getById(sessionId, userId);
 
       if (!session) {
         ctx.set.status = 404;
@@ -31,9 +28,6 @@ export const sessionsGetHandler = new Elysia()
       return { data: session };
     },
     {
-      query: t.Object({
-        summary: t.Optional(t.Union([t.Literal("true"), t.Literal("false")])),
-      }),
       params: t.Object({
         sessionId: t.String(),
       }),

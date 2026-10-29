@@ -6,6 +6,7 @@ import { MarketingNav } from "./MarketingNav";
 import { MarketingFooter } from "./MarketingFooter";
 import { ConsentBanner } from "./ConsentBanner";
 import { AppBanner } from "./AppBanner";
+import { FoundingBanner } from "./FoundingBanner";
 import { CampaignContext, campaignFromPath } from "./campaign";
 import {
   normalizeReferralCode,
@@ -60,6 +61,7 @@ export function MarketingLayout({
       <div className="mkt">
         <div className="mkt-bg" aria-hidden="true" />
         <AppBanner />
+        <FoundingBanner />
         <MarketingNav current={current} />
         {referralCode && dismissedReferralSource !== referralSource && (
           <div className="referral-banner" role="status">

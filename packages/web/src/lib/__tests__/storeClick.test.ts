@@ -62,7 +62,7 @@ describe("reportStoreClick", () => {
   });
 
   it("includes marketing_consent: true when consent is granted", async () => {
-    setConsent({ advertising: true, affiliate: false });
+    setConsent({ advertising: true });
     const sendBeacon = vi.fn().mockReturnValue(true);
     vi.stubGlobal("navigator", { ...navigator, sendBeacon });
 

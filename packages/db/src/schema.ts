@@ -3352,5 +3352,3 @@ export const businessVoucherRateLimits = pgTable(
 export * from "./togetherSharedSchema";
 export * from "./togetherSchema";
 export * from "./socialSchema";
-
-export * from "./togetherOfflineSchema";

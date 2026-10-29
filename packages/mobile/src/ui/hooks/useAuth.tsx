@@ -5,8 +5,6 @@ import { useUserMode } from "@/state/user-mode";
 import { useTrainSegment } from "@/ui/hooks/useTrainSegment";
 import { useCoachLibrarySegment } from "@/ui/hooks/useCoachLibrarySegment";
 import { usePendingInvite } from "@/state/pending-invite";
-import { usePendingTogetherJoin } from "@/state/pending-together-join";
-import { useTogetherSettings } from "@/state/together-settings";
 import { usePasswordRecovery } from "@/state/password-recovery";
 import { useAdapters } from "./useAdapters";
 
@@ -244,8 +242,6 @@ export function useAuth(): AuthState {
     useTrainSegment.getState().reset();
     useCoachLibrarySegment.getState().reset();
     usePendingInvite.getState().reset();
-    usePendingTogetherJoin.getState().reset();
-    useTogetherSettings.getState().reset();
     usePasswordRecovery.getState().reset();
   }, [storage]);
 

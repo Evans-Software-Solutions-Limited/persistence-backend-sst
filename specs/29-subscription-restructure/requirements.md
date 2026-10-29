@@ -122,15 +122,6 @@ separable from the per-feature `ai_daily_limit` in logs and analytics.
 ## STORY-003 — Organisations buy seats on the web; individuals buy in-app
 
 **AC 3.1** Tiers up to 30 clients are sold **only** by Apple IAP.
-**AC 3.1a** ⚠ **Amended 2026-10-19 (Brad, Linear PER-2/PER-3):** a **web Stripe
-subscription rail for partner offers** is permitted as an exception to AC 3.1,
-starting with the Blue Light Card member offer (Premium and Premium+, monthly and
-annual, 20 % off via a Stripe coupon gated by a promotion code). Rationale and
-margin model: Linear project "Awin / Blue Light Card discovery", document "Blue
-Light Card via Tradedoubler Grow — review, economics and recommendation". The
-in-app rule is unchanged: the app never shows, links to or prices the web offer
-(Apple 3.1.3(b)); a web-sourced row renders read-only in-app exactly like the
-organisation tiers. Public (non-partner) consumer sales remain IAP-only.
 **AC 3.2** Tiers above 30 clients are sold **only** on the web (Stripe or invoice),
 and are positioned as organisation products — gyms, studios, clinics, teams.
 **AC 3.3** ⚠ In-app, a web tier renders **read-only**: "manage your plan on the web".

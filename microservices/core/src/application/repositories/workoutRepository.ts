@@ -25,7 +25,6 @@ import {
   type Workout,
 } from "@persistence/db";
 import { getDb, type Db } from "@persistence/db/client";
-import { resolveWorkoutRepRange } from "../workouts/shared/repRange";
 import type { AdaptationCandidate } from "./exerciseRepository";
 import {
   estimateWorkoutDurationMinutes,
@@ -123,8 +122,8 @@ export interface CreateWorkoutExerciseInput {
   sortOrder: number;
   supersetGroup?: number | null;
   targetSets?: number | null;
-  targetRepsMin?: number | null;
-  targetRepsMax?: number | null;
+  targetRepsMin?: number;
+  targetRepsMax?: number;
   targetDurationSeconds?: number | null;
   restSeconds?: number | null;
   notes?: string | null;
@@ -1407,7 +1406,8 @@ export class WorkoutRepository {
       sortOrder: ex.sortOrder,
       supersetGroup: ex.supersetGroup ?? null,
       targetSets: ex.targetSets ?? null,
-      ...resolveWorkoutRepRange(ex),
+      targetRepsMin: ex.targetRepsMin ?? 1,
+      targetRepsMax: ex.targetRepsMax ?? 1,
       targetDurationSeconds: ex.targetDurationSeconds ?? null,
       restSeconds: ex.restSeconds ?? 90,
       notes: ex.notes ?? null,

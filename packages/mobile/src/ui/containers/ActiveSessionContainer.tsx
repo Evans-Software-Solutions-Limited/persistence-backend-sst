@@ -1,7 +1,3 @@
-import { useDiscardWorkout } from "@/ui/hooks/useDiscardWorkout";
-import { useTogetherEndNavigation } from "@/ui/hooks/useTogetherEndNavigation";
-import { discardTogetherSession } from "@/application/commands/session/discard-together-session.command";
-import { useTogetherGate } from "@/ui/hooks/useTogetherGate";
 /**
  * ActiveSessionContainer — owns session state + mutations for the
  * `/(app)/session` modal screen. (M3, Stories 002 + 004 + 005 + 009.)
@@ -24,18 +20,8 @@ import { useTogetherGate } from "@/ui/hooks/useTogetherGate";
  *       specs/milestones/M3-active-session/EXECUTION_PLAN.md § 2 Commit 7
  */
 
-import { refreshTogetherOwnPrevious } from "@/adapters/together/ownPrevious";
-import { randomUUID } from "expo-crypto";
-import { adoptSharedPlan } from "@/adapters/together/adoptSharedPlan";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert } from "react-native";
 import {
   addSupersetSetCommand,
@@ -51,8 +37,6 @@ import { ExerciseNotesPopover } from "@/ui/components/session/ExerciseNotesPopov
 import { renumberSets } from "@/domain/services/sessionService";
 import type { Exercise } from "@/domain/models/exercise";
 import type { ExerciseSet } from "@/domain/models/session";
-import { TogetherLobbyContainer } from "@/ui/containers/TogetherLobbyContainer";
-import { TogetherFinishChoicePresenter } from "@/ui/presenters/TogetherFinishChoicePresenter";
 import { ActiveSessionPresenter } from "@/ui/presenters/ActiveSessionPresenter";
 import { formatBarElapsed } from "@/ui/presenters/ActiveWorkoutBarPresenter";
 import { EndConfirmDialogPresenter } from "@/ui/presenters/EndConfirmDialogPresenter";
@@ -108,9 +92,7 @@ export function retrospectiveCompletedAtForDay(
 }
 
 export function ActiveSessionContainer() {
-  const togetherGate = useTogetherGate();
-  const { storage, api, auth, netInfo, togetherLobby, togetherCloud } =
-    useAdapters();
+  const { storage, api } = useAdapters();
   const params = useLocalSearchParams<{
     workoutId?: string;
     sessionId?: string;
@@ -121,28 +103,10 @@ export function ActiveSessionContainer() {
     clientName?: string;
     clientInitials?: string;
     retroactive?: string;
-    togetherAudience?: string;
-    togetherConnection?: string;
-    togetherAccountId?: string;
   }>();
   const requestedWorkoutId = params.workoutId ?? null;
 
-  const { session, userId, authLoading, rereadCache } = useActiveSession();
-  useTogetherEndNavigation(userId, storage, togetherLobby, togetherCloud);
-  const historyKey = session
-    ? `${session.id}:${session.startedAt}:${session.exercises
-        .filter((e) => !e.skipped)
-        .map((e) => e.exerciseId)
-        .join(",")}`
-    : undefined;
-  const historyOwner = useRef({ userId, sessionId: historyKey });
-  historyOwner.current = { userId, sessionId: historyKey };
-  useEffect(
-    () => () => {
-      historyOwner.current = { userId: null, sessionId: undefined };
-    },
-    [],
-  );
+  const { session, userId, rereadCache } = useActiveSession();
   const profile = useProfilePage().payload?.profile;
   const weightUnit = profile?.weightUnit ?? "kg";
   const preferredUnits = weightUnit === "lb" ? "imperial" : "metric";
@@ -154,36 +118,6 @@ export function ActiveSessionContainer() {
   const pointerRetroactive = useActiveWorkout((s) => s.active?.retroactive);
   const retroactive =
     pointerRetroactive === true || params.retroactive === "true";
-
-  useEffect(() => {
-    // A new route begins with null auth while the local session loads. That
-    // temporary state must not erase the deliberate detail-page host request.
-    if (
-      !authLoading &&
-      params.togetherAudience &&
-      (params.togetherAccountId !== userId ||
-        withClient ||
-        retroactive ||
-        params.clientId ||
-        (togetherGate.state !== "pending" && !togetherGate.allowed))
-    ) {
-      router.setParams({
-        togetherAudience: undefined,
-        togetherConnection: undefined,
-        togetherAccountId: undefined,
-      });
-    }
-  }, [
-    togetherGate.state,
-    togetherGate.allowed,
-    authLoading,
-    params.togetherAudience,
-    params.togetherAccountId,
-    params.clientId,
-    userId,
-    withClient,
-    retroactive,
-  ]);
 
   // Stable id factory — empty deps, M2 learning #7.
   const generateId = useCallback(
@@ -301,32 +235,10 @@ export function ActiveSessionContainer() {
   ]);
 
   const updateSessionMetadata = useCallback(
-    (
-      patch: Partial<
-        Pick<
-          import("@/domain/models/session").WorkoutSession,
-          | "activityEnvironment"
-          | "locationName"
-          | "retrospectiveCompletedAt"
-          | "retrospectiveDurationSeconds"
-        >
-      >,
-    ) => {
+    (patch: Partial<import("@/domain/models/session").WorkoutSession>) => {
       if (!session || !userId) return;
-      try {
-        const fresh = storage.getActiveSession(userId);
-        if (!fresh || fresh.id !== session.id || fresh.userId !== userId)
-          throw new Error("workout-changed");
-        // Rebase only the explicitly edited metadata, never the render's sets.
-        storage.cacheActiveSession(userId, { ...fresh, ...patch });
-        rereadCache();
-      } catch {
-        Alert.alert(
-          "Change not saved",
-          "Your workout is unchanged. Reopen it and try again.",
-        );
-        rereadCache();
-      }
+      storage.cacheActiveSession(userId, { ...session, ...patch });
+      rereadCache();
     },
     [rereadCache, session, storage, userId],
   );
@@ -374,7 +286,6 @@ export function ActiveSessionContainer() {
       map[ex.id] = recent[ex.exerciseId] ?? {};
     }
     return map;
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- recentSetsRevision is the cache-invalidation key for getRecentSetsByExercise, not a value read inside.
   }, [session, userId, storage, recentSetsRevision]);
 
   // Per-exercise template metadata threaded from the workout template.
@@ -404,25 +315,9 @@ export function ActiveSessionContainer() {
       if (!exercise) return;
       const template = templateByExercise[sessionExerciseId];
       const restSeconds = template?.restSeconds ?? DEFAULT_REST_SECONDS;
-      const fresh = userId ? storage.getActiveSession(userId) : null;
-      if (fresh?.together && userId) {
-        try {
-          storage.cacheActiveSession(userId, {
-            ...fresh,
-            restEndsAt: new Date(Date.now() + restSeconds * 1000).toISOString(),
-          });
-          rereadCache();
-        } catch {
-          Alert.alert(
-            "Rest not saved",
-            "Your workout is unchanged. Try again.",
-          );
-          return;
-        }
-      }
       restTimer.start(restSeconds, exercise.exerciseName);
     },
-    [session, templateByExercise, restTimer, userId, storage, rereadCache],
+    [session, templateByExercise, restTimer],
   );
 
   // -- Mutation wiring --------------------------------------------------
@@ -731,65 +626,6 @@ export function ActiveSessionContainer() {
     router.dismiss();
   }, []);
 
-  const confirmDiscardWorkout = useDiscardWorkout(userId, session?.id);
-  const [finishChoice, setFinishChoice] = useState<{
-    userId: string;
-    localSessionId: string;
-  } | null>(null);
-  const canFinishForAll = useCallback(() => {
-    if (!userId || !session?.together) return false;
-    const fresh = storage.getActiveSession(userId);
-    if (fresh?.id !== session.id) return false;
-    if (fresh.together?.transport === "cloud") {
-      const snapshot = togetherCloud?.getSnapshot().snapshot;
-      return (
-        snapshot?.sessionId === fresh.together.sessionId &&
-        snapshot.state === "active" &&
-        snapshot.sharingActive &&
-        snapshot.hostId === userId
-      );
-    }
-    const status = togetherLobby?.workout?.status(userId, session.id);
-    const lobby = togetherLobby?.getSnapshot();
-    return (
-      !!status &&
-      status.sessionId === fresh.together?.sessionId &&
-      (status.sharing === "active" || status.sharing === "reconnecting") &&
-      lobby?.role === "host" &&
-      lobby.members.some((member) => member.userId === userId && member.host) &&
-      !togetherLobby?.shared
-        ?.getSnapshot()
-        .closures.some(
-          (closure) =>
-            closure.mode === "finish_all" || closure.userId === userId,
-        )
-    );
-  }, [userId, session, storage, togetherCloud, togetherLobby]);
-  const chooseFinish = useCallback(
-    (mode: "finish_all" | "save_own") => {
-      const choice = finishChoice;
-      setFinishChoice(null);
-      if (
-        !choice ||
-        choice.userId !== userId ||
-        storage.getActiveSession(choice.userId)?.id !== choice.localSessionId
-      )
-        return;
-      if (mode === "finish_all" && !canFinishForAll()) {
-        Alert.alert(
-          "Session changed",
-          "Sharing has ended. Finish your own workout instead.",
-        );
-        return;
-      }
-      router.push({
-        pathname: "/(app)/session/rate",
-        params: { localSessionId: choice.localSessionId, mode },
-      } as never);
-    },
-    [finishChoice, userId, storage, canFinishForAll],
-  );
-
   const onFinish = useCallback(() => {
     // Tap Complete → rating screen captures 1-10 difficulty + notes
     // → submit fires completeSessionCommand → replaces with summary.
@@ -823,18 +659,8 @@ export function ActiveSessionContainer() {
       );
       return;
     }
-    if (session.together && userId) {
-      if (canFinishForAll())
-        setFinishChoice({ userId, localSessionId: session.id });
-      else
-        router.push({
-          pathname: "/(app)/session/rate",
-          params: { localSessionId: session.id, mode: "save_own" },
-        } as never);
-      return;
-    }
     router.push("/(app)/session/rate" as never);
-  }, [session, templateByExercise, userId, canFinishForAll]);
+  }, [session, templateByExercise]);
 
   // 05.4: the header "End" pill opens the styled <EndConfirmDialogPresenter>
   // (replacing the legacy Alert.alert). Confirming fires cancelSessionCommand
@@ -852,28 +678,7 @@ export function ActiveSessionContainer() {
     // client's behalf so the write stays scoped to the client + audited.
     const onBehalfClientId =
       useActiveWorkout.getState().active?.withClient?.id ?? null;
-    const result = cancelSessionCommand(
-      { storage, userId },
-      { onBehalfClientId },
-    );
-    if (!result.ok && result.error.kind === "together_completion_pending") {
-      try {
-        discardTogetherSession({
-          storage,
-          userId: userId,
-          localSessionId: session!.id,
-          workout: togetherLobby?.workout,
-          cloud: togetherCloud,
-        });
-        void togetherLobby?.cancel().catch(() => {});
-      } catch {
-        Alert.alert(
-          "Could not close the workout",
-          "Your workout is still on this device. Please try End again.",
-        );
-        return;
-      }
-    }
+    cancelSessionCommand({ storage, userId }, { onBehalfClientId });
     // Clear the UI-state slice too (Bug fix, Inspector Brad 🟡) — match the
     // overlay's end path. Without this, slice.active + the AsyncStorage pointer
     // dangle until the next launch's orphan reconciliation; and a stale
@@ -881,7 +686,7 @@ export function ActiveSessionContainer() {
     // session once M8 wires start() to populate them.
     void useActiveWorkout.getState().end();
     router.dismissAll();
-  }, [userId, storage, session, togetherLobby, togetherCloud]);
+  }, [userId, storage]);
 
   // Existing-exercise ids gate every picker (Add, Add-to-Superset,
   // Swap) — Brad's rule after the in-place swap fix landed: no
@@ -928,179 +733,61 @@ export function ActiveSessionContainer() {
     return null;
   }
 
-  const clearTogetherRest = () => {
-    const fresh = userId ? storage.getActiveSession(userId) : null;
-    if (fresh?.together && userId) {
-      try {
-        storage.cacheActiveSession(userId, { ...fresh, restEndsAt: null });
-        rereadCache();
-      } catch {
-        Alert.alert(
-          "Rest not saved",
-          "Try again to stop the shared rest timer.",
-        );
-        return false;
-      }
-    }
-    return true;
-  };
-  const renderPresenter = (
-    togetherRow?: ReactNode,
-    partnerView?: ReactNode,
-  ) => (
-    <ActiveSessionPresenter
-      togetherRow={togetherRow}
-      partnerView={partnerView}
-      sessionName={session.name}
-      startedAt={session.startedAt}
-      exercises={session.exercises}
-      previousSetsByExercise={previousSetsByExercise}
-      weightUnit={weightUnit}
-      preferredUnits={preferredUnits}
-      templateByExercise={templateByExercise}
-      restTimer={{
-        isActive: restTimer.isActive,
-        remainingSeconds: restTimer.remainingSeconds,
-        totalSeconds: restTimer.totalSeconds,
-        progress: restTimer.progress,
-        onSkip: () => {
-          if (clearTogetherRest()) restTimer.skip();
-        },
-        onDismiss: () => {
-          if (clearTogetherRest()) restTimer.dismiss();
-        },
-      }}
-      onLogSet={onLogSet}
-      onLogSupersetSet={onLogSupersetSet}
-      onRemoveSupersetSet={onRemoveSupersetSet}
-      onUpdateSet={onUpdateSet}
-      onRemoveSet={onRemoveSet}
-      onOpenNotes={onOpenNotes}
-      onOpenSupersetNotes={onOpenSupersetNotes}
-      onSubstitute={onSubstitute}
-      onRemoveExercise={onRemoveExercise}
-      onMoveExercise={onMoveExercise}
-      onReorderExercise={onReorderExercise}
-      onTapExercise={onTapExercise}
-      onAddExercise={onAddExercise}
-      onAddExerciseToSuperset={onAddExerciseToSuperset}
-      onStartRest={onStartRest}
-      withClient={withClient}
-      retroactive={retroactive}
-      activityEnvironment={session.activityEnvironment ?? null}
-      locationName={session.locationName ?? ""}
-      retrospectiveCompletedAt={session.retrospectiveCompletedAt ?? null}
-      retrospectiveDurationSeconds={
-        session.retrospectiveDurationSeconds ?? 3600
-      }
-      onActivityEnvironmentChange={(activityEnvironment) =>
-        updateSessionMetadata({ activityEnvironment })
-      }
-      onLocationNameChange={(locationName) =>
-        updateSessionMetadata({ locationName })
-      }
-      onRetrospectiveDateChange={onRetrospectiveDateChange}
-      onRetrospectiveDurationChange={(retrospectiveDurationSeconds) =>
-        updateSessionMetadata({ retrospectiveDurationSeconds })
-      }
-      onMinimize={onMinimize}
-      onDiscard={onDiscard}
-      onFinish={onFinish}
-    />
-  );
-
   return (
     <>
-      {togetherLobby &&
-      !withClient &&
-      !retroactive &&
-      (togetherGate.allowed || !!session.together) ? (
-        <TogetherLobbyContainer
-          lobby={togetherLobby}
-          allowNewSharing={togetherGate.allowed}
-          initialHostAudience={
-            togetherGate.allowed &&
-            !params.clientId &&
-            params.togetherAccountId === userId &&
-            (params.togetherAudience === "invite-only" ||
-              params.togetherAudience === "open" ||
-              params.togetherAudience === "friends")
-              ? params.togetherAudience
-              : undefined
-          }
-          initialHostConnection={
-            params.togetherConnection === "online" ? "online" : "local"
-          }
-          onConsumeHostIntent={() =>
-            router.setParams({
-              togetherAudience: undefined,
-              togetherConnection: undefined,
-              togetherAccountId: undefined,
-            })
-          }
-          cloud={togetherCloud}
-          accountId={userId}
-          workoutName={session.name}
-          displayName={profile?.fullName ?? profile?.username ?? undefined}
-          exerciseNames={Object.fromEntries(
-            session.exercises.map((e) => [e.exerciseId, e.exerciseName]),
-          )}
-          localSessionId={session.id}
-          getWorkout={() => storage.getActiveSession(userId)}
-          onDiscardWorkout={confirmDiscardWorkout}
-          onRestorePersonal={(draft) => {
-            if (draft.userId !== userId) throw new Error("account-changed");
-            storage.cacheActiveSession(userId, draft);
-            rereadCache();
-          }}
-          onAdoptPlan={(plan, mode) => {
-            const fresh = storage.getActiveSession(userId);
-            if (!fresh || fresh.id !== session.id)
-              throw new Error("workout-changed");
-            storage.cacheActiveSession(
-              userId,
-              adoptSharedPlan(fresh, plan, mode, {
-                randomUUID,
-                exerciseName: (id) =>
-                  storage.getCachedExercises().find((e) => e.id === id)?.name,
-              }),
-            );
-            rereadCache();
-          }}
-          refreshPrevious={(isCurrent) =>
-            refreshTogetherOwnPrevious({
-              storage,
-              api,
-              auth,
-              netInfo,
-              userId,
-              exerciseIds: session.exercises
-                .filter((e) => !e.skipped)
-                .map((e) => e.exerciseId),
-              before: session.startedAt,
-              isCurrent: () =>
-                isCurrent() &&
-                historyOwner.current.userId === userId &&
-                historyOwner.current.sessionId === historyKey,
-            })
-          }
-          getPrevious={() =>
-            (
-              storage.getPreviousForTogether?.(
-                userId,
-                session.exercises
-                  .filter((e) => !e.skipped)
-                  .map((e) => e.exerciseId),
-                session.startedAt,
-              ) ?? []
-            ).map((row) => ({ ...row, recordedAt: Date.parse(row.recordedAt) }))
-          }
-        >
-          {renderPresenter}
-        </TogetherLobbyContainer>
-      ) : (
-        renderPresenter()
-      )}
+      <ActiveSessionPresenter
+        sessionName={session.name}
+        startedAt={session.startedAt}
+        exercises={session.exercises}
+        previousSetsByExercise={previousSetsByExercise}
+        weightUnit={weightUnit}
+        preferredUnits={preferredUnits}
+        templateByExercise={templateByExercise}
+        restTimer={{
+          isActive: restTimer.isActive,
+          remainingSeconds: restTimer.remainingSeconds,
+          totalSeconds: restTimer.totalSeconds,
+          progress: restTimer.progress,
+          onSkip: restTimer.skip,
+          onDismiss: restTimer.dismiss,
+        }}
+        onLogSet={onLogSet}
+        onLogSupersetSet={onLogSupersetSet}
+        onRemoveSupersetSet={onRemoveSupersetSet}
+        onUpdateSet={onUpdateSet}
+        onRemoveSet={onRemoveSet}
+        onOpenNotes={onOpenNotes}
+        onOpenSupersetNotes={onOpenSupersetNotes}
+        onSubstitute={onSubstitute}
+        onRemoveExercise={onRemoveExercise}
+        onMoveExercise={onMoveExercise}
+        onReorderExercise={onReorderExercise}
+        onTapExercise={onTapExercise}
+        onAddExercise={onAddExercise}
+        onAddExerciseToSuperset={onAddExerciseToSuperset}
+        onStartRest={onStartRest}
+        withClient={withClient}
+        retroactive={retroactive}
+        activityEnvironment={session.activityEnvironment ?? null}
+        locationName={session.locationName ?? ""}
+        retrospectiveCompletedAt={session.retrospectiveCompletedAt ?? null}
+        retrospectiveDurationSeconds={
+          session.retrospectiveDurationSeconds ?? 3600
+        }
+        onActivityEnvironmentChange={(activityEnvironment) =>
+          updateSessionMetadata({ activityEnvironment })
+        }
+        onLocationNameChange={(locationName) =>
+          updateSessionMetadata({ locationName })
+        }
+        onRetrospectiveDateChange={onRetrospectiveDateChange}
+        onRetrospectiveDurationChange={(retrospectiveDurationSeconds) =>
+          updateSessionMetadata({ retrospectiveDurationSeconds })
+        }
+        onMinimize={onMinimize}
+        onDiscard={onDiscard}
+        onFinish={onFinish}
+      />
 
       {/* Picker routing — three single-purpose popovers, mounted by
           mode so the Modal stack only ever has one active:
@@ -1167,16 +854,6 @@ export function ActiveSessionContainer() {
         onCancel={onCloseNotes}
       />
 
-      <TogetherFinishChoicePresenter
-        visible={
-          !!finishChoice &&
-          finishChoice.userId === userId &&
-          finishChoice.localSessionId === session.id
-        }
-        onCancel={() => setFinishChoice(null)}
-        onFinishAll={() => chooseFinish("finish_all")}
-        onFinishOwn={() => chooseFinish("save_own")}
-      />
       {endConfirmVisible && (
         <EndConfirmDialogPresenter
           elapsed={formatBarElapsed(

@@ -1,9 +1,3 @@
-import { bootstrapSettled } from "@/application/bootstrap/gate";
-import {
-  BOOTSTRAP_FRESH_MS,
-  recallBootstrapSection,
-} from "@/application/bootstrap/freshness";
-import type { BootstrapSectionKey } from "@/domain/models/bootstrap";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getApiBaseUrl } from "@/adapters/api";
 import { processSyncQueue } from "@/application/commands/sync.command";
@@ -89,12 +83,6 @@ export type CachedResourceConfig<T> = {
    * array inline per render.
    */
   tables?: readonly string[];
-  /**
-   * The bootstrap section that writes this cache. When the cold-start
-   * bootstrap wrote it within `BOOTSTRAP_FRESH_MS`, the mount-time fetch is
-   * skipped and the cache is served; pull, focus and `reload()` still fetch.
-   */
-  bootstrapSection?: BootstrapSectionKey;
   /**
    * Gate for the AUTOMATIC fetch paths (mount auto-refresh + the bus-driven
    * silent refresh below) — NOT for the synchronous cache `read` or the
@@ -428,24 +416,6 @@ export function useCachedResource<T>(
     let failed = false;
     void (async () => {
       try {
-        // Let the cold-start bootstrap land first, then re-check: it may have
-        // written this cache (TTL) or recorded it as fresh (bootstrap section).
-        await bootstrapSettled(userId);
-        if (cancelled || latestUserRef.current !== userId) return;
-        const latest = read(storage, userId);
-        const wroteFresh =
-          config.bootstrapSection !== undefined &&
-          recallBootstrapSection(
-            userId,
-            config.bootstrapSection,
-            BOOTSTRAP_FRESH_MS,
-          ) !== null;
-        if (!latest.isStale || wroteFresh) {
-          setData(latest.value);
-          setIsStale(false);
-          setCacheVersion((v) => v + 1);
-          return;
-        }
         let lastError: ApiError | null = null;
         for (let attempt = 0; attempt < delays.length; attempt++) {
           if (cancelled || latestUserRef.current !== userId) break;
@@ -529,9 +499,6 @@ export function useCachedResource<T>(
       }
     };
     // attemptFetch is stable per (api/auth/storage/userId); initial* gate entry.
-    // `read`, `storage` and the bootstrap section are stable caller config
-    // (same convention as `refresh`/`reload` above).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     userId,
     initialIsStale,

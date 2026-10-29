@@ -45,9 +45,7 @@ export const vouchersHandler = new Elysia()
     {
       body: t.Object({
         code: t.String({ minLength: 1, maxLength: 128 }),
-        eligibilityEmail: t.Optional(
-          t.String({ minLength: 3, maxLength: 254 }),
-        ),
+        eligibilityEmail: t.String({ minLength: 3, maxLength: 254 }),
       }),
     },
   )
@@ -67,9 +65,7 @@ export const vouchersHandler = new Elysia()
     {
       body: t.Object({
         code: t.String({ minLength: 1, maxLength: 128 }),
-        eligibilityEmail: t.Optional(
-          t.String({ minLength: 3, maxLength: 254 }),
-        ),
+        eligibilityEmail: t.String({ minLength: 3, maxLength: 254 }),
       }),
     },
   )

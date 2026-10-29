@@ -110,23 +110,6 @@ describe("useUnreadNotificationCount", () => {
     await waitFor(() => expect(result.current).toBe(3));
   });
 
-  it("fetches exactly once on mount: the focus effect re-running when the session resolves is not a refocus", async () => {
-    const api = new InMemoryApiAdapter();
-    const storage = new InMemoryStorageAdapter();
-    const spy = jest.spyOn(api, "getNotifications");
-    const { result } = renderHook(() => useUnreadNotificationCount(), {
-      wrapper: wrapperFor(
-        makeAdapters(api, storage, new StubNotifications(), SESSION),
-      ),
-    });
-    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 20));
-    });
-    expect(spy).toHaveBeenCalledTimes(1);
-    expect(result.current).toBe(0);
-  });
-
   it("reflects the optimistic 0 after a pending mark-all, not the stale server total", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();

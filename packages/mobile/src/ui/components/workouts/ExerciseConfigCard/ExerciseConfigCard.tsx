@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Text, View } from "@tamagui/core";
 
 import { IconBtn, Pill, RepRange, Stepper } from "@/ui/components/foundation";

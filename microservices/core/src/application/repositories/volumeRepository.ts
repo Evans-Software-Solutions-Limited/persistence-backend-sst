@@ -10,7 +10,6 @@ import {
   workoutSessions,
 } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
-import type { TogetherTx } from "../together/shared";
 import type { WindowKind } from "../progress/window";
 
 export interface DailyVolume {
@@ -36,11 +35,6 @@ export interface MuscleVolume {
  * the fast reads; the 03:00 cron + on-session-complete recompute keep them warm.
  */
 export class VolumeRepository {
-  private readonly transaction?: TogetherTx;
-
-  constructor(transaction?: TogetherTx) {
-    this.transaction = transaction;
-  }
   static readonly key = "VolumeRepository";
 
   // ─── Live daily breakdown (Home WeeklyVolume bar chart) ──────────────────
@@ -50,7 +44,7 @@ export class VolumeRepository {
     startISO: string,
     endISO: string,
   ): Promise<DailyVolume[]> {
-    const db = this.transaction ?? getDb();
+    const db = getDb();
     const dayExpr = sql<string>`(${workoutSessions.completedAt} AT TIME ZONE ${tz})::date`;
     const rows = await db
       .select({
@@ -104,7 +98,7 @@ export class VolumeRepository {
     startISO: string,
     endISO: string,
   ): Promise<number> {
-    const db = this.transaction ?? getDb();
+    const db = getDb();
     const rows = await db
       .select({
         v: sql<number>`COALESCE(SUM(${exerciseSets.weightKg} * ${exerciseSets.reps}), 0)::float`,
@@ -135,7 +129,7 @@ export class VolumeRepository {
     startISO: string,
     endISO: string,
   ): Promise<number> {
-    const db = this.transaction ?? getDb();
+    const db = getDb();
     const rows = await db
       .select({ c: sql<number>`count(*)::int` })
       .from(workoutSessions)
@@ -156,7 +150,7 @@ export class VolumeRepository {
     weekStartISO: string,
     weekEndISO: string,
   ): Promise<void> {
-    const db = this.transaction ?? getDb();
+    const db = getDb();
     const volumeKg = await this.totalVolume(
       userId,
       tz,
@@ -191,7 +185,7 @@ export class VolumeRepository {
     userId: string,
     weekStartISO: string,
   ): Promise<{ volumeKg: number; sessionCount: number } | null> {
-    const db = this.transaction ?? getDb();
+    const db = getDb();
     const rows = await db
       .select({
         volumeKg: weeklyVolumePerUser.volumeKg,
@@ -219,7 +213,7 @@ export class VolumeRepository {
     windowStartISO: string,
     windowEndISO: string,
   ): Promise<void> {
-    const db = this.transaction ?? getDb();
+    const db = getDb();
 
     // Aggregate IN SQL, grouped per exercise — the result is bounded by the
     // user's distinct-exercise count, not their lifetime set count. The
@@ -328,7 +322,7 @@ export class VolumeRepository {
   ): Promise<Map<string, string>> {
     const map = new Map<string, string>();
     if (muscleIds.length === 0) return map;
-    const db = this.transaction ?? getDb();
+    const db = getDb();
     const rows = await db
       .select({
         id: muscleGroups.id,
@@ -348,7 +342,7 @@ export class VolumeRepository {
     windowKind: WindowKind,
     windowStartISO: string,
   ): Promise<MuscleVolume[]> {
-    const db = this.transaction ?? getDb();
+    const db = getDb();
     const rows = await db
       .select({
         muscle: volumeByMusclePerUser.muscleGroup,
@@ -368,7 +362,7 @@ export class VolumeRepository {
   }
 
   async getUserTimezone(userId: string): Promise<string> {
-    const db = this.transaction ?? getDb();
+    const db = getDb();
     const rows = await db
       .select({ tz: profiles.timezone })
       .from(profiles)
@@ -379,7 +373,7 @@ export class VolumeRepository {
 
   /** Distinct user_ids with at least one completed session — drives the cron. */
   async userIdsWithCompletedSessions(): Promise<string[]> {
-    const db = this.transaction ?? getDb();
+    const db = getDb();
     const rows = await db
       .selectDistinct({ userId: workoutSessions.userId })
       .from(workoutSessions)

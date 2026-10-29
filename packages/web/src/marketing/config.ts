@@ -119,12 +119,6 @@ export const CAMPAIGNS: Record<string, Campaign> = {
   ig: { ct: "ig", utm_source: "instagram", utm_campaign: "bio" },
   li: { ct: "li", utm_source: "linkedin", utm_campaign: "bio" },
 
-  // Affiliate. Blue Light Card members arrive via Tradedoubler on
-  // `/blue-light-card` (PER-3); `/blc` is the short landing slug for anything
-  // BLC prints or posts, and the web checkout carries this `campaign` so the
-  // sale groups with the channel's store clicks in the attribution tables.
-  blc: { ct: "blc", utm_source: "bluelightcard", utm_campaign: "member-offer" },
-
   default: { ct: "qr", utm_source: "qr", utm_campaign: "qr" },
 };
 

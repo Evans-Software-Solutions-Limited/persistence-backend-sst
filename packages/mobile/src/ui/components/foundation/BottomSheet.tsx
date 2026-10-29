@@ -2,7 +2,6 @@ import GorhomBottomSheet, {
   BottomSheetBackdrop,
   type BottomSheetBackdropProps,
   BottomSheetScrollView,
-  BottomSheetView,
 } from "@gorhom/bottom-sheet";
 import { Text, View } from "@tamagui/core";
 import {
@@ -53,13 +52,7 @@ export type BottomSheetAccent =
   | "trainer"
   | "ember"
   | "success";
-export type BottomSheetHeight =
-  | number
-  | "peek"
-  | "default"
-  | "tall"
-  /** As tall as its content: short confirm sheets that must never clip or leave a gap. */
-  | "content";
+export type BottomSheetHeight = number | "peek" | "default" | "tall";
 
 export type BottomSheetProps = {
   visible: boolean;
@@ -67,10 +60,7 @@ export type BottomSheetProps = {
   title?: string;
   eyebrow?: string;
   accent?: BottomSheetAccent;
-  /**
-   * peek=60%, default=78%, tall=88%, an explicit percentage number (0-100), or
-   * `content` (gorhom dynamic sizing: no scroll, no footer, sized to the body).
-   */
+  /** peek=60%, default=78%, tall=88%, or an explicit percentage number (0-100). */
   height?: BottomSheetHeight;
   children: ReactNode;
   /**
@@ -80,12 +70,6 @@ export type BottomSheetProps = {
   footer?: ReactNode;
   /** Fixed controls (for example wheel pickers) can own their gestures. */
   scrollable?: boolean;
-  /**
-   * Body padding above the first child and below the last (default 20 / 40,
-   * both over the bottom inset). The Together sheets (PER-60) sit 4pt under
-   * the handle and end 28pt below their own button, as the canvas draws them.
-   */
-  contentPadding?: { top?: number; bottom?: number };
   testID?: string;
 };
 
@@ -98,16 +82,14 @@ export type BottomSheetProps = {
 const HANDLE_HEIGHT = 24;
 
 /** Snap height as a 0-1 fraction of the container. */
-function resolveFraction(
-  height: Exclude<BottomSheetHeight, "content">,
-): number {
+function resolveFraction(height: BottomSheetHeight): number {
   if (height === "peek") return 0.6;
   if (height === "default") return 0.78;
   if (height === "tall") return 0.88;
   return Math.min(100, Math.max(10, height)) / 100;
 }
 
-function resolveSnap(height: Exclude<BottomSheetHeight, "content">): string {
+function resolveSnap(height: BottomSheetHeight): string {
   return `${resolveFraction(height) * 100}%`;
 }
 
@@ -134,15 +116,10 @@ export function BottomSheet({
   children,
   footer,
   scrollable = true,
-  contentPadding,
   testID,
 }: BottomSheetProps) {
   const ref = useRef<GorhomBottomSheet>(null);
-  const fitContent = height === "content";
-  const snapPoints = useMemo(
-    () => (height === "content" ? undefined : [resolveSnap(height)]),
-    [height],
-  );
+  const snapPoints = useMemo(() => [resolveSnap(height)], [height]);
   // Reduce-motion (spec-12.2 AC 3.3): snap the sheet open/closed instead of
   // sliding. gorhom drives the mount + expand/close transitions through
   // `animationConfigs`; a zero-duration timing config makes them instant while
@@ -156,8 +133,6 @@ export function BottomSheet({
   // throws without a provider) so the sheet still renders in tests / any tree
   // mounted outside a SafeAreaProvider — falls back to 0.
   const bottomInset = useContext(SafeAreaInsetsContext)?.bottom ?? 0;
-  const padTop = contentPadding?.top ?? 20;
-  const padBottom = (contentPadding?.bottom ?? 40) + bottomInset;
 
   // The sheet body needs an EXPLICIT height. `flex: 1` here does not work:
   // gorhom's content view (`BottomSheetContent`) applies its height through an
@@ -176,9 +151,7 @@ export function BottomSheet({
   // so the two cannot drift.
   const windowHeight = useWindowDimensions().height;
   const sheetBodyHeight =
-    height === "content"
-      ? undefined
-      : windowHeight * resolveFraction(height) - HANDLE_HEIGHT;
+    windowHeight * resolveFraction(height) - HANDLE_HEIGHT;
 
   // Render the sheet once it has been opened at least once, then keep it
   // mounted so a parent-driven close (`setVisible(false)`) animates DOWN via
@@ -237,10 +210,9 @@ export function BottomSheet({
       // gorhom v5 defaults `enableDynamicSizing: true`, which sizes the sheet to
       // its CONTENT height and overrides `snapPoints`. With a long body (e.g. the
       // Create-Exercise form) that pushes the sheet to ~full screen instead of the
-      // intended 88%/78%/60%. Every height but `content` is an explicit snap
-      // point, so dynamic sizing is off for them to honour `height` exactly;
-      // `content` is the one that asks for it (short sheets: no scroll body).
-      enableDynamicSizing={fitContent}
+      // intended 88%/78%/60%. This component always has an explicit snap point, so
+      // dynamic sizing is never wanted — disable it to honour `height` exactly.
+      enableDynamicSizing={false}
       enablePanDownToClose
       // Keyboard handling (device-QA #5): without these, gorhom's default
       // keyboard behaviour fights the inner BottomSheetScrollView on
@@ -267,158 +239,141 @@ export function BottomSheet({
         overflow: "hidden",
       }}
     >
-      {fitContent ? (
-        <BottomSheetView
-          style={{
-            paddingHorizontal: 20,
-            paddingTop: padTop,
-            paddingBottom: padBottom,
-          }}
-          testID={testID}
-          accessibilityViewIsModal
-          importantForAccessibility="yes"
-        >
-          {children}
-        </BottomSheetView>
-      ) : (
-        <View
-          // `height` + `flexShrink`, and BOTH halves are load-bearing.
-          //
-          // `height` supplies a DEFINITE flex basis. That is the whole fix: gorhom
-          // applies its content height through an animated style that returns `{}`
-          // until the container is measured, so in those frames the parent column
-          // has no definite height. A `flex: 1` child (basis `0%`) collapses to its
-          // content there, which makes the inner scroll view's viewport equal its
-          // content — nothing overflows, so nothing scrolls, and the body just
-          // overflows the sheet and is clipped by `overflow: "hidden"` above.
-          // `maxHeight` fails for the same reason: no basis to resolve against, so
-          // it collapsed the body to nothing on device. Don't retry either.
-          //
-          // `flexShrink` lets the body give that height BACK, clamping to the box
-          // gorhom actually computed (`animatedContentHeightMax`) whenever that is
-          // smaller than our estimate. Two real cases need it, both found by
-          // Inspector Brad:
-          //   1. `windowHeight` is the wrong ruler for a sheet that is NOT mounted
-          //      at the root. gorhom measures its PARENT, so the three Home
-          //      quick-log sheets (Weigh-in, Water, Sleep — mounted inside
-          //      HomeContainer, i.e. inside the tab scene) sit in a container
-          //      ~102pt shorter than the window. Without shrink the body overshoots
-          //      by ~90pt (`tall`) / ~61pt (`peek`) and that band is unreachable —
-          //      on Weigh-in it contains the Save button.
-          //   2. `keyboardBehavior="interactive"` shrinks that box further while
-          //      the keyboard is up.
-          // RN's default `flexShrink` is 0, which is exactly why neither case
-          // worked before. Shrink keeps the basis, so it cannot reintroduce the
-          // collapse — it only adds a ceiling, and demotes HANDLE_HEIGHT to a
-          // fallback rather than a load-bearing constant.
-          height={sheetBodyHeight}
-          flexShrink={1}
-          testID={testID}
-          // Plain in-flow flex container — NOT gorhom's <BottomSheetView>, whose
-          // base style is position:absolute (top/left/right, no height) and thus
-          // overrides flex:1, sizing the node to its content. That left the inner
-          // BottomSheetScrollView with no bounded viewport, so it never scrolled
-          // and tall bodies (e.g. the coach ProfileDrawer) were clipped — the
-          // Sign-out button unreachable. NOTE: an earlier version of this comment
-          // concluded that "a flex:1 View fills the box" — it does NOT, and that
-          // claim is what produced two failed fixes at the gesture layer. See the
-          // basis/shrink note above; the height must be explicit.
-          // a11y: mark the open sheet as a modal so VoiceOver/TalkBack traps focus
-          // INSIDE it and ignores the screen behind the backdrop.
-          accessibilityViewIsModal
-          importantForAccessibility="yes"
-        >
-          {title || eyebrow ? (
-            <View
-              paddingHorizontal={20}
-              paddingTop={4}
-              paddingBottom={12}
-              borderBottomWidth={1}
-              borderColor="$border"
-            >
-              {eyebrow ? (
-                <Text
-                  fontFamily="$display"
-                  fontSize={10.5}
-                  fontWeight="600"
-                  letterSpacing={1.7}
-                  textTransform="uppercase"
-                  color={accentToken(accent)}
-                  marginBottom={4}
-                >
-                  {eyebrow}
-                </Text>
-              ) : null}
-              {title ? (
-                <Text
-                  fontFamily="$display"
-                  fontWeight="700"
-                  fontSize={20}
-                  letterSpacing={-0.4}
-                  color="$text"
-                  // a11y: announce the sheet title as a heading so screen-reader
-                  // users get the sheet's purpose on focus + can navigate by header.
-                  accessibilityRole="header"
-                >
-                  {title}
-                </Text>
-              ) : null}
-            </View>
-          ) : null}
+      <View
+        // `height` + `flexShrink`, and BOTH halves are load-bearing.
+        //
+        // `height` supplies a DEFINITE flex basis. That is the whole fix: gorhom
+        // applies its content height through an animated style that returns `{}`
+        // until the container is measured, so in those frames the parent column
+        // has no definite height. A `flex: 1` child (basis `0%`) collapses to its
+        // content there, which makes the inner scroll view's viewport equal its
+        // content — nothing overflows, so nothing scrolls, and the body just
+        // overflows the sheet and is clipped by `overflow: "hidden"` above.
+        // `maxHeight` fails for the same reason: no basis to resolve against, so
+        // it collapsed the body to nothing on device. Don't retry either.
+        //
+        // `flexShrink` lets the body give that height BACK, clamping to the box
+        // gorhom actually computed (`animatedContentHeightMax`) whenever that is
+        // smaller than our estimate. Two real cases need it, both found by
+        // Inspector Brad:
+        //   1. `windowHeight` is the wrong ruler for a sheet that is NOT mounted
+        //      at the root. gorhom measures its PARENT, so the three Home
+        //      quick-log sheets (Weigh-in, Water, Sleep — mounted inside
+        //      HomeContainer, i.e. inside the tab scene) sit in a container
+        //      ~102pt shorter than the window. Without shrink the body overshoots
+        //      by ~90pt (`tall`) / ~61pt (`peek`) and that band is unreachable —
+        //      on Weigh-in it contains the Save button.
+        //   2. `keyboardBehavior="interactive"` shrinks that box further while
+        //      the keyboard is up.
+        // RN's default `flexShrink` is 0, which is exactly why neither case
+        // worked before. Shrink keeps the basis, so it cannot reintroduce the
+        // collapse — it only adds a ceiling, and demotes HANDLE_HEIGHT to a
+        // fallback rather than a load-bearing constant.
+        height={sheetBodyHeight}
+        flexShrink={1}
+        testID={testID}
+        // Plain in-flow flex container — NOT gorhom's <BottomSheetView>, whose
+        // base style is position:absolute (top/left/right, no height) and thus
+        // overrides flex:1, sizing the node to its content. That left the inner
+        // BottomSheetScrollView with no bounded viewport, so it never scrolled
+        // and tall bodies (e.g. the coach ProfileDrawer) were clipped — the
+        // Sign-out button unreachable. NOTE: an earlier version of this comment
+        // concluded that "a flex:1 View fills the box" — it does NOT, and that
+        // claim is what produced two failed fixes at the gesture layer. See the
+        // basis/shrink note above; the height must be explicit.
+        // a11y: mark the open sheet as a modal so VoiceOver/TalkBack traps focus
+        // INSIDE it and ignores the screen behind the backdrop.
+        accessibilityViewIsModal
+        importantForAccessibility="yes"
+      >
+        {title || eyebrow ? (
+          <View
+            paddingHorizontal={20}
+            paddingTop={4}
+            paddingBottom={12}
+            borderBottomWidth={1}
+            borderColor="$border"
+          >
+            {eyebrow ? (
+              <Text
+                fontFamily="$display"
+                fontSize={10.5}
+                fontWeight="600"
+                letterSpacing={1.7}
+                textTransform="uppercase"
+                color={accentToken(accent)}
+                marginBottom={4}
+              >
+                {eyebrow}
+              </Text>
+            ) : null}
+            {title ? (
+              <Text
+                fontFamily="$display"
+                fontWeight="700"
+                fontSize={20}
+                letterSpacing={-0.4}
+                color="$text"
+                // a11y: announce the sheet title as a heading so screen-reader
+                // users get the sheet's purpose on focus + can navigate by header.
+                accessibilityRole="header"
+              >
+                {title}
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
 
-          {scrollable ? (
-            <BottomSheetScrollView
-              // `flex: 1` bounds the scroll view to the space below the fixed
-              // header (the sheet is a fixed-height flex column now that dynamic
-              // sizing is off). Without it the scroll view grows to its content
-              // height and overflows — clipped by the sheet's `overflow: hidden`,
-              // so the body looked cut off and unscrollable.
-              style={{ flex: 1 }}
-              // Add the bottom safe-area inset so the last row (e.g. the drawer's
-              // Sign out) clears the home indicator instead of sitting under it —
-              // when the body is ~sheet-height it otherwise looks cut off and
-              // there's nothing to scroll to. The extra height also lets the
-              // scroll view engage when the content is borderline.
-              //
-              // With a `footer`, that inset moves to the footer instead: the footer
-              // is what now sits against the home indicator, and paying the inset
-              // twice would leave a dead band of scroll above it.
-              contentContainerStyle={{
-                padding: 20,
-                paddingTop: padTop,
-                paddingBottom: footer ? 24 : padBottom,
-              }}
-              keyboardShouldPersistTaps="handled"
-            >
-              {children}
-            </BottomSheetScrollView>
-          ) : (
-            <View
-              flex={1}
-              padding={20}
-              paddingTop={padTop}
-              paddingBottom={footer ? 24 : padBottom}
-              testID="bottom-sheet-static-body"
-            >
-              {children}
-            </View>
-          )}
+        {scrollable ? (
+          <BottomSheetScrollView
+            // `flex: 1` bounds the scroll view to the space below the fixed
+            // header (the sheet is a fixed-height flex column now that dynamic
+            // sizing is off). Without it the scroll view grows to its content
+            // height and overflows — clipped by the sheet's `overflow: hidden`,
+            // so the body looked cut off and unscrollable.
+            style={{ flex: 1 }}
+            // Add the bottom safe-area inset so the last row (e.g. the drawer's
+            // Sign out) clears the home indicator instead of sitting under it —
+            // when the body is ~sheet-height it otherwise looks cut off and
+            // there's nothing to scroll to. The extra height also lets the
+            // scroll view engage when the content is borderline.
+            //
+            // With a `footer`, that inset moves to the footer instead: the footer
+            // is what now sits against the home indicator, and paying the inset
+            // twice would leave a dead band of scroll above it.
+            contentContainerStyle={{
+              padding: 20,
+              paddingBottom: footer ? 24 : 40 + bottomInset,
+            }}
+            keyboardShouldPersistTaps="handled"
+          >
+            {children}
+          </BottomSheetScrollView>
+        ) : (
+          <View
+            flex={1}
+            padding={20}
+            paddingBottom={footer ? 24 : 40 + bottomInset}
+            testID="bottom-sheet-static-body"
+          >
+            {children}
+          </View>
+        )}
 
-          {footer ? (
-            <View
-              paddingHorizontal={20}
-              paddingTop={12}
-              paddingBottom={12 + bottomInset}
-              borderTopWidth={1}
-              borderColor="$border"
-              backgroundColor="$surface"
-              testID="bottom-sheet-footer"
-            >
-              {footer}
-            </View>
-          ) : null}
-        </View>
-      )}
+        {footer ? (
+          <View
+            paddingHorizontal={20}
+            paddingTop={12}
+            paddingBottom={12 + bottomInset}
+            borderTopWidth={1}
+            borderColor="$border"
+            backgroundColor="$surface"
+            testID="bottom-sheet-footer"
+          >
+            {footer}
+          </View>
+        ) : null}
+      </View>
     </GorhomBottomSheet>
   );
 }

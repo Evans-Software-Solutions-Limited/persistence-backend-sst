@@ -45,12 +45,6 @@ jobs:
       - name: Setup
         uses: ./.github/actions/setup
 
-      - name: Validate Supabase admin credential
-        env:
-          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: bun scripts/validate-supabase-admin.ts production
-
       # Validate before migrations or any remote configuration changes.
       - name: Validate web authentication settings
         env:
@@ -155,7 +149,6 @@ jobs:
           # public-safe but flows through the secret pattern for per-stage wiring.
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           TOGETHER_TOKEN_SECRET: ${{ secrets.TOGETHER_TOKEN_SECRET }}
-          TOGETHER_OFFLINE_AUTHORITY: ${{ secrets.TOGETHER_OFFLINE_AUTHORITY }}
           GEOAPIFY_API_KEY: ${{ secrets.GEOAPIFY_API_KEY }}
           # Meta Conversions API + Turnstile (spec-30 growth instrumentation).
           # ALL OPTIONAL + NOT fail-fast (like EXPO_ACCESS_TOKEN/SENTRY_DSN): an
@@ -221,7 +214,6 @@ jobs:
           bunx sst secret set SentryDsn "$SENTRY_DSN" --stage production
           # Optional until Together rollout; remain server-only.
           bunx sst secret set TogetherTokenSecret "$TOGETHER_TOKEN_SECRET" --stage production
-          bunx sst secret set TogetherOfflineAuthority "$TOGETHER_OFFLINE_AUTHORITY" --stage production
           bunx sst secret set GeoapifyApiKey "$GEOAPIFY_API_KEY" --stage production
           # Optional (spec-30) — safe to set empty; the CAPI drainer + Turnstile
           # verification no-op until these carry real values.
@@ -252,9 +244,7 @@ jobs:
         # and Turnstile widget no-op. Founding values are public environment
         # variables; pixel/Turnstile identifiers remain GitHub env secrets.
         env:
-          TOGETHER_ENABLED: ${{ vars.TOGETHER_ENABLED || 'true' }}
-          APP_MIN_IOS_VERSION: ${{ vars.APP_MIN_IOS_VERSION || '1.1.3' }}
-          APP_MIN_ANDROID_VERSION: ${{ vars.APP_MIN_ANDROID_VERSION || '1.1.3' }}
+          TOGETHER_ENABLED: ${{ vars.TOGETHER_ENABLED }}
           TOGETHER_DISCOVERY_ENABLED: ${{ vars.TOGETHER_DISCOVERY_ENABLED }}
           VITE_META_PIXEL_ID: ${{ secrets.VITE_META_PIXEL_ID }}
           VITE_TURNSTILE_SITE_KEY: ${{ secrets.VITE_TURNSTILE_SITE_KEY }}
@@ -263,21 +253,4 @@ jobs:
           # environment variables, not secrets. Unset ⇒ no offer CTA renders.
           VITE_STORE_OFFER_IOS_URL: ${{ vars.VITE_STORE_OFFER_IOS_URL }}
           VITE_STORE_OFFER_ANDROID_URL: ${{ vars.VITE_STORE_OFFER_ANDROID_URL }}
-          # Tradedoubler browser tag for the Blue Light Card page (PER-3):
-          # organisation, programme and sale-event ids, read by infra/web.ts
-          # into the site build. Identifiers, not secrets. Unset ⇒ the tag and
-          # the browser-side sale call are no-ops (server-side reporting still
-          # runs from the Stripe webhook).
-          VITE_TRADEDOUBLER_ORG_ID: ${{ vars.VITE_TRADEDOUBLER_ORG_ID }}
-          VITE_TRADEDOUBLER_PROGRAM_ID: ${{ vars.VITE_TRADEDOUBLER_PROGRAM_ID }}
-          VITE_TRADEDOUBLER_SALE_EVENT_ID: ${{ vars.VITE_TRADEDOUBLER_SALE_EVENT_ID }}
-          # Blue Light Card web subscription rail (PER-3). Identifiers, not
-          # secrets: the Stripe Coupon the member codes must belong to, and
-          # Tradedoubler's organisation / sale-event ids for the server-side
-          # conversion report. Unset ⇒ every code is refused and the report
-          # is a logged no-op. Read by infra/api.ts into the API Lambda env.
-          BLC_STRIPE_COUPON_ID: ${{ vars.BLC_STRIPE_COUPON_ID }}
-          TRADEDOUBLER_ORGANIZATION_ID: ${{ vars.TRADEDOUBLER_ORGANIZATION_ID }}
-          TRADEDOUBLER_SALE_EVENT_ID: ${{ vars.TRADEDOUBLER_SALE_EVENT_ID }}
-          TRADEDOUBLER_VALID_ON_DAYS: ${{ vars.TRADEDOUBLER_VALID_ON_DAYS }}
         run: bunx sst deploy --stage production

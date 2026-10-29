@@ -28,7 +28,6 @@ import {
   requestHash,
   type TogetherTx,
   TogetherError,
-  newSessionCode,
 } from "./shared";
 import { canInteract, areFriends } from "../social/socialRepository";
 import type { TogetherCommand } from "./types";
@@ -36,7 +35,6 @@ import { evaluateTogetherEligibility } from "../entitlement/togetherEligibility"
 import { pagePosition, nextPage } from "../social/pagination";
 import { ExerciseRepository } from "../repositories/exerciseRepository";
 import { placesRepository } from "../places/placesRepository";
-import { readPreviousValues } from "./previousValues";
 export const hashTogether = requestHash;
 function secretToken(actor: string, route: string, key: string) {
   const secret = process.env.TOGETHER_TOKEN_SECRET;
@@ -45,8 +43,6 @@ function secretToken(actor: string, route: string, key: string) {
     .update(JSON.stringify([actor, route, key]))
     .digest("base64url");
 }
-const MAX_PARTICIPANTS = 4;
-type JoinRequest = typeof requests.$inferSelect;
 type Session = typeof sessions.$inferSelect;
 type Participant = typeof participants.$inferSelect;
 const memberWhere = (id: string, uid: string) =>
@@ -124,12 +120,7 @@ export async function revokePair(
   const memberships = await tx
     .select()
     .from(participants)
-    .where(
-      and(
-        inArray(participants.userId, [a, b]),
-        eq(participants.removedFromRoster, false),
-      ),
-    );
+    .where(inArray(participants.userId, [a, b]));
   const ids = [
     ...new Set(
       memberships
@@ -232,15 +223,15 @@ export class TogetherRepository {
     let valid =
       !!s.hostId &&
       s.state === "active" &&
-      !ps.some((p) => p.leftAt && !p.removedFromRoster) &&
+      !ps.some((p) => p.leftAt) &&
       s.expiresAt > new Date();
     if (valid)
-      for (const p of ps.filter((p) => !p.removedFromRoster)) {
+      for (const p of ps) {
         if (!(await evaluateTogetherEligibility(tx, p.userId))) {
           valid = false;
           break;
         }
-        for (const q of ps.filter((p) => !p.removedFromRoster))
+        for (const q of ps)
           if (
             p.userId !== q.userId &&
             !(await canInteract(tx, p.userId, q.userId))
@@ -286,77 +277,20 @@ export class TogetherRepository {
     const own = this.member(ps, actor);
     const live = await this.live(tx, s, ps);
     const shared = live && !own.leftAt;
-    const people = await tx
-      .select({
-        userId: profiles.id,
-        displayName: profiles.fullName,
-        avatarUrl: profiles.avatarUrl,
-      })
-      .from(profiles)
-      .where(
-        inArray(
-          profiles.id,
-          (shared ? ps : [own]).map((p) => p.userId),
-        ),
-      );
     return {
       sessionId: s.id,
       state: s.state,
-      sharingActive: shared,
-      continuation: !shared && own.status === "active" ? "solo" : null,
       hostId: s.hostId,
-      /** Only the host shares the code (PER-60). */
-      code: s.hostId === actor ? (s.code ?? null) : null,
       revision: s.revision,
       planVersion: s.planVersion,
       plan: shared ? s.plan : (own.frozenPlan ?? s.plan),
       participants: (shared ? ps.filter((p) => !p.leftAt) : [own]).map((p) => ({
         userId: p.userId,
-        displayName:
-          people.find((person) => person.userId === p.userId)?.displayName ??
-          null,
-        avatarUrl:
-          people.find((person) => person.userId === p.userId)?.avatarUrl ??
-          null,
         status: p.status,
-        progress: p.execution.exercises.map((e) => ({
-          planExerciseId: e.planExerciseId,
-          completedSets: e.sets.filter((set) => set.completed).length,
-          skipped: e.skipped,
-        })),
         ownRevision: p.ownRevision,
         delegationGeneration: p.delegationGeneration,
         allowPartnerLogging: p.allowPartnerLogging,
-        execution:
-          p.userId === actor ||
-          (shared &&
-            own.status === "active" &&
-            this.effectiveNumbersRecipients(s, ps, p).includes(actor))
-            ? p.execution
-            : null,
-        numbersAvailable:
-          p.userId === actor ||
-          (shared &&
-            own.status === "active" &&
-            this.effectiveNumbersRecipients(s, ps, p).includes(actor)),
-        previousValuesAvailable:
-          p.userId === actor ||
-          (shared &&
-            own.status === "active" &&
-            p.status === "active" &&
-            p.previousRecipientIds.includes(actor)),
-        ...(p.userId === actor
-          ? {
-              numbersConsent: {
-                version: p.numbersConsentVersion,
-                recipientIds: this.effectiveNumbersRecipients(s, ps, p),
-              },
-              previousConsent: {
-                version: p.previousConsentVersion,
-                recipientIds: this.effectivePreviousRecipients(s, ps, p),
-              },
-            }
-          : {}),
+        execution: p.execution,
         exerciseCatalog: Object.fromEntries(
           Object.entries(p.exerciseDefinitions).map(([id, definition]) => [
             id,
@@ -369,12 +303,7 @@ export class TogetherRepository {
         ),
         ...(p.userId === actor ? { historyId: p.historyId } : {}),
       })),
-      completion: {
-        status: own.status,
-        historyId: own.historyId,
-        ownRevision: own.ownRevision,
-        recoveryMayBePending: !shared,
-      },
+      completion: { status: own.status, historyId: own.historyId },
     };
   }
   private async definitions(
@@ -474,20 +403,12 @@ export class TogetherRepository {
     key: string,
     body: {
       clientDraftId: string;
-      startedAt?: string;
       plan: TogetherPlan;
       ownExecution: TogetherExecution;
     },
   ) {
     return withActors([actor], async (tx) => {
       await assertTogetherPaid(tx, actor);
-      requireTogether(
-        body.startedAt === undefined ||
-          (Number.isFinite(Date.parse(body.startedAt)) &&
-            Date.parse(body.startedAt) <= Date.now()),
-        "INVALID_SCHEMA",
-        400,
-      );
       const result = await replayMutation(
         tx,
         actor,
@@ -536,18 +457,6 @@ export class TogetherRepository {
                 await this.definitions(tx, [e.substituteExerciseId], [actor]),
               );
           }
-          // PER-60: a six-character join code, unique among active sessions.
-          let code = newSessionCode();
-          for (let attempt = 0; attempt < 5; attempt++) {
-            const [taken] = await tx
-              .select({ id: sessions.id })
-              .from(sessions)
-              .where(
-                and(eq(sessions.code, code), eq(sessions.state, "active")),
-              );
-            if (!taken) break;
-            code = newSessionCode();
-          }
           const [s] = await tx
             .insert(sessions)
             .values({
@@ -555,7 +464,6 @@ export class TogetherRepository {
               clientDraftId: body.clientDraftId,
               promotionHash: hashTogether(body),
               plan: body.plan,
-              code,
               expiresAt: new Date(Date.now() + 4 * 3600000),
             })
             .returning();
@@ -564,9 +472,6 @@ export class TogetherRepository {
             .values({
               sessionId: s.id,
               userId: actor,
-              originalStartedAt: body.startedAt
-                ? new Date(body.startedAt)
-                : s.createdAt,
               execution,
               exerciseDefinitions,
               consentVersion: "together-v1",
@@ -586,7 +491,6 @@ export class TogetherRepository {
         .where(eq(participants.sessionId, result.sessionId));
       return {
         sessionId: session.id,
-        code: session.code,
         revision: session.revision,
         snapshot: await this.snapshotIn(tx, session, members, actor),
       };
@@ -678,152 +582,30 @@ export class TogetherRepository {
       );
     });
   }
-  private async canJoinMembers(
-    tx: TogetherTx,
-    ps: Participant[],
-    actor: string,
-  ) {
-    for (const member of ps.filter((p) => !p.removedFromRoster))
-      if (
-        member.userId !== actor &&
-        !(await canInteract(tx, actor, member.userId))
-      )
-        return false;
-    return true;
-  }
-  private async approveJoin(
-    tx: TogetherTx,
-    s: Session,
-    ps: Participant[],
-    r: JoinRequest,
-  ) {
-    requireTogether(
-      await this.canJoinMembers(tx, ps, r.userId),
-      "FORBIDDEN",
-      403,
-    );
-    requireTogether(
-      ps.filter((p) => !p.removedFromRoster).length < MAX_PARTICIPANTS,
-      "SESSION_FULL",
-      409,
-    );
-    await this.free(tx, r.userId);
-    if (r.inviteId) {
-      const [invite] = await tx
-        .select()
-        .from(invites)
-        .where(eq(invites.id, r.inviteId));
-      requireTogether(
-        invite &&
-          !invite.revoked &&
-          !invite.revokedFor.includes(r.userId) &&
-          (invite.audience !== "friends" ||
-            (await areFriends(tx, s.hostId!, r.userId))) &&
-          !invite.consumed &&
-          invite.expiresAt > new Date(),
-        "INVITE_EXPIRED",
-        410,
-      );
-      await tx
-        .update(invites)
-        .set({ consumed: true })
-        .where(eq(invites.id, r.inviteId));
-    } else
-      requireTogether(
-        s.audience !== "private" &&
-          (s.audience !== "friends" ||
-            (await areFriends(tx, s.hostId!, r.userId))),
-        "FORBIDDEN",
-        403,
-      );
-    const exerciseDefinitions = await this.planValid(tx, s.plan, [
-      ...ps.filter((p) => !p.removedFromRoster).map((p) => p.userId),
-      r.userId,
-    ]);
-    for (const member of ps.filter((p) => !p.removedFromRoster))
-      for (const e of member.execution.exercises)
-        if (e.substituteExerciseId)
-          await this.definitions(tx, [e.substituteExerciseId], [r.userId]);
-    const [p] = await tx
-      .insert(participants)
-      .values({
-        sessionId: s.id,
-        userId: r.userId,
-        execution: { exercises: [] },
-        exerciseDefinitions,
-        consentVersion: r.consentVersion,
-        originalStartedAt: r.originalStartedAt ?? new Date(),
-      })
-      .returning();
-    // A grant covers the roster its owner consented to, never future joiners.
-    await tx
-      .update(participants)
-      .set({
-        allowPartnerLogging: false,
-        delegationGeneration: sql`${participants.delegationGeneration}+1`,
-      })
-      .where(
-        and(
-          eq(participants.sessionId, s.id),
-          inArray(
-            participants.userId,
-            ps.map((member) => member.userId),
-          ),
-        ),
-      );
-    for (const member of ps) {
-      member.allowPartnerLogging = false;
-      member.delegationGeneration++;
-    }
-    ps.push(p);
-  }
   async requestJoin(
     actor: string,
     key: string,
     body: {
       inviteToken?: string;
-      /** The six-character session code (PER-60): a credential like an invite. */
-      code?: string;
       sessionId?: string;
       consentVersion: "together-v1";
       consentAccepted: true;
-      startedAt?: string;
     },
   ) {
-    requireTogether(
-      body.startedAt === undefined ||
-        (Number.isFinite(Date.parse(body.startedAt)) &&
-          Date.parse(body.startedAt) <= Date.now()),
-      "INVALID_SCHEMA",
-      400,
-    );
     const [invite] = body.inviteToken
       ? await getDb()
           .select()
           .from(invites)
           .where(eq(invites.tokenHash, hashTogether(body.inviteToken)))
       : [];
-    const [coded] = body.code
-      ? await getDb()
-          .select({ id: sessions.id })
-          .from(sessions)
-          .where(
-            and(eq(sessions.code, body.code), eq(sessions.state, "active")),
-          )
-      : [];
-    const id = invite?.sessionId ?? coded?.id ?? body.sessionId;
+    const id = invite?.sessionId ?? body.sessionId;
     requireTogether(id, "NOT_FOUND", 404);
     return this.transaction(actor, id, async (tx, s, ps) => {
       requireTogether(
         s.hostId &&
           s.hostId !== actor &&
           (await this.live(tx, s, ps)) &&
-          (await this.canJoinMembers(tx, ps, actor)),
-        "FORBIDDEN",
-        403,
-      );
-      requireTogether(
-        !ps.some((p) => p.userId === actor && p.removedFromRoster),
+          (await canInteract(tx, actor, s.hostId)),
         "FORBIDDEN",
         403,
       );
@@ -846,14 +628,6 @@ export class TogetherRepository {
           "INVITE_EXPIRED",
           410,
         );
-      } else if (body.code) {
-        // The code is the secret: it opens private and friends-only sessions;
-        // non-partners still wait for the host (approval below).
-        requireTogether(
-          s.code === body.code && s.state === "active",
-          "NOT_FOUND",
-          404,
-        );
       } else {
         requireTogether(
           s.audience !== "private" &&
@@ -863,235 +637,33 @@ export class TogetherRepository {
           403,
         );
       }
-      const joined = await replayMutation(
-        tx,
-        actor,
-        "join",
-        key,
-        body,
-        async () => {
-          await enforceRateLimit(tx, actor, "join");
-          await this.free(tx, actor);
-          requireTogether(
-            ps.filter((p) => !p.removedFromRoster).length < MAX_PARTICIPANTS,
-            "SESSION_FULL",
-            409,
-          );
-          const [existing] = await tx
-            .select()
-            .from(requests)
-            .where(
-              and(
-                eq(requests.sessionId, id),
-                eq(requests.userId, actor),
-                eq(requests.status, "pending"),
-              ),
-            );
-          const [r] = existing
-            ? await tx
-                .update(requests)
-                .set({
-                  inviteId: invite?.id ?? null,
-                  consentVersion: body.consentVersion,
-                  originalStartedAt: body.startedAt
-                    ? new Date(body.startedAt)
-                    : null,
-                })
-                .where(eq(requests.id, existing.id))
-                .returning()
-            : await tx
-                .insert(requests)
-                .values({
-                  sessionId: id,
-                  userId: actor,
-                  inviteId: invite?.id,
-                  consentVersion: body.consentVersion,
-                  originalStartedAt: body.startedAt
-                    ? new Date(body.startedAt)
-                    : null,
-                })
-                .returning();
-          if (await areFriends(tx, actor, s.hostId!)) {
-            await this.approveJoin(tx, s, ps, r);
-            await tx
-              .update(requests)
-              .set({ status: "approved" })
-              .where(eq(requests.id, r.id));
-            await this.emit(tx, s, { type: "membership_changed" });
-            return { requestId: r.id, status: "approved" };
-          }
-          if (!existing) await this.emit(tx, s, { type: "join_requested" });
-          return { requestId: r.id, status: "pending" };
-        },
-      );
-      return { ...joined, sessionId: id };
-    });
-  }
-  /** Workout name, start and plan rows for the consent card (PER-60). */
-  private planRows(s: Session, ps: Participant[]) {
-    const host = ps.find((p) => p.userId === s.hostId);
-    return {
-      workoutName: s.plan.name,
-      startedAt: (host?.originalStartedAt ?? s.createdAt).toISOString(),
-      plan: [...s.plan.exercises]
-        .sort((x, y) => x.order - y.order)
-        .slice(0, 20)
-        .map((e) => ({
-          // Custom names have no length limit; the mobile schema allows 120
-          // characters per row, so clamp here where the schema is owned.
-          name:
-            host?.exerciseDefinitions[e.exerciseId]?.name
-              ?.trim()
-              .slice(0, 120) || "Exercise",
-          sets: e.targetSets,
-          reps: e.targetReps ?? null,
-        })),
-    };
-  }
-  /**
-   * What a joiner sees before consenting (PER-60): the host, the workout, who
-   * is in and the plan, for a pasted invite link or a typed session code.
-   * Rate limited with discovery; a code or token that resolves to nothing, an
-   * ended session or your own session is simply not found.
-   */
-  async preview(
-    actor: string,
-    selector: { inviteToken?: string; code?: string },
-  ) {
-    return withActors([actor], async (tx) => {
-      await enforceRateLimit(tx, actor, "discovery");
-      let s: Session | undefined;
-      let consumedInvite = false;
-      if (selector.inviteToken) {
-        const [invite] = await tx
+      return replayMutation(tx, actor, "join", key, body, async () => {
+        await enforceRateLimit(tx, actor, "join");
+        await this.free(tx, actor);
+        requireTogether(ps.length < 2, "SESSION_FULL", 409);
+        const [existing] = await tx
           .select()
-          .from(invites)
-          .where(eq(invites.tokenHash, hashTogether(selector.inviteToken)));
-        requireTogether(
-          invite &&
-            !invite.revoked &&
-            !invite.revokedFor.includes(actor) &&
-            invite.expiresAt > new Date(),
-          "INVITE_EXPIRED",
-          410,
-        );
-        [s] = await tx
-          .select()
-          .from(sessions)
-          .where(eq(sessions.id, invite.sessionId));
-        // The same rules as requestJoin: a friends-only invite for a
-        // non-partner must not show the session either.
-        requireTogether(
-          invite.audience !== "friends" ||
-            !s?.hostId ||
-            (await areFriends(tx, actor, s.hostId)),
-          "INVITE_EXPIRED",
-          410,
-        );
-        consumedInvite = invite.consumed;
-      } else {
-        requireTogether(selector.code, "INVALID_SCHEMA", 400);
-        [s] = await tx
-          .select()
-          .from(sessions)
+          .from(requests)
           .where(
-            and(eq(sessions.code, selector.code), eq(sessions.state, "active")),
+            and(
+              eq(requests.sessionId, id),
+              eq(requests.userId, actor),
+              eq(requests.status, "pending"),
+            ),
           );
-      }
-      requireTogether(s && s.hostId && s.hostId !== actor, "NOT_FOUND", 404);
-      const ps = await tx
-        .select()
-        .from(participants)
-        .where(eq(participants.sessionId, s.id));
-      // A consumed invite only still works for the person who used it.
-      requireTogether(
-        !consumedInvite || ps.some((p) => p.userId === actor && !p.leftAt),
-        "INVITE_EXPIRED",
-        410,
-      );
-      requireTogether(
-        (await this.live(tx, s, ps)) &&
-          (await canInteract(tx, actor, s.hostId)),
-        "NOT_FOUND",
-        404,
-      );
-      const [host] = await tx
-        .select({
-          userId: profiles.id,
-          displayName: profiles.fullName,
-          avatarUrl: profiles.avatarUrl,
-        })
-        .from(profiles)
-        .where(eq(profiles.id, s.hostId));
-      return {
-        sessionId: s.id,
-        audience: s.audience,
-        host,
-        occupancy: ps.filter((p) => !p.removedFromRoster).length,
-        partner: await areFriends(tx, actor, s.hostId),
-        expiresAt: s.expiresAt,
-        ...this.planRows(s, ps),
-      };
-    });
-  }
-  async joinStatus(actor: string, requestId: string) {
-    return withActors([actor], async (tx) => {
-      await assertActorActive(tx, actor);
-      const [request] = await tx
-        .select()
-        .from(requests)
-        .where(and(eq(requests.id, requestId), eq(requests.userId, actor)));
-      requireTogether(request, "NOT_FOUND", 404);
-      const [session] = await tx
-        .select()
-        .from(sessions)
-        .where(eq(sessions.id, request.sessionId));
-      const unavailable =
-        !session ||
-        session.state !== "active" ||
-        session.collaborationRevoked ||
-        session.expiresAt <= new Date();
-      return {
-        requestId: request.id,
-        sessionId: request.sessionId,
-        status:
-          request.status === "approved"
-            ? "approved"
-            : unavailable
-              ? "unavailable"
-              : request.status,
-      };
-    });
-  }
-  async cancelJoin(actor: string, requestId: string, key: string) {
-    return withActors([actor], async (tx) => {
-      await assertActorActive(tx, actor);
-      const [request] = await tx
-        .select()
-        .from(requests)
-        .where(and(eq(requests.id, requestId), eq(requests.userId, actor)));
-      requireTogether(request, "NOT_FOUND", 404);
-      return replayMutation(
-        tx,
-        actor,
-        `cancel-join:${requestId}`,
-        key,
-        {},
-        async () => {
-          requireTogether(
-            request.status !== "approved",
-            "ALREADY_ADMITTED",
-            409,
-          );
-          await tx
-            .update(requests)
-            .set({ status: "rejected" })
-            .where(
-              and(eq(requests.id, requestId), eq(requests.status, "pending")),
-            );
-          return { cancelled: true };
-        },
-      );
+        if (existing) return { requestId: existing.id, status: "pending" };
+        const [r] = await tx
+          .insert(requests)
+          .values({
+            sessionId: id,
+            userId: actor,
+            inviteId: invite?.id,
+            consentVersion: body.consentVersion,
+          })
+          .returning();
+        await this.emit(tx, s, { type: "join_requested" });
+        return { requestId: r.id, status: "pending" };
+      });
     });
   }
   async listRequests(
@@ -1183,7 +755,59 @@ export class TogetherRepository {
                 s.revision,
               );
             if (body.decision === "approve") {
-              await this.approveJoin(tx, s, ps, current);
+              requireTogether(ps.length < 2, "SESSION_FULL", 409);
+              await this.free(tx, r.userId);
+              if (r.inviteId) {
+                const [invite] = await tx
+                  .select()
+                  .from(invites)
+                  .where(eq(invites.id, r.inviteId));
+                requireTogether(
+                  invite &&
+                    !invite.revoked &&
+                    !invite.revokedFor.includes(r.userId) &&
+                    (invite.audience !== "friends" ||
+                      (await areFriends(tx, actor, r.userId))) &&
+                    !invite.consumed &&
+                    invite.expiresAt > new Date(),
+                  "INVITE_EXPIRED",
+                  410,
+                );
+                await tx
+                  .update(invites)
+                  .set({ consumed: true })
+                  .where(eq(invites.id, r.inviteId));
+              } else
+                requireTogether(
+                  s.audience !== "private" &&
+                    (s.audience !== "friends" ||
+                      (await areFriends(tx, actor, r.userId))),
+                  "FORBIDDEN",
+                  403,
+                );
+              const exerciseDefinitions = await this.planValid(tx, s.plan, [
+                actor,
+                r.userId,
+              ]);
+              for (const member of ps)
+                for (const e of member.execution.exercises)
+                  if (e.substituteExerciseId)
+                    await this.definitions(
+                      tx,
+                      [e.substituteExerciseId],
+                      [r.userId],
+                    );
+              const [p] = await tx
+                .insert(participants)
+                .values({
+                  sessionId: id,
+                  userId: r.userId,
+                  execution: { exercises: [] },
+                  exerciseDefinitions,
+                  consentVersion: r.consentVersion,
+                })
+                .returning();
+              ps.push(p);
             }
             await tx
               .update(requests)
@@ -1204,81 +828,6 @@ export class TogetherRepository {
       [r.userId],
     );
   }
-  async removeParticipant(
-    actor: string,
-    id: string,
-    userId: string,
-    key: string,
-    body: { expectedRevision: number },
-  ) {
-    return this.transaction(actor, id, async (tx, s, ps) => {
-      requireTogether(actor === s.hostId && actor !== userId, "FORBIDDEN", 403);
-      const target = this.member(ps, userId);
-      const result = await replayMutation(
-        tx,
-        actor,
-        `remove:${id}:${userId}`,
-        key,
-        body,
-        async () => {
-          requireTogether(await this.live(tx, s, ps), "FORBIDDEN", 403);
-          if (s.revision !== body.expectedRevision)
-            throw new TogetherError(
-              "VERSION_CONFLICT",
-              409,
-              "Session changed",
-              s.revision,
-            );
-          requireTogether(!target.leftAt, "INVALID_STATE", 409);
-          target.leftAt = new Date();
-          target.removedFromRoster = true;
-          target.frozenPlan ??= s.plan;
-          await tx
-            .update(participants)
-            .set({
-              leftAt: target.leftAt,
-              removedFromRoster: true,
-              frozenPlan: target.frozenPlan,
-            })
-            .where(memberWhere(id, userId));
-          for (const p of ps) {
-            p.allowPartnerLogging = false;
-            p.delegationGeneration++;
-            p.previousConsentVersion++;
-            p.numbersConsentVersion++;
-            p.previousRecipientIds = [];
-            p.numbersRecipientIds = [];
-            await tx
-              .update(participants)
-              .set({
-                allowPartnerLogging: false,
-                delegationGeneration: p.delegationGeneration,
-                previousConsentVersion: p.previousConsentVersion,
-                numbersConsentVersion: p.numbersConsentVersion,
-                previousRecipientIds: [],
-                numbersRecipientIds: [],
-              })
-              .where(memberWhere(id, p.userId));
-          }
-          await tx
-            .update(connections)
-            .set({ revoked: true })
-            .where(
-              and(
-                eq(connections.sessionId, id),
-                eq(connections.userId, userId),
-              ),
-            );
-          await tx
-            .delete(tickets)
-            .where(and(eq(tickets.sessionId, id), eq(tickets.userId, userId)));
-          await this.emit(tx, s, { type: "membership_changed" });
-          return { removed: true };
-        },
-      );
-      return { ...result, snapshot: await this.snapshotIn(tx, s, ps, actor) };
-    });
-  }
   async command(actor: string, id: string, key: string, body: TogetherCommand) {
     return this.transaction(actor, id, async (tx, s, ps) => {
       const own = this.member(ps, actor);
@@ -1286,8 +835,8 @@ export class TogetherRepository {
       const target = isPlan
         ? own
         : this.member(ps, body.target.athleteId ?? actor);
-      const live = !own.removedFromRoster && (await this.live(tx, s, ps));
-      requireTogether(!own.leftAt || own.removedFromRoster, "FORBIDDEN", 403);
+      const live = await this.live(tx, s, ps);
+      requireTogether(!own.leftAt, "FORBIDDEN", 403);
       requireTogether(own.status === "active", "INVALID_STATE", 409);
       if (isPlan) {
         requireTogether(actor === s.hostId && live, "FORBIDDEN", 403);
@@ -1295,8 +844,7 @@ export class TogetherRepository {
       } else if (target.userId !== actor) {
         requireTogether(live && !target.leftAt, "FORBIDDEN", 403);
         requireTogether(
-          this.effectiveNumbersRecipients(s, ps, target).includes(actor) &&
-            target.allowPartnerLogging &&
+          target.allowPartnerLogging &&
             body.delegationGeneration === target.delegationGeneration,
           "DELEGATION_REVOKED",
           403,
@@ -1347,7 +895,7 @@ export class TogetherRepository {
               op.plan,
               ps.filter((p) => !p.leftAt).map((p) => p.userId),
             );
-            for (const p of ps.filter((p) => !p.removedFromRoster))
+            for (const p of ps)
               for (const e of p.execution.exercises)
                 if (e.everAcknowledged) {
                   const old = s.plan.exercises.find(
@@ -1362,7 +910,7 @@ export class TogetherRepository {
                     409,
                   );
                 }
-            for (const p of ps.filter((p) => !p.removedFromRoster)) {
+            for (const p of ps) {
               p.exerciseDefinitions = {
                 ...p.exerciseDefinitions,
                 ...definitions,
@@ -1384,7 +932,7 @@ export class TogetherRepository {
             if (op.type === "rest") execution.restEndsAt = op.endsAt;
             else {
               requireTogether(
-                (live ? s.plan : (target.frozenPlan ?? s.plan)).exercises.some(
+                s.plan.exercises.some(
                   (e) => e.planExerciseId === op.planExerciseId,
                 ),
                 "INVALID_SCHEMA",
@@ -1446,7 +994,7 @@ export class TogetherRepository {
               .where(memberWhere(id, target.userId));
           }
           const event = {
-            revision: s.revision + (own.removedFromRoster ? 0 : 1),
+            revision: s.revision + 1,
             commandId: body.commandId,
             target: isPlan
               ? { kind: "plan" as const }
@@ -1455,9 +1003,7 @@ export class TogetherRepository {
             newVersion: version + 1,
             operation: op,
           };
-          // A removed athlete retains their own durable execution, but their
-          // private edits must not advertise activity to the remaining roster.
-          if (!own.removedFromRoster) await this.emit(tx, s, event);
+          await this.emit(tx, s, event);
           const result = {
             commandId: body.commandId,
             revision: s.revision,
@@ -1517,173 +1063,6 @@ export class TogetherRepository {
       );
     });
   }
-  private effectivePreviousRecipients(
-    s: Session,
-    ps: Participant[],
-    owner: Participant,
-  ) {
-    if (
-      s.collaborationRevoked ||
-      s.state !== "active" ||
-      owner.status !== "active" ||
-      owner.leftAt
-    )
-      return [];
-    return owner.previousRecipientIds.filter((id) =>
-      ps.some((p) => p.userId === id && p.status === "active" && !p.leftAt),
-    );
-  }
-  private effectiveNumbersRecipients(
-    s: Session,
-    ps: Participant[],
-    owner: Participant,
-  ) {
-    if (
-      s.collaborationRevoked ||
-      s.state !== "active" ||
-      owner.status !== "active" ||
-      owner.leftAt
-    )
-      return [];
-    return owner.numbersRecipientIds.filter((id) =>
-      ps.some((p) => p.userId === id && p.status === "active" && !p.leftAt),
-    );
-  }
-  previousConsent(
-    actor: string,
-    id: string,
-    key: string,
-    body: { expectedVersion: number; recipientIds: string[] },
-  ) {
-    return this.scopedConsent(actor, id, key, body, false);
-  }
-  numbersConsent(
-    actor: string,
-    id: string,
-    key: string,
-    body: { expectedVersion: number; recipientIds: string[] },
-  ) {
-    return this.scopedConsent(actor, id, key, body, true);
-  }
-  private async scopedConsent(
-    actor: string,
-    id: string,
-    key: string,
-    body: { expectedVersion: number; recipientIds: string[] },
-    numbers: boolean,
-  ) {
-    return this.transaction(actor, id, async (tx, s, ps) => {
-      const owner = this.member(ps, actor);
-      const versionField = numbers
-        ? "numbersConsentVersion"
-        : "previousConsentVersion";
-      const recipientsField = numbers
-        ? "numbersRecipientIds"
-        : "previousRecipientIds";
-      requireTogether(
-        Number.isSafeInteger(body.expectedVersion) &&
-          body.expectedVersion >= 0 &&
-          body.recipientIds.length <= MAX_PARTICIPANTS - 1 &&
-          new Set(body.recipientIds).size === body.recipientIds.length &&
-          !body.recipientIds.includes(actor),
-        "INVALID_PREVIOUS_CONSENT",
-        400,
-      );
-      // Receipts contain no recipients or historical values. Retrying a grant
-      // checks its original payload but always returns today's effective consent.
-      await replayMutation(
-        tx,
-        actor,
-        `${numbers ? "numbers" : "previous"}-consent:${id}`,
-        key,
-        body,
-        async () => {
-          if (body.expectedVersion !== owner[versionField])
-            throw new TogetherError(
-              "VERSION_CONFLICT",
-              409,
-              undefined,
-              owner[versionField],
-            );
-          if (body.recipientIds.length) {
-            requireTogether(
-              owner.status === "active" &&
-                !owner.leftAt &&
-                (await this.live(tx, s, ps)),
-              "FORBIDDEN",
-              403,
-            );
-            await assertTogetherPaid(tx, actor);
-            requireTogether(
-              body.recipientIds.every((uid) =>
-                ps.some(
-                  (p) => p.userId === uid && p.status === "active" && !p.leftAt,
-                ),
-              ),
-              "INVALID_PREVIOUS_CONSENT",
-              400,
-            );
-          }
-          owner[versionField]++;
-          owner[recipientsField] = [...body.recipientIds].sort();
-          await tx
-            .update(participants)
-            .set({
-              [recipientsField]: owner[recipientsField],
-              [versionField]: owner[versionField],
-            })
-            .where(memberWhere(id, actor));
-          if (!owner.removedFromRoster)
-            await this.emit(tx, s, {
-              type: numbers
-                ? "numbers_consent_changed"
-                : "previous_consent_changed",
-              userId: actor,
-              version: owner[versionField],
-            });
-          return { version: owner[versionField] };
-        },
-      );
-      return {
-        sessionId: id,
-        ownerId: actor,
-        version: owner[versionField],
-        recipientIds: numbers
-          ? this.effectiveNumbersRecipients(s, ps, owner)
-          : this.effectivePreviousRecipients(s, ps, owner),
-      };
-    });
-  }
-  async previousValues(actor: string, id: string, ownerId: string) {
-    return this.transaction(actor, id, async (tx, s, ps) => {
-      const reader = this.member(ps, actor);
-      const owner = this.member(ps, ownerId);
-      if (actor !== ownerId)
-        requireTogether(
-          (await this.live(tx, s, ps)) &&
-            reader.status === "active" &&
-            !reader.leftAt &&
-            this.effectivePreviousRecipients(s, ps, owner).includes(actor),
-          "FORBIDDEN",
-          403,
-        );
-      return {
-        sessionId: id,
-        ownerId,
-        consentVersion: owner.previousConsentVersion,
-        revision: s.revision,
-        planVersion: s.planVersion,
-        ownRevision: owner.ownRevision,
-        values: await readPreviousValues(
-          tx,
-          ownerId,
-          owner.frozenPlan ?? s.plan,
-          owner.execution,
-          owner.originalStartedAt ?? s.createdAt,
-        ),
-      };
-    });
-  }
   async visibility(
     actor: string,
     id: string,
@@ -1716,7 +1095,7 @@ export class TogetherRepository {
         400,
       );
       requireTogether(
-        body.audience !== "nearby" ||
+        body.audience === "private" ||
           process.env.TOGETHER_DISCOVERY_ENABLED === "true",
         "FORBIDDEN",
         403,
@@ -1756,8 +1135,7 @@ export class TogetherRepository {
     },
   ) {
     requireTogether(
-      query.audience === "friends" ||
-        process.env.TOGETHER_DISCOVERY_ENABLED === "true",
+      process.env.TOGETHER_DISCOVERY_ENABLED === "true",
       "FORBIDDEN",
       403,
     );
@@ -1811,9 +1189,7 @@ export class TogetherRepository {
           .where(eq(participants.sessionId, s.id));
         if (
           !(await this.live(tx, s, ps)) ||
-          ps.filter((p) => !p.removedFromRoster).length >= MAX_PARTICIPANTS ||
-          ps.some((member) => member.userId === actor) ||
-          !(await this.canJoinMembers(tx, ps, actor)) ||
+          ps.length >= 2 ||
           ps.find((p) => p.userId === s.hostId)?.status !== "active"
         )
           continue;
@@ -1824,11 +1200,10 @@ export class TogetherRepository {
             displayName: p.fullName,
             avatarUrl: p.avatarUrl,
           },
-          ...this.planRows(s, ps),
           placeId: s.placeId,
           placeLabel: s.placeLabel,
           expiresAt: s.expiresAt,
-          occupancy: ps.filter((p) => !p.removedFromRoster).length,
+          occupancy: ps.length,
         });
         if (data.length >= (query.limit ?? 20)) break;
       }
@@ -1861,30 +1236,7 @@ export class TogetherRepository {
         410,
       );
       return {
-        data: rows.map((r) => {
-          const event = r.event as Record<string, unknown>;
-          const target = event.target as
-            | { kind?: string; athleteId?: string }
-            | undefined;
-          const owner = ps.find(
-            (member) => member.userId === target?.athleteId,
-          );
-          const visible =
-            target?.kind !== "execution" ||
-            target.athleteId === actor ||
-            (!!owner &&
-              this.effectiveNumbersRecipients(s, ps, owner).includes(actor));
-          return {
-            revision: r.revision,
-            event: visible
-              ? r.event
-              : {
-                  type: "execution_changed",
-                  userId: target?.athleteId,
-                  newVersion: event.newVersion,
-                },
-          };
-        }),
+        data: rows.map((r) => ({ revision: r.revision, event: r.event })),
         revision: s.revision,
       };
     });
@@ -1983,282 +1335,6 @@ export class TogetherRepository {
       .delete(connections)
       .where(eq(connections.connectionId, connectionId));
   }
-  private async finalizeParticipant(
-    tx: TogetherTx,
-    s: Session,
-    p: Participant,
-  ) {
-    if (p.status !== "active") return;
-    const hasWork = p.execution.exercises.some((exercise) =>
-      exercise.sets.some((set) => set.completed),
-    );
-    p.status = hasWork ? "finalizing" : "finished_empty";
-    p.frozenPlan ??= s.plan;
-    p.allowPartnerLogging = false;
-    p.delegationGeneration++;
-    await tx
-      .update(participants)
-      .set({
-        status: p.status,
-        frozenPlan: p.frozenPlan,
-        allowPartnerLogging: false,
-        delegationGeneration: p.delegationGeneration,
-      })
-      .where(memberWhere(s.id, p.userId));
-    if (hasWork || p.removedFromRoster)
-      await tx
-        .insert(jobs)
-        .values({
-          sessionId: s.id,
-          userId: p.userId,
-          // Empty private completion has no shared event timestamp. Retain its
-          // completion identity/time for a later explicit reviewed amendment,
-          // without scheduling recording or fabricating a history result.
-          ...(!hasWork ? { status: "saved", effectsDone: true } : {}),
-        })
-        .onConflictDoNothing();
-    if (!p.removedFromRoster)
-      await this.emit(tx, s, {
-        type: "participant_finished",
-        userId: p.userId,
-        status: p.status,
-      });
-  }
-  private async closeSharing(
-    tx: TogetherTx,
-    s: Session,
-    ps: Participant[],
-    mode: "finish_all" | "save_own",
-  ) {
-    s.state = "closed";
-    s.collaborationRevoked = true;
-    s.audience = "private";
-    await tx
-      .update(sessions)
-      .set({ state: "closed", collaborationRevoked: true, audience: "private" })
-      .where(eq(sessions.id, s.id));
-    await tx
-      .update(invites)
-      .set({ revoked: true })
-      .where(eq(invites.sessionId, s.id));
-    await tx
-      .update(requests)
-      .set({ status: "rejected" })
-      .where(and(eq(requests.sessionId, s.id), eq(requests.status, "pending")));
-    await tx
-      .update(connections)
-      .set({ revoked: true })
-      .where(eq(connections.sessionId, s.id));
-    for (const p of ps) {
-      p.frozenPlan ??= s.plan;
-      p.allowPartnerLogging = false;
-      p.delegationGeneration++;
-      await tx
-        .update(participants)
-        .set({
-          frozenPlan: p.frozenPlan,
-          allowPartnerLogging: false,
-          delegationGeneration: p.delegationGeneration,
-        })
-        .where(memberWhere(s.id, p.userId));
-    }
-    await this.emit(tx, s, {
-      type: "session_closed",
-      mode,
-      acknowledgedStateOnly: true,
-    });
-  }
-  async close(
-    actor: string,
-    id: string,
-    key: string,
-    body: {
-      expectedRevision: number;
-      expectedOwnRevision: number;
-      mode: "finish_all" | "save_own";
-    },
-  ) {
-    return this.transaction(actor, id, async (tx, s, ps) => {
-      const own = this.member(ps, actor);
-      requireTogether(
-        body.mode === "finish_all" || body.mode === "save_own",
-        "INVALID_SCHEMA",
-        400,
-      );
-      requireTogether(s.hostId === actor && !own.leftAt, "FORBIDDEN", 403);
-      const receipt = await replayMutation(
-        tx,
-        actor,
-        `close:${id}`,
-        key,
-        body,
-        async () => {
-          requireTogether(
-            s.state === "active" && own.status === "active",
-            "INVALID_STATE",
-            409,
-          );
-          if (body.mode === "finish_all")
-            requireTogether(await this.live(tx, s, ps), "FORBIDDEN", 403);
-          if (s.revision !== body.expectedRevision)
-            throw new TogetherError(
-              "VERSION_CONFLICT",
-              409,
-              "Session changed",
-              s.revision,
-            );
-          if (own.ownRevision !== body.expectedOwnRevision)
-            throw new TogetherError(
-              "VERSION_CONFLICT",
-              409,
-              "Personal execution changed",
-              own.ownRevision,
-            );
-          const targets =
-            body.mode === "finish_all" ? ps.filter((p) => !p.leftAt) : [own];
-          for (const participant of targets)
-            await this.finalizeParticipant(tx, s, participant);
-          await this.closeSharing(tx, s, ps, body.mode);
-          return {
-            mode: body.mode,
-            revision: s.revision,
-            acknowledgedStateOnly: true as const,
-          };
-        },
-      );
-      const [current] = await tx
-        .select()
-        .from(participants)
-        .where(memberWhere(id, actor));
-      return {
-        ...receipt,
-        sharingActive: false as const,
-        recoveryMayBePending: true as const,
-        ownRevision: current.ownRevision,
-        status: current.status === "finalizing" ? "pending" : current.status,
-        historyId: current.historyId,
-      };
-    });
-  }
-  /** Stop collaboration only. Every athlete's unfinished result remains private. */
-  async stopSharing(actor: string, id: string, key: string) {
-    return this.transaction(actor, id, async (tx, s, ps) => {
-      const own = this.member(ps, actor);
-      return replayMutation(
-        tx,
-        actor,
-        `stop-sharing:${id}`,
-        key,
-        {},
-        async () => {
-          requireTogether(own.status === "active", "INVALID_STATE", 409);
-          if (s.state === "closed" || own.leftAt)
-            return { stopped: true as const };
-          if (actor === s.hostId)
-            await this.closeSharing(tx, s, ps, "save_own");
-          else {
-            own.leftAt = new Date();
-            own.removedFromRoster = true;
-            own.frozenPlan ??= s.plan;
-            await tx
-              .update(participants)
-              .set({
-                leftAt: own.leftAt,
-                removedFromRoster: true,
-                frozenPlan: own.frozenPlan,
-              })
-              .where(memberWhere(id, actor));
-            await tx
-              .update(participants)
-              .set({
-                allowPartnerLogging: false,
-                delegationGeneration: sql`${participants.delegationGeneration}+1`,
-                previousRecipientIds: [],
-                numbersRecipientIds: [],
-                previousConsentVersion: sql`${participants.previousConsentVersion}+1`,
-                numbersConsentVersion: sql`${participants.numbersConsentVersion}+1`,
-              })
-              .where(eq(participants.sessionId, id));
-            for (const p of ps) {
-              p.allowPartnerLogging = false;
-              p.delegationGeneration++;
-              p.previousRecipientIds = [];
-              p.numbersRecipientIds = [];
-              p.previousConsentVersion++;
-              p.numbersConsentVersion++;
-            }
-            await tx
-              .update(connections)
-              .set({ revoked: true })
-              .where(
-                and(
-                  eq(connections.sessionId, id),
-                  eq(connections.userId, actor),
-                ),
-              );
-            await tx
-              .delete(tickets)
-              .where(and(eq(tickets.sessionId, id), eq(tickets.userId, actor)));
-            await this.emit(tx, s, { type: "membership_changed" });
-          }
-          return { stopped: true as const };
-        },
-      );
-    });
-  }
-  /** Explicit own discard retires membership without recording a workout result. */
-  async discard(actor: string, id: string, key: string) {
-    return this.transaction(actor, id, async (tx, s, ps) => {
-      const own = this.member(ps, actor);
-      return replayMutation(tx, actor, `discard:${id}`, key, {}, async () => {
-        // A recording already accepted by Finish must settle before releasing
-        // its membership. Discard cannot race or erase that committed result.
-        requireTogether(own.status !== "finalizing", "RESULT_PENDING", 409);
-        if (own.status !== "active") return { retired: true as const };
-        const wasInRoster = !own.leftAt && !own.removedFromRoster;
-        own.status = "finished_empty";
-        own.leftAt ??= new Date();
-        own.removedFromRoster = actor !== s.hostId;
-        await tx
-          .update(participants)
-          .set({
-            status: own.status,
-            leftAt: own.leftAt,
-            removedFromRoster: own.removedFromRoster,
-          })
-          .where(memberWhere(id, actor));
-        // Removed athletes may retire their private checkpoint, but have no
-        // authority to change grants belonging to the current roster.
-        if (!wasInRoster) return { retired: true as const };
-        // Leaving revokes the roster's former sharing grants, matching Leave.
-        await tx
-          .update(participants)
-          .set({
-            allowPartnerLogging: false,
-            delegationGeneration: sql`${participants.delegationGeneration}+1`,
-            previousRecipientIds: [],
-            numbersRecipientIds: [],
-            previousConsentVersion: sql`${participants.previousConsentVersion}+1`,
-            numbersConsentVersion: sql`${participants.numbersConsentVersion}+1`,
-          })
-          .where(eq(participants.sessionId, id));
-        await tx
-          .update(connections)
-          .set({ revoked: true })
-          .where(
-            and(eq(connections.sessionId, id), eq(connections.userId, actor)),
-          );
-        for (const member of ps) {
-          member.allowPartnerLogging = false;
-          member.delegationGeneration++;
-        }
-        if (actor === s.hostId && s.state === "active")
-          await this.closeSharing(tx, s, ps, "save_own");
-        else await this.emit(tx, s, { type: "membership_changed" });
-        return { retired: true as const };
-      });
-    });
-  }
   async finish(
     actor: string,
     id: string,
@@ -2283,38 +1359,33 @@ export class TogetherRepository {
                 "Personal execution changed",
                 p.ownRevision,
               );
-            await this.finalizeParticipant(tx, s, p);
-          }
-          if (leave && !p.leftAt) {
-            if (actor !== s.hostId) {
-              await tx
-                .update(participants)
-                .set({
-                  allowPartnerLogging: false,
-                  delegationGeneration: sql`${participants.delegationGeneration}+1`,
-                  previousRecipientIds: [],
-                  numbersRecipientIds: [],
-                  previousConsentVersion: sql`${participants.previousConsentVersion}+1`,
-                  numbersConsentVersion: sql`${participants.numbersConsentVersion}+1`,
-                })
-                .where(eq(participants.sessionId, id));
-              for (const member of ps) {
-                member.allowPartnerLogging = false;
-                member.delegationGeneration++;
-                member.previousRecipientIds = [];
-                member.numbersRecipientIds = [];
-                member.previousConsentVersion++;
-                member.numbersConsentVersion++;
-              }
-            }
-            p.leftAt = new Date();
-            p.removedFromRoster = actor !== s.hostId;
+            const hasWork = p.execution.exercises.some((e) =>
+              e.sets.some((s) => s.completed),
+            );
+            p.status = hasWork ? "finalizing" : "finished_empty";
+            p.frozenPlan = s.plan;
             await tx
               .update(participants)
               .set({
-                leftAt: p.leftAt,
-                removedFromRoster: p.removedFromRoster,
+                status: p.status,
+                frozenPlan: s.plan,
+                allowPartnerLogging: false,
+                delegationGeneration: p.delegationGeneration + 1,
+                ...(leave ? { leftAt: new Date() } : {}),
               })
+              .where(memberWhere(id, actor));
+            if (hasWork)
+              await tx.insert(jobs).values({ sessionId: id, userId: actor });
+            await this.emit(tx, s, {
+              type: "participant_finished",
+              userId: actor,
+              status: p.status,
+            });
+          }
+          if (leave) {
+            await tx
+              .update(participants)
+              .set({ leftAt: new Date() })
               .where(memberWhere(id, actor));
             await tx
               .update(connections)
@@ -2325,11 +1396,16 @@ export class TogetherRepository {
                   eq(connections.userId, actor),
                 ),
               );
-            if (actor !== s.hostId)
-              await this.emit(tx, s, { type: "membership_changed" });
           }
-          if (actor === s.hostId && s.state === "active") {
-            await this.closeSharing(tx, s, ps, "save_own");
+          if (actor === s.hostId) {
+            await tx
+              .update(invites)
+              .set({ revoked: true })
+              .where(eq(invites.sessionId, id));
+            await tx
+              .update(sessions)
+              .set({ audience: "private" })
+              .where(eq(sessions.id, id));
           }
           if (ps.every((p) => p.status !== "active"))
             await tx

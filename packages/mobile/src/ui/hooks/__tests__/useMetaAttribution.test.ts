@@ -15,7 +15,7 @@ jest.mock("@/application/analytics/metaAttribution", () => ({
 
 /** Drives AppState so the "must be active" rule can be exercised. */
 function mockAppState(initial: "active" | "inactive" | "background") {
-  const listeners: ((s: string) => void)[] = [];
+  const listeners: Array<(s: string) => void> = [];
   const remove = jest.fn();
   const originalState = AppState.currentState;
   Object.defineProperty(AppState, "currentState", {

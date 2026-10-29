@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getApiBaseUrl } from "@/adapters/api";
-import { bootstrapSettled } from "@/application/bootstrap/gate";
 import { WORKOUT_TABLES } from "@/adapters/storage";
 import { processSyncQueue } from "@/application/commands/sync.command";
 import {
@@ -47,18 +46,7 @@ const EMPTY_QUERY_RESULT: WorkoutsQueryResult = {
   default: { workouts: [], quota: null, isStale: true, cached: null },
 };
 
-export type UseWorkoutsOptions = {
-  /**
-   * Refresh once on mount when any section is stale. Default true. Pass
-   * false from always-mounted observers (the workout cap gate in the app
-   * layout) so the screen that renders the lists is the only one fetching;
-   * observers still see every refresh through the storage revision.
-   */
-  autoRefresh?: boolean;
-};
-
-export function useWorkouts(options: UseWorkoutsOptions = {}): WorkoutsState {
-  const autoRefresh = options.autoRefresh ?? true;
+export function useWorkouts(): WorkoutsState {
   const { api, auth, storage } = useAdapters();
   const { session } = useAuth();
   const userId = session?.userId ?? null;
@@ -170,20 +158,11 @@ export function useWorkouts(options: UseWorkoutsOptions = {}): WorkoutsState {
       autoRefreshedForUserRef.current = null;
       return;
     }
-    if (!autoRefresh) return;
     if (autoRefreshedForUserRef.current === userId) return;
     if (!anyStale) return;
     autoRefreshedForUserRef.current = userId;
-    void (async () => {
-      // The cold-start bootstrap writes these lists; fetch only if still stale.
-      await bootstrapSettled(userId);
-      if (latestUserIdRef.current !== userId) return;
-      const now = getWorkoutsQuery(storage, userId);
-      if (now.mine.isStale || now.assigned.isStale || now.default.isStale)
-        void refresh();
-      else setCacheVersion((v) => v + 1);
-    })();
-  }, [userId, anyStale, refresh, autoRefresh, storage]);
+    void refresh();
+  }, [userId, anyStale, refresh]);
 
   // Soft re-read: bump cacheVersion so `initial` recomputes from
   // storage. Stable identity (no deps) so callers can safely list it

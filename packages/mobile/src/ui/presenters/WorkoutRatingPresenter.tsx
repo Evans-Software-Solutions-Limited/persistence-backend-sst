@@ -19,7 +19,6 @@
  *       "Confirmation to save session"
  */
 
-import { TogetherAthleteAvatar } from "./TogetherAthleteAvatar";
 import React, { useState } from "react";
 import {
   Keyboard,
@@ -38,7 +37,7 @@ import { SemiCircleSlider } from "@/ui/components/workouts/SemiCircleSlider";
 const MIN_RATING = 1;
 const MAX_RATING = 10;
 
-export const getDifficultyMessage = (rating: number): string => {
+const getDifficultyMessage = (rating: number): string => {
   if (rating <= 2) return "Too Easy";
   if (rating <= 4) return "Easy";
   if (rating <= 6) return "Moderate";
@@ -50,7 +49,7 @@ export const getDifficultyMessage = (rating: number): string => {
 // RPE_BAND_TONES): easy → $success, moderate → $info, hard → $warning,
 // veryHard → $ember, maximal → $error. Band boundaries preserved from the
 // legacy port (1-2 / 3-4 / 5-6 / 7-8 / 9-10).
-export const getDifficultyColor = (rating: number): string => {
+const getDifficultyColor = (rating: number): string => {
   if (rating <= 2) return color.$success;
   if (rating <= 4) return color.$info;
   if (rating <= 6) return color.$warning;
@@ -60,11 +59,9 @@ export const getDifficultyColor = (rating: number): string => {
 
 export type WorkoutRatingPresenterProps = {
   isLoading?: boolean;
-  group?: readonly { id: string; name: string; own: boolean }[];
   initialNotes?: string;
   onSubmit: (rating: number, notes: string) => void;
   onBack: () => void;
-  onDiscard?: () => void;
 };
 
 export function WorkoutRatingPresenter(props: WorkoutRatingPresenterProps) {
@@ -92,16 +89,6 @@ export function WorkoutRatingPresenter(props: WorkoutRatingPresenterProps) {
         >
           <Text style={styles.backLabel}>← Back</Text>
         </TouchableOpacity>
-        {props.onDiscard && (
-          <TouchableOpacity
-            onPress={props.onDiscard}
-            disabled={props.isLoading}
-            accessibilityLabel="Discard without saving"
-            testID="workout-rating-discard"
-          >
-            <Text style={{ color: color.$error }}>Discard without saving</Text>
-          </TouchableOpacity>
-        )}
       </View>
 
       <KeyboardAvoidingView
@@ -112,45 +99,11 @@ export function WorkoutRatingPresenter(props: WorkoutRatingPresenterProps) {
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
         >
-          <Text style={styles.congrats}>Save your workout</Text>
-          <Text style={styles.subtitle}>Review your effort before saving.</Text>
+          <Text style={styles.congrats}>Congratulations! 🎉</Text>
+          <Text style={styles.subtitle}>
+            You&apos;ve completed your workout!
+          </Text>
 
-          {!!props.group?.length && (
-            <View
-              testID="together-group-rating"
-              style={{ alignSelf: "stretch", gap: 10, marginBottom: 20 }}
-            >
-              <Text
-                style={{ color: color.$text, fontSize: 17, fontWeight: "600" }}
-              >
-                Finishing together
-              </Text>
-              {props.group.map((member) => (
-                <View
-                  key={member.id}
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    gap: 10,
-                  }}
-                >
-                  <TogetherAthleteAvatar
-                    name={member.name}
-                    selected={member.own}
-                  />
-                  <Text style={{ color: color.$text, flex: 1 }}>
-                    {member.name}
-                  </Text>
-                  <Text style={{ color: color.$text2, fontSize: 12 }}>
-                    {member.own ? "Your rating below" : "Rates on their phone"}
-                  </Text>
-                </View>
-              ))}
-              <Text style={{ color: color.$text2, fontSize: 12 }}>
-                Everyone rates and saves their own workout.
-              </Text>
-            </View>
-          )}
           <Text style={styles.question}>How difficult was that?</Text>
 
           <View

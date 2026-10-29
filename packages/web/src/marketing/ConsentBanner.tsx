@@ -8,11 +8,6 @@ import {
   type ConsentChoices,
 } from "@/lib/consent";
 import { initMetaPixel, trackPageView } from "@/lib/metaPixel";
-import {
-  captureTduid,
-  initTradedoubler,
-  teardownTradedoubler,
-} from "@/lib/tradedoubler";
 
 /**
  * Marketing-cookie consent banner (spec-30 R3.5). Rendered once from
@@ -40,16 +35,12 @@ export function ConsentBanner() {
   const [advertising, setAdvertising] = useState<boolean>(
     () => getChoices().advertising,
   );
-  const [affiliate, setAffiliate] = useState<boolean>(
-    () => getChoices().affiliate,
-  );
 
   useEffect(() => {
     const reopen = () => {
       // Re-seed the toggles from the current stored choice so the panel
       // reflects reality when re-opened from the footer.
       setAdvertising(getChoices().advertising);
-      setAffiliate(getChoices().affiliate);
       setManaging(false);
       setOpen(true);
     };
@@ -59,11 +50,9 @@ export function ConsentBanner() {
 
   if (!open) return null;
 
-  // Persist a final set of choices and bring each tag into line: load the
-  // pixel (and fire the first PageView) when advertising is granted, or clear
-  // its cookies when it isn't; keep the affiliate click id and load the
-  // Tradedoubler tag when affiliate is granted, or tear it down when it
-  // isn't. Then close.
+  // Persist a final set of choices and bring the pixel into line: load it (and
+  // fire the first PageView) when advertising is granted, or clear its cookies
+  // when it isn't. Then close.
   const apply = (choices: ConsentChoices) => {
     setConsent(choices);
     if (choices.advertising) {
@@ -71,12 +60,6 @@ export function ConsentBanner() {
       trackPageView();
     } else {
       clearMetaCookies();
-    }
-    if (choices.affiliate) {
-      captureTduid();
-      initTradedoubler();
-    } else {
-      teardownTradedoubler();
     }
     setManaging(false);
     setOpen(false);
@@ -122,23 +105,6 @@ export function ConsentBanner() {
                 onChange={(e) => setAdvertising(e.target.checked)}
               />
             </label>
-            <label className="mkt-consent-cat" htmlFor="cat-affiliate">
-              <div className="mkt-consent-cat-text">
-                <span className="mkt-consent-cat-name">
-                  Affiliate measurement
-                </span>
-                <span className="mkt-consent-cat-desc">
-                  Lets Blue Light Card and our affiliate network count sign-ups
-                  that came from them (Tradedoubler).
-                </span>
-              </div>
-              <input
-                id="cat-affiliate"
-                type="checkbox"
-                checked={affiliate}
-                onChange={(e) => setAffiliate(e.target.checked)}
-              />
-            </label>
           </div>
         )}
 
@@ -150,7 +116,7 @@ export function ConsentBanner() {
             <button
               type="button"
               className="btn btn-line"
-              onClick={() => apply({ advertising, affiliate })}
+              onClick={() => apply({ advertising })}
             >
               Save choices
             </button>
@@ -166,14 +132,14 @@ export function ConsentBanner() {
           <button
             type="button"
             className="btn btn-line"
-            onClick={() => apply({ advertising: false, affiliate: false })}
+            onClick={() => apply({ advertising: false })}
           >
             Reject all
           </button>
           <button
             type="button"
             className="btn btn-line"
-            onClick={() => apply({ advertising: true, affiliate: true })}
+            onClick={() => apply({ advertising: true })}
           >
             Accept all
           </button>

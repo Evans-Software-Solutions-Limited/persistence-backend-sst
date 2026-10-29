@@ -11,7 +11,6 @@ import {
  */
 export function useGetStreaks(): CachedResourceState<Streak[]> {
   return useCachedResource<Streak[]>({
-    bootstrapSection: "streaks",
     read: (storage, userId) => ({
       value: storage.getCachedStreaks(userId),
       isStale: true,

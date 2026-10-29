@@ -1,29 +1,3 @@
-import { createCloudApis } from "@/adapters/together/cloudApi";
-import { MAX_IN_FLIGHT_REQUESTS, RequestLimiter } from "./requestLimiter";
-import { REQUEST_LOG_CAPACITY, RequestLog } from "./requestLog";
-import { isDiagnosticsAllowed } from "@/diagnostics/allowed";
-import type {
-  BootstrapPayload,
-  BootstrapSectionKey,
-  BootstrapSectionResult,
-  BootstrapSections,
-  GetBootstrapParams,
-} from "@/domain/models/bootstrap";
-import {
-  recoveryCandidate,
-  recoveryResult,
-} from "@/adapters/together/recoverySchema";
-import type {
-  TogetherOfflineApi,
-  TogetherOfflineApiError,
-} from "@/domain/ports/togetherOfflineApi.port";
-import {
-  credentialValidator,
-  object,
-  signed,
-  uuid,
-  integer,
-} from "@/adapters/together/security/schema";
 import Constants from "expo-constants";
 import type { DashboardPayload } from "@/domain/models/dashboard";
 import type { AppliedReferral } from "@/domain/models/referral";
@@ -280,9 +254,6 @@ type RequestOptions = {
    */
   timeoutMs?: number;
   signal?: AbortSignal;
-  idempotencyKey?: string;
-  /** Strict provisioning responses must never fall back to offline on malformed JSON. */
-  validateResponse?: (value: unknown) => boolean;
 };
 
 /**
@@ -294,8 +265,6 @@ type RequestOptions = {
  * settles inside the window.
  */
 export const DASHBOARD_REQUEST_TIMEOUT_MS = 10_000;
-/** The bootstrap composes up to sixteen reads; give it twice the dashboard budget. */
-const BOOTSTRAP_REQUEST_TIMEOUT_MS = 20_000;
 
 /** Onboarding routing cannot remain pending forever; expiry enables Retry. */
 export const ONBOARDING_REQUEST_TIMEOUT_MS = 10_000;
@@ -339,14 +308,6 @@ function withDeadline<T>(
 
 export class SSTApiAdapter implements ApiPort {
   private tokenProvider: (() => Promise<string | null>) | null = null;
-  /** Cold start mounts many fetching hooks at once; see RequestLimiter. */
-  private readonly limiter = new RequestLimiter(MAX_IN_FLIGHT_REQUESTS);
-  /** Last requests (method, path, status, timing); read by the hidden request-log screen. Records only where that screen exists. */
-  readonly requestLog = new RequestLog(
-    REQUEST_LOG_CAPACITY,
-    Date.now,
-    isDiagnosticsAllowed(),
-  );
 
   /**
    * UUID → display-label lookup per reference-list kind. Populated every
@@ -412,10 +373,6 @@ export class SSTApiAdapter implements ApiPort {
       "Content-Type": "application/json",
     };
 
-    if (options.idempotencyKey !== undefined) {
-      headers["Idempotency-Key"] = options.idempotencyKey;
-    }
-
     // Per-request abort wiring. Only allocated when a caller opts into
     // a timeout — fetch otherwise behaves exactly as before, so non-
     // dashboard endpoints are unaffected by this change. The timer is
@@ -449,35 +406,22 @@ export class SSTApiAdapter implements ApiPort {
         }
       }
 
-      const requestSignal = signal ?? controller?.signal;
-      const response = await this.limiter.run(
-        () =>
-          this.requestLog.track(method, path, () =>
-            fetch(this.buildUrl(path, params), {
-              method,
-              headers,
-              body: body ? JSON.stringify(body) : undefined,
-              signal: requestSignal,
-            }),
-          ),
-        requestSignal,
-      );
+      const response = await fetch(this.buildUrl(path, params), {
+        method,
+        headers,
+        body: body ? JSON.stringify(body) : undefined,
+        signal: signal ?? controller?.signal,
+      });
 
       if (!response.ok) {
         const errorBody = await response.json().catch(() => null);
-        const error: TogetherOfflineApiError = mapHttpErrorToApiError(
-          response.status,
-          response.statusText,
-          errorBody,
+        return fail(
+          mapHttpErrorToApiError(
+            response.status,
+            response.statusText,
+            errorBody,
+          ),
         );
-        if (
-          options.validateResponse &&
-          typeof errorBody?.error?.code === "string" &&
-          /^[A-Z][A-Z0-9_]{0,63}$/.test(errorBody.error.code)
-        ) {
-          error.togetherCode = errorBody.error.code;
-        }
-        return fail(error);
       }
 
       // Handle 204 No Content (typical for DELETE)
@@ -488,27 +432,7 @@ export class SSTApiAdapter implements ApiPort {
         return ok(undefined as T);
       }
 
-      let json: T;
-      try {
-        json = (await response.json()) as T;
-      } catch (error) {
-        if (
-          options.validateResponse &&
-          (error instanceof SyntaxError ||
-            (typeof error === "object" &&
-              error !== null &&
-              "name" in error &&
-              error.name === "SyntaxError"))
-        ) {
-          return fail({
-            kind: "api",
-            code: "server",
-            status: response.status,
-            message: "Invalid Together response",
-          });
-        }
-        throw error;
-      }
+      const json = (await response.json()) as T;
       return ok(json);
     } catch (err) {
       // AbortError is fetch's signal that the controller fired. Surface
@@ -543,115 +467,11 @@ export class SSTApiAdapter implements ApiPort {
     const result = await this.request<ApiResponse<T>>(path, options);
     if (!result.ok) return result;
     const body = result.value;
-    const untrusted: unknown = body;
-    if (
-      options.validateResponse &&
-      (!object(untrusted, ["data"]) ||
-        !options.validateResponse(untrusted.data))
-    ) {
-      return fail({
-        kind: "api",
-        code: "server",
-        message: "Invalid Together response",
-      });
-    }
     if (isErrorResponse(body)) {
       return fail({ kind: "api", code: "server", message: body.error });
     }
     return ok(body.data);
   }
-
-  private readonly cloudApis = createCloudApis(
-    (path, options) => this.requestEnvelope(path, options),
-    (path, options) => this.request(path, options),
-  );
-  readonly togetherCloud = this.cloudApis.cloud;
-  readonly togetherSocial = this.cloudApis.social;
-
-  readonly togetherOffline: TogetherOfflineApi = {
-    recovery: {
-      upload: (requestId, body) =>
-        this.requestEnvelope("/together/offline/recovery", {
-          method: "POST",
-          body,
-          idempotencyKey: requestId,
-          timeoutMs: 15_000,
-          validateResponse: (value) => recoveryCandidate(value, true),
-        }),
-      get: (executionId) =>
-        this.requestEnvelope(
-          `/together/offline/recovery/${encodeURIComponent(executionId)}`,
-          { timeoutMs: 15_000, validateResponse: recoveryCandidate },
-        ),
-      complete: (executionId, requestId, body) =>
-        this.requestEnvelope(
-          `/together/offline/recovery/${encodeURIComponent(executionId)}/complete`,
-          {
-            method: "POST",
-            body,
-            idempotencyKey: requestId,
-            timeoutMs: 15_000,
-            validateResponse: recoveryResult,
-          },
-        ),
-    },
-    trust: () =>
-      this.requestEnvelope("/together/offline/trust", {
-        timeoutMs: 10_000,
-        validateResponse: (value) =>
-          object(value, ["publicKeys", "maxCredentialAgeMs"]) &&
-          integer(value.maxCredentialAgeMs) &&
-          value.maxCredentialAgeMs > 0 &&
-          value.maxCredentialAgeMs <= 86_400_000 &&
-          !!value.publicKeys &&
-          typeof value.publicKeys === "object" &&
-          !Array.isArray(value.publicKeys) &&
-          Object.entries(value.publicKeys).length > 0 &&
-          Object.entries(value.publicKeys).every(
-            ([key, pem]) =>
-              /^[A-Za-z0-9_-]{1,64}$/.test(key) &&
-              typeof pem === "string" &&
-              /^-----BEGIN PUBLIC KEY-----\n[A-Za-z0-9+/]{59}=\n-----END PUBLIC KEY-----\n$/.test(
-                pem,
-              ),
-          ),
-      }),
-    register: (proof) =>
-      this.requestEnvelope("/together/offline/devices", {
-        method: "POST",
-        body: proof,
-        idempotencyKey: proof.payload.requestId,
-        timeoutMs: 10_000,
-        validateResponse: credentialValidator.Check,
-      }),
-    friendship: (friendId, requestId) =>
-      this.requestEnvelope("/together/offline/friendship-proof", {
-        method: "POST",
-        body: { friendId },
-        idempotencyKey: requestId,
-        timeoutMs: 10_000,
-        validateResponse: (value) =>
-          signed(
-            value,
-            (payload) =>
-              object(payload, [
-                "kind",
-                "keyId",
-                "users",
-                "issuedAt",
-                "expiresAt",
-              ]) &&
-              payload.kind === "together-friendship-v1" &&
-              typeof payload.keyId === "string" &&
-              /^[A-Za-z0-9_-]{1,64}$/.test(payload.keyId) &&
-              Array.isArray(payload.users) &&
-              payload.users.length === 2 &&
-              payload.users.every(uuid) &&
-              integer(payload.issuedAt) &&
-              integer(payload.expiresAt),
-          ),
-      }),
-  };
 
   // -- Health --
   async healthCheck() {
@@ -710,15 +530,11 @@ export class SSTApiAdapter implements ApiPort {
     }
 
     try {
-      const response = await this.limiter.run(() =>
-        this.requestLog.track("POST", "/profile/avatar", () =>
-          fetch(this.buildUrl("/profile/avatar"), {
-            method: "POST",
-            headers,
-            body: formData,
-          }),
-        ),
-      );
+      const response = await fetch(this.buildUrl("/profile/avatar"), {
+        method: "POST",
+        headers,
+        body: formData,
+      });
 
       if (!response.ok) {
         const errorBody = await response.json().catch(() => null);
@@ -877,11 +693,8 @@ export class SSTApiAdapter implements ApiPort {
     return this.requestEnvelope<ApiSession[]>("/sessions", { params });
   }
 
-  async getSession(id: string, options?: { summary?: boolean }) {
-    return this.requestEnvelope<ApiSession>(
-      `/sessions/${id}`,
-      options?.summary ? { params: { summary: "true" } } : undefined,
-    );
+  async getSession(id: string) {
+    return this.requestEnvelope<ApiSession>(`/sessions/${id}`);
   }
 
   async createSession(data: CreateSessionInput) {
@@ -902,17 +715,8 @@ export class SSTApiAdapter implements ApiPort {
     return this.request<void>(`/sessions/${id}`, { method: "DELETE" });
   }
 
-  async getRecentSets(params?: {
-    exerciseIds: readonly string[];
-    before: string;
-  }) {
-    const query = params
-      ? `?${new URLSearchParams({ exerciseIds: params.exerciseIds.join(","), before: params.before })}`
-      : "";
-    return this.requestEnvelope<RecentSetEntry[]>(
-      `/sessions/recent-sets${query}`,
-      { timeoutMs: 10_000 },
-    );
+  async getRecentSets() {
+    return this.requestEnvelope<RecentSetEntry[]>("/sessions/recent-sets");
   }
 
   async recordSession(payload: RecordSessionInput) {
@@ -1503,112 +1307,6 @@ export class SSTApiAdapter implements ApiPort {
       ...res.value,
       recentPRs: res.value.recentPRs.map(normalizePersonalRecord),
     });
-  }
-
-  async getBootstrap(
-    params: GetBootstrapParams,
-  ): Promise<Result<BootstrapPayload, ApiError>> {
-    type Raw = {
-      generatedAt: string;
-      sections: Partial<
-        Record<BootstrapSectionKey, BootstrapSectionResult<unknown>>
-      >;
-    };
-    const res = await this.requestEnvelope<Raw>("/users/me/bootstrap", {
-      params: {
-        include: params.include.join(","),
-        ownerLibraryOnly: params.ownerLibraryOnly ? "true" : undefined,
-      },
-      timeoutMs: BOOTSTRAP_REQUEST_TIMEOUT_MS,
-      validateResponse: (value) =>
-        object(value, ["generatedAt", "sections"]) &&
-        typeof value.generatedAt === "string" &&
-        !!value.sections &&
-        typeof value.sections === "object",
-    });
-    if (!res.ok) return res;
-    // Each section repeats the transform its single-endpoint method applies.
-    const map = <K extends BootstrapSectionKey>(
-      key: K,
-      transform: (raw: unknown) => BootstrapSections[K],
-    ): BootstrapSectionResult<BootstrapSections[K]> | undefined => {
-      const section = res.value.sections[key];
-      if (!section) return undefined;
-      if (!section.ok) return { ok: false, error: section.error };
-      try {
-        return { ok: true, value: transform(section.value) };
-      } catch {
-        return { ok: false, error: "malformed" };
-      }
-    };
-    const workoutsSlice = (raw: unknown) => {
-      const slice = raw as {
-        workouts: ApiWorkout[];
-        total: number;
-        quota?: WorkoutQuota;
-      };
-      return {
-        workouts: slice.workouts,
-        total: slice.total,
-        quota: slice.quota ?? null,
-      };
-    };
-    const sections: BootstrapPayload["sections"] = {
-      home: map("home", (raw) => {
-        const home = raw as HomePayload;
-        return {
-          ...home,
-          recentPRs: home.recentPRs.map(normalizePersonalRecord),
-        };
-      }),
-      profile: map("profile", (raw) => raw as ProfilePageData),
-      subscription: map("subscription", (raw) => raw as MySubscription),
-      tiers: map("tiers", (raw) =>
-        (raw as WireSubscriptionTier[]).map(mapSubscriptionTier),
-      ),
-      onboarding: map("onboarding", (raw) => raw as OnboardingState | null),
-      workouts: map("workouts", (raw) => {
-        const w = raw as Record<"mine" | "assigned" | "default", unknown>;
-        return {
-          mine: workoutsSlice(w.mine),
-          assigned: workoutsSlice(w.assigned),
-          default: workoutsSlice(w.default),
-        };
-      }),
-      notifications: map("notifications", (raw) => {
-        const body = raw as ApiNotificationListResponse;
-        return {
-          notifications: (body.rows ?? []).map(mapApiNotification),
-          nextCursor: body.nextCursor ?? null,
-          unreadCount: body.unreadCount ?? 0,
-        };
-      }),
-      habitConfig: map("habitConfig", (raw) => raw as HabitConfigEntry[]),
-      habitCompletions: map(
-        "habitCompletions",
-        (raw) => raw as HabitCompletion[],
-      ),
-      streaks: map("streaks", (raw) => raw as Streak[]),
-      achievements: map("achievements", (raw) => raw as Achievement[]),
-      volumeStats: map("volumeStats", (raw) => raw as VolumeStats),
-      bodyTrend: map("bodyTrend", (raw) => raw as BodyTrendPoint[]),
-      recentPRs: map("recentPRs", (raw) =>
-        (raw as PersonalRecord[]).map(normalizePersonalRecord),
-      ),
-      muscleGroups: map("muscleGroups", (raw) => {
-        const entries = (raw as RawReferenceEntry[]).map(mapRawReferenceEntry);
-        this.populateReferenceLookup("muscle_groups", entries);
-        return entries;
-      }),
-      equipment: map("equipment", (raw) => {
-        const entries = (raw as RawReferenceEntry[]).map(mapRawReferenceEntry);
-        this.populateReferenceLookup("equipment", entries);
-        return entries;
-      }),
-    };
-    for (const key of Object.keys(sections) as BootstrapSectionKey[])
-      if (sections[key] === undefined) delete sections[key];
-    return ok({ generatedAt: res.value.generatedAt, sections });
   }
 
   async getTodayRings(): Promise<Result<Rings, ApiError>> {
@@ -2814,18 +2512,12 @@ export class SSTApiAdapter implements ApiPort {
         if (token) headers["Authorization"] = `Bearer ${token}`;
       }
 
-      const response = await this.limiter.run(
-        () =>
-          this.requestLog.track(method, path, () =>
-            fetch(this.buildUrl(path, params), {
-              method,
-              headers,
-              body: body ? JSON.stringify(body) : undefined,
-              ...(controller ? { signal: controller.signal } : {}),
-            }),
-          ),
-        controller?.signal,
-      );
+      const response = await fetch(this.buildUrl(path, params), {
+        method,
+        headers,
+        body: body ? JSON.stringify(body) : undefined,
+        ...(controller ? { signal: controller.signal } : {}),
+      });
       const json = (await response.json().catch(() => null)) as T | null;
       return ok({ status: response.status, json });
     } catch (err) {

@@ -12,10 +12,7 @@ vi.mock("../../../repositories/subscriptionRepository", () => ({
   })),
 }));
 
-import {
-  handleSubscriptionCreated,
-  normaliseMetadataBillingCycle,
-} from "../../eventHandlers/subscriptionCreated";
+import { handleSubscriptionCreated } from "../../eventHandlers/subscriptionCreated";
 
 function buildEvent(
   overrides: Partial<Stripe.Subscription> = {},
@@ -163,68 +160,5 @@ describe("handleSubscriptionCreated", () => {
     await expect(handleSubscriptionCreated(buildEvent())).rejects.toThrow(
       /Neon: connection terminated/,
     );
-  });
-});
-
-describe("handleSubscriptionCreated — Blue Light Card web subscriptions", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    findByExternalIdMock.mockResolvedValue(null);
-    insertMock.mockResolvedValue({ id: "us_blc" });
-  });
-
-  it("inserts the row the checkout's subscription_data.metadata describes", async () => {
-    // The BLC checkout stamps the column's vocabulary (`yearly`) directly.
-    await handleSubscriptionCreated(
-      buildEvent({
-        id: "sub_blc_1",
-        status: "active",
-        trial_end: null,
-        metadata: {
-          supabase_user_id: "user-blc",
-          tier_name: "premium_plus",
-          billing_cycle: "yearly",
-          cadence: "annual",
-          channel: "blc",
-          voucher: "BLC-TEST",
-          tduid: "td_1",
-          campaign_slug: "",
-        },
-      } as Partial<Stripe.Subscription>),
-    );
-    expect(insertMock).toHaveBeenCalledTimes(1);
-    expect(insertMock.mock.calls[0][0]).toMatchObject({
-      userId: "user-blc",
-      tierName: "premium_plus",
-      billingCycle: "yearly",
-      paymentStatus: "active",
-      externalSubscriptionId: "sub_blc_1",
-      trialEndsAt: null,
-    });
-  });
-
-  it("maps a web-style 'annual' to the column's 'yearly' rather than storing a value the app cannot read", async () => {
-    // `normaliseBillingCycle` on the read side turns anything but
-    // monthly/yearly into null — so an `annual` row would show no cycle.
-    await handleSubscriptionCreated(
-      buildEvent({
-        metadata: {
-          supabase_user_id: "user-blc",
-          tier_name: "premium",
-          billing_cycle: "annual",
-        },
-      } as Partial<Stripe.Subscription>),
-    );
-    expect(insertMock.mock.calls[0][0].billingCycle).toBe("yearly");
-  });
-
-  it("normalises the synonyms and keeps monthly as the default", () => {
-    expect(normaliseMetadataBillingCycle("yearly")).toBe("yearly");
-    expect(normaliseMetadataBillingCycle(" Annual ")).toBe("yearly");
-    expect(normaliseMetadataBillingCycle("annually")).toBe("yearly");
-    expect(normaliseMetadataBillingCycle("year")).toBe("yearly");
-    expect(normaliseMetadataBillingCycle("monthly")).toBe("monthly");
-    expect(normaliseMetadataBillingCycle("weekly")).toBe("monthly");
-    expect(normaliseMetadataBillingCycle(undefined)).toBe("monthly");
   });
 });

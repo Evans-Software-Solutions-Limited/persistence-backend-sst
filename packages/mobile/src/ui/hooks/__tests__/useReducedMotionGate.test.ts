@@ -1,13 +1,13 @@
 import { renderHook } from "@testing-library/react-native";
 
-import { useReducedMotionGate } from "../useReducedMotionGate";
-
 // Per-file override of the global reanimated mock so we can flip the OS
 // reduce-motion signal. `mock`-prefixed name satisfies jest's factory hoisting.
 let mockReduced = false;
 jest.mock("react-native-reanimated", () => ({
   useReducedMotion: () => mockReduced,
 }));
+
+import { useReducedMotionGate } from "../useReducedMotionGate";
 
 describe("useReducedMotionGate", () => {
   afterEach(() => {

@@ -1,5 +1,5 @@
 import { fireEvent } from "@testing-library/react-native";
-import { AccessibilityInfo } from "react-native";
+import { AccessibilityInfo, StyleSheet } from "react-native";
 import React from "react";
 import {
   ActiveSessionPresenter,
@@ -73,34 +73,6 @@ describe("ActiveSessionPresenter (vertical scroll, legacy parity)", () => {
     expect(getByTestId("active-session-empty")).toBeTruthy();
     fireEvent.press(getByTestId("active-session-empty-add"));
     expect(props.onAddExercise).toHaveBeenCalledTimes(1);
-  });
-
-  it("a partner's view replaces your list and Finish, keeping the header and strip (PER-60 row 2)", () => {
-    const { Text } = jest.requireActual("react-native");
-    const { getByTestId, queryByTestId, getByText, rerender } = renderWithTheme(
-      <ActiveSessionPresenter
-        {...baseProps}
-        togetherRow={<Text>strip</Text>}
-        partnerView={<Text>Mia’s workout</Text>}
-      />,
-    );
-    expect(getByTestId("active-session-partner-list")).toBeTruthy();
-    expect(getByTestId("session-header")).toBeTruthy();
-    expect(getByText("strip")).toBeTruthy();
-    expect(getByText("Mia’s workout")).toBeTruthy();
-    expect(queryByTestId("session-exercise-se-1")).toBeNull();
-    expect(queryByTestId("active-session-finish")).toBeNull();
-    fireEvent.press(getByTestId("session-minimize"));
-    expect(baseProps.onMinimize).toHaveBeenCalledTimes(1);
-    rerender(
-      <ActiveSessionPresenter
-        {...baseProps}
-        togetherRow={<Text>strip</Text>}
-      />,
-    );
-    expect(queryByTestId("active-session-partner-list")).toBeNull();
-    expect(getByTestId("session-exercise-se-1")).toBeTruthy();
-    expect(getByTestId("active-session-finish")).toBeTruthy();
   });
 
   it("stacks every exercise vertically (no pager / tab-strip)", () => {
@@ -303,7 +275,9 @@ describe("ActiveSessionPresenter (vertical scroll, legacy parity)", () => {
         buildExercise({ id: "se-3", sortOrder: 2 }),
       ],
     };
-    renderWithTheme(<ActiveSessionPresenter {...props} />);
+    const { getByTestId } = renderWithTheme(
+      <ActiveSessionPresenter {...props} />,
+    );
 
     // The block's row id is the superset key, but the command takes the LEAD
     // exercise — two index spaces that used to be converted twice.
@@ -512,7 +486,7 @@ describe("ActiveSessionPresenter (vertical scroll, legacy parity)", () => {
         buildExercise({ id: "se-2", sortOrder: 1 }),
       ],
     };
-    const { getByTestId } = renderWithTheme(
+    const { getByTestId, queryByTestId } = renderWithTheme(
       <ActiveSessionPresenter {...props} />,
     );
 

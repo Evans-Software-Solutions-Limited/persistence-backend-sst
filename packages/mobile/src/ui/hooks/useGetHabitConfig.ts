@@ -25,7 +25,6 @@ export type HabitConfigState = CachedResourceState<HabitConfig[]> & {
 
 export function useGetHabitConfig(): HabitConfigState {
   const res = useCachedResource<HabitConfig[]>({
-    bootstrapSection: "habitConfig",
     read: (storage, userId) => ({
       value: storage.getHabitConfigs(userId),
       // Always background-refresh once: the config is small + rarely changes,

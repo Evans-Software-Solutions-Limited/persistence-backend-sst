@@ -143,20 +143,6 @@ export async function refreshWorkouts(
     ownerLibraryOnly: type === "mine" ? ownerLibraryOnly : undefined,
   });
   if (!result.ok) return result;
-  applyWorkoutsList(storage, userId, type, result.value);
-  return ok({ workouts: result.value.workouts, quota: result.value.quota });
-}
-
-/**
- * Writes one server list slice the way a refresh does. Shared by
- * `refreshWorkouts` and the cold-start bootstrap command.
- */
-export function applyWorkoutsList(
-  storage: StoragePort,
-  userId: string,
-  type: WorkoutListType,
-  value: { workouts: Workout[]; quota: WorkoutQuota | null },
-): void {
   // ⚠ Preserve rows the server cannot know about yet.
   //
   // `cacheWorkoutsList` REPLACES the whole slice, so writing the server's list
@@ -176,16 +162,17 @@ export function applyWorkoutsList(
     mergePreservingUnsynced(
       storage,
       storage.getCachedWorkoutsList(userId, type)?.workouts,
-      value.workouts,
+      result.value.workouts,
     ),
-    value.quota,
+    result.value.quota,
   );
   // Splatter detail rows from the list payload — every list response
   // carries full Workout payloads, so the popover detail can hit the
   // cache without an extra GET /workouts/:id round-trip.
-  for (const w of value.workouts) {
+  for (const w of result.value.workouts) {
     storage.cacheWorkoutDetail(userId, w);
   }
+  return ok({ workouts: result.value.workouts, quota: result.value.quota });
 }
 
 /**

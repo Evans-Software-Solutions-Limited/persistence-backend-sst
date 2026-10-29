@@ -30,7 +30,7 @@ export const socialHandler = new Elysia()
   .onBeforeHandle(async (c) => {
     const path = new URL(c.request.url).pathname;
     const bucket =
-      path === "/social/people" || path.startsWith("/social/person-code")
+      path === "/social/people"
         ? "search"
         : c.request.method === "POST" && path === "/social/requests"
           ? "invite"
@@ -58,37 +58,6 @@ export const socialHandler = new Elysia()
       return { error: { code: error.code, message: error.message } };
     }
   })
-  .get("/social/profile", async (c) => ({
-    data: await repo.getProfile(getUser(c).sub),
-  }))
-  .post(
-    "/social/person-code",
-    async (c) => ({
-      data: await repo.personCode(getUser(c).sub, c.headers["idempotency-key"]),
-    }),
-    {
-      headers: socialMutationHeaders,
-      body: t.Object({}, { additionalProperties: false }),
-    },
-  )
-  .post(
-    "/social/person-code/resolve",
-    async (c) => ({
-      data: await repo.resolvePersonCode(getUser(c).sub, c.body.code),
-    }),
-    {
-      body: t.Object(
-        {
-          code: t.String({
-            minLength: 32,
-            maxLength: 32,
-            pattern: "^[A-Za-z0-9_-]+$",
-          }),
-        },
-        { additionalProperties: false },
-      ),
-    },
-  )
   .put(
     "/social/profile",
     async (c) => ({
@@ -127,11 +96,6 @@ export const socialHandler = new Elysia()
     (c) => repo.list(getUser(c).sub, "pending", c.query.limit, c.query.cursor),
     { query: socialPageQuery },
   )
-  .get(
-    "/social/blocks",
-    (c) => repo.blocked(getUser(c).sub, c.query.limit, c.query.cursor),
-    { query: socialPageQuery },
-  )
   .post(
     "/social/requests",
     async (c) => ({
@@ -139,25 +103,9 @@ export const socialHandler = new Elysia()
         getUser(c).sub,
         c.body.userId,
         c.headers["idempotency-key"],
-        c.body.personCode,
       ),
     }),
-    {
-      headers: socialMutationHeaders,
-      body: t.Object(
-        {
-          userId: t.String({ format: "uuid" }),
-          personCode: t.Optional(
-            t.String({
-              minLength: 32,
-              maxLength: 32,
-              pattern: "^[A-Za-z0-9_-]+$",
-            }),
-          ),
-        },
-        { additionalProperties: false },
-      ),
-    },
+    { headers: socialMutationHeaders, body: userParams },
   )
   .post(
     "/social/requests/:id/decision",

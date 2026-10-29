@@ -1,26 +1,6 @@
 import { fireEvent, within } from "@testing-library/react-native";
+
 import { renderWithTheme } from "../../../../__tests__/test-utils";
-jest.mock("@/ui/containers/TogetherHubContainer", () => ({
-  TogetherHubContainer: () => {
-    const { View } = jest.requireActual("react-native");
-    return <View testID="together-body" />;
-  },
-}));
-const mockTogetherGate = {
-  allowed: true,
-  state: "allowed" as "allowed" | "locked" | "pending" | "unavailable",
-  onUpgrade: jest.fn(),
-  retry: jest.fn(),
-};
-jest.mock("@/ui/hooks/useTogetherGate", () => ({
-  useTogetherGate: () => mockTogetherGate,
-}));
-beforeEach(() => {
-  mockTogetherGate.allowed = true;
-  mockTogetherGate.state = "allowed";
-  mockTogetherGate.onUpgrade.mockClear();
-  mockTogetherGate.retry.mockClear();
-});
 
 /**
  * TrainHubContainer tests.
@@ -38,7 +18,8 @@ beforeEach(() => {
 
 const mockPush = jest.fn();
 jest.mock("expo-router", () => {
-  const React = jest.requireActual("react");
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const React = require("react");
   return {
     router: { push: (...args: unknown[]) => mockPush(...args) },
     // Run the focus callback on mount (and whenever it changes), mirroring a
@@ -49,9 +30,10 @@ jest.mock("expo-router", () => {
 });
 
 jest.mock("@/ui/containers/WorkoutsListContainer", () => {
-  const { Text } = jest.requireActual("react-native");
-
-  const React = jest.requireActual("react");
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { Text } = require("react-native");
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const React = require("react");
   return {
     WorkoutsListContainer: () =>
       React.createElement(Text, { testID: "workouts-body" }, "Workouts body"),
@@ -59,9 +41,10 @@ jest.mock("@/ui/containers/WorkoutsListContainer", () => {
 });
 
 jest.mock("@/ui/containers/ExerciseListContainer", () => {
-  const { Text } = jest.requireActual("react-native");
-
-  const React = jest.requireActual("react");
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { Text } = require("react-native");
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const React = require("react");
   return {
     ExerciseListContainer: () =>
       React.createElement(Text, { testID: "exercises-body" }, "Exercises body"),
@@ -69,9 +52,10 @@ jest.mock("@/ui/containers/ExerciseListContainer", () => {
 });
 
 jest.mock("@/ui/containers/TrainOverviewContainer", () => {
-  const { Text } = jest.requireActual("react-native");
-
-  const React = jest.requireActual("react");
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { Text } = require("react-native");
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const React = require("react");
   return {
     TrainOverviewContainer: () =>
       React.createElement(Text, { testID: "overview-body" }, "Overview body"),
@@ -79,9 +63,10 @@ jest.mock("@/ui/containers/TrainOverviewContainer", () => {
 });
 
 jest.mock("@/ui/containers/GymsSegmentContainer", () => {
-  const { Text } = jest.requireActual("react-native");
-
-  const React = jest.requireActual("react");
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { Text } = require("react-native");
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const React = require("react");
   return {
     GymsSegmentContainer: () =>
       React.createElement(Text, { testID: "gyms-body" }, "Gyms body"),
@@ -137,25 +122,6 @@ beforeEach(() => {
 });
 
 describe("TrainHubContainer", () => {
-  it("embeds Together on Train and preserves the selected segment on return", () => {
-    const r = renderWithTheme(<TrainHubContainer />);
-    fireEvent.press(r.getByTestId("train-segment-option-Together"));
-    expect(r.getByTestId("together-body")).toBeTruthy();
-    // Canvas row 1 hub chrome: My code, then Together settings (PER-60).
-    fireEvent.press(r.getByLabelText("My code"));
-    expect(mockPush).toHaveBeenLastCalledWith({
-      pathname: "/(app)/together/partners",
-      params: { code: "1" },
-    });
-    fireEvent.press(r.getByLabelText("Together settings"));
-    expect(mockPush).toHaveBeenLastCalledWith("/(app)/together/settings");
-    expect(useTrainSegment.getState().segment).toBe("Together");
-    r.unmount();
-    expect(
-      renderWithTheme(<TrainHubContainer />).getByTestId("together-body"),
-    ).toBeTruthy();
-  });
-
   it("leads with the Training overview (default segment) + no top-right action", () => {
     // The store default is now "Training" (M16); assert it here (beforeEach
     // pins the other tests to Workouts).

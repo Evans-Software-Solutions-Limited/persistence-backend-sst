@@ -156,28 +156,6 @@ describe("SetsUpdateHandler", () => {
     expect(response.status).toBe(200);
   });
 
-  // Sentry PERSISTENCE-BACKEND-8: same numeric(6,2) / numeric(8,2) bounds as
-  // set create — an oversized PATCH 422s instead of a Postgres overflow 500.
-  it.each([
-    ["weightKg above numeric(6,2)", { weightKg: "10000" }],
-    ["distanceMeters above numeric(8,2)", { distanceMeters: 1000000.01 }],
-  ])("should 422 %s without touching the repository", async (_label, body) => {
-    const { setsUpdateHandler } = await import("../setsUpdateHandler");
-    const response = await setsUpdateHandler.handle(
-      new Request("http://localhost/sessions/s1/exercises/se-1/sets/set1", {
-        method: "PATCH",
-        headers: {
-          authorization: "Bearer token",
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(body),
-      }),
-    );
-    expect(response.status).toBe(422);
-    expect(mocks.getSetInSession).not.toHaveBeenCalled();
-    expect(mocks.updateSet).not.toHaveBeenCalled();
-  });
-
   it("should update multiple parameters simultaneously", async () => {
     mocks.getSetInSession.mockResolvedValue({
       id: "set1",

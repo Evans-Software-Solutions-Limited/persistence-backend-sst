@@ -80,8 +80,7 @@ export function computeWorkoutTotalCapVerdict(
 
 export function useWorkoutTotalCapGate(): WorkoutTotalCapGate {
   const subQuery = useMySubscription();
-  // Observer only: HomeContainer / the Workouts tab own the network refresh.
-  const workouts = useWorkouts({ autoRefresh: false });
+  const workouts = useWorkouts();
 
   const subscription = subQuery.data ?? null;
   const isResolved = subscription !== null || subQuery.isError;

@@ -23,7 +23,7 @@ it.each(["/founding/access", "/founding/access/callback"])(
   "does not initialize marketing scripts or page tracking on %s",
   async (route) => {
     window.history.replaceState(null, "", route);
-    setConsent({ advertising: true, affiliate: false });
+    setConsent({ advertising: true });
     renderPage(<App />, { route });
     await screen.findByRole("heading", { name: "Sign in to Persistence" });
     expect(initMetaPixel).not.toHaveBeenCalled();

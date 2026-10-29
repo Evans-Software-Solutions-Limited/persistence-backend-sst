@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { router, type Href } from "expo-router";
 import { useFuelSheets } from "@/state/fuel-sheets";
 import { usePlanFlow } from "@/state/plan-flow";
@@ -13,9 +13,6 @@ import { usePlanAccept } from "@/ui/hooks/usePlanAccept";
 import { useOnlineStatus } from "@/ui/hooks/useOnlineStatus";
 import {
   DEFAULT_MEALPRINT_PREFERENCES,
-  addNotWantedMeals,
-  MEAL_SEARCH_FULL_MESSAGE,
-  type NotWantedMeal,
   heldTotalsExcluding,
   planDraftToAcceptInput,
   summarisePreferences,
@@ -96,22 +93,6 @@ export function MealprintPlanSheetContainer() {
   const [mealsPerDay, setMealsPerDay] = useState(MEALS_PER_DAY_DEFAULT);
   const [effortLevel, setEffortLevel] = useState<EffortLevel>(EFFORT_DEFAULT);
   const [steer, setSteer] = useState("");
-  const [feedbackId, setFeedbackId] = useState<string | null>(null);
-  const [swapSteer, setSwapSteer] = useState("");
-  const notWantedRef = useRef<NotWantedMeal[]>([]);
-  const [searchError, setSearchError] = useState<string | null>(null);
-  const [swapError, setSwapError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (
-      feedbackId !== null &&
-      (!visible || !draft?.meals.some((meal) => meal.localId === feedbackId))
-    ) {
-      setFeedbackId(null);
-      setSwapSteer("");
-      setSwapError(null);
-    }
-  }, [feedbackId, visible, draft]);
 
   const onSheetClose = useCallback(() => {
     if (visible) close();
@@ -125,30 +106,17 @@ export function MealprintPlanSheetContainer() {
   useEffect(() => {
     if (!visible) return;
     flowOpen(activeDate);
-    notWantedRef.current = [];
-    setSearchError(null);
     resetGenerate();
     resetSwap();
     resetAccept();
     setMealsPerDay(preferences.data?.mealsPerDay ?? MEALS_PER_DAY_DEFAULT);
     setEffortLevel(preferences.data?.effortLevel ?? EFFORT_DEFAULT);
     setSteer("");
-    setFeedbackId(null);
-    setSwapSteer("");
-    setSwapError(null);
     // Only the OPEN transition should reseed — re-running on every preferences
     // refresh would blow away whatever the user has already typed into the
     // config form.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    visible,
-    activeDate,
-    userId,
-    flowOpen,
-    resetGenerate,
-    resetSwap,
-    resetAccept,
-  ]);
+  }, [visible, activeDate, flowOpen, resetGenerate, resetSwap, resetAccept]);
 
   const { run: runGenerate, retry: retryGenerate } = generate;
   const onGenerate = useCallback(() => {
@@ -158,22 +126,8 @@ export function MealprintPlanSheetContainer() {
       gate.onUpgrade();
       return;
     }
-    const history = addNotWantedMeals(
-      notWantedRef.current,
-      draft?.meals.map(({ meal }) => ({
-        name: meal.name,
-        ingredients: meal.items.map((item) => item.name),
-      })) ?? [],
-    );
-    if (!history) {
-      setSearchError(MEAL_SEARCH_FULL_MESSAGE);
-      return;
-    }
-    notWantedRef.current = history;
-    setSearchError(null);
     flowGenerating();
     void runGenerate({
-      notWantedMeals: history,
       planDate: activeDate,
       mealsPerDay,
       effortLevel,
@@ -188,7 +142,6 @@ export function MealprintPlanSheetContainer() {
     mealsPerDay,
     effortLevel,
     steer,
-    draft,
   ]);
 
   const onRetryGenerate = useCallback(() => {
@@ -214,60 +167,20 @@ export function MealprintPlanSheetContainer() {
   }, [generate.stage, generate.result]);
 
   const { run: runSwap, reset: resetSwapCall } = swap;
-  const onGenerateSwap = useCallback(
+  const onSwapMeal = useCallback(
     (localId: string) => {
-      if (!online || swappingId !== null || accept.accepting) return;
-      setSwapError(null);
       if (draft === null) return;
       const targetMeal = draft.meals.find((m) => m.localId === localId);
       if (targetMeal === undefined) return;
-      const history = addNotWantedMeals(notWantedRef.current, [
-        {
-          name: targetMeal.meal.name,
-          ingredients: targetMeal.meal.items.map((item) => item.name),
-        },
-      ]);
-      if (!history) {
-        setSwapError(MEAL_SEARCH_FULL_MESSAGE);
-        return;
-      }
-      notWantedRef.current = history;
       flowBeginSwap(localId);
       void runSwap({
-        notWantedMeals: history,
-        originalRequest: steer.trim() || undefined,
         dayTarget: draft.target,
         heldTotals: heldTotalsExcluding(draft, localId),
         logSlot: targetMeal.meal.logSlot,
         mealsPerDay: draft.mealsPerDay,
-        steer: swapSteer.trim() || undefined,
       });
     },
-    [
-      draft,
-      flowBeginSwap,
-      runSwap,
-      swapSteer,
-      steer,
-      online,
-      swappingId,
-      accept.accepting,
-    ],
-  );
-
-  const onSwapMeal = useCallback(
-    (localId: string) => {
-      if (
-        swappingId !== null ||
-        accept.accepting ||
-        !draft?.meals.some((meal) => meal.localId === localId)
-      )
-        return;
-      setFeedbackId(localId);
-      setSwapSteer("");
-      setSwapError(null);
-    },
-    [draft, swappingId, accept.accepting],
+    [draft, flowBeginSwap, runSwap],
   );
 
   useEffect(() => {
@@ -275,40 +188,18 @@ export function MealprintPlanSheetContainer() {
     if (swappingId === null) return;
     if (swap.stage === "ready" && swap.result?.meal) {
       flowSwapApplied(swappingId, swap.result.meal);
-      setFeedbackId(null);
     } else {
       // Either a genuine failure, or an `ok` empty result (budget_exhausted /
       // no_candidates) — both leave the meal un-swapped; the user can retry.
       flowSwapAbandoned();
-      setSwapError(
-        swap.failure?.message ??
-          "No replacement matched. Try different feedback.",
-      );
     }
     resetSwapCall();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [swap.stage, swap.result]);
 
   const onRemoveMeal = useCallback(
-    (localId: string) => {
-      const removed = draft?.meals.find(
-        (meal) => meal.localId === localId,
-      )?.meal;
-      if (!removed || swappingId !== null || accept.accepting) return;
-      const history = addNotWantedMeals(notWantedRef.current, [
-        {
-          name: removed.name,
-          ingredients: removed.items.map((item) => item.name),
-        },
-      ]);
-      if (!history) {
-        setSearchError(MEAL_SEARCH_FULL_MESSAGE);
-        return;
-      }
-      notWantedRef.current = history;
-      flowRemoveMeal(localId);
-    },
-    [draft, flowRemoveMeal, swappingId, accept.accepting],
+    (localId: string) => flowRemoveMeal(localId),
+    [flowRemoveMeal],
   );
 
   const onItemServingsChange = useCallback(
@@ -319,13 +210,13 @@ export function MealprintPlanSheetContainer() {
 
   const { accept: runAccept, reset: resetAcceptCall } = accept;
   const onAccept = useCallback(async () => {
-    if (draft === null || flaggedIds.size > 0 || swappingId !== null) return;
+    if (draft === null || flaggedIds.size > 0) return;
     const result = await runAccept(planDraftToAcceptInput(draft));
     if (result) {
       flowAccepted(result);
       notifyMutated();
     }
-  }, [draft, flaggedIds, swappingId, runAccept, flowAccepted, notifyMutated]);
+  }, [draft, flaggedIds, runAccept, flowAccepted, notifyMutated]);
 
   // Side effect of an `unresolvable_items` accept failure: flag the affected
   // draft meal(s) so the user sees exactly which one needs a swap. A fresh
@@ -392,9 +283,8 @@ export function MealprintPlanSheetContainer() {
     router.push("/(app)/fuel/preferences?mode=editor" as Href);
   }, [close]);
 
-  const stage: MealprintPlanSheetStage = searchError
-    ? "error"
-    : step === "saved"
+  const stage: MealprintPlanSheetStage =
+    step === "saved"
       ? "saved"
       : step === "draft"
         ? "draft"
@@ -466,34 +356,12 @@ export function MealprintPlanSheetContainer() {
       flaggedIds={flaggedIds}
       swappingId={swappingId}
       onSwapMeal={onSwapMeal}
-      swapFeedback={
-        feedbackId === null
-          ? undefined
-          : {
-              mealId: feedbackId,
-              value: swapSteer,
-              onChange: setSwapSteer,
-              onGenerate: () => onGenerateSwap(feedbackId),
-              onCancel: () => {
-                if (swappingId === null) {
-                  setFeedbackId(null);
-                  setSwapSteer("");
-                }
-              },
-              busy: swappingId !== null,
-              disabled: !online || accept.accepting,
-              error: swapError,
-            }
-      }
       onRemoveMeal={onRemoveMeal}
       onItemServingsChange={onItemServingsChange}
       draftTotals={draftTotals}
       accepting={accept.accepting}
       acceptBlocked={
-        draft === null ||
-        draft.meals.length === 0 ||
-        flaggedIds.size > 0 ||
-        swappingId !== null
+        draft === null || draft.meals.length === 0 || flaggedIds.size > 0
       }
       onAccept={() => void onAccept()}
       acceptErrorMessage={acceptErrorMessage}
@@ -501,8 +369,8 @@ export function MealprintPlanSheetContainer() {
       onAcceptRecovery={() => void onAcceptRecovery()}
       labelCheckRequired={generate.result?.labelCheckRequired ?? true}
       onViewToday={onViewToday}
-      errorMessage={searchError ?? generate.failure?.message ?? null}
-      errorRetryable={!searchError && (generate.failure?.retryable ?? false)}
+      errorMessage={generate.failure?.message ?? null}
+      errorRetryable={generate.failure?.retryable ?? false}
       errorIsEntitlement={generate.failure?.entitlementDenied ?? false}
       onRetryGenerate={onRetryGenerate}
       onUpgrade={gate.onUpgrade}

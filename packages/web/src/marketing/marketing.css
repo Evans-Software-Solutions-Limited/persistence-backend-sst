@@ -72,16 +72,6 @@
     0 18px 44px -24px rgba(23, 22, 26, 0.28);
   --m-shadow-lift: 0 24px 60px -28px rgba(23, 22, 26, 0.28);
 
-  /* Form + segmented-control surfaces (Blue Light Card offer page, PER-3). */
-  --m-success-dim: rgba(47, 174, 124, 0.14);
-  --m-input-bg: #fffefb;
-  --m-seg-track: rgba(27, 26, 30, 0.06);
-  --m-seg-active: #fffefb;
-  /* Blue Light Card partner blue — a PLACEHOLDER until Blue Light Card's brand
-     assets arrive; used only on the eyebrow chip, the code-field focus ring
-     and the lockup. Swap the value here and nowhere else. */
-  --m-blc: #1f5fd6;
-
   --m-disp: "Geist Variable", system-ui, -apple-system, sans-serif;
   --m-serif: "Instrument Serif", Georgia, serif;
   --m-font: "Geist Variable", system-ui, -apple-system, sans-serif;
@@ -144,13 +134,6 @@
     0 1px 0 rgba(255, 255, 255, 0.04) inset,
     0 24px 60px -24px rgba(0, 0, 0, 0.7);
   --m-shadow-lift: 0 24px 60px -24px rgba(0, 0, 0, 0.7);
-
-  --m-success-dim: rgba(47, 174, 124, 0.16);
-  --m-input-bg: rgba(244, 241, 234, 0.05);
-  --m-seg-track: rgba(244, 241, 234, 0.07);
-  --m-seg-active: rgba(244, 241, 234, 0.14);
-  /* Placeholder partner blue on dark — see the light block. */
-  --m-blc: #8ab8ff;
 }
 
 /* ── Root scope ───────────────────────────────────────────────────────── */

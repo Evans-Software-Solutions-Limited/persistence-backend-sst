@@ -2,8 +2,6 @@ import { useQuery } from "@tanstack/react-query";
 import type { SubscriptionTier } from "@/domain/models/subscription";
 import type { ApiError } from "@/shared/errors";
 import { useAdapters } from "@/ui/hooks/useAdapters";
-import { useAuth } from "@/ui/hooks/useAuth";
-import { useBootstrapSettled } from "@/ui/hooks/useBootstrapSettled";
 
 /**
  * Fetch the active subscription-tier catalog via `ApiPort
@@ -25,13 +23,9 @@ export const SUBSCRIPTION_TIERS_STALE_TIME_MS = 10 * 60 * 1000;
 
 export function useSubscriptionTiers(enabled = true) {
   const { api } = useAdapters();
-  const { session } = useAuth();
-  // During a cold start the bootstrap seeds the catalog; signed out, nothing
-  // is pending and the catalog loads at once.
-  const settled = useBootstrapSettled(session?.userId ?? null);
   return useQuery<SubscriptionTier[], ApiError>({
     queryKey: SUBSCRIPTION_TIERS_QUERY_KEY,
-    enabled: enabled && settled,
+    enabled,
     queryFn: async () => {
       const result = await api.getSubscriptionTiers();
       if (!result.ok) throw result.error;

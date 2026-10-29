@@ -142,18 +142,3 @@ describe("the paid Meta channel is its own slug", () => {
     expect(CAMPAIGNS.meta.ct).not.toBe(CAMPAIGNS.ig.ct);
   });
 });
-
-describe("the Blue Light Card affiliate channel (PER-3)", () => {
-  it("has its own slug, Apple ct and Play UTMs", () => {
-    expect(CAMPAIGNS.blc).toEqual({
-      ct: "blc",
-      utm_source: "bluelightcard",
-      utm_campaign: "member-offer",
-    });
-    expect(new URL(appStoreUrl("blc")!).searchParams.get("ct")).toBe("blc");
-    const referrer = new URL(playStoreUrl("blc")!).searchParams.get("referrer");
-    expect(new URLSearchParams(referrer ?? "").get("utm_source")).toBe(
-      "bluelightcard",
-    );
-  });
-});

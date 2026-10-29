@@ -1,5 +1,4 @@
 import { fireEvent } from "@testing-library/react-native";
-import { StyleSheet } from "react-native";
 
 import { renderWithTheme } from "../../../../../__tests__/test-utils";
 import { Text } from "../../Text";
@@ -94,19 +93,6 @@ describe("Card", () => {
       </Card>,
     );
     expect(getByTestId("card")).toBeTruthy();
-  });
-
-  it("padX / padY override the axis padding (a style padding never beats the padding prop)", () => {
-    const { getByTestId } = renderWithTheme(
-      <Card testID="card" pad={0} padX={16} padY={4}>
-        <Text>x</Text>
-      </Card>,
-    );
-    const flat = StyleSheet.flatten(getByTestId("card").props.style);
-    expect(flat.paddingLeft ?? flat.paddingHorizontal).toBe(16);
-    expect(flat.paddingRight ?? flat.paddingHorizontal).toBe(16);
-    expect(flat.paddingTop ?? flat.paddingVertical).toBe(4);
-    expect(flat.paddingBottom ?? flat.paddingVertical).toBe(4);
   });
 
   it("honours an explicit accessibilityRole on the pressable variant", () => {

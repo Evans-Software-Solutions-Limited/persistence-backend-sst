@@ -183,7 +183,7 @@ export function FoundingThanks() {
             </>
           ) : null}
           <p className="founding-terms">
-            <Link to="/pricing">View current plans</Link>
+            <Link to="/founding">{FOUNDING_COPY.thanks.backCta}</Link>
           </p>
         </div>
       </section>

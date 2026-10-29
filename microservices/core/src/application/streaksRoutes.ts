@@ -1,7 +1,6 @@
 import Elysia from "elysia";
 import { getStreaksHandler } from "./progress/getStreaksHandler";
 import { useFreezeTokenHandler } from "./progress/useFreezeTokenHandler";
-import { bootstrapHandler } from "./bootstrap/bootstrapHandler";
 
 /**
  * Streaks — both routes live under `/users/me/streaks`, grouped into ONE
@@ -23,5 +22,4 @@ import { bootstrapHandler } from "./bootstrap/bootstrapHandler";
  */
 export const streaksRoutes = new Elysia()
   .use(getStreaksHandler)
-  .use(useFreezeTokenHandler)
-  .use(bootstrapHandler);
+  .use(useFreezeTokenHandler);

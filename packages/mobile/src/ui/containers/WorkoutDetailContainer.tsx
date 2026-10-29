@@ -1,6 +1,3 @@
-import { useTogetherGate } from "@/ui/hooks/useTogetherGate";
-import { TogetherStartRow } from "@/ui/presenters/TogetherStartRow";
-import type { TogetherLobbyAudience } from "@/domain/ports/togetherLobby.port";
 import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import {
@@ -45,8 +42,7 @@ import { AdaptiveSuiteRouteGuard } from "@/ui/components/subscription/AdaptiveSu
 export function WorkoutDetailContainer() {
   const params = useLocalSearchParams<{ id?: string }>();
   const workoutId = params.id ?? null;
-  const { storage, togetherLobby } = useAdapters();
-  const togetherGate = useTogetherGate();
+  const { storage } = useAdapters();
   const { session } = useAuth();
   const userId = session?.userId ?? null;
   const weightUnit = useProfilePage().payload?.profile.weightUnit ?? "kg";
@@ -155,8 +151,7 @@ export function WorkoutDetailContainer() {
   // starting a session — checked client-side so the user never even opens
   // a session that the server's over-limit backstop would deny at Finish.
   const onStartWorkout = useCallback(
-    (id: string, audience?: TogetherLobbyAudience) => {
-      if (audience && (!userId || !togetherGate.allowed)) return;
+    (id: string) => {
       if (isLoadoutWorkout && !loadoutGate.allowed) {
         openLoadoutUpsell();
         return;
@@ -165,22 +160,9 @@ export function WorkoutDetailContainer() {
         totalCapGate.onLocked();
         return;
       }
-      // Together starts from Start a shared session with this workout selected
-      // (PER-60 default): mode and audience are asked there, preset from settings.
-      router.push(
-        (audience
-          ? `/(app)/together/start?workoutId=${encodeURIComponent(id)}`
-          : `/(app)/session?workoutId=${id}`) as never,
-      );
+      router.push(`/(app)/session?workoutId=${id}` as never);
     },
-    [
-      isLoadoutWorkout,
-      loadoutGate.allowed,
-      openLoadoutUpsell,
-      totalCapGate,
-      userId,
-      togetherGate.allowed,
-    ],
+    [isLoadoutWorkout, loadoutGate.allowed, openLoadoutUpsell, totalCapGate],
   );
 
   // Stack-push the exercise detail on top so the workout stays underneath.
@@ -275,16 +257,6 @@ export function WorkoutDetailContainer() {
         onClose={onClose}
         onEdit={onEdit}
         onStartWorkout={onStartWorkout}
-        togetherEntry={
-          togetherLobby && togetherGate.allowed ? (
-            <TogetherStartRow
-              detail="Nearby or Online"
-              onStart={() => {
-                if (workout) onStartWorkout(workout.id, "friends");
-              }}
-            />
-          ) : undefined
-        }
         onExercisePress={onExercisePress}
         // AC-1.2 is read-scoped, not owner-scoped: coach-assigned and template
         // workouts can be adapted too, with the resulting setup owned by the

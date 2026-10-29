@@ -1,7 +1,6 @@
 import { Alert } from "react-native";
 import {
   act,
-  cleanup,
   fireEvent,
   render,
   screen,
@@ -175,19 +174,6 @@ beforeEach(() => {
 });
 
 describe("SubscriptionSelectionContainer referrals", () => {
-  beforeEach(() => {
-    // Auth bootstrap enables the referral query after the catalogue resolves.
-    // Drive React Query notifications with virtual time so cold CI renders
-    // cannot exhaust waitFor's wall-clock deadline between those stages.
-    jest.useFakeTimers();
-  });
-
-  afterEach(() => {
-    cleanup();
-    jest.clearAllTimers();
-    jest.useRealTimers();
-  });
-
   const onboardingRecommendation = (
     overrides: {
       onSkip?: jest.Mock;

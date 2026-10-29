@@ -12,20 +12,12 @@ permissions:
   issues: write
   id-token: write
   statuses: write
-
-# One review per PR at a time; a second trigger queues behind the first
-# rather than cancelling it halfway through posting.
-concurrency:
-  group: inspector-brad-${{ github.event.issue.number || github.event.pull_request.number }}
-  cancel-in-progress: false
+  checks: write
 
 jobs:
   review:
-    # Only people with write access can trigger a review — drive-by comments
-    # on public repos don't spin up a runner or spend your quota.
     if: >-
       (github.event.issue.pull_request != null || github.event.pull_request != null) &&
-      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association) &&
       (
         contains(github.event.comment.body, '@inspector-brad') ||
         contains(github.event.comment.body, '/inspector-brad')
@@ -36,32 +28,24 @@ jobs:
       - name: Acknowledge with reaction
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
           COMMENT_ID: ${{ github.event.comment.id }}
-          # Review-comment triggers live under pulls/comments, not issues/comments.
-          COMMENT_KIND: ${{ github.event_name == 'pull_request_review_comment' && 'pulls' || 'issues' }}
+          REPO: ${{ github.repository }}
         run: |
-          gh api -X POST \
-            "repos/${REPO}/${COMMENT_KIND}/comments/${COMMENT_ID}/reactions" \
-            -f content="eyes"
+          gh api -X POST             "repos/${REPO}/issues/comments/${COMMENT_ID}/reactions"             -H "Accept: application/vnd.github+json"             -f content="eyes"
 
-      # Brad reads the working tree, not git history, so a shallow checkout is
-      # enough. Credentials aren't persisted so the token never sits in
-      # .git/config where the reviewer could read it.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
         with:
           ref: refs/pull/${{ github.event.issue.number || github.event.pull_request.number }}/head
-          fetch-depth: 1
-          persist-credentials: false
+          fetch-depth: 0
 
       - id: review
-        uses: Evans-Software-Solutions-Limited/inspector-brad@v1
+        uses: BradleyEvans96/inspector-brad@v1
         with:
           oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           # Optional overrides:
-          # model: claude-sonnet-5-5
-          # effort: medium
+          # model: claude-opus-4-7
+          # effort: high
           # extra-instructions: |
           #   This repo is a Django app. Be strict about N+1 queries.
 
@@ -75,5 +59,4 @@ jobs:
           PR_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          gh pr comment "${PR_NUMBER}" --repo "${REPO}" \
-            --body "🚨 **Inspector Brad failed to review this PR.** [View logs](${RUN_URL})"
+          gh pr comment "${PR_NUMBER}" --repo "${REPO}" --body "🚨 **Inspector Brad failed to review this PR.** [View logs](${RUN_URL})"

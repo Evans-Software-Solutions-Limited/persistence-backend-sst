@@ -23,9 +23,6 @@ export const ADMIN_CAMPAIGN_SLUGS: readonly string[] = [
   "ig",
   "li",
   "meta",
-  // Blue Light Card member offer (PER-3) — the `/blc` landing route and the
-  // `ct` every store CTA on `/blue-light-card` carries.
-  "blc",
 ];
 
 /** Shape every slug — ours and any hand-typed one — must satisfy. */

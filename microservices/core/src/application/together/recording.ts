@@ -12,8 +12,10 @@ import {
   type RecordSessionInput,
 } from "../repositories/sessionRepository";
 import { PersonalRecordsRepository } from "../repositories/personalRecordsRepository";
+import { StreakRepository } from "../repositories/streakRepository";
+import { VolumeRepository } from "../repositories/volumeRepository";
 import { materializeTogetherExercise } from "./exerciseRecording";
-import { recomputeRecoveredEffects } from "./recoveredRecording";
+import { recomputeUserVolume } from "../progress/recompute";
 /** Persisted frozen participant state is the source of truth. Record, PRs and mapping commit together. */
 export async function processTogetherJob(id: string, userId: string) {
   const known = await getDb()
@@ -87,7 +89,7 @@ export async function processTogetherJob(id: string, userId: string) {
       const payload: RecordSessionInput = {
         clientSessionId: job.clientRecordId,
         name: p.frozenPlan.name,
-        startedAt: (p.originalStartedAt ?? s.createdAt).toISOString(),
+        startedAt: s.createdAt.toISOString(),
         completedAt: job.completedAt.toISOString(),
         status: "completed",
         exercises: recordedExercises,
@@ -119,37 +121,31 @@ export async function processTogetherJob(id: string, userId: string) {
               .update(jobs)
               .set({ status: "saved" })
               .where(and(eq(jobs.sessionId, id), eq(jobs.userId, uid)));
-            if (!p.removedFromRoster) {
-              await recordTx
-                .update(sessions)
-                .set({ revision: s.revision + 1 })
-                .where(eq(sessions.id, id));
-              await recordTx.insert(events).values({
-                sessionId: id,
-                revision: s.revision + 1,
-                event: { type: "completion_saved", userId: uid },
-              });
-            }
+            await recordTx
+              .update(sessions)
+              .set({ revision: s.revision + 1 })
+              .where(eq(sessions.id, id));
+            await recordTx.insert(events).values({
+              sessionId: id,
+              revision: s.revision + 1,
+              event: { type: "completion_saved", userId: uid },
+            });
           },
         },
       );
     },
   );
-  await withActors([userId], async (tx) => {
-    const [job] = await tx
-      .select()
-      .from(jobs)
+  const [job] = await getDb()
+    .select()
+    .from(jobs)
+    .where(and(eq(jobs.sessionId, id), eq(jobs.userId, userId)));
+  if (!job.effectsDone) {
+    // These rebuild from durable history and throw on failure; never mark swallowed errors done.
+    await new StreakRepository().reconcileWorkoutStreakHistory(userId);
+    await recomputeUserVolume(new VolumeRepository(), userId, new Date());
+    await getDb()
+      .update(jobs)
+      .set({ effectsDone: true })
       .where(and(eq(jobs.sessionId, id), eq(jobs.userId, userId)));
-    if (!job.effectsDone) {
-      await recomputeRecoveredEffects(
-        userId,
-        [job.completedAt, new Date()],
-        tx,
-      );
-      await tx
-        .update(jobs)
-        .set({ effectsDone: true })
-        .where(and(eq(jobs.sessionId, id), eq(jobs.userId, userId)));
-    }
-  });
+  }
 }

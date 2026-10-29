@@ -1,19 +1,15 @@
 import { Text, View } from "@tamagui/core";
-import { Pressable } from "react-native";
-import { QrCode, Settings } from "lucide-react-native";
-import { color } from "@/ui/theme/tokens";
 import { router, useFocusEffect } from "expo-router";
 import { useCallback, useEffect } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useTrainSegment } from "@/ui/hooks/useTrainSegment";
 import { useClientRelationships } from "@/ui/hooks/useClientRelationships";
-import { Btn, ScreenGlow, Segmented } from "@/ui/components/foundation";
+import { Btn, Segmented } from "@/ui/components/foundation";
 import { IconPlus } from "@/ui/components/icons";
 import { ExerciseListContainer } from "@/ui/containers/ExerciseListContainer";
 import { WorkoutsListContainer } from "@/ui/containers/WorkoutsListContainer";
 import { TrainOverviewContainer } from "@/ui/containers/TrainOverviewContainer";
-import { TogetherHubContainer } from "./TogetherHubContainer";
 import { GymsSegmentContainer } from "@/ui/containers/GymsSegmentContainer";
 
 /**
@@ -93,7 +89,6 @@ export function TrainHubContainer() {
 
   return (
     <View flex={1} paddingTop={insets.top} testID="train-hub">
-      <ScreenGlow />
       {/* Hub header — inline flex-end row (prototype-hubs.jsx:15–33). */}
       <View
         testID="train-header"
@@ -116,74 +111,17 @@ export function TrainHubContainer() {
           >
             TRAIN
           </Text>
-          {/* The Together hub carries its own title ("Train together", canvas
-              row 1), so the chrome keeps only the eyebrow there. */}
-          {effectiveSegment !== "Together" && (
-            <Text
-              fontFamily="$display"
-              fontWeight="700"
-              fontSize={32}
-              letterSpacing={-0.96}
-              color="$text"
-            >
-              {effectiveSegment}
-            </Text>
-          )}
+          <Text
+            fontFamily="$display"
+            fontWeight="700"
+            fontSize={32}
+            letterSpacing={-0.96}
+            color="$text"
+          >
+            {effectiveSegment}
+          </Text>
         </View>
-        {effectiveSegment === "Together" ? (
-          // Canvas row 1 hub: My code, then Together settings (44pt, 8 apart).
-          <View flexDirection="row" gap={8}>
-            {(
-              [
-                [
-                  "My code",
-                  <QrCode
-                    key="qr"
-                    size={20}
-                    color={color.$text2}
-                    strokeWidth={1.75}
-                  />,
-                  () =>
-                    router.push({
-                      pathname: "/(app)/together/partners",
-                      params: { code: "1" },
-                    } as never),
-                ],
-                [
-                  "Together settings",
-                  <Settings
-                    key="cog"
-                    size={20}
-                    color={color.$text2}
-                    strokeWidth={1.75}
-                  />,
-                  () => router.push("/(app)/together/settings" as never),
-                ],
-              ] as const
-            ).map(([label, icon, onPress]) => (
-              <Pressable
-                key={label}
-                accessibilityRole="button"
-                accessibilityLabel={label}
-                onPress={onPress}
-                style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}
-              >
-                <View
-                  width={44}
-                  height={44}
-                  borderRadius={10}
-                  backgroundColor="$surface2"
-                  borderWidth={1}
-                  borderColor="$border"
-                  alignItems="center"
-                  justifyContent="center"
-                >
-                  {icon}
-                </View>
-              </Pressable>
-            ))}
-          </View>
-        ) : effectiveSegment === "Exercises" ? (
+        {effectiveSegment === "Exercises" ? (
           <Btn
             variant="soft"
             tone="primary"
@@ -204,8 +142,8 @@ export function TrainHubContainer() {
           // feature is discoverable before a workout is opened.
           options={
             showTraining
-              ? ["Training", "Workouts", "Exercises", "Together", "Gyms"]
-              : ["Workouts", "Exercises", "Together", "Gyms"]
+              ? ["Training", "Workouts", "Exercises", "Gyms"]
+              : ["Workouts", "Exercises", "Gyms"]
           }
           value={effectiveSegment}
           onChange={(next) => {
@@ -215,7 +153,6 @@ export function TrainHubContainer() {
               next === "Training" ||
               next === "Workouts" ||
               next === "Exercises" ||
-              next === "Together" ||
               next === "Gyms"
             ) {
               setSegment(next);
@@ -229,8 +166,6 @@ export function TrainHubContainer() {
           <TrainOverviewContainer />
         ) : effectiveSegment === "Workouts" ? (
           <WorkoutsListContainer />
-        ) : effectiveSegment === "Together" ? (
-          <TogetherHubContainer />
         ) : effectiveSegment === "Gyms" ? (
           <GymsSegmentContainer />
         ) : (

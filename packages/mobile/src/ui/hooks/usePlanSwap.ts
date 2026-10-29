@@ -46,8 +46,7 @@ function classify(status: number | undefined): PlanSwapFailure {
   }
   if (status === 422) {
     return {
-      message:
-        "Couldn't find a swap that fits your feedback and food preferences. Try again or edit your feedback.",
+      message: "Couldn't find a safe swap. Try again.",
       retryable: true,
       entitlementDenied: false,
     };

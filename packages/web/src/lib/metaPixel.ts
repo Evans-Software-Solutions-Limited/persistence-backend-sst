@@ -22,14 +22,6 @@
 
 import { clearMetaCookies, hasConsent } from "./consent";
 import type { FoundingPlanId } from "@/marketing/foundingOffer";
-import type { BlcPlanId } from "@/marketing/blc/blcOffer";
-
-/**
- * Every plan the website sells on its own checkout, as the one canonical id
- * Meta sees on `InitiateCheckout` / `Purchase`: the founding terms and the
- * Blue Light Card member plans (PER-3). Each family keeps its own table.
- */
-export type PlanContentId = FoundingPlanId | BlcPlanId;
 
 type FbqArgs = unknown[];
 
@@ -162,7 +154,7 @@ export function trackStoreClick(
  * purchase Meta cannot segment than one it segments wrongly.
  */
 function planParams(
-  planId: PlanContentId | undefined,
+  planId: FoundingPlanId | undefined,
 ): Record<string, unknown> {
   if (planId === undefined) return {};
   return {
@@ -186,7 +178,7 @@ export function trackInitiateCheckout(
   eventId: string,
   value: number,
   currency: string,
-  planId: PlanContentId | undefined,
+  planId: FoundingPlanId | undefined,
 ): void {
   if (!hasConsent("advertising") || !isLoaded()) return;
   window.fbq!(
@@ -210,7 +202,7 @@ export function trackPurchase(
   eventId: string,
   value: number,
   currency: string,
-  planId: PlanContentId | undefined,
+  planId: FoundingPlanId | undefined,
 ): void {
   if (!hasConsent("advertising") || !isLoaded()) return;
   window.fbq!(

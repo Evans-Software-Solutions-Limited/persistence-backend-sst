@@ -94,8 +94,7 @@ function classify(status: number | undefined): MealSuggestFailure {
   }
   if (status === 422) {
     return {
-      message:
-        "Couldn't find a meal that fits your request and food preferences. Try again or edit your request.",
+      message: "Couldn't put together anything that fits. Try again.",
       retryable: true,
       entitlementDenied: false,
     };

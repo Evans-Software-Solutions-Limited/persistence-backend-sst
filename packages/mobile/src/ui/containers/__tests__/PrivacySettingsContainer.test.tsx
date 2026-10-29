@@ -286,11 +286,8 @@ describe("PrivacySettingsContainer — delete account", () => {
   // later cannot slip past the one test that exists to prevent a recurrence.
   const assertNoPermissionRequestShape = () => {
     expect(Alert.alert).toHaveBeenCalled();
-    for (const [title, , buttons] of (Alert.alert as jest.Mock).mock.calls as [
-      string,
-      string,
-      AlertButton[] | undefined,
-    ][]) {
+    for (const [title, , buttons] of (Alert.alert as jest.Mock).mock
+      .calls as Array<[string, string, AlertButton[] | undefined]>) {
       expect(title).not.toMatch(/^allow/i);
       for (const { text } of buttons ?? []) {
         expect(text ?? "").not.toMatch(/^(not now|allow)$/i);
@@ -303,7 +300,7 @@ describe("PrivacySettingsContainer — delete account", () => {
     ["failed", true, true],
     ["failed", false, true],
     ["pending", false, true],
-  ] as [string, boolean, boolean][])(
+  ] as Array<[string, boolean, boolean]>)(
     "never shows a permission-request-shaped dialog (outcome %s, presentable %s)",
     async (outcome, presentable) => {
       (canRequestSystemTracking as jest.Mock).mockResolvedValue(presentable);

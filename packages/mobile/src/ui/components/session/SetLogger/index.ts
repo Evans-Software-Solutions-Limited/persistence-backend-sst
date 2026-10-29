@@ -1,1 +1,1 @@
-export { SetLogger, type SetLoggerProps, type SetSyncState } from "./SetLogger";
+export { SetLogger, type SetLoggerProps } from "./SetLogger";

@@ -228,25 +228,7 @@ interface Proof {
   createdAt: number;
   plan: string | null;
   campaign: string | null;
-  /** Where the provider returns to; absent on records from before PER-3. */
-  returnPath?: string;
-  /** Caller-owned values carried across a redirect (and a new tab). */
-  extra?: Record<string, string>;
 }
-
-/**
- * Per-flow options for the redirecting sign-in methods. The founding access
- * page passes none and gets exactly its historical behaviour; the Blue Light
- * Card offer (PER-3) sets `returnPath` so the callback lands back on its own
- * page, and `extra` to carry its code and chosen plan through the round trip
- * — an email link may open in a fresh tab with no sessionStorage, so the proof
- * (localStorage) is the only thing both tabs can read.
- */
-export interface AuthFlowOptions {
-  returnPath?: string;
-  extra?: Record<string, string>;
-}
-const DEFAULT_RETURN_PATH = "/founding/access/callback";
 function randomToken() {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
   return btoa(String.fromCharCode(...bytes))
@@ -254,21 +236,16 @@ function randomToken() {
     .replaceAll("/", "_")
     .replaceAll("=", "");
 }
-export function callbackUrl(
-  state: string,
-  returnPath: string = DEFAULT_RETURN_PATH,
-) {
-  return `${window.location.origin}${returnPath}?flow=${encodeURIComponent(state)}`;
+export function callbackUrl(state: string) {
+  return `${window.location.origin}/founding/access/callback?flow=${encodeURIComponent(state)}`;
 }
-async function prepareProof(options: AuthFlowOptions = {}) {
+async function prepareProof() {
   const proof: Proof = {
     verifier: randomToken(),
     state: randomToken(),
     createdAt: Date.now(),
     plan: sessionStorage.getItem(PLAN_KEY),
     campaign: sessionStorage.getItem("persistence.founding.campaign"),
-    ...(options.returnPath ? { returnPath: options.returnPath } : {}),
-    ...(options.extra ? { extra: options.extra } : {}),
   };
   const digest = await crypto.subtle.digest(
     "SHA-256",
@@ -294,20 +271,17 @@ async function prepareProof(options: AuthFlowOptions = {}) {
   sessionStorage.setItem(ACTIVE_PROOF_KEY, proof.state);
   return { proof, challenge };
 }
-export async function oauthUrl(
-  provider: "apple" | "google",
-  options: AuthFlowOptions = {},
-): Promise<string> {
+export async function oauthUrl(provider: "apple" | "google"): Promise<string> {
   const cfg = authConfig();
   if (!cfg)
     throw new Error(
       "Web sign-in is unavailable. Please contact Persistence support.",
     );
-  const { proof, challenge } = await prepareProof(options);
+  const { proof, challenge } = await prepareProof();
   const url = new URL(`${cfg.url}/auth/v1/authorize`);
   url.search = new URLSearchParams({
     provider,
-    redirect_to: callbackUrl(proof.state, options.returnPath),
+    redirect_to: callbackUrl(proof.state),
     code_challenge: challenge,
     code_challenge_method: "s256",
     ...(provider === "google" ? { prompt: "select_account" } : {}),
@@ -317,12 +291,11 @@ export async function oauthUrl(
 export async function signUp(
   email: string,
   password: string,
-  options: AuthFlowOptions = {},
 ): Promise<MembershipAccount | null> {
   const attempt = beginAuthentication();
-  const { proof, challenge } = await prepareProof(options);
+  const { proof, challenge } = await prepareProof();
   const data = await authRequest(
-    `/signup?redirect_to=${encodeURIComponent(callbackUrl(proof.state, options.returnPath))}`,
+    `/signup?redirect_to=${encodeURIComponent(callbackUrl(proof.state))}`,
     {
       email,
       password,
@@ -335,13 +308,10 @@ export async function signUp(
   discardCurrentProof();
   return acceptTokens(session, attempt);
 }
-export async function sendSignInLink(
-  email: string,
-  options: AuthFlowOptions = {},
-): Promise<void> {
-  const { proof, challenge } = await prepareProof(options);
+export async function sendSignInLink(email: string): Promise<void> {
+  const { proof, challenge } = await prepareProof();
   await authRequest(
-    `/otp?redirect_to=${encodeURIComponent(callbackUrl(proof.state, options.returnPath))}`,
+    `/otp?redirect_to=${encodeURIComponent(callbackUrl(proof.state))}`,
     {
       email,
       create_user: false,
@@ -427,27 +397,6 @@ export function callbackPlan(search: string): string | null {
 export function signOut() {
   beginAuthentication();
   discardCurrentProof();
-}
-
-/**
- * The caller-owned `extra` values a redirecting flow was started with, read
- * from the proof BEFORE `completeCallback` consumes it (the same ordering
- * `callbackPlan` relies on). Null for a proof that carried none, or none at
- * all.
- */
-export function callbackExtra(search: string): Record<string, string> | null {
-  try {
-    const state = new URLSearchParams(search).get("flow");
-    const proof = JSON.parse(localStorage.getItem(PROOF_KEY + state) ?? "null");
-    if (proof?.state !== state || typeof proof.extra !== "object") return null;
-    const extra: Record<string, string> = {};
-    for (const [key, value] of Object.entries(proof.extra ?? {})) {
-      if (typeof value === "string") extra[key] = value;
-    }
-    return extra;
-  } catch {
-    return null;
-  }
 }
 
 export function callbackCampaign(search: string): string | null {
