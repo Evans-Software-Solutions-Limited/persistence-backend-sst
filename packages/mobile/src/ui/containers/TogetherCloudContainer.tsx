@@ -233,11 +233,15 @@ export function TogetherCloudContainer(p: {
       : shownAudience === "private"
         ? "invite-only"
         : undefined;
-  /** Sends who can join; offline, it stays queued and still shows. */
+  /**
+   * Sends who can join; offline, it stays queued and still shows. Reads the
+   * controller's current snapshot, not this render's: the start-as-Partners
+   * effect calls this from its first render, before `endsAt` arrived.
+   */
   const sendVisibility = (value: "invite-only" | "friends") =>
     p.cloud.visibility(
       value === "friends" ? "friends" : "private",
-      state.snapshot?.endsAt ??
+      p.cloud.getSnapshot().snapshot?.endsAt ??
         new Date(Date.now() + VISIBLE_FOR).toISOString(),
     );
   const [toast, showToast] = useTogetherToast();

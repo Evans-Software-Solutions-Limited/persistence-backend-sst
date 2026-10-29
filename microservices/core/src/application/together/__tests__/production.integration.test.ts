@@ -818,6 +818,55 @@ describe("production Together persistence and recovery", () => {
     expect(capped!.listedUntil!.getTime()).toBe(capped!.expiresAt.getTime());
     expect(await listed()).toEqual([s.sessionId]);
   });
+  it("a lapsed listing also stops people joining by the session ID, while an invite still works (inspector lead)", async () => {
+    const consent = {
+      consentVersion: "together-v1" as const,
+      consentAccepted: true as const,
+    };
+    const s = await create();
+    await db
+      .insert(schema.friendships)
+      .values({ userId: a, friendId: b, status: "accepted", initiatedBy: a });
+    // An older app's "for 15 minutes" at a venue: C isn't a partner, so C's
+    // request waits for the host.
+    await repo.visibility(a, s.sessionId, key(), {
+      audience: "nearby",
+      placeId: "geoapify:place",
+      expiresAt: new Date(Date.now() + 15 * 60000).toISOString(),
+    });
+    const pending = await repo.requestJoin(c, key(), {
+      sessionId: s.sessionId,
+      ...consent,
+    });
+    expect(pending.status).toBe("pending");
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(Date.now() + 16 * 60000);
+      await expect(
+        repo.requestJoin(c, key(), { sessionId: s.sessionId, ...consent }),
+      ).rejects.toMatchObject({ status: 403 });
+      await expect(
+        repo.decide(a, s.sessionId, pending.requestId, key(), {
+          decision: "approve",
+          expectedRevision: (await repo.snapshot(a, s.sessionId)).revision,
+        }),
+      ).rejects.toMatchObject({ status: 403 });
+      // The session carries on, and the host's own invite still admits.
+      const invite = await repo.invite(a, s.sessionId, key(), {
+        expiresInMinutes: 15,
+      });
+      expect(
+        (
+          await repo.requestJoin(b, key(), {
+            inviteToken: invite.token,
+            ...consent,
+          })
+        ).status,
+      ).toBe("approved");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
   it("allows friends-only discovery while venue directory stays disabled", async () => {
     vi.stubEnv("TOGETHER_DISCOVERY_ENABLED", "false");
     const s = await create();

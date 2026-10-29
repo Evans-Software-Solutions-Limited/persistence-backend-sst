@@ -1152,6 +1152,19 @@ it("starts a selected training-partner session once and publishes only after con
   expect(h.cloud.hostWorkout).toHaveBeenCalledTimes(1);
 });
 
+it("starting as Partners sends the session's end the host call just reported, not a 2-hour guess (inspector lead)", async () => {
+  const h = setup();
+  const endsAt = new Date(Date.now() + 3.9 * 3600_000).toISOString();
+  jest.mocked(h.cloud.hostWorkout).mockImplementation(async () => {
+    h.publish({ phase: "active", snapshot: { ...server, endsAt } });
+  });
+  renderWithTheme(
+    <TogetherCloudContainer {...h.props} initialHost="friends" />,
+  );
+  await waitFor(() => expect(h.cloud.visibility).toHaveBeenCalledTimes(1));
+  expect(h.cloud.visibility).toHaveBeenCalledWith("friends", endsAt);
+});
+
 it("preserves existing Together authority rather than hosting a second session", () => {
   const h = setup();
   h.draft.together = {

@@ -213,6 +213,21 @@ notice as the sheet (`TogetherSharingRefused`, extracted). The card's hook
 state goes with the screen, so leaving clears it. Needs the migration and a
 core deploy before the app relies on `endsAt`.
 
+**Inspector Brad (29 Oct, sweep on `558f870`).** (1, medium, backend) A
+lapsed `listed_until` hid the session from discovery but still let someone
+holding the session ID join (or ask to), since the audience branches of
+`requestJoin` and `approveJoin` only checked `audience` and `live()`. Both
+now also require the listing to be open (`listed()`: null or in the future).
+Invites still admit. A session-code request has no invite, so its approval
+goes through the same audience branch: after an older app's listing lapses it
+is refused, as the whole session used to be. Open, not from this PR:
+`approveJoin` already refused a code request for a `private` session, despite
+the "code opens private sessions" comment in `requestJoin`. (2, medium) The
+start-as-Partners effect called `sendVisibility` from its first render, whose
+`state.snapshot` predates `hostWorkout()`, so it sent now + 2h instead of the
+server's `endsAt` and the listing lapsed halfway through. `sendVisibility`
+now reads `p.cloud.getSnapshot()`. Both tests fail on the old code.
+
 **Not verified.** Nothing on a device or simulator.
 
 ### 2026-10-26 — Together UX pass PR 3: leaving, ending and finishing (PER-60, branch `claude/per-60-together-finish`)
