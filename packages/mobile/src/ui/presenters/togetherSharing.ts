@@ -22,6 +22,12 @@ export interface SharingPerson {
   userId: string;
   name: string;
   tone: TogetherAvatarTone;
+  /**
+   * Finished their own workout but still in the Online roster: nothing new can
+   * be granted to them (the server refuses the whole list), so they get no
+   * chip and switches turned on leave them out.
+   */
+  finished?: boolean;
 }
 
 /** What is granted: the previous values per recipient. */
@@ -51,17 +57,20 @@ export interface TogetherSharingState {
 
 /** Partners in seat order, named, with the strip's ring colours. */
 export function sharingPeople(
-  members: readonly { userId: string }[],
+  members: readonly { userId: string; status?: string }[],
   accountId: string,
   name: (userId: string, seat: number) => string,
 ): SharingPerson[] {
   return members
-    .map((m, seat) => ({ userId: m.userId, seat }))
+    .map((m, seat) => ({ ...m, seat }))
     .filter((m) => m.userId !== accountId)
     .map((m, i) => ({
       userId: m.userId,
       name: name(m.userId, m.seat),
       tone: TOGETHER_PARTNER_TONES[i % TOGETHER_PARTNER_TONES.length]!,
+      ...(m.status !== undefined && m.status !== "active"
+        ? { finished: true }
+        : {}),
     }));
 }
 
@@ -70,14 +79,13 @@ export function sharingState(
   people: readonly SharingPerson[],
   refused: SharingRefusal | null = null,
 ): TogetherSharingState {
-  const recipients = people.map((p) => ({
-    ...p,
-    on: !!base.previous[p.userId],
-  }));
+  const recipients = people
+    .filter((p) => !p.finished)
+    .map((p) => ({ ...p, on: !!base.previous[p.userId] }));
   return {
     numbers: base.numbers,
     logging: base.logging,
-    previous: recipients.some((r) => r.on),
+    previous: people.some((p) => base.previous[p.userId]),
     recipients,
     refused,
   };
@@ -97,7 +105,10 @@ export function applySharingChange(
   if (change.key === "previous")
     return {
       ...base,
-      previous: Object.fromEntries(people.map((p) => [p.userId, change.value])),
+      // Turning it on picks everyone still training; off clears everyone.
+      previous: Object.fromEntries(
+        people.map((p) => [p.userId, change.value ? !p.finished : false]),
+      ),
     };
   return { ...base, [change.key]: change.value };
 }
@@ -249,25 +260,28 @@ export function cloudSharingWrites(
     target.numbers === before.numbers
       ? [...granted]
       : target.numbers
-        ? people.map((p) => p.userId)
+        ? people.filter((p) => !p.finished).map((p) => p.userId)
         : [];
-  const previous = [
-    ...(own.previousConsent?.recipientIds ?? []).filter(
-      (id) => !people.some((p) => p.userId === id),
-    ),
-    ...people
-      .filter((p) =>
-        !!target.previous[p.userId] === !!before.previous[p.userId]
+  // The server refuses a list naming anyone not still training, so the list
+  // sent only ever names partners who are.
+  const previous = people
+    .filter(
+      (p) =>
+        !p.finished &&
+        (!!target.previous[p.userId] === !!before.previous[p.userId]
           ? (own.previousConsent?.recipientIds ?? []).includes(p.userId)
-          : target.previous[p.userId],
-      )
-      .map((p) => p.userId),
-  ];
+          : target.previous[p.userId]),
+    )
+    .map((p) => p.userId);
   return {
     ...(sameIds(numbers, own.numbersConsent?.recipientIds ?? [])
       ? {}
       : { numbers }),
-    ...(sameIds(previous, own.previousConsent?.recipientIds ?? [])
+    // Sent only when the tap touched previous values: rewriting a list that
+    // still names someone who has left would be refused.
+    ...(!people.some(
+      (p) => !!target.previous[p.userId] !== !!before.previous[p.userId],
+    ) || sameIds(previous, own.previousConsent?.recipientIds ?? [])
       ? {}
       : { previous }),
     ...(target.logging === own.allowPartnerLogging

@@ -185,7 +185,7 @@ describe("Online consent", () => {
         { ...before, previous: { ...before.previous, i: true } },
         before,
       ),
-    ).toEqual({ previous: ["gone", "t", "i"] });
+    ).toEqual({ previous: ["t", "i"] });
     // Numbers off revokes everyone; fill-in is one flag.
     expect(
       cloudSharingWrites(own, people, { ...before, numbers: false }, before),
@@ -202,5 +202,58 @@ describe("Online consent", () => {
         none,
       ),
     ).toEqual({ numbers: ["b", "t", "i"] });
+  });
+});
+
+describe("partners who have finished (Online)", () => {
+  // Tom finished his workout but is still in the roster.
+  const roster = sharingPeople(
+    [
+      { userId: "me", status: "active" },
+      { userId: "b", status: "active" },
+      { userId: "t", status: "saved" },
+      { userId: "i", status: "active" },
+    ],
+    "me",
+    (id) => id,
+  );
+  it("keeps their strip colour but gives them no chip", () => {
+    expect(roster.map((p) => [p.userId, p.tone, !!p.finished])).toEqual([
+      ["b", "info", false],
+      ["t", "success", true],
+      ["i", "gold", false],
+    ]);
+    const state = sharingState(
+      { numbers: false, logging: false, previous: { t: true } },
+      roster,
+    );
+    expect(state.recipients.map((r) => r.userId)).toEqual(["b", "i"]);
+    // Tom still holds it, so the switch says so.
+    expect(state.previous).toBe(true);
+  });
+  it("leaves them out of anything turned on, so the server accepts it", () => {
+    const own = {
+      allowPartnerLogging: false,
+      numbersConsent: { recipientIds: [] },
+      previousConsent: { recipientIds: ["t"] },
+    };
+    const before = cloudSharingBase(own, roster);
+    expect(
+      cloudSharingWrites(own, roster, { ...before, numbers: true }, before),
+    ).toEqual({ numbers: ["b", "i"] });
+    const on = applySharingChange({ ...before, previous: {} }, roster, {
+      key: "previous",
+      value: true,
+    });
+    expect(on.previous).toEqual({ b: true, t: false, i: true });
+    // A chip for Inés: the list sent names only partners still training.
+    expect(
+      cloudSharingWrites(
+        own,
+        roster,
+        { ...before, previous: { ...before.previous, i: true } },
+        before,
+      ),
+    ).toEqual({ previous: ["i"] });
   });
 });

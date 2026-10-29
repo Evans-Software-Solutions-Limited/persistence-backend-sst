@@ -165,6 +165,16 @@ recorded; `accept()` keeps it when an older server's snapshot leaves
 reports `audience` always wins. New controller assertions fail on the old
 code.
 
+**Inspector Brad (29 Oct, sweep on `4aa5fd7`).** One medium lead: Online
+"on for everyone" included partners who had finished (still in the roster,
+status `saved`/`finalizing`/`finished_empty`), and the server's
+`scopedConsent` refuses the whole list (`400 INVALID_PREVIOUS_CONSENT`), so
+the switch kept flipping back. `sharingPeople` now flags them `finished`
+(colours unchanged); they get no chip, turning a switch on leaves them out,
+the previous-values list sent only ever names partners still training, and it
+is sent only when the tap changed previous values. Nearby has no status and
+is unchanged. New model tests fail on the old code.
+
 **Not verified.** Nothing on a device or simulator.
 
 ### 2026-10-26 — Together UX pass PR 3: leaving, ending and finishing (PER-60, branch `claude/per-60-together-finish`)
