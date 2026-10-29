@@ -234,6 +234,13 @@ export class TogetherCloudController implements TogetherCloudPort {
     stored: Durable | null,
   ): CloudSnapshot | undefined {
     if (!snapshot || !stored || !this.account) return snapshot;
+    // An older server leaves `audience` out; keep the one it accepted.
+    if (
+      snapshot.audience === undefined &&
+      stored.own?.sessionId === snapshot.sessionId &&
+      stored.own.audience
+    )
+      snapshot = { ...snapshot, audience: stored.own.audience };
     const acknowledged =
       stored.own?.sessionId === snapshot.sessionId
         ? stored.own.participants.find((p) => p.userId === this.account)
@@ -715,8 +722,15 @@ export class TogetherCloudController implements TogetherCloudPort {
           error instanceof Error ? error.message : "cloud-workout-unsupported";
       }
     }
+    // An older server leaves `audience` out: keep the one it last accepted.
+    const audience =
+      snapshot.audience ??
+      (stored.own?.sessionId === snapshot.sessionId
+        ? stored.own.audience
+        : undefined);
     stored.own = {
       ...copy(snapshot),
+      ...(audience ? { audience } : {}),
       participants: [copy(own)],
       sharingActive: false,
     };
@@ -1151,6 +1165,20 @@ export class TogetherCloudController implements TogetherCloudPort {
               owner.allowPartnerLogging = acknowledged.allowed;
               owner.delegationGeneration = acknowledged.generation;
             }
+          }
+          if (next.method === "visibility" && fresh.own) {
+            // No version to compare, so the accepted audience is recorded as
+            // acknowledged and shown now; a later snapshot that reports one
+            // wins (PER-60).
+            const { audience } = next.args[2] as {
+              audience: "private" | "friends";
+            };
+            fresh.own.audience = audience;
+            if (this.state.snapshot?.sessionId === fresh.own.sessionId)
+              this.state = {
+                ...this.state,
+                snapshot: { ...this.state.snapshot, audience },
+              };
           }
           if (next.method === "cancelJoin") fresh.joinStatus = "rejected";
           this.persist(fresh);

@@ -154,6 +154,17 @@ server's `audience`, else no choice. It survives minimise and restart, and a
 change dropped later leaves nothing behind. New controller assertions fail on
 the old code.
 
+**Inspector Brad (29 Oct, sweep on `9611f0e`).** One medium lead: an accepted
+Who can join left the outbox before the closing refresh brought the new
+audience back, so the segment flicked to the stale value (or stayed there if
+the refresh failed, or went blank on an older server). The drain's success
+branch now records the accepted audience in the durable checkpoint
+(`own.audience`) and the published snapshot, as consent and delegation are
+recorded; `accept()` keeps it when an older server's snapshot leaves
+`audience` out, and `withIntent` overlays it the same way. A server that
+reports `audience` always wins. New controller assertions fail on the old
+code.
+
 **Not verified.** Nothing on a device or simulator.
 
 ### 2026-10-26 — Together UX pass PR 3: leaving, ending and finishing (PER-60, branch `claude/per-60-together-finish`)

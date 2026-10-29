@@ -2522,7 +2522,17 @@ describe("sharing switches move on tap (PER-60)", () => {
     ).resolves.toBeUndefined();
     expect(api.visibility).toHaveBeenCalled();
     expect(controller.getSnapshot().pendingCount).toBe(0);
+    // Accepted, so it shows even though the refresh failed.
+    expect(controller.getSnapshot().snapshot?.audience).toBe("friends");
     api.snapshot = snapshot;
+    // A refresh from an older server that leaves audience out keeps it.
+    await controller.refresh();
+    expect(controller.getSnapshot().snapshot?.audience).toBe("friends");
+    // A server that reports one wins.
+    server.audience = "private";
+    await controller.refresh();
+    expect(controller.getSnapshot().snapshot?.audience).toBe("private");
+    delete server.audience;
   });
 
   it("keeps the intent pending through a network fault and applies it on retry", async () => {
