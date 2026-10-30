@@ -631,17 +631,97 @@ describe("RecipeCreateContainer", () => {
     expect(mockRouterBack).toHaveBeenCalledTimes(1);
   });
 
-  it("onLinkFood defaults a blank quantity/unit from the linked food's own serving", () => {
+  it("onLinkFood never invents a 100 g amount for a row without one; Save waits for it (PER-78)", () => {
     const { adapters } = makeAdapters();
     render(
       <Wrapper adapters={adapters}>
         <RecipeCreateContainer />
       </Wrapper>,
     );
+    act(() => mockProbe.last!.onNameChange("Bowl"));
     const id = mockProbe.last!.rows[0].id;
     act(() => mockProbe.last!.onLinkFood(id, chicken));
+    // The unit names what the amount is measured in; the amount stays unset.
     expect(mockProbe.last?.rows[0]).toEqual(
-      expect.objectContaining({ quantity: 100, unit: "g" }),
+      expect.objectContaining({
+        foodId: "f-chicken",
+        quantity: null,
+        unit: "g",
+      }),
+    );
+    expect(mockProbe.last?.canSave).toBe(false);
+    act(() => mockProbe.last!.onChangeRowQuantity(id, 150));
+    expect(mockProbe.last?.canSave).toBe(true);
+  });
+
+  it("keeps an imported ingredient's amount and text when it is linked by search or AI (PER-78)", async () => {
+    useRecipeDraft.getState().setSeed({
+      title: "Sticky chicken",
+      servings: 4,
+      instructions: null,
+      ingredients: [
+        { name: "chicken thighs, diced", quantity: 400, unit: "g" },
+        { name: "gochujang", quantity: 0.5, unit: "kg" },
+      ],
+      source: "import",
+      sourceUrl: "https://x.test/r",
+    });
+    const { adapters, storage } = makeAdapters();
+    storage.cacheFoods([chicken]);
+    render(
+      <Wrapper adapters={adapters}>
+        <RecipeCreateContainer />
+      </Wrapper>,
+    );
+    const [first, second] = mockProbe.last!.rows;
+    act(() => mockProbe.last!.onLinkFood(first.id, chicken));
+    await act(async () => {
+      mockProbe.last!.onCreateWithAi(second.id);
+    });
+    await waitFor(() => expect(mockProbe.last?.rows[1].foodId).not.toBeNull());
+
+    expect(mockProbe.last?.rows[0]).toEqual(
+      expect.objectContaining({
+        name: "chicken thighs, diced",
+        foodName: "Chicken breast",
+        quantity: 400,
+        unit: "g",
+      }),
+    );
+    expect(mockProbe.last?.rows[1]).toEqual(
+      expect.objectContaining({ name: "gochujang", quantity: 0.5, unit: "kg" }),
+    );
+    // Recipe nutrition scales the real 400 g: 4 × the per-100 g chicken.
+    act(() => mockProbe.last!.onRemoveRow(second.id));
+    act(() => mockProbe.last!.onServingsChange(1));
+    expect(mockProbe.last?.macroTotal.kcal).toBe(660);
+  });
+
+  it("a late AI answer does not link a row the user renamed meanwhile (PER-78)", async () => {
+    const { adapters, api } = makeAdapters();
+    let release: () => void = () => {};
+    const original = api.resolveIngredient.bind(api);
+    api.resolveIngredient = (input) =>
+      new Promise((resolve) => {
+        release = () => void original(input).then(resolve);
+      });
+    render(
+      <Wrapper adapters={adapters}>
+        <RecipeCreateContainer />
+      </Wrapper>,
+    );
+    const id = mockProbe.last!.rows[0].id;
+    act(() => mockProbe.last!.onChangeRowName(id, "Obscure thing"));
+    act(() => {
+      mockProbe.last!.onCreateWithAi(id);
+    });
+    act(() => mockProbe.last!.onChangeRowName(id, "Something else"));
+    await act(async () => {
+      release();
+    });
+    await waitFor(() => expect(mockProbe.last?.resolvingRowId).toBeNull());
+    expect(mockProbe.last?.rows[0]).toEqual(
+      expect.objectContaining({ name: "Something else", foodId: null }),
     );
   });
 

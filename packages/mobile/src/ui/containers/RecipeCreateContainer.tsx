@@ -59,6 +59,31 @@ function emptyRow(id: string): RowState {
   };
 }
 
+/**
+ * Link a row to a food (manual search pick or AI resolve). Linking identifies
+ * the food; it does not change the recipe's amount (PER-78). The row keeps its
+ * quantity, its text and any unit it has — previously a row with no amount took the food's
+ * reference serving (usually 100 g), so an imported "400g chicken" line, read
+ * with no quantity, silently became 100 g. A row still without an amount stays
+ * that way: the empty amount field is the prompt, and Save waits for it.
+ */
+function linkRowToFood(row: RowState, food: Food): RowState {
+  return {
+    ...row,
+    foodId: food.id,
+    foodName: food.name,
+    name: row.name.trim() ? row.name : food.name,
+    // A blank unit only names what the amount field is measured in; it
+    // leaves the amount itself alone.
+    unit: row.unit ? row.unit : food.servingUnit,
+  };
+}
+
+/** A linked row needs a positive amount before its nutrition can count. */
+function linkedRowMissingAmount(row: RowState): boolean {
+  return row.foodId !== null && !(row.quantity !== null && row.quantity > 0);
+}
+
 const RESOLVE_LIMIT_MESSAGE =
   "Daily AI limit reached — it resets tomorrow. Link a food manually instead.";
 const RESOLVE_GENERIC_MESSAGE =
@@ -205,22 +230,7 @@ export function RecipeCreateContainer() {
 
   const onLinkFood = useCallback((id: string, food: Food) => {
     setRows((prev) =>
-      prev.map((r) =>
-        r.id === id
-          ? {
-              ...r,
-              foodId: food.id,
-              foodName: food.name,
-              name: food.name,
-              // A blank quantity/unit means the row was never given one (e.g.
-              // an import seed's free-text line) — default it from the linked
-              // food's own serving so the ingredient-derived macro total has
-              // something to scale, rather than silently contributing 0.
-              quantity: r.quantity === null ? food.servingSize : r.quantity,
-              unit: r.unit ? r.unit : food.servingUnit,
-            }
-          : r,
-      ),
+      prev.map((r) => (r.id === id ? linkRowToFood(r, food) : r)),
     );
     // Linking a food switches the recipe back into ingredient-derived mode —
     // any AI/import whole-recipe total no longer reflects the current rows.
@@ -256,17 +266,12 @@ export function RecipeCreateContainer() {
         // total) can resolve it, exactly like `useSearchFoods` already does
         // for a manually-picked search result.
         storage.cacheFoods([food]);
+        // A late AI answer must not land on a row the user has since renamed
+        // or linked by hand (PER-78); a deleted row simply isn't matched.
         setRows((prev) =>
           prev.map((r) =>
-            r.id === id
-              ? {
-                  ...r,
-                  foodId: food.id,
-                  foodName: food.name,
-                  name: food.name,
-                  quantity: r.quantity === null ? food.servingSize : r.quantity,
-                  unit: r.unit ? r.unit : food.servingUnit,
-                }
+            r.id === id && r.foodId === null && r.name === row.name
+              ? linkRowToFood(r, food)
               : r,
           ),
         );
@@ -377,7 +382,13 @@ export function RecipeCreateContainer() {
     () => rows.filter((r) => r.foodId !== null || r.name.trim().length > 0),
     [rows],
   );
-  const canSave = name.trim().length > 0 && validRows.length > 0 && !saving;
+  // A linked ingredient without an amount would save as "1" of nothing in
+  // particular (PER-78), so Save waits until each one has an amount.
+  const canSave =
+    name.trim().length > 0 &&
+    validRows.length > 0 &&
+    !validRows.some(linkedRowMissingAmount) &&
+    !saving;
 
   const onBack = useCallback(() => router.back(), []);
 
