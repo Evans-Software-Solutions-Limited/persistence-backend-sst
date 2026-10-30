@@ -177,6 +177,69 @@ describe("QuickAddSheetPresenter — search stage", () => {
     );
   });
 
+  it("shows a result per its own serving, named, when the food has one (PER-100)", () => {
+    // Open Food Facts row: macros per 100 g, pack serving 174 g.
+    const breast: Food = {
+      ...food,
+      id: "f2",
+      name: "Chicken breast",
+      brand: null,
+      kcal: 165,
+      proteinG: 31,
+      carbsG: 0,
+      fatG: 3.6,
+      servingSize: 100,
+      servingUnit: "g",
+      servingQuantity: 174,
+    };
+    const { getByTestId } = render({
+      stage: "search",
+      query: "chicken",
+      results: [breast],
+    });
+    expect(getByTestId("quick-add-result-serving-f2").props.children).toEqual([
+      "",
+      "1 serving (174 g) · 287 kcal",
+    ]);
+    expect(getByTestId("quick-add-result-macros-f2").props.children).toBe(
+      "P 54g · C 0g · F 6g",
+    );
+  });
+
+  it("says per 100 g when the food has no serving size (PER-100)", () => {
+    const plain: Food = {
+      ...food,
+      id: "f3",
+      brand: "Brand",
+      kcal: 139,
+      servingSize: 100,
+      servingQuantity: null,
+    };
+    const { getByTestId } = render({
+      stage: "search",
+      query: "oat",
+      results: [plain],
+    });
+    expect(getByTestId("quick-add-result-serving-f3").props.children).toEqual([
+      "Brand · ",
+      "per 100 g · 139 kcal",
+    ]);
+  });
+
+  it("opens the food at one of its own servings (PER-100)", () => {
+    const { getByText } = render({
+      stage: "search",
+      selected: {
+        ...food,
+        kcal: 165,
+        servingSize: 100,
+        servingQuantity: 174,
+      },
+      servings: 1,
+    });
+    expect(getByText("287 kcal")).toBeTruthy();
+  });
+
   it("shows the selected-food detail with OFF credit + confirms", () => {
     const { getByTestId, props } = render({ stage: "search", selected: food });
     expect(getByTestId("quick-add-detail")).toBeTruthy();

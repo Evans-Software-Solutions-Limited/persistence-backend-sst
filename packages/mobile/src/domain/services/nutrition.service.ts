@@ -628,6 +628,53 @@ export function portionToServings(
   return grams / size;
 }
 
+/** A food's own serving, as a search / history row shows it (PER-100). */
+export type FoodOwnServing = {
+  /** How many of the food's macro bases (`servingSize`) one own serving is —
+   * the value `scaleFoodMacros` / a logged `servings` expects for 1 serving. */
+  multiplier: number;
+  /** "1 serving (174 g)", "1 slice", or "per 100 g". */
+  label: string;
+  /** True when the food has no serving of its own and is shown per 100 g/ml. */
+  per100: boolean;
+};
+
+const fmtAmount = (n: number) => String(Math.round(n * 10) / 10);
+
+/**
+ * The serving a food row is shown and logged in (PER-100): the real pack
+ * serving (OFF `serving_quantity`) when known, else the food's own serving
+ * when it isn't the bare 100 g/ml basis; only a food with no serving at all
+ * falls back to "per 100 g". Open Food Facts rows keep macros per 100 g with
+ * the pack serving in `servingQuantity`, so without this every OFF result read
+ * per 100 g.
+ */
+export function foodOwnServing(
+  food: Pick<Food, "servingSize" | "servingUnit" | "servingQuantity">,
+): FoodOwnServing {
+  const size = food.servingSize > 0 ? food.servingSize : 100;
+  const massOrVolume = isPer100Unit(food.servingUnit);
+  const unit = massOrVolume ? food.servingUnit.trim().toLowerCase() : "g";
+  // `servingQuantity` is a gram figure, so it only rescales a g/ml basis.
+  if (massOrVolume && food.servingQuantity && food.servingQuantity > 0) {
+    return {
+      multiplier: food.servingQuantity / size,
+      label: `1 serving (${fmtAmount(food.servingQuantity)} ${unit})`,
+      per100: false,
+    };
+  }
+  if (!(food.servingSize > 0) || (massOrVolume && size === 100)) {
+    return { multiplier: 1, label: `per 100 ${unit}`, per100: true };
+  }
+  return {
+    multiplier: 1,
+    label: massOrVolume
+      ? `1 serving (${fmtAmount(size)} ${unit})`
+      : `${fmtAmount(size)} ${food.servingUnit.trim()}`,
+    per100: false,
+  };
+}
+
 /** True for the gram / millilitre bases a "per 100" reference makes sense for. */
 export function isPer100Unit(unit: string | null | undefined): boolean {
   const u = (unit ?? "").trim().toLowerCase();

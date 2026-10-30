@@ -65,6 +65,8 @@ export {
   portionToServings,
   isPer100Unit,
   per100Macros,
+  foodOwnServing,
+  type FoodOwnServing,
   ACTIVITY_LEVELS,
   DEFAULT_ACTIVITY_ID,
   computeConsumed,
