@@ -1,4 +1,4 @@
-import { fireEvent } from "@testing-library/react-native";
+import { fireEvent, within } from "@testing-library/react-native";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 import {
   RecipeImportPresenter,
@@ -29,6 +29,14 @@ function render(over: Partial<RecipeImportPresenterProps> = {}) {
   };
   return { ...renderWithTheme(<RecipeImportPresenter {...props} />), props };
 }
+
+// PER-68: stacked multiline paste fields must stay above the keyboard.
+it("keeps the pasted-recipe fields in a scroller that avoids the keyboard", () => {
+  const { getByTestId } = render({ stage: "paste" });
+  const scroll = getByTestId("recipe-import-scroll");
+  expect(scroll.props.automaticallyAdjustKeyboardInsets).toBe(true);
+  expect(within(scroll).getByTestId("recipe-paste-instructions")).toBeTruthy();
+});
 
 describe("RecipeImportPresenter — input stage", () => {
   it("disables submit with no URL", () => {
