@@ -628,6 +628,34 @@ export function portionToServings(
   return grams / size;
 }
 
+/** True for the gram / millilitre bases a "per 100" reference makes sense for. */
+export function isPer100Unit(unit: string | null | undefined): boolean {
+  const u = (unit ?? "").trim().toLowerCase();
+  return u === "g" || u === "ml";
+}
+
+/**
+ * A food's macros per 100 g (or 100 ml) — the label-style reference line on the
+ * scan card (PER-95). Unrounded; the presenter formats. Null when the food's
+ * basis isn't grams/ml or has no positive size, so a "per 100 g" figure is
+ * never invented for a count-based food.
+ */
+export function per100Macros(
+  food: Pick<
+    Food,
+    "kcal" | "proteinG" | "carbsG" | "fatG" | "servingSize" | "servingUnit"
+  >,
+): MacroSum | null {
+  if (!isPer100Unit(food.servingUnit) || !(food.servingSize > 0)) return null;
+  const k = 100 / food.servingSize;
+  return {
+    kcal: food.kcal * k,
+    proteinG: food.proteinG * k,
+    carbsG: food.carbsG * k,
+    fatG: food.fatG * k,
+  };
+}
+
 // ── AI estimate item rescaling (Snap / free-text draft card) ────────────────
 
 /**

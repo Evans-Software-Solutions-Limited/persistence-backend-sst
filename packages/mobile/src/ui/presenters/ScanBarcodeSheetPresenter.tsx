@@ -76,6 +76,9 @@ export type ScanBarcodeSheetProps = {
   effectiveGrams: number;
   /** Macros scaled to the chosen portion (container-computed). */
   scaled: ScanScaledMacros;
+  /** Label-style per-100 g/ml reference (container-computed); null when the
+   * food's basis isn't grams/ml. */
+  per100: ScanScaledMacros | null;
   slot: MealSlot;
   onSlotChange: (slot: MealSlot) => void;
   onAdd: () => void;
@@ -83,7 +86,21 @@ export type ScanBarcodeSheetProps = {
   testID?: string;
 };
 
-function FoundCard({ food, scaled }: { food: Food; scaled: ScanScaledMacros }) {
+function FoundCard({
+  food,
+  scaled,
+  amount,
+  per100,
+}: {
+  food: Food;
+  scaled: ScanScaledMacros;
+  amount: number;
+  per100: ScanScaledMacros | null;
+}) {
+  // The big numbers are the totals for the amount being logged, so they are
+  // labelled with that amount — never "per 100 g" (PER-95). The per-100
+  // reference line underneath carries the label-style figures.
+  const unit = food.servingUnit || "g";
   return (
     <Card pad={14} radius={14} accent="primary" testID="scan-found-card">
       <View flexDirection="row" alignItems="center" gap={12}>
@@ -112,9 +129,10 @@ function FoundCard({ food, scaled }: { food: Food; scaled: ScanScaledMacros }) {
             fontSize={11.5}
             color="$text3"
             numberOfLines={1}
+            testID="scan-amount-label"
           >
-            {food.barcode ? `${food.barcode} · ` : ""}per {food.servingSize}
-            {food.servingUnit}
+            {food.barcode ? `${food.barcode} · ` : ""}
+            {`for ${intl(amount)} ${unit}`}
           </Text>
           <View flexDirection="row" gap={6} marginTop={6}>
             <Pill
@@ -127,6 +145,18 @@ function FoundCard({ food, scaled }: { food: Food; scaled: ScanScaledMacros }) {
             >{`C ${round1(scaled.carbsG)}g`}</Pill>
             <Pill tone="neutral" size="xs">{`F ${round1(scaled.fatG)}g`}</Pill>
           </View>
+          {per100 ? (
+            <Text
+              fontFamily="$body"
+              fontSize={10.5}
+              color="$text3"
+              marginTop={4}
+              numberOfLines={1}
+              testID="scan-per100"
+            >
+              {`Per 100 ${unit}: ${intl(per100.kcal)} kcal · P ${round1(per100.proteinG)}g · C ${round1(per100.carbsG)}g · F ${round1(per100.fatG)}g`}
+            </Text>
+          ) : null}
           {food.source === "openfoodfacts" ? (
             <Text
               fontFamily="$body"
@@ -169,6 +199,7 @@ export function ScanBarcodeSheetPresenter({
   onPortionInc,
   effectiveGrams,
   scaled,
+  per100,
   slot,
   onSlotChange,
   onAdd,
@@ -260,7 +291,12 @@ export function ScanBarcodeSheetPresenter({
         )
       ) : stage === "found" && food ? (
         <View gap={14} testID="scan-found">
-          <FoundCard food={food} scaled={scaled} />
+          <FoundCard
+            food={food}
+            scaled={scaled}
+            amount={effectiveGrams}
+            per100={per100}
+          />
 
           <Card pad={14} radius={14}>
             <View

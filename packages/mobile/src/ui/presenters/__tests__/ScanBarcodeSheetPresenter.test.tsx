@@ -39,6 +39,7 @@ function render(over: Partial<ScanBarcodeSheetProps> = {}) {
     onPortionInc: jest.fn(),
     effectiveGrams: 40,
     scaled: { kcal: 150, proteinG: 5, carbsG: 27, fatG: 3 },
+    per100: null,
     slot: "breakfast",
     onSlotChange: jest.fn(),
     onAdd: jest.fn(),
@@ -83,6 +84,42 @@ describe("ScanBarcodeSheetPresenter", () => {
       portionMode: "serving",
     });
     expect(getByText("× 220g")).toBeTruthy();
+  });
+
+  it("labels portion totals with the amount logged and adds a per-100 g reference, never 'per 100g' (PER-95)", () => {
+    const { getByText, queryByText } = render({
+      stage: "found",
+      food: {
+        ...food,
+        barcode: "4056489241430",
+        kcal: 139,
+        proteinG: 28.8,
+        carbsG: 0.8,
+        fatG: 2.1,
+        servingSize: 100,
+        servingQuantity: 240,
+      },
+      effectiveGrams: 240,
+      scaled: { kcal: 334, proteinG: 69, carbsG: 2, fatG: 5 },
+      per100: { kcal: 139, proteinG: 28.8, carbsG: 0.8, fatG: 2.1 },
+    });
+    expect(getByText("4056489241430 · for 240 g")).toBeTruthy();
+    expect(getByText("334")).toBeTruthy();
+    expect(
+      getByText("Per 100 g: 139 kcal · P 28.8g · C 0.8g · F 2.1g"),
+    ).toBeTruthy();
+    expect(queryByText(/per 100g/i)).toBeNull();
+  });
+
+  it("omits the per-100 reference when the food has no gram/ml basis", () => {
+    const { queryByTestId, getByText } = render({
+      stage: "found",
+      food: { ...food, barcode: null, servingSize: 1, servingUnit: "slice" },
+      effectiveGrams: 2,
+      per100: null,
+    });
+    expect(getByText("for 2 slice")).toBeTruthy();
+    expect(queryByTestId("scan-per100")).toBeNull();
   });
 
   it("falls back to servingSize in the Serving label when serving_quantity is null", () => {

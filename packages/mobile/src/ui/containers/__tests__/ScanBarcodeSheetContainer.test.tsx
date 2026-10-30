@@ -290,4 +290,58 @@ describe("ScanBarcodeSheetContainer", () => {
     expect(mockProbe.last?.effectiveGrams).toBe(220);
     expect(mockProbe.last?.scaled.kcal).toBe(660);
   });
+
+  it("gives the 240 g pack totals plus the label's per-100 g reference, and logs the pack (PER-95)", async () => {
+    const { adapters, storage } = makeAdapters();
+    // Simply Tikka Chicken Breast Pieces (4056489241430): OFF per-100 g values
+    // from the pack label, serving_quantity 240 g.
+    storage.cacheFoods([
+      {
+        ...food,
+        id: "tikka",
+        name: "Tikka Chicken Breast Pieces",
+        barcode: "4056489241430",
+        kcal: 139,
+        proteinG: 28.8,
+        carbsG: 0.8,
+        fatG: 2.1,
+        servingSize: 100,
+        servingUnit: "g",
+        servingQuantity: 240,
+      },
+    ]);
+    render(
+      <Wrapper adapters={adapters}>
+        <ScanBarcodeSheetContainer />
+      </Wrapper>,
+    );
+    act(() => useFuelSheets.getState().openScan("snack"));
+    await act(async () => {
+      mockProbe.last!.onBarcodeScanned("4056489241430");
+    });
+    await waitFor(() => expect(mockProbe.last?.stage).toBe("found"));
+
+    expect(mockProbe.last?.effectiveGrams).toBe(240);
+    expect(mockProbe.last?.scaled).toEqual({
+      kcal: 334,
+      proteinG: 69,
+      carbsG: 2,
+      fatG: 5,
+    });
+    expect(mockProbe.last?.per100).toEqual({
+      kcal: 139,
+      proteinG: 28.8,
+      carbsG: 0.8,
+      fatG: 2.1,
+    });
+
+    await act(async () => {
+      mockProbe.last!.onAdd();
+    });
+    // Fuel's total for the day matches the pack label (2.4 × per-100 g).
+    const today = storage.getCachedFuelToday(USER, localDayISO());
+    const logged = today?.entriesBySlot.snack[0];
+    expect(logged?.servings).toBeCloseTo(2.4);
+    expect(logged?.kcal).toBe(334);
+  });
 });

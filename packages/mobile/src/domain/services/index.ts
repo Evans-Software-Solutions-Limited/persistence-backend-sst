@@ -63,6 +63,8 @@ export {
   macroPct,
   entryDisplayLabel,
   portionToServings,
+  isPer100Unit,
+  per100Macros,
   ACTIVITY_LEVELS,
   DEFAULT_ACTIVITY_ID,
   computeConsumed,
