@@ -23,6 +23,15 @@ describe("resolveNotificationRoute", () => {
     );
   });
 
+  it("routes the coach nutrition-target links to Fuel (PER-96)", () => {
+    // Core's nutrition_target_set_by_trainer emits `/nutrition/targets`, which
+    // is not an app route: passed through, it hit the root +not-found screen.
+    expect(resolveNotificationRoute("/nutrition/targets")).toBe(
+      "/(app)/fuel/targets",
+    );
+    expect(resolveNotificationRoute("/nutrition")).toBe("/(app)/(tabs)/fuel");
+  });
+
   it("passes through an already-absolute app path", () => {
     expect(resolveNotificationRoute("/(app)/(tabs)/you")).toBe(
       "/(app)/(tabs)/you",

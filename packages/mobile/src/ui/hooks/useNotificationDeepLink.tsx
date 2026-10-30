@@ -22,21 +22,38 @@ import type { NotificationResponseInfo } from "@/domain/ports/notifications.port
 import { resolveAndPrimeNotificationRoute } from "@/ui/navigation/notificationRoute";
 import { useAdapters } from "./useAdapters";
 
+/**
+ * Notification ids already routed, kept for the life of the JS process rather
+ * than per hook instance (PER-96). The hook lives in `app/(app)/_layout.tsx`,
+ * which unmounts whenever the root `<Slot/>` leaves the `(app)` group (the
+ * +not-found screen, onboarding, sign-out). On remount a per-instance ref
+ * started empty and `getLastNotificationResponse()` handed back the SAME
+ * launching tap, so it was routed again — and a link that left `(app)` again
+ * looped until React aborted with "Maximum update depth exceeded". A tap is
+ * one navigation, however many times the layout mounts.
+ */
+const handledNotificationIds = new Set<string>();
+
+/** Test-only: forget routed taps between test cases. */
+export function resetHandledNotificationTaps(): void {
+  handledNotificationIds.clear();
+}
+
 export function useNotificationDeepLink(enabled = true): void {
   const { notifications } = useAdapters();
   const router = useRouter();
   const handledColdStartRef = useRef(false);
-  // Dedupe across the two entry points: `expo-notifications` can surface
-  // the SAME launching tap via BOTH `getLastNotificationResponse()` (cold
-  // start) AND `addNotificationResponseListener` (subscribed on mount).
-  // Keyed by the notification id so whichever path fires first dispatches
-  // and the other is a no-op — preventing a double `router.push`.
-  const handledIdsRef = useRef<Set<string>>(new Set());
 
+  // Dedupe across the two entry points AND across remounts: `expo-notifications`
+  // can surface the SAME launching tap via BOTH `getLastNotificationResponse()`
+  // (cold start, and again on every later read) AND
+  // `addNotificationResponseListener` (subscribed on mount). Keyed by the
+  // notification id so whichever path fires first dispatches and every later
+  // delivery is a no-op — preventing a double `router.push`.
   const dispatch = useCallback(
     (response: NotificationResponseInfo) => {
-      if (handledIdsRef.current.has(response.id)) return;
-      handledIdsRef.current.add(response.id);
+      if (handledNotificationIds.has(response.id)) return;
+      handledNotificationIds.add(response.id);
       router.push(resolveAndPrimeNotificationRoute(response.deepLink) as never);
     },
     [router],
