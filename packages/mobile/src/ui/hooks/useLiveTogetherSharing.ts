@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useRef } from "react";
+import { useEffect, useReducer } from "react";
 import { applyNearbyConsent } from "@/application/together/nearbyConsent";
 import type { TogetherCloudPort } from "@/domain/ports/togetherCloud.port";
 import type { TogetherLobbyPort } from "@/domain/ports/togetherLobby.port";
@@ -43,13 +43,6 @@ export function useLiveTogetherSharing(p: {
   useEffect(() => p.lobby?.subscribe(refresh), [p.lobby]);
   useEffect(() => shared?.subscribe(refresh), [shared]);
   useEffect(() => p.cloud?.subscribe(refresh), [p.cloud]);
-  const mounted = useRef(true);
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
 
   let title = "";
   let source: TogetherSharingSource | null = null;
@@ -99,7 +92,11 @@ export function useLiveTogetherSharing(p: {
               accountId: userId,
               recipient: w.recipientId,
               consent: w.consent,
-              stillCurrent: () => mounted.current && p.lobby?.shared === shared,
+              // Not tied to this screen: leaving Together settings mid-send
+              // must still publish the rows the grant was for. The workout,
+              // account and grant checks in applyNearbyConsent stop a stale
+              // publish (PER-60).
+              stillCurrent: () => p.lobby?.shared === shared,
               getWorkout: workout,
               getPrevious: () => {
                 const current = workout();

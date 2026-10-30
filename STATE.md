@@ -236,6 +236,14 @@ tap sent `delegation(true)` and granted the newcomer fill-in. It now writes
 only when the tap changed it (`target.logging !== before.logging`) and the
 server differs. Test fails on the old code.
 
+**Inspector Brad (30 Oct, sweep on `c989d3c`).** (1, medium) The live card's
+Nearby `stillCurrent` was `mounted.current && p.lobby?.shared === shared`;
+`lobby.shared` is fixed, so it meant only "still mounted". Leaving Together
+settings while `setConsent` was in flight granted previous values but skipped
+`publishPrevious`, its only caller, so the partner's Prev stayed blank. The
+mounted check is gone; `applyNearbyConsent`'s workout, account and grant
+checks already stop a stale publish. Test fails on the old code.
+
 **Not verified.** Nothing on a device or simulator.
 
 ### 2026-10-26 — Together UX pass PR 3: leaving, ending and finishing (PER-60, branch `claude/per-60-together-finish`)

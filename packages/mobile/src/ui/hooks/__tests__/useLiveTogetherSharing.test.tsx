@@ -169,6 +169,36 @@ it("reads a live Nearby session and writes to it, previous values included", asy
   expect(result.current).toBeNull();
 });
 
+it("still publishes previous values when the screen is left mid-send (inspector lead)", async () => {
+  const n = nearby();
+  let land!: () => void;
+  jest
+    .mocked(n.sharedPort.setConsent)
+    .mockImplementationOnce(
+      () => new Promise<void>((resolve) => (land = resolve)),
+    );
+  const { result, unmount } = renderHook(() =>
+    useLiveTogetherSharing({ userId: "me", lobby: n.port, storage }),
+  );
+  let sent!: Promise<void>;
+  act(() => {
+    sent = Promise.resolve(
+      result.current!.onChange({ recipient: "t", value: true }),
+    );
+  });
+  // Back out of Together settings before the grant has been sent.
+  unmount();
+  await act(async () => {
+    land();
+    await sent;
+  });
+  expect(n.sharedPort.publishPrevious).toHaveBeenCalledWith(
+    "t",
+    [expect.objectContaining({ exerciseId: "squat" })],
+    Date.parse(workout.startedAt),
+  );
+});
+
 it("publishes no previous values when no workout is open", async () => {
   storage.getActiveSession.mockReturnValueOnce(null as never);
   storage.getActiveSession.mockReturnValueOnce(null as never);
