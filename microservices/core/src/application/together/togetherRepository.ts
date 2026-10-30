@@ -232,6 +232,8 @@ export class TogetherRepository {
    * The listing deadline an older app sends ("for 15 minutes") once ended the
    * whole session; now it ends only the listing, so it must also close the
    * audience route in, or someone holding the session ID could still join.
+   * Only the request is gated: the host approving one is a deliberate choice,
+   * and a code request is approved through the same audience branch.
    */
   private listed(s: Session) {
     return !s.listedUntil || s.listedUntil > new Date();
@@ -744,7 +746,6 @@ export class TogetherRepository {
     } else
       requireTogether(
         s.audience !== "private" &&
-          this.listed(s) &&
           (s.audience !== "friends" ||
             (await areFriends(tx, s.hostId!, r.userId))),
         "FORBIDDEN",

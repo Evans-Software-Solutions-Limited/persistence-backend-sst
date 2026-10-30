@@ -818,7 +818,7 @@ describe("production Together persistence and recovery", () => {
     expect(capped!.listedUntil!.getTime()).toBe(capped!.expiresAt.getTime());
     expect(await listed()).toEqual([s.sessionId]);
   });
-  it("a lapsed listing also stops people joining by the session ID, while an invite still works (inspector lead)", async () => {
+  it("a lapsed listing stops new requests by the session ID; the host can still approve, and an invite still works (inspector lead)", async () => {
     const consent = {
       consentVersion: "together-v1" as const,
       consentAccepted: true as const,
@@ -845,12 +845,11 @@ describe("production Together persistence and recovery", () => {
       await expect(
         repo.requestJoin(c, key(), { sessionId: s.sessionId, ...consent }),
       ).rejects.toMatchObject({ status: 403 });
-      await expect(
-        repo.decide(a, s.sessionId, pending.requestId, key(), {
-          decision: "approve",
-          expectedRevision: (await repo.snapshot(a, s.sessionId)).revision,
-        }),
-      ).rejects.toMatchObject({ status: 403 });
+      // The host approving a request made in time is still their choice.
+      await repo.decide(a, s.sessionId, pending.requestId, key(), {
+        decision: "approve",
+        expectedRevision: (await repo.snapshot(a, s.sessionId)).revision,
+      });
       // The session carries on, and the host's own invite still admits.
       const invite = await repo.invite(a, s.sessionId, key(), {
         expiresInMinutes: 15,

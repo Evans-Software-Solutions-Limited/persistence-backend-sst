@@ -244,6 +244,16 @@ settings while `setConsent` was in flight granted previous values but skipped
 mounted check is gone; `applyNearbyConsent`'s workout, account and grant
 checks already stop a stale publish. Test fails on the old code.
 
+**Inspector Brad (30 Oct, sweep on `a97f7c4`).** (1, medium) The `listed()`
+gate added to `approveJoin` in `767d524` also caught session-code requests
+(stored with no invite, so approved through the audience branch): after an
+older app's listing lapsed they could never be admitted. `approveJoin` no
+longer checks the listing; only `requestJoin`'s session-ID branch does, and
+the host approving a request is their choice. Not fixed here, already on
+main: `approveJoin` refuses every code request for a `private` session (and a
+non-partner's for `friends`). Needs the request to record that it came by
+code (a column, so a migration); left for a follow-up.
+
 **Not verified.** Nothing on a device or simulator.
 
 ### 2026-10-26 — Together UX pass PR 3: leaving, ending and finishing (PER-60, branch `claude/per-60-together-finish`)
