@@ -185,6 +185,15 @@ beforeAll(async () => {
       "utf8",
     ),
   );
+  await pg.exec(
+    readFileSync(
+      new URL(
+        "../../../../../../supabase/migrations/20261030120000_together_join_request_via_code.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
   db = drizzle(pg, { schema });
   holder.db = db;
 });
