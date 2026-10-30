@@ -203,6 +203,25 @@ describe("Online consent", () => {
       ),
     ).toEqual({ numbers: ["b", "t", "i"] });
   });
+  it("never re-grants fill-in the server dropped when a partner joined, on an unrelated tap (inspector lead)", () => {
+    // Shown from a held optimistic base: fill-in on. Meanwhile a partner was
+    // admitted and the server turned fill-in off for everyone already in.
+    const shown = cloudSharingBase(own, people);
+    const server = { ...own, allowPartnerLogging: false };
+    expect(
+      cloudSharingWrites(
+        server,
+        people,
+        { ...shown, previous: { ...shown.previous, i: true } },
+        shown,
+      ),
+    ).toEqual({ previous: ["t", "i"] });
+    // Tapping fill-in itself still sends it.
+    const off = { ...shown, logging: false };
+    expect(
+      cloudSharingWrites(server, people, { ...off, logging: true }, off),
+    ).toEqual({ logging: true });
+  });
 });
 
 describe("partners who have finished (Online)", () => {

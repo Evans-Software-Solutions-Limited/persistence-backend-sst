@@ -288,7 +288,11 @@ export function cloudSharingWrites(
     ) || sameIds(previous, own.previousConsent?.recipientIds ?? [])
       ? {}
       : { previous }),
-    ...(target.logging === own.allowPartnerLogging
+    // Compared with what was shown, like the others: a stale optimistic
+    // base still saying on must not re-grant fill-in the server turned off
+    // when a partner joined (approveJoin never grants future joiners).
+    ...(target.logging === before.logging ||
+    target.logging === own.allowPartnerLogging
       ? {}
       : { logging: target.logging }),
   };

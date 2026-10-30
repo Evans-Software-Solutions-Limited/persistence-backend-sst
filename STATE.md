@@ -228,6 +228,14 @@ start-as-Partners effect called `sendVisibility` from its first render, whose
 server's `endsAt` and the listing lapsed halfway through. `sendVisibility`
 now reads `p.cloud.getSnapshot()`. Both tests fail on the old code.
 
+**Inspector Brad (29 Oct, sweep on `767d524`).** (1, medium) Online fill-in
+was the one switch `cloudSharingWrites` compared with the server value rather
+than what was shown. With a stale optimistic base still showing fill-in on
+after `approveJoin` turned it off for everyone already in, an unrelated chip
+tap sent `delegation(true)` and granted the newcomer fill-in. It now writes
+only when the tap changed it (`target.logging !== before.logging`) and the
+server differs. Test fails on the old code.
+
 **Not verified.** Nothing on a device or simulator.
 
 ### 2026-10-26 — Together UX pass PR 3: leaving, ending and finishing (PER-60, branch `claude/per-60-together-finish`)
