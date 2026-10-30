@@ -1,5 +1,30 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-30 — Together: the session code admits to private sessions (PER-60, branch `claude/compassionate-clarke-eefidd`)
+
+Found during PR #514's review. The app offers "Private · code or QR" and lets a
+joiner type the six-character code (`TogetherJoinContainer` → `requestJoin`
+with `code`). `requestJoin`'s code branch skips the audience check, but the
+stored request had no invite, so `approveJoin` fell into its audience branch:
+a partner's code join to a private session (the Online default) was refused
+with 403, and the host could never approve a non-partner's code request. QR
+and link joins carry an invite and were unaffected.
+
+Fix: `together_join_requests.via_code` (migration
+`20261030120000_together_join_request_via_code.sql`, idempotent, rollback in
+`supabase/rollbacks/`). `requestJoin` sets it when the request came by code and
+not by invite; `approveJoin` skips the audience check for it, as it does for
+an invite. Membership, blocking, seat, paid and `live()` checks are unchanged.
+A bare session-ID request to a private session is still refused.
+
+Evidence: PGlite test `the session code admits to a private session: partners
+straight in, others once the host approves` fails on the old code. Migration
+checked in PGlite: applies twice, rolls back twice without losing rows,
+reapplies. The integration suites that load migrations now load this one.
+
+**Deploy:** run the migration before the core deploy. Independent of #514, but
+both add a migration; either order works. **Not verified** on a device.
+
 ### 2026-10-27 — Together UX pass PR 4: sharing and settings (PER-60, branch `claude/per-60-together-sharing`)
 
 Canvas row 4 (`Sharing.dc.html`, five phones). Last PR of the Together UX
@@ -252,7 +277,8 @@ longer checks the listing; only `requestJoin`'s session-ID branch does, and
 the host approving a request is their choice. Not fixed here, already on
 main: `approveJoin` refuses every code request for a `private` session (and a
 non-partner's for `friends`). Needs the request to record that it came by
-code (a column, so a migration); left for a follow-up.
+code (a column, so a migration); fixed in #515 (`via_code`), merged into
+this branch on 30 Oct.
 
 **Not verified.** Nothing on a device or simulator.
 

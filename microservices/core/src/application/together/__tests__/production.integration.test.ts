@@ -184,6 +184,15 @@ beforeAll(async () => {
   );
   await pg.exec(listedMigration);
   await pg.exec(listedMigration);
+  const viaCodeMigration = readFileSync(
+    new URL(
+      "../../../../../../supabase/migrations/20261030120000_together_join_request_via_code.sql",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  await pg.exec(viaCodeMigration);
+  await pg.exec(viaCodeMigration);
   db = drizzle(pg, { schema });
   holder.db = db;
 });
@@ -987,6 +996,35 @@ describe("production Together persistence and recovery", () => {
       }),
     ).rejects.toMatchObject({ status: 404 });
   });
+  it("the session code admits to a private session: partners straight in, others once the host approves", async () => {
+    const consent = {
+      consentVersion: "together-v1" as const,
+      consentAccepted: true as const,
+    };
+    // A new Online session is private: only the code or an invite gets in.
+    const s = await create();
+    await db
+      .insert(schema.friendships)
+      .values({ userId: a, friendId: b, status: "accepted", initiatedBy: a });
+    await expect(
+      repo.requestJoin(c, key(), { sessionId: s.sessionId, ...consent }),
+    ).rejects.toMatchObject({ status: 403 });
+    expect(
+      await repo.requestJoin(b, key(), { code: s.code!, ...consent }),
+    ).toMatchObject({ status: "approved", sessionId: s.sessionId });
+    const pending = await repo.requestJoin(c, key(), {
+      code: s.code!,
+      ...consent,
+    });
+    expect(pending.status).toBe("pending");
+    await repo.decide(a, s.sessionId, pending.requestId, key(), {
+      decision: "approve",
+      expectedRevision: (await repo.snapshot(a, s.sessionId)).revision,
+    });
+    expect(
+      (await repo.snapshot(a, s.sessionId)).participants.map((p) => p.userId),
+    ).toEqual(expect.arrayContaining([a, b, c]));
+  });
   it("visibility and discovery restrict friends/private, cursor scope and nearby place selection", async () => {
     const s = await create();
     await expect(
@@ -1598,6 +1636,15 @@ describe("remaining recovery and migration boundaries", () => {
       readFileSync(
         new URL(
           "../../../../../../supabase/migrations/20261029120000_together_listed_until.sql",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+    );
+    await pg.exec(
+      readFileSync(
+        new URL(
+          "../../../../../../supabase/migrations/20261030120000_together_join_request_via_code.sql",
           import.meta.url,
         ),
         "utf8",
