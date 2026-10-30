@@ -175,6 +175,15 @@ beforeAll(async () => {
   );
   await pg.exec(codeMigration);
   await pg.exec(codeMigration);
+  const listedMigration = readFileSync(
+    new URL(
+      "../../../../../../supabase/migrations/20261029120000_together_listed_until.sql",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  await pg.exec(listedMigration);
+  await pg.exec(listedMigration);
   const viaCodeMigration = readFileSync(
     new URL(
       "../../../../../../supabase/migrations/20261030120000_together_join_request_via_code.sql",
@@ -724,6 +733,147 @@ describe("production Together persistence and recovery", () => {
       ),
     ).toMatchObject({ status: "finished_empty" });
     expect((await repo.snapshot(a, s.sessionId)).state).toBe("closed");
+  });
+  it("the host's snapshot reports who can join; a partner's does not (PER-60)", async () => {
+    const s = await pair();
+    const host = await repo.snapshot(a, s.sessionId);
+    expect(["private", "friends"]).toContain(host.audience);
+    await repo.visibility(a, s.sessionId, key(), {
+      audience: "friends",
+      expiresAt: new Date(Date.now() + 60000).toISOString(),
+    });
+    expect((await repo.snapshot(a, s.sessionId)).audience).toBe("friends");
+    expect((await repo.snapshot(b, s.sessionId)).audience).toBeNull();
+    // The host also gets when the session ends, in the server's own clock, to
+    // send back as the listing deadline (inspector lead).
+    const [row] = await db
+      .select({ expiresAt: schema.togetherSessions.expiresAt })
+      .from(schema.togetherSessions)
+      .where(eq(schema.togetherSessions.id, s.sessionId));
+    expect((await repo.snapshot(a, s.sessionId)).endsAt).toBe(
+      row!.expiresAt.toISOString(),
+    );
+    expect((await repo.snapshot(b, s.sessionId)).endsAt).toBeNull();
+  });
+  it("changing who can join never shortens the session's own lifetime (PER-60)", async () => {
+    const s = await create();
+    const lifetime = async () =>
+      (
+        await db
+          .select({ expiresAt: schema.togetherSessions.expiresAt })
+          .from(schema.togetherSessions)
+          .where(eq(schema.togetherSessions.id, s.sessionId))
+      )[0]!.expiresAt.getTime();
+    const before = await lifetime();
+    for (const audience of ["friends", "private"] as const)
+      await repo.visibility(a, s.sessionId, key(), {
+        audience,
+        expiresAt: new Date(Date.now() + 60000).toISOString(),
+      });
+    expect(await lifetime()).toBe(before);
+    expect(before).toBeGreaterThan(Date.now() + 3 * 3600000);
+    // The value isn't stored, so a phone clock hours fast or slow still works;
+    // only something that isn't a date is refused.
+    for (const offset of [6 * 3600000, -3600000])
+      await repo.visibility(a, s.sessionId, key(), {
+        audience: "friends",
+        expiresAt: new Date(Date.now() + offset).toISOString(),
+      });
+    await expect(
+      repo.visibility(a, s.sessionId, key(), {
+        audience: "friends",
+        expiresAt: "soon",
+      }),
+    ).rejects.toMatchObject({ status: 400 });
+    expect(await lifetime()).toBe(before);
+  });
+  it("an older app's time-boxed listing ends on time, without ending the session (inspector lead)", async () => {
+    const s = await create();
+    await db
+      .insert(schema.friendships)
+      .values({ userId: a, friendId: b, status: "accepted", initiatedBy: a });
+    const listed = async () =>
+      (await repo.discovery(b, { audience: "friends" })).data.map(
+        (x) => x.sessionId,
+      );
+    // Apps before PER-60 offered "for 15 minutes" and sent that deadline.
+    await repo.visibility(a, s.sessionId, key(), {
+      audience: "friends",
+      expiresAt: new Date(Date.now() + 15 * 60000).toISOString(),
+    });
+    expect(await listed()).toEqual([s.sessionId]);
+    const [row] = (await repo.discovery(b, { audience: "friends" })).data;
+    expect(Date.parse(String(row!.expiresAt))).toBeLessThanOrEqual(
+      Date.now() + 15 * 60000,
+    );
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(Date.now() + 16 * 60000);
+      expect(await listed()).toEqual([]);
+      // The session itself carries on: partners can still be in it.
+      expect((await repo.snapshot(a, s.sessionId)).state).toBe("active");
+    } finally {
+      vi.useRealTimers();
+    }
+    // A deadline past the session's own end is capped at it.
+    await repo.visibility(a, s.sessionId, key(), {
+      audience: "friends",
+      expiresAt: new Date(Date.now() + 48 * 3600000).toISOString(),
+    });
+    const [capped] = await db
+      .select()
+      .from(schema.togetherSessions)
+      .where(eq(schema.togetherSessions.id, s.sessionId));
+    expect(capped!.listedUntil!.getTime()).toBe(capped!.expiresAt.getTime());
+    expect(await listed()).toEqual([s.sessionId]);
+  });
+  it("a lapsed listing stops new requests by the session ID; the host can still approve, and an invite still works (inspector lead)", async () => {
+    const consent = {
+      consentVersion: "together-v1" as const,
+      consentAccepted: true as const,
+    };
+    const s = await create();
+    await db
+      .insert(schema.friendships)
+      .values({ userId: a, friendId: b, status: "accepted", initiatedBy: a });
+    // An older app's "for 15 minutes" at a venue: C isn't a partner, so C's
+    // request waits for the host.
+    await repo.visibility(a, s.sessionId, key(), {
+      audience: "nearby",
+      placeId: "geoapify:place",
+      expiresAt: new Date(Date.now() + 15 * 60000).toISOString(),
+    });
+    const pending = await repo.requestJoin(c, key(), {
+      sessionId: s.sessionId,
+      ...consent,
+    });
+    expect(pending.status).toBe("pending");
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(Date.now() + 16 * 60000);
+      await expect(
+        repo.requestJoin(c, key(), { sessionId: s.sessionId, ...consent }),
+      ).rejects.toMatchObject({ status: 403 });
+      // The host approving a request made in time is still their choice.
+      await repo.decide(a, s.sessionId, pending.requestId, key(), {
+        decision: "approve",
+        expectedRevision: (await repo.snapshot(a, s.sessionId)).revision,
+      });
+      // The session carries on, and the host's own invite still admits.
+      const invite = await repo.invite(a, s.sessionId, key(), {
+        expiresInMinutes: 15,
+      });
+      expect(
+        (
+          await repo.requestJoin(b, key(), {
+            inviteToken: invite.token,
+            ...consent,
+          })
+        ).status,
+      ).toBe("approved");
+    } finally {
+      vi.useRealTimers();
+    }
   });
   it("allows friends-only discovery while venue directory stays disabled", async () => {
     vi.stubEnv("TOGETHER_DISCOVERY_ENABLED", "false");
@@ -1477,6 +1627,15 @@ describe("remaining recovery and migration boundaries", () => {
       readFileSync(
         new URL(
           "../../../../../../supabase/migrations/20261023120000_together_session_code.sql",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+    );
+    await pg.exec(
+      readFileSync(
+        new URL(
+          "../../../../../../supabase/migrations/20261029120000_together_listed_until.sql",
           import.meta.url,
         ),
         "utf8",

@@ -27,6 +27,13 @@ export function cloudSnapshot(v: unknown): boolean {
     typeof v.sharingActive === "boolean" &&
     (v.continuation === null || v.continuation === "solo") &&
     (v.hostId === null || uuid(v.hostId)) &&
+    (v.audience === undefined ||
+      v.audience === null ||
+      ["private", "friends", "nearby"].includes(String(v.audience))) &&
+    (v.endsAt === undefined ||
+      v.endsAt === null ||
+      (typeof v.endsAt === "string" &&
+        Number.isFinite(Date.parse(v.endsAt)))) &&
     integer(v.revision) &&
     integer(v.planVersion) &&
     recoveryPlan(v.plan) &&

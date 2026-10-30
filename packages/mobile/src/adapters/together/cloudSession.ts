@@ -234,6 +234,13 @@ export class TogetherCloudController implements TogetherCloudPort {
     stored: Durable | null,
   ): CloudSnapshot | undefined {
     if (!snapshot || !stored || !this.account) return snapshot;
+    // An older server leaves `audience` out; keep the one it accepted.
+    if (
+      snapshot.audience === undefined &&
+      stored.own?.sessionId === snapshot.sessionId &&
+      stored.own.audience
+    )
+      snapshot = { ...snapshot, audience: stored.own.audience };
     const acknowledged =
       stored.own?.sessionId === snapshot.sessionId
         ? stored.own.participants.find((p) => p.userId === this.account)
@@ -284,7 +291,15 @@ export class TogetherCloudController implements TogetherCloudPort {
       "INSERT INTO together_cloud_workout(account_id,payload) VALUES (?,?) ON CONFLICT(account_id) DO UPDATE SET payload=excluded.payload",
       [this.account, JSON.stringify(value)],
     );
-    this.publish({ pendingCount: value.pending.length });
+    const visibility = value.pending
+      .filter((a) => a.method === "visibility")
+      .at(-1);
+    this.publish({
+      pendingCount: value.pending.length,
+      pendingVisibility: visibility
+        ? (visibility.args[2] as { audience: "private" | "friends" }).audience
+        : undefined,
+    });
   }
   private context() {
     if (!this.account || !this.active || this.disposed)
@@ -707,8 +722,15 @@ export class TogetherCloudController implements TogetherCloudPort {
           error instanceof Error ? error.message : "cloud-workout-unsupported";
       }
     }
+    // An older server leaves `audience` out: keep the one it last accepted.
+    const audience =
+      snapshot.audience ??
+      (stored.own?.sessionId === snapshot.sessionId
+        ? stored.own.audience
+        : undefined);
     stored.own = {
       ...copy(snapshot),
+      ...(audience ? { audience } : {}),
       participants: [copy(own)],
       sharingActive: false,
     };
@@ -1022,7 +1044,9 @@ export class TogetherCloudController implements TogetherCloudPort {
           }
           if (
             !response.ok &&
-            (next.method === "consent" || next.method === "delegation") &&
+            (next.method === "consent" ||
+              next.method === "delegation" ||
+              next.method === "visibility") &&
             definitiveRejection(response.error)
           ) {
             // The server will never take this sharing change. Drop the intent
@@ -1038,7 +1062,10 @@ export class TogetherCloudController implements TogetherCloudPort {
             if (this.mutationResults.has(droppedKey))
               this.mutationResults.set(droppedKey, {
                 done: true,
-                error: response.error.togetherCode ?? response.error.code,
+                error:
+                  next.method === "visibility"
+                    ? "cloud-visibility-refused"
+                    : (response.error.togetherCode ?? response.error.code),
               });
             continue;
           }
@@ -1139,6 +1166,20 @@ export class TogetherCloudController implements TogetherCloudPort {
               owner.delegationGeneration = acknowledged.generation;
             }
           }
+          if (next.method === "visibility" && fresh.own) {
+            // No version to compare, so the accepted audience is recorded as
+            // acknowledged and shown now; a later snapshot that reports one
+            // wins (PER-60).
+            const { audience } = next.args[2] as {
+              audience: "private" | "friends";
+            };
+            fresh.own.audience = audience;
+            if (this.state.snapshot?.sessionId === fresh.own.sessionId)
+              this.state = {
+                ...this.state,
+                snapshot: { ...this.state.snapshot, audience },
+              };
+          }
           if (next.method === "cancelJoin") fresh.joinStatus = "rejected";
           this.persist(fresh);
           if (next.method === "create")
@@ -1190,7 +1231,14 @@ export class TogetherCloudController implements TogetherCloudPort {
       // A running drain may already be refreshing after its outbox loop. Its
       // completion does not acknowledge an action appended during that refresh.
       for (;;) {
-        await this.drain();
+        try {
+          await this.drain();
+        } catch (error) {
+          // A later step failed (the closing refresh, or an action queued
+          // after this one); if this action already settled, its own result
+          // stands rather than the drain's error.
+          if (!this.mutationResults.get(resultKey)?.done) throw error;
+        }
         this.guard(context);
         const result = this.mutationResults.get(resultKey);
         if (result?.done) {
@@ -1402,6 +1450,11 @@ export class TogetherCloudController implements TogetherCloudPort {
       throw new Error("cloud-previous-stale");
     this.publish({ previous: { ...this.state.previous, [ownerId]: result } });
   }
+  /**
+   * Rejects with `cloud-visibility-refused` when the server refused it for
+   * good (the action is dropped, as consent is); any other rejection leaves
+   * it queued for reconnect (PER-60).
+   */
   async visibility(audience: "private" | "friends", expiresAt: string) {
     const { s } = this.own();
     await this.queue("visibility", [

@@ -38,6 +38,12 @@ import {
   togetherPartnerAccess,
 } from "@/ui/presenters/TogetherPartnerPresenter";
 import { useTogetherPartnerOutbox } from "@/ui/hooks/useTogetherPartnerOutbox";
+import { useTogetherSharing } from "@/ui/hooks/useTogetherSharing";
+import {
+  cloudSharingBase,
+  cloudSharingWrites,
+  sharingPeople,
+} from "@/ui/presenters/togetherSharing";
 import { useTogetherToast } from "@/ui/hooks/useTogetherToast";
 import { rememberCloudRoster } from "@/ui/state/togetherRosterSeen";
 import {
@@ -169,6 +175,16 @@ export function cloudSharedView(
       : [],
   };
 }
+/**
+ * The `expiresAt` sent with Who can join when the server doesn't say when the
+ * session ends. Current servers send `endsAt` and list the session until the
+ * deadline sent. Older ones wrote it over the session's own lifetime (so 15
+ * minutes ended the session) and rejected anything past their clock plus 4
+ * hours or before it: two hours keeps a session at least that long there and
+ * tolerates a phone clock up to two hours off either way (PER-60).
+ */
+const VISIBLE_FOR = 2 * 3600_000;
+
 export function TogetherCloudContainer(p: {
   cloud: TogetherCloudPort;
   /** Host online straight away: "friends" also publishes visibility to training partners. */
@@ -204,6 +220,30 @@ export function TogetherCloudContainer(p: {
     [viewing, setViewing] = useState<string | null>(null);
   /** Canvas row 3: the strip's Leave or End sheet. */
   const [leaveOpen, setLeaveOpen] = useState(false);
+  /** Canvas row 4: the strip's settings cog. */
+  const [sharingOpen, setSharingOpen] = useState(false);
+  // Who can join: a change still in the outbox (persisted, so it survives a
+  // minimise or restart), else what the server reports. A change the server
+  // drops later leaves nothing behind. Unknown (an older server) shows no
+  // choice rather than claiming Private.
+  const shownAudience = state.pendingVisibility ?? state.snapshot?.audience;
+  const hostAudience =
+    shownAudience === "friends"
+      ? "friends"
+      : shownAudience === "private"
+        ? "invite-only"
+        : undefined;
+  /**
+   * Sends who can join; offline, it stays queued and still shows. Reads the
+   * controller's current snapshot, not this render's: the start-as-Partners
+   * effect calls this from its first render, before `endsAt` arrived.
+   */
+  const sendVisibility = (value: "invite-only" | "friends") =>
+    p.cloud.visibility(
+      value === "friends" ? "friends" : "private",
+      p.cloud.getSnapshot().snapshot?.endsAt ??
+        new Date(Date.now() + VISIBLE_FOR).toISOString(),
+    );
   const [toast, showToast] = useTogetherToast();
   const [, requestCameraPermission] = useCameraPermissions();
   const [scanning, setScanning] = useState(false);
@@ -234,6 +274,7 @@ export function TogetherCloudContainer(p: {
     setScanning(false);
     setViewing(null);
     setLeaveOpen(false);
+    setSharingOpen(false);
     return () => {
       lifetime.current++;
     };
@@ -383,10 +424,7 @@ export function TogetherCloudContainer(p: {
       }
       if (p.initialHost === "friends")
         try {
-          await p.cloud.visibility(
-            "friends",
-            new Date(Date.now() + 15 * 60_000).toISOString(),
-          );
+          await sendVisibility("friends");
         } catch {
           if (scope === generation.current)
             setNotice(
@@ -451,6 +489,50 @@ export function TogetherCloudContainer(p: {
   const own = state.snapshot?.participants.find(
     (x) => x.userId === p.accountId,
   );
+  const confirmRemoval = (id: string) => {
+    const dialogGeneration = generation.current;
+    Alert.alert(
+      "Remove athlete?",
+      "They keep their own workout. Other athletes can continue this session.",
+      [
+        { text: "Keep training", style: "cancel" },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: () => {
+            if (dialogGeneration === generation.current)
+              run(() => p.cloud.remove(id));
+          },
+        },
+      ],
+    );
+  };
+  // Canvas row 4: the cog's three switches, for everyone else in the session.
+  // `own` already carries pending intent, so a switch holds through the ack.
+  const people = sharingPeople(
+    state.snapshot?.participants ?? [],
+    p.accountId,
+    (id, seat) => partner(id)?.displayName ?? `Athlete ${seat + 1}`,
+  );
+  const sharing = useTogetherSharing(
+    state.snapshot?.sharingActive && own
+      ? {
+          sessionId: state.snapshot.sessionId,
+          people,
+          base: cloudSharingBase(own, people),
+          write: async (target, before) => {
+            const w = cloudSharingWrites(own, people, target, before);
+            await Promise.all([
+              ...(w.numbers ? [p.cloud.numbersConsent(w.numbers)] : []),
+              ...(w.previous ? [p.cloud.previousConsent(w.previous)] : []),
+              ...(w.logging !== undefined
+                ? [p.cloud.delegation(w.logging)]
+                : []),
+            ]);
+          },
+        }
+      : null,
+  );
   // The stored sharing defaults apply to each person who joins an Online session
   // (canvas row 4, PER-60): once per newcomer, and once to everyone already in
   // when this account has not logged or granted anything yet.
@@ -495,25 +577,29 @@ export function TogetherCloudContainer(p: {
       .map((x) => x.userId)
       .filter((id) => id !== p.accountId && !g.ids.has(id));
     for (const id of fresh) g.ids.add(id);
-    const grantTo = firstSight && !untouched ? [] : fresh;
+    // The server refuses a list naming anyone not still training, so the
+    // grants only ever name partners who are (finished ones keep a seat).
+    const training = new Set(
+      s.participants.filter((x) => x.status === "active").map((x) => x.userId),
+    );
+    const grantTo = (firstSight && !untouched ? [] : fresh).filter((id) =>
+      training.has(id),
+    );
+    const withNewcomers = (granted: readonly string[] = []) => [
+      ...new Set([...granted.filter((id) => training.has(id)), ...grantTo]),
+    ];
     if (grantTo.length) {
       if (sharingDefaults.numbers)
         fire(() =>
-          p.cloud.numbersConsent([
-            ...new Set([
-              ...(own.numbersConsent?.recipientIds ?? []),
-              ...grantTo,
-            ]),
-          ]),
+          p.cloud.numbersConsent(
+            withNewcomers(own.numbersConsent?.recipientIds),
+          ),
         );
       if (sharingDefaults.previous)
         fire(() =>
-          p.cloud.previousConsent([
-            ...new Set([
-              ...(own.previousConsent?.recipientIds ?? []),
-              ...grantTo,
-            ]),
-          ]),
+          p.cloud.previousConsent(
+            withNewcomers(own.previousConsent?.recipientIds),
+          ),
         );
     }
     if (
@@ -690,10 +776,7 @@ export function TogetherCloudContainer(p: {
               }
             : undefined
         }
-        onSettings={() => {
-          setInviteView(false);
-          setVisible(true);
-        }}
+        onSettings={() => setSharingOpen(true)}
         endLabel={hosting ? "End" : "Leave"}
         onEnd={() => setLeaveOpen(true)}
       />
@@ -734,6 +817,31 @@ export function TogetherCloudContainer(p: {
           {partnerView}
         </>
       )}
+      <TogetherSharingPresenter
+        visible={sharingOpen && !!state.snapshot?.sharingActive}
+        state={sharing.state}
+        onChange={sharing.change}
+        removable={state.snapshot?.hostId === p.accountId ? people : undefined}
+        audience={
+          state.snapshot?.hostId === p.accountId
+            ? {
+                value: hostAudience,
+                online: true,
+                // Tapping the current value sends it again. Offline it stays
+                // queued and shows; refused, the server's answer shows.
+                onChange: (value) => {
+                  if (value === "open") return;
+                  sendVisibility(value).catch(() => {});
+                },
+              }
+            : undefined
+        }
+        onRemove={confirmRemoval}
+        onDone={() => {
+          setSharingOpen(false);
+          sharing.dismiss();
+        }}
+      />
       <TogetherLeaveSheet
         visible={leaveOpen && !soloAgain && !!state.snapshot}
         role={hosting ? "host" : "guest"}
@@ -1017,102 +1125,8 @@ export function TogetherCloudContainer(p: {
                 setVisible(false);
                 router.push("/(app)/together/partners" as never);
               }}
-              onVisible={() =>
-                run(() =>
-                  p.cloud.visibility(
-                    "friends",
-                    new Date(Date.now() + 15 * 60_000).toISOString(),
-                  ),
-                )
-              }
+              onVisible={() => run(() => sendVisibility("friends"))}
             />
-            {state.snapshot && own && (
-              <TogetherSharingPresenter
-                snapshot={shared}
-                accountId={p.accountId}
-                members={state.snapshot.participants.map((x) => ({
-                  userId: x.userId,
-                  host: x.userId === state.snapshot!.hostId,
-                }))}
-                role={state.snapshot.hostId === p.accountId ? "host" : "guest"}
-                onRemove={(id) => {
-                  const dialogGeneration = generation.current;
-                  Alert.alert(
-                    "Remove athlete?",
-                    "They keep their own workout. Other athletes can continue this session.",
-                    [
-                      { text: "Keep training", style: "cancel" },
-                      {
-                        text: "Remove",
-                        style: "destructive",
-                        onPress: () => {
-                          if (dialogGeneration === generation.current)
-                            run(() => p.cloud.remove(id));
-                        },
-                      },
-                    ],
-                  );
-                }}
-                sessionLogging={own.allowPartnerLogging}
-                onSessionLogging={(allowed) =>
-                  fire(() => p.cloud.delegation(allowed))
-                }
-                onConsent={(id, consent) => {
-                  // `own` already reflects pending intent, so each diff is
-                  // against what the switches show. The three permissions are
-                  // independent server resources: queue every change now and
-                  // let the outbox serialise the network.
-                  const next = (ids: string[] | undefined, on: boolean) =>
-                    on
-                      ? [...new Set([...(ids ?? []), id])]
-                      : (ids ?? []).filter((x) => x !== id);
-                  if (
-                    consent.numbers !==
-                    (own.numbersConsent?.recipientIds.includes(id) ?? false)
-                  )
-                    fire(() =>
-                      p.cloud.numbersConsent(
-                        next(own.numbersConsent?.recipientIds, consent.numbers),
-                      ),
-                    );
-                  if (
-                    consent.prev !==
-                    (own.previousConsent?.recipientIds.includes(id) ?? false)
-                  )
-                    fire(() =>
-                      p.cloud.previousConsent(
-                        next(own.previousConsent?.recipientIds, consent.prev),
-                      ),
-                    );
-                  if (consent.logging !== own.allowPartnerLogging)
-                    fire(() => p.cloud.delegation(consent.logging));
-                }}
-                onDiscard={p.onDiscardWorkout}
-                onClose={(mode) => {
-                  if (mode === "finish_all") {
-                    review(mode);
-                    return;
-                  }
-                  Alert.alert(
-                    "Stop sharing?",
-                    "Your workout stays active. Nothing is rated or saved.",
-                    [
-                      { text: "Keep sharing", style: "cancel" },
-                      {
-                        text: "Stop sharing",
-                        onPress: () =>
-                          run(async () => {
-                            if (!p.cloud.stopSharing)
-                              throw new Error("stop-sharing-unavailable");
-                            await p.cloud.stopSharing();
-                            if (isCurrent()) setVisible(false);
-                          }),
-                      },
-                    ],
-                  );
-                }}
-              />
-            )}
           </>
         )}
       </BottomSheet>

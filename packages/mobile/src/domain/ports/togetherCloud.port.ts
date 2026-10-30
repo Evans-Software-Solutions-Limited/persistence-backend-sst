@@ -41,6 +41,10 @@ export interface CloudSnapshot {
   hostId: string | null;
   /** The session code; present for the host only (PER-60). */
   code?: string | null;
+  /** Who can join, for the host only; older servers leave it out (PER-60). */
+  audience?: "private" | "friends" | "nearby" | null;
+  /** When the session ends, for the host only; older servers leave it out (PER-60). */
+  endsAt?: string | null;
   revision: number;
   planVersion: number;
   plan: CloudPlan;
@@ -268,6 +272,11 @@ export interface TogetherCloudState {
   requests: CloudRequest[];
   previous: Record<string, CloudPrevious>;
   pendingCount: number;
+  /**
+   * Who can join, while a change to it is still in the outbox: the host's
+   * intent wins until the server answers, as consent's does (PER-60).
+   */
+  pendingVisibility?: "private" | "friends";
   error?: string;
 }
 export interface TogetherCloudPort {
@@ -302,6 +311,7 @@ export interface TogetherCloudPort {
   numbersConsent(recipientIds: string[]): Promise<void>;
   previousConsent(recipientIds: string[]): Promise<void>;
   previous(ownerId: string): Promise<void>;
+  /** Rejects `cloud-visibility-refused` when refused for good; otherwise it stays queued. */
   visibility(audience: "private" | "friends", expiresAt: string): Promise<void>;
   friends(cursor?: string): ReturnType<TogetherCloudApi["friends"]>;
   /** Preview an Online session from a pasted link or a typed code before consenting (PER-60). */

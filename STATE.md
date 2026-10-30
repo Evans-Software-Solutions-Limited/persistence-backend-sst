@@ -25,6 +25,263 @@ reapplies. The integration suites that load migrations now load this one.
 **Deploy:** run the migration before the core deploy. Independent of #514, but
 both add a migration; either order works. **Not verified** on a device.
 
+### 2026-10-27 — Together UX pass PR 4: sharing and settings (PER-60, branch `claude/per-60-together-sharing`)
+
+Canvas row 4 (`Sharing.dc.html`, five phones). Last PR of the Together UX
+pass. Mobile only; no backend change, no native build.
+
+**What changed.** The strip's settings cog opens one drawer on both
+transports (`TogetherSharingPresenter`, rebuilt): "Together settings", "This
+session only…", three `TogetherSwitch` rows (Show my numbers, Share previous
+values, Let others fill in my sets) with the canvas sub-lines, recipient chips
+under previous values, one orange notice when the session refuses a change,
+and Done. The switches speak for everyone in the session: numbers and fill-in
+read on only when on for every partner; previous values reads on while anyone
+is picked. The old per-partner cards, delivery debug lines, explainer,
+Discard and close-mode buttons are gone from the cog (Leave/End/Finish live on
+the strip since PR 3). Together settings gains the live card ("Now · Brad's
+session", "Ends with the session", previous values summarised) while a
+session is live; it writes to the session, never the defaults.
+
+**Shape.** `ui/presenters/togetherSharing.ts` is the pure model: both
+transports reduce to `SharingBase` (`nearbySharingBase`/`Writes` over
+per-recipient grants; `cloudSharingBase`/`Writes` over recipient lists plus
+the session fill-in flag). `useTogetherSharing` shows a change at once, holds
+it until its write settles, and shows the notice only when the switch went
+back (`holds`): an Online write that rejects while the change stays queued
+offline is not a refusal. `useLiveTogetherSharing` reads the live session from
+the adapters, so the settings card works while the workout is minimised.
+Nearby consent plus previous-value publishing moved out of the lobby container
+into `application/together/nearbyConsent.ts` (`applyNearbyConsent`), shared by
+the container and the card. Online host gets "Who can join" (Private /
+Partners) through the existing `visibility` call, which replaces the old
+"Show to training partners for 15 minutes" button.
+
+**Canvas differences (on PER-60):** no "Who can join" for Nearby (changing it
+mid-session touches invitation/admission rules in the transport); the host
+keeps "Remove" per partner (a safety control the canvas omits); unticking
+every chip turns previous values off ("Nobody picked" can't be told apart from
+off on either transport). Lost from the in-session UI with the old cog sheet:
+Online "Revoke this invitation" and "Retry connection", and the Nearby lobby
+sheet's extras (training partners link, diagnostics share) for guests; the
+lobby and invite sheets are still reached from Invite.
+
+Profile › Train together: no entry left in source; Together settings is
+reached only from the Train hub cog. The `together/partners` deep link is
+unchanged.
+
+**Verified.** Mobile Jest 652 suites / 8,730 tests, coverage
+96.21 / 92.19 / 96.11 / 97.6 (gate 90). `tsc`, `expo lint`, prettier clean.
+Unit: model (people, base/writes per transport, change, holds, refusal copy,
+summary); hook (hold, refusal, queued-not-refused, latest-wins, session change,
+unmount); live hook (Nearby with previous values, no workout, not live, Online
+host/guest/stopped). Presenters: every phone, chips, refusal, host extras,
+ended. Containers: Nearby PREV scoping, cross-account and refresh guards
+through the new sheet, removal, cog open/Done; Online every-partner writes,
+refusal notice, late rejection after account change, Who can join (and its
+revert), invite and request bar from the strip. Screens: harness shots next
+to canvas crops for all five phones in
+`specs/milestones/TRAIN-TOGETHER/evidence/ui-2026-10-27-per60-pr4/`.
+
+**Inspector Brad (27 Oct, sweep on `ab7087f`).** Three medium leads. (1) The
+switches read on only when every partner held the grant, so a newcomer given
+the stored defaults (numbers on) sat behind a switch reading Off, and the next
+chip tap rewrote every recipient's numbers to the shown value, silently
+revoking it. Each switch now reads on while anyone holds the grant, and
+`nearbySharingWrites`/`cloudSharingWrites` take what was shown (`before`) and
+change only what the tap changed; the hook passes it. (2) Online "Who can join"
+reverted when `visibility` rejected, but the outbox keeps that action queued
+and sends it on reconnect (visibility is never dropped), so it no longer
+reverts. (3) The segment was a guess seeded once: it now records when Partners
+was sent and lapses to Private after the server's 15 minutes, every send
+(start, the main sheet's button, the segment) updates it, and tapping the shown
+value sends it again to renew or retry. Each new test fails on the old code.
+
+**Inspector Brad (27 Oct, sweep on `2375688`).** The three fixes above held;
+two low leads. (1) Who can join was seeded Partners from `initialHost` before
+anything was sent (a recovered or unconfirmed start never sends) and outlived
+the session. It now starts Private, only `sendVisibility` sets Partners, the
+choice is keyed to the session it was sent for, and an account change clears
+it. (2) With nobody else in the session the switches flipped and snapped back
+(nothing to grant). The drawer and the live card now say "Nobody else is here
+yet. Everyone who joins starts with your defaults." instead of the switches.
+Each new test fails on the old code.
+
+**Inspector Brad (27 Oct, sweep on `8fa5c05`).** One medium lead: Who can
+join lived in the Online container's state, which minimise unmounts, so on
+reopening it read Private while the server still listed the session to
+partners. It now lives in `ui/state/togetherVisibilitySent.ts`, keyed by
+session (like `togetherRosterSeen`); memory only, so after a restart it reads
+Private until the host sends again. The new test fails on the old code.
+
+**Inspector Brad (27 Oct, sweep on `6cb2d73`).** (1, high) The server's
+`visibility()` wrote `body.expiresAt` over `sessions.expiresAt`, which is the
+session's own lifetime (`live()` revokes collaboration once it passes), so
+every 15-minute visibility send, including the existing start-as-Partners
+call and "Show to training partners", ended the Online session 15 minutes
+later. **Backend:** `visibility()` no longer touches `expiresAt` (still
+validated for compatibility); new PGlite test. **Mobile:** Partners now lasts
+the session (no 15-minute lapse), and the app sends the server's 4-hour cap
+less 10 minutes so an older server extends rather than cuts the session; the
+button copy drops "for 15 minutes". Needs a core deploy to fix sessions from
+older app builds. (2, low) `useTogetherSharing` ignored a superseded write's
+success but not its failure, so undoing a tap could raise a "switched back"
+notice; failures from a replaced tap are now ignored. Each new test fails on
+the old code.
+
+**Inspector Brad (28 Oct, sweep on `e9e324d`).** One medium lead: the app's
+near-4-hour `expiresAt` left 10 minutes of slack against the server's
+`<= now + 4h` check, so a phone clock 10+ minutes fast got 400 on every Who
+can join send, and a rejected `visibility` is never dropped from the outbox
+(it blocks what's queued behind it and the session goes unavailable). The
+server now only checks `expiresAt` is a date, since it no longer stores it;
+the app sends now + 2 hours, which an undeployed server still accepts for a
+clock up to 2 hours off either way and which keeps a session at least 2 hours
+there. New PGlite assertions (6 h ahead, 1 h behind accepted; non-date 400)
+fail on the old code.
+
+**Inspector Brad (28 Oct, sweep on `9db2acb`).** One low lead: after a
+restart the in-memory `visibilitySent` was empty, so the Online segment
+claimed Private while the server still listed the session to partners. The
+host's snapshot now carries `audience` (`TogetherRepository.snapshot`, null
+for partners; the client schema accepts it absent for older servers). The
+segment reads the host's own send first (it can be ahead of a queued send),
+then the server's `audience`, and shows no selection when neither is known
+instead of claiming Private. New PGlite and app tests fail on the old code.
+
+**Inspector Brad (28 Oct, sweep on `1336cfe`).** (1, medium) A definitively
+refused Who can join kept showing, and in fact the outbox never dropped a
+refused `visibility` (only consent and delegation), so a 4xx also blocked the
+queue. The controller now drops it like consent and `visibility()` rejects
+`cloud-visibility-refused` (any other rejection means still queued); the app
+forgets that send so the server's audience shows again. (2, low) The hook
+skipped any superseded failure, so a refusal was lost when the newer tap was
+on another switch and the switch went back silently. It now tracks the newest
+tap per switch (chips share previous values') and skips only when that same
+switch was tapped again. Each new test fails on the old code.
+
+**Inspector Brad (28 Oct, sweep on `c67ae9c`).** One low lead:
+`visibility()` read "refused" from the action having left `pending`, but an
+accepted action leaves it too, so an accepted send whose closing refresh
+failed was called refused and the segment fell back to the stale audience.
+`queue()` now returns a settled action's own result when a later step of the
+drain fails, and the drop branch marks a refused visibility
+`cloud-visibility-refused` explicitly, so `visibility()` is a plain queue call
+again. New controller test fails on the old code.
+
+**Inspector Brad (28 Oct, sweep on `506074c`).** One medium lead: a send
+queued offline and refused on reconnect was dropped by the background drain
+with nobody listening, so the remembered choice kept showing. The in-memory
+`togetherVisibilitySent` store is gone. The controller now publishes
+`pendingVisibility` from the persisted outbox (the last queued `visibility`,
+as consent's intent is overlaid), and the segment shows that, else the
+server's `audience`, else no choice. It survives minimise and restart, and a
+change dropped later leaves nothing behind. New controller assertions fail on
+the old code.
+
+**Inspector Brad (29 Oct, sweep on `9611f0e`).** One medium lead: an accepted
+Who can join left the outbox before the closing refresh brought the new
+audience back, so the segment flicked to the stale value (or stayed there if
+the refresh failed, or went blank on an older server). The drain's success
+branch now records the accepted audience in the durable checkpoint
+(`own.audience`) and the published snapshot, as consent and delegation are
+recorded; `accept()` keeps it when an older server's snapshot leaves
+`audience` out, and `withIntent` overlays it the same way. A server that
+reports `audience` always wins. New controller assertions fail on the old
+code.
+
+**Inspector Brad (29 Oct, sweep on `4aa5fd7`).** One medium lead: Online
+"on for everyone" included partners who had finished (still in the roster,
+status `saved`/`finalizing`/`finished_empty`), and the server's
+`scopedConsent` refuses the whole list (`400 INVALID_PREVIOUS_CONSENT`), so
+the switch kept flipping back. `sharingPeople` now flags them `finished`
+(colours unchanged); they get no chip, turning a switch on leaves them out,
+the previous-values list sent only ever names partners still training, and it
+is sent only when the tap changed previous values. Nearby has no status and
+is unchanged. New model tests fail on the old code.
+
+**Inspector Brad (29 Oct, sweep on `99fecad`).** (1, medium) The joining
+defaults effect in `TogetherCloudContainer` still granted to every new
+participant and kept any finished partner already on the list, so a late
+joiner's defaults were refused whole. Both the newcomers and the existing
+list are now filtered to participants with `status === "active"`. (2, low) With
+every partner finished, `recipients` was empty and the sheet and live card said
+"Nobody else is here yet", hiding the switches. The empty state now comes from
+a new `alone` flag (nobody at all). When everyone else has finished, numbers
+and previous values can still be switched off but not on (there is nobody to
+grant to); fill-in stays live. Both tests fail on the old code.
+
+**Inspector Brad (29 Oct, sweep on `d2f6a4e`).** (1, medium) An Online
+athlete who had finished their own workout still got Together settings' live
+card while the session shared on for others, and every tap was refused
+(`scopedConsent` and `delegation` both need the actor `active`).
+`useLiveTogetherSharing` now treats an Online session as live only while this
+athlete's own status is `active`. (2, low) The refusal notice outlived Done and
+came back on every open; `useTogetherSharing` now exposes `dismiss()`, which
+both containers call from the sheet's Done/close. Both tests fail on the old
+code.
+
+**Inspector Brad (29 Oct, sweep on `9392d2e`).** (1, medium, backend) Once
+`visibility()` stopped writing `expiresAt`, nothing ended the listing for apps
+built before PER-60 ("for 15 minutes"), so a session stayed in friends/venue
+discovery until it ended. New nullable column `together_sessions.listed_until`
+(migration `20261029120000_together_listed_until.sql`, idempotent, with a
+rollback): `visibility()` stores the deadline sent, capped at the session's
+`expiresAt`, and `discovery()` lists only while it is null or in the future,
+returning it as the listing's `expiresAt`. The session's own lifetime is still
+untouched. The host's snapshot now also carries `endsAt` (the session's
+`expiresAt`, server clock; null for partners), and the app sends that back as
+the deadline so the new Who can join lists for the whole session without
+trusting the phone clock; against a server without `endsAt` it falls back to
+now + 2h. (2, low) The Together settings live card now shows the same refusal
+notice as the sheet (`TogetherSharingRefused`, extracted). The card's hook
+state goes with the screen, so leaving clears it. Needs the migration and a
+core deploy before the app relies on `endsAt`.
+
+**Inspector Brad (29 Oct, sweep on `558f870`).** (1, medium, backend) A
+lapsed `listed_until` hid the session from discovery but still let someone
+holding the session ID join (or ask to), since the audience branches of
+`requestJoin` and `approveJoin` only checked `audience` and `live()`. Both
+now also require the listing to be open (`listed()`: null or in the future).
+Invites still admit. A session-code request has no invite, so its approval
+goes through the same audience branch: after an older app's listing lapses it
+is refused, as the whole session used to be. Open, not from this PR:
+`approveJoin` already refused a code request for a `private` session, despite
+the "code opens private sessions" comment in `requestJoin`. (2, medium) The
+start-as-Partners effect called `sendVisibility` from its first render, whose
+`state.snapshot` predates `hostWorkout()`, so it sent now + 2h instead of the
+server's `endsAt` and the listing lapsed halfway through. `sendVisibility`
+now reads `p.cloud.getSnapshot()`. Both tests fail on the old code.
+
+**Inspector Brad (29 Oct, sweep on `767d524`).** (1, medium) Online fill-in
+was the one switch `cloudSharingWrites` compared with the server value rather
+than what was shown. With a stale optimistic base still showing fill-in on
+after `approveJoin` turned it off for everyone already in, an unrelated chip
+tap sent `delegation(true)` and granted the newcomer fill-in. It now writes
+only when the tap changed it (`target.logging !== before.logging`) and the
+server differs. Test fails on the old code.
+
+**Inspector Brad (30 Oct, sweep on `c989d3c`).** (1, medium) The live card's
+Nearby `stillCurrent` was `mounted.current && p.lobby?.shared === shared`;
+`lobby.shared` is fixed, so it meant only "still mounted". Leaving Together
+settings while `setConsent` was in flight granted previous values but skipped
+`publishPrevious`, its only caller, so the partner's Prev stayed blank. The
+mounted check is gone; `applyNearbyConsent`'s workout, account and grant
+checks already stop a stale publish. Test fails on the old code.
+
+**Inspector Brad (30 Oct, sweep on `a97f7c4`).** (1, medium) The `listed()`
+gate added to `approveJoin` in `767d524` also caught session-code requests
+(stored with no invite, so approved through the audience branch): after an
+older app's listing lapsed they could never be admitted. `approveJoin` no
+longer checks the listing; only `requestJoin`'s session-ID branch does, and
+the host approving a request is their choice. Not fixed here, already on
+main: `approveJoin` refuses every code request for a `private` session (and a
+non-partner's for `friends`). Needs the request to record that it came by
+code (a column, so a migration); fixed in #515 (`via_code`), merged into
+this branch on 30 Oct.
+
+**Not verified.** Nothing on a device or simulator.
+
 ### 2026-10-26 — Together UX pass PR 3: leaving, ending and finishing (PER-60, branch `claude/per-60-together-finish`)
 
 Third of four UI PRs ([canvas](https://claude.ai/artifact/VBc4WTCmYuT5uJ1V6GyqSM)

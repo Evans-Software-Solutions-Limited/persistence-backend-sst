@@ -498,6 +498,27 @@ function shareProps(r: ReturnType<typeof renderWithTheme>) {
   return r.UNSAFE_getByType(TogetherSharingPresenter)
     .props as React.ComponentProps<typeof TogetherSharingPresenter>;
 }
+/** Joining grants nothing by default here, so only the sheet's changes are counted. */
+async function shareNothingByDefault() {
+  await act(async () => {});
+  useTogetherSettings.setState({
+    userId: "a",
+    hydrated: true,
+    sharing: { numbers: false, previous: false, logging: false },
+  });
+}
+/** The engine records each grant as it is set, bumping its version. */
+function recordGrants(h: ReturnType<typeof sharingHarness>) {
+  let version = 0;
+  jest
+    .mocked(h.shared.setConsent)
+    .mockImplementation(async (recipientId, consent) => {
+      version++;
+      h.setShared({
+        grants: [{ ownerId: "a", recipientId, version, consent }],
+      });
+    });
+}
 function lastDialog() {
   return jest.mocked(Alert.alert).mock.calls.at(-1)![2]!;
 }
@@ -593,21 +614,18 @@ it("scopes PREV publication to explicit recipient, current owner and workout sta
       },
     ]);
   const r = mountShared(h, { getPrevious });
+  await shareNothingByDefault();
   h.publish({
     phase: "hosting",
     role: "host",
+    sessionId: "s1",
     members: [
       { userId: "a", host: true },
       { userId: "other", host: false },
     ],
   });
-  fireEvent.press(r.getByText("Open"));
   await act(async () =>
-    shareProps(r).onConsent("other", {
-      numbers: false,
-      prev: true,
-      logging: false,
-    }),
+    shareProps(r).onChange({ recipient: "other", value: true }),
   );
   expect(h.shared.setConsent).toHaveBeenCalledWith("other", {
     numbers: false,
@@ -620,13 +638,15 @@ it("scopes PREV publication to explicit recipient, current owner and workout sta
     Date.parse(personal().startedAt),
   );
   jest.mocked(h.shared.publishPrevious).mockClear();
+  // Previous values are off for Mia again; showing numbers publishes no PREV.
   await act(async () =>
-    shareProps(r).onConsent("other", {
-      numbers: true,
-      prev: false,
-      logging: true,
-    }),
+    shareProps(r).onChange({ key: "numbers", value: true }),
   );
+  expect(h.shared.setConsent).toHaveBeenLastCalledWith("other", {
+    numbers: true,
+    prev: false,
+    logging: false,
+  });
   expect(h.shared.publishPrevious).not.toHaveBeenCalled();
 });
 it("does not publish PREV after a delayed grant crosses accounts", async () => {
@@ -638,16 +658,21 @@ it("does not publish PREV after a delayed grant crosses accounts", async () => {
     }),
   );
   const getPrevious = jest.fn(() => []);
+  // Account b's stored defaults are not under test here.
+  const rehydrate = useTogetherSettings.getState().rehydrate;
+  useTogetherSettings.setState({ rehydrate: jest.fn(async () => {}) });
   const r = mountShared(h, { getPrevious });
-  h.publish({ phase: "hosting", role: "host" });
-  fireEvent.press(r.getByText("Open"));
-  act(() =>
-    shareProps(r).onConsent("other", {
-      numbers: true,
-      prev: true,
-      logging: false,
-    }),
-  );
+  await shareNothingByDefault();
+  h.publish({
+    phase: "hosting",
+    role: "host",
+    sessionId: "s1",
+    members: [
+      { userId: "a", host: true },
+      { userId: "other", host: false },
+    ],
+  });
+  act(() => shareProps(r).onChange({ key: "previous", value: true }));
   r.rerender(
     <TogetherLobbyContainer
       lobby={h.lobby}
@@ -660,6 +685,7 @@ it("does not publish PREV after a delayed grant crosses accounts", async () => {
   await act(async () => finish());
   expect(getPrevious).not.toHaveBeenCalled();
   expect(h.shared.publishPrevious).not.toHaveBeenCalled();
+  useTogetherSettings.setState({ rehydrate });
 });
 it("never reads PREV from a draft belonging to another account", async () => {
   const h = sharingHarness(),
@@ -668,15 +694,19 @@ it("never reads PREV from a draft belonging to another account", async () => {
     getWorkout: () => ({ ...personal(), userId: "b" }),
     getPrevious,
   });
-  h.publish({ phase: "hosting", role: "host" });
-  fireEvent.press(r.getByText("Open"));
+  h.publish({
+    phase: "hosting",
+    role: "host",
+    sessionId: "s1",
+    members: [
+      { userId: "a", host: true },
+      { userId: "other", host: false },
+    ],
+  });
   await act(async () =>
-    shareProps(r).onConsent("other", {
-      numbers: false,
-      prev: true,
-      logging: false,
-    }),
+    shareProps(r).onChange({ key: "previous", value: true }),
   );
+  expect(h.shared.setConsent).toHaveBeenCalled();
   expect(getPrevious).not.toHaveBeenCalled();
 });
 it("publishes the chosen display name only while admitted and tolerates failed profile delivery", async () => {
@@ -970,7 +1000,7 @@ it("fill-in edits a Nearby partner's planned set at once, and a revoked grant lo
   expect(h.shared.requestDelegatedSet).toHaveBeenCalledTimes(2);
   uuid.mockRestore();
 });
-it("destructive dialogs are generation-bound and do nothing when dismissed", async () => {
+it("removal is generation-bound and does nothing when dismissed", async () => {
   const h = sharingHarness();
   const r = mountShared(h);
   h.publish({
@@ -981,7 +1011,6 @@ it("destructive dialogs are generation-bound and do nothing when dismissed", asy
       { userId: "other", host: false },
     ],
   });
-  fireEvent.press(r.getByText("Open"));
   act(() => shareProps(r).onRemove!("other"));
   expect(h.lobby.removeParticipant).not.toHaveBeenCalled();
   const oldRemove = lastDialog().find((b) => b.text === "Remove")!;
@@ -994,14 +1023,8 @@ it("destructive dialogs are generation-bound and do nothing when dismissed", asy
   );
   await act(async () => oldRemove.onPress!());
   expect(h.lobby.removeParticipant).not.toHaveBeenCalled();
-  fireEvent.press(r.getByText("Open"));
-  act(() => shareProps(r).onClose("finish_all"));
-  const oldClose = lastDialog().find((b) => b.text === "End sharing")!;
-  r.unmount();
-  await act(async () => oldClose.onPress!());
-  expect(h.shared.close).not.toHaveBeenCalled();
 });
-it("confirms removal and routes an acknowledged closure to own recovery", async () => {
+it("confirms removal; only the host is offered it", async () => {
   const h = sharingHarness();
   const r = mountShared(h);
   h.publish({
@@ -1012,21 +1035,16 @@ it("confirms removal and routes an acknowledged closure to own recovery", async 
       { userId: "other", host: false },
     ],
   });
-  fireEvent.press(r.getByText("Open"));
+  expect(shareProps(r).removable?.map((p) => p.userId)).toEqual(["other"]);
   act(() => shareProps(r).onRemove!("other"));
   await act(async () =>
     lastDialog().find((b) => b.text === "Remove")!.onPress!(),
   );
   expect(h.lobby.removeParticipant).toHaveBeenCalledWith("other");
-  act(() => shareProps(r).onClose("save_own"));
-  expect(h.shared.close).not.toHaveBeenCalled();
-  await act(async () =>
-    lastDialog().find((b) => b.text === "End sharing")!.onPress!(),
-  );
-  expect(h.shared.close).toHaveBeenCalledWith("save_own");
-  expect(router.push).not.toHaveBeenCalled();
+  h.publish({ role: "guest" });
+  expect(shareProps(r).removable).toBeUndefined();
 });
-it("late closure cannot navigate or cancel a newer account's lobby", async () => {
+it("a late lobby leave cannot cancel a newer account's lobby", async () => {
   const h = sharingHarness();
   let finish!: () => void;
   jest.mocked(h.shared.close).mockReturnValueOnce(
@@ -1036,23 +1054,6 @@ it("late closure cannot navigate or cancel a newer account's lobby", async () =>
   );
   const r = mountShared(h);
   h.publish({ phase: "hosting", role: "host" });
-  fireEvent.press(r.getByText("Open"));
-  act(() => shareProps(r).onClose("finish_all"));
-  act(() => lastDialog().find((b) => b.text === "End sharing")!.onPress!());
-  r.rerender(
-    <TogetherLobbyContainer
-      lobby={h.lobby}
-      accountId="b"
-      workoutName="Other"
-    />,
-  );
-  await act(async () => finish());
-  expect(router.push).not.toHaveBeenCalled();
-  jest.mocked(h.shared.close).mockReturnValueOnce(
-    new Promise((r) => {
-      finish = r;
-    }),
-  );
   fireEvent.press(r.getByText("Open"));
   fireEvent.press(r.getByText("Leave lobby · keep my workout"));
   r.rerender(
@@ -1105,8 +1106,12 @@ it("workout row opens settings and the leave sheet while self selection restores
   expect(row().endLabel).toBe("Leave");
   expect(row().onInvite).toBeUndefined();
   expect(row().status).toBe("In sync · 2 training");
+  // The cog opens row 4's sharing sheet; Done closes it.
+  expect(shareProps(r).visible).toBe(false);
   act(() => row().onSettings());
-  expect(r.getByText("Training partners")).toBeTruthy();
+  expect(shareProps(r).visible).toBe(true);
+  act(() => shareProps(r).onDone());
+  expect(shareProps(r).visible).toBe(false);
   act(() => row().onSelect("b"));
   expect(r.UNSAFE_getByType(TogetherPartnerPresenter)).toBeTruthy();
   act(() => row().onSelect("a"));
@@ -1155,9 +1160,18 @@ it.each(["current", "revoked", "regranted", "workout", "unmounted"])(
       getPrevious: () => [],
       getWorkout: () => workout,
     });
-    h.publish({ phase: "hosting", role: "host" });
-    fireEvent.press(r.getByText("Open"));
+    await shareNothingByDefault();
+    h.publish({
+      phase: "hosting",
+      role: "host",
+      sessionId: "s1",
+      members: [
+        { userId: "a", host: true },
+        { userId: "other", host: false },
+      ],
+    });
     await act(async () => {});
+    recordGrants(h);
     let resolve!: (rows: readonly TogetherPreviousRow[]) => void;
     refreshPrevious.mockImplementation(
       () =>
@@ -1171,25 +1185,18 @@ it.each(["current", "revoked", "regranted", "workout", "unmounted"])(
       version: 1,
       consent: { prev: true, numbers: false, logging: false },
     };
-    h.setShared({ grants: [grant] });
     await act(async () => {
-      shareProps(r).onConsent("other", grant.consent);
+      shareProps(r).onChange({ key: "previous", value: true });
     });
     expect(h.shared.publishPrevious).toHaveBeenCalledWith(
       "other",
       [],
       Date.parse(workout.startedAt),
     );
-    if (state === "revoked") {
-      h.setShared({
-        grants: [
-          { ...grant, version: 2, consent: { ...grant.consent, prev: false } },
-        ],
-      });
+    if (state === "revoked")
       await act(async () => {
-        shareProps(r).onConsent("other", { ...grant.consent, prev: false });
+        shareProps(r).onChange({ recipient: "other", value: false });
       });
-    }
     if (state === "regranted")
       h.setShared({ grants: [{ ...grant, version: 3 }] });
     if (state === "workout") workout = { ...workout, id: "another" };
@@ -1234,9 +1241,18 @@ it("omits skipped PREV in cached and refreshed publication, using the current wo
     getPrevious: () => rows,
     refreshPrevious,
   });
-  h.publish({ phase: "hosting", role: "host" });
-  fireEvent.press(r.getByText("Open"));
+  await shareNothingByDefault();
+  h.publish({
+    phase: "hosting",
+    role: "host",
+    sessionId: "s1",
+    members: [
+      { userId: "a", host: true },
+      { userId: "other", host: false },
+    ],
+  });
   await act(async () => {});
+  recordGrants(h);
   let resolve!: (value: readonly TogetherPreviousRow[]) => void;
   refreshPrevious.mockImplementation(
     () =>
@@ -1244,12 +1260,8 @@ it("omits skipped PREV in cached and refreshed publication, using the current wo
         resolve = done;
       }),
   );
-  const consent = { prev: true, numbers: false, logging: false };
-  h.setShared({
-    grants: [{ ownerId: "a", recipientId: "other", version: 1, consent }],
-  });
   await act(async () => {
-    shareProps(r).onConsent("other", consent);
+    shareProps(r).onChange({ key: "previous", value: true });
   });
   expect(h.shared.publishPrevious).toHaveBeenLastCalledWith(
     "other",
@@ -1494,8 +1506,12 @@ it("starts and promotes the detail workout before showing the actual invitation,
   act(() => row().onInvite());
   expect(r.getByText("Invite people")).toBeTruthy();
   act(() => row().onSettings());
-  expect(mockSheet.mock.calls.at(-1)![0].title).toBe("Together settings");
-  expect(r.getByText("Show session invitation")).toBeTruthy();
+  expect(shareProps(r).visible).toBe(true);
+  expect(
+    r.getByText(
+      "This session only. Defaults live in Train › Together › Settings.",
+    ),
+  ).toBeTruthy();
   share.mockRestore();
 });
 

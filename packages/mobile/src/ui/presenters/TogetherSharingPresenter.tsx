@@ -1,153 +1,318 @@
-import { Switch } from "react-native";
+import type { ReactNode } from "react";
+import { Pressable } from "react-native";
 import { Text, View } from "@tamagui/core";
-import { Btn } from "@/ui/components/foundation/Btn";
-import { Card } from "@/ui/components/foundation/Card";
-import type {
-  TogetherSharedSnapshot,
-  TogetherSharingConsent,
-} from "@/domain/ports/togetherShared.port";
+import { BottomSheet, Card } from "@/ui/components/foundation";
+import { TogetherAthleteAvatar } from "./TogetherAthleteAvatar";
+import { TogetherAudienceSegment } from "./TogetherAudienceSegment";
+import { TogetherBtn } from "./TogetherBtn";
+import { TogetherEyebrow } from "./TogetherEyebrow";
+import { TogetherSwitch } from "./TogetherSwitch";
+import type { TogetherLobbyAudience } from "@/domain/ports/togetherLobby.port";
+import {
+  previousSummary,
+  refusedCopy,
+  type SharingChange,
+  type SharingPerson,
+  type SharingRefusal,
+  type TogetherSharingState,
+} from "./togetherSharing";
+
+export const NOBODY_YET =
+  "Nobody else is here yet. Everyone who joins starts with your defaults.";
+
+const SUB = {
+  numbers:
+    "Off: partners see your progress through the plan, not weights or reps.",
+  previous:
+    "On by default. Partners see your last numbers in your Prev column, blank where you have none.",
+  logging: "Anyone here could log on your record. Turn it off at any time.",
+};
+
+function Row(p: {
+  title: string;
+  detail?: string;
+  first?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <View
+      flexDirection="row"
+      alignItems="center"
+      gap={12}
+      paddingVertical={12}
+      borderTopWidth={p.first ? 0 : 1}
+      borderColor="$border"
+    >
+      <View flex={1} gap={2}>
+        <Text
+          fontFamily="$display"
+          fontWeight="600"
+          fontSize={14}
+          lineHeight={18}
+          color="$text"
+        >
+          {p.title}
+        </Text>
+        {!!p.detail && (
+          <Text fontFamily="$body" fontSize={12} lineHeight={17} color="$text3">
+            {p.detail}
+          </Text>
+        )}
+      </View>
+      {p.children}
+    </View>
+  );
+}
+
+/** A previous-values recipient: avatar in their strip colour, then their name. */
+function Chip(p: { person: SharingPerson; on: boolean; onPress(): void }) {
+  return (
+    <Pressable
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked: p.on }}
+      accessibilityLabel={`Share previous values with ${p.person.name}`}
+      hitSlop={{ top: 4, bottom: 4 }}
+      onPress={p.onPress}
+      testID={`together-sharing-chip-${p.person.userId}`}
+    >
+      <View
+        height={36}
+        paddingLeft={6}
+        paddingRight={12}
+        borderRadius={999}
+        flexDirection="row"
+        alignItems="center"
+        gap={6}
+        borderWidth={1}
+        borderColor={p.on ? "$primary" : "$border2"}
+        backgroundColor={p.on ? "$primaryDim" : "$surface3"}
+      >
+        <TogetherAthleteAvatar
+          name={p.person.name}
+          size={24}
+          tone={p.person.tone}
+        />
+        <Text
+          fontFamily="$display"
+          fontWeight="600"
+          fontSize={12}
+          color={p.on ? "$text" : "$text2"}
+        >
+          {p.person.name}
+        </Text>
+      </View>
+    </Pressable>
+  );
+}
+
+/**
+ * The three switches, shared by the in-session sheet (with explanations and
+ * recipient chips) and Together settings' live card (labels end "in this
+ * session", previous values summarised).
+ */
+export function TogetherSharingRows(p: {
+  state: TogetherSharingState;
+  onChange(change: SharingChange): void;
+  variant: "sheet" | "card";
+}) {
+  const sheet = p.variant === "sheet";
+  const label = (text: string) => (sheet ? text : `${text} in this session`);
+  // Nobody to share with yet: switches would have nothing to grant.
+  if (p.state.alone)
+    return (
+      <View paddingVertical={12} testID="together-sharing-nobody">
+        <Text fontFamily="$body" fontSize={12} lineHeight={17} color="$text3">
+          {NOBODY_YET}
+        </Text>
+      </View>
+    );
+  // Everyone else has finished: what is shared can still be switched off,
+  // but there is nobody left to grant anything new to.
+  const locked = (on: boolean) => !on && !p.state.recipients.length;
+  return (
+    <>
+      <Row
+        title="Show my numbers"
+        detail={sheet ? SUB.numbers : undefined}
+        first
+      >
+        <TogetherSwitch
+          accessibilityLabel={label("Show my numbers")}
+          value={p.state.numbers}
+          disabled={locked(p.state.numbers)}
+          onValueChange={(value) => p.onChange({ key: "numbers", value })}
+        />
+      </Row>
+      <Row
+        title="Share previous values"
+        detail={sheet ? SUB.previous : previousSummary(p.state)}
+      >
+        <TogetherSwitch
+          accessibilityLabel={label("Share previous values")}
+          value={p.state.previous}
+          disabled={locked(p.state.previous)}
+          onValueChange={(value) => p.onChange({ key: "previous", value })}
+        />
+      </Row>
+      {sheet && p.state.previous && p.state.recipients.length > 0 && (
+        <View flexDirection="row" flexWrap="wrap" gap={8} paddingBottom={12}>
+          {p.state.recipients.map((r) => (
+            <Chip
+              key={r.userId}
+              person={r}
+              on={r.on}
+              onPress={() => p.onChange({ recipient: r.userId, value: !r.on })}
+            />
+          ))}
+        </View>
+      )}
+      <Row
+        title="Let others fill in my sets"
+        detail={sheet ? SUB.logging : undefined}
+      >
+        <TogetherSwitch
+          accessibilityLabel={label("Let others fill in my sets")}
+          value={p.state.logging}
+          onValueChange={(value) => p.onChange({ key: "logging", value })}
+        />
+      </Row>
+    </>
+  );
+}
+
+/**
+ * Canvas row 4, phones 1–3 (`Sharing.dc.html`): the strip's settings cog.
+ * Three switches that move on tap, recipient chips under previous values, one
+ * notice when the session refuses a change, and Done.
+ */
+/** The orange notice for a change the session refused; the switch is back. */
+export function TogetherSharingRefused(p: { refusal: SharingRefusal }) {
+  return (
+    <View
+      flexDirection="row"
+      gap={10}
+      alignItems="flex-start"
+      paddingVertical={10}
+      paddingHorizontal={12}
+      borderRadius={12}
+      borderWidth={1}
+      borderColor="$ember"
+      backgroundColor="$emberDim"
+      accessibilityRole="alert"
+      testID="together-sharing-refused"
+    >
+      <View
+        width={6}
+        height={6}
+        borderRadius={999}
+        backgroundColor="$ember"
+        marginTop={6}
+      />
+      <Text
+        flex={1}
+        fontFamily="$body"
+        fontSize={12}
+        lineHeight={17}
+        color="$text2"
+      >
+        {refusedCopy(p.refusal)}
+      </Text>
+    </View>
+  );
+}
 
 export function TogetherSharingPresenter(p: {
-  snapshot: TogetherSharedSnapshot;
-  accountId: string;
-  members: readonly { userId: string; host: boolean }[];
-  role?: "host" | "guest";
-  sessionLogging?: boolean;
-  onSessionLogging?(enabled: boolean): void;
+  visible: boolean;
+  state: TogetherSharingState | null;
+  onChange(change: SharingChange): void;
+  /** The host's "Who can join"; left out where the session can't change it. */
+  audience?: {
+    value: TogetherLobbyAudience | undefined;
+    online: boolean;
+    onChange(value: TogetherLobbyAudience): void;
+  };
+  /** The host can still remove someone (a safety control the canvas leaves out). */
+  removable?: readonly SharingPerson[];
   onRemove?(userId: string): void;
-  onConsent(userId: string, consent: TogetherSharingConsent): void;
-  onDiscard?(): void;
-  onClose(mode: "finish_all" | "save_own" | "leave"): void;
+  onDone(): void;
 }) {
-  const closed = p.snapshot.closures.some(
-    (c) =>
-      c.userId === p.accountId ||
-      p.members.some((m) => m.host && m.userId === c.userId),
-  );
   return (
-    <View gap={12} testID="together-sharing-settings">
-      <Text fontFamily="$display" fontSize={17} color="$text">
-        Together settings
-      </Text>
-      {closed ? (
-        <Text color="$text2">
-          Sharing has ended. Your own workout is still available to review and
-          save.
-        </Text>
-      ) : (
-        <>
-          {p.members
-            .filter((m) => m.userId !== p.accountId)
-            .map((m, i) => {
-              const grant = p.snapshot.grants.find(
-                (g) => g.ownerId === p.accountId && g.recipientId === m.userId,
-              )?.consent ?? { numbers: false, prev: false, logging: false };
-              return (
-                <Card key={m.userId}>
-                  <View gap={10}>
-                    <Text fontFamily="$display" color="$text">
-                      {p.snapshot.profiles[m.userId] ?? `Athlete ${i + 1}`}
-                    </Text>
-                    {(
-                      [
-                        ["numbers", "Show my numbers"],
-                        ["prev", "Share my previous values"],
-                        ["logging", "Let them fill in my sets"],
-                      ] as const
-                    )
-                      .filter(
-                        ([key]) => key !== "logging" || !p.onSessionLogging,
-                      )
-                      .map(([key, label]) => (
-                        <View
-                          key={key}
-                          flexDirection="row"
-                          alignItems="center"
-                          gap={12}
-                        >
-                          <Text color="$text" fontFamily="$body" flex={1}>
-                            {label}
-                          </Text>
-                          <Switch
-                            accessibilityLabel={`${label} · ${p.snapshot.profiles[m.userId] ?? `Athlete ${i + 1}`}`}
-                            value={grant[key]}
-                            onValueChange={(value) =>
-                              p.onConsent(m.userId, { ...grant, [key]: value })
-                            }
-                          />
-                        </View>
-                      ))}
-                    {p.role === "host" && p.onRemove && (
-                      <Btn
-                        variant="ghost"
-                        onPress={() => p.onRemove!(m.userId)}
-                      >
-                        Remove from session
-                      </Btn>
-                    )}
-                  </View>
-                </Card>
-              );
-            })}
-          {p.onSessionLogging && (
-            <Card>
-              <View gap={8}>
-                <View flexDirection="row" alignItems="center" gap={12}>
-                  <Text color="$text" flex={1}>
-                    Let others fill in my sets
-                  </Text>
-                  <Switch
-                    accessibilityLabel="Let others fill in my sets"
-                    value={p.sessionLogging ?? false}
-                    onValueChange={p.onSessionLogging}
-                  />
-                </View>
-                <Text color="$text2" fontSize={12}>
-                  Applies to session participants who can see your numbers. Turn
-                  it off to refuse edits still in flight.
-                </Text>
-              </View>
-            </Card>
-          )}
-          {p.snapshot.deliveries.map((d) => (
-            <Text key={d.recipientId} color="$text2" fontSize={12}>
-              {p.snapshot.profiles[d.recipientId] ?? "Training partner"} ·
-              shared view{" "}
-              {d.state === "received" ? "received" : "awaiting receipt"} ·
-              revision {d.revision}
-            </Text>
-          ))}
-          <Text color="$text2" fontFamily="$body" fontSize={13}>
-            These permissions are separate. Joining or becoming training
-            partners never switches them on. Changes take effect when the other
-            device receives them; disconnected devices must reauthorize before
-            showing private values.
+    <BottomSheet
+      visible={p.visible}
+      onClose={p.onDone}
+      height="content"
+      contentPadding={{ top: 4, bottom: 28 }}
+      testID="together-sharing-settings"
+    >
+      <View gap={14}>
+        <View gap={4}>
+          <Text
+            fontFamily="$display"
+            fontWeight="700"
+            fontSize={22}
+            lineHeight={28}
+            letterSpacing={-0.5}
+            color="$text"
+            accessibilityRole="header"
+          >
+            Together settings
           </Text>
-          {p.onDiscard && (
-            <Btn full variant="ghost" tone="error" onPress={p.onDiscard}>
-              Discard without saving
-            </Btn>
-          )}
-          {p.role === "host" ? (
-            <>
-              <Btn
-                full
-                variant="outline"
-                onPress={() => p.onClose("finish_all")}
-              >
-                End session for everyone
-              </Btn>
-              <Btn full variant="outline" onPress={() => p.onClose("save_own")}>
-                Stop sharing · keep my workout
-              </Btn>
-            </>
-          ) : (
-            <Btn full variant="outline" onPress={() => p.onClose("leave")}>
-              Leave sharing · keep my workout
-            </Btn>
-          )}
-        </>
-      )}
-    </View>
+          <Text fontFamily="$body" fontSize={12} lineHeight={17} color="$text3">
+            This session only. Defaults live in Train › Together › Settings.
+          </Text>
+        </View>
+        {p.state ? (
+          <>
+            <TogetherEyebrow>What you share</TogetherEyebrow>
+            <Card padX={14} padY={4}>
+              <TogetherSharingRows
+                state={p.state}
+                onChange={p.onChange}
+                variant="sheet"
+              />
+            </Card>
+            {p.state.refused && (
+              <TogetherSharingRefused refusal={p.state.refused} />
+            )}
+            {p.audience && (
+              <>
+                <TogetherEyebrow>Who can join</TogetherEyebrow>
+                <TogetherAudienceSegment
+                  value={p.audience.value}
+                  online={p.audience.online}
+                  onChange={p.audience.onChange}
+                  copy={false}
+                />
+              </>
+            )}
+            {!!p.removable?.length && p.onRemove && (
+              <Card padX={14} padY={4}>
+                {p.removable.map((person, i) => (
+                  <Row key={person.userId} title={person.name} first={i === 0}>
+                    <TogetherBtn
+                      variant="quiet"
+                      size="md"
+                      onPress={() => p.onRemove!(person.userId)}
+                      accessibilityLabel={`Remove ${person.name} from the session`}
+                    >
+                      Remove
+                    </TogetherBtn>
+                  </Row>
+                ))}
+              </Card>
+            )}
+          </>
+        ) : (
+          <Text fontFamily="$body" fontSize={14} lineHeight={20} color="$text2">
+            Sharing has ended. Your own workout carries on here.
+          </Text>
+        )}
+        <View marginTop={4}>
+          <TogetherBtn onPress={p.onDone} testID="together-sharing-done">
+            Done
+          </TogetherBtn>
+        </View>
+      </View>
+    </BottomSheet>
   );
 }

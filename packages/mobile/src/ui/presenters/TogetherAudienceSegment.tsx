@@ -11,7 +11,8 @@ export const AUDIENCE_COPY: Record<TogetherLobbyAudience, string> = {
 
 /** Canvas row 1b "Who can join": three equal segments; Open nearby is Nearby-only. */
 export function TogetherAudienceSegment(p: {
-  value: TogetherLobbyAudience;
+  /** Undefined when it isn't known: no segment is selected. */
+  value: TogetherLobbyAudience | undefined;
   online: boolean;
   onChange(value: TogetherLobbyAudience): void;
   /** The explanatory line under the segment; the settings page has none (canvas row 4). */
@@ -70,7 +71,7 @@ export function TogetherAudienceSegment(p: {
           );
         })}
       </View>
-      {p.copy !== false && (
+      {p.copy !== false && p.value && (
         <Text fontFamily="$body" fontSize={12} lineHeight={17} color="$text3">
           {AUDIENCE_COPY[p.value]}
           {p.online ? " Open nearby works only with Nearby." : ""}
