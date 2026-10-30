@@ -194,7 +194,7 @@ export function TogetherCloudPresenter(p: {
                 disabled={p.busy}
                 onPress={p.onVisible}
               >
-                Show to training partners for 15 minutes
+                Show to training partners
               </Btn>
             </>
           )}

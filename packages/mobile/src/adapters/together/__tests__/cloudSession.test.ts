@@ -2471,6 +2471,70 @@ describe("sharing switches move on tap (PER-60)", () => {
     });
   });
 
+  it("drops a refused Who can join and says so, but keeps an offline one queued (PER-60)", async () => {
+    api.visibility = jest.fn(async () =>
+      fail({
+        kind: "api",
+        code: "forbidden",
+        message: "no",
+        status: 403,
+        togetherCode: "FORBIDDEN",
+      }),
+    ) as unknown as TogetherCloudApi["visibility"];
+    await expect(
+      controller.visibility("friends", new Date().toISOString()),
+    ).rejects.toThrow("cloud-visibility-refused");
+    expect(controller.getSnapshot().pendingCount).toBe(0);
+    expect(controller.getSnapshot().phase).toBe("active");
+    api.visibility = jest.fn(async () =>
+      fail({ kind: "api", code: "network", message: "offline" }),
+    ) as unknown as TogetherCloudApi["visibility"];
+    await expect(
+      controller.visibility("friends", new Date().toISOString()),
+    ).rejects.toThrow("network");
+    expect(controller.getSnapshot().pendingCount).toBe(1);
+    // Queued, so the host's choice is what the controller reports.
+    expect(controller.getSnapshot().pendingVisibility).toBe("friends");
+    // Refused on reconnect: dropped, and nothing of it is left to show.
+    api.visibility = jest.fn(async () =>
+      fail({
+        kind: "api",
+        code: "forbidden",
+        message: "no",
+        status: 403,
+        togetherCode: "FORBIDDEN",
+      }),
+    ) as unknown as TogetherCloudApi["visibility"];
+    await controller.retry().catch(() => {});
+    expect(controller.getSnapshot().pendingCount).toBe(0);
+    expect(controller.getSnapshot().pendingVisibility).toBeUndefined();
+  });
+
+  it("an accepted Who can join is not called refused when the refresh after it fails (PER-60)", async () => {
+    api.visibility = jest.fn(async () => ok({ revision: 1 }));
+    const snapshot = api.snapshot;
+    api.snapshot = jest.fn(async () =>
+      fail({ kind: "api", code: "network", message: "offline" }),
+    ) as unknown as TogetherCloudApi["snapshot"];
+    // The server took it; only the closing refresh failed.
+    await expect(
+      controller.visibility("friends", new Date().toISOString()),
+    ).resolves.toBeUndefined();
+    expect(api.visibility).toHaveBeenCalled();
+    expect(controller.getSnapshot().pendingCount).toBe(0);
+    // Accepted, so it shows even though the refresh failed.
+    expect(controller.getSnapshot().snapshot?.audience).toBe("friends");
+    api.snapshot = snapshot;
+    // A refresh from an older server that leaves audience out keeps it.
+    await controller.refresh();
+    expect(controller.getSnapshot().snapshot?.audience).toBe("friends");
+    // A server that reports one wins.
+    server.audience = "private";
+    await controller.refresh();
+    expect(controller.getSnapshot().snapshot?.audience).toBe("private");
+    delete server.audience;
+  });
+
   it("keeps the intent pending through a network fault and applies it on retry", async () => {
     const inner = api.consent as jest.Mock;
     api.consent = jest.fn(async () =>

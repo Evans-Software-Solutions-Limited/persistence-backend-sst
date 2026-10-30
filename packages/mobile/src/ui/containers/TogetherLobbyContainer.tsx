@@ -1,6 +1,7 @@
 import { togetherInvitationLink } from "@/adapters/together/invitationLink";
 import { hostDetailsFrom } from "@/adapters/together/planDetails";
 import { invitationPayload } from "@/application/together/invitation";
+import { applyNearbyConsent } from "@/application/together/nearbyConsent";
 import { TogetherScannerPresenter } from "@/ui/presenters/TogetherScannerPresenter";
 import { TogetherPreparingPresenter } from "@/ui/presenters/TogetherPreparingPresenter";
 import { TogetherStartRow } from "@/ui/presenters/TogetherStartRow";
@@ -16,6 +17,12 @@ import {
 } from "@/ui/presenters/TogetherPartnerPresenter";
 import { useTogetherPartnerOutbox } from "@/ui/hooks/useTogetherPartnerOutbox";
 import { useTogetherToast } from "@/ui/hooks/useTogetherToast";
+import { useTogetherSharing } from "@/ui/hooks/useTogetherSharing";
+import {
+  nearbySharingBase,
+  nearbySharingWrites,
+  sharingPeople,
+} from "@/ui/presenters/togetherSharing";
 import {
   ENDED_COPY,
   LEAVE_FAILED_COPY,
@@ -94,18 +101,6 @@ export function liveStatus(
     : { status: `Waiting for people · ${members} of 4`, tone: "muted" };
 }
 
-function currentPreviousRows(
-  workout: WorkoutSession,
-  rows: readonly TogetherPreviousRow[],
-) {
-  const exerciseIds = new Set(
-    workout.exercises
-      .filter((exercise) => !exercise.skipped)
-      .map((exercise) => exercise.exerciseId),
-  );
-  return rows.filter((row) => exerciseIds.has(row.exerciseId));
-}
-
 /** Mounted only by the disabled-by-default capability. Signing keys stay in the adapter. */
 export function TogetherLobbyContainer({
   lobby,
@@ -179,7 +174,8 @@ export function TogetherLobbyContainer({
   const [visible, setVisible] = useState(false);
   /** Canvas row 1b: the one sheet opened by Start on the solo strip. */
   const [startOpen, setStartOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  /** Canvas row 4: the strip's settings cog. */
+  const [sharingOpen, setSharingOpen] = useState(false);
   const [startingWorkout, setStartingWorkout] = useState(false);
   const [startFailed, setStartFailed] = useState(false);
   const hostGeneration = useRef(0);
@@ -261,9 +257,9 @@ export function TogetherLobbyContainer({
     setScanning(false);
     setCode("");
     setNotice("");
-    setSettingsOpen(false);
     setStartOpen(false);
     setLeaveOpen(false);
+    setSharingOpen(false);
     setViewing(null);
     setRemote(false);
     setHostOnline(null);
@@ -350,54 +346,27 @@ export function TogetherLobbyContainer({
     });
   };
   /** Grants (or revokes) what one person in the session may see; previous values are published right after. */
-  const grantConsent = (recipient: string, consent: TogetherSharingConsent) =>
-    invoke(async () => {
-      const consentGeneration = generation.current;
-      const request = (consentRequests.current.get(recipient) ?? 0) + 1;
-      consentRequests.current.set(recipient, request);
-      const shared = lobby.shared!;
-      const stillCurrent = () =>
+  const applyConsent = (recipient: string, consent: TogetherSharingConsent) => {
+    const consentGeneration = generation.current;
+    const request = (consentRequests.current.get(recipient) ?? 0) + 1;
+    consentRequests.current.set(recipient, request);
+    const shared = lobby.shared!;
+    return applyNearbyConsent({
+      shared,
+      accountId,
+      recipient,
+      consent,
+      stillCurrent: () =>
         consentGeneration === generation.current &&
         lobby.shared === shared &&
-        consentRequests.current.get(recipient) === request;
-      await shared.setConsent(recipient, consent);
-      if (!stillCurrent()) return;
-      const current = getWorkout?.();
-      if (consent.prev && current?.userId === accountId && getPrevious) {
-        const grantVersion = shared
-          .getSnapshot()
-          .grants.find(
-            (g) => g.ownerId === accountId && g.recipientId === recipient,
-          )?.version;
-        await shared.publishPrevious(
-          recipient,
-          currentPreviousRows(current, getPrevious()),
-          Date.parse(current.startedAt),
-        );
-        if (!stillCurrent() || !refreshPrevious) return;
-        const rows = await refreshPrevious(stillCurrent);
-        if (rows === null) return;
-        const fresh = getWorkout?.();
-        if (
-          !stillCurrent() ||
-          fresh?.id !== current.id ||
-          fresh.userId !== accountId ||
-          fresh.startedAt !== current.startedAt
-        )
-          return;
-        const grant = shared
-          .getSnapshot()
-          .grants.find(
-            (g) => g.ownerId === accountId && g.recipientId === recipient,
-          );
-        if (!grant?.consent.prev || grant.version !== grantVersion) return;
-        await shared.publishPrevious(
-          recipient,
-          currentPreviousRows(fresh, rows),
-          Date.parse(current.startedAt),
-        );
-      }
+        consentRequests.current.get(recipient) === request,
+      getWorkout,
+      getPrevious,
+      refreshPrevious,
     });
+  };
+  const grantConsent = (recipient: string, consent: TogetherSharingConsent) =>
+    invoke(() => applyConsent(recipient, consent));
   // The stored sharing defaults apply once to each person who joins (canvas row 4, PER-60).
   const defaultGranted = useRef(new Set<string>());
   useEffect(() => {
@@ -449,7 +418,6 @@ export function TogetherLobbyContainer({
     const promote = !!(lobby.workout && draft);
     setStartingWorkout(true);
     setStartFailed(false);
-    setSettingsOpen(false);
     setNotice("");
     try {
       if (
@@ -521,7 +489,6 @@ export function TogetherLobbyContainer({
       await lobby.shared.publishPlan(plan);
       if (scope === hostGeneration.current) {
         setStartFailed(false);
-        setSettingsOpen(false);
       }
     } catch {
       if (scope === hostGeneration.current)
@@ -588,38 +555,6 @@ export function TogetherLobbyContainer({
       ],
     );
   };
-  const confirmClose = (mode: "finish_all" | "save_own" | "leave") => {
-    const dialogGeneration = generation.current;
-    Alert.alert(
-      "End sharing?",
-      mode === "finish_all"
-        ? "Everyone will be told this session has ended. Work saved only on another device remains available for that athlete to review; it is not automatically saved to their account."
-        : "Your own workout stays available. Other athletes keep their own work.",
-      [
-        { text: "Keep training", style: "cancel" },
-        {
-          text: "End sharing",
-          onPress: () => {
-            if (dialogGeneration !== generation.current) return;
-            invoke(async () => {
-              const id = lobby.getSnapshot().sessionId;
-              await lobby.shared!.close(mode);
-              if (dialogGeneration !== generation.current) return;
-              if (id && lobby.getSnapshot().sessionId === id)
-                await lobby.cancel();
-              if (dialogGeneration !== generation.current) return;
-              dismiss();
-              if (mode === "finish_all" && localSessionId)
-                router.push({
-                  pathname: "/(app)/session/rate",
-                  params: { localSessionId },
-                } as never);
-            });
-          },
-        },
-      ],
-    );
-  };
   // A partner hears once when the host ends the session for everyone (their
   // `save_own` closure); closures already there when this mounts are old news.
   const announced = useRef<{ session?: string; seen: Set<string> }>({
@@ -648,6 +583,38 @@ export function TogetherLobbyContainer({
       snapshot.members,
       sharedSnapshot?.profiles,
     );
+  // Canvas row 4: the cog's three switches, for everyone else in the session.
+  const sharingClosed = !!sharedSnapshot?.closures.some(
+    (c) =>
+      c.userId === accountId ||
+      snapshot.members.some((m) => m.host && m.userId === c.userId),
+  );
+  const people = sharingPeople(
+    snapshot.members,
+    accountId,
+    (id, seat) => sharedSnapshot?.profiles[id] ?? `Athlete ${seat + 1}`,
+  );
+  const sharing = useTogetherSharing(
+    lobby.shared && sharedSnapshot && snapshot.sessionId && !sharingClosed
+      ? {
+          sessionId: snapshot.sessionId,
+          people,
+          base: nearbySharingBase(sharedSnapshot.grants, accountId, people),
+          write: async (target, before) => {
+            const writes = nearbySharingWrites(
+              lobby.shared!.getSnapshot().grants,
+              accountId,
+              people,
+              target,
+              before,
+            );
+            await Promise.all(
+              writes.map((w) => applyConsent(w.recipientId, w.consent)),
+            );
+          },
+        }
+      : null,
+  );
   const hostMember = snapshot.members.find((m) => m.host);
   const hostName =
     (hostMember && sharedSnapshot?.profiles[hostMember.userId]) ?? "the host";
@@ -742,7 +709,6 @@ export function TogetherLobbyContainer({
     snapshot.phase === "hosting" &&
     snapshot.role === "host" &&
     !!snapshot.invitation &&
-    !settingsOpen &&
     !startingWorkout &&
     !startFailed;
   const live = liveStatus(snapshot.members.length, workoutStatus?.sharing);
@@ -774,15 +740,11 @@ export function TogetherLobbyContainer({
       onInvite={
         snapshot.role === "host" && snapshot.invitation
           ? () => {
-              setSettingsOpen(false);
               setVisible(true);
             }
           : undefined
       }
-      onSettings={() => {
-        setSettingsOpen(true);
-        setVisible(true);
-      }}
+      onSettings={() => setSharingOpen(true)}
       endLabel={snapshot.role === "host" ? "End" : "Leave"}
       onEnd={() => setLeaveOpen(true)}
     />
@@ -853,7 +815,6 @@ export function TogetherLobbyContainer({
         if (scope !== hostGeneration.current) return;
         if (lobby.getSnapshot().phase === "hosting") {
           setStartOpen(false);
-          setSettingsOpen(false);
           setVisible(true);
         }
       });
@@ -922,6 +883,17 @@ export function TogetherLobbyContainer({
           {partnerView}
         </>
       )}
+      <TogetherSharingPresenter
+        visible={sharingOpen && !soloAgain && !!workoutStatus}
+        state={sharing.state}
+        onChange={sharing.change}
+        removable={snapshot.role === "host" ? people : undefined}
+        onRemove={lobby.removeParticipant ? confirmRemoval : undefined}
+        onDone={() => {
+          setSharingOpen(false);
+          sharing.dismiss();
+        }}
+      />
       <TogetherLeaveSheet
         visible={leaveOpen && !soloAgain && !!workoutStatus}
         role={snapshot.role === "host" ? "host" : "guest"}
@@ -957,13 +929,11 @@ export function TogetherLobbyContainer({
             ? "Starting Together"
             : showInvitation
               ? undefined
-              : settingsOpen && snapshot.phase === "hosting"
-                ? "Together settings"
-                : snapshot.phase === "selected"
-                  ? "Join this workout"
-                  : screen === "join"
-                    ? "Join a session"
-                    : "Train together"
+              : snapshot.phase === "selected"
+                ? "Join this workout"
+                : screen === "join"
+                  ? "Join a session"
+                  : "Train together"
         }
         eyebrow={showInvitation ? undefined : "TRAIN TOGETHER"}
         height={showInvitation ? 55 : "tall"}
@@ -1019,31 +989,6 @@ export function TogetherLobbyContainer({
                 Retry sharing my workout
               </Btn>
             )}
-            {settingsOpen &&
-              snapshot.phase === "hosting" &&
-              snapshot.invitation && (
-                <Btn full variant="soft" onPress={() => setSettingsOpen(false)}>
-                  Show session invitation
-                </Btn>
-              )}
-            {lobby.shared &&
-              sharedSnapshot &&
-              (snapshot.phase === "hosting" ||
-                snapshot.phase === "joined" ||
-                workoutStatus) && (
-                <TogetherSharingPresenter
-                  snapshot={sharedSnapshot}
-                  accountId={accountId}
-                  members={snapshot.members}
-                  role={snapshot.role}
-                  onRemove={
-                    lobby.removeParticipant ? confirmRemoval : undefined
-                  }
-                  onConsent={grantConsent}
-                  onClose={confirmClose}
-                  onDiscard={onDiscardWorkout}
-                />
-              )}
             {snapshot.role === "guest" &&
               !workoutStatus &&
               sharedSnapshot?.plan &&

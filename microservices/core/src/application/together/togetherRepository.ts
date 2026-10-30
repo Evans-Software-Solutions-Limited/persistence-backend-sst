@@ -1,5 +1,5 @@
 import { createHmac } from "node:crypto";
-import { and, eq, inArray, gt, asc, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, gt, asc, isNull, or, sql } from "drizzle-orm";
 import { getDb } from "@persistence/db/client";
 import {
   togetherSessions as sessions,
@@ -227,6 +227,16 @@ export class TogetherRepository {
     requireTogether(p, "NOT_FOUND", 404);
     return p;
   }
+  /**
+   * Whether the session is still open to join by its audience alone (PER-60).
+   * The listing deadline an older app sends ("for 15 minutes") once ended the
+   * whole session; now it ends only the listing, so it must also close the
+   * audience route in, or someone holding the session ID could still join.
+   * Only the request is gated: the host approving one is a deliberate choice.
+   */
+  private listed(s: Session) {
+    return !s.listedUntil || s.listedUntil > new Date();
+  }
   private async live(tx: TogetherTx, s: Session, ps: Participant[]) {
     if (s.collaborationRevoked) return false;
     let valid =
@@ -307,6 +317,10 @@ export class TogetherRepository {
       hostId: s.hostId,
       /** Only the host shares the code (PER-60). */
       code: s.hostId === actor ? (s.code ?? null) : null,
+      /** Who can join, for the host's settings after a restart (PER-60). */
+      audience: s.hostId === actor ? s.audience : null,
+      /** When the session ends, sent back as the host's listing deadline (PER-60). */
+      endsAt: s.hostId === actor ? s.expiresAt.toISOString() : null,
       revision: s.revision,
       planVersion: s.planVersion,
       plan: shared ? s.plan : (own.frozenPlan ?? s.plan),
@@ -859,6 +873,7 @@ export class TogetherRepository {
       } else {
         requireTogether(
           s.audience !== "private" &&
+            this.listed(s) &&
             (s.audience !== "friends" ||
               (await areFriends(tx, actor, s.hostId))),
           "FORBIDDEN",
@@ -1707,10 +1722,10 @@ export class TogetherRepository {
         403,
       );
       await assertTogetherPaid(tx, actor);
-      const expiresAt = new Date(body.expiresAt);
+      // Only its shape is checked: bounds against the server clock would
+      // reject a phone whose clock runs fast or slow (PER-60).
       requireTogether(
-        expiresAt > new Date() &&
-          expiresAt.getTime() <= Date.now() + 4 * 3600000,
+        Number.isFinite(Date.parse(body.expiresAt)),
         "INVALID_SCHEMA",
         400,
       );
@@ -1735,13 +1750,20 @@ export class TogetherRepository {
           const selected = body.placeId
             ? await placesRepository.resolve(body.placeId)
             : null;
+          // `expiresAt` is the session's own lifetime (live() revokes
+          // collaboration once it passes), so the deadline sent here only
+          // ends the listing (older apps offered "for 15 minutes"): changing
+          // who can find the session must never shorten it (PER-60).
+          const listedUntil = new Date(
+            Math.min(Date.parse(body.expiresAt), s.expiresAt.getTime()),
+          );
           await tx
             .update(sessions)
             .set({
               placeLabel: selected?.label ?? null,
               audience: body.audience,
               placeId: body.placeId ?? null,
-              expiresAt,
+              listedUntil,
             })
             .where(eq(sessions.id, id));
           await this.emit(tx, s, { type: "visibility_changed" });
@@ -1792,6 +1814,10 @@ export class TogetherRepository {
             eq(sessions.state, "active"),
             eq(sessions.collaborationRevoked, false),
             gt(sessions.expiresAt, new Date()),
+            or(
+              isNull(sessions.listedUntil),
+              gt(sessions.listedUntil, new Date()),
+            ),
             ...(query.placeId ? [eq(sessions.placeId, query.placeId)] : []),
           ),
         )
@@ -1831,7 +1857,8 @@ export class TogetherRepository {
           ...this.planRows(s, ps),
           placeId: s.placeId,
           placeLabel: s.placeLabel,
-          expiresAt: s.expiresAt,
+          // When the listing ends, as before PER-60 split it from the lifetime.
+          expiresAt: s.listedUntil ?? s.expiresAt,
           occupancy: ps.filter((p) => !p.removedFromRoster).length,
         });
         if (data.length >= (query.limit ?? 20)) break;

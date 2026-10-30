@@ -11,9 +11,25 @@ import { TogetherSwitch } from "./TogetherSwitch";
 import type { TogetherLobbyAudience } from "@/domain/ports/togetherLobby.port";
 import type { TogetherSharingDefaults } from "@/state/together-settings";
 import { color } from "@/ui/theme/tokens";
+import { tint } from "@/ui/theme/tint";
+import {
+  TogetherSharingRefused,
+  TogetherSharingRows,
+} from "./TogetherSharingPresenter";
+import type { SharingChange, TogetherSharingState } from "./togetherSharing";
 
-/** Canvas row 4 "Together settings · idle": what every new session starts with. */
+/**
+ * Canvas row 4 "Together settings": what every new session starts with, and
+ * while a session is live (phone 4), a card above the defaults for that
+ * session only.
+ */
 export function TogetherSettingsPresenter(p: {
+  /** The session running now; its switches write to it, not to the defaults. */
+  live?: {
+    title: string;
+    state: TogetherSharingState;
+    onChange(change: SharingChange): void;
+  } | null;
   audience: TogetherLobbyAudience;
   onAudience(value: TogetherLobbyAudience): void;
   sharing: TogetherSharingDefaults;
@@ -133,6 +149,54 @@ export function TogetherSettingsPresenter(p: {
             Settings
           </Text>
         </View>
+        {p.live && (
+          <View gap={8} testID="together-settings-live">
+            <View
+              flexDirection="row"
+              alignItems="center"
+              justifyContent="space-between"
+              gap={12}
+            >
+              <Text
+                fontFamily="$display"
+                fontWeight="600"
+                fontSize={10.5}
+                lineHeight={14}
+                letterSpacing={1.7}
+                color="$primary"
+                flexShrink={1}
+                numberOfLines={1}
+              >
+                {`NOW · ${p.live.title.toUpperCase()}`}
+              </Text>
+              <Text
+                fontFamily="$body"
+                fontSize={12}
+                lineHeight={17}
+                color="$text3"
+              >
+                Ends with the session
+              </Text>
+            </View>
+            <View
+              backgroundColor="$surface"
+              borderRadius={14}
+              borderWidth={1}
+              paddingHorizontal={14}
+              paddingVertical={4}
+              style={{ borderColor: tint(color.$primary, 0.35) }}
+            >
+              <TogetherSharingRows
+                state={p.live.state}
+                onChange={p.live.onChange}
+                variant="card"
+              />
+            </View>
+            {p.live.state.refused && (
+              <TogetherSharingRefused refusal={p.live.state.refused} />
+            )}
+          </View>
+        )}
         <View gap={8}>
           <TogetherEyebrow>Every new session starts with</TogetherEyebrow>
           <TogetherAudienceSegment

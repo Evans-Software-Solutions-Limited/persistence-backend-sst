@@ -2,170 +2,166 @@ import React from "react";
 import { fireEvent } from "@testing-library/react-native";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 import { TogetherSharingPresenter } from "../TogetherSharingPresenter";
-import type { TogetherSharedSnapshot } from "@/domain/ports/togetherShared.port";
-const snapshot: TogetherSharedSnapshot = {
-  progress: [],
-  plan: null,
-  planHash: null,
-  profiles: { a: "Mia" },
-  athletePlans: {},
-  athletes: [],
-  previous: {},
-  grants: [],
-  closures: [],
-  delegated: [],
-  deliveries: [],
-};
+import { sharingState, type SharingPerson } from "../togetherSharing";
+
+const people: SharingPerson[] = [
+  { userId: "b", name: "Brad", tone: "info" },
+  { userId: "t", name: "Tom", tone: "success" },
+  { userId: "i", name: "Inés", tone: "gold" },
+];
+const state = (
+  over: Partial<{
+    numbers: boolean;
+    logging: boolean;
+    previous: Record<string, boolean>;
+  }> = {},
+  refused: Parameters<typeof sharingState>[2] = null,
+) =>
+  sharingState(
+    {
+      numbers: true,
+      logging: false,
+      previous: { b: true, t: true, i: true },
+      ...over,
+    },
+    people,
+    refused,
+  );
 const props = () => ({
-  snapshot,
-  accountId: "me",
-  members: [
-    { userId: "me", host: true },
-    { userId: "a", host: false },
-    { userId: "b", host: false },
-  ],
-  role: "host" as const,
-  onConsent: jest.fn(),
-  onClose: jest.fn(),
-  onRemove: jest.fn(),
+  visible: true,
+  state: state(),
+  onChange: jest.fn(),
+  onDone: jest.fn(),
 });
-it("starts separate permissions off for every recipient and never combines them", () => {
+const checked = (r: ReturnType<typeof renderWithTheme>, label: string) =>
+  r.getByLabelText(label).props.accessibilityState.checked;
+
+it("phone 1: three switches for this session, explained, and Done", () => {
   const p = props();
   const r = renderWithTheme(<TogetherSharingPresenter {...p} />);
-  fireEvent(r.getByLabelText("Show my numbers · Mia"), "valueChange", true);
-  expect(p.onConsent).toHaveBeenCalledWith("a", {
-    numbers: true,
-    prev: false,
-    logging: false,
-  });
-  fireEvent(
-    r.getByLabelText("Share my previous values · Athlete 2"),
-    "valueChange",
-    true,
-  );
-  expect(p.onConsent).toHaveBeenLastCalledWith("b", {
-    numbers: false,
-    prev: true,
-    logging: false,
-  });
-  fireEvent(
-    r.getByLabelText("Let them fill in my sets · Mia"),
-    "valueChange",
-    true,
-  );
-  expect(p.onConsent).toHaveBeenLastCalledWith("a", {
-    numbers: false,
-    prev: false,
-    logging: true,
-  });
-  expect(r.queryByLabelText(/me/)).toBeNull();
-});
-it("revokes only the selected grant while preserving its other explicit consents", () => {
-  const p = props();
-  const r = renderWithTheme(
-    <TogetherSharingPresenter
-      {...p}
-      snapshot={{
-        ...snapshot,
-        grants: [
-          {
-            ownerId: "me",
-            recipientId: "a",
-            version: 4,
-            consent: { numbers: true, prev: true, logging: true },
-          },
-        ],
-      }}
-    />,
-  );
-  fireEvent(
-    r.getByLabelText("Share my previous values · Mia"),
-    "valueChange",
-    false,
-  );
-  expect(p.onConsent).toHaveBeenCalledWith("a", {
-    numbers: true,
-    prev: false,
-    logging: true,
-  });
-});
-it("distinguishes cloud session logging from per-recipient numbers and PREV", () => {
-  const p = props(),
-    onSessionLogging = jest.fn();
-  const r = renderWithTheme(
-    <TogetherSharingPresenter
-      {...p}
-      sessionLogging
-      onSessionLogging={onSessionLogging}
-    />,
-  );
-  expect(r.queryByLabelText("Let them fill in my sets · Mia")).toBeNull();
-  fireEvent(
-    r.getByLabelText("Let others fill in my sets"),
-    "valueChange",
-    false,
-  );
-  expect(onSessionLogging).toHaveBeenCalledWith(false);
-  expect(p.onConsent).not.toHaveBeenCalled();
-  r.rerender(
-    <TogetherSharingPresenter {...p} onSessionLogging={onSessionLogging} />,
-  );
-  expect(r.getByLabelText("Let others fill in my sets").props.value).toBe(
-    false,
-  );
-});
-it("supports host removal and distinct closure choices; guests can only leave", () => {
-  const p = props();
-  const r = renderWithTheme(<TogetherSharingPresenter {...p} />);
-  fireEvent.press(r.getAllByText("Remove from session")[1]);
-  expect(p.onRemove).toHaveBeenCalledWith("b");
-  fireEvent.press(r.getByText("End session for everyone"));
-  fireEvent.press(r.getByText("Stop sharing · keep my workout"));
-  expect(p.onClose.mock.calls).toEqual([["finish_all"], ["save_own"]]);
-  r.rerender(<TogetherSharingPresenter {...p} role="guest" />);
-  expect(r.queryByText("Remove from session")).toBeNull();
-  fireEvent.press(r.getByText("Leave sharing · keep my workout"));
-  expect(p.onClose).toHaveBeenLastCalledWith("leave");
-});
-it("removes permissions and closure actions after host or own sharing ended", () => {
-  const p = props();
-  const r = renderWithTheme(
-    <TogetherSharingPresenter
-      {...p}
-      snapshot={{ ...snapshot, closures: [{ userId: "me", mode: "leave" }] }}
-    />,
-  );
-  expect(r.getByText(/Sharing has ended/)).toBeTruthy();
-  expect(r.queryByLabelText("Show my numbers · Mia")).toBeNull();
-  r.rerender(
-    <TogetherSharingPresenter
-      {...p}
-      accountId="b"
-      snapshot={{
-        ...snapshot,
-        closures: [{ userId: "me", mode: "finish_all" }],
-      }}
-    />,
-  );
-  expect(r.queryByText("Leave sharing · keep my workout")).toBeNull();
-});
-it("describes peer receipts separately from account save, including pending recipients", () => {
-  const p = props();
-  const r = renderWithTheme(
-    <TogetherSharingPresenter
-      {...p}
-      snapshot={{
-        ...snapshot,
-        closures: [{ userId: "unrelated", mode: "leave" }],
-        deliveries: [
-          { recipientId: "a", state: "received", revision: 4 },
-          { recipientId: "b", state: "pending", revision: 5 },
-        ],
-      }}
-    />,
-  );
-  expect(r.getByText(/Mia.*shared view received.*revision 4/)).toBeTruthy();
+  expect(r.getByText("Together settings")).toBeTruthy();
   expect(
-    r.getByText(/Training partner.*shared view awaiting receipt.*revision 5/),
+    r.getByText(
+      "This session only. Defaults live in Train › Together › Settings.",
+    ),
   ).toBeTruthy();
+  expect(r.getByText("What you share")).toBeTruthy();
+  expect(checked(r, "Show my numbers")).toBe(true);
+  expect(checked(r, "Share previous values")).toBe(true);
+  expect(checked(r, "Let others fill in my sets")).toBe(false);
+  expect(
+    r.getByText(
+      "Anyone here could log on your record. Turn it off at any time.",
+    ),
+  ).toBeTruthy();
+  fireEvent.press(r.getByLabelText("Show my numbers"));
+  expect(p.onChange).toHaveBeenLastCalledWith({ key: "numbers", value: false });
+  fireEvent.press(r.getByLabelText("Let others fill in my sets"));
+  expect(p.onChange).toHaveBeenLastCalledWith({ key: "logging", value: true });
+  fireEvent.press(r.getByLabelText("Share previous values"));
+  expect(p.onChange).toHaveBeenLastCalledWith({
+    key: "previous",
+    value: false,
+  });
+  fireEvent.press(r.getByTestId("together-sharing-done"));
+  expect(p.onDone).toHaveBeenCalled();
+  // A guest's sheet: no Who can join, nobody to remove, no notice.
+  expect(r.queryByText("Who can join")).toBeNull();
+  expect(r.queryByText("Remove")).toBeNull();
+  expect(r.queryByTestId("together-sharing-refused")).toBeNull();
+});
+
+it("phone 2: a chip per partner narrows previous values", () => {
+  const p = props();
+  p.state = state({ previous: { b: true, t: false, i: true } });
+  const r = renderWithTheme(<TogetherSharingPresenter {...p} />);
+  const chip = (name: string) =>
+    r.getByLabelText(`Share previous values with ${name}`);
+  expect(chip("Brad").props.accessibilityState.checked).toBe(true);
+  expect(chip("Tom").props.accessibilityState.checked).toBe(false);
+  fireEvent.press(chip("Tom"));
+  expect(p.onChange).toHaveBeenLastCalledWith({ recipient: "t", value: true });
+  fireEvent.press(chip("Inés"));
+  expect(p.onChange).toHaveBeenLastCalledWith({ recipient: "i", value: false });
+});
+
+it("hides the chips while previous values are off", () => {
+  const p = props();
+  p.state = state({ previous: {} });
+  const r = renderWithTheme(<TogetherSharingPresenter {...p} />);
+  expect(checked(r, "Share previous values")).toBe(false);
+  expect(r.queryByLabelText("Share previous values with Brad")).toBeNull();
+});
+
+it("phone 3: a refused change shows one notice", () => {
+  const p = props();
+  p.state = state({}, { key: "logging", wanted: true });
+  const r = renderWithTheme(<TogetherSharingPresenter {...p} />);
+  expect(r.getByTestId("together-sharing-refused")).toBeTruthy();
+  expect(
+    r.getByText(
+      "Couldn’t turn on fill-in. The session didn’t accept it, so it’s switched back off.",
+    ),
+  ).toBeTruthy();
+});
+
+it("gives the host Who can join and Remove", () => {
+  const p = {
+    ...props(),
+    audience: { value: "friends" as const, online: true, onChange: jest.fn() },
+    removable: people.slice(0, 1),
+    onRemove: jest.fn(),
+  };
+  const r = renderWithTheme(<TogetherSharingPresenter {...p} />);
+  expect(r.getByText("Who can join")).toBeTruthy();
+  fireEvent.press(r.getByRole("radio", { name: "Private" }));
+  expect(p.audience.onChange).toHaveBeenCalledWith("invite-only");
+  fireEvent.press(r.getByLabelText("Remove Brad from the session"));
+  expect(p.onRemove).toHaveBeenCalledWith("b");
+});
+
+it("says sharing has ended when there is no live session", () => {
+  const p = { ...props(), state: null };
+  const r = renderWithTheme(<TogetherSharingPresenter {...p} />);
+  expect(
+    r.getByText("Sharing has ended. Your own workout carries on here."),
+  ).toBeTruthy();
+  expect(r.queryByText("What you share")).toBeNull();
+});
+
+it("when every partner has finished, keeps the switches and offers only what can still change (inspector lead)", () => {
+  const p = props();
+  // Inés finished with your numbers still shared; Omar finished with nothing.
+  const done = [
+    { userId: "ines", name: "Inés", tone: "info" as const, finished: true },
+    { userId: "omar", name: "Omar", tone: "success" as const, finished: true },
+  ];
+  p.state = sharingState({ numbers: true, logging: false, previous: {} }, done);
+  const r = renderWithTheme(<TogetherSharingPresenter {...p} />);
+  expect(r.queryByTestId("together-sharing-nobody")).toBeNull();
+  // Numbers can still be switched off; nothing new can be granted, so the
+  // previous-values switch can't be turned on. Fill-in is this account's own.
+  const numbers = r.getByLabelText("Show my numbers");
+  expect(numbers.props.accessibilityState.disabled).toBe(false);
+  expect(
+    r.getByLabelText("Share previous values").props.accessibilityState.disabled,
+  ).toBe(true);
+  expect(
+    r.getByLabelText("Let others fill in my sets").props.accessibilityState
+      .disabled,
+  ).toBe(false);
+  fireEvent.press(numbers);
+  expect(p.onChange).toHaveBeenCalledWith({ key: "numbers", value: false });
+});
+
+it("with nobody else in the session, explains the defaults instead of switches that can't stay on", () => {
+  const p = props();
+  p.state = sharingState({ numbers: false, logging: false, previous: {} }, []);
+  const r = renderWithTheme(<TogetherSharingPresenter {...p} />);
+  expect(
+    r.getByText(
+      "Nobody else is here yet. Everyone who joins starts with your defaults.",
+    ),
+  ).toBeTruthy();
+  expect(r.queryByLabelText("Show my numbers")).toBeNull();
 });

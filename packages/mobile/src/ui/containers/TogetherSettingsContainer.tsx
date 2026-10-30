@@ -6,6 +6,7 @@ import { useAuth } from "@/ui/hooks/useAuth";
 import { useTogetherSettings } from "@/state/together-settings";
 import { TogetherSettingsPresenter } from "@/ui/presenters/TogetherSettingsPresenter";
 import { loadPartners } from "./TogetherHubContainer";
+import { useLiveTogetherSharing } from "@/ui/hooks/useLiveTogetherSharing";
 import type { TogetherSocialApi } from "@/domain/ports/togetherSocial.port";
 
 /** Bounded page walk of the blocked list. */
@@ -26,12 +27,18 @@ export async function loadBlocked(social: TogetherSocialApi) {
   return people;
 }
 
-/** Canvas row 4 "Together settings · idle": defaults for every new session, plus who can find you. */
+/** Canvas row 4 "Together settings": the live session's sharing, defaults for every new session, and who can find you. */
 export function TogetherSettingsContainer() {
-  const { api } = useAdapters();
+  const { api, storage, togetherLobby, togetherCloud } = useAdapters();
   const social = api.togetherSocial;
   const userId = useAuth().session?.userId ?? null;
   const settings = useTogetherSettings();
+  const live = useLiveTogetherSharing({
+    userId,
+    lobby: togetherLobby,
+    cloud: togetherCloud,
+    storage,
+  });
   // The store rehydrates once per account; until it has, the switches would
   // show the shipped defaults and an edit would be dropped.
   useEffect(() => {
@@ -93,6 +100,7 @@ export function TogetherSettingsContainer() {
   };
   return (
     <TogetherSettingsPresenter
+      live={live}
       audience={settings.audience}
       onAudience={(audience) => void settings.setDefaults({ audience })}
       sharing={settings.sharing}
