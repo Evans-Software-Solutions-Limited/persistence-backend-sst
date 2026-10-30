@@ -33,8 +33,9 @@ import { SignOutConfirmDialog } from "./SignOutConfirmDialog";
  * Source: extra.jsx:7–108.
  *
  * Pure presenter — the container (ProfileDrawerContainer) owns all data +
- * navigation + the sign-out mutation. The mode-switch card renders only when
- * `isTrainerEligible` (STORY-003 AC 3.1).
+ * navigation + the sign-out mutation. The mode-switch card renders when
+ * `isTrainerEligible` (STORY-003 AC 3.1) — and ALWAYS in coach mode, so the
+ * way back to athlete never depends on the subscription request (PER-77).
  */
 
 // Maps the live SubscriptionTierName union to the drawer's badge label.
@@ -313,8 +314,14 @@ export function ProfileDrawerPresenter({
         </View>
       </View>
 
-      {/* Mode-switch card — only for trainer-eligible users (STORY-003 AC 3.1) */}
-      {isTrainerEligible ? (
+      {/* Mode-switch card — for trainer-eligible users (STORY-003 AC 3.1).
+          In coach mode it always renders: `isTrainerEligible` stays false
+          while the subscription request is loading, stalled or failed
+          offline, and hiding the card then left no way back to athlete
+          mode (PER-77). Switching TO athlete needs no entitlement; switching
+          to coach stays gated (the card only offers coach from athlete
+          mode, which still requires eligibility). */}
+      {isTrainerEligible || mode === "coach" ? (
         <ModeSwitchCardPresenter
           mode={mode}
           clientCount={clientCount}

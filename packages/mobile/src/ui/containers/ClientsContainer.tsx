@@ -12,6 +12,8 @@ import {
   useLocalSearchParams,
   type Href,
 } from "expo-router";
+import { Button } from "@/ui/components/Button";
+import { ErrorState } from "@/ui/components/ErrorState";
 import { FeatureGatePrompt } from "@/ui/components/subscription/FeatureGatePrompt";
 import { LoadingSpinner } from "@/ui/components/LoadingSpinner";
 import {
@@ -37,9 +39,11 @@ import {
  * Clients-list slice). Replaces the M10.5 Wave 2 `ComingSoon` placeholder with
  * the real roster, behind the unchanged feature gate.
  *
- * Three rendering branches (the first two are UNCHANGED from the Wave 2 stub):
+ * Four rendering branches:
  *
- *  - Subscription cache hasn't loaded → spinner.
+ *  - Subscription cache hasn't loaded → spinner (with the athlete escape).
+ *  - Subscription request failed with nothing cached → retry/error state
+ *    with the athlete escape, never the paywall (PER-77).
  *  - `useFeatureGate('trainer_clients')` denies → paywall card.
  *  - Allowed → the live roster: cache-first `useGetTrainerClients()` wired into
  *    <ClientsListPresenter> with local search + segmented-filter state.
@@ -227,10 +231,41 @@ export function ClientsContainer() {
   // Subscription cache not resolved yet — defensive spinner. Once the query
   // lands the gate's `reason: 'unknown'` falls through to a real verdict on
   // the next render.
+  //
+  // PER-77: the spinner carries the strand-guard escape. On a poor
+  // connection the request can stall for a long time (or stay disabled
+  // behind the cold-start bootstrap), and switching to athlete mode must
+  // never wait on the coach entitlement.
   if (subQuery.isPending) {
     return (
       <View style={styles.loading} testID="clients-loading">
         <LoadingSpinner size="lg" color={color.$primary} />
+        <Button
+          label="Switch to athlete mode"
+          onPress={onSwitchToAthlete}
+          variant="ghost"
+          testID="clients-loading-switch-athlete"
+        />
+      </View>
+    );
+  }
+
+  // PER-77: the request failed and there is no last-known subscription. That
+  // is "unavailable", not a confirmed denial — the backend answers a user
+  // without a plan with a synthesised free shape, so a real denial always
+  // arrives as data. Don't show the trainer paywall for a network failure;
+  // offer Retry plus the way back to athlete mode. Paid coach access is still
+  // withheld (no roster renders without a verdict).
+  if (subQuery.data === undefined) {
+    return (
+      <View style={styles.errorWrapper} testID="clients-subscription-error">
+        <ErrorState
+          message="Couldn't load your subscription. Check your connection and try again."
+          onRetry={() => void subQuery.refetch()}
+          secondaryLabel="Switch to athlete mode"
+          onSecondary={onSwitchToAthlete}
+          testID="clients-subscription-error-state"
+        />
       </View>
     );
   }
@@ -277,6 +312,10 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
+    backgroundColor: color.$bg,
+  },
+  errorWrapper: {
+    flex: 1,
     backgroundColor: color.$bg,
   },
   gateWrapper: {
