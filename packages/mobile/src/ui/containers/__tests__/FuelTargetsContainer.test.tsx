@@ -1,4 +1,5 @@
 import { act, render, waitFor } from "@testing-library/react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
 import type { AuthSession } from "@/domain/ports/auth.port";
@@ -780,4 +781,152 @@ it("updates the visible height unit immediately after quick-fill saves", async (
   await act(async () => editor().onSave());
   expect(mockProbe.last?.heightUnit).toBe("ftin");
   expect(mockProbe.last?.heightCm).toBeCloseTo(177.8);
+});
+
+describe("FuelTargetsContainer — reopening restores the calculator (PER-97)", () => {
+  const store = new Map<string, string>();
+  const getItem = AsyncStorage.getItem as jest.Mock;
+  const setItem = AsyncStorage.setItem as jest.Mock;
+
+  beforeEach(() => {
+    store.clear();
+    mockProbe.last = null;
+    mockBack.mockClear();
+    mockFetch.mockClear();
+    getItem.mockImplementation(async (k: string) => store.get(k) ?? null);
+    setItem.mockImplementation(async (k: string, v: string) => {
+      store.set(k, v);
+    });
+  });
+  afterEach(() => {
+    getItem.mockImplementation(async () => null);
+    setItem.mockImplementation(async () => undefined);
+  });
+
+  it("reopens on the activity, goal, macro mode and split saved last time", async () => {
+    const { adapters, storage } = makeAdapters();
+    storage.cacheProfilePage("user-1", makeProfilePagePayload());
+    const first = render(
+      <AdapterProvider adapters={adapters}>
+        <FuelTargetsContainer />
+      </AdapterProvider>,
+    );
+    await waitFor(() => expect(mockProbe.last?.kcal).not.toBeNull());
+    act(() => mockProbe.last?.onActivityChange("very"));
+    act(() => mockProbe.last?.onGoalChange(-0.5));
+    act(() => mockProbe.last?.onMacroModeChange("high_protein"));
+    act(() => mockProbe.last?.onMacroModeChange("custom"));
+    act(() => mockProbe.last?.onProteinPctChange(45));
+    act(() => mockProbe.last?.onCarbsPctChange(25));
+    const savedKcal = mockProbe.last?.kcal;
+    await act(async () => {
+      await mockProbe.last?.onSave();
+    });
+    await waitFor(() => expect(mockBack).toHaveBeenCalled());
+    first.unmount();
+
+    // Forget the first mount's props so the asserts below read the reopen.
+    mockProbe.last = null as FuelTargetsPresenterProps | null;
+    render(
+      <AdapterProvider adapters={adapters}>
+        <FuelTargetsContainer />
+      </AdapterProvider>,
+    );
+    await waitFor(() => expect(mockProbe.last?.activityId).toBe("very"));
+    expect(mockProbe.last?.goal).toBe(-0.5);
+    expect(mockProbe.last?.macroMode).toBe("custom");
+    expect(mockProbe.last?.macroSplit).toEqual({
+      proteinPct: 45,
+      carbsPct: 25,
+      fatPct: 30,
+    });
+    expect(mockProbe.last?.calorieMode).toBe("calculated");
+    expect(mockProbe.last?.kcal).toBe(savedKcal);
+  });
+
+  it("reopens in manual mode with the typed calories", async () => {
+    const { adapters, storage } = makeAdapters();
+    storage.cacheProfilePage("user-1", makeProfilePagePayload());
+    const first = render(
+      <AdapterProvider adapters={adapters}>
+        <FuelTargetsContainer />
+      </AdapterProvider>,
+    );
+    await waitFor(() => expect(mockProbe.last?.kcal).not.toBeNull());
+    act(() => mockProbe.last?.onCalorieModeChange("manual"));
+    act(() => mockProbe.last?.onManualKcalTextChange("2450"));
+    await act(async () => {
+      await mockProbe.last?.onSave();
+    });
+    await waitFor(() => expect(mockBack).toHaveBeenCalled());
+    first.unmount();
+
+    render(
+      <AdapterProvider adapters={adapters}>
+        <FuelTargetsContainer />
+      </AdapterProvider>,
+    );
+    await waitFor(() => expect(mockProbe.last?.calorieMode).toBe("manual"));
+    expect(mockProbe.last?.manualKcalText).toBe("2450");
+    expect(mockProbe.last?.kcal).toBe(2450);
+  });
+
+  it("without a device record, restores the saved target's preset", async () => {
+    const { adapters, api, storage } = makeAdapters();
+    storage.cacheProfilePage("user-1", makeProfilePagePayload());
+    api.nutritionTarget = {
+      userId: "user-1",
+      dailyKcal: 2600,
+      proteinG: 260,
+      carbsG: 195,
+      fatG: 87,
+      waterCups: 8,
+      preset: "high_protein",
+      setByUserId: null,
+      setByName: null,
+      updatedAt: "2026-10-01T00:00:00.000Z",
+    };
+    render(
+      <AdapterProvider adapters={adapters}>
+        <FuelTargetsContainer />
+      </AdapterProvider>,
+    );
+    await waitFor(() => expect(mockProbe.last?.macroMode).toBe("high_protein"));
+    expect(mockProbe.last?.activityId).toBe("moderate");
+  });
+
+  it("never overwrites a choice made before the saved inputs load", async () => {
+    store.set(
+      "persistence.fuel.calculator.v1:user-1",
+      JSON.stringify({
+        activityId: "athlete",
+        goal: 0.5,
+        calorieMode: "calculated",
+        manualKcalText: "",
+        macroMode: "low_carb",
+        customSplit: { proteinPct: 30, carbsPct: 40, fatPct: 30 },
+      }),
+    );
+    let release: () => void = () => {};
+    getItem.mockImplementation(
+      (k: string) =>
+        new Promise((resolve) => {
+          release = () => resolve(store.get(k) ?? null);
+        }),
+    );
+    const { adapters, storage } = makeAdapters();
+    storage.cacheProfilePage("user-1", makeProfilePagePayload());
+    render(
+      <AdapterProvider adapters={adapters}>
+        <FuelTargetsContainer />
+      </AdapterProvider>,
+    );
+    await waitFor(() => expect(mockProbe.last?.kcal).not.toBeNull());
+    act(() => mockProbe.last?.onActivityChange("light"));
+    await act(async () => {
+      release();
+    });
+    expect(mockProbe.last?.activityId).toBe("light");
+    expect(mockProbe.last?.macroMode).toBe("recommended");
+  });
 });
