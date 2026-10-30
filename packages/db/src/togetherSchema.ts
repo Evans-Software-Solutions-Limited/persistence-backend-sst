@@ -163,6 +163,8 @@ export const togetherJoinRequests = pgTable(
       .notNull()
       .references(() => profiles.id, { onDelete: "cascade" }),
     inviteId: uuid("invite_id").references(() => togetherInvites.id),
+    /** Made with the session code: approval skips the audience (PER-60). */
+    viaCode: boolean("via_code").notNull().default(false),
     originalStartedAt: at("original_started_at"),
     consentVersion: text("consent_version").notNull(),
     status: text("status").notNull().default("pending"),
