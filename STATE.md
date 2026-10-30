@@ -1,5 +1,30 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-30 — Coach: the way back to athlete mode never waits on the subscription (PER-77, branch `claude/release-2-coach-fixes`)
+
+Release 2 bug batch. A coach mode restored at launch could strand the user
+while `GET /subscriptions/me` was loading, stalled or failed offline:
+- the drawer's mode-switch card rendered only when `isTrainerEligible`, which
+  stays false until the request answers (`ProfileDrawerPresenter.tsx`);
+- the Clients tab's spinner had no exit, and a failed request with nothing
+  cached showed the trainer paywall, treating a network failure as a denial.
+
+Fix: the card also renders in coach mode (switching to athlete needs no
+entitlement; switching to coach stays gated). The Clients spinner carries the
+existing "Switch to athlete mode" escape, and a failed request with no data
+shows `ErrorState` with Retry and the same escape instead of the paywall. No
+roster renders without a verdict, and a late answer never switches back.
+
+Tests that fail on the old code: the drawer presenter test and three
+`ClientsContainer` PER-77 tests (hang, network error, timeout). Mobile suite
+with coverage 96.09 / 92.12 / 95.98 / 97.48. `SubscriptionSelectionContainer`
+stalls only in the cloud container; `AddClientSheetContainer` timed out under
+full-suite load and passes alone (24/24). PER-80 audit #8 (half) and #3
+(paywall part) are covered; #5 (a 401 demotes a coach) is not.
+**Needs Brad's OK (UI additions):** the ghost button under the spinner and the
+error copy "Couldn't load your subscription. Check your connection and try
+again." **Not verified** on a device.
+
 ### 2026-10-30 — Together: the session code admits to private sessions (PER-60, branch `claude/compassionate-clarke-eefidd`)
 
 Found during PR #514's review. The app offers "Private · code or QR" and lets a
