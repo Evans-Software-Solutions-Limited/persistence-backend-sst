@@ -35,7 +35,10 @@ import {
 } from "@/ui/presenters/TogetherLeaveSheet";
 import { rememberNearbyRoster } from "@/ui/state/togetherRosterSeen";
 import { TogetherToast } from "@/ui/presenters/TogetherToast";
-import { TogetherInvitePresenter } from "@/ui/presenters/TogetherInvitePresenter";
+import {
+  TOGETHER_INVITE_QR,
+  TogetherInvitePresenter,
+} from "@/ui/presenters/TogetherInvitePresenter";
 import { TogetherStartSheet } from "@/ui/presenters/TogetherStartSheet";
 import { TogetherJoinRequestBar } from "@/ui/presenters/TogetherJoinRequestBar";
 import { useTogetherSettings } from "@/state/together-settings";
@@ -942,7 +945,7 @@ export function TogetherLobbyContainer({
                   : "Train together"
         }
         eyebrow={showInvitation ? undefined : "TRAIN TOGETHER"}
-        height={showInvitation ? 55 : "tall"}
+        height={showInvitation ? "content" : "tall"}
         contentPadding={showInvitation ? { top: 4, bottom: 28 } : undefined}
         footer={
           startingSession ? (
@@ -958,6 +961,7 @@ export function TogetherLobbyContainer({
           <TogetherInvitePresenter
             qr={
               <TogetherInvitationQr
+                {...TOGETHER_INVITE_QR}
                 value={togetherInvitationLink({
                   connection: "local",
                   invitation: snapshot.invitation!,

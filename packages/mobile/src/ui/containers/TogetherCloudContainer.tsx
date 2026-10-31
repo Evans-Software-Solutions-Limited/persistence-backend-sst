@@ -5,7 +5,10 @@ import { TogetherScannerPresenter } from "@/ui/presenters/TogetherScannerPresent
 import { Alert, AppState, Share, Platform } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { TogetherInvitationQr } from "@/ui/presenters/TogetherInvitationQr";
-import { TogetherInvitePresenter } from "@/ui/presenters/TogetherInvitePresenter";
+import {
+  TOGETHER_INVITE_QR,
+  TogetherInvitePresenter,
+} from "@/ui/presenters/TogetherInvitePresenter";
 import {
   TogetherWorkoutRow,
   togetherMemberTone,
@@ -883,7 +886,9 @@ export function TogetherCloudContainer(p: {
             : "TRAIN TOGETHER"
         }
         height={
-          inviteView && state.phase === "active" && invitation ? 55 : "tall"
+          inviteView && state.phase === "active" && invitation
+            ? "content"
+            : "tall"
         }
         contentPadding={
           inviteView && state.phase === "active" && invitation
@@ -898,6 +903,7 @@ export function TogetherCloudContainer(p: {
             <TogetherInvitePresenter
               qr={
                 <TogetherInvitationQr
+                  {...TOGETHER_INVITE_QR}
                   value={togetherInvitationLink({
                     connection: "online",
                     invitation: invitation.token,

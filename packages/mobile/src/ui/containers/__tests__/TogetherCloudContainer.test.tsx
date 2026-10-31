@@ -38,18 +38,22 @@ jest.mock("expo-clipboard", () => ({
   setStringAsync: (...args: unknown[]) => mockCopy(...args),
 }));
 jest.mock("expo-crypto", () => ({ randomUUID: () => "uuid" }));
+const mockSheetHeight = jest.fn();
 jest.mock("@/ui/components/foundation/BottomSheet", () => ({
   BottomSheet: (p: {
     visible: boolean;
     children: React.ReactNode;
     footer?: React.ReactNode;
-  }) =>
-    p.visible ? (
+    height?: unknown;
+  }) => {
+    mockSheetHeight(p.height);
+    return p.visible ? (
       <>
         {p.children}
         {p.footer}
       </>
-    ) : null,
+    ) : null;
+  },
 }));
 const server: CloudSnapshot = {
   sessionId: "s",
@@ -1273,6 +1277,12 @@ it("shows the actual online invitation after confirmed Start and retries invitat
   expect(r.UNSAFE_getByType(QRCode).props.value).toBe(
     "persistencemobile://together/join?connection=online&invitation=invite",
   );
+  // Canvas row 1b: a 200 pt code in its 14 pt white box, in a sheet sized to
+  // that content rather than a 55 % sheet that scrolled (TestFlight 31 Oct).
+  expect(r.UNSAFE_getByType(QRCode).props).toEqual(
+    expect.objectContaining({ size: 200, quietZone: 0 }),
+  );
+  expect(mockSheetHeight).toHaveBeenLastCalledWith("content");
   expect(
     r.getByText(
       "Online · internet required · training partners join straight in",

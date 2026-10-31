@@ -149,6 +149,13 @@ it("hosts current workout, approves real peer IDs, copies invite and cleans up",
   await act(async () => fireEvent.press(r.getByText("Start the session")));
   // The invite sheet opens once after start, with the mode on it.
   await waitFor(() => expect(r.getByText("Invite people")).toBeTruthy());
+  // Canvas row 1b: a 200 pt code in its 14 pt white box, and a sheet sized to
+  // that content. The width-based 304 pt code in a 55 % sheet scrolled
+  // (TestFlight 31 Oct).
+  expect(r.UNSAFE_getByType("QRCode" as never).props).toEqual(
+    expect.objectContaining({ size: 200, quietZone: 0 }),
+  );
+  expect(mockSheet.mock.calls.at(-1)![0].height).toBe("content");
   expect(
     r.getByText(/Nearby · no internet needed · training partners join/),
   ).toBeTruthy();
