@@ -639,7 +639,8 @@ it("Online: a partner who finished their own workout drops off the host's strip 
   finished.participants.find((x) => x.userId === "v")!.status = "saved";
   act(() => h.publish({ snapshot: finished }));
   expect(strip().members.map((m) => m.userId)).toEqual(["u"]);
-  expect(strip().status).toBe("Waiting for people · 1 of 4");
+  // Their seat stays taken on the server, so the count is seats, not faces.
+  expect(strip().status).toBe("Waiting for people · 2 of 4");
   expect(r.getByTestId("own-workout")).toBeTruthy();
   expect(r.queryByLabelText("Show Athlete 2’s workout")).toBeNull();
   fireEvent.press(r.getByText("End"));

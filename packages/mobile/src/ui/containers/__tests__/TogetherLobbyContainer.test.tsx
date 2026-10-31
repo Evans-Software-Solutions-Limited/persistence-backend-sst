@@ -10,6 +10,7 @@ import { act, fireEvent, waitFor } from "@testing-library/react-native";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 import {
   TogetherLobbyContainer,
+  liveStatus,
   startRowDetail,
 } from "../TogetherLobbyContainer";
 import type {
@@ -2112,7 +2113,19 @@ describe("leaving and ending (canvas row 3)", () => {
     expect(leaveRow(r).members.map((m: { name: string }) => m.name)).toEqual([
       "Brad",
     ]);
-    expect(leaveRow(r).status).toBe("Waiting for people · 1 of 4");
+    // Both keep their roster seats, so the count is seats, not faces.
+    expect(leaveRow(r).status).toBe("Waiting for people · 3 of 4");
+  });
+
+  it("never says Waiting for people once every seat is taken (inspector lead)", () => {
+    expect(liveStatus(1, undefined, 4)).toEqual({
+      status: "In sync · 1 training",
+      tone: "live",
+    });
+    expect(liveStatus(1, undefined, 2).status).toBe(
+      "Waiting for people · 2 of 4",
+    );
+    expect(liveStatus(3, undefined, 4).status).toBe("In sync · 3 training");
   });
 
   it("another guest leaving drops them on a guest's strip, but the host stays until they end it", () => {

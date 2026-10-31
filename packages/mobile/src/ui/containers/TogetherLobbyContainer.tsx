@@ -95,14 +95,17 @@ export function startRowDetail(workout: WorkoutSession | null | undefined) {
 export function liveStatus(
   members: number,
   sharing: TogetherWorkoutStatus["sharing"] | undefined,
+  /** Seats taken: a guest who finished or left keeps theirs (#522). */
+  seats: number = members,
 ): { status: string; tone: "live" | "warn" | "muted" } {
   if (sharing === "reconnecting" || sharing === "paused")
     return { status: togetherWorkoutCopy(sharing), tone: "warn" };
   if (sharing === "local-only")
     return { status: togetherWorkoutCopy(sharing), tone: "muted" };
-  return members > 1
+  // "Waiting for people" only while a seat is free to wait for.
+  return members > 1 || seats >= 4
     ? { status: `In sync · ${members} training`, tone: "live" }
-    : { status: `Waiting for people · ${members} of 4`, tone: "muted" };
+    : { status: `Waiting for people · ${seats} of 4`, tone: "muted" };
 }
 
 /**
@@ -740,7 +743,11 @@ export function TogetherLobbyContainer({
     !!snapshot.invitation &&
     !startingWorkout &&
     !startFailed;
-  const live = liveStatus(members.length, workoutStatus?.sharing);
+  const live = liveStatus(
+    members.length,
+    workoutStatus?.sharing,
+    snapshot.members.length,
+  );
   const requests =
     snapshot.role === "host" && snapshot.phase === "hosting"
       ? snapshot.pending.map((request) => (

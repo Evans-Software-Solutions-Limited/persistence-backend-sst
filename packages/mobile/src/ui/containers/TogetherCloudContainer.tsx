@@ -648,6 +648,7 @@ export function TogetherCloudContainer(p: {
   };
   const hosting = state.snapshot?.hostId === p.accountId;
   const members = present.length;
+  const seats = state.snapshot?.participants.length ?? members;
   // Once sharing stops the snapshot lists only this athlete, so the host's
   // name is remembered from when it was live.
   const hostNameSeen = useRef<{ session?: string; name?: string }>({});
@@ -731,10 +732,12 @@ export function TogetherCloudContainer(p: {
             status: "Sharing ended · continue your workout",
             tone: "muted" as const,
           }
-        : members > 1
+        : // "Waiting for people" only while a seat is free: a partner who
+          // finished keeps their seat on the server (#522).
+          members > 1 || seats >= 4
           ? { status: `In sync · ${members} training`, tone: "live" as const }
           : {
-              status: `Waiting for people · ${members} of 4`,
+              status: `Waiting for people · ${seats} of 4`,
               tone: "muted" as const,
             };
   // Your own avatar is the only way back, so a partner view never outlives
