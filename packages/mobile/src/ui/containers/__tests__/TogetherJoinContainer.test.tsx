@@ -599,6 +599,10 @@ it("a code the backend cannot find, or cannot be checked offline, says so (PER-6
   await waitFor(() => expect(mockLobby.browse).toHaveBeenCalled());
   fireEvent.changeText(r.getByLabelText("Session code"), "ZZZ-ZZZ");
   fireEvent.press(r.getByText("Continue"));
+  await waitFor(() => expect(mockCloud.preview).toHaveBeenCalled());
+  // Not found is only said once the nearby search has ended without it.
+  expect(r.queryByText(/Couldn’t find that code/)).toBeNull();
+  publish({ searching: false });
   await waitFor(() =>
     expect(r.getByText(/Couldn’t find that code/)).toBeTruthy(),
   );
@@ -611,6 +615,64 @@ it("a code the backend cannot find, or cannot be checked offline, says so (PER-6
     expect(r.getByText(/No internet to check that code/)).toBeTruthy(),
   );
   expect(r.queryByText("Join this workout")).toBeNull();
+});
+it("a Nearby code typed before the search has verified its host is not reported as not found (TestFlight 31 Oct)", async () => {
+  // A Nearby code is unknown to the server, so the Online preview misses it.
+  // The search verifies the host a moment later; the old flow had already
+  // said "Couldn’t find that code" while the row for that host appeared.
+  mockCloud.preview.mockResolvedValue({
+    ok: false,
+    error: { kind: "api", code: "not_found", message: "no" },
+  });
+  mockLobby.selectCode.mockImplementation(async () => {
+    publish({
+      phase: "selected",
+      selection: { hostUserId: "brad", workoutName: "Lower Body B" },
+    });
+  });
+  const r = renderWithTheme(<TogetherJoinContainer />);
+  await waitFor(() => expect(mockLobby.browse).toHaveBeenCalled());
+  fireEvent.changeText(r.getByLabelText("Session code"), "4KQ-928");
+  fireEvent.press(r.getByText("Continue"));
+  await waitFor(() =>
+    expect(mockCloud.preview).toHaveBeenCalledWith({ code: "4KQ928" }),
+  );
+  await act(async () => {});
+  expect(r.queryByText(/Couldn’t find that code/)).toBeNull();
+  publish({
+    discovered: [{ ...discovered("d1", "brad"), code: "4KQ928" }],
+  });
+  await waitFor(() => expect(r.getByText("Join this workout")).toBeTruthy());
+  expect(mockLobby.selectCode).toHaveBeenCalledWith("4KQ928");
+  expect(r.queryByText(/Couldn’t find that code/)).toBeNull();
+});
+it("a row picked after a code miss opens its card without the miss (TestFlight 31 Oct)", async () => {
+  mockCloud.preview.mockResolvedValue({
+    ok: false,
+    error: { kind: "api", code: "not_found", message: "no" },
+  });
+  mockFriends.mockResolvedValue(
+    page([
+      {
+        sessionId: "s-tom",
+        host: { userId: "tom", displayName: "Tom Vance", avatarUrl: null },
+        occupancy: 2,
+        expiresAt: "x",
+        workoutName: "Push A",
+      },
+    ]),
+  );
+  const r = renderWithTheme(<TogetherJoinContainer />);
+  await waitFor(() => expect(mockLobby.browse).toHaveBeenCalled());
+  publish({ searching: false });
+  fireEvent.changeText(r.getByLabelText("Session code"), "ZZZ-ZZZ");
+  fireEvent.press(r.getByText("Continue"));
+  await waitFor(() =>
+    expect(r.getByText(/Couldn’t find that code/)).toBeTruthy(),
+  );
+  fireEvent.press(r.getByLabelText("Join Tom Vance"));
+  await waitFor(() => expect(r.getByText("Join this workout")).toBeTruthy());
+  expect(r.queryByText(/Couldn’t find that code/)).toBeNull();
 });
 it("a pasted Online link fills the consent card in from the preview (PER-60)", async () => {
   mockCloud.preview.mockResolvedValue({

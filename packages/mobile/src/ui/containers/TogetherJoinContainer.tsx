@@ -41,6 +41,7 @@ import {
   type PartnerOnlineSession,
 } from "./TogetherHubContainer";
 import type {
+  TogetherLobbyPort,
   TogetherLobbySnapshot,
   TogetherPlanRow,
 } from "@/domain/ports/togetherLobby.port";
@@ -319,30 +320,43 @@ export function TogetherJoinContainer() {
       setCode(text);
       setScanning(false);
       // A nearby host advertises its code: no internet needed when the search found it.
-      if (
-        lobby?.selectCode &&
-        (lobby.getSnapshot().discovered ?? []).some((d) => d.code === typed)
-      ) {
-        await lobby.selectCode(typed);
+      const nearby = async () => {
+        await lobby!.selectCode!(typed);
         if (!isCurrent()) return;
-        const selected = lobby.getSnapshot();
+        const selected = lobby!.getSnapshot();
         if (selected.phase === "selected" && selected.selection) {
           setCold(false);
           setTarget(localTarget(selected.selection));
           return;
         }
         if (selected.error) throw new Error(selected.error);
-      }
-      if (!cloud) throw new Error("code-not-found");
-      const preview = await cloud.preview({ code: typed });
+      };
+      if (lobby?.selectCode && nearbyHasCode(lobby, typed)) return nearby();
+      const preview = cloud ? await cloud.preview({ code: typed }) : undefined;
       if (!isCurrent()) return;
-      if (!preview.ok)
-        throw new Error(
-          preview.error.code === "network" ? "code-offline" : "code-not-found",
-        );
-      setCold(false);
-      setTarget({ kind: "online-code", code: typed, preview: preview.value });
-      return;
+      if (preview?.ok) {
+        setCold(false);
+        setTarget({
+          kind: "online-code",
+          code: typed,
+          preview: preview.value,
+        });
+        return;
+      }
+      // The search may still be verifying the host that owns this code: a
+      // Nearby code is unknown to the server, so "not found" must wait for
+      // the search to finish. Saying it earlier showed "Couldn’t find that
+      // code" while the search was finding that very host (TestFlight 31 Oct).
+      if (lobby?.selectCode && (await nearbyFinds(lobby, typed))) {
+        if (!isCurrent()) return;
+        return nearby();
+      }
+      if (!isCurrent()) return;
+      throw new Error(
+        preview && !preview.ok && preview.error.code === "network"
+          ? "code-offline"
+          : "code-not-found",
+      );
     }
     const value = text.includes("://")
       ? readTogetherInvitation(text)
@@ -776,6 +790,9 @@ export function TogetherJoinContainer() {
       onSelect={(id) => {
         const found = online.find((s) => s.sessionId === id);
         if (found) {
+          // A row the search found starts clean: an earlier "Couldn’t find
+          // that code" must not ride onto its Join this workout card.
+          setNotice("");
           setCold(false);
           setTarget({ kind: "online-session", ...found });
           return;
@@ -803,6 +820,31 @@ export function TogetherJoinContainer() {
   );
 }
 
+/** Whether the nearby search has verified a host advertising this code. */
+function nearbyHasCode(lobby: TogetherLobbyPort, code: string): boolean {
+  return (lobby.getSnapshot().discovered ?? []).some((d) => d.code === code);
+}
+/**
+ * Resolves true once the running nearby search verifies a host with this
+ * code, false when the search ends (30 s, cancelled or failed) without one.
+ */
+function nearbyFinds(lobby: TogetherLobbyPort, code: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    let unsubscribe: (() => void) | undefined;
+    let done = false;
+    const check = () => {
+      if (done) return;
+      const s = lobby.getSnapshot();
+      const found = nearbyHasCode(lobby, code);
+      if (!found && s.phase === "browsing" && s.searching) return;
+      done = true;
+      unsubscribe?.();
+      resolve(found);
+    };
+    unsubscribe = lobby.subscribe(check);
+    check();
+  });
+}
 function hostName(
   target: Target,
   partners: Record<string, Partner>,
