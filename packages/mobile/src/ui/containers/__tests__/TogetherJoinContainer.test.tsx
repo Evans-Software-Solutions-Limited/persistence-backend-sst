@@ -14,7 +14,8 @@ let mockUser = "u",
   mockParams: any = {},
   mockActive: any = null,
   mockState: any,
-  mockCloudState: any;
+  mockCloudState: any,
+  mockSharedPlan: any;
 const mockRouter = { back: jest.fn(), replace: jest.fn() },
   mockRequest = jest.fn(),
   mockReread = jest.fn();
@@ -66,7 +67,7 @@ const mockLobby: any = {
     getPlan: jest.fn((): any => ownPlan),
   },
   shared: {
-    getSnapshot: () => ({ plan }),
+    getSnapshot: () => ({ plan: mockSharedPlan }),
     setOwnPlan: jest.fn(),
     publishOwnActivity: jest.fn(async () => {}),
   },
@@ -189,6 +190,7 @@ beforeEach(() => {
   mockActive = null;
   mockAllowed = true;
   mockId = 0;
+  mockSharedPlan = plan;
   mockState = { phase: "idle", members: [], pending: [] };
   mockCloudState = {
     phase: "idle",
@@ -353,6 +355,77 @@ it.each([
     failure === "publish" ? 1 : 0,
   );
   expect(r.queryByText(/Could not/)).toBeNull();
+});
+it("admission before the host's plan arrives keeps connecting, then opens the workout once the plan lands (TestFlight 31 Oct)", async () => {
+  // The roster frame admits the guest; the host's plan follows in later frames.
+  mockSharedPlan = null;
+  const r = renderWithTheme(<TogetherJoinContainer />);
+  await waitFor(() => expect(mockLobby.browse).toHaveBeenCalled());
+  publish({ discovered: [discovered("s-brad", "brad", 3)] });
+  await waitFor(() => expect(r.getByText("Brad Evans")).toBeTruthy());
+  fireEvent.press(r.getByLabelText("Join Brad Evans"));
+  await waitFor(() => expect(r.getByText("Join this workout")).toBeTruthy());
+  fireEvent.press(r.getByText("Join and start"));
+  await waitFor(() => expect(mockLobby.join).toHaveBeenCalledTimes(1));
+  publish({ phase: "joined" });
+  await act(async () => {});
+  expect(r.queryByText(/Could not connect/)).toBeNull();
+  expect(r.getByText("Connecting to Brad’s phone")).toBeTruthy();
+  expect(mockLobby.workout.promote).not.toHaveBeenCalled();
+  // The plan lands: the controller republishes its snapshot.
+  mockSharedPlan = plan;
+  publish({});
+  await waitFor(() =>
+    expect(mockRouter.replace).toHaveBeenCalledWith("/(app)/session"),
+  );
+  expect(mockLobby.workout.promote).toHaveBeenCalledTimes(1);
+  expect(r.queryByText(/Could not connect/)).toBeNull();
+});
+it("an admission that lands after the join attempt failed clears the failure and opens the workout", async () => {
+  mockParams = {
+    connection: "local",
+    invitation: "invite",
+    transport: "nearby",
+  };
+  mockLobby.join.mockRejectedValueOnce(new Error("join-late"));
+  const r = renderWithTheme(<TogetherJoinContainer />);
+  await waitFor(() => expect(r.getByText("Join this workout")).toBeTruthy());
+  fireEvent.press(r.getByText("Join and start"));
+  await waitFor(() =>
+    expect(
+      r.getByText(/Could not connect\. Your own workout is safe/),
+    ).toBeTruthy(),
+  );
+  // The host taps "Let in" late: the lobby reaches joined after the failure.
+  publish({ phase: "joined" });
+  await waitFor(() =>
+    expect(mockRouter.replace).toHaveBeenCalledWith("/(app)/session"),
+  );
+  expect(mockLobby.workout.promote).toHaveBeenCalledTimes(1);
+  expect(r.queryByText(/Could not connect/)).toBeNull();
+});
+it("an admission while another action holds the lock is adopted once the lock frees", async () => {
+  let release!: () => void;
+  mockLobby.join.mockImplementationOnce(
+    () => new Promise<void>((resolve) => (release = resolve)),
+  );
+  const r = renderWithTheme(<TogetherJoinContainer />);
+  await waitFor(() => expect(mockLobby.browse).toHaveBeenCalled());
+  publish({ discovered: [discovered("s-brad", "brad", 3)] });
+  await waitFor(() => expect(r.getByText("Brad Evans")).toBeTruthy());
+  fireEvent.press(r.getByLabelText("Join Brad Evans"));
+  await waitFor(() => expect(r.getByText("Join this workout")).toBeTruthy());
+  fireEvent.press(r.getByText("Join and start"));
+  await waitFor(() => expect(mockLobby.join).toHaveBeenCalledTimes(1));
+  // Admitted while the join action is still running.
+  publish({ phase: "joined" });
+  await act(async () => {});
+  expect(mockLobby.workout.promote).not.toHaveBeenCalled();
+  await act(async () => release());
+  await waitFor(() =>
+    expect(mockRouter.replace).toHaveBeenCalledWith("/(app)/session"),
+  );
+  expect(mockLobby.workout.promote).toHaveBeenCalledTimes(1);
 });
 it("a non-partner asks to join and waits for the host; cancel returns to the list", async () => {
   const r = renderWithTheme(<TogetherJoinContainer />);
