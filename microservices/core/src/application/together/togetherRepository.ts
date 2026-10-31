@@ -473,7 +473,9 @@ export class TogetherRepository {
         "INVALID_SCHEMA",
         400,
       );
-      e.everAcknowledged = e.sets.length > 0;
+      // Empty rows (never completed) are shared too; only a logged set locks
+      // the exercise against substitution (PER-60).
+      e.everAcknowledged = e.sets.some((set) => set.completed);
     }
   }
   private async free(tx: TogetherTx, uid: string) {
@@ -1460,7 +1462,7 @@ export class TogetherRepository {
                 );
                 if (index >= 0) e.sets[index] = op.set;
                 else e.sets.push(op.set);
-                e.everAcknowledged = true;
+                if (op.set.completed) e.everAcknowledged = true;
               } else if (op.type === "removeSet")
                 e.sets = e.sets.filter((x) => x.setId !== op.setId);
               else if (op.type === "skip") e.skipped = op.skipped;

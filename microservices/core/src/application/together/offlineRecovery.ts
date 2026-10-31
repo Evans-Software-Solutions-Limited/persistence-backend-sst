@@ -50,7 +50,9 @@ export function reconstructOwn(
     );
     if (index >= 0) exercise.sets[index] = op.set;
     else exercise.sets.push(op.set);
-    exercise.everAcknowledged = true;
+    // An empty row (never completed) is shared too; only a logged set locks
+    // the exercise against substitution (PER-60).
+    if (op.set.completed) exercise.everAcknowledged = true;
   } else if (op.type === "removeSet")
     exercise.sets = exercise.sets.filter((s) => s.setId !== op.setId);
   else if (op.type === "skip") exercise.skipped = op.skipped;

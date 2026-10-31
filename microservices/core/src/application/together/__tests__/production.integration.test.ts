@@ -628,6 +628,49 @@ describe("production Together persistence and recovery", () => {
       status: 400,
     });
   });
+  it("an empty row (never completed) is shared without locking substitution (PER-60)", async () => {
+    const s = await create();
+    const pid = s.plan.exercises[0].planExerciseId;
+    const empty = { ...set(), reps: 0, weightKg: 0, completed: false };
+    await run(
+      a,
+      s.sessionId,
+      cmd(a, pid, 0, { type: "upsertSet", planExerciseId: pid, set: empty }),
+    );
+    const own = (await repo.snapshot(a, s.sessionId)).participants[0];
+    expect(own.execution!.exercises[0].sets).toEqual([empty]);
+    expect(own.progress?.[0]?.completedSets).toBe(0);
+    await run(
+      a,
+      s.sessionId,
+      cmd(a, pid, 1, {
+        type: "substitute",
+        planExerciseId: pid,
+        exerciseId: otherExercise,
+      }),
+    );
+    // Logging the row then locks it, as before.
+    await run(
+      a,
+      s.sessionId,
+      cmd(a, pid, 2, {
+        type: "upsertSet",
+        planExerciseId: pid,
+        set: { ...empty, reps: 8, weightKg: 40, completed: true },
+      }),
+    );
+    await expect(
+      run(
+        a,
+        s.sessionId,
+        cmd(a, pid, 3, {
+          type: "substitute",
+          planExerciseId: pid,
+          exerciseId: null,
+        }),
+      ),
+    ).rejects.toMatchObject({ status: 409 });
+  });
   it("block immediately restricts replay/snapshots/partner writes but preserves own pending work and reports", async () => {
     const s = await pair();
     const pid = s.plan.exercises[0].planExerciseId;

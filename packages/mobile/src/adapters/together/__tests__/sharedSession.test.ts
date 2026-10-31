@@ -237,6 +237,26 @@ describe("shared plans, sealed consent and independent projections", () => {
     engines[1].setOwnPlan(plan);
     expect(engines[1].getSnapshot().athletes).toEqual(before);
   });
+  it("a row filled keeps its place in the partner's projection (TestFlight 31 Oct)", async () => {
+    await engines[1].publishOwnActivity();
+    await engines[1].setConsent(id(3), { ...none, numbers: true });
+    const row = (setId: string, reps: number, completed: boolean) => ({
+      type: "upsertSet",
+      planExerciseId: id(50),
+      set: { setId, reps, weightKg: completed ? 60 : 0, completed },
+    });
+    // Two empty rows shared, then the first one filled.
+    await engines[1].publishProgress(command(2, 0, row(id(61), 0, false)));
+    await engines[1].publishProgress(command(2, 1, row(id(62), 0, false)));
+    await engines[1].publishProgress(command(2, 2, row(id(61), 8, true)));
+    const sets = engines[2]
+      .getSnapshot()
+      .athletes.find((a) => a.userId === id(2))!.exercises[id(50)]!.sets;
+    expect(sets.map((set) => [set.setId, set.completed])).toEqual([
+      [id(61), true],
+      [id(62), false],
+    ]);
+  });
   it("a guest's numbers grant sent before promotion is followed by the plan and a baseline when it publishes (PER-60)", async () => {
     // The guest's sharing defaults land at admission, before their workout is
     // promoted, so the grant carries no plan.

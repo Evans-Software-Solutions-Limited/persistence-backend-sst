@@ -1086,10 +1086,11 @@ export class TogetherSharedSession implements TogetherSharedPort {
       const e = projection.exercises[op.planExerciseId as string];
       check(e);
       if (op.type === "upsertSet") {
-        e.sets = e.sets.filter(
-          (s) => s.setId !== (op.set as { setId: string }).setId,
-        );
-        e.sets.push(clone(op.set) as (typeof e.sets)[number]);
+        // In place, so a row filled keeps its position as on your own screen.
+        const set = clone(op.set) as (typeof e.sets)[number];
+        const index = e.sets.findIndex((s) => s.setId === set.setId);
+        if (index >= 0) e.sets[index] = set;
+        else e.sets.push(set);
       } else if (op.type === "removeSet")
         e.sets = e.sets.filter((s) => s.setId !== op.setId);
       else if (op.type === "skip") e.skipped = op.skipped as boolean;

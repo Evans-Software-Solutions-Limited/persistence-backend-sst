@@ -37,8 +37,10 @@ type PartnerExercise = {
   rows: PartnerRow[];
 };
 /**
- * The partner's exercises in plan order: logged sets first, then an empty row
- * for every planned set not logged yet, plus the rows the viewer added.
+ * The partner's exercises in plan order: the partner's own rows (filled
+ * where logged, empty where not, so a fill-in names the row it was typed
+ * into), then an empty row for every planned set beyond them, plus the rows
+ * the viewer added.
  */
 export function togetherPartnerExercises(p: {
   snapshot: TogetherSharedSnapshot;
@@ -75,12 +77,17 @@ export function togetherPartnerExercises(p: {
   return slots.map((slot, index) => {
     const exercise = p.projection?.exercises[slot.planExerciseId];
     const exerciseId = slot.exerciseId ?? slot.fallbackId;
-    const logged: PartnerRow[] = (exercise?.sets ?? []).map((set) => ({
-      setId: set.setId,
-      reps: set.reps,
-      weightKg: set.weightKg,
-      logged: true,
-    }));
+    // The partner's rows as they are on their phone, empty ones included.
+    const logged: PartnerRow[] = (exercise?.sets ?? []).map((set) =>
+      set.completed
+        ? {
+            setId: set.setId,
+            reps: set.reps,
+            weightKg: set.weightKg,
+            logged: true,
+          }
+        : { setId: set.setId, reps: null, weightKg: null, logged: false },
+    );
     // Added rows go on top of what is on screen, even past the plan.
     const total =
       Math.max(slot.targetSets, logged.length) +

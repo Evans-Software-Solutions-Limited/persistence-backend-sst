@@ -139,6 +139,9 @@ function validate(session: WorkoutSession, promoting = false) {
     }
   }
 }
+/** An upsert that logs a set; an empty row's never locks a substitution. */
+const loggedUpsert = (operation: Record<string, unknown>) =>
+  (operation.set as { completed?: unknown } | undefined)?.completed !== false;
 const structure = (s: WorkoutSession) =>
   requestHash({
     name: s.name,
@@ -427,7 +430,8 @@ export class TogetherWorkoutCheckpoint implements TogetherWorkoutPort {
           c.intents.some(
             (intent) =>
               intent.payload.operation.type === "upsertSet" &&
-              intent.payload.operation.planExerciseId === op.planExerciseId,
+              intent.payload.operation.planExerciseId === op.planExerciseId &&
+              loggedUpsert(intent.payload.operation),
           )
         )
           throw new Error("workout-substitution-locked");
@@ -601,7 +605,8 @@ export class TogetherWorkoutCheckpoint implements TogetherWorkoutPort {
             c.intents.some(
               (i) =>
                 i.payload.operation.type === "upsertSet" &&
-                i.payload.operation.planExerciseId === planId,
+                i.payload.operation.planExerciseId === planId &&
+                loggedUpsert(i.payload.operation),
             )
           ) {
             c.error = "workout-substitution-locked";
@@ -669,16 +674,26 @@ export class TogetherWorkoutCheckpoint implements TogetherWorkoutPort {
               configurable: true,
               writable: true,
             });
-          if (s.reps !== null && s.weightKg !== null)
-            projected[s.id] = {
-              planExerciseId: c.exerciseIds[e.id],
-              set: {
-                setId: c.setIds[s.id],
-                reps: s.reps,
-                weightKg: s.weightKg,
-                completed: true,
-              },
-            };
+          // Every row is shared, logged or not (placeholder zeros, never
+          // completed), so partners see the real set list and a fill-in lands
+          // on the row it was typed into (PER-60).
+          projected[s.id] = {
+            planExerciseId: c.exerciseIds[e.id],
+            set:
+              s.reps !== null && s.weightKg !== null
+                ? {
+                    setId: c.setIds[s.id],
+                    reps: s.reps,
+                    weightKg: s.weightKg,
+                    completed: true,
+                  }
+                : {
+                    setId: c.setIds[s.id],
+                    reps: 0,
+                    weightKg: 0,
+                    completed: false,
+                  },
+          };
         }
       const operations: Record<string, unknown>[] = controlOperations;
       for (const [id, value] of Object.entries(c.projected))

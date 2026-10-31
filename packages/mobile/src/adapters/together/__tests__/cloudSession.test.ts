@@ -537,7 +537,15 @@ describe("cloud authoritative personal checkpoint", () => {
     );
     controller.setActive(true);
     await controller.resume(server.sessionId);
-    expect(server.participants[0].execution!.exercises[0].sets).toEqual([]);
+    // A half-typed row is no longer a logged set; the row itself stays shared.
+    expect(server.participants[0].execution!.exercises[0].sets).toEqual([
+      {
+        setId: first!.exercises[0].sets[0].setId,
+        reps: 0,
+        weightKg: 0,
+        completed: false,
+      },
+    ]);
     const restored = controller.readDraft(userId)!;
     restored.exercises[0].sets[0].reps = 9;
     controller.saveDraft(userId, restored);
@@ -547,6 +555,36 @@ describe("cloud authoritative personal checkpoint", () => {
     );
     await controller.finish(controller.reviewToken());
     expect(controller.readDraft(userId)?.status).toBe("completed");
+  });
+  it("a partner's fill-in on planned row 2 fills set 2 on the owner's phone, no extra set (TestFlight 31 Oct)", async () => {
+    const d = draft();
+    const row = d.exercises[0].sets[0];
+    d.exercises[0].sets = [1, 2, 3].map((n) => ({
+      ...row,
+      id: `local-row-${n}`,
+      setNumber: n,
+      reps: null,
+      weightKg: null,
+    }));
+    await controller.hostWorkout(d);
+    await controller.retry();
+    // Every planned row is shared, empty ones as never-completed rows.
+    const shared = server.participants[0].execution!.exercises[0].sets;
+    expect(shared.map((set) => set.completed)).toEqual([false, false, false]);
+    // The partner fills the second row; the server updates it in place.
+    shared[1] = { ...shared[1]!, reps: 8, weightKg: 60, completed: true };
+    server.participants[0].ownRevision++;
+    server.revision++;
+    await controller.refresh();
+    expect(
+      controller
+        .readDraft(userId)!
+        .exercises[0].sets.map((set) => [set.id, set.reps, set.weightKg]),
+    ).toEqual([
+      ["local-row-1", null, null],
+      ["local-row-2", 8, 60],
+      ["local-row-3", null, null],
+    ]);
   });
   it("retains an exact outbox key after ambiguous delivery and account switch, and retries without duplicate sets", async () => {
     const original = api.create;
