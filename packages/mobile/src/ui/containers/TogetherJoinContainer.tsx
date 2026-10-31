@@ -841,19 +841,35 @@ function nearbyHasCode(lobby: TogetherLobbyPort, code: string): boolean {
  * Resolves true once the running nearby search verifies a host with this
  * code, false when the search ends (30 s, cancelled or failed) without one.
  */
+/**
+ * How long a typed code waits for the running nearby search to verify its
+ * host before "not found" is said. A host in range is verified within a few
+ * seconds; waiting out the whole 30 s search locked the Join screen on a
+ * mistyped code (Inspector, #522).
+ */
+export const NEARBY_CODE_WAIT_MS = 8_000;
 function nearbyFinds(lobby: TogetherLobbyPort, code: string): Promise<boolean> {
   return new Promise((resolve) => {
     let unsubscribe: (() => void) | undefined;
     let done = false;
+    const finish = (found: boolean) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      unsubscribe?.();
+      resolve(found);
+    };
     const check = () => {
       if (done) return;
       const s = lobby.getSnapshot();
       const found = nearbyHasCode(lobby, code);
       if (!found && s.phase === "browsing" && s.searching) return;
-      done = true;
-      unsubscribe?.();
-      resolve(found);
+      finish(found);
     };
+    const timer = setTimeout(
+      () => finish(nearbyHasCode(lobby, code)),
+      NEARBY_CODE_WAIT_MS,
+    );
     unsubscribe = lobby.subscribe(check);
     check();
   });

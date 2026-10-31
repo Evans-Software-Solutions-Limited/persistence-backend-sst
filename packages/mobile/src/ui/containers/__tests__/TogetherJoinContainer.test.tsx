@@ -3,6 +3,7 @@ import { AppState, Linking } from "react-native";
 import { act, fireEvent, waitFor } from "@testing-library/react-native";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 import {
+  NEARBY_CODE_WAIT_MS,
   TogetherJoinContainer,
   togetherSearchFailure,
 } from "../TogetherJoinContainer";
@@ -669,6 +670,28 @@ it("a code the backend cannot find, or cannot be checked offline, says so (PER-6
     expect(r.getByText(/No internet to check that code/)).toBeTruthy(),
   );
   expect(r.queryByText("Join this workout")).toBeNull();
+});
+it("a mistyped code says not found within the short wait, not after the whole search (inspector lead)", async () => {
+  mockCloud.preview.mockResolvedValueOnce({
+    ok: false,
+    error: { kind: "api", code: "not_found", message: "no" },
+  });
+  const r = renderWithTheme(<TogetherJoinContainer />);
+  await waitFor(() => expect(mockLobby.browse).toHaveBeenCalled());
+  jest.useFakeTimers();
+  try {
+    fireEvent.changeText(r.getByLabelText("Session code"), "ZZZ-ZZZ");
+    fireEvent.press(r.getByText("Continue"));
+    await act(async () => {});
+    // The search is still running and never finds it.
+    expect(r.queryByText(/Couldn’t find that code/)).toBeNull();
+    await act(async () => {
+      jest.advanceTimersByTime(NEARBY_CODE_WAIT_MS);
+    });
+    expect(r.getByText(/Couldn’t find that code/)).toBeTruthy();
+  } finally {
+    jest.useRealTimers();
+  }
 });
 it("a Nearby code typed before the search has verified its host is not reported as not found (TestFlight 31 Oct)", async () => {
   // A Nearby code is unknown to the server, so the Online preview misses it.
