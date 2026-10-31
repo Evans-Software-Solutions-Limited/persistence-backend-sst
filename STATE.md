@@ -25,6 +25,26 @@ full-suite load and passes alone (24/24). PER-80 audit #8 (half) and #3
 error copy "Couldn't load your subscription. Check your connection and try
 again." **Not verified** on a device.
 
+### 2026-10-30 — Release 2 build: native packages for sharing a view as an image (PER-99, branch `claude/compassionate-clarke-eefidd`)
+
+Brad's Release 2 rule (30 Oct): UI revamps can follow as an over-the-air update,
+but anything native must be in the Release 2 store build, and everything is
+designed before it is built. `runtimeVersion` is `appVersion`, so an OTA update
+can only reach a build with the same app version and cannot add native code.
+
+Added `react-native-view-shot` 4.0.3 and `expo-sharing` ~55.0.20, the versions
+in SDK 55's `bundledNativeModules.json` (`expo install` couldn't reach Expo's
+API from the cloud container). Unused in source for now: PER-99 (summary as an
+image, designed under PER-85, canvas row 3c) and any shared recap (PER-74) can
+then ship as JS. `expo-sharing`'s config plugin only adds a share-into
+extension (off by default), so `app.config.ts` is unchanged; sending a share
+sheet needs no plugin or permission. Saving to Photos would also need
+`expo-media-library` and a permission string; not added.
+
+Checks: tsc, lint and prettier clean. Both packages ship autolinking metadata
+(view-shot podspec + android; expo-sharing `expo-module.config.json`).
+**Not verified:** a native build. The next EAS build is the proof.
+
 ### 2026-10-30 — Together: the session code admits to private sessions (PER-60, branch `claude/compassionate-clarke-eefidd`)
 
 Found during PR #514's review. The app offers "Private · code or QR" and lets a
