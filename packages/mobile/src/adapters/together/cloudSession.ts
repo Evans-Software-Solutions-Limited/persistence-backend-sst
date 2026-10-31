@@ -1073,13 +1073,16 @@ export class TogetherCloudController implements TogetherCloudPort {
             !response.ok &&
             (next.method === "consent" ||
               next.method === "delegation" ||
-              next.method === "visibility") &&
+              next.method === "visibility" ||
+              next.method === "decide") &&
             definitiveRejection(response.error)
           ) {
-            // The server will never take this sharing change. Drop the intent
-            // so the switch returns to the acknowledged value, hand the code
-            // to the caller for a notice, and keep the session usable: the
-            // refresh at the end of the loop restores server truth.
+            // The server will never take this sharing change or admission
+            // decision. Drop it so the switch returns to the acknowledged
+            // value (an admit leaves the request waiting), hand the code to
+            // the caller for a notice, and keep the session usable: nothing
+            // queued behind it is held back, and the refresh at the end of
+            // the loop restores server truth (PER-60).
             const dropped = this.load()!;
             if (requestHash(dropped.pending[0]) !== requestHash(next))
               throw new Error("cloud-outbox-conflict");

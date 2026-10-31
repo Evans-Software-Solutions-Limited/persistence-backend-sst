@@ -2615,6 +2615,78 @@ describe("sharing switches move on tap (PER-60)", () => {
     expect(controller.getSnapshot().pendingVisibility).toBeUndefined();
   });
 
+  it("a refused admit is dropped and the host's own set queued after it still reaches the server (PER-60)", async () => {
+    api.decide = jest.fn(async () =>
+      fail({
+        kind: "api",
+        code: "server",
+        message: "no",
+        status: 400,
+        togetherCode: "INVALID_SCHEMA",
+      }),
+    ) as unknown as TogetherCloudApi["decide"];
+    api.command = jest.fn(async (_id, _key, c: CloudCommand) => {
+      const p = server.participants[0];
+      const op = c.operation as {
+        planExerciseId: string;
+        set: {
+          setId: string;
+          reps: number;
+          weightKg: number;
+          completed: boolean;
+        };
+      };
+      const e = p.execution!.exercises.find(
+        (x) => x.planExerciseId === op.planExerciseId,
+      )!;
+      e.sets = e.sets.map((set) => (set.setId === op.set.setId ? op.set : set));
+      p.ownRevision++;
+      server.revision++;
+      return ok({
+        commandId: c.commandId,
+        revision: server.revision,
+        event: { newVersion: p.ownRevision },
+      });
+    }) as unknown as TogetherCloudApi["command"];
+    await expect(controller.decide(randomUUID(), "approve")).rejects.toThrow(
+      "INVALID_SCHEMA",
+    );
+    // Dropped: nothing left to retry, and the session stays usable.
+    expect(controller.getSnapshot().pendingCount).toBe(0);
+    expect(controller.getSnapshot().phase).toBe("active");
+    const edit = controller.readDraft(userId)!;
+    edit.exercises[0].sets[0].reps = 12;
+    controller.saveDraft(userId, edit);
+    await controller.retry();
+    expect(server.participants[0].execution!.exercises[0].sets[0].reps).toBe(
+      12,
+    );
+    expect(api.decide).toHaveBeenCalledTimes(1);
+    expect(controller.getSnapshot().pendingCount).toBe(0);
+  });
+
+  it("an admit that fails on the network stays queued and is sent on reconnect (PER-60)", async () => {
+    api.decide = jest.fn(async () =>
+      fail({ kind: "api", code: "network", message: "offline" }),
+    ) as unknown as TogetherCloudApi["decide"];
+    const requestId = randomUUID();
+    await expect(controller.decide(requestId, "approve")).rejects.toThrow(
+      "network",
+    );
+    expect(controller.getSnapshot().pendingCount).toBe(1);
+    api.decide = jest.fn(async () =>
+      ok(copy(server)),
+    ) as unknown as TogetherCloudApi["decide"];
+    await controller.retry();
+    expect(api.decide).toHaveBeenCalledWith(
+      server.sessionId,
+      requestId,
+      expect.any(String),
+      expect.objectContaining({ decision: "approve" }),
+    );
+    expect(controller.getSnapshot().pendingCount).toBe(0);
+  });
+
   it("an accepted Who can join is not called refused when the refresh after it fails (PER-60)", async () => {
     api.visibility = jest.fn(async () => ok({ revision: 1 }));
     const snapshot = api.snapshot;

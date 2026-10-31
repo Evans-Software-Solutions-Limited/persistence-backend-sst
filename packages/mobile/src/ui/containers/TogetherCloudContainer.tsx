@@ -34,7 +34,10 @@ import type {
   TogetherSharedSnapshot,
   TogetherPreviousRow,
 } from "@/domain/ports/togetherShared.port";
-import { TogetherCloudPresenter } from "@/ui/presenters/TogetherCloudPresenter";
+import {
+  TogetherCloudPresenter,
+  togetherCloudErrorCopy,
+} from "@/ui/presenters/TogetherCloudPresenter";
 import { useTogetherSettings } from "@/state/together-settings";
 import { TogetherSharingPresenter } from "@/ui/presenters/TogetherSharingPresenter";
 import {
@@ -639,6 +642,25 @@ export function TogetherCloudContainer(p: {
       Object.entries(x.exerciseCatalog).map(([id, value]) => [id, value.name]),
     ),
   );
+  /**
+   * Admit or deny a join request. A decision the server refuses for good is
+   * dropped from the outbox (it never holds back your own sets); say why, so
+   * the request is not left looking like it is being let in (PER-60).
+   */
+  const decide = (requestId: string, decision: "approve" | "reject") =>
+    run(async () => {
+      try {
+        await p.cloud.decide(requestId, decision);
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "";
+        const copy =
+          code === "INVALID_SCHEMA"
+            ? "Couldn’t let them in: your workout has an exercise they can’t use yet. Your workout is unchanged."
+            : togetherCloudErrorCopy(code);
+        if (!copy || !isCurrent()) throw error;
+        showToast(copy);
+      }
+    });
   const review = (mode?: string) => {
     setVisible(false);
     router.push({
@@ -807,8 +829,8 @@ export function TogetherCloudContainer(p: {
             key={r.requestId}
             name={r.displayName ?? "Someone"}
             busy={busy || (state.snapshot?.participants.length ?? 0) >= 4}
-            onAdmit={() => run(() => p.cloud.decide(r.requestId, "approve"))}
-            onDeny={() => run(() => p.cloud.decide(r.requestId, "reject"))}
+            onAdmit={() => decide(r.requestId, "approve")}
+            onDeny={() => decide(r.requestId, "reject")}
           />
         ))}
     </>
@@ -1115,7 +1137,7 @@ export function TogetherCloudContainer(p: {
                 })
               }
               onDecision={(id, approved) =>
-                run(() => p.cloud.decide(id, approved ? "approve" : "reject"))
+                decide(id, approved ? "approve" : "reject")
               }
               onRetry={() => run(() => p.cloud.retry())}
               onReview={() => review()}
