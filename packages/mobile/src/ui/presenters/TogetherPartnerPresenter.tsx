@@ -200,7 +200,7 @@ export function TogetherPartnerPresenter(p: {
     return (
       <View gap={16} testID="together-partner-view">
         {bar(`${owner} · numbers private`)}
-        <View paddingHorizontal={16} gap={14}>
+        <View gap={14} testID="together-partner-list">
           <View
             backgroundColor="$surface"
             borderWidth={1}
@@ -342,7 +342,9 @@ export function TogetherPartnerPresenter(p: {
             ? `${owner} · read-only. Fill-in is off.`
             : `${owner} · waiting for ${first}’s sets`,
       )}
-      <View paddingHorizontal={16}>
+      {/* No inset of its own: the cards sit at the same width as your own
+          workout (the screen pads both); only the bar lines up with the strip. */}
+      <View testID="together-partner-list">
         {exercises.map((e) => {
           const rows = e.rows.map(shown);
           const exercise: SessionExercise = {

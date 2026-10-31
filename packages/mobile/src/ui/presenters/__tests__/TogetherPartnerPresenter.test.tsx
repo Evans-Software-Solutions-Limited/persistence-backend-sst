@@ -536,6 +536,35 @@ it("private partner: progress through the plan only, no weights, reps or Prev", 
   expect(r.queryByText(/60 kg/)).toBeNull();
 });
 
+/**
+ * Horizontal inset the partner view adds between the screen's content padding
+ * (the same 16 pt as your own workout's list) and `node`.
+ */
+const insetWithinView = (node: any) => {
+  const { StyleSheet } = jest.requireActual("react-native");
+  let inset = 0;
+  for (let n = node.parent; n; n = n.parent) {
+    // Host views only: a component and the view it renders share props.
+    if (typeof n.type !== "string") continue;
+    const s = StyleSheet.flatten(n.props?.style) ?? {};
+    const pick = (...keys: string[]) =>
+      keys.map((k) => s[k] ?? n.props?.[k]).find((v) => v != null) ?? 0;
+    inset +=
+      pick("paddingLeft", "paddingStart", "paddingHorizontal", "padding") +
+      pick("marginLeft", "marginStart", "marginHorizontal", "margin");
+    if (n.props?.testID === "together-partner-view") break;
+  }
+  return inset;
+};
+it("a partner's cards are as wide as your own: no inset beyond the screen's (TestFlight 31 Oct)", () => {
+  const r = render(base());
+  expect(insetWithinView(r.getByTestId("session-exercise-squat-slot"))).toBe(0);
+  // The bar stays under the strip, which has its own 16 pt inset.
+  expect(insetWithinView(r.getByTestId("together-partner-bar"))).toBe(16);
+  const hidden = render(base({ grants: consent(false, false, false) }));
+  expect(insetWithinView(hidden.getByTestId("together-partner-list"))).toBe(0);
+});
+
 it("private partner with no plan yet says so", () => {
   const r = render(base({ grants: [], athletePlans: {}, profiles: {} }));
   expect(r.getByText("Training partner · numbers private")).toBeTruthy();
