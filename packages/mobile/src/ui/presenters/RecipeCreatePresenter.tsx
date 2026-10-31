@@ -422,6 +422,9 @@ export function RecipeCreatePresenter(props: RecipeCreatePresenterProps) {
         style={{ flex: 1 }}
         contentContainerStyle={{ padding: 16, paddingBottom: 140, gap: 14 }}
         keyboardShouldPersistTaps="handled"
+        // PER-68: ingredients and instructions sit at the bottom of a long
+        // form; keep the focused field above the keyboard.
+        automaticallyAdjustKeyboardInsets
         testID="recipe-create-scroll"
       >
         {extractionMethod === "ai" || extractionMethod === "page" ? (

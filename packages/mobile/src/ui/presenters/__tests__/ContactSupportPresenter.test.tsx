@@ -1,4 +1,4 @@
-import { fireEvent } from "@testing-library/react-native";
+import { fireEvent, within } from "@testing-library/react-native";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 import {
   ContactSupportPresenter,
@@ -22,6 +22,19 @@ function makeProps(
 }
 
 describe("ContactSupportPresenter", () => {
+  // PER-68: the multiline message and Send sit low in the scroller.
+  it("keeps the message field and Send reachable with the keyboard up", () => {
+    const { getByTestId } = renderWithTheme(
+      <ContactSupportPresenter {...makeProps()} />,
+    );
+    const scroll = getByTestId("contact-support-scroll");
+    expect(scroll.props.automaticallyAdjustKeyboardInsets).toBe(true);
+    // One tap on Send while typing, not one to dismiss and another to send.
+    expect(scroll.props.keyboardShouldPersistTaps).toBe("handled");
+    expect(within(scroll).getByTestId("contact-support-message")).toBeTruthy();
+    expect(within(scroll).getByTestId("contact-support-send")).toBeTruthy();
+  });
+
   it("renders the readonly email field with the supplied address", () => {
     const { getByTestId } = renderWithTheme(
       <ContactSupportPresenter {...makeProps()} />,

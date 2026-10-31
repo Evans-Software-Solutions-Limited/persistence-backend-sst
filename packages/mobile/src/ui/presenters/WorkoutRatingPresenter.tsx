@@ -108,9 +108,19 @@ export function WorkoutRatingPresenter(props: WorkoutRatingPresenterProps) {
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={styles.flex}
       >
+        {/* PER-68: this route is an iOS page-sheet modal, so the sheet sits
+            below the top of the window — and KeyboardAvoidingView measures
+            its own frame relative to its parent, not the window. It
+            under-padded by the sheet's offset and nothing scrolled the
+            notes field into view, so the keyboard covered what was typed.
+            The scroller's own keyboard insets are computed in window
+            coordinates and keep the focused input visible (the pattern the
+            active session and workout form already use). */}
         <ScrollView
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
+          automaticallyAdjustKeyboardInsets
+          testID="workout-rating-scroll"
         >
           <Text style={styles.congrats}>Save your workout</Text>
           <Text style={styles.subtitle}>Review your effort before saving.</Text>

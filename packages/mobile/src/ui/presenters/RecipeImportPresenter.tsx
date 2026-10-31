@@ -88,7 +88,11 @@ export function RecipeImportPresenter({
 
       <ScrollView
         keyboardShouldPersistTaps="handled"
+        // PER-68: the pasted-recipe fields stack 120pt multiline boxes down
+        // the screen; keep the focused one above the keyboard.
+        automaticallyAdjustKeyboardInsets
         contentContainerStyle={{ padding: 16, gap: 14, flexGrow: 1 }}
+        testID="recipe-import-scroll"
       >
         {stage === "input" ? (
           <>

@@ -10,7 +10,7 @@
  * back, etc.) live in `WorkoutRatingContainer.test.tsx`.
  */
 
-import { fireEvent, render } from "@testing-library/react-native";
+import { fireEvent, render, within } from "@testing-library/react-native";
 import React from "react";
 import { Keyboard, View } from "react-native";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
@@ -120,6 +120,22 @@ it("offers discard separately from rating and prevents it during submission", ()
   );
   fireEvent.press(r.getByLabelText("Discard without saving"));
   expect(discard).toHaveBeenCalledTimes(1);
+});
+
+// PER-68: the notes field and Submit must stay above the keyboard. The route
+// is an iOS page sheet, where KeyboardAvoidingView (parent-relative frame)
+// under-pads, so the scroller holding them adjusts its own keyboard insets in
+// window coordinates and scrolls the focused input into view. Jest has no
+// keyboard: this pins the wiring that native behaviour depends on.
+it("keeps the notes field and Submit in a scroller that avoids the keyboard", () => {
+  const r = renderWithTheme(
+    <WorkoutRatingPresenter onSubmit={noop} onBack={noop} />,
+  );
+  const scroll = r.getByTestId("workout-rating-scroll");
+  expect(scroll.props.automaticallyAdjustKeyboardInsets).toBe(true);
+  expect(scroll.props.keyboardShouldPersistTaps).toBe("handled");
+  expect(within(scroll).getByTestId("workout-rating-notes")).toBeTruthy();
+  expect(within(scroll).getByTestId("workout-rating-submit")).toBeTruthy();
 });
 
 it("dismisses the keyboard when interacting with the difficulty control", () => {

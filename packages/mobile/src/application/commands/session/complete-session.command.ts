@@ -71,6 +71,20 @@ export type CompletedSessionResult = {
   totalDurationSeconds: number;
 };
 
+/**
+ * PER-83: true when a bulk-record body can never be accepted because it
+ * carries no exercises. Both `POST /sessions/record` and the coach on-behalf
+ * `POST /trainers/me/clients/:id/sessions/record` declare
+ * `exercises: t.Array(…, { minItems: 1 })`, so such a body is a deterministic
+ * 422 on every attempt. Shared with the sync drain, which drops already-queued
+ * entries of this shape (`purgeUnrecordableSessionRecords`).
+ */
+export function isUnrecordableSessionPayload(payload: unknown): boolean {
+  if (payload === null || typeof payload !== "object") return false;
+  const exercises = (payload as { exercises?: unknown }).exercises;
+  return Array.isArray(exercises) && exercises.length === 0;
+}
+
 export function completeSessionCommand(
   deps: CompleteSessionCommandDeps,
   input: CompleteSessionInput = {},
@@ -280,6 +294,18 @@ export function finalizeSessionCommand(
   const endpoint = onBehalfClientId
     ? `/trainers/me/clients/${onBehalfClientId}/sessions/record`
     : "/sessions/record";
+
+  // PER-83: a session with no exercises has nothing to record, and both
+  // record endpoints reject `exercises: []` with a deterministic 422
+  // (`minItems: 1`). Enqueueing it stranded the entry in /sync-failed for
+  // good (a Retry re-sends the identical body). The finalized row is still
+  // cached above, exactly as for a recorded session; only the flush is
+  // skipped. In practice this is a discarded empty Quick Workout — Complete
+  // is already gated on a logged set.
+  if (isUnrecordableSessionPayload(payload)) {
+    deps.storage.invalidateDashboard(deps.userId);
+    return ok({ session: finalized, totalDurationSeconds: summary.duration });
+  }
 
   deps.storage.enqueueMutation({
     entityType: "session",
