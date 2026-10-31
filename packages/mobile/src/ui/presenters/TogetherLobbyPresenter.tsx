@@ -63,6 +63,9 @@ const PHASE_COPY: Record<TogetherLobbySnapshot["phase"], string> = {
   full: "This lobby is full. Four athletes can join, including the host.",
 };
 
+/** The line a failure code without its own copy falls through to. */
+export const TOGETHER_FALLBACK_COPY =
+  "Could not connect securely. Keep training on your own, or try a new invitation.";
 export function togetherErrorCopy(
   code?: string,
   transport?: TogetherLobbySnapshot["transport"],
@@ -143,7 +146,7 @@ export function togetherErrorCopy(
     return "The host declined this request. Your personal workout is unchanged.";
   if (/key|storage/i.test(code))
     return "Secure access is unavailable on this device. Your personal workout and recovery remain available.";
-  return "Could not connect securely. Keep training on your own, or try a new invitation.";
+  return TOGETHER_FALLBACK_COPY;
 }
 
 function Copy({ children }: { children: ReactNode }) {

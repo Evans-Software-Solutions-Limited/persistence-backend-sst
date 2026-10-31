@@ -152,6 +152,10 @@ jest.mock("expo-crypto", () => ({
     `11111111-1111-4111-8111-${String(++mockId).padStart(12, "0")}`,
 }));
 const mockStart = jest.fn();
+const mockReport = jest.fn();
+jest.mock("@/diagnostics/together/togetherReport", () => ({
+  reportTogetherFailure: (...a: any[]) => mockReport(...a),
+}));
 jest.mock("@/application/commands/session", () => ({
   startSessionCommand: (...args: any[]) => mockStart(...args),
 }));
@@ -443,6 +447,39 @@ it("scanning the QR of a session you left says you left, and the list is not a r
   expect(r.queryByText(/Could not connect/)).toBeNull();
   expect(r.queryByText("Can’t search nearby")).toBeNull();
   expect(r.queryByText("Join this workout")).toBeNull();
+});
+it("a join that ends on the generic line sends its real code to Sentry; specific copy and success do not", async () => {
+  mockParams = {
+    connection: "local",
+    invitation: "invite",
+    transport: "nearby",
+  };
+  mockLobby.join.mockRejectedValueOnce(new Error("plan-unavailable"));
+  const r = renderWithTheme(<TogetherJoinContainer />);
+  await waitFor(() => expect(r.getByText("Join this workout")).toBeTruthy());
+  publish({ transport: "lan" });
+  fireEvent.press(r.getByText("Join and start"));
+  await waitFor(() => expect(r.getByText(/Could not connect\./)).toBeTruthy());
+  expect(mockReport).toHaveBeenCalledTimes(1);
+  expect(mockReport).toHaveBeenCalledWith({
+    mode: "lan",
+    stage: "join",
+    code: "plan-unavailable",
+    copy: "fallback",
+  });
+  // A failure with its own copy is not a mystery and is not sent.
+  mockLobby.join.mockRejectedValueOnce(new Error("workout-already-sharing"));
+  fireEvent.press(r.getByText("Join and start"));
+  await waitFor(() =>
+    expect(r.getByText(/You already have a live session/)).toBeTruthy(),
+  );
+  expect(mockReport).toHaveBeenCalledTimes(1);
+  // Admitted: the workout opens and nothing more is reported.
+  publish({ phase: "joined" });
+  await waitFor(() =>
+    expect(mockRouter.replace).toHaveBeenCalledWith("/(app)/session"),
+  );
+  expect(mockReport).toHaveBeenCalledTimes(1);
 });
 it("a non-partner asks to join and waits for the host; cancel returns to the list", async () => {
   const r = renderWithTheme(<TogetherJoinContainer />);

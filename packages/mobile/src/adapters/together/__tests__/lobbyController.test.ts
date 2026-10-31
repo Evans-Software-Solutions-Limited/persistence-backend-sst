@@ -1971,6 +1971,66 @@ describe("reviewed lobby coordinator, real cryptography and SQLite, simulated na
     });
     expect(guest.native.startDiscovery).toHaveBeenCalledTimes(1);
   });
+  it("reports Nearby/LAN failures with their mode, stage and code, and never a successful join or a cancel (Sentry)", async () => {
+    const report = jest.fn();
+    const host = setup(),
+      guest = setup(2, { report });
+    await host.controller.host("Open", "open");
+    await join(host, guest);
+    await host.controller.approve(
+      host.controller.getSnapshot().pending[0].peerId,
+    );
+    await settle();
+    expect(guest.controller.getSnapshot().phase).toBe("joined");
+    await guest.controller.cancel();
+    await settle();
+    expect(report).not.toHaveBeenCalled();
+    // Rejoining the session it left.
+    await guest.controller.selectInvite(
+      host.controller.getSnapshot().invitation!,
+    );
+    expect(report).toHaveBeenCalledWith({
+      mode: "lan",
+      stage: "rejoin",
+      code: "session-left",
+    });
+    // Discovery that fails on the radio.
+    guest.native.startDiscovery.mockRejectedValueOnce(
+      new Error("nearby_unavailable"),
+    );
+    await guest.controller.browse();
+    expect(report).toHaveBeenLastCalledWith({
+      mode: "lan",
+      stage: "discover",
+      code: "nearby_unavailable",
+    });
+    // A connect the native layer refuses after the host was found.
+    const other = setup(3, { report });
+    await other.controller.selectInvite(invitation());
+    other.native.connect.mockRejectedValueOnce(new Error("connect_failed"));
+    await other.controller.join();
+    other.native.emit({
+      type: "discovered",
+      endpointId: "host",
+      lobbyId: id(100),
+    });
+    await settle();
+    expect(report).toHaveBeenLastCalledWith({
+      mode: "lan",
+      stage: "connect",
+      code: "connect_failed",
+    });
+    // A reporter that throws never breaks the lobby.
+    report.mockImplementation(() => {
+      throw new Error("sentry down");
+    });
+    other.native.startDiscovery.mockRejectedValueOnce(new Error("wifi_off"));
+    await other.controller.browse();
+    expect(other.controller.getSnapshot()).toMatchObject({
+      phase: "unavailable",
+      error: "wifi_off",
+    });
+  });
   it("a guest who left and reaches the same session by search is told they left at Join", async () => {
     const host = setup(),
       guest = setup(2);

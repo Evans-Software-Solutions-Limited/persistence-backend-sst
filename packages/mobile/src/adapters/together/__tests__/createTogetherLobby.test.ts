@@ -69,6 +69,22 @@ it("isolates environment journals and disposes once after stopping", async () =>
   expect(mockClose).toHaveBeenCalledTimes(1);
   await b.dispose();
 });
+it("wires failures to the Sentry reporter, and runs without one that cannot load", () => {
+  create(provisioning, "prod", true);
+  expect(mockConstruct.mock.calls[0][0].report).toBe(
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- the module registry is reset per test
+    require("@/diagnostics/together/togetherReport").reportTogetherFailure,
+  );
+  jest.resetModules();
+  jest.doMock("@/diagnostics/together/togetherReport", () => {
+    throw new Error("unavailable");
+  });
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- the module registry is reset per test
+  const fresh = require("../createTogetherLobby").createTogetherLobby;
+  expect(fresh(provisioning, "prod", true)).toBeDefined();
+  expect(mockConstruct.mock.calls.at(-1)[0].report).toBeUndefined();
+  jest.dontMock("@/diagnostics/together/togetherReport");
+});
 it("closes failed construction and isolates unavailable native storage", () => {
   mockConstruct.mockImplementation(() => {
     throw Error("failure");

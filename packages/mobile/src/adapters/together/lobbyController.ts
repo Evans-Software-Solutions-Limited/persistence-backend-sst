@@ -68,6 +68,22 @@ export interface TogetherLobbyControllerOptions {
   recovery?: TogetherRecoveryApi;
   /** Phase transitions, failures with their real codes and session events. */
   diagnostics?: TogetherLogSink;
+  /** A Nearby/LAN failure with its stage, for error reporting (Sentry). */
+  report?: (failure: TogetherFailure) => void;
+}
+export type TogetherFailureStage =
+  | "discover"
+  | "connect"
+  | "handshake"
+  | "admission"
+  | "join"
+  | "readmit"
+  | "rejoin"
+  | "host";
+export interface TogetherFailure {
+  mode: TogetherTransport;
+  stage: TogetherFailureStage;
+  code: string;
 }
 interface Resources {
   shared?: TogetherSharedSession;
@@ -249,6 +265,39 @@ export class TogetherLobbyController implements TogetherLobbyPort {
   private log(message: string, data?: Record<string, unknown>) {
     this.options.diagnostics?.record("lobby", message, data);
   }
+  /** Where in the journey a failure happened, read before the failure is published. */
+  private stage(code: string): TogetherFailureStage {
+    if (code === "session-left") return "rejoin";
+    if (/handshake|authentication|channel_failed|protocol_failed/i.test(code))
+      return "handshake";
+    switch (this.snapshot.phase) {
+      case "browsing":
+      case "searching":
+        return "discover";
+      case "connecting":
+        return "connect";
+      case "pending-approval":
+        return "admission";
+      case "joined":
+      case "reconnecting":
+        return "readmit";
+      case "hosting":
+        return "host";
+      default:
+        return this.snapshot.role === "host" ? "host" : "join";
+    }
+  }
+  private report(code: string) {
+    try {
+      this.options.report?.({
+        mode: this.transport,
+        stage: this.stage(code),
+        code,
+      });
+    } catch {
+      /* Reporting can never break the lobby. */
+    }
+  }
   private publish(change: Partial<TogetherLobbySnapshot>) {
     const previous = this.snapshot;
     this.snapshot = {
@@ -394,6 +443,7 @@ export class TogetherLobbyController implements TogetherLobbyPort {
     const resources = this.resources;
     if (!resources || !this.admitted() || TERMINAL.has(code))
       return this.failure(error, generation);
+    this.report(code);
     this.clearTimers();
     this.publish({ phase: "reconnecting", error: code });
     void this.enqueue(async () => {
@@ -1103,6 +1153,9 @@ export class TogetherLobbyController implements TogetherLobbyPort {
         !resources.lobby.isHost &&
         !["unavailable", "full"].includes(this.snapshot.phase)
       ) {
+        // A host that drops a guest before admission (e.g. it refused the
+        // request) leaves no other trace on the guest's phone.
+        if (!admitted) this.report(cause ?? "disconnected");
         this.publish({ phase: "reconnecting", error: cause ?? "disconnected" });
         if (admitted && !this.reconnectTimer) {
           this.reconnectTimer = setTimeout(() => {
@@ -1145,6 +1198,7 @@ export class TogetherLobbyController implements TogetherLobbyPort {
   private failure(error: unknown, generation: number) {
     if (!this.current(generation)) return;
     const code = togetherErrorCode(error);
+    this.report(code);
     this.log("failure", {
       code,
       message: togetherErrorMessage(error),

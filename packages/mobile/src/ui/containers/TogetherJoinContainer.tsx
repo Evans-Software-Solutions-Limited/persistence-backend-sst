@@ -50,6 +50,7 @@ import type {
   TogetherCloudState,
 } from "@/domain/ports/togetherCloud.port";
 import { normaliseSessionCode } from "@/adapters/together/planDetails";
+import { reportTogetherFailure } from "@/diagnostics/together/togetherReport";
 
 const EMPTY: TogetherLobbySnapshot = {
   phase: "disabled",
@@ -241,11 +242,22 @@ export function TogetherJoinContainer() {
       .catch((error: unknown) => {
         if (!isCurrent()) return;
         const code = error instanceof Error ? error.message : "";
-        setNotice(
+        const specific =
           code === "workout-already-sharing"
             ? "You already have a live session. Your workout has been kept."
-            : CODE_COPY[code] || togetherCloudErrorCopy(code) || failure,
-        );
+            : CODE_COPY[code] || togetherCloudErrorCopy(code);
+        // A generic line hides the real code from everyone: send it to Sentry.
+        if (!specific)
+          reportTogetherFailure({
+            mode:
+              target && target.kind !== "local"
+                ? "online"
+                : (lobby?.getSnapshot().transport ?? "nearby"),
+            stage: "join",
+            code: code || "unknown",
+            copy: "fallback",
+          });
+        setNotice(specific || failure);
         setJoining(false);
       })
       .finally(() => {

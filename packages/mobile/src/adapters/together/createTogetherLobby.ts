@@ -2,6 +2,7 @@
 import type { TogetherProvisioningPort } from "@/domain/ports/togetherProvisioning.port";
 import type { TogetherLobbyPort } from "@/domain/ports/togetherLobby.port";
 import type { TogetherRecoveryApi } from "@/domain/ports/togetherOfflineApi.port";
+import type { TogetherLobbyControllerOptions } from "./lobbyController";
 
 /** Explicit composition: the app-wide update gate owns native binary compatibility. */
 export function createTogetherLobby(
@@ -33,6 +34,16 @@ export function createTogetherLobby(
       require("./nativeDiagnostics") as typeof import("./nativeDiagnostics");
     const { togetherLog } =
       require("@/diagnostics/together/togetherLog") as typeof import("@/diagnostics/together/togetherLog");
+    // Error reporting is optional: a reporter that cannot load never takes
+    // Together down with it.
+    let report: TogetherLobbyControllerOptions["report"];
+    try {
+      report = (
+        require("@/diagnostics/together/togetherReport") as typeof import("@/diagnostics/together/togetherReport")
+      ).reportTogetherFailure;
+    } catch {
+      report = undefined;
+    }
     const db = openDatabaseSync(
       `together-lobby-${requestHash(environment)}.db`,
     );
@@ -48,6 +59,7 @@ export function createTogetherLobby(
         defaultTransport: platform === "ios" ? "lan" : undefined,
         database: db,
         diagnostics: togetherLog,
+        report,
         randomBytes: getRandomBytes,
         randomUUID,
         recovery,
