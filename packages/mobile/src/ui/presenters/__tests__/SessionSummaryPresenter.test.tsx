@@ -436,6 +436,24 @@ describe("navigation", () => {
     expect(selected()).toEqual(["summary-dot-volume"]);
   });
 
+  it("an accessibility activation turns the page again after a swipe (inspector lead)", () => {
+    // TalkBack's double-tap calls onPress with no onPressIn before it.
+    const q = renderSummary();
+    const selected = () =>
+      q
+        .queryAllByTestId(/^summary-dot-/)
+        .filter((d) => d.props.accessibilityState?.selected)
+        .map((d) => d.props.testID);
+    const pager = q.UNSAFE_getByType(Carousel as never);
+    fireEvent.press(q.getByTestId("summary-dot-exercises"));
+    act(() => pager.props.onScrollStart());
+    act(() => pager.props.onSnapToItem(1));
+    act(() => pager.props.onScrollEnd());
+    expect(selected()).toEqual(["summary-dot-muscles"]);
+    fireEvent.press(q.getByTestId("summary-page-muscles"));
+    expect(selected()).toEqual(["summary-dot-exercises"]);
+  });
+
   it("keeps the page on screen when the records land and add a page", () => {
     const together = {
       self: "Mia",

@@ -219,6 +219,13 @@ export function SessionSummaryPresenter(p: SessionSummaryPresenterProps) {
             onScrollStart={() => {
               swiped.current = true;
             }}
+            // Once the swipe settles (after its release press was skipped),
+            // clear it: an accessibility activation calls onPress without an
+            // onPressIn, so the flag would otherwise block every later page
+            // turn for a TalkBack user who swiped (#522).
+            onScrollEnd={() => {
+              swiped.current = false;
+            }}
             onConfigurePanGesture={(g) => {
               // Sideways only: a vertical drag never moves the pages.
               g.activeOffsetX([-10, 10]);
