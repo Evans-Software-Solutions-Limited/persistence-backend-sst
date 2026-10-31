@@ -6,6 +6,7 @@ import {
   perServingDivisor,
   type MacroSum,
 } from "@/domain/services";
+import { toGrams } from "@/domain/services/units";
 import type {
   CreateRecipeInput,
   Food,
@@ -68,14 +69,22 @@ function emptyRow(id: string): RowState {
  * that way: the empty amount field is the prompt, and Save waits for it.
  */
 function linkRowToFood(row: RowState, food: Food): RowState {
+  // A mass amount (an imported "400g") can't be converted to a food measured
+  // by count ("1 piece"): the serving maths would fall back to 400 pieces.
+  // Clear it and take the food's unit, so Save waits for an amount the
+  // nutrition can use.
+  const massRow = row.quantity !== null && toGrams(1, row.unit) !== null;
+  const massFood = toGrams(1, food.servingUnit) !== null;
+  const mismatch = massRow && !massFood;
   return {
     ...row,
     foodId: food.id,
     foodName: food.name,
     name: row.name.trim() ? row.name : food.name,
+    quantity: mismatch ? null : row.quantity,
     // A blank unit only names what the amount field is measured in; it
     // leaves the amount itself alone.
-    unit: row.unit ? row.unit : food.servingUnit,
+    unit: mismatch || !row.unit ? food.servingUnit : row.unit,
   };
 }
 

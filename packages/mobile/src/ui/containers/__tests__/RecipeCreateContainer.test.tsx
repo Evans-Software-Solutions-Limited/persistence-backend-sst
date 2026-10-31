@@ -654,6 +654,43 @@ describe("RecipeCreateContainer", () => {
     expect(mockProbe.last?.canSave).toBe(true);
   });
 
+  it("clears an imported gram amount linked to a food measured by count, so Save waits for one (inspector lead)", () => {
+    useRecipeDraft.getState().setSeed({
+      title: "Omelette",
+      servings: 1,
+      instructions: null,
+      ingredients: [{ name: "eggs", quantity: 400, unit: "g" }],
+      source: "import",
+      sourceUrl: "https://x.test/r",
+    });
+    const { adapters } = makeAdapters();
+    render(
+      <Wrapper adapters={adapters}>
+        <RecipeCreateContainer />
+      </Wrapper>,
+    );
+    const egg: Food = {
+      ...chicken,
+      id: "f-egg",
+      name: "Egg",
+      servingSize: 1,
+      servingUnit: "piece",
+    };
+    const id = mockProbe.last!.rows[0].id;
+    act(() => mockProbe.last!.onLinkFood(id, egg));
+    // 400 g can't become pieces: the amount is cleared, never 400 eggs.
+    expect(mockProbe.last?.rows[0]).toEqual(
+      expect.objectContaining({
+        foodId: "f-egg",
+        quantity: null,
+        unit: "piece",
+      }),
+    );
+    expect(mockProbe.last?.canSave).toBe(false);
+    act(() => mockProbe.last!.onChangeRowQuantity(id, 3));
+    expect(mockProbe.last?.canSave).toBe(true);
+  });
+
   it("keeps an imported ingredient's amount and text when it is linked by search or AI (PER-78)", async () => {
     useRecipeDraft.getState().setSeed({
       title: "Sticky chicken",
