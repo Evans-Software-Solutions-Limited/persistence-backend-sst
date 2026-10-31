@@ -8,9 +8,11 @@ has a test that fails on the old code.
   never changed the signed roster, and the host's strip/tabs/sheets read only
   the roster; new `presentMembers(members, closures, accountId)` drops closed
   non-host members (roster and seat count unchanged). Online: a guest's Finish
-  just mine called `/finish` (stays as a "saved" participant) — now `/leave`;
-  the host shows only the host and `active` participants. Online Leave had no
-  code defect. Owed: Nearby closure lost if the guest's link was already down.
+  just mine stays a "saved" participant, so the host now shows only the host
+  and `active` participants. (Routing the guest's finish through `/leave` was
+  tried and reverted: the server's `/leave` resets every remaining
+  participant's consents, cutting sharing between the host and other guests.)
+  Online Leave had no code defect. Owed: Nearby closure lost if the guest's link was already down.
 - **"Waiting for Libby's plan".** A Nearby guest never bound/published its plan
   at admission (only on the first logged set); `adoptAndOpen` now does, and
   `publishOwnActivity` sends the baseline to existing numbers grantees. Online

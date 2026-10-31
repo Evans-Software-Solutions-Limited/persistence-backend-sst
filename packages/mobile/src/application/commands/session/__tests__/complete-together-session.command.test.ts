@@ -273,20 +273,20 @@ it("allows a failed closure delivery to retry against the same saved result", as
   expect(h.deps.storage.getPendingMutations()).toHaveLength(1);
 });
 
-it("finishes a guest result by leaving, without the host-only close endpoint", async () => {
-  // PER-60: a guest's Finish is the solo finish and leaves the session. A
-  // plain finish kept them on the host's strip as a finished partner.
+it("finishes a guest result with a plain finish, never leave or the host-only close", async () => {
+  // A guest's Finish just mine stays a /finish: the server's /leave resets
+  // every remaining participant's sharing consents, which would cut sharing
+  // between the host and other guests still training (Inspector, #522). The
+  // host's strip drops partners who are no longer active instead.
   const h = setup("cloud");
   h.snapshot.hostId = "host";
   h.deps.cloud.close = jest.fn();
-  const finish = jest.fn();
-  const leave = h.cloudFinish;
-  h.deps.cloud.finish = finish;
+  const leave = jest.fn();
   h.deps.cloud.leave = leave;
   await completeTogetherSession(h.deps, { ...input, mode: "save_own" });
   expect(h.deps.cloud.close).not.toHaveBeenCalled();
-  expect(finish).not.toHaveBeenCalled();
-  expect(leave).toHaveBeenCalledWith("token");
+  expect(leave).not.toHaveBeenCalled();
+  expect(h.cloudFinish).toHaveBeenCalledWith("token");
 });
 it("finishes a guest without a mode as a plain finish", async () => {
   const h = setup("cloud");
