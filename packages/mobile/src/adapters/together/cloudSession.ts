@@ -654,11 +654,36 @@ export class TogetherCloudController implements TogetherCloudPort {
             isSubstituted: false,
             originalExerciseId: null,
             notes: null,
-            sets: [],
+            // One empty row per planned set, as a Nearby guest's adopted plan
+            // and a template start have, unless the server already holds this
+            // athlete's sets for it (a rejoin): those are merged below.
+            sets: own.execution!.exercises.some(
+              (e) => e.planExerciseId === p.planExerciseId && e.sets.length,
+            )
+              ? []
+              : Array.from({ length: p.targetSets }, (_, index) => ({
+                  id: this.options.randomUUID(),
+                  sessionExerciseId: eid,
+                  setNumber: index + 1,
+                  weightKg: null,
+                  reps: null,
+                  rpe: null,
+                  durationSeconds: null,
+                  distanceMeters: null,
+                  isCompleted: false,
+                  completedAt: null,
+                })),
           };
         }),
       };
     }
+    // Planned rows not on the server yet are projected and sent below, so
+    // partners see them and a fill-in lands on the row it names (PER-60).
+    const plannedRows =
+      createdPersonal &&
+      stored.personal.exercises.some((e) =>
+        e.sets.some((set) => !Object.hasOwn(stored.mapping.sets, set.id)),
+      );
     if (createdPersonal) {
       mergeCloudExecution(
         stored.personal!,
@@ -668,8 +693,10 @@ export class TogetherCloudController implements TogetherCloudPort {
         snapshot.plan,
         own.exerciseCatalog,
       );
-      stored.desired = copy(own.execution);
-      stored.desiredPlanHash = requestHash(snapshot.plan);
+      if (!plannedRows) {
+        stored.desired = copy(own.execution);
+        stored.desiredPlanHash = requestHash(snapshot.plan);
+      }
     }
     if (
       stored.desired &&

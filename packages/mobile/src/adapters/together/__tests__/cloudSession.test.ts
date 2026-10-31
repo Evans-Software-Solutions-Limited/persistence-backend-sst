@@ -151,9 +151,14 @@ describe("cloud authoritative personal checkpoint", () => {
             togetherCode: "VERSION_CONFLICT",
           });
         const op = c.operation as any;
-        const e = p.execution!.exercises.find(
+        let e = p.execution!.exercises.find(
           (e) => e.planExerciseId === op.planExerciseId,
         );
+        // The server opens an exercise on its first write, as the real one does.
+        if (!e && op.planExerciseId) {
+          e = { planExerciseId: op.planExerciseId, skipped: false, sets: [] };
+          p.execution!.exercises.push(e);
+        }
         if (op.type === "upsertSet") {
           const i = e!.sets.findIndex((s) => s.setId === op.set.setId);
           if (i >= 0) e!.sets[i] = op.set;
@@ -796,11 +801,38 @@ describe("cloud authoritative personal checkpoint", () => {
   it("creates a canonical blank draft for deliberate join without an existing workout", async () => {
     server.hostId = other;
     server.participants[0].execution = { exercises: [] };
+    server.plan.exercises[0].targetSets = 3;
     await controller.join({ sessionId: server.sessionId });
+    await controller.retry();
     const own = controller.readDraft(userId)!;
     expect(own.exercises[0].exerciseId).toBe(exerciseId);
-    expect(own.exercises[0].sets).toEqual([]);
+    // One empty row per planned set, as a Nearby guest and a template start
+    // have; partners see those rows, not stand-ins (PER-60, TestFlight 31 Oct).
+    expect(
+      own.exercises[0].sets.map((s) => [s.setNumber, s.reps, s.weightKg]),
+    ).toEqual([
+      [1, null, null],
+      [2, null, null],
+      [3, null, null],
+    ]);
     expect(own.together?.transport).toBe("cloud");
+    expect(server.participants[0].execution!.exercises[0].sets).toEqual(
+      [0, 1, 2].map(() => ({
+        setId: expect.any(String),
+        reps: 0,
+        weightKg: 0,
+        completed: false,
+      })),
+    );
+  });
+  it("a rejoin keeps the server's sets and adds no planned rows on top", async () => {
+    server.hostId = other;
+    server.plan.exercises[0].targetSets = 3;
+    await controller.join({ sessionId: server.sessionId });
+    const own = controller.readDraft(userId)!;
+    expect(own.exercises[0].sets.map((s) => [s.reps, s.weightKg])).toEqual([
+      [8, 25],
+    ]);
   });
   it("retains offline own changes and explicitly saves reviewed private continuation", async () => {
     await controller.hostWorkout(draft());
@@ -1479,7 +1511,10 @@ describe("cloud authoritative personal checkpoint", () => {
     await controller.host(d);
     expect(controller.readDraft(userId)?.notes).toBeNull();
     const review = await controller.prepareReview();
-    expect(review.omissions).toEqual([]);
+    // The planned row left empty stays on this device, as a host's does.
+    expect(review.omissions).toEqual([
+      "Incomplete sets remain on this device.",
+    ]);
     server.participants[0].status = "finished_empty";
     server.completion.status = "finished_empty";
     await controller.refresh();
