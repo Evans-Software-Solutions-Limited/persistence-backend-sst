@@ -291,6 +291,34 @@ describe("ScanBarcodeSheetContainer", () => {
     expect(mockProbe.last?.scaled.kcal).toBe(660);
   });
 
+  it("passes the unrounded amount for the label, so half a piece reads 0.5 (inspector lead)", async () => {
+    const { adapters, storage } = makeAdapters();
+    storage.cacheFoods([
+      {
+        ...food,
+        id: "egg",
+        name: "Egg",
+        barcode: "5000000000001",
+        servingSize: 1,
+        servingUnit: "piece",
+        servingQuantity: null,
+      },
+    ]);
+    render(
+      <Wrapper adapters={adapters}>
+        <ScanBarcodeSheetContainer />
+      </Wrapper>,
+    );
+    act(() => useFuelSheets.getState().openScan("snack"));
+    await act(async () => {
+      mockProbe.last!.onBarcodeScanned("5000000000001");
+    });
+    await waitFor(() => expect(mockProbe.last?.stage).toBe("found"));
+    act(() => mockProbe.last!.onPortionDec());
+    expect(mockProbe.last?.portionValue).toBe(0.5);
+    expect(mockProbe.last?.effectiveAmount).toBe(0.5);
+  });
+
   it("gives the 240 g pack totals plus the label's per-100 g reference, and logs the pack (PER-95)", async () => {
     const { adapters, storage } = makeAdapters();
     // Simply Tikka Chicken Breast Pieces (4056489241430): OFF per-100 g values

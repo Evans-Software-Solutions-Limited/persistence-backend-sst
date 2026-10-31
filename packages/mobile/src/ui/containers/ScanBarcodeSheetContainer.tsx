@@ -187,6 +187,7 @@ export function ScanBarcodeSheetContainer() {
       onPortionDec={onPortionDec}
       onPortionInc={onPortionInc}
       effectiveGrams={effectiveGrams}
+      effectiveAmount={servingsScale * effSize}
       scaled={scaled}
       per100={per100}
       slot={slot}

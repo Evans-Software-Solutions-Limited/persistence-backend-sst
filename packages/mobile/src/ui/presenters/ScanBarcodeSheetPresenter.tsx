@@ -74,6 +74,12 @@ export type ScanBarcodeSheetProps = {
   onPortionInc: () => void;
   /** Effective grams for the "= N g" readout (container-computed). */
   effectiveGrams: number;
+  /**
+   * The unrounded amount of the food's own unit being logged, for the found
+   * card's "for N unit" label; rounding it to a whole number would read
+   * "for 1 piece" at half a piece (PER-95). Falls back to `effectiveGrams`.
+   */
+  effectiveAmount?: number;
   /** Macros scaled to the chosen portion (container-computed). */
   scaled: ScanScaledMacros;
   /** Label-style per-100 g/ml reference (container-computed); null when the
@@ -132,7 +138,7 @@ function FoundCard({
             testID="scan-amount-label"
           >
             {food.barcode ? `${food.barcode} · ` : ""}
-            {`for ${intl(amount)} ${unit}`}
+            {`for ${round1(amount)} ${unit}`}
           </Text>
           <View flexDirection="row" gap={6} marginTop={6}>
             <Pill
@@ -198,6 +204,7 @@ export function ScanBarcodeSheetPresenter({
   onPortionDec,
   onPortionInc,
   effectiveGrams,
+  effectiveAmount,
   scaled,
   per100,
   slot,
@@ -294,7 +301,7 @@ export function ScanBarcodeSheetPresenter({
           <FoundCard
             food={food}
             scaled={scaled}
-            amount={effectiveGrams}
+            amount={effectiveAmount ?? effectiveGrams}
             per100={per100}
           />
 

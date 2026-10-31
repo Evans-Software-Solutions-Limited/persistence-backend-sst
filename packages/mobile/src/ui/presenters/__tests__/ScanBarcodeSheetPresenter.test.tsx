@@ -122,6 +122,18 @@ describe("ScanBarcodeSheetPresenter", () => {
     expect(queryByTestId("scan-per100")).toBeNull();
   });
 
+  it("labels half a piece as 0.5, not rounded up to 1 (inspector lead)", () => {
+    const { getByText, queryByText } = render({
+      stage: "found",
+      food: { ...food, barcode: null, servingSize: 1, servingUnit: "piece" },
+      effectiveGrams: 1,
+      effectiveAmount: 0.5,
+      per100: null,
+    });
+    expect(getByText("for 0.5 piece")).toBeTruthy();
+    expect(queryByText("for 1 piece")).toBeNull();
+  });
+
   it("falls back to servingSize in the Serving label when serving_quantity is null", () => {
     const { getByText } = render({
       stage: "found",
