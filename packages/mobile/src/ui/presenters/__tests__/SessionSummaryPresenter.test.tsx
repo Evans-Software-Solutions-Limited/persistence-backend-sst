@@ -4,8 +4,9 @@
  * vs Together page counts.
  */
 
-import { fireEvent } from "@testing-library/react-native";
+import { act, fireEvent } from "@testing-library/react-native";
 import React from "react";
+import Carousel from "react-native-reanimated-carousel";
 import type { ExerciseSet, WorkoutSession } from "@/domain/models/session";
 import {
   buildWorkoutSummary,
@@ -401,6 +402,38 @@ describe("navigation", () => {
     expect(selected()).toEqual(["summary-dot-totals"]);
     fireEvent.press(q.getByTestId("summary-page-totals"));
     expect(selected()).toEqual(["summary-dot-muscles"]);
+  });
+
+  it("a swipe back is not undone by the tap that ends it (TestFlight 31 Oct)", () => {
+    // Jest cannot drive the native pan, so this replays what the device
+    // delivers: press in, the carousel's scroll start, its snap to the page
+    // the swipe chose, then the page's press on release. The press used to
+    // add "next page" on top, so a swipe back landed one page forward.
+    const q = renderSummary();
+    const selected = () =>
+      q
+        .queryAllByTestId(/^summary-dot-/)
+        .filter((d) => d.props.accessibilityState?.selected)
+        .map((d) => d.props.testID);
+    const pager = q.UNSAFE_getByType(Carousel as never);
+    fireEvent.press(q.getByTestId("summary-dot-exercises"));
+    const swipe = (to: number) => {
+      const page = q.getByTestId(
+        selected()[0]!.replace("summary-dot-", "summary-page-"),
+      );
+      fireEvent(page, "pressIn");
+      act(() => pager.props.onScrollStart());
+      act(() => pager.props.onSnapToItem(to));
+      fireEvent.press(page);
+    };
+    swipe(1);
+    expect(selected()).toEqual(["summary-dot-muscles"]);
+    swipe(2);
+    expect(selected()).toEqual(["summary-dot-exercises"]);
+    // A plain tap, with no swipe, still turns the page.
+    fireEvent(q.getByTestId("summary-page-exercises"), "pressIn");
+    fireEvent.press(q.getByTestId("summary-page-exercises"));
+    expect(selected()).toEqual(["summary-dot-volume"]);
   });
 
   it("keeps the page on screen when the records land and add a page", () => {
