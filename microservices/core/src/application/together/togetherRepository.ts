@@ -391,27 +391,25 @@ export class TogetherRepository {
       },
     };
   }
+  /**
+   * Checks and snapshots the definitions of exercises a session carries.
+   * Every viewer must be able to see each exercise in their own library,
+   * except one created by `sharedBy`: the member whose plan (the host) or
+   * own execution (a substitute) carries it. Its definition is shared with
+   * the session's other admitted members (PER-60), only by copying it into
+   * their participant rows; it never changes who can see the exercise
+   * outside the session.
+   */
   private async definitions(
     tx: TogetherTx,
     ids: string[],
     viewers: string[],
     existing: Record<string, TogetherExerciseDefinition> = {},
+    sharedBy?: string | null,
   ) {
     const unique = [...new Set(ids)];
     const result = { ...existing };
     for (const id of unique) {
-      for (const viewer of viewers) {
-        const [visible] = await tx
-          .select({ id: exercises.id })
-          .from(exercises)
-          .where(
-            and(
-              eq(exercises.id, id),
-              new ExerciseRepository().buildVisibilityCondition(viewer),
-            ),
-          );
-        requireTogether(visible, "INVALID_SCHEMA", 400);
-      }
       const [source] = await tx
         .select({
           name: exercises.name,
@@ -423,14 +421,29 @@ export class TogetherRepository {
         .where(eq(exercises.id, id))
         .for("key share");
       requireTogether(source, "INVALID_SCHEMA", 400);
+      const shared = !!sharedBy && source.createdBy === sharedBy;
+      for (const viewer of shared ? [] : viewers) {
+        const [visible] = await tx
+          .select({ id: exercises.id })
+          .from(exercises)
+          .where(
+            and(
+              eq(exercises.id, id),
+              new ExerciseRepository().buildVisibilityCondition(viewer),
+            ),
+          );
+        requireTogether(visible, "INVALID_SCHEMA", 400);
+      }
       result[id] ??= { ...source, primaryMuscles: source.primaryMuscles ?? [] };
     }
     return result;
   }
+  /** Only the host authors a plan, so only the host's own exercises in it are shared. */
   private async planValid(
     tx: TogetherTx,
     plan: TogetherPlan,
     viewers: string[],
+    host?: string | null,
   ) {
     requireTogether(
       new Set(plan.exercises.map((e) => e.planExerciseId)).size ===
@@ -442,6 +455,8 @@ export class TogetherRepository {
       tx,
       plan.exercises.map((e) => e.exerciseId),
       viewers,
+      {},
+      host,
     );
   }
   private executionValid(plan: TogetherPlan, execution: TogetherExecution) {
@@ -752,14 +767,28 @@ export class TogetherRepository {
         "FORBIDDEN",
         403,
       );
-    const exerciseDefinitions = await this.planValid(tx, s.plan, [
-      ...ps.filter((p) => !p.removedFromRoster).map((p) => p.userId),
-      r.userId,
-    ]);
+    // The host's own exercises in the plan, and a member's own substitutes,
+    // are shared with the joiner on admission; anything else in them must
+    // already be visible to the joiner (PER-60).
+    const exerciseDefinitions = await this.planValid(
+      tx,
+      s.plan,
+      [
+        ...ps.filter((p) => !p.removedFromRoster).map((p) => p.userId),
+        r.userId,
+      ],
+      s.hostId,
+    );
     for (const member of ps.filter((p) => !p.removedFromRoster))
       for (const e of member.execution.exercises)
         if (e.substituteExerciseId)
-          await this.definitions(tx, [e.substituteExerciseId], [r.userId]);
+          await this.definitions(
+            tx,
+            [e.substituteExerciseId],
+            [r.userId],
+            {},
+            member.userId,
+          );
     const [p] = await tx
       .insert(participants)
       .values({
@@ -1365,6 +1394,7 @@ export class TogetherRepository {
               tx,
               op.plan,
               ps.filter((p) => !p.leftAt).map((p) => p.userId),
+              s.hostId,
             );
             for (const p of ps.filter((p) => !p.removedFromRoster))
               for (const e of p.execution.exercises)
@@ -1449,6 +1479,7 @@ export class TogetherRepository {
                       ? ps.filter((p) => !p.leftAt).map((p) => p.userId)
                       : [actor],
                     target.exerciseDefinitions,
+                    target.userId,
                   );
                 e.substituteExerciseId = op.exerciseId;
               }
