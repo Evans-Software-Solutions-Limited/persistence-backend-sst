@@ -36,6 +36,20 @@ Mobile suite with coverage 96.15 / 92.18 / 96.05 / 97.52;
 `SubscriptionSelectionContainer` (cloud container only) and `useWorkouts`
 (load timeout; 8/8 alone) failed in the full run. **Not verified** on a device.
 
+### 2026-10-31 — Staging deploy unblocked: `listed_until` migration renamed after `via_code` (PER-60, branch `claude/compassionate-clarke-eefidd`)
+
+Deploy Staging failed on every merge from #514 on (runs 504–507) at
+`supabase db push --dry-run`: "Found local migration files to be inserted
+before the last migration on remote database". #515's
+`20261030120000_together_join_request_via_code.sql` merged and deployed first;
+#514's `20261029120000_together_listed_until.sql` merged after it with an
+older timestamp, so Supabase refused it. It never applied anywhere (staging
+deploys failed before the push; production hasn't deployed since), so it is
+renamed to `20261030130000_together_listed_until.sql` (with its rollback); the
+SQL is unchanged and idempotent. The integration suites that load it now load
+the new name. Lesson: when two PRs each add a migration, the one merged second
+must carry the later timestamp — rename on conflict resolution.
+
 ### 2026-10-30 — Workout and sync: empty session records, keyboard on the completion screen (PER-83, PER-68; PER-67 open; branch `claude/release-2-workout-fixes`)
 
 Release 2 bug batch.
