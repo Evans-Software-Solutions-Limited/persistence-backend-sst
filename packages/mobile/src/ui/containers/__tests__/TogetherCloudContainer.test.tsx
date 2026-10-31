@@ -14,6 +14,10 @@ import {
 import { TogetherCloudPresenter } from "../../presenters/TogetherCloudPresenter";
 import { TogetherPartnerPresenter } from "../../presenters/TogetherPartnerPresenter";
 import { TogetherSharingPresenter } from "../../presenters/TogetherSharingPresenter";
+import {
+  TogetherWorkoutRow,
+  togetherMemberTone,
+} from "../../presenters/TogetherWorkoutRow";
 import type {
   TogetherCloudApi,
   TogetherCloudPort,
@@ -38,18 +42,22 @@ jest.mock("expo-clipboard", () => ({
   setStringAsync: (...args: unknown[]) => mockCopy(...args),
 }));
 jest.mock("expo-crypto", () => ({ randomUUID: () => "uuid" }));
+const mockSheetHeight = jest.fn();
 jest.mock("@/ui/components/foundation/BottomSheet", () => ({
   BottomSheet: (p: {
     visible: boolean;
     children: React.ReactNode;
     footer?: React.ReactNode;
-  }) =>
-    p.visible ? (
+    height?: unknown;
+  }) => {
+    mockSheetHeight(p.height);
+    return p.visible ? (
       <>
         {p.children}
         {p.footer}
       </>
-    ) : null,
+    ) : null;
+  },
 }));
 const server: CloudSnapshot = {
   sessionId: "s",
@@ -606,6 +614,70 @@ it("Online: the partner view closes when the partner leaves or the session snaps
   // back into the partner's.
   act(() => h.publish({ phase: "active", snapshot: structuredClone(server) }));
   expect(r.getByTestId("own-workout")).toBeTruthy();
+});
+it("Online: a partner keeps their colour when an earlier partner finishes (inspector lead)", () => {
+  const h = setup(true);
+  const three = structuredClone(h.state().snapshot!);
+  three.participants.push({
+    ...structuredClone(three.participants[1]!),
+    userId: "w",
+  });
+  act(() => h.publish({ snapshot: three }));
+  const r = renderWithTheme(
+    <TogetherCloudContainer {...h.props}>
+      {(row) => <>{row}</>}
+    </TogetherCloudContainer>,
+  );
+  const strip = () =>
+    r.UNSAFE_getByType(TogetherWorkoutRow).props as React.ComponentProps<
+      typeof TogetherWorkoutRow
+    >;
+  const toneOfW = () =>
+    togetherMemberTone(strip().toneMembers ?? strip().members, "u", "w");
+  const before = toneOfW();
+  const finished = structuredClone(three);
+  finished.participants.find((x) => x.userId === "v")!.status = "saved";
+  act(() => h.publish({ snapshot: finished }));
+  expect(strip().members.map((m) => m.userId)).toEqual(["u", "w"]);
+  expect(toneOfW()).toBe(before);
+});
+it("Online: a partner who finished their own workout drops off the host's strip and tabs (TestFlight 31 Oct)", async () => {
+  // An older guest app finishes without leaving, so the server keeps their
+  // seat with a saved result: the host's phone kept showing them.
+  const h = setup(true);
+  const r = renderWithTheme(
+    <TogetherCloudContainer {...h.props}>
+      {(row, partnerView) => (
+        <>
+          {row}
+          {partnerView ?? <Text testID="own-workout">own</Text>}
+        </>
+      )}
+    </TogetherCloudContainer>,
+  );
+  const strip = () =>
+    r.UNSAFE_getByType(TogetherWorkoutRow).props as React.ComponentProps<
+      typeof TogetherWorkoutRow
+    >;
+  expect(strip().members.map((m) => m.userId)).toEqual(["u", "v"]);
+  expect(strip().status).toBe("In sync · 2 training");
+  fireEvent.press(r.getByLabelText("Show Athlete 2’s workout"));
+  await act(async () => {});
+  expect(r.queryByTestId("own-workout")).toBeNull();
+  const finished = structuredClone(h.state().snapshot!);
+  finished.participants.find((x) => x.userId === "v")!.status = "saved";
+  act(() => h.publish({ snapshot: finished }));
+  expect(strip().members.map((m) => m.userId)).toEqual(["u"]);
+  // Their seat stays taken on the server, so the count is seats, not faces.
+  expect(strip().status).toBe("Waiting for people · 2 of 4");
+  expect(r.getByTestId("own-workout")).toBeTruthy();
+  expect(r.queryByLabelText("Show Athlete 2’s workout")).toBeNull();
+  fireEvent.press(r.getByText("End"));
+  expect(
+    r.getByText(
+      "Everyone keeps their own workout and carries on solo. Nobody new can join.",
+    ),
+  ).toBeTruthy();
 });
 it("Online: backgrounding for a moment keeps what you typed for a partner", async () => {
   const h = setup(true);
@@ -1273,6 +1345,12 @@ it("shows the actual online invitation after confirmed Start and retries invitat
   expect(r.UNSAFE_getByType(QRCode).props.value).toBe(
     "persistencemobile://together/join?connection=online&invitation=invite",
   );
+  // Canvas row 1b: a 200 pt code in its 14 pt white box, in a sheet sized to
+  // that content rather than a 55 % sheet that scrolled (TestFlight 31 Oct).
+  expect(r.UNSAFE_getByType(QRCode).props).toEqual(
+    expect.objectContaining({ size: 200, quietZone: 0 }),
+  );
+  expect(mockSheetHeight).toHaveBeenLastCalledWith("content");
   expect(
     r.getByText(
       "Online · internet required · training partners join straight in",

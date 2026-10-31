@@ -123,11 +123,21 @@ export function SessionSummaryPresenter(p: SessionSummaryPresenterProps) {
     setSelected(pages[i]!);
     carousel.current?.scrollTo({ index: i, animated: true });
   };
+  // A swipe that pages the carousel also ends as a tap on the page under the
+  // finger: the summary is a native modal, outside the gesture root, so the
+  // pan cannot cancel the page's press. Without this, a swipe back was
+  // followed by the tap's "next page" and the pager went forward instead.
+  const swiped = useRef(false);
   const unit = p.weightUnit ?? "kg";
 
   const page = (kind: SummaryPage, i: number) => (
     <Pressable
-      onPress={() => go((i + 1) % pages.length)}
+      onPressIn={() => {
+        swiped.current = false;
+      }}
+      onPress={() => {
+        if (!swiped.current) go((i + 1) % pages.length);
+      }}
       accessibilityRole="button"
       accessibilityLabel={`${PAGE_TITLE[kind]}, page ${i + 1} of ${pages.length}`}
       accessibilityHint="Swipe sideways for the other pages"
@@ -206,6 +216,16 @@ export function SessionSummaryPresenter(p: SessionSummaryPresenterProps) {
             loop={false}
             defaultIndex={current}
             onSnapToItem={(i) => setSelected(pages[i]!)}
+            onScrollStart={() => {
+              swiped.current = true;
+            }}
+            // Once the swipe settles (after its release press was skipped),
+            // clear it: an accessibility activation calls onPress without an
+            // onPressIn, so the flag would otherwise block every later page
+            // turn for a TalkBack user who swiped (#522).
+            onScrollEnd={() => {
+              swiped.current = false;
+            }}
             onConfigurePanGesture={(g) => {
               // Sideways only: a vertical drag never moves the pages.
               g.activeOffsetX([-10, 10]);

@@ -2,7 +2,16 @@ import React from "react";
 import { fireEvent } from "@testing-library/react-native";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 import { TogetherWorkoutRow, togetherMemberTone } from "../TogetherWorkoutRow";
+import { TogetherAthleteAvatar } from "../TogetherAthleteAvatar";
 import { TogetherStartRow } from "../TogetherStartRow";
+import { TogetherPill } from "../TogetherPill";
+import {
+  IconCheck,
+  IconSettings,
+  IconX,
+  iconDefaults,
+} from "@/ui/components/icons";
+import { color } from "@/ui/theme/tokens";
 const members = [
   { userId: "me", name: "Brad Evans" },
   { userId: "mia", name: "Mia Osei" },
@@ -91,4 +100,62 @@ it("partner tones follow roster order without me; tabs are 44pt targets (row 2)"
   );
   // 26pt face + 9pt slop each side.
   expect(r.getByLabelText("Show Tom Vance’s workout").props.hitSlop).toBe(9);
+});
+it("the settings cog and close glyphs take the pill's colour, never currentColor (black on a device)", () => {
+  const r = renderWithTheme(
+    <TogetherWorkoutRow
+      members={members}
+      selectedId="mia"
+      accountId="me"
+      status="In sync · 3 training"
+      onSelect={() => {}}
+      onSettings={() => {}}
+      onEnd={() => {}}
+    />,
+  );
+  expect(r.UNSAFE_getByType(IconSettings).props.color).toBe(color.$text2);
+  // A primary pill's glyph is ink; a colour the caller chose is kept.
+  const pills = renderWithTheme(
+    <>
+      <TogetherPill
+        tone="primary"
+        onPress={() => {}}
+        icon={<IconX {...iconDefaults({ size: 16 })} />}
+      />
+      <TogetherPill
+        onPress={() => {}}
+        icon={<IconCheck {...iconDefaults({ size: 16 })} color="#FF0000" />}
+      />
+    </>,
+  );
+  expect(pills.UNSAFE_getByType(IconX).props.color).toBe(color.$primaryInk);
+  expect(pills.UNSAFE_getByType(IconCheck).props.color).toBe("#FF0000");
+});
+
+it("keeps a partner's colour when an earlier partner drops off the strip (inspector lead)", () => {
+  const p = {
+    selectedId: "me",
+    accountId: "me",
+    status: "In sync · 2 training",
+    onSelect: jest.fn(),
+    onSettings: jest.fn(),
+    onEnd: jest.fn(),
+  };
+  const toneOf = (r: ReturnType<typeof renderWithTheme>, name: string) =>
+    r
+      .UNSAFE_getAllByType(TogetherAthleteAvatar)
+      .find((a) => a.props.name === name)!.props.tone;
+  const before = renderWithTheme(
+    <TogetherWorkoutRow {...p} members={members} />,
+  );
+  const tom = toneOf(before, "Tom Vance");
+  // Mia finished: she drops off the strip, but Tom keeps his colour.
+  const after = renderWithTheme(
+    <TogetherWorkoutRow
+      {...p}
+      members={members.filter((m) => m.userId !== "mia")}
+      toneMembers={members}
+    />,
+  );
+  expect(toneOf(after, "Tom Vance")).toBe(tom);
 });

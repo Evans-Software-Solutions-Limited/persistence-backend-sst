@@ -1,6 +1,21 @@
-import type { ReactNode } from "react";
+import { cloneElement, isValidElement, type ReactNode } from "react";
 import { Pressable } from "react-native";
 import { Text, View } from "@tamagui/core";
+import { color } from "@/ui/theme/tokens";
+
+/**
+ * Gives an icon the pill's text colour. `iconDefaults()` sets
+ * `color: "currentColor"`, which react-native-svg cannot inherit from a
+ * parent view, so on a device the glyph drew black (TestFlight, 31 Oct). A
+ * concrete colour the caller set is kept. Same rule as `IconBtn`.
+ */
+function tinted(icon: ReactNode, hex: string): ReactNode {
+  if (!isValidElement<{ color?: unknown }>(icon)) return icon;
+  const current = icon.props.color;
+  return typeof current === "string" && current !== "currentColor"
+    ? icon
+    : cloneElement(icon, { color: hex });
+}
 
 /** Canvas `.pill`: a quiet 32pt control with a 44pt hit area; `primary` is the filled Start. */
 export function TogetherPill(p: {
@@ -39,7 +54,7 @@ export function TogetherPill(p: {
         flexDirection="row"
         gap={6}
       >
-        {p.icon}
+        {tinted(p.icon, primary ? color.$primaryInk : color.$text2)}
         {p.children !== undefined && (
           <Text
             fontFamily="$display"

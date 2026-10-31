@@ -5,7 +5,10 @@ import { TogetherScannerPresenter } from "@/ui/presenters/TogetherScannerPresent
 import { Alert, AppState, Share, Platform } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { TogetherInvitationQr } from "@/ui/presenters/TogetherInvitationQr";
-import { TogetherInvitePresenter } from "@/ui/presenters/TogetherInvitePresenter";
+import {
+  TOGETHER_INVITE_QR,
+  TogetherInvitePresenter,
+} from "@/ui/presenters/TogetherInvitePresenter";
 import {
   TogetherWorkoutRow,
   togetherMemberTone,
@@ -462,10 +465,18 @@ export function TogetherCloudContainer(p: {
   const shared = cloudSharedView(state, p.accountId);
   const partner = (id: string) =>
     state.snapshot?.participants.find((x) => x.userId === id);
-  const present = viewing ? !!partner(viewing) : true;
+  // Who is still training here, for the strip and partner tabs (PER-60): a
+  // partner who finished their own workout has left the session, even when an
+  // older app kept their seat. The sharing sheet still lists them as finished.
+  const present = (state.snapshot?.participants ?? []).filter(
+    (x) => x.userId === p.accountId || x.status === "active",
+  );
+  const viewingPresent = viewing
+    ? present.some((x) => x.userId === viewing)
+    : true;
   useEffect(() => {
-    if (!present) setViewing(null);
-  }, [present]);
+    if (!viewingPresent) setViewing(null);
+  }, [viewingPresent]);
   // Fill-in for partners outlives their view (see useTogetherPartnerOutbox).
   const partnerOutbox = useTogetherPartnerOutbox({
     snapshot: shared,
@@ -636,7 +647,8 @@ export function TogetherCloudContainer(p: {
     } as never);
   };
   const hosting = state.snapshot?.hostId === p.accountId;
-  const members = state.snapshot?.participants.length ?? 0;
+  const members = present.length;
+  const seats = state.snapshot?.participants.length ?? members;
   // Once sharing stops the snapshot lists only this athlete, so the host's
   // name is remembered from when it was live.
   const hostNameSeen = useRef<{ session?: string; name?: string }>({});
@@ -720,16 +732,18 @@ export function TogetherCloudContainer(p: {
             status: "Sharing ended · continue your workout",
             tone: "muted" as const,
           }
-        : members > 1
+        : // "Waiting for people" only while a seat is free: a partner who
+          // finished keeps their seat on the server (#522).
+          members > 1 || seats >= 4
           ? { status: `In sync · ${members} training`, tone: "live" as const }
           : {
-              status: `Waiting for people · ${members} of 4`,
+              status: `Waiting for people · ${seats} of 4`,
               tone: "muted" as const,
             };
   // Your own avatar is the only way back, so a partner view never outlives
   // the strip (snapshot cleared) or the partner (they left the session).
   const partnerView =
-    !soloAgain && viewing && partner(viewing) ? (
+    !soloAgain && viewing && viewingPresent ? (
       <TogetherPartnerPresenter
         key={viewing}
         weightUnit={p.weightUnit}
@@ -738,7 +752,7 @@ export function TogetherCloudContainer(p: {
         accountId={p.accountId}
         exerciseNames={names}
         tone={togetherMemberTone(
-          state.snapshot?.participants ?? [],
+          state.snapshot?.participants ?? present,
           p.accountId,
           viewing,
         )}
@@ -752,13 +766,15 @@ export function TogetherCloudContainer(p: {
   const row = soloAgain ? null : state.snapshot ? (
     <>
       <TogetherWorkoutRow
-        members={state.snapshot.participants.map((x, i) => ({
+        members={present.map((x) => ({
           userId: x.userId,
           name:
             x.userId === p.accountId
               ? "Me"
-              : (x.displayName ?? `Athlete ${i + 1}`),
+              : (x.displayName ??
+                `Athlete ${(state.snapshot?.participants ?? present).findIndex((y) => y.userId === x.userId) + 1}`),
         }))}
+        toneMembers={state.snapshot.participants}
         selectedId={viewing ?? p.accountId}
         accountId={p.accountId}
         status={status.status}
@@ -790,7 +806,7 @@ export function TogetherCloudContainer(p: {
           <TogetherJoinRequestBar
             key={r.requestId}
             name={r.displayName ?? "Someone"}
-            busy={busy || members >= 4}
+            busy={busy || (state.snapshot?.participants.length ?? 0) >= 4}
             onAdmit={() => run(() => p.cloud.decide(r.requestId, "approve"))}
             onDeny={() => run(() => p.cloud.decide(r.requestId, "reject"))}
           />
@@ -850,14 +866,14 @@ export function TogetherCloudContainer(p: {
         visible={leaveOpen && !soloAgain && !!state.snapshot}
         role={hosting ? "host" : "guest"}
         hostName={hostName}
-        others={(state.snapshot?.participants ?? [])
+        others={present
           .filter((x) => x.userId !== p.accountId)
           .map((x, i) => x.displayName ?? `Athlete ${i + 1}`)}
         loggedSets={loggedSets(p.getWorkout())}
         unsent={unsentFor(
           partnerOutbox.unsent(),
           (id) => partner(id)?.displayName ?? "your partner",
-          (state.snapshot?.participants ?? []).map((x) => x.userId),
+          present.map((x) => x.userId),
         )}
         onStay={() => setLeaveOpen(false)}
         onConfirm={leave}
@@ -883,7 +899,9 @@ export function TogetherCloudContainer(p: {
             : "TRAIN TOGETHER"
         }
         height={
-          inviteView && state.phase === "active" && invitation ? 55 : "tall"
+          inviteView && state.phase === "active" && invitation
+            ? "content"
+            : "tall"
         }
         contentPadding={
           inviteView && state.phase === "active" && invitation
@@ -898,6 +916,7 @@ export function TogetherCloudContainer(p: {
             <TogetherInvitePresenter
               qr={
                 <TogetherInvitationQr
+                  {...TOGETHER_INVITE_QR}
                   value={togetherInvitationLink({
                     connection: "online",
                     invitation: invitation.token,

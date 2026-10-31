@@ -9,6 +9,15 @@ import {
 } from "./TogetherConnectionChoice";
 import type { TogetherLobbyAudience } from "@/domain/ports/togetherLobby.port";
 import { formatSessionCode } from "@/adapters/together/planDetails";
+import { color } from "@/ui/theme/tokens";
+
+/**
+ * Canvas rows 1b/1c `.qr`: a 200pt code in a 14pt white box. The box is the
+ * quiet zone, so the code itself adds none. Both invite sheets pass this to
+ * `TogetherInvitationQr`; its width-based default (304pt plus a 28pt quiet
+ * zone) made the sheet scroll.
+ */
+export const TOGETHER_INVITE_QR = { size: 200, quietZone: 0 } as const;
 
 export function togetherInviteLine(
   connection: "local" | "online",
@@ -55,7 +64,11 @@ export function TogetherInvitePresenter(p: {
         <TogetherPill
           onPress={p.onClose}
           accessibilityLabel="Close"
-          icon={<IconX {...iconDefaults({ size: 16 })} />}
+          icon={
+            // Canvas `.pill` colour. Without it the icon is `currentColor`,
+            // which react-native-svg draws black on the dark pill.
+            <IconX {...iconDefaults({ size: 16 })} color={color.$text2} />
+          }
         />
       </View>
       <View

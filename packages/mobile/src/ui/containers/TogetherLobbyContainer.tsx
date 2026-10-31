@@ -35,7 +35,10 @@ import {
 } from "@/ui/presenters/TogetherLeaveSheet";
 import { rememberNearbyRoster } from "@/ui/state/togetherRosterSeen";
 import { TogetherToast } from "@/ui/presenters/TogetherToast";
-import { TogetherInvitePresenter } from "@/ui/presenters/TogetherInvitePresenter";
+import {
+  TOGETHER_INVITE_QR,
+  TogetherInvitePresenter,
+} from "@/ui/presenters/TogetherInvitePresenter";
 import { TogetherStartSheet } from "@/ui/presenters/TogetherStartSheet";
 import { TogetherJoinRequestBar } from "@/ui/presenters/TogetherJoinRequestBar";
 import { useTogetherSettings } from "@/state/together-settings";
@@ -92,14 +95,34 @@ export function startRowDetail(workout: WorkoutSession | null | undefined) {
 export function liveStatus(
   members: number,
   sharing: TogetherWorkoutStatus["sharing"] | undefined,
+  /** Seats taken: a guest who finished or left keeps theirs (#522). */
+  seats: number = members,
 ): { status: string; tone: "live" | "warn" | "muted" } {
   if (sharing === "reconnecting" || sharing === "paused")
     return { status: togetherWorkoutCopy(sharing), tone: "warn" };
   if (sharing === "local-only")
     return { status: togetherWorkoutCopy(sharing), tone: "muted" };
-  return members > 1
+  // "Waiting for people" only while a seat is free to wait for.
+  return members > 1 || seats >= 4
     ? { status: `In sync · ${members} training`, tone: "live" }
-    : { status: `Waiting for people · ${members} of 4`, tone: "muted" };
+    : { status: `Waiting for people · ${seats} of 4`, tone: "muted" };
+}
+
+/**
+ * Who is still training here (PER-60). A guest who leaves, or finishes their
+ * own workout, publishes a closure and drops their link, but keeps their seat
+ * in the signed roster, so the strip, partner tabs and sharing go by closures.
+ * The host stays: their closure ends the session for everyone.
+ */
+export function presentMembers<M extends { userId: string; host: boolean }>(
+  members: readonly M[],
+  closures: readonly { userId: string }[] | undefined,
+  accountId: string,
+): M[] {
+  const departed = new Set((closures ?? []).map((c) => c.userId));
+  return members.filter(
+    (m) => m.host || m.userId === accountId || !departed.has(m.userId),
+  );
 }
 
 /** Mounted only by the disabled-by-default capability. Signing keys stay in the adapter. */
@@ -169,6 +192,11 @@ export function TogetherLobbyContainer({
     [shared],
   );
   const sharedSnapshot = shared?.getSnapshot();
+  const members = presentMembers(
+    snapshot.members,
+    sharedSnapshot?.closures,
+    accountId,
+  );
   const defaults = useTogetherSettings();
   const [audience, setAudience] = useState<TogetherLobbyAudience>(
     defaults.audience === "friends" ? "invite-only" : defaults.audience,
@@ -315,9 +343,8 @@ export function TogetherLobbyContainer({
     }
   }, [snapshot.phase, lobby, displayName, accountId]);
   useEffect(() => {
-    if (viewing && !snapshot.members.some((m) => m.userId === viewing))
-      setViewing(null);
-  }, [snapshot.members, viewing]);
+    if (viewing && !members.some((m) => m.userId === viewing)) setViewing(null);
+  }, [members, viewing]);
   // Camera never stays active after selecting or losing authorization.
   useEffect(() => {
     if (snapshot.phase !== "idle") {
@@ -593,10 +620,15 @@ export function TogetherLobbyContainer({
       c.userId === accountId ||
       snapshot.members.some((m) => m.host && m.userId === c.userId),
   );
-  const people = sharingPeople(
+  // Colours and fallback names come from the full roster, so a guest who
+  // leaves doesn't shift anyone else's; only who is still here is listed.
+  const rosterPeople = sharingPeople(
     snapshot.members,
     accountId,
     (id, seat) => sharedSnapshot?.profiles[id] ?? `Athlete ${seat + 1}`,
+  );
+  const people = rosterPeople.filter((person) =>
+    members.some((m) => m.userId === person.userId),
   );
   const sharing = useTogetherSharing(
     lobby.shared && sharedSnapshot && snapshot.sessionId && !sharingClosed
@@ -716,7 +748,11 @@ export function TogetherLobbyContainer({
     !!snapshot.invitation &&
     !startingWorkout &&
     !startFailed;
-  const live = liveStatus(snapshot.members.length, workoutStatus?.sharing);
+  const live = liveStatus(
+    members.length,
+    workoutStatus?.sharing,
+    snapshot.members.length,
+  );
   const requests =
     snapshot.role === "host" && snapshot.phase === "hosting"
       ? snapshot.pending.map((request) => (
@@ -728,14 +764,15 @@ export function TogetherLobbyContainer({
           />
         ))
       : null;
-  const strip = soloAgain ? null : workoutStatus && snapshot.members.length ? (
+  const strip = soloAgain ? null : workoutStatus && members.length ? (
     <TogetherWorkoutRow
-      members={snapshot.members.map((m, i) => ({
+      toneMembers={snapshot.members}
+      members={members.map((m) => ({
         userId: m.userId,
         name:
           m.userId === accountId
             ? (displayName ?? "Me")
-            : (sharedSnapshot?.profiles[m.userId] ?? `Athlete ${i + 1}`),
+            : partnerName(m.userId),
       }))}
       selectedId={viewing ?? accountId}
       accountId={accountId}
@@ -893,7 +930,9 @@ export function TogetherLobbyContainer({
         visible={sharingOpen && !soloAgain && !!workoutStatus}
         state={sharing.state}
         onChange={sharing.change}
-        removable={snapshot.role === "host" ? people : undefined}
+        // A guest who left still holds a roster seat; the host must still be
+        // able to remove them to free it (#522).
+        removable={snapshot.role === "host" ? rosterPeople : undefined}
         onRemove={lobby.removeParticipant ? confirmRemoval : undefined}
         onDone={() => {
           setSharingOpen(false);
@@ -904,14 +943,14 @@ export function TogetherLobbyContainer({
         visible={leaveOpen && !soloAgain && !!workoutStatus}
         role={snapshot.role === "host" ? "host" : "guest"}
         hostName={hostName}
-        others={snapshot.members
+        others={members
           .filter((m) => m.userId !== accountId)
           .map((m) => partnerName(m.userId))}
         loggedSets={loggedSets(getWorkout?.())}
         unsent={unsentFor(
           partnerOutbox.unsent(),
           partnerName,
-          snapshot.members.map((m) => m.userId),
+          members.map((m) => m.userId),
         )}
         onStay={() => setLeaveOpen(false)}
         onConfirm={leave}
@@ -942,7 +981,7 @@ export function TogetherLobbyContainer({
                   : "Train together"
         }
         eyebrow={showInvitation ? undefined : "TRAIN TOGETHER"}
-        height={showInvitation ? 55 : "tall"}
+        height={showInvitation ? "content" : "tall"}
         contentPadding={showInvitation ? { top: 4, bottom: 28 } : undefined}
         footer={
           startingSession ? (
@@ -958,6 +997,7 @@ export function TogetherLobbyContainer({
           <TogetherInvitePresenter
             qr={
               <TogetherInvitationQr
+                {...TOGETHER_INVITE_QR}
                 value={togetherInvitationLink({
                   connection: "local",
                   invitation: snapshot.invitation!,

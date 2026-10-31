@@ -1,5 +1,40 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-31 — Together TestFlight fixes from Brad's two-phone run (PER-60, branch `claude/compassionate-clarke-eefidd`, PR #522)
+
+Release 2 build (1.2.0), both modes. Mobile only, no native package; each fix
+has a test that fails on the old code.
+- **Guest leave/finish didn't reach the host.** Nearby: a `leave` closure
+  never changed the signed roster, and the host's strip/tabs/sheets read only
+  the roster; new `presentMembers(members, closures, accountId)` drops closed
+  non-host members (roster and seat count unchanged). Online: a guest's Finish
+  just mine stays a "saved" participant, so the host now shows only the host
+  and `active` participants. (Routing the guest's finish through `/leave` was
+  tried and reverted: the server's `/leave` resets every remaining
+  participant's consents, cutting sharing between the host and other guests.)
+  Online Leave had no code defect. Owed: Nearby closure lost if the guest's link was already down.
+- **"Waiting for Libby's plan".** A Nearby guest never bound/published its plan
+  at admission (only on the first logged set); `adoptAndOpen` now does, and
+  `publishOwnActivity` sends the baseline to existing numbers grantees. Online
+  shows it only while reconnecting or not sharing. Separately, Online refuses a
+  joiner who can't see the host's custom exercise (`planValid`) — Brad to
+  decide whether admission should share those definitions.
+- **Partner workout narrower:** a second 16 pt inset in
+  `TogetherPartnerPresenter`; removed.
+- **Black icons:** `iconDefaults()` sets `currentColor`, which react-native-svg
+  can't inherit; `TogetherPill` now tints it (`$text2` / `$primaryInk`). Also
+  fixes the Leave/Start sheets' close icons.
+- **Summary carousel swipe-left:** each page's tap (advance) fired at the end
+  of a swipe inside the native modal; a swipe now suppresses that tap.
+- **Invite sheet scroll:** the sheets never passed the canvas's 200 pt QR
+  size; now `TOGETHER_INVITE_QR` and content-sized sheets (591 → 487 pt of
+  content). Close icon `$text2`.
+- **"Not found" while it did connect:** a typed code not yet verified nearby
+  went to the Online check and reported not found while the search went on to
+  find it; it now waits for the running search.
+- **Empty planned-set rows:** no code defect found; likely the approved
+  "numbers private" view before Libby's grant arrived. Device check owed.
+
 ### 2026-10-31 — Release 2 app version 1.2.0 (branch `claude/compassionate-clarke-eefidd`)
 
 `app.json` version 1.1.3 → 1.2.0 before the Release 2 TestFlight build. With

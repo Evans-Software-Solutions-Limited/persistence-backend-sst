@@ -3,6 +3,7 @@ import { AppState, Linking } from "react-native";
 import { act, fireEvent, waitFor } from "@testing-library/react-native";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 import {
+  NEARBY_CODE_WAIT_MS,
   TogetherJoinContainer,
   togetherSearchFailure,
 } from "../TogetherJoinContainer";
@@ -60,8 +61,27 @@ const mockLobby: any = {
   join: jest.fn(async () => {}),
   browse: jest.fn(async () => {}),
   selectDiscovered: jest.fn(async () => {}),
-  workout: { promote: jest.fn(async () => {}) },
-  shared: { getSnapshot: () => ({ plan }) },
+  workout: {
+    promote: jest.fn(async () => {}),
+    getPlan: jest.fn((): any => ownPlan),
+  },
+  shared: {
+    getSnapshot: () => ({ plan }),
+    setOwnPlan: jest.fn(),
+    publishOwnActivity: jest.fn(async () => {}),
+  },
+};
+/** The guest's own plan once promoted: their planExerciseIds, the host's exercises. */
+const ownPlan = {
+  name: "Push",
+  exercises: [
+    {
+      planExerciseId: "44444444-4444-4444-8444-444444444444",
+      exerciseId: "33333333-3333-4333-8333-333333333333",
+      order: 0,
+      targetSets: 1,
+    },
+  ],
 };
 const mockFriends = jest.fn();
 const mockSocialFriends = jest.fn();
@@ -298,6 +318,41 @@ it("joins a verified partner's nearby session: consent → connecting → admitt
   );
   expect(mockStorage.cacheActiveSession).toHaveBeenCalled();
   expect(mockReread).toHaveBeenCalled();
+  // The host sees this plan straight away, before any set is logged (PER-60).
+  const promoted = mockLobby.workout.promote.mock.calls[0][0];
+  expect(mockLobby.workout.getPlan).toHaveBeenCalledWith("u", promoted.id);
+  expect(mockLobby.shared.setOwnPlan).toHaveBeenCalledWith(ownPlan);
+  expect(mockLobby.shared.publishOwnActivity).toHaveBeenCalledTimes(1);
+});
+it.each([
+  ["the send fails", "publish"],
+  ["the plan is refused", "bind"],
+])("%s at admission: the workout still opens", async (_label, failure) => {
+  if (failure === "publish")
+    mockLobby.shared.publishOwnActivity.mockRejectedValueOnce(
+      new Error("network"),
+    );
+  else
+    mockLobby.shared.setOwnPlan.mockImplementationOnce(() => {
+      throw new Error("invalid");
+    });
+  const r = renderWithTheme(<TogetherJoinContainer />);
+  await waitFor(() => expect(mockLobby.browse).toHaveBeenCalled());
+  publish({ discovered: [discovered("s-brad", "brad", 3)] });
+  await waitFor(() => expect(r.getByText("Brad Evans")).toBeTruthy());
+  fireEvent.press(r.getByLabelText("Join Brad Evans"));
+  await waitFor(() => expect(r.getByText("Join this workout")).toBeTruthy());
+  fireEvent.press(r.getByText("Join and start"));
+  await waitFor(() => expect(mockLobby.join).toHaveBeenCalledTimes(1));
+  publish({ phase: "joined" });
+  await waitFor(() =>
+    expect(mockRouter.replace).toHaveBeenCalledWith("/(app)/session"),
+  );
+  expect(mockLobby.shared.setOwnPlan).toHaveBeenCalledTimes(1);
+  expect(mockLobby.shared.publishOwnActivity).toHaveBeenCalledTimes(
+    failure === "publish" ? 1 : 0,
+  );
+  expect(r.queryByText(/Could not/)).toBeNull();
 });
 it("a non-partner asks to join and waits for the host; cancel returns to the list", async () => {
   const r = renderWithTheme(<TogetherJoinContainer />);
@@ -599,6 +654,10 @@ it("a code the backend cannot find, or cannot be checked offline, says so (PER-6
   await waitFor(() => expect(mockLobby.browse).toHaveBeenCalled());
   fireEvent.changeText(r.getByLabelText("Session code"), "ZZZ-ZZZ");
   fireEvent.press(r.getByText("Continue"));
+  await waitFor(() => expect(mockCloud.preview).toHaveBeenCalled());
+  // Not found is only said once the nearby search has ended without it.
+  expect(r.queryByText(/Couldn’t find that code/)).toBeNull();
+  publish({ searching: false });
   await waitFor(() =>
     expect(r.getByText(/Couldn’t find that code/)).toBeTruthy(),
   );
@@ -611,6 +670,86 @@ it("a code the backend cannot find, or cannot be checked offline, says so (PER-6
     expect(r.getByText(/No internet to check that code/)).toBeTruthy(),
   );
   expect(r.queryByText("Join this workout")).toBeNull();
+});
+it("a mistyped code says not found within the short wait, not after the whole search (inspector lead)", async () => {
+  mockCloud.preview.mockResolvedValueOnce({
+    ok: false,
+    error: { kind: "api", code: "not_found", message: "no" },
+  });
+  const r = renderWithTheme(<TogetherJoinContainer />);
+  await waitFor(() => expect(mockLobby.browse).toHaveBeenCalled());
+  jest.useFakeTimers();
+  try {
+    fireEvent.changeText(r.getByLabelText("Session code"), "ZZZ-ZZZ");
+    fireEvent.press(r.getByText("Continue"));
+    await act(async () => {});
+    // The search is still running and never finds it.
+    expect(r.queryByText(/Couldn’t find that code/)).toBeNull();
+    await act(async () => {
+      jest.advanceTimersByTime(NEARBY_CODE_WAIT_MS);
+    });
+    expect(r.getByText(/Couldn’t find that code/)).toBeTruthy();
+  } finally {
+    jest.useRealTimers();
+  }
+});
+it("a Nearby code typed before the search has verified its host is not reported as not found (TestFlight 31 Oct)", async () => {
+  // A Nearby code is unknown to the server, so the Online preview misses it.
+  // The search verifies the host a moment later; the old flow had already
+  // said "Couldn’t find that code" while the row for that host appeared.
+  mockCloud.preview.mockResolvedValue({
+    ok: false,
+    error: { kind: "api", code: "not_found", message: "no" },
+  });
+  mockLobby.selectCode.mockImplementation(async () => {
+    publish({
+      phase: "selected",
+      selection: { hostUserId: "brad", workoutName: "Lower Body B" },
+    });
+  });
+  const r = renderWithTheme(<TogetherJoinContainer />);
+  await waitFor(() => expect(mockLobby.browse).toHaveBeenCalled());
+  fireEvent.changeText(r.getByLabelText("Session code"), "4KQ-928");
+  fireEvent.press(r.getByText("Continue"));
+  await waitFor(() =>
+    expect(mockCloud.preview).toHaveBeenCalledWith({ code: "4KQ928" }),
+  );
+  await act(async () => {});
+  expect(r.queryByText(/Couldn’t find that code/)).toBeNull();
+  publish({
+    discovered: [{ ...discovered("d1", "brad"), code: "4KQ928" }],
+  });
+  await waitFor(() => expect(r.getByText("Join this workout")).toBeTruthy());
+  expect(mockLobby.selectCode).toHaveBeenCalledWith("4KQ928");
+  expect(r.queryByText(/Couldn’t find that code/)).toBeNull();
+});
+it("a row picked after a code miss opens its card without the miss (TestFlight 31 Oct)", async () => {
+  mockCloud.preview.mockResolvedValue({
+    ok: false,
+    error: { kind: "api", code: "not_found", message: "no" },
+  });
+  mockFriends.mockResolvedValue(
+    page([
+      {
+        sessionId: "s-tom",
+        host: { userId: "tom", displayName: "Tom Vance", avatarUrl: null },
+        occupancy: 2,
+        expiresAt: "x",
+        workoutName: "Push A",
+      },
+    ]),
+  );
+  const r = renderWithTheme(<TogetherJoinContainer />);
+  await waitFor(() => expect(mockLobby.browse).toHaveBeenCalled());
+  publish({ searching: false });
+  fireEvent.changeText(r.getByLabelText("Session code"), "ZZZ-ZZZ");
+  fireEvent.press(r.getByText("Continue"));
+  await waitFor(() =>
+    expect(r.getByText(/Couldn’t find that code/)).toBeTruthy(),
+  );
+  fireEvent.press(r.getByLabelText("Join Tom Vance"));
+  await waitFor(() => expect(r.getByText("Join this workout")).toBeTruthy());
+  expect(r.queryByText(/Couldn’t find that code/)).toBeNull();
 });
 it("a pasted Online link fills the consent card in from the preview (PER-60)", async () => {
   mockCloud.preview.mockResolvedValue({

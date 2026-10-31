@@ -10,6 +10,8 @@ import {
 import { TogetherToast } from "../TogetherToast";
 import { TogetherFinishChoicePresenter } from "../TogetherFinishChoicePresenter";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
+import { IconX } from "@/ui/components/icons";
+import { color } from "@/ui/theme/tokens";
 
 jest.mock("@/ui/components/foundation/BottomSheet", () => ({
   BottomSheet: (p: {
@@ -43,6 +45,11 @@ describe("TogetherLeaveSheet", () => {
     fireEvent.press(r.getByLabelText("Close"));
     expect(base.onStay).toHaveBeenCalledTimes(2);
     expect(base.onConfirm).toHaveBeenCalledTimes(1);
+  });
+
+  it("draws the close icon in the pill's $text2, not black (TestFlight, 31 Oct)", () => {
+    const r = renderWithTheme(<TogetherLeaveSheet {...base} role="guest" />);
+    expect(r.UNSAFE_getByType(IconX).props.color).toBe(color.$text2);
   });
 
   it("guest with one set and one partner reads in the singular", () => {

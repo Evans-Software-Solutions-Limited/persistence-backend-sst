@@ -10,6 +10,7 @@ import { act, fireEvent, waitFor } from "@testing-library/react-native";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 import {
   TogetherLobbyContainer,
+  liveStatus,
   startRowDetail,
 } from "../TogetherLobbyContainer";
 import type {
@@ -149,6 +150,13 @@ it("hosts current workout, approves real peer IDs, copies invite and cleans up",
   await act(async () => fireEvent.press(r.getByText("Start the session")));
   // The invite sheet opens once after start, with the mode on it.
   await waitFor(() => expect(r.getByText("Invite people")).toBeTruthy());
+  // Canvas row 1b: a 200 pt code in its 14 pt white box, and a sheet sized to
+  // that content. The width-based 304 pt code in a 55 % sheet scrolled
+  // (TestFlight 31 Oct).
+  expect(r.UNSAFE_getByType("QRCode" as never).props).toEqual(
+    expect.objectContaining({ size: 200, quietZone: 0 }),
+  );
+  expect(mockSheet.mock.calls.at(-1)![0].height).toBe("content");
   expect(
     r.getByText(/Nearby · no internet needed · training partners join/),
   ).toBeTruthy();
@@ -2039,6 +2047,125 @@ describe("leaving and ending (canvas row 3)", () => {
     ).toBeTruthy();
     h.update("local-only");
     expect(r.UNSAFE_queryByType(TogetherWorkoutRow)).toBeNull();
+  });
+
+  it("a guest who leaves or finishes drops off the host's strip, tabs and sheets (TestFlight 31 Oct)", () => {
+    // The guest's closure arrives but the signed roster keeps their seat: the
+    // host's phone kept showing them in the session.
+    const h = sharingHarness();
+    h.setShared({ profiles: { other: "Libby", third: "Mia" } });
+    const r = mountShared(h, {
+      displayName: "Brad",
+      getWorkout: () => withSets(2),
+      children: (row, partnerView) => (
+        <View testID={partnerView ? "partner-screen" : "personal-workout"}>
+          {row}
+          {partnerView}
+        </View>
+      ),
+    });
+    h.publish({
+      phase: "hosting",
+      role: "host",
+      sessionId: "s1",
+      members: [
+        { userId: "a", host: true },
+        { userId: "other", host: false },
+        { userId: "third", host: false },
+      ],
+    });
+    h.update("active");
+    expect(leaveRow(r).members.map((m: { name: string }) => m.name)).toEqual([
+      "Brad",
+      "Libby",
+      "Mia",
+    ]);
+    expect(leaveRow(r).status).toBe("In sync · 3 training");
+    fireEvent.press(r.getByLabelText("Show Libby’s workout"));
+    expect(r.getByTestId("partner-screen")).toBeTruthy();
+    // Libby leaves (Leave, or Finish just mine: both publish `leave`).
+    act(() => h.setShared({ closures: [{ userId: "other", mode: "leave" }] }));
+    expect(leaveRow(r).members.map((m: { name: string }) => m.name)).toEqual([
+      "Brad",
+      "Mia",
+    ]);
+    expect(leaveRow(r).status).toBe("In sync · 2 training");
+    expect(r.getByTestId("personal-workout")).toBeTruthy();
+    expect(r.queryByLabelText("Show Libby’s workout")).toBeNull();
+    // The switches only cover who is still here, but Libby keeps her roster
+    // seat, so the host can still remove her to free it (inspector lead).
+    expect(
+      shareProps(r).state!.recipients.map((p: { name: string }) => p.name),
+    ).toEqual(["Mia"]);
+    expect(shareProps(r).removable?.map((p) => p.name)).toEqual([
+      "Libby",
+      "Mia",
+    ]);
+    act(() => leaveRow(r).onEnd());
+    expect(
+      r.getByText(
+        "Everyone keeps their own workout and carries on solo. Nobody new can join.",
+      ),
+    ).toBeTruthy();
+    // No toast: a guest leaving is not the host ending it.
+    expect(r.queryByTestId("together-toast")).toBeNull();
+    // Mia goes too: the host is left waiting, still hosting.
+    act(() =>
+      h.setShared({
+        closures: [
+          { userId: "other", mode: "leave" },
+          { userId: "third", mode: "leave" },
+        ],
+      }),
+    );
+    expect(leaveRow(r).members.map((m: { name: string }) => m.name)).toEqual([
+      "Brad",
+    ]);
+    // Both keep their roster seats, so the count is seats, not faces.
+    expect(leaveRow(r).status).toBe("Waiting for people · 3 of 4");
+  });
+
+  it("never says Waiting for people once every seat is taken (inspector lead)", () => {
+    expect(liveStatus(1, undefined, 4)).toEqual({
+      status: "In sync · 1 training",
+      tone: "live",
+    });
+    expect(liveStatus(1, undefined, 2).status).toBe(
+      "Waiting for people · 2 of 4",
+    );
+    expect(liveStatus(3, undefined, 4).status).toBe("In sync · 3 training");
+  });
+
+  it("another guest leaving drops them on a guest's strip, but the host stays until they end it", () => {
+    const h = sharingHarness();
+    h.setShared({ profiles: { host: "Brad", other: "Libby" } });
+    const r = mountShared(h, { getWorkout: () => withSets(1) });
+    h.publish({
+      phase: "joined",
+      role: "guest",
+      sessionId: "s1",
+      members: [
+        { userId: "host", host: true },
+        { userId: "a", host: false },
+        { userId: "other", host: false },
+      ],
+    });
+    h.update("active");
+    act(() => h.setShared({ closures: [{ userId: "other", mode: "leave" }] }));
+    expect(
+      leaveRow(r).members.map((m: { userId: string }) => m.userId),
+    ).toEqual(["host", "a"]);
+    act(() =>
+      h.setShared({
+        closures: [
+          { userId: "other", mode: "leave" },
+          { userId: "host", mode: "save_own" },
+        ],
+      }),
+    );
+    expect(
+      leaveRow(r).members.map((m: { userId: string }) => m.userId),
+    ).toEqual(["host", "a"]);
   });
 
   it("a recovering workout keeps its row so its review stays reachable", () => {
