@@ -1,5 +1,41 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-31 — Nutrition and units bug batch (PER-96, 95, 100, 97, 98, 78; branch `claude/release-2-nutrition-fixes`)
+
+Release 2 bug batch, mobile only, one commit per issue; each test named in the
+PR fails on the old code.
+
+- **PER-96** notification crash: the coach's "nutrition target set" push links
+  `/nutrition/targets`, not an app route. The app landed on +not-found, which
+  unmounts `(app)`; AuthGate remounted it and the per-mount handled-tap list
+  routed the launching tap again, forever. Now `/nutrition/targets` and
+  `/nutrition` map to Fuel, and handled taps are remembered for the app
+  session. Traced from code, not reproduced on a device. Still unmapped (now
+  "Screen not found", no loop): `/sessions/:id`, `/progress/goals/:id`,
+  `/progress/measurements/:id`.
+- **PER-95** scan card: totals were labelled "per {serving}"; now "for 240 g"
+  plus a "Per 100 g" reference line. Brad's 26 Oct note (open the food quick
+  view, canvas N3) is new UI and not built.
+- **PER-100** search rows: per serving when known ("1 serving (174 g) · 287
+  kcal"), "per 100 g" otherwise; opening a food defaults to one serving.
+- **PER-97** calculator inputs: saved per account on the device
+  (`state/fuel-calculator-inputs.ts`) and restored; without them the macro mode
+  is worked back from the saved target. The weight tile already quick-logs.
+- **PER-98** kg/lb: workout set inputs showed and stored raw kg under an LB
+  header (225 typed = 225 kg); now shown/typed in lb, stored kg, re-saved only
+  on edit. Coach client body trend and goal, coach calculator weight, coach Log
+  weight default, Together recovery and partner sets now follow the unit.
+  **Brad to decide:** lb users' past sets typed as lb were stored as kg and
+  now read about 2.2× (history and PRs already showed this).
+- **PER-78** recipe import: a leading mass amount is parsed from each line;
+  linking keeps the amount and text, never invents 100 g; Save is disabled
+  while a linked row has no amount; a late AI answer doesn't relink a renamed
+  row. Volume/count amounts stay for the user to enter.
+
+Mobile suite with coverage 96.15 / 92.18 / 96.05 / 97.52;
+`SubscriptionSelectionContainer` (cloud container only) and `useWorkouts`
+(load timeout; 8/8 alone) failed in the full run. **Not verified** on a device.
+
 ### 2026-10-31 — Staging deploy unblocked: `listed_until` migration renamed after `via_code` (PER-60, branch `claude/compassionate-clarke-eefidd`)
 
 Deploy Staging failed on every merge from #514 on (runs 504–507) at

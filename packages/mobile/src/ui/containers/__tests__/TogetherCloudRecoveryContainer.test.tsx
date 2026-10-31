@@ -23,6 +23,9 @@ jest.mock("expo-router", () => ({
 jest.mock("@/ui/hooks/useAdapters", () => ({
   useAdapters: () => ({ togetherCloud: mockCloud, storage: mockStorage }),
 }));
+jest.mock("@/ui/hooks/useProfilePage", () => ({
+  useProfilePage: () => ({ payload: { profile: { weightUnit: "lb" } } }),
+}));
 jest.mock("@/ui/hooks/useAuth", () => ({
   useAuth: () => ({ session: mockUser ? { userId: mockUser } : null }),
 }));

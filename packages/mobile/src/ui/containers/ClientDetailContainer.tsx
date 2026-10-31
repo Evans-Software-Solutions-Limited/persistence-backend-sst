@@ -24,7 +24,12 @@ import {
 } from "@/ui/presenters/coach/ClientDetailPresenter";
 import type { ActiveProgramme, BodyTrendPoint } from "@/domain/models/progress";
 import type { TrendData } from "@/ui/presenters/BodyTrendPresenter";
-import { preferredVolumeUnit } from "@/shared/utils";
+import {
+  preferredVolumeUnit,
+  weightInUnit,
+  type WeightUnit,
+} from "@/shared/utils";
+import { useProfilePage } from "@/ui/hooks/useProfilePage";
 
 /**
  * Build the <BodyTrendPresenter> props from a trend series — the same
@@ -32,7 +37,12 @@ import { preferredVolumeUnit } from "@/shared/utils";
  * the HealthKit merge (the coach reads the client's SERVER data only; the
  * client's device is what pushes HealthKit readings up).
  */
-export function buildClientBodyTrend(pts: BodyTrendPoint[]): {
+export function buildClientBodyTrend(
+  pts: BodyTrendPoint[],
+  /** The viewing coach's display preference (PER-98) — values are stored in
+   * kg and converted here, exactly as YouContainer does for the athlete. */
+  weightUnit: WeightUnit = "kg",
+): {
   weight: TrendData & { unit: "kg" | "lb" };
   bodyFat: TrendData;
 } {
@@ -43,12 +53,15 @@ export function buildClientBodyTrend(pts: BodyTrendPoint[]): {
     .map((p) => p.bodyFat)
     .filter((f): f is number => f != null);
   const delta = (s: number[]) => (s.length > 1 ? s[s.length - 1] - s[0] : 0);
+  const lastWeightKg = weightSeries[weightSeries.length - 1];
   return {
     weight: {
-      current: weightSeries[weightSeries.length - 1] ?? null,
-      delta: delta(weightSeries),
+      current:
+        lastWeightKg != null ? weightInUnit(lastWeightKg, weightUnit) : null,
+      delta: weightInUnit(delta(weightSeries), weightUnit),
+      // The sparkline only needs the series' shape, so it stays in kg.
       series: weightSeries,
-      unit: "kg" as const,
+      unit: weightUnit,
     },
     bodyFat: {
       current: fatSeries[fatSeries.length - 1] ?? null,
@@ -139,9 +152,13 @@ export function ClientDetailContainer() {
     void loadAssignments();
   }, [refreshDetail, refreshTrend, loadProgramme, loadAssignments]);
 
+  // The coach's own weight-display preference (PER-98): the client's weights
+  // are shown in the unit the viewer chose, like every athlete surface.
+  const weightUnit: WeightUnit =
+    useProfilePage().payload?.profile.weightUnit ?? "kg";
   const bodyTrend = useMemo(
-    () => buildClientBodyTrend(trend.data ?? []),
-    [trend.data],
+    () => buildClientBodyTrend(trend.data ?? [], weightUnit),
+    [trend.data, weightUnit],
   );
 
   // AI Client Summary (M8 Coach Phase 6, design.md § Module g). ONLINE-ONLY —
@@ -308,8 +325,10 @@ export function ClientDetailContainer() {
       // Device-QA follow-up: the water field follows the CLIENT's own
       // preferred unit (default litres; imperial → cups), not the coach's.
       preferredVolumeUnit(client?.preferredUnits),
+      // PER-98: the calculator's weight field is typed in the coach's unit.
+      weightUnit,
     );
-  }, [id, openEditTargets, detail.data, refreshAll]);
+  }, [id, openEditTargets, detail.data, refreshAll, weightUnit]);
 
   const onAssignGoal = useCallback(() => {
     if (!id) return;
@@ -383,6 +402,7 @@ export function ClientDetailContainer() {
       detail={detail.data}
       clientName={name ?? null}
       bodyTrend={bodyTrend}
+      weightUnit={weightUnit}
       activeProgramme={activeProgramme}
       assignments={assignments}
       isLoading={

@@ -317,6 +317,38 @@ describe("QuickAddSheetContainer", () => {
     expect(useFuelSheets.getState().rev).toBe(1);
   });
 
+  it("logs one of the food's own servings, not 100 g, for an Open Food Facts result (PER-100)", async () => {
+    const { adapters, storage } = makeAdapters();
+    const offFood: Food = {
+      ...food,
+      id: "off-1",
+      kcal: 165,
+      proteinG: 31,
+      carbsG: 0,
+      fatG: 3.6,
+      servingSize: 100,
+      servingQuantity: 174,
+      source: "openfoodfacts",
+    };
+    storage.cacheFoods([offFood]);
+    render(
+      <Wrapper adapters={adapters}>
+        <QuickAddSheetContainer />
+      </Wrapper>,
+    );
+    act(() => useFuelSheets.getState().openQuickAdd("snack"));
+    act(() => mockProbe.last!.onSearch());
+    act(() => mockProbe.last!.onSelect(offFood));
+    await waitFor(() => expect(mockProbe.last?.selected?.id).toBe("off-1"));
+    await act(async () => {
+      mockProbe.last!.onAdd();
+    });
+    const entry = storage.getCachedFuelToday(USER, localDayISO())?.entriesBySlot
+      .snack[0];
+    expect(entry?.servings).toBeCloseTo(1.74);
+    expect(entry?.kcal).toBe(287);
+  });
+
   it("hands off to the scan sheet", () => {
     const { adapters, storage } = makeAdapters();
     storage.cacheMeals(USER, [meal]);

@@ -9,7 +9,29 @@ import {
   formatVolume,
   cmToFeetInches,
   formatHeight,
+  weightInputToKg,
+  weightToInputText,
 } from "../units";
+
+describe("weight inputs (PER-98)", () => {
+  it("shows a stored kg weight as input text in the display unit", () => {
+    expect(weightToInputText(null, "lb")).toBe("");
+    expect(weightToInputText(82.5, "kg")).toBe("82.5");
+    expect(weightToInputText(100, "lb")).toBe("220.5");
+  });
+
+  it("stores typed text as kg", () => {
+    expect(weightInputToKg("", "lb")).toBeNull();
+    expect(weightInputToKg("abc", "kg")).toBeNull();
+    expect(weightInputToKg("82.5", "kg")).toBe(82.5);
+    expect(weightInputToKg("225", "lb")).toBe(102.058);
+  });
+
+  it("round-trips a typed lb weight", () => {
+    const kg = weightInputToKg("100", "lb")!;
+    expect(weightToInputText(kg, "lb")).toBe("100");
+  });
+});
 
 describe("weight conversion", () => {
   it("round-trips kg <-> lb through the exact factor", () => {

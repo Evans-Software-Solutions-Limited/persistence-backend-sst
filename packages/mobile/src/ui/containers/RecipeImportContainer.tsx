@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import { router } from "expo-router";
 import * as Clipboard from "expo-clipboard";
+import { parseIngredientLine } from "@/domain/services/recipeIngredientLine";
 import { useRecipeDraft } from "@/state/recipe-draft";
 import { useImportRecipeUrl } from "@/ui/hooks/useImportRecipeUrl";
 import {
@@ -18,6 +19,17 @@ import {
  *
  * Implements: specs/milestones (Recipes AI PR3 brief) § E. Import-from-URL
  */
+/** A free-text ingredient line as a create-form seed row, amount read off it
+ * when it is a clear mass (PER-78); otherwise the whole line, amount unset. */
+function toIngredientSeed(line: string) {
+  const parsed = parseIngredientLine(line);
+  return {
+    name: parsed.name,
+    quantity: parsed.quantity,
+    unit: parsed.unit || null,
+  };
+}
+
 export function RecipeImportContainer() {
   const importRecipeUrl = useImportRecipeUrl();
   const setSeed = useRecipeDraft((s) => s.setSeed);
@@ -78,11 +90,8 @@ export function RecipeImportContainer() {
     setSeed({
       title: pastedTitle.trim(),
       servings: null,
-      ingredients: ingredients.map((name) => ({
-        name,
-        quantity: null,
-        unit: null,
-      })),
+      // PER-78 — keep each line's stated amount (see parseIngredientLine).
+      ingredients: ingredients.map(toIngredientSeed),
       instructions: pastedInstructions.trim() || null,
       source: "manual",
       sourceUrl,
@@ -117,11 +126,8 @@ export function RecipeImportContainer() {
         title: recipe.name,
         servings: recipe.servings,
         instructions: recipe.instructions,
-        ingredients: recipe.ingredients.map((line) => ({
-          name: line,
-          quantity: null,
-          unit: null,
-        })),
+        // PER-78 — keep each line's stated amount (see parseIngredientLine).
+        ingredients: recipe.ingredients.map(toIngredientSeed),
         source: "import",
         extractionMethod: recipe.extractionMethod,
         nutrition: recipe.nutrition,

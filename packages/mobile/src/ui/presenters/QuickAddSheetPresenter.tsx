@@ -26,7 +26,7 @@ import {
   IconSwap,
 } from "@/ui/components/icons";
 import type { Food, MealSlot } from "@/domain/models/nutrition";
-import { scaleFoodMacros } from "@/domain/services";
+import { foodOwnServing, scaleFoodMacros } from "@/domain/services";
 import {
   AiDraftConfirmPresenter,
   type AiDraftItem,
@@ -510,6 +510,10 @@ function FoodRow({
   food: Food;
   onSelect: (f: Food) => void;
 }) {
+  // PER-100: show the food's own serving, named; per 100 g only when the food
+  // has no serving of its own.
+  const serving = foodOwnServing(food);
+  const macro = scaleFoodMacros(food, serving.multiplier);
   return (
     <Pressable
       testID={`quick-add-result-${food.id}`}
@@ -535,10 +539,14 @@ function FoodRow({
           >
             {food.name}
           </Text>
-          <Text fontFamily="$mono" fontSize={11} color="$text3">
+          <Text
+            fontFamily="$mono"
+            fontSize={11}
+            color="$text3"
+            testID={`quick-add-result-serving-${food.id}`}
+          >
             {food.brand ? `${food.brand} · ` : ""}
-            {intl(food.kcal)} kcal / {food.servingSize}
-            {food.servingUnit}
+            {`${serving.label} · ${intl(macro.kcal)} kcal`}
           </Text>
           <Text
             fontFamily="$mono"
@@ -547,7 +555,7 @@ function FoodRow({
             fontVariant={["tabular-nums"]}
             testID={`quick-add-result-macros-${food.id}`}
           >
-            {`P ${intl(food.proteinG)}g · C ${intl(food.carbsG)}g · F ${intl(food.fatG)}g`}
+            {`P ${intl(macro.proteinG)}g · C ${intl(macro.carbsG)}g · F ${intl(macro.fatG)}g`}
           </Text>
         </View>
         <IconBtn
@@ -580,7 +588,12 @@ function SearchStage(props: QuickAddSheetProps) {
   } = props;
 
   if (selected) {
-    const macro = scaleFoodMacros(selected, servings);
+    // The stepper counts the food's own servings (PER-100), so 1 = the pack
+    // serving the result row showed, not the per-100 g basis.
+    const macro = scaleFoodMacros(
+      selected,
+      servings * foodOwnServing(selected).multiplier,
+    );
     return (
       <View gap={16} testID="quick-add-detail">
         <View flexDirection="row" alignItems="center" gap={10}>

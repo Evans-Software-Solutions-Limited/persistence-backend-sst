@@ -82,6 +82,39 @@ describe("SetLogger", () => {
     expect(onChange).toHaveBeenCalledWith({ weightKg: 82.5 });
   });
 
+  it("shows the stored weight in lb and stores a typed lb weight as kg (PER-98)", () => {
+    // The column header reads LB for an lb athlete; the field used to show and
+    // write the raw kg number underneath it.
+    const onChange = jest.fn();
+    const { getByTestId, rerender } = renderWithTheme(
+      <SetLogger
+        set={buildSet({ weightKg: 100 })}
+        setNumber={1}
+        previous={null}
+        weightUnit="lb"
+        onChange={onChange}
+        onRemove={jest.fn()}
+        onFillPrevious={jest.fn()}
+      />,
+    );
+    expect(getByTestId("set-logger-weight").props.value).toBe("220.5");
+    fireEvent.changeText(getByTestId("set-logger-weight"), "225");
+    expect(onChange).toHaveBeenCalledWith({ weightKg: 102.058 });
+    // The command echoes the stored kg back: the typed text stays as typed.
+    rerender(
+      <SetLogger
+        set={buildSet({ weightKg: 102.058 })}
+        setNumber={1}
+        previous={null}
+        weightUnit="lb"
+        onChange={onChange}
+        onRemove={jest.fn()}
+        onFillPrevious={jest.fn()}
+      />,
+    );
+    expect(getByTestId("set-logger-weight").props.value).toBe("225");
+  });
+
   it("ignores invalid weight input (no onChange when text doesn't parse)", () => {
     const onChange = jest.fn();
     const { getByTestId } = renderWithTheme(

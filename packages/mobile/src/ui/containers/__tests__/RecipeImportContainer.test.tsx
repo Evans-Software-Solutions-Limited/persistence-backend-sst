@@ -232,6 +232,39 @@ describe("RecipeImportContainer", () => {
     });
   });
 
+  it("keeps each imported line's mass amount as the row quantity (PER-78)", async () => {
+    const { adapters, api } = makeAdapters();
+    api.importedRecipe = {
+      extractionMethod: "structured",
+      name: "Sticky chicken",
+      servings: 4,
+      instructions: null,
+      ingredients: [
+        "600g boneless chicken thighs, diced",
+        "1½ tbsp gochujang",
+        "2-3 garlic cloves",
+      ],
+      sourceUrl: "",
+      nutrition: null,
+    };
+    render(
+      <Wrapper adapters={adapters}>
+        <RecipeImportContainer />
+      </Wrapper>,
+    );
+    act(() => mockProbe.last!.onUrlChange("https://x.test/chicken"));
+    await act(async () => {
+      mockProbe.last!.onImport();
+    });
+    await waitFor(() => expect(mockRouterReplace).toHaveBeenCalled());
+    expect(useRecipeDraft.getState().seed?.ingredients).toEqual([
+      { name: "boneless chicken thighs, diced", quantity: 600, unit: "g" },
+      // Volume and ranges need the user's review: no invented amount.
+      { name: "1½ tbsp gochujang", quantity: null, unit: null },
+      { name: "2-3 garlic cloves", quantity: null, unit: null },
+    ]);
+  });
+
   it("on success with scraped per-serving nutrition: carries it through to the seed", async () => {
     const { adapters, api } = makeAdapters();
     api.importedRecipe = {
@@ -353,8 +386,10 @@ describe("RecipeImportContainer", () => {
       source: "manual",
       sourceUrl: "https://recipes.example/soup",
       instructions: "Simmer for 20 minutes",
+      // PER-78: a clear mass amount is kept as the row's quantity; a count
+      // stays in the line's text for the user to review.
       ingredients: [
-        { name: "200g lentils", quantity: null, unit: null },
+        { name: "lentils", quantity: 200, unit: "g" },
         { name: "1 onion", quantity: null, unit: null },
       ],
     });

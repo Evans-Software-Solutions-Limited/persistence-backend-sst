@@ -22,7 +22,12 @@ import { styles } from "./styles";
 import { IconX } from "@/ui/components/icons";
 import { color } from "@/ui/theme/tokens";
 import type { ExerciseSet } from "@/domain/models/session";
-import { weightInUnit, type WeightUnit } from "@/shared/utils";
+import {
+  weightInUnit,
+  weightInputToKg,
+  weightToInputText,
+  type WeightUnit,
+} from "@/shared/utils";
 import {
   activityDistanceFromMeters,
   activityDistanceToMeters,
@@ -55,9 +60,10 @@ export type SetLoggerProps = {
   /** Weight + reps from the previous set on the same exercise (for quick-fill). */
   previous: { weightKg: number; reps: number } | null;
   /**
-   * Display-unit preference for the previous-set chip. The current-set
-   * weight TextInput below is unaffected — it's an input surface (writes
-   * kg), not a display label. Defaults to "kg".
+   * Display-unit preference for the previous-set chip AND the weight input,
+   * which shows and accepts the weight in this unit and stores kg (PER-98:
+   * the column header already said LB while the field read and wrote kg).
+   * Defaults to "kg".
    */
   weightUnit?: WeightUnit;
   preferredUnits?: "metric" | "imperial";
@@ -82,7 +88,9 @@ export function SetLogger(props: SetLoggerProps) {
   const preferredUnits = props.preferredUnits ?? "metric";
   const trackingMode = props.trackingMode ?? "strength";
   const [reps, setReps] = useState(toInputString(props.set.reps));
-  const [weight_kg, setWeightKg] = useState(toInputString(props.set.weightKg));
+  const [weightText, setWeightText] = useState(() =>
+    weightToInputText(props.set.weightKg, weightUnit),
+  );
   const [duration, setDuration] = useState(
     formatDurationInput(props.set.durationSeconds),
   );
@@ -100,8 +108,14 @@ export function SetLogger(props: SetLoggerProps) {
 
   useEffect(() => {
     setReps(toInputString(props.set.reps));
-    setWeightKg(toInputString(props.set.weightKg));
-  }, [props.set.reps, props.set.weightKg]);
+    // Keep what the user is typing ("100.") when it already means the
+    // stored kg; otherwise show the stored weight in the display unit.
+    setWeightText((current) =>
+      weightInputToKg(current, weightUnit) === props.set.weightKg
+        ? current
+        : weightToInputText(props.set.weightKg, weightUnit),
+    );
+  }, [props.set.reps, props.set.weightKg, weightUnit]);
 
   useEffect(() => {
     // Commands echo each valid keystroke back through SQLite. Do not replace
@@ -138,10 +152,10 @@ export function SetLogger(props: SetLoggerProps) {
   };
 
   const handleWeightChange = (text: string) => {
-    setWeightKg(text);
+    setWeightText(text);
     if (text === "") return props.onChange({ weightKg: null });
-    const n = Number.parseFloat(text);
-    if (!Number.isNaN(n)) props.onChange({ weightKg: n });
+    const kg = weightInputToKg(text, weightUnit);
+    if (kg !== null) props.onChange({ weightKg: kg });
   };
 
   const handleDurationChange = (text: string) => {
@@ -250,7 +264,7 @@ export function SetLogger(props: SetLoggerProps) {
         editable={!props.readOnly}
         ref={weightInputRef}
         style={[styles.input, styles.weightInput]}
-        value={trackingMode === "strength" ? weight_kg : distance}
+        value={trackingMode === "strength" ? weightText : distance}
         onChangeText={
           props.readOnly
             ? undefined

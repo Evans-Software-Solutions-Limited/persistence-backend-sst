@@ -42,6 +42,14 @@ const LEGACY_REDIRECTS: Record<string, string> = {
   "/progress": "/(app)/(tabs)/you",
   "/notifications": "/(app)/notifications",
   "/profile/notifications": "/(app)/profile/notifications",
+  // `nutrition_target_set_by_trainer` (core `setClientNutritionTarget`) emits
+  // `/nutrition/targets`, which is not an app route. Passed through, it landed
+  // on the root +not-found screen, which unmounts the (app) tree; AuthGate then
+  // bounced back to the tabs and the remounted deep-link hook replayed the same
+  // launching tap — a navigation loop that crashed with "Maximum update depth
+  // exceeded" (PER-96). The athlete's Fuel Targets screen is the target.
+  "/nutrition/targets": "/(app)/fuel/targets",
+  "/nutrition": "/(app)/(tabs)/fuel",
 };
 
 /**

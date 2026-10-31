@@ -8,7 +8,10 @@ import type {
 import { ok, type Result } from "@/shared/errors";
 import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
-import { useNotificationDeepLink } from "@/ui/hooks/useNotificationDeepLink";
+import {
+  resetHandledNotificationTaps,
+  useNotificationDeepLink,
+} from "@/ui/hooks/useNotificationDeepLink";
 
 class StubNotifications implements NotificationsPort {
   // null = normal cold launch (no tap); { id, deepLink } = launched by a tap.
@@ -74,7 +77,10 @@ function wrapperFor(notifications: NotificationsPort) {
   };
 }
 
-beforeEach(() => mockPush.mockClear());
+beforeEach(() => {
+  mockPush.mockClear();
+  resetHandledNotificationTaps();
+});
 
 describe("useNotificationDeepLink", () => {
   it("routes the cold-start notification's deep link once (legacy remap), and not again on re-render", async () => {
@@ -186,6 +192,57 @@ describe("useNotificationDeepLink", () => {
       }),
     );
     expect(mockPush).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not replay the launching tap when the (app) layout remounts (PER-96)", async () => {
+    // A link that leaves the (app) group (e.g. an unknown route -> root
+    // +not-found) unmounts the layout that hosts this hook; AuthGate then
+    // sends the user back to the tabs and the layout mounts again. The OS
+    // still reports the same launching tap from getLastNotificationResponse(),
+    // so a per-mount dedupe routed it again on every mount: an endless
+    // navigation loop ("Maximum update depth exceeded").
+    const notifications = new StubNotifications();
+    notifications.coldStart = {
+      id: "nutrition-1",
+      deepLink: "/nutrition/targets",
+    };
+    const first = renderHook(() => useNotificationDeepLink(true), {
+      wrapper: wrapperFor(notifications),
+    });
+    await waitFor(() => expect(mockPush).toHaveBeenCalledTimes(1));
+    first.unmount();
+
+    renderHook(() => useNotificationDeepLink(true), {
+      wrapper: wrapperFor(notifications),
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await waitFor(() =>
+      expect(notifications.responseListeners).toHaveLength(1),
+    );
+    // The listener re-delivering it after the remount is also a no-op.
+    act(() =>
+      notifications.emitResponse({
+        id: "nutrition-1",
+        deepLink: "/nutrition/targets",
+      }),
+    );
+    expect(mockPush).toHaveBeenCalledTimes(1);
+  });
+
+  it("routes the coach nutrition-target tap to Fuel Targets, not +not-found (PER-96)", async () => {
+    const notifications = new StubNotifications();
+    notifications.coldStart = {
+      id: "nutrition-2",
+      deepLink: "/nutrition/targets",
+    };
+    renderHook(() => useNotificationDeepLink(true), {
+      wrapper: wrapperFor(notifications),
+    });
+    await waitFor(() =>
+      expect(mockPush).toHaveBeenCalledWith("/(app)/fuel/targets"),
+    );
   });
 
   it("is a no-op when disabled", async () => {

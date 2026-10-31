@@ -2,25 +2,17 @@
  * <FuelTargetsContainer> — wires the profile + nutrition-target hooks into
  * the pure <FuelTargetsPresenter> (M9 PR3, STORY-004).
  *
- * The calculator is a "compute fresh each time" tool, matching the design-
- * source prototype (`fuel-targets.jsx` has no concept of restoring a prior
- * session — it always starts from the profile + sensible defaults and lets
- * the sliders drive the live preview). `nutrition_targets` only persists the
- * RESULT (kcal/macros/water/preset), not the calculator inputs (activity
- * level, goal-slider position) — there's no column to hydrate them from.
- * The manual calorie mode (Brad-requested 2026-07-02, post-PR #144) follows
- * the same rule: the typed kcal is an editor input, only the result persists;
- * re-opening the editor starts back in calculated mode.
- *
- * Deliberate scope line for AC 4.6 ("form pre-populates from current target
- * if exists"): only `waterCups` is hydrated from an existing target (a
- * trivial single-field carry-over with no interaction with the live-
- * calculator model). `macroMode`/the goal slider/activity level always start
- * at their defaults — re-deriving a percentage split + activity/goal
- * position from a saved kcal+grams target is possible but adds real
- * complexity (mode-validity checks, an effect racing the cache/fetch
- * lifecycle) for a cosmetic convenience the user resolves in a few taps.
- * Flagged here rather than silently built partially.
+ * Reopening restores what the athlete chose last time (PER-97, 26 Oct user
+ * feedback: "the calculator resets every time"). Sex, age, height and weight
+ * come from the profile and the latest weigh-in. `nutrition_targets` persists
+ * only the RESULT (kcal/macros/water/preset), so the calculator's own inputs
+ * (activity, goal, calorie mode + typed kcal, macro mode + custom split) are
+ * saved per account on this device at Save (`state/fuel-calculator-inputs`)
+ * and read back on open. With no device record (another device, or targets
+ * saved before the fix) the saved target's preset — and for "custom" its
+ * gram-derived split — restores the macro section; activity and goal can't
+ * be derived from a result and start at their defaults. `waterCups` is
+ * hydrated from the saved target as before.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -35,6 +27,13 @@ import { useMealprintPreferences } from "@/ui/hooks/useMealprintPreferences";
 import { useMealprintGate } from "@/ui/hooks/useMealprintGate";
 import { summarisePreferences } from "@/domain/models/mealprint";
 import { useFuelSheets } from "@/state/fuel-sheets";
+import {
+  loadFuelCalculatorInputs,
+  macroInputsFromTarget,
+  saveFuelCalculatorInputs,
+  type FuelCalculatorInputs,
+} from "@/state/fuel-calculator-inputs";
+import { useAuth } from "@/ui/hooks/useAuth";
 import { computeAge, localDayISO, preferredVolumeUnit } from "@/shared/utils";
 import {
   computeFuelTargetsPreview,
@@ -69,6 +68,7 @@ export function FuelTargetsContainer({
   onboarding = false,
 }: { onboarding?: boolean } = {}) {
   const router = useRouter();
+  const userId = useAuth().session?.userId ?? null;
   const profilePage = useProfilePage();
   // Device-QA #5/#7 — the water goal's display unit follows the user's
   // `preferredUnits`, defaulting to litres. `ProfilePageProfile` has no
@@ -108,6 +108,46 @@ export function FuelTargetsContainer({
   const [waterCups, setWaterCups] = useState(DEFAULT_WATER_CUPS);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // PER-97 — reopen on the inputs the athlete last saved. The device record
+  // (activity, goal, calorie mode, split) wins; without one (another device,
+  // or targets saved before this fix) the saved target's preset and grams
+  // restore the macro split. Any edit made before either read lands latches
+  // `inputsTouchedRef`, so a late read never overwrites the athlete's change.
+  const inputsTouchedRef = useRef(false);
+  const [storedInputs, setStoredInputs] = useState<
+    FuelCalculatorInputs | null | undefined
+  >(undefined);
+  useEffect(() => {
+    if (!userId) return;
+    let cancelled = false;
+    void loadFuelCalculatorInputs(userId).then((saved) => {
+      if (cancelled) return;
+      setStoredInputs(saved ?? null);
+      if (!saved || inputsTouchedRef.current) return;
+      inputsTouchedRef.current = true;
+      setActivityId(saved.activityId);
+      setGoal(saved.goal);
+      setCalorieMode(saved.calorieMode);
+      setManualKcalText(saved.manualKcalText);
+      setMacroMode(saved.macroMode);
+      setCustomSplit(saved.customSplit);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
+  useEffect(() => {
+    if (storedInputs !== null || inputsTouchedRef.current) return;
+    const restored = macroInputsFromTarget(target.data);
+    if (!restored) return;
+    inputsTouchedRef.current = true;
+    setMacroMode(restored.macroMode);
+    if (restored.customSplit) setCustomSplit(restored.customSplit);
+  }, [storedInputs, target.data]);
+  const touchInputs = useCallback(() => {
+    inputsTouchedRef.current = true;
+  }, []);
 
   // One-shot: carry over the water goal from an existing target once it's
   // resolved (cache-first, so this often fires synchronously on mount; on a
@@ -197,13 +237,35 @@ export function FuelTargetsContainer({
   // typed earlier in this session survives toggling back and forth.
   const onCalorieModeChange = useCallback(
     (mode: CalorieMode) => {
+      touchInputs();
       if (mode === "manual" && manualKcalText === "") {
         const seed = preview.kcal ?? target.data?.dailyKcal ?? null;
         if (seed !== null) setManualKcalText(String(seed));
       }
       setCalorieMode(mode);
     },
-    [manualKcalText, preview.kcal, target.data],
+    [manualKcalText, preview.kcal, target.data, touchInputs],
+  );
+  const onManualKcalTextChange = useCallback(
+    (text: string) => {
+      touchInputs();
+      setManualKcalText(text);
+    },
+    [touchInputs],
+  );
+  const onActivityChange = useCallback(
+    (id: ActivityLevel["id"]) => {
+      touchInputs();
+      setActivityId(id);
+    },
+    [touchInputs],
+  );
+  const onGoalChange = useCallback(
+    (next: number) => {
+      touchInputs();
+      setGoal(next);
+    },
+    [touchInputs],
   );
 
   // Switching INTO Custom mode snapshots whatever split was effectively
@@ -213,25 +275,35 @@ export function FuelTargetsContainer({
   // each fixed preset's split is a pure constant lookup.
   const onMacroModeChange = useCallback(
     (nextMode: MacroPresetMode) => {
+      touchInputs();
       if (nextMode === "custom" && macroMode !== "custom") {
         setCustomSplit(presetSplit(macroMode, goal));
       }
       setMacroMode(nextMode);
     },
-    [macroMode, goal],
+    [macroMode, goal, touchInputs],
   );
 
   const onProteinPctChange = useCallback(
-    (pct: number) => setCustomSplit((prev) => ({ ...prev, proteinPct: pct })),
-    [],
+    (pct: number) => {
+      touchInputs();
+      setCustomSplit((prev) => ({ ...prev, proteinPct: pct }));
+    },
+    [touchInputs],
   );
   const onCarbsPctChange = useCallback(
-    (pct: number) => setCustomSplit((prev) => ({ ...prev, carbsPct: pct })),
-    [],
+    (pct: number) => {
+      touchInputs();
+      setCustomSplit((prev) => ({ ...prev, carbsPct: pct }));
+    },
+    [touchInputs],
   );
   const onFatPctChange = useCallback(
-    (pct: number) => setCustomSplit((prev) => ({ ...prev, fatPct: pct })),
-    [],
+    (pct: number) => {
+      touchInputs();
+      setCustomSplit((prev) => ({ ...prev, fatPct: pct }));
+    },
+    [touchInputs],
   );
 
   const onCancel = useCallback(() => {
@@ -271,6 +343,17 @@ export function FuelTargetsContainer({
         setErrorMessage("Couldn't save your targets. Please try again.");
         return;
       }
+      // PER-97 — remember the inputs behind these targets for the next open.
+      if (userId) {
+        await saveFuelCalculatorInputs(userId, {
+          activityId,
+          goal,
+          calorieMode,
+          manualKcalText,
+          macroMode,
+          customSplit,
+        });
+      }
       // Signal the Fuel screen (a pushed route underneath us) to re-read +
       // reconcile so the new target shows immediately on return, not on the
       // next cold start. Same mechanism the Scan/QuickAdd/Snap sheets and
@@ -280,7 +363,20 @@ export function FuelTargetsContainer({
     } finally {
       setIsSaving(false);
     }
-  }, [preview, waterCups, macroMode, setTargets, notifyFuelMutated, router]);
+  }, [
+    preview,
+    waterCups,
+    macroMode,
+    setTargets,
+    notifyFuelMutated,
+    router,
+    userId,
+    activityId,
+    goal,
+    calorieMode,
+    manualKcalText,
+    customSplit,
+  ]);
 
   const isLoadingInitial =
     (profilePage.isRefreshing ||
@@ -325,16 +421,16 @@ export function FuelTargetsContainer({
       calorieMode={calorieMode}
       onCalorieModeChange={onCalorieModeChange}
       manualKcalText={manualKcalText}
-      onManualKcalTextChange={setManualKcalText}
+      onManualKcalTextChange={onManualKcalTextChange}
       tdee={preview.tdee}
       kcal={preview.kcal}
       goalLabelInfo={preview.goalLabel}
       macroSplit={preview.macroSplit}
       macroGrams={preview.macroGrams}
       activityId={activityId}
-      onActivityChange={setActivityId}
+      onActivityChange={onActivityChange}
       goal={goal}
-      onGoalChange={setGoal}
+      onGoalChange={onGoalChange}
       macroMode={macroMode}
       onMacroModeChange={onMacroModeChange}
       onProteinPctChange={onProteinPctChange}

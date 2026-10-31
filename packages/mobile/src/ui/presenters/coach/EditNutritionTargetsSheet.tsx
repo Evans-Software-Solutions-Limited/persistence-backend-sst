@@ -21,8 +21,10 @@ import {
 import {
   cupsToLitres,
   formatLitres,
+  lbToKg,
   litresToCups,
   type VolumeUnit,
+  type WeightUnit,
 } from "@/shared/utils";
 
 /**
@@ -70,6 +72,19 @@ export function parseBodyStat(raw: string): number | null {
   if (!/^\d+(\.\d+)?$/.test(trimmed)) return null;
   const n = Number.parseFloat(trimmed);
   return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/**
+ * The calculator's weight field, typed in the coach's preferred unit (PER-98),
+ * as kilograms for the TDEE maths. Null on blank/invalid/≤0.
+ */
+export function weightKgFromInput(
+  raw: string,
+  unit: WeightUnit,
+): number | null {
+  const value = parseBodyStat(raw);
+  if (value === null) return null;
+  return unit === "lb" ? lbToKg(value) : value;
 }
 
 /**
@@ -218,6 +233,7 @@ export function EditNutritionTargetsSheet() {
   // The CLIENT's preferred display unit for the water field (device-QA
   // follow-up) — default litres, cups only for an explicitly-imperial client.
   const volumeUnit = useEditNutritionTargetsSheet((s) => s.volumeUnit);
+  const weightUnit = useEditNutritionTargetsSheet((s) => s.weightUnit);
   const isCups = volumeUnit === "cups";
 
   const { api } = useAdapters();
@@ -318,14 +334,23 @@ export function EditNutritionTargetsSheet() {
           sex,
           age: parseBodyStat(ageText),
           heightCm: parseBodyStat(heightText),
-          weightKg: parseBodyStat(weightText),
+          weightKg: weightKgFromInput(weightText, weightUnit),
         },
         activityId,
         goal,
         macroMode,
         recommendedSplit(goal),
       ),
-    [sex, ageText, heightText, weightText, activityId, goal, macroMode],
+    [
+      sex,
+      ageText,
+      heightText,
+      weightText,
+      weightUnit,
+      activityId,
+      goal,
+      macroMode,
+    ],
   );
 
   // Calculator payload — the computed kcal/macros plus a manually-entered water
@@ -471,7 +496,7 @@ export function EditNutritionTargetsSheet() {
                 />
               </View>
               <View flex={1} gap={8}>
-                <SectionLabel>Weight · kg</SectionLabel>
+                <SectionLabel>{`Weight · ${weightUnit}`}</SectionLabel>
                 <TextInput
                   value={weightText}
                   onChangeText={setWeightText}

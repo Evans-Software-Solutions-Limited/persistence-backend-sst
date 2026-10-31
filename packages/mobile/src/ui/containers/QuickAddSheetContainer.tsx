@@ -22,6 +22,7 @@ import {
 import {
   MEAL_SLOTS,
   entryDisplayLabel,
+  foodOwnServing,
   perServingDivisor,
   type EntryNameLookups,
 } from "@/domain/services";
@@ -250,7 +251,9 @@ export function QuickAddSheetContainer() {
     await logEntry.mutate({
       foodId: selected.id,
       mealSlot: slot,
-      servings,
+      // The stepper counts the food's own servings (PER-100); the entry stores
+      // multiples of the food's macro basis (per 100 g for Open Food Facts).
+      servings: servings * foodOwnServing(selected).multiplier,
       loggedAt,
     });
     notifyMutated();

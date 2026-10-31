@@ -6,6 +6,7 @@ import { useResolveBarcode } from "@/ui/hooks/useResolveBarcode";
 import { useLogEntry } from "@/ui/hooks/useLogEntry";
 import { dayLabel, loggedAtNoonUtc, localDayISO } from "@/shared/utils";
 import {
+  per100Macros,
   portionToServings,
   scaleFoodMacros,
   type PortionMode,
@@ -138,6 +139,7 @@ export function ScanBarcodeSheetContainer() {
         : { kcal: 0, proteinG: 0, carbsG: 0, fatG: 0 },
     [food, servingsScale],
   );
+  const per100 = useMemo(() => (food ? per100Macros(food) : null), [food]);
 
   const onPortionDec = useCallback(() => {
     if (portionMode === "serving")
@@ -185,7 +187,9 @@ export function ScanBarcodeSheetContainer() {
       onPortionDec={onPortionDec}
       onPortionInc={onPortionInc}
       effectiveGrams={effectiveGrams}
+      effectiveAmount={servingsScale * effSize}
       scaled={scaled}
+      per100={per100}
       slot={slot}
       onSlotChange={setSlot}
       onAdd={() => void onAdd()}

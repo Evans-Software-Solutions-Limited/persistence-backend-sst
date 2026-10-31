@@ -1,3 +1,4 @@
+import { useProfilePage } from "@/ui/hooks/useProfilePage";
 import { useDiscardWorkout } from "@/ui/hooks/useDiscardWorkout";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ScrollView } from "react-native";
@@ -17,6 +18,8 @@ export function TogetherRecoveryContainer() {
       : undefined;
   const { togetherLobby, storage } = useAdapters();
   const { session: auth } = useAuth();
+  // PER-98: reviewed sets are shown in the athlete's weight unit.
+  const weightUnit = useProfilePage().payload?.profile.weightUnit;
   const userId = auth?.userId;
   const workout = togetherLobby?.workout;
   const scope = useMemo(
@@ -165,6 +168,7 @@ export function TogetherRecoveryContainer() {
     >
       <ScrollView contentContainerStyle={{ padding: 20 }}>
         <TogetherRecoveryPresenter
+          weightUnit={weightUnit}
           name={draft?.name ?? "Together workout"}
           review={review}
           busy={busy}

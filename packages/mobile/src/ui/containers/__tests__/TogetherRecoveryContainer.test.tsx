@@ -36,6 +36,9 @@ jest.mock("@/ui/hooks/useAuth", () => ({
 jest.mock("@/ui/hooks/useAdapters", () => ({
   useAdapters: () => mockAdapters,
 }));
+jest.mock("@/ui/hooks/useProfilePage", () => ({
+  useProfilePage: () => ({ payload: { profile: { weightUnit: "lb" } } }),
+}));
 function candidate(
   status: TogetherWorkoutReview["status"] = "stored_for_review",
 ): TogetherWorkoutReview {

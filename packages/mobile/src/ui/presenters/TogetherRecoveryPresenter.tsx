@@ -2,6 +2,7 @@ import { Text, View } from "@tamagui/core";
 import { Btn } from "@/ui/components/foundation/Btn";
 import { Card } from "@/ui/components/foundation/Card";
 import type { TogetherWorkoutReview } from "@/domain/ports/togetherWorkout.port";
+import { kgToLb, weightInUnit, type WeightUnit } from "@/shared/utils";
 
 export interface TogetherRecoveryPresenterProps {
   name: string;
@@ -15,6 +16,8 @@ export interface TogetherRecoveryPresenterProps {
   onBack(): void;
   onDone(): void;
   onDiscard?(): void;
+  /** The athlete's weight-display preference (PER-98); defaults to kg. */
+  weightUnit?: WeightUnit;
 }
 const Copy = ({ children }: { children: React.ReactNode }) => (
   <Text fontFamily="$body" fontSize={13} lineHeight={20} color="$text2">
@@ -30,6 +33,11 @@ export function TogetherRecoveryPresenter(p: TogetherRecoveryPresenterProps) {
       e.skipped ? [] : e.sets.filter((s) => s.completed),
     ) ?? [];
   const volume = sets.reduce((n, s) => n + s.reps * s.weightKg, 0);
+  const unit = p.weightUnit ?? "kg";
+  const volumeText =
+    unit === "lb"
+      ? Math.round(kgToLb(volume)).toLocaleString()
+      : volume.toLocaleString();
   return (
     <View gap={16} testID="together-recovery">
       <Btn variant="ghost" onPress={p.onBack}>
@@ -72,7 +80,7 @@ export function TogetherRecoveryPresenter(p: TogetherRecoveryPresenterProps) {
           {p.review ? (
             <>
               <Copy>
-                {sets.length} completed sets · {volume.toLocaleString()} kg
+                {sets.length} completed sets · {volumeText} {unit}
               </Copy>
               {p.review.execution.exercises.map((e) => {
                 const plan = p.review!.plan.exercises.find(
@@ -90,7 +98,8 @@ export function TogetherRecoveryPresenter(p: TogetherRecoveryPresenterProps) {
                         .filter((s) => s.completed)
                         .map((s, i) => (
                           <Copy key={s.setId}>
-                            Set {i + 1} · {s.reps} reps · {s.weightKg} kg
+                            Set {i + 1} · {s.reps} reps ·{" "}
+                            {weightInUnit(s.weightKg, unit)} {unit}
                           </Copy>
                         ))}
                   </View>

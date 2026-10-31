@@ -191,6 +191,22 @@ describe("buildClientBodyTrend", () => {
     expect(trend.bodyFat).toEqual({ current: 21, delta: -1, series: [22, 21] });
   });
 
+  it("shows the client's weight in the coach's lb preference (PER-98)", () => {
+    const trend = buildClientBodyTrend(
+      [
+        { date: "2026-06-01", weightKg: 82, bodyFat: null },
+        { date: "2026-06-20", weightKg: 80, bodyFat: 21 },
+      ],
+      "lb",
+    );
+    expect(trend.weight).toEqual({
+      current: 176.4,
+      delta: -4.4,
+      series: [82, 80],
+      unit: "lb",
+    });
+  });
+
   it("handles an empty series", () => {
     const trend = buildClientBodyTrend([]);
     expect(trend.weight.current).toBeNull();
