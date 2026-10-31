@@ -14,6 +14,7 @@ import {
 import { TogetherCloudPresenter } from "../../presenters/TogetherCloudPresenter";
 import { TogetherPartnerPresenter } from "../../presenters/TogetherPartnerPresenter";
 import { TogetherSharingPresenter } from "../../presenters/TogetherSharingPresenter";
+import { TogetherWorkoutRow } from "../../presenters/TogetherWorkoutRow";
 import type {
   TogetherCloudApi,
   TogetherCloudPort,
@@ -610,6 +611,43 @@ it("Online: the partner view closes when the partner leaves or the session snaps
   // back into the partner's.
   act(() => h.publish({ phase: "active", snapshot: structuredClone(server) }));
   expect(r.getByTestId("own-workout")).toBeTruthy();
+});
+it("Online: a partner who finished their own workout drops off the host's strip and tabs (TestFlight 31 Oct)", async () => {
+  // An older guest app finishes without leaving, so the server keeps their
+  // seat with a saved result: the host's phone kept showing them.
+  const h = setup(true);
+  const r = renderWithTheme(
+    <TogetherCloudContainer {...h.props}>
+      {(row, partnerView) => (
+        <>
+          {row}
+          {partnerView ?? <Text testID="own-workout">own</Text>}
+        </>
+      )}
+    </TogetherCloudContainer>,
+  );
+  const strip = () =>
+    r.UNSAFE_getByType(TogetherWorkoutRow).props as React.ComponentProps<
+      typeof TogetherWorkoutRow
+    >;
+  expect(strip().members.map((m) => m.userId)).toEqual(["u", "v"]);
+  expect(strip().status).toBe("In sync · 2 training");
+  fireEvent.press(r.getByLabelText("Show Athlete 2’s workout"));
+  await act(async () => {});
+  expect(r.queryByTestId("own-workout")).toBeNull();
+  const finished = structuredClone(h.state().snapshot!);
+  finished.participants.find((x) => x.userId === "v")!.status = "saved";
+  act(() => h.publish({ snapshot: finished }));
+  expect(strip().members.map((m) => m.userId)).toEqual(["u"]);
+  expect(strip().status).toBe("Waiting for people · 1 of 4");
+  expect(r.getByTestId("own-workout")).toBeTruthy();
+  expect(r.queryByLabelText("Show Athlete 2’s workout")).toBeNull();
+  fireEvent.press(r.getByText("End"));
+  expect(
+    r.getByText(
+      "Everyone keeps their own workout and carries on solo. Nobody new can join.",
+    ),
+  ).toBeTruthy();
 });
 it("Online: backgrounding for a moment keeps what you typed for a partner", async () => {
   const h = setup(true);

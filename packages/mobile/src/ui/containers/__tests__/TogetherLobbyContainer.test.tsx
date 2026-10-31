@@ -2048,6 +2048,105 @@ describe("leaving and ending (canvas row 3)", () => {
     expect(r.UNSAFE_queryByType(TogetherWorkoutRow)).toBeNull();
   });
 
+  it("a guest who leaves or finishes drops off the host's strip, tabs and sheets (TestFlight 31 Oct)", () => {
+    // The guest's closure arrives but the signed roster keeps their seat: the
+    // host's phone kept showing them in the session.
+    const h = sharingHarness();
+    h.setShared({ profiles: { other: "Libby", third: "Mia" } });
+    const r = mountShared(h, {
+      displayName: "Brad",
+      getWorkout: () => withSets(2),
+      children: (row, partnerView) => (
+        <View testID={partnerView ? "partner-screen" : "personal-workout"}>
+          {row}
+          {partnerView}
+        </View>
+      ),
+    });
+    h.publish({
+      phase: "hosting",
+      role: "host",
+      sessionId: "s1",
+      members: [
+        { userId: "a", host: true },
+        { userId: "other", host: false },
+        { userId: "third", host: false },
+      ],
+    });
+    h.update("active");
+    expect(leaveRow(r).members.map((m: { name: string }) => m.name)).toEqual([
+      "Brad",
+      "Libby",
+      "Mia",
+    ]);
+    expect(leaveRow(r).status).toBe("In sync · 3 training");
+    fireEvent.press(r.getByLabelText("Show Libby’s workout"));
+    expect(r.getByTestId("partner-screen")).toBeTruthy();
+    // Libby leaves (Leave, or Finish just mine: both publish `leave`).
+    act(() => h.setShared({ closures: [{ userId: "other", mode: "leave" }] }));
+    expect(leaveRow(r).members.map((m: { name: string }) => m.name)).toEqual([
+      "Brad",
+      "Mia",
+    ]);
+    expect(leaveRow(r).status).toBe("In sync · 2 training");
+    expect(r.getByTestId("personal-workout")).toBeTruthy();
+    expect(r.queryByLabelText("Show Libby’s workout")).toBeNull();
+    expect(shareProps(r).removable?.map((p) => p.name)).toEqual(["Mia"]);
+    act(() => leaveRow(r).onEnd());
+    expect(
+      r.getByText(
+        "Everyone keeps their own workout and carries on solo. Nobody new can join.",
+      ),
+    ).toBeTruthy();
+    // No toast: a guest leaving is not the host ending it.
+    expect(r.queryByTestId("together-toast")).toBeNull();
+    // Mia goes too: the host is left waiting, still hosting.
+    act(() =>
+      h.setShared({
+        closures: [
+          { userId: "other", mode: "leave" },
+          { userId: "third", mode: "leave" },
+        ],
+      }),
+    );
+    expect(leaveRow(r).members.map((m: { name: string }) => m.name)).toEqual([
+      "Brad",
+    ]);
+    expect(leaveRow(r).status).toBe("Waiting for people · 1 of 4");
+  });
+
+  it("another guest leaving drops them on a guest's strip, but the host stays until they end it", () => {
+    const h = sharingHarness();
+    h.setShared({ profiles: { host: "Brad", other: "Libby" } });
+    const r = mountShared(h, { getWorkout: () => withSets(1) });
+    h.publish({
+      phase: "joined",
+      role: "guest",
+      sessionId: "s1",
+      members: [
+        { userId: "host", host: true },
+        { userId: "a", host: false },
+        { userId: "other", host: false },
+      ],
+    });
+    h.update("active");
+    act(() => h.setShared({ closures: [{ userId: "other", mode: "leave" }] }));
+    expect(
+      leaveRow(r).members.map((m: { userId: string }) => m.userId),
+    ).toEqual(["host", "a"]);
+    act(() =>
+      h.setShared({
+        closures: [
+          { userId: "other", mode: "leave" },
+          { userId: "host", mode: "save_own" },
+        ],
+      }),
+    );
+    expect(
+      leaveRow(r).members.map((m: { userId: string }) => m.userId),
+    ).toEqual(["host", "a"]);
+  });
+
   it("a recovering workout keeps its row so its review stays reachable", () => {
     const h = workoutHarness();
     const r = renderWithTheme(

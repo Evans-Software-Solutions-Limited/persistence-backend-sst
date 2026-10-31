@@ -1936,6 +1936,26 @@ describe("reviewed lobby coordinator, real cryptography and SQLite, simulated na
         ).toBe("local-only");
     },
   );
+  it("a guest's Leave reaches the host as a closure before the lobby stops, while the signed roster keeps the seat", async () => {
+    // TestFlight 31 Oct: the host's strip read the roster, which a Leave never
+    // changes; the closure is what says the guest has gone (PER-60).
+    const { host, guest } = await sharedPair();
+    // As the strip's Leave does: close, then cancel the lobby straight away.
+    await guest.controller.shared.close("leave");
+    await guest.controller.cancel();
+    await settle();
+    expect(host.controller.shared.getSnapshot().closures).toEqual([
+      { userId: id(2), mode: "leave" },
+    ]);
+    expect(host.controller.getSnapshot().members.map((m) => m.userId)).toEqual([
+      id(1),
+      id(2),
+    ]);
+    // The host carries on sharing; only the guest's own logging went solo.
+    expect(
+      host.controller.workout.status(id(1), "local-session")?.sharing,
+    ).toBe("active");
+  });
   it.each(["success", "missing", "denied"] as const)(
     "expired own logging uses original recovery signer (%s), never reprovisioning",
     async (outcome) => {

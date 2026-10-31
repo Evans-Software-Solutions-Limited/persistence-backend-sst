@@ -54,7 +54,10 @@ export async function completeTogetherSession(
         await cloud.close(input.mode, candidate.token);
       } else if (input.mode === "save_own" && snapshot.hostId === deps.userId)
         await cloud.close(input.mode, candidate.token);
-      else if (input.mode === "leave") await cloud.leave(candidate.token);
+      // A guest finishing their own workout leaves the session (PER-60): a
+      // plain finish kept them in the host's roster as a finished partner.
+      else if (input.mode === "leave" || input.mode === "save_own")
+        await cloud.leave(candidate.token);
       else await cloud.finish(candidate.token);
     }
     guard();

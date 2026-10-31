@@ -465,10 +465,18 @@ export function TogetherCloudContainer(p: {
   const shared = cloudSharedView(state, p.accountId);
   const partner = (id: string) =>
     state.snapshot?.participants.find((x) => x.userId === id);
-  const present = viewing ? !!partner(viewing) : true;
+  // Who is still training here, for the strip and partner tabs (PER-60): a
+  // partner who finished their own workout has left the session, even when an
+  // older app kept their seat. The sharing sheet still lists them as finished.
+  const present = (state.snapshot?.participants ?? []).filter(
+    (x) => x.userId === p.accountId || x.status === "active",
+  );
+  const viewingPresent = viewing
+    ? present.some((x) => x.userId === viewing)
+    : true;
   useEffect(() => {
-    if (!present) setViewing(null);
-  }, [present]);
+    if (!viewingPresent) setViewing(null);
+  }, [viewingPresent]);
   // Fill-in for partners outlives their view (see useTogetherPartnerOutbox).
   const partnerOutbox = useTogetherPartnerOutbox({
     snapshot: shared,
@@ -639,7 +647,7 @@ export function TogetherCloudContainer(p: {
     } as never);
   };
   const hosting = state.snapshot?.hostId === p.accountId;
-  const members = state.snapshot?.participants.length ?? 0;
+  const members = present.length;
   // Once sharing stops the snapshot lists only this athlete, so the host's
   // name is remembered from when it was live.
   const hostNameSeen = useRef<{ session?: string; name?: string }>({});
@@ -732,7 +740,7 @@ export function TogetherCloudContainer(p: {
   // Your own avatar is the only way back, so a partner view never outlives
   // the strip (snapshot cleared) or the partner (they left the session).
   const partnerView =
-    !soloAgain && viewing && partner(viewing) ? (
+    !soloAgain && viewing && viewingPresent ? (
       <TogetherPartnerPresenter
         key={viewing}
         weightUnit={p.weightUnit}
@@ -740,11 +748,7 @@ export function TogetherCloudContainer(p: {
         ownerId={viewing}
         accountId={p.accountId}
         exerciseNames={names}
-        tone={togetherMemberTone(
-          state.snapshot?.participants ?? [],
-          p.accountId,
-          viewing,
-        )}
+        tone={togetherMemberTone(present, p.accountId, viewing)}
         editable={
           !!partner(viewing)?.allowPartnerLogging &&
           togetherPartnerAccess(shared, viewing, p.accountId).editable
@@ -755,7 +759,7 @@ export function TogetherCloudContainer(p: {
   const row = soloAgain ? null : state.snapshot ? (
     <>
       <TogetherWorkoutRow
-        members={state.snapshot.participants.map((x, i) => ({
+        members={present.map((x, i) => ({
           userId: x.userId,
           name:
             x.userId === p.accountId
@@ -793,7 +797,7 @@ export function TogetherCloudContainer(p: {
           <TogetherJoinRequestBar
             key={r.requestId}
             name={r.displayName ?? "Someone"}
-            busy={busy || members >= 4}
+            busy={busy || (state.snapshot?.participants.length ?? 0) >= 4}
             onAdmit={() => run(() => p.cloud.decide(r.requestId, "approve"))}
             onDeny={() => run(() => p.cloud.decide(r.requestId, "reject"))}
           />
@@ -853,14 +857,14 @@ export function TogetherCloudContainer(p: {
         visible={leaveOpen && !soloAgain && !!state.snapshot}
         role={hosting ? "host" : "guest"}
         hostName={hostName}
-        others={(state.snapshot?.participants ?? [])
+        others={present
           .filter((x) => x.userId !== p.accountId)
           .map((x, i) => x.displayName ?? `Athlete ${i + 1}`)}
         loggedSets={loggedSets(p.getWorkout())}
         unsent={unsentFor(
           partnerOutbox.unsent(),
           (id) => partner(id)?.displayName ?? "your partner",
-          (state.snapshot?.participants ?? []).map((x) => x.userId),
+          present.map((x) => x.userId),
         )}
         onStay={() => setLeaveOpen(false)}
         onConfirm={leave}

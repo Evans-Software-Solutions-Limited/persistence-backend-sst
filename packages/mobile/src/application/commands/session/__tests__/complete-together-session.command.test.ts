@@ -273,13 +273,29 @@ it("allows a failed closure delivery to retry against the same saved result", as
   expect(h.deps.storage.getPendingMutations()).toHaveLength(1);
 });
 
-it("finishes a guest result without calling the host-only close endpoint", async () => {
+it("finishes a guest result by leaving, without the host-only close endpoint", async () => {
+  // PER-60: a guest's Finish is the solo finish and leaves the session. A
+  // plain finish kept them on the host's strip as a finished partner.
   const h = setup("cloud");
   h.snapshot.hostId = "host";
   h.deps.cloud.close = jest.fn();
+  const finish = jest.fn();
+  const leave = h.cloudFinish;
+  h.deps.cloud.finish = finish;
+  h.deps.cloud.leave = leave;
   await completeTogetherSession(h.deps, { ...input, mode: "save_own" });
   expect(h.deps.cloud.close).not.toHaveBeenCalled();
-  expect(h.deps.cloud.finish).toHaveBeenCalledWith("token");
+  expect(finish).not.toHaveBeenCalled();
+  expect(leave).toHaveBeenCalledWith("token");
+});
+it("finishes a guest without a mode as a plain finish", async () => {
+  const h = setup("cloud");
+  h.snapshot.hostId = "host";
+  const leave = jest.fn();
+  h.deps.cloud.leave = leave;
+  await completeTogetherSession(h.deps, input);
+  expect(leave).not.toHaveBeenCalled();
+  expect(h.cloudFinish).toHaveBeenCalledWith("token");
 });
 it("rejects finish-all if host authority changed before submit", async () => {
   const h = setup("cloud");
