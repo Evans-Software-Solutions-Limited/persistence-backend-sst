@@ -1956,6 +1956,43 @@ describe("reviewed lobby coordinator, real cryptography and SQLite, simulated na
       host.controller.workout.status(id(1), "local-session")?.sharing,
     ).toBe("active");
   });
+  it("a guest who left and scans the same QR is told they left, not a generic secure-connection failure (TestFlight 31 Oct)", async () => {
+    const { host, guest } = await sharedPair();
+    await guest.controller.shared.close("leave");
+    await guest.controller.cancel();
+    await settle();
+    // Same single-session invitation, scanned again.
+    await guest.controller.selectInvite(
+      host.controller.getSnapshot().invitation!,
+    );
+    expect(guest.controller.getSnapshot()).toMatchObject({
+      phase: "unavailable",
+      error: "session-left",
+    });
+    expect(guest.native.startDiscovery).toHaveBeenCalledTimes(1);
+  });
+  it("a guest who left and reaches the same session by search is told they left at Join", async () => {
+    const host = setup(),
+      guest = setup(2);
+    await host.controller.host("Open", "open");
+    await join(host, guest);
+    const pending = host.controller.getSnapshot().pending[0];
+    await host.controller.approve(pending.peerId);
+    await settle();
+    expect(guest.controller.getSnapshot().phase).toBe("joined");
+    await guest.controller.cancel();
+    await settle();
+    await guest.controller.browse();
+    const session = await probe(host, guest);
+    await guest.controller.selectDiscovered(session);
+    expect(guest.controller.getSnapshot().phase).toBe("selected");
+    await guest.controller.join();
+    await settle();
+    expect(guest.controller.getSnapshot()).toMatchObject({
+      phase: "unavailable",
+      error: "session-left",
+    });
+  });
   it.each(["success", "missing", "denied"] as const)(
     "expired own logging uses original recovery signer (%s), never reprovisioning",
     async (outcome) => {

@@ -71,6 +71,7 @@ const SELECTION_ERRORS = new Set([
   "host-unavailable",
   "own-invitation",
   "code-not-found",
+  "session-left",
 ]);
 export function togetherSearchFailure(code: string): string {
   return RADIO_OFF.test(code) && !SELECTION_ERRORS.has(code)
@@ -113,6 +114,7 @@ const CODE_COPY: Record<string, string> = {
     "Couldn’t find that code. Nearby sessions show after a search, Online ones need internet. Ask the host to show their QR.",
   "code-offline":
     "No internet to check that code. Nearby sessions show after a search; otherwise ask the host to show their QR.",
+  "session-left": togetherErrorCopy("session-left"),
 };
 
 /** Canvas row 1: Join a session → Join this workout → Joining → the workout. */

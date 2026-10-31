@@ -427,6 +427,23 @@ it("an admission while another action holds the lock is adopted once the lock fr
   );
   expect(mockLobby.workout.promote).toHaveBeenCalledTimes(1);
 });
+it("scanning the QR of a session you left says you left, and the list is not a radio failure (TestFlight 31 Oct)", async () => {
+  mockParams = { connection: "local", invitation: "invite" };
+  mockLobby.selectInvite.mockImplementationOnce(async () => {
+    publish({ phase: "unavailable", error: "session-left" });
+  });
+  const r = renderWithTheme(<TogetherJoinContainer />);
+  await waitFor(() =>
+    expect(
+      r.getByText(
+        "You left this session, so you can’t rejoin it. Keep training on your own, or ask the host to start a new session.",
+      ),
+    ).toBeTruthy(),
+  );
+  expect(r.queryByText(/Could not connect/)).toBeNull();
+  expect(r.queryByText("Can’t search nearby")).toBeNull();
+  expect(r.queryByText("Join this workout")).toBeNull();
+});
 it("a non-partner asks to join and waits for the host; cancel returns to the list", async () => {
   const r = renderWithTheme(<TogetherJoinContainer />);
   await waitFor(() => expect(mockLobby.browse).toHaveBeenCalled());

@@ -757,6 +757,7 @@ export class TogetherLobbyController implements TogetherLobbyPort {
         throw new Error("own-invitation");
       if (this.deniedHost(selected.hostUserId))
         throw new Error("host-unavailable");
+      this.assertNotLeft(selected.sessionId);
       this.selected = selected;
       this.publish({
         phase: "selected",
@@ -802,6 +803,7 @@ export class TogetherLobbyController implements TogetherLobbyPort {
       selected = this.selected;
     this.publish({ phase: "preparing", error: undefined });
     try {
+      this.assertNotLeft(selected.sessionId);
       verifyCredential(selected.credential, identity.trustedKeys, this.now());
       const friendship = await this.options.provisioning.friendship(
         selected.hostUserId,
@@ -827,6 +829,22 @@ export class TogetherLobbyController implements TogetherLobbyPort {
       await this.start(resources, generation);
     } catch (error) {
       this.failure(error, generation);
+    }
+  }
+  /**
+   * Leaving is terminal for that session on this phone: the local store is
+   * closed for it, and the host keeps the seat under the first consent, so a
+   * second join can never be admitted. Without this the join died inside the
+   * restored shared session with "Local sharing closed", which had no copy
+   * ("Could not connect securely", TestFlight 31 Oct, PER-60).
+   */
+  private assertNotLeft(sessionId: string) {
+    try {
+      new TogetherLocalStore(this.options.database, this.account!).assertOpen(
+        sessionId,
+      );
+    } catch {
+      throw new Error("session-left");
     }
   }
   private consent(pin: HostPin, identity: ReadyIdentity) {
