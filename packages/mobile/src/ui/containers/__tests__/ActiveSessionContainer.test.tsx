@@ -616,7 +616,21 @@ describe("ActiveSessionContainer", () => {
       startedAt: "2026-05-05T10:00:00.000Z",
       completedAt: null,
       notes: null,
-      exercises: [],
+      // A session with an exercise: an empty one queues nothing (PER-83).
+      exercises: [
+        {
+          id: "se-1",
+          sessionId: "local-1",
+          exerciseId: "ex-bench",
+          exerciseName: "Bench Press",
+          sortOrder: 0,
+          supersetGroup: null,
+          isSubstituted: false,
+          originalExerciseId: null,
+          notes: null,
+          sets: [],
+        },
+      ],
     });
     useActiveWorkout.setState({
       active: {
@@ -702,12 +716,13 @@ describe("ActiveSessionContainer", () => {
     fireEvent.press(await findByTestId("session-end"));
     expect(await findByTestId("end-confirm-dialog")).toBeTruthy();
 
-    // Confirm "End" → bulk cancellation queued + modal stack collapsed.
+    // Confirm "End" → the session is cancelled + modal stack collapsed. It
+    // has no exercises, so there is nothing to record: the server rejects
+    // `exercises: []` with a 422, which stranded a failed sync (PER-83).
     fireEvent.press(await findByTestId("end-confirm-dialog-end"));
 
-    const queue = storage.getPendingMutations();
-    expect(queue).toHaveLength(1);
-    expect(JSON.parse(queue[0].payload).status).toBe("cancelled");
+    expect(storage.getUncompletedMutations()).toHaveLength(0);
+    expect(storage.getLatestSession("user-1")?.status).toBe("cancelled");
     expect(mockRouterDismissAll).toHaveBeenCalled();
     expect(queryByTestId("end-confirm-dialog")).toBeNull();
     // Bug fix (🟡): the in-session End path must clear the slice too, not just

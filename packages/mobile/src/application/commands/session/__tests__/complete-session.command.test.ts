@@ -1,6 +1,7 @@
 import {
   completeSessionCommand,
   finalizeSessionCommand,
+  isUnrecordableSessionPayload,
 } from "../complete-session.command";
 import { cancelSessionCommand } from "../cancel-session.command";
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
@@ -394,6 +395,63 @@ describe("cancelSessionCommand", () => {
       "/trainers/me/clients/client-9/sessions/record",
     );
     expect(JSON.parse(queue[0].payload).status).toBe("cancelled");
+  });
+
+  // PER-83: the server rejects `exercises: []` with a deterministic 422, so
+  // discarding an empty Quick Workout used to strand a failed sync entry.
+  it("discarding an empty workout queues no record (PER-83)", () => {
+    storage.cacheActiveSession(
+      "user-1",
+      buildSession({ workoutId: null, name: "Quick Workout", exercises: [] }),
+    );
+    const result = cancelSessionCommand({ storage, userId: "user-1", now });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.session.status).toBe("cancelled");
+    expect(storage.getUncompletedMutations()).toHaveLength(0);
+    // Same local outcome as a recorded discard: the row is finalized, so it
+    // is no longer the active session.
+    expect(storage.getActiveSession("user-1")).toBeNull();
+    expect(storage.getLatestSession("user-1")?.status).toBe("cancelled");
+  });
+
+  it("discarding an empty coach-run workout queues no on-behalf record (PER-83)", () => {
+    storage.cacheActiveSession("user-1", buildSession({ exercises: [] }));
+    cancelSessionCommand(
+      { storage, userId: "user-1", now },
+      { onBehalfClientId: "client-9" },
+    );
+    expect(storage.getUncompletedMutations()).toHaveLength(0);
+  });
+
+  it("completing a session with no exercises queues no record (PER-83)", () => {
+    storage.cacheActiveSession("user-1", buildSession({ exercises: [] }));
+    const result = completeSessionCommand({ storage, userId: "user-1", now });
+    expect(result.ok).toBe(true);
+    expect(storage.getUncompletedMutations()).toHaveLength(0);
+  });
+
+  it("an exercise with no sets still records exactly as before (PER-83)", () => {
+    const base = buildSession();
+    storage.cacheActiveSession(
+      "user-1",
+      buildSession({ exercises: [{ ...base.exercises[0], sets: [] }] }),
+    );
+    cancelSessionCommand({ storage, userId: "user-1", now });
+    const queue = storage.getPendingMutations();
+    expect(queue).toHaveLength(1);
+    expect(JSON.parse(queue[0].payload).exercises).toHaveLength(1);
+  });
+});
+
+describe("isUnrecordableSessionPayload (PER-83)", () => {
+  it("is true only for a body whose exercises array is empty", () => {
+    expect(isUnrecordableSessionPayload({ exercises: [] })).toBe(true);
+    expect(isUnrecordableSessionPayload({ exercises: [{}] })).toBe(false);
+    expect(isUnrecordableSessionPayload({})).toBe(false);
+    expect(isUnrecordableSessionPayload(null)).toBe(false);
+    expect(isUnrecordableSessionPayload("[]")).toBe(false);
   });
 });
 

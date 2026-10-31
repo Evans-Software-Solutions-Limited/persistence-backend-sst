@@ -1,4 +1,4 @@
-import { fireEvent } from "@testing-library/react-native";
+import { fireEvent, within } from "@testing-library/react-native";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 import type { Food } from "@/domain/models/nutrition";
 import {
@@ -75,6 +75,16 @@ function render(over: Partial<RecipeCreatePresenterProps> = {}) {
 }
 
 describe("RecipeCreatePresenter", () => {
+  // PER-68: ingredients and instructions sit at the bottom of a long form.
+  it("keeps the instructions field in a scroller that avoids the keyboard", () => {
+    const { getByTestId } = render();
+    const scroll = getByTestId("recipe-create-scroll");
+    expect(scroll.props.automaticallyAdjustKeyboardInsets).toBe(true);
+    expect(
+      within(scroll).getByTestId("recipe-create-instructions"),
+    ).toBeTruthy();
+  });
+
   it("renders the name/servings/instructions fields", () => {
     const { getByTestId } = render();
     expect(getByTestId("recipe-create-name")).toBeTruthy();

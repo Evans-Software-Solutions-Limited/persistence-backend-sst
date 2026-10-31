@@ -1,4 +1,7 @@
-import { processSyncQueue } from "../sync.command";
+import {
+  processSyncQueue,
+  purgeUnrecordableSessionRecords,
+} from "../sync.command";
 import { updateProfileCommand } from "../update-profile.command";
 import { configureHabitCommand } from "../configure-habit.command";
 import { toggleHabitDayCommand } from "../toggle-habit.command";
@@ -2342,5 +2345,144 @@ describe("processSyncQueue", () => {
 
     const result = await processSyncQueue(storage, auth, "https://api.test");
     expect(result.succeeded).toBe(1);
+  });
+});
+
+// PER-83: shipped builds queued `POST /sessions/record` with `exercises: []`
+// for a discarded empty Quick Workout. The server 422s that body every time, so
+// the entry exhausted, sat in /sync-failed, and re-fired on every reconnect.
+describe("unrecordable empty session records (PER-83)", () => {
+  let storage: InMemoryStorageAdapter;
+  let auth: InMemoryAuthAdapter;
+
+  const emptyRecord = (clientSessionId: string) => ({
+    clientSessionId,
+    workoutId: null,
+    name: "Quick Workout",
+    startedAt: "2026-09-21T18:50:17.000Z",
+    completedAt: "2026-09-21T18:50:31.000Z",
+    status: "cancelled",
+    totalDurationSeconds: 14,
+    exercises: [],
+  });
+
+  const enqueueRecord = (
+    entityId: string,
+    payload: unknown,
+    endpoint = "/sessions/record",
+  ) =>
+    storage.enqueueMutation({
+      entityType: "session",
+      entityId,
+      operation: "create",
+      payload,
+      endpoint,
+      method: "POST",
+    });
+
+  const idFor = (entityId: string) =>
+    storage
+      .getUncompletedMutations()
+      .find((entry) => entry.entityId === entityId)!.id;
+
+  beforeEach(() => {
+    storage = new InMemoryStorageAdapter();
+    storage.initialize();
+    auth = new InMemoryAuthAdapter();
+    mockFetch.mockReset();
+  });
+
+  it("drops an exhausted empty record so the failed-sync banner clears, and never re-POSTs it", async () => {
+    enqueueRecord("local-empty", emptyRecord("local-empty"));
+    const id = idFor("local-empty");
+    for (let i = 0; i < 3; i++) {
+      storage.markMutationInFlight(id);
+      storage.markMutationFailed(
+        id,
+        'HTTP 422: {"code":"VALIDATION","message":"Expected array length to be greater or equal to 1"}',
+      );
+    }
+    expect(storage.getFailedExhaustedEntries()).toHaveLength(1);
+
+    await processSyncQueue(storage, auth, "https://api.test");
+
+    expect(storage.getFailedExhaustedEntries()).toHaveLength(0);
+    expect(storage.getUncompletedMutations()).toHaveLength(0);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("drops the empty record on a manual Retry instead of re-sending the identical body", async () => {
+    enqueueRecord("local-empty", emptyRecord("local-empty"));
+    const id = idFor("local-empty");
+    storage.markMutationPermanentlyFailed(id, "HTTP 422");
+    storage.resetFailedEntries([id]);
+
+    await processSyncQueue(storage, auth, "https://api.test");
+
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(storage.getUncompletedMutations()).toHaveLength(0);
+  });
+
+  it("drops the on-behalf form too, but keeps every sendable entry and the in-flight one", () => {
+    enqueueRecord(
+      "local-coach",
+      emptyRecord("local-coach"),
+      "/trainers/me/clients/client-9/sessions/record",
+    );
+    enqueueRecord("local-real", {
+      ...emptyRecord("local-real"),
+      exercises: [{ exerciseId: "ex-1", sortOrder: 0, sets: [] }],
+    });
+    enqueueRecord("local-flying", emptyRecord("local-flying"));
+    storage.markMutationInFlight(idFor("local-flying"));
+    storage.enqueueMutation({
+      entityType: "session",
+      entityId: "local-bad",
+      operation: "create",
+      payload: "not json",
+      endpoint: "/sessions/record",
+      method: "POST",
+    });
+    storage.enqueueMutation({
+      entityType: "workout",
+      entityId: "w1",
+      operation: "create",
+      payload: { name: "Push", exercises: [] },
+      endpoint: "/workouts",
+      method: "POST",
+    });
+
+    expect(purgeUnrecordableSessionRecords(storage)).toBe(1);
+
+    expect(
+      storage
+        .getUncompletedMutations()
+        .map((entry) => entry.entityId)
+        .sort(),
+    ).toEqual(["local-bad", "local-flying", "local-real", "w1"]);
+  });
+
+  it("a purge failure does not stop the ordinary drain", async () => {
+    enqueueRecord("local-real", {
+      ...emptyRecord("local-real"),
+      exercises: [{ exerciseId: "ex-1", sortOrder: 0, sets: [] }],
+    });
+    const spy = jest
+      .spyOn(storage, "getUncompletedMutations")
+      .mockImplementationOnce(() => {
+        throw new Error("cache broken");
+      });
+    const error = jest.spyOn(console, "error").mockImplementation(() => {});
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ data: { id: "s1" } }),
+    });
+
+    const result = await processSyncQueue(storage, auth, "https://api.test");
+
+    expect(result.succeeded).toBe(1);
+    expect(error).toHaveBeenCalled();
+    spy.mockRestore();
+    error.mockRestore();
   });
 });

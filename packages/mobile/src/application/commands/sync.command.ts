@@ -23,6 +23,7 @@ import {
   hasTemplatePreference,
   stripSupersededTemplatePreferences,
 } from "./template-preference-queue";
+import { isUnrecordableSessionPayload } from "./session/complete-session.command";
 
 /** A non-OK HTTP response from a sync POST/PUT/DELETE, carrying the status so
  * the drain can classify permanent vs transient failures. */
@@ -723,6 +724,48 @@ type RecordSessionApiResponse = {
  * - App comes to foreground
  * - After a local mutation is enqueued (debounced)
  */
+/**
+ * PER-83: drop queued session records that can never be accepted.
+ *
+ * Shipped builds enqueued `POST /sessions/record` (and the coach on-behalf
+ * form) for a discarded EMPTY Quick Workout. Both endpoints require
+ * `exercises` to have at least one item, so the server answers that body with
+ * a deterministic 422 on every attempt: the entry exhausted its retries, sat in
+ * /sync-failed (where Retry re-sent the identical body) and was resurrected on
+ * reconnect, failing again each time. Nothing was ever lost — there was
+ * nothing to save — so the only correct outcome is to remove the entry.
+ *
+ * Runs at the start of every drain, which covers the worker's on-mount flush
+ * after an update, a manual Retry from /sync-failed, and any entry still
+ * pending from before the update. `in_flight` rows are left alone: a running
+ * drain owns them (and startup recovery returns them to `pending` before the
+ * first drain).
+ *
+ * Returns the number of entries dropped. A payload that does not parse is left
+ * for the ordinary path, never guessed at.
+ */
+export function purgeUnrecordableSessionRecords(storage: StoragePort): number {
+  const unsendable = storage.getUncompletedMutations().filter((entry) => {
+    if (
+      entry.entityType !== "session" ||
+      entry.operation !== "create" ||
+      entry.method !== "POST" ||
+      entry.status === "in_flight" ||
+      !entry.endpoint.endsWith("/sessions/record")
+    ) {
+      return false;
+    }
+    try {
+      return isUnrecordableSessionPayload(JSON.parse(entry.payload));
+    } catch {
+      return false;
+    }
+  });
+  if (unsendable.length === 0) return 0;
+  storage.discardEntries(unsendable.map((entry) => entry.id));
+  return unsendable.length;
+}
+
 export async function processSyncQueue(
   storage: StoragePort,
   auth: AuthPort,
@@ -735,6 +778,12 @@ export async function processSyncQueue(
   opts?: { now?: () => number },
 ): Promise<SyncResult> {
   const now = opts?.now ?? Date.now;
+  try {
+    purgeUnrecordableSessionRecords(storage);
+  } catch (err) {
+    // The cleanup must never block the ordinary drain.
+    console.error("[sync] unrecordable session purge failed:", err);
+  }
   const entries = storage.getPendingMutations();
   let succeeded = 0;
   let failed = 0;

@@ -59,7 +59,15 @@ export function ContactSupportPresenter({
         }
       />
 
-      <ScrollView style={styles.content} testID="contact-support-scroll">
+      {/* PER-68: the multiline message and Send sit low in this scroller and
+          nothing avoided the keyboard; Send also took two taps while it was
+          up (the first only dismissed it). */}
+      <ScrollView
+        style={styles.content}
+        testID="contact-support-scroll"
+        keyboardShouldPersistTaps="handled"
+        automaticallyAdjustKeyboardInsets
+      >
         <View style={styles.section}>
           <Text style={styles.sectionDescription}>
             Have a question or need help? Send us a message and we&apos;ll get
