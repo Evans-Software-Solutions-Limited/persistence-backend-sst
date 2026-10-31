@@ -37,10 +37,11 @@ type PartnerExercise = {
   rows: PartnerRow[];
 };
 /**
- * The partner's exercises in plan order: the partner's own rows (filled
- * where logged, empty where not, so a fill-in names the row it was typed
- * into), then an empty row for every planned set beyond them, plus the rows
- * the viewer added.
+ * The partner's exercises in plan order, each with the partner's own set rows
+ * in their order: filled where logged, empty where not, so a row the partner
+ * adds or deletes shows here too and a fill-in names the row it was typed
+ * into. Before the partner has shared any rows for an exercise, an empty row
+ * stands in for every planned set. Rows the viewer added follow.
  */
 export function togetherPartnerExercises(p: {
   snapshot: TogetherSharedSnapshot;
@@ -74,6 +75,11 @@ export function togetherPartnerExercises(p: {
         targetSets: 0,
       })),
   ];
+  // A partner whose app shares empty rows shows exactly their rows; one that
+  // shares logged sets only shows any empty row (PER-60).
+  const exact = Object.values(p.projection?.exercises ?? {}).some((e) =>
+    e.sets.some((set) => !set.completed),
+  );
   return slots.map((slot, index) => {
     const exercise = p.projection?.exercises[slot.planExerciseId];
     const exerciseId = slot.exerciseId ?? slot.fallbackId;
@@ -88,13 +94,14 @@ export function togetherPartnerExercises(p: {
           }
         : { setId: set.setId, reps: null, weightKg: null, logged: false },
     );
-    // Added rows go on top of what is on screen, even past the plan.
-    const total =
-      Math.max(slot.targetSets, logged.length) +
+    // Planned rows stand in until the partner's own rows for the exercise
+    // arrive, and on top of logged sets from an app that shares only those.
+    // Added rows go on top of what is on screen, even past the plan. When the
+    // partner's rows arrive, an untouched stand-in goes, never the one being
+    // typed into.
+    const want =
+      (exact && exercise ? 0 : Math.max(0, slot.targetSets - logged.length)) +
       (p.added[slot.planExerciseId] ?? 0);
-    // When the partner logs a set of their own, an untouched empty row goes,
-    // never the one the viewer is typing into.
-    const want = total - logged.length;
     const free: string[] = [];
     const pool = (i: number) => p.rowId(slot.planExerciseId, i);
     const known = p.minted?.(slot.planExerciseId) ?? 0;

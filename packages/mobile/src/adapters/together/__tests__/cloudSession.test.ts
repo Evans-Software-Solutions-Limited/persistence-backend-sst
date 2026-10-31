@@ -586,6 +586,38 @@ describe("cloud authoritative personal checkpoint", () => {
       ["local-row-3", null, null],
     ]);
   });
+  it("deleting an empty row removes it for partners; adding one shares it (TestFlight 31 Oct)", async () => {
+    const d = draft();
+    const row = d.exercises[0].sets[0];
+    d.exercises[0].sets = [1, 2].map((n) => ({
+      ...row,
+      id: `local-row-${n}`,
+      setNumber: n,
+      reps: null,
+      weightKg: null,
+    }));
+    await controller.hostWorkout(d);
+    await controller.retry();
+    const [first, second] = server.participants[0].execution!.exercises[0].sets;
+    const edit = controller.readDraft(userId)!;
+    edit.exercises[0].sets.splice(0, 1);
+    controller.saveDraft(userId, edit);
+    await controller.retry();
+    expect(
+      server.participants[0].execution!.exercises[0].sets.map((s) => s.setId),
+    ).toEqual([second!.setId]);
+    const added = controller.readDraft(userId)!;
+    added.exercises[0].sets.push({ ...row, id: "local-row-3", setNumber: 2 });
+    added.exercises[0].sets[1]!.reps = null;
+    added.exercises[0].sets[1]!.weightKg = null;
+    controller.saveDraft(userId, added);
+    await controller.retry();
+    const after = server.participants[0].execution!.exercises[0].sets;
+    expect(after).toHaveLength(2);
+    expect(after[0]!.setId).toBe(second!.setId);
+    expect(after.map((s) => s.completed)).toEqual([false, false]);
+    expect(after.map((s) => s.setId)).not.toContain(first!.setId);
+  });
   it("retains an exact outbox key after ambiguous delivery and account switch, and retries without duplicate sets", async () => {
     const original = api.create;
     let ambiguous = true;

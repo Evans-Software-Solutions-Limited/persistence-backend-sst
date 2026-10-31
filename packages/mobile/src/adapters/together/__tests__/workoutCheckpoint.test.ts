@@ -393,6 +393,28 @@ describe("own workout durable checkpoint (real SQLite and signatures)", () => {
       ["local-row-3", null, null],
     ]);
   });
+  it("deleting an empty row removes it for partners (TestFlight 31 Oct)", async () => {
+    const s = draft();
+    const row = s.exercises[0].sets[0];
+    s.exercises[0].sets = [1, 2].map((n) => ({
+      ...row,
+      id: `local-row-${n}`,
+      setNumber: n,
+      reps: null,
+      weightKg: null,
+    }));
+    await runtime.promote(s);
+    const before = runtime.getOwnExecution(userId, s.id)!.execution.exercises[0]
+      .sets;
+    expect(before).toHaveLength(2);
+    s.exercises[0].sets.splice(0, 1);
+    saveCurrent(runtime, userId, s);
+    expect(
+      runtime
+        .getOwnExecution(userId, s.id)!
+        .execution.exercises[0].sets.map((set) => set.setId),
+    ).toEqual([before[1]!.setId]);
+  });
   it("blank/partial sets are preserved and shared as empty rows, never as logged values", async () => {
     const s = draft();
     s.exercises[0].sets[0].reps = null;
