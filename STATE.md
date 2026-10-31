@@ -1,5 +1,16 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-31 — Release 2 app version 1.2.0 (branch `claude/compassionate-clarke-eefidd`)
+
+`app.json` version 1.1.3 → 1.2.0 before the Release 2 TestFlight build. With
+`runtimeVersion: { policy: "appVersion" }`, OTA updates target an app version;
+1.1.3 was already on earlier TestFlight builds (e.g. build 22) that lack
+`react-native-view-shot` / `expo-sharing` (#516). Keeping 1.1.3 would send a
+future OTA that uses them (PER-99) to those binaries too. Build numbers stay
+remote (`appVersionSource: remote`, `autoIncrement`). `BUNDLED_MINIMUM_VERSION`
+stays 1.1.3: raising it would force older testers to update, Brad's call.
+Config, splash, update-gate and manifest tests pass (50).
+
 ### 2026-10-31 — Nutrition and units bug batch (PER-96, 95, 100, 97, 98, 78; branch `claude/release-2-nutrition-fixes`)
 
 Release 2 bug batch, mobile only, one commit per issue; each test named in the
