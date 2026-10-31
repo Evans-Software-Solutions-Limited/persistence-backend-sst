@@ -30,6 +30,8 @@ export {
   kgToLb,
   lbToKg,
   weightInUnit,
+  weightToInputText,
+  weightInputToKg,
   formatWeight,
   volumeInUnit,
   formatVolumeParts,

@@ -45,6 +45,16 @@ describe("LogClientWeightPresenter", () => {
     });
   });
 
+  it("starts in the coach's lb preference and saves kg (PER-98)", () => {
+    const { props, getByTestId } = render({ defaultUnit: "lb" });
+    // The 80 kg starting weight, shown in lb.
+    expect(getByTestId("log-client-weight-input").props.value).toBe("176.4");
+    fireEvent.changeText(getByTestId("log-client-weight-input"), "220");
+    fireEvent.press(getByTestId("log-client-weight-save"));
+    const { weightKg } = (props.onSave as jest.Mock).mock.calls[0][0];
+    expect(weightKg).toBeCloseTo(99.79, 1);
+  });
+
   it("converts a lb entry back to kg on save", () => {
     const { props, getByTestId, getByLabelText } = render();
     fireEvent.press(getByLabelText("Use lb"));

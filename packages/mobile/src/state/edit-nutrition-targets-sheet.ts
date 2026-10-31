@@ -1,7 +1,7 @@
 import { create } from "zustand";
 
 import type { CalorieHitModule } from "@/domain/models/clientDetail";
-import type { VolumeUnit } from "@/shared/utils";
+import type { VolumeUnit, WeightUnit } from "@/shared/utils";
 
 /**
  * useEditNutritionTargetsSheet — the coach edit-a-client's-macros sheet
@@ -44,11 +44,15 @@ export interface EditNutritionTargetsSheetState {
   /** The client's preferred volume display unit for the water field. Defaults
    *  to "l" until a caller supplies the client's actual preference. */
   volumeUnit: VolumeUnit;
+  /** The COACH's weight-display preference (PER-98) — the unit the
+   *  calculator's weight field is typed in. Converted to kg for the maths. */
+  weightUnit: WeightUnit;
   openSheet: (
     clientId: string,
     initial: EditNutritionTargetsInitial | null,
     onSaved?: () => void,
     volumeUnit?: VolumeUnit,
+    weightUnit?: WeightUnit,
   ) => void;
   closeSheet: () => void;
 }
@@ -86,13 +90,15 @@ export const useEditNutritionTargetsSheet =
     initial: null,
     onSaved: null,
     volumeUnit: "l",
-    openSheet: (clientId, initial, onSaved, volumeUnit) =>
+    weightUnit: "kg",
+    openSheet: (clientId, initial, onSaved, volumeUnit, weightUnit) =>
       set({
         open: true,
         clientId,
         initial: initial ?? null,
         onSaved: onSaved ?? null,
         volumeUnit: volumeUnit ?? "l",
+        weightUnit: weightUnit ?? "kg",
       }),
     closeSheet: () =>
       set({
@@ -101,5 +107,6 @@ export const useEditNutritionTargetsSheet =
         initial: null,
         onSaved: null,
         volumeUnit: "l",
+        weightUnit: "kg",
       }),
   }));

@@ -34,6 +34,26 @@ export function weightInUnit(kg: number, unit: WeightUnit): number {
 }
 
 /**
+ * A stored-kg weight as the text of a weight input shown in `unit` (PER-98).
+ * Empty for no weight. `kg` is the plain stored number, as before.
+ */
+export function weightToInputText(kg: number | null, unit: WeightUnit): string {
+  return kg == null ? "" : String(weightInUnit(kg, unit));
+}
+
+/**
+ * Weight-input text typed in `unit` as kilograms for storage (PER-98); null
+ * when blank or not a number. `lb` is converted exactly and kept to 3 dp, so
+ * a typed 100 lb reads back as 100 lb.
+ */
+export function weightInputToKg(text: string, unit: WeightUnit): number | null {
+  if (text.trim() === "") return null;
+  const n = Number.parseFloat(text);
+  if (Number.isNaN(n)) return null;
+  return unit === "lb" ? Math.round(lbToKg(n) * 1000) / 1000 : n;
+}
+
+/**
  * Format a stored-kg weight as "<value> <unit>", e.g. `formatWeight(72.5,"kg")`
  * → "72.5 kg", `formatWeight(72.5,"lb")` → "159.8 lb". `decimals` controls the
  * fixed precision (default 1, matching the body-weight tile).

@@ -29,6 +29,7 @@ import {
 import { ErrorState, PLogoDrawLoader } from "@/ui/components";
 import { LoadingSpinner } from "@/ui/components/LoadingSpinner";
 import type { ApiError } from "@/shared/errors";
+import { weightInUnit, type WeightUnit } from "@/shared/utils";
 import type {
   AdherenceModule,
   AiSummaryModule,
@@ -79,6 +80,8 @@ export type ClientDetailProps = {
   /** Fallback header name (from route params) before the aggregate lands. */
   clientName: string | null;
   bodyTrend: { weight: TrendData & { unit: "kg" | "lb" }; bodyFat: TrendData };
+  /** The viewing coach's weight-display preference (PER-98); defaults to kg. */
+  weightUnit?: WeightUnit;
   /** The client's live programme, or null (specs/19-programs AC 4.5). */
   activeProgramme: ActiveProgramme | null;
   /** The client's OPEN assignments — the M18 Upcoming-sessions surface. */
@@ -134,6 +137,7 @@ export function ClientDetailPresenter(props: ClientDetailProps) {
     detail,
     clientName,
     bodyTrend,
+    weightUnit = "kg",
     activeProgramme,
     assignments,
     isLoading,
@@ -218,7 +222,11 @@ export function ClientDetailPresenter(props: ClientDetailProps) {
           />
 
           {detail?.goal ? (
-            <GoalCard goal={detail.goal} onEdit={onEditGoal} />
+            <GoalCard
+              goal={detail.goal}
+              weightUnit={weightUnit}
+              onEdit={onEditGoal}
+            />
           ) : null}
 
           {/* Body-trend + Log-weight kept from #146 (open decision ②),
@@ -799,7 +807,15 @@ function AISummaryCard({
 }
 
 // ── GoalCard ─────────────────────────────────────────────────────────────────
-function GoalCard({ goal, onEdit }: { goal: GoalModule; onEdit: () => void }) {
+function GoalCard({
+  goal,
+  weightUnit,
+  onEdit,
+}: {
+  goal: GoalModule;
+  weightUnit: WeightUnit;
+  onEdit: () => void;
+}) {
   const { startKg, nowKg, targetKg } = goal.weight;
   const pct = goal.pct ?? 0;
 
@@ -867,11 +883,18 @@ function GoalCard({ goal, onEdit }: { goal: GoalModule; onEdit: () => void }) {
       ) : null}
 
       <View flexDirection="row" justifyContent="space-between" marginTop={8}>
-        <GoalTick label="Start" value={weightText(startKg, goal.unit)} />
-        <GoalTick label="Now" value={weightText(nowKg, goal.unit)} accent />
+        <GoalTick
+          label="Start"
+          value={weightText(startKg, goal.unit, weightUnit)}
+        />
+        <GoalTick
+          label="Now"
+          value={weightText(nowKg, goal.unit, weightUnit)}
+          accent
+        />
         <GoalTick
           label="Target"
-          value={weightText(targetKg, goal.unit)}
+          value={weightText(targetKg, goal.unit, weightUnit)}
           align="right"
         />
       </View>
@@ -1416,9 +1439,15 @@ function missedCount(detail: ClientDetail | null): number | null {
   return missed > 0 ? missed : 0;
 }
 
-function weightText(kg: number | null, unit: string | null): string {
+function weightText(
+  kg: number | null,
+  unit: string | null,
+  weightUnit: WeightUnit,
+): string {
   if (kg == null) return "—";
   const u = unit ?? "kg";
+  // The goal axis is stored in kg; show it in the viewer's unit (PER-98).
+  if (u === "kg") return `${weightInUnit(kg, weightUnit)} ${weightUnit}`;
   return `${kg} ${u}`;
 }
 

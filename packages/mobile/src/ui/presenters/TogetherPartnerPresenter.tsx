@@ -4,6 +4,7 @@ import type { SetSyncState } from "@/ui/components/session/SetLogger";
 import { IconEyeOff, iconDefaults } from "@/ui/components/icons";
 import { color } from "@/ui/theme/tokens";
 import type { ExerciseSet, SessionExercise } from "@/domain/models/session";
+import type { WeightUnit } from "@/shared/utils";
 import type {
   TogetherAthleteProjection,
   TogetherSharedSnapshot,
@@ -132,6 +133,8 @@ export function TogetherPartnerPresenter(p: {
   editable: boolean;
   /** This partner's fill-in state, owned by the container (`useTogetherPartnerOutbox`). */
   outbox: TogetherPartnerOutbox;
+  /** The viewer's weight-display preference (PER-98); defaults to kg. */
+  weightUnit?: WeightUnit;
 }) {
   const access = togetherPartnerAccess(p.snapshot, p.ownerId, p.accountId);
   const editable = p.editable && access.editable;
@@ -383,6 +386,7 @@ export function TogetherPartnerPresenter(p: {
             <SessionExerciseCard
               key={e.planExerciseId}
               partner
+              weightUnit={p.weightUnit}
               readOnly={!editable}
               exercise={exercise}
               caption={caption(e)}

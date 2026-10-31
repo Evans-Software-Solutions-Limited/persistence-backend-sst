@@ -1,3 +1,4 @@
+import type { WeightUnit } from "@/shared/utils";
 import { togetherInvitationLink } from "@/adapters/together/invitationLink";
 import { invitationPayload } from "@/application/together/invitation";
 import { TogetherScannerPresenter } from "@/ui/presenters/TogetherScannerPresenter";
@@ -197,6 +198,8 @@ export function TogetherCloudContainer(p: {
   onDiscardWorkout?(): void;
   /** `partnerView` is set while a partner's avatar is selected on the strip. */
   children?: (row: ReactNode, partnerView?: ReactNode) => ReactNode;
+  /** The athlete's weight-display preference for partner sets (PER-98). */
+  weightUnit?: WeightUnit;
 }) {
   const rawState = useSyncExternalStore(
     (l) => p.cloud.subscribe(l),
@@ -729,6 +732,7 @@ export function TogetherCloudContainer(p: {
     !soloAgain && viewing && partner(viewing) ? (
       <TogetherPartnerPresenter
         key={viewing}
+        weightUnit={p.weightUnit}
         snapshot={shared}
         ownerId={viewing}
         accountId={p.accountId}

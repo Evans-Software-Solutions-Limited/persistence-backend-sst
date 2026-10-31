@@ -1,3 +1,4 @@
+import type { WeightUnit } from "@/shared/utils";
 import { togetherInvitationLink } from "@/adapters/together/invitationLink";
 import { hostDetailsFrom } from "@/adapters/together/planDetails";
 import { invitationPayload } from "@/application/together/invitation";
@@ -121,7 +122,10 @@ export function TogetherLobbyContainer({
   allowNewSharing = true,
   initialHostConnection = "local",
   onConsumeHostIntent,
+  weightUnit,
 }: {
+  /** The athlete's weight-display preference for partner sets (PER-98). */
+  weightUnit?: WeightUnit;
   initialHostAudience?: TogetherLobbyAudience;
   allowNewSharing?: boolean;
   initialHostConnection?: "local" | "online";
@@ -665,6 +669,7 @@ export function TogetherLobbyContainer({
     return (
       <TogetherCloudContainer
         cloud={cloud}
+        weightUnit={weightUnit}
         initialHost={hostOnline ?? undefined}
         accountId={accountId}
         workoutName={workoutName}
@@ -794,6 +799,7 @@ export function TogetherLobbyContainer({
     !soloAgain && viewing && sharedSnapshot && lobby.shared ? (
       <TogetherPartnerPresenter
         key={`${accountId}:${viewing}`}
+        weightUnit={weightUnit}
         snapshot={sharedSnapshot}
         accountId={accountId}
         ownerId={viewing}

@@ -40,6 +40,9 @@ export type LogClientWeightProps = {
   error?: string | null;
   onSave: (input: LogClientWeightSaveInput) => void;
   onBack: () => void;
+  /** The coach's weight-display preference (PER-98) — the unit the toggle
+   * starts on. The weight is always saved in kg. */
+  defaultUnit?: Unit;
 };
 
 export function LogClientWeightPresenter({
@@ -49,13 +52,14 @@ export function LogClientWeightPresenter({
   error,
   onSave,
   onBack,
+  defaultUnit = "kg",
 }: LogClientWeightProps) {
   const insets = useSafeAreaInsets();
   const fmt = (v: number) => v.toFixed(1);
   const toDisplay = (kgValue: number, u: Unit) =>
     u === "kg" ? kgValue : kgValue / KG_PER_LB;
 
-  const [unit, setUnit] = useState<Unit>("kg");
+  const [unit, setUnit] = useState<Unit>(defaultUnit);
   const [kg, setKg] = useState<number>(80);
   // Raw text backing the weight TextInput, tracked separately from the
   // canonical numeric `kg` — see WeighInSheetPresenter's identical field for
@@ -63,7 +67,9 @@ export function LogClientWeightPresenter({
   // deleting all the digits makes `parseFloat("")` NaN, the handler bails,
   // and the controlled input snaps back to the last valid number — the
   // field can never be cleared to type a new value.
-  const [weightText, setWeightText] = useState<string>(() => fmt(80));
+  const [weightText, setWeightText] = useState<string>(() =>
+    fmt(toDisplay(80, defaultUnit)),
+  );
   const [bodyFat, setBodyFat] = useState<number | null>(null);
 
   const display = toDisplay(kg, unit);

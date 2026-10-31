@@ -27,7 +27,12 @@ import { IconSwap, IconTrash } from "@/ui/components/icons";
 import { GEIST_MONO_FAMILY } from "@/ui/theme/fonts";
 import { color } from "@/ui/theme/tokens";
 import type { ExerciseSet } from "@/domain/models/session";
-import { weightInUnit, type WeightUnit } from "@/shared/utils";
+import {
+  weightInUnit,
+  weightInputToKg,
+  weightToInputText,
+  type WeightUnit,
+} from "@/shared/utils";
 
 export type ActiveSupersetExerciseRowProps = {
   exerciseName: string;
@@ -36,9 +41,9 @@ export type ActiveSupersetExerciseRowProps = {
   currentSet?: ExerciseSet;
   previousSet?: { weightKg: number; reps: number };
   /**
-   * Display-unit preference for the previous-set chip. The current-set
-   * weight TextInput below is unaffected — it's an input surface (writes
-   * kg), not a display label. Defaults to "kg".
+   * Display-unit preference for the previous-set chip AND the weight input,
+   * which shows and accepts the weight in this unit and stores kg (PER-98).
+   * Defaults to "kg".
    */
   weightUnit?: WeightUnit;
   onUpdateSet: (patch: Partial<Pick<ExerciseSet, "weightKg" | "reps">>) => void;
@@ -66,8 +71,9 @@ export function ActiveSupersetExerciseRow({
   const [repsValue, setRepsValue] = useState(
     currentSet?.reps != null ? String(currentSet.reps) : "",
   );
-  const [weightValue, setWeightValue] = useState(
-    currentSet?.weightKg != null ? String(currentSet.weightKg) : "",
+  // Shown and typed in the display unit, stored in kg (PER-98).
+  const [weightValue, setWeightValue] = useState(() =>
+    weightToInputText(currentSet?.weightKg ?? null, weightUnit),
   );
 
   // Reset local state when the underlying set data changes (e.g. after
@@ -75,10 +81,13 @@ export function ActiveSupersetExerciseRow({
   // remove renumbers the surviving sets).
   useEffect(() => {
     setRepsValue(currentSet?.reps != null ? String(currentSet.reps) : "");
-    setWeightValue(
-      currentSet?.weightKg != null ? String(currentSet.weightKg) : "",
+    const storedKg = currentSet?.weightKg ?? null;
+    setWeightValue((current) =>
+      weightInputToKg(current, weightUnit) === storedKg
+        ? current
+        : weightToInputText(storedKg, weightUnit),
     );
-  }, [currentSet?.reps, currentSet?.weightKg]);
+  }, [currentSet?.reps, currentSet?.weightKg, weightUnit]);
 
   const handleRepsChange = (text: string) => {
     setRepsValue(text);
@@ -96,8 +105,8 @@ export function ActiveSupersetExerciseRow({
       onUpdateSet({ weightKg: null });
       return;
     }
-    const parsed = Number.parseFloat(text);
-    if (!Number.isNaN(parsed)) onUpdateSet({ weightKg: parsed });
+    const kg = weightInputToKg(text, weightUnit);
+    if (kg !== null) onUpdateSet({ weightKg: kg });
   };
 
   return (

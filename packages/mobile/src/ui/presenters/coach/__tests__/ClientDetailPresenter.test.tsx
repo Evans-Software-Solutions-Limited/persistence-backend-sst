@@ -366,6 +366,21 @@ describe("ClientDetailPresenter — GoalCard", () => {
     expect(props.onEditGoal).toHaveBeenCalledTimes(1);
   });
 
+  it("shows the goal's start / now / target in the coach's lb preference (PER-98)", () => {
+    const { getByText, queryByText } = render({ weightUnit: "lb" });
+    // 76.1 / 78.2 / 80 kg.
+    expect(getByText("167.8 lb")).toBeTruthy();
+    expect(getByText("172.4 lb")).toBeTruthy();
+    expect(getByText("176.4 lb")).toBeTruthy();
+    expect(queryByText("80 kg")).toBeNull();
+  });
+
+  it("shows the goal in kg by default", () => {
+    const { getByText } = render();
+    expect(getByText("76.1 kg")).toBeTruthy();
+    expect(getByText("80 kg")).toBeTruthy();
+  });
+
   it("hides the edit pencil + attribution for a self-set goal", () => {
     const detail = fullDetail();
     detail.goal = { ...detail.goal!, assignedByCoach: false };

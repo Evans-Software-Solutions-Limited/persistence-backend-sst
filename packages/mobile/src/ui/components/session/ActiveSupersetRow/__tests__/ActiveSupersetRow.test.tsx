@@ -398,6 +398,28 @@ describe("ActiveSupersetRow", () => {
     expect(getByText("8 reps • 176.4 lb")).toBeTruthy();
   });
 
+  it("weight inputs show and accept lb under the LB header, storing kg (PER-98)", () => {
+    const onUpdateSet = jest.fn();
+    const props = {
+      ...baseProps,
+      onUpdateSet,
+      exercises: [
+        buildExercise({
+          id: "se-A",
+          sets: [buildSet({ id: "set-A1", weightKg: 100 })],
+        }),
+        buildExercise({ id: "se-B", sortOrder: 1 }),
+      ],
+      weightUnit: "lb" as const,
+    };
+    const { getByTestId } = renderWithTheme(<ActiveSupersetRow {...props} />);
+    expect(getByTestId("superset-row-se-A-1-weight").props.value).toBe("220.5");
+    fireEvent.changeText(getByTestId("superset-row-se-A-1-weight"), "225");
+    expect(onUpdateSet).toHaveBeenCalledWith("se-A", "set-A1", {
+      weightKg: 102.058,
+    });
+  });
+
   it("seeds at least one setNumber even when peers carry zero sets (paired-logging guarantee)", () => {
     const props = {
       ...baseProps,

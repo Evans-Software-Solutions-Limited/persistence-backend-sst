@@ -17,6 +17,15 @@ jest.mock("expo-router", () => ({
   useLocalSearchParams: () => mockParams,
 }));
 
+const mockProfile: { weightUnit: "kg" | "lb" | null } = { weightUnit: null };
+jest.mock("@/ui/hooks/useProfilePage", () => ({
+  useProfilePage: () => ({
+    payload: mockProfile.weightUnit
+      ? { profile: { weightUnit: mockProfile.weightUnit } }
+      : null,
+  }),
+}));
+
 const mockCaptured: { props: LogClientWeightProps | null } = { props: null };
 jest.mock("@/ui/presenters/LogClientWeightPresenter", () => ({
   LogClientWeightPresenter: (props: LogClientWeightProps) => {
@@ -43,11 +52,19 @@ describe("LogClientWeightContainer", () => {
     jest.clearAllMocks();
     mockParams.id = "client-1";
     mockParams.name = "Jordan";
+    mockProfile.weightUnit = null;
   });
 
   it("passes the client name through", () => {
     renderWithApi(jest.fn(async () => ok({})));
     expect(props().clientName).toBe("Jordan");
+    expect(props().defaultUnit).toBeUndefined();
+  });
+
+  it("starts the unit toggle on the coach's weight preference (PER-98)", () => {
+    mockProfile.weightUnit = "lb";
+    renderWithApi(jest.fn(async () => ok({})));
+    expect(props().defaultUnit).toBe("lb");
   });
 
   it("logs the weight then navigates back on success", async () => {

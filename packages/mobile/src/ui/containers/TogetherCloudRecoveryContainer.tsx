@@ -1,3 +1,4 @@
+import { useProfilePage } from "@/ui/hooks/useProfilePage";
 import { useDiscardWorkout } from "@/ui/hooks/useDiscardWorkout";
 import {
   useEffect,
@@ -26,6 +27,8 @@ const EMPTY: TogetherCloudState = {
 export function TogetherCloudRecoveryContainer() {
   const { togetherCloud: cloud, storage } = useAdapters();
   const { session: auth } = useAuth();
+  // PER-98: reviewed sets are shown in the athlete's weight unit.
+  const weightUnit = useProfilePage().payload?.profile.weightUnit;
   const userId = auth?.userId;
   const params = useLocalSearchParams<{
     localSessionId?: string;
@@ -204,6 +207,7 @@ export function TogetherCloudRecoveryContainer() {
           />
         ) : (
           <TogetherRecoveryPresenter
+            weightUnit={weightUnit}
             name={draft?.name ?? "My workout"}
             available={valid}
             review={review}

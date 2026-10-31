@@ -1017,6 +1017,7 @@ export function ActiveSessionContainer() {
       (togetherGate.allowed || !!session.together) ? (
         <TogetherLobbyContainer
           lobby={togetherLobby}
+          weightUnit={weightUnit}
           allowNewSharing={togetherGate.allowed}
           initialHostAudience={
             togetherGate.allowed &&

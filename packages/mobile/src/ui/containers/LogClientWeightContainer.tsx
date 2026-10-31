@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useAdapters } from "@/ui/hooks/useAdapters";
+import { useProfilePage } from "@/ui/hooks/useProfilePage";
 import {
   LogClientWeightPresenter,
   type LogClientWeightSaveInput,
@@ -17,6 +18,9 @@ export function LogClientWeightContainer() {
   const router = useRouter();
   const { id, name } = useLocalSearchParams<{ id: string; name?: string }>();
   const { api } = useAdapters();
+  // The coach's own weight-display preference (PER-98). Keyed below so a
+  // profile that resolves after mount still starts the toggle on it.
+  const defaultUnit = useProfilePage().payload?.profile.weightUnit;
 
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -50,6 +54,8 @@ export function LogClientWeightContainer() {
 
   return (
     <LogClientWeightPresenter
+      key={defaultUnit ?? "pending"}
+      defaultUnit={defaultUnit}
       clientName={name ?? null}
       saving={saving}
       success={success}

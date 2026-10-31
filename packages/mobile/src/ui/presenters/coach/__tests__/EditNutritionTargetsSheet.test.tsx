@@ -23,6 +23,7 @@ import {
   EditNutritionTargetsSheet,
   parseBodyStat,
   parseTargetField,
+  weightKgFromInput,
 } from "@/ui/presenters/coach/EditNutritionTargetsSheet";
 import { computeFuelTargetsPreview } from "@/domain/services/nutrition.service";
 
@@ -356,5 +357,58 @@ describe("EditNutritionTargetsSheet", () => {
       },
     });
     expect(useEditNutritionTargetsSheet.getState().open).toBe(false);
+  });
+
+  it("calculator weight is typed in the coach's lb preference and converted to kg (PER-98)", async () => {
+    const { adapters } = makeAdapters();
+    render(
+      <Wrapper adapters={adapters}>
+        <EditNutritionTargetsSheet />
+      </Wrapper>,
+    );
+    act(() => {
+      useEditNutritionTargetsSheet.getState().openSheet(
+        "client-9",
+        {
+          dailyKcal: null,
+          proteinG: null,
+          carbsG: null,
+          fatG: null,
+          waterCups: null,
+          ageYears: 30,
+          heightCm: 180,
+        },
+        undefined,
+        undefined,
+        "lb",
+      );
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("edit-nutrition-mode-calculator")).toBeTruthy(),
+    );
+    fireEvent.press(screen.getByTestId("edit-nutrition-mode-calculator"));
+    expect(screen.getByText("Weight · lb")).toBeTruthy();
+    fireEvent.press(screen.getByTestId("edit-calc-sex-male"));
+    // 176.37 lb = 80 kg: the preview matches the 80 kg calculation.
+    fireEvent.changeText(screen.getByTestId("edit-calc-weight"), "176.37");
+    const expected = computeFuelTargetsPreview(
+      { sex: "male", age: 30, heightCm: 180, weightKg: 80 },
+      "moderate",
+      0,
+      "recommended",
+      { proteinPct: 30, carbsPct: 45, fatPct: 25 },
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("edit-calc-preview")).toBeTruthy(),
+    );
+    expect(screen.getByTestId("edit-calc-preview-kcal").props.children).toEqual(
+      [expected.kcal, " kcal / day"],
+    );
+  });
+
+  it("weightKgFromInput reads kg as-is and converts lb", () => {
+    expect(weightKgFromInput("80", "kg")).toBe(80);
+    expect(weightKgFromInput("176.37", "lb")).toBeCloseTo(80, 2);
+    expect(weightKgFromInput("", "lb")).toBeNull();
   });
 });

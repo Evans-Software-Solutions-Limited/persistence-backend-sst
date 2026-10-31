@@ -83,6 +83,14 @@ it("keeps unuploaded work local and disables unavailable or busy operations", ()
   fireEvent.press(r.getByText("Back"));
   expect(p.onBack).toHaveBeenCalledTimes(1);
 });
+it("shows reviewed weights and volume in pounds for an lb athlete (PER-98)", () => {
+  const p = { ...props(), review: review(), weightUnit: "lb" as const },
+    r = renderWithTheme(<TogetherRecoveryPresenter {...p} />);
+  // 5 × 20 kg = 100 kg of volume = 220 lb; a 20 kg set is 44.1 lb.
+  expect(r.getByText("1 completed sets · 220 lb")).toBeTruthy();
+  expect(r.getByText("Set 1 · 5 reps · 44.1 lb")).toBeTruthy();
+  expect(r.queryByText(/ kg/)).toBeNull();
+});
 it("shows completed own sets and explicit local omissions without counting skipped or incomplete sets", () => {
   const p = { ...props(), review: review() },
     r = renderWithTheme(<TogetherRecoveryPresenter {...p} />);
