@@ -1,5 +1,42 @@
 # Project memory · persistence-backend-sst
 
+### 2026-10-30 — Workout and sync: empty session records, keyboard on the completion screen (PER-83, PER-68; PER-67 open; branch `claude/release-2-workout-fixes`)
+
+Release 2 bug batch.
+
+**PER-83 (production).** `finalizeSessionCommand` always enqueued
+`POST /sessions/record` (or the coach on-behalf form), and both endpoints
+require at least one exercise, so a discarded empty Quick Workout was a 422 on
+every attempt and stuck in /sync-failed. Now an `exercises: []` record is never
+queued (the session is still saved locally), and
+`purgeUnrecordableSessionRecords` runs at the start of every sync pass,
+deleting queued session records with `exercises: []` (not mid-send), so the six
+stuck users clear after updating. A purge failure never blocks the drain. An
+exercise with no sets still records (the server accepts it). **Brad to
+decide:** a server-side 200 no-op for a cancelled empty session, which is the
+only fix for users who don't update.
+
+**PER-68.** `session/rate` is an iOS page sheet; React Native's
+KeyboardAvoidingView under-pads inside a sheet and nothing scrolled the notes
+into view. `automaticallyAdjustKeyboardInsets` on the scroll view (the pattern
+the active session and workout form use). Same fix where the audit found a
+clear obstruction: Contact Support (plus `keyboardShouldPersistTaps="handled"`
+so Send works in one tap), Recipe Create, Recipe Import. Device check owed:
+Fuel Targets manual calorie field, Log Client Weight, Android edge-to-edge.
+No native keyboard library needed.
+
+**PER-67 not fixed.** No code path found where delete enters the collapsed
+reorder view (the list remounts on remove; the drag target is top-left, delete
+is right). Possible: the drag library's 88pt initial placement not corrected
+after remount. Needs a screen recording on a device.
+
+Tests fail on the old code (PER-83: 6; PER-68: 4 presenter tests, which check
+the setting since Jest has no keyboard). Two `ActiveSessionContainer` tests that
+expected an empty discard to queue a record were updated. Mobile suite with
+coverage 96.12 / 92.15 / 96.01 / 97.51; `SubscriptionSelectionContainer`
+(cloud container only) and `progress-hooks` (load timeout; 35/35 alone) failed
+in the full run. **Not verified** on a device.
+
 ### 2026-10-30 — Together: the session code admits to private sessions (PER-60, branch `claude/compassionate-clarke-eefidd`)
 
 Found during PR #514's review. The app offers "Private · code or QR" and lets a
