@@ -2092,7 +2092,15 @@ describe("leaving and ending (canvas row 3)", () => {
     expect(leaveRow(r).status).toBe("In sync · 2 training");
     expect(r.getByTestId("personal-workout")).toBeTruthy();
     expect(r.queryByLabelText("Show Libby’s workout")).toBeNull();
-    expect(shareProps(r).removable?.map((p) => p.name)).toEqual(["Mia"]);
+    // The switches only cover who is still here, but Libby keeps her roster
+    // seat, so the host can still remove her to free it (inspector lead).
+    expect(
+      shareProps(r).state!.recipients.map((p: { name: string }) => p.name),
+    ).toEqual(["Mia"]);
+    expect(shareProps(r).removable?.map((p) => p.name)).toEqual([
+      "Libby",
+      "Mia",
+    ]);
     act(() => leaveRow(r).onEnd());
     expect(
       r.getByText(

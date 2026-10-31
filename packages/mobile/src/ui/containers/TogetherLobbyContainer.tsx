@@ -622,11 +622,14 @@ export function TogetherLobbyContainer({
   );
   // Colours and fallback names come from the full roster, so a guest who
   // leaves doesn't shift anyone else's; only who is still here is listed.
-  const people = sharingPeople(
+  const rosterPeople = sharingPeople(
     snapshot.members,
     accountId,
     (id, seat) => sharedSnapshot?.profiles[id] ?? `Athlete ${seat + 1}`,
-  ).filter((person) => members.some((m) => m.userId === person.userId));
+  );
+  const people = rosterPeople.filter((person) =>
+    members.some((m) => m.userId === person.userId),
+  );
   const sharing = useTogetherSharing(
     lobby.shared && sharedSnapshot && snapshot.sessionId && !sharingClosed
       ? {
@@ -927,7 +930,9 @@ export function TogetherLobbyContainer({
         visible={sharingOpen && !soloAgain && !!workoutStatus}
         state={sharing.state}
         onChange={sharing.change}
-        removable={snapshot.role === "host" ? people : undefined}
+        // A guest who left still holds a roster seat; the host must still be
+        // able to remove them to free it (#522).
+        removable={snapshot.role === "host" ? rosterPeople : undefined}
         onRemove={lobby.removeParticipant ? confirmRemoval : undefined}
         onDone={() => {
           setSharingOpen(false);
