@@ -14,7 +14,10 @@ import {
 import { TogetherCloudPresenter } from "../../presenters/TogetherCloudPresenter";
 import { TogetherPartnerPresenter } from "../../presenters/TogetherPartnerPresenter";
 import { TogetherSharingPresenter } from "../../presenters/TogetherSharingPresenter";
-import { TogetherWorkoutRow } from "../../presenters/TogetherWorkoutRow";
+import {
+  TogetherWorkoutRow,
+  togetherMemberTone,
+} from "../../presenters/TogetherWorkoutRow";
 import type {
   TogetherCloudApi,
   TogetherCloudPort,
@@ -611,6 +614,32 @@ it("Online: the partner view closes when the partner leaves or the session snaps
   // back into the partner's.
   act(() => h.publish({ phase: "active", snapshot: structuredClone(server) }));
   expect(r.getByTestId("own-workout")).toBeTruthy();
+});
+it("Online: a partner keeps their colour when an earlier partner finishes (inspector lead)", () => {
+  const h = setup(true);
+  const three = structuredClone(h.state().snapshot!);
+  three.participants.push({
+    ...structuredClone(three.participants[1]!),
+    userId: "w",
+  });
+  act(() => h.publish({ snapshot: three }));
+  const r = renderWithTheme(
+    <TogetherCloudContainer {...h.props}>
+      {(row) => <>{row}</>}
+    </TogetherCloudContainer>,
+  );
+  const strip = () =>
+    r.UNSAFE_getByType(TogetherWorkoutRow).props as React.ComponentProps<
+      typeof TogetherWorkoutRow
+    >;
+  const toneOfW = () =>
+    togetherMemberTone(strip().toneMembers ?? strip().members, "u", "w");
+  const before = toneOfW();
+  const finished = structuredClone(three);
+  finished.participants.find((x) => x.userId === "v")!.status = "saved";
+  act(() => h.publish({ snapshot: finished }));
+  expect(strip().members.map((m) => m.userId)).toEqual(["u", "w"]);
+  expect(toneOfW()).toBe(before);
 });
 it("Online: a partner who finished their own workout drops off the host's strip and tabs (TestFlight 31 Oct)", async () => {
   // An older guest app finishes without leaving, so the server keeps their

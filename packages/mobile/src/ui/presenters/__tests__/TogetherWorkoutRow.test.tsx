@@ -2,6 +2,7 @@ import React from "react";
 import { fireEvent } from "@testing-library/react-native";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 import { TogetherWorkoutRow, togetherMemberTone } from "../TogetherWorkoutRow";
+import { TogetherAthleteAvatar } from "../TogetherAthleteAvatar";
 import { TogetherStartRow } from "../TogetherStartRow";
 import { TogetherPill } from "../TogetherPill";
 import {
@@ -129,4 +130,32 @@ it("the settings cog and close glyphs take the pill's colour, never currentColor
   );
   expect(pills.UNSAFE_getByType(IconX).props.color).toBe(color.$primaryInk);
   expect(pills.UNSAFE_getByType(IconCheck).props.color).toBe("#FF0000");
+});
+
+it("keeps a partner's colour when an earlier partner drops off the strip (inspector lead)", () => {
+  const p = {
+    selectedId: "me",
+    accountId: "me",
+    status: "In sync · 2 training",
+    onSelect: jest.fn(),
+    onSettings: jest.fn(),
+    onEnd: jest.fn(),
+  };
+  const toneOf = (r: ReturnType<typeof renderWithTheme>, name: string) =>
+    r
+      .UNSAFE_getAllByType(TogetherAthleteAvatar)
+      .find((a) => a.props.name === name)!.props.tone;
+  const before = renderWithTheme(
+    <TogetherWorkoutRow {...p} members={members} />,
+  );
+  const tom = toneOf(before, "Tom Vance");
+  // Mia finished: she drops off the strip, but Tom keeps his colour.
+  const after = renderWithTheme(
+    <TogetherWorkoutRow
+      {...p}
+      members={members.filter((m) => m.userId !== "mia")}
+      toneMembers={members}
+    />,
+  );
+  expect(toneOf(after, "Tom Vance")).toBe(tom);
 });

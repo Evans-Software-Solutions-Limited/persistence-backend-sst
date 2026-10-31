@@ -620,11 +620,13 @@ export function TogetherLobbyContainer({
       c.userId === accountId ||
       snapshot.members.some((m) => m.host && m.userId === c.userId),
   );
+  // Colours and fallback names come from the full roster, so a guest who
+  // leaves doesn't shift anyone else's; only who is still here is listed.
   const people = sharingPeople(
-    members,
+    snapshot.members,
     accountId,
     (id, seat) => sharedSnapshot?.profiles[id] ?? `Athlete ${seat + 1}`,
-  );
+  ).filter((person) => members.some((m) => m.userId === person.userId));
   const sharing = useTogetherSharing(
     lobby.shared && sharedSnapshot && snapshot.sessionId && !sharingClosed
       ? {
@@ -761,6 +763,7 @@ export function TogetherLobbyContainer({
       : null;
   const strip = soloAgain ? null : workoutStatus && members.length ? (
     <TogetherWorkoutRow
+      toneMembers={snapshot.members}
       members={members.map((m) => ({
         userId: m.userId,
         name:
@@ -835,7 +838,7 @@ export function TogetherLobbyContainer({
         accountId={accountId}
         ownerId={viewing}
         exerciseNames={exerciseNames}
-        tone={togetherMemberTone(members, accountId, viewing)}
+        tone={togetherMemberTone(snapshot.members, accountId, viewing)}
         editable={
           togetherPartnerAccess(sharedSnapshot, viewing, accountId).editable
         }

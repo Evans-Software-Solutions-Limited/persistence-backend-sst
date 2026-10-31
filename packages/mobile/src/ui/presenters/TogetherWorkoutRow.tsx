@@ -29,6 +29,12 @@ export function togetherMemberTone(
  */
 export function TogetherWorkoutRow(p: {
   members: readonly { userId: string; name: string }[];
+  /**
+   * The full roster each partner's colour is worked out from, when `members`
+   * shows only who is still training; without it a partner who finishes
+   * shifts everyone after them to a new colour mid-workout (#522).
+   */
+  toneMembers?: readonly { userId: string }[];
   selectedId: string;
   accountId?: string;
   status: string;
@@ -69,7 +75,11 @@ export function TogetherWorkoutRow(p: {
               <TogetherAthleteAvatar
                 key={m.userId}
                 name={m.name}
-                tone={togetherMemberTone(p.members, me, m.userId)}
+                tone={togetherMemberTone(
+                  p.toneMembers ?? p.members,
+                  me,
+                  m.userId,
+                )}
                 selected={m.userId === p.selectedId}
                 accessibilityRole="tab"
                 accessibilityLabel={

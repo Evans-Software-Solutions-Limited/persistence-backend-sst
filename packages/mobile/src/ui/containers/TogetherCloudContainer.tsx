@@ -751,7 +751,11 @@ export function TogetherCloudContainer(p: {
         ownerId={viewing}
         accountId={p.accountId}
         exerciseNames={names}
-        tone={togetherMemberTone(present, p.accountId, viewing)}
+        tone={togetherMemberTone(
+          state.snapshot?.participants ?? present,
+          p.accountId,
+          viewing,
+        )}
         editable={
           !!partner(viewing)?.allowPartnerLogging &&
           togetherPartnerAccess(shared, viewing, p.accountId).editable
@@ -762,13 +766,15 @@ export function TogetherCloudContainer(p: {
   const row = soloAgain ? null : state.snapshot ? (
     <>
       <TogetherWorkoutRow
-        members={present.map((x, i) => ({
+        members={present.map((x) => ({
           userId: x.userId,
           name:
             x.userId === p.accountId
               ? "Me"
-              : (x.displayName ?? `Athlete ${i + 1}`),
+              : (x.displayName ??
+                `Athlete ${(state.snapshot?.participants ?? present).findIndex((y) => y.userId === x.userId) + 1}`),
         }))}
+        toneMembers={state.snapshot.participants}
         selectedId={viewing ?? p.accountId}
         accountId={p.accountId}
         status={status.status}
