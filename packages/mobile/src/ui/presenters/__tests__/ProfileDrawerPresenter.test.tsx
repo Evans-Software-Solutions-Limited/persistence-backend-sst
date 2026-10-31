@@ -131,6 +131,20 @@ describe("ProfileDrawerPresenter", () => {
     expect(queryByTestId("mode-switch-card")).toBeNull();
   });
 
+  it("PER-77: keeps the switch-to-athlete card in coach mode while eligibility is unknown (subscription loading/stalled/offline)", () => {
+    // `isTrainerEligible` is false until the subscription request answers;
+    // a coach whose request is stalled must still be able to leave.
+    const onSwitchMode = jest.fn();
+    const { getByTestId } = renderDrawer({
+      isTrainerEligible: false,
+      mode: "coach",
+      onSwitchMode,
+    });
+    expect(getByTestId("mode-switch-card")).toBeTruthy();
+    fireEvent.press(getByTestId("mode-switch-card-cta"));
+    expect(onSwitchMode).toHaveBeenCalledWith("athlete");
+  });
+
   it("renders the mode-switch card when trainer-eligible (AC 3.1)", () => {
     const { getByTestId } = renderDrawer({ isTrainerEligible: true });
     expect(getByTestId("mode-switch-card")).toBeTruthy();
