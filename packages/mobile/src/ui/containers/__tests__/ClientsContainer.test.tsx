@@ -21,6 +21,7 @@ import type { MySubscription } from "@/domain/models/subscription";
 import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import { useAddClientSheet } from "@/state/add-client-sheet";
+import { useUserMode } from "@/state/user-mode";
 import { ClientsContainer } from "@/ui/containers/ClientsContainer";
 import { makeTrainerClients } from "@/ui/presenters/coach/__tests__/trainerClients.fixture";
 
@@ -33,6 +34,7 @@ const mockFetch = jest.fn(async () => ({
 (globalThis as Record<string, unknown>).fetch = mockFetch;
 
 const mockPush = jest.fn();
+const mockNavigate = jest.fn();
 const mockSearchParams: { clientId?: string } = {};
 // Capture the focus callback so a test can invoke it manually (wrapped in
 // act) rather than firing it on every render — the container's first-focus
@@ -53,6 +55,7 @@ jest.mock("expo-router", () => ({
   },
   router: {
     push: (...args: unknown[]) => mockPush(...args),
+    navigate: (...args: unknown[]) => mockNavigate(...args),
     replace: jest.fn(),
     back: jest.fn(),
   },
@@ -165,6 +168,12 @@ function makeTrainerSub(
 
 beforeEach(() => {
   mockPush.mockReset();
+  mockNavigate.mockReset();
+  useUserMode.setState({
+    mode: "athlete",
+    isTrainerEligible: false,
+    isEligibilityKnown: false,
+  });
   mockFetch.mockClear();
   delete mockSearchParams.clientId;
   useAddClientSheet.setState({ open: false, onInvited: null });
@@ -183,6 +192,99 @@ describe("ClientsContainer", () => {
       </Wrapper>,
     );
     expect(screen.getByTestId("clients-loading")).toBeTruthy();
+  });
+
+  describe("PER-77: athlete escape while the coach subscription is unavailable", () => {
+    it("offers Switch to athlete mode under the spinner while the subscription request stalls, and a late answer does not switch back", async () => {
+      const { adapters, api } = makeAdapters(null);
+      // A request that hangs (poor connection that stays technically up).
+      let resolveSub: (
+        value: Awaited<ReturnType<InMemoryApiAdapter["getMySubscription"]>>,
+      ) => void = () => {};
+      api.getMySubscription = () =>
+        new Promise((resolve) => {
+          resolveSub = resolve;
+        });
+      // Rehydrated coach mode; eligibility unknown until the request answers.
+      useUserMode.setState({ mode: "coach" });
+      render(
+        <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
+          <ClientsContainer />
+        </Wrapper>,
+      );
+      expect(screen.getByTestId("clients-loading")).toBeTruthy();
+
+      fireEvent.press(screen.getByTestId("clients-loading-switch-athlete"));
+      expect(useUserMode.getState().mode).toBe("athlete");
+      // Clients → Train, the athlete equivalent tab.
+      expect(mockNavigate).toHaveBeenCalledWith("/(app)/(tabs)/train");
+
+      // The coach entitlement answering afterwards must not restore coach.
+      await act(async () => {
+        resolveSub({ ok: true, value: makeTrainerSub() });
+      });
+      expect(useUserMode.getState().mode).toBe("athlete");
+    });
+
+    it("a network failure with nothing cached shows retry + the athlete escape, NOT the trainer paywall", async () => {
+      const { adapters, api } = makeAdapters(makeTrainerSub());
+      api.shouldFail = true;
+      api.failError = {
+        kind: "api",
+        code: "network",
+        message: "Network request failed",
+      };
+      const getSub = jest.spyOn(api, "getMySubscription");
+      useUserMode.setState({ mode: "coach" });
+      render(
+        <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
+          <ClientsContainer />
+        </Wrapper>,
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId("clients-subscription-error")).toBeTruthy(),
+      );
+      // Unavailable is not a confirmed denial: no paywall, no roster.
+      expect(screen.queryByTestId("clients-gate")).toBeNull();
+      expect(
+        screen.queryByTestId("feature-gate-prompt-trainer_clients"),
+      ).toBeNull();
+      expect(screen.queryByTestId("client-row-c-priya")).toBeNull();
+
+      // Retry re-asks the server; once it answers, the real (entitled)
+      // verdict replaces the error state — still no paywall.
+      api.shouldFail = false;
+      const callsBefore = getSub.mock.calls.length;
+      fireEvent.press(screen.getByText("Retry"));
+      await waitFor(() =>
+        expect(screen.queryByTestId("clients-subscription-error")).toBeNull(),
+      );
+      expect(getSub.mock.calls.length).toBeGreaterThan(callsBefore);
+      expect(screen.queryByTestId("clients-gate")).toBeNull();
+      expect(screen.queryByTestId("clients-loading")).toBeNull();
+    });
+
+    it("the error state's Switch to athlete mode leaves coach mode without a subscription answer", async () => {
+      const { adapters, api } = makeAdapters(makeTrainerSub());
+      api.shouldFail = true;
+      api.failError = { kind: "api", code: "timeout", message: "Timed out" };
+      useUserMode.setState({ mode: "coach" });
+      render(
+        <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
+          <ClientsContainer />
+        </Wrapper>,
+      );
+      await waitFor(() =>
+        expect(
+          screen.getByTestId("clients-subscription-error-state-secondary"),
+        ).toBeTruthy(),
+      );
+      fireEvent.press(
+        screen.getByTestId("clients-subscription-error-state-secondary"),
+      );
+      expect(useUserMode.getState().mode).toBe("athlete");
+      expect(mockNavigate).toHaveBeenCalledWith("/(app)/(tabs)/train");
+    });
   });
 
   it("renders the FeatureGatePrompt for a non-trainer (free) user", async () => {

@@ -36,6 +36,51 @@ Mobile suite with coverage 96.15 / 92.18 / 96.05 / 97.52;
 `SubscriptionSelectionContainer` (cloud container only) and `useWorkouts`
 (load timeout; 8/8 alone) failed in the full run. **Not verified** on a device.
 
+### 2026-10-30 — Coach: the way back to athlete mode never waits on the subscription (PER-77, branch `claude/release-2-coach-fixes`)
+
+Release 2 bug batch. A coach mode restored at launch could strand the user
+while `GET /subscriptions/me` was loading, stalled or failed offline:
+- the drawer's mode-switch card rendered only when `isTrainerEligible`, which
+  stays false until the request answers (`ProfileDrawerPresenter.tsx`);
+- the Clients tab's spinner had no exit, and a failed request with nothing
+  cached showed the trainer paywall, treating a network failure as a denial.
+
+Fix: the card also renders in coach mode (switching to athlete needs no
+entitlement; switching to coach stays gated). The Clients spinner carries the
+existing "Switch to athlete mode" escape, and a failed request with no data
+shows `ErrorState` with Retry and the same escape instead of the paywall. No
+roster renders without a verdict, and a late answer never switches back.
+
+Tests that fail on the old code: the drawer presenter test and three
+`ClientsContainer` PER-77 tests (hang, network error, timeout). Mobile suite
+with coverage 96.09 / 92.12 / 95.98 / 97.48. `SubscriptionSelectionContainer`
+stalls only in the cloud container; `AddClientSheetContainer` timed out under
+full-suite load and passes alone (24/24). PER-80 audit #8 (half) and #3
+(paywall part) are covered; #5 (a 401 demotes a coach) is not.
+**Needs Brad's OK (UI additions):** the ghost button under the spinner and the
+error copy "Couldn't load your subscription. Check your connection and try
+again." **Not verified** on a device.
+
+### 2026-10-30 — Release 2 build: native packages for sharing a view as an image (PER-99, branch `claude/compassionate-clarke-eefidd`)
+
+Brad's Release 2 rule (30 Oct): UI revamps can follow as an over-the-air update,
+but anything native must be in the Release 2 store build, and everything is
+designed before it is built. `runtimeVersion` is `appVersion`, so an OTA update
+can only reach a build with the same app version and cannot add native code.
+
+Added `react-native-view-shot` 4.0.3 and `expo-sharing` ~55.0.20, the versions
+in SDK 55's `bundledNativeModules.json` (`expo install` couldn't reach Expo's
+API from the cloud container). Unused in source for now: PER-99 (summary as an
+image, designed under PER-85, canvas row 3c) and any shared recap (PER-74) can
+then ship as JS. `expo-sharing`'s config plugin only adds a share-into
+extension (off by default), so `app.config.ts` is unchanged; sending a share
+sheet needs no plugin or permission. Saving to Photos would also need
+`expo-media-library` and a permission string; not added.
+
+Checks: tsc, lint and prettier clean. Both packages ship autolinking metadata
+(view-shot podspec + android; expo-sharing `expo-module.config.json`).
+**Not verified:** a native build. The next EAS build is the proof.
+
 ### 2026-10-30 — Together: the session code admits to private sessions (PER-60, branch `claude/compassionate-clarke-eefidd`)
 
 Found during PR #514's review. The app offers "Private · code or QR" and lets a
