@@ -496,6 +496,19 @@ export function TogetherJoinContainer() {
     storage.cacheActiveSession(userId, draft);
     await lobby.workout.promote(draft);
     if (!isCurrent()) return;
+    // Partners see your plan from the moment you are in, not only after your
+    // first set: the host publishes on start, a guest here (PER-60, PER-64).
+    // A send that fails is retried with your first set, so it never blocks
+    // opening the workout.
+    const own = lobby.workout.getPlan(userId, draft.id);
+    if (own && lobby.shared) {
+      try {
+        lobby.shared.setOwnPlan(own);
+        void lobby.shared.publishOwnActivity().catch(() => {});
+      } catch {
+        /* The first logged set binds and sends the plan instead. */
+      }
+    }
     rereadCache();
     router.replace("/(app)/session" as never);
   };

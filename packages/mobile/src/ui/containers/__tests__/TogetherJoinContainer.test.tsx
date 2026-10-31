@@ -60,8 +60,27 @@ const mockLobby: any = {
   join: jest.fn(async () => {}),
   browse: jest.fn(async () => {}),
   selectDiscovered: jest.fn(async () => {}),
-  workout: { promote: jest.fn(async () => {}) },
-  shared: { getSnapshot: () => ({ plan }) },
+  workout: {
+    promote: jest.fn(async () => {}),
+    getPlan: jest.fn((): any => ownPlan),
+  },
+  shared: {
+    getSnapshot: () => ({ plan }),
+    setOwnPlan: jest.fn(),
+    publishOwnActivity: jest.fn(async () => {}),
+  },
+};
+/** The guest's own plan once promoted: their planExerciseIds, the host's exercises. */
+const ownPlan = {
+  name: "Push",
+  exercises: [
+    {
+      planExerciseId: "44444444-4444-4444-8444-444444444444",
+      exerciseId: "33333333-3333-4333-8333-333333333333",
+      order: 0,
+      targetSets: 1,
+    },
+  ],
 };
 const mockFriends = jest.fn();
 const mockSocialFriends = jest.fn();
@@ -298,6 +317,41 @@ it("joins a verified partner's nearby session: consent → connecting → admitt
   );
   expect(mockStorage.cacheActiveSession).toHaveBeenCalled();
   expect(mockReread).toHaveBeenCalled();
+  // The host sees this plan straight away, before any set is logged (PER-60).
+  const promoted = mockLobby.workout.promote.mock.calls[0][0];
+  expect(mockLobby.workout.getPlan).toHaveBeenCalledWith("u", promoted.id);
+  expect(mockLobby.shared.setOwnPlan).toHaveBeenCalledWith(ownPlan);
+  expect(mockLobby.shared.publishOwnActivity).toHaveBeenCalledTimes(1);
+});
+it.each([
+  ["the send fails", "publish"],
+  ["the plan is refused", "bind"],
+])("%s at admission: the workout still opens", async (_label, failure) => {
+  if (failure === "publish")
+    mockLobby.shared.publishOwnActivity.mockRejectedValueOnce(
+      new Error("network"),
+    );
+  else
+    mockLobby.shared.setOwnPlan.mockImplementationOnce(() => {
+      throw new Error("invalid");
+    });
+  const r = renderWithTheme(<TogetherJoinContainer />);
+  await waitFor(() => expect(mockLobby.browse).toHaveBeenCalled());
+  publish({ discovered: [discovered("s-brad", "brad", 3)] });
+  await waitFor(() => expect(r.getByText("Brad Evans")).toBeTruthy());
+  fireEvent.press(r.getByLabelText("Join Brad Evans"));
+  await waitFor(() => expect(r.getByText("Join this workout")).toBeTruthy());
+  fireEvent.press(r.getByText("Join and start"));
+  await waitFor(() => expect(mockLobby.join).toHaveBeenCalledTimes(1));
+  publish({ phase: "joined" });
+  await waitFor(() =>
+    expect(mockRouter.replace).toHaveBeenCalledWith("/(app)/session"),
+  );
+  expect(mockLobby.shared.setOwnPlan).toHaveBeenCalledTimes(1);
+  expect(mockLobby.shared.publishOwnActivity).toHaveBeenCalledTimes(
+    failure === "publish" ? 1 : 0,
+  );
+  expect(r.queryByText(/Could not/)).toBeNull();
 });
 it("a non-partner asks to join and waits for the host; cancel returns to the list", async () => {
   const r = renderWithTheme(<TogetherJoinContainer />);

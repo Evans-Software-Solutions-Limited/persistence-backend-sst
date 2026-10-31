@@ -237,6 +237,30 @@ describe("shared plans, sealed consent and independent projections", () => {
     engines[1].setOwnPlan(plan);
     expect(engines[1].getSnapshot().athletes).toEqual(before);
   });
+  it("a guest's numbers grant sent before promotion is followed by the plan and a baseline when it publishes (PER-60)", async () => {
+    // The guest's sharing defaults land at admission, before their workout is
+    // promoted, so the grant carries no plan.
+    engines[1].dispose();
+    engines[1] = make(2);
+    await engines[1].setConsent(id(1), { ...none, numbers: true });
+    let host = engines[0].getSnapshot();
+    expect(host.grants.find((g) => g.ownerId === id(2))?.consent.numbers).toBe(
+      true,
+    );
+    expect(host.athletePlans[id(2)]).toBeUndefined();
+    expect(host.athletes.find((a) => a.userId === id(2))).toBeUndefined();
+    engines[1].setOwnPlan(plan);
+    await engines[1].publishOwnActivity();
+    host = engines[0].getSnapshot();
+    expect(host.athletePlans[id(2)]).toEqual(plan);
+    const projection = host.athletes.find((a) => a.userId === id(2));
+    expect(projection).toMatchObject({ userId: id(2), revision: 0 });
+    expect(Object.keys(projection!.exercises)).toEqual([id(50)]);
+    // Nobody without a numbers grant gets numbers.
+    expect(
+      engines[2].getSnapshot().athletes.find((a) => a.userId === id(2)),
+    ).toBeUndefined();
+  });
   it("distributes a host-only immutable plan with independent logs, selected numbers and blind host relay", async () => {
     await engines[0].publishPlan(plan);
     expect(engines[1].getSnapshot().plan).toEqual(plan);

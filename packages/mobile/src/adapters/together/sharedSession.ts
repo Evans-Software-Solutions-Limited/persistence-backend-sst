@@ -981,10 +981,17 @@ export class TogetherSharedSession implements TogetherSharedPort {
     const prior = this.latest.get(
       scope({ authorId: this.ownId, recipientId: "all", type: "activity" }),
     );
-    if (prior?.payload.revision === this.ownRevision) {
+    if (prior?.payload.revision === this.ownRevision)
       await this.options.send(prior);
-      return;
-    }
+    else await this.publishActivity(plan);
+    // A numbers grant made before this plan was bound (a guest's sharing
+    // defaults land at admission, before promotion) carried no plan, so the
+    // partner had nothing to draw: send the baseline now (PER-60, PER-64).
+    for (const grant of [...this.grants.values()])
+      if (grant.ownerId === this.ownId && grant.consent.numbers)
+        await this.sendProjection(grant.recipientId);
+  }
+  private async publishActivity(plan: TogetherSharedPlan) {
     const projection = this.athletes.get(this.ownId);
     await this.publish("activity", "all", {
       plan,
