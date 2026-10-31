@@ -202,7 +202,7 @@ beforeAll(async () => {
   await pg.exec(
     await readFile(
       new URL(
-        "../../../../../../supabase/migrations/20261029120000_together_listed_until.sql",
+        "../../../../../../supabase/migrations/20261030130000_together_listed_until.sql",
         import.meta.url,
       ),
       "utf8",
