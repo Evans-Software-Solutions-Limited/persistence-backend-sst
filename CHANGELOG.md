@@ -1,5 +1,47 @@
 # Changelog
 
+## [1.27.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.26.0...persistence-v1.27.0) (2026-10-31)
+
+
+### Features
+
+* add authenticated offline Together LAN foundation ([#480](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/480)) ([29b7d65](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/29b7d659b3f99c87e5016688940aa72c23e9671d))
+* add verified same-network Together lobby browsing ([#484](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/484)) ([c6a7155](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/c6a7155576612a85bb1cc23b67395d17961aa4ea))
+* connect reviewed Together lobby to provisioned LAN admission ([#483](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/483)) ([8257b53](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/8257b532fef859dadfad929ae91fa826282f2b4b))
+* connect Together admission to durable own-workout logging ([#485](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/485)) ([bc4c34f](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/bc4c34f30752f0ae307b3f59ac35bb78ed23f0c4))
+* **core,web:** Blue Light Card member offer on a web Stripe subscription rail (PER-3) ([#504](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/504)) ([ca20e82](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/ca20e827d1a4f11f20304a71f88a1177178f5e12))
+* **mobile:** Together connects Nearby or Online only, with the sync-hint socket for online sessions (PER-64) ([#499](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/499)) ([4ba9897](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/4ba98970afe830e003d50c55ca282da4b841e9ef))
+* **mobile:** Together leaving, ending and finishing (PER-60 PR 3) ([#513](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/513)) ([2f89cdf](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/2f89cdfa816ce8f00bbfa70a0ab65364de2f72a5))
+* **mobile:** Together partner view — avatars are tabs (PER-60 PR 2) ([#512](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/512)) ([2014b3a](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/2014b3a6ad7bf3d57ed70b1be54bb34142a6c7f7))
+* **mobile:** Together sharing and settings (PER-60 PR 4) ([#514](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/514)) ([075995a](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/075995a68c1c0e04997164e18b5f5027a66803c8))
+* **mobile:** Together UX pass PR 1 — join, hub and create (PER-60) ([#511](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/511)) ([7008512](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/70085122c508228aa0f8bbfe448b2cf4e2e6d64f))
+* one bootstrap request for the app shell's cold start (PER-80) ([#497](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/497)) ([0ce69db](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/0ce69dbb75a98ac7ee514cdbd911b7b0faf5b35c))
+* prepare mobile identities for offline Together ([#482](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/482)) ([97c7769](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/97c7769e549a0890ed0183528b73f2c074ea2878))
+* **together:** integrate peer workouts and recovery for testing ([#486](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/486)) ([a773d58](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/a773d5810a044e5902031d1d74cace52c1d171f2))
+* **together:** iPhone-to-iPhone Nearby on peer-to-peer Wi-Fi through the LAN module, and connect deadlines above the SDK's (PER-64) ([#507](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/507)) ([ef58815](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/ef58815bba1163d890f00faed72e0f01bcd80ea5))
+* **together:** keep membership across background, reconnect on foreground and re-grant (PER-80) ([#495](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/495)) ([c642f24](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/c642f24ee842f702865a811b2ecf75905947ecaa))
+* **together:** Together log, real native error codes and Nearby SDK detail for the Nearby join failure (PER-64) ([#503](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/503)) ([9b8fe93](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/9b8fe9394625e0fc93bb9072e48f4f5a65628e54))
+* **together:** verify rosters once per revision and native Curve25519 (PER-64 D16) ([#492](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/492)) ([f99b269](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/f99b2696abeab405ec1249439640e88809f4c719))
+
+
+### Bug Fixes
+
+* **core:** bind every sql-template time bound as a string — recent sets and the stale-job sweep (PER-64) ([#505](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/505)) ([7d9a771](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/7d9a771a619948fd87bc652c036386d6a5921037))
+* **core:** bound set weight and distance at the validator — numeric overflow 500 on sessions/record ([#510](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/510)) ([9ec74af](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/9ec74af6486286caf191328c51320102f10d9ea1))
+* **db:** rename the listed_until migration after via_code so staging can deploy (PER-60) ([#520](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/520)) ([5a49c3b](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/5a49c3b5b050a87989847b4593d8d2b6e7f415d7))
+* **mobile:** empty session records no longer stick in sync; keyboard on the completion screen (PER-83, PER-68) ([#518](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/518)) ([91ca7a8](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/91ca7a8ea0503c57401b34c0d75af79a84373843))
+* **mobile:** keep athlete-mode switch reachable while coach subscription loads (PER-77) ([#517](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/517)) ([019b8ff](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/019b8ff00ff725e71ce2d4915cc74e474b34a38e))
+* **mobile:** nutrition and units bug batch (PER-96, PER-95, PER-100, PER-97, PER-98, PER-78) ([#519](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/519)) ([c5085d9](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/c5085d936c6d5ec6120bb57b86bc69c026da3cd1))
+* **mobile:** open the cold-start gate first and name the launch requests, 12 to 5 (PER-80) ([#498](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/498)) ([ae55119](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/ae55119410cf969423ab386ae20486a0b6be5f24))
+* **mobile:** restore Together setup and native Nearby registration ([#488](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/488)) ([2f0df36](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/2f0df36df17df264e8730dfa0b42c5f3bb1e01c2))
+* **mobile:** strong sdallocx so Nearby's BoringSSL cannot be coalesced onto ReactNativeDependencies (PER-64) ([#501](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/501)) ([39f394d](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/39f394d9cc8116d05df29a72067ec137e2ec6adb))
+* **together:** the session code admits to private sessions (PER-60) ([#515](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/515)) ([7f92a14](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/7f92a142a1dc306312b97262b42b8c3911d40304))
+
+
+### Performance Improvements
+
+* **mobile:** stop duplicate cold-start fetches and cap in-flight API requests (PER-80) ([#496](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/496)) ([489ca1b](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/489ca1b8b6d512ceea2618fd7f6e08ddb06b3642))
+
 ## [1.26.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.25.1...persistence-v1.26.0) (2026-10-01)
 
 
