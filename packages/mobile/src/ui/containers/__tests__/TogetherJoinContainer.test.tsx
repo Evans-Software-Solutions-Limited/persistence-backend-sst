@@ -408,6 +408,30 @@ it("an admission that lands after the join attempt failed clears the failure and
   expect(mockLobby.workout.promote).toHaveBeenCalledTimes(1);
   expect(r.queryByText(/Could not connect/)).toBeNull();
 });
+it("a failed adoption is retried when the lobby is joined again, not left on Joining (inspector lead)", async () => {
+  mockParams = {
+    connection: "local",
+    invitation: "invite",
+    transport: "nearby",
+  };
+  mockLobby.workout.promote.mockRejectedValueOnce(new Error("blip"));
+  const r = renderWithTheme(<TogetherJoinContainer />);
+  await waitFor(() => expect(r.getByText("Join this workout")).toBeTruthy());
+  fireEvent.press(r.getByText("Join and start"));
+  await waitFor(() => expect(mockLobby.join).toHaveBeenCalledTimes(1));
+  publish({ phase: "joined" });
+  await waitFor(() =>
+    expect(mockLobby.workout.promote).toHaveBeenCalledTimes(1),
+  );
+  // The radio blips and comes back: adoption runs again and opens.
+  publish({ phase: "reconnecting" });
+  await act(async () => {});
+  publish({ phase: "joined" });
+  await waitFor(() =>
+    expect(mockRouter.replace).toHaveBeenCalledWith("/(app)/session"),
+  );
+  expect(mockLobby.workout.promote).toHaveBeenCalledTimes(2);
+});
 it("an admission while another action holds the lock is adopted once the lock frees", async () => {
   let release!: () => void;
   mockLobby.join.mockImplementationOnce(

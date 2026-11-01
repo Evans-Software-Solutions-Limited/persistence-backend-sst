@@ -485,7 +485,18 @@ export function TogetherJoinContainer() {
   }, [params.scan, gate.allowed, userId]);
   /** Joining starts your workout on this plan: an open workout keeps its logged sets and gains the plan. */
   const adoptAndOpen = async (isCurrent: () => boolean) => {
+    // Adopt once per admission, but a failed adoption (a radio blip between
+    // the effect and this call, a plan not here yet) must be retried when the
+    // lobby is joined again, not leave the guest on Joining (#523).
     adopted.current = true;
+    try {
+      await adoptAndOpenOnce(isCurrent);
+    } catch (error) {
+      adopted.current = false;
+      throw error;
+    }
+  };
+  const adoptAndOpenOnce = async (isCurrent: () => boolean) => {
     if (!userId || !lobby?.workout || lobby.getSnapshot().phase !== "joined")
       throw new Error("not-admitted");
     const plan = lobby.shared?.getSnapshot().plan;
