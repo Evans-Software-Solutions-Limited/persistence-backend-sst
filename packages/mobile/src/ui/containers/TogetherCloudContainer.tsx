@@ -1,3 +1,7 @@
+import {
+  rememberEmptyRows,
+  sharesEmptyRows,
+} from "@/ui/state/togetherEmptyRowsSeen";
 import type { WeightUnit } from "@/shared/utils";
 import { togetherInvitationLink } from "@/adapters/together/invitationLink";
 import { invitationPayload } from "@/application/together/invitation";
@@ -466,6 +470,7 @@ export function TogetherCloudContainer(p: {
     };
   }, [resumeId, attachedId, p.cloud]);
   const shared = cloudSharedView(state, p.accountId);
+  rememberEmptyRows(state.snapshot?.sessionId, shared);
   const partner = (id: string) =>
     state.snapshot?.participants.find((x) => x.userId === id);
   // Who is still training here, for the strip and partner tabs (PER-60): a
@@ -767,6 +772,7 @@ export function TogetherCloudContainer(p: {
   const partnerView =
     !soloAgain && viewing && viewingPresent ? (
       <TogetherPartnerPresenter
+        sharesEmptyRows={sharesEmptyRows(state.snapshot?.sessionId, viewing)}
         key={viewing}
         weightUnit={p.weightUnit}
         snapshot={shared}

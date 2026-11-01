@@ -4,7 +4,13 @@ import { renderWithTheme } from "../../../../__tests__/test-utils";
 import {
   TogetherPartnerPresenter,
   togetherPartnerAccess,
+  togetherPartnerExercises,
 } from "../TogetherPartnerPresenter";
+import {
+  rememberEmptyRows,
+  resetEmptyRowsSeen,
+  sharesEmptyRows,
+} from "@/ui/state/togetherEmptyRowsSeen";
 import {
   PARTNER_SET_TIMEOUT_MS,
   useTogetherPartnerOutbox,
@@ -294,6 +300,37 @@ it("mirrors the partner's rows: a deleted empty row goes, an added one shows (Te
     expect(r.getByTestId(`set-logger-${id}`)).toBeTruthy();
 });
 
+it("a partner known to share empty rows stays exact once every row is logged (inspector lead)", () => {
+  // Squat: 4 planned; Mia deleted two empty rows and logged the other two.
+  const snapshot = withRows([S("s1", 8, 60), S("s2", 8, 60)], [S("r1", 5, 80)]);
+  const squatRows = (shares: boolean) =>
+    togetherPartnerExercises({
+      snapshot,
+      ownerId: "mia",
+      projection: snapshot.athletes[0],
+      exerciseNames: {},
+      added: {},
+      rowId: (id, i) => `${id}-stand-in-${i}`,
+      sharesEmptyRows: shares,
+    })
+      .find((e) => e.planExerciseId === "squat-slot")!
+      .rows.map((row) => row.setId);
+  // Without the memory it reads as an older app and the deleted rows return.
+  expect(squatRows(false)).toHaveLength(4);
+  expect(squatRows(true)).toEqual(["s1", "s2"]);
+});
+it("remembers per session which partners have shared an empty row", () => {
+  resetEmptyRowsSeen();
+  rememberEmptyRows("s-1", withRows([S("s1", 8, 60), E("e2")], []));
+  expect(sharesEmptyRows("s-1", "mia")).toBe(true);
+  // Every row logged later: still known.
+  rememberEmptyRows("s-1", withRows([S("s1", 8, 60), S("e2", 8, 60)], []));
+  expect(sharesEmptyRows("s-1", "mia")).toBe(true);
+  // A new session starts fresh.
+  rememberEmptyRows("s-2", withRows([S("s1", 8, 60)], []));
+  expect(sharesEmptyRows("s-2", "mia")).toBe(false);
+  expect(sharesEmptyRows(undefined, "mia")).toBe(false);
+});
 it("a fill-in on a planned row names Mia's own row, so it fills that set (TestFlight 31 Oct)", async () => {
   const r = render(withRows([S("s1", 8, 60), E("e2"), E("e3")], [E("r1")]));
   fireEvent.changeText(r.getAllByTestId("set-logger-reps")[2]!, "6");

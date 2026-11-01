@@ -54,6 +54,11 @@ export function togetherPartnerExercises(p: {
   keep?(setId: string): boolean;
   /** Ids already minted for an exercise, so kept rows past the first few are found. */
   minted?(planExerciseId: string): number;
+  /**
+   * The partner's app is known to share empty rows (seen earlier in this
+   * session), so their rows are exact even when every one is logged.
+   */
+  sharesEmptyRows?: boolean;
 }): PartnerExercise[] {
   const plan = p.snapshot.athletePlans[p.ownerId];
   const planned = [...(plan?.exercises ?? [])].sort(
@@ -77,9 +82,11 @@ export function togetherPartnerExercises(p: {
   ];
   // A partner whose app shares empty rows shows exactly their rows; one that
   // shares logged sets only shows any empty row (PER-60).
-  const exact = Object.values(p.projection?.exercises ?? {}).some((e) =>
-    e.sets.some((set) => !set.completed),
-  );
+  const exact =
+    !!p.sharesEmptyRows ||
+    Object.values(p.projection?.exercises ?? {}).some((e) =>
+      e.sets.some((set) => !set.completed),
+    );
   return slots.map((slot, index) => {
     const exercise = p.projection?.exercises[slot.planExerciseId];
     const exerciseId = slot.exerciseId ?? slot.fallbackId;
@@ -149,6 +156,8 @@ export function TogetherPartnerPresenter(p: {
   outbox: TogetherPartnerOutbox;
   /** The viewer's weight-display preference (PER-98); defaults to kg. */
   weightUnit?: WeightUnit;
+  /** This partner's app is known to share empty rows (`togetherEmptyRowsSeen`). */
+  sharesEmptyRows?: boolean;
 }) {
   const access = togetherPartnerAccess(p.snapshot, p.ownerId, p.accountId);
   const editable = p.editable && access.editable;
@@ -318,6 +327,7 @@ export function TogetherPartnerPresenter(p: {
     rowId: p.outbox.rowId,
     keep: (setId) => !!drafts[setId] || !!delivery[setId],
     minted: p.outbox.minted,
+    sharesEmptyRows: p.sharesEmptyRows,
   });
   /** The value shown in a row: a live draft, else what the partner logged. */
   const shown = (row: PartnerRow): PartnerRow => {
