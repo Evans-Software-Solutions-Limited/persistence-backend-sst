@@ -416,7 +416,7 @@ describe("own workout durable checkpoint (real SQLite and signatures)", () => {
         .execution.exercises[0].sets.map((set) => set.setId),
     ).toEqual([before[1]!.setId]);
   });
-  it("shares empty rows only up to the row cap, so a long plan never stalls sharing (inspector lead)", async () => {
+  it("shares empty rows only while the sealed frame and row cap allow, so a long plan never stalls sharing (inspector lead)", async () => {
     const s = draft();
     const base = s.exercises[0];
     // Four exercises of 90 empty rows: 360 rows, past the 300-row cap.
@@ -437,7 +437,10 @@ describe("own workout durable checkpoint (real SQLite and signatures)", () => {
     const shared = runtime
       .getOwnExecution(userId, s.id)!
       .execution.exercises.reduce((n, e) => n + e.sets.length, 0);
-    expect(shared).toBe(MAX_PROJECTED_ROWS);
+    // As many as fit one sealed frame with the plan, never past the row cap.
+    expect(shared).toBeGreaterThan(100);
+    expect(shared).toBeLessThanOrEqual(MAX_PROJECTED_ROWS);
+    expect(shared).toBeLessThan(360);
     // The athlete's own workout keeps every row.
     expect(
       runtime

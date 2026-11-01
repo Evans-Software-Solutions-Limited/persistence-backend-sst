@@ -1,4 +1,5 @@
 /** @jest-environment node */
+import { emptyRowRoom } from "../workoutCheckpoint";
 import { completeTogetherSession } from "@/application/commands/session/complete-together-session.command";
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
 import type { WorkoutSession } from "@/domain/models/session";
@@ -284,6 +285,63 @@ describe("shared plans, sealed consent and independent projections", () => {
     await expect(
       engines[1].publishProgress(command(2, 220, row(100, true))),
     ).rejects.toThrow();
+  });
+  it("the empty rows a sender budgets for a big plan all fit through publish (inspector lead)", async () => {
+    // 20 exercises of 10 sets: the plan alone takes a real share of the frame.
+    const bigPlan = {
+      ...plan,
+      exercises: Array.from({ length: 20 }, (_, i) => ({
+        planExerciseId: id(400 + i),
+        exerciseId: id(500 + i),
+        order: i,
+        targetSets: 10,
+      })),
+    };
+    engines.forEach((e) => e.dispose());
+    engines = [make(1), make(2), make(3)];
+    engines.forEach((e) => e.setOwnPlan(bigPlan));
+    await engines[0].publishPlan(bigPlan);
+    await engines[1].publishOwnActivity();
+    await engines[1].setConsent(id(3), { ...none, numbers: true });
+    const room = emptyRowRoom(
+      bigPlan,
+      { exercises: [] } as unknown as WorkoutSession,
+      {},
+    ).left;
+    // Fewer than 200 planned rows fit once the plan and sealing are counted.
+    expect(room).toBeGreaterThan(50);
+    expect(room).toBeLessThan(200);
+    const big = (n: number, op: Record<string, unknown>) =>
+      commandFromEnvelope(
+        signPayload<OwnerCommand>(
+          {
+            kind: "together-recovery-v1",
+            userId: id(2),
+            sessionId: pin.sessionId,
+            executionId: id(22),
+            commandId: randomUUID(),
+            planHash: requestHash(bigPlan),
+            startedAt: time,
+            expectedVersion: n,
+            operation: op,
+          },
+          person(2).seed,
+        ),
+      );
+    for (let n = 0; n < room; n++)
+      await engines[1].publishProgress(
+        big(n, {
+          type: "upsertSet",
+          planExerciseId: id(400 + (n % 20)),
+          set: { setId: id(2000 + n), reps: 0, weightKg: 0, completed: false },
+        }),
+      );
+    const partner = engines[2]
+      .getSnapshot()
+      .athletes.find((a) => a.userId === id(2))!;
+    expect(
+      Object.values(partner.exercises).reduce((n, e) => n + e.sets.length, 0),
+    ).toBe(room);
   });
   it("a guest's numbers grant sent before promotion is followed by the plan and a baseline when it publishes (PER-60)", async () => {
     // The guest's sharing defaults land at admission, before their workout is
