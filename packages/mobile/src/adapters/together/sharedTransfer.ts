@@ -3,6 +3,12 @@ import { requestHash } from "./security/identity";
 import type { SharedEnvelope } from "./sharedSession";
 
 export const MAX_SHARED_BYTES = 30000;
+/**
+ * Rows one athlete's shared projection may carry. Empty planned rows are
+ * shared too (PER-60), so this is separate from the 100 logged sets a
+ * projection may hold, and sized to stay inside one shared frame.
+ */
+export const MAX_PROJECTED_ROWS = 300;
 export const MAX_PREVIOUS_BYTES = 2 * 1024 * 1024;
 export const SHARED_CHUNK_SIZE = 12000;
 export const SHARED_TRANSFER_TIMEOUT = 60000;

@@ -257,6 +257,34 @@ describe("shared plans, sealed consent and independent projections", () => {
       [id(62), false],
     ]);
   });
+  it("a long plan's empty rows past 100 still share, while logged sets keep their 100 cap (inspector lead)", async () => {
+    await engines[1].publishOwnActivity();
+    await engines[1].setConsent(id(3), { ...none, numbers: true });
+    const row = (n: number, completed: boolean) => ({
+      type: "upsertSet",
+      planExerciseId: id(50),
+      set: {
+        setId: id(1000 + n),
+        reps: completed ? 8 : 0,
+        weightKg: completed ? 60 : 0,
+        completed,
+      },
+    });
+    // 120 empty rows: past the old shared total of 100, inside the row cap.
+    for (let n = 0; n < 120; n++)
+      await engines[1].publishProgress(command(2, n, row(n, false)));
+    const sets = () =>
+      engines[2].getSnapshot().athletes.find((a) => a.userId === id(2))!
+        .exercises[id(50)]!.sets;
+    expect(sets()).toHaveLength(120);
+    // Filling 100 of them is fine; a 101st logged set is still refused.
+    for (let n = 0; n < 100; n++)
+      await engines[1].publishProgress(command(2, 120 + n, row(n, true)));
+    expect(sets().filter((s) => s.completed)).toHaveLength(100);
+    await expect(
+      engines[1].publishProgress(command(2, 220, row(100, true))),
+    ).rejects.toThrow();
+  });
   it("a guest's numbers grant sent before promotion is followed by the plan and a baseline when it publishes (PER-60)", async () => {
     // The guest's sharing defaults land at admission, before their workout is
     // promoted, so the grant carries no plan.

@@ -28,6 +28,7 @@ import {
   type Signed,
 } from "./security/identity";
 import { uuid, object, integer } from "./security/schema";
+import { MAX_PROJECTED_ROWS } from "./sharedTransfer";
 
 export interface WorkoutAuthority {
   sessionId: string;
@@ -665,8 +666,23 @@ export class TogetherWorkoutCheckpoint implements TogetherWorkoutPort {
           commands.push(command);
         }
       const projected: Projection = Object.create(null);
+      // Empty rows are shared only up to the frame's row cap: a long plan
+      // must never push the projection past what partners accept, or every
+      // later update would fail (#523). Logged sets always go.
+      let emptyRoom =
+        MAX_PROJECTED_ROWS -
+        session.exercises.reduce(
+          (n, e) =>
+            n +
+            e.sets.filter((s) => s.reps !== null && s.weightKg !== null).length,
+          0,
+        );
       for (const e of session.exercises)
         for (const s of e.sets) {
+          if (s.reps === null || s.weightKg === null) {
+            if (emptyRoom <= 0) continue;
+            emptyRoom--;
+          }
           if (!Object.hasOwn(c.setIds, s.id))
             Object.defineProperty(c.setIds, s.id, {
               value: this.randomUUID(),

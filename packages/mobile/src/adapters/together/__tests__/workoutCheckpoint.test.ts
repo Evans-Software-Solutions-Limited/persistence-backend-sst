@@ -1,3 +1,4 @@
+import { MAX_PROJECTED_ROWS } from "../sharedTransfer";
 /** @jest-environment node */
 import { DatabaseSync } from "node:sqlite";
 import { completeTogetherSession } from "../../../application/commands/session/complete-together-session.command";
@@ -414,6 +415,35 @@ describe("own workout durable checkpoint (real SQLite and signatures)", () => {
         .getOwnExecution(userId, s.id)!
         .execution.exercises[0].sets.map((set) => set.setId),
     ).toEqual([before[1]!.setId]);
+  });
+  it("shares empty rows only up to the row cap, so a long plan never stalls sharing (inspector lead)", async () => {
+    const s = draft();
+    const base = s.exercises[0];
+    // Four exercises of 90 empty rows: 360 rows, past the 300-row cap.
+    s.exercises = [0, 1, 2, 3].map((x) => ({
+      ...base,
+      id: `local-exercise-${x}`,
+      sortOrder: x,
+      sets: Array.from({ length: 90 }, (_, n) => ({
+        ...base.sets[0],
+        id: `local-row-${x}-${n}`,
+        sessionExerciseId: `local-exercise-${x}`,
+        setNumber: n + 1,
+        reps: null,
+        weightKg: null,
+      })),
+    }));
+    await runtime.promote(s);
+    const shared = runtime
+      .getOwnExecution(userId, s.id)!
+      .execution.exercises.reduce((n, e) => n + e.sets.length, 0);
+    expect(shared).toBe(MAX_PROJECTED_ROWS);
+    // The athlete's own workout keeps every row.
+    expect(
+      runtime
+        .read(userId, s.id)!
+        .exercises.reduce((n, e) => n + e.sets.length, 0),
+    ).toBe(360);
   });
   it("blank/partial sets are preserved and shared as empty rows, never as logged values", async () => {
     const s = draft();
