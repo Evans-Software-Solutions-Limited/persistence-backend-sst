@@ -5,6 +5,7 @@ import {
 import type { WeightUnit } from "@/shared/utils";
 import { togetherInvitationLink } from "@/adapters/together/invitationLink";
 import { hostDetailsFrom } from "@/adapters/together/planDetails";
+import { withSharedExerciseNames } from "@/adapters/together/adoptSharedPlan";
 import { invitationPayload } from "@/application/together/invitation";
 import { applyNearbyConsent } from "@/application/together/nearbyConsent";
 import { TogetherScannerPresenter } from "@/ui/presenters/TogetherScannerPresenter";
@@ -846,7 +847,10 @@ export function TogetherLobbyContainer({
         snapshot={sharedSnapshot}
         accountId={accountId}
         ownerId={viewing}
-        exerciseNames={exerciseNames}
+        exerciseNames={withSharedExerciseNames(
+          exerciseNames,
+          sharedSnapshot.exerciseDefinitions,
+        )}
         tone={togetherMemberTone(snapshot.members, accountId, viewing)}
         editable={
           togetherPartnerAccess(sharedSnapshot, viewing, accountId).editable

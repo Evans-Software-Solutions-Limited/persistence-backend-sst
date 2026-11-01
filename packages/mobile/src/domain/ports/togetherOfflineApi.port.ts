@@ -3,6 +3,7 @@ import type {
   Credential,
   FriendshipEvidence,
   Registration,
+  TogetherExerciseShare,
   TrustedKeys,
 } from "@/domain/models/togetherIdentity";
 import type { Result, ApiError } from "@/shared/errors";
@@ -95,6 +96,8 @@ export interface TogetherRecoveryApi {
       startedAt: number;
       plan: TogetherRecoveryPlan;
       commands: Signed<TogetherRecoveryCommand>[];
+      /** The host's share of its custom exercises (PER-60); absent when none. */
+      exerciseShare?: TogetherExerciseShare;
     },
   ): Promise<
     Result<

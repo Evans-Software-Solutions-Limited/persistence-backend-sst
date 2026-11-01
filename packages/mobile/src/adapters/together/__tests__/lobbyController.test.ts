@@ -1659,6 +1659,56 @@ describe("reviewed lobby coordinator, real cryptography and SQLite, simulated na
     await settle();
     return { host, guest };
   }
+  it("hands a guest the host's share of its custom exercise and keeps it in the guest's workout (PER-60)", async () => {
+    const host = setup(1, {
+        customExercises: (ownerId, ids) =>
+          ownerId === id(1) && ids.includes(id(500))
+            ? {
+                [id(500)]: {
+                  name: "Host squat",
+                  category: "strength",
+                  primaryMuscles: [],
+                },
+              }
+            : {},
+      }),
+      guest = setup(2);
+    await host.controller.host("Strength A");
+    await join(host, guest, true);
+    await host.controller.workout.promote(workout());
+    await guest.controller.workout.promote(workout(2));
+    await jest.advanceTimersByTimeAsync(0);
+    await settle();
+    await host.controller.shared.publishPlan(
+      host.controller.workout.getPlan(id(1), "local-session")!,
+    );
+    await settle();
+    const shared = guest.controller.shared.getSnapshot();
+    expect(shared.exerciseDefinitions?.[id(500)]?.name).toBe("Host squat");
+    expect(shared.exerciseShare?.proof.payload).toMatchObject({
+      kind: "together-exercise-share-v1",
+      hostUserId: id(1),
+      userId: id(2),
+      exerciseIds: [id(500)],
+    });
+    const stored = JSON.parse(
+      (
+        guest.db
+          .prepare("SELECT payload FROM together_workout_checkpoint")
+          .get() as { payload: string }
+      ).payload,
+    );
+    expect(stored.exerciseShare).toEqual(shared.exerciseShare);
+    // The host keeps no share of its own.
+    const hosted = JSON.parse(
+      (
+        host.db
+          .prepare("SELECT payload FROM together_workout_checkpoint")
+          .get() as { payload: string }
+      ).payload,
+    );
+    expect(hosted.exerciseShare).toBeUndefined();
+  });
   it("composes named profiles, independent plans and projection receipts without journal acknowledgement", async () => {
     const { host, guest } = await sharedPair();
     await host.controller.shared.publishProfile("Brad");

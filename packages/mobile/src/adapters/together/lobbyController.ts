@@ -2,6 +2,7 @@ import { TogetherWorkoutCheckpoint } from "./workoutCheckpoint";
 import { TogetherSharedSession } from "./sharedSession";
 import type {
   TogetherSharedPort,
+  TogetherSharedExerciseDefinition,
   TogetherSharedSnapshot,
   TogetherSharingConsent,
 } from "../../domain/ports/togetherShared.port";
@@ -70,6 +71,14 @@ export interface TogetherLobbyControllerOptions {
   diagnostics?: TogetherLogSink;
   /** A Nearby/LAN failure with its stage, for error reporting (Sentry). */
   report?: (failure: TogetherFailure) => void;
+  /**
+   * The account's own custom exercises among `ids`, from its library. A host
+   * shares these with admitted guests (PER-60).
+   */
+  customExercises?: (
+    ownerId: string,
+    ids: readonly string[],
+  ) => Record<string, TogetherSharedExerciseDefinition>;
 }
 export type TogetherFailureStage =
   | "discover"
@@ -193,20 +202,22 @@ export class TogetherLobbyController implements TogetherLobbyPort {
               requestHash(resources.identity.credential),
           );
         if (!member) return;
+        const shared = resources.shared?.getSnapshot();
         if (
-          resources.shared
-            ?.getSnapshot()
-            .closures.some(
-              (c) =>
-                c.userId === this.account ||
-                c.userId === resources.lobby.pin.hostUserId,
-            )
+          shared?.closures.some(
+            (c) =>
+              c.userId === this.account ||
+              c.userId === resources.lobby.pin.hostUserId,
+          )
         )
           return;
         return {
           sessionId: resources.lobby.pin.sessionId,
           executionId: member.consent.payload.executionId,
           credential: resources.identity.credential,
+          ...(shared?.exerciseShare
+            ? { exerciseShare: shared.exerciseShare }
+            : {}),
           seed: resources.identity.seed,
           sharing:
             this.snapshot.phase === "reconnecting" ||
@@ -951,8 +962,13 @@ export class TogetherLobbyController implements TogetherLobbyPort {
           throw new Error("sharing-unavailable");
         await resources.session.sendShared(envelope);
       },
+      customExercises: (ids) =>
+        this.account
+          ? (this.options.customExercises?.(this.account, ids) ?? {})
+          : {},
     });
     let applyingDelegation = false;
+    let storedShare: string | null = null;
     resources.shared.subscribe(() => {
       if (this.resources !== resources) return;
       if (!applyingDelegation && this.account) {
@@ -994,6 +1010,15 @@ export class TogetherLobbyController implements TogetherLobbyPort {
           applyingDelegation = false;
         }
       }
+      // A share from the host goes into the guest's workout for its recovery
+      // upload (PER-60); one that can't be stored yet is stored next time.
+      const share = resources.shared!.exerciseShareId();
+      if (this.resources === resources && this.account && share !== storedShare)
+        try {
+          if (this.workout.syncExerciseShare(this.account)) storedShare = share;
+        } catch {
+          /* Retried on the next shared change or at promotion. */
+        }
       if (this.resources === resources) this.publish({});
     });
     this.resources = resources;
@@ -1287,4 +1312,6 @@ const EMPTY_SHARED: TogetherSharedSnapshot = {
   grants: [],
   closures: [],
   delegated: [],
+  exerciseShare: null,
+  exerciseDefinitions: {},
 };

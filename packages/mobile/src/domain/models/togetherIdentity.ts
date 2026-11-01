@@ -27,4 +27,23 @@ export interface Registration {
   requestId: string;
   timestamp: number;
 }
+/**
+ * A Nearby host's signed statement, issued to one admitted guest, that the
+ * plan's exercises are shared with that guest (PER-60). Mirrors core
+ * `ExerciseShare`; the server honours only ids the host created.
+ */
+export interface ExerciseShareProof {
+  kind: "together-exercise-share-v1";
+  sessionId: string;
+  hostUserId: string;
+  hostDeviceId: string;
+  userId: string;
+  exerciseIds: string[];
+  issuedAt: number;
+}
+/** The share and the host's server-issued credential that verifies it. */
+export interface TogetherExerciseShare {
+  credential: Signed<Credential>;
+  proof: Signed<ExerciseShareProof>;
+}
 export type TrustedKeys = Record<string, string>;

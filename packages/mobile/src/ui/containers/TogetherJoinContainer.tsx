@@ -33,7 +33,10 @@ import {
   invitationPayload,
 } from "@/application/together/invitation";
 import { startSessionCommand } from "@/application/commands/session";
-import { adoptSharedPlan } from "@/adapters/together/adoptSharedPlan";
+import {
+  adoptSharedPlan,
+  sharedExerciseName,
+} from "@/adapters/together/adoptSharedPlan";
 import { usePendingTogetherJoin } from "@/state/pending-together-join";
 import {
   loadPartnerSessions,
@@ -520,7 +523,11 @@ export function TogetherJoinContainer() {
       {
         randomUUID,
         exerciseName: (id) =>
-          storage.getCachedExercises().find((e) => e.id === id)?.name,
+          sharedExerciseName(
+            id,
+            storage.getCachedExercises(),
+            lobby.shared?.getSnapshot().exerciseDefinitions,
+          ),
       },
     );
     if (!existing) draft.name = plan.name;
