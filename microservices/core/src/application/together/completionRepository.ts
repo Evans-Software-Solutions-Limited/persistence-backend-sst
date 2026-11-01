@@ -14,6 +14,7 @@ import {
   type TogetherPlan,
   type TogetherExecution,
   type TogetherExerciseDefinition,
+  type TogetherSharedExercises,
 } from "@persistence/db";
 import { executionSchema } from "./types";
 import {
@@ -44,6 +45,7 @@ export class TogetherCompletionRepository {
     plan: TogetherPlan,
     execution: TogetherExecution,
     existing: Record<string, TogetherExerciseDefinition>,
+    shared?: TogetherSharedExercises | null,
   ) {
     requireTogether(executionValidator.Check(execution), "INVALID_SCHEMA", 400);
     requireTogether(
@@ -71,15 +73,16 @@ export class TogetherCompletionRepository {
         e.substituteExerciseId ? [e.substituteExerciseId] : [],
       ),
     ]);
+    const columns = {
+      name: exercises.name,
+      category: exercises.category,
+      primaryMuscles: exercises.primaryMuscles,
+      createdBy: exercises.createdBy,
+    };
     for (const id of ids) {
       if (definitions[id]) continue;
-      const [source] = await tx
-        .select({
-          name: exercises.name,
-          category: exercises.category,
-          primaryMuscles: exercises.primaryMuscles,
-          createdBy: exercises.createdBy,
-        })
+      let [source] = await tx
+        .select(columns)
         .from(exercises)
         .where(
           and(
@@ -87,6 +90,19 @@ export class TogetherCompletionRepository {
             new ExerciseRepository().buildVisibilityCondition(actor),
           ),
         );
+      // An exercise the actor can't see is allowed only when a verified host
+      // share names it and the host created it (PER-60); its definition is
+      // read here, never taken from the upload.
+      if (!source && shared?.exerciseIds.includes(id))
+        [source] = await tx
+          .select(columns)
+          .from(exercises)
+          .where(
+            and(
+              eq(exercises.id, id),
+              eq(exercises.createdBy, shared.hostUserId),
+            ),
+          );
       requireTogether(source, "EXERCISE_UNAVAILABLE", 409);
       definitions[id] = {
         ...source,
@@ -108,6 +124,7 @@ export class TogetherCompletionRepository {
       completedAt: Date;
       historyId?: string | null;
       clientRecordId?: string;
+      shared?: TogetherSharedExercises | null;
     },
   ) {
     const [prior] = await tx
@@ -120,6 +137,7 @@ export class TogetherCompletionRepository {
       input.plan,
       input.execution,
       { ...prior?.exerciseDefinitions, ...input.definitions },
+      input.shared,
     );
     const completedAt = prior?.completedAt ?? input.completedAt;
     requireTogether(
@@ -237,6 +255,7 @@ export class TogetherCompletionRepository {
             startedAt: candidate.startedAt,
             completedAt: new Date(body.completedAt),
             clientRecordId: executionId,
+            shared: candidate.sharedExercises,
           });
         },
       );

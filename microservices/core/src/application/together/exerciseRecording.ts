@@ -26,15 +26,37 @@ export async function materializeTogetherExercise(
   }
   // Foreign custom exercises get an independently owned copy even while
   // the source exists: a later creator purge must not cascade this result.
+  // The copy carries the source's full details (PER-60); the authorized
+  // snapshot stands in only once the source is gone. Never public, and never
+  // the source's own idempotency key.
   const clientRequestId = `together-recovery:${sourceId}`;
+  const [full] = source
+    ? await tx
+        .select({
+          name: exercises.name,
+          description: exercises.description,
+          instructions: exercises.instructions,
+          category: exercises.category,
+          difficultyLevel: exercises.difficultyLevel,
+          primaryMuscles: exercises.primaryMuscles,
+          secondaryMuscles: exercises.secondaryMuscles,
+          equipmentRequired: exercises.equipmentRequired,
+          videoUrl: exercises.videoUrl,
+          thumbnailUrl: exercises.thumbnailUrl,
+        })
+        .from(exercises)
+        .where(eq(exercises.id, source.id))
+    : [];
   await tx
     .insert(exercises)
     .values({
+      ...(full ?? {
+        name: definition.name,
+        category: definition.category,
+        primaryMuscles: definition.primaryMuscles,
+      }),
       createdBy: userId,
       clientRequestId,
-      name: definition.name,
-      category: definition.category,
-      primaryMuscles: definition.primaryMuscles,
       isPublic: false,
     })
     .onConflictDoNothing({

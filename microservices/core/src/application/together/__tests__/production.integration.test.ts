@@ -2059,6 +2059,62 @@ describe("host custom exercises shared with admitted partners (PER-60)", () => {
         "Host finisher",
       );
   });
+  it("saves the guest's sets on a private copy carrying the host exercise's full details", async () => {
+    const s = await hosted();
+    const muscle = key(),
+      secondary = key(),
+      equipment = key();
+    await db
+      .update(schema.exercises)
+      .set({
+        description: "A hinge",
+        instructions: "Brace, then pull",
+        category: "olympic",
+        difficultyLevel: "advanced",
+        primaryMuscles: [muscle],
+        secondaryMuscles: [secondary],
+        equipmentRequired: [equipment],
+        videoUrl: "https://example.com/lift.mp4",
+        thumbnailUrl: "https://example.com/lift.jpg",
+        clientRequestId: "host-own-key",
+      })
+      .where(eq(schema.exercises.id, s.hostLift));
+    const invite = await repo.invite(a, s.sessionId, key(), {
+      expiresInMinutes: 15,
+    });
+    const req = await repo.requestJoin(b, key(), {
+      inviteToken: invite.token,
+      ...consent,
+    });
+    await repo.decide(a, s.sessionId, req.requestId, key(), {
+      decision: "approve",
+      expectedRevision: (await repo.snapshot(a, s.sessionId)).revision,
+    });
+    await run(b, s.sessionId, cmd(b, s.plan.exercises[1].planExerciseId));
+    await repo.finish(b, s.sessionId, key(), { expectedOwnRevision: 1 });
+    await repo.processJob(s.sessionId, b);
+    const [recorded] = await db.select().from(schema.sessionExercises);
+    expect(recorded.exerciseId).not.toBe(s.hostLift);
+    const [copy] = await db
+      .select()
+      .from(schema.exercises)
+      .where(eq(schema.exercises.id, recorded.exerciseId));
+    expect(copy).toMatchObject({
+      createdBy: b,
+      isPublic: false,
+      clientRequestId: `together-recovery:${s.hostLift}`,
+      name: "Host lift",
+      description: "A hinge",
+      instructions: "Brace, then pull",
+      category: "olympic",
+      difficultyLevel: "advanced",
+      primaryMuscles: [muscle],
+      secondaryMuscles: [secondary],
+      equipmentRequired: [equipment],
+      videoUrl: "https://example.com/lift.mp4",
+      thumbnailUrl: "https://example.com/lift.jpg",
+    });
+  });
   it("shows a user who is not admitted no more than the consent card", async () => {
     const s = await hosted();
     const preview = await repo.preview(c, { code: s.code! });

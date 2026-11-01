@@ -31,6 +31,20 @@ export interface Registration {
   requestId: string;
   timestamp: number;
 }
+/**
+ * A host's signed statement, issued to one admitted guest of one Nearby
+ * session, that the listed plan exercises are shared with that guest
+ * (PER-60). Recovery only honours ids the host itself created.
+ */
+export interface ExerciseShare {
+  kind: "together-exercise-share-v1";
+  sessionId: string;
+  hostUserId: string;
+  hostDeviceId: string;
+  userId: string;
+  exerciseIds: string[];
+  issuedAt: number;
+}
 export type TrustedKeys = Record<string, string>;
 export function signatureBytes(payload: unknown) {
   return Buffer.from(

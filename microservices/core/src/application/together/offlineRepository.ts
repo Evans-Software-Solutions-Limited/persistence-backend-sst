@@ -21,6 +21,7 @@ import {
   requestHash,
   enforceRateLimit,
   togetherEnabled,
+  type TogetherTx,
 } from "./shared";
 import { areFriends, canInteract } from "../social/socialRepository";
 import {
@@ -29,12 +30,13 @@ import {
   verifySignature,
   OFFLINE_CREDENTIAL_TTL_MS,
   type Credential,
+  type ExerciseShare,
   type FriendshipEvidence,
   type Registration,
   type Signed,
 } from "./offlineIdentity";
 import { reconstructOwn, type RecoveryCommand } from "./offlineRecovery";
-import type { TogetherPlan } from "@persistence/db";
+import type { TogetherPlan, TogetherSharedExercises } from "@persistence/db";
 
 export interface RecoveryUpload {
   credential: Signed<Credential>;
@@ -43,6 +45,64 @@ export interface RecoveryUpload {
   startedAt: number;
   plan: TogetherPlan;
   commands: Signed<RecoveryCommand>[];
+  /** The host's signed share of its custom plan exercises (PER-60). */
+  exerciseShare?: {
+    credential: Signed<Credential>;
+    proof: Signed<ExerciseShare>;
+  };
+}
+/**
+ * Verifies a host's exercise share for this guest's upload: a server-issued
+ * credential for the host's registered device, and the host's signature over
+ * a share naming this session and this guest. Returns the plan exercise ids it
+ * covers; completion still copies only those the host created.
+ */
+async function verifiedShare(
+  tx: TogetherTx,
+  actor: string,
+  body: RecoveryUpload,
+): Promise<TogetherSharedExercises | null> {
+  if (!body.exerciseShare) return null;
+  const { credential, proof } = body.exerciseShare,
+    host = credential.payload,
+    authority = offlineAuthority();
+  requireTogether(
+    host.kind === "together-device-v1" &&
+      Object.hasOwn(authority.publicKeys, host.keyId),
+    "INVALID_PROOF",
+    403,
+  );
+  verifySignature(credential, authority.publicKeys[host.keyId]);
+  const share = verifySignature(proof, host.publicKey);
+  requireTogether(
+    share.kind === "together-exercise-share-v1" &&
+      share.sessionId === body.sessionId &&
+      share.userId === actor &&
+      share.hostUserId !== actor &&
+      share.hostUserId === host.userId &&
+      share.hostDeviceId === host.deviceId &&
+      new Set(share.exerciseIds).size === share.exerciseIds.length,
+    "INVALID_PROOF",
+    403,
+  );
+  // As for the actor's own credential: the key must be the one the host
+  // registered for that device, not merely one the authority once signed.
+  const [device] = await tx
+    .select()
+    .from(devices)
+    .where(
+      and(eq(devices.userId, host.userId), eq(devices.deviceId, host.deviceId)),
+    );
+  requireTogether(
+    device && device.publicKey === host.publicKey,
+    "INVALID_PROOF",
+    403,
+  );
+  const planned = new Set(body.plan.exercises.map((e) => e.exerciseId));
+  return {
+    hostUserId: share.hostUserId,
+    exerciseIds: share.exerciseIds.filter((id) => planned.has(id)),
+  };
 }
 export class TogetherOfflineRepository {
   private enabled() {
@@ -236,6 +296,7 @@ export class TogetherOfflineRepository {
         "INVALID_PROOF",
         403,
       );
+      const shared = await verifiedShare(tx, actor, body);
       return replayMutation(
         tx,
         actor,
@@ -296,8 +357,28 @@ export class TogetherOfflineRepository {
                 plan: body.plan,
                 planHash,
                 execution: { exercises: [] },
+                sharedExercises: shared,
               })
               .returning();
+          else if (shared) {
+            // A later batch may carry a fresh share (the host re-sent its
+            // plan): its ids join the earlier ones, from the same host only.
+            const prior = execution.sharedExercises;
+            requireTogether(
+              !prior || prior.hostUserId === shared.hostUserId,
+              "INVALID_PROOF",
+              403,
+            );
+            execution.sharedExercises = {
+              hostUserId: shared.hostUserId,
+              exerciseIds: [
+                ...new Set([
+                  ...(prior?.exerciseIds ?? []),
+                  ...shared.exerciseIds,
+                ]),
+              ],
+            };
+          }
           const receipts = [];
           for (const signed of body.commands) {
             const command = verifySignature(signed, credential.publicKey);
@@ -361,6 +442,7 @@ export class TogetherOfflineRepository {
             .set({
               execution: execution.execution,
               revision: execution.revision,
+              sharedExercises: execution.sharedExercises,
             })
             .where(predicate);
           return { ...this.review(execution), receipts };
