@@ -1,4 +1,8 @@
-import { MAX_PREVIOUS_BYTES, sharedLimit } from "./sharedTransfer";
+import {
+  MAX_PREVIOUS_BYTES,
+  MAX_PROJECTED_ROWS,
+  sharedLimit,
+} from "./sharedTransfer";
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { chacha20poly1305 } from "@noble/ciphers/chacha.js";
 import { getCryptoBackend } from "./security/cryptoBackend";
@@ -936,7 +940,10 @@ export class TogetherSharedSession implements TogetherSharedPort {
           (typeof value.restEndsAt === "string" &&
             Number.isFinite(Date.parse(value.restEndsAt)))),
     );
-    let total = 0;
+    // Logged sets keep their 100 cap; empty planned rows, shared since PER-60,
+    // only count towards the frame-sized row cap.
+    let logged = 0;
+    let rows = 0;
     for (const [id, e] of Object.entries(value.exercises)) {
       check(
         this.athletePlans
@@ -962,7 +969,8 @@ export class TogetherSharedSession implements TogetherSharedPort {
             typeof set.completed === "boolean",
         );
         ids.add(set.setId);
-        check(++total <= 100);
+        check(++rows <= MAX_PROJECTED_ROWS);
+        if (set.completed) check(++logged <= 100);
       }
     }
   }
@@ -1086,10 +1094,11 @@ export class TogetherSharedSession implements TogetherSharedPort {
       const e = projection.exercises[op.planExerciseId as string];
       check(e);
       if (op.type === "upsertSet") {
-        e.sets = e.sets.filter(
-          (s) => s.setId !== (op.set as { setId: string }).setId,
-        );
-        e.sets.push(clone(op.set) as (typeof e.sets)[number]);
+        // In place, so a row filled keeps its position as on your own screen.
+        const set = clone(op.set) as (typeof e.sets)[number];
+        const index = e.sets.findIndex((s) => s.setId === set.setId);
+        if (index >= 0) e.sets[index] = set;
+        else e.sets.push(set);
       } else if (op.type === "removeSet")
         e.sets = e.sets.filter((s) => s.setId !== op.setId);
       else if (op.type === "skip") e.skipped = op.skipped as boolean;

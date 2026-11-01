@@ -4,7 +4,13 @@ import { renderWithTheme } from "../../../../__tests__/test-utils";
 import {
   TogetherPartnerPresenter,
   togetherPartnerAccess,
+  togetherPartnerExercises,
 } from "../TogetherPartnerPresenter";
+import {
+  rememberEmptyRows,
+  resetEmptyRowsSeen,
+  sharesEmptyRows,
+} from "@/ui/state/togetherEmptyRowsSeen";
 import {
   PARTNER_SET_TIMEOUT_MS,
   useTogetherPartnerOutbox,
@@ -234,6 +240,119 @@ it("partner with fill-in: every planned set has a row, editable at once, no Log-
     /Finish/,
   ])
     expect(r.queryByText(copy)).toBeNull();
+});
+
+/** Mia's projection as an app that shares every row sends it, empty ones too. */
+const withRows = (
+  squat: {
+    setId: string;
+    reps: number;
+    weightKg: number;
+    completed: boolean;
+  }[],
+  rdl: { setId: string; reps: number; weightKg: number; completed: boolean }[],
+) => {
+  const next = base();
+  const athlete = next.athletes[0]!;
+  return {
+    ...next,
+    athletes: [
+      {
+        ...athlete,
+        exercises: {
+          "squat-slot": { exerciseId: "squat", skipped: false, sets: squat },
+          "rdl-slot": { exerciseId: "rdl", skipped: false, sets: rdl },
+        },
+      },
+    ],
+  };
+};
+const E = (setId: string) => ({
+  setId,
+  reps: 0,
+  weightKg: 0,
+  completed: false,
+});
+
+it("mirrors the partner's rows: a deleted empty row goes, an added one shows (TestFlight 31 Oct)", () => {
+  // Squat: 4 planned, Mia logged one and deleted an empty row. RDL: 3
+  // planned, Mia added a fourth.
+  const r = render(
+    withRows(
+      [S("s1", 8, 60), E("e2"), E("e3")],
+      [E("r1"), E("r2"), E("r3"), E("r4")],
+    ),
+  );
+  const reps = r.getAllByTestId("set-logger-reps");
+  expect(reps.map((input) => input.props.value)).toEqual([
+    "8",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+  ]);
+  // Empty rows are never shown as saved, and keep Mia's order.
+  expect(r.getAllByTestId("set-logger-sync-saved")).toHaveLength(1);
+  expect(r.getAllByTestId("set-logger-sync-none")).toHaveLength(6);
+  for (const id of ["s1", "e2", "e3", "r1", "r2", "r3", "r4"])
+    expect(r.getByTestId(`set-logger-${id}`)).toBeTruthy();
+});
+
+it("a partner known to share empty rows stays exact once every row is logged (inspector lead)", () => {
+  // Squat: 4 planned; Mia deleted two empty rows and logged the other two.
+  const snapshot = withRows([S("s1", 8, 60), S("s2", 8, 60)], [S("r1", 5, 80)]);
+  const squatRows = (shares: boolean) =>
+    togetherPartnerExercises({
+      snapshot,
+      ownerId: "mia",
+      projection: snapshot.athletes[0],
+      exerciseNames: {},
+      added: {},
+      rowId: (id, i) => `${id}-stand-in-${i}`,
+      sharesEmptyRows: shares,
+    })
+      .find((e) => e.planExerciseId === "squat-slot")!
+      .rows.map((row) => row.setId);
+  // Without the memory it reads as an older app and the deleted rows return.
+  expect(squatRows(false)).toHaveLength(4);
+  expect(squatRows(true)).toEqual(["s1", "s2"]);
+});
+it("remembers per session which partners have shared an empty row", () => {
+  resetEmptyRowsSeen();
+  rememberEmptyRows("s-1", withRows([S("s1", 8, 60), E("e2")], []));
+  expect(sharesEmptyRows("s-1", "mia")).toBe(true);
+  // Every row logged later: still known.
+  rememberEmptyRows("s-1", withRows([S("s1", 8, 60), S("e2", 8, 60)], []));
+  expect(sharesEmptyRows("s-1", "mia")).toBe(true);
+  // A new session starts fresh.
+  rememberEmptyRows("s-2", withRows([S("s1", 8, 60)], []));
+  expect(sharesEmptyRows("s-2", "mia")).toBe(false);
+  expect(sharesEmptyRows(undefined, "mia")).toBe(false);
+});
+it("a fill-in on a planned row names Mia's own row, so it fills that set (TestFlight 31 Oct)", async () => {
+  const r = render(withRows([S("s1", 8, 60), E("e2"), E("e3")], [E("r1")]));
+  fireEvent.changeText(r.getAllByTestId("set-logger-reps")[2]!, "6");
+  fireEvent.changeText(r.getAllByTestId("set-logger-weight")[2]!, "70");
+  fireEvent(r.getAllByTestId("set-logger-weight")[2]!, "blur");
+  expect(onOperation).toHaveBeenCalledWith(
+    {
+      type: "upsertSet",
+      planExerciseId: "squat-slot",
+      set: { setId: "e3", reps: 6, weightKg: 70, completed: true },
+    },
+    5,
+  );
+  // Mia's phone fills that row in place: no extra row, the dot turns Saved.
+  await act(async () => {});
+  r.rerender(
+    view(withRows([S("s1", 8, 60), E("e2"), S("e3", 6, 70)], [E("r1")])),
+  );
+  expect(
+    r.getAllByTestId("set-logger-reps").map((input) => input.props.value),
+  ).toEqual(["8", "", "6", ""]);
+  expect(r.getAllByTestId("set-logger-sync-saved")).toHaveLength(2);
 });
 
 it("shows the partner's own previous values by set number, a dash where they have none", () => {

@@ -193,9 +193,12 @@ describe("lossless supported cloud draft projection", () => {
       ),
     ).toThrow("cloud-plan-mismatch");
     s.exercises[0].sets[0].weightKg = null;
+    // A partial row is shared as an empty row, never as a logged set.
     expect(
       cloudProjection(s, d.plan, mapping, randomUUID).exercises[0].sets,
-    ).toEqual([]);
+    ).toEqual([
+      { setId: expect.any(String), reps: 0, weightKg: 0, completed: false },
+    ]);
     s.exercises[0].sets = [];
     expect(
       promoteCloudDraft(s, randomUUID).draft.plan.exercises[0].targetSets,

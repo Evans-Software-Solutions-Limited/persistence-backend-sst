@@ -143,10 +143,11 @@ export function useTogetherPartnerOutbox(p: {
     const { [setId]: _gone, ...rest } = o.delivery;
     o.delivery = rest;
   };
+  /** A set the partner has logged; their empty rows are shared too (PER-60). */
   const loggedSet = (ownerId: string, setId: string) =>
     Object.values(access(ownerId)?.projection?.exercises ?? {})
       .flatMap((e) => e.sets)
-      .find((set) => set.setId === setId);
+      .find((set) => set.setId === setId && set.completed);
 
   /** Sends the next queued set against the revision on screen now. */
   const pump = (ownerId: string) => {

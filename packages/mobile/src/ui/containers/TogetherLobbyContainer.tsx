@@ -1,3 +1,7 @@
+import {
+  rememberEmptyRows,
+  sharesEmptyRows,
+} from "@/ui/state/togetherEmptyRowsSeen";
 import type { WeightUnit } from "@/shared/utils";
 import { togetherInvitationLink } from "@/adapters/together/invitationLink";
 import { hostDetailsFrom } from "@/adapters/together/planDetails";
@@ -192,6 +196,7 @@ export function TogetherLobbyContainer({
     [shared],
   );
   const sharedSnapshot = shared?.getSnapshot();
+  rememberEmptyRows(snapshot.sessionId, sharedSnapshot);
   const members = presentMembers(
     snapshot.members,
     sharedSnapshot?.closures,
@@ -835,6 +840,7 @@ export function TogetherLobbyContainer({
   const partnerView =
     !soloAgain && viewing && sharedSnapshot && lobby.shared ? (
       <TogetherPartnerPresenter
+        sharesEmptyRows={sharesEmptyRows(snapshot.sessionId, viewing)}
         key={`${accountId}:${viewing}`}
         weightUnit={weightUnit}
         snapshot={sharedSnapshot}

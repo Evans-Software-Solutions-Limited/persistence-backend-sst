@@ -1,3 +1,4 @@
+import { MAX_PROJECTED_ROWS } from "../sharedTransfer";
 /** @jest-environment node */
 import { DatabaseSync } from "node:sqlite";
 import { completeTogetherSession } from "../../../application/commands/session/complete-together-session.command";
@@ -341,28 +342,130 @@ describe("own workout durable checkpoint (real SQLite and signatures)", () => {
       ),
     );
     expect(commands.map((c) => c.expectedVersion)).toEqual([0, 1, 2, 3, 4]);
+    // A set that loses a value becomes an empty row again (never completed,
+    // placeholder zeros); a row deleted is removed (PER-60).
     expect(commands.map((c) => c.operation.type)).toEqual([
       "upsertSet",
       "upsertSet",
-      "removeSet",
+      "upsertSet",
       "upsertSet",
       "removeSet",
     ]);
     expect(commands[0].operation.planExerciseId).toBe(
       commands[1].operation.planExerciseId,
     );
-    expect(commands[2].operation.setId).toBe(
-      (commands[0].operation.set as { setId: string }).setId,
-    );
+    expect(commands[2].operation.set).toEqual({
+      setId: (commands[0].operation.set as { setId: string }).setId,
+      reps: 0,
+      weightKg: 0,
+      completed: false,
+    });
     expect(
       runtime.read(userId, s.id)!.exercises[0].sets[0].weightKg,
     ).toBeNull();
   });
-  it("blank/partial sets are preserved without fabricating zero operations", async () => {
+  it("a partner's fill-in on planned row 2 fills set 2 on the owner's phone, no extra set (TestFlight 31 Oct)", async () => {
+    const s = draft();
+    const row = s.exercises[0].sets[0];
+    s.exercises[0].sets = [1, 2, 3].map((n) => ({
+      ...row,
+      id: `local-row-${n}`,
+      setNumber: n,
+      reps: null,
+      weightKg: null,
+    }));
+    await runtime.promote(s);
+    const own = runtime.getOwnExecution(userId, s.id)!;
+    // Every planned row is shared, so a partner can name the second one.
+    const shared = own.execution.exercises[0].sets;
+    expect(shared.map((set) => set.completed)).toEqual([false, false, false]);
+    runtime.applyOwnOperation(userId, s.id, own.revision, {
+      type: "upsertSet",
+      planExerciseId: own.execution.exercises[0].planExerciseId,
+      set: { setId: shared[1]!.setId, reps: 8, weightKg: 60, completed: true },
+    });
+    expect(
+      runtime
+        .read(userId, s.id)!
+        .exercises[0].sets.map((set) => [set.id, set.reps, set.weightKg]),
+    ).toEqual([
+      ["local-row-1", null, null],
+      ["local-row-2", 8, 60],
+      ["local-row-3", null, null],
+    ]);
+  });
+  it("deleting an empty row removes it for partners (TestFlight 31 Oct)", async () => {
+    const s = draft();
+    const row = s.exercises[0].sets[0];
+    s.exercises[0].sets = [1, 2].map((n) => ({
+      ...row,
+      id: `local-row-${n}`,
+      setNumber: n,
+      reps: null,
+      weightKg: null,
+    }));
+    await runtime.promote(s);
+    const before = runtime.getOwnExecution(userId, s.id)!.execution.exercises[0]
+      .sets;
+    expect(before).toHaveLength(2);
+    s.exercises[0].sets.splice(0, 1);
+    saveCurrent(runtime, userId, s);
+    expect(
+      runtime
+        .getOwnExecution(userId, s.id)!
+        .execution.exercises[0].sets.map((set) => set.setId),
+    ).toEqual([before[1]!.setId]);
+  });
+  it("shares empty rows only while the sealed frame and row cap allow, so a long plan never stalls sharing (inspector lead)", async () => {
+    const s = draft();
+    const base = s.exercises[0];
+    // Four exercises of 90 empty rows: 360 rows, past the 300-row cap.
+    s.exercises = [0, 1, 2, 3].map((x) => ({
+      ...base,
+      id: `local-exercise-${x}`,
+      sortOrder: x,
+      sets: Array.from({ length: 90 }, (_, n) => ({
+        ...base.sets[0],
+        id: `local-row-${x}-${n}`,
+        sessionExerciseId: `local-exercise-${x}`,
+        setNumber: n + 1,
+        reps: null,
+        weightKg: null,
+      })),
+    }));
+    await runtime.promote(s);
+    const shared = runtime
+      .getOwnExecution(userId, s.id)!
+      .execution.exercises.reduce((n, e) => n + e.sets.length, 0);
+    // As many as fit one sealed frame with the plan, never past the row cap.
+    expect(shared).toBeGreaterThan(100);
+    expect(shared).toBeLessThanOrEqual(MAX_PROJECTED_ROWS);
+    expect(shared).toBeLessThan(360);
+    // The athlete's own workout keeps every row.
+    expect(
+      runtime
+        .read(userId, s.id)!
+        .exercises.reduce((n, e) => n + e.sets.length, 0),
+    ).toBe(360);
+  });
+  it("blank/partial sets are preserved and shared as empty rows, never as logged values", async () => {
     const s = draft();
     s.exercises[0].sets[0].reps = null;
     await runtime.promote(s);
-    expect(entries()).toEqual([]);
+    const commands = entries().map((e) =>
+      readOwnerCommand(
+        {
+          commandId: e.commandId,
+          sessionId: e.sessionId,
+          executionId: e.executionId,
+          payload: e.payload,
+        },
+        credential,
+      ),
+    );
+    expect(commands.map((c) => c.operation.set)).toEqual([
+      { setId: expect.any(String), reps: 0, weightKg: 0, completed: false },
+    ]);
     expect(runtime.read(userId, s.id)!.exercises).toEqual(s.exercises);
   });
   it("journal and full checkpoint roll back together when the snapshot write fails", async () => {
@@ -897,7 +1000,17 @@ describe("own workout durable checkpoint (real SQLite and signatures)", () => {
       revision: 6,
       execution: {
         restEndsAt: "2026-10-05T10:00:00.000Z",
-        exercises: [{ skipped: true, sets: [{ setId: newSetId, reps: 8 }] }],
+        // The removed set's row stays on the athlete's screen, so it is
+        // shared as an empty row ahead of the new set.
+        exercises: [
+          {
+            skipped: true,
+            sets: [
+              { setId: set.setId, completed: false },
+              { setId: newSetId, reps: 8 },
+            ],
+          },
+        ],
       },
     });
     runtime.applyOwnOperation(userId, s.id, 6, { type: "rest", endsAt: null });
@@ -1027,11 +1140,12 @@ describe("own workout durable checkpoint (real SQLite and signatures)", () => {
     const s = draft();
     s.exercises[0].sets[0].reps = null;
     await runtime.promote(s);
+    // Promotion shared the empty row; it does not lock substitution.
     const plan = runtime.getPlan(userId, s.id)!;
     const planId = plan.exercises[0].planExerciseId;
     const original = s.exercises[0].exerciseId;
     const alternative = randomUUID();
-    runtime.applyOwnOperation(userId, s.id, 0, {
+    runtime.applyOwnOperation(userId, s.id, 1, {
       type: "substitute",
       planExerciseId: planId,
       exerciseId: alternative,
@@ -1040,7 +1154,7 @@ describe("own workout durable checkpoint (real SQLite and signatures)", () => {
       exerciseId: alternative,
       originalExerciseId: original,
     });
-    runtime.applyOwnOperation(userId, s.id, 1, {
+    runtime.applyOwnOperation(userId, s.id, 2, {
       type: "substitute",
       planExerciseId: planId,
       exerciseId: null,
@@ -1050,7 +1164,7 @@ describe("own workout durable checkpoint (real SQLite and signatures)", () => {
       originalExerciseId: null,
     });
     const setId = randomUUID();
-    runtime.applyOwnOperation(userId, s.id, 2, {
+    runtime.applyOwnOperation(userId, s.id, 3, {
       type: "upsertSet",
       planExerciseId: planId,
       set: { setId, reps: 8, weightKg: 60, completed: true },
@@ -1058,7 +1172,7 @@ describe("own workout durable checkpoint (real SQLite and signatures)", () => {
     const before = runtime.read(userId, s.id);
     const execution = runtime.getOwnExecution(userId, s.id);
     expect(() =>
-      runtime.applyOwnOperation(userId, s.id, 3, {
+      runtime.applyOwnOperation(userId, s.id, 4, {
         type: "substitute",
         planExerciseId: planId,
         exerciseId: alternative,
@@ -1066,14 +1180,14 @@ describe("own workout durable checkpoint (real SQLite and signatures)", () => {
     ).toThrow("substitution-locked");
     expect(runtime.read(userId, s.id)).toEqual(before);
     expect(runtime.getOwnExecution(userId, s.id)).toEqual(execution);
-    runtime.applyOwnOperation(userId, s.id, 3, {
+    runtime.applyOwnOperation(userId, s.id, 4, {
       type: "substitute",
       planExerciseId: planId,
       exerciseId: null,
     });
     expect(runtime.getOwnExecution(userId, s.id)).toEqual(execution);
     expect(() =>
-      runtime.applyOwnOperation(userId, s.id, 3, {
+      runtime.applyOwnOperation(userId, s.id, 4, {
         type: "substitute",
         planExerciseId: planId,
         exerciseId: "bad",
@@ -1155,7 +1269,7 @@ describe("own workout durable checkpoint (real SQLite and signatures)", () => {
                     op.set as TogetherRecoveryExecution["exercises"][number]["sets"][number];
                   e.sets = e.sets.filter((x) => x.setId !== set.setId);
                   e.sets.push(set);
-                  e.everAcknowledged = true;
+                  if (set.completed) e.everAcknowledged = true;
                 }
               }
               candidate!.revision++;
@@ -1321,7 +1435,12 @@ describe("own workout durable checkpoint (real SQLite and signatures)", () => {
       s.exercises[0].sets[0].reps = null;
       await runtime.promote(s);
       const review = await runtime.review(userId, s.id);
-      expect(review.execution.exercises).toEqual([]);
+      // The row is shared as an empty row, never as a completed set.
+      expect(
+        review.execution.exercises.flatMap((e) =>
+          e.sets.map((set) => [set.completed, set.reps, set.weightKg]),
+        ),
+      ).toEqual([[false, 0, 0]]);
       expect(review.omissions).toContain(
         "Unfinished sets stay on this device and are not included in this result.",
       );

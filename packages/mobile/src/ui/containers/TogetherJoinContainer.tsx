@@ -50,6 +50,7 @@ import type {
   TogetherCloudState,
 } from "@/domain/ports/togetherCloud.port";
 import { normaliseSessionCode } from "@/adapters/together/planDetails";
+import { reportTogetherFailure } from "@/diagnostics/together/togetherReport";
 
 const EMPTY: TogetherLobbySnapshot = {
   phase: "disabled",
@@ -71,6 +72,7 @@ const SELECTION_ERRORS = new Set([
   "host-unavailable",
   "own-invitation",
   "code-not-found",
+  "session-left",
 ]);
 export function togetherSearchFailure(code: string): string {
   return RADIO_OFF.test(code) && !SELECTION_ERRORS.has(code)
@@ -113,6 +115,7 @@ const CODE_COPY: Record<string, string> = {
     "Couldn’t find that code. Nearby sessions show after a search, Online ones need internet. Ask the host to show their QR.",
   "code-offline":
     "No internet to check that code. Nearby sessions show after a search; otherwise ask the host to show their QR.",
+  "session-left": togetherErrorCopy("session-left"),
 };
 
 /** Canvas row 1: Join a session → Join this workout → Joining → the workout. */
@@ -152,6 +155,8 @@ export function TogetherJoinContainer() {
   const [online, setOnline] = useState<PartnerOnlineSession[]>([]);
   const [target, setTarget] = useState<Target | null>(null);
   const [joining, setJoining] = useState(false);
+  /** Join was pressed for this Nearby target; the host's admission may land after a failed attempt. */
+  const [asked, setAsked] = useState(false);
   const [cold, setCold] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
   const scope = useRef({ userId, lobby, cloud });
@@ -161,6 +166,7 @@ export function TogetherJoinContainer() {
     generation = useRef(0),
     scanned = useRef(false),
     incoming = useRef(""),
+    adopted = useRef(false),
     focused = useRef(false);
   const ownSharing = !!session?.together;
   const liveLobby = ["hosting", "joined", "reconnecting"].includes(
@@ -188,6 +194,8 @@ export function TogetherJoinContainer() {
     setSearched(false);
     setTarget(null);
     setJoining(false);
+    setAsked(false);
+    adopted.current = false;
     setPartners({});
     setOnline([]);
     incoming.current = "";
@@ -234,11 +242,22 @@ export function TogetherJoinContainer() {
       .catch((error: unknown) => {
         if (!isCurrent()) return;
         const code = error instanceof Error ? error.message : "";
-        setNotice(
+        const specific =
           code === "workout-already-sharing"
             ? "You already have a live session. Your workout has been kept."
-            : CODE_COPY[code] || togetherCloudErrorCopy(code) || failure,
-        );
+            : CODE_COPY[code] || togetherCloudErrorCopy(code);
+        // A generic line hides the real code from everyone: send it to Sentry.
+        if (!specific)
+          reportTogetherFailure({
+            mode:
+              target && target.kind !== "local"
+                ? "online"
+                : (lobby?.getSnapshot().transport ?? "nearby"),
+            stage: "join",
+            code: code || "unknown",
+            copy: "fallback",
+          });
+        setNotice(specific || failure);
         setJoining(false);
       })
       .finally(() => {
@@ -466,6 +485,18 @@ export function TogetherJoinContainer() {
   }, [params.scan, gate.allowed, userId]);
   /** Joining starts your workout on this plan: an open workout keeps its logged sets and gains the plan. */
   const adoptAndOpen = async (isCurrent: () => boolean) => {
+    // Adopt once per admission, but a failed adoption (a radio blip between
+    // the effect and this call, a plan not here yet) must be retried when the
+    // lobby is joined again, not leave the guest on Joining (#523).
+    adopted.current = true;
+    try {
+      await adoptAndOpenOnce(isCurrent);
+    } catch (error) {
+      adopted.current = false;
+      throw error;
+    }
+  };
+  const adoptAndOpenOnce = async (isCurrent: () => boolean) => {
     if (!userId || !lobby?.workout || lobby.getSnapshot().phase !== "joined")
       throw new Error("not-admitted");
     const plan = lobby.shared?.getSnapshot().plan;
@@ -512,14 +543,33 @@ export function TogetherJoinContainer() {
     rereadCache();
     router.replace("/(app)/session" as never);
   };
-  // Admission arrives from the host; the plan is adopted once, then the workout opens.
-  const admitted =
-    snapshot.phase === "joined" && joining && target?.kind === "local";
+  // A new target is a new attempt: an earlier Join press does not carry over.
   useEffect(() => {
-    if (!admitted) return;
+    setAsked(false);
+    adopted.current = false;
+  }, [target]);
+  // The host's admission is the truth. It can land after the join attempt
+  // reported a failure (a late "Let in"), so a live connection always clears
+  // the failure and returns to the Joining screen (TestFlight 31 Oct, PER-60).
+  const live = snapshot.phase === "joined" && target?.kind === "local" && asked;
+  useEffect(() => {
+    if (!live) return;
+    setNotice("");
+    setJoining(true);
+  }, [live]);
+  // Admission arrives from the host, then the host's plan follows it in later
+  // frames. The plan is adopted once it is here, then the workout opens; until
+  // then the guest stays on Joining. Adopting at the roster frame threw
+  // "plan-unavailable" and left "Could not connect" next to a live session.
+  const hostPlan = !!lobby?.shared?.getSnapshot().plan;
+  const admitted = live && joining && hostPlan;
+  useEffect(() => {
+    // `busy` re-runs this once an earlier action releases the lock, which
+    // would otherwise drop the admission silently.
+    if (!admitted || busy || adopted.current) return;
     run(adoptAndOpen);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [admitted]);
+  }, [admitted, busy]);
   useEffect(() => {
     if (!userId || target?.kind === "local" || !remote.snapshot) return;
     if (remote.phase === "active") {
@@ -542,6 +592,7 @@ export function TogetherJoinContainer() {
     if (!joining || target?.kind !== "local") return;
     if (snapshot.phase === "unavailable" || snapshot.phase === "full") {
       setJoining(false);
+      setAsked(false);
       setTarget(null);
       setNotice(
         togetherErrorCopy(snapshot.error ?? snapshot.phase, snapshot.transport),
@@ -564,6 +615,7 @@ export function TogetherJoinContainer() {
       if (!target) return;
       setJoining(true);
       if (target.kind === "local") {
+        setAsked(true);
         await lobby!.join();
         return;
       }
@@ -592,6 +644,7 @@ export function TogetherJoinContainer() {
     run(async (isCurrent) => {
       const was = target;
       setJoining(false);
+      setAsked(false);
       setTarget(null);
       setCold(false);
       // The nearby search is always running behind an Online target, so the

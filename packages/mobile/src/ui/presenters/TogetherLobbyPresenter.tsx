@@ -63,6 +63,9 @@ const PHASE_COPY: Record<TogetherLobbySnapshot["phase"], string> = {
   full: "This lobby is full. Four athletes can join, including the host.",
 };
 
+/** The line a failure code without its own copy falls through to. */
+export const TOGETHER_FALLBACK_COPY =
+  "Could not connect securely. Keep training on your own, or try a new invitation.";
 export function togetherErrorCopy(
   code?: string,
   transport?: TogetherLobbySnapshot["transport"],
@@ -76,6 +79,11 @@ export function togetherErrorCopy(
   if (!code) return "";
   if (code === "removed-from-session")
     return "You were removed from this session. Your own workout remains on this device for personal logging and review.";
+  // A guest who left (or finished) cannot rejoin the same session: leaving is
+  // final on that phone and the host keeps the seat. "Local sharing closed" is
+  // the store's own message for the same state, from any older path.
+  if (code === "session-left" || code === "Local sharing closed")
+    return "You left this session, so you can’t rejoin it. Keep training on your own, or ask the host to start a new session.";
   if (code === "discovery-expired")
     return "This nearby lobby listing has expired. Search nearby again or ask the host for an invitation. Internet is not required.";
   if (code === "friendship-required")
@@ -138,7 +146,7 @@ export function togetherErrorCopy(
     return "The host declined this request. Your personal workout is unchanged.";
   if (/key|storage/i.test(code))
     return "Secure access is unavailable on this device. Your personal workout and recovery remain available.";
-  return "Could not connect securely. Keep training on your own, or try a new invitation.";
+  return TOGETHER_FALLBACK_COPY;
 }
 
 function Copy({ children }: { children: ReactNode }) {

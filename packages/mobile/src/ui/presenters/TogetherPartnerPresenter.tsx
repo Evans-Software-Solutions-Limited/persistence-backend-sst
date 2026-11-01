@@ -37,8 +37,11 @@ type PartnerExercise = {
   rows: PartnerRow[];
 };
 /**
- * The partner's exercises in plan order: logged sets first, then an empty row
- * for every planned set not logged yet, plus the rows the viewer added.
+ * The partner's exercises in plan order, each with the partner's own set rows
+ * in their order: filled where logged, empty where not, so a row the partner
+ * adds or deletes shows here too and a fill-in names the row it was typed
+ * into. Before the partner has shared any rows for an exercise, an empty row
+ * stands in for every planned set. Rows the viewer added follow.
  */
 export function togetherPartnerExercises(p: {
   snapshot: TogetherSharedSnapshot;
@@ -51,6 +54,11 @@ export function togetherPartnerExercises(p: {
   keep?(setId: string): boolean;
   /** Ids already minted for an exercise, so kept rows past the first few are found. */
   minted?(planExerciseId: string): number;
+  /**
+   * The partner's app is known to share empty rows (seen earlier in this
+   * session), so their rows are exact even when every one is logged.
+   */
+  sharesEmptyRows?: boolean;
 }): PartnerExercise[] {
   const plan = p.snapshot.athletePlans[p.ownerId];
   const planned = [...(plan?.exercises ?? [])].sort(
@@ -72,22 +80,35 @@ export function togetherPartnerExercises(p: {
         targetSets: 0,
       })),
   ];
+  // A partner whose app shares empty rows shows exactly their rows; one that
+  // shares logged sets only shows any empty row (PER-60).
+  const exact =
+    !!p.sharesEmptyRows ||
+    Object.values(p.projection?.exercises ?? {}).some((e) =>
+      e.sets.some((set) => !set.completed),
+    );
   return slots.map((slot, index) => {
     const exercise = p.projection?.exercises[slot.planExerciseId];
     const exerciseId = slot.exerciseId ?? slot.fallbackId;
-    const logged: PartnerRow[] = (exercise?.sets ?? []).map((set) => ({
-      setId: set.setId,
-      reps: set.reps,
-      weightKg: set.weightKg,
-      logged: true,
-    }));
-    // Added rows go on top of what is on screen, even past the plan.
-    const total =
-      Math.max(slot.targetSets, logged.length) +
+    // The partner's rows as they are on their phone, empty ones included.
+    const logged: PartnerRow[] = (exercise?.sets ?? []).map((set) =>
+      set.completed
+        ? {
+            setId: set.setId,
+            reps: set.reps,
+            weightKg: set.weightKg,
+            logged: true,
+          }
+        : { setId: set.setId, reps: null, weightKg: null, logged: false },
+    );
+    // Planned rows stand in until the partner's own rows for the exercise
+    // arrive, and on top of logged sets from an app that shares only those.
+    // Added rows go on top of what is on screen, even past the plan. When the
+    // partner's rows arrive, an untouched stand-in goes, never the one being
+    // typed into.
+    const want =
+      (exact && exercise ? 0 : Math.max(0, slot.targetSets - logged.length)) +
       (p.added[slot.planExerciseId] ?? 0);
-    // When the partner logs a set of their own, an untouched empty row goes,
-    // never the one the viewer is typing into.
-    const want = total - logged.length;
     const free: string[] = [];
     const pool = (i: number) => p.rowId(slot.planExerciseId, i);
     const known = p.minted?.(slot.planExerciseId) ?? 0;
@@ -135,6 +156,8 @@ export function TogetherPartnerPresenter(p: {
   outbox: TogetherPartnerOutbox;
   /** The viewer's weight-display preference (PER-98); defaults to kg. */
   weightUnit?: WeightUnit;
+  /** This partner's app is known to share empty rows (`togetherEmptyRowsSeen`). */
+  sharesEmptyRows?: boolean;
 }) {
   const access = togetherPartnerAccess(p.snapshot, p.ownerId, p.accountId);
   const editable = p.editable && access.editable;
@@ -304,6 +327,7 @@ export function TogetherPartnerPresenter(p: {
     rowId: p.outbox.rowId,
     keep: (setId) => !!drafts[setId] || !!delivery[setId],
     minted: p.outbox.minted,
+    sharesEmptyRows: p.sharesEmptyRows,
   });
   /** The value shown in a row: a live draft, else what the partner logged. */
   const shown = (row: PartnerRow): PartnerRow => {

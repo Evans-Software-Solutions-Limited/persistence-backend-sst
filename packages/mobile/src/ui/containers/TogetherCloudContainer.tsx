@@ -1,3 +1,7 @@
+import {
+  rememberEmptyRows,
+  sharesEmptyRows,
+} from "@/ui/state/togetherEmptyRowsSeen";
 import type { WeightUnit } from "@/shared/utils";
 import { togetherInvitationLink } from "@/adapters/together/invitationLink";
 import { invitationPayload } from "@/application/together/invitation";
@@ -34,7 +38,10 @@ import type {
   TogetherSharedSnapshot,
   TogetherPreviousRow,
 } from "@/domain/ports/togetherShared.port";
-import { TogetherCloudPresenter } from "@/ui/presenters/TogetherCloudPresenter";
+import {
+  TogetherCloudPresenter,
+  togetherCloudErrorCopy,
+} from "@/ui/presenters/TogetherCloudPresenter";
 import { useTogetherSettings } from "@/state/together-settings";
 import { TogetherSharingPresenter } from "@/ui/presenters/TogetherSharingPresenter";
 import {
@@ -463,6 +470,7 @@ export function TogetherCloudContainer(p: {
     };
   }, [resumeId, attachedId, p.cloud]);
   const shared = cloudSharedView(state, p.accountId);
+  rememberEmptyRows(state.snapshot?.sessionId, shared);
   const partner = (id: string) =>
     state.snapshot?.participants.find((x) => x.userId === id);
   // Who is still training here, for the strip and partner tabs (PER-60): a
@@ -639,6 +647,25 @@ export function TogetherCloudContainer(p: {
       Object.entries(x.exerciseCatalog).map(([id, value]) => [id, value.name]),
     ),
   );
+  /**
+   * Admit or deny a join request. A decision the server refuses for good is
+   * dropped from the outbox (it never holds back your own sets); say why, so
+   * the request is not left looking like it is being let in (PER-60).
+   */
+  const decide = (requestId: string, decision: "approve" | "reject") =>
+    run(async () => {
+      try {
+        await p.cloud.decide(requestId, decision);
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "";
+        const copy =
+          code === "INVALID_SCHEMA"
+            ? "Couldn’t let them in: your workout has an exercise they can’t use yet. Your workout is unchanged."
+            : togetherCloudErrorCopy(code);
+        if (!copy || !isCurrent()) throw error;
+        showToast(copy);
+      }
+    });
   const review = (mode?: string) => {
     setVisible(false);
     router.push({
@@ -745,6 +772,7 @@ export function TogetherCloudContainer(p: {
   const partnerView =
     !soloAgain && viewing && viewingPresent ? (
       <TogetherPartnerPresenter
+        sharesEmptyRows={sharesEmptyRows(state.snapshot?.sessionId, viewing)}
         key={viewing}
         weightUnit={p.weightUnit}
         snapshot={shared}
@@ -807,8 +835,8 @@ export function TogetherCloudContainer(p: {
             key={r.requestId}
             name={r.displayName ?? "Someone"}
             busy={busy || (state.snapshot?.participants.length ?? 0) >= 4}
-            onAdmit={() => run(() => p.cloud.decide(r.requestId, "approve"))}
-            onDeny={() => run(() => p.cloud.decide(r.requestId, "reject"))}
+            onAdmit={() => decide(r.requestId, "approve")}
+            onDeny={() => decide(r.requestId, "reject")}
           />
         ))}
     </>
@@ -1115,7 +1143,7 @@ export function TogetherCloudContainer(p: {
                 })
               }
               onDecision={(id, approved) =>
-                run(() => p.cloud.decide(id, approved ? "approve" : "reject"))
+                decide(id, approved ? "approve" : "reject")
               }
               onRetry={() => run(() => p.cloud.retry())}
               onReview={() => review()}

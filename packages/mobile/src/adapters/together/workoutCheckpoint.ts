@@ -28,6 +28,11 @@ import {
   type Signed,
 } from "./security/identity";
 import { uuid, object, integer } from "./security/schema";
+import {
+  MAX_PROJECTED_ROWS,
+  MAX_SHARED_BYTES,
+  sealedFrameBytes,
+} from "./sharedTransfer";
 
 export interface WorkoutAuthority {
   sessionId: string;
@@ -139,6 +144,9 @@ function validate(session: WorkoutSession, promoting = false) {
     }
   }
 }
+/** An upsert that logs a set; an empty row's never locks a substitution. */
+const loggedUpsert = (operation: Record<string, unknown>) =>
+  (operation.set as { completed?: unknown } | undefined)?.completed !== false;
 const structure = (s: WorkoutSession) =>
   requestHash({
     name: s.name,
@@ -427,7 +435,8 @@ export class TogetherWorkoutCheckpoint implements TogetherWorkoutPort {
           c.intents.some(
             (intent) =>
               intent.payload.operation.type === "upsertSet" &&
-              intent.payload.operation.planExerciseId === op.planExerciseId,
+              intent.payload.operation.planExerciseId === op.planExerciseId &&
+              loggedUpsert(intent.payload.operation),
           )
         )
           throw new Error("workout-substitution-locked");
@@ -601,7 +610,8 @@ export class TogetherWorkoutCheckpoint implements TogetherWorkoutPort {
             c.intents.some(
               (i) =>
                 i.payload.operation.type === "upsertSet" &&
-                i.payload.operation.planExerciseId === planId,
+                i.payload.operation.planExerciseId === planId &&
+                loggedUpsert(i.payload.operation),
             )
           ) {
             c.error = "workout-substitution-locked";
@@ -660,8 +670,17 @@ export class TogetherWorkoutCheckpoint implements TogetherWorkoutPort {
           commands.push(command);
         }
       const projected: Projection = Object.create(null);
+      // Empty rows are shared only while the progress frame (plan plus this
+      // projection, sealed) still fits MAX_SHARED_BYTES and the row cap: a
+      // frame partners refuse would stall every later update (#523). Logged
+      // sets always go.
+      const room = emptyRowRoom(c.plan, session, c.exerciseIds);
       for (const e of session.exercises)
         for (const s of e.sets) {
+          if (s.reps === null || s.weightKg === null) {
+            if (room.left <= 0) continue;
+            room.left--;
+          }
           if (!Object.hasOwn(c.setIds, s.id))
             Object.defineProperty(c.setIds, s.id, {
               value: this.randomUUID(),
@@ -669,16 +688,26 @@ export class TogetherWorkoutCheckpoint implements TogetherWorkoutPort {
               configurable: true,
               writable: true,
             });
-          if (s.reps !== null && s.weightKg !== null)
-            projected[s.id] = {
-              planExerciseId: c.exerciseIds[e.id],
-              set: {
-                setId: c.setIds[s.id],
-                reps: s.reps,
-                weightKg: s.weightKg,
-                completed: true,
-              },
-            };
+          // Every row is shared, logged or not (placeholder zeros, never
+          // completed), so partners see the real set list and a fill-in lands
+          // on the row it was typed into (PER-60).
+          projected[s.id] = {
+            planExerciseId: c.exerciseIds[e.id],
+            set:
+              s.reps !== null && s.weightKg !== null
+                ? {
+                    setId: c.setIds[s.id],
+                    reps: s.reps,
+                    weightKg: s.weightKg,
+                    completed: true,
+                  }
+                : {
+                    setId: c.setIds[s.id],
+                    reps: 0,
+                    weightKg: 0,
+                    completed: false,
+                  },
+          };
         }
       const operations: Record<string, unknown>[] = controlOperations;
       for (const [id, value] of Object.entries(c.projected))
@@ -783,4 +812,66 @@ export class TogetherWorkoutCheckpoint implements TogetherWorkoutPort {
       );
     });
   }
+}
+
+const utf8Bytes = (value: unknown) =>
+  new TextEncoder().encode(JSON.stringify(value)).length;
+/** A setId-sized stand-in, so sizes match the real uuids. */
+const UUID_SIZED = "00000000-0000-4000-8000-000000000000";
+/**
+ * How many empty rows can join this athlete's shared projection: as many as
+ * keep the sealed progress frame (the plan plus the projection, logged rows
+ * first) inside MAX_SHARED_BYTES, and the rows inside MAX_PROJECTED_ROWS.
+ * Sized from the real plan, with every variable field at its widest.
+ */
+export function emptyRowRoom(
+  plan: {
+    exercises: readonly { planExerciseId: string; exerciseId: string }[];
+  },
+  session: WorkoutSession,
+  exerciseIds: Readonly<Record<string, string>>,
+): { left: number } {
+  const logged = (s: { reps: number | null; weightKg: number | null }) =>
+    s.reps !== null && s.weightKg !== null;
+  const sets: Record<string, unknown[]> = {};
+  let rows = 0;
+  for (const e of session.exercises)
+    for (const s of e.sets)
+      if (logged(s)) {
+        rows++;
+        (sets[exerciseIds[e.id] ?? ""] ??= []).push({
+          setId: UUID_SIZED,
+          reps: s.reps,
+          weightKg: s.weightKg,
+          completed: true,
+        });
+      }
+  const base = utf8Bytes({
+    grantVersion: Number.MAX_SAFE_INTEGER,
+    planHash: "0".repeat(64),
+    plan,
+    value: {
+      userId: UUID_SIZED,
+      revision: Number.MAX_SAFE_INTEGER,
+      restEndsAt: "2000-01-01T00:00:00.000Z",
+      exercises: Object.fromEntries(
+        plan.exercises.map((p) => [
+          p.planExerciseId,
+          {
+            exerciseId: p.exerciseId,
+            skipped: false,
+            sets: sets[p.planExerciseId] ?? [],
+          },
+        ]),
+      ),
+    },
+  });
+  // One more row costs its JSON and a separating comma.
+  const row =
+    utf8Bytes({ setId: UUID_SIZED, reps: 0, weightKg: 0, completed: false }) +
+    1;
+  const bySize = Math.floor(
+    ((MAX_SHARED_BYTES - sealedFrameBytes(0)) * 3) / 4 / row - base / row,
+  );
+  return { left: Math.max(0, Math.min(bySize, MAX_PROJECTED_ROWS - rows)) };
 }

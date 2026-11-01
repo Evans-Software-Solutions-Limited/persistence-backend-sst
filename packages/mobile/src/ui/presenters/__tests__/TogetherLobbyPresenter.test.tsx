@@ -445,6 +445,13 @@ it("names connect-stage and handshake failures instead of the generic last line"
     /Could not connect securely/,
   );
 });
+it("a guest who left the session is told so, not the generic secure-connection line (TestFlight 31 Oct)", () => {
+  for (const code of ["session-left", "Local sharing closed"]) {
+    expect(togetherErrorCopy(code)).toBe(
+      "You left this session, so you can’t rejoin it. Keep training on your own, or ask the host to start a new session.",
+    );
+  }
+});
 it("shows the raw diagnostic code and shares the Together log only when diagnostics are offered", () => {
   const p = props("unavailable");
   p.snapshot.error = "connect_failed";

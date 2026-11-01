@@ -99,13 +99,62 @@ function compact(data: Record<string, unknown>) {
   return out;
 }
 
+/**
+ * A native or JS failure code as it may leave the phone. Codes, and the
+ * fixed error messages this codebase uses as codes, are letters, digits,
+ * spaces and `_ - . :` up to 64 characters; anything else (an email, a
+ * token, a long SDK description) is replaced whole, never trimmed to fit.
+ */
+const SAFE_CODE = /^[A-Za-z0-9 _.:-]{1,64}$/;
+export function safeTogetherCode(code: unknown): string {
+  if (typeof code !== "string" || !code.trim()) return "unknown";
+  return SAFE_CODE.test(code) ? code.trim() : "unrecognised";
+}
+/**
+ * Log fields that may leave the phone. Identifiers (session, lobby, endpoint,
+ * peer and device ids), free-text error messages and anything not listed are
+ * dropped: what remains is codes, phases, counts, flags and timings.
+ */
+const SAFE_KEYS = new Set([
+  "code",
+  "error",
+  "phase",
+  "requested",
+  "selected",
+  "found",
+  "ms",
+  "chars",
+  "active",
+  "host",
+  "known",
+  "peers",
+  "ready",
+  "incoming",
+  "valid",
+  "accept",
+]);
+export function safeTogetherData(
+  data: Record<string, unknown> | undefined,
+): Record<string, string | number | boolean> | undefined {
+  if (!data) return undefined;
+  const out: Record<string, string | number | boolean> = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (!SAFE_KEYS.has(key)) continue;
+    if (typeof value === "number" || typeof value === "boolean")
+      out[key] = value;
+    else if (typeof value === "string") out[key] = safeTogetherCode(value);
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
 function breadcrumb(entry: TogetherLogEntry) {
   if (!isSentryEnabled()) return;
+  const data = safeTogetherData(entry.data);
   Sentry.addBreadcrumb({
     category: `together.${entry.source}`,
     message: entry.message,
     level: /fail|error|reject/i.test(entry.message) ? "warning" : "info",
-    ...(entry.data ? { data: entry.data } : {}),
+    ...(data ? { data } : {}),
   });
 }
 

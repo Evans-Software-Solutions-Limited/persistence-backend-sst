@@ -151,9 +151,14 @@ describe("cloud authoritative personal checkpoint", () => {
             togetherCode: "VERSION_CONFLICT",
           });
         const op = c.operation as any;
-        const e = p.execution!.exercises.find(
+        let e = p.execution!.exercises.find(
           (e) => e.planExerciseId === op.planExerciseId,
         );
+        // The server opens an exercise on its first write, as the real one does.
+        if (!e && op.planExerciseId) {
+          e = { planExerciseId: op.planExerciseId, skipped: false, sets: [] };
+          p.execution!.exercises.push(e);
+        }
         if (op.type === "upsertSet") {
           const i = e!.sets.findIndex((s) => s.setId === op.set.setId);
           if (i >= 0) e!.sets[i] = op.set;
@@ -537,7 +542,15 @@ describe("cloud authoritative personal checkpoint", () => {
     );
     controller.setActive(true);
     await controller.resume(server.sessionId);
-    expect(server.participants[0].execution!.exercises[0].sets).toEqual([]);
+    // A half-typed row is no longer a logged set; the row itself stays shared.
+    expect(server.participants[0].execution!.exercises[0].sets).toEqual([
+      {
+        setId: first!.exercises[0].sets[0].setId,
+        reps: 0,
+        weightKg: 0,
+        completed: false,
+      },
+    ]);
     const restored = controller.readDraft(userId)!;
     restored.exercises[0].sets[0].reps = 9;
     controller.saveDraft(userId, restored);
@@ -547,6 +560,68 @@ describe("cloud authoritative personal checkpoint", () => {
     );
     await controller.finish(controller.reviewToken());
     expect(controller.readDraft(userId)?.status).toBe("completed");
+  });
+  it("a partner's fill-in on planned row 2 fills set 2 on the owner's phone, no extra set (TestFlight 31 Oct)", async () => {
+    const d = draft();
+    const row = d.exercises[0].sets[0];
+    d.exercises[0].sets = [1, 2, 3].map((n) => ({
+      ...row,
+      id: `local-row-${n}`,
+      setNumber: n,
+      reps: null,
+      weightKg: null,
+    }));
+    await controller.hostWorkout(d);
+    await controller.retry();
+    // Every planned row is shared, empty ones as never-completed rows.
+    const shared = server.participants[0].execution!.exercises[0].sets;
+    expect(shared.map((set) => set.completed)).toEqual([false, false, false]);
+    // The partner fills the second row; the server updates it in place.
+    shared[1] = { ...shared[1]!, reps: 8, weightKg: 60, completed: true };
+    server.participants[0].ownRevision++;
+    server.revision++;
+    await controller.refresh();
+    expect(
+      controller
+        .readDraft(userId)!
+        .exercises[0].sets.map((set) => [set.id, set.reps, set.weightKg]),
+    ).toEqual([
+      ["local-row-1", null, null],
+      ["local-row-2", 8, 60],
+      ["local-row-3", null, null],
+    ]);
+  });
+  it("deleting an empty row removes it for partners; adding one shares it (TestFlight 31 Oct)", async () => {
+    const d = draft();
+    const row = d.exercises[0].sets[0];
+    d.exercises[0].sets = [1, 2].map((n) => ({
+      ...row,
+      id: `local-row-${n}`,
+      setNumber: n,
+      reps: null,
+      weightKg: null,
+    }));
+    await controller.hostWorkout(d);
+    await controller.retry();
+    const [first, second] = server.participants[0].execution!.exercises[0].sets;
+    const edit = controller.readDraft(userId)!;
+    edit.exercises[0].sets.splice(0, 1);
+    controller.saveDraft(userId, edit);
+    await controller.retry();
+    expect(
+      server.participants[0].execution!.exercises[0].sets.map((s) => s.setId),
+    ).toEqual([second!.setId]);
+    const added = controller.readDraft(userId)!;
+    added.exercises[0].sets.push({ ...row, id: "local-row-3", setNumber: 2 });
+    added.exercises[0].sets[1]!.reps = null;
+    added.exercises[0].sets[1]!.weightKg = null;
+    controller.saveDraft(userId, added);
+    await controller.retry();
+    const after = server.participants[0].execution!.exercises[0].sets;
+    expect(after).toHaveLength(2);
+    expect(after[0]!.setId).toBe(second!.setId);
+    expect(after.map((s) => s.completed)).toEqual([false, false]);
+    expect(after.map((s) => s.setId)).not.toContain(first!.setId);
   });
   it("retains an exact outbox key after ambiguous delivery and account switch, and retries without duplicate sets", async () => {
     const original = api.create;
@@ -726,11 +801,38 @@ describe("cloud authoritative personal checkpoint", () => {
   it("creates a canonical blank draft for deliberate join without an existing workout", async () => {
     server.hostId = other;
     server.participants[0].execution = { exercises: [] };
+    server.plan.exercises[0].targetSets = 3;
     await controller.join({ sessionId: server.sessionId });
+    await controller.retry();
     const own = controller.readDraft(userId)!;
     expect(own.exercises[0].exerciseId).toBe(exerciseId);
-    expect(own.exercises[0].sets).toEqual([]);
+    // One empty row per planned set, as a Nearby guest and a template start
+    // have; partners see those rows, not stand-ins (PER-60, TestFlight 31 Oct).
+    expect(
+      own.exercises[0].sets.map((s) => [s.setNumber, s.reps, s.weightKg]),
+    ).toEqual([
+      [1, null, null],
+      [2, null, null],
+      [3, null, null],
+    ]);
     expect(own.together?.transport).toBe("cloud");
+    expect(server.participants[0].execution!.exercises[0].sets).toEqual(
+      [0, 1, 2].map(() => ({
+        setId: expect.any(String),
+        reps: 0,
+        weightKg: 0,
+        completed: false,
+      })),
+    );
+  });
+  it("a rejoin keeps the server's sets and adds no planned rows on top", async () => {
+    server.hostId = other;
+    server.plan.exercises[0].targetSets = 3;
+    await controller.join({ sessionId: server.sessionId });
+    const own = controller.readDraft(userId)!;
+    expect(own.exercises[0].sets.map((s) => [s.reps, s.weightKg])).toEqual([
+      [8, 25],
+    ]);
   });
   it("retains offline own changes and explicitly saves reviewed private continuation", async () => {
     await controller.hostWorkout(draft());
@@ -1409,7 +1511,10 @@ describe("cloud authoritative personal checkpoint", () => {
     await controller.host(d);
     expect(controller.readDraft(userId)?.notes).toBeNull();
     const review = await controller.prepareReview();
-    expect(review.omissions).toEqual([]);
+    // The planned row left empty stays on this device, as a host's does.
+    expect(review.omissions).toEqual([
+      "Incomplete sets remain on this device.",
+    ]);
     server.participants[0].status = "finished_empty";
     server.completion.status = "finished_empty";
     await controller.refresh();
@@ -2508,6 +2613,78 @@ describe("sharing switches move on tap (PER-60)", () => {
     await controller.retry().catch(() => {});
     expect(controller.getSnapshot().pendingCount).toBe(0);
     expect(controller.getSnapshot().pendingVisibility).toBeUndefined();
+  });
+
+  it("a refused admit is dropped and the host's own set queued after it still reaches the server (PER-60)", async () => {
+    api.decide = jest.fn(async () =>
+      fail({
+        kind: "api",
+        code: "server",
+        message: "no",
+        status: 400,
+        togetherCode: "INVALID_SCHEMA",
+      }),
+    ) as unknown as TogetherCloudApi["decide"];
+    api.command = jest.fn(async (_id, _key, c: CloudCommand) => {
+      const p = server.participants[0];
+      const op = c.operation as {
+        planExerciseId: string;
+        set: {
+          setId: string;
+          reps: number;
+          weightKg: number;
+          completed: boolean;
+        };
+      };
+      const e = p.execution!.exercises.find(
+        (x) => x.planExerciseId === op.planExerciseId,
+      )!;
+      e.sets = e.sets.map((set) => (set.setId === op.set.setId ? op.set : set));
+      p.ownRevision++;
+      server.revision++;
+      return ok({
+        commandId: c.commandId,
+        revision: server.revision,
+        event: { newVersion: p.ownRevision },
+      });
+    }) as unknown as TogetherCloudApi["command"];
+    await expect(controller.decide(randomUUID(), "approve")).rejects.toThrow(
+      "INVALID_SCHEMA",
+    );
+    // Dropped: nothing left to retry, and the session stays usable.
+    expect(controller.getSnapshot().pendingCount).toBe(0);
+    expect(controller.getSnapshot().phase).toBe("active");
+    const edit = controller.readDraft(userId)!;
+    edit.exercises[0].sets[0].reps = 12;
+    controller.saveDraft(userId, edit);
+    await controller.retry();
+    expect(server.participants[0].execution!.exercises[0].sets[0].reps).toBe(
+      12,
+    );
+    expect(api.decide).toHaveBeenCalledTimes(1);
+    expect(controller.getSnapshot().pendingCount).toBe(0);
+  });
+
+  it("an admit that fails on the network stays queued and is sent on reconnect (PER-60)", async () => {
+    api.decide = jest.fn(async () =>
+      fail({ kind: "api", code: "network", message: "offline" }),
+    ) as unknown as TogetherCloudApi["decide"];
+    const requestId = randomUUID();
+    await expect(controller.decide(requestId, "approve")).rejects.toThrow(
+      "network",
+    );
+    expect(controller.getSnapshot().pendingCount).toBe(1);
+    api.decide = jest.fn(async () =>
+      ok(copy(server)),
+    ) as unknown as TogetherCloudApi["decide"];
+    await controller.retry();
+    expect(api.decide).toHaveBeenCalledWith(
+      server.sessionId,
+      requestId,
+      expect.any(String),
+      expect.objectContaining({ decision: "approve" }),
+    );
+    expect(controller.getSnapshot().pendingCount).toBe(0);
   });
 
   it("an accepted Who can join is not called refused when the refresh after it fails (PER-60)", async () => {

@@ -303,6 +303,37 @@ it("wires host invitations, join requests, who can join and every-partner sharin
   expect(settings().visible).toBe(false);
 });
 
+it("a refused admit says why and frees the request bar (PER-60)", async () => {
+  const h = setup(true);
+  const r = renderWithTheme(<TogetherCloudContainer {...h.props} />);
+  act(() =>
+    h.publish({
+      requests: [
+        {
+          requestId: "request",
+          userId: "w",
+          displayName: "Tom",
+          avatarUrl: null,
+        },
+      ],
+    }),
+  );
+  jest
+    .mocked(h.cloud.decide)
+    .mockRejectedValueOnce(new Error("INVALID_SCHEMA"))
+    .mockRejectedValueOnce(new Error("SESSION_FULL"));
+  await act(async () => fireEvent.press(r.getByText("Let in")));
+  expect(
+    r.getByText(
+      "Couldn’t let them in: your workout has an exercise they can’t use yet. Your workout is unchanged.",
+    ),
+  ).toBeTruthy();
+  // Not left busy: the bar can be used again.
+  await act(async () => fireEvent.press(r.getByText("Let in")));
+  expect(h.cloud.decide).toHaveBeenCalledTimes(2);
+  expect(r.getByText(/All four places are occupied/)).toBeTruthy();
+});
+
 it("does not apply a late friend lookup or chained consent to another account", async () => {
   const h = setup();
   let resolve!: (x: Awaited<ReturnType<TogetherCloudPort["friends"]>>) => void;

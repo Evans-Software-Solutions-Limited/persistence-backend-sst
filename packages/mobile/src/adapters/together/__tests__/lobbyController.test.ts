@@ -1956,6 +1956,152 @@ describe("reviewed lobby coordinator, real cryptography and SQLite, simulated na
       host.controller.workout.status(id(1), "local-session")?.sharing,
     ).toBe("active");
   });
+  it("a guest who left and scans the same QR is told they left, not a generic secure-connection failure (TestFlight 31 Oct)", async () => {
+    const { host, guest } = await sharedPair();
+    await guest.controller.shared.close("leave");
+    await guest.controller.cancel();
+    await settle();
+    // Same single-session invitation, scanned again.
+    await guest.controller.selectInvite(
+      host.controller.getSnapshot().invitation!,
+    );
+    expect(guest.controller.getSnapshot()).toMatchObject({
+      phase: "unavailable",
+      error: "session-left",
+    });
+    expect(guest.native.startDiscovery).toHaveBeenCalledTimes(1);
+  });
+  it("reports Nearby/LAN failures with their mode, stage and code, and never a successful join or a cancel (Sentry)", async () => {
+    const report = jest.fn();
+    const host = setup(),
+      guest = setup(2, { report });
+    await host.controller.host("Open", "open");
+    await join(host, guest);
+    await host.controller.approve(
+      host.controller.getSnapshot().pending[0].peerId,
+    );
+    await settle();
+    expect(guest.controller.getSnapshot().phase).toBe("joined");
+    await guest.controller.cancel();
+    await settle();
+    expect(report).not.toHaveBeenCalled();
+    // Rejoining the session it left.
+    await guest.controller.selectInvite(
+      host.controller.getSnapshot().invitation!,
+    );
+    expect(report).toHaveBeenCalledWith({
+      mode: "lan",
+      stage: "rejoin",
+      code: "session-left",
+    });
+    // Discovery that fails on the radio.
+    guest.native.startDiscovery.mockRejectedValueOnce(
+      new Error("nearby_unavailable"),
+    );
+    await guest.controller.browse();
+    expect(report).toHaveBeenLastCalledWith({
+      mode: "lan",
+      stage: "discover",
+      code: "nearby_unavailable",
+    });
+    // A connect the native layer refuses after the host was found.
+    const other = setup(3, { report });
+    await other.controller.selectInvite(invitation());
+    other.native.connect.mockRejectedValueOnce(new Error("connect_failed"));
+    await other.controller.join();
+    other.native.emit({
+      type: "discovered",
+      endpointId: "host",
+      lobbyId: id(100),
+    });
+    await settle();
+    expect(report).toHaveBeenLastCalledWith({
+      mode: "lan",
+      stage: "connect",
+      code: "connect_failed",
+    });
+    // A reporter that throws never breaks the lobby.
+    report.mockImplementation(() => {
+      throw new Error("sentry down");
+    });
+    other.native.startDiscovery.mockRejectedValueOnce(new Error("wifi_off"));
+    await other.controller.browse();
+    expect(other.controller.getSnapshot()).toMatchObject({
+      phase: "unavailable",
+      error: "wifi_off",
+    });
+  });
+  it("tags each failure with the stage the lobby was in", async () => {
+    const report = jest.fn();
+    const stageAt = (code = "x") => {
+      report.mockClear();
+      return code;
+    };
+    const host = setup(1, { report }),
+      guest = setup(2, { report });
+    await host.controller.host("Strength A");
+    host.controller.invalidateAuthorization(stageAt());
+    expect(report).toHaveBeenCalledWith({
+      mode: "lan",
+      stage: "host",
+      code: "x",
+    });
+    await host.controller.host("Strength A");
+    // Selected, not yet joining.
+    await guest.controller.selectInvite(
+      host.controller.getSnapshot().invitation!,
+    );
+    guest.controller.invalidateAuthorization(stageAt());
+    expect(report).toHaveBeenLastCalledWith(
+      expect.objectContaining({ stage: "join" }),
+    );
+    // Waiting for the host's approval.
+    await join(host, guest);
+    expect(guest.controller.getSnapshot().phase).toBe("pending-approval");
+    guest.controller.invalidateAuthorization(stageAt());
+    expect(report).toHaveBeenLastCalledWith(
+      expect.objectContaining({ stage: "admission" }),
+    );
+    // Admitted, then lost.
+    const other = setup(3, { report });
+    await join(host, other);
+    await host.controller.approve(
+      host.controller.getSnapshot().pending.at(-1)!.peerId,
+    );
+    await settle();
+    expect(other.controller.getSnapshot().phase).toBe("joined");
+    other.controller.invalidateAuthorization(stageAt());
+    expect(report).toHaveBeenLastCalledWith(
+      expect.objectContaining({ stage: "readmit" }),
+    );
+    // A handshake code says so whatever the phase.
+    host.controller.invalidateAuthorization(stageAt("protocol_failed"));
+    expect(report).toHaveBeenLastCalledWith(
+      expect.objectContaining({ stage: "handshake" }),
+    );
+  });
+  it("a guest who left and reaches the same session by search is told they left at Join", async () => {
+    const host = setup(),
+      guest = setup(2);
+    await host.controller.host("Open", "open");
+    await join(host, guest);
+    const pending = host.controller.getSnapshot().pending[0];
+    await host.controller.approve(pending.peerId);
+    await settle();
+    expect(guest.controller.getSnapshot().phase).toBe("joined");
+    await guest.controller.cancel();
+    await settle();
+    await guest.controller.browse();
+    const session = await probe(host, guest);
+    await guest.controller.selectDiscovered(session);
+    expect(guest.controller.getSnapshot().phase).toBe("selected");
+    await guest.controller.join();
+    await settle();
+    expect(guest.controller.getSnapshot()).toMatchObject({
+      phase: "unavailable",
+      error: "session-left",
+    });
+  });
   it.each(["success", "missing", "denied"] as const)(
     "expired own logging uses original recovery signer (%s), never reprovisioning",
     async (outcome) => {

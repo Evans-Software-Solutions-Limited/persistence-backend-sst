@@ -108,16 +108,25 @@ export function cloudProjection(
             writable: true,
             configurable: true,
           });
-        return set.reps !== null && set.weightKg !== null
-          ? [
-              {
+        // Every row is shared, logged or not, so partners see the athlete's
+        // real set list and a fill-in lands on the row it was typed into. An
+        // empty row carries placeholder zeros and is never completed: the
+        // server records and counts completed sets only (PER-60).
+        return [
+          set.reps !== null && set.weightKg !== null
+            ? {
                 setId: mapping.sets[set.id],
                 reps: set.reps,
                 weightKg: set.weightKg,
                 completed: true,
+              }
+            : {
+                setId: mapping.sets[set.id],
+                reps: 0,
+                weightKg: 0,
+                completed: false,
               },
-            ]
-          : [];
+        ];
       }),
     };
   });
@@ -232,10 +241,12 @@ export function mergeCloudExecution(
       const id = mapping.sets[set.id];
       if (!id) continue;
       const acknowledged = own.sets.find((s) => s.setId === id);
-      if (acknowledged) {
+      if (acknowledged?.completed) {
         set.weightKg = acknowledged.weightKg;
         set.reps = acknowledged.reps;
       } else if (set.weightKg !== null && set.reps !== null) {
+        // Not logged on the server (an empty row, or no row at all): a
+        // half-typed row stays as it is, a complete one is cleared.
         set.weightKg = null;
         set.reps = null;
       }
@@ -248,8 +259,8 @@ export function mergeCloudExecution(
         id,
         sessionExerciseId: row.id,
         setNumber: row.sets.length + 1,
-        weightKg: set.weightKg,
-        reps: set.reps,
+        weightKg: set.completed ? set.weightKg : null,
+        reps: set.completed ? set.reps : null,
         rpe: null,
         durationSeconds: null,
         distanceMeters: null,

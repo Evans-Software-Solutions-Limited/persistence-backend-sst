@@ -97,6 +97,41 @@ it("forwards the app-wide log to Sentry breadcrumbs only while Sentry is enabled
   togetherLog.clear();
 });
 
+it("strips identifiers and free text from breadcrumbs, keeping codes, phases, counts and timings", () => {
+  togetherLog.record("lobby", "failure", {
+    code: "Local sharing closed",
+    message: "Device of sam@example.com not admitted",
+    phase: "preparing",
+    peerId: "0f5b2c1e-1111-4111-8111-111111111111",
+    endpointId: "AB12",
+    lobbyId: "c0ffee00-1111-4111-8111-111111111111",
+    sessionId: "c0ffee00-1111-4111-8111-111111111111",
+    invitationToken: "abc",
+    ms: 120,
+    ready: false,
+    error: "token=abc/def",
+  });
+  expect(mockBreadcrumb).toHaveBeenCalledWith({
+    category: "together.lobby",
+    message: "failure",
+    level: "warning",
+    data: {
+      code: "Local sharing closed",
+      phase: "preparing",
+      ms: 120,
+      ready: false,
+      error: "unrecognised",
+    },
+  });
+  // Nothing safe left: no data at all.
+  togetherLog.record("nearby", "event discovered", { endpointId: "AB12" });
+  expect(mockBreadcrumb).toHaveBeenLastCalledWith({
+    category: "together.nearby",
+    message: "event discovered",
+    level: "info",
+  });
+  togetherLog.clear();
+});
 it("shares the formatted log and tolerates a dismissed share sheet", async () => {
   const log = new TogetherLog(10, () => 5);
   log.record("lobby", "phase hosting");

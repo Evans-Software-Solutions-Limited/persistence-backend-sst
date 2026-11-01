@@ -1,5 +1,31 @@
 # Project memory · persistence-backend-sst
 
+### 2026-11-01 — Together TestFlight run 2: partner rows, fill-in, custom exercises, Nearby join (PER-60, branch `claude/compassionate-clarke-eefidd`)
+
+Second two-phone run on 1.2.0. Each fix has a test that fails on the old code.
+- **Custom exercises (Brad, 31 Oct: share with admitted partners).**
+  `definitions()` takes `sharedBy`: an exercise created by the host (plan) or
+  by the athlete whose workout it is (substitute) skips the joiner-visibility
+  check and its definition is copied into session participants only. Library
+  visibility unchanged; preview unchanged (name only). No migration.
+- **Partner rows / fill-in / deleted empty set.** Athletes only shared sets
+  with reps and kg, so the partner view drew stand-in planned rows with
+  invented ids: a fill-in matched nothing and added a set, a deleted empty row
+  came back. Every row is now shared (empty = reps 0, kg 0, not completed);
+  the partner view mirrors the athlete's rows (planned rows only before any
+  arrive or for older apps). Core: `everAcknowledged` only on a completed set,
+  so an empty row doesn't lock substitution. Online guests joining without a
+  workout now start with one row per planned set. **Deploy core first.**
+- **Refused admission blocked the host's Online outbox** (a `decide` the
+  server refused stayed at the head of `pending`; the host's sets, consents
+  and fill-in never sent). Now dropped like consent/visibility, with a toast.
+  Likely behind the Online "numbers private"/"Waiting" — still unproven.
+- **Nearby join:** a late admission after the join reported failure now opens
+  the workout; rejoining after leaving says so instead of "Could not connect
+  securely"; connection failures report to Sentry (`together.mode/stage/code`
+  tags, sanitised breadcrumbs, once per code per run, no ids or codes).
+- **Mixed builds:** an older partner shows shared empty rows as 0 × 0 sets.
+
 ### 2026-10-31 — Together TestFlight fixes from Brad's two-phone run (PER-60, branch `claude/compassionate-clarke-eefidd`, PR #522)
 
 Release 2 build (1.2.0), both modes. Mobile only, no native package; each fix

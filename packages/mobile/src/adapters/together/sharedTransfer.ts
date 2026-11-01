@@ -3,6 +3,26 @@ import { requestHash } from "./security/identity";
 import type { SharedEnvelope } from "./sharedSession";
 
 export const MAX_SHARED_BYTES = 30000;
+/**
+ * Rows one athlete's shared projection may carry. Empty planned rows are
+ * shared too (PER-60), so this is separate from the 100 logged sets a
+ * projection may hold, and sized to stay inside one shared frame.
+ */
+export const MAX_PROJECTED_ROWS = 300;
+/**
+ * The signed envelope a sealed shared body travels in, beyond the body's own
+ * ciphertext: header fields, nonce and signature. Measured at about 500
+ * bytes; kept generous so an estimate never undercounts.
+ */
+const SEALED_ENVELOPE_OVERHEAD = 1200;
+/**
+ * The bytes a shared frame takes for a body of `plainBytes` once sealed: the
+ * AEAD tag, base64 (×4/3) and the envelope. Senders budget against
+ * MAX_SHARED_BYTES with this, since a frame over it is refused (#523).
+ */
+export function sealedFrameBytes(plainBytes: number): number {
+  return Math.ceil((plainBytes + 16) / 3) * 4 + SEALED_ENVELOPE_OVERHEAD;
+}
 export const MAX_PREVIOUS_BYTES = 2 * 1024 * 1024;
 export const SHARED_CHUNK_SIZE = 12000;
 export const SHARED_TRANSFER_TIMEOUT = 60000;

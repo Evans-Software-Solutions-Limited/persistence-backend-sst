@@ -36,6 +36,7 @@ import { togetherRoutes } from "../togetherRoutes";
 import { TogetherCompletionRepository } from "../completionRepository";
 import { placesRepository } from "../../places/placesRepository";
 import { SessionRepository } from "../../repositories/sessionRepository";
+import { ExerciseRepository } from "../../repositories/exerciseRepository";
 import type { TogetherCommand } from "../types";
 let pg: PGlite;
 let db: ReturnType<typeof drizzle>;
@@ -626,6 +627,49 @@ describe("production Together persistence and recovery", () => {
     await expect(run(a, s.sessionId, cmd(a, key(), 5))).rejects.toMatchObject({
       status: 400,
     });
+  });
+  it("an empty row (never completed) is shared without locking substitution (PER-60)", async () => {
+    const s = await create();
+    const pid = s.plan.exercises[0].planExerciseId;
+    const empty = { ...set(), reps: 0, weightKg: 0, completed: false };
+    await run(
+      a,
+      s.sessionId,
+      cmd(a, pid, 0, { type: "upsertSet", planExerciseId: pid, set: empty }),
+    );
+    const own = (await repo.snapshot(a, s.sessionId)).participants[0];
+    expect(own.execution!.exercises[0].sets).toEqual([empty]);
+    expect(own.progress?.[0]?.completedSets).toBe(0);
+    await run(
+      a,
+      s.sessionId,
+      cmd(a, pid, 1, {
+        type: "substitute",
+        planExerciseId: pid,
+        exerciseId: otherExercise,
+      }),
+    );
+    // Logging the row then locks it, as before.
+    await run(
+      a,
+      s.sessionId,
+      cmd(a, pid, 2, {
+        type: "upsertSet",
+        planExerciseId: pid,
+        set: { ...empty, reps: 8, weightKg: 40, completed: true },
+      }),
+    );
+    await expect(
+      run(
+        a,
+        s.sessionId,
+        cmd(a, pid, 3, {
+          type: "substitute",
+          planExerciseId: pid,
+          exerciseId: null,
+        }),
+      ),
+    ).rejects.toMatchObject({ status: 409 });
   });
   it("block immediately restricts replay/snapshots/partner writes but preserves own pending work and reports", async () => {
     const s = await pair();
@@ -1736,7 +1780,7 @@ describe("scoped friend invitation revocation", () => {
 });
 
 describe("exercise retention and recording precision", () => {
-  it("rejects third-party private exercises before promotion and rejects unauthorised guests on admission", async () => {
+  it("rejects third-party private exercises before promotion and shares the host's own with an admitted guest (PER-60)", async () => {
     const privateId = key();
     await db.insert(schema.exercises).values({
       id: privateId,
@@ -1762,12 +1806,14 @@ describe("exercise retention and recording precision", () => {
       consentVersion: "together-v1",
       consentAccepted: true,
     });
-    await expect(
-      repo.decide(a, s.sessionId, req.requestId, key(), {
-        decision: "approve",
-        expectedRevision: (await repo.snapshot(a, s.sessionId)).revision,
-      }),
-    ).rejects.toMatchObject({ status: 400 });
+    await repo.decide(a, s.sessionId, req.requestId, key(), {
+      decision: "approve",
+      expectedRevision: (await repo.snapshot(a, s.sessionId)).revision,
+    });
+    const guest = (await repo.snapshot(b, s.sessionId)).participants.find(
+      (p) => p.userId === b,
+    );
+    expect(guest?.exerciseCatalog[privateId]?.name).toBe("Private");
   });
   it("recovers a deleted personal exercise from its frozen definition and records bounded max set values", async () => {
     const privateId = key();
@@ -1901,6 +1947,257 @@ describe("exercise retention and recording precision", () => {
   });
 });
 
+describe("host custom exercises shared with admitted partners (PER-60)", () => {
+  const consent = {
+    consentVersion: "together-v1" as const,
+    consentAccepted: true as const,
+  };
+  async function custom(createdBy: string, name: string) {
+    const id = key();
+    await db
+      .insert(schema.exercises)
+      .values({ id, name, createdBy, isPublic: false, category: "strength" });
+    return id;
+  }
+  /** A session whose plan is a system lift and the host's own custom lift. */
+  async function hosted() {
+    const hostLift = await custom(a, "Host lift");
+    const p = plan();
+    p.exercises.push({
+      planExerciseId: key(),
+      exerciseId: hostLift,
+      order: 1,
+      targetSets: 2,
+    });
+    return { ...(await create({ exercises: [] }, p)), hostLift };
+  }
+  const catalog = async (viewer: string, id: string, of: string) =>
+    (await repo.snapshot(viewer, id)).participants.find((p) => p.userId === of)
+      ?.exerciseCatalog;
+  it("admits a guest by approval and a partner by code, each seeing the host's custom exercise by name", async () => {
+    const s = await hosted();
+    // Substituted while the host was alone, before anyone joined.
+    const hostSub = await custom(a, "Host swap");
+    await run(
+      a,
+      s.sessionId,
+      cmd(a, s.plan.exercises[0].planExerciseId, 0, {
+        type: "substitute",
+        planExerciseId: s.plan.exercises[0].planExerciseId,
+        exerciseId: hostSub,
+      }),
+    );
+    const invite = await repo.invite(a, s.sessionId, key(), {
+      expiresInMinutes: 15,
+    });
+    const req = await repo.requestJoin(b, key(), {
+      inviteToken: invite.token,
+      ...consent,
+    });
+    await repo.decide(a, s.sessionId, req.requestId, key(), {
+      decision: "approve",
+      expectedRevision: (await repo.snapshot(a, s.sessionId)).revision,
+    });
+    expect((await catalog(b, s.sessionId, b))?.[s.hostLift]).toEqual({
+      name: "Host lift",
+      category: "strength",
+      primaryMuscles: [],
+    });
+    // The host's substitute is named through the host's own row.
+    expect((await catalog(b, s.sessionId, a))?.[hostSub]?.name).toBe(
+      "Host swap",
+    );
+    // A partner admitted straight in by the session code.
+    await db.insert(schema.friendships).values([
+      { userId: a, friendId: c, status: "accepted", initiatedBy: a },
+      { userId: b, friendId: c, status: "accepted", initiatedBy: b },
+    ]);
+    expect(
+      await repo.requestJoin(c, key(), { code: s.code!, ...consent }),
+    ).toMatchObject({ status: "approved" });
+    expect((await catalog(c, s.sessionId, c))?.[s.hostLift]?.name).toBe(
+      "Host lift",
+    );
+    // A guest's own custom substitute is shared the same way.
+    const guestSub = await custom(b, "Guest swap");
+    await run(
+      b,
+      s.sessionId,
+      cmd(b, s.plan.exercises[1].planExerciseId, 0, {
+        type: "substitute",
+        planExerciseId: s.plan.exercises[1].planExerciseId,
+        exerciseId: guestSub,
+      }),
+    );
+    expect((await catalog(a, s.sessionId, b))?.[guestSub]?.name).toBe(
+      "Guest swap",
+    );
+    // A plan change adding another of the host's lifts reaches every member.
+    const added = await custom(a, "Host finisher");
+    await run(a, s.sessionId, {
+      commandId: key(),
+      target: { kind: "plan" },
+      expectedVersion: (await repo.snapshot(a, s.sessionId)).planVersion,
+      operation: {
+        type: "replacePlan",
+        plan: {
+          ...s.plan,
+          exercises: [
+            ...s.plan.exercises,
+            {
+              planExerciseId: key(),
+              exerciseId: added,
+              order: 2,
+              targetSets: 1,
+            },
+          ],
+        },
+      },
+    });
+    for (const viewer of [b, c])
+      expect((await catalog(viewer, s.sessionId, viewer))?.[added]?.name).toBe(
+        "Host finisher",
+      );
+  });
+  it("shows a user who is not admitted no more than the consent card", async () => {
+    const s = await hosted();
+    const preview = await repo.preview(c, { code: s.code! });
+    // The consent card carries a name, sets and reps per row, as before.
+    for (const row of preview.plan)
+      expect(Object.keys(row).sort()).toEqual(["name", "reps", "sets"]);
+    expect(JSON.stringify(preview)).not.toContain(s.hostLift);
+    expect(JSON.stringify(preview)).not.toContain("strength");
+    const pending = await repo.requestJoin(c, key(), {
+      code: s.code!,
+      ...consent,
+    });
+    expect(pending.status).toBe("pending");
+    await expect(repo.snapshot(c, s.sessionId)).rejects.toMatchObject({
+      status: 404,
+    });
+    expect(
+      JSON.stringify(await repo.joinStatus(c, pending.requestId)),
+    ).not.toContain(s.hostLift);
+    await repo.decide(a, s.sessionId, pending.requestId, key(), {
+      decision: "reject",
+      expectedRevision: (await repo.snapshot(a, s.sessionId)).revision,
+    });
+    await expect(repo.snapshot(c, s.sessionId)).rejects.toMatchObject({
+      status: 404,
+    });
+    expect(
+      (await db.select().from(schema.togetherParticipants)).map(
+        (p) => p.userId,
+      ),
+    ).toEqual([a]);
+  });
+  it("gives an admitted guest no use of the host's exercise outside the session", async () => {
+    const s = await hosted();
+    const invite = await repo.invite(a, s.sessionId, key(), {
+      expiresInMinutes: 15,
+    });
+    const req = await repo.requestJoin(b, key(), {
+      inviteToken: invite.token,
+      ...consent,
+    });
+    await repo.decide(a, s.sessionId, req.requestId, key(), {
+      decision: "approve",
+      expectedRevision: (await repo.snapshot(a, s.sessionId)).revision,
+    });
+    const library = new ExerciseRepository();
+    expect(await library.getById(s.hostLift, b)).toBeNull();
+    expect(await library.findUnreadableExerciseIds(b, [s.hostLift])).toEqual([
+      s.hostLift,
+    ]);
+    // The guest cannot swap it into their own work in the session either.
+    await expect(
+      run(
+        b,
+        s.sessionId,
+        cmd(b, s.plan.exercises[0].planExerciseId, 0, {
+          type: "substitute",
+          planExerciseId: s.plan.exercises[0].planExerciseId,
+          exerciseId: s.hostLift,
+        }),
+      ),
+    ).rejects.toMatchObject({ code: "INVALID_SCHEMA" });
+    // Nor plan a session of their own with it once they have left.
+    await repo.discard(b, s.sessionId, key());
+    const own = plan();
+    own.exercises[0].exerciseId = s.hostLift;
+    await expect(
+      repo.create(b, key(), {
+        clientDraftId: key(),
+        plan: own,
+        ownExecution: { exercises: [] },
+      }),
+    ).rejects.toMatchObject({ code: "INVALID_SCHEMA" });
+  });
+  it("still refuses plan exercises the host does not own unless every member can see them", async () => {
+    // Someone else's private lift can't be planned at all.
+    const stranger = await custom(c, "Stranger lift");
+    const p = plan();
+    p.exercises[0].exerciseId = stranger;
+    await expect(create({ exercises: [] }, p)).rejects.toMatchObject({
+      code: "INVALID_SCHEMA",
+    });
+    // A lift the host sees only through a coach's assignment is not the
+    // host's to share: a guest who can't see it is still refused.
+    const [workout] = await db
+      .insert(schema.workouts)
+      .values({ name: "Assigned", createdBy: c })
+      .returning();
+    await db
+      .insert(schema.workoutExercises)
+      .values({ workoutId: workout.id, exerciseId: stranger, sortOrder: 0 });
+    await db.insert(schema.workoutAssignments).values({
+      workoutId: workout.id,
+      clientId: a,
+      trainerId: c,
+      assignedDate: "2026-09-21",
+    });
+    const s = await create({ exercises: [] }, p);
+    const invite = await repo.invite(a, s.sessionId, key(), {
+      expiresInMinutes: 15,
+    });
+    const req = await repo.requestJoin(b, key(), {
+      inviteToken: invite.token,
+      ...consent,
+    });
+    await expect(
+      repo.decide(a, s.sessionId, req.requestId, key(), {
+        decision: "approve",
+        expectedRevision: (await repo.snapshot(a, s.sessionId)).revision,
+      }),
+    ).rejects.toMatchObject({ code: "INVALID_SCHEMA" });
+    // Nor can the host plan a guest's private lift into a live session.
+    await repo.discard(a, s.sessionId, key());
+    const paired = await pair();
+    const guestLift = await custom(b, "Guest lift");
+    await expect(
+      run(a, paired.sessionId, {
+        commandId: key(),
+        target: { kind: "plan" },
+        expectedVersion: (await repo.snapshot(a, paired.sessionId)).planVersion,
+        operation: {
+          type: "replacePlan",
+          plan: {
+            ...paired.plan,
+            exercises: [
+              ...paired.plan.exercises,
+              {
+                planExerciseId: key(),
+                exerciseId: guestLift,
+                order: 1,
+                targetSets: 1,
+              },
+            ],
+          },
+        },
+      }),
+    ).rejects.toMatchObject({ code: "INVALID_SCHEMA" });
+  });
+});
 describe("serialized first-write identity races", () => {
   it("serializes first set against underlying shared plan replacement", async () => {
     const s = await pair();
