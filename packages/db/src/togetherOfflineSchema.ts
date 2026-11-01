@@ -10,6 +10,11 @@ import {
 } from "drizzle-orm/pg-core";
 import { profiles } from "./schema";
 import type { TogetherPlan, TogetherExecution } from "./togetherSchema";
+/** Plan exercise ids a verified host share covers; only the host's own count. */
+export interface TogetherSharedExercises {
+  hostUserId: string;
+  exerciseIds: string[];
+}
 export const togetherOfflineDevices = pgTable(
   "together_offline_devices",
   {
@@ -35,6 +40,11 @@ export const togetherOfflineExecutions = pgTable(
     planHash: text("plan_hash").notNull(),
     revision: integer("revision").notNull().default(0),
     execution: jsonb("execution").$type<TogetherExecution>().notNull(),
+    /**
+     * Exercises the session's host shared with this guest, from a verified
+     * host-signed share (PER-60). Null when none was uploaded.
+     */
+    sharedExercises: jsonb("shared_exercises").$type<TogetherSharedExercises>(),
   },
   (t) => [
     primaryKey({ columns: [t.userId, t.executionId] }),

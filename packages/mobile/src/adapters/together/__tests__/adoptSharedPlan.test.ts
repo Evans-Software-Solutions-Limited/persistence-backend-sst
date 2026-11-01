@@ -1,5 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { adoptSharedPlan } from "../adoptSharedPlan";
+import {
+  adoptSharedPlan,
+  sharedExerciseName,
+  withSharedExerciseNames,
+} from "../adoptSharedPlan";
 import type { WorkoutSession } from "../../../domain/models/session";
 import type { TogetherSharedPlan } from "../../../domain/ports/togetherShared.port";
 const id = (n: number) =>
@@ -171,5 +175,36 @@ describe("explicit pre-promotion plan adoption", () => {
     expect(() =>
       adoptSharedPlan(draft(), plan, "other" as "append", { randomUUID }),
     ).toThrow("unavailable");
+  });
+});
+
+describe("naming a host's custom exercise for a guest (PER-60)", () => {
+  const shared = { [id(2)]: { name: "Host lift" } };
+  it("names the adopted row from the host's definition when the guest's library lacks it", () => {
+    const adopted = adoptSharedPlan(draft(), plan, "append", {
+      randomUUID,
+      exerciseName: (exerciseId) => sharedExerciseName(exerciseId, [], shared),
+    });
+    expect(adopted.exercises.at(-1)?.exerciseName).toBe("Host lift");
+  });
+  it("prefers the guest's own library, then the host's definition, then the existing fallback", () => {
+    const library = [{ id: id(2), name: "My name for it" }];
+    expect(sharedExerciseName(id(2), library, shared)).toBe("My name for it");
+    expect(sharedExerciseName(id(2), [], shared)).toBe("Host lift");
+    expect(sharedExerciseName(id(9), [], shared)).toBeUndefined();
+    expect(sharedExerciseName(id(2), [], undefined)).toBeUndefined();
+  });
+  it("gives partner views the host's name where the workout only has the id", () => {
+    expect(
+      withSharedExerciseNames(
+        { [id(2)]: id(2), [id(5)]: "Bench" },
+        { ...shared, [id(6)]: { name: "Host row" } },
+      ),
+    ).toEqual({ [id(2)]: "Host lift", [id(5)]: "Bench", [id(6)]: "Host row" });
+    const names = { [id(5)]: "Bench" };
+    expect(withSharedExerciseNames(names, {})).toBe(names);
+    expect(
+      withSharedExerciseNames({ [id(2)]: "Own name" }, shared)[id(2)],
+    ).toBe("Own name");
   });
 });

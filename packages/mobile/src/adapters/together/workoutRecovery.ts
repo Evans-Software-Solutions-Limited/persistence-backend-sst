@@ -5,7 +5,11 @@ import type {
   TogetherRecoveryCandidate,
   TogetherRecoveryCommand,
 } from "../../domain/ports/togetherOfflineApi.port";
-import type { Credential, Signed } from "../../domain/models/togetherIdentity";
+import type {
+  Credential,
+  Signed,
+  TogetherExerciseShare,
+} from "../../domain/models/togetherIdentity";
 import { checkpointExecution, type Checkpoint } from "./workoutCheckpoint";
 import { commandFromEnvelope, readOwnerCommand } from "./localCommand";
 import { requestHash } from "./security/identity";
@@ -23,7 +27,13 @@ export interface WorkoutRecoveryOptions {
 }
 export interface RecoveryState {
   uploaded: number;
-  batch?: { key: string; start: number; count: number };
+  /** A retried batch resends exactly what it first sent, share included. */
+  batch?: {
+    key: string;
+    start: number;
+    count: number;
+    exerciseShare?: TogetherExerciseShare;
+  };
   finish?: {
     key: string;
     revision: number;
@@ -238,6 +248,7 @@ export class TogetherWorkoutRecovery {
         key: this.randomUUID(),
         start: recovery.uploaded,
         count: Math.min(100, c.intents.length - recovery.uploaded),
+        ...(c.exerciseShare ? { exerciseShare: c.exerciseShare } : {}),
       };
       const batch = recovery.batch,
         intents = c.intents.slice(batch.start, batch.start + batch.count);
@@ -253,6 +264,9 @@ export class TogetherWorkoutRecovery {
             (i) =>
               JSON.parse(i.command!.payload) as Signed<TogetherRecoveryCommand>,
           ),
+          ...(batch.exerciseShare
+            ? { exerciseShare: batch.exerciseShare }
+            : {}),
         }),
       );
       access.guard();

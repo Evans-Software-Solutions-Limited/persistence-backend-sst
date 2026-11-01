@@ -26,7 +26,10 @@ import { useTogetherGate } from "@/ui/hooks/useTogetherGate";
 
 import { refreshTogetherOwnPrevious } from "@/adapters/together/ownPrevious";
 import { randomUUID } from "expo-crypto";
-import { adoptSharedPlan } from "@/adapters/together/adoptSharedPlan";
+import {
+  adoptSharedPlan,
+  sharedExerciseName,
+} from "@/adapters/together/adoptSharedPlan";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import {
   useCallback,
@@ -1063,7 +1066,11 @@ export function ActiveSessionContainer() {
               adoptSharedPlan(fresh, plan, mode, {
                 randomUUID,
                 exerciseName: (id) =>
-                  storage.getCachedExercises().find((e) => e.id === id)?.name,
+                  sharedExerciseName(
+                    id,
+                    storage.getCachedExercises(),
+                    togetherLobby.shared?.getSnapshot().exerciseDefinitions,
+                  ),
               }),
             );
             rereadCache();

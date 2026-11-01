@@ -1,5 +1,40 @@
 # Project memory · persistence-backend-sst
 
+### 2026-11-01 — Nearby guests save on the host's custom exercises; full copies (PER-60, branch `claude/compassionate-clarke-eefidd`)
+
+Brad's decision (31 Oct): admitted partners get the host's custom exercises,
+saved as a private copy with full details, Nearby and Online. Library
+visibility outside Together unchanged. Each fix has a test that fails on the
+old code. [PER-60](https://linear.app/evans-software-solutions/issue/PER-60)
+- **Core.** `POST /together/offline/recovery` takes an optional
+  `exerciseShare` {host device credential, host-signed
+  `together-exercise-share-v1` proof: session, host user/device, guest, ≤100
+  exercise ids}. `recover` verifies the credential (authority keys + the
+  host's registered device key), the signature, session, guest = actor,
+  host ≠ actor; keeps the ids that are in the plan in the new nullable
+  `together_offline_executions.shared_exercises` (a later batch merges ids
+  from the same host only). `completeOffline` allows an exercise the guest
+  can't see only if it is in those ids and `created_by` = that host, read
+  server-side; everything else still 409s. `materializeTogetherExercise`
+  copies name, description, instructions, category, difficulty,
+  primary/secondary muscles, equipment, video, thumbnail from the source row
+  (snapshot if the source is gone), never `is_public`/`client_request_id` —
+  Online and template copies get full details too.
+  **Migrate before deploy:** `20261101120000_together_offline_shared_exercises`
+  (rollback in `supabase/rollbacks`). Deploy core before the app.
+- **Mobile.** New sealed `exercises` shared event, host → each admitted guest,
+  sent with (ahead of) the plan, on replay to a later guest, fresh on a
+  re-sent plan; only when the plan has the host's own custom exercises
+  (`customExercises` from the cached library, `createdBy` = host). Carries
+  the proof and names-first display definitions within `MAX_SHARED_BYTES`.
+  Guest validates strictly (`readExerciseShare`), stores the proof in its
+  checkpoint, uploads it with recovery. Rows/partner views name from own
+  library → host definition → old fallback.
+- **Open:** an older guest app joining a host whose plan has the host's
+  custom exercises fails the link (unknown event). A guest whose last upload
+  already happened before a share arrived does not re-upload it. Two-phone
+  verification not done.
+
 ### 2026-11-01 — Together TestFlight run 2: partner rows, fill-in, custom exercises, Nearby join (PER-60, branch `claude/compassionate-clarke-eefidd`)
 
 Second two-phone run on 1.2.0. Each fix has a test that fails on the old code.

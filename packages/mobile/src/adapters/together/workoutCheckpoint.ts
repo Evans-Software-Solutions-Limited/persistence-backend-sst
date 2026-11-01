@@ -28,6 +28,7 @@ import {
   type Signed,
 } from "./security/identity";
 import { uuid, object, integer } from "./security/schema";
+import type { TogetherExerciseShare } from "../../domain/models/togetherIdentity";
 import {
   MAX_PROJECTED_ROWS,
   MAX_SHARED_BYTES,
@@ -40,6 +41,8 @@ export interface WorkoutAuthority {
   credential: Signed<Credential>;
   seed: Uint8Array;
   sharing: "active" | "reconnecting";
+  /** The host's share of its custom exercises with this guest (PER-60). */
+  exerciseShare?: TogetherExerciseShare;
   send(command: LocalCommand): Promise<void>;
 }
 type Plan = {
@@ -78,7 +81,23 @@ export interface Checkpoint {
   projected: Projection;
   intents: { payload: OwnerCommand; command?: LocalCommand }[];
   error?: string;
+  /**
+   * The host's latest share of its custom exercises (PER-60), uploaded with
+   * the recovery so the server lets this guest save on them.
+   */
+  exerciseShare?: TogetherExerciseShare;
 }
+/** A share is kept only by the guest it was issued to, for this session. */
+const shareFor = (
+  c: Pick<Checkpoint, "sessionId">,
+  userId: string,
+  share: TogetherExerciseShare | undefined,
+) =>
+  share &&
+  share.proof.payload.sessionId === c.sessionId &&
+  share.proof.payload.userId === userId
+    ? share
+    : undefined;
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 const unsupported = () => {
   throw new Error("workout-unsupported");
@@ -563,7 +582,27 @@ export class TogetherWorkoutCheckpoint implements TogetherWorkoutPort {
       projected: {},
       intents: [],
     };
+    const share = shareFor(c, session.userId, auth.exerciseShare);
+    if (share) c.exerciseShare = copy(share);
     this.write(c, session);
+  }
+  /**
+   * Stores the host's latest exercise share in the account's active workout
+   * when it belongs to it. True once the workout holds it.
+   */
+  syncExerciseShare(userId: string): boolean {
+    if (this.account() !== userId) return false;
+    const active = this.getActive(userId);
+    const c = active && this.load(userId, active.id);
+    if (!c || c.snapshot.status !== "in_progress") return false;
+    const share = shareFor(c, userId, this.match(c)?.exerciseShare);
+    if (!share) return false;
+    if (c.exerciseShare && requestHash(c.exerciseShare) === requestHash(share))
+      return true;
+    c.exerciseShare = copy(share);
+    this.persist(c, []);
+    this.changed();
+    return true;
   }
   save(userId: string, session: WorkoutSession): void {
     if (this.account() !== userId || session.userId !== userId)

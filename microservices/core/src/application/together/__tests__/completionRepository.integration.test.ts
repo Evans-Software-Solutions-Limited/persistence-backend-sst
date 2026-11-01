@@ -2,7 +2,7 @@ import { PersonalRecordsRepository } from "../../repositories/personalRecordsRep
 import { SessionRepository } from "../../repositories/sessionRepository";
 import { TogetherOfflineRepository } from "../offlineRepository";
 import { processTogetherJob } from "../recording";
-import { randomUUID } from "node:crypto";
+import { generateKeyPairSync, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
@@ -27,6 +27,15 @@ import {
 } from "../completionRepository";
 import * as recovered from "../recoveredRecording";
 import { requestHash } from "../shared";
+import { ExerciseRepository } from "../../repositories/exerciseRepository";
+import {
+  signPayload,
+  type Credential,
+  type ExerciseShare,
+  type Signed,
+} from "../offlineIdentity";
+import type { RecoveryUpload } from "../offlineRepository";
+import type { RecoveryCommand } from "../offlineRecovery";
 const executedQueries: string[] = [];
 let pg: PGlite;
 let db: ReturnType<typeof drizzle>;
@@ -90,6 +99,13 @@ function ddl(table: PgTable) {
 const migration = readFileSync(
   new URL(
     "../../../../../../supabase/migrations/20260921211637_together_backend.sql",
+    import.meta.url,
+  ),
+  "utf8",
+);
+const sharedExercisesMigration = readFileSync(
+  new URL(
+    "../../../../../../supabase/migrations/20261101120000_together_offline_shared_exercises.sql",
     import.meta.url,
   ),
   "utf8",
@@ -161,6 +177,8 @@ beforeAll(async () => {
   );
   await pg.exec(offlineMigration);
   await pg.exec(offlineMigration);
+  await pg.exec(sharedExercisesMigration);
+  await pg.exec(sharedExercisesMigration);
   await pg.exec(reviewMigration);
   await pg.exec(reviewMigration);
   await pg.exec(reviewRollback);
@@ -908,5 +926,357 @@ describe("explicit owner-reviewed Together results", () => {
             )
           ).rows[0].ok,
         ).toBe(false);
+  });
+});
+
+describe("a Nearby host's custom exercises reach an admitted guest's history (PER-60)", () => {
+  // b hosts with its own private lift; a is the guest who cannot see it.
+  const c = randomUUID();
+  const pair = () => {
+    const p = generateKeyPairSync("ed25519");
+    return {
+      privateKey: p.privateKey
+        .export({ format: "pem", type: "pkcs8" })
+        .toString(),
+      publicKey: p.publicKey.export({ format: "pem", type: "spki" }).toString(),
+    };
+  };
+  const authority = pair(),
+    hostKeys = pair(),
+    guestKeys = pair(),
+    hostDevice = randomUUID(),
+    guestDevice = randomUUID();
+  const credential = (
+    userId: string,
+    deviceId: string,
+    publicKey: string,
+  ): Signed<Credential> =>
+    signPayload<Credential>(
+      {
+        kind: "together-device-v1",
+        keyId: "test",
+        userId,
+        deviceId,
+        publicKey,
+        issuedAt: Date.now() - 1000,
+        expiresAt: Date.now() + 3600000,
+      },
+      authority.privateKey,
+    );
+  beforeEach(async () => {
+    vi.stubEnv(
+      "TOGETHER_OFFLINE_AUTHORITY",
+      JSON.stringify({
+        keyId: "test",
+        privateKey: authority.privateKey,
+        publicKeys: { test: authority.publicKey },
+      }),
+    );
+    await db.insert(schema.profiles).values({ id: c, fullName: "C" });
+    await db.insert(schema.togetherOfflineDevices).values([
+      { userId: b, deviceId: hostDevice, publicKey: hostKeys.publicKey },
+      { userId: a, deviceId: guestDevice, publicKey: guestKeys.publicKey },
+    ]);
+    await db
+      .update(schema.exercises)
+      .set({
+        name: "Host lift",
+        description: "A hinge",
+        instructions: "Brace, then pull",
+        category: "olympic",
+        difficultyLevel: "advanced",
+        primaryMuscles: [randomUUID()],
+        secondaryMuscles: [randomUUID()],
+        equipmentRequired: [randomUUID()],
+        videoUrl: "https://example.com/lift.mp4",
+        thumbnailUrl: "https://example.com/lift.jpg",
+        clientRequestId: "host-own-key",
+      })
+      .where(eq(schema.exercises.id, otherExercise));
+  });
+  /** The guest's signed journal of one set on a plan of the host's lift. */
+  function upload(exerciseId = otherExercise): RecoveryUpload {
+    const plan = {
+      name: "Nearby workout",
+      exercises: [
+        { planExerciseId: key(), exerciseId, order: 0, targetSets: 3 },
+      ],
+    };
+    const base = {
+      kind: "together-recovery-v1" as const,
+      userId: a,
+      sessionId: key(),
+      executionId: key(),
+      startedAt: Date.now() - 7200000,
+      planHash: requestHash(plan),
+    };
+    return {
+      credential: credential(a, guestDevice, guestKeys.publicKey),
+      sessionId: base.sessionId,
+      executionId: base.executionId,
+      startedAt: base.startedAt,
+      plan,
+      commands: [
+        signPayload<RecoveryCommand>(
+          {
+            ...base,
+            commandId: key(),
+            expectedVersion: 0,
+            operation: {
+              type: "upsertSet",
+              planExerciseId: plan.exercises[0].planExerciseId,
+              set: { setId: key(), reps: 5, weightKg: 60, completed: true },
+            },
+          },
+          guestKeys.privateKey,
+        ),
+      ],
+    };
+  }
+  function share(
+    body: RecoveryUpload,
+    changes: Partial<ExerciseShare> = {},
+    signer = hostKeys.privateKey,
+    hostCredential = credential(b, hostDevice, hostKeys.publicKey),
+  ) {
+    return {
+      ...body,
+      exerciseShare: {
+        credential: hostCredential,
+        proof: signPayload<ExerciseShare>(
+          {
+            kind: "together-exercise-share-v1",
+            sessionId: body.sessionId,
+            hostUserId: b,
+            hostDeviceId: hostDevice,
+            userId: a,
+            exerciseIds: body.plan.exercises.map((e) => e.exerciseId),
+            issuedAt: Date.now(),
+            ...changes,
+          },
+          signer,
+        ),
+      },
+    };
+  }
+  const complete = (body: RecoveryUpload) =>
+    repo.completeOffline(a, body.executionId, key(), {
+      expectedRevision: 1,
+      completedAt: new Date(Date.now() - 60000).toISOString(),
+    });
+  it("saves the guest's workout on a private copy of the host's exercise with its full details", async () => {
+    const body = share(upload());
+    await recoveryRepo.recover(a, key(), body);
+    expect(await complete(body)).toMatchObject({ status: "saved" });
+    const [recorded] = await db.select().from(schema.sessionExercises);
+    expect(recorded.exerciseId).not.toBe(otherExercise);
+    const [copy] = await db
+      .select()
+      .from(schema.exercises)
+      .where(eq(schema.exercises.id, recorded.exerciseId));
+    const [source] = await db
+      .select()
+      .from(schema.exercises)
+      .where(eq(schema.exercises.id, otherExercise));
+    expect(copy).toMatchObject({
+      createdBy: a,
+      isPublic: false,
+      clientRequestId: `together-recovery:${otherExercise}`,
+      name: "Host lift",
+      description: "A hinge",
+      instructions: "Brace, then pull",
+      category: "olympic",
+      difficultyLevel: "advanced",
+      primaryMuscles: source.primaryMuscles,
+      secondaryMuscles: source.secondaryMuscles,
+      equipmentRequired: source.equipmentRequired,
+      videoUrl: "https://example.com/lift.mp4",
+      thumbnailUrl: "https://example.com/lift.jpg",
+    });
+    // The library outside Together is unchanged: the source stays private.
+    expect(await new ExerciseRepository().getById(otherExercise, a)).toBeNull();
+  });
+  it("still refuses the host's exercise without a share", async () => {
+    const body = upload();
+    await recoveryRepo.recover(a, key(), body);
+    await expect(complete(body)).rejects.toMatchObject({
+      code: "EXERCISE_UNAVAILABLE",
+      status: 409,
+    });
+    expect(await db.select().from(schema.workoutSessions)).toHaveLength(0);
+  });
+  it("shares only exercises the host created, read from the server", async () => {
+    // c's private lift, named in a share b signed: b can't give it away.
+    const stranger = key();
+    await db.insert(schema.exercises).values({
+      id: stranger,
+      name: "Stranger lift",
+      createdBy: c,
+      isPublic: false,
+    });
+    const body = share(upload(stranger));
+    await recoveryRepo.recover(a, key(), body);
+    await expect(complete(body)).rejects.toMatchObject({
+      code: "EXERCISE_UNAVAILABLE",
+    });
+    expect(await db.select().from(schema.workoutSessions)).toHaveLength(0);
+  });
+  it("ignores a share that is forged, misaddressed or from an unregistered key, and still recovers the guest's own journal", async () => {
+    // Each bad share is treated as no share: the guest's own commands are
+    // still accepted (a stuck journal would be worse), nothing is shared, and
+    // the host's exercise is still refused at completion.
+    const ignored = async (bad: (body: RecoveryUpload) => RecoveryUpload) => {
+      const body = bad(upload());
+      await expect(recoveryRepo.recover(a, key(), body)).resolves.toMatchObject(
+        {
+          status: "stored_for_review",
+        },
+      );
+      const [stored] = await db
+        .select()
+        .from(schema.togetherOfflineExecutions)
+        .where(
+          eq(schema.togetherOfflineExecutions.executionId, body.executionId),
+        );
+      expect(stored.sharedExercises).toBeNull();
+      await expect(complete(body)).rejects.toMatchObject({
+        code: "EXERCISE_UNAVAILABLE",
+        status: 409,
+      });
+    };
+    // Signed by someone else's key.
+    await ignored((body) => share(body, {}, guestKeys.privateKey));
+    // Issued to another guest, for another session, or by the guest itself.
+    await ignored((body) => share(body, { userId: c }));
+    await ignored((body) => share(body, { sessionId: key() }));
+    await ignored((body) =>
+      share(
+        body,
+        { hostUserId: a, hostDeviceId: guestDevice },
+        guestKeys.privateKey,
+        credential(a, guestDevice, guestKeys.publicKey),
+      ),
+    );
+    // Names a different device than the host's credential.
+    await ignored((body) => share(body, { hostDeviceId: key() }));
+    // A share edited after signing.
+    await ignored((body) => {
+      const edited = share(body);
+      edited.exerciseShare.proof.payload.exerciseIds = [exercise];
+      return edited;
+    });
+    // A credential the authority signed for a key the host never registered.
+    const rogue = pair();
+    await ignored((body) =>
+      share(
+        body,
+        {},
+        rogue.privateKey,
+        credential(b, hostDevice, rogue.publicKey),
+      ),
+    );
+    // A credential the authority never signed.
+    await ignored((body) => {
+      const unsigned = share(body);
+      unsigned.exerciseShare.credential = {
+        ...unsigned.exerciseShare.credential,
+        signature: "A".repeat(86),
+      };
+      return unsigned;
+    });
+    // A host key the authority no longer lists (rotated out).
+    await ignored((body) => {
+      const rotated = share(body);
+      rotated.exerciseShare.credential = {
+        ...rotated.exerciseShare.credential,
+        payload: {
+          ...rotated.exerciseShare.credential.payload,
+          keyId: "retired",
+        },
+      };
+      return rotated;
+    });
+  });
+  it("replays a stored batch even after its share stops verifying", async () => {
+    const body = share(upload());
+    const idempotency = key();
+    const first = await recoveryRepo.recover(a, idempotency, body);
+    await db
+      .delete(schema.togetherOfflineDevices)
+      .where(eq(schema.togetherOfflineDevices.userId, b));
+    await expect(recoveryRepo.recover(a, idempotency, body)).resolves.toEqual(
+      first,
+    );
+  });
+  it("bounds the share and keeps a later batch's share to the same host", async () => {
+    const body = upload();
+    await expect(
+      recoveryRepo.recover(
+        a,
+        key(),
+        share(body, {
+          exerciseIds: Array.from({ length: 101 }, () => key()),
+        }),
+      ),
+    ).rejects.toMatchObject({ code: "INVALID_SCHEMA", status: 400 });
+    await recoveryRepo.recover(a, key(), share(body));
+    const [stored] = await db.select().from(schema.togetherOfflineExecutions);
+    expect(stored.sharedExercises).toEqual({
+      hostUserId: b,
+      exerciseIds: [otherExercise],
+    });
+    // A replayed batch with a share from someone other than the first host.
+    const next = signPayload<RecoveryCommand>(
+      {
+        ...body.commands[0].payload,
+        commandId: key(),
+        expectedVersion: 1,
+        operation: { type: "rest", endsAt: null },
+      },
+      guestKeys.privateKey,
+    );
+    await db.insert(schema.togetherOfflineDevices).values({
+      userId: c,
+      deviceId: hostDevice,
+      publicKey: hostKeys.publicKey,
+    });
+    await recoveryRepo.recover(
+      a,
+      key(),
+      share(
+        { ...body, commands: [next] },
+        { hostUserId: c },
+        hostKeys.privateKey,
+        credential(c, hostDevice, hostKeys.publicKey),
+      ),
+    );
+    // The guest's batch is accepted; the other host's share is ignored.
+    const [after] = await db.select().from(schema.togetherOfflineExecutions);
+    expect(after.revision).toBe(2);
+    expect(after.sharedExercises).toEqual({
+      hostUserId: b,
+      exerciseIds: [otherExercise],
+    });
+  });
+  it("adds the new migration idempotently and rolls it back", async () => {
+    const rollback = readFileSync(
+      new URL(
+        "../../../../../../supabase/rollbacks/20261101120000_together_offline_shared_exercises.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    const column = async () =>
+      (
+        await pg.query(
+          "SELECT 1 FROM information_schema.columns WHERE table_name='together_offline_executions' AND column_name='shared_exercises'",
+        )
+      ).rows.length;
+    await pg.exec(rollback);
+    await pg.exec(rollback);
+    expect(await column()).toBe(0);
+    await pg.exec(sharedExercisesMigration);
+    await pg.exec(sharedExercisesMigration);
+    expect(await column()).toBe(1);
   });
 });

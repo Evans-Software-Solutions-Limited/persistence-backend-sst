@@ -118,6 +118,35 @@ export const rosterSchema = t.Object(
   },
   { additionalProperties: false },
 );
+/** Bounded like a plan: one share names at most a plan's 100 exercises. */
+export const MAX_SHARED_EXERCISES = 100;
+export const exerciseShareSchema = t.Object(
+  {
+    credential: signedCredentialSchema,
+    proof: t.Object(
+      {
+        payload: t.Object(
+          {
+            kind: t.Literal("together-exercise-share-v1"),
+            sessionId: uuid,
+            hostUserId: uuid,
+            hostDeviceId: uuid,
+            userId: uuid,
+            exerciseIds: t.Array(uuid, {
+              minItems: 1,
+              maxItems: MAX_SHARED_EXERCISES,
+            }),
+            issuedAt: timestamp,
+          },
+          { additionalProperties: false },
+        ),
+        signature: t.String({ pattern: "^[A-Za-z0-9_-]{86}$" }),
+      },
+      { additionalProperties: false },
+    ),
+  },
+  { additionalProperties: false },
+);
 // Only personal operations; plan is immutable for this recovery contract.
 const ownOperation = t.Union(
   commandSchema.properties.operation.anyOf
@@ -195,6 +224,8 @@ export const recoveryUploadSchema = t.Object(
       ),
       { minItems: 1, maxItems: 100 },
     ),
+    /** The host's share of its custom exercises; older apps omit it. */
+    exerciseShare: t.Optional(exerciseShareSchema),
   },
   { additionalProperties: false },
 );

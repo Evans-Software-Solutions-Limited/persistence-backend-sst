@@ -7,6 +7,7 @@ import { ed25519 } from "@noble/curves/ed25519.js";
 import { chacha20poly1305 } from "@noble/ciphers/chacha.js";
 import { getCryptoBackend } from "./security/cryptoBackend";
 import type {
+  TogetherSharedExerciseDefinition,
   TogetherSharedPort,
   TogetherSharedPlan,
   TogetherSharedSnapshot,
@@ -25,6 +26,11 @@ import {
 import { encode64, decode64 } from "./security/encoding";
 import { object, uuid, integer, hash } from "./security/schema";
 import { readOwnerCommand } from "./localCommand";
+import {
+  buildExerciseShare,
+  readExerciseShare,
+  type ExerciseShareBody,
+} from "./exerciseShare";
 import type { LocalCommand } from "./localStore";
 
 type EventType =
@@ -36,7 +42,8 @@ type EventType =
   | "progress"
   | "previous"
   | "delegate"
-  | "closure";
+  | "closure"
+  | "exercises";
 export interface SharedPayload {
   kind: "together-shared-v1";
   sessionId: string;
@@ -55,6 +62,14 @@ export interface TogetherSharedOptions {
   randomUUID(): string;
   now(): number;
   send(envelope: SharedEnvelope): Promise<void>;
+  /**
+   * Host: definitions of the host's own custom exercises among `ids`, from
+   * its library. A plan with any is shared with each admitted guest
+   * (PER-60); without one nothing extra is sent.
+   */
+  customExercises?(
+    ids: readonly string[],
+  ): Record<string, TogetherSharedExerciseDefinition>;
 }
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 function check(valid: unknown): asserts valid {
@@ -128,6 +143,10 @@ export class TogetherSharedSession implements TogetherSharedPort {
   >();
   private closures = new Map<string, "finish_all" | "save_own" | "leave">();
   private plan: TogetherSharedPlan | null = null;
+  /** Guest: the host's latest share of its custom exercises with this guest. */
+  private exerciseShare: ExerciseShareBody | null = null;
+  /** Host: the plan each guest's current share was issued for. */
+  private issuedShares = new Map<string, string>();
   private athletePlans = new Map<string, TogetherSharedPlan>();
   private disposed = false;
   private barriers = new Map<string, number>();
@@ -172,6 +191,7 @@ export class TogetherSharedSession implements TogetherSharedPort {
         latest.set(scope(e.payload), e);
     for (const type of [
       "plan",
+      "exercises",
       "profile",
       "activity",
       "consent",
@@ -209,6 +229,11 @@ export class TogetherSharedSession implements TogetherSharedPort {
       ),
       closures: [...this.closures].map(([userId, mode]) => ({ userId, mode })),
       delegated: [...this.delegated.values()],
+      exerciseShare: this.exerciseShare && {
+        credential: this.exerciseShare.credential,
+        proof: this.exerciseShare.proof,
+      },
+      exerciseDefinitions: this.exerciseShare?.definitions ?? {},
     });
   }
   private notify() {
@@ -352,6 +377,11 @@ export class TogetherSharedSession implements TogetherSharedPort {
     body: unknown,
     send = true,
   ) {
+    const envelope = this.record(type, recipientId, body);
+    if (send) await this.options.send(envelope);
+  }
+  /** Signs, seals and keeps an own event without sending it. */
+  private record(type: EventType, recipientId: string, body: unknown) {
     check(!this.disposed);
     this.member(this.ownId);
     if (type !== "consent") check(this.active(this.ownId));
@@ -378,7 +408,7 @@ export class TogetherSharedSession implements TogetherSharedPort {
         sharedLimit(envelope),
     );
     this.accept(envelope);
-    if (send) await this.options.send(envelope);
+    return envelope;
   }
   /** Incoming peer must be the author, or the pinned host forwarding an original signed envelope. */
   accept(
@@ -418,6 +448,7 @@ export class TogetherSharedSession implements TogetherSharedPort {
           "delegate",
           "receipt",
           "closure",
+          "exercises",
         ].includes(p.type),
     );
     check(
@@ -436,6 +467,11 @@ export class TogetherSharedSession implements TogetherSharedPort {
     );
     if (p.type === "plan")
       check(p.authorId === this.options.lobby.pin.hostUserId);
+    if (p.type === "exercises")
+      check(
+        p.authorId === this.options.lobby.pin.hostUserId &&
+          p.recipientId !== p.authorId,
+      );
     const prior = this.latest.get(scope(p));
     if (prior && prior.payload.revision >= p.revision) {
       if (prior.payload.revision === p.revision)
@@ -592,6 +628,7 @@ export class TogetherSharedSession implements TogetherSharedPort {
       ownerVersions: clone([...this.ownerVersions]),
     };
     const plan = clone(this.plan),
+      exerciseShare = clone(this.exerciseShare),
       ownRevision = this.ownRevision;
     return () => {
       this.deliveries = new Map(maps.deliveries);
@@ -606,6 +643,7 @@ export class TogetherSharedSession implements TogetherSharedPort {
       this.athletePlans = new Map(maps.athletePlans);
       this.ownerVersions = new Map(maps.ownerVersions);
       this.plan = plan;
+      this.exerciseShare = exerciseShare;
       this.ownRevision = ownRevision;
     };
   }
@@ -696,6 +734,19 @@ export class TogetherSharedSession implements TogetherSharedPort {
       return;
     }
 
+    if (p.type === "exercises") {
+      // The host keeps its own copy only to replay it; a guest validates it.
+      if (p.authorId === this.ownId) return;
+      const pin = this.options.lobby.pin;
+      this.exerciseShare = readExerciseShare(body, {
+        sessionId: pin.sessionId,
+        hostUserId: pin.hostUserId,
+        hostDeviceId: pin.hostDeviceId,
+        hostCredential: this.member(pin.hostUserId).credential,
+        userId: this.ownId,
+      });
+      return;
+    }
     if (p.type === "plan") {
       check(planShape(body));
       if (this.plan) check(requestHash(this.plan) === requestHash(body));
@@ -1023,7 +1074,56 @@ export class TogetherSharedSession implements TogetherSharedPort {
   }
   async publishPlan(plan: TogetherSharedPlan) {
     check(this.options.lobby.isHost);
-    await this.publish("plan", "all", plan);
+    const envelope = this.record("plan", "all", plan);
+    // Each admitted guest gets a fresh share (PER-60), sent ahead of the
+    // plan so it is there when the guest adopts the plan and names its rows.
+    // One a guest misses is kept and replayed when it reconnects.
+    const members =
+      this.options.lobby.store
+        .current(this.options.lobby.pin.sessionId)
+        ?.payload.members.map((m) => m.credential.payload.userId) ?? [];
+    for (const userId of members) {
+      if (userId === this.ownId) continue;
+      try {
+        const share = this.issueShare(userId);
+        if (share) await this.options.send(share);
+      } catch {
+        /* Replayed on the guest's next admission or reconnect. */
+      }
+    }
+    await this.options.send(envelope);
+  }
+  /**
+   * Host: signs and keeps a share of its custom plan exercises for one
+   * guest, when the plan has any. Nothing when it has none.
+   */
+  private issueShare(recipientId: string): SharedEnvelope | undefined {
+    if (!this.options.lobby.isHost || !this.plan || recipientId === this.ownId)
+      return undefined;
+    const ids = this.plan.exercises.map((e) => e.exerciseId);
+    const custom = this.options.customExercises?.(ids) ?? {};
+    if (!ids.some((id) => Object.hasOwn(custom, id))) {
+      this.issuedShares.set(recipientId, requestHash(this.plan));
+      return undefined;
+    }
+    const pin = this.options.lobby.pin;
+    const envelope = this.record(
+      "exercises",
+      recipientId,
+      buildExerciseShare({
+        seed: this.seed,
+        credential: this.options.lobby.ownCredential,
+        sessionId: pin.sessionId,
+        hostUserId: pin.hostUserId,
+        hostDeviceId: pin.hostDeviceId,
+        userId: recipientId,
+        exerciseIds: ids,
+        definitions: custom,
+        issuedAt: this.options.now(),
+      }),
+    );
+    this.issuedShares.set(recipientId, requestHash(this.plan));
+    return envelope;
   }
   async setConsent(recipientId: string, consent: TogetherSharingConsent) {
     check(recipientId !== this.ownId && consentShape(consent));
@@ -1239,6 +1339,10 @@ export class TogetherSharedSession implements TogetherSharedPort {
     await this.publish("closure", "all", { mode });
   }
   /** Checked between transfer chunks: revocation/supersession stops stale sends. */
+  /** Identifies the host's latest exercise share held here, if any. */
+  exerciseShareId(): string | null {
+    return this.exerciseShare?.proof.signature ?? null;
+  }
   isCurrent(envelope: SharedEnvelope): boolean {
     const p = envelope.payload;
     return (
@@ -1248,9 +1352,20 @@ export class TogetherSharedSession implements TogetherSharedPort {
       this.latest.get(scope(p))?.payload.id === p.id
     );
   }
-  /** Only current consent/data is replayed, ordered permission first. No stale encrypted caches. */
+  /** Only current consent/data is replayed, ordered permission first (a
+   * guest's exercise share ahead of the plan it names). No stale encrypted caches. */
   replay(recipientId: string): SharedEnvelope[] {
     this.member(recipientId);
+    // A guest admitted after the plan went out gets its share here.
+    if (
+      this.plan &&
+      this.issuedShares.get(recipientId) !== requestHash(this.plan)
+    )
+      try {
+        this.issueShare(recipientId);
+      } catch {
+        /* The plan still goes; the guest falls back as before. */
+      }
     const all = [...this.latest.values()].filter(
       (e) => this.options.lobby.isHost || e.payload.authorId === this.ownId,
     );
@@ -1266,7 +1381,14 @@ export class TogetherSharedSession implements TogetherSharedPort {
         const p = e.payload;
         if (p.type === "activity") return this.active(p.authorId);
         if (
-          ["plan", "profile", "activity", "consent", "closure"].includes(p.type)
+          [
+            "plan",
+            "exercises",
+            "profile",
+            "activity",
+            "consent",
+            "closure",
+          ].includes(p.type)
         )
           return true;
         const grant = [...this.latest.values()].find(
@@ -1287,6 +1409,7 @@ export class TogetherSharedSession implements TogetherSharedPort {
       .sort(
         (a, b) =>
           [
+            "exercises",
             "plan",
             "profile",
             "activity",
@@ -1298,6 +1421,7 @@ export class TogetherSharedSession implements TogetherSharedPort {
             "receipt",
           ].indexOf(a.payload.type) -
           [
+            "exercises",
             "plan",
             "profile",
             "activity",
@@ -1424,6 +1548,8 @@ export class TogetherSharedSession implements TogetherSharedPort {
     this.purge();
     this.athletes.clear();
     this.athletePlans.clear();
+    this.exerciseShare = null;
+    this.issuedShares.clear();
     this.grants.clear();
     this.deliveries.clear();
     this.progress.clear();

@@ -116,3 +116,38 @@ export function adoptSharedPlan(
   copy.exercises = [...retained, ...additions];
   return copy;
 }
+
+/**
+ * A plan exercise's name for a guest (PER-60): its own library first, then
+ * the host's shared definition of the host's custom exercise; undefined
+ * leaves the existing fallback.
+ */
+export function sharedExerciseName(
+  exerciseId: string,
+  library: readonly { id: string; name: string }[],
+  shared?: Readonly<Record<string, { name: string }>>,
+): string | undefined {
+  return (
+    library.find((e) => e.id === exerciseId)?.name?.trim() ||
+    (shared && Object.hasOwn(shared, exerciseId)
+      ? shared[exerciseId].name.trim()
+      : undefined) ||
+    undefined
+  );
+}
+/**
+ * Names for partner views: the workout's own names, with the host's shared
+ * definitions standing in where a name is missing or is only the id.
+ */
+export function withSharedExerciseNames(
+  names: Readonly<Record<string, string>>,
+  shared?: Readonly<Record<string, { name: string }>>,
+): Readonly<Record<string, string>> {
+  if (!shared || !Object.keys(shared).length) return names;
+  const merged: Record<string, string> = {};
+  for (const [id, definition] of Object.entries(shared))
+    merged[id] = definition.name;
+  for (const [id, name] of Object.entries(names))
+    if (name && (name !== id || !Object.hasOwn(merged, id))) merged[id] = name;
+  return merged;
+}
