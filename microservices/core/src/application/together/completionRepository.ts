@@ -25,6 +25,10 @@ import {
   withActors,
   type TogetherTx,
 } from "./shared";
+import {
+  togetherDefinition,
+  togetherDefinitionColumns,
+} from "./exerciseRecording";
 import { ExerciseRepository } from "../repositories/exerciseRepository";
 import {
   writeRecoveredHistory,
@@ -73,12 +77,7 @@ export class TogetherCompletionRepository {
         e.substituteExerciseId ? [e.substituteExerciseId] : [],
       ),
     ]);
-    const columns = {
-      name: exercises.name,
-      category: exercises.category,
-      primaryMuscles: exercises.primaryMuscles,
-      createdBy: exercises.createdBy,
-    };
+    const columns = togetherDefinitionColumns;
     for (const id of ids) {
       if (definitions[id]) continue;
       let [source] = await tx
@@ -104,10 +103,7 @@ export class TogetherCompletionRepository {
             ),
           );
       requireTogether(source, "EXERCISE_UNAVAILABLE", 409);
-      definitions[id] = {
-        ...source,
-        primaryMuscles: source.primaryMuscles ?? [],
-      };
+      definitions[id] = togetherDefinition(source);
     }
     return definitions;
   }

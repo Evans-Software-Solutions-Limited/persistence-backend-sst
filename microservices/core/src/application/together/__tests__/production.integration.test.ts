@@ -2092,6 +2092,16 @@ describe("host custom exercises shared with admitted partners (PER-60)", () => {
     });
     await run(b, s.sessionId, cmd(b, s.plan.exercises[1].planExerciseId));
     await repo.finish(b, s.sessionId, key(), { expectedOwnRevision: 1 });
+    // The host edits the exercise after the guest was admitted: the copy is
+    // what the guest was allowed to see then, not the later edit.
+    await db
+      .update(schema.exercises)
+      .set({
+        name: "Renamed later",
+        description: "Edited later",
+        videoUrl: "https://example.com/later.mp4",
+      })
+      .where(eq(schema.exercises.id, s.hostLift));
     await repo.processJob(s.sessionId, b);
     const [recorded] = await db.select().from(schema.sessionExercises);
     expect(recorded.exerciseId).not.toBe(s.hostLift);
