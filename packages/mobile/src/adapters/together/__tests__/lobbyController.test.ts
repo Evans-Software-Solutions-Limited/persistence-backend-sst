@@ -2031,6 +2031,55 @@ describe("reviewed lobby coordinator, real cryptography and SQLite, simulated na
       error: "wifi_off",
     });
   });
+  it("tags each failure with the stage the lobby was in", async () => {
+    const report = jest.fn();
+    const stageAt = (code = "x") => {
+      report.mockClear();
+      return code;
+    };
+    const host = setup(1, { report }),
+      guest = setup(2, { report });
+    await host.controller.host("Strength A");
+    host.controller.invalidateAuthorization(stageAt());
+    expect(report).toHaveBeenCalledWith({
+      mode: "lan",
+      stage: "host",
+      code: "x",
+    });
+    await host.controller.host("Strength A");
+    // Selected, not yet joining.
+    await guest.controller.selectInvite(
+      host.controller.getSnapshot().invitation!,
+    );
+    guest.controller.invalidateAuthorization(stageAt());
+    expect(report).toHaveBeenLastCalledWith(
+      expect.objectContaining({ stage: "join" }),
+    );
+    // Waiting for the host's approval.
+    await join(host, guest);
+    expect(guest.controller.getSnapshot().phase).toBe("pending-approval");
+    guest.controller.invalidateAuthorization(stageAt());
+    expect(report).toHaveBeenLastCalledWith(
+      expect.objectContaining({ stage: "admission" }),
+    );
+    // Admitted, then lost.
+    const other = setup(3, { report });
+    await join(host, other);
+    await host.controller.approve(
+      host.controller.getSnapshot().pending.at(-1)!.peerId,
+    );
+    await settle();
+    expect(other.controller.getSnapshot().phase).toBe("joined");
+    other.controller.invalidateAuthorization(stageAt());
+    expect(report).toHaveBeenLastCalledWith(
+      expect.objectContaining({ stage: "readmit" }),
+    );
+    // A handshake code says so whatever the phase.
+    host.controller.invalidateAuthorization(stageAt("protocol_failed"));
+    expect(report).toHaveBeenLastCalledWith(
+      expect.objectContaining({ stage: "handshake" }),
+    );
+  });
   it("a guest who left and reaches the same session by search is told they left at Join", async () => {
     const host = setup(),
       guest = setup(2);
