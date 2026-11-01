@@ -1121,19 +1121,35 @@ describe("a Nearby host's custom exercises reach an admitted guest's history (PE
     });
     expect(await db.select().from(schema.workoutSessions)).toHaveLength(0);
   });
-  it("rejects a share that is forged, misaddressed or from an unregistered key", async () => {
-    const body = upload();
-    const refused = async (upload: RecoveryUpload) => {
-      await expect(
-        recoveryRepo.recover(a, key(), upload),
-      ).rejects.toMatchObject({ code: "INVALID_PROOF", status: 403 });
+  it("ignores a share that is forged, misaddressed or from an unregistered key, and still recovers the guest's own journal", async () => {
+    // Each bad share is treated as no share: the guest's own commands are
+    // still accepted (a stuck journal would be worse), nothing is shared, and
+    // the host's exercise is still refused at completion.
+    const ignored = async (bad: (body: RecoveryUpload) => RecoveryUpload) => {
+      const body = bad(upload());
+      await expect(recoveryRepo.recover(a, key(), body)).resolves.toMatchObject(
+        {
+          status: "stored_for_review",
+        },
+      );
+      const [stored] = await db
+        .select()
+        .from(schema.togetherOfflineExecutions)
+        .where(
+          eq(schema.togetherOfflineExecutions.executionId, body.executionId),
+        );
+      expect(stored.sharedExercises).toBeNull();
+      await expect(complete(body)).rejects.toMatchObject({
+        code: "EXERCISE_UNAVAILABLE",
+        status: 409,
+      });
     };
     // Signed by someone else's key.
-    await refused(share(body, {}, guestKeys.privateKey));
+    await ignored((body) => share(body, {}, guestKeys.privateKey));
     // Issued to another guest, for another session, or by the guest itself.
-    await refused(share(body, { userId: c }));
-    await refused(share(body, { sessionId: key() }));
-    await refused(
+    await ignored((body) => share(body, { userId: c }));
+    await ignored((body) => share(body, { sessionId: key() }));
+    await ignored((body) =>
       share(
         body,
         { hostUserId: a, hostDeviceId: guestDevice },
@@ -1142,14 +1158,16 @@ describe("a Nearby host's custom exercises reach an admitted guest's history (PE
       ),
     );
     // Names a different device than the host's credential.
-    await refused(share(body, { hostDeviceId: key() }));
+    await ignored((body) => share(body, { hostDeviceId: key() }));
     // A share edited after signing.
-    const edited = share(body);
-    edited.exerciseShare.proof.payload.exerciseIds = [exercise];
-    await refused(edited);
+    await ignored((body) => {
+      const edited = share(body);
+      edited.exerciseShare.proof.payload.exerciseIds = [exercise];
+      return edited;
+    });
     // A credential the authority signed for a key the host never registered.
     const rogue = pair();
-    await refused(
+    await ignored((body) =>
       share(
         body,
         {},
@@ -1158,15 +1176,37 @@ describe("a Nearby host's custom exercises reach an admitted guest's history (PE
       ),
     );
     // A credential the authority never signed.
-    const unsigned = share(body);
-    unsigned.exerciseShare.credential = {
-      ...unsigned.exerciseShare.credential,
-      signature: "A".repeat(86),
-    };
-    await refused(unsigned);
-    expect(
-      await db.select().from(schema.togetherOfflineExecutions),
-    ).toHaveLength(0);
+    await ignored((body) => {
+      const unsigned = share(body);
+      unsigned.exerciseShare.credential = {
+        ...unsigned.exerciseShare.credential,
+        signature: "A".repeat(86),
+      };
+      return unsigned;
+    });
+    // A host key the authority no longer lists (rotated out).
+    await ignored((body) => {
+      const rotated = share(body);
+      rotated.exerciseShare.credential = {
+        ...rotated.exerciseShare.credential,
+        payload: {
+          ...rotated.exerciseShare.credential.payload,
+          keyId: "retired",
+        },
+      };
+      return rotated;
+    });
+  });
+  it("replays a stored batch even after its share stops verifying", async () => {
+    const body = share(upload());
+    const idempotency = key();
+    const first = await recoveryRepo.recover(a, idempotency, body);
+    await db
+      .delete(schema.togetherOfflineDevices)
+      .where(eq(schema.togetherOfflineDevices.userId, b));
+    await expect(recoveryRepo.recover(a, idempotency, body)).resolves.toEqual(
+      first,
+    );
   });
   it("bounds the share and keeps a later batch's share to the same host", async () => {
     const body = upload();
@@ -1200,18 +1240,23 @@ describe("a Nearby host's custom exercises reach an admitted guest's history (PE
       deviceId: hostDevice,
       publicKey: hostKeys.publicKey,
     });
-    await expect(
-      recoveryRepo.recover(
-        a,
-        key(),
-        share(
-          { ...body, commands: [next] },
-          { hostUserId: c },
-          hostKeys.privateKey,
-          credential(c, hostDevice, hostKeys.publicKey),
-        ),
+    await recoveryRepo.recover(
+      a,
+      key(),
+      share(
+        { ...body, commands: [next] },
+        { hostUserId: c },
+        hostKeys.privateKey,
+        credential(c, hostDevice, hostKeys.publicKey),
       ),
-    ).rejects.toMatchObject({ code: "INVALID_PROOF" });
+    );
+    // The guest's batch is accepted; the other host's share is ignored.
+    const [after] = await db.select().from(schema.togetherOfflineExecutions);
+    expect(after.revision).toBe(2);
+    expect(after.sharedExercises).toEqual({
+      hostUserId: b,
+      exerciseIds: [otherExercise],
+    });
   });
   it("adds the new migration idempotently and rolls it back", async () => {
     const rollback = readFileSync(

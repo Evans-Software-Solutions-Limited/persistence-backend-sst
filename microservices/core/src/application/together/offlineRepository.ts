@@ -21,6 +21,7 @@ import {
   requestHash,
   enforceRateLimit,
   togetherEnabled,
+  TogetherError,
   type TogetherTx,
 } from "./shared";
 import { areFriends, canInteract } from "../social/socialRepository";
@@ -56,6 +57,10 @@ export interface RecoveryUpload {
  * credential for the host's registered device, and the host's signature over
  * a share naming this session and this guest. Returns the plan exercise ids it
  * covers; completion still copies only those the host created.
+ *
+ * The share only adds permission, so one that fails any check counts as no
+ * share (null): the guest's own journal is still recovered, and completion
+ * refuses exercises the guest can't otherwise see (PER-60).
  */
 async function verifiedShare(
   tx: TogetherTx,
@@ -66,25 +71,29 @@ async function verifiedShare(
   const { credential, proof } = body.exerciseShare,
     host = credential.payload,
     authority = offlineAuthority();
-  requireTogether(
-    host.kind === "together-device-v1" &&
-      Object.hasOwn(authority.publicKeys, host.keyId),
-    "INVALID_PROOF",
-    403,
-  );
-  verifySignature(credential, authority.publicKeys[host.keyId]);
-  const share = verifySignature(proof, host.publicKey);
-  requireTogether(
-    share.kind === "together-exercise-share-v1" &&
-      share.sessionId === body.sessionId &&
-      share.userId === actor &&
-      share.hostUserId !== actor &&
-      share.hostUserId === host.userId &&
-      share.hostDeviceId === host.deviceId &&
-      new Set(share.exerciseIds).size === share.exerciseIds.length,
-    "INVALID_PROOF",
-    403,
-  );
+  if (
+    host.kind !== "together-device-v1" ||
+    !Object.hasOwn(authority.publicKeys, host.keyId)
+  )
+    return null;
+  let share: ExerciseShare;
+  try {
+    verifySignature(credential, authority.publicKeys[host.keyId]);
+    share = verifySignature(proof, host.publicKey);
+  } catch (error) {
+    if (error instanceof TogetherError) return null;
+    throw error;
+  }
+  if (
+    share.kind !== "together-exercise-share-v1" ||
+    share.sessionId !== body.sessionId ||
+    share.userId !== actor ||
+    share.hostUserId === actor ||
+    share.hostUserId !== host.userId ||
+    share.hostDeviceId !== host.deviceId ||
+    new Set(share.exerciseIds).size !== share.exerciseIds.length
+  )
+    return null;
   // As for the actor's own credential: the key must be the one the host
   // registered for that device, not merely one the authority once signed.
   const [device] = await tx
@@ -93,11 +102,7 @@ async function verifiedShare(
     .where(
       and(eq(devices.userId, host.userId), eq(devices.deviceId, host.deviceId)),
     );
-  requireTogether(
-    device && device.publicKey === host.publicKey,
-    "INVALID_PROOF",
-    403,
-  );
+  if (!device || device.publicKey !== host.publicKey) return null;
   const planned = new Set(body.plan.exercises.map((e) => e.exerciseId));
   return {
     hostUserId: share.hostUserId,
@@ -360,15 +365,15 @@ export class TogetherOfflineRepository {
                 sharedExercises: shared,
               })
               .returning();
-          else if (shared) {
+          else if (
+            shared &&
+            (!execution.sharedExercises ||
+              execution.sharedExercises.hostUserId === shared.hostUserId)
+          ) {
             // A later batch may carry a fresh share (the host re-sent its
-            // plan): its ids join the earlier ones, from the same host only.
+            // plan): its ids join the earlier ones, from the same host only;
+            // a share from anyone else is ignored like an unverified one.
             const prior = execution.sharedExercises;
-            requireTogether(
-              !prior || prior.hostUserId === shared.hostUserId,
-              "INVALID_PROOF",
-              403,
-            );
             execution.sharedExercises = {
               hostUserId: shared.hostUserId,
               exerciseIds: [
