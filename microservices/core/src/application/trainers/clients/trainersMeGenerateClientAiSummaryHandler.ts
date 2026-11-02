@@ -1,3 +1,4 @@
+import { AI_BUDGET_EXHAUSTED_BODY, hasAiBudget } from "../../ai/aiBudget";
 import Elysia, { t } from "elysia";
 import { eq } from "drizzle-orm";
 import { profiles } from "@persistence/db";
@@ -105,6 +106,13 @@ export const trainersMeGenerateClientAiSummaryHandler = new Elysia()
         if (usedToday >= AI_COACH_SUMMARY_DAILY_LIMIT) {
           ctx.set.status = 429;
           return { error: "ai_daily_limit" };
+        }
+
+        // Per-user AI spend budget (spec-29 Phase 1): the margin backstop
+        // behind the per-feature ceiling above.
+        if (!(await hasAiBudget(trainerId, AI_COACH_SUMMARY_ENDPOINT))) {
+          ctx.set.status = 429;
+          return AI_BUDGET_EXHAUSTED_BODY;
         }
 
         // Coach read-audit (specs/27-coach-health-data-read-audit) — logged

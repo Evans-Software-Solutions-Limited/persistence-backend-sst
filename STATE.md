@@ -1,5 +1,39 @@
 # Project memory · persistence-backend-sst
 
+### 2026-11-02 — Per-user AI spend budget (spec-29 Phase 1; PER-103 audit; branch `claude/adoring-wright-d53yzs`)
+
+Brad: the AI bill is ~£35/month with almost no users, and Premium+ pricing needs a
+cost floor. Built spec-29 Phase 1 tasks 1.1–1.5 and 1.8, backend only.
+
+- **Shared cost table** `packages/subscription-catalog/src/aiCosts.ts`, keyed by the
+  `ai_usage_log.endpoint` string each handler writes. `scripts/ai-cost-model.ts` now
+  reads its token profiles from it (task 1.1). Added the three AI features the model
+  never counted: meal-plan generate, meal swap, recipe import. **Premium+ worst case is
+  now $43.57/mo** (was $36.67). Still only 2 of 12 unit costs are measured.
+- **Migration** `20261102120000_ai_monthly_budget.sql`: nullable
+  `subscription_tiers.ai_monthly_budget_usd`, values from spec-29 design § 2 (Premium
+  4.89, Premium+ 7.26, coach ladder 5.52 / 8.47 / 14.52 / 24.20, free 0). ⚠
+  **Provisional**: PER-103 removes Premium's AI and Premium+'s price is unsettled.
+  ⚠ **Manual prod apply**; staging applies on merge. The column is NOT projected by
+  the public `/subscription-tiers` read (omitted from `SubscriptionTierRow`).
+- **`application/ai/aiBudget.ts` `hasAiBudget(userId, endpoint)`**: rolling 30-day
+  spend = Σ calls × table cost; refuses when the NEXT call would pass the budget, so a
+  cheap call can pass where an expensive one cannot. Fails closed: NULL budget → 0,
+  lapsed sub → free tier, unknown endpoint → priced at the most expensive call.
+  Wired into all 12 AI routes after the per-feature ceiling (kept, AC 2.2), returning
+  **429 `ai_budget_exhausted`**. Recipe import checks it before reserving the daily
+  quota and falls back to manual entry (422) as it does on any AI refusal.
+- Guard test: every endpoint literal an AI handler logs must be in the cost table.
+- **Not done**: 1.6 (recipe extract daily → monthly), 1.7 (mobile copy: a budget 429
+  currently shows each screen's existing "daily limit" message), token/model columns
+  on `ai_usage_log` (needed to replace estimates with measurements), `ai_jobs` kinds
+  (registry empty; wire when the first kind lands).
+- **Measurement still owed** (PER-103): this session had no valid AWS or database
+  access. Brad to run `ai-usage-measurement.sql` (shared in chat) and pull Bedrock
+  Cost Explorer / CloudWatch token metrics. Note account `465891279888` (prod) is
+  shared with `axel-saas` and `evans-software-solutions`, so filter Bedrock spend by
+  product before attributing the £35 to Persistence; dev/staging is `111315405717`.
+
 ### 2026-11-01 — Together TestFlight run 2: partner rows, fill-in, custom exercises, Nearby join (PER-60, branch `claude/compassionate-clarke-eefidd`)
 
 Second two-phone run on 1.2.0. Each fix has a test that fails on the old code.

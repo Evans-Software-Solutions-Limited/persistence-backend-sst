@@ -1,5 +1,23 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+
+// Per-user AI spend budget (spec-29 Phase 1). Allowed by default; a test flips
+// `aiBudget.allowed` to prove the 429 path.
+const aiBudget = vi.hoisted(() => ({
+  allowed: true,
+  calls: [] as unknown[][],
+}));
+vi.mock("../../../ai/aiBudget", () => ({
+  AI_BUDGET_EXHAUSTED_BODY: { error: "ai_budget_exhausted" },
+  hasAiBudget: async (...args: unknown[]) => {
+    aiBudget.calls.push(args);
+    return aiBudget.allowed;
+  },
+}));
+afterEach(() => {
+  aiBudget.allowed = true;
+  aiBudget.calls = [];
+});
 
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getAuthUser: vi.fn(async (h: string | undefined) =>
@@ -173,6 +191,21 @@ describe("recipesImportHandler", () => {
       if (failure === "entitlement") expect(reserve).not.toHaveBeenCalled();
     },
   );
+
+  it("falls back to manual entry without reserving quota when the AI spend budget is spent", async () => {
+    vi.mocked(safeRecipeFetch).mockResolvedValue({
+      html: "<main>Soup Ingredients 100g peas. Simmer peas.</main>",
+      finalUrl: "https://x.test/r",
+    });
+    vi.mocked(parseRecipeFromHtml).mockReturnValue(null);
+    aiBudget.allowed = false;
+    const { recipesImportHandler } = await import("../recipesImportHandler");
+    const res = await recipesImportHandler.handle(post("https://x.test/r"));
+    expect(res.status).toBe(422);
+    expect(extract).not.toHaveBeenCalled();
+    expect(reserve).not.toHaveBeenCalled();
+    expect(aiBudget.calls.at(-1)).toEqual(["test-user-id", "/recipes/import"]);
+  });
 
   it("never calls AI after blocked private URL fetch", async () => {
     vi.mocked(safeRecipeFetch).mockRejectedValue(

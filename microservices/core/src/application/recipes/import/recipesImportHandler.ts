@@ -1,3 +1,4 @@
+import { hasAiBudget } from "../../ai/aiBudget";
 import Elysia, { t } from "elysia";
 import { safeRecipeFetch, RecipeFetchError } from "../services/url-fetch";
 import { parseRecipeFromHtml } from "../services/parseRecipe";
@@ -57,6 +58,9 @@ export const recipesImportHandler = new Elysia()
             const verdict = await assertEntitlement(userId, "ai_access");
             if (
               verdict.allowed &&
+              // Per-user AI spend budget (spec-29 Phase 1). Checked before the
+              // reservation so a refused call does not use up the daily quota.
+              (await hasAiBudget(userId, "/recipes/import")) &&
               (await ctx.AiUsageLogRepository.reserveForUserToday({
                 userId,
                 endpoint: "/recipes/import",

@@ -32,46 +32,22 @@
  * than "what is our exact COGS", which it cannot.
  */
 
-// ─── Inputs: model prices ────────────────────────────────────────────────────
+import {
+  AI_COSTS,
+  PRICE_PER_MTOK,
+  costPerCall,
+  type ModelTier,
+  type TokenProfile,
+} from "@persistence/subscription-catalog";
 
-/**
- * USD per million tokens, list price.
- *
- * ⚠ These are the ANTHROPIC list prices the Phase E eval used (`armB.ts`), not
- * Bedrock's. Bedrock is partner-priced and can differ — the eval's own comment
- * flags this as needing a check against the real AWS bill before it becomes a
- * pricing commitment. That check has not happened.
- */
-export const PRICE_PER_MTOK = {
-  haiku: { input: 1, output: 5 },
-  opus: { input: 5, output: 25 },
-} as const;
+// ─── Inputs: model prices and per-call token shapes ─────────────────────────
+//
+// Shared with the per-user AI budget enforcement so the model and the
+// enforcement cannot drift (spec-29 task 1.1). Edit them in
+// `packages/subscription-catalog/src/aiCosts.ts`.
 
-export type ModelTier = keyof typeof PRICE_PER_MTOK;
-
-/**
- * An endpoint's per-call token shape.
- *
- * `measured: true` means the cost came from a real run and `inputTokens` /
- * `outputTokens` are back-derived from it. `measured: false` means the tokens are
- * a considered guess and the cost is computed from them.
- */
-export type TokenProfile = {
-  readonly inputTokens: number;
-  readonly outputTokens: number;
-  readonly model: ModelTier;
-  readonly measured: boolean;
-  /** Where the numbers came from, so a reader can judge them. */
-  readonly basis: string;
-};
-
-export function costPerCall(profile: TokenProfile): number {
-  const price = PRICE_PER_MTOK[profile.model];
-  return (
-    (profile.inputTokens / 1_000_000) * price.input +
-    (profile.outputTokens / 1_000_000) * price.output
-  );
-}
+export { PRICE_PER_MTOK, costPerCall };
+export type { ModelTier, TokenProfile };
 
 // ─── Inputs: the endpoints ───────────────────────────────────────────────────
 
@@ -105,14 +81,7 @@ export const AI_ENDPOINTS: readonly AiEndpoint[] = [
     ceilingEnv: "AI_PHOTO_DAILY_LIMIT",
     dailyCeiling: 12,
     typicalPerDay: 2,
-    profile: {
-      model: "opus",
-      inputTokens: 1_100,
-      outputTokens: 400,
-      measured: false,
-      basis:
-        "640px food photo ≈ 550 image tokens (w×h/750) + ~550 prompt; a short item list out. Client downscales to 640px per design § Image transport.",
-    },
+    profile: AI_COSTS.nutrition_photo.profile,
   },
   {
     key: "nutrition_text",
@@ -121,13 +90,7 @@ export const AI_ENDPOINTS: readonly AiEndpoint[] = [
     ceilingEnv: "AI_TEXT_DAILY_LIMIT",
     dailyCeiling: 30,
     typicalPerDay: 3,
-    profile: {
-      model: "haiku",
-      inputTokens: 500,
-      outputTokens: 300,
-      measured: false,
-      basis: "One meal description in, an item list out. Text-only.",
-    },
+    profile: AI_COSTS.nutrition_text.profile,
   },
   {
     key: "recipe_extract",
@@ -136,14 +99,7 @@ export const AI_ENDPOINTS: readonly AiEndpoint[] = [
     ceilingEnv: "AI_RECIPE_DAILY_LIMIT",
     dailyCeiling: 12,
     typicalPerDay: 0.2,
-    profile: {
-      model: "opus",
-      inputTokens: 1_100,
-      outputTokens: 1_200,
-      measured: false,
-      basis:
-        "Same image budget as the food photo, but a whole ingredient list + method out — the largest output of any endpoint, which is why it dominates the estimated half.",
-    },
+    profile: AI_COSTS.recipe_extract.profile,
   },
   {
     key: "recipe_estimate",
@@ -155,13 +111,7 @@ export const AI_ENDPOINTS: readonly AiEndpoint[] = [
     ceilingEnv: "AI_RECIPE_ESTIMATE_DAILY_LIMIT (unset — code default)",
     dailyCeiling: 30,
     typicalPerDay: 0.5,
-    profile: {
-      model: "haiku",
-      inputTokens: 800,
-      outputTokens: 200,
-      measured: false,
-      basis: "Ingredient lines + servings in, one macro block out.",
-    },
+    profile: AI_COSTS.recipe_estimate.profile,
   },
   {
     key: "resolve_ingredient",
@@ -170,13 +120,7 @@ export const AI_ENDPOINTS: readonly AiEndpoint[] = [
     ceilingEnv: "AI_RESOLVE_DAILY_LIMIT",
     dailyCeiling: 60,
     typicalPerDay: 2,
-    profile: {
-      model: "haiku",
-      inputTokens: 300,
-      outputTokens: 100,
-      measured: false,
-      basis: "One ingredient string in, one food match out. The cheapest call.",
-    },
+    profile: AI_COSTS.resolve_ingredient.profile,
   },
   {
     key: "coach_summary",
@@ -186,14 +130,7 @@ export const AI_ENDPOINTS: readonly AiEndpoint[] = [
     dailyCeiling: 40,
     perClientBounded: true,
     typicalPerDay: 1,
-    profile: {
-      model: "haiku",
-      inputTokens: 3_000,
-      outputTokens: 600,
-      measured: false,
-      basis:
-        "Synthesis over Client Detail modules a–f, so the largest INPUT of any endpoint; short prose out.",
-    },
+    profile: AI_COSTS.coach_summary.profile,
   },
   {
     key: "loadout_remap",
@@ -202,14 +139,7 @@ export const AI_ENDPOINTS: readonly AiEndpoint[] = [
     ceilingEnv: "AI_LOADOUT_REMAP_DAILY_LIMIT",
     dailyCeiling: 30,
     typicalPerDay: 1,
-    profile: {
-      model: "haiku",
-      inputTokens: 4_200,
-      outputTokens: 300,
-      measured: true,
-      basis:
-        "MEASURED — Phase E2 bake-off, 58 swap-bearing fixtures: $0.0057/adaptation. Tokens back-derived from that cost.",
-    },
+    profile: AI_COSTS.loadout_remap.profile,
   },
   {
     key: "meal_suggest",
@@ -220,14 +150,7 @@ export const AI_ENDPOINTS: readonly AiEndpoint[] = [
     // Deciding what to eat is a per-MEAL action, so a few a day for an engaged
     // user — the same order as the Loadout re-map, not the once-per-gym scan.
     typicalPerDay: 2,
-    profile: {
-      model: "haiku",
-      inputTokens: 4_200,
-      outputTokens: 300,
-      measured: false,
-      basis:
-        "spec-26 design § Cost: ~£0.006/suggest. Text-only composition over a ~200-candidate list — declared as the SAME shape as the Loadout re-map, so the re-map's measured token profile is reused. Inherits that measurement's basis, not its confidence: the candidate list length is an estimate.",
-    },
+    profile: AI_COSTS.meal_suggest.profile,
   },
   {
     key: "equipment_scan",
@@ -238,14 +161,35 @@ export const AI_ENDPOINTS: readonly AiEndpoint[] = [
     // A scan is once-per-GYM, not once-per-day: `saved_gyms` persists it. This is
     // the whole argument for 6 rather than 10.
     typicalPerDay: 0.1,
-    profile: {
-      model: "opus",
-      inputTokens: 3_000,
-      outputTokens: 488,
-      measured: true,
-      basis:
-        "MEASURED — Phase E1, 7 photos at 1568px: $0.0272/scan, mean 10.1s. Tokens back-derived.",
-    },
+    profile: AI_COSTS.equipment_scan.profile,
+  },
+  {
+    key: "recipe_import",
+    label: "Recipes AI — import from a web page",
+    gate: "ai_access",
+    ceilingEnv: "AI_RECIPE_DAILY_LIMIT",
+    dailyCeiling: 12,
+    // Only pages without structured recipe data reach the model.
+    typicalPerDay: 0.2,
+    profile: AI_COSTS.recipe_import.profile,
+  },
+  {
+    key: "meal_plan_generate",
+    label: "Mealprint — generate a day plan",
+    gate: "mealprint",
+    ceilingEnv: "AI_MEAL_PLAN_DAILY_LIMIT",
+    dailyCeiling: 5,
+    typicalPerDay: 0.3,
+    profile: AI_COSTS.meal_plan_generate.profile,
+  },
+  {
+    key: "meal_plan_swap",
+    label: "Mealprint — swap a planned meal",
+    gate: "mealprint",
+    ceilingEnv: "AI_MEAL_SWAP_DAILY_LIMIT",
+    dailyCeiling: 10,
+    typicalPerDay: 0.5,
+    profile: AI_COSTS.meal_plan_swap.profile,
   },
 ] as const;
 

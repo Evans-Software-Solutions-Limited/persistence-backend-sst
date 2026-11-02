@@ -564,6 +564,13 @@ export const subscriptionTiers = pgTable("subscription_tiers", {
   // £14.99 trainer tier would widen the known Loadout price hole for no
   // product benefit — the migration carries the full rationale.
   mealprintAccess: boolean("mealprint_access").notNull().default(false),
+  // Per-user AI spend budget, USD per rolling 30 days (spec-29 Phase 1,
+  // `20261102120000_ai_monthly_budget.sql`). NULL = not configured, which the
+  // budget check treats as zero — it fails closed, never open.
+  aiMonthlyBudgetUsd: decimal("ai_monthly_budget_usd", {
+    precision: 8,
+    scale: 2,
+  }),
   isActive: boolean("is_active").default(true),
   stripePriceIdMonthly: text("stripe_price_id_monthly"),
   stripePriceIdYearly: text("stripe_price_id_yearly"),

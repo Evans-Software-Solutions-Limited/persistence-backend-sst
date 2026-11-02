@@ -14,11 +14,13 @@ import { getDb } from "@persistence/db/client";
  * the new column here and the obvious "fix" is to project it — quietly coupling
  * an unauthenticated endpoint to the migration state. `mealprint_access` was
  * added to this list for exactly that reason: the typecheck error it produced
- * pointed the wrong way.
+ * pointed the wrong way. `ai_monthly_budget_usd` is omitted for the same
+ * reason and one more: the AI budget is a backend fail-safe that is never
+ * shown to users (spec-29 AC 2.4), so it has no business on a public endpoint.
  */
 export type SubscriptionTierRow = Omit<
   typeof subscriptionTiers.$inferSelect,
-  "loadoutAccess" | "mealprintAccess"
+  "loadoutAccess" | "mealprintAccess" | "aiMonthlyBudgetUsd"
 >;
 
 /**

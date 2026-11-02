@@ -1,5 +1,23 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+
+// Per-user AI spend budget (spec-29 Phase 1). Allowed by default; a test flips
+// `aiBudget.allowed` to prove the 429 path.
+const aiBudget = vi.hoisted(() => ({
+  allowed: true,
+  calls: [] as unknown[][],
+}));
+vi.mock("../../../ai/aiBudget", () => ({
+  AI_BUDGET_EXHAUSTED_BODY: { error: "ai_budget_exhausted" },
+  hasAiBudget: async (...args: unknown[]) => {
+    aiBudget.calls.push(args);
+    return aiBudget.allowed;
+  },
+}));
+afterEach(() => {
+  aiBudget.allowed = true;
+  aiBudget.calls = [];
+});
 import {
   AiUnavailableError,
   AiUnreadableError,
@@ -341,6 +359,19 @@ describe("POST /workouts/:id/loadout/preview", () => {
       expect(selectSubstitutesMock).not.toHaveBeenCalled();
       // A pre-model rejection costs nothing and must not write a usage row.
       expect(usageLogRecordMock).not.toHaveBeenCalled();
+    });
+
+    it("429s ai_budget_exhausted when the AI spend budget is spent, without calling the model", async () => {
+      aiBudget.allowed = false;
+
+      const res = await call({ savedGymId: GYM_ID });
+
+      expect(res.status).toBe(429);
+      expect(((await res.json()) as any).error).toBe("ai_budget_exhausted");
+      expect(selectSubstitutesMock).not.toHaveBeenCalled();
+      // A pre-model rejection costs nothing and must not write a usage row.
+      expect(usageLogRecordMock).not.toHaveBeenCalled();
+      expect(aiBudget.calls.at(-1)?.[1]).toBe("/workouts/:id/loadout/preview");
     });
 
     it("counts against this endpoint only", async () => {

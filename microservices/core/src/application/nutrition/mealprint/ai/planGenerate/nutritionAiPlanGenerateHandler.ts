@@ -1,3 +1,4 @@
+import { AI_BUDGET_EXHAUSTED_BODY, hasAiBudget } from "../../../../ai/aiBudget";
 import { notWantedMealsSchema } from "../mealContext";
 import Elysia, { t } from "elysia";
 import {
@@ -157,6 +158,13 @@ export const nutritionAiPlanGenerateHandler = new Elysia()
         if (usedToday >= AI_MEAL_PLAN_DAILY_LIMIT) {
           ctx.set.status = 429;
           return { error: "ai_daily_limit" };
+        }
+
+        // Per-user AI spend budget (spec-29 Phase 1): the margin backstop
+        // behind the per-feature ceiling above.
+        if (!(await hasAiBudget(userId, ENDPOINT))) {
+          ctx.set.status = 429;
+          return AI_BUDGET_EXHAUSTED_BODY;
         }
 
         const [target, preferences] = await Promise.all([

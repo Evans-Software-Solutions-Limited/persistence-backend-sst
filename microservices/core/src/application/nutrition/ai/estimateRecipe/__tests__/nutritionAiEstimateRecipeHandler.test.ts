@@ -1,5 +1,23 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+
+// Per-user AI spend budget (spec-29 Phase 1). Allowed by default; a test flips
+// `aiBudget.allowed` to prove the 429 path.
+const aiBudget = vi.hoisted(() => ({
+  allowed: true,
+  calls: [] as unknown[][],
+}));
+vi.mock("../../../../ai/aiBudget", () => ({
+  AI_BUDGET_EXHAUSTED_BODY: { error: "ai_budget_exhausted" },
+  hasAiBudget: async (...args: unknown[]) => {
+    aiBudget.calls.push(args);
+    return aiBudget.allowed;
+  },
+}));
+afterEach(() => {
+  aiBudget.allowed = true;
+  aiBudget.calls = [];
+});
 
 const VALID_MACROS = {
   kcal: 1200,
@@ -160,6 +178,22 @@ describe("nutritionAiEstimateRecipeHandler", () => {
     expect((await response.json()) as any).toEqual({ error: "ai_daily_limit" });
     expect(estimateRecipeMacrosMock).not.toHaveBeenCalled();
     expect(usageLogRecordMock).not.toHaveBeenCalled();
+  });
+
+  it("429s ai_budget_exhausted when the AI spend budget is spent, without calling the model", async () => {
+    aiBudget.allowed = false;
+    const { nutritionAiEstimateRecipeHandler } =
+      await import("../nutritionAiEstimateRecipeHandler");
+    const response = await nutritionAiEstimateRecipeHandler.handle(
+      authedRequest(BODY),
+    );
+    expect(response.status).toBe(429);
+    expect((await response.json()) as any).toEqual({
+      error: "ai_budget_exhausted",
+    });
+    expect(estimateRecipeMacrosMock).not.toHaveBeenCalled();
+    expect(usageLogRecordMock).not.toHaveBeenCalled();
+    expect(aiBudget.calls.at(-1)?.[1]).toBe("estimate-recipe");
   });
 
   it("passes the 'estimate-recipe' endpoint string to the ceiling check", async () => {
