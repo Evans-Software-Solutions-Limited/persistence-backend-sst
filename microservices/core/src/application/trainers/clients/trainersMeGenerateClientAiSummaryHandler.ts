@@ -108,13 +108,6 @@ export const trainersMeGenerateClientAiSummaryHandler = new Elysia()
           return { error: "ai_daily_limit" };
         }
 
-        // Per-user AI spend budget (spec-29 Phase 1): the margin backstop
-        // behind the per-feature ceiling above.
-        if (!(await hasAiBudget(trainerId, AI_COACH_SUMMARY_ENDPOINT))) {
-          ctx.set.status = 429;
-          return AI_BUDGET_EXHAUSTED_BODY;
-        }
-
         // Coach read-audit (specs/27-coach-health-data-read-audit) — logged
         // only after the entitlement + daily-ceiling gates pass, i.e. once a
         // real read is about to happen (a cache hit still reads the Client
@@ -153,6 +146,13 @@ export const trainersMeGenerateClientAiSummaryHandler = new Elysia()
               canManualRefresh,
             } satisfies AiSummaryModule,
           };
+        }
+
+        // Per-user AI spend budget (spec-29 Phase 1): only the generate branch
+        // spends AI, so a coach over budget can still open cached summaries.
+        if (!(await hasAiBudget(trainerId, AI_COACH_SUMMARY_ENDPOINT))) {
+          ctx.set.status = 429;
+          return AI_BUDGET_EXHAUSTED_BODY;
         }
 
         // 6. Generate — assemble modules a–f from the SAME aggregate the card

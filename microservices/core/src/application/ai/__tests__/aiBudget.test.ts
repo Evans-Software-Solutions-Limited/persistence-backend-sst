@@ -11,7 +11,7 @@ import {
   AI_COSTS,
   MAX_COST_PER_CALL_USD,
   costPerCall,
-} from "@persistence/subscription-catalog";
+} from "@persistence/subscription-catalog/ai-costs";
 import {
   AI_BUDGET_WINDOW_DAYS,
   budgetAllows,
@@ -151,6 +151,63 @@ describe("loadAiMonthlyBudgetUsd", () => {
       [{ budget: "1.50" }],
     ]);
     expect(await loadAiMonthlyBudgetUsd("u1")).toBe(1.5);
+  });
+
+  it("uses a scheduled tier once its change has taken effect", async () => {
+    // Upgrade premium → premium_plus whose effective time has passed: the
+    // budget follows the new tier, matching the Loadout/Mealprint checks.
+    const stub = useDb([
+      [
+        sub({
+          budget: "4.89",
+          metadata: {
+            scheduled_change: {
+              next_tier_name: "premium_plus",
+              effective_at: PAST.toISOString(),
+            },
+          },
+        }),
+      ],
+      [{ budget: "7.26" }],
+    ]);
+    expect(await loadAiMonthlyBudgetUsd("u1")).toBe(7.26);
+    expect(stub.db.select).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps the stored tier while a scheduled change is still in the future", async () => {
+    const stub = useDb([
+      [
+        sub({
+          budget: "24.20",
+          metadata: {
+            scheduled_change: {
+              next_tier_name: "individual_trainer",
+              effective_at: FUTURE.toISOString(),
+            },
+          },
+        }),
+      ],
+    ]);
+    expect(await loadAiMonthlyBudgetUsd("u1")).toBe(24.2);
+    expect(stub.db.select).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to free when the scheduled tier has no catalog row", async () => {
+    useDb([
+      [
+        sub({
+          metadata: {
+            scheduled_change: {
+              next_tier_name: "retired_tier",
+              effective_at: PAST.toISOString(),
+            },
+          },
+        }),
+      ],
+      [],
+      [{ budget: "0.00" }],
+    ]);
+    expect(await loadAiMonthlyBudgetUsd("u1")).toBe(0);
   });
 
   it("is zero when even the free tier row is missing", async () => {

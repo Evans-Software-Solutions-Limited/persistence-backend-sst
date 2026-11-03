@@ -38,7 +38,7 @@ import {
   costPerCall,
   type ModelTier,
   type TokenProfile,
-} from "@persistence/subscription-catalog";
+} from "@persistence/subscription-catalog/ai-costs";
 
 // ─── Inputs: model prices and per-call token shapes ─────────────────────────
 //

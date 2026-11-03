@@ -5,7 +5,7 @@ import {
   userSubscriptions,
 } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
-import { costPerUsageEndpoint } from "@persistence/subscription-catalog";
+import { costPerUsageEndpoint } from "@persistence/subscription-catalog/ai-costs";
 import {
   classifySubscriptionStatus,
   parsePriceDecimal,
@@ -105,21 +105,38 @@ export async function loadAiMonthlyBudgetUsd(userId: string): Promise<number> {
 
   const sub = subRows[0];
   if (sub) {
+    const scheduledTier = resolveEffectiveScheduledTier(sub.metadata);
     const lapsed = classifySubscriptionStatus(
       sub.paymentStatus,
       sub.expiresAt,
       sub.cancelledAt,
-      resolveEffectiveScheduledTier(sub.metadata) !== null,
+      scheduledTier !== null,
     );
-    if (lapsed === null) return toBudget(sub.budget);
+    if (lapsed === null) {
+      // A scheduled plan change whose effective time has passed wins over the
+      // stored tier, as it does in the Loadout and Mealprint entitlement
+      // checks — otherwise the budget disagrees with access until the store
+      // webhook rewrites `tier_name`. A scheduled tier with no catalog row
+      // falls through to free.
+      if (scheduledTier === null) return toBudget(sub.budget);
+      const scheduled = await loadTierBudget(scheduledTier);
+      if (scheduled !== undefined) return toBudget(scheduled);
+    }
   }
 
-  const freeRows = await db
+  return toBudget(await loadTierBudget("free"));
+}
+
+/** The tier's budget column; `undefined` when the tier has no catalog row. */
+async function loadTierBudget(
+  tierName: string,
+): Promise<string | null | undefined> {
+  const rows = await getDb()
     .select({ budget: subscriptionTiers.aiMonthlyBudgetUsd })
     .from(subscriptionTiers)
-    .where(eq(subscriptionTiers.tierName, "free"))
+    .where(eq(subscriptionTiers.tierName, tierName))
     .limit(1);
-  return toBudget(freeRows[0]?.budget);
+  return rows.length === 0 ? undefined : rows[0].budget;
 }
 
 /** USD the user's AI calls have cost over the rolling window ending `now`. */
