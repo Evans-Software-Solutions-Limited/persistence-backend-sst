@@ -9,11 +9,14 @@ import {
   verifyCredential,
   verifySignature,
   type Credential,
+  type FriendshipEvidence,
   type Signed,
   type TrustedKeys,
 } from "./security/identity";
 import { object, uuid } from "./security/schema";
 import { encode64 } from "./security/encoding";
+import { getCryptoBackend } from "./security/cryptoBackend";
+import type { TogetherSocialApi } from "../../domain/ports/togetherSocial.port";
 import { isHostDetails } from "./planDetails";
 import type {
   TogetherHostDetails,
@@ -25,9 +28,16 @@ export const SUMMARY_TTL = 15_000;
 export const REFRESH_MARGIN = 5_000;
 /** How long the native socket keeps trying after `connect` returns (Android and iOS both use 30 s). */
 export const NATIVE_CONNECT_DEADLINE = 30_000;
+/**
+ * A Training partners host answers a probe with a hint; the guest then has
+ * this long to match it against its partners and send a friendship proof.
+ */
+export const FRIENDS_STEP_DEADLINE = 10_000;
+const NONCE = /^[A-Za-z0-9_-]{43}$/;
 export interface LobbySummary extends HostPin {
   kind: "together-summary-v1";
-  audience: "open";
+  /** "friends" only in reply to a verified friendship proof. */
+  audience: "open" | "friends";
   workoutName: string;
   memberCount: number;
   /** PER-60: start time, plan rows and the session code; absent from older hosts. */
@@ -46,12 +56,97 @@ export function readProbe(frame: string): string | undefined {
       object(p, ["kind", "nonce"]) &&
       p.kind === "together-probe-v1" &&
       typeof p.nonce === "string" &&
-      /^[A-Za-z0-9_-]{43}$/.test(p.nonce)
+      NONCE.test(p.nonce)
     )
       return p.nonce;
   } catch {
     /* Non-probes go to the existing authenticated protocol. */
   }
+}
+/**
+ * Binds a Training partners host to one probe without naming it: only a
+ * guest that already knows the host's user id can recompute the tag, and a
+ * fresh nonce gives a fresh tag, so hints cannot be linked across searches.
+ */
+export function friendsHintTag(nonce: string, hostUserId: string): string {
+  return encode64(
+    getCryptoBackend().sha256(
+      new TextEncoder().encode(`together-friends-hint-v1${nonce}${hostUserId}`),
+    ),
+    true,
+  );
+}
+/** A Training partners host's reply to a probe: no session, name, plan or identity. */
+export function friendsHint(nonce: string, hostUserId: string): string {
+  return JSON.stringify({
+    kind: "together-friends-hint-v1",
+    nonce,
+    tag: friendsHintTag(nonce, hostUserId),
+  });
+}
+export function readFriendsHint(
+  frame: string,
+  nonce: string,
+): string | undefined {
+  if (frame.length > 256) return;
+  try {
+    const p: unknown = JSON.parse(frame);
+    if (
+      object(p, ["kind", "nonce", "tag"]) &&
+      p.kind === "together-friends-hint-v1" &&
+      p.nonce === nonce &&
+      typeof p.tag === "string" &&
+      NONCE.test(p.tag)
+    )
+      return p.tag;
+  } catch {
+    /* Anything else is a summary or nothing. */
+  }
+}
+/** The guest's second frame, sent only after a hint matched one of its partners. */
+export function friendsProbe(
+  nonce: string,
+  friendship: Signed<FriendshipEvidence>,
+): string {
+  return JSON.stringify({
+    kind: "together-friends-probe-v1",
+    nonce,
+    friendship,
+  });
+}
+/** Host side: the proof comes back unverified; the caller verifies it exactly as admission does. */
+export function readFriendsProbe(frame: string, nonce: string): unknown {
+  if (frame.length > 2048) return;
+  try {
+    const p: unknown = JSON.parse(frame);
+    if (
+      object(p, ["kind", "nonce", "friendship"]) &&
+      p.kind === "together-friends-probe-v1" &&
+      p.nonce === nonce
+    )
+      return p.friendship;
+  } catch {
+    /* Not a friends probe: no summary. */
+  }
+}
+/** Accepted training partners' user ids, every page; the social API lists both directions. */
+export async function acceptedFriendIds(
+  social: Pick<TogetherSocialApi, "friends">,
+  userId: string,
+): Promise<string[]> {
+  const ids = new Set<string>();
+  let cursor: string | undefined;
+  for (let page = 0; page < 10; page++) {
+    const result = await social.friends(cursor);
+    if (!result.ok) throw new Error("friends-unavailable");
+    for (const r of result.value.data)
+      if (r.status === "accepted")
+        ids.add(r.userId === userId ? r.friendId : r.userId);
+    if (!result.value.nextCursor) break;
+    cursor = result.value.nextCursor;
+  }
+  ids.delete(userId);
+  return [...ids];
 }
 export function signSummary(
   pin: HostPin,
@@ -61,6 +156,7 @@ export function signSummary(
   nonce: string,
   now: number,
   details?: TogetherHostDetails & { code: string },
+  audience: LobbySummary["audience"] = "open",
 ): string {
   verifyCredential(identity.credential, identity.trustedKeys, now);
   return JSON.stringify(
@@ -68,7 +164,7 @@ export function signSummary(
       {
         kind: "together-summary-v1",
         ...pin,
-        audience: "open",
+        audience,
         workoutName,
         memberCount,
         ...(details
@@ -95,6 +191,8 @@ export function readSummary(
   nonce: string,
   trusted: TrustedKeys,
   now: number,
+  /** Set only in the Training partners flow: the partner whose hint matched. */
+  friendId?: string,
 ): LobbySummary {
   if (frame.length > 6000) throw new Error("invalid-summary");
   const envelope: unknown = JSON.parse(frame);
@@ -121,7 +219,8 @@ export function readSummary(
   const p = envelope.payload;
   if (
     p.kind !== "together-summary-v1" ||
-    p.audience !== "open" ||
+    p.audience !== (friendId === undefined ? "open" : "friends") ||
+    (friendId !== undefined && p.hostUserId !== friendId) ||
     p.sessionId !== sessionId ||
     ![p.sessionId, p.hostUserId, p.hostDeviceId].every(uuid) ||
     p.nonce !== nonce ||
@@ -153,13 +252,27 @@ export function readSummary(
     identity.publicKey,
   );
 }
+/** A verified summary; a Training partners one keeps the proof that unlocked it, for Join. */
+export type DiscoveredSummary = LobbySummary & {
+  friendship?: Signed<FriendshipEvidence>;
+};
 interface BrowserOptions {
   native: TogetherLanNative;
   trustedKeys: TrustedKeys;
   randomBytes(length: number): Uint8Array;
   now(): number;
-  onChange(summaries: readonly LobbySummary[]): void;
+  onChange(summaries: readonly DiscoveredSummary[]): void;
   onError(code: string): void;
+  /**
+   * Training partners search. Without it, or when either call fails, a
+   * partners host's hint is ignored and the search behaves as before.
+   */
+  friends?: {
+    /** Accepted partners' user ids; read once per search. */
+    ids(): Promise<readonly string[]>;
+    /** The server-signed friendship proof for one partner; fetched once per search. */
+    proof(friendId: string): Promise<Signed<FriendshipEvidence> | null>;
+  };
 }
 /** No visitor identity or admission data is sent until explicit Join. One outbound socket at a time. */
 export class TogetherLobbyBrowser {
@@ -172,7 +285,12 @@ export class TogetherLobbyBrowser {
     sessionId: string;
     refresh?: boolean;
   }[] = [];
-  private summaries = new Map<string, LobbySummary>();
+  private summaries = new Map<string, DiscoveredSummary>();
+  private friendIds?: Promise<readonly string[]>;
+  private proofs = new Map<
+    string,
+    Promise<Signed<FriendshipEvidence> | null>
+  >();
   /** Endpoints queued for a refresh probe; cleared when a new summary lands or the host is lost. */
   private refreshing = new Set<string>();
   private active?: {
@@ -182,6 +300,10 @@ export class TogetherLobbyBrowser {
     peerId?: string;
     /** A re-probe of a listed host: its failure drops that row only. */
     refresh?: boolean;
+    /** Training partners step: matching a hint, then waiting for the summary. */
+    stage?: "matching" | "friends";
+    friendId?: string;
+    friendship?: Signed<FriendshipEvidence>;
   };
   private deadline?: ReturnType<typeof setTimeout>;
   private expiry?: ReturnType<typeof setInterval>;
@@ -285,17 +407,33 @@ export class TogetherLobbyBrowser {
     } else if (event.type === "frame") {
       const active = this.active;
       if (!active || active.peerId !== event.peerId) return;
+      if (!active.stage && this.options.friends) {
+        const tag = readFriendsHint(event.frame, active.nonce);
+        if (tag) {
+          void this.matchFriend(active, tag);
+          return;
+        }
+      }
+      // A host that speaks again while its hint is being matched gets nothing.
+      if (active.stage === "matching") {
+        void this.finish(active);
+        return;
+      }
       try {
         this.refreshing.delete(active.endpointId);
+        const summary = readSummary(
+          event.frame,
+          active.sessionId,
+          active.nonce,
+          this.options.trustedKeys,
+          this.options.now(),
+          active.friendId,
+        );
         this.summaries.set(
           active.endpointId,
-          readSummary(
-            event.frame,
-            active.sessionId,
-            active.nonce,
-            this.options.trustedKeys,
-            this.options.now(),
-          ),
+          active.friendship
+            ? { ...summary, friendship: active.friendship }
+            : summary,
         );
         this.publish();
       } catch {
@@ -376,6 +514,52 @@ export class TogetherLobbyBrowser {
       if (this.reserved) this.release();
     } else if (!active.peerId) this.unreachable(active, false);
   }
+  /**
+   * A Training partners host answered with a hint. If the tag is one of this
+   * account's partners, send that partner's friendship proof on the same
+   * socket; the host replies with its signed summary only if the proof is
+   * valid for the pair. Anything else ends the probe as if no host answered.
+   */
+  private async matchFriend(
+    active: NonNullable<TogetherLobbyBrowser["active"]>,
+    tag: string,
+  ) {
+    const friends = this.options.friends!;
+    active.stage = "matching";
+    // The bound socket is closed on timeout; it never ends the search.
+    clearTimeout(this.deadline);
+    this.deadline = setTimeout(
+      () => void this.finish(active),
+      FRIENDS_STEP_DEADLINE,
+    );
+    // Offline or a failed lookup: no partner matches for the rest of this search.
+    this.friendIds ??= friends.ids().catch(() => []);
+    const ids = await this.friendIds;
+    if (this.active !== active) return;
+    const friendId = ids.find((id) => friendsHintTag(active.nonce, id) === tag);
+    let friendship: Signed<FriendshipEvidence> | null = null;
+    if (friendId) {
+      let proof = this.proofs.get(friendId);
+      if (!proof) {
+        proof = friends.proof(friendId).catch(() => null);
+        this.proofs.set(friendId, proof);
+      }
+      friendship = await proof;
+    }
+    if (this.active !== active) return;
+    if (!friendId || !friendship) {
+      void this.finish(active);
+      return;
+    }
+    active.stage = "friends";
+    active.friendId = friendId;
+    active.friendship = friendship;
+    void this.options.native
+      .send(active.peerId!, friendsProbe(active.nonce, friendship))
+      .catch(() => {
+        if (this.active === active) void this.finish(active);
+      });
+  }
   private release() {
     clearTimeout(this.reserved);
     this.reserved = undefined;
@@ -414,6 +598,8 @@ export class TogetherLobbyBrowser {
     this.queue = [];
     this.summaries.clear();
     this.refreshing.clear();
+    this.friendIds = undefined;
+    this.proofs.clear();
     this.active = undefined;
     this.stopping = this.options.native.stop();
     await this.stopping;

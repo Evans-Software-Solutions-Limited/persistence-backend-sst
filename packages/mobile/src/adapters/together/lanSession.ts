@@ -1,5 +1,5 @@
 import type { TogetherSharedSession, SharedEnvelope } from "./sharedSession";
-import { readProbe } from "./lobbyDiscovery";
+import { readFriendsProbe, readProbe } from "./lobbyDiscovery";
 import type {
   TogetherLanNative,
   TogetherLanEvent,
@@ -34,6 +34,8 @@ interface Connection {
   link: TogetherLocalLink;
   authenticated: boolean;
   received: boolean;
+  /** The probe nonce a Training partners hint answered; the next frame must be its friends probe. */
+  hinted?: string;
   admitted: boolean;
   frames: number;
   processing: Promise<void>;
@@ -49,6 +51,10 @@ export interface LanSessionOptions {
   onEvent: (event: LanSessionEvent) => void;
   shared?: TogetherSharedSession;
   probeSummary?: (nonce: string) => string | undefined;
+  /** A Training partners host's anonymous hint for a probe; the socket stays open for one friends probe. */
+  probeHint?: (nonce: string) => string | undefined;
+  /** The signed summary for a friends probe whose proof verifies, else nothing. */
+  friendsSummary?: (nonce: string, friendship: unknown) => string | undefined;
 }
 
 /** Foreground LAN lifecycle only. No UI mounting, account switching or cloud fallback. */
@@ -348,11 +354,29 @@ export class TogetherLanSession {
           const nonce = readProbe(event.frame);
           if (nonce) {
             const summary = this.options.probeSummary?.(nonce);
+            const hint = summary ? undefined : this.options.probeHint?.(nonce);
+            if (hint) {
+              connection.hinted = nonce;
+              await this.options.native!.send(event.peerId, hint);
+              return;
+            }
             if (summary) await this.options.native!.send(event.peerId, summary);
             this.drop(event.peerId);
             await this.disconnect(event.peerId);
             return;
           }
+        }
+        if (connection.hinted) {
+          // One friends probe per hinted socket; it never reaches the secure channel.
+          const friendship = readFriendsProbe(event.frame, connection.hinted);
+          const summary =
+            friendship === undefined
+              ? undefined
+              : this.options.friendsSummary?.(connection.hinted, friendship);
+          if (summary) await this.options.native!.send(event.peerId, summary);
+          this.drop(event.peerId);
+          await this.disconnect(event.peerId);
+          return;
         }
         const result = await connection.link.receive(event.frame);
         if (this.links.get(event.peerId) !== connection) return;

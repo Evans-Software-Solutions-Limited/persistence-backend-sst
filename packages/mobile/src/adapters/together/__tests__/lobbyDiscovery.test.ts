@@ -2,14 +2,26 @@
 import { randomBytes } from "node:crypto";
 import {
   TogetherLobbyBrowser,
+  acceptedFriendIds,
+  friendsHint,
+  friendsHintTag,
+  friendsProbe,
+  readFriendsHint,
+  readFriendsProbe,
   readProbe,
   readSummary,
   signSummary,
+  FRIENDS_STEP_DEADLINE,
   NATIVE_CONNECT_DEADLINE,
   REFRESH_MARGIN,
   SUMMARY_TTL,
 } from "../lobbyDiscovery";
-import { publicKeyPem, signPayload } from "../security/identity";
+import {
+  publicKeyPem,
+  signPayload,
+  type FriendshipEvidence,
+  type Signed,
+} from "../security/identity";
 import { encode64 } from "../security/encoding";
 import type {
   TogetherLanEvent,
@@ -651,5 +663,309 @@ describe("bounded anonymous network browser lifecycle", () => {
     await settle();
     expect(native.disconnect).toHaveBeenCalledWith("third");
     expect(errors).not.toHaveBeenCalled();
+  });
+});
+describe("Training partners search (Brad, 3 Nov)", () => {
+  const friendId = pin.hostUserId;
+  const proof = {
+    payload: {
+      kind: "together-friendship-v1",
+      keyId: "issuer",
+      users: [friendId, id(9)],
+      issuedAt: now - 100,
+      expiresAt: now + 60000,
+    },
+    signature: "sig",
+  } as unknown as Signed<FriendshipEvidence>;
+  it("the hint names no session, host or plan, and its tag changes with every nonce", () => {
+    const other = encode64(randomBytes(32), true);
+    const hint = friendsHint(nonce, friendId);
+    expect(hint.length).toBeLessThanOrEqual(256);
+    expect(Object.keys(JSON.parse(hint)).sort()).toEqual([
+      "kind",
+      "nonce",
+      "tag",
+    ]);
+    for (const secret of [friendId, pin.sessionId, pin.hostDeviceId])
+      expect(hint).not.toContain(secret);
+    expect(readFriendsHint(hint, nonce)).toBe(friendsHintTag(nonce, friendId));
+    expect(friendsHintTag(other, friendId)).not.toBe(
+      friendsHintTag(nonce, friendId),
+    );
+    expect(friendsHintTag(nonce, id(9))).not.toBe(
+      friendsHintTag(nonce, friendId),
+    );
+    for (const bad of [
+      friendsHint(other, friendId),
+      "x".repeat(257),
+      "{",
+      JSON.stringify({ ...JSON.parse(hint), tag: "short" }),
+      JSON.stringify({ ...JSON.parse(hint), extra: 1 }),
+      JSON.stringify({ ...JSON.parse(hint), kind: "together-probe-v1" }),
+    ])
+      expect(readFriendsHint(bad, nonce)).toBeUndefined();
+    // A hint is never mistaken for a probe.
+    expect(readProbe(hint)).toBeUndefined();
+  });
+  it("reads a friends probe only for its own nonce and within its bound", () => {
+    const frame = friendsProbe(nonce, proof);
+    expect(readFriendsProbe(frame, nonce)).toEqual(proof);
+    for (const bad of [
+      friendsProbe(encode64(randomBytes(32), true), proof),
+      "x".repeat(2049),
+      "{",
+      JSON.stringify({ kind: "together-probe-v1", nonce, friendship: proof }),
+      JSON.stringify({ ...JSON.parse(frame), extra: 1 }),
+    ])
+      expect(readFriendsProbe(bad, nonce)).toBeUndefined();
+  });
+  it("accepts a partners summary only in the friends flow and only from the matched partner", () => {
+    const partners = signSummary(
+      pin,
+      identity,
+      "Partners",
+      1,
+      nonce,
+      now,
+      undefined,
+      "friends",
+    );
+    expect(
+      readSummary(partners, pin.sessionId, nonce, trustedKeys, now, friendId),
+    ).toMatchObject({ audience: "friends", hostUserId: friendId });
+    expect(() =>
+      readSummary(partners, pin.sessionId, nonce, trustedKeys, now),
+    ).toThrow("invalid-summary");
+    expect(() =>
+      readSummary(partners, pin.sessionId, nonce, trustedKeys, now, id(9)),
+    ).toThrow("invalid-summary");
+    expect(() =>
+      readSummary(frame(), pin.sessionId, nonce, trustedKeys, now, friendId),
+    ).toThrow("invalid-summary");
+  });
+  it("lists accepted partners from every page, in both directions", async () => {
+    const page = (data: object[], nextCursor: string | null) =>
+      ({ ok: true, value: { data, nextCursor } }) as never;
+    const row = (userId: string, friendId: string, status = "accepted") => ({
+      userId,
+      friendId,
+      status,
+    });
+    const friends = jest
+      .fn()
+      .mockResolvedValueOnce(
+        page([row(id(1), id(2)), row(id(3), id(1), "pending")], "next"),
+      )
+      .mockResolvedValueOnce(
+        page([row(id(4), id(1)), row(id(1), id(2))], null),
+      );
+    expect(await acceptedFriendIds({ friends }, id(1))).toEqual([id(2), id(4)]);
+    expect(friends).toHaveBeenLastCalledWith("next");
+    await expect(
+      acceptedFriendIds(
+        {
+          friends: async () =>
+            ({ ok: false, error: { code: "offline" } }) as never,
+        },
+        id(1),
+      ),
+    ).rejects.toThrow("friends-unavailable");
+  });
+  describe("browser", () => {
+    let emit: (e: TogetherLanEvent) => void, native: TogetherLanNative;
+    let browser: TogetherLobbyBrowser, clock: number;
+    let changes: jest.Mock, errors: jest.Mock;
+    let ids: jest.Mock, proofFor: jest.Mock;
+    beforeEach(() => {
+      jest.useFakeTimers();
+      clock = now;
+      changes = jest.fn();
+      errors = jest.fn();
+      ids = jest.fn(async () => [id(8), friendId]);
+      proofFor = jest.fn(async () => proof);
+      native = {
+        startHost: jest.fn(async () => {}),
+        startDiscovery: jest.fn(async () => {}),
+        connect: jest.fn(async () => {}),
+        send: jest.fn(async () => {}),
+        disconnect: jest.fn(async () => {}),
+        stop: jest.fn(async () => {}),
+        addListener: jest.fn((_event, listener) => {
+          emit = listener;
+          return { remove: jest.fn() };
+        }),
+      };
+      browser = new TogetherLobbyBrowser({
+        native,
+        trustedKeys,
+        randomBytes,
+        now: () => clock,
+        onChange: changes,
+        onError: errors,
+        friends: { ids, proof: proofFor },
+      });
+    });
+    afterEach(async () => {
+      await browser.stop().catch(() => {});
+      jest.useRealTimers();
+    });
+    const sent = () =>
+      jest
+        .mocked(native.send)
+        .mock.calls.map(([, f]) => JSON.parse(f) as Record<string, unknown>);
+    const challenge = () => sent().at(-1)!.nonce as string;
+    /** Host side: connect, then answer the probe with a partners hint. */
+    async function partnersHost(peerId: string, host = friendId) {
+      emit({ type: "connected", peerId, incoming: false });
+      const n = challenge();
+      emit({ type: "frame", peerId, frame: friendsHint(n, host) });
+      await settle();
+      return n;
+    }
+    const partnersSummary = (n: string) =>
+      signSummary(pin, identity, "Partners", 1, n, clock, undefined, "friends");
+    it("a partner's hint gets the friendship proof, and the partners summary is listed with that proof", async () => {
+      await browser.start();
+      emit({ type: "discovered", endpointId: "one", lobbyId: pin.sessionId });
+      const n = await partnersHost("p1");
+      expect(sent()).toEqual([
+        { kind: "together-probe-v1", nonce: n },
+        { kind: "together-friends-probe-v1", nonce: n, friendship: proof },
+      ]);
+      expect(proofFor).toHaveBeenCalledWith(friendId);
+      emit({ type: "frame", peerId: "p1", frame: partnersSummary(n) });
+      await settle();
+      expect(changes).toHaveBeenLastCalledWith([
+        expect.objectContaining({
+          audience: "friends",
+          workoutName: "Partners",
+          friendship: proof,
+        }),
+      ]);
+      expect(native.disconnect).toHaveBeenCalledWith("p1");
+      expect(errors).not.toHaveBeenCalled();
+    });
+    it("a stranger's hint or a missing proof sends nothing more and lists nothing", async () => {
+      await browser.start();
+      for (const name of ["a", "b"])
+        emit({ type: "discovered", endpointId: name, lobbyId: pin.sessionId });
+      await partnersHost("pa", id(7));
+      expect(sent()).toHaveLength(1);
+      expect(native.disconnect).toHaveBeenCalledWith("pa");
+      expect(proofFor).not.toHaveBeenCalled();
+      proofFor.mockResolvedValueOnce(null);
+      await partnersHost("pb");
+      expect(sent()).toHaveLength(2);
+      expect(native.disconnect).toHaveBeenCalledWith("pb");
+      expect(changes).not.toHaveBeenCalledWith([expect.anything()]);
+      expect(errors).not.toHaveBeenCalled();
+    });
+    it("offline (the partner list fails) ignores hints but still lists open hosts", async () => {
+      ids.mockRejectedValue(new Error("offline"));
+      await browser.start();
+      emit({ type: "discovered", endpointId: "f", lobbyId: pin.sessionId });
+      const other = { ...pin, sessionId: id(4) };
+      emit({ type: "discovered", endpointId: "o", lobbyId: other.sessionId });
+      await partnersHost("pf");
+      expect(sent()).toHaveLength(1);
+      emit({ type: "connected", peerId: "po", incoming: false });
+      emit({
+        type: "frame",
+        peerId: "po",
+        frame: signSummary(other, identity, "Open", 1, challenge(), clock),
+      });
+      await settle();
+      expect(changes).toHaveBeenLastCalledWith([
+        expect.objectContaining({ audience: "open", workoutName: "Open" }),
+      ]);
+      expect(errors).not.toHaveBeenCalled();
+      expect(ids).toHaveBeenCalledTimes(1);
+    });
+    it("a partners host that never answers the proof is closed without ending the search", async () => {
+      await browser.start();
+      emit({ type: "discovered", endpointId: "slow", lobbyId: pin.sessionId });
+      emit({ type: "discovered", endpointId: "next", lobbyId: pin.sessionId });
+      await partnersHost("ps");
+      jest.advanceTimersByTime(FRIENDS_STEP_DEADLINE);
+      await settle();
+      expect(native.disconnect).toHaveBeenCalledWith("ps");
+      expect(native.connect).toHaveBeenLastCalledWith("next");
+      expect(errors).not.toHaveBeenCalled();
+    });
+    it("a friends probe that cannot be written closes only that socket", async () => {
+      await browser.start();
+      emit({ type: "discovered", endpointId: "w", lobbyId: pin.sessionId });
+      jest
+        .mocked(native.send)
+        .mockResolvedValueOnce(undefined)
+        .mockRejectedValueOnce(new Error("write failed"));
+      await partnersHost("pw");
+      expect(native.disconnect).toHaveBeenCalledWith("pw");
+      expect(errors).not.toHaveBeenCalled();
+      expect(native.stop).not.toHaveBeenCalled();
+    });
+    it("a host that talks again while its hint is being matched gets nothing", async () => {
+      let release!: (ids: string[]) => void;
+      ids.mockReturnValue(
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+      );
+      await browser.start();
+      emit({ type: "discovered", endpointId: "x", lobbyId: pin.sessionId });
+      emit({ type: "connected", peerId: "px", incoming: false });
+      const n = challenge();
+      emit({ type: "frame", peerId: "px", frame: friendsHint(n, friendId) });
+      emit({ type: "frame", peerId: "px", frame: partnersSummary(n) });
+      await settle();
+      expect(native.disconnect).toHaveBeenCalledWith("px");
+      release([friendId]);
+      await settle();
+      expect(sent()).toEqual([{ kind: "together-probe-v1", nonce: n }]);
+      expect(changes).not.toHaveBeenCalledWith([expect.anything()]);
+      expect(errors).not.toHaveBeenCalled();
+    });
+    it("a refresh of a partners host re-runs the friends step and keeps it listed, reading partners and proof once", async () => {
+      await browser.start();
+      emit({ type: "discovered", endpointId: "one", lobbyId: pin.sessionId });
+      const answer = async (peerId: string) => {
+        const n = await partnersHost(peerId);
+        emit({ type: "frame", peerId, frame: partnersSummary(n) });
+        emit({ type: "disconnected", peerId });
+        await settle();
+      };
+      await answer("p1");
+      clock = now + SUMMARY_TTL - REFRESH_MARGIN;
+      jest.advanceTimersByTime(1000);
+      expect(native.connect).toHaveBeenCalledTimes(2);
+      await answer("p2");
+      expect(
+        sent().filter((f) => f.kind === "together-friends-probe-v1"),
+      ).toHaveLength(2);
+      clock = now + SUMMARY_TTL + 1000;
+      jest.advanceTimersByTime(1000);
+      expect(changes).toHaveBeenLastCalledWith([
+        expect.objectContaining({ audience: "friends" }),
+      ]);
+      expect(ids).toHaveBeenCalledTimes(1);
+      expect(proofFor).toHaveBeenCalledTimes(1);
+    });
+    it("a guest without partner search ignores the hint, exactly as before", async () => {
+      await browser.stop();
+      browser = new TogetherLobbyBrowser({
+        native,
+        trustedKeys,
+        randomBytes,
+        now: () => clock,
+        onChange: changes,
+        onError: errors,
+      });
+      await browser.start();
+      emit({ type: "discovered", endpointId: "one", lobbyId: pin.sessionId });
+      await partnersHost("p1");
+      expect(sent()).toHaveLength(1);
+      expect(native.disconnect).toHaveBeenCalledWith("p1");
+      expect(errors).not.toHaveBeenCalled();
+    });
   });
 });

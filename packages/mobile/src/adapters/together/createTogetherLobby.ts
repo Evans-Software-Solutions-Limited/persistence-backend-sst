@@ -2,6 +2,7 @@
 import type { TogetherProvisioningPort } from "@/domain/ports/togetherProvisioning.port";
 import type { TogetherLobbyPort } from "@/domain/ports/togetherLobby.port";
 import type { TogetherRecoveryApi } from "@/domain/ports/togetherOfflineApi.port";
+import type { TogetherSocialApi } from "@/domain/ports/togetherSocial.port";
 import type { TogetherLobbyControllerOptions } from "./lobbyController";
 
 /** Explicit composition: the app-wide update gate owns native binary compatibility. */
@@ -12,6 +13,8 @@ export function createTogetherLobby(
   recovery?: TogetherRecoveryApi,
   /** `Platform.OS`; iOS starts on the LAN module's peer-to-peer Wi-Fi (PER-64). */
   platform?: string,
+  /** Accepted training partners, so search can find a Training partners host. */
+  social?: Pick<TogetherSocialApi, "friends">,
 ): TogetherLobbyPort | undefined {
   if (!enabled || !provisioning) return undefined;
   try {
@@ -30,6 +33,8 @@ export function createTogetherLobby(
       require("./security/identity") as typeof import("./security/identity");
     const { TogetherLobbyController } =
       require("./lobbyController") as typeof import("./lobbyController");
+    const { acceptedFriendIds } =
+      require("./lobbyDiscovery") as typeof import("./lobbyDiscovery");
     const { withNativeDiagnostics } =
       require("./nativeDiagnostics") as typeof import("./nativeDiagnostics");
     const { togetherLog } =
@@ -63,6 +68,12 @@ export function createTogetherLobby(
         randomBytes: getRandomBytes,
         randomUUID,
         recovery,
+        ...(social
+          ? {
+              friendIds: (account: string) =>
+                acceptedFriendIds(social, account),
+            }
+          : {}),
       });
       const dispose = controller.dispose.bind(controller);
       let disposed = false;

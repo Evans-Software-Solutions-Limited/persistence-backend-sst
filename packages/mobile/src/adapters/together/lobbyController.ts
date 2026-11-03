@@ -9,8 +9,9 @@ import type { TogetherRecoveryApi } from "../../domain/ports/togetherOfflineApi.
 import { encode64 } from "./security/encoding";
 import {
   TogetherLobbyBrowser,
+  friendsHint,
   signSummary,
-  type LobbySummary,
+  type DiscoveredSummary,
 } from "./lobbyDiscovery";
 import type {
   TogetherHostDetails,
@@ -37,7 +38,10 @@ import {
   requestHash,
   signPayload,
   verifyCredential,
+  verifyFriendship,
+  type FriendshipEvidence,
   type JoinConsent,
+  type Signed,
 } from "./security/identity";
 import {
   createLobbyInvitation,
@@ -45,6 +49,7 @@ import {
   type LobbyInvitation,
 } from "./lobbyInvitation";
 import { togetherErrorCode, togetherErrorMessage } from "./errorCode";
+import { ok } from "../../shared/errors/result";
 import type { TogetherLogSink } from "@/diagnostics/together/togetherLog";
 
 export interface TogetherLobbyControllerOptions {
@@ -66,6 +71,11 @@ export interface TogetherLobbyControllerOptions {
   now?: () => number;
   deniedPairs?: () => readonly (readonly [string, string])[];
   recovery?: TogetherRecoveryApi;
+  /**
+   * The account's accepted training partners (social API). Lets search find
+   * a Training partners host; without it, or offline, only open hosts list.
+   */
+  friendIds?: (account: string) => Promise<readonly string[]>;
   /** Phase transitions, failures with their real codes and session events. */
   diagnostics?: TogetherLogSink;
   /** A Nearby/LAN failure with its stage, for error reporting (Sentry). */
@@ -161,10 +171,12 @@ export class TogetherLobbyController implements TogetherLobbyPort {
   private generation = 0;
   private resources?: Resources;
   private selected?: LobbyInvitation;
+  /** The friendship proof that found a selected Training partners host; Join reuses it. */
+  private selectedFriendship?: Signed<FriendshipEvidence>;
   /** What this host advertises besides the workout name (PER-60). */
   private hostDetails?: TogetherHostDetails & { code: string };
   private browser?: TogetherLobbyBrowser;
-  private discovered = new Map<string, LobbySummary>();
+  private discovered = new Map<string, DiscoveredSummary>();
   private identity?: ReadyIdentity;
   private nativeQueue: Promise<void> = Promise.resolve();
   private timer?: ReturnType<typeof setTimeout>;
@@ -490,6 +502,7 @@ export class TogetherLobbyController implements TogetherLobbyPort {
     this.browser = undefined;
     this.discovered.clear();
     this.selected = undefined;
+    this.selectedFriendship = undefined;
     this.identity?.seed.fill(0);
     this.identity = undefined;
     resources?.identity.seed.fill(0);
@@ -649,11 +662,29 @@ export class TogetherLobbyController implements TogetherLobbyPort {
       const native = this.native();
       if (!native)
         throw new Error("Together requires a compatible native build");
+      const account = this.account!;
+      const friendIds = this.options.friendIds;
       const browser = new TogetherLobbyBrowser({
         native,
         trustedKeys: identity.trustedKeys,
         randomBytes: this.options.randomBytes,
         now: () => this.now(),
+        ...(friendIds
+          ? {
+              friends: {
+                ids: () => friendIds(account),
+                proof: async (friendId) => {
+                  if (!this.current(generation) || this.deniedHost(friendId))
+                    return null;
+                  const result = await this.options.provisioning.friendship(
+                    friendId,
+                    { online: this.online },
+                  );
+                  return result.ok ? result.value : null;
+                },
+              },
+            }
+          : {}),
         onChange: (summaries) => {
           if (!this.current(generation)) return;
           this.discovered.clear();
@@ -757,7 +788,7 @@ export class TogetherLobbyController implements TogetherLobbyPort {
         throw new Error("host-unavailable");
       this.selected = {
         kind: "together-invitation-v2",
-        audience: "open",
+        audience: summary.audience,
         sessionId: summary.sessionId,
         hostUserId: summary.hostUserId,
         hostDeviceId: summary.hostDeviceId,
@@ -769,10 +800,11 @@ export class TogetherLobbyController implements TogetherLobbyPort {
         ...(summary.plan ? { plan: summary.plan } : {}),
         ...(summary.code ? { code: summary.code } : {}),
       };
+      this.selectedFriendship = summary.friendship;
       this.discovered.clear();
       this.publish({
         phase: "selected",
-        audience: "open",
+        audience: summary.audience,
         discovered: [],
         selection: {
           hostUserId: summary.hostUserId,
@@ -855,10 +887,11 @@ export class TogetherLobbyController implements TogetherLobbyPort {
     try {
       this.assertNotLeft(selected.sessionId);
       verifyCredential(selected.credential, identity.trustedKeys, this.now());
-      const friendship = await this.options.provisioning.friendship(
-        selected.hostUserId,
-        { online: this.online },
-      );
+      const friendship =
+        this.reusableFriendship(selected.hostUserId, identity) ??
+        (await this.options.provisioning.friendship(selected.hostUserId, {
+          online: this.online,
+        }));
       if (!this.current(generation)) return;
       if (!friendship.ok) throw new Error(friendship.error.code);
       if (selected.audience === "friends" && !friendship.value)
@@ -879,6 +912,23 @@ export class TogetherLobbyController implements TogetherLobbyPort {
       await this.start(resources, generation);
     } catch (error) {
       this.failure(error, generation);
+    }
+  }
+  /** The proof that found this partner's host in search, while it is still valid for the pair. */
+  private reusableFriendship(hostUserId: string, identity: ReadyIdentity) {
+    const proof = this.selectedFriendship;
+    if (!proof) return;
+    try {
+      verifyFriendship(
+        proof,
+        identity.trustedKeys,
+        hostUserId,
+        identity.credential.payload.userId,
+        this.now(),
+      );
+      return ok(proof);
+    } catch {
+      return;
     }
   }
   /**
@@ -1028,6 +1078,45 @@ export class TogetherLobbyController implements TogetherLobbyPort {
             nonce,
             this.now(),
             this.hostDetails,
+          );
+        },
+        probeHint: (nonce) => {
+          if (!this.current(generation) || this.snapshot.audience !== "friends")
+            return;
+          return friendsHint(nonce, resources.lobby.pin.hostUserId);
+        },
+        friendsSummary: (nonce, friendship) => {
+          if (!this.current(generation) || this.snapshot.audience !== "friends")
+            return;
+          const host = resources.lobby.pin.hostUserId;
+          const users = (friendship as Signed<FriendshipEvidence> | null)
+            ?.payload?.users;
+          const guest = Array.isArray(users)
+            ? users.find((user) => user !== host)
+            : undefined;
+          if (typeof guest !== "string" || this.deniedHost(guest)) return;
+          try {
+            // Exactly the admission check: authority key, freshness, this pair.
+            verifyFriendship(
+              friendship as Signed<FriendshipEvidence>,
+              resources.identity.trustedKeys,
+              host,
+              guest,
+              this.now(),
+            );
+          } catch {
+            return;
+          }
+          return signSummary(
+            resources.lobby.pin,
+            resources.identity,
+            this.snapshot.selection!.workoutName,
+            resources.lobby.store.current(resources.lobby.pin.sessionId)!
+              .payload.members.length,
+            nonce,
+            this.now(),
+            this.hostDetails,
+            "friends",
           );
         },
         onEvent: (event) => {

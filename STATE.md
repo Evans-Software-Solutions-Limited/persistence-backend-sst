@@ -1,5 +1,34 @@
 # Project memory · persistence-backend-sst
 
+### 2026-11-03 — Nearby search finds a Training partners host for its partners (branch `claude/together-friends-search`)
+
+Brad, 3 Nov: search found only "Open nearby" hosts, so a partner could join a
+Training partners host by QR but not find it. Mobile only, no core, native or
+UI change; each behaviour has a test that fails on the old code.
+- **Protocol** (`lobbyDiscovery.ts`, `lanSession.ts`). Guest probe unchanged. A
+  `friends` host answers it with `together-friends-hint-v1 {nonce, tag}`, tag =
+  base64url SHA-256(`together-friends-hint-v1` ‖ nonce ‖ hostUserId): no
+  session, name, plan or id in clear, new tag per nonce, ≤256 chars, unsigned.
+  The guest tests the tag against its accepted partners (social
+  `/social/friends`, read once per search; failure or offline ⇒ hints ignored),
+  fetches that partner's proof (`provisioning.friendship`, once per partner per
+  search) and sends `together-friends-probe-v1 {nonce, friendship}` on the same
+  socket. The host verifies it exactly as admission does (`verifyFriendship`:
+  authority key, fresh, pair includes the host) plus its own denied pairs, then
+  sends the usual signed summary with `audience: "friends"`; anything else
+  closes with nothing. `readSummary` accepts `friends` only in that flow and
+  only from the matched partner. One friends probe per hinted socket; the
+  friends step has its own 10 s deadline and never ends the search; refresh
+  probes re-run it. Private hosts still never answer; open hosts unchanged;
+  an older guest drops the hint as an invalid summary.
+- **Join** reuses the search's proof while it still verifies (else fetches),
+  and selection carries the summary's audience so friend admission runs.
+- **Composition:** `createTogetherLobby(..., api.togetherSocial)` →
+  controller `friendIds`.
+- Known limit: anyone who already knows a host's user id can recognise its tag
+  in a hint (it never learns the session or plan without the pair's proof).
+  Not device-tested.
+
 ### 2026-11-03 — Android date of birth before 1970 snapped to 1970 (branch `claude/android-dob-min-date`)
 
 A tester on Android picked 1968 in onboarding's date of birth. Cause is in
