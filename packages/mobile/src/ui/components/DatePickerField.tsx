@@ -34,6 +34,9 @@ const MONTHS = [
 
 type CalendarMode = "days" | "months" | "years";
 
+/** Earliest date the Android picker offers when a caller sets only a maximum. */
+const ANDROID_EARLIEST_DATE = new Date(1900, 0, 1, 12);
+
 function validIsoDay(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const [year, month, day] = value.split("-").map(Number);
@@ -666,7 +669,12 @@ export function DatePickerField({
         value: selected,
         mode: "date",
         display: "default",
-        minimumDate: minimum,
+        // ⚠ Never send a maximum without a minimum on Android.
+        // @react-native-community/datetimepicker 8.6.0 (Android 8+) clamps
+        // every pick to its minimum, and with no minimum given it clamps to 0 —
+        // 1 January 1970. A date of birth in 1968 silently became 1970-01-01.
+        // An explicit early minimum keeps the whole range selectable.
+        minimumDate: minimum ?? (maximum ? ANDROID_EARLIEST_DATE : undefined),
         maximumDate: maximum,
         onChange: handleNativeChange,
       });
