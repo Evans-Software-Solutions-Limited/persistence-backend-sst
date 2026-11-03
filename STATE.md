@@ -1,5 +1,17 @@
 # Project memory · persistence-backend-sst
 
+### 2026-11-03 — Android date of birth before 1970 snapped to 1970 (branch `claude/android-dob-min-date`)
+
+A tester on Android picked 1968 in onboarding's date of birth. Cause is in
+`@react-native-community/datetimepicker` 8.6.0 on Android 8+: when a maximum is
+given, an OnDateChanged listener clamps every pick to `minDateWithTimeZone`, which
+returns **0 (1 Jan 1970)** when no minimum was passed. Both DOB fields (Edit Profile,
+which onboarding step 1 reuses, and the Fuel age editor) pass a maximum and no
+minimum. iOS is unaffected, which is why it did not reproduce on Brad's phone.
+`DatePickerField` now sends a 1900-01-01 minimum on Android whenever a caller sets
+only a maximum; the new test fails on the old code. Mobile only, no native change.
+Device check on Android still owed.
+
 ### 2026-11-02 — Per-user AI spend budget (spec-29 Phase 1; PER-103 audit; branch `claude/adoring-wright-d53yzs`)
 
 Brad: the AI bill is ~£35/month with almost no users, and Premium+ pricing needs a
@@ -33,6 +45,13 @@ cost floor. Built spec-29 Phase 1 tasks 1.1–1.5 and 1.8, backend only.
   Cost Explorer / CloudWatch token metrics. Note account `465891279888` (prod) is
   shared with `axel-saas` and `evans-software-solutions`, so filter Bedrock spend by
   product before attributing the £35 to Persistence; dev/staging is `111315405717`.
+- **Review fixes (3 Nov, PR #525):** the cost table moved to its own entry point
+  `@persistence/subscription-catalog/ai-costs`. Re-exporting it from the index
+  broke six mobile Jest suites: Babel injected a `@babel/runtime` helper the
+  catalog can't resolve. Per Inspector Brad, the coach summary now checks the
+  budget only when it must generate, so cached summaries keep working, and the
+  budget follows a scheduled tier once its `effective_at` passes.
+
 
 ### 2026-11-01 — Together TestFlight run 2: partner rows, fill-in, custom exercises, Nearby join (PER-60, branch `claude/compassionate-clarke-eefidd`)
 

@@ -101,6 +101,47 @@ describe("DatePickerField", () => {
     expect(onChange).toHaveBeenCalledWith("1994-03-08");
   });
 
+  it("never sends Android a maximum without a minimum (the 1970 clamp)", () => {
+    // The library clamps Android picks to `minimumDate`, defaulting to the
+    // 1970 epoch when it is missing — a 1968 birth date became 1970-01-01.
+    Object.defineProperty(Platform, "OS", {
+      configurable: true,
+      value: "android",
+    });
+    const open = jest
+      .spyOn(DateTimePickerAndroid, "open")
+      .mockImplementation(() => undefined);
+    const screen = renderWithTheme(
+      <DatePickerField
+        label="Date of birth"
+        value=""
+        maximumDate="2026-11-03"
+        onChange={jest.fn()}
+      />,
+    );
+
+    fireEvent.press(screen.getByTestId("date-picker-field"));
+    const options = open.mock.calls[0]?.[0];
+    expect(options?.minimumDate).toEqual(new Date(1900, 0, 1, 12));
+    expect(options?.maximumDate).toEqual(new Date(2026, 10, 3, 12));
+  });
+
+  it("leaves Android unbounded when the caller sets no bounds", () => {
+    Object.defineProperty(Platform, "OS", {
+      configurable: true,
+      value: "android",
+    });
+    const open = jest
+      .spyOn(DateTimePickerAndroid, "open")
+      .mockImplementation(() => undefined);
+    const screen = renderWithTheme(
+      <DatePickerField label="Date" value="" onChange={jest.fn()} />,
+    );
+
+    fireEvent.press(screen.getByTestId("date-picker-field"));
+    expect(open.mock.calls[0]?.[0]?.minimumDate).toBeUndefined();
+  });
+
   it("uses a taller native drawer where a small iPhone needs it", () => {
     expect(nativeDateSheetHeightPercent(667)).toBe(69);
     expect(nativeDateSheetHeightPercent(956)).toBe(52);
