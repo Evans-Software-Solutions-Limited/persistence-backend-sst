@@ -1,5 +1,17 @@
 # Project memory · persistence-backend-sst
 
+### 2026-11-03 — Android date of birth before 1970 snapped to 1970 (branch `claude/android-dob-min-date`)
+
+A tester on Android picked 1968 in onboarding's date of birth. Cause is in
+`@react-native-community/datetimepicker` 8.6.0 on Android 8+: when a maximum is
+given, an OnDateChanged listener clamps every pick to `minDateWithTimeZone`, which
+returns **0 (1 Jan 1970)** when no minimum was passed. Both DOB fields (Edit Profile,
+which onboarding step 1 reuses, and the Fuel age editor) pass a maximum and no
+minimum. iOS is unaffected, which is why it did not reproduce on Brad's phone.
+`DatePickerField` now sends a 1900-01-01 minimum on Android whenever a caller sets
+only a maximum; the new test fails on the old code. Mobile only, no native change.
+Device check on Android still owed.
+
 ### 2026-11-01 — Nearby guests save on the host's custom exercises; full copies (PER-60, branch `claude/compassionate-clarke-eefidd`)
 
 Brad's decision (31 Oct): admitted partners get the host's custom exercises,
