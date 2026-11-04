@@ -1,3 +1,4 @@
+import { AI_BUDGET_EXHAUSTED_BODY, hasAiBudget } from "../../ai/aiBudget";
 import Elysia, { t } from "elysia";
 import { WorkoutService } from "../../repositories/workoutService";
 import { ExerciseService } from "../../repositories/exerciseService";
@@ -273,6 +274,13 @@ export const workoutLoadoutPreviewHandler = new Elysia()
         if (usedToday >= AI_LOADOUT_REMAP_DAILY_LIMIT) {
           ctx.set.status = 429;
           return { error: "ai_daily_limit" };
+        }
+
+        // Per-user AI spend budget (spec-29 Phase 1): the margin backstop
+        // behind the per-feature ceiling above.
+        if (!(await hasAiBudget(userId, ENDPOINT))) {
+          ctx.set.status = 429;
+          return AI_BUDGET_EXHAUSTED_BODY;
         }
 
         // 8. Stage 1 — one candidate query for the whole adaptation (§ 6.3).

@@ -1,5 +1,23 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+
+// Per-user AI spend budget (spec-29 Phase 1). Allowed by default; a test flips
+// `aiBudget.allowed` to prove the 429 path.
+const aiBudget = vi.hoisted(() => ({
+  allowed: true,
+  calls: [] as unknown[][],
+}));
+vi.mock("../../../ai/aiBudget", () => ({
+  AI_BUDGET_EXHAUSTED_BODY: { error: "ai_budget_exhausted" },
+  hasAiBudget: async (...args: unknown[]) => {
+    aiBudget.calls.push(args);
+    return aiBudget.allowed;
+  },
+}));
+afterEach(() => {
+  aiBudget.allowed = true;
+  aiBudget.calls = [];
+});
 
 // ─── Mocks (hoisted) ─────────────────────────────────────────────────────────
 
@@ -272,6 +290,32 @@ describe("trainersMeGenerateClientAiSummaryHandler", () => {
     expect(recordMock).not.toHaveBeenCalled();
     // At-ceiling: no data read, so no read-audit row.
     expect(auditClientDataReadMock).not.toHaveBeenCalled();
+  });
+
+  it("429s ai_budget_exhausted when a summary must be generated and the budget is spent", async () => {
+    aiBudget.allowed = false;
+    getForDayMock.mockResolvedValue(null);
+    const app = await buildApp();
+    const res = await app.handle(authedRequest());
+    expect(res.status).toBe(429);
+    expect(await res.json()).toEqual({ error: "ai_budget_exhausted" });
+    expect(generateSummaryMock).not.toHaveBeenCalled();
+    expect(getClientDetailMock).not.toHaveBeenCalled();
+    expect(recordMock).not.toHaveBeenCalled();
+    expect(aiBudget.calls.at(-1)?.[1]).toBe(
+      "/trainers/me/clients/:clientId/ai-summary",
+    );
+  });
+
+  it("still serves a cached summary when the budget is spent — a cache hit costs no AI", async () => {
+    aiBudget.allowed = false;
+    getForDayMock.mockResolvedValue({ ...CACHED_ROW, refreshCount: 1 });
+    const app = await buildApp();
+    const res = await app.handle(authedRequest());
+    expect(res.status).toBe(200);
+    expect((await json(res)).data.summary).toEqual(CACHED_ROW.summary);
+    expect(generateSummaryMock).not.toHaveBeenCalled();
+    expect(aiBudget.calls).toHaveLength(0);
   });
 
   it("no row → auto-generates, inserts refresh_count=0, records usage, canManualRefresh true", async () => {

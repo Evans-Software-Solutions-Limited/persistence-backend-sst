@@ -1,3 +1,4 @@
+import { AI_BUDGET_EXHAUSTED_BODY, hasAiBudget } from "../../ai/aiBudget";
 import Elysia, { t } from "elysia";
 import { eq } from "drizzle-orm";
 import { profiles } from "@persistence/db";
@@ -145,6 +146,13 @@ export const trainersMeGenerateClientAiSummaryHandler = new Elysia()
               canManualRefresh,
             } satisfies AiSummaryModule,
           };
+        }
+
+        // Per-user AI spend budget (spec-29 Phase 1): only the generate branch
+        // spends AI, so a coach over budget can still open cached summaries.
+        if (!(await hasAiBudget(trainerId, AI_COACH_SUMMARY_ENDPOINT))) {
+          ctx.set.status = 429;
+          return AI_BUDGET_EXHAUSTED_BODY;
         }
 
         // 6. Generate — assemble modules a–f from the SAME aggregate the card
