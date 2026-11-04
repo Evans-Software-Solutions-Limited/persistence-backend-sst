@@ -731,6 +731,40 @@ describe("Training partners search (Brad, 3 Nov; Inspector Brad, PR #527)", () =
       readSummary(frame(), pin.sessionId, nonce, trustedKeys, now, friendId),
     ).toThrow("invalid-summary");
   });
+  it("reads every page of partners, past 200, and stops on a repeated cursor", async () => {
+    const partner = (n: number) =>
+      `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+    const pages = 15;
+    const friends = jest.fn(async (cursor?: string) => {
+      const page = cursor ? Number(cursor) : 0;
+      return {
+        ok: true as const,
+        value: {
+          data: Array.from({ length: 20 }, (_, k) => ({
+            userId: id(1),
+            friendId: partner(page * 20 + k),
+            status: "accepted",
+          })),
+          nextCursor: page + 1 < pages ? String(page + 1) : null,
+        },
+      };
+    });
+    const all = await acceptedFriendIds({ friends } as never, id(1));
+    expect(all).toHaveLength(pages * 20);
+    expect(all).toContain(partner(pages * 20 - 1));
+    // A server that keeps handing back the same cursor can't loop the search.
+    const stuck = jest.fn(async () => ({
+      ok: true as const,
+      value: {
+        data: [{ userId: id(1), friendId: id(2), status: "accepted" }],
+        nextCursor: "same",
+      },
+    }));
+    await expect(
+      acceptedFriendIds({ friends: stuck } as never, id(1)),
+    ).resolves.toEqual([id(2)]);
+    expect(stuck).toHaveBeenCalledTimes(2);
+  });
   it("lists accepted partners from every page, in both directions", async () => {
     const page = (data: object[], nextCursor: string | null) =>
       ({ ok: true, value: { data, nextCursor } }) as never;

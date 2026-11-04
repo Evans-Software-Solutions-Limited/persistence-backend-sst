@@ -106,21 +106,31 @@ export function readFriendsHint(
     /* Anything else is a summary or nothing. */
   }
 }
+/**
+ * Pages of partners read at most: a safety bound only (5,000 partners at the
+ * API's default page size), never a product limit. The list loads off the
+ * probe socket, so reading it all costs the search nothing.
+ */
+export const FRIEND_PAGES_MAX = 250;
 /** Accepted training partners' user ids, every page; the social API lists both directions. */
 export async function acceptedFriendIds(
   social: Pick<TogetherSocialApi, "friends">,
   userId: string,
 ): Promise<string[]> {
   const ids = new Set<string>();
+  const cursors = new Set<string>();
   let cursor: string | undefined;
-  for (let page = 0; page < 10; page++) {
+  for (let page = 0; page < FRIEND_PAGES_MAX; page++) {
     const result = await social.friends(cursor);
     if (!result.ok) throw new Error("friends-unavailable");
     for (const r of result.value.data)
       if (r.status === "accepted")
         ids.add(r.userId === userId ? r.friendId : r.userId);
-    if (!result.value.nextCursor) break;
-    cursor = result.value.nextCursor;
+    const next = result.value.nextCursor;
+    // Until the server says there is no more; a repeated cursor would loop.
+    if (!next || cursors.has(next)) break;
+    cursors.add(next);
+    cursor = next;
   }
   ids.delete(userId);
   return [...ids];
