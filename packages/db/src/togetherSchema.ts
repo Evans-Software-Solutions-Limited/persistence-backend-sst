@@ -36,6 +36,18 @@ export interface TogetherExerciseDefinition {
     | null;
   primaryMuscles: string[];
   createdBy: string | null;
+  /**
+   * The rest of the exercise as it was when access was authorized (PER-60).
+   * A partner's private copy is made from this snapshot, never from the live
+   * row. Absent on snapshots taken before these fields existed.
+   */
+  description?: string | null;
+  instructions?: string | null;
+  difficultyLevel?: "beginner" | "intermediate" | "advanced" | "expert" | null;
+  secondaryMuscles?: string[] | null;
+  equipmentRequired?: string[] | null;
+  videoUrl?: string | null;
+  thumbnailUrl?: string | null;
 }
 export interface TogetherSet {
   setId: string;

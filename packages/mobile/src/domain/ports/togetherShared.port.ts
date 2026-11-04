@@ -1,3 +1,6 @@
+import type { TogetherExerciseShare } from "@/domain/models/togetherIdentity";
+import type { ExerciseCategory } from "@/domain/models/exercise";
+
 export interface TogetherSharedPlan {
   name: string;
   exercises: {
@@ -6,6 +9,12 @@ export interface TogetherSharedPlan {
     order: number;
     targetSets: number;
   }[];
+}
+/** What a guest needs to show a host's custom exercise it can't see (PER-60). */
+export interface TogetherSharedExerciseDefinition {
+  name: string;
+  category: ExerciseCategory | null;
+  primaryMuscles: string[];
 }
 export interface TogetherSharingConsent {
   numbers: boolean;
@@ -78,6 +87,12 @@ export interface TogetherSharedSnapshot {
     grantVersion: number;
     expectedVersion: number;
   }[];
+  /** The host's latest share of its custom exercises with this guest. */
+  exerciseShare?: TogetherExerciseShare | null;
+  /** The host's custom exercises in the plan, by exercise id, for display. */
+  exerciseDefinitions?: Readonly<
+    Record<string, TogetherSharedExerciseDefinition>
+  >;
 }
 export interface TogetherSharedPort {
   getSnapshot(): TogetherSharedSnapshot;

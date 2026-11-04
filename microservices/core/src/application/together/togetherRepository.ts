@@ -34,6 +34,10 @@ import { canInteract, areFriends } from "../social/socialRepository";
 import type { TogetherCommand } from "./types";
 import { evaluateTogetherEligibility } from "../entitlement/togetherEligibility";
 import { pagePosition, nextPage } from "../social/pagination";
+import {
+  togetherDefinition,
+  togetherDefinitionColumns,
+} from "./exerciseRecording";
 import { ExerciseRepository } from "../repositories/exerciseRepository";
 import { placesRepository } from "../places/placesRepository";
 import { readPreviousValues } from "./previousValues";
@@ -411,12 +415,7 @@ export class TogetherRepository {
     const result = { ...existing };
     for (const id of unique) {
       const [source] = await tx
-        .select({
-          name: exercises.name,
-          category: exercises.category,
-          primaryMuscles: exercises.primaryMuscles,
-          createdBy: exercises.createdBy,
-        })
+        .select(togetherDefinitionColumns)
         .from(exercises)
         .where(eq(exercises.id, id))
         .for("key share");
@@ -434,7 +433,7 @@ export class TogetherRepository {
           );
         requireTogether(visible, "INVALID_SCHEMA", 400);
       }
-      result[id] ??= { ...source, primaryMuscles: source.primaryMuscles ?? [] };
+      result[id] ??= togetherDefinition(source);
     }
     return result;
   }

@@ -12,7 +12,11 @@ import {
   withActors,
   type TogetherTx,
 } from "./shared";
-import { materializeTogetherExercise } from "./exerciseRecording";
+import {
+  materializeTogetherExercise,
+  togetherDefinition,
+  togetherDefinitionColumns,
+} from "./exerciseRecording";
 import { areFriends } from "../social/socialRepository";
 import { nextPage, pagePosition } from "../social/pagination";
 import { ExerciseRepository } from "../repositories/exerciseRepository";
@@ -28,13 +32,7 @@ async function validateSharedExercises(
   const repo = new ExerciseRepository();
   const found = ids.length
     ? await tx
-        .select({
-          id: exercises.id,
-          createdBy: exercises.createdBy,
-          name: exercises.name,
-          category: exercises.category,
-          primaryMuscles: exercises.primaryMuscles,
-        })
+        .select({ id: exercises.id, ...togetherDefinitionColumns })
         .from(exercises)
         .where(
           and(
@@ -185,10 +183,8 @@ export const templatesRepository = {
             ownedIds.set(
               source.id,
               await materializeTogetherExercise(tx, actor, source.id, {
-                name: source.name,
+                ...togetherDefinition(source),
                 category: source.category ?? "strength",
-                primaryMuscles: source.primaryMuscles ?? [],
-                createdBy: source.createdBy,
               }),
             );
           const input = row.plan.exercises.map((e) => ({
