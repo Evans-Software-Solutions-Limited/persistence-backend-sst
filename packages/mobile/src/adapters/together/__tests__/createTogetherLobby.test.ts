@@ -114,7 +114,7 @@ it("gives search the account's accepted training partners from the social API, a
       nextCursor: null,
     },
   }));
-  create(provisioning, "prod", true, undefined, "android", {
+  create(provisioning, "prod", true, undefined, "android", undefined, {
     friends,
   } as never);
   const { friendIds } = mockConstruct.mock.calls[0][0];

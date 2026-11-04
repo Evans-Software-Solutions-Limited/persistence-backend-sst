@@ -94,6 +94,13 @@ const migration = readFileSync(
   ),
   "utf8",
 );
+const sharedExercisesMigration = readFileSync(
+  new URL(
+    "../../../../../../supabase/migrations/20261101120000_together_offline_shared_exercises.sql",
+    import.meta.url,
+  ),
+  "utf8",
+);
 const offlineMigration = readFileSync(
   new URL(
     "../../../../../../supabase/migrations/20260930160418_together_offline_recovery.sql",
@@ -158,6 +165,8 @@ beforeAll(async () => {
   );
   await pg.exec(offlineMigration);
   await pg.exec(offlineMigration);
+  await pg.exec(sharedExercisesMigration);
+  await pg.exec(sharedExercisesMigration);
   await pg.exec(
     readFileSync(
       new URL(

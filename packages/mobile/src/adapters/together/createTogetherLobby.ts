@@ -4,6 +4,8 @@ import type { TogetherLobbyPort } from "@/domain/ports/togetherLobby.port";
 import type { TogetherRecoveryApi } from "@/domain/ports/togetherOfflineApi.port";
 import type { TogetherSocialApi } from "@/domain/ports/togetherSocial.port";
 import type { TogetherLobbyControllerOptions } from "./lobbyController";
+import type { Exercise } from "@/domain/models/exercise";
+import { ownCustomExercises } from "./ownCustomExercises";
 
 /** Explicit composition: the app-wide update gate owns native binary compatibility. */
 export function createTogetherLobby(
@@ -13,6 +15,8 @@ export function createTogetherLobby(
   recovery?: TogetherRecoveryApi,
   /** `Platform.OS`; iOS starts on the LAN module's peer-to-peer Wi-Fi (PER-64). */
   platform?: string,
+  /** The cached exercise library; a host shares its own custom ones (PER-60). */
+  exercises?: () => readonly Exercise[],
   /** Accepted training partners, so search can find a Training partners host. */
   social?: Pick<TogetherSocialApi, "friends">,
 ): TogetherLobbyPort | undefined {
@@ -68,6 +72,9 @@ export function createTogetherLobby(
         randomBytes: getRandomBytes,
         randomUUID,
         recovery,
+        customExercises: exercises
+          ? (ownerId, ids) => ownCustomExercises(exercises(), ownerId, ids)
+          : undefined,
         ...(social
           ? {
               friendIds: (account: string) =>
