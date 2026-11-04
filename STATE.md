@@ -34,10 +34,11 @@ UI change; each behaviour has a test that fails on the old code.
   partner step let listed hosts miss their refresh and expire). The partner
   list loads at search start, never on the socket (a hint that beats it is
   probed again once it loads); the proof is fetched from our server as soon as
-  a hint matches; the step from hint to summary is capped at
-  `REFRESH_MARGIN - 1 s` (4 s) and never ends the search. A host that proved
-  itself but missed the cap only because our proof fetch was slow is probed
-  once more when the cached proof lands (still one fetch per partner per search).
+  a hint matches; the whole slot, connect included, is capped at
+  `REFRESH_MARGIN - 1 s` (4 s) counted from when it opened (not from the hint),
+  and never ends the search. A matched partner host that runs out of time gets
+  one more slot of its own per search (after our proof lands if that was the
+  wait); a second stall gets nothing.
   Private hosts still never answer; open hosts unchanged; an older guest drops
   the hint as an invalid summary.
 - **Join** reuses the search's proof while it still verifies (else fetches),
