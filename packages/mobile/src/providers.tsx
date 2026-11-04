@@ -131,6 +131,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
       togetherEnabled,
       api.togetherOffline?.recovery,
       Platform.OS,
+      () => storage.getCachedExercises(),
     );
     const togetherCloud = createTogetherCloud(
       api.togetherCloud,

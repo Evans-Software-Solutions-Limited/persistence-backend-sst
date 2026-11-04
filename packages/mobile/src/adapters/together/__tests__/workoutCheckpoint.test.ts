@@ -33,6 +33,7 @@ import type {
   TogetherRecoveryResult,
 } from "../../../domain/ports/togetherOfflineApi.port";
 import { commandFromEnvelope, readOwnerCommand } from "../localCommand";
+import { buildExerciseShare } from "../exerciseShare";
 import type { WorkoutSession } from "../../../domain/models/session";
 const userId = randomUUID();
 const seed = new Uint8Array(32).fill(42);
@@ -1429,6 +1430,84 @@ describe("own workout durable checkpoint (real SQLite and signatures)", () => {
       expect(await runtime.review(userId, s.id)).toEqual(saved);
       expect(completions).toHaveLength(1);
       expect(() => saveCurrent(runtime, userId, s)).toThrow("workout-finished");
+    });
+    it("uploads the host's latest exercise share for this guest with the recovery (PER-60)", async () => {
+      const bodies: Parameters<TogetherRecoveryApi["upload"]>[1][] = [];
+      const upload = api.upload;
+      api.upload = async (key, body) => {
+        bodies.push(JSON.parse(JSON.stringify(body)));
+        return upload(key, body);
+      };
+      const hostSeed = new Uint8Array(32).fill(9);
+      const hostCredential = signPayload<Credential>(
+        {
+          kind: "together-device-v1",
+          keyId: "test",
+          userId: randomUUID(),
+          deviceId: randomUUID(),
+          publicKey: publicKeyPem(hostSeed),
+          issuedAt: 1,
+          expiresAt: 9999999999999,
+        },
+        new Uint8Array(32).fill(6),
+      );
+      const issue = (
+        issuedAt: number,
+        to = userId,
+        sessionId = authority!.sessionId,
+      ) => {
+        const { credential: c, proof } = buildExerciseShare({
+          seed: hostSeed,
+          credential: hostCredential,
+          sessionId,
+          hostUserId: hostCredential.payload.userId,
+          hostDeviceId: hostCredential.payload.deviceId,
+          userId: to,
+          exerciseIds: [draft().exercises[0].exerciseId],
+          definitions: {},
+          issuedAt,
+        });
+        return { credential: c, proof };
+      };
+      // Held at promotion, then replaced by the host's re-sent share.
+      authority!.exerciseShare = issue(1);
+      const s = draft();
+      await runtime.promote(s);
+      const fresh = issue(2);
+      authority!.exerciseShare = fresh;
+      runtime.syncExerciseShare(userId);
+      // One for another guest or another session is never kept.
+      authority!.exerciseShare = issue(3, randomUUID());
+      runtime.syncExerciseShare(userId);
+      authority!.exerciseShare = issue(4, userId, randomUUID());
+      runtime.syncExerciseShare(userId);
+      await runtime.review(userId, s.id);
+      expect(bodies).toHaveLength(1);
+      expect(bodies[0].exerciseShare).toEqual(fresh);
+      // The share is the only addition to the upload.
+      expect(Object.keys(bodies[0]).sort()).toEqual([
+        "commands",
+        "credential",
+        "executionId",
+        "exerciseShare",
+        "plan",
+        "sessionId",
+        "startedAt",
+      ]);
+    });
+    it("uploads no exercise share when the host sent none", async () => {
+      const bodies: Parameters<TogetherRecoveryApi["upload"]>[1][] = [];
+      const upload = api.upload;
+      api.upload = async (key, body) => {
+        bodies.push(body);
+        return upload(key, body);
+      };
+      const s = draft();
+      await runtime.promote(s);
+      runtime.syncExerciseShare(userId);
+      await runtime.review(userId, s.id);
+      expect(bodies).toHaveLength(1);
+      expect(Object.hasOwn(bodies[0], "exerciseShare")).toBe(false);
     });
     it("keeps blank and partial sets, explicitly finishes empty without fabricated weight/reps", async () => {
       const s = draft();
