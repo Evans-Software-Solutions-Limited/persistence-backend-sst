@@ -10,24 +10,36 @@ UI change; each behaviour has a test that fails on the old code.
   base64url SHA-256(`together-friends-hint-v1` ‖ nonce ‖ hostUserId): no
   session, name, plan or id in clear, new tag per nonce, ≤256 chars, unsigned.
   The guest tests the tag against its accepted partners (social
-  `/social/friends`, read once per search; failure or offline ⇒ hints ignored),
-  fetches that partner's proof (`provisioning.friendship`, once per partner per
-  search) and sends `together-friends-probe-v1 {nonce, friendship}` on the same
-  socket. The host verifies it exactly as admission does (`verifyFriendship`:
-  authority key, fresh, pair includes the host) plus its own denied pairs, then
-  sends the usual signed summary with `audience: "friends"`; anything else
-  closes with nothing. `readSummary` accepts `friends` only in that flow and
-  only from the matched partner. One friends probe per hinted socket; the
-  friends step has its own 10 s deadline and never ends the search; refresh
-  probes re-run it. Private hosts still never answer; open hosts unchanged;
-  an older guest drops the hint as an invalid summary.
+  `/social/friends`, read once per search; failure or offline ⇒ hints ignored).
+- **Partner exchange** (`friendsDiscovery.ts`, after Inspector Brad on PR
+  #527: an unsigned hint let any device that knew P's id pose as P, collect
+  G's identity and replay G's proof to the real P). On a match the guest sends
+  `challenge {nonce, eph}` (fresh X25519 key, nothing else). The host replies
+  `response {nonce, eph, sealed}`: its server credential plus a device-key
+  signature over the transcript hash (session, nonce, both ephemerals), sealed
+  with ChaCha20-Poly1305 under HKDF(X25519 secret ‖ hostUserId, transcript).
+  The guest checks credential (trusted authority, fresh, userId = matched
+  partner) and signature; only then fetches the proof (once per partner per
+  search) and sends it sealed (`proof`). The host opens it, verifies it as
+  admission does plus its denied pairs, and returns the signed summary sealed
+  to the guest (`summary`); anything else closes with nothing. A relay sees
+  only ciphertext; a stranger cannot open the response without P's id; a
+  replayed proof cannot be opened under the host's next ephemeral. Same
+  primitives as `security/channel.ts`, no new dependency. Frames measured: 146,
+  ~1.1 k, ~0.5 k, ≤ ~8.1 k (bounds 256/4096/2048/9000; Nearby framing 64 KiB).
+  `readSummary` accepts `friends` only in that flow, only from the matched
+  partner and the device that signed the response. One exchange per hinted
+  socket; 10 s deadline that never ends the search; refresh re-runs it.
+  Private hosts still never answer; open hosts unchanged; an older guest drops
+  the hint as an invalid summary.
 - **Join** reuses the search's proof while it still verifies (else fetches),
   and selection carries the summary's audience so friend admission runs.
 - **Composition:** `createTogetherLobby(..., api.togetherSocial)` →
   controller `friendIds`.
 - Known limit: anyone who already knows a host's user id can recognise its tag
-  in a hint (it never learns the session or plan without the pair's proof).
-  Not device-tested.
+  in a hint and open that host's response (its device credential); it never
+  learns the session, plan or a guest's identity. Not device-tested; the larger
+  frames over real Nearby/LAN are unproven.
 
 ### 2026-11-03 — Android date of birth before 1970 snapped to 1970 (branch `claude/android-dob-min-date`)
 

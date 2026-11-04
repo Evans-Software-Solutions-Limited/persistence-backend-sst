@@ -50,6 +50,7 @@ import {
 } from "./lobbyInvitation";
 import { togetherErrorCode, togetherErrorMessage } from "./errorCode";
 import { ok } from "../../shared/errors/result";
+import { FriendsHostExchange } from "./friendsDiscovery";
 import type { TogetherLogSink } from "@/diagnostics/together/togetherLog";
 
 export interface TogetherLobbyControllerOptions {
@@ -1080,44 +1081,41 @@ export class TogetherLobbyController implements TogetherLobbyPort {
             this.hostDetails,
           );
         },
-        probeHint: (nonce) => {
+        probeFriends: (nonce) => {
           if (!this.current(generation) || this.snapshot.audience !== "friends")
             return;
-          return friendsHint(nonce, resources.lobby.pin.hostUserId);
-        },
-        friendsSummary: (nonce, friendship) => {
-          if (!this.current(generation) || this.snapshot.audience !== "friends")
-            return;
-          const host = resources.lobby.pin.hostUserId;
-          const users = (friendship as Signed<FriendshipEvidence> | null)
-            ?.payload?.users;
-          const guest = Array.isArray(users)
-            ? users.find((user) => user !== host)
-            : undefined;
-          if (typeof guest !== "string" || this.deniedHost(guest)) return;
-          try {
-            // Exactly the admission check: authority key, freshness, this pair.
-            verifyFriendship(
-              friendship as Signed<FriendshipEvidence>,
-              resources.identity.trustedKeys,
-              host,
-              guest,
-              this.now(),
-            );
-          } catch {
-            return;
-          }
-          return signSummary(
-            resources.lobby.pin,
-            resources.identity,
-            this.snapshot.selection!.workoutName,
-            resources.lobby.store.current(resources.lobby.pin.sessionId)!
-              .payload.members.length,
+          const pin = resources.lobby.pin;
+          return new FriendsHostExchange({
+            hint: friendsHint(nonce, pin.hostUserId),
             nonce,
-            this.now(),
-            this.hostDetails,
-            "friends",
-          );
+            sessionId: pin.sessionId,
+            hostUserId: pin.hostUserId,
+            credential: resources.identity.credential,
+            seed: resources.identity.seed,
+            trustedKeys: resources.identity.trustedKeys,
+            randomBytes: this.options.randomBytes,
+            now: () => this.now(),
+            // Called only for a partner whose sealed proof verified.
+            summary: (guest) => {
+              if (
+                !this.current(generation) ||
+                this.snapshot.audience !== "friends" ||
+                this.deniedHost(guest)
+              )
+                return;
+              return signSummary(
+                pin,
+                resources.identity,
+                this.snapshot.selection!.workoutName,
+                resources.lobby.store.current(pin.sessionId)!.payload.members
+                  .length,
+                nonce,
+                this.now(),
+                this.hostDetails,
+                "friends",
+              );
+            },
+          });
         },
         onEvent: (event) => {
           if (this.current(generation))

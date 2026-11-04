@@ -16,6 +16,7 @@ import {
 import { object, uuid } from "./security/schema";
 import { encode64 } from "./security/encoding";
 import { getCryptoBackend } from "./security/cryptoBackend";
+import { FriendsGuestExchange } from "./friendsDiscovery";
 import type { TogetherSocialApi } from "../../domain/ports/togetherSocial.port";
 import { isHostDetails } from "./planDetails";
 import type {
@@ -30,7 +31,7 @@ export const REFRESH_MARGIN = 5_000;
 export const NATIVE_CONNECT_DEADLINE = 30_000;
 /**
  * A Training partners host answers a probe with a hint; the guest then has
- * this long to match it against its partners and send a friendship proof.
+ * this long to match it, verify the host and get its summary (friendsDiscovery.ts).
  */
 export const FRIENDS_STEP_DEADLINE = 10_000;
 const NONCE = /^[A-Za-z0-9_-]{43}$/;
@@ -101,32 +102,6 @@ export function readFriendsHint(
       return p.tag;
   } catch {
     /* Anything else is a summary or nothing. */
-  }
-}
-/** The guest's second frame, sent only after a hint matched one of its partners. */
-export function friendsProbe(
-  nonce: string,
-  friendship: Signed<FriendshipEvidence>,
-): string {
-  return JSON.stringify({
-    kind: "together-friends-probe-v1",
-    nonce,
-    friendship,
-  });
-}
-/** Host side: the proof comes back unverified; the caller verifies it exactly as admission does. */
-export function readFriendsProbe(frame: string, nonce: string): unknown {
-  if (frame.length > 2048) return;
-  try {
-    const p: unknown = JSON.parse(frame);
-    if (
-      object(p, ["kind", "nonce", "friendship"]) &&
-      p.kind === "together-friends-probe-v1" &&
-      p.nonce === nonce
-    )
-      return p.friendship;
-  } catch {
-    /* Not a friends probe: no summary. */
   }
 }
 /** Accepted training partners' user ids, every page; the social API lists both directions. */
@@ -300,9 +275,13 @@ export class TogetherLobbyBrowser {
     peerId?: string;
     /** A re-probe of a listed host: its failure drops that row only. */
     refresh?: boolean;
-    /** Training partners step: matching a hint, then waiting for the summary. */
-    stage?: "matching" | "friends";
+    /**
+     * Training partners step: matching a hint, waiting for the host to prove
+     * it is that partner, fetching the proof, then waiting for the summary.
+     */
+    stage?: "matching" | "challenged" | "proving" | "friends";
     friendId?: string;
+    exchange?: FriendsGuestExchange;
     friendship?: Signed<FriendshipEvidence>;
   };
   private deadline?: ReturnType<typeof setTimeout>;
@@ -414,21 +393,28 @@ export class TogetherLobbyBrowser {
           return;
         }
       }
-      // A host that speaks again while its hint is being matched gets nothing.
-      if (active.stage === "matching") {
+      if (active.stage === "challenged") {
+        void this.prove(active, event.frame);
+        return;
+      }
+      // A host that speaks out of turn in the partners step gets nothing.
+      if (active.stage === "matching" || active.stage === "proving") {
         void this.finish(active);
         return;
       }
       try {
         this.refreshing.delete(active.endpointId);
+        const exchange = active.exchange;
         const summary = readSummary(
-          event.frame,
+          exchange ? exchange.summary(event.frame) : event.frame,
           active.sessionId,
           active.nonce,
           this.options.trustedKeys,
           this.options.now(),
           active.friendId,
         );
+        if (exchange && summary.hostDeviceId !== exchange.hostDeviceId)
+          throw new Error("invalid-summary");
         this.summaries.set(
           active.endpointId,
           active.friendship
@@ -516,9 +502,9 @@ export class TogetherLobbyBrowser {
   }
   /**
    * A Training partners host answered with a hint. If the tag is one of this
-   * account's partners, send that partner's friendship proof on the same
-   * socket; the host replies with its signed summary only if the proof is
-   * valid for the pair. Anything else ends the probe as if no host answered.
+   * account's partners, challenge the host with a fresh ephemeral key and
+   * nothing else (friendsDiscovery.ts). Anything else ends the probe as if no
+   * host answered.
    */
   private async matchFriend(
     active: NonNullable<TogetherLobbyBrowser["active"]>,
@@ -537,28 +523,61 @@ export class TogetherLobbyBrowser {
     const ids = await this.friendIds;
     if (this.active !== active) return;
     const friendId = ids.find((id) => friendsHintTag(active.nonce, id) === tag);
-    let friendship: Signed<FriendshipEvidence> | null = null;
-    if (friendId) {
-      let proof = this.proofs.get(friendId);
-      if (!proof) {
-        proof = friends.proof(friendId).catch(() => null);
-        this.proofs.set(friendId, proof);
-      }
-      friendship = await proof;
+    if (!friendId) {
+      void this.finish(active);
+      return;
     }
+    active.stage = "challenged";
+    active.friendId = friendId;
+    active.exchange = new FriendsGuestExchange({
+      nonce: active.nonce,
+      sessionId: active.sessionId,
+      friendId,
+      trustedKeys: this.options.trustedKeys,
+      randomBytes: this.options.randomBytes,
+      now: this.options.now,
+    });
+    this.send(active, active.exchange.challenge());
+  }
+  /**
+   * The host's response must prove, with its server-issued credential, that
+   * it is the matched partner's device for this exchange. Only then is the
+   * partner's proof fetched and sent, sealed to that host.
+   */
+  private async prove(
+    active: NonNullable<TogetherLobbyBrowser["active"]>,
+    frame: string,
+  ) {
+    active.stage = "proving";
+    const friendId = active.friendId!;
+    try {
+      active.exchange!.accept(frame);
+    } catch {
+      void this.finish(active);
+      return;
+    }
+    let proof = this.proofs.get(friendId);
+    if (!proof) {
+      proof = this.options.friends!.proof(friendId).catch(() => null);
+      this.proofs.set(friendId, proof);
+    }
+    const friendship = await proof;
     if (this.active !== active) return;
-    if (!friendId || !friendship) {
+    if (!friendship) {
       void this.finish(active);
       return;
     }
     active.stage = "friends";
-    active.friendId = friendId;
     active.friendship = friendship;
-    void this.options.native
-      .send(active.peerId!, friendsProbe(active.nonce, friendship))
-      .catch(() => {
-        if (this.active === active) void this.finish(active);
-      });
+    this.send(active, active.exchange!.proof(friendship));
+  }
+  private send(
+    active: NonNullable<TogetherLobbyBrowser["active"]>,
+    frame: string,
+  ) {
+    void this.options.native.send(active.peerId!, frame).catch(() => {
+      if (this.active === active) void this.finish(active);
+    });
   }
   private release() {
     clearTimeout(this.reserved);
@@ -567,6 +586,7 @@ export class TogetherLobbyBrowser {
   }
   private async finish(active: NonNullable<TogetherLobbyBrowser["active"]>) {
     if (this.active !== active) return;
+    active.exchange?.dispose();
     clearTimeout(this.deadline);
     // Keep ownership until disconnect resolves, and ignore repeated frames.
     this.active = undefined;
@@ -600,6 +620,7 @@ export class TogetherLobbyBrowser {
     this.refreshing.clear();
     this.friendIds = undefined;
     this.proofs.clear();
+    this.active?.exchange?.dispose();
     this.active = undefined;
     this.stopping = this.options.native.stop();
     await this.stopping;

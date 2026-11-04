@@ -5,9 +5,7 @@ import {
   acceptedFriendIds,
   friendsHint,
   friendsHintTag,
-  friendsProbe,
   readFriendsHint,
-  readFriendsProbe,
   readProbe,
   readSummary,
   signSummary,
@@ -23,6 +21,7 @@ import {
   type Signed,
 } from "../security/identity";
 import { encode64 } from "../security/encoding";
+import { FriendsHostExchange } from "../friendsDiscovery";
 import type {
   TogetherLanEvent,
   TogetherLanNative,
@@ -665,18 +664,19 @@ describe("bounded anonymous network browser lifecycle", () => {
     expect(errors).not.toHaveBeenCalled();
   });
 });
-describe("Training partners search (Brad, 3 Nov)", () => {
+describe("Training partners search (Brad, 3 Nov; Inspector Brad, PR #527)", () => {
   const friendId = pin.hostUserId;
-  const proof = {
-    payload: {
-      kind: "together-friendship-v1",
+  const guestId = id(9);
+  const proof = signPayload(
+    {
+      kind: "together-friendship-v1" as const,
       keyId: "issuer",
-      users: [friendId, id(9)],
+      users: [friendId, guestId] as [string, string],
       issuedAt: now - 100,
       expiresAt: now + 60000,
     },
-    signature: "sig",
-  } as unknown as Signed<FriendshipEvidence>;
+    issuer,
+  ) as Signed<FriendshipEvidence>;
   it("the hint names no session, host or plan, and its tag changes with every nonce", () => {
     const other = encode64(randomBytes(32), true);
     const hint = friendsHint(nonce, friendId);
@@ -706,18 +706,6 @@ describe("Training partners search (Brad, 3 Nov)", () => {
       expect(readFriendsHint(bad, nonce)).toBeUndefined();
     // A hint is never mistaken for a probe.
     expect(readProbe(hint)).toBeUndefined();
-  });
-  it("reads a friends probe only for its own nonce and within its bound", () => {
-    const frame = friendsProbe(nonce, proof);
-    expect(readFriendsProbe(frame, nonce)).toEqual(proof);
-    for (const bad of [
-      friendsProbe(encode64(randomBytes(32), true), proof),
-      "x".repeat(2049),
-      "{",
-      JSON.stringify({ kind: "together-probe-v1", nonce, friendship: proof }),
-      JSON.stringify({ ...JSON.parse(frame), extra: 1 }),
-    ])
-      expect(readFriendsProbe(bad, nonce)).toBeUndefined();
   });
   it("accepts a partners summary only in the friends flow and only from the matched partner", () => {
     const partners = signSummary(
@@ -775,10 +763,11 @@ describe("Training partners search (Brad, 3 Nov)", () => {
     let emit: (e: TogetherLanEvent) => void, native: TogetherLanNative;
     let browser: TogetherLobbyBrowser, clock: number;
     let changes: jest.Mock, errors: jest.Mock;
-    let ids: jest.Mock, proofFor: jest.Mock;
+    let ids: jest.Mock, proofFor: jest.Mock, guests: string[];
     beforeEach(() => {
       jest.useFakeTimers();
       clock = now;
+      guests = [];
       changes = jest.fn();
       errors = jest.fn();
       ids = jest.fn(async () => [id(8), friendId]);
@@ -809,32 +798,77 @@ describe("Training partners search (Brad, 3 Nov)", () => {
       await browser.stop().catch(() => {});
       jest.useRealTimers();
     });
+    const wire = () => jest.mocked(native.send).mock.calls.map(([, f]) => f);
     const sent = () =>
-      jest
-        .mocked(native.send)
-        .mock.calls.map(([, f]) => JSON.parse(f) as Record<string, unknown>);
+      wire().map((f) => JSON.parse(f) as Record<string, unknown>);
     const challenge = () => sent().at(-1)!.nonce as string;
-    /** Host side: connect, then answer the probe with a partners hint. */
-    async function partnersHost(peerId: string, host = friendId) {
-      emit({ type: "connected", peerId, incoming: false });
-      const n = challenge();
-      emit({ type: "frame", peerId, frame: friendsHint(n, host) });
-      await settle();
-      return n;
-    }
     const partnersSummary = (n: string) =>
       signSummary(pin, identity, "Partners", 1, n, clock, undefined, "friends");
-    it("a partner's hint gets the friendship proof, and the partners summary is listed with that proof", async () => {
+    /** The real host side of the exchange, as P's phone runs it. */
+    const exchange = (
+      n: string,
+      who: { hostUserId: string; credential: typeof identity.credential },
+      deviceSeed = seed,
+    ) =>
+      new FriendsHostExchange({
+        hint: friendsHint(n, who.hostUserId),
+        nonce: n,
+        sessionId: pin.sessionId,
+        hostUserId: who.hostUserId,
+        credential: who.credential,
+        seed: deviceSeed,
+        trustedKeys,
+        randomBytes,
+        now: () => clock,
+        summary: (guest) => {
+          guests.push(guest);
+          return partnersSummary(n);
+        },
+      });
+    /** Connect, answer the probe with a hint; returns the host side. */
+    async function partnersHost(
+      peerId: string,
+      make = (n: string) =>
+        exchange(n, { hostUserId: friendId, credential: identity.credential }),
+    ) {
+      emit({ type: "connected", peerId, incoming: false });
+      const n = challenge();
+      const side = make(n);
+      emit({ type: "frame", peerId, frame: side.hint });
+      await settle();
+      return side;
+    }
+    /** Feed the guest's last frame to the host and its reply back. */
+    async function pump(peerId: string, side: FriendsHostExchange) {
+      const reply = side.receive(wire().at(-1)!);
+      if (reply) emit({ type: "frame", peerId, frame: reply });
+      await settle();
+      return reply;
+    }
+    it("a partner's host proves itself before the guest sends anything identifying; the summary lists", async () => {
       await browser.start();
       emit({ type: "discovered", endpointId: "one", lobbyId: pin.sessionId });
-      const n = await partnersHost("p1");
-      expect(sent()).toEqual([
-        { kind: "together-probe-v1", nonce: n },
-        { kind: "together-friends-probe-v1", nonce: n, friendship: proof },
-      ]);
+      const host = await partnersHost("p1");
+      // The challenge is a fresh ephemeral key and nothing else.
+      expect(sent()[1]).toEqual({
+        kind: "together-friends-challenge-v1",
+        nonce: expect.any(String),
+        eph: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/),
+      });
+      expect(proofFor).not.toHaveBeenCalled();
+      await pump("p1", host);
       expect(proofFor).toHaveBeenCalledWith(friendId);
-      emit({ type: "frame", peerId: "p1", frame: partnersSummary(n) });
-      await settle();
+      expect(sent()[2]).toEqual({
+        kind: "together-friends-proof-v1",
+        nonce: expect.any(String),
+        sealed: expect.any(String),
+      });
+      const reply = await pump("p1", host);
+      expect(guests).toEqual([guestId]);
+      // Only ciphertext crosses the air after the hint.
+      for (const f of [...wire().slice(1), reply!])
+        for (const clear of [guestId, "together-friendship-v1", "Partners"])
+          expect(f).not.toContain(clear);
       expect(changes).toHaveBeenLastCalledWith([
         expect.objectContaining({
           audience: "friends",
@@ -845,17 +879,68 @@ describe("Training partners search (Brad, 3 Nov)", () => {
       expect(native.disconnect).toHaveBeenCalledWith("p1");
       expect(errors).not.toHaveBeenCalled();
     });
+    it("a device that knows the partner's id but is not the partner learns no guest identity and no proof", async () => {
+      const forger = new Uint8Array(32).fill(4);
+      const forgerCredential = signPayload(
+        {
+          ...identity.credential.payload,
+          userId: id(5),
+          deviceId: id(6),
+          publicKey: publicKeyPem(forger),
+        },
+        issuer,
+      );
+      await browser.start();
+      for (const name of ["a", "b"])
+        emit({ type: "discovered", endpointId: name, lobbyId: pin.sessionId });
+      // Its own server credential, claiming the partner's id for the keys.
+      let host = await partnersHost("pa", (n) =>
+        exchange(
+          n,
+          { hostUserId: friendId, credential: forgerCredential },
+          forger,
+        ),
+      );
+      await pump("pa", host);
+      expect(native.disconnect).toHaveBeenCalledWith("pa");
+      // The partner's (public) credential, without the partner's device key.
+      host = await partnersHost("pb", (n) =>
+        exchange(
+          n,
+          { hostUserId: friendId, credential: identity.credential },
+          forger,
+        ),
+      );
+      await pump("pb", host);
+      expect(native.disconnect).toHaveBeenCalledWith("pb");
+      expect(proofFor).not.toHaveBeenCalled();
+      expect(sent().map((f) => f.kind)).toEqual([
+        "together-probe-v1",
+        "together-friends-challenge-v1",
+        "together-probe-v1",
+        "together-friends-challenge-v1",
+      ]);
+      for (const f of wire()) expect(f).not.toContain(guestId);
+      expect(changes).not.toHaveBeenCalledWith([expect.anything()]);
+      expect(errors).not.toHaveBeenCalled();
+    });
     it("a stranger's hint or a missing proof sends nothing more and lists nothing", async () => {
       await browser.start();
       for (const name of ["a", "b"])
         emit({ type: "discovered", endpointId: name, lobbyId: pin.sessionId });
-      await partnersHost("pa", id(7));
+      await partnersHost("pa", (n) =>
+        exchange(n, { hostUserId: id(7), credential: identity.credential }),
+      );
       expect(sent()).toHaveLength(1);
       expect(native.disconnect).toHaveBeenCalledWith("pa");
-      expect(proofFor).not.toHaveBeenCalled();
       proofFor.mockResolvedValueOnce(null);
-      await partnersHost("pb");
-      expect(sent()).toHaveLength(2);
+      const host = await partnersHost("pb");
+      await pump("pb", host);
+      expect(sent().map((f) => f.kind)).toEqual([
+        "together-probe-v1",
+        "together-probe-v1",
+        "together-friends-challenge-v1",
+      ]);
       expect(native.disconnect).toHaveBeenCalledWith("pb");
       expect(changes).not.toHaveBeenCalledWith([expect.anything()]);
       expect(errors).not.toHaveBeenCalled();
@@ -881,7 +966,7 @@ describe("Training partners search (Brad, 3 Nov)", () => {
       expect(errors).not.toHaveBeenCalled();
       expect(ids).toHaveBeenCalledTimes(1);
     });
-    it("a partners host that never answers the proof is closed without ending the search", async () => {
+    it("a partners host that never answers is closed without ending the search", async () => {
       await browser.start();
       emit({ type: "discovered", endpointId: "slow", lobbyId: pin.sessionId });
       emit({ type: "discovered", endpointId: "next", lobbyId: pin.sessionId });
@@ -892,7 +977,7 @@ describe("Training partners search (Brad, 3 Nov)", () => {
       expect(native.connect).toHaveBeenLastCalledWith("next");
       expect(errors).not.toHaveBeenCalled();
     });
-    it("a friends probe that cannot be written closes only that socket", async () => {
+    it("a challenge that cannot be written closes only that socket", async () => {
       await browser.start();
       emit({ type: "discovered", endpointId: "w", lobbyId: pin.sessionId });
       jest
@@ -904,7 +989,7 @@ describe("Training partners search (Brad, 3 Nov)", () => {
       expect(errors).not.toHaveBeenCalled();
       expect(native.stop).not.toHaveBeenCalled();
     });
-    it("a host that talks again while its hint is being matched gets nothing", async () => {
+    it("a host that talks out of turn gets nothing", async () => {
       let release!: (ids: string[]) => void;
       ids.mockReturnValue(
         new Promise((resolve) => {
@@ -913,6 +998,7 @@ describe("Training partners search (Brad, 3 Nov)", () => {
       );
       await browser.start();
       emit({ type: "discovered", endpointId: "x", lobbyId: pin.sessionId });
+      emit({ type: "discovered", endpointId: "y", lobbyId: pin.sessionId });
       emit({ type: "connected", peerId: "px", incoming: false });
       const n = challenge();
       emit({ type: "frame", peerId: "px", frame: friendsHint(n, friendId) });
@@ -921,16 +1007,31 @@ describe("Training partners search (Brad, 3 Nov)", () => {
       expect(native.disconnect).toHaveBeenCalledWith("px");
       release([friendId]);
       await settle();
-      expect(sent()).toEqual([{ kind: "together-probe-v1", nonce: n }]);
+      expect(sent()).toHaveLength(1);
+      // While the proof is being fetched, too.
+      let fetched!: (p: typeof proof) => void;
+      proofFor.mockReturnValueOnce(
+        new Promise((resolve) => {
+          fetched = resolve;
+        }),
+      );
+      const host = await partnersHost("py");
+      await pump("py", host);
+      emit({ type: "frame", peerId: "py", frame: "{}" });
+      fetched(proof);
+      await settle();
+      expect(native.disconnect).toHaveBeenCalledWith("py");
+      expect(sent().at(-1)!.kind).toBe("together-friends-challenge-v1");
       expect(changes).not.toHaveBeenCalledWith([expect.anything()]);
       expect(errors).not.toHaveBeenCalled();
     });
-    it("a refresh of a partners host re-runs the friends step and keeps it listed, reading partners and proof once", async () => {
+    it("a refresh of a partners host re-runs the exchange and keeps it listed, reading partners and proof once", async () => {
       await browser.start();
       emit({ type: "discovered", endpointId: "one", lobbyId: pin.sessionId });
       const answer = async (peerId: string) => {
-        const n = await partnersHost(peerId);
-        emit({ type: "frame", peerId, frame: partnersSummary(n) });
+        const host = await partnersHost(peerId);
+        await pump(peerId, host);
+        await pump(peerId, host);
         emit({ type: "disconnected", peerId });
         await settle();
       };
@@ -940,7 +1041,7 @@ describe("Training partners search (Brad, 3 Nov)", () => {
       expect(native.connect).toHaveBeenCalledTimes(2);
       await answer("p2");
       expect(
-        sent().filter((f) => f.kind === "together-friends-probe-v1"),
+        sent().filter((f) => f.kind === "together-friends-proof-v1"),
       ).toHaveLength(2);
       clock = now + SUMMARY_TTL + 1000;
       jest.advanceTimersByTime(1000);
