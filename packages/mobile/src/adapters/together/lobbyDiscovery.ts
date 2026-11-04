@@ -280,6 +280,8 @@ export class TogetherLobbyBrowser {
     endpointId: string;
     sessionId: string;
     nonce: string;
+    /** When this slot opened: the partners step shares its budget from here. */
+    startedAt: number;
     peerId?: string;
     /** A re-probe of a listed host: its failure drops that row only. */
     refresh?: boolean;
@@ -456,6 +458,7 @@ export class TogetherLobbyBrowser {
     const active = {
       ...endpoint,
       nonce: encode64(this.options.randomBytes(32), true),
+      startedAt: this.options.now(),
     };
     this.active = active;
     // No endpoint correlation exists on connected: timeout ends the entire generation.
@@ -536,12 +539,16 @@ export class TogetherLobbyBrowser {
       void this.finish(active);
       return;
     }
-    // From here the slot is held at most this long, so listed hosts' refresh
-    // probes still run before their summaries lapse; it never ends the search.
+    // The whole slot, connect included, is held at most this long from when
+    // it opened (not from the hint), so listed hosts' refresh probes still
+    // run before their summaries lapse; it never ends the search.
     clearTimeout(this.deadline);
     this.deadline = setTimeout(
       () => this.partnerTimeout(active),
-      FRIENDS_STEP_DEADLINE,
+      Math.max(
+        0,
+        active.startedAt + FRIENDS_STEP_DEADLINE - this.options.now(),
+      ),
     );
     // Fetched from our own server while the host proves itself; a fetch that
     // outlives this socket still lands in the cache for the next probe.

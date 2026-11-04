@@ -978,6 +978,21 @@ describe("Training partners search (Brad, 3 Nov; Inspector Brad, PR #527)", () =
       expect(native.connect).toHaveBeenLastCalledWith("next");
       expect(errors).not.toHaveBeenCalled();
     });
+    it("a hint that arrives late in the slot gets only what is left of the partners budget, not a fresh one", async () => {
+      await browser.start();
+      emit({ type: "discovered", endpointId: "late", lobbyId: pin.sessionId });
+      emit({ type: "discovered", endpointId: "next", lobbyId: pin.sessionId });
+      // The host takes 3.5 s to connect and hint: 0.5 s of the 4 s budget remains.
+      clock += 3500;
+      jest.advanceTimersByTime(3500);
+      await partnersHost("pl");
+      clock += 600;
+      jest.advanceTimersByTime(600);
+      await settle();
+      expect(native.disconnect).toHaveBeenCalledWith("pl");
+      expect(native.connect).toHaveBeenLastCalledWith("next");
+      expect(errors).not.toHaveBeenCalled();
+    });
     it("a challenge that cannot be written closes only that socket", async () => {
       await browser.start();
       emit({ type: "discovered", endpointId: "w", lobbyId: pin.sessionId });
