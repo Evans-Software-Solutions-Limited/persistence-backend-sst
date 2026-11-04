@@ -993,6 +993,30 @@ describe("Training partners search (Brad, 3 Nov; Inspector Brad, PR #527)", () =
       expect(native.connect).toHaveBeenLastCalledWith("next");
       expect(errors).not.toHaveBeenCalled();
     });
+    it("a partner host cut off late in its slot gets one fresh slot, and only one", async () => {
+      await browser.start();
+      emit({ type: "discovered", endpointId: "late", lobbyId: pin.sessionId });
+      clock += 3500;
+      jest.advanceTimersByTime(3500);
+      await partnersHost("pl");
+      // It hinted late and never got through the exchange in what was left.
+      clock += 600;
+      jest.advanceTimersByTime(600);
+      await settle();
+      expect(native.disconnect).toHaveBeenCalledWith("pl");
+      expect(jest.mocked(native.connect).mock.calls.map(([e]) => e)).toEqual([
+        "late",
+        "late",
+      ]);
+      // The retry stalls too: no third slot.
+      await partnersHost("pl2");
+      clock += FRIENDS_STEP_DEADLINE;
+      jest.advanceTimersByTime(FRIENDS_STEP_DEADLINE);
+      await settle();
+      expect(native.disconnect).toHaveBeenCalledWith("pl2");
+      expect(native.connect).toHaveBeenCalledTimes(2);
+      expect(errors).not.toHaveBeenCalled();
+    });
     it("a challenge that cannot be written closes only that socket", async () => {
       await browser.start();
       emit({ type: "discovered", endpointId: "w", lobbyId: pin.sessionId });

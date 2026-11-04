@@ -600,13 +600,23 @@ export class TogetherLobbyBrowser {
   private partnerTimeout(active: NonNullable<TogetherLobbyBrowser["active"]>) {
     if (this.active !== active) return;
     const { endpointId, sessionId, friendId } = active;
-    if (active.stage === "proving" && !this.retried.has(endpointId)) {
+    // A matched partner host gets one more slot of its own per search: the
+    // budget counts from when the slot opened, so a slow connect can leave
+    // too little for the exchange. Still at most one extra bounded slot, so
+    // a host stalling on purpose can't make the search loop.
+    if (active.stage && !this.retried.has(endpointId)) {
       this.retried.add(endpointId);
-      const generation = this.searches;
-      void this.proof(friendId!).then((proof) => {
-        if (proof && this.running && this.searches === generation)
-          this.retry([[endpointId, sessionId]]);
-      });
+      if (active.stage === "proving") {
+        // Waiting on our own proof: probe again once it has landed.
+        const generation = this.searches;
+        void this.proof(friendId!).then((proof) => {
+          if (proof && this.running && this.searches === generation)
+            this.retry([[endpointId, sessionId]]);
+        });
+      } else {
+        // Behind whatever is already queued; finish() starts the next slot.
+        this.queue.push({ endpointId, sessionId, refresh: true });
+      }
     }
     void this.finish(active);
   }
