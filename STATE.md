@@ -29,7 +29,15 @@ UI change; each behaviour has a test that fails on the old code.
   ~1.1 k, ~0.5 k, ≤ ~8.1 k (bounds 256/4096/2048/9000; Nearby framing 64 KiB).
   `readSummary` accepts `friends` only in that flow, only from the matched
   partner and the device that signed the response. One exchange per hinted
-  socket; 10 s deadline that never ends the search; refresh re-runs it.
+  socket; refresh re-runs it.
+- **Timing** (Inspector Brad lead, PR #527: one outbound socket, so a slow
+  partner step let listed hosts miss their refresh and expire). The partner
+  list loads at search start, never on the socket (a hint that beats it is
+  probed again once it loads); the proof is fetched from our server as soon as
+  a hint matches; the step from hint to summary is capped at
+  `REFRESH_MARGIN - 1 s` (4 s) and never ends the search. A host that proved
+  itself but missed the cap only because our proof fetch was slow is probed
+  once more when the cached proof lands (still one fetch per partner per search).
   Private hosts still never answer; open hosts unchanged; an older guest drops
   the hint as an invalid summary.
 - **Join** reuses the search's proof while it still verifies (else fetches),

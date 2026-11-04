@@ -855,9 +855,10 @@ describe("Training partners search (Brad, 3 Nov; Inspector Brad, PR #527)", () =
         nonce: expect.any(String),
         eph: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/),
       });
-      expect(proofFor).not.toHaveBeenCalled();
-      await pump("p1", host);
+      // Fetched from our own server meanwhile, but nothing more is sent yet.
       expect(proofFor).toHaveBeenCalledWith(friendId);
+      expect(sent()).toHaveLength(2);
+      await pump("p1", host);
       expect(sent()[2]).toEqual({
         kind: "together-friends-proof-v1",
         nonce: expect.any(String),
@@ -913,7 +914,7 @@ describe("Training partners search (Brad, 3 Nov; Inspector Brad, PR #527)", () =
       );
       await pump("pb", host);
       expect(native.disconnect).toHaveBeenCalledWith("pb");
-      expect(proofFor).not.toHaveBeenCalled();
+      // The proof may come from our own server, but it never leaves the phone.
       expect(sent().map((f) => f.kind)).toEqual([
         "together-probe-v1",
         "together-friends-challenge-v1",
@@ -1050,6 +1051,111 @@ describe("Training partners search (Brad, 3 Nov; Inspector Brad, PR #527)", () =
       ]);
       expect(ids).toHaveBeenCalledTimes(1);
       expect(proofFor).toHaveBeenCalledTimes(1);
+    });
+    const pending = <T>() => {
+      let resolve!: (value: T) => void;
+      const promise = new Promise<T>((r) => {
+        resolve = r;
+      });
+      return { promise, resolve };
+    };
+    /** Advance fake time and the clock together, one publish tick at a time. */
+    const tick = async (ms: number) => {
+      for (let t = 0; t < ms; t += 500) {
+        clock += 500;
+        jest.advanceTimersByTime(500);
+        await settle();
+      }
+    };
+    it("asks for the partner list when the search starts, not on the probe socket (Inspector Brad, PR #527)", async () => {
+      await browser.start();
+      expect(ids).toHaveBeenCalledTimes(1);
+      expect(native.connect).not.toHaveBeenCalled();
+    });
+    it.each(["partner list", "proof fetch", "host's answer"])(
+      "a listed open host stays listed while a partner step is slow (%s)",
+      async (slow) => {
+        const never = new Promise<never>(() => {});
+        if (slow === "partner list") ids.mockReturnValue(never);
+        if (slow === "proof fetch") proofFor.mockReturnValue(never);
+        await browser.start();
+        await settle();
+        const open = { ...pin, sessionId: id(4) };
+        emit({
+          type: "discovered",
+          endpointId: "open",
+          lobbyId: open.sessionId,
+        });
+        emit({ type: "connected", peerId: "o1", incoming: false });
+        const openReply = (peerId: string) =>
+          emit({
+            type: "frame",
+            peerId,
+            frame: signSummary(open, identity, "Open", 1, challenge(), clock),
+          });
+        openReply("o1");
+        await settle();
+        // The partner host is found just before the open host's refresh is due.
+        await tick(9500);
+        emit({ type: "discovered", endpointId: "p", lobbyId: pin.sessionId });
+        const host = await partnersHost("pp");
+        if (slow === "proof fetch") await pump("pp", host);
+        // The refresh goes out before the open summary lapses (15 s).
+        await tick(4500);
+        expect(native.connect).toHaveBeenLastCalledWith("open");
+        emit({ type: "connected", peerId: "o2", incoming: false });
+        openReply("o2");
+        await settle();
+        await tick(2000);
+        expect(changes).toHaveBeenLastCalledWith([
+          expect.objectContaining({ workoutName: "Open" }),
+        ]);
+        expect(errors).not.toHaveBeenCalled();
+      },
+    );
+    it("a proof that misses the deadline is used on the next probe without a second fetch", async () => {
+      const late = pending<typeof proof>();
+      proofFor.mockReturnValue(late.promise);
+      await browser.start();
+      await settle();
+      emit({ type: "discovered", endpointId: "p", lobbyId: pin.sessionId });
+      let host = await partnersHost("p1");
+      await pump("p1", host);
+      await tick(FRIENDS_STEP_DEADLINE);
+      expect(native.disconnect).toHaveBeenCalledWith("p1");
+      expect(sent().some((f) => f.kind === "together-friends-proof-v1")).toBe(
+        false,
+      );
+      late.resolve(proof);
+      await settle();
+      expect(native.connect).toHaveBeenCalledTimes(2);
+      expect(native.connect).toHaveBeenLastCalledWith("p");
+      host = await partnersHost("p2");
+      await pump("p2", host);
+      await pump("p2", host);
+      expect(changes).toHaveBeenLastCalledWith([
+        expect.objectContaining({ audience: "friends", friendship: proof }),
+      ]);
+      expect(proofFor).toHaveBeenCalledTimes(1);
+    });
+    it("a hint that arrives before the partner list is probed again once it loads", async () => {
+      const list = pending<string[]>();
+      ids.mockReturnValue(list.promise);
+      await browser.start();
+      emit({ type: "discovered", endpointId: "p", lobbyId: pin.sessionId });
+      await partnersHost("p1");
+      expect(sent()).toHaveLength(1);
+      expect(native.disconnect).toHaveBeenCalledWith("p1");
+      list.resolve([friendId]);
+      await settle();
+      expect(native.connect).toHaveBeenCalledTimes(2);
+      const host = await partnersHost("p2");
+      await pump("p2", host);
+      await pump("p2", host);
+      expect(changes).toHaveBeenLastCalledWith([
+        expect.objectContaining({ audience: "friends" }),
+      ]);
+      expect(ids).toHaveBeenCalledTimes(1);
     });
     it("a guest without partner search ignores the hint, exactly as before", async () => {
       await browser.stop();
