@@ -20,12 +20,18 @@ jest.mock("expo-constants", () => ({
   __esModule: true,
   default: {
     get expoConfig() {
-      return {
-        version: "1.2.0",
-        ios: { buildNumber: "29" },
-        extra: { appVariant: mockAppVariant },
-      };
+      return { extra: { appVariant: mockAppVariant } };
     },
+  },
+}));
+
+// The native app record: EAS writes the build number there, not into expoConfig.
+let mockNativeBuild: string | null = "29";
+jest.mock("expo-application", () => ({
+  __esModule: true,
+  nativeApplicationVersion: "1.2.0",
+  get nativeBuildVersion() {
+    return mockNativeBuild;
   },
 }));
 
@@ -345,7 +351,8 @@ describe("sendSentryCheck", () => {
       }),
     };
   }
-  it("sends one check per build on a staging build", async () => {
+  it("sends one check per build on a staging build, read from the native build number", async () => {
+    mockNativeBuild = "29";
     const mod = loadInitialised("https://k@o.ingest.sentry.io/1");
     const storage = memory();
     expect(await mod.sendSentryCheck(storage)).toBe(true);
@@ -354,6 +361,13 @@ describe("sendSentryCheck", () => {
     expect(mocks.captureMessage).toHaveBeenCalledWith("Sentry check", {
       level: "info",
       tags: { "sentry.check": "true", "app.build": "1.2.0+29" },
+    });
+    // A newer build of the same version installed over it checks again.
+    mockNativeBuild = "30";
+    expect(await mod.sendSentryCheck(storage)).toBe(true);
+    expect(mocks.captureMessage).toHaveBeenLastCalledWith("Sentry check", {
+      level: "info",
+      tags: { "sentry.check": "true", "app.build": "1.2.0+30" },
     });
   });
   it("never sends on production, without a DSN, or when storage fails", async () => {

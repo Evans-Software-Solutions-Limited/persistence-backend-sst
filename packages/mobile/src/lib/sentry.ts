@@ -1,3 +1,4 @@
+import * as Application from "expo-application";
 import Constants from "expo-constants";
 import * as Sentry from "@sentry/react-native";
 import type {
@@ -270,11 +271,11 @@ export async function sendSentryCheck(storage: {
 }): Promise<boolean> {
   const environment = resolveEnvironment();
   if (!enabled || environment === "production") return false;
+  // The native values: EAS sets the build number remotely, into the native
+  // project, not into the embedded Expo config.
   const build = [
-    Constants.expoConfig?.version ?? "unknown",
-    Constants.expoConfig?.ios?.buildNumber ??
-      Constants.expoConfig?.android?.versionCode ??
-      "unknown",
+    Application.nativeApplicationVersion ?? "unknown",
+    Application.nativeBuildVersion ?? "unknown",
   ].join("+");
   try {
     if ((await storage.getItem(SENTRY_CHECK_KEY)) === build) return false;
