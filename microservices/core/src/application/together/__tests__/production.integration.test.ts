@@ -1079,30 +1079,76 @@ describe("production Together persistence and recovery", () => {
       (await repo.snapshot(a, s.sessionId)).participants.map((p) => p.userId),
     ).toEqual(expect.arrayContaining([a, b, c]));
   });
-  it("a code request made while private can't be let in once the session is Training partners and they aren't partners", async () => {
+  it("switching to Training partners closes non-partners' pending code requests and keeps partners'", async () => {
     const consent = {
       consentVersion: "together-v1" as const,
       consentAccepted: true as const,
     };
     const s = await create();
-    const pending = await repo.requestJoin(c, key(), {
+    // Both ask with the code while the session is private; b becomes a
+    // partner before the switch, c never does.
+    const stranger = await repo.requestJoin(c, key(), {
       code: s.code!,
       ...consent,
     });
-    expect(pending.status).toBe("pending");
+    const partner = await repo.requestJoin(b, key(), {
+      code: s.code!,
+      ...consent,
+    });
+    expect([stranger.status, partner.status]).toEqual(["pending", "pending"]);
+    await db
+      .insert(schema.friendships)
+      .values({ userId: a, friendId: b, status: "accepted", initiatedBy: a });
     await repo.visibility(a, s.sessionId, key(), {
       audience: "friends",
       expiresAt: new Date(Date.now() + 60000).toISOString(),
     });
+    // The non-partner is told, not left waiting on an Approve that can't work.
+    expect(await repo.joinStatus(c, stranger.requestId)).toMatchObject({
+      status: "rejected",
+    });
     await expect(
-      repo.decide(a, s.sessionId, pending.requestId, key(), {
+      repo.decide(a, s.sessionId, stranger.requestId, key(), {
         decision: "approve",
         expectedRevision: (await repo.snapshot(a, s.sessionId)).revision,
       }),
-    ).rejects.toMatchObject({ status: 403 });
+    ).rejects.toBeTruthy();
+    expect(await repo.joinStatus(b, partner.requestId)).toMatchObject({
+      status: "pending",
+    });
+    await repo.decide(a, s.sessionId, partner.requestId, key(), {
+      decision: "approve",
+      expectedRevision: (await repo.snapshot(a, s.sessionId)).revision,
+    });
     expect(
       (await repo.snapshot(a, s.sessionId)).participants.map((p) => p.userId),
-    ).toEqual([a]);
+    ).toEqual(expect.arrayContaining([a, b]));
+  });
+  it("a Training partners code answers a non-partner exactly like a wrong code, even when they can't otherwise join", async () => {
+    const consent = {
+      consentVersion: "together-v1" as const,
+      consentAccepted: true as const,
+    };
+    const s = await create();
+    await repo.visibility(a, s.sessionId, key(), {
+      audience: "friends",
+      expiresAt: new Date(Date.now() + 60000).toISOString(),
+    });
+    // Unpaid: before this, a real code got PAID_REQUIRED, a wrong one 404.
+    await db
+      .delete(schema.userSubscriptions)
+      .where(eq(schema.userSubscriptions.userId, c));
+    const wrong = await repo
+      .requestJoin(c, key(), { code: "ZZZZZZ", ...consent })
+      .catch((e: unknown) => e);
+    const real = await repo
+      .requestJoin(c, key(), { code: s.code!, ...consent })
+      .catch((e: unknown) => e);
+    expect(real).toMatchObject({ status: 404, code: "NOT_FOUND" });
+    expect(real).toMatchObject({
+      status: (wrong as { status: number }).status,
+      code: (wrong as { code: string }).code,
+    });
   });
   it("visibility and discovery restrict friends/private, cursor scope and nearby place selection", async () => {
     const s = await create();

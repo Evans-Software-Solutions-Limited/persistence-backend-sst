@@ -861,6 +861,19 @@ export class TogetherRepository {
     const id = invite?.sessionId ?? coded?.id ?? body.sessionId;
     requireTogether(id, "NOT_FOUND", 404);
     return this.transaction(actor, id, async (tx, s, ps) => {
+      // A code is checked before anything else, so a Training partners
+      // session's code gives a non-partner the same answer as a wrong code,
+      // not a paywall or block error that shows the session exists (PER-60).
+      if (body.code && !invite)
+        requireTogether(
+          s.code === body.code &&
+            s.state === "active" &&
+            !!s.hostId &&
+            (s.audience !== "friends" ||
+              (await areFriends(tx, actor, s.hostId))),
+          "NOT_FOUND",
+          404,
+        );
       requireTogether(
         s.hostId &&
           s.hostId !== actor &&
@@ -1811,6 +1824,23 @@ export class TogetherRepository {
               listedUntil,
             })
             .where(eq(sessions.id, id));
+          // On Training partners a non-partner's pending request can never be
+          // let in (decide checks the pair), so close it now rather than leave
+          // the host an Approve that fails and the requester waiting (PER-60).
+          if (body.audience === "friends") {
+            const pending = await tx
+              .select({ id: requests.id, userId: requests.userId })
+              .from(requests)
+              .where(
+                and(eq(requests.sessionId, id), eq(requests.status, "pending")),
+              );
+            for (const r of pending)
+              if (!(await areFriends(tx, actor, r.userId)))
+                await tx
+                  .update(requests)
+                  .set({ status: "rejected" })
+                  .where(eq(requests.id, r.id));
+          }
           await this.emit(tx, s, { type: "visibility_changed" });
           return { revision: s.revision };
         },
