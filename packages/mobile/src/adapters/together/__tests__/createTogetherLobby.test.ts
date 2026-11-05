@@ -103,6 +103,25 @@ it("closes the database even when disposal fails", async () => {
   expect(mockClose).toHaveBeenCalledTimes(1);
 });
 
+it("gives search the account's accepted training partners from the social API, and nothing without it", async () => {
+  const friends = jest.fn(async () => ({
+    ok: true as const,
+    value: {
+      data: [
+        { userId: "me", friendId: "partner", status: "accepted" },
+        { userId: "asker", friendId: "me", status: "pending" },
+      ],
+      nextCursor: null,
+    },
+  }));
+  create(provisioning, "prod", true, undefined, "android", undefined, {
+    friends,
+  } as never);
+  const { friendIds } = mockConstruct.mock.calls[0][0];
+  await expect(friendIds("me")).resolves.toEqual(["partner"]);
+  create(provisioning, "prod", true);
+  expect(mockConstruct.mock.calls[1][0].friendIds).toBeUndefined();
+});
 it("starts iOS on the LAN module's peer-to-peer Wi-Fi and leaves other platforms on their default", () => {
   create(provisioning, "https://api.test", true, undefined, "ios");
   expect(mockConstruct).toHaveBeenCalledWith(

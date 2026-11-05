@@ -28,7 +28,10 @@ import {
   publicKeyPem,
   signPayload,
   type Credential,
+  type FriendshipEvidence,
+  type Signed,
 } from "../security/identity";
+import { FriendsGuestExchange } from "../friendsDiscovery";
 import { ok, fail } from "../../../shared/errors/result";
 const id = (n: number) =>
   `${n.toString(16).padStart(8, "0")}-1111-4111-8111-111111111111`;
@@ -1360,17 +1363,32 @@ describe("reviewed lobby coordinator, real cryptography and SQLite, simulated na
       plan,
     });
   });
-  it("friends hosts reveal no public summary and reject missing friendship before connecting", async () => {
+  it("friends hosts answer a search with only an anonymous hint and reject missing friendship before connecting", async () => {
     const host = setup(),
       guest = setup(2);
     await host.controller.host("Friends", "friends");
-    expect(
-      JSON.parse(host.controller.getSnapshot().invitation!).payload.audience,
-    ).toBe("friends");
+    const invite = JSON.parse(host.controller.getSnapshot().invitation!);
+    expect(invite.payload.audience).toBe("friends");
+    // A guest without partner search (an older build) ignores the hint.
     await guest.controller.browse();
     await probe(host, guest);
     expect(guest.controller.getSnapshot().discovered).toEqual([]);
-    expect(host.native.send).not.toHaveBeenCalled();
+    expect(host.native.send).toHaveBeenCalledTimes(1);
+    const hint = host.native.send.mock.calls[0][1];
+    expect(Object.keys(JSON.parse(hint)).sort()).toEqual([
+      "kind",
+      "nonce",
+      "tag",
+    ]);
+    expect(JSON.parse(hint).kind).toBe("together-friends-hint-v1");
+    for (const secret of [
+      id(1),
+      invite.payload.sessionId,
+      invite.payload.hostDeviceId,
+      "Friends",
+    ])
+      expect(hint).not.toContain(secret);
+    expect(guest.native.send).toHaveBeenCalledTimes(1);
     await guest.controller.cancel();
     guest.native.connect.mockClear();
     await guest.controller.selectInvite(
@@ -1383,6 +1401,279 @@ describe("reviewed lobby coordinator, real cryptography and SQLite, simulated na
     });
     expect(guest.native.connect).not.toHaveBeenCalled();
     expect(host.controller.getSnapshot().pending).toEqual([]);
+  });
+  it("a training partner's search finds a Training partners host and joins through friend admission (Brad, 3 Nov)", async () => {
+    const friendIds = jest.fn(async () => [id(5), id(1)]);
+    const host = setup(),
+      guest = setup(2, { friendIds });
+    jest
+      .mocked(guest.provisioning.friendship)
+      .mockResolvedValue(ok(friendship(2)));
+    await host.controller.host("Partners", "friends");
+    await guest.controller.browse();
+    const sessionId = await probe(host, guest);
+    expect(guest.controller.getSnapshot()).toMatchObject({
+      phase: "browsing",
+      discovered: [
+        {
+          sessionId,
+          hostUserId: id(1),
+          workoutName: "Partners",
+          memberCount: 1,
+        },
+      ],
+    });
+    expect(friendIds).toHaveBeenCalledWith(id(2));
+    expect(guest.provisioning.friendship).toHaveBeenCalledTimes(1);
+    expect(guest.provisioning.friendship).toHaveBeenCalledWith(id(1), {
+      online: false,
+    });
+    expect(
+      guest.native.send.mock.calls.map(([, f]) => JSON.parse(f).kind),
+    ).toEqual([
+      "together-probe-v1",
+      "together-friends-challenge-v1",
+      "together-friends-proof-v1",
+    ]);
+    expect(
+      host.native.send.mock.calls.map(([, f]) => JSON.parse(f).kind),
+    ).toEqual([
+      "together-friends-hint-v1",
+      "together-friends-response-v1",
+      "together-friends-summary-v1",
+    ]);
+    // Over the air: no guest identity, no proof, no workout in clear.
+    for (const [, f] of [
+      ...guest.native.send.mock.calls,
+      ...host.native.send.mock.calls,
+    ])
+      for (const clear of [id(2), "together-friendship-v1", "Partners"])
+        expect(f).not.toContain(clear);
+    await guest.controller.selectDiscovered(sessionId);
+    expect(guest.controller.getSnapshot()).toMatchObject({
+      phase: "selected",
+      audience: "friends",
+    });
+    await guest.controller.join();
+    const peerId = guest.identity.deviceId;
+    host.native.targets.set(peerId, { native: guest.native, peerId: "host" });
+    guest.native.targets.set("host", { native: host.native, peerId });
+    guest.native.emit({
+      type: "discovered",
+      endpointId: "real",
+      lobbyId: sessionId,
+    });
+    await settle();
+    host.native.emit({ type: "connected", peerId, incoming: true });
+    guest.native.emit({ type: "connected", peerId: "host", incoming: false });
+    await settle();
+    // Friend admission: no host approval, and the search's proof is reused.
+    expect(guest.controller.getSnapshot()).toMatchObject({
+      phase: "joined",
+      members: [
+        { userId: id(1), host: true },
+        { userId: id(2), host: false },
+      ],
+    });
+    expect(host.controller.getSnapshot().pending).toEqual([]);
+    expect(guest.provisioning.friendship).toHaveBeenCalledTimes(1);
+  });
+  it("a non-partner's search finds no Training partners host and never asks for a proof", async () => {
+    const friendIds = jest.fn(async () => [id(5)]);
+    const host = setup(),
+      guest = setup(2, { friendIds });
+    await host.controller.host("Partners", "friends");
+    await guest.controller.browse();
+    await probe(host, guest);
+    expect(guest.controller.getSnapshot().discovered).toEqual([]);
+    expect(guest.provisioning.friendship).not.toHaveBeenCalled();
+    expect(host.native.send).toHaveBeenCalledTimes(1);
+    expect(guest.native.send).toHaveBeenCalledTimes(1);
+    expect(friendIds).toHaveBeenCalledTimes(1);
+  });
+  it("a partner this phone has blocked is never asked for a proof, so its host stays unlisted", async () => {
+    const host = setup(),
+      guest = setup(2, {
+        friendIds: jest.fn(async () => [id(1)]),
+        deniedPairs: () => [[id(2), id(1)]],
+      });
+    jest
+      .mocked(guest.provisioning.friendship)
+      .mockResolvedValue(ok(friendship(2)));
+    await host.controller.host("Partners", "friends");
+    await guest.controller.browse();
+    await probe(host, guest);
+    expect(guest.controller.getSnapshot().discovered).toEqual([]);
+    expect(guest.provisioning.friendship).not.toHaveBeenCalled();
+    expect(JSON.parse(host.native.send.mock.calls[0][1]).kind).toBe(
+      "together-friends-hint-v1",
+    );
+    expect(
+      guest.native.send.mock.calls.map(([, f]) => JSON.parse(f).kind),
+    ).toEqual(["together-probe-v1", "together-friends-challenge-v1"]);
+  });
+  it("Join fetches a fresh proof when the one that found the host has expired", async () => {
+    let clock = now;
+    const host = setup(),
+      guest = setup(2, {
+        now: () => clock,
+        friendIds: jest.fn(async () => [id(1)]),
+      });
+    const shortLived = signPayload(
+      {
+        ...friendship(2).payload,
+        expiresAt: now + 16000,
+      },
+      authority,
+    );
+    jest
+      .mocked(guest.provisioning.friendship)
+      .mockResolvedValueOnce(ok(shortLived))
+      .mockResolvedValue(ok(friendship(2)));
+    await host.controller.host("Partners", "friends");
+    await guest.controller.browse();
+    const sessionId = await probe(host, guest);
+    await guest.controller.selectDiscovered(sessionId);
+    clock = now + 17000;
+    await guest.controller.join();
+    expect(guest.provisioning.friendship).toHaveBeenCalledTimes(2);
+    expect(guest.controller.getSnapshot().phase).toBe("searching");
+  });
+  it("a Training partners host answers a forged, expired, other-pair or blocked proof with no summary", async () => {
+    const host = setup(1, { deniedPairs: () => [[id(1), id(4)]] });
+    await host.controller.host("Partners", "friends");
+    const proof = (
+      users: [string, string],
+      expiresAt = now + 60000,
+      key = authority,
+    ) =>
+      signPayload(
+        {
+          kind: "together-friendship-v1" as const,
+          keyId: "v1",
+          users,
+          issuedAt: now - 100,
+          expiresAt,
+        },
+        key,
+      );
+    const sessionId = JSON.parse(host.controller.getSnapshot().invitation!)
+      .payload.sessionId;
+    let socket = 0;
+    /** One raw socket to the host: send `frames`, return what the host sent back. */
+    const raw = async (frames: string[]) => {
+      const peerId = `raw-${++socket}`;
+      host.native.send.mockClear();
+      host.native.disconnect.mockClear();
+      host.native.emit({ type: "connected", peerId, incoming: true });
+      for (const frame of frames) {
+        host.native.emit({ type: "frame", peerId, frame });
+        await settle();
+      }
+      return { peerId, replies: host.native.send.mock.calls.map(([, f]) => f) };
+    };
+    /** The guest side of a full partners exchange, carrying `friendship`. */
+    const ask = async (friendship: unknown) => {
+      const peerId = `raw-${++socket}`;
+      host.native.send.mockClear();
+      host.native.disconnect.mockClear();
+      host.native.emit({ type: "connected", peerId, incoming: true });
+      const nonce = randomBytes(32).toString("base64url");
+      const said: string[] = [];
+      const say = async (frame: string) => {
+        said.push(frame);
+        host.native.emit({ type: "frame", peerId, frame });
+        await settle();
+        return host.native.send.mock.calls.at(-1)![1];
+      };
+      const hint = await say(
+        JSON.stringify({ kind: "together-probe-v1", nonce }),
+      );
+      expect(JSON.parse(hint).kind).toBe("together-friends-hint-v1");
+      const g = new FriendsGuestExchange({
+        nonce,
+        sessionId,
+        friendId: id(1),
+        trustedKeys: trusted,
+        randomBytes,
+        now: () => now,
+      });
+      g.accept(await say(g.challenge()));
+      expect(host.native.disconnect).not.toHaveBeenCalled();
+      await say(g.proof(friendship as Signed<FriendshipEvidence>));
+      expect(host.native.disconnect).toHaveBeenCalledWith(peerId);
+      const replies = host.native.send.mock.calls.slice(2).map(([, f]) => f);
+      return { said, replies, summary: () => g.summary(replies[0]) };
+    };
+    for (const bad of [
+      proof([id(1), id(2)], now + 60000, new Uint8Array(32).fill(9)),
+      proof([id(1), id(2)], now - 1),
+      proof([id(2), id(3)]),
+      proof([id(1), id(1)]),
+      proof([id(1), id(4)]),
+      { payload: { users: [id(1), id(2)] } },
+      null,
+    ])
+      expect((await ask(bad)).replies).toEqual([]);
+    // The previous unsealed form, and a proof before any challenge, get nothing.
+    const nonce = randomBytes(32).toString("base64url");
+    const probeFrame = JSON.stringify({ kind: "together-probe-v1", nonce });
+    for (const second of [
+      JSON.stringify({
+        kind: "together-friends-probe-v1",
+        nonce,
+        friendship: proof([id(1), id(2)]),
+      }),
+      JSON.stringify({ kind: "together-friends-proof-v1", nonce, sealed: "" }),
+    ]) {
+      const { peerId, replies } = await raw([probeFrame, second]);
+      expect(replies.map((f) => JSON.parse(f).kind)).toEqual([
+        "together-friends-hint-v1",
+      ]);
+      expect(host.native.disconnect).toHaveBeenCalledWith(peerId);
+    }
+    // A captured valid exchange replayed on a new socket, same nonce and
+    // challenge: the host's fresh ephemeral makes the old proof unreadable.
+    const valid = await ask(proof([id(2), id(1)]));
+    expect(valid.replies).toHaveLength(1);
+    const replay = await raw(valid.said);
+    expect(replay.replies.map((f) => JSON.parse(f).kind)).toEqual([
+      "together-friends-hint-v1",
+      "together-friends-response-v1",
+    ]);
+    expect(host.native.disconnect).toHaveBeenCalledWith(replay.peerId);
+    // One probe per socket: a second plain probe after the hint gets nothing.
+    const again = await raw([probeFrame, probeFrame]);
+    expect(again.replies).toHaveLength(1);
+    expect(host.native.disconnect).toHaveBeenCalledWith(again.peerId);
+    // The control: the valid exchange's sealed summary opens for its guest only.
+    expect(JSON.parse(valid.summary()).payload).toMatchObject({
+      kind: "together-summary-v1",
+      audience: "friends",
+      workoutName: "Partners",
+    });
+    expect(host.controller.getSnapshot()).toMatchObject({
+      phase: "hosting",
+      pending: [],
+    });
+  });
+  it("a failed partner lookup still lists open hosts and does not fail the search", async () => {
+    const open = setup(),
+      partners = setup(3),
+      guest = setup(2, {
+        friendIds: jest.fn(async () => Promise.reject(new Error("offline"))),
+      });
+    await open.controller.host("Open workout", "open");
+    await partners.controller.host("Partners", "friends");
+    await guest.controller.browse();
+    await probe(partners, guest, "partners");
+    const sessionId = await probe(open, guest, "open");
+    expect(guest.controller.getSnapshot()).toMatchObject({
+      phase: "browsing",
+      error: undefined,
+      discovered: [{ sessionId, workoutName: "Open workout" }],
+    });
+    expect(guest.provisioning.friendship).not.toHaveBeenCalled();
   });
   it("private hosts never disclose summary; their invite token admits only through normal approval", async () => {
     const host = setup(),
