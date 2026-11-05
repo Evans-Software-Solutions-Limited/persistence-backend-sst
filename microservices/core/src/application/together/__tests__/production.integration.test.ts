@@ -976,12 +976,16 @@ describe("production Together persistence and recovery", () => {
     expect(row.plan[0].name).toHaveLength(120);
     expect(row.plan[0].name.startsWith("Bulgarian")).toBe(true);
     expect(Number.isFinite(Date.parse(row.startedAt))).toBe(true);
-    // A non-partner previews by code: enough to consent, nothing more.
-    expect(await repo.preview(c, { code: s.code! })).toMatchObject({
+    // A Training partners session's code finds nothing for a non-partner,
+    // exactly like a wrong code; a partner previews it (PER-60).
+    await expect(repo.preview(c, { code: s.code! })).rejects.toMatchObject({
+      status: 404,
+    });
+    expect(await repo.preview(b, { code: s.code! })).toMatchObject({
       sessionId: s.sessionId,
       workoutName: "Session",
       occupancy: 1,
-      partner: false,
+      partner: true,
       host: { userId: a },
       plan: [{ sets: 3 }],
     });
@@ -1015,7 +1019,8 @@ describe("production Together persistence and recovery", () => {
     await expect(
       repo.preview(b, { inviteToken: invite.token }),
     ).rejects.toMatchObject({ status: 410 });
-    // The code is a credential: partners join straight in, others wait.
+    // On a Training partners session the code admits partners straight in
+    // and finds nothing for anyone else.
     expect(
       await repo.requestJoin(b, key(), {
         code: s.code!,
@@ -1025,13 +1030,18 @@ describe("production Together persistence and recovery", () => {
     ).toMatchObject({ status: "approved", sessionId: s.sessionId });
     // Members who are not the host never see the code.
     expect((await repo.snapshot(b, s.sessionId)).code).toBeNull();
-    expect(
-      await repo.requestJoin(c, key(), {
+    await expect(
+      repo.requestJoin(c, key(), {
         code: s.code!,
         consentVersion: "together-v1",
         consentAccepted: true,
       }),
-    ).toMatchObject({ status: "pending", sessionId: s.sessionId });
+    ).rejects.toMatchObject({ status: 404 });
+    expect(
+      (await db.select().from(schema.togetherJoinRequests)).map(
+        (r) => r.userId,
+      ),
+    ).not.toContain(c);
     await expect(
       repo.requestJoin(c, key(), {
         code: "ZZZZZZ",
@@ -1068,6 +1078,138 @@ describe("production Together persistence and recovery", () => {
     expect(
       (await repo.snapshot(a, s.sessionId)).participants.map((p) => p.userId),
     ).toEqual(expect.arrayContaining([a, b, c]));
+  });
+  it("switching to Training partners closes non-partners' pending code requests and keeps partners'", async () => {
+    const consent = {
+      consentVersion: "together-v1" as const,
+      consentAccepted: true as const,
+    };
+    const s = await create();
+    // Both ask with the code while the session is private; b becomes a
+    // partner before the switch, c never does.
+    const stranger = await repo.requestJoin(c, key(), {
+      code: s.code!,
+      ...consent,
+    });
+    const partner = await repo.requestJoin(b, key(), {
+      code: s.code!,
+      ...consent,
+    });
+    expect([stranger.status, partner.status]).toEqual(["pending", "pending"]);
+    await db
+      .insert(schema.friendships)
+      .values({ userId: a, friendId: b, status: "accepted", initiatedBy: a });
+    await repo.visibility(a, s.sessionId, key(), {
+      audience: "friends",
+      expiresAt: new Date(Date.now() + 60000).toISOString(),
+    });
+    // The non-partner is told, not left waiting on an Approve that can't work.
+    expect(await repo.joinStatus(c, stranger.requestId)).toMatchObject({
+      status: "rejected",
+    });
+    await expect(
+      repo.decide(a, s.sessionId, stranger.requestId, key(), {
+        decision: "approve",
+        expectedRevision: (await repo.snapshot(a, s.sessionId)).revision,
+      }),
+    ).rejects.toBeTruthy();
+    expect(await repo.joinStatus(b, partner.requestId)).toMatchObject({
+      status: "pending",
+    });
+    await repo.decide(a, s.sessionId, partner.requestId, key(), {
+      decision: "approve",
+      expectedRevision: (await repo.snapshot(a, s.sessionId)).revision,
+    });
+    expect(
+      (await repo.snapshot(a, s.sessionId)).participants.map((p) => p.userId),
+    ).toEqual(expect.arrayContaining([a, b]));
+  });
+  it("switching to Training partners leaves a request made with a private invite to that invite's rules", async () => {
+    const consent = {
+      consentVersion: "together-v1" as const,
+      consentAccepted: true as const,
+    };
+    const s = await create();
+    const invite = await repo.invite(a, s.sessionId, key(), {
+      expiresInMinutes: 15,
+    });
+    const asked = await repo.requestJoin(c, key(), {
+      inviteToken: invite.token,
+      ...consent,
+    });
+    await repo.visibility(a, s.sessionId, key(), {
+      audience: "friends",
+      expiresAt: new Date(Date.now() + 60000).toISOString(),
+    });
+    // Same outcome as asking with that invite after the switch: the host
+    // can still let them in.
+    expect(await repo.joinStatus(c, asked.requestId)).toMatchObject({
+      status: "pending",
+    });
+    await repo.decide(a, s.sessionId, asked.requestId, key(), {
+      decision: "approve",
+      expectedRevision: (await repo.snapshot(a, s.sessionId)).revision,
+    });
+    expect(
+      (await repo.snapshot(a, s.sessionId)).participants.map((p) => p.userId),
+    ).toEqual(expect.arrayContaining([a, c]));
+  });
+  it("switching to private closes nearby-list requests the host can no longer approve and keeps code requests", async () => {
+    const consent = {
+      consentVersion: "together-v1" as const,
+      consentAccepted: true as const,
+    };
+    const s = await create();
+    await repo.visibility(a, s.sessionId, key(), {
+      audience: "nearby",
+      placeId: "geoapify:place",
+      expiresAt: new Date(Date.now() + 60000).toISOString(),
+    });
+    const listed = await repo.requestJoin(c, key(), {
+      sessionId: s.sessionId,
+      ...consent,
+    });
+    const coded = await repo.requestJoin(b, key(), {
+      code: s.code!,
+      ...consent,
+    });
+    expect([listed.status, coded.status]).toEqual(["pending", "pending"]);
+    await repo.visibility(a, s.sessionId, key(), {
+      audience: "private",
+      expiresAt: new Date(Date.now() + 60000).toISOString(),
+    });
+    expect(await repo.joinStatus(c, listed.requestId)).toMatchObject({
+      status: "rejected",
+    });
+    expect(await repo.joinStatus(b, coded.requestId)).toMatchObject({
+      status: "pending",
+    });
+  });
+  it("a Training partners code answers a non-partner exactly like a wrong code, even when they can't otherwise join", async () => {
+    const consent = {
+      consentVersion: "together-v1" as const,
+      consentAccepted: true as const,
+    };
+    const s = await create();
+    await repo.visibility(a, s.sessionId, key(), {
+      audience: "friends",
+      expiresAt: new Date(Date.now() + 60000).toISOString(),
+    });
+    // Unpaid: before this, a real code got PAID_REQUIRED, a wrong one 404.
+    await db
+      .delete(schema.userSubscriptions)
+      .where(eq(schema.userSubscriptions.userId, c));
+    const wrong = await repo
+      .requestJoin(c, key(), { code: "ZZZZZZ", ...consent })
+      .catch((e: unknown) => e);
+    const real = await repo
+      .requestJoin(c, key(), { code: s.code!, ...consent })
+      .catch((e: unknown) => e);
+    expect(real).toMatchObject({ status: 404, code: "NOT_FOUND" });
+    expect(real).toMatchObject({
+      status: (wrong as { status: number }).status,
+      code: (wrong as { code: string }).code,
+    });
   });
   it("visibility and discovery restrict friends/private, cursor scope and nearby place selection", async () => {
     const s = await create();

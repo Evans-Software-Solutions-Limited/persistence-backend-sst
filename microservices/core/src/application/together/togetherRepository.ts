@@ -758,11 +758,12 @@ export class TogetherRepository {
         .update(invites)
         .set({ consumed: true })
         .where(eq(invites.id, r.inviteId));
-    } else if (!r.viaCode)
-      // The code is a credential like an invite: a request made with it was
-      // checked against the session's code, so its audience doesn't apply.
+    } else
+      // A request made with the code was checked against it, so a private
+      // session's audience doesn't apply to it; a Training partners session
+      // still needs the pair to be partners when the host lets them in.
       requireTogether(
-        s.audience !== "private" &&
+        (r.viaCode || s.audience !== "private") &&
           (s.audience !== "friends" ||
             (await areFriends(tx, s.hostId!, r.userId))),
         "FORBIDDEN",
@@ -860,6 +861,19 @@ export class TogetherRepository {
     const id = invite?.sessionId ?? coded?.id ?? body.sessionId;
     requireTogether(id, "NOT_FOUND", 404);
     return this.transaction(actor, id, async (tx, s, ps) => {
+      // A code is checked before anything else, so a Training partners
+      // session's code gives a non-partner the same answer as a wrong code,
+      // not a paywall or block error that shows the session exists (PER-60).
+      if (body.code && !invite)
+        requireTogether(
+          s.code === body.code &&
+            s.state === "active" &&
+            !!s.hostId &&
+            (s.audience !== "friends" ||
+              (await areFriends(tx, actor, s.hostId))),
+          "NOT_FOUND",
+          404,
+        );
       requireTogether(
         s.hostId &&
           s.hostId !== actor &&
@@ -893,10 +907,14 @@ export class TogetherRepository {
           410,
         );
       } else if (body.code) {
-        // The code is the secret: it opens private and friends-only sessions;
-        // non-partners still wait for the host (approval below).
+        // The code opens a private session to whoever holds it (non-partners
+        // wait for the host, below). A Training partners session respects
+        // its audience: for anyone else the code finds nothing (PER-60).
         requireTogether(
-          s.code === body.code && s.state === "active",
+          s.code === body.code &&
+            s.state === "active" &&
+            (s.audience !== "friends" ||
+              (await areFriends(tx, actor, s.hostId))),
           "NOT_FOUND",
           404,
         );
@@ -1046,6 +1064,14 @@ export class TogetherRepository {
           .where(
             and(eq(sessions.code, selector.code), eq(sessions.state, "active")),
           );
+        // As requestJoin: a Training partners session's code finds nothing
+        // for anyone who isn't the host's partner (PER-60).
+        if (
+          s?.audience === "friends" &&
+          s.hostId &&
+          !(await areFriends(tx, actor, s.hostId))
+        )
+          s = undefined;
       }
       requireTogether(s && s.hostId && s.hostId !== actor, "NOT_FOUND", 404);
       const ps = await tx
@@ -1798,6 +1824,35 @@ export class TogetherRepository {
               listedUntil,
             })
             .where(eq(sessions.id, id));
+          // Close every pending request the host could no longer approve under
+          // the new audience (the same rule decide applies), rather than leave
+          // an Approve that fails and a requester waiting (PER-60): a listed
+          // request on a private session, or a non-partner's code or listed
+          // request on Training partners. A request made with an invite follows
+          // that invite's own audience, as approval does, so it stays.
+          const pending = await tx
+            .select({
+              id: requests.id,
+              userId: requests.userId,
+              inviteId: requests.inviteId,
+              viaCode: requests.viaCode,
+            })
+            .from(requests)
+            .where(
+              and(eq(requests.sessionId, id), eq(requests.status, "pending")),
+            );
+          for (const r of pending) {
+            if (r.inviteId) continue;
+            const approvable =
+              (r.viaCode || body.audience !== "private") &&
+              (body.audience !== "friends" ||
+                (await areFriends(tx, actor, r.userId)));
+            if (!approvable)
+              await tx
+                .update(requests)
+                .set({ status: "rejected" })
+                .where(eq(requests.id, r.id));
+          }
           await this.emit(tx, s, { type: "visibility_changed" });
           return { revision: s.revision };
         },
