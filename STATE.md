@@ -1,5 +1,23 @@
 # Project memory · persistence-backend-sst
 
+### 2026-11-05 — A session code respects Training partners (PER-60, branch `claude/together-code-partners`)
+
+Brad's rule (5 Nov): a typed session code respects how the host set the
+workout up. On a **Training partners** session, a code finds nothing for anyone
+who isn't the host's accepted partner and is rejected like a wrong code.
+- **Core** (`togetherRepository.ts`): `preview` and `requestJoin` by code return
+  404 `NOT_FOUND` for a non-partner on a `friends` session; partners still join
+  straight in. Approving a request made with the code still checks the pair are
+  partners when the session is Training partners (a request made while it was
+  private can't be let in after the host switches it). Private ("Code or QR
+  only") is unchanged: the code works for anyone who holds it, non-partners wait
+  for approval. Tests in `production.integration.test.ts` fail on the old code.
+- **Nearby** already matched: a typed code only matches hosts the search found,
+  and since #527 a non-partner can't find a Training partners host.
+- **Copy** (needs Brad's approval): the Training partners option reads "Only
+  your training partners can find and join" (was "Partners join straight in.
+  Others use the code.").
+
 ### 2026-11-03 — Android date of birth before 1970 snapped to 1970 (branch `claude/android-dob-min-date`)
 
 A tester on Android picked 1968 in onboarding's date of birth. Cause is in

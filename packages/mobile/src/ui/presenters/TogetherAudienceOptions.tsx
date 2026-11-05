@@ -17,7 +17,7 @@ export function TogetherAudienceOptions({
     [
       "friends",
       "Training partners",
-      "Partners join straight in. Others use the code.",
+      "Only your training partners can find and join",
     ],
     [
       "open",

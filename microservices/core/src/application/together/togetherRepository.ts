@@ -758,11 +758,12 @@ export class TogetherRepository {
         .update(invites)
         .set({ consumed: true })
         .where(eq(invites.id, r.inviteId));
-    } else if (!r.viaCode)
-      // The code is a credential like an invite: a request made with it was
-      // checked against the session's code, so its audience doesn't apply.
+    } else
+      // A request made with the code was checked against it, so a private
+      // session's audience doesn't apply to it; a Training partners session
+      // still needs the pair to be partners when the host lets them in.
       requireTogether(
-        s.audience !== "private" &&
+        (r.viaCode || s.audience !== "private") &&
           (s.audience !== "friends" ||
             (await areFriends(tx, s.hostId!, r.userId))),
         "FORBIDDEN",
@@ -893,10 +894,14 @@ export class TogetherRepository {
           410,
         );
       } else if (body.code) {
-        // The code is the secret: it opens private and friends-only sessions;
-        // non-partners still wait for the host (approval below).
+        // The code opens a private session to whoever holds it (non-partners
+        // wait for the host, below). A Training partners session respects
+        // its audience: for anyone else the code finds nothing (PER-60).
         requireTogether(
-          s.code === body.code && s.state === "active",
+          s.code === body.code &&
+            s.state === "active" &&
+            (s.audience !== "friends" ||
+              (await areFriends(tx, actor, s.hostId))),
           "NOT_FOUND",
           404,
         );
@@ -1046,6 +1051,14 @@ export class TogetherRepository {
           .where(
             and(eq(sessions.code, selector.code), eq(sessions.state, "active")),
           );
+        // As requestJoin: a Training partners session's code finds nothing
+        // for anyone who isn't the host's partner (PER-60).
+        if (
+          s?.audience === "friends" &&
+          s.hostId &&
+          !(await areFriends(tx, actor, s.hostId))
+        )
+          s = undefined;
       }
       requireTogether(s && s.hostId && s.hostId !== actor, "NOT_FOUND", 404);
       const ps = await tx
