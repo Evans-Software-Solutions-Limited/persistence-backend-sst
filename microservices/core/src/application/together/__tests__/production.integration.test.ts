@@ -1124,6 +1124,36 @@ describe("production Together persistence and recovery", () => {
       (await repo.snapshot(a, s.sessionId)).participants.map((p) => p.userId),
     ).toEqual(expect.arrayContaining([a, b]));
   });
+  it("switching to Training partners leaves a request made with a private invite to that invite's rules", async () => {
+    const consent = {
+      consentVersion: "together-v1" as const,
+      consentAccepted: true as const,
+    };
+    const s = await create();
+    const invite = await repo.invite(a, s.sessionId, key(), {
+      expiresInMinutes: 15,
+    });
+    const asked = await repo.requestJoin(c, key(), {
+      inviteToken: invite.token,
+      ...consent,
+    });
+    await repo.visibility(a, s.sessionId, key(), {
+      audience: "friends",
+      expiresAt: new Date(Date.now() + 60000).toISOString(),
+    });
+    // Same outcome as asking with that invite after the switch: the host
+    // can still let them in.
+    expect(await repo.joinStatus(c, asked.requestId)).toMatchObject({
+      status: "pending",
+    });
+    await repo.decide(a, s.sessionId, asked.requestId, key(), {
+      decision: "approve",
+      expectedRevision: (await repo.snapshot(a, s.sessionId)).revision,
+    });
+    expect(
+      (await repo.snapshot(a, s.sessionId)).participants.map((p) => p.userId),
+    ).toEqual(expect.arrayContaining([a, c]));
+  });
   it("a Training partners code answers a non-partner exactly like a wrong code, even when they can't otherwise join", async () => {
     const consent = {
       consentVersion: "together-v1" as const,

@@ -1824,18 +1824,24 @@ export class TogetherRepository {
               listedUntil,
             })
             .where(eq(sessions.id, id));
-          // On Training partners a non-partner's pending request can never be
-          // let in (decide checks the pair), so close it now rather than leave
-          // the host an Approve that fails and the requester waiting (PER-60).
+          // On Training partners a non-partner's pending code request can
+          // never be let in (decide checks the pair), so close it now rather
+          // than leave the host an Approve that fails and the requester
+          // waiting (PER-60). A request made with an invite follows that
+          // invite's own audience, as approval does, so it stays.
           if (body.audience === "friends") {
             const pending = await tx
-              .select({ id: requests.id, userId: requests.userId })
+              .select({
+                id: requests.id,
+                userId: requests.userId,
+                inviteId: requests.inviteId,
+              })
               .from(requests)
               .where(
                 and(eq(requests.sessionId, id), eq(requests.status, "pending")),
               );
             for (const r of pending)
-              if (!(await areFriends(tx, actor, r.userId)))
+              if (!r.inviteId && !(await areFriends(tx, actor, r.userId)))
                 await tx
                   .update(requests)
                   .set({ status: "rejected" })
