@@ -13,7 +13,13 @@ import * as Notifications from "expo-notifications";
 import { ErrorBoundary } from "../src/ui/components/ErrorBoundary";
 import { ErrorState } from "../src/ui/components/ErrorState";
 import { PLogoDrawLoader } from "../src/ui/components/PLogoDrawLoader";
-import { captureBoundaryError, initSentry, Sentry } from "../src/lib/sentry";
+import {
+  captureBoundaryError,
+  initSentry,
+  sendSentryCheck,
+  Sentry,
+} from "../src/lib/sentry";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AppProviders } from "../src/providers";
 import { useActiveWorkoutRehydration } from "../src/ui/hooks/useActiveWorkoutRehydration";
 import { useAuth } from "../src/ui/hooks/useAuth";
@@ -42,6 +48,9 @@ import { color } from "../src/ui/theme/tokens";
 // unchanged). Errors are PII-scrubbed by the beforeSend/beforeBreadcrumb hooks
 // (see ../src/lib/sentry).
 initSentry();
+// Staging and development builds send one "Sentry check" per build, so a
+// build whose events never arrive is visible (PER-60). Production never does.
+void sendSentryCheck(AsyncStorage);
 
 /**
  * Foreground-display behaviour for local notifications fired by the

@@ -1,5 +1,20 @@
 # Project memory · persistence-backend-sst
 
+### 2026-11-05 — Staging builds prove Sentry delivery (PER-60, branch `claude/sentry-staging-check`)
+
+Brad saw the Join "Could not connect" fallback on TestFlight 1.2.0 (28), which
+reports to Sentry, yet Sentry has no event from any 1.2.0 build. Findings: the
+build had the DSN (EAS log: profile env wins over the "preview" environment);
+Sentry dropped/filtered nothing (dropped-events stats); the last JS-captured
+staging event was 7 Oct (build 1.1.3+1); since then staging sent only native
+watchdog reports (last 14 Oct). Root cause not proven from the repo.
+- `sendSentryCheck` (src/lib/sentry.ts, called from app/_layout.tsx): staging and
+  development builds send one info "Sentry check" per build (AsyncStorage key);
+  production never does. If it never arrives, events are not leaving the app.
+- `safeScrubEvent` replaces `scrubEvent` as `beforeSend`: a scrubber that throws
+  no longer drops the event silently; a stripped copy (title, level, tags,
+  fingerprint, release only) is sent tagged `scrub.failed`.
+
 ### 2026-11-03 — Android date of birth before 1970 snapped to 1970 (branch `claude/android-dob-min-date`)
 
 A tester on Android picked 1968 in onboarding's date of birth. Cause is in
