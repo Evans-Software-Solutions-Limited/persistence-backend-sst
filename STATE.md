@@ -15,6 +15,56 @@ watchdog reports (last 14 Oct). Root cause not proven from the repo.
   no longer drops the event silently; a stripped copy (title, level, tags,
   fingerprint, release only) is sent tagged `scrub.failed`.
 
+### 2026-11-03 — Nearby search finds a Training partners host for its partners (branch `claude/together-friends-search`)
+
+Brad, 3 Nov: search found only "Open nearby" hosts, so a partner could join a
+Training partners host by QR but not find it. Mobile only, no core, native or
+UI change; each behaviour has a test that fails on the old code.
+- **Protocol** (`lobbyDiscovery.ts`, `lanSession.ts`). Guest probe unchanged. A
+  `friends` host answers it with `together-friends-hint-v1 {nonce, tag}`, tag =
+  base64url SHA-256(`together-friends-hint-v1` ‖ nonce ‖ hostUserId): no
+  session, name, plan or id in clear, new tag per nonce, ≤256 chars, unsigned.
+  The guest tests the tag against its accepted partners (social
+  `/social/friends`, read once per search; failure or offline ⇒ hints ignored).
+- **Partner exchange** (`friendsDiscovery.ts`, after Inspector Brad on PR
+  #527: an unsigned hint let any device that knew P's id pose as P, collect
+  G's identity and replay G's proof to the real P). On a match the guest sends
+  `challenge {nonce, eph}` (fresh X25519 key, nothing else). The host replies
+  `response {nonce, eph, sealed}`: its server credential plus a device-key
+  signature over the transcript hash (session, nonce, both ephemerals), sealed
+  with ChaCha20-Poly1305 under HKDF(X25519 secret ‖ hostUserId, transcript).
+  The guest checks credential (trusted authority, fresh, userId = matched
+  partner) and signature; only then fetches the proof (once per partner per
+  search) and sends it sealed (`proof`). The host opens it, verifies it as
+  admission does plus its denied pairs, and returns the signed summary sealed
+  to the guest (`summary`); anything else closes with nothing. A relay sees
+  only ciphertext; a stranger cannot open the response without P's id; a
+  replayed proof cannot be opened under the host's next ephemeral. Same
+  primitives as `security/channel.ts`, no new dependency. Frames measured: 146,
+  ~1.1 k, ~0.5 k, ≤ ~8.1 k (bounds 256/4096/2048/9000; Nearby framing 64 KiB).
+  `readSummary` accepts `friends` only in that flow, only from the matched
+  partner and the device that signed the response. One exchange per hinted
+  socket; refresh re-runs it.
+- **Timing** (Inspector Brad lead, PR #527: one outbound socket, so a slow
+  partner step let listed hosts miss their refresh and expire). The partner
+  list loads at search start, never on the socket (a hint that beats it is
+  probed again once it loads); the proof is fetched from our server as soon as
+  a hint matches; the whole slot, connect included, is capped at
+  `REFRESH_MARGIN - 1 s` (4 s) counted from when it opened (not from the hint),
+  and never ends the search. A matched partner host that runs out of time gets
+  one more slot of its own per search (after our proof lands if that was the
+  wait); a second stall gets nothing.
+  Private hosts still never answer; open hosts unchanged; an older guest drops
+  the hint as an invalid summary.
+- **Join** reuses the search's proof while it still verifies (else fetches),
+  and selection carries the summary's audience so friend admission runs.
+- **Composition:** `createTogetherLobby(..., api.togetherSocial)` →
+  controller `friendIds`.
+- Known limit: anyone who already knows a host's user id can recognise its tag
+  in a hint and open that host's response (its device credential); it never
+  learns the session, plan or a guest's identity. Not device-tested; the larger
+  frames over real Nearby/LAN are unproven.
+
 ### 2026-11-03 — Android date of birth before 1970 snapped to 1970 (branch `claude/android-dob-min-date`)
 
 A tester on Android picked 1968 in onboarding's date of birth. Cause is in

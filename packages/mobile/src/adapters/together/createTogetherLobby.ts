@@ -2,6 +2,7 @@
 import type { TogetherProvisioningPort } from "@/domain/ports/togetherProvisioning.port";
 import type { TogetherLobbyPort } from "@/domain/ports/togetherLobby.port";
 import type { TogetherRecoveryApi } from "@/domain/ports/togetherOfflineApi.port";
+import type { TogetherSocialApi } from "@/domain/ports/togetherSocial.port";
 import type { TogetherLobbyControllerOptions } from "./lobbyController";
 import type { Exercise } from "@/domain/models/exercise";
 import { ownCustomExercises } from "./ownCustomExercises";
@@ -16,6 +17,8 @@ export function createTogetherLobby(
   platform?: string,
   /** The cached exercise library; a host shares its own custom ones (PER-60). */
   exercises?: () => readonly Exercise[],
+  /** Accepted training partners, so search can find a Training partners host. */
+  social?: Pick<TogetherSocialApi, "friends">,
 ): TogetherLobbyPort | undefined {
   if (!enabled || !provisioning) return undefined;
   try {
@@ -34,6 +37,8 @@ export function createTogetherLobby(
       require("./security/identity") as typeof import("./security/identity");
     const { TogetherLobbyController } =
       require("./lobbyController") as typeof import("./lobbyController");
+    const { acceptedFriendIds } =
+      require("./lobbyDiscovery") as typeof import("./lobbyDiscovery");
     const { withNativeDiagnostics } =
       require("./nativeDiagnostics") as typeof import("./nativeDiagnostics");
     const { togetherLog } =
@@ -70,6 +75,12 @@ export function createTogetherLobby(
         customExercises: exercises
           ? (ownerId, ids) => ownCustomExercises(exercises(), ownerId, ids)
           : undefined,
+        ...(social
+          ? {
+              friendIds: (account: string) =>
+                acceptedFriendIds(social, account),
+            }
+          : {}),
       });
       const dispose = controller.dispose.bind(controller);
       let disposed = false;

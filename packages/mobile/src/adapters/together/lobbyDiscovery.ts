@@ -9,11 +9,15 @@ import {
   verifyCredential,
   verifySignature,
   type Credential,
+  type FriendshipEvidence,
   type Signed,
   type TrustedKeys,
 } from "./security/identity";
 import { object, uuid } from "./security/schema";
 import { encode64 } from "./security/encoding";
+import { getCryptoBackend } from "./security/cryptoBackend";
+import { FriendsGuestExchange } from "./friendsDiscovery";
+import type { TogetherSocialApi } from "../../domain/ports/togetherSocial.port";
 import { isHostDetails } from "./planDetails";
 import type {
   TogetherHostDetails,
@@ -25,9 +29,18 @@ export const SUMMARY_TTL = 15_000;
 export const REFRESH_MARGIN = 5_000;
 /** How long the native socket keeps trying after `connect` returns (Android and iOS both use 30 s). */
 export const NATIVE_CONNECT_DEADLINE = 30_000;
+/**
+ * From a matched Training partners hint to its summary (friendsDiscovery.ts).
+ * Below REFRESH_MARGIN: the browser has one socket, and a slow partner step
+ * (or a host stalling on purpose) must not let listed hosts' refresh probes
+ * miss their summaries' expiry.
+ */
+export const FRIENDS_STEP_DEADLINE = REFRESH_MARGIN - 1_000;
+const NONCE = /^[A-Za-z0-9_-]{43}$/;
 export interface LobbySummary extends HostPin {
   kind: "together-summary-v1";
-  audience: "open";
+  /** "friends" only in reply to a verified friendship proof. */
+  audience: "open" | "friends";
   workoutName: string;
   memberCount: number;
   /** PER-60: start time, plan rows and the session code; absent from older hosts. */
@@ -46,12 +59,81 @@ export function readProbe(frame: string): string | undefined {
       object(p, ["kind", "nonce"]) &&
       p.kind === "together-probe-v1" &&
       typeof p.nonce === "string" &&
-      /^[A-Za-z0-9_-]{43}$/.test(p.nonce)
+      NONCE.test(p.nonce)
     )
       return p.nonce;
   } catch {
     /* Non-probes go to the existing authenticated protocol. */
   }
+}
+/**
+ * Binds a Training partners host to one probe without naming it: only a
+ * guest that already knows the host's user id can recompute the tag, and a
+ * fresh nonce gives a fresh tag, so hints cannot be linked across searches.
+ */
+export function friendsHintTag(nonce: string, hostUserId: string): string {
+  return encode64(
+    getCryptoBackend().sha256(
+      new TextEncoder().encode(`together-friends-hint-v1${nonce}${hostUserId}`),
+    ),
+    true,
+  );
+}
+/** A Training partners host's reply to a probe: no session, name, plan or identity. */
+export function friendsHint(nonce: string, hostUserId: string): string {
+  return JSON.stringify({
+    kind: "together-friends-hint-v1",
+    nonce,
+    tag: friendsHintTag(nonce, hostUserId),
+  });
+}
+export function readFriendsHint(
+  frame: string,
+  nonce: string,
+): string | undefined {
+  if (frame.length > 256) return;
+  try {
+    const p: unknown = JSON.parse(frame);
+    if (
+      object(p, ["kind", "nonce", "tag"]) &&
+      p.kind === "together-friends-hint-v1" &&
+      p.nonce === nonce &&
+      typeof p.tag === "string" &&
+      NONCE.test(p.tag)
+    )
+      return p.tag;
+  } catch {
+    /* Anything else is a summary or nothing. */
+  }
+}
+/**
+ * Pages of partners read at most: a safety bound only (5,000 partners at the
+ * API's default page size), never a product limit. The list loads off the
+ * probe socket, so reading it all costs the search nothing.
+ */
+export const FRIEND_PAGES_MAX = 250;
+/** Accepted training partners' user ids, every page; the social API lists both directions. */
+export async function acceptedFriendIds(
+  social: Pick<TogetherSocialApi, "friends">,
+  userId: string,
+): Promise<string[]> {
+  const ids = new Set<string>();
+  const cursors = new Set<string>();
+  let cursor: string | undefined;
+  for (let page = 0; page < FRIEND_PAGES_MAX; page++) {
+    const result = await social.friends(cursor);
+    if (!result.ok) throw new Error("friends-unavailable");
+    for (const r of result.value.data)
+      if (r.status === "accepted")
+        ids.add(r.userId === userId ? r.friendId : r.userId);
+    const next = result.value.nextCursor;
+    // Until the server says there is no more; a repeated cursor would loop.
+    if (!next || cursors.has(next)) break;
+    cursors.add(next);
+    cursor = next;
+  }
+  ids.delete(userId);
+  return [...ids];
 }
 export function signSummary(
   pin: HostPin,
@@ -61,6 +143,7 @@ export function signSummary(
   nonce: string,
   now: number,
   details?: TogetherHostDetails & { code: string },
+  audience: LobbySummary["audience"] = "open",
 ): string {
   verifyCredential(identity.credential, identity.trustedKeys, now);
   return JSON.stringify(
@@ -68,7 +151,7 @@ export function signSummary(
       {
         kind: "together-summary-v1",
         ...pin,
-        audience: "open",
+        audience,
         workoutName,
         memberCount,
         ...(details
@@ -95,6 +178,8 @@ export function readSummary(
   nonce: string,
   trusted: TrustedKeys,
   now: number,
+  /** Set only in the Training partners flow: the partner whose hint matched. */
+  friendId?: string,
 ): LobbySummary {
   if (frame.length > 6000) throw new Error("invalid-summary");
   const envelope: unknown = JSON.parse(frame);
@@ -121,7 +206,8 @@ export function readSummary(
   const p = envelope.payload;
   if (
     p.kind !== "together-summary-v1" ||
-    p.audience !== "open" ||
+    p.audience !== (friendId === undefined ? "open" : "friends") ||
+    (friendId !== undefined && p.hostUserId !== friendId) ||
     p.sessionId !== sessionId ||
     ![p.sessionId, p.hostUserId, p.hostDeviceId].every(uuid) ||
     p.nonce !== nonce ||
@@ -153,13 +239,27 @@ export function readSummary(
     identity.publicKey,
   );
 }
+/** A verified summary; a Training partners one keeps the proof that unlocked it, for Join. */
+export type DiscoveredSummary = LobbySummary & {
+  friendship?: Signed<FriendshipEvidence>;
+};
 interface BrowserOptions {
   native: TogetherLanNative;
   trustedKeys: TrustedKeys;
   randomBytes(length: number): Uint8Array;
   now(): number;
-  onChange(summaries: readonly LobbySummary[]): void;
+  onChange(summaries: readonly DiscoveredSummary[]): void;
   onError(code: string): void;
+  /**
+   * Training partners search. Without it, or when either call fails, a
+   * partners host's hint is ignored and the search behaves as before.
+   */
+  friends?: {
+    /** Accepted partners' user ids; read once per search. */
+    ids(): Promise<readonly string[]>;
+    /** The server-signed friendship proof for one partner; fetched once per search. */
+    proof(friendId: string): Promise<Signed<FriendshipEvidence> | null>;
+  };
 }
 /** No visitor identity or admission data is sent until explicit Join. One outbound socket at a time. */
 export class TogetherLobbyBrowser {
@@ -172,16 +272,37 @@ export class TogetherLobbyBrowser {
     sessionId: string;
     refresh?: boolean;
   }[] = [];
-  private summaries = new Map<string, LobbySummary>();
+  private summaries = new Map<string, DiscoveredSummary>();
+  /** Accepted partners, once loaded for this search. */
+  private friendIds?: readonly string[];
+  /** Hosts whose hint came before the partner list: probed again once it loads. */
+  private awaitingIds = new Map<string, string>();
+  /** Endpoints already given a second probe after a slow proof fetch. */
+  private retried = new Set<string>();
+  private searches = 0;
+  private proofs = new Map<
+    string,
+    Promise<Signed<FriendshipEvidence> | null>
+  >();
   /** Endpoints queued for a refresh probe; cleared when a new summary lands or the host is lost. */
   private refreshing = new Set<string>();
   private active?: {
     endpointId: string;
     sessionId: string;
     nonce: string;
+    /** When this slot opened: the partners step shares its budget from here. */
+    startedAt: number;
     peerId?: string;
     /** A re-probe of a listed host: its failure drops that row only. */
     refresh?: boolean;
+    /**
+     * Training partners step: waiting for the matched host to prove
+     * it is that partner, fetching the proof, then waiting for the summary.
+     */
+    stage?: "challenged" | "proving" | "friends";
+    friendId?: string;
+    exchange?: FriendsGuestExchange;
+    friendship?: Signed<FriendshipEvidence>;
   };
   private deadline?: ReturnType<typeof setTimeout>;
   private expiry?: ReturnType<typeof setInterval>;
@@ -197,10 +318,12 @@ export class TogetherLobbyBrowser {
   constructor(private readonly options: BrowserOptions) {}
   async start() {
     this.running = true;
+    this.searches++;
     this.subscription = this.options.native.addListener("onEvent", (event) =>
       this.event(event),
     );
     this.expiry = setInterval(() => this.publish(), 1000);
+    this.loadFriendIds();
     try {
       await this.options.native.startDiscovery();
     } catch (error) {
@@ -254,6 +377,7 @@ export class TogetherLobbyBrowser {
       );
       this.summaries.delete(event.endpointId);
       this.refreshing.delete(event.endpointId);
+      this.awaitingIds.delete(event.endpointId);
       this.publish();
       const active = this.active;
       if (active?.endpointId === event.endpointId) {
@@ -285,17 +409,40 @@ export class TogetherLobbyBrowser {
     } else if (event.type === "frame") {
       const active = this.active;
       if (!active || active.peerId !== event.peerId) return;
+      if (!active.stage && this.options.friends) {
+        const tag = readFriendsHint(event.frame, active.nonce);
+        if (tag) {
+          this.matchFriend(active, tag);
+          return;
+        }
+      }
+      if (active.stage === "challenged") {
+        void this.prove(active, event.frame);
+        return;
+      }
+      // A host that speaks out of turn in the partners step gets nothing.
+      if (active.stage === "proving") {
+        void this.finish(active);
+        return;
+      }
       try {
         this.refreshing.delete(active.endpointId);
+        const exchange = active.exchange;
+        const summary = readSummary(
+          exchange ? exchange.summary(event.frame) : event.frame,
+          active.sessionId,
+          active.nonce,
+          this.options.trustedKeys,
+          this.options.now(),
+          active.friendId,
+        );
+        if (exchange && summary.hostDeviceId !== exchange.hostDeviceId)
+          throw new Error("invalid-summary");
         this.summaries.set(
           active.endpointId,
-          readSummary(
-            event.frame,
-            active.sessionId,
-            active.nonce,
-            this.options.trustedKeys,
-            this.options.now(),
-          ),
+          active.friendship
+            ? { ...summary, friendship: active.friendship }
+            : summary,
         );
         this.publish();
       } catch {
@@ -321,6 +468,7 @@ export class TogetherLobbyBrowser {
     const active = {
       ...endpoint,
       nonce: encode64(this.options.randomBytes(32), true),
+      startedAt: this.options.now(),
     };
     this.active = active;
     // No endpoint correlation exists on connected: timeout ends the entire generation.
@@ -376,6 +524,151 @@ export class TogetherLobbyBrowser {
       if (this.reserved) this.release();
     } else if (!active.peerId) this.unreachable(active, false);
   }
+  /**
+   * A Training partners host answered with a hint. If the tag is one of this
+   * account's partners, challenge the host with a fresh ephemeral key and
+   * nothing else (friendsDiscovery.ts). Anything else ends the probe as if no
+   * host answered.
+   */
+  private matchFriend(
+    active: NonNullable<TogetherLobbyBrowser["active"]>,
+    tag: string,
+  ) {
+    // The partner list loads in parallel from the start of the search; the
+    // socket never waits for it. A hint that arrives first is probed again
+    // once the list is in.
+    if (!this.friendIds) {
+      this.awaitingIds.set(active.endpointId, active.sessionId);
+      void this.finish(active);
+      return;
+    }
+    const friendId = this.friendIds.find(
+      (id) => friendsHintTag(active.nonce, id) === tag,
+    );
+    if (!friendId) {
+      void this.finish(active);
+      return;
+    }
+    // The whole slot, connect included, is held at most this long from when
+    // it opened (not from the hint), so listed hosts' refresh probes still
+    // run before their summaries lapse; it never ends the search.
+    clearTimeout(this.deadline);
+    this.deadline = setTimeout(
+      () => this.partnerTimeout(active),
+      Math.max(
+        0,
+        active.startedAt + FRIENDS_STEP_DEADLINE - this.options.now(),
+      ),
+    );
+    // Fetched from our own server while the host proves itself; a fetch that
+    // outlives this socket still lands in the cache for the next probe.
+    void this.proof(friendId);
+    active.stage = "challenged";
+    active.friendId = friendId;
+    active.exchange = new FriendsGuestExchange({
+      nonce: active.nonce,
+      sessionId: active.sessionId,
+      friendId,
+      trustedKeys: this.options.trustedKeys,
+      randomBytes: this.options.randomBytes,
+      now: this.options.now,
+    });
+    this.send(active, active.exchange.challenge());
+  }
+  /**
+   * The host's response must prove, with its server-issued credential, that
+   * it is the matched partner's device for this exchange. Only then does the
+   * partner's proof leave the phone, sealed to that host.
+   */
+  private async prove(
+    active: NonNullable<TogetherLobbyBrowser["active"]>,
+    frame: string,
+  ) {
+    active.stage = "proving";
+    const friendId = active.friendId!;
+    try {
+      active.exchange!.accept(frame);
+    } catch {
+      void this.finish(active);
+      return;
+    }
+    const friendship = await this.proof(friendId);
+    if (this.active !== active) return;
+    if (!friendship) {
+      void this.finish(active);
+      return;
+    }
+    active.stage = "friends";
+    active.friendship = friendship;
+    this.send(active, active.exchange!.proof(friendship));
+  }
+  /**
+   * The partner step ran out of time. A host that already proved it is the
+   * partner, held up only by our own proof fetch, is probed once more when
+   * that fetch lands; a host that stalled on its own is not.
+   */
+  private partnerTimeout(active: NonNullable<TogetherLobbyBrowser["active"]>) {
+    if (this.active !== active) return;
+    const { endpointId, sessionId, friendId } = active;
+    // A matched partner host gets one more slot of its own per search: the
+    // budget counts from when the slot opened, so a slow connect can leave
+    // too little for the exchange. Still at most one extra bounded slot, so
+    // a host stalling on purpose can't make the search loop.
+    if (active.stage && !this.retried.has(endpointId)) {
+      this.retried.add(endpointId);
+      if (active.stage === "proving") {
+        // Waiting on our own proof: probe again once it has landed.
+        const generation = this.searches;
+        void this.proof(friendId!).then((proof) => {
+          if (proof && this.running && this.searches === generation)
+            this.retry([[endpointId, sessionId]]);
+        });
+      } else {
+        // Behind whatever is already queued; finish() starts the next slot.
+        this.queue.push({ endpointId, sessionId, refresh: true });
+      }
+    }
+    void this.finish(active);
+  }
+  /** Probed again like a refresh: a host that has since gone drops quietly. */
+  private retry(endpoints: Iterable<[string, string]>) {
+    for (const [endpointId, sessionId] of endpoints)
+      this.queue.push({ endpointId, sessionId, refresh: true });
+    this.next();
+  }
+  /** One fetch per partner per search, cached whether or not its socket is still open. */
+  private proof(friendId: string) {
+    let proof = this.proofs.get(friendId);
+    if (!proof) {
+      proof = this.options.friends!.proof(friendId).catch(() => null);
+      this.proofs.set(friendId, proof);
+    }
+    return proof;
+  }
+  /** Starts with the search, off the probe socket; offline or failed means no partners. */
+  private loadFriendIds() {
+    const friends = this.options.friends;
+    if (!friends) return;
+    const generation = this.searches;
+    void friends
+      .ids()
+      .catch(() => [])
+      .then((ids) => {
+        if (!this.running || this.searches !== generation) return;
+        this.friendIds = [...ids];
+        const waiting = [...this.awaitingIds];
+        this.awaitingIds.clear();
+        if (ids.length) this.retry(waiting);
+      });
+  }
+  private send(
+    active: NonNullable<TogetherLobbyBrowser["active"]>,
+    frame: string,
+  ) {
+    void this.options.native.send(active.peerId!, frame).catch(() => {
+      if (this.active === active) void this.finish(active);
+    });
+  }
   private release() {
     clearTimeout(this.reserved);
     this.reserved = undefined;
@@ -383,6 +676,7 @@ export class TogetherLobbyBrowser {
   }
   private async finish(active: NonNullable<TogetherLobbyBrowser["active"]>) {
     if (this.active !== active) return;
+    active.exchange?.dispose();
     clearTimeout(this.deadline);
     // Keep ownership until disconnect resolves, and ignore repeated frames.
     this.active = undefined;
@@ -414,6 +708,12 @@ export class TogetherLobbyBrowser {
     this.queue = [];
     this.summaries.clear();
     this.refreshing.clear();
+    this.searches++;
+    this.friendIds = undefined;
+    this.awaitingIds.clear();
+    this.retried.clear();
+    this.proofs.clear();
+    this.active?.exchange?.dispose();
     this.active = undefined;
     this.stopping = this.options.native.stop();
     await this.stopping;
