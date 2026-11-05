@@ -1,3 +1,4 @@
+import * as Application from "expo-application";
 import Constants from "expo-constants";
 import * as Sentry from "@sentry/react-native";
 import type {
@@ -218,13 +219,75 @@ export function initSentry(): boolean {
     tracesSampleRate: 0.1,
     // Never attach IPs / device PII automatically. All scrubbing is ours.
     sendDefaultPii: false,
-    beforeSend: scrubEvent,
+    beforeSend: safeScrubEvent,
     // `beforeSend` does NOT run on transaction events — scrub those too.
     beforeSendTransaction: scrubTransaction,
     beforeBreadcrumb: scrubBreadcrumb,
   });
   enabled = true;
   return true;
+}
+
+/**
+ * `beforeSend` that never drops an event silently. A scrubber that throws
+ * makes the SDK discard the event with no trace in Sentry; instead send a
+ * stripped copy (title, level, tags, fingerprint and release only: nothing the
+ * scrubber would have had to clean) tagged `scrub.failed`, so the failure is
+ * visible and can be fixed.
+ */
+export function safeScrubEvent(event: ErrorEvent): ErrorEvent {
+  try {
+    return scrubEvent(event);
+  } catch {
+    const title =
+      event.exception?.values?.[0]?.type ??
+      (typeof event.message === "string" ? "message" : "event");
+    return {
+      type: event.type,
+      event_id: event.event_id,
+      timestamp: event.timestamp,
+      platform: event.platform,
+      level: event.level,
+      release: event.release,
+      environment: event.environment,
+      fingerprint: event.fingerprint,
+      message: `Scrubbing failed for a ${title}`,
+      tags: { ...event.tags, "scrub.failed": "true" },
+    };
+  }
+}
+
+const SENTRY_CHECK_KEY = "sentry-check-sent";
+
+/**
+ * Non-production builds send one "Sentry check" message per app build, so a
+ * TestFlight build that reports nothing can be told apart from one whose
+ * events never reach Sentry. Production never sends it. Storage is injected
+ * (AsyncStorage in the app); a storage failure skips the check.
+ */
+export async function sendSentryCheck(storage: {
+  getItem(key: string): Promise<string | null>;
+  setItem(key: string, value: string): Promise<void>;
+}): Promise<boolean> {
+  const environment = resolveEnvironment();
+  if (!enabled || environment === "production") return false;
+  // The native values: EAS sets the build number remotely, into the native
+  // project, not into the embedded Expo config.
+  const build = [
+    Application.nativeApplicationVersion ?? "unknown",
+    Application.nativeBuildVersion ?? "unknown",
+  ].join("+");
+  try {
+    if ((await storage.getItem(SENTRY_CHECK_KEY)) === build) return false;
+    Sentry.captureMessage("Sentry check", {
+      level: "info",
+      tags: { "sentry.check": "true", "app.build": build },
+    });
+    await storage.setItem(SENTRY_CHECK_KEY, build);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Report an error caught by the React ErrorBoundary. No-op when disabled. */

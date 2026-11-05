@@ -3,12 +3,14 @@
 const mocks = {
   init: jest.fn(),
   captureException: jest.fn(),
+  captureMessage: jest.fn(),
   wrap: jest.fn((c: unknown) => c),
 };
 jest.mock("@sentry/react-native", () => ({
   __esModule: true,
   init: mocks.init,
   captureException: mocks.captureException,
+  captureMessage: mocks.captureMessage,
   wrap: mocks.wrap,
 }));
 
@@ -20,6 +22,16 @@ jest.mock("expo-constants", () => ({
     get expoConfig() {
       return { extra: { appVariant: mockAppVariant } };
     },
+  },
+}));
+
+// The native app record: EAS writes the build number there, not into expoConfig.
+let mockNativeBuild: string | null = "29";
+jest.mock("expo-application", () => ({
+  __esModule: true,
+  nativeApplicationVersion: "1.2.0",
+  get nativeBuildVersion() {
+    return mockNativeBuild;
   },
 }));
 
@@ -254,7 +266,7 @@ describe("initSentry / isSentryEnabled", () => {
     expect(opts.environment).toBe("staging");
     expect(opts.tracesSampleRate).toBe(0.1);
     expect(opts.sendDefaultPii).toBe(false);
-    expect(opts.beforeSend).toBe(mod.scrubEvent);
+    expect(opts.beforeSend).toBe(mod.safeScrubEvent);
     expect(opts.beforeSendTransaction).toBe(mod.scrubTransaction);
     expect(opts.beforeBreadcrumb).toBe(mod.scrubBreadcrumb);
   });
@@ -282,5 +294,91 @@ describe("captureBoundaryError", () => {
     });
     mod.captureBoundaryError(err);
     expect(mocks.captureException).toHaveBeenLastCalledWith(err, undefined);
+  });
+});
+
+describe("safeScrubEvent", () => {
+  it("sends a stripped, tagged copy instead of silently dropping an event the scrubber can't handle", () => {
+    const { safeScrubEvent } = load();
+    const hostile = new Proxy(
+      {},
+      {
+        ownKeys() {
+          throw new Error("boom");
+        },
+      },
+    );
+    const out = safeScrubEvent({
+      event_id: "e1",
+      level: "warning",
+      release: "r",
+      environment: "staging",
+      fingerprint: ["together-failure", "nearby", "join", "x"],
+      message: "Together join failed: x",
+      tags: { "together.code": "x" },
+      extra: hostile,
+    } as never);
+    expect(out).toMatchObject({
+      event_id: "e1",
+      level: "warning",
+      release: "r",
+      fingerprint: ["together-failure", "nearby", "join", "x"],
+      tags: { "together.code": "x", "scrub.failed": "true" },
+    });
+    expect(out).not.toHaveProperty("extra");
+  });
+  it("passes a normal event through the scrubber", () => {
+    const { safeScrubEvent } = load();
+    const out = safeScrubEvent({
+      message: "a@b.com",
+      extra: { note: "ok" },
+    } as never);
+    expect(out.message).toBe("[redacted]-email");
+    expect(out.tags).toBeUndefined();
+  });
+});
+
+describe("sendSentryCheck", () => {
+  function memory(fail = false) {
+    const items = new Map<string, string>();
+    return {
+      getItem: jest.fn(async (k: string) => {
+        if (fail) throw new Error("storage");
+        return items.get(k) ?? null;
+      }),
+      setItem: jest.fn(async (k: string, v: string) => {
+        items.set(k, v);
+      }),
+    };
+  }
+  it("sends one check per build on a staging build, read from the native build number", async () => {
+    mockNativeBuild = "29";
+    const mod = loadInitialised("https://k@o.ingest.sentry.io/1");
+    const storage = memory();
+    expect(await mod.sendSentryCheck(storage)).toBe(true);
+    expect(await mod.sendSentryCheck(storage)).toBe(false);
+    expect(mocks.captureMessage).toHaveBeenCalledTimes(1);
+    expect(mocks.captureMessage).toHaveBeenCalledWith("Sentry check", {
+      level: "info",
+      tags: { "sentry.check": "true", "app.build": "1.2.0+29" },
+    });
+    // A newer build of the same version installed over it checks again.
+    mockNativeBuild = "30";
+    expect(await mod.sendSentryCheck(storage)).toBe(true);
+    expect(mocks.captureMessage).toHaveBeenLastCalledWith("Sentry check", {
+      level: "info",
+      tags: { "sentry.check": "true", "app.build": "1.2.0+30" },
+    });
+  });
+  it("never sends on production, without a DSN, or when storage fails", async () => {
+    mockAppVariant = "production";
+    let mod = loadInitialised("https://k@o.ingest.sentry.io/1");
+    expect(await mod.sendSentryCheck(memory())).toBe(false);
+    mockAppVariant = "staging";
+    mod = loadInitialised(undefined);
+    expect(await mod.sendSentryCheck(memory())).toBe(false);
+    mod = loadInitialised("https://k@o.ingest.sentry.io/1");
+    expect(await mod.sendSentryCheck(memory(true))).toBe(false);
+    expect(mocks.captureMessage).not.toHaveBeenCalled();
   });
 });
