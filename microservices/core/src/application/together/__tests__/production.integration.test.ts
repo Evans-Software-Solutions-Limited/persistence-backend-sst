@@ -1154,6 +1154,37 @@ describe("production Together persistence and recovery", () => {
       (await repo.snapshot(a, s.sessionId)).participants.map((p) => p.userId),
     ).toEqual(expect.arrayContaining([a, c]));
   });
+  it("switching to private closes nearby-list requests the host can no longer approve and keeps code requests", async () => {
+    const consent = {
+      consentVersion: "together-v1" as const,
+      consentAccepted: true as const,
+    };
+    const s = await create();
+    await repo.visibility(a, s.sessionId, key(), {
+      audience: "nearby",
+      placeId: "geoapify:place",
+      expiresAt: new Date(Date.now() + 60000).toISOString(),
+    });
+    const listed = await repo.requestJoin(c, key(), {
+      sessionId: s.sessionId,
+      ...consent,
+    });
+    const coded = await repo.requestJoin(b, key(), {
+      code: s.code!,
+      ...consent,
+    });
+    expect([listed.status, coded.status]).toEqual(["pending", "pending"]);
+    await repo.visibility(a, s.sessionId, key(), {
+      audience: "private",
+      expiresAt: new Date(Date.now() + 60000).toISOString(),
+    });
+    expect(await repo.joinStatus(c, listed.requestId)).toMatchObject({
+      status: "rejected",
+    });
+    expect(await repo.joinStatus(b, coded.requestId)).toMatchObject({
+      status: "pending",
+    });
+  });
   it("a Training partners code answers a non-partner exactly like a wrong code, even when they can't otherwise join", async () => {
     const consent = {
       consentVersion: "together-v1" as const,

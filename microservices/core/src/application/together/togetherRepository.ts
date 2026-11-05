@@ -1824,28 +1824,34 @@ export class TogetherRepository {
               listedUntil,
             })
             .where(eq(sessions.id, id));
-          // On Training partners a non-partner's pending code request can
-          // never be let in (decide checks the pair), so close it now rather
-          // than leave the host an Approve that fails and the requester
-          // waiting (PER-60). A request made with an invite follows that
-          // invite's own audience, as approval does, so it stays.
-          if (body.audience === "friends") {
-            const pending = await tx
-              .select({
-                id: requests.id,
-                userId: requests.userId,
-                inviteId: requests.inviteId,
-              })
-              .from(requests)
-              .where(
-                and(eq(requests.sessionId, id), eq(requests.status, "pending")),
-              );
-            for (const r of pending)
-              if (!r.inviteId && !(await areFriends(tx, actor, r.userId)))
-                await tx
-                  .update(requests)
-                  .set({ status: "rejected" })
-                  .where(eq(requests.id, r.id));
+          // Close every pending request the host could no longer approve under
+          // the new audience (the same rule decide applies), rather than leave
+          // an Approve that fails and a requester waiting (PER-60): a listed
+          // request on a private session, or a non-partner's code or listed
+          // request on Training partners. A request made with an invite follows
+          // that invite's own audience, as approval does, so it stays.
+          const pending = await tx
+            .select({
+              id: requests.id,
+              userId: requests.userId,
+              inviteId: requests.inviteId,
+              viaCode: requests.viaCode,
+            })
+            .from(requests)
+            .where(
+              and(eq(requests.sessionId, id), eq(requests.status, "pending")),
+            );
+          for (const r of pending) {
+            if (r.inviteId) continue;
+            const approvable =
+              (r.viaCode || body.audience !== "private") &&
+              (body.audience !== "friends" ||
+                (await areFriends(tx, actor, r.userId)));
+            if (!approvable)
+              await tx
+                .update(requests)
+                .set({ status: "rejected" })
+                .where(eq(requests.id, r.id));
           }
           await this.emit(tx, s, { type: "visibility_changed" });
           return { revision: s.revision };
