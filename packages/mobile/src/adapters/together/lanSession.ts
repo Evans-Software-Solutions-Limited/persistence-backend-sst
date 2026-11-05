@@ -34,6 +34,8 @@ interface Connection {
   link: TogetherLocalLink;
   authenticated: boolean;
   received: boolean;
+  /** A Training partners hint was sent: the remaining frames belong to its exchange. */
+  friends?: FriendsProbe;
   admitted: boolean;
   frames: number;
   processing: Promise<void>;
@@ -49,6 +51,16 @@ export interface LanSessionOptions {
   onEvent: (event: LanSessionEvent) => void;
   shared?: TogetherSharedSession;
   probeSummary?: (nonce: string) => string | undefined;
+  /** A Training partners host's anonymous hint for a probe, and the exchange that may follow it. */
+  probeFriends?: (nonce: string) => FriendsProbe | undefined;
+}
+/** Host side of one partners exchange (friendsDiscovery.ts). */
+export interface FriendsProbe {
+  hint: string;
+  /** The reply, or undefined to close with nothing. */
+  receive(frame: string): string | undefined;
+  readonly finished: boolean;
+  dispose(): void;
 }
 
 /** Foreground LAN lifecycle only. No UI mounting, account switching or cloud fallback. */
@@ -348,11 +360,28 @@ export class TogetherLanSession {
           const nonce = readProbe(event.frame);
           if (nonce) {
             const summary = this.options.probeSummary?.(nonce);
+            const friends = summary
+              ? undefined
+              : this.options.probeFriends?.(nonce);
+            if (friends) {
+              connection.friends = friends;
+              await this.options.native!.send(event.peerId, friends.hint);
+              return;
+            }
             if (summary) await this.options.native!.send(event.peerId, summary);
             this.drop(event.peerId);
             await this.disconnect(event.peerId);
             return;
           }
+        }
+        if (connection.friends) {
+          // One partners exchange per hinted socket; it never reaches the secure channel.
+          const reply = connection.friends.receive(event.frame);
+          if (reply) await this.options.native!.send(event.peerId, reply);
+          if (reply && !connection.friends.finished) return;
+          this.drop(event.peerId);
+          await this.disconnect(event.peerId);
+          return;
         }
         const result = await connection.link.receive(event.frame);
         if (this.links.get(event.peerId) !== connection) return;
@@ -518,6 +547,7 @@ export class TogetherLanSession {
     }
     clearTimeout(connection.deadline);
     clearInterval(connection.heartbeat);
+    connection.friends?.dispose();
     connection.link.close();
     if (this.mode === "guest") {
       this.connecting = false;
