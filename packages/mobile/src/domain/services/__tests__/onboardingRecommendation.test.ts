@@ -4,7 +4,8 @@ import { recommendOnboardingPlan } from "../onboardingRecommendation";
 describe("recommendOnboardingPlan", () => {
   it.each([
     ["nutrition_barcode", "training_three_workouts", "free"],
-    ["nutrition_photo_estimate", "training_three_workouts", "premium"],
+    // PER-103: photo logging is AI, which only Premium+ carries.
+    ["nutrition_photo_estimate", "training_three_workouts", "premium_plus"],
     ["nutrition_barcode", "training_unlimited_workouts", "premium"],
     ["nutrition_mealprint", "training_unlimited_workouts", "premium_plus"],
     ["nutrition_photo_estimate", "training_loadout", "premium_plus"],
@@ -44,7 +45,7 @@ describe("recommendOnboardingPlan", () => {
     const result = recommendOnboardingPlan({
       path: "athlete",
       coachClientBand: null,
-      intentKeys: ["nutrition_photo_estimate", "training_three_workouts"],
+      intentKeys: ["nutrition_barcode", "training_unlimited_workouts"],
       currentTier: "premium_plus",
     });
 
@@ -70,7 +71,7 @@ describe("recommendOnboardingPlan", () => {
       recommendOnboardingPlan({
         path: "athlete",
         coachClientBand: null,
-        intentKeys: ["nutrition_photo_estimate"],
+        intentKeys: ["training_unlimited_workouts"],
         catalogue: [{ tierName: "free" }, { tierName: "premium_plus" }],
       }).tierName,
     ).toBe("premium_plus");

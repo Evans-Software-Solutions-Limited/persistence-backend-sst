@@ -21,7 +21,8 @@ const COACH_RANK: Partial<Record<SubscriptionTierName, number>> = {
 
 const INTENT_TIER: Record<OnboardingIntentKey, SubscriptionTierName> = {
   nutrition_barcode: "free",
-  nutrition_photo_estimate: "premium",
+  // PER-103: photo logging is AI, and AI is Premium+ only.
+  nutrition_photo_estimate: "premium_plus",
   nutrition_mealprint: "premium_plus",
   training_three_workouts: "free",
   training_unlimited_workouts: "premium",
@@ -33,7 +34,7 @@ const INTENT_REASON: Record<OnboardingIntentKey, string> = {
   nutrition_photo_estimate: "Photo nutrition estimates",
   nutrition_mealprint: "Mealprint meal planning",
   training_three_workouts: "Up to three custom workouts",
-  training_unlimited_workouts: "Unlimited workouts and history",
+  training_unlimited_workouts: "Unlimited workouts",
   training_loadout: "Loadout equipment-aware training",
 };
 

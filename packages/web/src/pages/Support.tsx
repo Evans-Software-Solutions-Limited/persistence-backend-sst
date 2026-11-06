@@ -197,9 +197,9 @@ export function Support() {
                 <h4>Which plan is right for me?</h4>
                 <p>
                   Free covers full logging and nutrition tracking. Premium adds
-                  unlimited history, analytics and AI logging; Premium+ adds
-                  Loadout and Mealprint. Compare them on the{" "}
-                  <Link to="/pricing">pricing page</Link>.
+                  unlimited workouts and Train Together; Premium+ adds every AI
+                  feature: photo logging, recipe import, Mealprint and Loadout.
+                  Compare them on the <Link to="/pricing">pricing page</Link>.
                 </p>
               </div>
             </div>

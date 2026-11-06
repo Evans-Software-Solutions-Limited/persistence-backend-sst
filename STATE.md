@@ -1,5 +1,57 @@
 # Project memory · persistence-backend-sst
 
+### 2026-11-06 — Premium without AI, Premium+ carries all AI (PER-103, branch `claude/inspiring-cerf-145ez4`)
+
+Brad's decisions (31 Oct – 6 Nov): three athlete tiers. Premium £4.99 / £39.99,
+no AI. Premium+ £24.99 / £199.99, every AI feature. Core (PER-65) folds into
+Premium. [PER-103](https://linear.app/evans-software-solutions/issue/PER-103)
+- **Migration** `20261106120000_premium_without_ai.sql`: Premium `ai_access`
+  false, prices, AI budget 0, new description; Premium+ prices, budget $4.89,
+  new description. No `tier_name` change. ⚠ Prod has NOT applied
+  `20261102120000_ai_monthly_budget.sql` (the column is missing on prod, checked
+  5 Nov): the release must apply both, in order, before the backend deploy.
+- **Budget rule**: 40 % of the net per month of the cadence that nets less. For
+  Premium+ that is the App Store annual (£199.99 → $12.22/mo → $4.89).
+  `scripts/ai-cost-model.ts` now holds the live ladder with yearly prices and
+  prints this ceiling; a test pins it to the migration. ⚠ Coach budgets from
+  #525 (5.52 / 8.47 / 14.52 / 24.20) sit above this annual-aware ceiling
+  (3.91 / 7.09 / 12.22 / 20.54); coach pricing was kept out of PER-103.
+- **Backend** `pickUpgradeTier`: an athlete (user/physio) denied `ai_access` or
+  `ai_workout` is upsold `premium_plus`; coaches still get `individual_trainer`
+  (it keeps AI). `CONSUMER_AI_FEATURES` is separate from the suite set so a
+  coach is never upsold the suite for plain AI.
+- **Route audit (no AI from Free or Premium)**: `ai_access` gates
+  `/nutrition/ai/{estimate,estimate-text,extract-recipe,estimate-recipe}`,
+  resolve-ingredient, the AI step of `/recipes/import` (structured import stays
+  open) and the coach summary (coach-only); `loadout` gates
+  `/ai/equipment-scan` and `/workouts/:id/loadout/preview`; `meal_ai` gates
+  meal-suggest, plan-generate, plan-meal-swap (and Mealprint's plan read, log
+  and shopping list, which stay Premium+ by Brad's decision). The jobs
+  registry has no kinds. Every Bedrock caller is behind one of these.
+- **Mobile**: `useFeatureGate` sends an AI denial to Premium+ from Free and
+  Premium (Premium previously got no target: Snap did nothing). Onboarding's
+  photo card is Premium+ and recommends Premium+; "Unlimited workouts and
+  history" became "Unlimited workouts".
+- **Catalog/web copy**: Premium "Everything in Free · Unlimited workouts ·
+  Train Together with your partners"; Premium+ tagline "Everything in
+  Premium, plus every AI feature" with AI food logging, recipe import,
+  Mealprint, Loadout. Programme import removed (not built). Support FAQ and
+  `marketing/WEBSITE_PRICING_SPEC.md` updated.
+- **Blue Light Card** (staging only, not live): public prices follow the App
+  Store; members pay £3.99 / £31.99 and £19.99 / £159.99. Core
+  `blc/blcOffer.ts` and web `marketing/blc/blcOffer.ts` changed together; Stripe
+  needs new Prices under the same lookup keys or checkout returns 503.
+- **Measured AI use (prod `ai_usage_log`, 5 Nov)**: 133 calls from 5 test
+  accounts since 22 Jul, ≈ $1.05 at table prices; heaviest rolling 30 days
+  $0.28. The ~£35/month AI bill is not explained by logged prod calls (staging
+  account, shared prod account, evals or unlogged calls); unit costs are still
+  2 of 12 measured (PER-104).
+- **Deferred by Brad (6 Nov)**: the Free 90-day history limit. The app has no
+  past-workout list to gate, so it waits for a history/progress screen (PER-15).
+- **Not done here**: store and RevenueCat changes (Brad's checklist on
+  PER-103), Stripe prices, and the old 1.1.x build still upsells Premium for AI
+  until users update.
+
 ### 2026-11-05 — Staging builds prove Sentry delivery (PER-60, branch `claude/sentry-staging-check`)
 
 Brad saw the Join "Could not connect" fallback on TestFlight 1.2.0 (28), which

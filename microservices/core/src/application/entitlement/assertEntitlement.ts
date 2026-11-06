@@ -111,6 +111,17 @@ const PREMIUM_PLUS_FEATURES: ReadonlySet<EntitlementFeature> = new Set([
 ]);
 
 /**
+ * AI features that only Premium+ carries on the CONSUMER ladder (PER-103, Nov
+ * 2026: Premium has no AI). Deliberately NOT part of `PREMIUM_PLUS_FEATURES`:
+ * the entry coach rung `individual_trainer` still carries `ai_access`, so a
+ * coach denied AI is upsold that rung, not the dearer suite tier.
+ */
+const CONSUMER_AI_FEATURES: ReadonlySet<EntitlementFeature> = new Set([
+  "ai_access",
+  "ai_workout",
+]);
+
+/**
  * Spec-narrow tier-name union. Reflects the spec-29 Phase 2 coach ladder
  * (`20260805120000_coach_ladder_restructure.sql`): Free + Premium + Premium+ for
  * consumers, and the coach ladder `individual_trainer` (Start Up Coach, no suite)
@@ -271,16 +282,12 @@ export class EntitlementError extends Error {
  *     flag instead of a counter.
  *   - Otherwise: effective tier's `ai_access === true` → allowed;
  *     `false` → deny reason `'tier'`.
- *   - `upgradeTo` for a `'tier'` deny reuses `pickUpgradeTier` — per
- *     `20260526120000_simplify_tier_model.sql`, "AI access becomes a
- *     paid-tier USP: Premium + any Trainer tier all get AI", i.e. EVERY
- *     paid tier in the catalog has `ai_access = true`. That makes the
- *     cheapest ai_access=true tier for a given role identical to the
- *     cheapest paid tier for that role, which is exactly what
- *     `pickUpgradeTier` already resolves for `create_workout` — no
- *     separate "query subscription_tiers for the cheapest ai_access=true
- *     row" lookup is needed unless the catalog ever ships a paid tier
- *     without AI (it doesn't today).
+ *   - `upgradeTo` for a `'tier'` deny comes from `pickUpgradeTier`. Since
+ *     PER-103 (Nov 2026) Premium carries NO AI, so the cheapest AI tier on
+ *     the consumer ladder is `premium_plus`: an athlete (free OR premium) is
+ *     upsold Premium+, never Premium, which would take their money and leave
+ *     the feature locked. Coaches are upsold `individual_trainer`, which
+ *     still carries `ai_access`.
  *
  * `trainer_clients` routes to `assertTrainerClients` (real cap check). The
  * remaining stub features (`ai_workout`,
@@ -631,8 +638,8 @@ async function assertAiAccess(userId: string): Promise<EntitlementVerdict> {
   }
 
   return buildDenyVerdict({
-    // 'tier' for an active-but-flag-off tier (today only reachable via
-    // free — every paid tier ships ai_access=true); 'cancelled' /
+    // 'tier' for an active-but-flag-off tier (free, or premium since
+    // PER-103 — Premium carries no AI); 'cancelled' /
     // 'expired' for a reverted sub whose free-tier fallback also lacks
     // the flag.
     reason: denyReason,
@@ -1312,8 +1319,9 @@ export function normaliseRole(
  *     `'start_up_coach_plus'` (£34.99 — the cheapest coach tier that carries the
  *     suite AND keeps them in coach mode); any other paid deny upsells
  *     `'individual_trainer'` (£18.99 — the entry coach rung).
- *   - `user` / `physiotherapist` → a suite deny upsells `'premium_plus'`
- *     (£29.99); otherwise `'premium'` (£16.99, the cheapest paid consumer tier).
+ *   - `user` / `physiotherapist` → a suite or AI deny upsells `'premium_plus'`
+ *     (£24.99, the only consumer tier with AI since PER-103); otherwise
+ *     `'premium'` (£4.99, the cheapest paid consumer tier).
  *
  * ⚠ Role decides the LADDER (coach vs consumer); feature decides the RUNG within
  * it. A coach must never be sent to `premium_plus` — that would strip their
@@ -1341,8 +1349,11 @@ export function pickUpgradeTier(
     return isSuiteFeature ? "start_up_coach_plus" : "individual_trainer";
   }
 
-  // user + physiotherapist: the consumer ladder.
-  return isSuiteFeature ? "premium_plus" : "premium";
+  // user + physiotherapist: the consumer ladder. Premium carries no AI
+  // (PER-103), so an AI deny goes to Premium+ like a suite deny.
+  return isSuiteFeature || CONSUMER_AI_FEATURES.has(feature)
+    ? "premium_plus"
+    : "premium";
 }
 
 /**
@@ -1351,6 +1362,7 @@ export function pickUpgradeTier(
  */
 export const __entitlementUpgradeSetsForTest = {
   premiumPlus: PREMIUM_PLUS_FEATURES,
+  consumerAi: CONSUMER_AI_FEATURES,
 } as const;
 
 // ─── Internal ─────────────────────────────────────────────────────────
