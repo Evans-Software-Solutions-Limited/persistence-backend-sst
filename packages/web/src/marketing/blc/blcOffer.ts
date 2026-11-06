@@ -24,15 +24,20 @@ export interface BlcPrice {
   memberMinor: number;
 }
 
-/** 20 % off Premium and Premium+, both cadences. */
+/**
+ * 20 % off Premium and Premium+, both cadences (PER-103 prices, Nov 2026).
+ * Member figures are what Stripe charges after the 20 % coupon, which rounds
+ * to the penny: £4.99 → £3.99, £39.99 → £31.99, £24.99 → £19.99,
+ * £199.99 → £159.99.
+ */
 export const BLC_OFFER: Record<BlcTier, Record<BlcCadence, BlcPrice>> = {
   premium: {
-    monthly: { publicMinor: 1699, memberMinor: 1359 },
-    annual: { publicMinor: 13999, memberMinor: 11199 },
+    monthly: { publicMinor: 499, memberMinor: 399 },
+    annual: { publicMinor: 3999, memberMinor: 3199 },
   },
   premium_plus: {
-    monthly: { publicMinor: 2999, memberMinor: 2399 },
-    annual: { publicMinor: 24999, memberMinor: 19999 },
+    monthly: { publicMinor: 2499, memberMinor: 1999 },
+    annual: { publicMinor: 19999, memberMinor: 15999 },
   },
 };
 

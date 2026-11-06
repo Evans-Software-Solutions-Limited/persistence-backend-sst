@@ -37,7 +37,9 @@ export interface CatalogTier {
 }
 
 /**
- * Layout and feature catalog approved in spec-29 on 2026-08-05. IAP prices do
+ * Layout and feature catalog approved in spec-29 on 2026-08-05; athlete tiers
+ * revised by PER-103 (Nov 2026): Premium has no AI, Premium+ carries all of it.
+ * Advertise only what is built. IAP prices do
  * not live here: native surfaces resolve them from StoreKit/RevenueCat by
  * product id, while web surfaces join `/subscription-tiers` by tier id.
  */
@@ -71,16 +73,15 @@ export const SUBSCRIPTION_CATALOG = [
     rail: "iap",
     features: [
       "Everything in Free",
-      "Unlimited workouts and history",
-      "Photo and free-text AI nutrition logging",
-      "Smart swap suggestions",
+      "Unlimited workouts",
+      "Train Together with your partners",
     ],
   },
   {
     id: "premium_plus",
     name: "Premium+",
     audience: "consumer",
-    tagline: "Everything in Premium, plus the adaptive suite",
+    tagline: "Everything in Premium, plus every AI feature",
     monthly: null,
     annual: null,
     clients: null,
@@ -89,9 +90,10 @@ export const SUBSCRIPTION_CATALOG = [
     highlight: true,
     features: [
       "Everything in Premium",
-      "Loadout — equipment-aware training",
-      "Mealprint — AI meal planning around your targets",
-      "Programme import from PDF or spreadsheet",
+      "Photo and free-text AI food logging",
+      "Recipe import and AI recipe estimates",
+      "Mealprint: AI meal plans and smart swaps",
+      "Loadout: equipment-aware training",
     ],
   },
   {

@@ -50,6 +50,27 @@ describe("subscription catalog", () => {
     expect(features).not.toMatch(/AI Workout Suggestions/i);
   });
 
+  // PER-103: Premium carries no AI, Premium+ carries all of it. A Premium line
+  // that promised AI would sell a feature the server refuses with a 402.
+  it("advertises no AI on Free or Premium", () => {
+    for (const id of ["free", "premium"] as const) {
+      const features = catalogTier(id).features.join(" ");
+      expect(features, id).not.toMatch(/\bAI\b|Smart swap|Mealprint|Loadout/i);
+    }
+  });
+
+  it("puts AI food logging on Premium+", () => {
+    const tier = catalogTier("premium_plus");
+    expect(tier.features.join(" ")).toMatch(/AI food logging/);
+    expect(tier.tagline).toMatch(/AI/);
+  });
+
+  // Not built yet: no route, job kind or screen exists for it.
+  it("does not advertise programme import", () => {
+    const all = SUBSCRIPTION_CATALOG.flatMap((tier) => tier.features).join(" ");
+    expect(all).not.toMatch(/Programme import/i);
+  });
+
   it("keeps organisation tiers web-only", () => {
     expect(
       SUBSCRIPTION_CATALOG.filter((tier) => tier.audience === "org").every(

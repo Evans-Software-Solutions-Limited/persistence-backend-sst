@@ -122,6 +122,18 @@ const TRAINER_TIER_NAMES: ReadonlySet<SubscriptionTierName> = new Set([
 ]);
 
 /**
+ * AI features. Since PER-103 (Nov 2026) Premium carries no AI: on the athlete
+ * ladder only Premium+ does, so an athlete denied AI is pointed at Premium+
+ * from Free AND from Premium. Pointing at Premium would take their money and
+ * leave AI locked; pointing nowhere left Premium users with a dead button.
+ * Mirrors the server's `pickUpgradeTier`.
+ */
+const AI_FEATURES: ReadonlySet<EntitlementFeature> = new Set([
+  "ai_access",
+  "ai_workout",
+]);
+
+/**
  * Pick the upgrade target for a denied gate. Feature-aware so trainer-
  * only features (e.g. `trainer_clients`) point at the cheapest trainer
  * tier rather than the user-track next step.
@@ -142,6 +154,14 @@ function resolveUpgradeTarget(
     // copy rather than suggesting a sideways switch.
     if (TRAINER_TIER_NAMES.has(currentTier)) return null;
     return "individual_trainer";
+  }
+  if (AI_FEATURES.has(feature)) {
+    // Coach tiers sit on their own ladder, and Premium+ is the top of the
+    // athlete one: nothing to suggest (a lapsed sub reinstates instead).
+    if (TRAINER_TIER_NAMES.has(currentTier) || currentTier === "premium_plus") {
+      return null;
+    }
+    return "premium_plus";
   }
   return USER_UPGRADE_CHAIN[currentTier] ?? null;
 }

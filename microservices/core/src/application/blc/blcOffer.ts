@@ -43,6 +43,9 @@ export const BLC_PRICE_CURRENCY = "gbp";
 
 /**
  * Full public prices, in minor units (pence). The coupon applies the 20 %.
+ * PER-103 (Nov 2026): Premium £4.99 / £39.99, Premium+ £24.99 / £199.99, the
+ * same as the App Store. Each change needs a new Stripe Price under the SAME
+ * lookup key (create it with `transfer_lookup_key`), or checkout refuses.
  * Stripe's `recurring.interval` for each cadence is verified alongside the
  * amount so a monthly key cannot be re-pointed at an annual Price.
  */
@@ -56,24 +59,24 @@ export const BLC_PRICE_LOOKUP_KEYS: Record<
   premium: {
     monthly: {
       lookupKey: "web_premium_monthly",
-      amountMinor: 1699,
+      amountMinor: 499,
       interval: "month",
     },
     annual: {
       lookupKey: "web_premium_annual",
-      amountMinor: 13999,
+      amountMinor: 3999,
       interval: "year",
     },
   },
   premium_plus: {
     monthly: {
       lookupKey: "web_premium_plus_monthly",
-      amountMinor: 2999,
+      amountMinor: 2499,
       interval: "month",
     },
     annual: {
       lookupKey: "web_premium_plus_annual",
-      amountMinor: 24999,
+      amountMinor: 19999,
       interval: "year",
     },
   },

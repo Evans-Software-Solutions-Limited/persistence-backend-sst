@@ -172,14 +172,6 @@ describe("assertEntitlement — stub features", () => {
 const FREE_TIER_NO_AI = [
   { tierName: "free", workoutLimit: 3, aiAccess: false, priceMonthly: "0.00" },
 ];
-const PREMIUM_TIER_WITH_AI = [
-  {
-    tierName: "premium",
-    workoutLimit: null,
-    aiAccess: true,
-    priceMonthly: "12.99",
-  },
-];
 const TRAINER_TIER_WITH_AI = [
   {
     tierName: "individual_trainer",
@@ -189,6 +181,31 @@ const TRAINER_TIER_WITH_AI = [
   },
 ];
 
+// PER-103: Premium+ is the cheapest consumer tier with AI; Premium has none.
+const PREMIUM_PLUS_TIER_WITH_AI = [
+  {
+    tierName: "premium_plus",
+    workoutLimit: null,
+    aiAccess: true,
+    priceMonthly: "24.99",
+  },
+];
+const PREMIUM_SUB_ACTIVE_NO_AI = [
+  {
+    tierName: "premium",
+    paymentStatus: "active",
+    expiresAt: null,
+    aiAccess: false,
+  },
+];
+const PREMIUM_PLUS_SUB_ACTIVE_AI = [
+  {
+    tierName: "premium_plus",
+    paymentStatus: "active",
+    expiresAt: null,
+    aiAccess: true,
+  },
+];
 const PREMIUM_SUB_ACTIVE_AI = [
   {
     tierName: "premium",
@@ -270,13 +287,13 @@ describe("assertEntitlement — ai_access", () => {
     expect(verdict).toEqual({ allowed: true });
   });
 
-  it("denies with reason='tier' for a free user (no sub row) and suggests premium", async () => {
+  it("denies with reason='tier' for a free user (no sub row) and suggests premium_plus", async () => {
     (getDb as any).mockReturnValue(
       makeQueueDb([
         PROFILE_USER,
         [], // no user_subscriptions row
         FREE_TIER_NO_AI, // no-sub-row free-tier lookup
-        PREMIUM_TIER_WITH_AI, // buildDenyVerdict's upgrade-tier lookup
+        PREMIUM_PLUS_TIER_WITH_AI, // buildDenyVerdict's upgrade-tier lookup
       ]),
     );
 
@@ -285,9 +302,56 @@ describe("assertEntitlement — ai_access", () => {
       allowed: false,
       reason: "tier",
       currentTier: "free",
-      upgradeTo: "premium",
-      upgradePriceMonthly: 12.99,
+      upgradeTo: "premium_plus",
+      upgradePriceMonthly: 24.99,
     });
+  });
+
+  // PER-103 acceptance: an active Premium subscriber is refused AI with a
+  // Premium+ upsell, and an active Premium+ subscriber is let through.
+  it("denies an active premium sub (ai_access=false) and suggests premium_plus", async () => {
+    (getDb as any).mockReturnValue(
+      makeQueueDb([
+        PROFILE_USER,
+        PREMIUM_SUB_ACTIVE_NO_AI,
+        PREMIUM_PLUS_TIER_WITH_AI,
+      ]),
+    );
+
+    const verdict = await assertEntitlement("user-1", "ai_access");
+    expect(verdict).toEqual({
+      allowed: false,
+      reason: "tier",
+      currentTier: "premium",
+      upgradeTo: "premium_plus",
+      upgradePriceMonthly: 24.99,
+    });
+  });
+
+  it("denies a physiotherapist on premium and suggests premium_plus", async () => {
+    (getDb as any).mockReturnValue(
+      makeQueueDb([
+        PROFILE_PHYSIO,
+        PREMIUM_SUB_ACTIVE_NO_AI,
+        PREMIUM_PLUS_TIER_WITH_AI,
+      ]),
+    );
+
+    const verdict = await assertEntitlement("user-1", "ai_access");
+    expect(verdict).toMatchObject({
+      allowed: false,
+      reason: "tier",
+      upgradeTo: "premium_plus",
+    });
+  });
+
+  it("allows an active premium_plus sub", async () => {
+    (getDb as any).mockReturnValue(
+      makeQueueDb([PROFILE_USER, PREMIUM_PLUS_SUB_ACTIVE_AI]),
+    );
+
+    const verdict = await assertEntitlement("user-1", "ai_access");
+    expect(verdict).toEqual({ allowed: true });
   });
 
   it("denies with reason='tier' for a trainer-role free user and suggests individual_trainer", async () => {
@@ -391,7 +455,7 @@ describe("assertEntitlement — ai_access", () => {
             aiAccess: null, // LEFT JOIN miss — no catalog row for the deleted tier
           },
         ],
-        PREMIUM_TIER_WITH_AI, // upgrade-tier lookup
+        PREMIUM_PLUS_TIER_WITH_AI, // upgrade-tier lookup
       ]),
     );
 
@@ -400,8 +464,8 @@ describe("assertEntitlement — ai_access", () => {
       allowed: false,
       reason: "tier",
       currentTier: "free",
-      upgradeTo: "premium",
-      upgradePriceMonthly: 12.99,
+      upgradeTo: "premium_plus",
+      upgradePriceMonthly: 24.99,
     });
   });
 
@@ -2167,8 +2231,29 @@ describe("pure helpers", () => {
     });
 
     it("keeps non-Premium+ features on premium for the user track", () => {
-      expect(pickUpgradeTier("user", "ai_access")).toBe("premium");
       expect(pickUpgradeTier("user", "trainer_clients")).toBe("premium");
+      expect(pickUpgradeTier("physiotherapist", "create_workout")).toBe(
+        "premium",
+      );
+    });
+
+    // PER-103: Premium carries no AI, so an athlete denied AI must be upsold
+    // Premium+. Upselling Premium would take their money and leave AI locked.
+    it("returns premium_plus for an AI deny on the user track", () => {
+      for (const feature of ["ai_access", "ai_workout"] as const) {
+        expect(pickUpgradeTier("user", feature)).toBe("premium_plus");
+        expect(pickUpgradeTier("physiotherapist", feature)).toBe(
+          "premium_plus",
+        );
+      }
+    });
+
+    // …but a coach denied AI stays on the coach ladder at the entry rung,
+    // which still carries ai_access: not the suite tier, not Premium+.
+    it("returns individual_trainer for a trainer denied ai_access", () => {
+      expect(pickUpgradeTier("personal_trainer", "ai_access")).toBe(
+        "individual_trainer",
+      );
     });
 
     // Coaches stay on the coach ladder for a SUITE deny (spec-29 Phase 2):
@@ -2215,6 +2300,12 @@ describe("pure helpers", () => {
       expect(premiumPlus.has("loadout")).toBe(true);
       expect(premiumPlus.has("meal_ai")).toBe(true);
       expect(premiumPlus.has("create_workout")).toBe(false);
+      // AI is consumer-only Premium+; keeping it out of the suite set is what
+      // stops a coach being upsold the suite tier for plain AI.
+      expect(premiumPlus.has("ai_access")).toBe(false);
+      const { consumerAi } = __entitlementUpgradeSetsForTest;
+      expect(consumerAi.has("ai_access")).toBe(true);
+      expect(consumerAi.has("create_workout")).toBe(false);
     });
 
     it("returns null for an admin denied loadout", () => {

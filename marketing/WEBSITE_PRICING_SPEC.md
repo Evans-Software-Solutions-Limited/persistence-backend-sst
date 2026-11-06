@@ -44,6 +44,19 @@ marked **TBC** is an open decision (see §6).
 
 ## 1. Consumer plans
 
+> ✅ **CURRENT (PER-103, 6 Nov 2026) — this block supersedes every consumer price
+> and feature list below it.** Premium carries no AI; Premium+ carries all of it.
+> Live copy comes from `packages/subscription-catalog`.
+>
+> | Plan | Monthly | Annual | Includes |
+> | --- | --- | --- | --- |
+> | Free | £0 | — | Full workout and set logging · Nutrition tracking and barcode scanner · Streaks, PRs and core progress · 3 custom workouts |
+> | Premium | £4.99 | £39.99 | Everything in Free · Unlimited workouts · Train Together with your partners |
+> | Premium+ | £24.99 | £199.99 | Everything in Premium · Photo and free-text AI food logging · Recipe import and AI recipe estimates · Mealprint: AI meal plans and smart swaps · Loadout: equipment-aware training |
+>
+> Blue Light Card members: 20 % off (£3.99 / £31.99 and £19.99 / £159.99).
+> Programme import and a Free history limit are NOT shipped; do not advertise them.
+
 > ⚠ **SUPERSEDED 2026-08-04 — `specs/29-subscription-restructure/` is canonical for
 > every price on this page.** Premium moved £12.99 → **£14.99** and annual moved to
 > ~30 % off (£124.99 / £249.99), because the Apple Small Business 15 % rate was NOT
