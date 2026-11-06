@@ -772,6 +772,36 @@ describe("useFeatureGate hook", () => {
       },
     );
 
+    // Inspector Brad, PR #530: role picks the ladder, as on the server. A
+    // coach without a coach tier is sent to the entry coach rung (it carries
+    // AI), never Premium+, which would strip their coaching role.
+    it.each([
+      ["personal_trainer", "free", "individual_trainer"],
+      ["personal_trainer", "premium", "individual_trainer"],
+      ["physiotherapist", "premium", "premium_plus"],
+      ["admin", "free", null],
+    ] as const)(
+      "%s on %s denied ai_access is upsold %s",
+      async (role, tierName, expected) => {
+        const { adapters, api, auth } = makeAdapters();
+        signIn(auth);
+        api.mySubscription = makeSub({ tierName, role, aiAccess: false });
+        api.subscriptionTiers = [PREMIUM_TIER, PREMIUM_PLUS_TIER];
+
+        const { result } = renderHook(() => useFeatureGate("ai_access"), {
+          wrapper: wrapper(adapters, makeQueryClient()),
+        });
+
+        // The pre-cache fallback already reads "free" with no role, so wait
+        // for the loaded subscription's answer, not just the tier name.
+        await waitFor(() => {
+          expect(result.current.gateProps.currentTier).toBe(tierName);
+          expect(result.current.gateProps.upgradeTo).toBe(expected);
+        });
+        expect(result.current.allowed).toBe(false);
+      },
+    );
+
     it("free user denied create_workout is still upsold premium", async () => {
       const { adapters, api, auth } = makeAdapters();
       signIn(auth);

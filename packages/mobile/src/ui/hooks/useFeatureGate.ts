@@ -4,6 +4,7 @@ import type { EntitlementFeature } from "@/domain/models/entitlement";
 import type {
   BillingCycle,
   MySubscription,
+  SubscriptionRole,
   SubscriptionTier,
   SubscriptionTierName,
 } from "@/domain/models/subscription";
@@ -147,6 +148,7 @@ const AI_FEATURES: ReadonlySet<EntitlementFeature> = new Set([
 function resolveUpgradeTarget(
   currentTier: SubscriptionTierName,
   feature: EntitlementFeature,
+  role: SubscriptionRole = "user",
 ): SubscriptionTierName | null {
   if (feature === "trainer_clients") {
     // Already on a trainer tier? Shouldn't hit the gate; defensively
@@ -161,6 +163,11 @@ function resolveUpgradeTarget(
     if (TRAINER_TIER_NAMES.has(currentTier) || currentTier === "premium_plus") {
       return null;
     }
+    // Role picks the LADDER, as on the server: a coach on free/premium goes
+    // to the entry coach rung (it carries AI); Premium+ would strip their
+    // coaching role. Admins get nothing to suggest.
+    if (role === "admin") return null;
+    if (role === "personal_trainer") return "individual_trainer";
     return "premium_plus";
   }
   return USER_UPGRADE_CHAIN[currentTier] ?? null;
@@ -417,7 +424,11 @@ export function useFeatureGate(
       subscription,
     );
 
-    const upgradeTo = resolveUpgradeTarget(subscription.tierName, feature);
+    const upgradeTo = resolveUpgradeTarget(
+      subscription.tierName,
+      feature,
+      subscription.role,
+    );
     const upgradeTier = findTier(tiers, upgradeTo);
     const billingCycle: BillingCycle = subscription.billingCycle ?? "monthly";
 
