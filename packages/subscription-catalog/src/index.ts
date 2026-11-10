@@ -91,7 +91,7 @@ export const SUBSCRIPTION_CATALOG = [
     features: [
       "Everything in Premium",
       "Photo and free-text AI food logging",
-      "Recipe import and AI recipe estimates",
+      "AI smart recipe import and recipe estimates",
       "Mealprint: AI meal plans and smart swaps",
       "Loadout: equipment-aware training",
     ],
