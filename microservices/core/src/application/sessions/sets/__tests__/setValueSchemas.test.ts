@@ -20,7 +20,10 @@ describe("storableSetValue", () => {
     [1.005, "1.005"],
     ["60.555", "60.555"],
     ["9999.994", "9999.994"],
-    ["007.5", "007.5"],
+    ["007.5", "7.5"],
+    ["0.5", "0.5"],
+    ["1.00499999", "1.004"],
+    ["1.0051", "1.005"],
     [".5", ".5"],
     [1e-7, "0"],
   ])(
@@ -66,13 +69,31 @@ describe("storableSetValue", () => {
 
 describe("storableSetValue at the rounding edge", () => {
   it("blanks exactly the values Postgres would round past the column", () => {
-    expect(storableSetValue("9999.9949999", WEIGHT_KG_MAX)).toBe(
-      "9999.9949999",
-    );
+    expect(storableSetValue("9999.9949999", WEIGHT_KG_MAX)).toBe("9999.994");
     expect(storableSetValue("9999.995", WEIGHT_KG_MAX)).toBeNull();
     expect(storableSetValue("999999.995", DISTANCE_METERS_MAX)).toBeNull();
     expect(storableSetValue("999999.99", DISTANCE_METERS_MAX)).toBe(
       "999999.99",
     );
+  });
+});
+
+describe("storableSetValue keeps the text Postgres can read", () => {
+  // numeric_in rejects a display scale above 16383, which would fail the
+  // whole workout's transaction (Inspector Brad, PR #532).
+  it("cuts a very long fraction to the three digits rounding reads", () => {
+    expect(storableSetValue(`1.${"0".repeat(16384)}`, WEIGHT_KG_MAX)).toBe(
+      "1.000",
+    );
+    expect(storableSetValue(`60.555${"9".repeat(20000)}`, WEIGHT_KG_MAX)).toBe(
+      "60.555",
+    );
+  });
+
+  it("drops a very long run of leading zeros", () => {
+    expect(storableSetValue(`${"0".repeat(20000)}62.5`, WEIGHT_KG_MAX)).toBe(
+      "62.5",
+    );
+    expect(storableSetValue("000", WEIGHT_KG_MAX)).toBe("0");
   });
 });

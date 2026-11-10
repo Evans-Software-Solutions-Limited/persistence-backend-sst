@@ -102,6 +102,11 @@ export function storableSetValue(
     decimal = value.trim();
     if (!PLAIN_DECIMAL.test(decimal)) return null;
   }
+  // Keep it short enough for Postgres' numeric input, which rejects a scale
+  // above 16383 (Inspector Brad, PR #532): leading zeros go, and so do
+  // fractional digits past the third, since rounding to two places (half away
+  // from zero) reads only the third. What is stored does not change.
+  decimal = decimal.replace(/^0+(?=\d)/, "").replace(/(\.\d{3})\d+$/, "$1");
   // `max` has two places ("9999.99"), so appending 5 gives the rounding edge.
   const firstUnstorable = `${String(max)}5`;
   if (compareDecimal(decimal, firstUnstorable) >= 0) return null;
