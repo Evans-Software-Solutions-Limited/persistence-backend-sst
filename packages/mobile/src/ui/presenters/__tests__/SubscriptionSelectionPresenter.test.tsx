@@ -64,9 +64,6 @@ function defaultProps(): SubscriptionSelectionPresenterProps {
     billingCycle: "monthly",
     currentTier: "free",
     selectedRole: "user",
-    isTrialEligibleUser: true,
-    isTrialEligibleTrainer: true,
-    hasTrialEligibilityData: true,
     subscriptionEndsAt: null,
     canCancel: false,
     isCancelledButActive: false,
@@ -309,34 +306,24 @@ describe("SubscriptionSelectionPresenter — interactions", () => {
   });
 });
 
-describe("SubscriptionSelectionPresenter — comped tier not in catalog", () => {
-  it("suppresses trial banners when the user holds a paid tier missing from the catalog", () => {
-    // Mirrors the iOS-rail guard. A promotional premium_plus grant can be
-    // temporarily absent from a stale/partial API catalog,
-    // so no card is marked current — without the guard every cheaper card
-    // renders as a buyable free trial and can nudge a comped user onto a
-    // worse tier than the one they were given.
-    render(
-      <SubscriptionSelectionPresenter
-        {...defaultProps()}
-        currentTier="premium_plus"
-      />,
-    );
-    expect(screen.queryByText(/free trial/i)).toBeNull();
+describe("SubscriptionSelectionPresenter — no free trials", () => {
+  // Neither store offers a trial since the PER-103 restructure, so no card
+  // may advertise one: not to a first-time user, and not on the trainer
+  // cards either.
+  it("shows no trial banner on athlete cards for a first-time free user", () => {
+    render(<SubscriptionSelectionPresenter {...defaultProps()} />);
+    expect(screen.getAllByText("Premium").length).toBeGreaterThan(0);
+    expect(screen.queryByText(/trial/i)).toBeNull();
   });
 
-  it("suppresses trainer-card trial banners in the same state", () => {
-    // The trainer loop resolves fixed tier names out of the catalog and has
-    // the identical hole — a held-but-unlisted tier marks no card current,
-    // so every trainer card would offer a trial.
+  it("shows no trial banner on coach cards", () => {
     render(
       <SubscriptionSelectionPresenter
         {...defaultProps()}
         selectedRole="trainer"
-        currentTier="premium_plus"
       />,
     );
-    expect(screen.queryByText(/free trial/i)).toBeNull();
+    expect(screen.queryByText(/trial/i)).toBeNull();
   });
 });
 

@@ -94,6 +94,18 @@ describe("Pricing", () => {
     ).toBeNull();
   });
 
+  // PER-103: the Individuals intro matches the store listings: Premium is
+  // workouts and Train Together, Premium+ is every AI feature.
+  it("describes Individuals plans as the store listings do", () => {
+    renderPage(<Pricing />);
+    expect(
+      screen.getByText(
+        "Free to start. Premium adds unlimited workouts and Train Together with your partners. Premium+ adds every AI feature, including Mealprint and Loadout.",
+      ),
+    ).toBeDefined();
+    expect(screen.queryByText(/full adaptive suite/i)).toBeNull();
+  });
+
   // PER-103: Premium carries no AI, so its card must not promise any.
   it("shows no AI feature on the Premium card", () => {
     renderPage(<Pricing />);

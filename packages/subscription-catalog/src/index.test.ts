@@ -65,6 +65,14 @@ describe("subscription catalog", () => {
     expect(tier.tagline).toMatch(/AI/);
   });
 
+  // Structured recipe import (a page's recipe metadata) is open on every tier;
+  // only the AI step is Premium+, so the line must say AI, not plain import.
+  it("sells the AI recipe import on Premium+, never plain recipe import", () => {
+    const features = catalogTier("premium_plus").features;
+    expect(features).toContain("AI smart recipe import and recipe estimates");
+    expect(features.some((line) => /^Recipe import/i.test(line))).toBe(false);
+  });
+
   // Not built yet: no route, job kind or screen exists for it.
   it("does not advertise programme import", () => {
     const all = SUBSCRIPTION_CATALOG.flatMap((tier) => tier.features).join(" ");
