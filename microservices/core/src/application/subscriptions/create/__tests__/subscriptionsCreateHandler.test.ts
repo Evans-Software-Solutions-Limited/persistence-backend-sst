@@ -678,8 +678,46 @@ describe("subscriptionsCreateHandler — POST /subscriptions (new sub path)", ()
     expect(insertPayload.paymentStatus).toBe("pending");
     expect(insertPayload.metadata.requires_3d_secure).toBe(true);
 
-    // Trial flag still flipped immediately on 3DS path — abandon-proof
+    // Consumer tier: no trial (PER-103), so no trial flag to flip. The
+    // abandon-proof flip on the 3DS path is covered by the coach-tier variant
+    // below.
     expect(profileRepositoryMocks.update).not.toHaveBeenCalled();
+  });
+
+  // Anti-farming: the trial flag must flip BEFORE the 3DS early return, or a
+  // coach could abandon the challenge and claim the 14-day trial again.
+  it("flips the coach trial flag on the 3DS path before returning requires_action (new sub)", async () => {
+    mockPriceLookup({
+      priceMonthly: "price_trainer_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: true,
+    });
+    stripeMock.subscriptions.create.mockResolvedValueOnce(
+      buildStripeSubscription({
+        id: "sub_trainer_3ds",
+        status: "incomplete",
+        trial_end: null as unknown as number,
+        latest_invoice: {
+          payment_intent: {
+            status: "requires_action",
+            client_secret: "pi_trainer_3ds_secret",
+          },
+        } as unknown as Stripe.Invoice,
+      }),
+    );
+    const res = await postCreate(trainerBody);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as any;
+    expect(body).toMatchObject({
+      requires_action: true,
+      client_secret: "pi_trainer_3ds_secret",
+    });
+    const createCall = stripeMock.subscriptions.create.mock.calls[0][0];
+    expect(createCall.trial_period_days).toBe(14);
+    expect(profileRepositoryMocks.update).toHaveBeenCalledWith("user-1", {
+      hasUsedTrainerTrial: true,
+    });
   });
 
   it("does not treat reinstateable status as reinstate when stripe_subscription_id is missing (falls through to new-sub)", async () => {
@@ -1543,8 +1581,47 @@ describe("subscriptionsCreateHandler — subscription-change path", () => {
     expect((patch.metadata as Record<string, unknown>).requires_3d_secure).toBe(
       true,
     );
-    // Trial flag flipped on 3DS path (anti-farming)
+    // Consumer tier: no trial (PER-103), so no trial flag to flip. The
+    // anti-farming flip on this path is covered by the coach-tier variant
+    // below.
     expect(profileRepositoryMocks.update).not.toHaveBeenCalled();
+  });
+
+  it("flips the coach trial flag on the change-path 3DS branch before returning requires_action", async () => {
+    mockPriceLookup({
+      priceMonthly: "price_trainer_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: true,
+    });
+    subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
+      changePathRow(),
+    );
+    stripeMock.subscriptions.create.mockResolvedValueOnce(
+      buildStripeSubscription({
+        id: "sub_change_trainer_3ds",
+        status: "incomplete",
+        latest_invoice: {
+          payment_intent: {
+            status: "requires_action",
+            client_secret: "pi_change_trainer_3ds_secret",
+          },
+        } as unknown as Stripe.Invoice,
+      }),
+    );
+    const res = await postCreate(trainerBody);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as any;
+    expect(body).toMatchObject({
+      requires_action: true,
+      subscription_id: "us_existing",
+      client_secret: "pi_change_trainer_3ds_secret",
+    });
+    const createCall = stripeMock.subscriptions.create.mock.calls[0][0];
+    expect(createCall.trial_period_days).toBe(14);
+    expect(profileRepositoryMocks.update).toHaveBeenCalledWith("user-1", {
+      hasUsedTrainerTrial: true,
+    });
   });
 
   it("rolls back the new Stripe sub when the DB update fails", async () => {
