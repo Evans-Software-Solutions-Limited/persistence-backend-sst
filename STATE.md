@@ -16,9 +16,19 @@ onboarding copy, JSON-LD prices). This branch closes the rest Brad approved:
 - **Web Pricing** Individuals intro now mirrors the Play listing.
 - Left by Brad's call: founding-offer blurbs (offer closed), programme-import
   mentions in `schema.ts` comment / `app-store-tracker.html`.
-- ⚠ Open: Stripe `resolveTrial` still gives consumer tiers 7 days on the web
-  rail (`subscriptionsCreateHandler.ts:78`) — needs Brad's decision.
-  `FeatureGatePrompt` renders the DB GBP price, wrong outside the UK.
+- **Stripe consumer trial removed** (Brad, 10 Nov): `resolveTrial` grants no
+  trial on `premium` / `premium_plus`, even with `use_trial: true`, and never
+  sets `has_used_user_trial`. Coach tiers keep the 14-day Stripe trial.
+- **Marketing growth proposal (Marketing-Affen, Oct 2026)** wants partner
+  coupon codes (gyms, creators, coaches/clubs) unlocking six weeks of Premium.
+  Brad, 10 Nov: **card up front is required** — the code trial must take a
+  payment method and auto-renew (store offer codes / Play promo codes, or a
+  Stripe 42-day trial from a web QR), NOT a server-side grant. Not built yet:
+  in-app offer-code redemption, mapping RevenueCat offer codes to
+  `referral_codes`, per-code net-revenue commission reports, first-workout
+  activation bounties. iOS cannot do exactly six weeks (Apple trial lengths are
+  fixed: 1–2 weeks, 1/2/3/6/12 months). Corporate seats fit business vouchers.
+- ⚠ Open: `FeatureGatePrompt` renders the DB GBP price, wrong outside the UK.
 - ⚠ Pre-existing test failure: `SubscriptionSelectionContainer.test.tsx` fails
   16/23 on unmodified `main` too (run serially, 10 Nov): tests after the
   referral block find only the loading view. Each passes alone, so state leaks

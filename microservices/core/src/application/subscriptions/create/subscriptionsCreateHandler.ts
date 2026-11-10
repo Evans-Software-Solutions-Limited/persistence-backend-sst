@@ -75,7 +75,6 @@ import { isUniqueViolation } from "../../stripe/pgErrors";
  */
 
 const TRAINER_TIER_TRIAL_DAYS = 14;
-const USER_TIER_TRIAL_DAYS = 7;
 
 // Local payment_statuses that mean "the Stripe subscription is still
 // alive and resumable via stripe.subscriptions.update(cancel_at_period_end:
@@ -418,35 +417,22 @@ export function deriveChangeType(input: {
  * (0 = no trial), and which trial flag to set on the profile after the
  * subscription writes succeed.
  *
- * Post tier-simplification (20260526120000_simplify_tier_model.sql):
- *   - `premium` (only paid user tier) — 7 days, gated on
- *     `has_used_user_trial`.
+ *   - `premium` / `premium_plus` — NO trial (PER-103, Brad 10 Nov 2026).
+ *     Neither store offers a consumer trial any more (the Play
+ *     `free-trial-7d` offers were deactivated), so the web rail must not
+ *     either: same product, same terms on every rail. `has_used_user_trial`
+ *     is therefore never set by this path.
  *   - Any trainer tier (`is_trainer_tier = true`) — 14 days, gated on
- *     `has_used_trainer_trial`. Was `_pro`-suffix-checked when Standard
- *     trainer tiers existed; all surviving trainer tiers carry the
- *     former Pro entitlements (AI buddy etc.) so the suffix check is
- *     gone.
- *   - `premium_plus` (M19-P0, spec-21 § 9.1) — also a user tier: 7 days,
- *     gated on the SAME `has_used_user_trial` flag as `premium` (one
- *     trial per user across the consumer track, not one per tier —
- *     otherwise a user could trial `premium` then immediately trial
- *     `premium_plus` for a second free week).
+ *     `has_used_trainer_trial`.
  *   - Anything else — no trial.
  */
 function resolveTrial(
   tierName: string,
   isTrainerTier: boolean,
   useTrial: boolean,
-  hasUsedUserTrial: boolean,
   hasUsedTrainerTrial: boolean,
-): { days: number; flag: "user" | "trainer" | null } {
+): { days: number; flag: "trainer" | null } {
   if (!useTrial) return { days: 0, flag: null };
-
-  const isUserTier = tierName === "premium" || tierName === "premium_plus";
-  if (isUserTier) {
-    if (hasUsedUserTrial) return { days: 0, flag: null };
-    return { days: USER_TIER_TRIAL_DAYS, flag: "user" };
-  }
 
   if (isTrainerTier) {
     if (hasUsedTrainerTrial) return { days: 0, flag: null };
@@ -755,7 +741,7 @@ async function handleSubscriptionChange(args: {
   billingCycle: "monthly" | "yearly";
   paymentMethodId: string;
   platform: "ios" | "android" | null;
-  trial: { days: number; flag: "user" | "trainer" | null };
+  trial: { days: number; flag: "trainer" | null };
   /**
    * Pre-computed discriminator (upgrade / downgrade / cycle_change) for
    * the response shape. Caller derives this from tier prices BEFORE
@@ -947,12 +933,8 @@ async function handleSubscriptionChange(args: {
 
   // Trial flag flip (same anti-farming behaviour as new-sub).
   if (trial.flag !== null) {
-    const updateData =
-      trial.flag === "user"
-        ? { hasUsedUserTrial: true }
-        : { hasUsedTrainerTrial: true };
     try {
-      await profileRepo.update(userId, updateData);
+      await profileRepo.update(userId, { hasUsedTrainerTrial: true });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error(
@@ -1554,7 +1536,6 @@ export const subscriptionsCreateHandler = new Elysia()
           body.tier_name,
           priceInfo.isTrainerTier,
           body.use_trial,
-          profile.hasUsedUserTrial ?? false,
           profile.hasUsedTrainerTrial ?? false,
         );
 
@@ -1607,7 +1588,6 @@ export const subscriptionsCreateHandler = new Elysia()
         body.tier_name,
         priceInfo.isTrainerTier,
         body.use_trial,
-        profile.hasUsedUserTrial ?? false,
         profile.hasUsedTrainerTrial ?? false,
       );
 
@@ -1802,12 +1782,8 @@ export const subscriptionsCreateHandler = new Elysia()
       // line 740-765). This is the ONE path where the handler touches
       // `profiles.*`; the DB trigger handles every other derived column.
       if (trial.flag !== null) {
-        const updateData =
-          trial.flag === "user"
-            ? { hasUsedUserTrial: true }
-            : { hasUsedTrainerTrial: true };
         try {
-          await profileRepo.update(userId, updateData);
+          await profileRepo.update(userId, { hasUsedTrainerTrial: true });
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           // Non-fatal: the subscription is created and recorded. A failed
