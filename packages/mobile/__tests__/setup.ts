@@ -88,17 +88,10 @@ jest.mock("react-native-gesture-handler", () => {
   const { View, ScrollView: RNScrollView } = require("react-native");
   const React = require("react");
   const noop = () => undefined;
-  const { mockSortableRows } =
-    require("./reorderable-test-api") as typeof import("./reorderable-test-api");
 
   /**
-   * A chainable gesture stub that REMEMBERS its handlers.
-   *
-   * `ReorderableList` composes a collapse long-press simultaneously with the
-   * sortable's own pan, and that collapse is what swaps the rows for compact
-   * ones before the drag activates. Recording the handlers lets a test fire
-   * that sequence (see `reorderable-test-api.ts`); the gesture recognition
-   * itself is only checkable on a device.
+   * A chainable gesture stub that remembers its handlers. Gesture
+   * recognition itself is only checkable on a device.
    */
   const builder = () => {
     const handlers: Record<string, (...args: unknown[]) => unknown> = {};
@@ -127,26 +120,7 @@ jest.mock("react-native-gesture-handler", () => {
       Pan: builder,
       Tap: builder,
       LongPress: builder,
-      /**
-       * Pairs the collapse long-press with its row. The mocked `useSortable`
-       * tags its handle gesture with the row id, which is the only place both
-       * halves are visible at once.
-       */
-      Simultaneous: (...gestures: any[]) => {
-        const row = gestures.find((gesture) => gesture?.__mockRowId);
-        const collapse = gestures.find(
-          (gesture) => gesture?.__mockHandlers?.start,
-        );
-        if (row && collapse) {
-          const existing = mockSortableRows.get(row.__mockRowId) ?? {};
-          mockSortableRows.set(row.__mockRowId, {
-            ...existing,
-            onCollapse: collapse.__mockHandlers.start as () => void,
-            onCollapseEnd: collapse.__mockHandlers.finalize as () => void,
-          });
-        }
-        return gestures[0];
-      },
+      Simultaneous: (...gestures: any[]) => gestures[0],
       Race: noop,
     },
     GestureDetector: ({ children }: { children: React.ReactNode }) =>

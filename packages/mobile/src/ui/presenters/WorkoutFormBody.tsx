@@ -1,10 +1,11 @@
 import { Text, View } from "@tamagui/core";
-import React from "react";
+import React, { useEffect, useState } from "react";
 import {
   AccessibilityInfo,
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  ScrollView,
   Switch,
   TextInput,
   View as RNView,
@@ -13,10 +14,11 @@ import {
   COMPACT_REORDER_ROW_HEIGHT,
   CompactReorderRow,
 } from "@/ui/components/workouts/CompactReorderRow";
+import { ReorderableList } from "@/ui/components/workouts/ReorderableList";
 import {
-  ReorderableList,
-  type ReorderableRenderProps,
-} from "@/ui/components/workouts/ReorderableList";
+  ReorderButton,
+  ReorderModeBar,
+} from "@/ui/components/workouts/ReorderControls";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AddExercisePopover } from "@/ui/components/workouts/AddExercisePopover";
@@ -141,22 +143,11 @@ export type WorkoutFormBodyProps = {
 };
 
 /**
- * Gap between compact reorder rows. It has to live INSIDE the height the
- * sortable is told about, because absolutely-positioned rows ignore the
- * container's `gap`.
- */
-/**
- * Spacing between drag rows. It is padding INSIDE the measured row, never
- * margin or the container's `gap`: the rows are absolutely positioned, so only
- * their own height reaches the sortable.
+ * Spacing between reorder-mode rows. Padding INSIDE the row height the
+ * sortable is told about: the rows are absolutely positioned, so the
+ * container's `gap` never reaches them.
  */
 const EDITOR_ROW_GAP = 10;
-
-/**
- * Seed height for a row before it reports its own. A lead card with its
- * superset connector is taller, a plain one shorter.
- */
-const ESTIMATED_EDITOR_BLOCK_HEIGHT = 190;
 
 export function WorkoutFormBody({
   formState,
@@ -186,6 +177,12 @@ export function WorkoutFormBody({
 }: WorkoutFormBodyProps) {
   const insets = useSafeAreaInsets();
   const exercises = formState.exercises;
+  /**
+   * Reorder mode (PER-67, Brad 10 Nov 2026): the Reorder button beside the
+   * Exercises heading swaps the cards for compact rows with drag handles;
+   * Done swaps them back. Nothing on a card starts a drag.
+   */
+  const [isReordering, setIsReordering] = useState(false);
   const supersetLetters = buildSupersetLetterMap(
     exercises.map((ex) => ex.superset_group),
   );
@@ -233,12 +230,12 @@ export function WorkoutFormBody({
   const canReorder =
     reorderBlocks.length > 1 && onReorderExercise !== undefined;
   const rows = reorderBlocks.map((block) => ({ id: block[0].id, block }));
+  const showReorder = isReordering && canReorder;
+  useEffect(() => {
+    if (isReordering && !canReorder) setIsReordering(false);
+  }, [isReordering, canReorder]);
 
-  /**
-   * Commit a drop and LEAVE reorder mode. Exiting here is the point — the
-   * previous version kept the mode alive after the drop and hid the only exit
-   * behind a Done button.
-   */
+  /** Commit a drop. The mode stays open for further moves until Done. */
   const handleReorder = (movedId: string, toIndex: number) => {
     const moved = rows.find((row) => row.id === movedId);
     const lead = moved?.block[0];
@@ -253,17 +250,8 @@ export function WorkoutFormBody({
     );
   };
 
-  /**
-   * One drag block: a standalone exercise, or every member of a superset. The
-   * grip goes to the block's LEAD card, wrapped in the sortable's `Handle` —
-   * holding it drags the real cards, with no mode in between.
-   */
-  const renderBlock = (
-    block: WorkoutFormExercise[],
-    blockIndex: number,
-    draggable: boolean,
-  ) => {
-    const blockPosition = blockIndex + 1;
+  /** One block: a standalone exercise, or every member of a superset. */
+  const renderBlock = (block: WorkoutFormExercise[]) => {
     return (
       <View key={block[0].id}>
         <View gap={10}>
@@ -294,18 +282,6 @@ export function WorkoutFormBody({
                       : undefined
                   }
                   supersetLeadExercise={supersetExercises[0]}
-                  reorderPosition={blockPosition}
-                  reorderTotal={reorderBlocks.length}
-                  onMove={
-                    onMoveExercise && (!hasSupersetGroup || isSupersetStart)
-                      ? (direction) => onMoveExercise(exercise.id, direction)
-                      : undefined
-                  }
-                  draggable={
-                    (!hasSupersetGroup || isSupersetStart) &&
-                    canReorder &&
-                    draggable
-                  }
                 />
               </View>
             );
@@ -490,6 +466,9 @@ export function WorkoutFormBody({
           >
             {`Exercises · ${exercises.length}`}
           </Text>
+          {canReorder ? (
+            <ReorderButton onPress={() => setIsReordering(true)} />
+          ) : null}
         </View>
       </View>
     </View>
@@ -593,48 +572,60 @@ export function WorkoutFormBody({
             style={{ flex: 1 }}
             behavior={Platform.OS === "ios" ? "padding" : undefined}
           >
-            <ReorderableList
-              testID="workout-form-scroll"
-              style={{ flex: 1, paddingHorizontal: 16 }}
-              contentContainerStyle={{ paddingBottom: 24 }}
-              // Only the seed used before each card reports its own height.
-              // Cards differ — a superset member is shorter than a lead with
-              // its connector — and the list measures them.
-              estimatedItemHeight={ESTIMATED_EDITOR_BLOCK_HEIGHT}
-              compactItemHeight={COMPACT_REORDER_ROW_HEIGHT + EDITOR_ROW_GAP}
-              keyboardDismissMode="on-drag"
-              automaticallyAdjustKeyboardInsets
-              data={rows}
-              onReorder={handleReorder}
-              header={formHeader}
-              footer={
-                <>
-                  {exercises.length === 0 ? emptyExercises : null}
-                  {formFooter}
-                </>
-              }
-              renderItem={(
-                row,
-                { index, isCompact }: ReorderableRenderProps,
-              ) => (
-                <RNView style={{ paddingBottom: EDITOR_ROW_GAP }}>
-                  {isCompact ? (
-                    <CompactReorderRow
-                      exerciseNames={row.block.map(
-                        (exercise) => exercise.exercise_name,
-                      )}
-                      position={index + 1}
-                      total={rows.length}
-                      // No `onMove` in compact mode: a move from outside the
-                      // drag would desync the sortable's position map. The
-                      // full cards carry the accessible Move actions.
-                    />
-                  ) : (
-                    renderBlock(row.block, index, true)
+            {showReorder ? (
+              <RNView
+                style={{ flex: 1, paddingHorizontal: 16 }}
+                testID="workout-form-reorder"
+              >
+                <ReorderModeBar onDone={() => setIsReordering(false)} />
+                <ReorderableList
+                  testID="workout-form-reorder-list"
+                  contentContainerStyle={{ paddingBottom: 24 }}
+                  rowHeight={COMPACT_REORDER_ROW_HEIGHT + EDITOR_ROW_GAP}
+                  data={rows}
+                  onReorder={handleReorder}
+                  renderRow={(row, { index, wrapHandle }) => (
+                    <RNView style={{ paddingBottom: EDITOR_ROW_GAP }}>
+                      <CompactReorderRow
+                        exerciseNames={row.block.map(
+                          (exercise) => exercise.exercise_name,
+                        )}
+                        position={index + 1}
+                        total={rows.length}
+                        onMove={
+                          onMoveExercise
+                            ? (direction) =>
+                                onMoveExercise(row.block[0].id, direction)
+                            : undefined
+                        }
+                        wrapHandle={wrapHandle}
+                      />
+                    </RNView>
                   )}
-                </RNView>
-              )}
-            />
+                />
+              </RNView>
+            ) : (
+              <ScrollView
+                testID="workout-form-scroll"
+                style={{ flex: 1, paddingHorizontal: 16 }}
+                contentContainerStyle={{ paddingBottom: 24 }}
+                keyboardDismissMode="on-drag"
+                keyboardShouldPersistTaps="handled"
+                automaticallyAdjustKeyboardInsets
+              >
+                {formHeader}
+                {rows.map((row) => (
+                  <RNView
+                    key={row.id}
+                    style={{ paddingBottom: EDITOR_ROW_GAP }}
+                  >
+                    {renderBlock(row.block)}
+                  </RNView>
+                ))}
+                {exercises.length === 0 ? emptyExercises : null}
+                {formFooter}
+              </ScrollView>
+            )}
           </KeyboardAvoidingView>
 
           <View

@@ -11,16 +11,14 @@
  *   reorderableTestApi.drop("row-1", 2, { "row-1": 2, "row-2": 0, "row-3": 1 });
  *
  * What this can prove: which rows are draggable, that a drop commits the right
- * id and index, that a pan which never activated commits nothing, and that the
- * rows collapse for the drag. What it cannot prove is the gesture, the
+ * id and index, and that a pan which never activated commits nothing. What it
+ * cannot prove is the gesture, the
  * geometry or the auto-scroll — `specs/milestones/REORDER-REBUILD/SMOKE_TEST.md`
  * is the gate for those.
  */
 import { act } from "@testing-library/react-native";
 
 export type MockSortableRow = {
-  onCollapse?: () => void;
-  onCollapseEnd?: () => void;
   onDragStart?: () => void;
   onDrop?: (
     id: string,
@@ -60,26 +58,6 @@ afterEach(() => {
 });
 
 export const reorderableTestApi = {
-  /**
-   * The collapse long-press, which fires BEFORE the drag activates and swaps
-   * the rows for compact ones. Firing this then `dragStart` is the real
-   * sequence.
-   */
-  collapse(id: string) {
-    // Each of these lands in React state, so it has to be flushed like any
-    // other event a test fires.
-    act(() => {
-      mockSortableRows.get(id)?.onCollapse?.();
-    });
-  },
-  /** The collapse press ending — puts the rows back if no drag happened. */
-  collapseEnd(id: string) {
-    // Each of these lands in React state, so it has to be flushed like any
-    // other event a test fires.
-    act(() => {
-      mockSortableRows.get(id)?.onCollapseEnd?.();
-    });
-  },
   /** Activate the pan, as Gesture Handler does after its long press. */
   dragStart(id: string) {
     // Each of these lands in React state, so it has to be flushed like any

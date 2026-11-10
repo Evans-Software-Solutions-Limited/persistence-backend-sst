@@ -3,7 +3,6 @@ import { Text, View } from "@tamagui/core";
 import { IconBtn, Pill, RepRange, Stepper } from "@/ui/components/foundation";
 import { toneHex } from "@/ui/components/foundation/tones";
 import { IconLayers, IconTrash } from "@/ui/components/icons";
-import { ExerciseReorderHandle } from "@/ui/components/workouts/ExerciseReorderHandle";
 
 /**
  * <ExerciseConfigCard> — v3 restyle onto the foundation kit + prototype
@@ -39,11 +38,6 @@ interface ExerciseConfigCardProps {
   readonly supersetLetter?: string;
 
   readonly supersetLeadExercise?: any;
-  readonly reorderPosition?: number;
-  readonly reorderTotal?: number;
-  readonly onMove?: (direction: -1 | 1) => void;
-  /** Inside a `ReorderableList`: the grip says it can be dragged. */
-  readonly draggable?: boolean;
 }
 
 export default function ExerciseConfigCard({
@@ -56,10 +50,6 @@ export default function ExerciseConfigCard({
   supersetGroupNumber,
   supersetLetter,
   supersetLeadExercise,
-  reorderPosition,
-  reorderTotal,
-  onMove,
-  draggable,
 }: ExerciseConfigCardProps) {
   const isInSuperset =
     isSupersetStart ||
@@ -171,15 +161,6 @@ export default function ExerciseConfigCard({
         padding={12}
       >
         <View flexDirection="row" alignItems="center" gap={9} marginBottom={11}>
-          {(onMove || draggable) && reorderPosition && reorderTotal ? (
-            <ExerciseReorderHandle
-              label={exercise.exercise_name}
-              position={reorderPosition}
-              total={reorderTotal}
-              onMove={onMove}
-              draggable={draggable}
-            />
-          ) : null}
           <View
             minWidth={22}
             height={22}

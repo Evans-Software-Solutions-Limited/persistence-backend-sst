@@ -1,5 +1,45 @@
 # Project memory · persistence-backend-sst
 
+### 2026-11-10 — Reorder mode, and a workout with an impossible weight still syncs (PER-67, PERSISTENCE-MOBILE-2; branch `claude/inspiring-cerf-145ez4`)
+
+Release 2 fixes; Brad's decisions 10 Nov.
+- **Stuck sync (Sentry PERSISTENCE-MOBILE-2).** One iPhone 15 on 1.1.2 has
+  failed to sync a 22 Oct workout ~30 times (manual Retry): set 3 was logged at
+  9 × 35,532 kg, which overflows `exercise_sets.weight_kg` numeric(6,2). Prod
+  answers 500 (backend v1.26.0); #510's 422 would only stop the retries. The
+  only other way out on the device was Discard (losing the workout). The
+  account can't be identified. Earlier events on other phones (to 17 Oct) are
+  PER-83's empty-workout 422, fixed in 1.2.0.
+  - **Core:** both `sessions/record` routes (self and on-behalf) accept any
+    number/string for `weightKg`/`distanceMeters`; `recordSession` saves a
+    value the column can't hold (negative, non-numeric, over the column once
+    rounded to 2 dp) as NULL via `storableSetValue`. The rest of the workout
+    saves. Set create/update keep the strict 422. Once the release is out the
+    user's next Retry succeeds, on any app version.
+  - **Mobile:** `SetLogger` and superset rows refuse a weight keystroke over
+    9,999.99 kg (checked in kg; ~22,046 lb).
+- **Reorder mode (PER-67).** `ReorderableList` is rewritten as the
+  reorder-mode list only: fixed-height compact rows, the drag on each row's
+  visible grip (200 ms hold), no measuring, no header compensation, no collapse
+  timing. A Reorder button (session: above the first exercise; workout
+  editor/creator: beside "Exercises · N") opens it; `ReorderModeBar` Done
+  closes it; a drop stays in the mode. At rest the cards are a plain
+  `ScrollView` with no drag code, and the grips are gone from
+  `SessionExerciseCard`, `ActiveSupersetRow` and `ExerciseConfigCard`.
+  VoiceOver Move up/down live on the reorder rows. The mode closes itself when
+  fewer than two blocks remain or a partner tab opens. Cause of the bug: the
+  old design collapsed every card on a 90 ms long press of an invisible
+  56×56 target over each card's top-left corner, while the drag's own 200 ms
+  pan was still pending, so a gesture that stopped in between could leave
+  some cards collapsed. Device gate:
+  `specs/milestones/REORDER-REBUILD/SMOKE_TEST.md` (rewritten).
+- **Per-set reps (canvas C5f) deferred to the next build** (Brad, 10 Nov).
+- Verified: core session/repository/trainer suites 243 passed; the new
+  repository test fails on the old code. Mobile: suites related to the changed
+  files 119/122 passed; `SubscriptionSelectionContainer` fails identically on
+  main (container-only), `TogetherSettingsContainer` and `SwapExercisePopover`
+  pass alone (load). Typecheck and lint clean. **Not device-tested.**
+
 ### 2026-11-06 — Premium without AI, Premium+ carries all AI (PER-103, branch `claude/inspiring-cerf-145ez4`)
 
 Brad's decisions (31 Oct – 6 Nov): three athlete tiers. Premium £4.99 / £39.99,

@@ -23,7 +23,7 @@
 
 import { Ionicons } from "@expo/vector-icons";
 import { ScreenGlow } from "@/ui/components/foundation";
-import React, { useMemo, type ReactNode } from "react";
+import React, { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   AccessibilityInfo,
   KeyboardAvoidingView,
@@ -43,10 +43,11 @@ import {
   COMPACT_REORDER_ROW_HEIGHT,
   CompactReorderRow,
 } from "@/ui/components/workouts/CompactReorderRow";
+import { ReorderableList } from "@/ui/components/workouts/ReorderableList";
 import {
-  ReorderableList,
-  type ReorderableRenderProps,
-} from "@/ui/components/workouts/ReorderableList";
+  ReorderButton,
+  ReorderModeBar,
+} from "@/ui/components/workouts/ReorderControls";
 import { SessionHeader } from "@/ui/components/session/SessionHeader";
 import { buildReorderBlocks } from "@/domain/services/workout.service";
 import { TrainerBannerPresenter } from "@/ui/presenters/TrainerBannerPresenter";
@@ -211,11 +212,11 @@ export type ActiveSessionPresenterProps = {
 const DEFAULT_TEMPLATE: SessionExerciseTemplate = { restSeconds: 90 };
 
 /**
- * Gap between compact rows. It lives INSIDE the measured row height the
- * sortable is told about, because absolutely-positioned rows ignore the
- * container's `gap`.
+ * Gap between reorder-mode rows. It lives INSIDE the row height the sortable
+ * is told about, because absolutely-positioned rows ignore the container's
+ * `gap`.
  */
-const REORDER_ROW_GAP = 16;
+const REORDER_ROW_GAP = 12;
 
 type DisplayItem =
   | { kind: "exercise"; exercise: SessionExercise }
@@ -267,13 +268,6 @@ function buildDisplayItems(exercises: SessionExercise[]): DisplayItem[] {
   return items;
 }
 
-/**
- * Seed height for a drag row, used only for the frame or two before the rows
- * report their own. A logged strength card is taller, an unstarted one
- * shorter; the list measures each of them.
- */
-const ESTIMATED_BLOCK_HEIGHT = 220;
-
 export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
   const insets = useSafeAreaInsets();
   const weightUnit = props.weightUnit ?? "kg";
@@ -291,17 +285,12 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
   const today = localDayISO(new Date());
 
   /**
-   * Reorder is ONE gesture on the real card: hold the grip and drag.
-   *
-   * There is no reorder mode any more, and nothing to tap in or out. The two
-   * earlier designs both existed to work around a belief that the sortable
-   * could only drag uniform rows — first by collapsing the list mid-drag
-   * (which left the library holding stale measurements of the taller cards),
-   * then by making the collapse a mode you entered with one hold and dragged
-   * with a second. The belief was wrong: the library measures rows when told
-   * to (`enableDynamicHeights`), so the cards themselves drag. See
-   * `ReorderableList`.
+   * Reorder mode (PER-67, Brad 10 Nov 2026). The Reorder button above the
+   * exercises swaps the cards for one compact row per block with a drag
+   * handle; Done swaps them back. Outside the mode nothing on a card can
+   * start a drag. UI-only state: the order itself lives in the session.
    */
+  const [isReordering, setIsReordering] = useState(false);
 
   /**
    * Reorder rows are NOT the display items.
@@ -330,27 +319,14 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
   // renders two cards but is a single block, so there is nothing to move.
   const canReorder = rows.length > 1 && props.onReorderExercise !== undefined;
 
-  /**
-   * Block position for a display row, and whether it leads its block.
-   *
-   * The accessible Move up/down actions go through the same command as a drag,
-   * which works in BLOCK space — but the cards render in DISPLAY space, which
-   * splits a cardio-bearing superset into separate rows. Announcing
-   * `index + 1` of `displayItems.length` therefore described a move the command
-   * would not make, and offered "Move up" on a peer the command rejects. Only
-   * the block lead carries a grip, and it speaks block numbers.
-   */
-  const blockOf = (exerciseId: string) => {
-    const blockIndex = rows.findIndex((row) =>
-      row.exercises.some((exercise) => exercise.id === exerciseId),
-    );
-    if (blockIndex < 0) return null;
-    return {
-      position: blockIndex + 1,
-      total: rows.length,
-      isLead: rows[blockIndex].exercises[0].id === exerciseId,
-    };
-  };
+  // Leave the mode if there stops being anything to reorder (an exercise
+  // removed elsewhere, a partner tab opened).
+  const showReorder = isReordering && canReorder && !props.partnerView;
+  useEffect(() => {
+    if (isReordering && !(canReorder && !props.partnerView)) {
+      setIsReordering(false);
+    }
+  }, [isReordering, canReorder, props.partnerView]);
 
   /**
    * Commit a drop. `toIndex` is a BLOCK index — a superset moves as one — and
@@ -398,12 +374,8 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
   const displayItemsOfBlock = (blockId: string) =>
     displayItemsByBlock.get(blockId) ?? [];
 
-  /**
-   * One display item. Only the block LEAD advertises a draggable grip — the
-   * gesture itself belongs to `ReorderableList`, which puts an invisible
-   * target over the row's top-left corner.
-   */
-  const renderDisplayItem = (item: DisplayItem, draggable: boolean) => {
+  /** One display item: an exercise card or a superset. */
+  const renderDisplayItem = (item: DisplayItem) => {
     if (item.kind === "exercise") {
       const ex = item.exercise;
       const template = props.templateByExercise[ex.id] ?? DEFAULT_TEMPLATE;
@@ -434,14 +406,6 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
               ? () => props.onSkipExercise!(ex.id)
               : undefined
           }
-          reorderPosition={blockOf(ex.id)?.position}
-          reorderTotal={rows.length}
-          onMove={
-            props.onMoveExercise && blockOf(ex.id)?.isLead
-              ? (direction) => props.onMoveExercise?.(ex.id, direction)
-              : undefined
-          }
-          draggable={draggable && blockOf(ex.id)?.isLead === true}
         />
       );
     }
@@ -461,15 +425,6 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
         onRemoveExercise={props.onRemoveExercise}
         onOpenSupersetNotes={props.onOpenSupersetNotes}
         onAddExerciseToSuperset={props.onAddExerciseToSuperset}
-        reorderPosition={blockOf(item.exercises[0].id)?.position}
-        reorderTotal={rows.length}
-        onMove={
-          props.onMoveExercise
-            ? (direction) =>
-                props.onMoveExercise?.(item.exercises[0].id, direction)
-            : undefined
-        }
-        draggable={draggable}
       />
     );
   };
@@ -506,198 +461,202 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
             {props.togetherRow}
             {props.partnerView}
           </ScrollView>
+        ) : showReorder ? (
+          <View style={styles.reorderMode} testID="active-session-reorder">
+            <ReorderModeBar onDone={() => setIsReordering(false)} />
+            <ReorderableList
+              testID="active-session-reorder-list"
+              style={styles.scroll}
+              contentContainerStyle={styles.reorderContent}
+              rowHeight={COMPACT_REORDER_ROW_HEIGHT + REORDER_ROW_GAP}
+              data={rows}
+              onReorder={handleReorder}
+              renderRow={(row, { index, wrapHandle }) => (
+                <View style={{ paddingBottom: REORDER_ROW_GAP }}>
+                  <CompactReorderRow
+                    exerciseNames={row.exercises.map(
+                      (exercise) => exercise.exerciseName,
+                    )}
+                    position={index + 1}
+                    total={rows.length}
+                    onMove={
+                      props.onMoveExercise
+                        ? (direction) =>
+                            props.onMoveExercise?.(
+                              row.exercises[0].id,
+                              direction,
+                            )
+                        : undefined
+                    }
+                    wrapHandle={wrapHandle}
+                  />
+                </View>
+              )}
+            />
+          </View>
         ) : (
-          <ReorderableList
+          <ScrollView
             testID="active-session-list"
             style={styles.scroll}
             contentContainerStyle={styles.scrollContent}
-            // Only the seed used before the rows report their own heights, so a
-            // rough average of a card is right. Cards are NOT this tall and do
-            // not match each other; the list measures them.
-            estimatedItemHeight={ESTIMATED_BLOCK_HEIGHT}
-            compactItemHeight={COMPACT_REORDER_ROW_HEIGHT + REORDER_ROW_GAP}
             keyboardDismissMode="on-drag"
+            keyboardShouldPersistTaps="handled"
             automaticallyAdjustKeyboardInsets
-            data={rows}
-            onReorder={handleReorder}
-            header={
-              <>
-                <SessionHeader
-                  startedAt={props.startedAt}
-                  sessionName={props.sessionName}
-                  onMinimize={props.onMinimize}
-                  onEnd={props.onDiscard}
+          >
+            <>
+              <SessionHeader
+                startedAt={props.startedAt}
+                sessionName={props.sessionName}
+                onMinimize={props.onMinimize}
+                onEnd={props.onDiscard}
+              />
+              {props.togetherRow}
+              {props.withClient && (
+                <TrainerBannerPresenter
+                  withClient={props.withClient}
+                  retroactive={props.retroactive}
                 />
-                {props.togetherRow}
-                {props.withClient && (
-                  <TrainerBannerPresenter
-                    withClient={props.withClient}
-                    retroactive={props.retroactive}
-                  />
-                )}
-                {(hasCardio || props.retroactive) && (
-                  <View
-                    style={styles.activityMeta}
-                    testID="session-activity-meta"
-                  >
-                    {props.retroactive &&
-                    props.retrospectiveCompletedAt &&
-                    props.onRetrospectiveDateChange ? (
-                      <>
-                        <DatePickerField
-                          label="Workout date"
-                          value={retrospectiveDayValue(
-                            props.retrospectiveCompletedAt,
-                          )}
-                          maximumDate={today}
-                          allowClear={false}
-                          onChange={props.onRetrospectiveDateChange}
-                          testID="retrospective-workout-date"
-                        />
-                        <View style={styles.metaField}>
-                          <Text style={styles.metaLabel}>DURATION (MIN)</Text>
-                          <TextInput
-                            style={styles.metaInput}
-                            value={String(
-                              Math.max(
-                                1,
-                                Math.round(
-                                  (props.retrospectiveDurationSeconds ?? 3600) /
-                                    60,
-                                ),
-                              ),
-                            )}
-                            keyboardType="number-pad"
-                            onChangeText={(value) => {
-                              const minutes = Number.parseInt(value, 10);
-                              if (minutes > 0 && minutes <= 24 * 60)
-                                props.onRetrospectiveDurationChange?.(
-                                  minutes * 60,
-                                );
-                            }}
-                            maxLength={4}
-                            testID="retrospective-workout-duration"
-                          />
-                        </View>
-                      </>
-                    ) : null}
-                    {hasCardio ? (
-                      <>
-                        <Text style={styles.metaLabel}>ENVIRONMENT</Text>
-                        <View style={styles.environmentRow}>
-                          {(["indoor", "outdoor"] as const).map((value) => (
-                            <TouchableOpacity
-                              key={value}
-                              style={[
-                                styles.environmentButton,
-                                props.activityEnvironment === value &&
-                                  styles.environmentButtonActive,
-                              ]}
-                              onPress={() =>
-                                props.onActivityEnvironmentChange?.(value)
-                              }
-                              testID={`session-environment-${value}`}
-                            >
-                              <Text style={styles.environmentText}>
-                                {value.toUpperCase()}
-                              </Text>
-                            </TouchableOpacity>
-                          ))}
-                        </View>
-                        <View style={styles.metaField}>
-                          <Text style={styles.metaLabel}>
-                            LOCATION (OPTIONAL)
-                          </Text>
-                          <TextInput
-                            style={styles.metaInput}
-                            value={props.locationName ?? ""}
-                            onChangeText={props.onLocationNameChange}
-                            placeholder="Park, route or gym"
-                            placeholderTextColor={color.$text4}
-                            maxLength={120}
-                            testID="session-location"
-                          />
-                        </View>
-                      </>
-                    ) : null}
-                  </View>
-                )}
-              </>
-            }
-            footer={
-              orderedExercises.length > 0 ? (
+              )}
+              {(hasCardio || props.retroactive) && (
                 <View
-                  style={styles.addExerciseSection}
-                  testID="active-session-add-exercise-row"
+                  style={styles.activityMeta}
+                  testID="session-activity-meta"
                 >
-                  <View style={styles.divider} />
-                  <TouchableOpacity
-                    onPress={props.onAddExercise}
-                    style={styles.addExerciseLink}
-                    testID="active-session-add-exercise"
-                    accessibilityLabel="Add exercise"
-                  >
-                    <Ionicons
-                      name="add-circle-outline"
-                      size={20}
-                      color={color.$primary}
-                    />
-                    <Text style={styles.addExerciseText}>Add Exercise</Text>
-                  </TouchableOpacity>
+                  {props.retroactive &&
+                  props.retrospectiveCompletedAt &&
+                  props.onRetrospectiveDateChange ? (
+                    <>
+                      <DatePickerField
+                        label="Workout date"
+                        value={retrospectiveDayValue(
+                          props.retrospectiveCompletedAt,
+                        )}
+                        maximumDate={today}
+                        allowClear={false}
+                        onChange={props.onRetrospectiveDateChange}
+                        testID="retrospective-workout-date"
+                      />
+                      <View style={styles.metaField}>
+                        <Text style={styles.metaLabel}>DURATION (MIN)</Text>
+                        <TextInput
+                          style={styles.metaInput}
+                          value={String(
+                            Math.max(
+                              1,
+                              Math.round(
+                                (props.retrospectiveDurationSeconds ?? 3600) /
+                                  60,
+                              ),
+                            ),
+                          )}
+                          keyboardType="number-pad"
+                          onChangeText={(value) => {
+                            const minutes = Number.parseInt(value, 10);
+                            if (minutes > 0 && minutes <= 24 * 60)
+                              props.onRetrospectiveDurationChange?.(
+                                minutes * 60,
+                              );
+                          }}
+                          maxLength={4}
+                          testID="retrospective-workout-duration"
+                        />
+                      </View>
+                    </>
+                  ) : null}
+                  {hasCardio ? (
+                    <>
+                      <Text style={styles.metaLabel}>ENVIRONMENT</Text>
+                      <View style={styles.environmentRow}>
+                        {(["indoor", "outdoor"] as const).map((value) => (
+                          <TouchableOpacity
+                            key={value}
+                            style={[
+                              styles.environmentButton,
+                              props.activityEnvironment === value &&
+                                styles.environmentButtonActive,
+                            ]}
+                            onPress={() =>
+                              props.onActivityEnvironmentChange?.(value)
+                            }
+                            testID={`session-environment-${value}`}
+                          >
+                            <Text style={styles.environmentText}>
+                              {value.toUpperCase()}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                      <View style={styles.metaField}>
+                        <Text style={styles.metaLabel}>
+                          LOCATION (OPTIONAL)
+                        </Text>
+                        <TextInput
+                          style={styles.metaInput}
+                          value={props.locationName ?? ""}
+                          onChangeText={props.onLocationNameChange}
+                          placeholder="Park, route or gym"
+                          placeholderTextColor={color.$text4}
+                          maxLength={120}
+                          testID="session-location"
+                        />
+                      </View>
+                    </>
+                  ) : null}
                 </View>
-              ) : (
-                <View style={styles.emptyWrap} testID="active-session-empty">
-                  <Text style={styles.emptyTitle}>No exercises yet</Text>
-                  <Text style={styles.emptyBody}>
-                    Add exercises from the library to start logging sets.
-                  </Text>
-                  <TouchableOpacity
-                    onPress={props.onAddExercise}
-                    style={styles.emptyAddButton}
-                    testID="active-session-empty-add"
-                    accessibilityLabel="Add exercise"
-                  >
-                    <Ionicons name="add" size={18} color={color.$text} />
-                    <Text style={styles.emptyAddLabel}>Add exercise</Text>
-                  </TouchableOpacity>
+              )}
+            </>
+            {canReorder ? (
+              <View style={styles.reorderButtonRow}>
+                <ReorderButton onPress={() => setIsReordering(true)} />
+              </View>
+            ) : null}
+            <View>
+              {rows.map((row, index) => (
+                <View key={row.id} testID={`active-session-block-${index + 1}`}>
+                  {displayItemsOfBlock(row.id).map((item) =>
+                    renderDisplayItem(item),
+                  )}
                 </View>
-              )
-            }
-            renderItem={(row, { index, isCompact }: ReorderableRenderProps) => (
+              ))}
+            </View>
+            {orderedExercises.length > 0 ? (
               <View
-                // Opaque only while a drag has collapsed the rows, so a lifted
-                // row covers the ones beneath it. At rest the screen glow shows
-                // through, as on the canvas (PER-60).
-                style={isCompact ? styles.dragBlock : undefined}
-                testID={`active-session-drag-block-${index + 1}`}
+                style={styles.addExerciseSection}
+                testID="active-session-add-exercise-row"
               >
-                {isCompact ? (
-                  /*
-                   * Collapsed for the drag, so the whole list is visible while
-                   * you move a row. The swap happens on the hold, BEFORE the
-                   * drag activates — see `ReorderableList`.
-                   */
-                  <View style={{ paddingBottom: REORDER_ROW_GAP }}>
-                    <CompactReorderRow
-                      exerciseNames={row.exercises.map(
-                        (exercise) => exercise.exerciseName,
-                      )}
-                      position={index + 1}
-                      total={rows.length}
-                      // No `onMove` in compact mode: a move arriving from
-                      // outside the drag would desync the sortable's position
-                      // map against what is on screen. The full cards carry the
-                      // accessible Move actions.
-                    />
-                  </View>
-                ) : (
-                  displayItemsOfBlock(row.id).map((item) =>
-                    renderDisplayItem(item, canReorder),
-                  )
-                )}
+                <View style={styles.divider} />
+                <TouchableOpacity
+                  onPress={props.onAddExercise}
+                  style={styles.addExerciseLink}
+                  testID="active-session-add-exercise"
+                  accessibilityLabel="Add exercise"
+                >
+                  <Ionicons
+                    name="add-circle-outline"
+                    size={20}
+                    color={color.$primary}
+                  />
+                  <Text style={styles.addExerciseText}>Add Exercise</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={styles.emptyWrap} testID="active-session-empty">
+                <Text style={styles.emptyTitle}>No exercises yet</Text>
+                <Text style={styles.emptyBody}>
+                  Add exercises from the library to start logging sets.
+                </Text>
+                <TouchableOpacity
+                  onPress={props.onAddExercise}
+                  style={styles.emptyAddButton}
+                  testID="active-session-empty-add"
+                  accessibilityLabel="Add exercise"
+                >
+                  <Ionicons name="add" size={18} color={color.$text} />
+                  <Text style={styles.emptyAddLabel}>Add exercise</Text>
+                </TouchableOpacity>
               </View>
             )}
-          />
+          </ScrollView>
         )}
       </KeyboardAvoidingView>
 
@@ -744,10 +703,9 @@ const styles = StyleSheet.create({
   keyboardAvoider: { flex: 1 },
   scroll: { flex: 1 },
   reorderContent: {
-    // Horizontal only — see the contentContainerStyle note on the reorder
-    // list. The bottom clearance is for the floating Finish CTA, which keeps
-    // floating in compact mode; content BELOW the rows is harmless.
-    paddingHorizontal: 16,
+    // Nothing above the rows: the reorder list's drag maths assumes the rows
+    // start at the top of its scroller. The bottom clearance is for the
+    // floating Finish CTA.
     paddingBottom: 100,
   },
   scrollContent: {
@@ -764,8 +722,14 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
     gap: 16,
   },
-  dragBlock: {
-    backgroundColor: color.$bg,
+  reorderMode: {
+    flex: 1,
+    paddingHorizontal: 16,
+  },
+  reorderButtonRow: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    marginBottom: -8,
   },
   activityMeta: {
     marginHorizontal: 16,

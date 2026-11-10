@@ -1,3 +1,8 @@
+> ⚠ **SUPERSEDED 10 Nov 2026 (Brad, PER-67).** Reorder is now an explicit
+> mode: a Reorder button, compact rows with drag handles, Done to leave. The
+> hold-the-grip design below could leave some cards collapsed and others not.
+> Current gate: `SMOKE_TEST.md`.
+
 # BRIEF — Exercise reorder: strip out and rebuild
 
 **Status:** authored 2026-09-07, not started.
