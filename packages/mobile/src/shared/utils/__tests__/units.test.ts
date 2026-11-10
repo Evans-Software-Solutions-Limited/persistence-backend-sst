@@ -10,6 +10,8 @@ import {
   cmToFeetInches,
   formatHeight,
   weightInputToKg,
+  exceedsSetWeightMax,
+  SET_WEIGHT_KG_MAX,
   weightToInputText,
 } from "../units";
 
@@ -108,5 +110,15 @@ describe("height", () => {
     expect(formatHeight(178, "ftin")).toBe("5'10\"");
     expect(formatHeight(null, "cm")).toBe("—");
     expect(formatHeight(undefined, "ftin")).toBe("—");
+  });
+});
+
+describe("exceedsSetWeightMax", () => {
+  it("matches the server column, numeric(6,2)", () => {
+    expect(SET_WEIGHT_KG_MAX).toBe(9999.99);
+    expect(exceedsSetWeightMax(9999.99)).toBe(false);
+    expect(exceedsSetWeightMax(9999.994)).toBe(false);
+    expect(exceedsSetWeightMax(9999.995)).toBe(true);
+    expect(exceedsSetWeightMax(35532)).toBe(true);
   });
 });

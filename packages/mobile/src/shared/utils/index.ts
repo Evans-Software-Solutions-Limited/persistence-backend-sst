@@ -32,6 +32,8 @@ export {
   weightInUnit,
   weightToInputText,
   weightInputToKg,
+  SET_WEIGHT_KG_MAX,
+  exceedsSetWeightMax,
   formatWeight,
   volumeInUnit,
   formatVolumeParts,

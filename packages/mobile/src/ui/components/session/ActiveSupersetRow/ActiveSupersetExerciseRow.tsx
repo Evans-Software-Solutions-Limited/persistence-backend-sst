@@ -30,6 +30,7 @@ import type { ExerciseSet } from "@/domain/models/session";
 import {
   weightInUnit,
   weightInputToKg,
+  exceedsSetWeightMax,
   weightToInputText,
   type WeightUnit,
 } from "@/shared/utils";
@@ -100,12 +101,14 @@ export function ActiveSupersetExerciseRow({
   };
 
   const handleWeightChange = (text: string) => {
+    const kg = weightInputToKg(text, weightUnit);
+    // Same cap as SetLogger: refuse a keystroke past what can be stored.
+    if (kg !== null && exceedsSetWeightMax(kg)) return;
     setWeightValue(text);
     if (text === "") {
       onUpdateSet({ weightKg: null });
       return;
     }
-    const kg = weightInputToKg(text, weightUnit);
     if (kg !== null) onUpdateSet({ weightKg: kg });
   };
 
