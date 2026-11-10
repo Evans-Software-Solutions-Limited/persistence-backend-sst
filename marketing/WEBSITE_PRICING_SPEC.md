@@ -52,7 +52,7 @@ marked **TBC** is an open decision (see §6).
 > | --- | --- | --- | --- |
 > | Free | £0 | — | Full workout and set logging · Nutrition tracking and barcode scanner · Streaks, PRs and core progress · 3 custom workouts |
 > | Premium | £4.99 | £39.99 | Everything in Free · Unlimited workouts · Train Together with your partners |
-> | Premium+ | £24.99 | £199.99 | Everything in Premium · Photo and free-text AI food logging · Recipe import and AI recipe estimates · Mealprint: AI meal plans and smart swaps · Loadout: equipment-aware training |
+> | Premium+ | £24.99 | £199.99 | Everything in Premium · Photo and free-text AI food logging · AI smart recipe import and recipe estimates · Mealprint: AI meal plans and smart swaps · Loadout: equipment-aware training |
 >
 > Blue Light Card members: 20 % off (£3.99 / £31.99 and £19.99 / £159.99).
 > Programme import and a Free history limit are NOT shipped; do not advertise them.

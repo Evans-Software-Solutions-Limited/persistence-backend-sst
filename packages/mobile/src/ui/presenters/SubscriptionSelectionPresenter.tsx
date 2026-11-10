@@ -11,7 +11,6 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { DEFAULT_TRIAL_DAYS } from "@/domain/models/subscription";
 import type {
   BillingCycle,
   SubscriptionTier,
@@ -56,11 +55,6 @@ export interface SubscriptionSelectionPresenterProps {
   currentTier: SubscriptionTierName;
   selectedRole: Role;
 
-  // Trial eligibility
-  isTrialEligibleUser: boolean;
-  isTrialEligibleTrainer: boolean;
-  hasTrialEligibilityData: boolean;
-
   // Subscription status
   subscriptionEndsAt: string | null;
   canCancel: boolean;
@@ -99,9 +93,6 @@ export function SubscriptionSelectionPresenter(
     billingCycle,
     currentTier,
     selectedRole,
-    isTrialEligibleUser,
-    isTrialEligibleTrainer,
-    hasTrialEligibilityData,
     subscriptionEndsAt,
     canCancel,
     isCancelledButActive,
@@ -127,19 +118,6 @@ export function SubscriptionSelectionPresenter(
   // tier-rank map to keep in sync). Basic was dropped in the earlier tier
   // simplification — see migration 20260526120000_simplify_tier_model
   // and CLAUDE.md "Migration intent".
-  // A user can hold a tier that isn't in the rendered catalog — e.g. a
-  // RevenueCat promotional grant of a tier omitted by a stale/partial API
-  // catalog. No card is then marked current, so without this guard the
-  // remaining cards render as buyable "free trial"s and a comped user can
-  // be nudged onto a WORSE tier than the one they were given. Suppress
-  // trial banners in that state; they are not genuinely trial-eligible.
-  //
-  // Hoisted above BOTH memos: the trainer loop resolves three fixed tier
-  // names out of the catalog and has exactly the same hole if a trainer
-  // tier is ever held while absent from the response.
-  const holdsUnlistedPaidTier =
-    currentTier !== "free" &&
-    !subscriptionTiers.some((t) => t.tierName === currentTier);
 
   const userTierCards = useMemo(() => {
     const consumerTiers = subscriptionTiers
@@ -173,19 +151,12 @@ export function SubscriptionSelectionPresenter(
 
     for (const tier of visibleConsumerTiers) {
       const isTierCurrent = currentTier === tier.tierName;
-      const showTrial =
-        hasTrialEligibilityData &&
-        isTrialEligibleUser &&
-        !isTierCurrent &&
-        !holdsUnlistedPaidTier;
       cards.push(
         <SubscriptionCard
           key={tier.tierName}
           tier={tier}
           billingCycle={billingCycle}
           isCurrent={isTierCurrent}
-          showTrialBanner={showTrial}
-          trialBannerText={`${DEFAULT_TRIAL_DAYS}-day free trial`}
           onPress={() => onTierSelect(tier.tierName)}
           getFeaturesList={getFeaturesList}
           isTrainer={false}
@@ -198,12 +169,9 @@ export function SubscriptionSelectionPresenter(
 
     return cards;
   }, [
-    holdsUnlistedPaidTier,
     subscriptionTiers,
     billingCycle,
     currentTier,
-    hasTrialEligibilityData,
-    isTrialEligibleUser,
     onTierSelect,
     onboardingRecommendation,
   ]);
@@ -234,12 +202,6 @@ export function SubscriptionSelectionPresenter(
       const tier = subscriptionTiers.find((t) => t.tierName === baseName);
       if (tier) {
         const isCurrent = currentTier === tier.tierName;
-        const showTrialBanner =
-          hasTrialEligibilityData &&
-          isTrialEligibleTrainer &&
-          !isCurrent &&
-          !holdsUnlistedPaidTier;
-
         cards.push(
           <TrainerSubscriptionCard
             key={baseName}
@@ -248,8 +210,6 @@ export function SubscriptionSelectionPresenter(
             billingCycle={billingCycle}
             isStandardCurrent={false}
             isProCurrent={isCurrent}
-            showProTrialBanner={showTrialBanner}
-            trialBannerText={`${DEFAULT_TRIAL_DAYS}-day free trial`}
             onStandardPress={() => {}}
             onProPress={() => onTierSelect(tier.tierName)}
             isRecommended={
@@ -262,12 +222,9 @@ export function SubscriptionSelectionPresenter(
 
     return cards;
   }, [
-    holdsUnlistedPaidTier,
     subscriptionTiers,
     billingCycle,
     currentTier,
-    hasTrialEligibilityData,
-    isTrialEligibleTrainer,
     onTierSelect,
     onboardingRecommendation,
   ]);

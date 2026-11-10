@@ -362,11 +362,6 @@ function SubscriptionCatalogueContainer({
         billingCycle={billingCycle}
         currentTier={currentTier}
         selectedRole={selectedRole}
-        isTrialEligibleUser={subscriptionData?.isEligibleForUserTrial ?? false}
-        isTrialEligibleTrainer={
-          subscriptionData?.isEligibleForTrainerTrial ?? false
-        }
-        hasTrialEligibilityData={subscriptionData !== null}
         subscriptionEndsAt={subscriptionEndsAt}
         canCancel={canCancel}
         isCancelledButActive={isCancelledButActive}

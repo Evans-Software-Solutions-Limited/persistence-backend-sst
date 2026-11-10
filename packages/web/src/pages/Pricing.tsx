@@ -40,7 +40,7 @@ const AUDIENCE_TABS: readonly {
     eyebrow: "Personal plans",
     title: "Train yourself",
     description:
-      "Free to start. Premium+ unlocks the full adaptive suite — Loadout + Mealprint.",
+      "Free to start. Premium adds unlimited workouts and Train Together with your partners. Premium+ adds every AI feature, including Mealprint and Loadout.",
   },
   {
     id: "coach",

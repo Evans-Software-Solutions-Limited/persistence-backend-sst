@@ -176,6 +176,10 @@ const validBody = {
   use_trial: true,
 };
 
+// PER-103: only coach tiers still carry a Stripe trial, so tests exercising the
+// trial-flag flip (and its failure handling) use a coach tier.
+const trainerBody = { ...validBody, tier_name: "individual_trainer" };
+
 beforeEach(() => {
   vi.clearAllMocks();
   // vi.clearAllMocks() only clears call history; queued
@@ -274,36 +278,14 @@ describe("subscriptionsCreateHandler — pure helpers", () => {
     expect(__internals.derivePaymentStatus(failing)).toBe("pending");
   });
 
-  it("resolveTrial returns 7-day user trial only when tier=premium, eligible, opted-in", async () => {
+  // PER-103 (Brad, 10 Nov 2026): neither store offers a consumer trial, so the
+  // web rail must not either — even for a first-time user who opts in.
+  it("resolveTrial grants no trial on premium or premium_plus, even when eligible and opted in", async () => {
     const { __internals } = await import("../subscriptionsCreateHandler");
     const { resolveTrial } = __internals;
-    expect(resolveTrial("premium", false, true, false, false)).toEqual({
-      days: 7,
-      flag: "user",
-    });
-    expect(resolveTrial("premium", false, true, true, false)).toEqual({
-      days: 0,
-      flag: null,
-    });
-    expect(resolveTrial("premium", false, false, false, false)).toEqual({
-      days: 0,
-      flag: null,
-    });
-  });
-
-  it("resolveTrial treats premium_plus as a user tier too (M19-P0) — same has_used_user_trial gate as premium, not a separate flag", async () => {
-    const { __internals } = await import("../subscriptionsCreateHandler");
-    const { resolveTrial } = __internals;
-    expect(resolveTrial("premium_plus", false, true, false, false)).toEqual({
-      days: 7,
-      flag: "user",
-    });
-    // Already used the (shared) user trial → no second trial via premium_plus.
-    expect(resolveTrial("premium_plus", false, true, true, false)).toEqual({
-      days: 0,
-      flag: null,
-    });
-    expect(resolveTrial("premium_plus", false, false, false, false)).toEqual({
+    // Consumer tiers (premium / premium_plus) are non-trainer: eligible and
+    // opted in still means no trial.
+    expect(resolveTrial(false, true, false)).toEqual({
       days: 0,
       flag: null,
     });
@@ -316,23 +298,26 @@ describe("subscriptionsCreateHandler — pure helpers", () => {
     // `is_trainer_tier` flag, not a `_pro` suffix sniff.
     const { __internals } = await import("../subscriptionsCreateHandler");
     const { resolveTrial } = __internals;
-    expect(
-      resolveTrial("individual_trainer", true, true, false, false),
-    ).toEqual({ days: 14, flag: "trainer" });
-    // already used → 0
-    expect(resolveTrial("individual_trainer", true, true, false, true)).toEqual(
-      { days: 0, flag: null },
-    );
-    // any trainer tier — small_business + medium_enterprise — same rule
-    expect(resolveTrial("small_business", true, true, false, false)).toEqual({
+    expect(resolveTrial(true, true, false)).toEqual({
       days: 14,
       flag: "trainer",
     });
-    expect(resolveTrial("medium_enterprise", true, true, false, false)).toEqual(
-      { days: 14, flag: "trainer" },
-    );
+    // already used → 0
+    expect(resolveTrial(true, true, true)).toEqual({
+      days: 0,
+      flag: null,
+    });
+    // any trainer tier — small_business + medium_enterprise — same rule
+    expect(resolveTrial(true, true, false)).toEqual({
+      days: 14,
+      flag: "trainer",
+    });
+    expect(resolveTrial(true, true, false)).toEqual({
+      days: 14,
+      flag: "trainer",
+    });
     // is_trainer_tier flag false — guard rejects
-    expect(resolveTrial("rogue_tier", false, true, false, false)).toEqual({
+    expect(resolveTrial(false, true, false)).toEqual({
       days: 0,
       flag: null,
     });
@@ -343,7 +328,7 @@ describe("subscriptionsCreateHandler — pure helpers", () => {
     // are trial-eligible. `free` has no Stripe sub so no trial path.
     const { __internals } = await import("../subscriptionsCreateHandler");
     const { resolveTrial } = __internals;
-    expect(resolveTrial("free", false, true, false, false)).toEqual({
+    expect(resolveTrial(false, true, false)).toEqual({
       days: 0,
       flag: null,
     });
@@ -455,7 +440,9 @@ describe("subscriptionsCreateHandler — POST /subscriptions (new sub path)", ()
     expect(await res.json()).toMatchObject({ error: "User profile not found" });
   });
 
-  it("creates a new sub end-to-end, flips trial flag, returns happy-path response", async () => {
+  // PER-103: a consumer opting in to a trial (`use_trial: true`) gets none —
+  // no Stripe trial and no `has_used_user_trial` flip.
+  it("creates a new consumer sub end-to-end with no trial, even when use_trial is requested", async () => {
     mockPriceLookup({
       priceMonthly: "price_premium_monthly",
       priceYearly: null,
@@ -465,8 +452,8 @@ describe("subscriptionsCreateHandler — POST /subscriptions (new sub path)", ()
     stripeMock.subscriptions.create.mockResolvedValueOnce(
       buildStripeSubscription({
         id: "sub_new",
-        status: "trialing",
-        trial_end: 1700604800,
+        status: "active",
+        trial_end: null as unknown as number,
       }),
     );
     const res = await postCreate(validBody);
@@ -477,7 +464,7 @@ describe("subscriptionsCreateHandler — POST /subscriptions (new sub path)", ()
       requires_action: false,
       subscription_id: "us_new",
       stripe_subscription_id: "sub_new",
-      payment_status: "trialing",
+      payment_status: "active",
     });
 
     // Customer creation (no prior customer id)
@@ -497,9 +484,9 @@ describe("subscriptionsCreateHandler — POST /subscriptions (new sub path)", ()
       expect.objectContaining({ idempotencyKey: expect.any(String) }),
     );
 
-    // Stripe subscription create — with trial
+    // Stripe subscription create — no trial for a consumer tier
     const createCall = stripeMock.subscriptions.create.mock.calls[0][0];
-    expect(createCall.trial_period_days).toBe(7);
+    expect(createCall.trial_period_days).toBeUndefined();
     expect(createCall.metadata).toMatchObject({
       supabase_user_id: "user-1",
       tier_name: "premium",
@@ -513,7 +500,7 @@ describe("subscriptionsCreateHandler — POST /subscriptions (new sub path)", ()
       tierName: "premium",
       billingCycle: "monthly",
       currency: "GBP",
-      paymentStatus: "trialing",
+      paymentStatus: "active",
       externalSubscriptionId: "sub_new",
     });
     expect(insertPayload.metadata).toMatchObject({
@@ -523,10 +510,8 @@ describe("subscriptionsCreateHandler — POST /subscriptions (new sub path)", ()
     });
     expect(insertPayload.metadata.requires_3d_secure).toBeUndefined();
 
-    // Trial flag flipped on profile
-    expect(profileRepositoryMocks.update).toHaveBeenCalledWith("user-1", {
-      hasUsedUserTrial: true,
-    });
+    // No trial was used, so no trial flag is flipped
+    expect(profileRepositoryMocks.update).not.toHaveBeenCalled();
   });
 
   it("does NOT request a trial when use_trial=false (no Stripe trial, no profile flag)", async () => {
@@ -693,9 +678,45 @@ describe("subscriptionsCreateHandler — POST /subscriptions (new sub path)", ()
     expect(insertPayload.paymentStatus).toBe("pending");
     expect(insertPayload.metadata.requires_3d_secure).toBe(true);
 
-    // Trial flag still flipped immediately on 3DS path — abandon-proof
+    // Consumer tier: no trial (PER-103), so no trial flag to flip. The
+    // abandon-proof flip on the 3DS path is covered by the coach-tier variant
+    // below.
+    expect(profileRepositoryMocks.update).not.toHaveBeenCalled();
+  });
+
+  // Anti-farming: the trial flag must flip BEFORE the 3DS early return, or a
+  // coach could abandon the challenge and claim the 14-day trial again.
+  it("flips the coach trial flag on the 3DS path before returning requires_action (new sub)", async () => {
+    mockPriceLookup({
+      priceMonthly: "price_trainer_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: true,
+    });
+    stripeMock.subscriptions.create.mockResolvedValueOnce(
+      buildStripeSubscription({
+        id: "sub_trainer_3ds",
+        status: "incomplete",
+        trial_end: null as unknown as number,
+        latest_invoice: {
+          payment_intent: {
+            status: "requires_action",
+            client_secret: "pi_trainer_3ds_secret",
+          },
+        } as unknown as Stripe.Invoice,
+      }),
+    );
+    const res = await postCreate(trainerBody);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as any;
+    expect(body).toMatchObject({
+      requires_action: true,
+      client_secret: "pi_trainer_3ds_secret",
+    });
+    const createCall = stripeMock.subscriptions.create.mock.calls[0][0];
+    expect(createCall.trial_period_days).toBe(14);
     expect(profileRepositoryMocks.update).toHaveBeenCalledWith("user-1", {
-      hasUsedUserTrial: true,
+      hasUsedTrainerTrial: true,
     });
   });
 
@@ -876,13 +897,13 @@ describe("subscriptionsCreateHandler — POST /subscriptions (new sub path)", ()
       priceMonthly: "price_premium_monthly",
       priceYearly: null,
       currency: "GBP",
-      isTrainerTier: false,
+      isTrainerTier: true,
     });
     profileRepositoryMocks.update.mockRejectedValueOnce(
       new Error("neon transient"),
     );
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    const res = await postCreate(validBody);
+    const res = await postCreate(trainerBody);
     expect(res.status).toBe(200);
     expect(errSpy).toHaveBeenCalledWith(
       expect.stringContaining("trial flag update failed"),
@@ -1293,10 +1314,8 @@ describe("subscriptionsCreateHandler — subscription-change path", () => {
       stripe_payment_method_id: "pm_card",
     });
 
-    // Trial flag flipped (eligible — hasUsedUserTrial was false)
-    expect(profileRepositoryMocks.update).toHaveBeenCalledWith("user-1", {
-      hasUsedUserTrial: true,
-    });
+    // PER-103: no consumer trial, so no trial flag is flipped
+    expect(profileRepositoryMocks.update).not.toHaveBeenCalled();
 
     // NO inline old-sub cancel — that's the webhook's job
     expect(stripeMock.subscriptions.cancel).not.toHaveBeenCalled();
@@ -1562,9 +1581,46 @@ describe("subscriptionsCreateHandler — subscription-change path", () => {
     expect((patch.metadata as Record<string, unknown>).requires_3d_secure).toBe(
       true,
     );
-    // Trial flag flipped on 3DS path (anti-farming)
+    // Consumer tier: no trial (PER-103), so no trial flag to flip. The
+    // anti-farming flip on this path is covered by the coach-tier variant
+    // below.
+    expect(profileRepositoryMocks.update).not.toHaveBeenCalled();
+  });
+
+  it("flips the coach trial flag on the change-path 3DS branch before returning requires_action", async () => {
+    mockPriceLookup({
+      priceMonthly: "price_trainer_monthly",
+      priceYearly: null,
+      currency: "GBP",
+      isTrainerTier: true,
+    });
+    subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
+      changePathRow(),
+    );
+    stripeMock.subscriptions.create.mockResolvedValueOnce(
+      buildStripeSubscription({
+        id: "sub_change_trainer_3ds",
+        status: "incomplete",
+        latest_invoice: {
+          payment_intent: {
+            status: "requires_action",
+            client_secret: "pi_change_trainer_3ds_secret",
+          },
+        } as unknown as Stripe.Invoice,
+      }),
+    );
+    const res = await postCreate(trainerBody);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as any;
+    expect(body).toMatchObject({
+      requires_action: true,
+      subscription_id: "us_existing",
+      client_secret: "pi_change_trainer_3ds_secret",
+    });
+    const createCall = stripeMock.subscriptions.create.mock.calls[0][0];
+    expect(createCall.trial_period_days).toBe(14);
     expect(profileRepositoryMocks.update).toHaveBeenCalledWith("user-1", {
-      hasUsedUserTrial: true,
+      hasUsedTrainerTrial: true,
     });
   });
 
@@ -1814,7 +1870,7 @@ describe("subscriptionsCreateHandler — subscription-change path", () => {
       priceMonthly: "price_premium_monthly",
       priceYearly: null,
       currency: "GBP",
-      isTrainerTier: false,
+      isTrainerTier: true,
     });
     subscriptionRepositoryMocks.findMostRecentForUser.mockResolvedValueOnce(
       changePathRow(),
@@ -1827,7 +1883,7 @@ describe("subscriptionsCreateHandler — subscription-change path", () => {
     );
     profileRepositoryMocks.update.mockRejectedValueOnce(new Error("neon"));
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    const res = await postCreate(validBody);
+    const res = await postCreate(trainerBody);
     expect(res.status).toBe(200);
     expect(errSpy).toHaveBeenCalledWith(
       expect.stringContaining("trial flag update failed"),
@@ -2201,7 +2257,7 @@ describe("subscriptionsCreateHandler — response discriminators (M10)", () => {
       priceMonthly: "price_premium_monthly",
       priceYearly: null,
       currency: "GBP",
-      isTrainerTier: false,
+      isTrainerTier: true,
       priceMonthlyAmount: "14.99",
       priceYearlyAmount: null,
     });
@@ -2217,10 +2273,10 @@ describe("subscriptionsCreateHandler — response discriminators (M10)", () => {
         status: "trialing",
       }),
     );
-    await postCreate(validBody);
+    await postCreate(trainerBody);
     // null trial flag is treated as false → eligible for trial → flag flipped
     expect(profileRepositoryMocks.update).toHaveBeenCalledWith("user-1", {
-      hasUsedUserTrial: true,
+      hasUsedTrainerTrial: true,
     });
   });
 
@@ -2229,7 +2285,7 @@ describe("subscriptionsCreateHandler — response discriminators (M10)", () => {
       priceMonthly: "price_premium_monthly",
       priceYearly: null,
       currency: "GBP",
-      isTrainerTier: false,
+      isTrainerTier: true,
       priceMonthlyAmount: "14.99",
       priceYearlyAmount: null,
     });
@@ -2240,7 +2296,7 @@ describe("subscriptionsCreateHandler — response discriminators (M10)", () => {
       "trial-flag-non-error-reject" as unknown as Error,
     );
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    const res = await postCreate(validBody);
+    const res = await postCreate(trainerBody);
     // Trial flag failure is non-fatal — request still succeeds
     expect(res.status).toBe(200);
     expect(errSpy).toHaveBeenCalledWith(
