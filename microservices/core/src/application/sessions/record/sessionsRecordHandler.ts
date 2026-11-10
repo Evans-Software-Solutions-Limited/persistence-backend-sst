@@ -17,7 +17,7 @@ import {
 import { safeEvaluateStreaks, resolveEventTs } from "../../streaks/evaluate";
 import { safeRecomputeVolume } from "../../progress/recompute";
 import { emitEvent } from "../../analytics/emitEvent";
-import { weightKgSchema, distanceMetersSchema } from "../sets/setValueSchemas";
+import { recordedSetValueSchema } from "../sets/setValueSchemas";
 
 /**
  * POST /sessions/record
@@ -292,10 +292,12 @@ export const sessionsRecordHandler = new Elysia()
               t.Object({
                 setNumber: t.Number(),
                 reps: t.Optional(t.Union([t.Number(), t.Null()])),
-                weightKg: t.Optional(t.Union([weightKgSchema, t.Null()])),
+                weightKg: t.Optional(
+                  t.Union([recordedSetValueSchema, t.Null()]),
+                ),
                 durationSeconds: t.Optional(t.Union([t.Number(), t.Null()])),
                 distanceMeters: t.Optional(
-                  t.Union([distanceMetersSchema, t.Null()]),
+                  t.Union([recordedSetValueSchema, t.Null()]),
                 ),
                 rpe: t.Optional(t.Union([t.Number(), t.Null()])),
                 restAfterSeconds: t.Optional(t.Union([t.Number(), t.Null()])),

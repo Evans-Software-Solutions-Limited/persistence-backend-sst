@@ -81,12 +81,12 @@ describe("trainersMeRecordClientSessionHandler", () => {
     expect(recordClientSessionOnBehalf).not.toHaveBeenCalled();
   });
 
-  // Shares the self route's weight/distance bounds (Sentry
-  // PERSISTENCE-BACKEND-8): numeric(6,2) / numeric(8,2) on `exercise_sets`.
+  // Same as the self route: an impossible weight/distance no longer fails the
+  // whole workout; the repository saves it blank (`storableSetValue`).
   it.each([
     ["weightKg above numeric(6,2)", { weightKg: 10000 }],
     ["distanceMeters above numeric(8,2)", { distanceMeters: "1000000" }],
-  ])("422s %s before delegating", async (_label, set) => {
+  ])("delegates %s instead of rejecting the workout", async (_label, set) => {
     const { trainersMeRecordClientSessionHandler } =
       await import("../trainersMeRecordClientSessionHandler");
     const res = await trainersMeRecordClientSessionHandler.handle(
@@ -100,8 +100,8 @@ describe("trainersMeRecordClientSessionHandler", () => {
         ],
       }),
     );
-    expect(res.status).toBe(422);
-    expect(recordClientSessionOnBehalf).not.toHaveBeenCalled();
+    expect(res.status).toBe(201);
+    expect(recordClientSessionOnBehalf).toHaveBeenCalledTimes(1);
   });
 
   it("accepts a set at the weight column maximum", async () => {

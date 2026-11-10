@@ -11,17 +11,18 @@ import { t } from "elysia";
  * is retryable to the mobile sync queue, so the same oversized payload
  * burned its whole retry budget and stranded the session in /sync-failed.
  *
- * Validating here turns that into a 422 at the edge: the queue classifies
- * it as permanent on the first attempt and the repository never opens a
- * transaction for a row Postgres cannot store.
+ * For a single set edit, validating here turns that into a 422 at the edge,
+ * and the repository never opens a transaction for a row Postgres cannot
+ * store.
  *
  * Strings are bounded to the column scale (two fractional digits) as well
  * as its integer digits. Postgres rounds to scale BEFORE it checks
  * precision, and the carry can cross into the integer part — "9999.995"
  * rounds to 10000.00 and overflows numeric(6,2) exactly like 35532 did
  * (Inspector Brad, PR #510). Numbers are already safe through `maximum`.
- * Every route that writes these columns shares these schemas: self +
- * on-behalf `sessions/record`, and set create/update.
+ * Set create/update use these strict schemas. The two `sessions/record`
+ * routes do not: a finished workout is never rejected for one value; see
+ * `recordedSetValueSchema` below.
  */
 export const WEIGHT_KG_MAX = 9999.99;
 export const DISTANCE_METERS_MAX = 999999.99;
@@ -38,3 +39,37 @@ export const distanceMetersSchema = t.Union([
   t.Number({ minimum: 0, maximum: DISTANCE_METERS_MAX }),
   t.String({ pattern: DISTANCE_METERS_PATTERN }),
 ]);
+
+/**
+ * The RECORD path's looser shape (PER-67 release, Brad 10 Nov 2026).
+ *
+ * `sessions/record` (self and on-behalf) carries a whole finished workout from
+ * the sync queue. Rejecting it for one impossible value strands the entire
+ * workout on the device: the only way out is Discard, which loses every other
+ * set. That happened in production — a set logged at 35,532 kg (Sentry
+ * PERSISTENCE-MOBILE-2) left one user pressing Retry for weeks. So the record
+ * path accepts any number or string here and {@link storableSetValue} saves a
+ * value the column cannot hold as blank; everything else in the workout saves.
+ * Set create/update (a single edit the user is looking at) keep the strict
+ * 422 schemas above.
+ */
+export const recordedSetValueSchema = t.Union([t.Number(), t.String()]);
+
+/**
+ * The value to store for a weight/distance column, or null when it cannot be
+ * stored: not a finite number, negative, or above `max` once rounded to the
+ * column's two decimal places (Postgres rounds before its precision check, so
+ * 9999.995 kg would overflow exactly like 35532 did).
+ */
+export function storableSetValue(
+  value: string | number | null | undefined,
+  max: number,
+): string | null {
+  if (value === null || value === undefined) return null;
+  const n = typeof value === "number" ? value : Number(value.trim());
+  if (typeof value === "string" && value.trim() === "") return null;
+  if (!Number.isFinite(n) || n < 0) return null;
+  const rounded = Math.round(n * 100) / 100;
+  if (rounded > max) return null;
+  return String(value).trim();
+}

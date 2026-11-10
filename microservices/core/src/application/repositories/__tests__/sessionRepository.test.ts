@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { getTableConfig, PgDialect } from "drizzle-orm/pg-core";
-import { workoutSessions } from "@persistence/db";
+import { exerciseSets, workoutSessions } from "@persistence/db";
 
 // Query-shape unit fixtures have no rows/locks; real actor/root ordering is
 // asserted against PGlite in completionRepository.integration.test.ts.
@@ -917,6 +917,8 @@ describe("SessionRepository", () => {
          * rather than merely asserting its mocked return value.
          */
         captureSessionValues?: (values: unknown) => void;
+        /** Captures each exercise_sets insert's values (in order). */
+        captureSetValues?: (values: unknown) => void;
         /**
          * Captures the COUNT(*) chain's `.where(...)` argument so a
          * caller can introspect the filter (e.g. that a
@@ -933,6 +935,9 @@ describe("SessionRepository", () => {
             values: vi.fn().mockImplementation((values: unknown) => {
               if (table === workoutSessions) {
                 options.captureSessionValues?.(values);
+              }
+              if (table === exerciseSets) {
+                options.captureSetValues?.(values);
               }
               // Three insert shapes inside recordSession:
               //   - workoutSessions  (M13: .onConflictDoNothing().returning() → [session])
@@ -1194,6 +1199,82 @@ describe("SessionRepository", () => {
 
       expect(result.personalRecords).toEqual([]);
       expect(result.workoutsThisMonth).toBe(1);
+    });
+
+    // Sentry PERSISTENCE-MOBILE-2: a set logged at 35,532 kg overflowed
+    // numeric(6,2) and stranded the whole workout. The impossible value is now
+    // saved blank and every other value in the workout still saves.
+    it("saves a weight or distance the column cannot hold as blank, keeping the rest", async () => {
+      const refreshed = {
+        session: {
+          id: "s9",
+          userId: "u1",
+          workoutId: null,
+          name: "Push Day",
+          status: "completed",
+          startedAt: new Date(),
+          completedAt: new Date(),
+          createdAt: new Date(),
+        },
+        exercises: [
+          {
+            id: "se9",
+            sessionId: "s9",
+            exerciseId: "ex-1",
+            sortOrder: 1,
+            supersetGroup: null,
+            isSubstituted: false,
+            originalExerciseId: null,
+            notes: null,
+            createdAt: new Date(),
+          },
+        ],
+        sets: [],
+      };
+      const setValues: any[] = [];
+      const tx = makeRecordSessionTx(refreshed, {
+        captureSetValues: (v) => setValues.push(v),
+      });
+      (getDb as any).mockReturnValue(
+        withHistoryGuard({
+          transaction: vi
+            .fn()
+            .mockImplementation((cb: (t: any) => any) => cb(tx)),
+        }),
+      );
+
+      const { SessionRepository } = await import("../sessionRepository");
+      const repo = new SessionRepository();
+      await repo.recordSession(
+        "u1",
+        {
+          ...payload,
+          exercises: [
+            {
+              exerciseId: "ex-1",
+              sortOrder: 1,
+              sets: [
+                { setNumber: 1, reps: 9, weightKg: 60, isCompleted: true },
+                { setNumber: 2, reps: 9, weightKg: "62.5", isCompleted: true },
+                { setNumber: 3, reps: 9, weightKg: 35532, isCompleted: true },
+                {
+                  setNumber: 4,
+                  reps: 1,
+                  distanceMeters: "1000000",
+                  isCompleted: true,
+                },
+              ],
+            },
+          ],
+        },
+        vi.fn().mockResolvedValue([]),
+      );
+
+      expect(setValues).toHaveLength(4);
+      expect(setValues[0]).toMatchObject({ reps: 9, weightKg: "60" });
+      expect(setValues[1]).toMatchObject({ weightKg: "62.5" });
+      expect(setValues[2]).toMatchObject({ reps: 9, weightKg: null });
+      expect(setValues[3]).toMatchObject({ reps: 1, distanceMeters: null });
     });
 
     it("skips PR detection when status is cancelled (legacy recordWorkout parity)", async () => {
