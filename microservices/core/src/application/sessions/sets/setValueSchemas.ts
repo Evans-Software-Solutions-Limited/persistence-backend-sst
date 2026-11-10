@@ -56,20 +56,29 @@ export const distanceMetersSchema = t.Union([
 export const recordedSetValueSchema = t.Union([t.Number(), t.String()]);
 
 /**
- * The value to store for a weight/distance column, or null when it cannot be
- * stored: not a finite number, negative, or above `max` once rounded to the
- * column's two decimal places (Postgres rounds before its precision check, so
- * 9999.995 kg would overflow exactly like 35532 did).
+ * The value to store for a weight/distance column, as a plain decimal rounded
+ * to the column's two places, or null when it cannot be stored: not a finite
+ * number, negative, or above `max` once rounded (Postgres rounds before its
+ * precision check, so 9999.995 kg would overflow exactly like 35532 did).
  */
+const PLAIN_DECIMAL = /^(?:\d+(?:\.\d*)?|\.\d+)$/;
+
 export function storableSetValue(
   value: string | number | null | undefined,
   max: number,
 ): string | null {
   if (value === null || value === undefined) return null;
+  // A string must be a plain decimal: hex, binary or exponent text is
+  // nothing a person typed as a weight.
+  if (typeof value === "string" && !PLAIN_DECIMAL.test(value.trim())) {
+    return null;
+  }
   const n = typeof value === "number" ? value : Number(value.trim());
-  if (typeof value === "string" && value.trim() === "") return null;
   if (!Number.isFinite(n) || n < 0) return null;
   const rounded = Math.round(n * 100) / 100;
   if (rounded > max) return null;
-  return String(value).trim();
+  // Store the checked number, not the caller's text, so nothing Postgres'
+  // numeric input could reject reaches the transaction (Inspector Brad, PR
+  // #532). Rounded to the column's scale, it always prints as a plain decimal.
+  return String(rounded);
 }

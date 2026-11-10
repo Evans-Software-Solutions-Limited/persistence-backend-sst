@@ -13,8 +13,10 @@ describe("storableSetValue", () => {
     [0, "0"],
     [WEIGHT_KG_MAX, "9999.99"],
     ["9999.99", "9999.99"],
-    [123.456, "123.456"],
-  ])("keeps a storable weight %p", (value, expected) => {
+    [123.456, "123.46"],
+    ["60.555", "60.56"],
+    [1e-7, "0"],
+  ])("stores %p as a plain decimal", (value, expected) => {
     expect(storableSetValue(value, WEIGHT_KG_MAX)).toBe(expected);
   });
 
@@ -28,6 +30,12 @@ describe("storableSetValue", () => {
     ["empty", ""],
     ["blank", "   "],
     ["infinite", Number.POSITIVE_INFINITY],
+    // JS parses these, but the raw text could fail Postgres' numeric input
+    // and the whole workout with it (Inspector Brad, PR #532).
+    ["exponent text", "1e-1001"],
+    ["hex text", "0x10"],
+    ["binary text", "0b11"],
+    ["signed text", "+5"],
     ["NaN", Number.NaN],
   ])("blanks %s", (_label, value) => {
     expect(storableSetValue(value, WEIGHT_KG_MAX)).toBeNull();
