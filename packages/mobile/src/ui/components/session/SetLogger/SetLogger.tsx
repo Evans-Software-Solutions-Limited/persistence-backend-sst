@@ -25,6 +25,7 @@ import type { ExerciseSet } from "@/domain/models/session";
 import {
   weightInUnit,
   weightInputToKg,
+  exceedsSetWeightMax,
   weightToInputText,
   type WeightUnit,
 } from "@/shared/utils";
@@ -152,9 +153,12 @@ export function SetLogger(props: SetLoggerProps) {
   };
 
   const handleWeightChange = (text: string) => {
+    const kg = weightInputToKg(text, weightUnit);
+    // Refuse a keystroke that takes the weight past what can be stored, the
+    // way a max length would: the field keeps its last valid value.
+    if (kg !== null && exceedsSetWeightMax(kg)) return;
     setWeightText(text);
     if (text === "") return props.onChange({ weightKg: null });
-    const kg = weightInputToKg(text, weightUnit);
     if (kg !== null) props.onChange({ weightKg: kg });
   };
 

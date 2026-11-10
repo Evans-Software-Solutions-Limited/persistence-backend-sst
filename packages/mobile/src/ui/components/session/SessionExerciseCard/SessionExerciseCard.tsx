@@ -30,7 +30,6 @@ import {
 import { color } from "@/ui/theme/tokens";
 import type { ExerciseSet, SessionExercise } from "@/domain/models/session";
 import type { WeightUnit } from "@/shared/utils";
-import { ExerciseReorderHandle } from "@/ui/components/workouts/ExerciseReorderHandle";
 import { formatDurationInput } from "@/shared/utils/activityUnits";
 
 export type SessionExerciseCardProps = {
@@ -81,11 +80,6 @@ export type SessionExerciseCardProps = {
   onTapExercise?: () => void;
   onStartRest: () => void;
   onSkip?: () => void;
-  reorderPosition?: number;
-  reorderTotal?: number;
-  onMove?: (direction: -1 | 1) => void;
-  /** Inside a `ReorderableList`: the grip says it can be dragged. */
-  draggable?: boolean;
   /**
    * Someone else's exercise (PER-60 partner view): no notes, substitute,
    * remove, rest or per-set remove, which act on your own workout only.
@@ -151,17 +145,6 @@ export function SessionExerciseCard(props: SessionExerciseCardProps) {
       testID={`session-exercise-${props.exercise.id}`}
     >
       <View style={styles.exerciseHeader}>
-        {(props.onMove || props.draggable) &&
-        props.reorderPosition &&
-        props.reorderTotal ? (
-          <ExerciseReorderHandle
-            label={props.exercise.exerciseName}
-            position={props.reorderPosition}
-            total={props.reorderTotal}
-            onMove={props.onMove}
-            draggable={props.draggable}
-          />
-        ) : null}
         {props.exerciseImageUrl ? (
           <Image
             source={{ uri: props.exerciseImageUrl }}

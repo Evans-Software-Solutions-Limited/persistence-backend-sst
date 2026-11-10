@@ -115,6 +115,49 @@ describe("SetLogger", () => {
     expect(getByTestId("set-logger-weight").props.value).toBe("225");
   });
 
+  // Sentry PERSISTENCE-MOBILE-2: 35532 kg could not be stored and stranded
+  // the workout in the sync queue. The field refuses the keystroke instead.
+  it("refuses a keystroke that takes the weight past 9999.99 kg", () => {
+    const onChange = jest.fn();
+    const { getByTestId } = renderWithTheme(
+      <SetLogger
+        set={buildSet()}
+        setNumber={1}
+        previous={null}
+        onChange={onChange}
+        onRemove={jest.fn()}
+        onFillPrevious={jest.fn()}
+      />,
+    );
+    const input = getByTestId("set-logger-weight");
+    fireEvent.changeText(input, "3553");
+    fireEvent.changeText(input, "35532");
+    expect(onChange).toHaveBeenLastCalledWith({ weightKg: 3553 });
+    expect(onChange).not.toHaveBeenCalledWith({ weightKg: 35532 });
+    expect(getByTestId("set-logger-weight").props.value).toBe("3553");
+    fireEvent.changeText(input, "9999.99");
+    expect(onChange).toHaveBeenLastCalledWith({ weightKg: 9999.99 });
+  });
+
+  it("applies the cap to the kg value when the athlete types lb", () => {
+    const onChange = jest.fn();
+    const { getByTestId } = renderWithTheme(
+      <SetLogger
+        set={buildSet()}
+        setNumber={1}
+        previous={null}
+        weightUnit="lb"
+        onChange={onChange}
+        onRemove={jest.fn()}
+        onFillPrevious={jest.fn()}
+      />,
+    );
+    // 22,045 lb is 9,999.4 kg (allowed); 22,050 lb is 10,001.7 kg (refused).
+    fireEvent.changeText(getByTestId("set-logger-weight"), "22045");
+    fireEvent.changeText(getByTestId("set-logger-weight"), "22050");
+    expect(onChange).toHaveBeenCalledTimes(1);
+  });
+
   it("ignores invalid weight input (no onChange when text doesn't parse)", () => {
     const onChange = jest.fn();
     const { getByTestId } = renderWithTheme(

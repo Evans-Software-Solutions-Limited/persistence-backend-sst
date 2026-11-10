@@ -279,11 +279,12 @@ describe("sessionsRecordHandler", () => {
     expect(sessionMocks.recordSession).not.toHaveBeenCalled();
   });
 
-  // Sentry PERSISTENCE-BACKEND-8 (2026-10-22): `exercise_sets.weight_kg` is
+  // Sentry PERSISTENCE-BACKEND-8 / PERSISTENCE-MOBILE-2: `weight_kg` is
   // numeric(6,2) and `distance_meters` numeric(8,2). An oversized value used
-  // to reach Postgres, fail with `22003 numeric field overflow`, and surface
-  // as a retryable 500 that burned the sync queue's budget. The validator
-  // now rejects it with a 422 before the repository opens a transaction.
+  // to 500 (Postgres overflow), then (PR #510) 422 — either way the whole
+  // finished workout could never sync. Since 10 Nov the record route takes
+  // the workout and the repository saves the impossible value as blank
+  // (`storableSetValue`), so nothing else in the workout is lost.
   describe("set value bounds (numeric column precision)", () => {
     const bodyWithSet = (set: Record<string, unknown>) => ({
       ...validBody,
@@ -333,10 +334,11 @@ describe("sessionsRecordHandler", () => {
         { distanceMeters: "1000000.5" },
       ],
       ["negative distanceMeters", { distanceMeters: -5 }],
-    ])("422s %s before opening the repository", async (_label, set) => {
+      ["the production 35532 kg set", { weightKg: 35532 }],
+    ])("records the workout anyway for %s", async (_label, set) => {
       const response = await postRecord(set);
-      expect(response.status).toBe(422);
-      expect(sessionMocks.recordSession).not.toHaveBeenCalled();
+      expect(response.status).toBe(201);
+      expect(sessionMocks.recordSession).toHaveBeenCalledTimes(1);
     });
 
     it.each([

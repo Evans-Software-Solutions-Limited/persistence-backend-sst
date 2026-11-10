@@ -38,7 +38,6 @@ import { color } from "@/ui/theme/tokens";
 import type { ExerciseSet, SessionExercise } from "@/domain/models/session";
 import type { SessionExerciseTemplate } from "@/ui/presenters/ActiveSessionPresenter";
 import type { WeightUnit } from "@/shared/utils";
-import { ExerciseReorderHandle } from "@/ui/components/workouts/ExerciseReorderHandle";
 
 export type ActiveSupersetRowProps = {
   supersetGroup: number;
@@ -83,11 +82,6 @@ export type ActiveSupersetRowProps = {
   ) => void;
   /** Open the picker for adding another exercise into this superset group. */
   onAddExerciseToSuperset: (supersetGroup: number) => void;
-  reorderPosition?: number;
-  reorderTotal?: number;
-  onMove?: (direction: -1 | 1) => void;
-  /** Inside a `ReorderableList`: the grip says it can be dragged. */
-  draggable?: boolean;
 };
 
 const DEFAULT_TEMPLATE: SessionExerciseTemplate = { restSeconds: 90 };
@@ -135,18 +129,6 @@ export function ActiveSupersetRow(props: ActiveSupersetRowProps) {
       testID={`superset-group-${props.supersetGroup}`}
     >
       <View style={styles.supersetConnector}>
-        {(props.onMove || props.draggable) &&
-        props.reorderPosition &&
-        props.reorderTotal &&
-        leadExercise ? (
-          <ExerciseReorderHandle
-            label={`Superset starting with ${leadExercise.exerciseName}`}
-            position={props.reorderPosition}
-            total={props.reorderTotal}
-            onMove={props.onMove}
-            draggable={props.draggable}
-          />
-        ) : null}
         <View style={styles.supersetLineStart} />
         <View style={styles.supersetBadge}>
           <Text style={styles.supersetBadgeText}>

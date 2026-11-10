@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
 import { ExerciseReorderHandle } from "@/ui/components/workouts/ExerciseReorderHandle";
@@ -8,20 +9,26 @@ type CompactReorderRowProps = {
   position: number;
   total: number;
   onMove?: (direction: -1 | 1) => void;
+  /** From `ReorderableList`: attaches the drag to this row's grip. */
+  wrapHandle?: (handle: ReactNode) => ReactNode;
 };
 
 export const COMPACT_REORDER_ROW_HEIGHT = 72;
 
 /**
- * The compact row the list collapses to while a drag is in flight. Supersets are deliberately
- * capped at two lines, so neither exercise count nor visible set count can
- * produce a draggable item taller than the viewport.
+ * One exercise (or one superset) in reorder mode. Every row is the same
+ * height, which is what lets `ReorderableList` lay them out without measuring;
+ * supersets are capped at two lines for that reason.
+ *
+ * The grip is the drag handle and also carries the accessible Move up / Move
+ * down actions, so VoiceOver users reorder from the same rows.
  */
 export function CompactReorderRow({
   exerciseNames,
   position,
   total,
   onMove,
+  wrapHandle = (handle) => handle,
 }: CompactReorderRowProps) {
   const isSuperset = exerciseNames.length > 1;
   const label = isSuperset
@@ -33,13 +40,15 @@ export function CompactReorderRow({
       style={[styles.card, isSuperset && styles.supersetCard]}
       testID="compact-reorder-row"
     >
-      <ExerciseReorderHandle
-        label={label}
-        position={position}
-        total={total}
-        onMove={onMove}
-        draggable
-      />
+      {wrapHandle(
+        <ExerciseReorderHandle
+          label={label}
+          position={position}
+          total={total}
+          onMove={onMove}
+          draggable
+        />,
+      )}
 
       <View style={styles.content}>
         <Text style={[styles.eyebrow, isSuperset && styles.supersetBadge]}>

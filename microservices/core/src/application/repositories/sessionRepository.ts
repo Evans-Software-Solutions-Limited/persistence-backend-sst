@@ -16,6 +16,11 @@ import {
 } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
 import { PersonalRecordsRepository } from "./personalRecordsRepository";
+import {
+  DISTANCE_METERS_MAX,
+  WEIGHT_KG_MAX,
+  storableSetValue,
+} from "../sessions/sets/setValueSchemas";
 import type {
   DbOrTx,
   DetectedPersonalRecord,
@@ -813,15 +818,14 @@ export class SessionRepository {
             sessionExerciseId: exerciseRow.id,
             setNumber: set.setNumber,
             reps: set.reps ?? null,
-            weightKg:
-              set.weightKg !== undefined && set.weightKg !== null
-                ? String(set.weightKg)
-                : null,
+            // An impossible value is saved blank rather than failing the
+            // whole workout (see `storableSetValue`).
+            weightKg: storableSetValue(set.weightKg, WEIGHT_KG_MAX),
             durationSeconds: set.durationSeconds ?? null,
-            distanceMeters:
-              set.distanceMeters !== undefined && set.distanceMeters !== null
-                ? String(set.distanceMeters)
-                : null,
+            distanceMeters: storableSetValue(
+              set.distanceMeters,
+              DISTANCE_METERS_MAX,
+            ),
             rpe: set.rpe ?? null,
             restAfterSeconds: set.restAfterSeconds ?? null,
             isCompleted: set.isCompleted ?? false,

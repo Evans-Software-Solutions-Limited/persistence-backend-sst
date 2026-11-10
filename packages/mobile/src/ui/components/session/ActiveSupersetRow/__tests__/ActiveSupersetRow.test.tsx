@@ -259,6 +259,20 @@ describe("ActiveSupersetRow", () => {
     });
   });
 
+  it("refuses a superset weight past 9999.99 kg (PERSISTENCE-MOBILE-2)", () => {
+    const onUpdateSet = jest.fn();
+    const { getByTestId } = renderWithTheme(
+      <ActiveSupersetRow {...baseProps} onUpdateSet={onUpdateSet} />,
+    );
+    const input = getByTestId("superset-row-se-A-1-weight");
+    fireEvent.changeText(input, "35532");
+    expect(onUpdateSet).not.toHaveBeenCalled();
+    fireEvent.changeText(input, "3553");
+    expect(onUpdateSet).toHaveBeenCalledWith("se-A", "set-A1", {
+      weightKg: 3553,
+    });
+  });
+
   it("tapping the previous-set chip fills both reps and weight on that mini-row", () => {
     const props = {
       ...baseProps,

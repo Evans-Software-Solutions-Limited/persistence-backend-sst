@@ -46,6 +46,18 @@ export function weightToInputText(kg: number | null, unit: WeightUnit): string {
  * when blank or not a number. `lb` is converted exactly and kept to 3 dp, so
  * a typed 100 lb reads back as 100 lb.
  */
+/**
+ * The heaviest set weight the server can store: `exercise_sets.weight_kg` is
+ * numeric(6,2). A set logged at 35,532 kg once stranded a whole workout in the
+ * sync queue (Sentry PERSISTENCE-MOBILE-2).
+ */
+export const SET_WEIGHT_KG_MAX = 9999.99;
+
+/** True when a typed set weight (already in kg) is more than can be stored. */
+export function exceedsSetWeightMax(kg: number): boolean {
+  return Math.round(kg * 100) / 100 > SET_WEIGHT_KG_MAX;
+}
+
 export function weightInputToKg(text: string, unit: WeightUnit): number | null {
   if (text.trim() === "") return null;
   const n = Number.parseFloat(text);

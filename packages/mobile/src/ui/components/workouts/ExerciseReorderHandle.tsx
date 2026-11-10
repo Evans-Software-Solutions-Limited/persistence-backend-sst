@@ -10,15 +10,9 @@ export type ExerciseReorderHandleProps = {
   total: number;
   onMove?: (direction: -1 | 1) => void;
   /**
-   * True when this grip can be dragged, i.e. the row is inside a
-   * `ReorderableList`. It only changes what the hint says: the DRAG itself is
-   * not wired here.
-   *
-   * `ReorderableList` puts an invisible Gesture Handler target over the row's
-   * top-left corner, on top of this grip, because a target inside the row's
-   * body would unmount when the body collapses to a compact row mid-gesture
-   * and take the drag with it. So this component draws the grip and owns its
-   * accessibility; the list owns the gesture.
+   * True when this grip is a drag handle, i.e. it sits in a reorder-mode row
+   * inside `ReorderableList`, which attaches the drag to it. It only changes
+   * what the hint says.
    */
   draggable?: boolean;
 };
