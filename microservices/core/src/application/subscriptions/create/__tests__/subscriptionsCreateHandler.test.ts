@@ -283,12 +283,12 @@ describe("subscriptionsCreateHandler — pure helpers", () => {
   it("resolveTrial grants no trial on premium or premium_plus, even when eligible and opted in", async () => {
     const { __internals } = await import("../subscriptionsCreateHandler");
     const { resolveTrial } = __internals;
-    for (const tier of ["premium", "premium_plus"]) {
-      expect(resolveTrial(tier, false, true, false), tier).toEqual({
-        days: 0,
-        flag: null,
-      });
-    }
+    // Consumer tiers (premium / premium_plus) are non-trainer: eligible and
+    // opted in still means no trial.
+    expect(resolveTrial(false, true, false)).toEqual({
+      days: 0,
+      flag: null,
+    });
   });
 
   it("resolveTrial returns 14-day trainer trial for any trainer tier when eligible", async () => {
@@ -298,26 +298,26 @@ describe("subscriptionsCreateHandler — pure helpers", () => {
     // `is_trainer_tier` flag, not a `_pro` suffix sniff.
     const { __internals } = await import("../subscriptionsCreateHandler");
     const { resolveTrial } = __internals;
-    expect(resolveTrial("individual_trainer", true, true, false)).toEqual({
+    expect(resolveTrial(true, true, false)).toEqual({
       days: 14,
       flag: "trainer",
     });
     // already used → 0
-    expect(resolveTrial("individual_trainer", true, true, true)).toEqual({
+    expect(resolveTrial(true, true, true)).toEqual({
       days: 0,
       flag: null,
     });
     // any trainer tier — small_business + medium_enterprise — same rule
-    expect(resolveTrial("small_business", true, true, false)).toEqual({
+    expect(resolveTrial(true, true, false)).toEqual({
       days: 14,
       flag: "trainer",
     });
-    expect(resolveTrial("medium_enterprise", true, true, false)).toEqual({
+    expect(resolveTrial(true, true, false)).toEqual({
       days: 14,
       flag: "trainer",
     });
     // is_trainer_tier flag false — guard rejects
-    expect(resolveTrial("rogue_tier", false, true, false)).toEqual({
+    expect(resolveTrial(false, true, false)).toEqual({
       days: 0,
       flag: null,
     });
@@ -328,7 +328,7 @@ describe("subscriptionsCreateHandler — pure helpers", () => {
     // are trial-eligible. `free` has no Stripe sub so no trial path.
     const { __internals } = await import("../subscriptionsCreateHandler");
     const { resolveTrial } = __internals;
-    expect(resolveTrial("free", false, true, false)).toEqual({
+    expect(resolveTrial(false, true, false)).toEqual({
       days: 0,
       flag: null,
     });

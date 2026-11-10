@@ -427,7 +427,6 @@ export function deriveChangeType(input: {
  *   - Anything else — no trial.
  */
 function resolveTrial(
-  tierName: string,
   isTrainerTier: boolean,
   useTrial: boolean,
   hasUsedTrainerTrial: boolean,
@@ -1533,7 +1532,6 @@ export const subscriptionsCreateHandler = new Elysia()
         }
 
         const trialForChange = resolveTrial(
-          body.tier_name,
           priceInfo.isTrainerTier,
           body.use_trial,
           profile.hasUsedTrainerTrial ?? false,
@@ -1585,7 +1583,6 @@ export const subscriptionsCreateHandler = new Elysia()
 
       // --- New subscription path -----------------------------------------
       const trial = resolveTrial(
-        body.tier_name,
         priceInfo.isTrainerTier,
         body.use_trial,
         profile.hasUsedTrainerTrial ?? false,
