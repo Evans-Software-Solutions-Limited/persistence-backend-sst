@@ -13,8 +13,8 @@
 -- prod 5 Nov 2026), so nobody loses access they paid for.
 --
 -- Requires 20261102120000_ai_monthly_budget.sql (adds the budget column).
--- Every statement sets fixed values, so a re-run is a no-op. Manual prod apply,
--- before the backend deploy.
+-- Every statement sets fixed values, so a re-run is a no-op. Prod: applied by
+-- the production deploy workflow (`supabase db push`) before the backend deploy.
 
 UPDATE subscription_tiers
 SET ai_access             = false,

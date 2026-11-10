@@ -7,9 +7,11 @@ no AI. Premium+ £24.99 / £199.99, every AI feature. Core (PER-65) folds into
 Premium. [PER-103](https://linear.app/evans-software-solutions/issue/PER-103)
 - **Migration** `20261106120000_premium_without_ai.sql`: Premium `ai_access`
   false, prices, AI budget 0, new description; Premium+ prices, budget $4.89,
-  new description. No `tier_name` change. ⚠ Prod has NOT applied
-  `20261102120000_ai_monthly_budget.sql` (the column is missing on prod, checked
-  5 Nov): the release must apply both, in order, before the backend deploy.
+  new description. No `tier_name` change. Prod has not applied
+  `20261102120000_ai_monthly_budget.sql` or anything after 1 Oct (prod backend
+  is v1.26.0, checked 10 Nov); the production deploy workflow runs
+  `supabase db push` before `sst deploy`, so the next release applies them in
+  order.
 - **Budget rule**: 40 % of the net per month of the cadence that nets less. For
   Premium+ that is the App Store annual (£199.99 → $12.22/mo → $4.89).
   `scripts/ai-cost-model.ts` now holds the live ladder with yearly prices and
