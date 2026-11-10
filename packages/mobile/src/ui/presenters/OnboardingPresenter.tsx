@@ -34,9 +34,9 @@ export const NUTRITION_ONBOARDING_OPTIONS: readonly IntentOption[] = [
   },
   {
     intent: "nutrition_photo_estimate",
-    tier: "Premium",
+    tier: "Premium+",
     title: "Log from a photo",
-    body: "Photo calorie estimation you review before it saves. Includes everything in Free.",
+    body: "Photo calorie estimation you review before it saves. Includes everything in Premium.",
   },
   {
     intent: "nutrition_mealprint",
@@ -56,8 +56,8 @@ export const TRAINING_ONBOARDING_OPTIONS: readonly IntentOption[] = [
   {
     intent: "training_unlimited_workouts",
     tier: "Premium",
-    title: "Unlimited workouts and history",
-    body: "No cap on workouts, and your full training history. Includes everything in Free.",
+    title: "Unlimited workouts",
+    body: "No cap on the workouts you build. Includes everything in Free.",
   },
   {
     intent: "training_loadout",

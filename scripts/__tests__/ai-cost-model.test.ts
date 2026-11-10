@@ -9,7 +9,10 @@ import {
   WEB_RAIL_VAT_RATE,
   MARGINAL_INFRA_USD_PER_USER,
   TIERS,
+  BUDGET_CAP_SHARE,
+  annualNetMonthlyUsd,
   bindingCeiling,
+  budgetCeilingUsd,
   costPerCall,
   endpointsForTier,
   fixedMonthlyTotalUsd,
@@ -79,79 +82,71 @@ describe("endpointsForTier", () => {
     expect(endpointsForTier(tier("free"))).toHaveLength(0);
   });
 
-  it("gives Premium the ai_access endpoints but NOT Loadout", () => {
-    const keys = endpointsForTier(tier("premium")).map((e) => e.key);
-    expect(keys).toContain("nutrition_photo");
-    expect(keys).not.toContain("loadout_remap");
-    expect(keys).not.toContain("equipment_scan");
+  it("gives Premium nothing: it carries no AI since PER-103", () => {
+    expect(endpointsForTier(tier("premium"))).toHaveLength(0);
   });
 
-  it("gives Premium+ both gates", () => {
+  it("gives Premium+ every athlete AI endpoint", () => {
     const keys = endpointsForTier(tier("premium_plus")).map((e) => e.key);
     expect(keys).toContain("nutrition_photo");
     expect(keys).toContain("equipment_scan");
+    expect(keys).toContain("meal_suggest");
   });
 
-  it("gives every trainer tier Loadout too", () => {
-    // `20260725194527_premium_plus_tier` grants `loadout_access` to all three
-    // trainer tiers, which is what makes Individual Trainer the most exposed tier.
-    for (const name of [
-      "individual_trainer",
-      "small_business",
-      "medium_enterprise",
-    ]) {
-      expect(endpointsForTier(tier(name)).map((e) => e.key)).toContain(
-        "loadout_remap",
-      );
+  it("gives Start Up Coach AI but not the suite, and every other coach rung the suite", () => {
+    const entry = endpointsForTier(tier("individual_trainer")).map(
+      (e) => e.key,
+    );
+    expect(entry).toContain("nutrition_photo");
+    expect(entry).not.toContain("loadout_remap");
+    expect(entry).not.toContain("meal_suggest");
+    for (const name of ["start_up_coach_plus", "coach", "coach_pro"]) {
+      const keys = endpointsForTier(tier(name)).map((e) => e.key);
+      expect(keys, name).toContain("loadout_remap");
+      expect(keys, name).toContain("meal_suggest");
     }
   });
 });
 
 describe("bindingCeiling", () => {
   it("returns the env ceiling for an ordinary endpoint", () => {
-    expect(bindingCeiling(tier("premium"), endpoint("nutrition_photo"))).toBe(
-      12,
-    );
+    expect(
+      bindingCeiling(tier("premium_plus"), endpoint("nutrition_photo")),
+    ).toBe(12);
   });
 
   it("returns ZERO for the coach summary on an athlete tier", () => {
-    // The route needs a trainer↔client relationship, so a Premium athlete cannot
-    // call it. Charging them 40/day for it overstated Premium by $7.20/mo — a
-    // third of that tier's whole worst case.
-    expect(bindingCeiling(tier("premium"), endpoint("coach_summary"))).toBe(0);
+    // The route needs a trainer↔client relationship, so an athlete cannot call
+    // it. Charging them 40/day for it would overstate their worst case by $7.20.
     expect(
       bindingCeiling(tier("premium_plus"), endpoint("coach_summary")),
     ).toBe(0);
   });
 
-  it("lets the ROSTER bind below the env ceiling on a 2-client tier", () => {
-    // min(40, 2 × 2) = 4. Using 40 here would overstate the thinnest-margin tier
-    // by ~10×, i.e. the error would land exactly where it matters most.
+  it("lets the ROSTER bind below the env ceiling on a 5-client tier", () => {
+    // min(40, 2 × 5) = 10.
     expect(
       bindingCeiling(tier("individual_trainer"), endpoint("coach_summary")),
-    ).toBe(4);
+    ).toBe(10);
   });
 
   it("lets the env ceiling bind once the roster is large enough", () => {
     // min(40, 2 × 30) = 40.
-    expect(
-      bindingCeiling(tier("small_business"), endpoint("coach_summary")),
-    ).toBe(40);
-    expect(
-      bindingCeiling(tier("medium_enterprise"), endpoint("coach_summary")),
-    ).toBe(40);
+    expect(bindingCeiling(tier("coach_pro"), endpoint("coach_summary"))).toBe(
+      40,
+    );
   });
 });
 
 describe("tierCost", () => {
   it("nets VAT, Apple's cut and RevenueCat's off gross revenue", () => {
-    const cost = tierCost(tier("premium"));
-    // £12.99 ÷ (1 + VAT) × 1.27 × (1 − Apple) × (1 − RevenueCat). ⚠ Derived from the
+    const cost = tierCost(tier("premium_plus"));
+    // £24.99 ÷ (1 + VAT) × 1.27 × (1 − Apple) × (1 − RevenueCat). ⚠ Derived from the
     // constants rather than hardcoding 0.85 — that literal was the unapproved Small
     // Business rate, and pinning it made the default change a test failure instead
     // of a recomputation.
     expect(cost.netRevenueUsd).toBeCloseTo(
-      ((12.99 * 1.27) / (1 + IAP_VAT_RATE)) *
+      ((24.99 * 1.27) / (1 + IAP_VAT_RATE)) *
         (1 - APPLE_COMMISSION) *
         (1 - REVENUECAT_RATE),
       4,
@@ -159,11 +154,11 @@ describe("tierCost", () => {
   });
 
   it("⚠ takes VAT off BEFORE commission, not after", () => {
-    // The two orderings differ by ~$0.6/mo on Premium alone and compound across the
+    // The two orderings differ by ~$0.6/mo on one tier alone and compound across the
     // ladder. Apple is the merchant of record: it remits the VAT and its commission
     // is a share of the VAT-EXCLUSIVE price. Commission-first would overstate net.
-    const cost = tierCost(tier("premium")).netRevenueUsd;
-    const gross = 12.99 * 1.27;
+    const cost = tierCost(tier("premium_plus")).netRevenueUsd;
+    const gross = 24.99 * 1.27;
     const vatFirst =
       (gross / (1 + IAP_VAT_RATE)) *
       (1 - APPLE_COMMISSION) *
@@ -190,19 +185,19 @@ describe("tierCost", () => {
     // commission WITHOUT this override was the trap: it would understate the split
     // rail by 17 % and hide most of its advantage over IAP.
     const web = tierCost(
-      tier("premium"),
+      tier("premium_plus"),
       WEB_RAIL_COMMISSION,
       WEB_RAIL_VAT_RATE,
     ).netRevenueUsd;
     expect(web).toBeCloseTo(
-      12.99 * 1.27 * (1 - WEB_RAIL_COMMISSION) * (1 - REVENUECAT_RATE),
+      24.99 * 1.27 * (1 - WEB_RAIL_COMMISSION) * (1 - REVENUECAT_RATE),
       4,
     );
     // And it must beat the IAP rail by MORE than the commission spread alone.
-    const iap = tierCost(tier("premium")).netRevenueUsd;
+    const iap = tierCost(tier("premium_plus")).netRevenueUsd;
     const commissionSpreadOnly =
-      12.99 * 1.27 * (1 - WEB_RAIL_COMMISSION) * (1 - REVENUECAT_RATE) -
-      12.99 * 1.27 * (1 - APPLE_COMMISSION) * (1 - REVENUECAT_RATE);
+      24.99 * 1.27 * (1 - WEB_RAIL_COMMISSION) * (1 - REVENUECAT_RATE) -
+      24.99 * 1.27 * (1 - APPLE_COMMISSION) * (1 - REVENUECAT_RATE);
     expect(web - iap).toBeGreaterThan(commissionSpreadOnly);
   });
 
@@ -217,38 +212,42 @@ describe("tierCost", () => {
 
   it("OMITS an unreachable endpoint from the breakdown rather than listing it at $0", () => {
     // A row of zeroes reads as "free", not "unreachable".
-    const labels = tierCost(tier("premium")).perEndpoint.map((e) => e.label);
+    const labels = tierCost(tier("premium_plus")).perEndpoint.map(
+      (e) => e.label,
+    );
     expect(labels).not.toContain(endpoint("coach_summary").label);
   });
 
-  it("finds Individual Trainer the MOST exposed tier as a share of net revenue", () => {
-    // The headline finding: a coach gets `loadout_access` at £14.99 while an
-    // athlete pays £29.99 for it. If a pricing change ever fixes that, this test
-    // should fail and be updated deliberately.
-    const shares = TIERS.filter((t) => t.priceMonthly > 0).map((t) => {
+  it("finds Premium+ the MOST exposed tier as a share of net revenue", () => {
+    // Every athlete AI endpoint at £24.99: the worst case (all caps hit every
+    // day) is ~2.4× its net, which is what the $4.89 budget bounds. If a
+    // pricing change moves this, update it deliberately.
+    const shares = TIERS.filter((t) => t.aiAccess).map((t) => {
       const cost = tierCost(t);
       return { name: t.name, share: cost.worstCaseAiUsd / cost.netRevenueUsd };
     });
     const worst = shares.reduce((a, b) => (b.share > a.share ? b : a));
-    expect(worst.name).toBe("individual_trainer");
+    expect(worst.name).toBe("premium_plus");
     expect(worst.share).toBeGreaterThan(1);
   });
 
-  it("finds three tiers theoretically underwater at their ceilings", () => {
+  it("finds every AI tier below Coach Pro theoretically underwater at its ceilings", () => {
+    // Why the per-user AI budget exists: per-feature daily caps alone do not
+    // bound total spend.
     const underwater = TIERS.filter((t) => t.priceMonthly > 0)
       .map((t) => ({ t, cost: tierCost(t) }))
       .filter(({ cost }) => cost.worstCaseAiUsd > cost.netRevenueUsd)
       .map(({ t }) => t.name);
 
     expect(underwater).toEqual([
-      "premium",
       "premium_plus",
       "individual_trainer",
+      "start_up_coach_plus",
+      "coach",
     ]);
   });
 
   it("keeps TYPICAL use comfortably profitable on every paid tier", () => {
-    // The other half of the finding, and the reason none of this is an emergency.
     for (const t of TIERS.filter((x) => x.priceMonthly > 0)) {
       const cost = tierCost(t);
       expect(cost.typicalAiUsd / cost.netRevenueUsd).toBeLessThan(0.2);
@@ -256,16 +255,17 @@ describe("tierCost", () => {
   });
 
   it("caps typical use by what binds, not just by the typical rate", () => {
-    // A 2-client coach cannot make more summaries per day than they have clients.
-    const individual = tierCost(tier("individual_trainer"));
-    const small = tierCost(tier("small_business"));
-    expect(individual.typicalAiUsd).toBeLessThanOrEqual(small.typicalAiUsd);
+    // A 5-client coach cannot make more summaries per day than they have clients.
+    const entry = tierCost(tier("start_up_coach_plus"));
+    const pro = tierCost(tier("coach_pro"));
+    expect(entry.typicalAiUsd).toBeLessThanOrEqual(pro.typicalAiUsd);
   });
 
-  it("reports Premium's worst case as ENTIRELY estimated", () => {
-    // Premium cannot reach either measured endpoint, so every number in its row
-    // rests on a token guess. That is the caveat that must not get lost.
-    expect(tierCost(tier("premium")).worstCaseEstimatedShare).toBe(1);
+  it("costs Premium nothing in AI: no endpoint, no worst case, no typical", () => {
+    const cost = tierCost(tier("premium"));
+    expect(cost.perEndpoint).toHaveLength(0);
+    expect(cost.worstCaseAiUsd).toBe(0);
+    expect(cost.typicalAiUsd).toBe(0);
   });
 
   it("reports Premium+ as part-measured", () => {
@@ -274,9 +274,8 @@ describe("tierCost", () => {
     expect(share).toBeLessThan(1);
   });
 
-  it("attributes most of Premium's exposure to recipe extraction, not Loadout", () => {
-    // The conclusion that matters for what to fix next.
-    const rows = [...tierCost(tier("premium")).perEndpoint].sort(
+  it("attributes most of Premium+'s exposure to recipe extraction, not Loadout", () => {
+    const rows = [...tierCost(tier("premium_plus")).perEndpoint].sort(
       (a, b) => b.worstCaseUsd - a.worstCaseUsd,
     );
     expect(rows[0].label).toBe(endpoint("recipe_extract").label);
@@ -331,10 +330,8 @@ describe("report", () => {
     expect(out).toContain("subscribers →");
   });
 
-  it("labels Premium+ as unlaunched", () => {
-    // It is seeded `is_active = false`; a reader must not treat its row as live
-    // revenue.
-    expect(report()).toContain("Premium+ (unlaunched)");
+  it("labels no tier unlaunched now that the whole IAP ladder is live", () => {
+    expect(report()).not.toContain("(unlaunched)");
   });
 
   it("states the measured/estimated caveat up front, with counts that cannot go stale", () => {
@@ -358,7 +355,7 @@ describe("report", () => {
     expect(APPLE_COMMISSION).toBe(0.3);
     expect(SMALL_BUSINESS_APPLE_COMMISSION).toBe(0.15);
 
-    const premium = TIERS.find((t) => t.name === "premium")!;
+    const premium = TIERS.find((t) => t.name === "premium_plus")!;
     const assumed = tierCost(premium).netRevenueUsd;
     const ifApproved = tierCost(
       premium,
@@ -375,29 +372,19 @@ describe("report", () => {
     expect(report()).toContain("Commission scenarios");
   });
 
-  it("⚠ reaches Mealprint from premium_plus ONLY — the asymmetry with Loadout is the open pricing question", () => {
-    // `mealprint_access` is granted by migration 20260803120200 to premium_plus
-    // alone, while `loadout_access` also reaches all three trainer tiers. Modelling
-    // them as one flag would hide the number needed to settle that question, so
-    // this pins the two sets apart.
+  it("reaches Loadout and Mealprint on exactly the suite tiers", () => {
+    // Spec-29 Phase 2 granted Mealprint to every suite-bearing coach rung, so
+    // the two flags now cover the same set; Start Up Coach has neither.
     const reaches = (tierName: string, key: string) =>
       endpointsForTier(TIERS.find((t) => t.name === tierName)!).some(
         (e) => e.key === key,
       );
-
-    expect(reaches("premium_plus", "meal_suggest")).toBe(true);
-    for (const tier of [
-      "free",
-      "premium",
-      "individual_trainer",
-      "small_business",
-      "medium_enterprise",
-    ]) {
-      expect(reaches(tier, "meal_suggest")).toBe(false);
+    const suite = ["premium_plus", "start_up_coach_plus", "coach", "coach_pro"];
+    for (const t of TIERS) {
+      const expected = suite.includes(t.name);
+      expect(reaches(t.name, "meal_suggest"), t.name).toBe(expected);
+      expect(reaches(t.name, "loadout_remap"), t.name).toBe(expected);
     }
-    // …and the contrast that makes it a question at all: a £14.99 coach tier does
-    // reach Loadout, which an athlete pays £29.99 for.
-    expect(reaches("individual_trainer", "loadout_remap")).toBe(true);
   });
 
   it("marks the measured rows in the breakdown", () => {
@@ -415,5 +402,40 @@ describe("report", () => {
   it("shows the Apple commission it assumed", () => {
     // Every ratio in the table moves with this, so it must be on the page.
     expect(report()).toContain(`Apple ${(APPLE_COMMISSION * 100).toFixed(0)}%`);
+  });
+});
+
+describe("AI budget ceiling (PER-103)", () => {
+  it("nets the annual plan per month from the yearly price", () => {
+    expect(annualNetMonthlyUsd(tier("premium_plus"))).toBeCloseTo(
+      ((199.99 / 12) * 1.27 * (1 - APPLE_COMMISSION) * (1 - REVENUECAT_RATE)) /
+        (1 + IAP_VAT_RATE),
+      6,
+    );
+    expect(annualNetMonthlyUsd(tier("free"))).toBeNull();
+  });
+
+  it("sizes the ceiling on the annual plan, which nets less than monthly", () => {
+    const t = tier("premium_plus");
+    expect(annualNetMonthlyUsd(t)!).toBeLessThan(tierCost(t).netRevenueUsd);
+    expect(budgetCeilingUsd(t)).toBeCloseTo(
+      BUDGET_CAP_SHARE * annualNetMonthlyUsd(t)!,
+      6,
+    );
+  });
+
+  it("reproduces Premium+'s $4.89 budget in 20261106120000_premium_without_ai.sql", () => {
+    expect(budgetCeilingUsd(tier("premium_plus"))).toBeCloseTo(4.89, 2);
+  });
+
+  it("keeps Premium+'s typical AI use inside its budget", () => {
+    const t = tier("premium_plus");
+    expect(tierCost(t).typicalAiUsd).toBeLessThan(budgetCeilingUsd(t));
+  });
+
+  it("prints the ceiling for every AI tier", () => {
+    const out = report();
+    expect(out).toContain("AI budget ceiling");
+    expect(out).toContain("$4.89");
   });
 });

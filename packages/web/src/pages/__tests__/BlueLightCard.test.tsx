@@ -250,16 +250,16 @@ describe("BlueLightCard", () => {
 
       // Annual by default: public price struck through, member price shown.
       expect(screen.getByTestId("blc-public-premium").textContent).toBe(
-        "£139.99/yr",
+        "£39.99/yr",
       );
       expect(screen.getByTestId("blc-member-premium").textContent).toBe(
-        "£111.99/yr",
+        "£31.99/yr",
       );
       expect(screen.getByTestId("blc-public-premium_plus").textContent).toBe(
-        "£249.99/yr",
+        "£199.99/yr",
       );
       expect(screen.getByTestId("blc-member-premium_plus").textContent).toBe(
-        "£199.99/yr",
+        "£159.99/yr",
       );
       expect(screen.getByTestId("blc-public-premium").tagName).toBe("S");
       expect(
@@ -281,9 +281,9 @@ describe("BlueLightCard", () => {
         screen.getByTestId("blc-plan-premium_plus"),
       );
       // Features from the shared catalog, not retyped.
-      expect(screen.getByText("Unlimited workouts and history")).toBeDefined();
+      expect(screen.getByText("Unlimited workouts")).toBeDefined();
       expect(
-        screen.getByText("Loadout — equipment-aware training"),
+        screen.getByText("Loadout: equipment-aware training"),
       ).toBeDefined();
       // Terms, as one paragraph.
       expect(screen.getByText("Offer terms")).toBeDefined();
@@ -405,16 +405,16 @@ describe("BlueLightCard", () => {
         "false",
       ]);
       expect(screen.getByTestId("blc-public-premium").textContent).toBe(
-        "£16.99/mo",
+        "£4.99/mo",
       );
       expect(screen.getByTestId("blc-member-premium").textContent).toBe(
-        "£13.59/mo",
+        "£3.99/mo",
       );
       expect(screen.getByTestId("blc-public-premium_plus").textContent).toBe(
-        "£29.99/mo",
+        "£24.99/mo",
       );
       expect(screen.getByTestId("blc-member-premium_plus").textContent).toBe(
-        "£23.99/mo",
+        "£19.99/mo",
       );
       expect(
         screen.getAllByText("Billed every month. Cancel any time."),
@@ -545,7 +545,7 @@ describe("BlueLightCard", () => {
       expect(
         await screen.findByRole("heading", { name: SIGN_IN_HEADING }),
       ).toBeDefined();
-      expect(screen.getByText("Premium+ · monthly · £23.99/mo")).toBeDefined();
+      expect(screen.getByText("Premium+ · monthly · £19.99/mo")).toBeDefined();
     });
   });
 
@@ -565,7 +565,7 @@ describe("BlueLightCard", () => {
       expect(window.sessionStorage.getItem(BLC_PLAN_STORAGE_KEY)).toBe(
         "premium_plus:annual",
       );
-      expect(screen.getByText("Premium+ · annual · £199.99/yr")).toBeDefined();
+      expect(screen.getByText("Premium+ · annual · £159.99/yr")).toBeDefined();
       expect(
         screen.getByText(/cannot be moved to another one later/),
       ).toBeDefined();
@@ -636,7 +636,7 @@ describe("BlueLightCard", () => {
         "member@example.com",
         "hunter22",
       );
-      expect(screen.getByText("Premium · annual · £111.99/yr")).toBeDefined();
+      expect(screen.getByText("Premium · annual · £31.99/yr")).toBeDefined();
       expect(
         (screen.getByLabelText("Receipt email") as HTMLInputElement).value,
       ).toBe("member@example.com");
@@ -816,7 +816,7 @@ describe("BlueLightCard", () => {
       expect(
         await screen.findByRole("heading", { name: "Confirm your plan" }),
       ).toBeDefined();
-      expect(screen.getByText("Premium+ · annual · £199.99/yr")).toBeDefined();
+      expect(screen.getByText("Premium+ · annual · £159.99/yr")).toBeDefined();
       expect(JSON.parse(checkCalls(fetcher)[0][1].body as string)).toEqual({
         code: "BLC2026",
       });

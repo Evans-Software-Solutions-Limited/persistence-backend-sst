@@ -722,8 +722,124 @@ describe("useFeatureGate hook", () => {
       result.current.gateProps.onUpgrade();
     });
     expect(mockPush).toHaveBeenCalledTimes(1);
-    expect(mockPush.mock.calls[0][0]).toContain("tier=premium");
+    // PER-103: AI is Premium+ only, so even the pre-cache fallback for an AI
+    // feature routes there. (`tier=premium&` would be the old, wrong target.)
+    expect(mockPush.mock.calls[0][0]).toContain("tier=premium_plus");
     expect(mockPush.mock.calls[0][0]).toContain("cycle=monthly");
+  });
+
+  // PER-103: Premium carries no AI. An athlete denied AI is upsold Premium+
+  // from Free and from Premium; before, Premium got upgradeTo=null and the
+  // Snap button did nothing, and Free was upsold a tier without AI.
+  describe("AI upsell (PER-103)", () => {
+    const PREMIUM_PLUS_TIER: SubscriptionTier = {
+      ...PREMIUM_TIER,
+      tierName: "premium_plus",
+      displayName: "Premium+",
+      priceMonthly: 24.99,
+      priceYearly: 199.99,
+    };
+
+    it.each(["free", "premium"] as const)(
+      "%s user denied ai_access is upsold premium_plus at its live price",
+      async (tierName) => {
+        const { adapters, api, auth } = makeAdapters();
+        signIn(auth);
+        api.mySubscription = makeSub({ tierName, aiAccess: false });
+        api.subscriptionTiers = [
+          { ...PREMIUM_TIER, aiAccess: false },
+          PREMIUM_PLUS_TIER,
+        ];
+
+        const { result } = renderHook(() => useFeatureGate("ai_access"), {
+          wrapper: wrapper(adapters, makeQueryClient()),
+        });
+
+        await waitFor(() =>
+          expect(result.current.gateProps.currentTier).toBe(tierName),
+        );
+        await waitFor(() =>
+          expect(result.current.gateProps.upgradePriceMonthly).toBe(24.99),
+        );
+        expect(result.current.allowed).toBe(false);
+        expect(result.current.gateProps.upgradeTo).toBe("premium_plus");
+
+        act(() => {
+          result.current.gateProps.onUpgrade();
+        });
+        expect(mockPush).toHaveBeenCalledTimes(1);
+        expect(mockPush.mock.calls[0][0]).toContain("tier=premium_plus");
+      },
+    );
+
+    // Inspector Brad, PR #530: role picks the ladder, as on the server. A
+    // coach without a coach tier is sent to the entry coach rung (it carries
+    // AI), never Premium+, which would strip their coaching role.
+    it.each([
+      ["personal_trainer", "free", "individual_trainer"],
+      ["personal_trainer", "premium", "individual_trainer"],
+      ["physiotherapist", "premium", "premium_plus"],
+      ["admin", "free", null],
+    ] as const)(
+      "%s on %s denied ai_access is upsold %s",
+      async (role, tierName, expected) => {
+        const { adapters, api, auth } = makeAdapters();
+        signIn(auth);
+        api.mySubscription = makeSub({ tierName, role, aiAccess: false });
+        api.subscriptionTiers = [PREMIUM_TIER, PREMIUM_PLUS_TIER];
+
+        const { result } = renderHook(() => useFeatureGate("ai_access"), {
+          wrapper: wrapper(adapters, makeQueryClient()),
+        });
+
+        // The pre-cache fallback already reads "free" with no role, so wait
+        // for the loaded subscription's answer, not just the tier name.
+        await waitFor(() => {
+          expect(result.current.gateProps.currentTier).toBe(tierName);
+          expect(result.current.gateProps.upgradeTo).toBe(expected);
+        });
+        expect(result.current.allowed).toBe(false);
+      },
+    );
+
+    it("free user denied create_workout is still upsold premium", async () => {
+      const { adapters, api, auth } = makeAdapters();
+      signIn(auth);
+      api.mySubscription = makeSub();
+      api.subscriptionTiers = [PREMIUM_TIER, PREMIUM_PLUS_TIER];
+
+      const { result } = renderHook(() => useFeatureGate("create_workout"), {
+        wrapper: wrapper(adapters, makeQueryClient()),
+      });
+
+      await waitFor(() => expect(result.current.reason).toBe("tier"));
+      expect(result.current.gateProps.upgradeTo).toBe("premium");
+    });
+
+    it.each(["premium_plus", "individual_trainer"] as const)(
+      "a lapsed %s sub denied ai_access gets no upgrade target",
+      async (tierName) => {
+        const { adapters, api, auth } = makeAdapters();
+        signIn(auth);
+        api.mySubscription = makeSub({
+          tierName,
+          paymentStatus: "cancelled",
+          expiresAt: "2020-01-01T00:00:00.000Z",
+          aiAccess: true,
+        });
+        api.subscriptionTiers = [PREMIUM_TIER, PREMIUM_PLUS_TIER];
+
+        const { result } = renderHook(() => useFeatureGate("ai_access"), {
+          wrapper: wrapper(adapters, makeQueryClient()),
+        });
+
+        await waitFor(() =>
+          expect(result.current.gateProps.currentTier).toBe(tierName),
+        );
+        expect(result.current.allowed).toBe(false);
+        expect(result.current.gateProps.upgradeTo).toBeNull();
+      },
+    );
   });
 
   // Inspector Brad PR #73 high-severity find — sweep #3. Pre-fix, a free

@@ -200,29 +200,29 @@ export type Tier = {
   readonly label: string;
   /** GBP/month, from `subscription_tiers.price_monthly`. */
   readonly priceMonthly: number;
+  /** GBP/year, from `subscription_tiers.price_yearly`; null if not sold yearly. */
+  readonly priceYearly: number | null;
   readonly aiAccess: boolean;
   readonly loadoutAccess: boolean;
-  /**
-   * `subscription_tiers.mealprint_access` (migration 20260803120200).
-   *
-   * ⚠ Deliberately NOT the same set as {@link loadoutAccess}: Mealprint is
-   * premium_plus ONLY, while Loadout also reaches all three trainer tiers. That
-   * asymmetry is the open pricing question, and modelling it as one flag would
-   * hide exactly the number needed to settle it.
-   */
+  /** `subscription_tiers.mealprint_access` (migration 20260803120200). */
   readonly mealprintAccess: boolean;
   /** `trainer_client_limit`, or null for an athlete tier. */
   readonly clientLimit: number | null;
-  /** False for `premium_plus` until the launch flip. */
   readonly isActive: boolean;
 };
 
-/** Live catalog after `20260526120000_simplify_tier_model` + the premium_plus row. */
+/**
+ * The live IAP catalogue: spec-29's coach ladder (`20260805120000`,
+ * `20260805180000`, `20260808093010`) plus PER-103's athlete ladder
+ * (`20261106120000_premium_without_ai`): Premium has no AI, Premium+ carries
+ * all of it. Retired tiers (`small_business`, `medium_enterprise`) are gone.
+ */
 export const TIERS: readonly Tier[] = [
   {
     name: "free",
     label: "Free",
     priceMonthly: 0,
+    priceYearly: null,
     aiAccess: false,
     loadoutAccess: false,
     mealprintAccess: false,
@@ -232,8 +232,9 @@ export const TIERS: readonly Tier[] = [
   {
     name: "premium",
     label: "Premium",
-    priceMonthly: 12.99,
-    aiAccess: true,
+    priceMonthly: 4.99,
+    priceYearly: 39.99,
+    aiAccess: false,
     loadoutAccess: false,
     mealprintAccess: false,
     clientLimit: null,
@@ -242,41 +243,56 @@ export const TIERS: readonly Tier[] = [
   {
     name: "premium_plus",
     label: "Premium+",
-    priceMonthly: 29.99,
+    priceMonthly: 24.99,
+    priceYearly: 199.99,
     aiAccess: true,
     loadoutAccess: true,
     mealprintAccess: true,
     clientLimit: null,
-    isActive: false,
+    isActive: true,
   },
   {
     name: "individual_trainer",
-    label: "Individual Trainer",
-    priceMonthly: 14.99,
+    label: "Start Up Coach",
+    priceMonthly: 18.99,
+    priceYearly: 159.99,
     aiAccess: true,
-    loadoutAccess: true,
+    loadoutAccess: false,
     mealprintAccess: false,
-    clientLimit: 2,
+    clientLimit: 5,
     isActive: true,
   },
   {
-    name: "small_business",
-    label: "Small Business",
-    priceMonthly: 75,
+    name: "start_up_coach_plus",
+    label: "Start Up Coach +",
+    priceMonthly: 34.99,
+    priceYearly: 289.99,
     aiAccess: true,
     loadoutAccess: true,
-    mealprintAccess: false,
+    mealprintAccess: true,
+    clientLimit: 5,
+    isActive: true,
+  },
+  {
+    name: "coach",
+    label: "Coach",
+    priceMonthly: 59.99,
+    priceYearly: 499.99,
+    aiAccess: true,
+    loadoutAccess: true,
+    mealprintAccess: true,
+    clientLimit: 15,
+    isActive: true,
+  },
+  {
+    name: "coach_pro",
+    label: "Coach Pro",
+    priceMonthly: 99.99,
+    priceYearly: 839.99,
+    aiAccess: true,
+    loadoutAccess: true,
+    mealprintAccess: true,
     clientLimit: 30,
-    isActive: true,
-  },
-  {
-    name: "medium_enterprise",
-    label: "Medium/Enterprise",
-    priceMonthly: 300,
-    aiAccess: true,
-    loadoutAccess: true,
-    mealprintAccess: false,
-    clientLimit: 500,
     isActive: true,
   },
 ] as const;
@@ -409,8 +425,8 @@ export function endpointsForTier(tier: Tier): readonly AiEndpoint[] {
  * Two corrections, both of which move a headline number:
  *
  * - **The coach summary's real worst case is `min(2 × opened clients, ceiling)`**,
- *   so on the 2-client Individual Trainer tier the ROSTER binds at 4/day, not the
- *   env's 40. Ignoring that overstates that tier's exposure ~10× — and it is the
+ *   so on the 5-client Start Up Coach tier the ROSTER binds at 10/day, not the
+ *   env's 40. Ignoring that overstates that tier's exposure ~4× — and it is the
  *   tier with the thinnest headroom, so the error would land exactly where it
  *   matters most.
  * - **An ATHLETE tier cannot reach the coach summary at all**, so its ceiling is 0.
@@ -527,6 +543,34 @@ export function tierCost(
   };
 }
 
+/**
+ * The AI budget ceiling for a tier: {@link BUDGET_CAP_SHARE} of the net per
+ * month of whichever cadence nets LESS (the annual plan, at a ~30 % discount).
+ * One budget applies to every subscriber on a tier, so it must be safe on the
+ * cheapest way to buy it. PER-103 sized Premium+'s $4.89 this way.
+ */
+export const BUDGET_CAP_SHARE = 0.4;
+
+export function annualNetMonthlyUsd(
+  tier: Tier,
+  commission: number = APPLE_COMMISSION,
+  vatRate: number = IAP_VAT_RATE,
+): number | null {
+  if (tier.priceYearly == null) return null;
+  return (
+    (((tier.priceYearly / 12) * USD_PER_GBP) / (1 + vatRate)) *
+    (1 - commission) *
+    (1 - REVENUECAT_RATE)
+  );
+}
+
+export function budgetCeilingUsd(tier: Tier): number {
+  const monthly = tierCost(tier).netRevenueUsd;
+  const annual = annualNetMonthlyUsd(tier);
+  const lowest = annual == null ? monthly : Math.min(monthly, annual);
+  return BUDGET_CAP_SHARE * lowest;
+}
+
 export function fixedMonthlyTotalUsd(): number {
   return FIXED_MONTHLY_USD.reduce((sum, line) => sum + line.usd, 0);
 }
@@ -616,6 +660,20 @@ export function report(): string {
       `  ${tier.label.padEnd(20)} IAP @30% ${usd(now).padStart(8)}` +
         ` · IAP @15% ${usd(past).padStart(8)}` +
         ` · web ${usd(web).padStart(8)}`,
+    );
+  }
+
+  lines.push("");
+  lines.push(
+    `AI budget ceiling — ${pct(BUDGET_CAP_SHARE)} of the lower of monthly and annual net per month (IAP @30%):`,
+  );
+  for (const tier of TIERS.filter((t) => t.aiAccess)) {
+    const annual = annualNetMonthlyUsd(tier);
+    lines.push(
+      `  ${tier.label.padEnd(20)} monthly net ${usd(tierCost(tier).netRevenueUsd).padStart(8)}` +
+        ` · annual net/mo ${usd(annual ?? NaN).padStart(8)}` +
+        ` · ceiling ${usd(budgetCeilingUsd(tier)).padStart(7)}` +
+        ` · typical ${usd(tierCost(tier).typicalAiUsd).padStart(6)}`,
     );
   }
 

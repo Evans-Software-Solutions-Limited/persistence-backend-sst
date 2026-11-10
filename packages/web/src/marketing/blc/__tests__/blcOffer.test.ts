@@ -11,22 +11,22 @@ import {
 } from "../blcOffer";
 
 describe("BLC_OFFER", () => {
-  it("is 20% off the public price on every tier and cadence, to the penny agreed", () => {
+  it("is 20% off the PER-103 public prices on every tier and cadence, to the penny", () => {
     expect(BLC_OFFER.premium.monthly).toEqual({
-      publicMinor: 1699,
-      memberMinor: 1359,
+      publicMinor: 499,
+      memberMinor: 399,
     });
     expect(BLC_OFFER.premium.annual).toEqual({
-      publicMinor: 13999,
-      memberMinor: 11199,
+      publicMinor: 3999,
+      memberMinor: 3199,
     });
     expect(BLC_OFFER.premium_plus.monthly).toEqual({
-      publicMinor: 2999,
-      memberMinor: 2399,
+      publicMinor: 2499,
+      memberMinor: 1999,
     });
     expect(BLC_OFFER.premium_plus.annual).toEqual({
-      publicMinor: 24999,
-      memberMinor: 19999,
+      publicMinor: 19999,
+      memberMinor: 15999,
     });
     for (const tier of BLC_TIERS) {
       for (const cadence of ["monthly", "annual"] as const) {

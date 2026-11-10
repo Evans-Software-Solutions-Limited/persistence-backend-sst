@@ -83,14 +83,23 @@ describe("Pricing", () => {
     expect(screen.queryByText("139.99")).toBeNull();
   });
 
-  it("keeps Premium+ led by Loadout and Mealprint with no fictional workout feature", () => {
+  it("keeps Premium+ led by AI, Loadout and Mealprint with no fictional workout feature", () => {
     renderPage(<Pricing />);
     const premiumPlus = screen.getByTestId("pricing-tier-premium_plus");
-    expect(within(premiumPlus).getByText(/Loadout —/i)).toBeDefined();
-    expect(within(premiumPlus).getByText(/Mealprint —/i)).toBeDefined();
+    expect(within(premiumPlus).getByText(/AI food logging/i)).toBeDefined();
+    expect(within(premiumPlus).getByText(/^Loadout:/i)).toBeDefined();
+    expect(within(premiumPlus).getByText(/^Mealprint:/i)).toBeDefined();
     expect(
       within(premiumPlus).queryByText(/AI Workout Suggestions/i),
     ).toBeNull();
+  });
+
+  // PER-103: Premium carries no AI, so its card must not promise any.
+  it("shows no AI feature on the Premium card", () => {
+    renderPage(<Pricing />);
+    const premium = screen.getByTestId("pricing-tier-premium");
+    expect(within(premium).queryByText(/\bAI\b/)).toBeNull();
+    expect(within(premium).getByText("Unlimited workouts")).toBeDefined();
   });
 
   it("renders the coach entry fork and makes the suite explicit on every card", () => {

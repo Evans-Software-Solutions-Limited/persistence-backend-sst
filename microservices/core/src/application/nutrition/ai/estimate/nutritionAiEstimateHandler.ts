@@ -27,8 +27,9 @@ const ENDPOINT = "/nutrition/ai/estimate";
 // Daily per-user inference ceiling (cross-cuts § 4.3 Revised 2026-07-05).
 // A cost backstop with a deliberate profit buffer, NOT a product quota:
 // 12 photo estimates/day ≈ 2× the heaviest legitimate use (every meal +
-// retries), and a worst-case abuser costs ~£5.50/mo against a £12.99
-// premium sub. Counted against ACTUAL inferences only (see the
+// retries), and a worst-case abuser costs ~£5.50/mo; the per-user AI budget
+// bounds total spend across endpoints (Premium+ only since PER-103). Counted
+// against ACTUAL inferences only (see the
 // reached-model gate on the usage-log write below).
 // Fail-safe parse: a mis-set env var (garbage → NaN, "" → 0) must not
 // silently disable the cost guard — anything non-finite/non-positive
