@@ -13,18 +13,30 @@ describe("storableSetValue", () => {
     [0, "0"],
     [WEIGHT_KG_MAX, "9999.99"],
     ["9999.99", "9999.99"],
-    [123.456, "123.46"],
-    ["60.555", "60.56"],
+    // Postgres rounds these, exactly as it does for a set edit: 1.005 must
+    // become 1.01, which rounding the double got wrong (Inspector Brad).
+    [123.456, "123.456"],
+    ["1.005", "1.005"],
+    [1.005, "1.005"],
+    ["60.555", "60.555"],
+    ["9999.994", "9999.994"],
+    ["007.5", "007.5"],
+    [".5", ".5"],
     [1e-7, "0"],
-  ])("stores %p as a plain decimal", (value, expected) => {
-    expect(storableSetValue(value, WEIGHT_KG_MAX)).toBe(expected);
-  });
+  ])(
+    "stores %p as a plain decimal Postgres rounds itself",
+    (value, expected) => {
+      expect(storableSetValue(value, WEIGHT_KG_MAX)).toBe(expected);
+    },
+  );
 
   it.each([
     ["the production 35532 kg set", 35532],
     ["just over the column", 10000],
     ["a string that rounds over the column", "9999.995"],
     ["three decimals that round over", "9999.999"],
+    ["the number at the rounding edge", 9999.995],
+    ["a huge number", 1e30],
     ["negative", -1],
     ["not a number", "heavy"],
     ["empty", ""],
@@ -49,5 +61,18 @@ describe("storableSetValue", () => {
   it("uses the limit it is given (distance)", () => {
     expect(storableSetValue(42195.5, DISTANCE_METERS_MAX)).toBe("42195.5");
     expect(storableSetValue("1000000", DISTANCE_METERS_MAX)).toBeNull();
+  });
+});
+
+describe("storableSetValue at the rounding edge", () => {
+  it("blanks exactly the values Postgres would round past the column", () => {
+    expect(storableSetValue("9999.9949999", WEIGHT_KG_MAX)).toBe(
+      "9999.9949999",
+    );
+    expect(storableSetValue("9999.995", WEIGHT_KG_MAX)).toBeNull();
+    expect(storableSetValue("999999.995", DISTANCE_METERS_MAX)).toBeNull();
+    expect(storableSetValue("999999.99", DISTANCE_METERS_MAX)).toBe(
+      "999999.99",
+    );
   });
 });

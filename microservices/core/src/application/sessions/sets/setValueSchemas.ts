@@ -55,30 +55,55 @@ export const distanceMetersSchema = t.Union([
  */
 export const recordedSetValueSchema = t.Union([t.Number(), t.String()]);
 
-/**
- * The value to store for a weight/distance column, as a plain decimal rounded
- * to the column's two places, or null when it cannot be stored: not a finite
- * number, negative, or above `max` once rounded (Postgres rounds before its
- * precision check, so 9999.995 kg would overflow exactly like 35532 did).
- */
 const PLAIN_DECIMAL = /^(?:\d+(?:\.\d*)?|\.\d+)$/;
 
+/** Compare two non-negative plain decimals exactly, digit by digit. */
+function compareDecimal(a: string, b: string): number {
+  const [aInt = "", aFrac = ""] = a.split(".");
+  const [bInt = "", bFrac = ""] = b.split(".");
+  const ai = aInt.replace(/^0+/, "");
+  const bi = bInt.replace(/^0+/, "");
+  if (ai.length !== bi.length) return ai.length - bi.length;
+  if (ai !== bi) return ai < bi ? -1 : 1;
+  const width = Math.max(aFrac.length, bFrac.length);
+  const af = aFrac.padEnd(width, "0");
+  const bf = bFrac.padEnd(width, "0");
+  return af === bf ? 0 : af < bf ? -1 : 1;
+}
+
+/**
+ * The value to store for a weight/distance column as a plain decimal, or null
+ * when the column cannot hold it: not a finite number, negative, text that is
+ * not a plain decimal (hex, binary, exponent, signed: JS parses some of these
+ * but Postgres' numeric input rejects them, which would fail the whole
+ * workout's transaction), or too big once Postgres rounds it to two places.
+ *
+ * Postgres does the rounding, exactly as it does for a set edit, so a value
+ * stores the same whichever route it arrives by. The bound check therefore
+ * works on the decimal digits, never on a float: `max` is the column's top
+ * value (two places), and anything at or above `max` + 0.005 rounds past it
+ * (9999.995 kg overflows numeric(6,2) exactly like 35532 did). Rounding the
+ * double instead stored 1.005 as 1.00 (Inspector Brad, PR #532).
+ */
 export function storableSetValue(
   value: string | number | null | undefined,
   max: number,
 ): string | null {
   if (value === null || value === undefined) return null;
-  // A string must be a plain decimal: hex, binary or exponent text is
-  // nothing a person typed as a weight.
-  if (typeof value === "string" && !PLAIN_DECIMAL.test(value.trim())) {
-    return null;
+  let decimal: string;
+  if (typeof value === "number") {
+    if (!Number.isFinite(value) || value < 0) return null;
+    // Below a millionth, `String` switches to exponent form; the column
+    // stores it as 0 anyway.
+    decimal = value < 1e-6 ? "0" : String(value);
+    // Large numbers print in exponent form too; they are far past any max.
+    if (!PLAIN_DECIMAL.test(decimal)) return null;
+  } else {
+    decimal = value.trim();
+    if (!PLAIN_DECIMAL.test(decimal)) return null;
   }
-  const n = typeof value === "number" ? value : Number(value.trim());
-  if (!Number.isFinite(n) || n < 0) return null;
-  const rounded = Math.round(n * 100) / 100;
-  if (rounded > max) return null;
-  // Store the checked number, not the caller's text, so nothing Postgres'
-  // numeric input could reject reaches the transaction (Inspector Brad, PR
-  // #532). Rounded to the column's scale, it always prints as a plain decimal.
-  return String(rounded);
+  // `max` has two places ("9999.99"), so appending 5 gives the rounding edge.
+  const firstUnstorable = `${String(max)}5`;
+  if (compareDecimal(decimal, firstUnstorable) >= 0) return null;
+  return decimal;
 }
