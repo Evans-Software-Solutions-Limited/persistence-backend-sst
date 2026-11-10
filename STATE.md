@@ -1,5 +1,32 @@
 # Project memory · persistence-backend-sst
 
+### 2026-11-10 — Subscription restructure sense-check follow-ups (PER-103, branch `claude/sweet-keller-mxi2vb`)
+
+Review of the store/RevenueCat restructure against `main` after #530. #530 fixed
+the blockers (Premium `ai_access` off, AI upsell → Premium+, catalog and
+onboarding copy, JSON-LD prices). This branch closes the rest Brad approved:
+- **Fallback plan screen** (`SubscriptionSelectionPresenter`, rendered only
+  when no RevenueCat adapter is wired) no longer shows "7-day free trial"; the
+  trial-eligibility props are gone from presenter and container. Neither store
+  offers a trial (Play `free-trial-7d` offers deactivated).
+- **Premium+ copy**: "AI smart recipe import and recipe estimates" (Brad).
+  Structured URL import stays open on every tier; on an AI deny/failure/budget
+  miss `/recipes/import` returns 422 and the app offers paste/"Create
+  manually" — the graceful fallback Brad required.
+- **Web Pricing** Individuals intro now mirrors the Play listing.
+- Left by Brad's call: founding-offer blurbs (offer closed), programme-import
+  mentions in `schema.ts` comment / `app-store-tracker.html`.
+- ⚠ Open: Stripe `resolveTrial` still gives consumer tiers 7 days on the web
+  rail (`subscriptionsCreateHandler.ts:78`) — needs Brad's decision.
+  `FeatureGatePrompt` renders the DB GBP price, wrong outside the UK.
+- ⚠ Pre-existing test failure: `SubscriptionSelectionContainer.test.tsx` fails
+  16/23 on unmodified `main` too (run serially, 10 Nov): tests after the
+  referral block find only the loading view. Each passes alone, so state leaks
+  between tests. Not caused by this branch.
+- Staging DB / API not reachable from the cloud session (Supabase connector is
+  prod-only; proxy blocks the staging API). Verify staging `subscription_tiers`
+  shows premium `ai_access=false`, 4.99/39.99 before the prod release.
+
 ### 2026-11-06 — Premium without AI, Premium+ carries all AI (PER-103, branch `claude/inspiring-cerf-145ez4`)
 
 Brad's decisions (31 Oct – 6 Nov): three athlete tiers. Premium £4.99 / £39.99,
