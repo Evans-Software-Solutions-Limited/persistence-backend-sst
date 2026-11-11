@@ -1,5 +1,30 @@
 # Project memory · persistence-backend-sst
 
+### 2026-11-11 — AI-estimated nutrition entries are now flagged (branch `claude/elegant-mayer-twetwg`)
+
+Found while sense-checking a production photo estimate for Brad (11 Nov lunch,
+6 items, 1,315 kcal). Every entry logged from the AI photo / free-text confirm
+flow was stored with `ai_estimated = false` and `ai_confidence = NULL`, so
+AI rows couldn't be told apart from manual ones. The gap was known and
+documented in `useAiDraftItems.ts`: the create schema never accepted the
+fields.
+- **Core:** `POST /nutrition/entries` accepts optional `aiEstimated`
+  (boolean) and `aiConfidence` (0..1, else 422). A confidence without the
+  flag is dropped. `NutritionEntryRepository.create` writes both. Macros are
+  untouched.
+- **Mobile:** `LogEntryInput` carries both fields; `logEntryCommand` sets
+  them on the optimistic row and the queued payload; `useAiDraftItems.confirm`
+  sends `aiEstimated: true` + each item's own confidence (covers Snap and
+  "Or describe it…").
+- Existing prod rows stay `false` (no backfill). Old app builds keep sending
+  no flag, which is still valid, so it needs a mobile release to take effect.
+- The photo itself is never stored (estimate holds it in memory), so it
+  can't be reviewed after the fact.
+- Verified: the 7 new core tests fail on the old code and pass with the fix.
+  Core suite 0 failures, 96.3% lines / 94.1% branches (one worker was
+  OOM-killed in the container). Mobile command + hook suites 41/41.
+  Prettier, typecheck, lint pass.
+
 ### 2026-11-10 — Reorder mode, and a workout with an impossible weight still syncs (PER-67, PERSISTENCE-MOBILE-2; branch `claude/inspiring-cerf-145ez4`)
 
 Release 2 fixes; Brad's decisions 10 Nov.

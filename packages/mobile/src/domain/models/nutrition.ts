@@ -200,6 +200,10 @@ export type LogEntryInput = {
   fatG?: number;
   /** Label for a one-off / AI entry (no ref). Persisted to `custom_name`. */
   customName?: string;
+  /** True when the entry came from the AI photo / free-text estimate. */
+  aiEstimated?: boolean;
+  /** 0..1 — the AI's per-item confidence; only sent with `aiEstimated`. */
+  aiConfidence?: number;
   /** ISO timestamp. */
   loggedAt: string;
 };

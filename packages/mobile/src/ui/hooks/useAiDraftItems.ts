@@ -19,9 +19,8 @@ import { useLogEntry } from "./useLogEntry";
  * `foodId`/`recipeId`/`mealId` reference — carrying the item's own
  * kcal/macros PLUS `customName` = the AI's item name, so the logged row
  * renders the food name rather than the generic "Quick entry" fallback).
- * `aiEstimated`/`aiConfidence` are still NOT sent — the create schema has no
- * such fields and we don't invent backend fields beyond the agreed
- * `custom_name` column.
+ * Each entry is flagged `aiEstimated: true` with the item's own
+ * `aiConfidence`, so AI-estimated rows stay distinguishable from manual ones.
  *
  * Implements: specs/13-nutrition-tracking/design.md § Revised 2026-07-03
  *             › Mobile flow (SnapAISheet)
@@ -114,6 +113,8 @@ export function useAiDraftItems(): UseAiDraftItems {
             // Persist the AI's item name so the logged row shows e.g. "Banana"
             // instead of the generic "Quick entry" fallback (custom_name column).
             customName: item.name,
+            aiEstimated: true,
+            aiConfidence: item.confidence,
             loggedAt,
           });
         }

@@ -41,6 +41,8 @@ export type CreateEntryInput = {
   fatG: number;
   loggedAt: string;
   customName?: string | null;
+  aiEstimated?: boolean;
+  aiConfidence?: number | null;
 };
 
 export type UpdateEntryInput = Partial<
@@ -163,6 +165,11 @@ export class NutritionEntryRepository {
         fatG: String(input.fatG),
         loggedAt: new Date(input.loggedAt),
         customName: input.customName ?? null,
+        aiEstimated: input.aiEstimated ?? false,
+        aiConfidence:
+          input.aiConfidence === undefined || input.aiConfidence === null
+            ? null
+            : String(input.aiConfidence),
       })
       .returning();
 

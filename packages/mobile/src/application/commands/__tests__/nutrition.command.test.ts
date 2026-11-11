@@ -164,6 +164,42 @@ describe("logEntryCommand", () => {
     expect(entry.customName).toBe("Banana");
     expect(parsePayload(storage).customName).toBe("Banana");
   });
+
+  it("carries the AI flag and confidence onto the entry and payload", () => {
+    const storage = new InMemoryStorageAdapter();
+    const entry = logEntryCommand(deps(storage), {
+      mealSlot: "lunch",
+      servings: 1,
+      kcal: 425,
+      proteinG: 38,
+      carbsG: 0,
+      fatG: 30,
+      customName: "Roast chicken leg",
+      aiEstimated: true,
+      aiConfidence: 0.82,
+      loggedAt: `${DATE}T12:00:00.000Z`,
+    });
+    expect(entry.aiEstimated).toBe(true);
+    expect(entry.aiConfidence).toBe(0.82);
+    expect(parsePayload(storage).aiEstimated).toBe(true);
+    expect(parsePayload(storage).aiConfidence).toBe(0.82);
+  });
+
+  it("logs a manual entry as not AI-estimated, ignoring a stray confidence", () => {
+    const storage = new InMemoryStorageAdapter();
+    const entry = logEntryCommand(deps(storage), {
+      mealSlot: "lunch",
+      servings: 1,
+      kcal: 90,
+      proteinG: 1,
+      carbsG: 23,
+      fatG: 0,
+      aiConfidence: 0.5,
+      loggedAt: `${DATE}T12:00:00.000Z`,
+    });
+    expect(entry.aiEstimated).toBe(false);
+    expect(entry.aiConfidence).toBeNull();
+  });
 });
 
 describe("editEntryCommand", () => {

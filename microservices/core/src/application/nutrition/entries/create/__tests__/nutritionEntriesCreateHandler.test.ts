@@ -369,4 +369,72 @@ describe("nutritionEntriesCreateHandler", () => {
     expect(res.status).toBe(422); // Elysia body validation (minimum: 0)
     expect(entryMocks.create).not.toHaveBeenCalled();
   });
+
+  const aiBody = {
+    mealSlot: "lunch",
+    servings: 1,
+    kcal: 425,
+    proteinG: 38,
+    carbsG: 0,
+    fatG: 30,
+    loggedAt: "2026-11-11T12:00:00.000Z",
+    customName: "Roast chicken leg",
+  };
+
+  it("persists the AI provenance flag and confidence", async () => {
+    const { nutritionEntriesCreateHandler } =
+      await import("../nutritionEntriesCreateHandler");
+    const res = await nutritionEntriesCreateHandler.handle(
+      post({ ...aiBody, aiEstimated: true, aiConfidence: 0.82 }),
+    );
+    expect(res.status).toBe(201);
+    expect(entryMocks.create).toHaveBeenCalledWith(
+      "test-user-id",
+      expect.objectContaining({ aiEstimated: true, aiConfidence: 0.82 }),
+    );
+  });
+
+  it("defaults to a manual entry when no AI flag is sent", async () => {
+    const { nutritionEntriesCreateHandler } =
+      await import("../nutritionEntriesCreateHandler");
+    await nutritionEntriesCreateHandler.handle(post(aiBody));
+    expect(entryMocks.create).toHaveBeenCalledWith(
+      "test-user-id",
+      expect.objectContaining({ aiEstimated: false, aiConfidence: null }),
+    );
+  });
+
+  it("drops a confidence sent without the AI flag", async () => {
+    const { nutritionEntriesCreateHandler } =
+      await import("../nutritionEntriesCreateHandler");
+    await nutritionEntriesCreateHandler.handle(
+      post({ ...aiBody, aiEstimated: false, aiConfidence: 0.9 }),
+    );
+    expect(entryMocks.create).toHaveBeenCalledWith(
+      "test-user-id",
+      expect.objectContaining({ aiEstimated: false, aiConfidence: null }),
+    );
+  });
+
+  it("stores a null confidence when AI-flagged without one", async () => {
+    const { nutritionEntriesCreateHandler } =
+      await import("../nutritionEntriesCreateHandler");
+    await nutritionEntriesCreateHandler.handle(
+      post({ ...aiBody, aiEstimated: true }),
+    );
+    expect(entryMocks.create).toHaveBeenCalledWith(
+      "test-user-id",
+      expect.objectContaining({ aiEstimated: true, aiConfidence: null }),
+    );
+  });
+
+  it("rejects an out-of-range confidence at validation", async () => {
+    const { nutritionEntriesCreateHandler } =
+      await import("../nutritionEntriesCreateHandler");
+    const res = await nutritionEntriesCreateHandler.handle(
+      post({ ...aiBody, aiEstimated: true, aiConfidence: 1.5 }),
+    );
+    expect(res.status).toBe(422);
+    expect(entryMocks.create).not.toHaveBeenCalled();
+  });
 });
