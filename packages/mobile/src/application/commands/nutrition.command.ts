@@ -106,8 +106,8 @@ export function logEntryCommand(
     ...macro,
     loggedAt: input.loggedAt,
     loggedByUserId: null,
-    aiEstimated: false,
-    aiConfidence: null,
+    aiEstimated: input.aiEstimated ?? false,
+    aiConfidence: input.aiEstimated ? (input.aiConfidence ?? null) : null,
     customName: input.customName ?? null,
   };
 
@@ -130,6 +130,8 @@ export function logEntryCommand(
       carbsG: input.carbsG,
       fatG: input.fatG,
       customName: input.customName,
+      aiEstimated: input.aiEstimated,
+      aiConfidence: input.aiConfidence,
       loggedAt: input.loggedAt,
     },
     endpoint: "/nutrition/entries",

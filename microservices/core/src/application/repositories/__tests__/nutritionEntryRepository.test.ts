@@ -221,6 +221,60 @@ describe("NutritionEntryRepository", () => {
       expect(valuesSpy.mock.calls[0][0].customName).toBe("Mum's lasagne");
       expect(out.customName).toBe("Mum's lasagne");
     });
+
+    it("persists the AI flag and stringifies the confidence", async () => {
+      const valuesSpy = vi.fn().mockReturnValue({
+        returning: vi
+          .fn()
+          .mockResolvedValue([
+            rawRow({ aiEstimated: true, aiConfidence: "0.82" }),
+          ]),
+      });
+      (getDb as any).mockReturnValue({
+        insert: vi.fn().mockReturnValue({ values: valuesSpy }),
+      });
+      const repo = new NutritionEntryRepository();
+      const out = await repo.create("u1", {
+        mealSlot: "lunch",
+        servings: 1,
+        kcal: 425,
+        proteinG: 38,
+        carbsG: 0,
+        fatG: 30,
+        loggedAt: loggedAt.toISOString(),
+        aiEstimated: true,
+        aiConfidence: 0.82,
+      });
+
+      const passed = valuesSpy.mock.calls[0][0];
+      expect(passed.aiEstimated).toBe(true);
+      expect(passed.aiConfidence).toBe("0.82");
+      expect(out.aiEstimated).toBe(true);
+      expect(out.aiConfidence).toBe(0.82);
+    });
+
+    it("defaults to a manual entry with no confidence", async () => {
+      const valuesSpy = vi.fn().mockReturnValue({
+        returning: vi.fn().mockResolvedValue([rawRow()]),
+      });
+      (getDb as any).mockReturnValue({
+        insert: vi.fn().mockReturnValue({ values: valuesSpy }),
+      });
+      const repo = new NutritionEntryRepository();
+      await repo.create("u1", {
+        mealSlot: "lunch",
+        servings: 1,
+        kcal: 100,
+        proteinG: 1,
+        carbsG: 1,
+        fatG: 1,
+        loggedAt: loggedAt.toISOString(),
+      });
+
+      const passed = valuesSpy.mock.calls[0][0];
+      expect(passed.aiEstimated).toBe(false);
+      expect(passed.aiConfidence).toBeNull();
+    });
   });
 
   describe("update", () => {

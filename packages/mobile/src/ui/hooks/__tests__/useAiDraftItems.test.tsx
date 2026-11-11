@@ -201,6 +201,17 @@ describe("useAiDraftItems", () => {
     // The AI item's name is persisted as customName so the logged row shows
     // "Grilled chicken breast", not the "Quick entry" fallback.
     expect(lunch?.[0]?.customName).toBe("Grilled chicken breast");
+    // Flagged as AI-estimated with the item's own confidence, both on the
+    // optimistic row and on the queued wire payload.
+    expect(lunch?.[0]?.aiEstimated).toBe(true);
+    expect(lunch?.[0]?.aiConfidence).toBe(0.94);
+    const fetchMock = globalThis.fetch as unknown as jest.Mock;
+    const sent = fetchMock.mock.calls
+      .filter(([url]) => String(url).endsWith("/nutrition/entries"))
+      .map(([, init]) => JSON.parse((init as { body: string }).body));
+    expect(sent).toContainEqual(
+      expect.objectContaining({ aiEstimated: true, aiConfidence: 0.94 }),
+    );
   });
 
   it("confirm is a no-op (returns 0) when nothing is kept", async () => {

@@ -111,6 +111,10 @@ export const nutritionEntriesCreateHandler = new Elysia()
         fatG,
         loggedAt: body.loggedAt,
         customName: body.customName ?? null,
+        // Provenance only (never affects macros). A confidence without the
+        // AI flag is meaningless, so it is dropped rather than stored.
+        aiEstimated: body.aiEstimated ?? false,
+        aiConfidence: body.aiEstimated ? (body.aiConfidence ?? null) : null,
       });
 
       ctx.set.status = 201;
@@ -139,6 +143,10 @@ export const nutritionEntriesCreateHandler = new Elysia()
         // Client-supplied label for one-off/AI entries — stored/returned
         // verbatim, never derived or validated against a food (BRIEF).
         customName: t.Optional(t.String({ maxLength: 200 })),
+        // Set by the AI photo / free-text confirm flow so AI-estimated rows
+        // can be told apart from manual ones (accuracy review, M9.5).
+        aiEstimated: t.Optional(t.Boolean()),
+        aiConfidence: t.Optional(t.Number({ minimum: 0, maximum: 1 })),
       }),
     },
   );
