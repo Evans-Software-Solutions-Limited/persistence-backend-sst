@@ -19,6 +19,15 @@ first Android build with the Together native modules.
   (X25519/Ed25519) is in that jar (checked).
 - **Not verified:** no Android SDK in the cloud container; the next Android
   EAS build is the proof. Brad builds.
+- **Second build (EAS `b310d25c`, 15 Nov):** both fixes held, and
+  `together-crypto` and `together-lan` compiled. `together-nearby` failed at
+  `compileReleaseKotlin`: `play-services-nearby:19.5.0` ships Kotlin 2.4
+  metadata and the app's compiler expects 2.1 ("Module was compiled with an
+  incompatible version of Kotlin"). Those were the only errors in the full
+  log (read through the Expo connector). The module only calls Nearby's Java
+  API, so its build.gradle now passes `-Xskip-metadata-version-check` to its
+  own Kotlin compile. `implementation` keeps the jar off every other
+  module's classpath. Unverified until the next Android build.
 
 ### 2026-11-11 — AI-estimated nutrition entries are now flagged (branch `claude/elegant-mayer-twetwg`)
 
