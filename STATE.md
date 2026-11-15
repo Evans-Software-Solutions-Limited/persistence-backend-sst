@@ -1,5 +1,25 @@
 # Project memory · persistence-backend-sst
 
+### 2026-11-15 — Android production build: Together native modules (PER-64; branch `claude/inspiring-cerf-145ez4`)
+
+The 1.2.0 production build (14 Nov) passed on iOS (new signing, valid to
+Nov 2027) and failed on Android at Gradle configuration. Android had not been
+built since ~12 Oct: every staging build since skipped it, so this was the
+first Android build with the Together native modules.
+- **`together-nearby/android/build.gradle`** had no `defaultConfig`; Expo's
+  autolinking plugin requires `versionName` ("'android.defaultConfig.
+  versionName' is not defined", then "SoftwareComponent 'release' not
+  found"). Added `versionCode 1` / `versionName '0.1.0'`, as the other two
+  Together modules have.
+- **`together-crypto`** used `bcprov-jdk18on:1.80` while `expo-updates`
+  brings `bcutil-jdk15to18:1.81` (and its `bcprov-jdk15to18`). The two jars
+  share 4,418 class files (checked), which a release build rejects as
+  duplicate classes; expected to be the next failure. Now
+  `bcprov-jdk15to18:1.81`; every BouncyCastle class the module imports
+  (X25519/Ed25519) is in that jar (checked).
+- **Not verified:** no Android SDK in the cloud container; the next Android
+  EAS build is the proof. Brad builds.
+
 ### 2026-11-11 — AI-estimated nutrition entries are now flagged (branch `claude/elegant-mayer-twetwg`)
 
 Found while sense-checking a production photo estimate for Brad (11 Nov lunch,

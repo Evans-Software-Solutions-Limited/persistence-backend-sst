@@ -14,5 +14,8 @@ android {
 
 dependencies {
   // Ed25519/X25519 for minSdk 28 (java.security XDH/Ed25519 need API 33). D16 / PER-64 F9.
-  implementation 'org.bouncycastle:bcprov-jdk18on:1.80'
+  // The jdk15to18 edition, matching what expo-updates already brings in
+  // (bcutil-jdk15to18:1.81). The jdk18on edition ships the same classes, so
+  // having both fails the release build with duplicate classes.
+  implementation 'org.bouncycastle:bcprov-jdk15to18:1.81'
 }
