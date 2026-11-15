@@ -6,14 +6,21 @@ version = '0.1.0'
 
 android {
   namespace 'expo.modules.togethernearby'
-  // Expo's autolinking plugin reads defaultConfig.versionName while it
-  // configures every module; without it the whole Android build fails
-  // ("'android.defaultConfig.versionName' is not defined"). Matches the
-  // other Together modules.
   defaultConfig {
     versionCode 1
     versionName '0.1.0'
   }
 }
 
-dependencies { implementation 'com.google.android.gms:play-services-nearby:19.5.0' }
+// play-services-nearby 19.5.0 ships Kotlin 2.4 metadata, newer than the
+// app's Kotlin compiler can read ("Module was compiled with an incompatible
+// version of Kotlin"). This module only calls Nearby's Java API, so skipping
+// the metadata version check is safe here, and only here: `implementation`
+// keeps the jar off every other module's compile classpath.
+tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+  compilerOptions.freeCompilerArgs.add('-Xskip-metadata-version-check')
+}
+
+dependencies {
+  implementation 'com.google.android.gms:play-services-nearby:19.5.0'
+}
