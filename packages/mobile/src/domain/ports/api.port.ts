@@ -622,6 +622,16 @@ export interface ApiPort extends ReferralsPort {
     input: RegisterDeviceInput,
   ): Promise<Result<RegisterDeviceResult, ApiError>>;
 
+  /**
+   * Stop pushes to this device for the signed-in user. Wraps
+   * `POST /devices/unregister` with body `{ deviceToken }`. Called on
+   * sign-out, before the session is revoked (the request needs the JWT).
+   * Idempotent — an unknown token still succeeds.
+   */
+  unregisterDevice(
+    input: UnregisterDeviceInput,
+  ): Promise<Result<UnregisterDeviceResult, ApiError>>;
+
   // -- Goals --
   getGoals(params?: PaginationParams): Promise<Result<ApiGoal[], ApiError>>;
   getGoal(id: string): Promise<Result<ApiGoal, ApiError>>;
@@ -2555,4 +2565,13 @@ export type RegisterDeviceInput = {
 export type RegisterDeviceResult = {
   id: string;
   registered: true;
+};
+
+/** Domain input for `unregisterDevice` — the Expo push token to drop. */
+export type UnregisterDeviceInput = {
+  token: string;
+};
+
+export type UnregisterDeviceResult = {
+  unregistered: true;
 };

@@ -52,6 +52,7 @@ describe("UserDeviceRepository.register", () => {
       lastUsedAt: new Date(),
     };
     const mockDb = {
+      update: vi.fn().mockReturnValue(makeUpdateChain()),
       insert: vi.fn().mockReturnValue(makeInsertChain([mockDevice])),
     };
     (getDb as any).mockReturnValue(mockDb);
@@ -66,8 +67,49 @@ describe("UserDeviceRepository.register", () => {
     expect(result).toEqual(mockDevice);
   });
 
+  it("deactivates OTHER users' active rows for the same token before upserting", async () => {
+    // One phone token = one signed-in account. Registering it must take the
+    // token away from whichever account held it before (e.g. a test account
+    // signed out offline), or that account's pushes keep landing here.
+    const calls: string[] = [];
+    const updateChain = makeUpdateChain();
+    const mockDb = {
+      update: vi.fn(() => {
+        calls.push("update");
+        return updateChain;
+      }),
+      insert: vi.fn(() => {
+        calls.push("insert");
+        return makeInsertChain([{ id: "device-1", userId: "user-1" }]);
+      }),
+    };
+    (getDb as any).mockReturnValue(mockDb);
+
+    const { UserDeviceRepository } = await import("../userDeviceRepository");
+    const { userDevices } = await import("@persistence/db");
+    const { PgDialect } = await import("drizzle-orm/pg-core");
+    const repo = new UserDeviceRepository();
+    await repo.register("user-1", {
+      deviceToken: "ExponentPushToken[abc]",
+      platform: "ios",
+    });
+
+    expect(calls).toEqual(["update", "insert"]);
+    expect(mockDb.update).toHaveBeenCalledWith(userDevices);
+    expect(updateChain.set.mock.calls[0][0].isActive).toBe(false);
+
+    const query = new PgDialect().sqlToQuery(
+      updateChain._where.mock.calls[0][0],
+    );
+    expect(query.sql).toBe(
+      '("user_devices"."device_token" = $1 and "user_devices"."user_id" <> $2 and "user_devices"."is_active" = $3)',
+    );
+    expect(query.params).toEqual(["ExponentPushToken[abc]", "user-1", true]);
+  });
+
   it("forwards deviceInfo to both INSERT and the ON CONFLICT SET clause", async () => {
     const mockDb = {
+      update: vi.fn().mockReturnValue(makeUpdateChain()),
       insert: vi
         .fn()
         .mockReturnValue(
@@ -111,6 +153,7 @@ describe("UserDeviceRepository.register", () => {
 
   it("defaults deviceInfo to an empty object when omitted", async () => {
     const mockDb = {
+      update: vi.fn().mockReturnValue(makeUpdateChain()),
       insert: vi
         .fn()
         .mockReturnValue(
@@ -133,6 +176,7 @@ describe("UserDeviceRepository.register", () => {
 
   it("throws when the UPSERT returns no rows (driver bug)", async () => {
     const mockDb = {
+      update: vi.fn().mockReturnValue(makeUpdateChain()),
       insert: vi.fn().mockReturnValue(makeInsertChain([])),
     };
     (getDb as any).mockReturnValue(mockDb);

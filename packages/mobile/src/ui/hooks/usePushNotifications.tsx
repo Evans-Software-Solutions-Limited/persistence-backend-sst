@@ -108,7 +108,14 @@ export function usePushNotifications(enabled = true): void {
   // dedupe so the device re-registers under the new account even if the OS
   // token is unchanged (AC 4.4).
   useEffect(() => {
-    if (!enabled || !userId) return;
+    if (!userId) {
+      // Signed out: sign-out unregistered this device's token server-side
+      // (`unregisterDeviceCommand`), so the next sign-in — even back into
+      // the SAME account — must register again or its pushes stay off.
+      registeredForRef.current = null;
+      return;
+    }
+    if (!enabled) return;
     if (registeredForRef.current === userId) return;
     registeredForRef.current = userId;
     lastTokenRef.current = null;

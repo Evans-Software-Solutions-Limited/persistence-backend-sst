@@ -1,5 +1,36 @@
 # Project memory · persistence-backend-sst
 
+### 2026-11-16 — Signed-out account's pushes still reached the phone (branch `claude/confident-cerf-xp8bka`)
+
+Brad reported that after signing out of the account Apple used for App Review,
+that account's notifications still arrived on his phone overnight. Two gaps:
+- **Sign-out never unregistered the device.** The legacy app called
+  `unregister_device_token` on logout; the V2 port didn't, and the backend had
+  no route for it. The `user_devices` row stayed `is_active = true`, so the
+  dispatcher kept sending.
+- **One token could be active under several accounts.** The unique index is
+  `(user_id, device_token)`, so signing into a second account added a row
+  rather than moving the token.
+
+Fix:
+- **Core:** new `POST /devices/unregister` deactivates the JWT user's row for
+  that token. `UserDeviceRepository.register` now first deactivates OTHER
+  users' active rows for the same token: the last account to register a
+  token owns it. This is the one write in that repository outside `userId`.
+  It only sets `is_active = false`, only for the token the caller holds, and
+  returns nothing. It also repairs rows that are already stale, Brad's
+  included, the next time the signed-in account registers (every app
+  launch). Both device routes are grouped in `devicesRoutes` because a new
+  root `.use()` tripped TS2589 on `src/api.ts`.
+- **Mobile:** `signOut` runs `unregisterDeviceCommand` before revoking the
+  session (the call needs the JWT). It is best-effort, gives up after 3 s and
+  never blocks sign-out. If permission isn't granted it does nothing and
+  never prompts. `usePushNotifications` now clears its registered-for guard
+  on sign-out, so signing back into the same account re-registers without a
+  relaunch.
+- **Not verified on device.** Unit tests only. The fix reaches phones only
+  after the core deploy and a new app build.
+
 ### 2026-11-15 — Android production build: Together native modules (PER-64; branch `claude/inspiring-cerf-145ez4`)
 
 The 1.2.0 production build (14 Nov) passed on iOS (new signing, valid to

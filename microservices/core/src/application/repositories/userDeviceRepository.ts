@@ -1,6 +1,6 @@
 import { userDevices, type UserDevice } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, ne, sql } from "drizzle-orm";
 
 /**
  * Platform identifiers accepted by `POST /devices/register`. Mirrors
@@ -46,9 +46,19 @@ export class UserDeviceRepository {
    * and flips `is_active` back to true (the legacy unregister path
    * sets it to false; a re-register reactivates).
    *
-   * Different users registering the same token (shared device) get
-   * their own rows — that's intentional, the unique index is on the
-   * (user_id, device_token) pair, not on device_token alone.
+   * A push token identifies ONE physical install, and only the account
+   * currently signed in on it may receive its pushes. So before the upsert,
+   * every OTHER user's active row for this token is deactivated: whoever
+   * registers a token last owns it. Without this, signing out of account A
+   * and into account B (or a sign-out whose unregister call never reached
+   * us — offline, app killed) left A's row active, and A's notifications
+   * kept arriving on a phone A was no longer signed into.
+   *
+   * This is the one write in this repository that touches rows outside
+   * `userId`. It is deliberately narrow: it can only flip `is_active` to
+   * false, only for the exact token the caller has just proved it holds
+   * (the token is minted on the caller's device), and never reads or
+   * returns another user's data.
    *
    * Spec: specs/09-notifications-social/design.md § Backend endpoints
    *       > POST /devices/register.
@@ -67,6 +77,17 @@ export class UserDeviceRepository {
     const deviceInfoBlob: Record<string, unknown> = {
       ...(input.deviceInfo ?? {}),
     };
+
+    await db
+      .update(userDevices)
+      .set({ isActive: false, updatedAt: new Date() })
+      .where(
+        and(
+          eq(userDevices.deviceToken, input.deviceToken),
+          ne(userDevices.userId, userId),
+          eq(userDevices.isActive, true),
+        ),
+      );
 
     const result = await db
       .insert(userDevices)
@@ -152,9 +173,11 @@ export class UserDeviceRepository {
   }
 
   /**
-   * Mark a device token inactive — called when Expo reports
-   * `DeviceNotRegistered` for it (uninstalled app / revoked permission /
-   * rotated token) so the dead token stops being retried on every send.
+   * Mark a device token inactive. Called from `POST /devices/unregister`
+   * when the user signs out on that device (legacy
+   * `unregister_device_token`), and when Expo reports `DeviceNotRegistered`
+   * for it (uninstalled app / revoked permission / rotated token) so the
+   * dead token stops being retried on every send.
    *
    * Scoped to `(user_id, device_token)` (the unique-index pair), so it only
    * ever touches the caller's own row. Idempotent: deactivating an already-

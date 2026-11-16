@@ -26,3 +26,7 @@ export {
 } from "./commands/mark-read.command";
 export { markAllNotificationsReadCommand } from "./commands/mark-all-read.command";
 export { updateNotificationPreferencesCommand } from "./commands/update-preferences.command";
+export {
+  UNREGISTER_DEVICE_TIMEOUT_MS,
+  unregisterDeviceCommand,
+} from "./commands/unregister-device.command";

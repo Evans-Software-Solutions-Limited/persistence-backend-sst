@@ -101,6 +101,8 @@ import type {
   GetNotificationsParams,
   RegisterDeviceInput,
   RegisterDeviceResult,
+  UnregisterDeviceInput,
+  UnregisterDeviceResult,
   ApiProfile,
   ApiWorkout,
   ApiSession,
@@ -1367,6 +1369,15 @@ export class SSTApiAdapter implements ApiPort {
     return this.requestEnvelope<RegisterDeviceResult>("/devices/register", {
       method: "POST",
       body,
+    });
+  }
+
+  async unregisterDevice(
+    input: UnregisterDeviceInput,
+  ): Promise<Result<UnregisterDeviceResult, ApiError>> {
+    return this.requestEnvelope<UnregisterDeviceResult>("/devices/unregister", {
+      method: "POST",
+      body: { deviceToken: input.token },
     });
   }
 
