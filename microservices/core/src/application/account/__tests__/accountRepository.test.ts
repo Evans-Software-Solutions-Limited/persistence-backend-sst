@@ -13,6 +13,7 @@ import {
   SOFT_DELETE_GRACE_PERIOD_MS,
 } from "../accountRepository";
 import { ACCOUNT_DELETION_STEPS } from "../accountDeletionPlan";
+import { profiles, userDevices } from "@persistence/db";
 
 const dialect = new PgDialect();
 
@@ -161,49 +162,75 @@ describe("AccountRepository.purgeUserData", () => {
 describe("AccountRepository.softDelete", () => {
   beforeEach(() => vi.clearAllMocks());
 
+  /** Mock db whose transaction records each `tx.update(table).set().where()`. */
+  function makeDb() {
+    const updates: Array<{
+      table: unknown;
+      values: Record<string, unknown>;
+      where: unknown;
+    }> = [];
+    const tx = {
+      update: vi.fn((table: unknown) => ({
+        set: vi.fn((values: Record<string, unknown>) => ({
+          where: vi.fn(async (where: unknown) => {
+            updates.push({ table, values, where });
+          }),
+        })),
+      })),
+    };
+    const transaction = vi.fn(async (fn: (t: typeof tx) => Promise<void>) =>
+      fn(tx),
+    );
+    (getDb as any).mockReturnValue({ transaction });
+    return { updates, transaction };
+  }
+
   it("stamps deleted_at = now and purge_after = now + 30 days, scoped to the caller's id, and returns purgeAfter", async () => {
     const now = new Date("2026-07-13T12:00:00.000Z");
-    let capturedSet: Record<string, unknown> | undefined;
-    let capturedWhere: unknown;
-    const where = vi.fn(async (cond: unknown) => {
-      capturedWhere = cond;
-      return undefined;
-    });
-    const set = vi.fn((values: Record<string, unknown>) => {
-      capturedSet = values;
-      return { where };
-    });
-    const update = vi.fn(() => ({ set }));
-    (getDb as any).mockReturnValue({ update });
+    const { updates, transaction } = makeDb();
 
     const purgeAfter = await new AccountRepository().softDelete("user-42", now);
 
+    expect(transaction).toHaveBeenCalledTimes(1);
     expect(purgeAfter.getTime()).toBe(
       now.getTime() + SOFT_DELETE_GRACE_PERIOD_MS,
     );
     expect(purgeAfter.toISOString()).toBe("2026-08-12T12:00:00.000Z");
-    expect(capturedSet).toEqual({
+    const profile = updates.find((u) => u.table === profiles)!;
+    expect(profile.values).toEqual({
       deletedAt: now,
       purgeAfter,
       updatedAt: now,
     });
-    expect(renderCondition(capturedWhere)).toContain("= $1");
+    const q = dialect.sqlToQuery(profile.where as SQL);
+    expect(q.sql).toBe('"profiles"."id" = $1');
+    expect(q.params).toEqual(["user-42"]);
+  });
+
+  it("deactivates every device push token of the caller, in the same transaction", async () => {
+    // A soft-deleted account must stop pushing to its phones for the whole
+    // 30-day window — the dispatcher doesn't check deleted_at.
+    const now = new Date("2026-07-13T12:00:00.000Z");
+    const { updates } = makeDb();
+
+    await new AccountRepository().softDelete("user-42", now);
+
+    expect(updates.map((u) => u.table)).toEqual([profiles, userDevices]);
+    const devices = updates[1]!;
+    expect(devices.values).toEqual({ isActive: false, updatedAt: now });
+    const q = dialect.sqlToQuery(devices.where as SQL);
+    expect(q.sql).toBe('"user_devices"."user_id" = $1');
+    expect(q.params).toEqual(["user-42"]);
   });
 
   it("defaults to the current time when `now` is omitted", async () => {
-    const where = vi.fn(async () => undefined);
-    const set = vi.fn<
-      (values: Record<string, unknown>) => { where: typeof where }
-    >(() => ({ where }));
-    const update = vi.fn(() => ({ set }));
-    (getDb as any).mockReturnValue({ update });
+    const { updates } = makeDb();
 
     const before = Date.now();
     await new AccountRepository().softDelete("user-42");
     const after = Date.now();
 
-    const values = set.mock.calls[0]![0];
-    const stamped = values as unknown as { deletedAt: Date };
+    const stamped = updates[0]!.values as unknown as { deletedAt: Date };
     expect(stamped.deletedAt.getTime()).toBeGreaterThanOrEqual(before);
     expect(stamped.deletedAt.getTime()).toBeLessThanOrEqual(after);
   });

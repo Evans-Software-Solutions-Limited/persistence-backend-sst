@@ -95,6 +95,85 @@ describe("useAuth", () => {
     expect(result.current.session).toBeNull();
   });
 
+  it("unregisters this device's push token BEFORE revoking the session", async () => {
+    // The bug: after signing out, the old account's notifications kept
+    // arriving on this phone because its device token stayed registered.
+    const { adapters, auth } = createTestAdapters();
+    const api = adapters.api as InMemoryApiAdapter;
+    const notifications = adapters.notifications as StubNotificationsAdapter;
+    jest
+      .spyOn(notifications, "getPermissionStatus")
+      .mockResolvedValue("granted");
+    jest
+      .spyOn(notifications, "getDevicePushToken")
+      .mockResolvedValue({ ok: true, value: "ExponentPushToken[abc]" });
+    const order: string[] = [];
+    const unregister = api.unregisterDevice.bind(api);
+    jest.spyOn(api, "unregisterDevice").mockImplementation(async (input) => {
+      order.push("unregister");
+      return unregister(input);
+    });
+    const revoke = auth.signOut.bind(auth);
+    jest.spyOn(auth, "signOut").mockImplementation(async () => {
+      order.push("signOut");
+      return revoke();
+    });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AdapterProvider adapters={adapters}>{children}</AdapterProvider>
+    );
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+    await act(async () => {
+      await result.current.signIn("test@example.com", "password");
+    });
+    await act(async () => {
+      await result.current.signOut();
+    });
+
+    expect(api.unregisteredDevices).toEqual([
+      { token: "ExponentPushToken[abc]" },
+    ]);
+    expect(order).toEqual(["unregister", "signOut"]);
+    expect(result.current.session).toBeNull();
+  });
+
+  it("still signs out when the push unregister fails", async () => {
+    const { adapters } = createTestAdapters();
+    const api = adapters.api as InMemoryApiAdapter;
+    const notifications = adapters.notifications as StubNotificationsAdapter;
+    jest
+      .spyOn(notifications, "getPermissionStatus")
+      .mockResolvedValue("granted");
+    jest
+      .spyOn(notifications, "getDevicePushToken")
+      .mockResolvedValue({ ok: true, value: "ExponentPushToken[abc]" });
+    jest.spyOn(api, "unregisterDevice").mockResolvedValue({
+      ok: false,
+      error: { kind: "api", code: "network", message: "offline" },
+    } as Awaited<ReturnType<InMemoryApiAdapter["unregisterDevice"]>>);
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AdapterProvider adapters={adapters}>{children}</AdapterProvider>
+    );
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+    await act(async () => {
+      await result.current.signIn("test@example.com", "password");
+    });
+    await act(async () => {
+      await result.current.signOut();
+    });
+
+    expect(result.current.session).toBeNull();
+    warnSpy.mockRestore();
+  });
+
   it("resets the user-mode slice on sign-out (no cross-account bleed)", async () => {
     const { adapters } = createTestAdapters();
     const wrapper = ({ children }: { children: ReactNode }) => (

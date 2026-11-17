@@ -1,5 +1,72 @@
 # Project memory · persistence-backend-sst
 
+### 2026-11-16 — Signed-out account's pushes still reached the phone (branch `claude/confident-cerf-xp8bka`)
+
+Brad reported that after signing out of the account Apple used for App Review,
+that account's notifications still arrived on his phone overnight. Two gaps:
+- **Sign-out never unregistered the device.** The legacy app called
+  `unregister_device_token` on logout; the V2 port didn't, and the backend had
+  no route for it. The `user_devices` row stayed `is_active = true`, so the
+  dispatcher kept sending.
+- **One token could be active under several accounts.** The unique index is
+  `(user_id, device_token)`, so signing into a second account added a row
+  rather than moving the token.
+
+Fix:
+- **Core:** new `POST /devices/unregister` deactivates the JWT user's row for
+  that token. `UserDeviceRepository.register` now first deactivates OTHER
+  users' active rows for the same token: the last account to register a
+  token owns it. This is the one write in that repository outside `userId`.
+  It only sets `is_active = false`, only for the token the caller holds, and
+  returns nothing. It also repairs rows that are already stale, Brad's
+  included, the next time the signed-in account registers (every app
+  launch). Both device routes are grouped in `devicesRoutes` because a new
+  root `.use()` tripped TS2589 on `src/api.ts`.
+- **Mobile:** `signOut` runs `unregisterDeviceCommand` before revoking the
+  session (the call needs the JWT). It is best-effort, gives up after 3 s and
+  never blocks sign-out. If permission isn't granted it does nothing and
+  never prompts. `usePushNotifications` now clears its registered-for guard
+  on sign-out, so signing back into the same account re-registers without a
+  relaunch.
+- **Inspector Brad review (PR #537), two leads, both confirmed and fixed:**
+  - Account deletion ended the session without unregistering, and the
+    soft-delete only stamps `deleted_at`. The dispatcher doesn't check
+    `deleted_at`, so a deleted account kept pushing for up to 30 days.
+    `AccountRepository.softDelete` now deactivates all of the user's
+    `user_devices` rows in the same transaction as the stamp. That covers
+    every phone, not just the one the deletion came from. Restoring the
+    account and signing in registers the phone again.
+  - A timed-out sign-out unregister was abandoned but still in flight, still
+    carrying a JWT the server accepts. After a quick sign-back-in to the same
+    account, it could land after the fresh registration and switch pushes
+    off. `unregisterDeviceCommand` now aborts the request (an `AbortSignal`
+    through `ApiPort.unregisterDevice`). It skips the call if it gave up
+    during the token read, and doesn't log the failure of a request it
+    aborted itself.
+- **Second Inspector Brad sweep, two more leads:**
+  - Confirmed and fixed: deactivating on soft-delete wasn't enough. A phone
+    still signed in to the deleted account re-registers on its next launch,
+    and register doesn't check `deleted_at`. `listActiveTokens`, the push
+    send path's only device lookup, now joins `profiles` and returns nothing
+    while `deleted_at` is set. Restoring the account clears it, and pushes
+    resume.
+  - Accepted as a known risk, comment corrected: the take-over can't prove
+    the caller's device minted the token. Someone who knows a victim's Expo
+    token can register it and silence the victim's pushes, but only until
+    the victim's next launch re-registers it. A real proof of possession
+    would need a device-signed challenge; not done.
+- **CI fix (already broken on `main`):** "Unit Tests & Coverage" failed twice
+  with "runner received a shutdown signal" right after
+  `trainerRepository.test.ts`. The next file, `voucher.integration.test.ts`,
+  created a new PGlite for each of its 86 tests, and closing them didn't
+  free the WASM memory: 13.6 GB peak RSS, killed at test 68–69, the same on
+  `main` (adb284c). It now shares one PGlite for the file and drops and
+  rebuilds `public` before each test: 1.1 GB peak, 86/86, also passing with
+  the test order shuffled (seeds 1 and 42). Other files that create a
+  PGlite per test have the same pattern but aren't failing.
+- **Not verified on device.** Unit tests only. The fix reaches phones only
+  after the core deploy and a new app build.
+
 ### 2026-11-15 — Android production build: Together native modules (PER-64; branch `claude/inspiring-cerf-145ez4`)
 
 The 1.2.0 production build (14 Nov) passed on iOS (new signing, valid to

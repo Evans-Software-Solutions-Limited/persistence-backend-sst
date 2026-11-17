@@ -429,4 +429,39 @@ describe("usePushNotifications", () => {
     });
     expect(api.registeredDevices).toHaveLength(0);
   });
+  it("re-registers after sign-out → sign-in back into the SAME account", async () => {
+    // Sign-out unregisters the token server-side, so the guard that skips a
+    // repeat registration for the same user must reset on sign-out —
+    // otherwise that account gets no pushes until the app relaunches.
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    const notifications = new StubPushNotifications();
+    const adapters = makeAdapters(api, storage, notifications, SESSION);
+    let emitAuth: (s: AuthSession | null) => void = () => {};
+    (adapters.auth.onAuthStateChange as jest.Mock).mockImplementation(
+      (cb: (s: AuthSession | null) => void) => {
+        emitAuth = cb;
+        cb(SESSION);
+        return () => {};
+      },
+    );
+
+    renderHook(() => usePushNotifications(true), {
+      wrapper: wrapperFor(adapters),
+    });
+    await waitFor(() => expect(api.registeredDevices).toHaveLength(1));
+
+    act(() => emitAuth(null));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(api.registeredDevices).toHaveLength(1);
+
+    act(() => emitAuth(SESSION));
+    await waitFor(() => expect(api.registeredDevices).toHaveLength(2));
+    expect(api.registeredDevices[1]).toEqual({
+      token: "device-token-abc",
+      platform: "ios",
+    });
+  });
 });

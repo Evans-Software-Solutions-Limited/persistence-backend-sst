@@ -8,6 +8,7 @@ import { usePendingInvite } from "@/state/pending-invite";
 import { usePendingTogetherJoin } from "@/state/pending-together-join";
 import { useTogetherSettings } from "@/state/together-settings";
 import { usePasswordRecovery } from "@/state/password-recovery";
+import { unregisterDeviceCommand } from "@/application/notifications";
 import { useAdapters } from "./useAdapters";
 
 export type AuthState = {
@@ -42,7 +43,7 @@ export type AuthState = {
  * to provide reactive session state and auth actions.
  */
 export function useAuth(): AuthState {
-  const { auth, storage, api } = useAdapters();
+  const { auth, storage, api, notifications } = useAdapters();
   const [session, setSession] = useState<AuthSession | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<AuthError | null>(null);
@@ -251,6 +252,10 @@ export function useAuth(): AuthState {
 
   const signOut = useCallback(async () => {
     setError(null);
+    // Drop this device's push token for the outgoing account first, while
+    // the session (JWT) is still valid — otherwise the account's pushes keep
+    // arriving on this phone after sign-out. Bounded + never throws.
+    await unregisterDeviceCommand(api, notifications);
     const result = await auth.signOut();
     if (!result.ok) {
       // The remote revoke failed — almost always a network partition, which is
@@ -266,7 +271,7 @@ export function useAuth(): AuthState {
       throw new Error(result.error.message);
     }
     clearLocalState();
-  }, [auth, clearLocalState]);
+  }, [api, auth, notifications, clearLocalState]);
 
   const resetPassword = useCallback(
     async (email: string) => {

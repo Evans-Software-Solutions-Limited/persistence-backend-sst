@@ -1,5 +1,5 @@
 import { and, eq, isNotNull, lte } from "drizzle-orm";
-import { profiles } from "@persistence/db";
+import { profiles, userDevices } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
 import { ACCOUNT_DELETION_STEPS, buildStatement } from "./accountDeletionPlan";
 
@@ -56,18 +56,30 @@ export class AccountRepository {
    * {@link SOFT_DELETE_GRACE_PERIOD_MS}. Idempotent by design — a retry (or
    * a second `DELETE /account` call before the window elapses) simply
    * re-stamps both columns, extending the cooling-off window from "now"
-   * rather than layering state. Does NOT touch any other table; the actual
-   * purge is the nightly worker's job once `purge_after <= now()`.
+   * rather than layering state. The actual purge is the nightly worker's
+   * job once `purge_after <= now()`.
+   *
+   * In the same transaction it deactivates every one of the user's device
+   * push tokens. A deleted account must stop pushing to the phones it was
+   * on: the dispatcher does not check `deleted_at`, and the app's sign-out
+   * unregister only covers the phone the deletion came from. If the user
+   * restores the account, signing in registers the phone again.
    *
    * Returns the new `purgeAfter` so the handler can echo it in the response.
    */
   async softDelete(userId: string, now: Date = new Date()): Promise<Date> {
     const db = getDb();
     const purgeAfter = new Date(now.getTime() + SOFT_DELETE_GRACE_PERIOD_MS);
-    await db
-      .update(profiles)
-      .set({ deletedAt: now, purgeAfter, updatedAt: now })
-      .where(eq(profiles.id, userId));
+    await db.transaction(async (tx) => {
+      await tx
+        .update(profiles)
+        .set({ deletedAt: now, purgeAfter, updatedAt: now })
+        .where(eq(profiles.id, userId));
+      await tx
+        .update(userDevices)
+        .set({ isActive: false, updatedAt: now })
+        .where(eq(userDevices.userId, userId));
+    });
     return purgeAfter;
   }
 

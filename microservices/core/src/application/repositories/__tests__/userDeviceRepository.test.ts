@@ -21,10 +21,11 @@ function makeSelectChain(resolvedValue: unknown) {
   return { from: vi.fn().mockReturnValue({ where }) };
 }
 
-// `listActiveTokens` resolves directly off `.where(...)` (no `.limit`).
+// `listActiveTokens`: `.from(...).innerJoin(...).where(...)` (no `.limit`).
 function makeListChain(resolvedValue: unknown) {
   const where = vi.fn().mockResolvedValue(resolvedValue);
-  return { from: vi.fn().mockReturnValue({ where }) };
+  const innerJoin = vi.fn().mockReturnValue({ where });
+  return { from: vi.fn().mockReturnValue({ innerJoin }), innerJoin, where };
 }
 
 // `deactivateToken`: `.update(...).set(...).where(...)`.
@@ -52,6 +53,7 @@ describe("UserDeviceRepository.register", () => {
       lastUsedAt: new Date(),
     };
     const mockDb = {
+      update: vi.fn().mockReturnValue(makeUpdateChain()),
       insert: vi.fn().mockReturnValue(makeInsertChain([mockDevice])),
     };
     (getDb as any).mockReturnValue(mockDb);
@@ -66,8 +68,49 @@ describe("UserDeviceRepository.register", () => {
     expect(result).toEqual(mockDevice);
   });
 
+  it("deactivates OTHER users' active rows for the same token before upserting", async () => {
+    // One phone token = one signed-in account. Registering it must take the
+    // token away from whichever account held it before (e.g. a test account
+    // signed out offline), or that account's pushes keep landing here.
+    const calls: string[] = [];
+    const updateChain = makeUpdateChain();
+    const mockDb = {
+      update: vi.fn(() => {
+        calls.push("update");
+        return updateChain;
+      }),
+      insert: vi.fn(() => {
+        calls.push("insert");
+        return makeInsertChain([{ id: "device-1", userId: "user-1" }]);
+      }),
+    };
+    (getDb as any).mockReturnValue(mockDb);
+
+    const { UserDeviceRepository } = await import("../userDeviceRepository");
+    const { userDevices } = await import("@persistence/db");
+    const { PgDialect } = await import("drizzle-orm/pg-core");
+    const repo = new UserDeviceRepository();
+    await repo.register("user-1", {
+      deviceToken: "ExponentPushToken[abc]",
+      platform: "ios",
+    });
+
+    expect(calls).toEqual(["update", "insert"]);
+    expect(mockDb.update).toHaveBeenCalledWith(userDevices);
+    expect(updateChain.set.mock.calls[0][0].isActive).toBe(false);
+
+    const query = new PgDialect().sqlToQuery(
+      updateChain._where.mock.calls[0][0],
+    );
+    expect(query.sql).toBe(
+      '("user_devices"."device_token" = $1 and "user_devices"."user_id" <> $2 and "user_devices"."is_active" = $3)',
+    );
+    expect(query.params).toEqual(["ExponentPushToken[abc]", "user-1", true]);
+  });
+
   it("forwards deviceInfo to both INSERT and the ON CONFLICT SET clause", async () => {
     const mockDb = {
+      update: vi.fn().mockReturnValue(makeUpdateChain()),
       insert: vi
         .fn()
         .mockReturnValue(
@@ -111,6 +154,7 @@ describe("UserDeviceRepository.register", () => {
 
   it("defaults deviceInfo to an empty object when omitted", async () => {
     const mockDb = {
+      update: vi.fn().mockReturnValue(makeUpdateChain()),
       insert: vi
         .fn()
         .mockReturnValue(
@@ -133,6 +177,7 @@ describe("UserDeviceRepository.register", () => {
 
   it("throws when the UPSERT returns no rows (driver bug)", async () => {
     const mockDb = {
+      update: vi.fn().mockReturnValue(makeUpdateChain()),
       insert: vi.fn().mockReturnValue(makeInsertChain([])),
     };
     (getDb as any).mockReturnValue(mockDb);
@@ -211,6 +256,29 @@ describe("UserDeviceRepository.listActiveTokens", () => {
       { deviceToken: "ExponentPushToken[a]", platform: "ios" },
       { deviceToken: "ExponentPushToken[b]", platform: "android" },
     ]);
+  });
+
+  it("only targets active rows of the user, and nothing while the account is soft-deleted", async () => {
+    // A deleted account's rows can be switched back on by a phone still
+    // signed in to it re-registering; the lookup itself must stay silent.
+    const chain = makeListChain([]);
+    (getDb as any).mockReturnValue({ select: vi.fn().mockReturnValue(chain) });
+
+    const { UserDeviceRepository } = await import("../userDeviceRepository");
+    const { profiles } = await import("@persistence/db");
+    const { PgDialect } = await import("drizzle-orm/pg-core");
+    await new UserDeviceRepository().listActiveTokens("user-1");
+
+    const dialect = new PgDialect();
+    expect(chain.innerJoin.mock.calls[0][0]).toBe(profiles);
+    expect(dialect.sqlToQuery(chain.innerJoin.mock.calls[0][1]).sql).toBe(
+      '"profiles"."id" = "user_devices"."user_id"',
+    );
+    const where = dialect.sqlToQuery(chain.where.mock.calls[0][0]);
+    expect(where.sql).toBe(
+      '("user_devices"."user_id" = $1 and "user_devices"."is_active" = $2 and "profiles"."deleted_at" is null)',
+    );
+    expect(where.params).toEqual(["user-1", true]);
   });
 
   it("returns an empty array when the user has no active devices", async () => {

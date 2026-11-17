@@ -1,6 +1,6 @@
-import { userDevices, type UserDevice } from "@persistence/db";
+import { profiles, userDevices, type UserDevice } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, ne, sql } from "drizzle-orm";
 
 /**
  * Platform identifiers accepted by `POST /devices/register`. Mirrors
@@ -46,9 +46,27 @@ export class UserDeviceRepository {
    * and flips `is_active` back to true (the legacy unregister path
    * sets it to false; a re-register reactivates).
    *
-   * Different users registering the same token (shared device) get
-   * their own rows — that's intentional, the unique index is on the
-   * (user_id, device_token) pair, not on device_token alone.
+   * A push token identifies ONE physical install, and only the account
+   * currently signed in on it may receive its pushes. So before the upsert,
+   * every OTHER user's active row for this token is deactivated: whoever
+   * registers a token last owns it. Without this, signing out of account A
+   * and into account B (or a sign-out whose unregister call never reached
+   * us — offline, app killed) left A's row active, and A's notifications
+   * kept arriving on a phone A was no longer signed into.
+   *
+   * This is the one write in this repository that touches rows outside
+   * `userId`. It is deliberately narrow: it can only flip `is_active` to
+   * false, only for the token in the request, and never reads or returns
+   * another user's data.
+   *
+   * Known, accepted risk: the server can't prove the caller's device minted
+   * the token. It is just a string in the body. Someone who learns a
+   * victim's Expo push token (a screenshot, logs, a debug build) can
+   * register it, which switches off the victim's row and sends the caller's
+   * own pushes to the victim's phone. That only lasts until the victim's
+   * next app launch, which re-registers the token and takes it back. Before
+   * this take-over, a forged registration could still send the caller's
+   * pushes to the victim's phone; it just couldn't silence the victim's.
    *
    * Spec: specs/09-notifications-social/design.md § Backend endpoints
    *       > POST /devices/register.
@@ -67,6 +85,17 @@ export class UserDeviceRepository {
     const deviceInfoBlob: Record<string, unknown> = {
       ...(input.deviceInfo ?? {}),
     };
+
+    await db
+      .update(userDevices)
+      .set({ isActive: false, updatedAt: new Date() })
+      .where(
+        and(
+          eq(userDevices.deviceToken, input.deviceToken),
+          ne(userDevices.userId, userId),
+          eq(userDevices.isActive, true),
+        ),
+      );
 
     const result = await db
       .insert(userDevices)
@@ -132,6 +161,13 @@ export class UserDeviceRepository {
    * matches only rows explicitly `true`, so a NULL row (legacy / manual insert)
    * is treated as not-targetable rather than silently pushed to.
    *
+   * A soft-deleted account (`profiles.deleted_at` set, inside its 30-day
+   * window) gets no devices at all. `softDelete` switches its rows off, but
+   * any phone still signed in to it re-registers on its next launch. Gating
+   * here, the push send path's only device lookup, keeps a deleted account
+   * silent however its rows got switched back on. Restoring the account
+   * clears `deleted_at`, and pushes resume.
+   *
    * Spec: specs/09-notifications-social/design.md § ADDENDUM 2026-06-29.
    */
   async listActiveTokens(userId: string): Promise<ActiveDeviceToken[]> {
@@ -142,8 +178,13 @@ export class UserDeviceRepository {
         platform: userDevices.platform,
       })
       .from(userDevices)
+      .innerJoin(profiles, eq(profiles.id, userDevices.userId))
       .where(
-        and(eq(userDevices.userId, userId), eq(userDevices.isActive, true)),
+        and(
+          eq(userDevices.userId, userId),
+          eq(userDevices.isActive, true),
+          isNull(profiles.deletedAt),
+        ),
       );
     return rows.map((row) => ({
       deviceToken: row.deviceToken,
@@ -152,9 +193,11 @@ export class UserDeviceRepository {
   }
 
   /**
-   * Mark a device token inactive — called when Expo reports
-   * `DeviceNotRegistered` for it (uninstalled app / revoked permission /
-   * rotated token) so the dead token stops being retried on every send.
+   * Mark a device token inactive. Called from `POST /devices/unregister`
+   * when the user signs out on that device (legacy
+   * `unregister_device_token`), and when Expo reports `DeviceNotRegistered`
+   * for it (uninstalled app / revoked permission / rotated token) so the
+   * dead token stops being retried on every send.
    *
    * Scoped to `(user_id, device_token)` (the unique-index pair), so it only
    * ever touches the caller's own row. Idempotent: deactivating an already-

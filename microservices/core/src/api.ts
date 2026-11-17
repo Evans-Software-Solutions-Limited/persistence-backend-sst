@@ -80,7 +80,9 @@ import { notificationsUpdateAllHandler } from "./application/notifications/updat
 import { notificationsUpdateHandler } from "./application/notifications/update/notificationsUpdateHandler";
 import { preferencesGetHandler } from "./application/notifications/preferences/get/preferencesGetHandler";
 import { preferencesSetHandler } from "./application/notifications/preferences/set/preferencesSetHandler";
-import { devicesRegisterHandler } from "./application/devices/register/devicesRegisterHandler";
+// Device push-token routes (register + unregister) grouped into one sub-app —
+// see ./application/devicesRoutes for why (TS2589 headroom on the root chain).
+import { devicesRoutes } from "./application/devicesRoutes";
 import { trainersOverviewHandler } from "./application/trainers/overview/trainersOverviewHandler";
 import { trainersClientsListHandler } from "./application/trainers/clients/trainersClientsListHandler";
 import { trainersInvitationsListHandler } from "./application/trainers/invitations/trainersInvitationsListHandler";
@@ -208,7 +210,7 @@ const app = new Elysia()
   .use(notificationsUpdateHandler)
   .use(preferencesGetHandler)
   .use(preferencesSetHandler)
-  .use(devicesRegisterHandler)
+  .use(devicesRoutes)
   // M8 — trainer / Coach You.
   .use(trainersOverviewHandler)
   .use(trainersClientsListHandler)

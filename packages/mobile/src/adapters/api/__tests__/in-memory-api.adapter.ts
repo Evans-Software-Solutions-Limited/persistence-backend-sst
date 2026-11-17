@@ -66,6 +66,8 @@ import type {
   GetNotificationsParams,
   RegisterDeviceInput,
   RegisterDeviceResult,
+  UnregisterDeviceInput,
+  UnregisterDeviceResult,
   ApiProfile,
   ApiSession,
   ApiSessionExercise,
@@ -1133,6 +1135,7 @@ export class InMemoryApiAdapter implements ApiPort {
   public notificationsUnreadCount = 0;
   public notificationPreferences: NotificationPreferences = {};
   public registeredDevices: RegisterDeviceInput[] = [];
+  public unregisteredDevices: UnregisterDeviceInput[] = [];
   public lastPreferencesUpdate: NotificationPreferences | null = null;
   /** Captures every `getNotifications` params for assertions. */
   public getNotificationsCalls: (GetNotificationsParams | undefined)[] = [];
@@ -1222,6 +1225,18 @@ export class InMemoryApiAdapter implements ApiPort {
       id: `device-${this.registeredDevices.length}`,
       registered: true,
     });
+  }
+
+  public lastUnregisterSignal: AbortSignal | undefined;
+  async unregisterDevice(
+    input: UnregisterDeviceInput,
+    signal?: AbortSignal,
+  ): Promise<Result<UnregisterDeviceResult, ApiError>> {
+    this.lastUnregisterSignal = signal;
+    const guard = this.mayFail(undefined);
+    if (!guard.ok) return fail<ApiError>(guard.error);
+    this.unregisteredDevices.push(input);
+    return ok<UnregisterDeviceResult>({ unregistered: true });
   }
 
   // -- Progress / Home (M4 — 06-progress-goals) --
