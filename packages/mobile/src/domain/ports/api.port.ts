@@ -626,10 +626,12 @@ export interface ApiPort extends ReferralsPort {
    * Stop pushes to this device for the signed-in user. Wraps
    * `POST /devices/unregister` with body `{ deviceToken }`. Called on
    * sign-out, before the session is revoked (the request needs the JWT).
-   * Idempotent — an unknown token still succeeds.
+   * Idempotent — an unknown token still succeeds. `signal` aborts the
+   * request (sign-out bounds how long it waits and aborts on give-up).
    */
   unregisterDevice(
     input: UnregisterDeviceInput,
+    signal?: AbortSignal,
   ): Promise<Result<UnregisterDeviceResult, ApiError>>;
 
   // -- Goals --

@@ -1374,10 +1374,12 @@ export class SSTApiAdapter implements ApiPort {
 
   async unregisterDevice(
     input: UnregisterDeviceInput,
+    signal?: AbortSignal,
   ): Promise<Result<UnregisterDeviceResult, ApiError>> {
     return this.requestEnvelope<UnregisterDeviceResult>("/devices/unregister", {
       method: "POST",
       body: { deviceToken: input.token },
+      signal,
     });
   }
 

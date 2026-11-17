@@ -1227,9 +1227,12 @@ export class InMemoryApiAdapter implements ApiPort {
     });
   }
 
+  public lastUnregisterSignal: AbortSignal | undefined;
   async unregisterDevice(
     input: UnregisterDeviceInput,
+    signal?: AbortSignal,
   ): Promise<Result<UnregisterDeviceResult, ApiError>> {
+    this.lastUnregisterSignal = signal;
     const guard = this.mayFail(undefined);
     if (!guard.ok) return fail<ApiError>(guard.error);
     this.unregisteredDevices.push(input);

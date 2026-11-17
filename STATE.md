@@ -28,6 +28,21 @@ Fix:
   never prompts. `usePushNotifications` now clears its registered-for guard
   on sign-out, so signing back into the same account re-registers without a
   relaunch.
+- **Inspector Brad review (PR #537), two leads, both confirmed and fixed:**
+  - Account deletion ended the session without unregistering, and the
+    soft-delete only stamps `deleted_at`. The dispatcher doesn't check
+    `deleted_at`, so a deleted account kept pushing for up to 30 days.
+    `AccountRepository.softDelete` now deactivates all of the user's
+    `user_devices` rows in the same transaction as the stamp. That covers
+    every phone, not just the one the deletion came from. Restoring the
+    account and signing in registers the phone again.
+  - A timed-out sign-out unregister was abandoned but still in flight, still
+    carrying a JWT the server accepts. After a quick sign-back-in to the same
+    account, it could land after the fresh registration and switch pushes
+    off. `unregisterDeviceCommand` now aborts the request (an `AbortSignal`
+    through `ApiPort.unregisterDevice`). It skips the call if it gave up
+    during the token read, and doesn't log the failure of a request it
+    aborted itself.
 - **Not verified on device.** Unit tests only. The fix reaches phones only
   after the core deploy and a new app build.
 
