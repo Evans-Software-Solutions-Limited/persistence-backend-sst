@@ -214,12 +214,12 @@ export const BLC_COPY = {
     accountLabel: "Account",
     paidNote: "Sign in with the same account you used just now.",
     unfinishedHeading: "That checkout wasn't completed.",
-    unfinishedBody:
-      "Nothing was charged. Your Blue Light Card code still works.",
+    unfinishedBody: "Nothing was charged.",
     unreachableHeading: "We can't confirm this just yet.",
     unreachableBody:
       "We can't confirm your payment just yet. Check your email for the receipt, then email us if nothing arrives within a few minutes.",
     openApp: "Open Persistence",
-    backCta: "Back to the offer",
+    /** The offer page is parked (17 Nov 2026), so this leads to /pricing. */
+    backCta: "See our plans",
   },
 } as const;
