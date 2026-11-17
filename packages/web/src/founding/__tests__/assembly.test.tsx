@@ -82,20 +82,17 @@ describe("Blue Light Card routes (PER-3)", () => {
   });
 
   it.each(["/blue-light-card", "/blue-light-card/callback"])(
-    "renders the offer page at %s inside the marketing shell",
+    "redirects the parked offer page at %s to pricing",
     async (route) => {
-      vi.stubGlobal(
-        "fetch",
-        vi.fn(async () => new Response(JSON.stringify({ ok: true }))),
-      );
       renderPage(<App />, { route });
       expect(
-        await screen.findByRole("heading", {
+        await screen.findByRole("heading", { name: "Pricing options" }),
+      ).toBeDefined();
+      expect(
+        screen.queryByRole("heading", {
           name: "A thank-you for the people who show up.",
         }),
-      ).toBeDefined();
-      expect(screen.getByRole("button", { name: "Accept all" })).toBeDefined();
-      vi.unstubAllGlobals();
+      ).toBeNull();
     },
   );
 

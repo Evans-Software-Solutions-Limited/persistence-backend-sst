@@ -10,7 +10,6 @@ import Terms from "./pages/Terms";
 import DeleteAccount from "./pages/DeleteAccount";
 import OrganisationAdmin from "./pages/OrganisationAdmin";
 import FoundingThanks from "./pages/FoundingThanks";
-import BlueLightCard from "./pages/BlueLightCard";
 import BlueLightCardThanks from "./pages/BlueLightCardThanks";
 import FoundingAccess from "./founding/FoundingAccess";
 import RedeemPage from "./redemption/RedeemPage";
@@ -138,14 +137,21 @@ function App() {
           />
           <Route path="/founding/thanks" element={<FoundingThanks />} />
           {/*
-           * Blue Light Card member offer (PER-3). Reached only through the
-           * affiliate link (or a code the visitor already holds), so all three
-           * are noindex and NOT in public/sitemap.xml. `/callback` is where the
-           * Supabase OAuth / email-link sign-in returns to; the page strips the
-           * auth code from the address bar itself.
+           * Blue Light Card member offer (PER-3) — PARKED 17 Nov 2026 (Brad):
+           * the BLC partnership did not go ahead, so the offer page and its
+           * sign-in callback redirect to /pricing. The page, its presenter and
+           * the /blc backend stay in the codebase to restore later; to bring the
+           * page back, point these two routes at `pages/BlueLightCard` again.
+           * `/thanks` stays so a checkout already in flight can still finish.
            */}
-          <Route path="/blue-light-card" element={<BlueLightCard />} />
-          <Route path="/blue-light-card/callback" element={<BlueLightCard />} />
+          <Route
+            path="/blue-light-card"
+            element={<Navigate to="/pricing" replace />}
+          />
+          <Route
+            path="/blue-light-card/callback"
+            element={<Navigate to="/pricing" replace />}
+          />
           <Route
             path="/blue-light-card/thanks"
             element={<BlueLightCardThanks />}
