@@ -1,7 +1,7 @@
 import { Link } from "react-router";
 import { AppStoreCta } from "@/marketing/AppStoreCta";
 import { PlayStoreCta } from "@/marketing/PlayStoreCta";
-import { BLC_COPY, BLC_PATH } from "./blcOffer";
+import { BLC_COPY } from "./blcOffer";
 import "./blc.css";
 
 export type BlcThanksState =
@@ -128,7 +128,9 @@ export function BlueLightCardThanksPresenter(view: BlcThanksView) {
                     ? BLC_COPY.thanks.unfinishedBody
                     : BLC_COPY.thanks.unreachableBody}
                 </p>
-                <Link className="btn btn-line btn-block" to={BLC_PATH}>
+                {/* The offer page is parked (17 Nov 2026), so this goes to
+                    /pricing. Point it back at BLC_PATH when the page returns. */}
+                <Link className="btn btn-line btn-block" to="/pricing">
                   {BLC_COPY.thanks.backCta}
                 </Link>
               </>
