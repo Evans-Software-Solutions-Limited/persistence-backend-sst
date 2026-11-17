@@ -68,9 +68,7 @@ describe("BlueLightCardThanks", () => {
         .getByRole("link", { name: "Get it on Google Play" })
         .getAttribute("href"),
     ).toMatch(/^https:\/\/play\.google\.com\//);
-    expect(
-      screen.queryByRole("link", { name: "Back to the offer" }),
-    ).toBeNull();
+    expect(screen.queryByRole("link", { name: "See our plans" })).toBeNull();
     expect(String(mock.mock.calls[0][0])).toMatch(
       /\/blc\/checkout\/cs_test_1\/status$/,
     );
@@ -205,17 +203,11 @@ describe("BlueLightCardThanks", () => {
     expect(
       await screen.findByText("That checkout wasn't completed."),
     ).toBeDefined();
-    expect(
-      screen.getByText(
-        "Nothing was charged. Your Blue Light Card code still works.",
-      ),
-    ).toBeDefined();
+    expect(screen.getByText("Nothing was charged.")).toBeDefined();
     expect(screen.queryByRole("link", { name: "Open Persistence" })).toBeNull();
     expect(
-      screen
-        .getByRole("link", { name: "Back to the offer" })
-        .getAttribute("href"),
-    ).toBe("/blue-light-card");
+      screen.getByRole("link", { name: "See our plans" }).getAttribute("href"),
+    ).toBe("/pricing");
   });
 
   it("does not tell a paying buyer nothing was charged when OUR api is down", async () => {
@@ -226,9 +218,7 @@ describe("BlueLightCardThanks", () => {
     ).toBeDefined();
     expect(screen.queryByText(/nothing was charged/i)).toBeNull();
     expect(screen.queryByText("You're in.")).toBeNull();
-    expect(
-      screen.getByRole("link", { name: "Back to the offer" }),
-    ).toBeDefined();
+    expect(screen.getByRole("link", { name: "See our plans" })).toBeDefined();
   });
 
   it("retries a transient failure but not an unknown session", async () => {
