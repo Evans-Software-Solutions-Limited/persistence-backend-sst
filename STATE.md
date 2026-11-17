@@ -55,6 +55,15 @@ Fix:
     token can register it and silence the victim's pushes, but only until
     the victim's next launch re-registers it. A real proof of possession
     would need a device-signed challenge; not done.
+- **CI fix (already broken on `main`):** "Unit Tests & Coverage" failed twice
+  with "runner received a shutdown signal" right after
+  `trainerRepository.test.ts`. The next file, `voucher.integration.test.ts`,
+  created a new PGlite for each of its 86 tests, and closing them didn't
+  free the WASM memory: 13.6 GB peak RSS, killed at test 68–69, the same on
+  `main` (adb284c). It now shares one PGlite for the file and drops and
+  rebuilds `public` before each test: 1.1 GB peak, 86/86, also passing with
+  the test order shuffled (seeds 1 and 42). Other files that create a
+  PGlite per test have the same pattern but aren't failing.
 - **Not verified on device.** Unit tests only. The fix reaches phones only
   after the core deploy and a new app build.
 

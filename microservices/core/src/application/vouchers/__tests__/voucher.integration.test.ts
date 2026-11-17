@@ -1,6 +1,14 @@
 import { GRANTABLE_TIERS } from "@persistence/subscription-catalog";
 import { FoundingGrantService } from "../../founding/foundingGrantService";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
 import * as schema from "@persistence/db/schema";
@@ -38,8 +46,21 @@ const input: BatchInput = {
   allowedDomains: [],
   redeemBy: null,
 };
-beforeEach(async () => {
+// ONE PGlite for the file, with a freshly built schema before every test.
+// A new PGlite per test (closed in afterEach) did not give its WASM memory
+// back: this file's 86 tests climbed past 13 GB RSS and killed the 16 GB CI
+// runner partway through the core suite. Dropping and rebuilding `public`
+// keeps each test's isolation exactly as before (the setup below and the
+// four migrations only create objects in `public`). Same reuse pattern as
+// together/__tests__/production.integration.test.ts.
+beforeAll(async () => {
   pg = await PGlite.create();
+});
+afterAll(async () => {
+  await pg.close();
+});
+beforeEach(async () => {
+  await pg.exec("DROP SCHEMA public CASCADE; CREATE SCHEMA public;");
   vi.mocked(getDb).mockReturnValue(drizzle(pg, { schema }) as never);
   await pg.exec(`
       CREATE TABLE profiles (
@@ -97,9 +118,6 @@ beforeEach(async () => {
   }));
   repo = new VoucherRepository();
   service = new VoucherService(repo, identity, mailer);
-});
-afterEach(async () => {
-  await pg.close();
 });
 async function issue(overrides: Partial<BatchInput> = {}) {
   return repo.create({ ...input, ...overrides }, ADMIN);
