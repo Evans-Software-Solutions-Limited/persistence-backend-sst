@@ -43,6 +43,18 @@ Fix:
     through `ApiPort.unregisterDevice`). It skips the call if it gave up
     during the token read, and doesn't log the failure of a request it
     aborted itself.
+- **Second Inspector Brad sweep, two more leads:**
+  - Confirmed and fixed: deactivating on soft-delete wasn't enough. A phone
+    still signed in to the deleted account re-registers on its next launch,
+    and register doesn't check `deleted_at`. `listActiveTokens`, the push
+    send path's only device lookup, now joins `profiles` and returns nothing
+    while `deleted_at` is set. Restoring the account clears it, and pushes
+    resume.
+  - Accepted as a known risk, comment corrected: the take-over can't prove
+    the caller's device minted the token. Someone who knows a victim's Expo
+    token can register it and silence the victim's pushes, but only until
+    the victim's next launch re-registers it. A real proof of possession
+    would need a device-signed challenge; not done.
 - **Not verified on device.** Unit tests only. The fix reaches phones only
   after the core deploy and a new app build.
 

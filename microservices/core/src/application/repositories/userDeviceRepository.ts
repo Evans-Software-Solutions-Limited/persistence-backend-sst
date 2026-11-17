@@ -1,6 +1,6 @@
-import { userDevices, type UserDevice } from "@persistence/db";
+import { profiles, userDevices, type UserDevice } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
-import { and, eq, ne, sql } from "drizzle-orm";
+import { and, eq, isNull, ne, sql } from "drizzle-orm";
 
 /**
  * Platform identifiers accepted by `POST /devices/register`. Mirrors
@@ -56,9 +56,17 @@ export class UserDeviceRepository {
    *
    * This is the one write in this repository that touches rows outside
    * `userId`. It is deliberately narrow: it can only flip `is_active` to
-   * false, only for the exact token the caller has just proved it holds
-   * (the token is minted on the caller's device), and never reads or
-   * returns another user's data.
+   * false, only for the token in the request, and never reads or returns
+   * another user's data.
+   *
+   * Known, accepted risk: the server can't prove the caller's device minted
+   * the token. It is just a string in the body. Someone who learns a
+   * victim's Expo push token (a screenshot, logs, a debug build) can
+   * register it, which switches off the victim's row and sends the caller's
+   * own pushes to the victim's phone. That only lasts until the victim's
+   * next app launch, which re-registers the token and takes it back. Before
+   * this take-over, a forged registration could still send the caller's
+   * pushes to the victim's phone; it just couldn't silence the victim's.
    *
    * Spec: specs/09-notifications-social/design.md § Backend endpoints
    *       > POST /devices/register.
@@ -153,6 +161,13 @@ export class UserDeviceRepository {
    * matches only rows explicitly `true`, so a NULL row (legacy / manual insert)
    * is treated as not-targetable rather than silently pushed to.
    *
+   * A soft-deleted account (`profiles.deleted_at` set, inside its 30-day
+   * window) gets no devices at all. `softDelete` switches its rows off, but
+   * any phone still signed in to it re-registers on its next launch. Gating
+   * here, the push send path's only device lookup, keeps a deleted account
+   * silent however its rows got switched back on. Restoring the account
+   * clears `deleted_at`, and pushes resume.
+   *
    * Spec: specs/09-notifications-social/design.md § ADDENDUM 2026-06-29.
    */
   async listActiveTokens(userId: string): Promise<ActiveDeviceToken[]> {
@@ -163,8 +178,13 @@ export class UserDeviceRepository {
         platform: userDevices.platform,
       })
       .from(userDevices)
+      .innerJoin(profiles, eq(profiles.id, userDevices.userId))
       .where(
-        and(eq(userDevices.userId, userId), eq(userDevices.isActive, true)),
+        and(
+          eq(userDevices.userId, userId),
+          eq(userDevices.isActive, true),
+          isNull(profiles.deletedAt),
+        ),
       );
     return rows.map((row) => ({
       deviceToken: row.deviceToken,

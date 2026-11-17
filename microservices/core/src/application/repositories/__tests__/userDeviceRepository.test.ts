@@ -21,10 +21,11 @@ function makeSelectChain(resolvedValue: unknown) {
   return { from: vi.fn().mockReturnValue({ where }) };
 }
 
-// `listActiveTokens` resolves directly off `.where(...)` (no `.limit`).
+// `listActiveTokens`: `.from(...).innerJoin(...).where(...)` (no `.limit`).
 function makeListChain(resolvedValue: unknown) {
   const where = vi.fn().mockResolvedValue(resolvedValue);
-  return { from: vi.fn().mockReturnValue({ where }) };
+  const innerJoin = vi.fn().mockReturnValue({ where });
+  return { from: vi.fn().mockReturnValue({ innerJoin }), innerJoin, where };
 }
 
 // `deactivateToken`: `.update(...).set(...).where(...)`.
@@ -255,6 +256,29 @@ describe("UserDeviceRepository.listActiveTokens", () => {
       { deviceToken: "ExponentPushToken[a]", platform: "ios" },
       { deviceToken: "ExponentPushToken[b]", platform: "android" },
     ]);
+  });
+
+  it("only targets active rows of the user, and nothing while the account is soft-deleted", async () => {
+    // A deleted account's rows can be switched back on by a phone still
+    // signed in to it re-registering; the lookup itself must stay silent.
+    const chain = makeListChain([]);
+    (getDb as any).mockReturnValue({ select: vi.fn().mockReturnValue(chain) });
+
+    const { UserDeviceRepository } = await import("../userDeviceRepository");
+    const { profiles } = await import("@persistence/db");
+    const { PgDialect } = await import("drizzle-orm/pg-core");
+    await new UserDeviceRepository().listActiveTokens("user-1");
+
+    const dialect = new PgDialect();
+    expect(chain.innerJoin.mock.calls[0][0]).toBe(profiles);
+    expect(dialect.sqlToQuery(chain.innerJoin.mock.calls[0][1]).sql).toBe(
+      '"profiles"."id" = "user_devices"."user_id"',
+    );
+    const where = dialect.sqlToQuery(chain.where.mock.calls[0][0]);
+    expect(where.sql).toBe(
+      '("user_devices"."user_id" = $1 and "user_devices"."is_active" = $2 and "profiles"."deleted_at" is null)',
+    );
+    expect(where.params).toEqual(["user-1", true]);
   });
 
   it("returns an empty array when the user has no active devices", async () => {
