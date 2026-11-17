@@ -69,3 +69,12 @@ Brad builds the app himself after merging. Never start a native, prebuild, EAS
 or mobile build unless he explicitly authorises that specific build. A ticket
 mentioning a future build/release is not authorisation. Likewise, planning a
 campaign or social post does not authorise sending/publishing it.
+
+For any App Store or Google Play release work (release notes, subscription
+metadata, review notes, store checks), Claude loads the
+`persistence-store-release` skill first and follows its checklist. Agents
+without that skill follow its key rules: release notes mention only their own
+platform (no Android in App Store text, no iOS in Play text; Apple rejects it
+under Guideline 2.3.10), shortened subscription copy is confirmed with Brad,
+every saved price is read back, and Brad presses the final submit and rollout
+buttons unless he says otherwise in chat.
