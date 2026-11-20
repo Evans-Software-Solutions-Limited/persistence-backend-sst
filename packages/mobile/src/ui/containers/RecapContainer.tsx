@@ -74,7 +74,17 @@ export function streakText(streaks: readonly Streak[]): string {
 /** Every Y4 page with data, in canvas order. */
 export function recapPages(
   model: RecapModel,
-  p: { now: Date; unit: WeightUnit; streak: string },
+  p: {
+    now: Date;
+    unit: WeightUnit;
+    streak: string;
+    /**
+     * False when the period before isn't fully on the phone: comparing
+     * against a part-kept window ("2 more than last week") would mislead,
+     * so the line is left out.
+     */
+    compare?: boolean;
+  },
 ): RecapPage[] {
   const eb = periodLabel(model.period, p.now);
   const vol = volumeShort(model.totals.volumeKg, p.unit).split(" ");
@@ -85,7 +95,7 @@ export function recapPages(
       eyebrow: eb,
       big: String(model.totals.workouts),
       unit: "workouts",
-      sub: comparison(model, p.now),
+      sub: p.compare === false ? "" : comparison(model, p.now),
       trio: [
         { value: volumeShort(model.totals.volumeKg, p.unit), label: "Volume" },
         { value: hoursMinutes(model.totals.durationSeconds), label: "Time" },
@@ -205,7 +215,10 @@ export function RecapContainer({
   );
   const log = useTrainingLog(userId, range);
 
-  const partial = needsRemote(log.since, recapWindow(period, now).from);
+  // Ask the server (BE-H1) when the period or the one before it starts
+  // before the phone's log.
+  const partial = needsRemote(log.since, previousRecapWindow(period, now).from);
+  const currentPartial = needsRemote(log.since, recapWindow(period, now).from);
   const [remoteState, setRemoteState] = useState<{
     period: RecapPeriod;
     ok: boolean;
@@ -221,6 +234,11 @@ export function RecapContainer({
     };
   }, [remote, period, partial]);
 
+  const remoteOk = remoteState?.period === period && remoteState.ok;
+  // The comparison needs the whole period before on the phone, or the
+  // server's answer for it.
+  const previousCovered =
+    !needsRemote(log.since, previousRecapWindow(period, now).from) || remoteOk;
   const pages = useMemo(
     () =>
       recapPages(
@@ -231,19 +249,23 @@ export function RecapContainer({
           records: log.records,
           musclesOf: log.musclesOf,
         }),
-        { now, unit, streak: streakText(streaks.data ?? []) },
+        {
+          now,
+          unit,
+          streak: streakText(streaks.data ?? []),
+          compare: previousCovered,
+        },
       ),
-    [period, now, log, unit, streaks.data],
+    [period, now, log, unit, streaks.data, previousCovered],
   );
 
-  const remoteOk = remoteState?.period === period && remoteState.ok;
   return (
     <RecapPresenter
       period={period}
       pages={pages}
       gender={gender}
       coverageNote={
-        partial && !remoteOk && log.since
+        currentPartial && !remoteOk && log.since
           ? `From ${dayMonth(log.since)}, when this phone started keeping your history.`
           : null
       }

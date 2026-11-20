@@ -8,7 +8,7 @@ import { ok } from "@/shared/errors";
 import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import type { RecapPresenterProps } from "@/ui/presenters/RecapPresenter";
-import { buildRecap } from "@/domain/services/youPage";
+import { buildRecap, recapWindow } from "@/domain/services/youPage";
 import {
   musclesOf,
   record,
@@ -225,6 +225,32 @@ describe("recapPages", () => {
     expect(pages.find((p) => p.id === "together")).toMatchObject({ sub: "" });
   });
 
+  it("leaves the comparison out when told the period before is part-kept", () => {
+    const model = buildRecap({
+      period: "week",
+      now: NOW,
+      sessions: [week],
+      records: [],
+      musclesOf,
+    });
+    expect(
+      recapPages(model, {
+        now: NOW,
+        unit: "kg",
+        streak: "—",
+        compare: false,
+      })[0],
+    ).toMatchObject({ sub: "" });
+    expect(
+      recapPages(model, {
+        now: NOW,
+        unit: "kg",
+        streak: "—",
+        compare: true,
+      })[0],
+    ).toMatchObject({ sub: "1 more than last week" });
+  });
+
   it("shows each record in its own unit (Inspector Brad #541)", () => {
     const model = buildRecap({
       period: "week",
@@ -336,6 +362,45 @@ describe("RecapContainer", () => {
     act(() => mockProbe.last!.onClose());
     expect(mockBack).toHaveBeenCalled();
     share.mockRestore();
+  });
+
+  it("compares only against a period before that the phone fully kept (Inspector Brad #541)", async () => {
+    const { storage, adapters } = makeAdapters();
+    const remote: YouRemoteSource = {
+      historyMonth: jest.fn(),
+      recap: jest.fn(async () => ({ status: "unavailable" as const })),
+    };
+    // The log started mid last week: this week is covered, last week isn't.
+    const thisWeek = recapWindow("week", new Date()).from;
+    storage.markTrainingLogSince(
+      "user-1",
+      new Date(thisWeek.getTime() - 2 * 86_400_000).toISOString(),
+    );
+    const r = render(
+      <AdapterProvider adapters={adapters}>
+        <RecapContainer remote={remote} />
+      </AdapterProvider>,
+    );
+    await waitFor(() => expect(remote.recap).toHaveBeenCalledWith("week"));
+    await waitFor(() => expect(mockProbe.last).not.toBeNull());
+    expect(mockProbe.last!.coverageNote).toBeNull();
+    expect(mockProbe.last!.pages[0]).toMatchObject({ sub: "" });
+    r.unmount();
+
+    // A log kept long before both windows compares as normal.
+    const { storage: s2, adapters: a2 } = makeAdapters();
+    s2.markTrainingLogSince("user-1", "2020-01-01T00:00:00.000Z");
+    mockProbe.last = null;
+    render(
+      <AdapterProvider adapters={a2}>
+        <RecapContainer remote={remote} />
+      </AdapterProvider>,
+    );
+    await waitFor(() => expect(mockProbe.last).not.toBeNull());
+    expect(mockProbe.last!.coverageNote).toBeNull();
+    expect(mockProbe.last!.pages[0]).toMatchObject({
+      sub: "Same as last week",
+    });
   });
 
   it("drops the coverage note once BE-H1 answers", async () => {
