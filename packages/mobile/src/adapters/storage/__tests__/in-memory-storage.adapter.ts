@@ -43,6 +43,7 @@ import type {
   EnqueueMutationInput,
   RecentSetEntry,
   RecordResponseSummary,
+  RecordResponseSummaryPR,
   RestTimerState,
 } from "@/domain/ports/storage.port";
 import type {
@@ -1105,6 +1106,8 @@ export class InMemoryStorageAdapter implements StoragePort {
     if (saved.status !== "completed" || saved.withClient) return;
     const serverId =
       saved.together?.historyId ?? this.trainingLogIds.get(saved.id);
+    if (saved.together?.historyId && saved.together.historyId !== saved.id)
+      this.trainingLogIds.set(saved.id, saved.together.historyId);
     const session =
       serverId && serverId !== saved.id
         ? {
@@ -1212,7 +1215,36 @@ export class InMemoryStorageAdapter implements StoragePort {
     this.recordResponses.delete(userId);
   }
 
+  private trainingLogRecords = new Map<
+    string,
+    { userId: string; records: RecordResponseSummaryPR[] }
+  >();
+
+  getTrainingLogRecords(
+    userId: string,
+    sessionIds: readonly string[],
+  ): Record<string, RecordResponseSummaryPR[]> {
+    const out: Record<string, RecordResponseSummaryPR[]> = {};
+    const wanted = new Set(sessionIds);
+    const owner = new Map<string, string>(sessionIds.map((id) => [id, id]));
+    for (const [local, server] of this.trainingLogIds)
+      if (wanted.has(server)) owner.set(local, server);
+    for (const [key, id] of owner) {
+      const row = this.trainingLogRecords.get(key);
+      if (!row || row.userId !== userId) continue;
+      if (out[id] && key !== id) continue;
+      out[id] = JSON.parse(JSON.stringify(row.records));
+    }
+    return out;
+  }
+
   cacheRecordResponse(userId: string, response: RecordResponseSummary): void {
+    const prior = this.trainingLogRecords.get(response.localSessionId);
+    if (!prior || prior.userId === userId)
+      this.trainingLogRecords.set(response.localSessionId, {
+        userId,
+        records: JSON.parse(JSON.stringify(response.personalRecords)),
+      });
     // Deep-clone so tests can mutate the returned object without
     // poisoning the cache. Matches the cloneSession pattern used for
     // active_sessions above.
@@ -1531,6 +1563,7 @@ export class InMemoryStorageAdapter implements StoragePort {
     this.trainingLog.clear();
     this.trainingLogSince.clear();
     this.trainingLogIds.clear();
+    this.trainingLogRecords.clear();
     this.metadata.clear();
     this.exerciseCache.clear();
     this.referenceLists.clear();

@@ -79,6 +79,43 @@ describe("useTrainingLog", () => {
     expect(result.current.sessions.map((s) => s.id)).toEqual(["new"]);
   });
 
+  it("dates each workout's own records by its finish (Inspector Brad #541)", () => {
+    const storage = new InMemoryStorageAdapter();
+    const w = finished("w1", "2026-10-03T07:00:00.000Z", { bench: [[100, 5]] });
+    storage.saveTrainingLogEntry("u1", w);
+    storage.cacheRecordResponse("u1", {
+      localSessionId: "w1",
+      personalRecords: [
+        {
+          exerciseId: "bench",
+          exerciseName: "Bench",
+          recordType: "max_weight",
+          newValue: 100,
+          previousValue: 95,
+          setId: "s1",
+        },
+      ],
+      workoutsThisMonth: 1,
+      cachedAt: "x",
+    });
+    const { result } = renderHook(() => useTrainingLog("u1"), {
+      wrapper: wrap(storage),
+    });
+    expect(result.current.records).toEqual([
+      {
+        id: "w1:bench:max_weight",
+        userId: "u1",
+        exerciseId: "bench",
+        exerciseName: "Bench",
+        recordType: "max_weight",
+        value: 100,
+        achievedAt: w.completedAt,
+        sessionId: "w1",
+        setId: "s1",
+      },
+    ]);
+  });
+
   it("is empty when signed out", () => {
     const storage = new InMemoryStorageAdapter();
     const { result } = renderHook(() => useTrainingLog(null), {

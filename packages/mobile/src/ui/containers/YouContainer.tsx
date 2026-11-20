@@ -6,7 +6,6 @@ import { useAuth } from "@/ui/hooks/useAuth";
 import { useProfilePage } from "@/ui/hooks/useProfilePage";
 import { useGetAchievements } from "@/ui/hooks/useGetAchievements";
 import { useGetBodyMeasurements } from "@/ui/hooks/useGetBodyMeasurements";
-import { useGetPRHistory } from "@/ui/hooks/useGetPRHistory";
 import { useHealthData } from "@/ui/hooks/useHealthData";
 import { useHealthWeightSync } from "@/ui/hooks/useHealthWeightSync";
 import { useClientRelationships } from "@/ui/hooks/useClientRelationships";
@@ -170,7 +169,6 @@ export function YouContainer({
   const fullName = profile.payload?.profile.fullName ?? null;
   const achievements = useGetAchievements();
   const body = useGetBodyMeasurements(30);
-  const prs = useGetPRHistory();
   const health = useHealthData();
   const relationships = useClientRelationships();
   // The 7-day window moves with the date; the log reads only that window.
@@ -194,10 +192,8 @@ export function YouContainer({
   useEffect(() => {
     if (weekPartial) void remote.lastSevenDays();
   }, [remote, weekPartial]);
-  const records = useMemo(
-    () => prs.data ?? log.records,
-    [prs.data, log.records],
-  );
+  // Each workout's own records (the PR cache keeps only the latest best).
+  const records = log.records;
 
   const week = useMemo(() => {
     const w = window7;
@@ -335,7 +331,6 @@ export function YouContainer({
   const refreshAchievements = achievements.refresh;
   const refreshBody = body.refresh;
   const reloadBody = body.reload;
-  const refreshPRs = prs.refresh;
   const refreshHealth = health.refresh;
   const refreshRelationships = relationships.refresh;
   const reloadLog = log.reload;
@@ -344,7 +339,6 @@ export function YouContainer({
     void Promise.all([
       refreshAchievements(),
       refreshBody(),
-      refreshPRs(),
       refreshHealth(),
       refreshRelationships(),
     ]);
@@ -352,7 +346,6 @@ export function YouContainer({
     reloadLog,
     refreshAchievements,
     refreshBody,
-    refreshPRs,
     refreshHealth,
     refreshRelationships,
   ]);
@@ -365,14 +358,7 @@ export function YouContainer({
       reloadBody();
       void refreshRelationships({ silent: true });
       void refreshAchievements({ silent: true });
-      void refreshPRs({ silent: true });
-    }, [
-      reloadLog,
-      reloadBody,
-      refreshRelationships,
-      refreshAchievements,
-      refreshPRs,
-    ]),
+    }, [reloadLog, reloadBody, refreshRelationships, refreshAchievements]),
   );
 
   return (

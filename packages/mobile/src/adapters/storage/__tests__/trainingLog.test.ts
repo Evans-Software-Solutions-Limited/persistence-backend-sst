@@ -19,6 +19,8 @@ function sqliteAdapter(): { adapter: StoragePort; db: DatabaseSync } {
     );
     CREATE TABLE training_log_since (user_id TEXT PRIMARY KEY, since TEXT NOT NULL);
     CREATE TABLE training_log_ids (local_id TEXT PRIMARY KEY, server_id TEXT NOT NULL);
+    CREATE TABLE training_log_records (session_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, payload TEXT NOT NULL);
+    CREATE TABLE record_responses (user_id TEXT PRIMARY KEY, payload TEXT NOT NULL, cached_at TEXT NOT NULL);
     CREATE TABLE active_sessions (id TEXT PRIMARY KEY);
     CREATE TABLE session_exercises (session_id TEXT);
     CREATE TABLE personal_records (session_id TEXT);
@@ -199,6 +201,58 @@ describe.each([
     } finally {
       jest.useRealTimers();
     }
+  });
+
+  it("keeps every workout's own records, even for a lift beaten twice (Inspector Brad #541)", () => {
+    const pr = (newValue: number) => ({
+      exerciseId: "bench",
+      exerciseName: "Bench",
+      recordType: "max_weight" as const,
+      newValue,
+      previousValue: newValue - 5,
+      setId: "set",
+    });
+    const respond = (
+      localSessionId: string,
+      records: ReturnType<typeof pr>[],
+    ) =>
+      s.cacheRecordResponse("u1", {
+        localSessionId,
+        personalRecords: records,
+        workoutsThisMonth: 1,
+        cachedAt: "x",
+      });
+    // 3 Oct: summary saves, then the sync reply caches records and links ids.
+    s.saveTrainingLogEntry("u1", finished("local-a", 3));
+    respond("local-a", [pr(100)]);
+    s.linkTrainingLogSessionId("local-a", "srv-a");
+    // 24 Oct: the same lift beaten again.
+    s.saveTrainingLogEntry("u1", finished("local-b", 24));
+    respond("local-b", [pr(105)]);
+    s.linkTrainingLogSessionId("local-b", "srv-b");
+    // A Together workout: its response names the local id, the log keeps
+    // the confirmed history id.
+    s.saveTrainingLogEntry(
+      "u1",
+      finished("local-t", 25, {
+        together: { sessionId: "t", executionId: "x", historyId: "srv-t" },
+      }),
+    );
+    respond("local-t", [pr(110)]);
+
+    const got = s.getTrainingLogRecords("u1", [
+      "srv-a",
+      "srv-b",
+      "srv-t",
+      "none",
+    ]);
+    expect(got["srv-a"]!.map((r) => r.newValue)).toEqual([100]);
+    expect(got["srv-b"]!.map((r) => r.newValue)).toEqual([105]);
+    expect(got["srv-t"]!.map((r) => r.newValue)).toEqual([110]);
+    expect(got.none).toBeUndefined();
+    // Never another user's records.
+    expect(s.getTrainingLogRecords("u2", ["srv-a"])).toEqual({});
+    expect(s.getTrainingLogRecords("u1", [])).toEqual({});
   });
 
   it("stamps when the log started, once", () => {

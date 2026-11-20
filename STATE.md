@@ -46,7 +46,7 @@ no native packages, permissions, config plugins or version bump.
   "an upper day sorts it"; "No lifts in the last 7 days."; the History and
   Recap coverage lines. History's Y2b has no effort chip, because the rating
   isn't stored with the workout.
-- **Inspector Brad on #541, six sweeps, 11 leads, all confirmed and fixed:**
+- **Inspector Brad on #541, seven sweeps, 12 leads, all confirmed and fixed:**
   - Date-only body-trend days were parsed as UTC midnight, so west of UTC
     they landed on the wrong day. `toLocalDate` and `dayKey` now treat
     `YYYY-MM-DD` as a local day.
@@ -75,6 +75,12 @@ no native packages, permissions, config plugins or version bump.
   - Y1 now asks the seam (`lastSevenDays`) when its week starts before the
     log, like History and Recap. No coverage note on Y1: the canvas has
     none, and the short first week is the agreed start-empty behaviour.
+  - The PR cache (and the server's PR table) keep only each lift's latest
+    best, so a lift beaten twice lost its earlier record in Recap and
+    History. Each workout's own records are now kept from its record
+    response in `training_log_records` (written by `cacheRecordResponse`,
+    solo and Together). `useTrainingLog` builds its records from those,
+    and the You page no longer reads `useGetPRHistory`.
 - **Tests:** credit table tests, You-page builders, both storage adapters on
   real SQLite (`node:sqlite`), presenters (trained, new user, rest day,
   offline), containers.

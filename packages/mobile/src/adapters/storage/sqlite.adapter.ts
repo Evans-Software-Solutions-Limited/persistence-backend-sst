@@ -66,6 +66,7 @@ import type {
   EnqueueMutationInput,
   RecentSetEntry,
   RecordResponseSummary,
+  RecordResponseSummaryPR,
   RestTimerState,
   SyncQueueEntry,
   DeferKind,
@@ -752,6 +753,13 @@ ${indentSyncQueueDdl(8)}
       CREATE TABLE IF NOT EXISTS training_log_ids (
         local_id TEXT PRIMARY KEY,
         server_id TEXT NOT NULL
+      );
+      -- Each workout's own personal records, keyed by the id its record
+      -- response named (local or server); see getTrainingLogRecords.
+      CREATE TABLE IF NOT EXISTS training_log_records (
+        session_id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        payload TEXT NOT NULL
       );
       CREATE TABLE IF NOT EXISTS training_log_since (
         user_id TEXT PRIMARY KEY,
@@ -3140,6 +3148,12 @@ ${indentSyncQueueDdl(12)}
     // A Together finish never goes through POST /sessions/record: its
     // confirmed server id arrives as `together.historyId` instead.
     const serverId = saved.together?.historyId ?? linked?.server_id;
+    if (saved.together?.historyId && saved.together.historyId !== saved.id)
+      this.getDb().runSync(
+        `INSERT OR REPLACE INTO training_log_ids (local_id, server_id)
+         VALUES (?, ?)`,
+        [saved.id, saved.together.historyId],
+      );
     const session =
       serverId && serverId !== saved.id
         ? renameSession(saved, saved.id, serverId)
@@ -3206,6 +3220,38 @@ ${indentSyncQueueDdl(12)}
       JSON.stringify(renamed),
       localId,
     ]);
+  }
+
+  getTrainingLogRecords(
+    userId: string,
+    sessionIds: readonly string[],
+  ): Record<string, RecordResponseSummaryPR[]> {
+    const out: Record<string, RecordResponseSummaryPR[]> = {};
+    if (!sessionIds.length) return out;
+    const db = this.getDb();
+    const marks = sessionIds.map(() => "?").join(", ");
+    // Every id a logged workout's records may sit under: its own, and the
+    // local ids linked to it.
+    const aliases = db.getAllSync(
+      `SELECT local_id, server_id FROM training_log_ids
+       WHERE server_id IN (${marks})`,
+      [...sessionIds],
+    ) as { local_id: string; server_id: string }[];
+    const owner = new Map<string, string>(sessionIds.map((id) => [id, id]));
+    for (const a of aliases) owner.set(a.local_id, a.server_id);
+    const keys = [...owner.keys()];
+    const rows = db.getAllSync(
+      `SELECT session_id, payload FROM training_log_records
+       WHERE user_id = ? AND session_id IN (${keys.map(() => "?").join(", ")})`,
+      [userId, ...keys],
+    ) as { session_id: string; payload: string }[];
+    for (const row of rows) {
+      const id = owner.get(row.session_id)!;
+      // A server-keyed answer wins over the local one for the same workout.
+      if (out[id] && row.session_id !== id) continue;
+      out[id] = JSON.parse(row.payload) as RecordResponseSummaryPR[];
+    }
+    return out;
   }
 
   getTrainingLog(
@@ -3395,6 +3441,19 @@ ${indentSyncQueueDdl(12)}
 
   cacheRecordResponse(userId: string, response: RecordResponseSummary): void {
     const db = this.getDb();
+    // PER-141: keep this workout's records with it (the PR cache keeps only
+    // each lift's latest best).
+    db.runSync(
+      `INSERT INTO training_log_records (session_id, user_id, payload)
+       VALUES (?, ?, ?)
+       ON CONFLICT(session_id) DO UPDATE SET payload = excluded.payload
+       WHERE training_log_records.user_id = excluded.user_id`,
+      [
+        response.localSessionId,
+        userId,
+        JSON.stringify(response.personalRecords),
+      ],
+    );
     db.runSync(
       `INSERT INTO record_responses (user_id, payload, cached_at)
        VALUES (?, ?, ?)
@@ -3906,6 +3965,7 @@ ${indentSyncQueueDdl(12)}
       DELETE FROM training_log;
       DELETE FROM training_log_since;
       DELETE FROM training_log_ids;
+      DELETE FROM training_log_records;
     `);
   }
 }

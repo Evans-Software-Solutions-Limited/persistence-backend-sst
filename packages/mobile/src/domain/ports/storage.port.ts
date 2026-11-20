@@ -832,6 +832,19 @@ export interface StoragePort {
    */
   linkTrainingLogSessionId(localId: string, serverId: string): void;
 
+  /**
+   * Each workout's own personal records, from its `/sessions/record` (or
+   * Together) response, keyed by the logged workout id. The PR cache keeps
+   * only the latest best per lift, so a lift beaten twice loses its earlier
+   * record there; these lists keep every record with the workout that set
+   * it. Written by `cacheRecordResponse`; a local id resolves to its
+   * linked server id.
+   */
+  getTrainingLogRecords(
+    userId: string,
+    sessionIds: readonly string[],
+  ): Record<string, RecordResponseSummaryPR[]>;
+
   /** Finished workouts started in [from, to] (ISO), oldest first. */
   getTrainingLog(
     userId: string,

@@ -81,6 +81,29 @@ function makeAdapters() {
   };
 }
 
+/** A record response, as the sync drain caches it for a finished workout. */
+function respond(
+  storage: InMemoryStorageAdapter,
+  localSessionId: string,
+  exerciseId: string,
+) {
+  storage.cacheRecordResponse("user-1", {
+    localSessionId,
+    personalRecords: [
+      {
+        exerciseId,
+        exerciseName: exerciseId,
+        recordType: "1rm",
+        newValue: 100,
+        previousValue: 95,
+        setId: "s1",
+      },
+    ],
+    workoutsThisMonth: 1,
+    cachedAt: "x",
+  });
+}
+
 describe("HistoryWorkoutContainer (Y2b)", () => {
   beforeEach(() => {
     mockProbe.pages = null;
@@ -104,13 +127,9 @@ describe("HistoryWorkoutContainer (Y2b)", () => {
         { name: "Upper A" },
       ),
     );
-    storage.cachePersonalRecords("user-1", [
-      record("bench", "2026-10-26T07:30:00.000Z", {
-        sessionId: "w1",
-        exerciseName: "Bench",
-      }),
-      record("squat", "2026-10-01T07:30:00.000Z", { sessionId: "other" }),
-    ]);
+    // Each workout's own records arrive with its record response.
+    respond(storage, "w1", "bench");
+    respond(storage, "other", "squat");
     mockParams.id = "w1";
     const share = jest
       .spyOn(Share, "share")
@@ -160,9 +179,7 @@ describe("HistoryWorkoutContainer (Y2b)", () => {
       "user-1",
       finished("local-9", startedAt, { bench: [[95, 5]] }, { name: "Upper A" }),
     );
-    storage.cachePersonalRecords("user-1", [
-      record("bench", startedAt, { sessionId: "local-9" }),
-    ]);
+    respond(storage, "local-9", "bench");
     mockParams.id = "local-9";
     mockParams.at = startedAt;
     render(
@@ -176,7 +193,7 @@ describe("HistoryWorkoutContainer (Y2b)", () => {
     // Clear the probe: only a fresh render of the carousel may refill it.
     mockProbe.pages = null;
     act(() => {
-      storage.swapLocalSessionId("local-9", "srv-9");
+      storage.linkTrainingLogSessionId("local-9", "srv-9");
       listeners.forEach((cb) => cb());
     });
     expect(storage.getTrainingLogEntry("user-1", "local-9")).toBeNull();

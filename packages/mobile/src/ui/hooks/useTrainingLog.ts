@@ -3,6 +3,7 @@ import type { Exercise } from "@/domain/models/exercise";
 import type { PersonalRecord } from "@/domain/models/record";
 import type { WorkoutSession } from "@/domain/models/session";
 import type { ReferenceEntry } from "@/domain/models/reference-list";
+import type { RecordResponseSummaryPR } from "@/domain/ports/storage.port";
 import type { MusclesOf } from "@/domain/services/youPage";
 import { resolveMuscles } from "@/domain/services/workoutSummary";
 import { TRAINING_LOG_TABLES } from "@/adapters/storage/tables";
@@ -39,10 +40,35 @@ export function musclesLookup(
   };
 }
 
+/** Each workout's own records as `PersonalRecord`s dated by its finish. */
+export function workoutRecords(
+  userId: string,
+  sessions: readonly WorkoutSession[],
+  bySession: Readonly<Record<string, readonly RecordResponseSummaryPR[]>>,
+): PersonalRecord[] {
+  return sessions.flatMap((s) =>
+    (bySession[s.id] ?? []).map((r) => ({
+      id: `${s.id}:${r.exerciseId}:${r.recordType}`,
+      userId,
+      exerciseId: r.exerciseId,
+      exerciseName: r.exerciseName,
+      recordType: r.recordType,
+      value: r.newValue,
+      achievedAt: s.completedAt ?? s.startedAt,
+      sessionId: s.id,
+      setId: r.setId ?? null,
+    })),
+  );
+}
+
 export type TrainingLogState = {
   /** Finished workouts in the requested window (all when none), oldest first. */
   sessions: WorkoutSession[];
-  /** Cached personal records (for gold top lifts and History's ★). */
+  /**
+   * The personal records each loaded workout set (gold top lifts,
+   * History's ★, Y2b's records page, Recap's PR count), one per record in
+   * that workout's own response: not the latest-best PR cache.
+   */
   records: PersonalRecord[];
   /** When this phone started keeping the log. */
   since: string | null;
@@ -83,9 +109,20 @@ export function useTrainingLog(
       };
     // Idempotent: only the first read on this phone stamps the start.
     storage.markTrainingLogSince(userId, new Date().toISOString());
+    const sessions = storage.getTrainingLog(userId, {
+      from: fromIso,
+      to: toIso,
+    });
     return {
-      sessions: storage.getTrainingLog(userId, { from: fromIso, to: toIso }),
-      records: storage.getPersonalRecords(userId),
+      sessions,
+      records: workoutRecords(
+        userId,
+        sessions,
+        storage.getTrainingLogRecords(
+          userId,
+          sessions.map((s) => s.id),
+        ),
+      ),
       since: storage.getTrainingLogSince(userId),
       musclesOf: musclesLookup(
         storage.getCachedExercises(),
