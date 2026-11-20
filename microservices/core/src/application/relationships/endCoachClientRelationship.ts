@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import {
   clientAiSummaries,
+  coachClientProfiles,
   ptClientRelationships,
   programAssignments,
   workoutAssignments,
@@ -174,6 +175,27 @@ export async function endCoachClientRelationship({
         ),
       )
       .returning({ id: clientAiSummaries.id });
+
+    // 3b — PER-108 (design A D2): the invited profile this relationship came
+    // from is `ended`. Scoped to this coach, so another coach's profile for
+    // the same athlete is never touched.
+    //
+    // ⚠ Hooks for the areas that land later, each scoped to (this trainer,
+    // this client) only: cancel this coach's pending form requests and
+    // schedules (design C, PER-116), end plan and resource assignments
+    // (designs D/I, PER-118/PER-122), freeze the chat channel (design E,
+    // PER-120). Settings stay with the relationship row (it is revived on
+    // reconnect, and a personal-code accept overwrites them from the set-up).
+    await tx
+      .update(coachClientProfiles)
+      .set({ status: "ended", updatedAt: new Date() })
+      .where(
+        and(
+          eq(coachClientProfiles.relationshipId, row.id),
+          eq(coachClientProfiles.trainerId, trainerId),
+          eq(coachClientProfiles.status, "active"),
+        ),
+      );
 
     await auditTrainerAction({
       trainerId,

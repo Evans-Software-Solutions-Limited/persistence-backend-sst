@@ -24,5 +24,8 @@ export const CONSENT_VERSION = "v1-2026-07";
 export type ConsentSource =
   | "invite_accept"
   | "invite_code_redeem"
+  // PER-108: a personal invite code (one invited client) — the relationship
+  // goes active on redeem, so this is the only consent capture point.
+  | "personal_invite_redeem"
   | "leave_coach"
   | "coach_removed";

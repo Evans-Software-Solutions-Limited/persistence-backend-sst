@@ -132,12 +132,16 @@ describe("endCoachClientRelationship", () => {
 
     // Guard shape: the soft-end SET carries the terminal status + a today
     // end-date marker + a fresh updatedAt.
-    expect(ex.set).toHaveBeenCalledTimes(1);
+    // Two SETs: the soft-end, then (PER-108) this coach's invited profile for
+    // the relationship → 'ended'.
+    expect(ex.set).toHaveBeenCalledTimes(2);
+    expect(ex.set.mock.calls[1][0]).toMatchObject({ status: "ended" });
     const setArgs = ex.set.mock.calls[0][0];
     expect(setArgs.status).toBe("terminated");
     expect(setArgs.endDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(setArgs.updatedAt).toBeInstanceOf(Date);
-    expect(ex.where).toHaveBeenCalledTimes(5); // consent-version select + update + 3 deletes
+    // consent-version select + update + 3 deletes + the PER-108 profile update
+    expect(ex.where).toHaveBeenCalledTimes(6);
 
     // 28-coach-data-sharing-consent: withdrawal clears the current-consent
     // stamp on the SAME update, and appends a `withdraw` row — source

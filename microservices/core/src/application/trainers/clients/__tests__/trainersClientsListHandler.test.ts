@@ -28,6 +28,15 @@ vi.mock("../../../repositories/trainerRepository", () => ({
   InviteError: class InviteError extends Error {},
 }));
 
+const invitedSummaries = vi.fn(async () => [
+  { profileId: "p1", displayName: "Lena", inviteStatus: "active" },
+]);
+vi.mock("../../../coaching/clientProfileRepository", () => ({
+  ClientProfileRepository: vi.fn().mockImplementation(() => ({
+    invitedSummaries,
+  })),
+}));
+
 describe("trainersClientsListHandler", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -74,5 +83,10 @@ describe("trainersClientsListHandler", () => {
     expect(body.data).toHaveLength(1);
     expect(body.data[0].id).toBe("c1");
     expect(mocks.getClients).toHaveBeenCalledWith("trainer-id");
+    // PER-108: invited profiles ride alongside as a sibling field.
+    expect(body.invited).toEqual([
+      { profileId: "p1", displayName: "Lena", inviteStatus: "active" },
+    ]);
+    expect(invitedSummaries).toHaveBeenCalledWith("trainer-id");
   });
 });

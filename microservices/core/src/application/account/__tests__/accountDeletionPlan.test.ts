@@ -21,6 +21,19 @@ describe("ACCOUNT_DELETION_STEPS", () => {
     expect(profileSteps).toHaveLength(1);
   });
 
+  it("tombstones the athlete's accepted coach_client_profiles BEFORE the profiles delete (PER-108)", () => {
+    const idx = ACCOUNT_DELETION_STEPS.findIndex(
+      (s) => s.kind === "tombstone-client-profiles",
+    );
+    expect(ACCOUNT_DELETION_STEPS[idx]).toEqual({
+      kind: "tombstone-client-profiles",
+      table: "coach_client_profiles",
+      column: "client_id",
+    });
+    // Before the final profiles delete, or the CASCADE removes the row first.
+    expect(idx).toBe(ACCOUNT_DELETION_STEPS.length - 2);
+  });
+
   it("nullifies every cross-user attribution column (NO ACTION on other users' rows)", () => {
     const nullified = ACCOUNT_DELETION_STEPS.filter(
       (s) => s.kind === "nullify",
@@ -137,6 +150,21 @@ describe("buildStatement", () => {
       'update "nutrition_entries" set "logged_by_user_id" = null where "logged_by_user_id" = $1',
     );
     expect(params).toEqual(["user-123"]);
+  });
+
+  it("renders a tombstone-and-scrub UPDATE that detaches the row from the athlete", () => {
+    const { sql, params } = render(
+      {
+        kind: "tombstone-client-profiles",
+        table: "coach_client_profiles",
+        column: "client_id",
+      },
+      "user-123",
+    );
+    expect(sql).toBe(
+      'update "coach_client_profiles" set deleted_at = now(), updated_at = now(), display_name = $1, contact_email = null, contact_phone = null, goal = null, private_notes = null, relationship_id = null, "client_id" = null where "client_id" = $2 returning id',
+    );
+    expect(params).toEqual(["Removed", "user-123"]);
   });
 
   it("renders a subquery-based SET NULL for nullify-referencing-owned steps", () => {
