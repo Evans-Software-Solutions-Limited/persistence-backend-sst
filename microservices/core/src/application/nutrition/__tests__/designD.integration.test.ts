@@ -455,6 +455,23 @@ describe("Design D test 3 — replay", () => {
   // (22021), so a customName carrying one (AI or pasted text) threw inside
   // the insert and 500'd the batch on every re-send. It is stripped instead:
   // the food log is kept and the name keeps every other character.
+  it("strips a NUL byte from customName on edit (PUT /nutrition/entries/:id) too", async () => {
+    const created = await call(
+      "A",
+      "POST",
+      "/nutrition/entries",
+      oldShapeEntry(),
+    );
+    const res = await call(
+      "A",
+      "PUT",
+      `/nutrition/entries/${created.json.data.id}`,
+      { customName: "Wrap\u0000 (big)" },
+    );
+    expect(res.status).toBe(200);
+    expect(res.json.data.customName).toBe("Wrap (big)");
+  });
+
   it("strips a NUL byte from customName instead of failing the batch", async () => {
     const res = await call("A", "POST", "/nutrition/entries/batch", {
       entries: [

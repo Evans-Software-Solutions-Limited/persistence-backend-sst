@@ -94,6 +94,10 @@ plans, coach plans, recipe sharing and the shopping list are PER-118.
   so 400. I checked every other client string in this PR: keys pass a
   regex, ids must be uuids, and `loggedAt` reaches Postgres only as a
   parsed Date.
+- **Fourth sweep: case closed** on 44b86d0. Its one aside (pre-existing,
+  outside the PR's files): `PUT /nutrition/entries/:id` still wrote
+  `customName` unstripped. Reproduced (500) and fixed in
+  `NutritionEntryRepository.update`, the point every edit write goes through.
 
 ### 2026-11-16 — Signed-out account's pushes still reached the phone (branch `claude/confident-cerf-xp8bka`)
 

@@ -5,6 +5,7 @@ import {
   type NutritionEntry,
 } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
+import { stripNul } from "../shared/stripNul";
 
 export type MealSlot = "breakfast" | "lunch" | "snack" | "dinner";
 
@@ -274,7 +275,10 @@ export class NutritionEntryRepository {
     if (input.proteinG !== undefined) patch.proteinG = String(input.proteinG);
     if (input.carbsG !== undefined) patch.carbsG = String(input.carbsG);
     if (input.fatG !== undefined) patch.fatG = String(input.fatG);
-    if (input.customName !== undefined) patch.customName = input.customName;
+    // NUL stripped: Postgres `text` rejects it (22021), which 500'd the edit.
+    if (input.customName !== undefined)
+      patch.customName =
+        input.customName === null ? null : stripNul(input.customName);
 
     const result = await db
       .update(nutritionEntries)
