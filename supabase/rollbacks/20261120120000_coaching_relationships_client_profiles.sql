@@ -8,6 +8,25 @@ DROP TRIGGER IF EXISTS pt_client_relationships_activated_at ON pt_client_relatio
 DROP FUNCTION IF EXISTS set_pt_relationship_activated_at();
 
 DELETE FROM trainer_invite_codes WHERE client_profile_id IS NOT NULL;
+
+-- Restore the client write policies from 20260626110000.
+DROP POLICY IF EXISTS "Trainers can create invite codes" ON trainer_invite_codes;
+CREATE POLICY "Trainers can create invite codes"
+  ON trainer_invite_codes FOR INSERT
+  TO authenticated
+  WITH CHECK (
+    trainer_id = auth.uid()
+    AND EXISTS (
+      SELECT 1 FROM profiles
+      WHERE id = auth.uid()
+      AND role IN ('personal_trainer', 'physiotherapist', 'admin')
+    )
+  );
+DROP POLICY IF EXISTS "Trainers can update own invite codes" ON trainer_invite_codes;
+CREATE POLICY "Trainers can update own invite codes"
+  ON trainer_invite_codes FOR UPDATE
+  TO authenticated
+  USING (trainer_id = auth.uid());
 DROP INDEX IF EXISTS trainer_invite_codes_trainer_active_uq;
 CREATE UNIQUE INDEX trainer_invite_codes_trainer_active_uq
   ON trainer_invite_codes (trainer_id)

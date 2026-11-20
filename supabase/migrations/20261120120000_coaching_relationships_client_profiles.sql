@@ -154,6 +154,16 @@ CREATE UNIQUE INDEX trainer_invite_codes_trainer_active_uq
   ON trainer_invite_codes (trainer_id)
   WHERE status = 'active' AND client_profile_id IS NULL;
 
+-- No direct writes from the client. The core API writes this table through the
+-- service connection, which bypasses RLS, and no app writes it over PostgREST
+-- (checked: mobile, web and the 1.2.0 bundle). The INSERT/UPDATE policies from
+-- 20260626110000 only checked trainer_id and role, so a coach could POST a row
+-- with client_profile_id and an expires_at of their choosing. That would skip
+-- the declaration gate, the 7-day expiry and the seat check, and give an
+-- ACTIVE relationship on redeem. The coach's own SELECT policy stays.
+DROP POLICY IF EXISTS "Trainers can create invite codes" ON trainer_invite_codes;
+DROP POLICY IF EXISTS "Trainers can update own invite codes" ON trainer_invite_codes;
+
 -- ─── pt_client_relationships ─────────────────────────────────────────────────
 ALTER TABLE pt_client_relationships
   ADD COLUMN IF NOT EXISTS activated_at timestamptz;

@@ -9,6 +9,7 @@ import {
   isNotNull,
   isNull,
   lt,
+  ne,
   sql,
 } from "drizzle-orm";
 import {
@@ -306,9 +307,29 @@ export class ClientProfileRepository {
             ),
           )
       : [];
+    // A status-filtered delta must also say which rows LEFT that status (an
+    // invited profile the athlete accepted, one the coach cancelled, one
+    // offboarding ended). They changed, so they're past `since`, but they no
+    // longer match the filter and aren't tombstoned. Reported in deletedIds:
+    // to the device's filtered cache, "gone from this view" is a deletion.
+    // An id the device never held is simply ignored.
+    const leftView =
+      opts.since && opts.status
+        ? await db
+            .select({ id: coachClientProfiles.id })
+            .from(coachClientProfiles)
+            .where(
+              and(
+                eq(coachClientProfiles.trainerId, trainerId),
+                isNull(coachClientProfiles.deletedAt),
+                ne(coachClientProfiles.status, opts.status),
+                gt(coachClientProfiles.updatedAt, opts.since),
+              ),
+            )
+        : [];
     return {
       data: live.map(profileDto),
-      deletedIds: deleted.map((d) => d.id),
+      deletedIds: [...deleted, ...leftView].map((d) => d.id),
       asOf: asOf.toISOString(),
     };
   }

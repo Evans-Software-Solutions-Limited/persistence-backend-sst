@@ -106,6 +106,16 @@ client onboarding" (approved 20 Nov). Backend only; no app or native change.
   caller controls. It now keys on `x-persistence-source-ip`, which
   `trustedSourceHeaders` (api.ts) sets from the API Gateway context after
   stripping any client copy, the same header `vouchersHandler` uses.
+- **Inspector Brad seventh sweep (0a21ff8), two low leads, both confirmed and fixed:**
+  - `?status=&since=` never reported profiles that left the status (accepted,
+    cancelled, ended). Ids of rows updated since `since` that no longer match
+    the filter now go in `deletedIds` ("gone from this view").
+  - The 20260626 `authenticated` INSERT/UPDATE RLS policies on
+    `trainer_invite_codes` let a coach POST a personal code over PostgREST,
+    skipping the declaration, 7-day expiry and seat check. No client writes
+    this table directly (checked mobile, web and the 1.2.0 bundle), so the
+    migration drops both policies. The SELECT policy stays, and the rollback
+    restores the two.
 - **Not done here**: no migration applied to staging/prod; no device test. The
   1.2.0 accept screen still says "awaiting their acceptance" for a personal
   code (known gap, D5); the OTA bundle (PER-126) reads `relationshipStatus`.

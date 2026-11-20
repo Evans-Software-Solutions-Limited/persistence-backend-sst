@@ -1561,6 +1561,56 @@ describe("invited profiles", () => {
     ).toBe(404);
   });
 
+  it("a status-filtered delta reports profiles that left the status", async () => {
+    const { profile: accepted, code } = await readyCode();
+    const cancelled = await newProfile(COACH_A, { displayName: "Cancelled" });
+    const stillInvited = await newProfile(COACH_A, { displayName: "Waiting" });
+    const t0 = new Date(Date.now() - 1000).toISOString();
+
+    await accept(ATHLETE_E, code); // invited → active
+    await http(
+      "DELETE",
+      `/trainers/me/client-profiles/${cancelled.id}/invite`,
+      COACH_A,
+    ); // invited → cancelled
+    await http(
+      "PATCH",
+      `/trainers/me/client-profiles/${stillInvited.id}`,
+      COACH_A,
+      { goal: "edited" },
+    ); // still invited, changed
+
+    const invited = await http(
+      "GET",
+      `/trainers/me/client-profiles?status=invited&since=${encodeURIComponent(t0)}`,
+      COACH_A,
+    );
+    expect(invited.json.data.map((p: Json) => p.id)).toEqual([stillInvited.id]);
+    expect(invited.json.deletedIds.sort()).toEqual(
+      [accepted.id, cancelled.id].sort(),
+    );
+
+    // The active view sees the accepted one arrive and nothing leave.
+    const active = await http(
+      "GET",
+      `/trainers/me/client-profiles?status=active&since=${encodeURIComponent(t0)}`,
+      COACH_A,
+    );
+    expect(active.json.data.map((p: Json) => p.id)).toEqual([accepted.id]);
+    expect(active.json.deletedIds.sort()).toEqual(
+      [cancelled.id, stillInvited.id].sort(),
+    );
+
+    // An unfiltered delta is unchanged: everything is in data, no deletions.
+    const all = await http(
+      "GET",
+      `/trainers/me/client-profiles?since=${encodeURIComponent(t0)}`,
+      COACH_A,
+    );
+    expect(all.json.data).toHaveLength(3);
+    expect(all.json.deletedIds).toEqual([]);
+  });
+
   it("an accepted profile can't be edited or deleted", async () => {
     const { profile, code } = await readyCode();
     await accept(ATHLETE_E, code);
@@ -2077,6 +2127,17 @@ describe(MIGRATION, () => {
     await m.exec(mig);
     expect(await snapshot()).toEqual(first);
 
+    // No client writes to invite codes: only the coach's SELECT policy is left.
+    const policies = async () =>
+      (
+        await m.query<{ policyname: string; cmd: string }>(
+          `select policyname, cmd from pg_policies where tablename = 'trainer_invite_codes' order by policyname`,
+        )
+      ).rows;
+    expect(await policies()).toEqual([
+      { policyname: "Trainers can view own invite codes", cmd: "SELECT" },
+    ]);
+
     // Purging an athlete's account removes an accepted profile (CASCADE).
     const fk = await m.query<{ confdeltype: string }>(
       `select confdeltype from pg_constraint where conname = 'coach_client_profiles_client_id_fkey'`,
@@ -2142,6 +2203,12 @@ describe(MIGRATION, () => {
       "select code from trainer_invite_codes",
     );
     expect(general.rows).toEqual([{ code: "GENRL1" }]);
+    // The rollback puts the original write policies back.
+    expect((await policies()).map((p) => p.cmd).sort()).toEqual([
+      "INSERT",
+      "SELECT",
+      "UPDATE",
+    ]);
 
     await m.exec(mig);
     expect((await snapshot()).settings).toHaveLength(2);
