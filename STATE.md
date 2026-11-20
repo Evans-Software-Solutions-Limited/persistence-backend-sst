@@ -46,6 +46,24 @@ no native packages, permissions, config plugins or version bump.
   "an upper day sorts it"; "No lifts in the last 7 days."; the History and
   Recap coverage lines. History's Y2b has no effort chip, because the rating
   isn't stored with the workout.
+- **Inspector Brad on #541, two sweeps, 6 leads, all confirmed and fixed:**
+  - Date-only body-trend days were parsed as UTC midnight, so west of UTC
+    they landed on the wrong day. `toLocalDate` and `dayKey` now treat
+    `YYYY-MM-DD` as a local day.
+  - The Y2b modal went blank when the workout's id was renamed. It now
+    follows the rename by start time and keeps what it has shown.
+  - The training log was parsed in full on every focus. Reads are now
+    bounded in SQL, and each screen asks only for its window.
+  - **Nothing in production called `swapLocalSessionId`**, so logged
+    workouts kept `local-…` ids and never matched server personal records
+    (History's ★ and the Y2b records page stayed empty). The
+    `/sessions/record` reply now calls `linkTrainingLogSessionId`, which
+    touches only the training log. It renames the row and remembers the
+    pair in `training_log_ids`, so the summary's later save lands under
+    the server id. `active_sessions` is deliberately left on the local id:
+    the summary and the Together hydrate compare against it.
+  - Recap's records trio now uses `recordValue` (time and distance PRs
+    were being run through the weight conversion).
 - **Tests:** credit table tests, You-page builders, both storage adapters on
   real SQLite (`node:sqlite`), presenters (trained, new user, rest day,
   offline), containers.
