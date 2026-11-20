@@ -162,7 +162,7 @@ describe("buildStatement", () => {
       "user-123",
     );
     expect(sql).toBe(
-      'update "coach_client_profiles" set deleted_at = now(), updated_at = now(), display_name = $1, contact_email = null, contact_phone = null, goal = null, private_notes = null, relationship_id = null, "client_id" = null where "client_id" = $2',
+      'update "coach_client_profiles" set deleted_at = now(), updated_at = now(), display_name = $1, contact_email = null, contact_phone = null, goal = null, private_notes = null, relationship_id = null, "client_id" = null where "client_id" = $2 returning id',
     );
     expect(params).toEqual(["Removed", "user-123"]);
   });

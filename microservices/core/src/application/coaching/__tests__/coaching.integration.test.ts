@@ -1943,6 +1943,45 @@ describe("retention purge", () => {
     expect(left.map((p) => p.id)).toEqual([other.id]);
   });
 
+  it("re-stamps purge tombstones with the commit-time clock, so a mid-purge sync still sees them", async () => {
+    const repo = new ClientProfileRepository();
+    const { profile, code } = await readyCode();
+    await accept(ATHLETE_E, code);
+    // The purge transaction started 5 minutes ago, past the asOf margin:
+    // its now() stamped the tombstone then.
+    const purgeStart = new Date(Date.now() - 5 * 60_000);
+    await db
+      .update(schema.coachClientProfiles)
+      .set({ deletedAt: purgeStart, updatedAt: purgeStart, clientId: null })
+      .where(eq(schema.coachClientProfiles.id, profile.id));
+    // A coach device listed mid-purge, so its asOf is after that stamp.
+    const asOfMidPurge = new Date(purgeStart.getTime() + 60_000).toISOString();
+    const before = await http(
+      "GET",
+      `/trainers/me/client-profiles?since=${encodeURIComponent(asOfMidPurge)}`,
+      COACH_A,
+    );
+    expect(before.json.deletedIds).toEqual([]);
+
+    await repo.restampTombstones([profile.id, "not-a-uuid"]);
+    const after = await http(
+      "GET",
+      `/trainers/me/client-profiles?since=${encodeURIComponent(asOfMidPurge)}`,
+      COACH_A,
+    );
+    expect(after.json.deletedIds).toEqual([profile.id]);
+
+    // A live profile is never touched by the re-stamp.
+    const live = await newProfile(COACH_A, { displayName: "Live" });
+    await repo.restampTombstones([live.id]);
+    const [row] = await db
+      .select()
+      .from(schema.coachClientProfiles)
+      .where(eq(schema.coachClientProfiles.id, live.id));
+    expect(row!.deletedAt).toBeNull();
+    await repo.restampTombstones([]);
+  });
+
   it("the CASCADE still removes an accepted profile if the profiles row goes another way", async () => {
     const { profile, code } = await readyCode();
     await accept(ATHLETE_E, code);

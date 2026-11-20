@@ -39,7 +39,10 @@ export type AccountDeletionStep =
    * scrubbed and `client_id` nulled at once, so the CASCADE no longer reaches
    * the row; the nightly retention sweep hard-deletes the tombstone 30 days
    * later. Generated SQL: `UPDATE <table> SET deleted_at = now(), …scrub…,
-   * <column> = NULL WHERE <column> = $userId`.
+   * <column> = NULL WHERE <column> = $userId RETURNING id`. The ids are
+   * re-stamped after the purge commits (`AccountRepository.purgeUserData`):
+   * inside the transaction `now()` is the transaction's START, which a long
+   * purge can push past a coach device's `asOf`.
    */
   | { kind: "tombstone-client-profiles"; table: string; column: string }
   | {
@@ -135,7 +138,7 @@ export function buildStatement(step: AccountDeletionStep, userId: string): SQL {
     return sql`update ${table} set ${column} = null where ${column} = ${userId}`;
   }
   if (step.kind === "tombstone-client-profiles") {
-    return sql`update ${table} set deleted_at = now(), updated_at = now(), display_name = ${SCRUBBED_DISPLAY_NAME}, contact_email = null, contact_phone = null, goal = null, private_notes = null, relationship_id = null, ${column} = null where ${column} = ${userId}`;
+    return sql`update ${table} set deleted_at = now(), updated_at = now(), display_name = ${SCRUBBED_DISPLAY_NAME}, contact_email = null, contact_phone = null, goal = null, private_notes = null, relationship_id = null, ${column} = null where ${column} = ${userId} returning id`;
   }
   if (step.kind === "nullify-referencing-owned") {
     const ownerTable = sql.identifier(step.ownerTable);

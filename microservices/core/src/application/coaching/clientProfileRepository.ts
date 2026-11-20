@@ -807,6 +807,28 @@ export class ClientProfileRepository {
       );
   }
 
+  /**
+   * Re-stamp tombstones with the time this statement runs. Called after the
+   * account purge commits, by ids only (the athlete is gone by then): inside
+   * the purge transaction `now()` is the transaction's START, and the cron
+   * gives a purge minutes, more than `AS_OF_SAFETY_MARGIN_MS`. On its own,
+   * this UPDATE's `now()` is effectively its commit time, so any device whose
+   * `asOf` predates it still gets the id in `deletedIds`.
+   */
+  async restampTombstones(ids: string[]): Promise<void> {
+    const valid = ids.filter(isUuid);
+    if (valid.length === 0) return;
+    await getDb()
+      .update(coachClientProfiles)
+      .set({ deletedAt: sql`now()`, updatedAt: sql`now()` })
+      .where(
+        and(
+          inArray(coachClientProfiles.id, valid),
+          isNotNull(coachClientProfiles.deletedAt),
+        ),
+      );
+  }
+
   /** The roster's `invited` sibling field on `GET /trainers/me/clients`. */
   async invitedSummaries(trainerId: string): Promise<InvitedClientSummary[]> {
     const db = getDb();

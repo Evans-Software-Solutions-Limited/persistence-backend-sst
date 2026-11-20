@@ -116,6 +116,13 @@ client onboarding" (approved 20 Nov). Backend only; no app or native change.
     this table directly (checked mobile, web and the 1.2.0 bundle), so the
     migration drops both policies. The SELECT policy stays, and the rollback
     restores the two.
+- **Inspector Brad eighth sweep (41344b3), one low lead, confirmed and fixed:**
+  the account-purge tombstone step runs inside `purgeUserData`'s transaction,
+  where `now()` is the transaction START. A slow purge (cron budget 300 s)
+  could commit a stamp older than the 2-minute `asOf` margin. The step now
+  `RETURNING id`, and after the commit `ClientProfileRepository.restampTombstones`
+  re-stamps those ids with a standalone `now()`. That's best effort: a
+  failure is logged and never stops the auth-user delete.
 - **Not done here**: no migration applied to staging/prod; no device test. The
   1.2.0 accept screen still says "awaiting their acceptance" for a personal
   code (known gap, D5); the OTA bundle (PER-126) reads `relationshipStatus`.
