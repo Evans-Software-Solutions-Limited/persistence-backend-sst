@@ -86,6 +86,14 @@ plans, coach plans, recipe sharing and the shopping list are PER-118.
   (pre-existing on the single POST). Reproduced on PGlite. Now only the
   reference the macros came from is stored; the others are dropped, and an
   empty string counts as no reference.
+- **Third sweep:** both earlier leads were confirmed closed. One low lead,
+  confirmed and fixed: a NUL byte in `customName`, or in a your-meals
+  `name`, passes `t.String()` but Postgres `text` rejects it (22021), so
+  the batch 500'd on every re-send. `shared/stripNul.ts` strips it, keeping
+  the log and the rest of the name; a meal name that is only NULs is blank,
+  so 400. I checked every other client string in this PR: keys pass a
+  regex, ids must be uuids, and `loggedAt` reaches Postgres only as a
+  parsed Date.
 
 ### 2026-11-16 — Signed-out account's pushes still reached the phone (branch `claude/confident-cerf-xp8bka`)
 

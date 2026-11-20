@@ -451,6 +451,33 @@ describe("Design D test 3 — replay", () => {
     });
   });
 
+  // Inspector Brad, third sweep on #542: Postgres `text` rejects a NUL byte
+  // (22021), so a customName carrying one (AI or pasted text) threw inside
+  // the insert and 500'd the batch on every re-send. It is stripped instead:
+  // the food log is kept and the name keeps every other character.
+  it("strips a NUL byte from customName instead of failing the batch", async () => {
+    const res = await call("A", "POST", "/nutrition/entries/batch", {
+      entries: [
+        {
+          ...oldShapeEntry({ customName: "Pho\u0000 bowl" }),
+          clientRequestId: "n-1",
+        },
+        { ...oldShapeEntry({ customName: "After" }), clientRequestId: "n-2" },
+      ],
+    });
+    expect(res.status).toBe(200);
+    expect(res.json.data.results[0].entry.customName).toBe("Pho bowl");
+    expect(res.json.data.results[1].entry.customName).toBe("After");
+    const single = await call(
+      "A",
+      "POST",
+      "/nutrition/entries",
+      oldShapeEntry({ customName: "\u0000" }),
+    );
+    expect(single.status).toBe(201);
+    expect(single.json.data.customName).toBe("");
+  });
+
   it("stores plan provenance from a batch, and drops a local plan id rather than failing", async () => {
     const planId = "11111111-1111-4111-8111-111111111111";
     const res = await call("A", "POST", "/nutrition/entries/batch", {
@@ -796,6 +823,21 @@ describe("PUT /nutrition/user-meals", () => {
     const res = await call("A", "PUT", "/nutrition/user-meals", body);
     expect(res.status).toBe(400);
     expect(res.json).toEqual({ error });
+  });
+
+  it("strips a NUL byte from a meal name; a name that is only NULs is blank", async () => {
+    const res = await call("A", "PUT", "/nutrition/user-meals", {
+      meals: [{ name: "Pre\u0000-workout", logSlot: "snack", sortOrder: 0 }],
+    });
+    expect(res.status).toBe(200);
+    expect(res.json.data.meals[0].name).toBe("Pre-workout");
+    const blank = await call("A", "PUT", "/nutrition/user-meals", {
+      meals: [{ name: "\u0000\u0000", logSlot: "snack", sortOrder: 0 }],
+    });
+    expect(blank).toEqual({
+      status: 400,
+      json: { error: "invalid_user_meal_name" },
+    });
   });
 
   it("400s the same meal listed twice", async () => {

@@ -1,4 +1,5 @@
 import { t, type Static } from "elysia";
+import { stripNul } from "../../shared/stripNul";
 import type { FoodRepository } from "../../repositories/foodRepository";
 import type { RecipeRepository } from "../../repositories/recipeRepository";
 import type { MealRepository } from "../../repositories/mealRepository";
@@ -203,7 +204,8 @@ export async function resolveEntryInput(
       carbsG,
       fatG,
       loggedAt: body.loggedAt,
-      customName: body.customName ?? null,
+      customName:
+        body.customName === undefined ? null : stripNul(body.customName),
       // Provenance only (never affects macros). A confidence without the
       // AI flag is meaningless, so it is dropped rather than stored.
       aiEstimated: body.aiEstimated ?? false,

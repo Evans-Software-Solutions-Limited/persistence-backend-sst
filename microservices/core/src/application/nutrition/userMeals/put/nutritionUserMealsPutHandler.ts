@@ -1,6 +1,7 @@
 import Elysia, { t } from "elysia";
 import { UserMealService } from "../../../repositories/userMealService";
 import { normaliseIdempotencyKey } from "../../../shared/idempotencyKey";
+import { stripNul } from "../../../shared/stripNul";
 import {
   getAuthUser,
   requireAuth,
@@ -35,7 +36,8 @@ export const nutritionUserMealsPutHandler = new Elysia()
 
       const meals = [];
       for (const meal of ctx.body.meals) {
-        const name = meal.name.trim();
+        // NUL stripped first: Postgres `text` rejects it (a 500 otherwise).
+        const name = stripNul(meal.name).trim();
         if (name.length === 0 || name.length > 40) {
           ctx.set.status = 400;
           return { error: "invalid_user_meal_name" };
