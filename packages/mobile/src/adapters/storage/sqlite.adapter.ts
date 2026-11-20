@@ -747,6 +747,12 @@ ${indentSyncQueueDdl(8)}
       );
       CREATE INDEX IF NOT EXISTS idx_training_log_user_started
         ON training_log(user_id, started_at);
+      -- local-… → server id for workouts already synced (see
+      -- linkTrainingLogSessionId).
+      CREATE TABLE IF NOT EXISTS training_log_ids (
+        local_id TEXT PRIMARY KEY,
+        server_id TEXT NOT NULL
+      );
       CREATE TABLE IF NOT EXISTS training_log_since (
         user_id TEXT PRIMARY KEY,
         since TEXT NOT NULL
@@ -3125,8 +3131,15 @@ ${indentSyncQueueDdl(12)}
 
   // -- Training log (PER-141) --
 
-  saveTrainingLogEntry(userId: string, session: WorkoutSession): void {
-    if (session.status !== "completed" || session.withClient) return;
+  saveTrainingLogEntry(userId: string, saved: WorkoutSession): void {
+    if (saved.status !== "completed" || saved.withClient) return;
+    const linked = this.getDb().getFirstSync(
+      `SELECT server_id FROM training_log_ids WHERE local_id = ?`,
+      [saved.id],
+    ) as { server_id: string } | null;
+    const session = linked
+      ? renameSession(saved, saved.id, linked.server_id)
+      : saved;
     this.getDb().runSync(
       `INSERT INTO training_log (id, user_id, started_at, payload, updated_at)
        VALUES (?, ?, ?, ?, ?)
@@ -3143,6 +3156,40 @@ ${indentSyncQueueDdl(12)}
         new Date().toISOString(),
       ],
     );
+  }
+
+  linkTrainingLogSessionId(localId: string, serverId: string): void {
+    if (localId === serverId) return;
+    const db = this.getDb();
+    db.withTransactionSync(() => {
+      db.runSync(
+        `INSERT OR REPLACE INTO training_log_ids (local_id, server_id)
+         VALUES (?, ?)`,
+        [localId, serverId],
+      );
+      this.renameTrainingLogRow(localId, serverId);
+    });
+  }
+
+  /** Move a training-log row to a new id, nested session ids included. */
+  private renameTrainingLogRow(localId: string, serverId: string): void {
+    const db = this.getDb();
+    const logged = db.getFirstSync(
+      `SELECT payload FROM training_log WHERE id = ?`,
+      [localId],
+    ) as { payload: string } | null;
+    if (!logged) return;
+    const renamed = renameSession(
+      JSON.parse(logged.payload) as WorkoutSession,
+      localId,
+      serverId,
+    );
+    db.runSync(`DELETE FROM training_log WHERE id = ?`, [serverId]);
+    db.runSync(`UPDATE training_log SET id = ?, payload = ? WHERE id = ?`, [
+      serverId,
+      JSON.stringify(renamed),
+      localId,
+    ]);
   }
 
   getTrainingLog(
@@ -3548,28 +3595,8 @@ ${indentSyncQueueDdl(12)}
         `UPDATE personal_records SET session_id = ? WHERE session_id = ?`,
         [serverId, localId],
       );
-      // PER-141: the training log keeps the session under its server id,
-      // with the nested ids rewritten like active_sessions above.
-      const logged = db.getFirstSync(
-        `SELECT payload FROM training_log WHERE id = ?`,
-        [localId],
-      ) as { payload: string } | null;
-      if (logged) {
-        const s = JSON.parse(logged.payload) as WorkoutSession;
-        const renamed: WorkoutSession = {
-          ...s,
-          id: serverId,
-          exercises: s.exercises.map((e) =>
-            e.sessionId === localId ? { ...e, sessionId: serverId } : e,
-          ),
-        };
-        db.runSync(`DELETE FROM training_log WHERE id = ?`, [serverId]);
-        db.runSync(`UPDATE training_log SET id = ?, payload = ? WHERE id = ?`, [
-          serverId,
-          JSON.stringify(renamed),
-          localId,
-        ]);
-      }
+      // PER-141: the training log keeps the session under its server id.
+      this.renameTrainingLogRow(localId, serverId);
     });
   }
 
@@ -3862,6 +3889,7 @@ ${indentSyncQueueDdl(12)}
       DELETE FROM cached_meal_plans;
       DELETE FROM training_log;
       DELETE FROM training_log_since;
+      DELETE FROM training_log_ids;
     `);
   }
 }
@@ -4070,4 +4098,19 @@ function parseEntitlementVerdict(raw: unknown): EntitlementVerdict | null {
   } catch {
     return null;
   }
+}
+
+/** A session under a new id, with its exercises' session ids rewritten. */
+function renameSession(
+  s: WorkoutSession,
+  localId: string,
+  serverId: string,
+): WorkoutSession {
+  return {
+    ...s,
+    id: serverId,
+    exercises: s.exercises.map((e) =>
+      e.sessionId === localId ? { ...e, sessionId: serverId } : e,
+    ),
+  };
 }

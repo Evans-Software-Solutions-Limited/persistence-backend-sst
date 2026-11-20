@@ -821,6 +821,17 @@ export interface StoragePort {
    */
   saveTrainingLogEntry(userId: string, session: WorkoutSession): void;
 
+  /**
+   * The sync reply path's id swap for the training log: `POST
+   * /sessions/record` returned `serverId` for the workout saved as
+   * `localId`. Renames the row (and its nested session ids) and remembers
+   * the pair, so a summary that saves the workout after the sync drained
+   * still lands under the server id. Personal records carry server session
+   * ids, so History's ★ and the Y2b records page match only after this.
+   * Touches nothing but the training log.
+   */
+  linkTrainingLogSessionId(localId: string, serverId: string): void;
+
   /** Finished workouts started in [from, to] (ISO), oldest first. */
   getTrainingLog(
     userId: string,

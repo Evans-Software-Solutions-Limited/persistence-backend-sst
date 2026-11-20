@@ -16,7 +16,6 @@ import {
   type YouRemoteSource,
 } from "@/application/queries/youRemote";
 import type { WeightUnit } from "@/shared/utils";
-import { weightInUnit } from "@/shared/utils";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { useGetStreaks } from "@/ui/hooks/useGetStreaks";
 import { useProfilePage } from "@/ui/hooks/useProfilePage";
@@ -28,7 +27,11 @@ import {
   liftRows,
   volumeShort,
 } from "@/ui/presenters/you/youFormat";
-import { listNames, recordText } from "@/ui/presenters/summaryFormat";
+import {
+  listNames,
+  recordText,
+  recordValue,
+} from "@/ui/presenters/summaryFormat";
 
 /** "This week", "October", "Aug – Oct". */
 export function periodLabel(period: RecapPeriod, now: Date): string {
@@ -135,10 +138,8 @@ export function recapPages(
       unit: model.records.length === 1 ? "PR" : "PRs",
       sub: `${top.exerciseName} ${recordText(top, top.value, p.unit)}`,
       trio: model.records.slice(0, 3).map((r) => ({
-        value:
-          r.recordType === "max_reps"
-            ? String(Math.round(r.value))
-            : String(Number(weightInUnit(r.value, p.unit).toFixed(1))),
+        // Each record type in its own unit: reps, a clock, metres or weight.
+        value: recordValue(r.recordType, r.value, p.unit).value,
         label: r.exerciseName,
       })),
       gold: true,

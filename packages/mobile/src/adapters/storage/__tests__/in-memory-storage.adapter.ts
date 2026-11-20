@@ -1099,13 +1099,44 @@ export class InMemoryStorageAdapter implements StoragePort {
   private trainingLog = new Map<string, WorkoutSession & { __owner: string }>();
   private trainingLogSince = new Map<string, string>();
 
-  saveTrainingLogEntry(userId: string, session: WorkoutSession): void {
-    if (session.status !== "completed" || session.withClient) return;
+  private trainingLogIds = new Map<string, string>();
+
+  saveTrainingLogEntry(userId: string, saved: WorkoutSession): void {
+    if (saved.status !== "completed" || saved.withClient) return;
+    const serverId = this.trainingLogIds.get(saved.id);
+    const session = serverId
+      ? {
+          ...saved,
+          id: serverId,
+          exercises: saved.exercises.map((ex) =>
+            ex.sessionId === saved.id ? { ...ex, sessionId: serverId } : ex,
+          ),
+        }
+      : saved;
     const prior = this.trainingLog.get(session.id);
     if (prior && prior.__owner !== userId) return;
     this.trainingLog.set(session.id, {
       ...cloneSession(session),
       __owner: userId,
+    });
+  }
+
+  linkTrainingLogSessionId(localId: string, serverId: string): void {
+    if (localId === serverId) return;
+    this.trainingLogIds.set(localId, serverId);
+    this.renameTrainingLog(localId, serverId);
+  }
+
+  private renameTrainingLog(localId: string, serverId: string): void {
+    const logged = this.trainingLog.get(localId);
+    if (!logged) return;
+    this.trainingLog.delete(localId);
+    this.trainingLog.set(serverId, {
+      ...logged,
+      id: serverId,
+      exercises: logged.exercises.map((ex) =>
+        ex.sessionId === localId ? { ...ex, sessionId: serverId } : ex,
+      ),
     });
   }
 
@@ -1310,17 +1341,7 @@ export class InMemoryStorageAdapter implements StoragePort {
 
   swapLocalSessionId(localId: string, serverId: string): void {
     if (localId === serverId) return;
-    const logged = this.trainingLog.get(localId);
-    if (logged) {
-      this.trainingLog.delete(localId);
-      this.trainingLog.set(serverId, {
-        ...logged,
-        id: serverId,
-        exercises: logged.exercises.map((ex) =>
-          ex.sessionId === localId ? { ...ex, sessionId: serverId } : ex,
-        ),
-      });
-    }
+    this.renameTrainingLog(localId, serverId);
     for (const [userId, session] of this.activeSessions) {
       if (session.id !== localId) continue;
       // Mirror the SQLite adapter (sqlite.adapter.ts § swapLocalSessionId):
@@ -1500,6 +1521,7 @@ export class InMemoryStorageAdapter implements StoragePort {
     this.queue = [];
     this.trainingLog.clear();
     this.trainingLogSince.clear();
+    this.trainingLogIds.clear();
     this.metadata.clear();
     this.exerciseCache.clear();
     this.referenceLists.clear();

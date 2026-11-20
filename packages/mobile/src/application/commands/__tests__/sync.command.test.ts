@@ -1542,6 +1542,45 @@ describe("processSyncQueue", () => {
     expect(cached?.personalRecords[0]?.newValue).toBe(137.4);
   });
 
+  it("moves the finished workout's training log to its server id so its records match (PER-141, Inspector Brad #541)", async () => {
+    await auth.signInWithEmail("user-1@example.com", "password");
+    const session = await auth.getSession();
+    if (!session.ok || !session.value) throw new Error("seed failed");
+    const userId = session.value.userId;
+    storage.saveTrainingLogEntry(userId, {
+      id: "local-1",
+      userId,
+      workoutId: null,
+      name: "Upper A",
+      status: "completed",
+      startedAt: "2026-10-26T07:10:00.000Z",
+      completedAt: "2026-10-26T08:10:00.000Z",
+      notes: null,
+      exercises: [],
+    });
+    storage.enqueueMutation({
+      entityType: "session",
+      entityId: "local-1",
+      operation: "create",
+      payload: { status: "completed" },
+      endpoint: "/sessions/record",
+      method: "POST",
+    });
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        data: { id: "server-1", personalRecords: [], workoutsThisMonth: 3 },
+      }),
+    });
+
+    await processSyncQueue(storage, auth, "https://api.test");
+
+    expect(storage.getTrainingLogEntry(userId, "local-1")).toBeNull();
+    expect(storage.getTrainingLogEntry(userId, "server-1")?.name).toBe(
+      "Upper A",
+    );
+  });
+
   it("caches workoutsThisMonth=null (not 0) when the server response omits or nulls the field (Inspector Brad PR #62 regression)", async () => {
     // The medium-severity "fabricated zero" bug: pre-fix, `?? 0`
     // landed a literal 0 in the cache when the field was missing.

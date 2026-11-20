@@ -18,6 +18,7 @@ function sqliteAdapter(): { adapter: StoragePort; db: DatabaseSync } {
       updated_at TEXT NOT NULL
     );
     CREATE TABLE training_log_since (user_id TEXT PRIMARY KEY, since TEXT NOT NULL);
+    CREATE TABLE training_log_ids (local_id TEXT PRIMARY KEY, server_id TEXT NOT NULL);
     CREATE TABLE active_sessions (id TEXT PRIMARY KEY);
     CREATE TABLE session_exercises (session_id TEXT);
     CREATE TABLE personal_records (session_id TEXT);
@@ -108,6 +109,27 @@ describe.each([
     // A swap with nothing logged is harmless.
     s.swapLocalSessionId("local-2", "srv-2");
     expect(s.getTrainingLog("u1")).toHaveLength(1);
+  });
+
+  it("moves a synced workout to its server id, whichever comes first (Inspector Brad #541)", () => {
+    // Summary saved first, then the sync reply links the ids.
+    s.saveTrainingLogEntry("u1", finished("local-1", 20));
+    s.linkTrainingLogSessionId("local-1", "srv-1");
+    expect(s.getTrainingLogEntry("u1", "local-1")).toBeNull();
+    expect(s.getTrainingLogEntry("u1", "srv-1")!.exercises[0]!.sessionId).toBe(
+      "srv-1",
+    );
+    // The sync drained before the summary saved: it still lands as srv-2.
+    s.linkTrainingLogSessionId("local-2", "srv-2");
+    s.saveTrainingLogEntry("u1", finished("local-2", 21));
+    expect(s.getTrainingLogEntry("u1", "local-2")).toBeNull();
+    expect(s.getTrainingLogEntry("u1", "srv-2")!.id).toBe("srv-2");
+    // A re-save under the old id never duplicates.
+    s.saveTrainingLogEntry("u1", finished("local-1", 20));
+    expect(s.getTrainingLog("u1").map((x) => x.id)).toEqual(["srv-1", "srv-2"]);
+    // Same id both sides is a no-op.
+    s.linkTrainingLogSessionId("srv-1", "srv-1");
+    expect(s.getTrainingLogEntry("u1", "srv-1")).not.toBeNull();
   });
 
   it("stamps when the log started, once", () => {

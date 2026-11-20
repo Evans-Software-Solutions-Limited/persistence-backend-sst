@@ -225,6 +225,26 @@ describe("recapPages", () => {
     expect(pages.find((p) => p.id === "together")).toMatchObject({ sub: "" });
   });
 
+  it("shows each record in its own unit (Inspector Brad #541)", () => {
+    const model = buildRecap({
+      period: "week",
+      now: NOW,
+      sessions: [],
+      records: [
+        record("run", at(27), { recordType: "best_time", value: 95 }),
+        record("row", at(27), { recordType: "longest_distance", value: 2000 }),
+        record("squat", at(27), { recordType: "1rm", value: 100 }),
+      ],
+      musclesOf,
+    });
+    const page = recapPages(model, { now: NOW, unit: "lb", streak: "—" }).find(
+      (p) => p.id === "records",
+    ) as unknown as { trio: { value: string }[] };
+    expect(page.trio.map((t) => t.value).sort()).toEqual(
+      ["1:35", "2,000", "220.5"].sort(),
+    );
+  });
+
   it("shares each kind of page as text", () => {
     const model = buildRecap({
       period: "week",
