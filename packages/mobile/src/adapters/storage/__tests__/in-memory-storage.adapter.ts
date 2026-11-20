@@ -1121,9 +1121,13 @@ export class InMemoryStorageAdapter implements StoragePort {
       ...cloneSession(session),
       __owner: userId,
     });
+    // Same rule as SQLite: a back-dated workout counts from when it was logged.
     const since = this.trainingLogSince.get(userId);
-    if (since == null || Date.parse(session.startedAt) < Date.parse(since))
-      this.trainingLogSince.set(userId, session.startedAt);
+    const at = saved.retrospectiveCompletedAt
+      ? new Date().toISOString()
+      : session.startedAt;
+    if (since == null || Date.parse(at) < Date.parse(since))
+      this.trainingLogSince.set(userId, at);
   }
 
   linkTrainingLogSessionId(localId: string, serverId: string): void {

@@ -160,7 +160,7 @@ describe.each([
     // Opening You on the 20th doesn't move it later.
     s.markTrainingLogSince("u1", "2026-10-20T10:00:00.000Z");
     expect(s.getTrainingLogSince("u1")).toBe(finished("a", 18).startedAt);
-    // A later workout leaves it; an earlier one (logged after the fact) moves it.
+    // A later workout leaves it; an earlier live finish moves it back.
     s.saveTrainingLogEntry("u1", finished("b", 22));
     expect(s.getTrainingLogSince("u1")).toBe(finished("a", 18).startedAt);
     s.saveTrainingLogEntry("u1", finished("c", 10));
@@ -168,6 +168,37 @@ describe.each([
     // An unfinished workout never moves it.
     s.saveTrainingLogEntry("u1", finished("d", 1, { status: "cancelled" }));
     expect(s.getTrainingLogSince("u1")).toBe(finished("c", 10).startedAt);
+  });
+
+  it("never moves the start back for a back-dated workout (Inspector Brad #541)", () => {
+    jest.useFakeTimers({ now: new Date("2026-11-21T09:00:00.000Z") });
+    try {
+      // The day after the update, a forgotten workout is logged for 3 Aug.
+      s.saveTrainingLogEntry(
+        "u1",
+        finished("retro", 3, {
+          startedAt: "2026-08-03T07:00:00.000Z",
+          retrospectiveCompletedAt: "2026-08-03T08:00:00.000Z",
+        }),
+      );
+      // The log starts when it was logged, not on 3 Aug.
+      expect(s.getTrainingLogSince("u1")).toBe("2026-11-21T09:00:00.000Z");
+      // And a back-dated workout never pulls an existing start back.
+      s.saveTrainingLogEntry(
+        "u1",
+        finished("retro2", 1, {
+          startedAt: "2026-07-01T07:00:00.000Z",
+          retrospectiveCompletedAt: "2026-07-01T08:00:00.000Z",
+        }),
+      );
+      expect(s.getTrainingLogSince("u1")).toBe("2026-11-21T09:00:00.000Z");
+      // The workouts themselves are still in the log on their own dates.
+      expect(s.getTrainingLogEntry("u1", "retro")!.startedAt).toBe(
+        "2026-08-03T07:00:00.000Z",
+      );
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it("stamps when the log started, once", () => {

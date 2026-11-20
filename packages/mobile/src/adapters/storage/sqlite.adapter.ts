@@ -3160,14 +3160,17 @@ ${indentSyncQueueDdl(12)}
         new Date().toISOString(),
       ],
     );
-    // The log covers the phone from its earliest workout: a workout saved
-    // before any screen first read the log must not postdate `since`.
+    // The log covers the phone from its earliest live workout: one saved
+    // before any screen first read the log must not postdate `since`. A
+    // back-dated (retrospective) workout says when it happened, not when
+    // the phone started keeping a log, so it counts from when it was logged.
     const since = this.getTrainingLogSince(userId);
-    if (since == null || Date.parse(session.startedAt) < Date.parse(since))
+    const at = trainingLogStart(saved);
+    if (since == null || Date.parse(at) < Date.parse(since))
       this.getDb().runSync(
         `INSERT INTO training_log_since (user_id, since) VALUES (?, ?)
          ON CONFLICT(user_id) DO UPDATE SET since = excluded.since`,
-        [userId, session.startedAt],
+        [userId, at],
       );
   }
 
@@ -4126,4 +4129,14 @@ function renameSession(
       e.sessionId === localId ? { ...e, sessionId: serverId } : e,
     ),
   };
+}
+
+/**
+ * When a saved workout shows the phone was keeping its log: a live finish
+ * from its start; a back-dated (retrospective) one only from now.
+ */
+export function trainingLogStart(session: WorkoutSession): string {
+  return session.retrospectiveCompletedAt
+    ? new Date().toISOString()
+    : session.startedAt;
 }

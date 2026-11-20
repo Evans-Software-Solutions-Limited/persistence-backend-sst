@@ -46,7 +46,7 @@ no native packages, permissions, config plugins or version bump.
   "an upper day sorts it"; "No lifts in the last 7 days."; the History and
   Recap coverage lines. History's Y2b has no effort chip, because the rating
   isn't stored with the workout.
-- **Inspector Brad on #541, three sweeps, 8 leads, all confirmed and fixed:**
+- **Inspector Brad on #541, four sweeps, 9 leads, all confirmed and fixed:**
   - Date-only body-trend days were parsed as UTC midnight, so west of UTC
     they landed on the wrong day. `toLocalDate` and `dayKey` now treat
     `YYYY-MM-DD` as a local day.
@@ -67,7 +67,9 @@ no native packages, permissions, config plugins or version bump.
   - Together finishes never hit `/sessions/record`, so saving now prefers
     the confirmed `together.historyId` as the row id.
   - `since` was stamped on the first screen read only; every save now pulls
-    it back to the earliest logged start.
+    it back to the earliest live start. A back-dated (retrospective)
+    workout counts from when it was logged, never its own date, so it
+    can't claim months the phone didn't keep.
 - **Tests:** credit table tests, You-page builders, both storage adapters on
   real SQLite (`node:sqlite`), presenters (trained, new user, rest day,
   offline), containers.
