@@ -24,6 +24,10 @@ import {
   findPersonalCode,
 } from "../../coaching/acceptPersonalCode";
 import type { AcceptPreview } from "../../coaching/setupSections";
+import {
+  inviteGuessLimited,
+  RATE_LIMITED_BODY,
+} from "../../coaching/inviteGuessLimit";
 
 /**
  * POST /trainers/accept-invite-code — client enters a trainer's invite code
@@ -111,6 +115,14 @@ export const trainersAcceptInviteCodeHandler = new Elysia()
           message:
             "Explicit consent to share your data with this coach is required to connect.",
         };
+      }
+
+      // PER-108: a guessed personal code would activate a relationship and
+      // hand over the coach's set-up, so redeem attempts share the invite
+      // preview's guessing budget. Checked before any DB work.
+      if (inviteGuessLimited(userId, ctx.headers["x-forwarded-for"])) {
+        ctx.set.status = 429;
+        return RATE_LIMITED_BODY;
       }
 
       const result = await db.transaction(

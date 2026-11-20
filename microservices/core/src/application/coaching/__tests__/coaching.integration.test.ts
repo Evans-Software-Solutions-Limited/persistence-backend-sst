@@ -240,11 +240,13 @@ async function http(
   actor: string | null,
   body?: unknown,
   key?: string,
+  extraHeaders: Record<string, string> = {},
 ): Promise<{ status: number; json: Json }> {
   const res = await app.handle(
     new Request(`http://localhost${path}`, {
       method,
       headers: {
+        ...extraHeaders,
         ...(actor ? { authorization: `Bearer ${actor}` } : {}),
         ...(body !== undefined ? { "content-type": "application/json" } : {}),
         ...(key ? { "idempotency-key": key } : {}),
@@ -1192,6 +1194,73 @@ describe("GET /invites/:code/preview", () => {
     expect(res.status).toBe(429);
     const other = await http("GET", "/invites/NOPE99/preview", ATHLETE_F);
     expect(other.status).toBe(404);
+  });
+});
+
+// ─── Guessing codes ──────────────────────────────────────────────────────────
+
+describe("guessing invite codes is throttled", () => {
+  const guess = (athlete: string, code: string, ip?: string) =>
+    http(
+      "POST",
+      "/trainers/accept-invite-code",
+      athlete,
+      { code, consent: true, consentVersion: "v1-2026-07" },
+      undefined,
+      ip ? { "x-forwarded-for": ip } : {},
+    );
+
+  it("an athlete sweeping codes is stopped before reaching a real one", async () => {
+    const { profile, code } = await readyCode();
+    for (let i = 0; i < 30; i++) {
+      expect((await guess(ATHLETE_F, "ZZZZZZ")).status).toBe(404);
+    }
+    const hit = await guess(ATHLETE_F, code);
+    expect(hit.status).toBe(429);
+    expect(hit.json).toEqual({
+      code: "rate_limited",
+      message: "Too many attempts. Try again later.",
+    });
+    // Nothing happened: no relationship, the code is still the invitee's.
+    expect(await relationship(COACH_A, ATHLETE_F)).toBeUndefined();
+    const detail = await http(
+      "GET",
+      `/trainers/me/client-profiles/${profile.id}`,
+      COACH_A,
+    );
+    expect(detail.json.data).toMatchObject({
+      status: "invited",
+      invite: { status: "active" },
+    });
+    // The real invitee is unaffected.
+    expect((await guess(ATHLETE_E, code)).status).toBe(201);
+  });
+
+  it("preview and accept share one budget", async () => {
+    for (let i = 0; i < 20; i++) {
+      await http("GET", "/invites/ZZZZZZ/preview", ATHLETE_F);
+    }
+    for (let i = 0; i < 10; i++) {
+      expect((await guess(ATHLETE_F, "ZZZZZZ")).status).toBe(404);
+    }
+    expect((await guess(ATHLETE_F, "ZZZZZZ")).status).toBe(429);
+    expect(
+      (await http("GET", "/invites/ZZZZZZ/preview", ATHLETE_F)).status,
+    ).toBe(429);
+  });
+
+  it("one address spreading guesses over many accounts is stopped too", async () => {
+    const ip = "203.0.113.7";
+    const accounts = Array.from({ length: 4 }, () => randomUUID());
+    for (const account of accounts) {
+      for (let i = 0; i < 30; i++) await guess(account, "ZZZZZZ", ip);
+    }
+    // A fresh account from the same address is already over the IP budget.
+    expect((await guess(randomUUID(), "ZZZZZZ", ip)).status).toBe(429);
+    // Another address is not.
+    expect((await guess(randomUUID(), "ZZZZZZ", "198.51.100.9")).status).toBe(
+      404,
+    );
   });
 });
 

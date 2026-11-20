@@ -5,7 +5,7 @@ import {
   requireAuth,
 } from "@persistence/api-utils/auth/supabaseAuth";
 import { readIdempotencyKey } from "../shared/idempotencyKey";
-import { rateLimitExceeded } from "../leads/rateLimit";
+import { inviteGuessLimited, RATE_LIMITED_BODY } from "./inviteGuessLimit";
 import { resolveCoachScope } from "../relationships/resolveCoachScope";
 import { CoachClientSettingsRepository } from "./clientSettings";
 import { isActiveTrainer } from "./clientProfileRepository";
@@ -139,26 +139,18 @@ export const declarationHandler = authed()
   );
 
 /**
- * Codes are 6 characters, so the preview is rate-limited per user to make
- * guessing impractical. In-memory per Lambda container: a first line, as in
- * `leads/rateLimit.ts`, not a wall. The accept route stays the real gate.
+ * Codes are 6 characters, so the preview is rate-limited. It shares its budget
+ * with the accept route (`inviteGuessLimit.ts`): both tell a valid code from
+ * an invalid one.
  */
-export const INVITE_PREVIEW_LIMIT_PER_HOUR = 30;
-
 /** `GET /invites/:code/preview`. */
 export const invitePreviewHandler = authed().get(
   "/invites/:code/preview",
   async (ctx) => {
     const { sub } = getUser(ctx);
-    if (
-      rateLimitExceeded(
-        `invite-preview:${sub}`,
-        INVITE_PREVIEW_LIMIT_PER_HOUR,
-        60 * 60 * 1000,
-      )
-    ) {
+    if (inviteGuessLimited(sub, ctx.headers["x-forwarded-for"])) {
       ctx.set.status = 429;
-      return { code: "rate_limited", message: "Too many attempts. Try later." };
+      return RATE_LIMITED_BODY;
     }
     const preview = await previewInviteCode(ctx.params.code);
     if (!preview) {
