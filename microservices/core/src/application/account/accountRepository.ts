@@ -2,6 +2,14 @@ import { and, eq, isNotNull, lte } from "drizzle-orm";
 import { profiles, userDevices } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
 import { ACCOUNT_DELETION_STEPS, buildStatement } from "./accountDeletionPlan";
+import { ClientProfileRepository } from "../coaching/clientProfileRepository";
+
+/** Rows from `tx.execute`: postgres.js gives an array, PGlite `{ rows }`. */
+function executedRows(result: unknown): Array<{ id?: unknown }> {
+  if (Array.isArray(result)) return result as Array<{ id?: unknown }>;
+  const rows = (result as { rows?: unknown } | null | undefined)?.rows;
+  return Array.isArray(rows) ? (rows as Array<{ id?: unknown }>) : [];
+}
 
 /** The 30-day cooling-off window (Cluster 2a soft-delete). */
 export const SOFT_DELETE_GRACE_PERIOD_MS = 30 * 24 * 60 * 60 * 1000;
@@ -26,6 +34,7 @@ export class AccountRepository {
    */
   async purgeUserData(userId: string): Promise<void> {
     const db = getDb();
+    const tombstoned: string[] = [];
     await db.transaction(async (tx) => {
       // Serialize with POST /account/restore before deleting anything.
       // `listPendingPurge` is snapshotted once at the top of the nightly
@@ -46,9 +55,30 @@ export class AccountRepository {
       if (stillSoftDeleted.length === 0) return;
 
       for (const step of ACCOUNT_DELETION_STEPS) {
-        await tx.execute(buildStatement(step, userId));
+        const result = await tx.execute(buildStatement(step, userId));
+        if (step.kind === "tombstone-client-profiles") {
+          for (const row of executedRows(result)) {
+            if (typeof row.id === "string") tombstoned.push(row.id);
+          }
+        }
       }
     });
+
+    // PER-108: the coach-profile tombstones were stamped with the transaction's
+    // start time. Re-stamp them now it has committed, so a coach device that
+    // listed mid-purge still sees them in `deletedIds`. Best effort: the
+    // purge itself has committed, so a failure here must not stop the
+    // auth-user delete that follows it. The worst case is the old stamp.
+    if (tombstoned.length > 0) {
+      try {
+        await new ClientProfileRepository().restampTombstones(tombstoned);
+      } catch (err) {
+        console.error(
+          "[account-purge] failed to re-stamp coach profile tombstones",
+          err,
+        );
+      }
+    }
   }
 
   /**

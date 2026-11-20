@@ -1,5 +1,5 @@
 import Elysia from "elysia";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { trainerInviteCodes, profiles } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
 import {
@@ -57,6 +57,9 @@ export const trainersInviteCodeCreateHandler = new Elysia()
         and(
           eq(trainerInviteCodes.trainerId, userId),
           eq(trainerInviteCodes.status, "active"),
+          // PER-108: personal codes (one invited client each) are not the
+          // coach's general code.
+          isNull(trainerInviteCodes.clientProfileId),
           sql`${trainerInviteCodes.expiresAt} <= NOW()`,
         ),
       );
@@ -73,6 +76,9 @@ export const trainersInviteCodeCreateHandler = new Elysia()
         and(
           eq(trainerInviteCodes.trainerId, userId),
           eq(trainerInviteCodes.status, "active"),
+          // PER-108: personal codes (one invited client each) are not the
+          // coach's general code.
+          isNull(trainerInviteCodes.clientProfileId),
           sql`${trainerInviteCodes.expiresAt} > NOW()`,
         ),
       )
@@ -160,6 +166,7 @@ export const trainersInviteCodeCreateHandler = new Elysia()
               and(
                 eq(trainerInviteCodes.trainerId, userId),
                 eq(trainerInviteCodes.status, "active"),
+                isNull(trainerInviteCodes.clientProfileId),
                 sql`${trainerInviteCodes.expiresAt} > NOW()`,
               ),
             )

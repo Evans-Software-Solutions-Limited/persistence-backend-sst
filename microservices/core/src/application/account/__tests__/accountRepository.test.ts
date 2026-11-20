@@ -7,6 +7,18 @@ vi.mock("@persistence/db/client", () => ({
   getDb: vi.fn(),
 }));
 
+// The post-commit tombstone re-stamp (PER-108); its SQL is covered against
+// PGlite in coaching/__tests__/coaching.integration.test.ts.
+const restampTombstones = vi.fn<(ids: string[]) => Promise<void>>(
+  async () => {},
+);
+vi.mock("../../coaching/clientProfileRepository", async (original) => ({
+  ...(await original<object>()),
+  ClientProfileRepository: class {
+    restampTombstones = restampTombstones;
+  },
+}));
+
 import { getDb } from "@persistence/db/client";
 import {
   AccountRepository,
@@ -70,6 +82,77 @@ describe("AccountRepository.purgeUserData", () => {
     expect(dialect.sqlToQuery(executed[executed.length - 1]!).sql).toContain(
       '"profiles"',
     );
+  });
+
+  it("re-stamps the coach-profile tombstones AFTER the purge transaction commits (PER-108)", async () => {
+    const executed: SQL[] = [];
+    const order: string[] = [];
+    const tx = makeTx(executed);
+    // postgres.js returns an array of rows from `execute`.
+    tx.execute = vi.fn(async (stmt: SQL) => {
+      executed.push(stmt);
+      return dialect.sqlToQuery(stmt).sql.includes('"coach_client_profiles"')
+        ? ([{ id: "p-1" }, { id: "p-2" }] as never)
+        : (undefined as never);
+    });
+    const transaction = vi.fn(async (cb: (t: typeof tx) => Promise<void>) => {
+      await cb(tx);
+      order.push("commit");
+    });
+    restampTombstones.mockImplementationOnce(async () => {
+      order.push("restamp");
+    });
+    (getDb as any).mockReturnValue({ transaction });
+
+    await new AccountRepository().purgeUserData("athlete-1");
+
+    expect(restampTombstones).toHaveBeenCalledWith(["p-1", "p-2"]);
+    expect(order).toEqual(["commit", "restamp"]);
+  });
+
+  it("reads PGlite-shaped { rows } results too, and nothing to re-stamp means no call", async () => {
+    const executed: SQL[] = [];
+    const tx = makeTx(executed);
+    tx.execute = vi.fn(async (stmt: SQL) => {
+      executed.push(stmt);
+      return dialect.sqlToQuery(stmt).sql.includes('"coach_client_profiles"')
+        ? ({ rows: [{ id: "p-9" }, { id: 7 }] } as never)
+        : ({ rows: [] } as never);
+    });
+    (getDb as any).mockReturnValue({
+      transaction: vi.fn(async (cb: (t: typeof tx) => Promise<void>) => cb(tx)),
+    });
+    await new AccountRepository().purgeUserData("athlete-2");
+    expect(restampTombstones).toHaveBeenCalledWith(["p-9"]);
+
+    restampTombstones.mockClear();
+    const quiet = makeTx([]);
+    (getDb as any).mockReturnValue({
+      transaction: vi.fn(async (cb: (t: typeof quiet) => Promise<void>) =>
+        cb(quiet),
+      ),
+    });
+    await new AccountRepository().purgeUserData("athlete-3");
+    expect(restampTombstones).not.toHaveBeenCalled();
+  });
+
+  it("a failed re-stamp doesn't fail the purge, which has already committed", async () => {
+    const tx = makeTx([]);
+    tx.execute = vi.fn(async (stmt: SQL) =>
+      dialect.sqlToQuery(stmt).sql.includes('"coach_client_profiles"')
+        ? ([{ id: "p-1" }] as never)
+        : (undefined as never),
+    );
+    (getDb as any).mockReturnValue({
+      transaction: vi.fn(async (cb: (t: typeof tx) => Promise<void>) => cb(tx)),
+    });
+    restampTombstones.mockRejectedValueOnce(new Error("db blip"));
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    await expect(
+      new AccountRepository().purgeUserData("athlete-4"),
+    ).resolves.toBeUndefined();
+    expect(spy).toHaveBeenCalled();
+    spy.mockRestore();
   });
 
   it("handles a Coach-Mode user (trainer_actions_audit + client_ai_summaries rows on both sides) without relying on any FK to auto-cascade — every NO-ACTION table is explicitly deleted before profiles", async () => {

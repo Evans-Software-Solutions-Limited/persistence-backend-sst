@@ -1,0 +1,36 @@
+{
+  "_source": "Recorded from the 1.2.0 store bundle (commit 3bad31e, chore(mobile): app version 1.2.0). packages/mobile/src/adapters/api/sst-api.adapter.ts acceptTrainerInviteCode + getTrainerClients, packages/mobile/src/domain/models/trainerInviteCode.ts. PER-108 / design A D5: these must keep passing.",
+  "acceptInviteCode": {
+    "request": {
+      "method": "POST",
+      "path": "/trainers/accept-invite-code",
+      "body": {
+        "code": "<code>",
+        "consent": true,
+        "consentVersion": "v1-2026-07"
+      }
+    },
+    "successStatusRange": [200, 299],
+    "successEnvelope": "data",
+    "successFields": {
+      "success": "boolean:true",
+      "relationshipId": "string",
+      "trainerName": "string",
+      "message": "string"
+    },
+    "errorFields": { "code": "string", "message": "string" },
+    "errorCodes": [
+      "invalid_code",
+      "self_invite",
+      "exists",
+      "code_already_used",
+      "coach_client_limit_reached",
+      "consent_required"
+    ]
+  },
+  "trainerClients": {
+    "request": { "method": "GET", "path": "/trainers/me/clients" },
+    "successEnvelope": "data",
+    "dataIsArray": true
+  }
+}

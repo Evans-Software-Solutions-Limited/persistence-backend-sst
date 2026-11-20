@@ -88,6 +88,232 @@ no native packages, permissions, config plugins or version bump.
   real SQLite (`node:sqlite`), presenters (trained, new user, rest day,
   offline), containers.
 
+### 2026-11-20 — Your meals, food-log idempotency and batch logging ([PER-109](https://linear.app/evans-software-solutions/issue/PER-109), BE-D1; branch `bradleysimmsevans/per-109-be-d1-backend-your-meals-food-log`)
+
+Design D (Linear doc on PER-66), "Your meals" and "Entries" parts only. Meal
+plans, coach plans, recipe sharing and the shopping list are PER-118.
+- **Migration** `20261120143109_your_meals_entry_idempotency.sql` (+ rollback):
+  `user_meals` (name 1–40, `log_slot` CHECK, `default_key`, `archived_at`,
+  `client_request_id`; RLS on, no policies), and on `nutrition_entries`:
+  `user_meal_id` (→ user_meals, SET NULL), `source_plan_id`,
+  `source_plan_meal_id` (no FK), `client_request_id`. Both key indexes are
+  FULL unique `(user_id, client_request_id)`, as in 20260727120100 (a partial
+  index raises 42P10 under Drizzle's predicate-less ON CONFLICT). The
+  `(user_id, default_key)` index is partial; seeding uses a target-less
+  `ON CONFLICT DO NOTHING`, which matches partial indexes. ⚠ Migrate before
+  deploy: the schema declares the new columns, so every `nutrition_entries`
+  read 42703s without them. The staging workflow already runs
+  `supabase db push` before `sst deploy`.
+- **`POST /nutrition/entries`** stores `Idempotency-Key` as
+  `client_request_id`. A replay returns the first row (201, same body), and
+  it's checked before macro derivation, so a replay still works after the
+  food is deleted. The 1.2.0 sync queue already sends the header, so the
+  duplicate food log on retry is fixed for 1.2.0 phones as soon as core
+  deploys. Optional `userMealId` must be the caller's (else 400
+  `user_meal_not_found`); the server then sets `mealSlot` from the meal's
+  `logSlot`. Macro derivation moved to `nutrition/entries/resolveEntryInput.ts`,
+  shared with the batch.
+- **`POST /nutrition/entries/batch`**: ≤ 50 entries, each the single-create
+  body plus a required `clientRequestId` and optional
+  `sourcePlanId`/`sourcePlanMealId` (a non-uuid, e.g. `local-…`, is stored as
+  null). Each entry is idempotent on its own key in the same column, with no
+  batch transaction, so a part-sent batch can be re-sent. It answers 200 with
+  per-entry `{clientRequestId, entry}` or `{clientRequestId, error}`, so one
+  bad entry doesn't strand the others in the queue.
+- **`GET/PUT /nutrition/user-meals`**: GET seeds Breakfast, Lunch, Snack,
+  Dinner (the shipped `MEAL_SLOTS` order and labels) once, safe under
+  concurrent first reads; `?includeArchived=true` adds removed meals. PUT
+  replaces the list in one transaction: an id updates and un-archives, a
+  foreign uuid → 400, a non-uuid id counts as none, `clientRequestId`
+  upserts (a replayed PUT doesn't duplicate), meals left out are archived and
+  their entries keep `user_meal_id`. Last write wins. Responses are
+  `{data: {meals, asOf}}`.
+- **Entry reads** (`/nutrition/entries`, `/nutrition/today`) return
+  `userMealId`: the stored one, or for entries without one the default meal
+  for the slot (`nutrition/userMeals/effectiveUserMeal.ts`: the seeded
+  default if active and still on that slot, else the first active meal on
+  that slot, else null). Reads never seed, so they stay write-free for 1.2.0.
+  `entriesBySlot` is unchanged.
+- **Old-app slot move:** `PUT /nutrition/entries/:id` with a `mealSlot` keeps
+  `user_meal_id` only if that meal maps to the new slot; otherwise it clears
+  it, so the entry regroups under the new slot's default.
+- **Tests** (PGlite with the real migration files; only auth stubbed):
+  `nutrition/__tests__/designD.integration.test.ts` (Design D tests 3 and 4,
+  two-user isolation, user-meals PUT), `repositories/__tests__/yourMealsMigration.integration.test.ts`
+  (test 8: forward twice, down/up, existing entries untouched, index shapes,
+  CHECKs, SET NULL/CASCADE, RLS), and
+  `nutrition/entries/__tests__/entriesContract120.integration.test.ts`, the new
+  1.2.0 entry contract fixtures (`fixtures/entries120.fixture.ts`, recorded
+  from the 1.2.0 app's queue payloads, headers and models), run through the
+  production `nutritionRoutes` tree.
+- **For APP-D1 (PER-132):** create meals with a `clientRequestId` and drain
+  the user-meals PUT before entries that reference them. A `local-…`
+  `userMealId` is rejected (400 on POST, a per-entry error in the batch).
+- **Not verified:** nothing deployed or run against staging/prod Postgres;
+  PGlite only.
+- **Inspector Brad on PR #542, one lead, confirmed and fixed:** one malformed
+  batch entry threw inside the loop. A `local-…` `foodId`/`recipeId`/`mealId`
+  hit the uuid cast (22P02), and a bad `loggedAt` threw `Invalid time value`
+  in the insert. Either one 500'd the whole batch, and every re-send failed
+  at the same entry, so the entries after it were never logged. Reproduced on
+  PGlite, then fixed in `resolveEntryInput`, so the single POST gets it too:
+  a non-uuid reference is `*_not_found` with no query, and an unparseable or
+  unstorable `loggedAt` (outside the years 1900–9999) is `invalid_logged_at`.
+  These are returned errors, not throws. For the single POST, 400 replaces
+  the old 500, which is what 1.2.0's drain expects: a 4xx on a payload still
+  carrying a `local-…` id is deferred and retried after the id swap. Truly
+  unexpected errors (a DB outage) still 500 the batch on purpose. A per-entry
+  200 would tell the phone to give up on entries that would succeed on retry,
+  and the batch is safe to re-send.
+- **Second Inspector Brad sweep, one lead, confirmed and fixed:** only the
+  FIRST reference present (food → recipe → meal) was checked, but all three
+  ids were stored as sent. So `{foodId, mealId: "local-…"}` or a second,
+  unknown uuid failed the insert (22P02 or 23503): a 500 on every re-send.
+  `foodId: ""` slipped past the truthy check, and another user's `recipeId`
+  beside the caller's own food was stored without an ownership check
+  (pre-existing on the single POST). Reproduced on PGlite. Now only the
+  reference the macros came from is stored; the others are dropped, and an
+  empty string counts as no reference.
+- **Third sweep:** both earlier leads were confirmed closed. One low lead,
+  confirmed and fixed: a NUL byte in `customName`, or in a your-meals
+  `name`, passes `t.String()` but Postgres `text` rejects it (22021), so
+  the batch 500'd on every re-send. `shared/stripNul.ts` strips it, keeping
+  the log and the rest of the name; a meal name that is only NULs is blank,
+  so 400. I checked every other client string in this PR: keys pass a
+  regex, ids must be uuids, and `loggedAt` reaches Postgres only as a
+  parsed Date.
+- **Fourth sweep: case closed** on 44b86d0. Its one aside (pre-existing,
+  outside the PR's files): `PUT /nutrition/entries/:id` still wrote
+  `customName` unstripped. Reproduced (500) and fixed in
+  `NutritionEntryRepository.update`, the point every edit write goes through.
+
+### 2026-11-20 — BE-A1: client profiles, personal invite codes, set-up, several coaches, coach declaration ([PER-108](https://linear.app/evans-software-solutions/issue/PER-108); branch `bradleysimmsevans/per-108-be-a1-backend-client-profiles`)
+
+Foundation backend for Linear "Backend design A — Coaching relationships and
+client onboarding" (approved 20 Nov). Backend only; no app or native change.
+
+- **Migration** `20261120120000_coaching_relationships_client_profiles.sql`
+  (rollback in `supabase/rollbacks/`). New: `coach_client_profiles` (with a
+  `deleted_at` tombstone so `?since=` can return `deletedIds`),
+  `coach_client_setup_items` (with `materialised_at`/`materialised_ref_id`
+  so accept materialises each item once), `coach_client_settings`,
+  `trainer_declarations`. Added: `trainer_invite_codes.client_profile_id` +
+  `client_request_id`, `pt_client_relationships.activated_at` +
+  `client_profile_id`. RLS on, no policies. Backfills touch active rows only.
+  - ⚠ `trainer_invite_codes_trainer_active_uq` (one active code per trainer)
+    is recreated under the same name with `AND client_profile_id IS NULL`, so a
+    coach can hold a general code plus one personal code per profile. Loosened,
+    never tightened. The general-code create handler now filters
+    `client_profile_id IS NULL` everywhere so it never returns a personal code.
+  - `activated_at` is stamped by a trigger whenever status becomes `active`,
+    so every existing accept path sets it without being edited.
+- **Code** in `microservices/core/src/application/coaching/` +
+  `relationships/resolveCoachScope.ts`, mounted via `coachingRoutes` inside
+  `trainersOnBehalfRoutes` (TS2589). Routes: `/trainers/me/client-profiles`
+  CRUD, `setup/:section`, `setup/copy-from`, `preview`, `invite` POST/DELETE;
+  `/trainers/me/clients/:clientId/settings` GET/PATCH;
+  `/trainers/me/declaration` GET/POST; `GET /invites/:code/preview`;
+  `GET /users/me/coaching`. `GET /trainers/me/clients` gains a sibling
+  `invited`; `data` unchanged.
+- **Accept** (`POST /trainers/accept-invite-code`, request unchanged): a
+  personal code takes `coaching/acceptPersonalCode.ts` (active relationship,
+  consent source `personal_invite_redeem`, settings from set-up, private notes
+  → private `trainer_client_notes`, items materialised). A replay by the same
+  athlete returns 200 with the first result; a race serialises on the code
+  row lock. General codes behave as before plus optional
+  `relationshipStatus: 'pending'`, `ready: null`.
+- **Set-up hook** (`coaching/setupSections.ts`): live sections are
+  `nutrition_target` and `welcome_message` (sent as a `coach_brief`
+  notification until chat ships). `programme` (PER-112), `meal_plan`
+  (PER-118), `starter_form`/`repeating_form` (PER-116), `resource` (PER-122)
+  return 422 `section_unavailable` until their ticket adds a handler to
+  `HANDLERS`. Offboarding marks this coach's profile `ended`; comments mark
+  where C/D/E/I add their teardown.
+- **Declaration**: `COACH_DECLARATION_VERSION` env (infra/api.ts; default
+  `2026-11-v1` in `coaching/declaration.ts`). Gates only the new invite route.
+  `statementTextHash` is an optional, additive request field (the design's
+  body is `{statementVersion}`; the text ships in the app).
+- **Retention**: `ClientProfileRepository.purgeUnaccepted` runs in the nightly
+  `accountPurgeCron` (own try/catch + Sentry). It also covers a profile never
+  sent a code (90 days after creation), which the design didn't spell out.
+  See the second-sweep note below for the two-phase change.
+- **Invite preview rate limit** reuses the in-memory `leads/rateLimit.ts`
+  (per Lambda container, 30/user/hour): a first line, not a wall.
+- **Tests**: `coaching/__tests__/coaching.integration.test.ts` runs the real
+  migration on PGlite through the real handlers: every D7 item (isolation,
+  wrong role, accept/replay/race/expired/resent/cancelled/exists/seat cap,
+  second coach, 1.2.0 fixture `fixtures/contract-1.2.0.json`, code lifecycle,
+  revision, declaration, migration twice/down/up, retention). Changed files
+  ≥ 90% on all four metrics. Existing queue-mock tests for accept, roster and
+  offboarding were updated for the extra query.
+- **Inspector Brad (PR #540), two leads, both confirmed and fixed (2fdaf64):**
+  - A soft-deleted coach's personal code still made an active relationship,
+    a consent grant and the set-up (soft-delete leaves codes active). Accept
+    now checks the coach's `deleted_at` under the trainer row lock and answers
+    404 `invalid_code`. Restoring the account brings the codes back.
+  - Lock-order inversion: accept locks code → profile, while resend, cancel
+    and delete locked profile → code (deadlock risk, 40P01). They now lock
+    the profile's live codes first (`lockActiveCodes`). A test records the
+    `FOR UPDATE` order on all four paths; it fails on the old code.
+- **Inspector Brad second sweep (ec840cd), three leads, all confirmed and fixed:**
+  - `coach_client_profiles.client_id` is now `ON DELETE CASCADE` (the design
+    said SET NULL). Otherwise an accepted profile kept a purged athlete's
+    name, contact details and the coach's notes forever. The migration also
+    re-points the constraint, for any database that ran the earlier draft.
+  - The retention purge is two-phase. It tombstones and scrubs the personal
+    fields at 90 days, so `?since=` reports the id in `deletedIds`, then
+    hard-deletes tombstones after 30 days. The cron log now has
+    `{tombstoned, purged}`. A coach-deleted profile now goes 30 days after
+    the deletion (was 90).
+  - `asOf` on the profiles list is 2 minutes behind the server clock, so a
+    write still open during the list is re-read on the next sync.
+- **Inspector Brad third sweep (e2e51d3), one low lead, confirmed and fixed:**
+  the CASCADE hard-deleted a purged athlete's accepted profile with no
+  tombstone, so coaches' offline caches kept it. `ACCOUNT_DELETION_STEPS` has a
+  new `tombstone-client-profiles` step, run before the `profiles` delete. It
+  stamps `deleted_at`, scrubs the personal fields and nulls `client_id` and
+  `relationship_id`, so `?since=` reports the id. Retention phase B now
+  hard-deletes ANY tombstone after 30 days. The CASCADE stays as a backstop.
+- **Inspector Brad fourth sweep (69ba06e), one low lead, confirmed and fixed:**
+  phase A stamped tombstones with the cron's start `now`, read before the
+  other nightly sweeps. A device listing mid-sweep could get an `asOf` past
+  that stamp and miss the deletion. Tombstones now take SQL `now()` (the
+  write's own time); the passed `now` is only for the cutoff arithmetic.
+- **Inspector Brad fifth sweep (cee8acf), one medium lead, confirmed and fixed:**
+  `POST /trainers/accept-invite-code` had no throttle, and a guessed personal
+  code activates a relationship with the coach's set-up. The new
+  `coaching/inviteGuessLimit.ts` gives preview and accept ONE shared budget:
+  30/hour per user and 120/hour per IP, answering 429
+  `rate_limited` before any DB work. It's in-memory per Lambda container,
+  like `leads/rateLimit.ts`. A durable limiter (table or WAF) is a follow-up
+  if Brad wants it. (The lead's "stale active codes past 7 days" point was
+  wrong: accept already refuses an expired code.)
+- **Inspector Brad sixth sweep (e3d7f46), one low lead, confirmed and fixed:**
+  the per-IP bucket keyed on the first `X-Forwarded-For` entry, which the
+  caller controls. It now keys on `x-persistence-source-ip`, which
+  `trustedSourceHeaders` (api.ts) sets from the API Gateway context after
+  stripping any client copy, the same header `vouchersHandler` uses.
+- **Inspector Brad seventh sweep (0a21ff8), two low leads, both confirmed and fixed:**
+  - `?status=&since=` never reported profiles that left the status (accepted,
+    cancelled, ended). Ids of rows updated since `since` that no longer match
+    the filter now go in `deletedIds` ("gone from this view").
+  - The 20260626 `authenticated` INSERT/UPDATE RLS policies on
+    `trainer_invite_codes` let a coach POST a personal code over PostgREST,
+    skipping the declaration, 7-day expiry and seat check. No client writes
+    this table directly (checked mobile, web and the 1.2.0 bundle), so the
+    migration drops both policies. The SELECT policy stays, and the rollback
+    restores the two.
+- **Inspector Brad eighth sweep (41344b3), one low lead, confirmed and fixed:**
+  the account-purge tombstone step runs inside `purgeUserData`'s transaction,
+  where `now()` is the transaction START. A slow purge (cron budget 300 s)
+  could commit a stamp older than the 2-minute `asOf` margin. The step now
+  `RETURNING id`, and after the commit `ClientProfileRepository.restampTombstones`
+  re-stamps those ids with a standalone `now()`. That's best effort: a
+  failure is logged and never stops the auth-user delete.
+- **Not done here**: no migration applied to staging/prod; no device test. The
+  1.2.0 accept screen still says "awaiting their acceptance" for a personal
+  code (known gap, D5); the OTA bundle (PER-126) reads `relationshipStatus`.
+
 ### 2026-11-16 — Signed-out account's pushes still reached the phone (branch `claude/confident-cerf-xp8bka`)
 
 Brad reported that after signing out of the account Apple used for App Review,
@@ -9240,28 +9466,3 @@ PR not yet raised. NO product code — script + dataset + verdict + spec updates
   final focused backend:177; mobile import/review:105. Typecheck,lint,format and
   non-mobile build passed; local Inspector clean. No deployment/native build or
   paid AI invocation. Browser fixtures checked phone-width paste/review UI.
-
-### 2026-09-21 — RevenueCat CI expiry fixture
-
-- Staging run 35626969128 failed because the ends_at fallback test used a fixed
-  timestamp that expired at 14:13:20 UTC today, entering the existing billing
-  retry path. Reproduced the exact CI assertion locally before changing it.
-- Reused the existing future PERIOD_END_MS fixture in both input and expectation.
-  No production subscription/access logic changed. All 91 RevenueCat tests
-  passed; formatting and diff checks passed.
-
-### 2026-09-21 — Deploy coverage scheduling parity
-
-- Staging run 35630909480 timed out the voucher page's 501-code CSV template
-  test while backend and web coverage ran concurrently. PR checks already
-  serialized workspace suites to prevent runner contention; deploy workflows
-  had missed that fix.
-- Added the same Turbo --concurrency=1 setting to staging and production test
-  steps. Preserve runner-internal parallelism, coverage, failure gating and
-  the existing mobile exclusion. No retries, timeout increases or test changes.
-- Two uncached runs of the complete deploy test command passed: 18 tasks and
-  6,855 tests each (5,143 core; 1,483 web; 229 shared/scripts). The failing
-  voucher test completed in 1.267s and 1.636s against its existing 5s timeout.
-- actionlint, workflow formatting and diff checks passed; local Inspector Brad
-  found no actionable issues. Keep test scheduling aligned across PR, staging
-  and production workflows when changing CI resource controls.

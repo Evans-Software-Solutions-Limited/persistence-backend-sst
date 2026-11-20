@@ -1,5 +1,6 @@
 import {
   type AnyPgColumn,
+  smallint,
   boolean,
   check,
   date,
@@ -1096,6 +1097,16 @@ export const ptClientRelationships = pgTable(
     // Migration: 20260720230030_data_sharing_consents.sql.
     consentGivenAt: timestamp("consent_given_at", { withTimezone: true }),
     consentVersion: text("consent_version"),
+    // PER-108 (design A, D1). Set whenever status BECOMES active, by the
+    // `pt_client_relationships_activated_at` trigger — so every accept path
+    // stamps it. Design B uses it as the coaching start date. Migration:
+    // 20261120120000_coaching_relationships_client_profiles.sql.
+    activatedAt: timestamp("activated_at", { withTimezone: true }),
+    // The invited profile this relationship came from (personal code accept).
+    clientProfileId: uuid("client_profile_id").references(
+      (): AnyPgColumn => coachClientProfiles.id,
+      { onDelete: "set null" },
+    ),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
   },
@@ -1808,18 +1819,190 @@ export const trainerInviteCodes = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // PER-108: set on a PERSONAL code (one invited client, 7-day expiry).
+    // NULL = today's general code, unchanged.
+    clientProfileId: uuid("client_profile_id").references(
+      (): AnyPgColumn => coachClientProfiles.id,
+      { onDelete: "cascade" },
+    ),
+    // Idempotency-Key of the personal-code issue request (offline contract).
+    clientRequestId: text("client_request_id"),
   },
   (t) => [
     uniqueIndex("trainer_invite_codes_code_active_uq")
       .on(t.code)
       .where(sql`status = 'active'`),
-    // Enforces "at most one active code per trainer" — mirrors the partial
-    // unique index in 20260625120000_trainer_invite_codes.sql. Declared here
-    // so the Drizzle schema stays in parity with the DB (avoids drizzle-kit
-    // flagging it for drop if push/generate is ever wired up).
+    // "At most one active GENERAL code per trainer" — first added in
+    // 20260625120000_trainer_invite_codes.sql, predicate loosened by
+    // 20261120120000_coaching_relationships_client_profiles.sql so personal
+    // codes don't count. Declared here so the Drizzle schema stays in parity
+    // with the DB (avoids drizzle-kit flagging it for drop).
     uniqueIndex("trainer_invite_codes_trainer_active_uq")
       .on(t.trainerId)
+      .where(sql`status = 'active' AND client_profile_id IS NULL`),
+    // One live personal code per invited profile.
+    uniqueIndex("trainer_invite_codes_profile_active_uq")
+      .on(t.clientProfileId)
       .where(sql`status = 'active'`),
+    uniqueIndex("trainer_invite_codes_client_request_uq").on(
+      t.trainerId,
+      t.clientRequestId,
+    ),
+  ],
+);
+
+// ─── Coaching relationships and client onboarding (PER-108, design A) ────────
+// Migration: 20261120120000_coaching_relationships_client_profiles.sql, which
+// also carries the CHECK constraints (lengths, status/section/alert_mode
+// vocabularies). All four tables are service-role only (RLS on, no policies).
+
+/** The invited client: a profile the coach prepares before they accept. */
+export const coachClientProfiles = pgTable(
+  "coach_client_profiles",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    trainerId: uuid("trainer_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    displayName: text("display_name").notNull(),
+    contactEmail: text("contact_email"),
+    contactPhone: text("contact_phone"),
+    goal: text("goal"),
+    privateNotes: text("private_notes"),
+    // 'invited' | 'active' | 'cancelled' | 'ended'
+    status: text("status").notNull().default("invited"),
+    // CASCADE: purging the athlete's account must take the accepted profile
+    // (their name, contact details, the coach's notes) with it.
+    clientId: uuid("client_id").references(() => profiles.id, {
+      onDelete: "cascade",
+    }),
+    relationshipId: uuid("relationship_id").references(
+      (): AnyPgColumn => ptClientRelationships.id,
+      { onDelete: "set null" },
+    ),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    // Tombstone so `?since=` lists can report deletedIds (offline contract).
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    revision: integer("revision").notNull().default(1),
+    clientRequestId: text("client_request_id"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("coach_client_profiles_client_request_uq").on(
+      t.trainerId,
+      t.clientRequestId,
+    ),
+    index("coach_client_profiles_trainer_status_idx").on(t.trainerId, t.status),
+    index("coach_client_profiles_relationship_idx").on(t.relationshipId),
+  ],
+);
+
+export type CoachClientProfile = typeof coachClientProfiles.$inferSelect;
+
+/** What's ready for an invited client before they accept (C11l–r). */
+export const coachClientSetupItems = pgTable(
+  "coach_client_setup_items",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    profileId: uuid("profile_id")
+      .notNull()
+      .references(() => coachClientProfiles.id, { onDelete: "cascade" }),
+    // 'starter_form' | 'repeating_form' | 'programme' | 'nutrition_target'
+    // | 'meal_plan' | 'resource' | 'welcome_message'
+    section: text("section").notNull(),
+    refId: uuid("ref_id"),
+    config: jsonb("config")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    sortOrder: integer("sort_order").notNull(),
+    materialisedAt: timestamp("materialised_at", { withTimezone: true }),
+    materialisedRefId: uuid("materialised_ref_id"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("coach_client_setup_items_ref_uq")
+      .on(t.profileId, t.section, t.refId)
+      .where(sql`ref_id IS NOT NULL`),
+    index("coach_client_setup_items_profile_idx").on(
+      t.profileId,
+      t.section,
+      t.sortOrder,
+    ),
+  ],
+);
+
+export type CoachClientSetupItem = typeof coachClientSetupItems.$inferSelect;
+
+/** Per-relationship coach settings (C3.9). */
+export const coachClientSettings = pgTable(
+  "coach_client_settings",
+  {
+    relationshipId: uuid("relationship_id")
+      .primaryKey()
+      .references(() => ptClientRelationships.id, { onDelete: "cascade" }),
+    trainerId: uuid("trainer_id").notNull(),
+    clientId: uuid("client_id").notNull(),
+    trackTraining: boolean("track_training").notNull().default(false),
+    trackCalories: boolean("track_calories").notNull().default(false),
+    sessionsPerWeek: smallint("sessions_per_week"),
+    features: jsonb("features")
+      .$type<Record<string, boolean>>()
+      .notNull()
+      .default({}),
+    // 'default' | 'mute' | 'everything'
+    alertMode: text("alert_mode").notNull().default("default"),
+    revision: integer("revision").notNull().default(1),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index("coach_client_settings_trainer_client_idx").on(
+      t.trainerId,
+      t.clientId,
+    ),
+    index("coach_client_settings_client_idx").on(t.clientId),
+  ],
+);
+
+export type CoachClientSettingsRow = typeof coachClientSettings.$inferSelect;
+
+/** The dated coach declaration (D6b). Append-only. */
+export const trainerDeclarations = pgTable(
+  "trainer_declarations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    trainerId: uuid("trainer_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    statementVersion: text("statement_version").notNull(),
+    statementTextHash: text("statement_text_hash"),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    clientRequestId: text("client_request_id"),
+  },
+  (t) => [
+    uniqueIndex("trainer_declarations_trainer_version_uq").on(
+      t.trainerId,
+      t.statementVersion,
+    ),
+    uniqueIndex("trainer_declarations_client_request_uq").on(
+      t.trainerId,
+      t.clientRequestId,
+    ),
   ],
 );
 
@@ -2187,6 +2370,51 @@ export const mealItems = pgTable(
   (t) => [index("meal_items_meal_idx").on(t.mealId)],
 );
 
+// Design D "Your meals" (N1b) — a person's own named meals. See
+// supabase/migrations/20261120143109_your_meals_entry_idempotency.sql.
+// `logSlot` maps each meal onto the four old slots so older bundles still place
+// every entry; `defaultKey` marks the four seeded defaults.
+export const userMeals = pgTable(
+  "user_meals",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+    logSlot: text("log_slot").notNull(),
+    defaultKey: text("default_key"),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    clientRequestId: text("client_request_id"),
+  },
+  (t) => [
+    index("user_meals_user_sort_idx").on(t.userId, t.sortOrder),
+    uniqueIndex("user_meals_user_default_key_idx")
+      .on(t.userId, t.defaultKey)
+      .where(sql`${t.defaultKey} IS NOT NULL`),
+    // ⚠ FULL, not partial — see the nutrition_entries twin below.
+    uniqueIndex("user_meals_user_client_request_idx").on(
+      t.userId,
+      t.clientRequestId,
+    ),
+    check(
+      "user_meals_name_len_chk",
+      sql`char_length(${t.name}) BETWEEN 1 AND 40`,
+    ),
+    check(
+      "user_meals_log_slot_chk",
+      sql`${t.logSlot} IN ('breakfast','lunch','snack','dinner')`,
+    ),
+  ],
+);
+
 export const nutritionEntries = pgTable(
   "nutrition_entries",
   {
@@ -2220,9 +2448,26 @@ export const nutritionEntries = pgTable(
     // Client-supplied label for one-off/AI-estimated entries (no foodId/recipeId/
     // mealId) — stored and returned verbatim, never derived or validated server-side.
     customName: text("custom_name"),
+    // Design D (PER-109) — `userMealId` in the API. NULL for entries logged by
+    // older bundles; reads group those under the default meal for their slot.
+    userMealId: uuid("user_meal_id").references(() => userMeals.id, {
+      onDelete: "set null",
+    }),
+    // Provenance only, no FK (the plan may be deleted; history stays).
+    sourcePlanId: uuid("source_plan_id"),
+    sourcePlanMealId: uuid("source_plan_meal_id"),
+    // `Idempotency-Key` / batch `clientRequestId`. ⚠ MIGRATE BEFORE DEPLOY —
+    // declaring these columns puts them in every SELECT on this table.
+    clientRequestId: text("client_request_id"),
   },
   (t) => [
     index("nutrition_entries_user_date").on(t.userId, t.loggedAt),
+    // ⚠ FULL unique, not partial: Drizzle's onConflict target emits no
+    // predicate, so a partial index raises 42P10 on every keyed insert.
+    uniqueIndex("nutrition_entries_user_client_request_idx").on(
+      t.userId,
+      t.clientRequestId,
+    ),
     index("nutrition_entries_user_slot_date").on(
       t.userId,
       t.mealSlot,
@@ -2639,6 +2884,7 @@ export type MealItem = typeof mealItems.$inferSelect;
 export type NewMealItem = typeof mealItems.$inferInsert;
 export type NutritionEntry = typeof nutritionEntries.$inferSelect;
 export type NewNutritionEntry = typeof nutritionEntries.$inferInsert;
+export type UserMeal = typeof userMeals.$inferSelect;
 export type NutritionTarget = typeof nutritionTargets.$inferSelect;
 export type NewNutritionTarget = typeof nutritionTargets.$inferInsert;
 export type WaterLog = typeof waterLog.$inferSelect;
