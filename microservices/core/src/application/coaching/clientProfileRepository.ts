@@ -848,7 +848,8 @@ export class ClientProfileRepository {
    *      its personal fields are scrubbed at once, so a coach's phone syncing
    *      with `?since=` gets its id in `deletedIds`;
    *   B. a tombstone older than `TOMBSTONE_SYNC_DAYS` is hard-deleted. That
-   *      also covers profiles the coach deleted themselves.
+   *      also covers profiles the coach deleted themselves, and accepted
+   *      profiles the account purge tombstoned for a deleted athlete.
    */
   async purgeUnaccepted(
     now: Date,
@@ -894,11 +895,13 @@ export class ClientProfileRepository {
       )
       .returning({ id: coachClientProfiles.id });
 
+    // Any tombstone: never-accepted ones from phase A or a coach's delete,
+    // and accepted ones the account purge tombstoned for a deleted athlete
+    // (ACCOUNT_DELETION_STEPS). A live profile never carries deleted_at.
     const purged = await db
       .delete(coachClientProfiles)
       .where(
         and(
-          neverAccepted,
           isNotNull(coachClientProfiles.deletedAt),
           lt(coachClientProfiles.deletedAt, tombstoneCutoff),
         ),

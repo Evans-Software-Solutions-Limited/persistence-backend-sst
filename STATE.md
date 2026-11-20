@@ -80,6 +80,13 @@ client onboarding" (approved 20 Nov). Backend only; no app or native change.
     the deletion (was 90).
   - `asOf` on the profiles list is 2 minutes behind the server clock, so a
     write still open during the list is re-read on the next sync.
+- **Inspector Brad third sweep (e2e51d3), one low lead, confirmed and fixed:**
+  the CASCADE hard-deleted a purged athlete's accepted profile with no
+  tombstone, so coaches' offline caches kept it. `ACCOUNT_DELETION_STEPS` has a
+  new `tombstone-client-profiles` step, run before the `profiles` delete. It
+  stamps `deleted_at`, scrubs the personal fields and nulls `client_id` and
+  `relationship_id`, so `?since=` reports the id. Retention phase B now
+  hard-deletes ANY tombstone after 30 days. The CASCADE stays as a backstop.
 - **Not done here**: no migration applied to staging/prod; no device test. The
   1.2.0 accept screen still says "awaiting their acceptance" for a personal
   code (known gap, D5); the OTA bundle (PER-126) reads `relationshipStatus`.

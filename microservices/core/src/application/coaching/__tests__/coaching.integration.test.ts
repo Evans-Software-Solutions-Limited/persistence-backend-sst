@@ -122,6 +122,10 @@ import {
   registerSetupSectionHandler,
   type SetupSectionHandler,
 } from "../setupSections";
+import {
+  ACCOUNT_DELETION_STEPS,
+  buildStatement,
+} from "../../account/accountDeletionPlan";
 import contract from "./fixtures/contract-1.2.0.json";
 
 const MIGRATIONS = "../../../../../../supabase/migrations/";
@@ -1754,15 +1758,62 @@ describe("GET /users/me/coaching", () => {
 // ─── D7.10 Retention ─────────────────────────────────────────────────────────
 
 describe("retention purge", () => {
-  it("purging the athlete's account takes their accepted profile with it", async () => {
+  it("purging the athlete's account tombstones their accepted profile, then removes it", async () => {
+    const repo = new ClientProfileRepository();
     const { profile, code } = await readyCode();
     await accept(ATHLETE_E, code);
     const other = await newProfile(COACH_A, { displayName: "Someone else" });
-    // The account purge's last step (ACCOUNT_DELETION_STEPS) deletes the
-    // profiles row; the relationship, settings and notes cascade from it.
+    const t0 = new Date(Date.now() - 1000).toISOString();
+
+    // The account purge (ACCOUNT_DELETION_STEPS, in order): the tombstone
+    // step, then the profiles delete the relationship and notes cascade from.
+    const tombstoneStep = ACCOUNT_DELETION_STEPS.find(
+      (s) => s.kind === "tombstone-client-profiles",
+    )!;
+    await db.execute(buildStatement(tombstoneStep, ATHLETE_E));
     await db.delete(schema.profiles).where(eq(schema.profiles.id, ATHLETE_E));
+
+    // The row survives as a scrubbed tombstone, detached from the athlete.
+    const [row] = await db
+      .select()
+      .from(schema.coachClientProfiles)
+      .where(eq(schema.coachClientProfiles.id, profile.id));
+    expect(row).toMatchObject({
+      clientId: null,
+      relationshipId: null,
+      displayName: "Removed",
+      contactEmail: null,
+      contactPhone: null,
+      goal: null,
+      privateNotes: null,
+    });
+    expect(row!.deletedAt).toBeInstanceOf(Date);
+
+    // The coach's phone hears about it, and can no longer open it.
+    const list = await http(
+      "GET",
+      `/trainers/me/client-profiles?since=${encodeURIComponent(t0)}`,
+      COACH_A,
+    );
+    expect(list.json.deletedIds).toEqual([profile.id]);
+    expect(list.json.data.map((p: Json) => p.id)).not.toContain(profile.id);
+    expect(
+      (await http("GET", `/trainers/me/client-profiles/${profile.id}`, COACH_A))
+        .status,
+    ).toBe(404);
+
+    // 30 days on, the retention sweep removes the tombstone for good.
+    const later = new Date(Date.now() + 31 * 86400_000);
+    expect((await repo.purgeUnaccepted(later)).purged).toBe(1);
     const left = await db.select().from(schema.coachClientProfiles);
     expect(left.map((p) => p.id)).toEqual([other.id]);
+  });
+
+  it("the CASCADE still removes an accepted profile if the profiles row goes another way", async () => {
+    const { profile, code } = await readyCode();
+    await accept(ATHLETE_E, code);
+    await db.delete(schema.profiles).where(eq(schema.profiles.id, ATHLETE_E));
+    const left = await db.select().from(schema.coachClientProfiles);
     expect(left.map((p) => p.id)).not.toContain(profile.id);
   });
 
