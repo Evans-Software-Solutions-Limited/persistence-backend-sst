@@ -31,6 +31,10 @@ import { trainersMeSendClientBriefHandler } from "./trainers/briefs/trainersMeSe
 // (TS2589) — the root chain was already at the limit. Both handlers declare
 // absolute paths, so nesting adds no prefix.
 import { coachClientOffboardingRoutes } from "./coachClientOffboardingRoutes";
+// PER-108 (BE-A1) — client profiles, personal invites, per-client settings,
+// the coach declaration, invite preview and /users/me/coaching. Nested for the
+// same TS2589 reason; absolute paths, no prefix.
+import { coachingRoutes } from "./coachingRoutes";
 
 export const trainersOnBehalfRoutes = new Elysia()
   // sessions — POST create (header-only), POST .../sessions/record (full
@@ -78,4 +82,7 @@ export const trainersOnBehalfRoutes = new Elysia()
   // removes client) + DELETE /clients/me/relationships/:relationshipId (client
   // leaves coach). DELETE method, so no collision with the bare `:clientId` GET
   // above.
-  .use(coachClientOffboardingRoutes);
+  .use(coachClientOffboardingRoutes)
+  // `…/:clientId/settings` is a static segment after `:clientId`, so it never
+  // collides with the bare `:clientId` GET above.
+  .use(coachingRoutes);

@@ -1,4 +1,5 @@
 import { sql, type SQL } from "drizzle-orm";
+import { SCRUBBED_DISPLAY_NAME } from "../coaching/clientProfileRepository";
 
 /**
  * Account-deletion plan (08-profile-settings § Revised 2026-06-28, STORY-011).
@@ -30,6 +31,20 @@ export type AccountDeletionStep =
    * NO-ACTION FK to one of the deleting user's rows (e.g. foods). Generated
    * SQL: `UPDATE <table> SET <column> = NULL WHERE <column> IN (SELECT id FROM <ownerTable> WHERE <ownerColumn> = $userId)`.
    */
+  /**
+   * Tombstone and scrub an athlete's ACCEPTED coach_client_profiles rows
+   * (PER-108) instead of letting the profiles CASCADE hard-delete them. The
+   * coach's offline cache only learns a profile is gone through `deletedIds`
+   * on `?since=`, which needs a `deleted_at` tombstone. Personal fields are
+   * scrubbed and `client_id` nulled at once, so the CASCADE no longer reaches
+   * the row; the nightly retention sweep hard-deletes the tombstone 30 days
+   * later. Generated SQL: `UPDATE <table> SET deleted_at = now(), …scrub…,
+   * <column> = NULL WHERE <column> = $userId RETURNING id`. The ids are
+   * re-stamped after the purge commits (`AccountRepository.purgeUserData`):
+   * inside the transaction `now()` is the transaction's START, which a long
+   * purge can push past a coach device's `asOf`.
+   */
+  | { kind: "tombstone-client-profiles"; table: string; column: string }
   | {
       kind: "nullify-referencing-owned";
       table: string;
@@ -96,6 +111,14 @@ export const ACCOUNT_DELETION_STEPS: readonly AccountDeletionStep[] = [
   { kind: "delete", table: "client_ai_summaries", column: "trainer_id" },
   { kind: "delete", table: "client_ai_summaries", column: "client_id" },
 
+  // An athlete's accepted invited-client profiles (PER-108): tombstone and
+  // scrub rather than CASCADE, so coaches' offline caches see the deletion.
+  {
+    kind: "tombstone-client-profiles",
+    table: "coach_client_profiles",
+    column: "client_id",
+  },
+
   // 3) Delete the profile — ON DELETE CASCADE FKs remove every remaining
   //    owned row (workouts, sessions, PRs, measurements, achievements,
   //    friendships, habits, health, notifications, devices, goals, streaks,
@@ -113,6 +136,9 @@ export function buildStatement(step: AccountDeletionStep, userId: string): SQL {
   const column = sql.identifier(step.column);
   if (step.kind === "nullify") {
     return sql`update ${table} set ${column} = null where ${column} = ${userId}`;
+  }
+  if (step.kind === "tombstone-client-profiles") {
+    return sql`update ${table} set deleted_at = now(), updated_at = now(), display_name = ${SCRUBBED_DISPLAY_NAME}, contact_email = null, contact_phone = null, goal = null, private_notes = null, relationship_id = null, ${column} = null where ${column} = ${userId} returning id`;
   }
   if (step.kind === "nullify-referencing-owned") {
     const ownerTable = sql.identifier(step.ownerTable);

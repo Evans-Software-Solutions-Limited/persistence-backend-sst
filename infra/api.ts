@@ -162,6 +162,10 @@ export const coreRoute = coreAPI.route("$default", {
     ...togetherEnvironment,
     APP_MIN_IOS_VERSION: process.env.APP_MIN_IOS_VERSION || "1.1.3",
     APP_MIN_ANDROID_VERSION: process.env.APP_MIN_ANDROID_VERSION || "1.1.3",
+    // PER-108 (design A D6b): the coach declaration version coaches must accept
+    // before the personal-invite route issues a code. Bumping it asks every
+    // coach again. Empty = the default in coaching/declaration.ts.
+    COACH_DECLARATION_VERSION: process.env.COACH_DECLARATION_VERSION ?? "",
     DATABASE_URL: databaseUrl.value,
     SUPABASE_URL: supabaseUrl,
     // Supabase service-role key — server-side only. Used exclusively by
