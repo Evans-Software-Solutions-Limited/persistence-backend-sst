@@ -333,6 +333,7 @@ describe("RecapContainer", () => {
     const remote: YouRemoteSource = {
       historyMonth: jest.fn(),
       recap: jest.fn(async () => ({ status: "unavailable" as const })),
+      lastSevenDays: jest.fn(),
     };
     const share = jest
       .spyOn(Share, "share")
@@ -369,6 +370,7 @@ describe("RecapContainer", () => {
     const remote: YouRemoteSource = {
       historyMonth: jest.fn(),
       recap: jest.fn(async () => ({ status: "unavailable" as const })),
+      lastSevenDays: jest.fn(),
     };
     // The log started mid last week: this week is covered, last week isn't.
     const thisWeek = recapWindow("week", new Date()).from;
@@ -408,6 +410,7 @@ describe("RecapContainer", () => {
     const remote: YouRemoteSource = {
       historyMonth: jest.fn(),
       recap: jest.fn(async () => ({ status: "ok" as const, data: {} })),
+      lastSevenDays: jest.fn(),
     };
     render(
       <AdapterProvider adapters={adapters}>

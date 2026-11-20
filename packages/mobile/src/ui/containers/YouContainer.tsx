@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { ScrollView } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useScrollToTopOnTabPress } from "@/ui/hooks/useScrollToTopOnTabPress";
@@ -39,6 +39,11 @@ import {
   trainNextLine,
   whenLabel,
 } from "@/ui/presenters/you/youFormat";
+import {
+  needsRemote,
+  youRemoteUnavailable,
+  type YouRemoteSource,
+} from "@/application/queries/youRemote";
 import { buildMilestoneTiers } from "./buildMilestoneTiers";
 
 // Re-exported so existing callers/tests keep working (the mapping lives in
@@ -145,7 +150,9 @@ function withHealth(
  * tiles from the cached body trend and Health; coaches from the cached
  * relationships. Coach You is `CoachYouContainer`.
  */
-export function YouContainer() {
+export function YouContainer({
+  remote = youRemoteUnavailable,
+}: { remote?: YouRemoteSource } = {}) {
   const { session } = useAuth();
   const userId = session?.userId ?? null;
   const profile = useProfilePage();
@@ -178,6 +185,15 @@ export function YouContainer() {
     [dayKeyNow],
   );
   const log = useTrainingLog(userId, window7);
+  // The week before the phone's log began isn't on the phone: ask the BE-H1
+  // seam (unavailable until PER-113). Y1 has no coverage note on the canvas,
+  // so until then the page shows what the phone holds.
+  // When PER-113 lands, its answer replaces the week model below.
+  // Only once signed in: before auth resolves there's no log to judge.
+  const weekPartial = userId != null && needsRemote(log.since, window7.from);
+  useEffect(() => {
+    if (weekPartial) void remote.lastSevenDays();
+  }, [remote, weekPartial]);
   const records = useMemo(
     () => prs.data ?? log.records,
     [prs.data, log.records],

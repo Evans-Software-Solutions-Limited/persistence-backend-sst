@@ -335,6 +335,7 @@ describe("HistoryContainer", () => {
     const remote: YouRemoteSource = {
       historyMonth: jest.fn(async () => ({ status: "unavailable" as const })),
       recap: jest.fn(),
+      lastSevenDays: jest.fn(),
     };
     render(
       <AdapterProvider adapters={adapters}>
@@ -397,6 +398,7 @@ describe("HistoryContainer", () => {
         data: [key],
       })),
       recap: jest.fn(),
+      lastSevenDays: jest.fn(),
     };
     render(
       <AdapterProvider adapters={adapters}>

@@ -8,6 +8,9 @@ describe("youRemote (BE-H1 seam)", () => {
     await expect(youRemoteUnavailable.recap("3months")).resolves.toEqual({
       status: "unavailable",
     });
+    await expect(youRemoteUnavailable.lastSevenDays()).resolves.toEqual({
+      status: "unavailable",
+    });
   });
 
   it("needs the server for ranges before the phone's log", () => {

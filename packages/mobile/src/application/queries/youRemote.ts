@@ -13,9 +13,12 @@
  * Those routes don't exist yet, so every source here answers
  * `unavailable`. When BE-H1 merges: add the three calls to `ApiPort`,
  * implement `YouRemoteSource` over them (caching responses by period), and
- * pass it to the containers in place of `youRemoteUnavailable`. Nothing
- * else changes: containers already ask `needsRemote` before trusting a
- * range to the phone.
+ * pass it to the containers in place of `youRemoteUnavailable`. Every
+ * container (You, History, Recap) already asks `needsRemote` before
+ * trusting a range to the phone and calls the seam when it's true; BE-H1
+ * only has to use the answers. Y1 has no coverage note on the canvas, so
+ * until then a part-kept week simply shows what the phone holds (Brad,
+ * 20 Nov: start empty, no backfill).
  */
 
 import type { RecapPeriod } from "@/domain/services/youPage";
@@ -30,12 +33,15 @@ export interface YouRemoteSource {
   historyMonth(month: string): Promise<YouRemoteResult<readonly string[]>>;
   /** A recap the phone can't build on its own. */
   recap(period: RecapPeriod): Promise<YouRemoteResult<unknown>>;
+  /** Y1's last 7 days (`GET /users/me/muscle-volume?days=7`). */
+  lastSevenDays(): Promise<YouRemoteResult<unknown>>;
 }
 
 /** Until BE-H1 (PER-113) ships: the server can't fill any gap yet. */
 export const youRemoteUnavailable: YouRemoteSource = {
   historyMonth: async () => ({ status: "unavailable" }),
   recap: async () => ({ status: "unavailable" }),
+  lastSevenDays: async () => ({ status: "unavailable" }),
 };
 
 /**

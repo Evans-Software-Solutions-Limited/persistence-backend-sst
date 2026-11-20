@@ -309,6 +309,38 @@ describe("YouContainer", () => {
     expect(p.initials).toBe("BS");
   });
 
+  it("asks the BE-H1 seam for a week the phone only partly kept (Inspector Brad #541)", async () => {
+    const lastSevenDays = jest.fn(async () => ({
+      status: "unavailable" as const,
+    }));
+    const remote = { historyMonth: jest.fn(), recap: jest.fn(), lastSevenDays };
+    // A fresh log (starts now): the 7-day window begins before it.
+    const fresh = makeAdapters();
+    const r = render(
+      <AdapterProvider adapters={fresh.adapters}>
+        <YouContainer remote={remote} />
+      </AdapterProvider>,
+    );
+    await waitFor(() => expect(lastSevenDays).toHaveBeenCalled());
+    r.unmount();
+
+    // A log kept long before the window: the phone has the whole week.
+    lastSevenDays.mockClear();
+    const kept = makeAdapters();
+    kept.adapters.storage.markTrainingLogSince(
+      "user-1",
+      "2020-01-01T00:00:00.000Z",
+    );
+    mockProbe.last = null;
+    render(
+      <AdapterProvider adapters={kept.adapters}>
+        <YouContainer remote={remote} />
+      </AdapterProvider>,
+    );
+    await waitFor(() => expect(mockProbe.last).not.toBeNull());
+    expect(lastSevenDays).not.toHaveBeenCalled();
+  });
+
   it("falls back to the email initial until the profile resolves", async () => {
     const { adapters } = makeAdapters();
     renderYou(adapters);
