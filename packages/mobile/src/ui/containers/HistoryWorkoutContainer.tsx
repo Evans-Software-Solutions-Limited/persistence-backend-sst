@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { Share } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
-import type { PersonalRecord } from "@/domain/models/record";
+import type { RecordResponseSummaryPR } from "@/domain/ports/storage.port";
 import type { WorkoutSession } from "@/domain/models/session";
 import {
   buildWorkoutSummary,
@@ -16,15 +16,15 @@ import { useTrainingLog } from "@/ui/hooks/useTrainingLog";
 import { SessionSummaryPresenter } from "@/ui/presenters/SessionSummaryPresenter";
 import { WorkoutDetailsPresenter } from "@/ui/presenters/WorkoutDetailsPresenter";
 
-/** A cached personal record as a summary record (no "was" value cached). */
-export function toSummaryRecord(r: PersonalRecord): SummaryRecord {
+/** A workout's own record response entry as a summary record. */
+export function toSummaryRecord(r: RecordResponseSummaryPR): SummaryRecord {
   return {
     exerciseId: r.exerciseId,
     exerciseName: r.exerciseName,
     recordType: r.recordType,
-    newValue: r.value,
-    previousValue: null,
-    setId: r.setId ?? undefined,
+    newValue: r.newValue,
+    previousValue: r.previousValue,
+    setId: r.setId,
   };
 }
 
@@ -66,12 +66,15 @@ export function HistoryWorkoutContainer() {
     shown.current = found ?? prev;
     return shown.current;
   }, [log.sessions, id]);
+  // The workout's own records, "was" values included, as the finish shows.
   const records = useMemo(
     () =>
-      log.records
-        .filter((r) => r.sessionId === id || r.sessionId === workout?.id)
-        .map(toSummaryRecord),
-    [log.records, id, workout?.id],
+      (
+        log.recordsBySession[workout?.id ?? ""] ??
+        log.recordsBySession[id ?? ""] ??
+        []
+      ).map(toSummaryRecord),
+    [log.recordsBySession, id, workout?.id],
   );
   const model = useMemo(
     () =>

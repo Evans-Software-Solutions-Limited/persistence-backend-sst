@@ -1741,6 +1741,10 @@ ${indentSyncQueueDdl(12)}
         // `createWorkoutCommand` now writes coach-authored workouts here
         // offline, so this slice holds `local-…` ids too.
         "cached_coach_workout_library",
+        // PER-141: a workout finished offline with a just-created custom
+        // exercise logs its `local-…` id; muscles, gold and per-lift
+        // grouping all key on the server id.
+        "training_log",
       ] as const) {
         const blobs = db.getAllSync(
           `SELECT rowid, payload FROM ${table} WHERE payload LIKE ?`,

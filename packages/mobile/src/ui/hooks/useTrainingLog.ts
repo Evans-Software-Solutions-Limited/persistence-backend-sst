@@ -70,6 +70,13 @@ export type TrainingLogState = {
    * that workout's own response: not the latest-best PR cache.
    */
   records: PersonalRecord[];
+  /**
+   * Each loaded workout's records as its response gave them, "was" values
+   * included (Y2b's records page).
+   */
+  recordsBySession: Readonly<
+    Record<string, readonly RecordResponseSummaryPR[]>
+  >;
   /** When this phone started keeping the log. */
   since: string | null;
   musclesOf: MusclesOf;
@@ -103,6 +110,7 @@ export function useTrainingLog(
       return {
         sessions: [],
         records: [],
+        recordsBySession: {},
         since: null,
         musclesOf: () => null,
         reload,
@@ -113,16 +121,14 @@ export function useTrainingLog(
       from: fromIso,
       to: toIso,
     });
+    const recordsBySession = storage.getTrainingLogRecords(
+      userId,
+      sessions.map((s) => s.id),
+    );
     return {
       sessions,
-      records: workoutRecords(
-        userId,
-        sessions,
-        storage.getTrainingLogRecords(
-          userId,
-          sessions.map((s) => s.id),
-        ),
-      ),
+      records: workoutRecords(userId, sessions, recordsBySession),
+      recordsBySession,
       since: storage.getTrainingLogSince(userId),
       musclesOf: musclesLookup(
         storage.getCachedExercises(),

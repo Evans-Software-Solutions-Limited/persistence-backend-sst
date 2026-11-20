@@ -46,7 +46,7 @@ no native packages, permissions, config plugins or version bump.
   "an upper day sorts it"; "No lifts in the last 7 days."; the History and
   Recap coverage lines. History's Y2b has no effort chip, because the rating
   isn't stored with the workout.
-- **Inspector Brad on #541, seven sweeps, 12 leads, all confirmed and fixed:**
+- **Inspector Brad on #541, eight sweeps, 14 leads, all confirmed and fixed:**
   - Date-only body-trend days were parsed as UTC midnight, so west of UTC
     they landed on the wrong day. `toLocalDate` and `dayKey` now treat
     `YYYY-MM-DD` as a local day.
@@ -81,6 +81,9 @@ no native packages, permissions, config plugins or version bump.
     response in `training_log_records` (written by `cacheRecordResponse`,
     solo and Together). `useTrainingLog` builds its records from those,
     and the You page no longer reads `useGetPRHistory`.
+  - `swapLocalExerciseId` now rewrites `training_log` too, so a workout
+    with an offline custom exercise keeps its muscles, gold and single lift
+    entry. Y2b keeps each record's "was" value from the workout's response.
 - **Tests:** credit table tests, You-page builders, both storage adapters on
   real SQLite (`node:sqlite`), presenters (trained, new user, rest day,
   offline), containers.

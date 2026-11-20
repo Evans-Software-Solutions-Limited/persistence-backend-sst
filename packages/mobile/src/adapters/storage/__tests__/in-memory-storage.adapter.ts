@@ -563,6 +563,13 @@ export class InMemoryStorageAdapter implements StoragePort {
         if (we.exerciseId === localId) we.exerciseId = serverId;
       }
     }
+    // PER-141: the training log too (parity with SQLite's blob rewrite).
+    for (const logged of this.trainingLog.values()) {
+      for (const ex of logged.exercises) {
+        if (ex.exerciseId === localId) ex.exerciseId = serverId;
+        if (ex.originalExerciseId === localId) ex.originalExerciseId = serverId;
+      }
+    }
     for (const e of this.queue) {
       if (e.entityType === "exercise" && e.entityId === localId) {
         e.entityId = serverId;

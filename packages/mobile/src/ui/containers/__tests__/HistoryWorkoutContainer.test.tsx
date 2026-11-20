@@ -8,10 +8,7 @@ import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import type { SessionSummaryPresenterProps } from "@/ui/presenters/SessionSummaryPresenter";
 import type { WorkoutDetailsPresenterProps } from "@/ui/presenters/WorkoutDetailsPresenter";
-import {
-  record,
-  session as finished,
-} from "@/domain/services/__tests__/youFixtures";
+import { session as finished } from "@/domain/services/__tests__/youFixtures";
 import {
   HistoryWorkoutContainer,
   toSummaryRecord,
@@ -145,6 +142,8 @@ describe("HistoryWorkoutContainer (Y2b)", () => {
     expect(p.onContinue).toBeUndefined();
     expect(p.model.volumeKg).toBe(950);
     expect(p.records.map((r) => r.exerciseId)).toEqual(["bench"]);
+    // The "was" value from the workout's own response reaches the page.
+    expect(p.records[0]!.previousValue).toBe(95);
     expect(p.rating).toBeNull();
     act(() => p.onShare("text"));
     expect(share).toHaveBeenCalledWith({ message: "text" });
@@ -257,17 +256,22 @@ describe("HistoryWorkoutContainer (Y2b)", () => {
   });
 });
 
-it("maps a cached record without a 'was' value", () => {
+it("keeps a record's 'was' value from the workout's own response (Inspector Brad #541)", () => {
   expect(
-    toSummaryRecord(
-      record("bench", "x", { exerciseName: "Bench", value: 95, setId: null }),
-    ),
+    toSummaryRecord({
+      exerciseId: "bench",
+      exerciseName: "Bench",
+      recordType: "1rm",
+      newValue: 95,
+      previousValue: 92.5,
+      setId: "s1",
+    }),
   ).toEqual({
     exerciseId: "bench",
     exerciseName: "Bench",
     recordType: "1rm",
     newValue: 95,
-    previousValue: null,
-    setId: undefined,
+    previousValue: 92.5,
+    setId: "s1",
   });
 });

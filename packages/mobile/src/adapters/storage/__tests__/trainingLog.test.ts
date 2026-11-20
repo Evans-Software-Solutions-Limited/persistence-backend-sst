@@ -21,17 +21,24 @@ function sqliteAdapter(): { adapter: StoragePort; db: DatabaseSync } {
     CREATE TABLE training_log_ids (local_id TEXT PRIMARY KEY, server_id TEXT NOT NULL);
     CREATE TABLE training_log_records (session_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, payload TEXT NOT NULL);
     CREATE TABLE record_responses (user_id TEXT PRIMARY KEY, payload TEXT NOT NULL, cached_at TEXT NOT NULL);
+    -- What swapLocalExerciseId also touches.
+    CREATE TABLE cached_exercises (id TEXT PRIMARY KEY, data TEXT, synced_at TEXT);
+    CREATE TABLE sync_queue (id INTEGER PRIMARY KEY, entity_type TEXT, entity_id TEXT, endpoint TEXT, payload TEXT, status TEXT, updated_at TEXT);
+    CREATE TABLE recent_sets (exercise_id TEXT);
+    CREATE TABLE cached_workout_detail (payload TEXT);
+    CREATE TABLE cached_workouts (payload TEXT);
+    CREATE TABLE cached_coach_workout_library (payload TEXT);
     CREATE TABLE active_sessions (id TEXT PRIMARY KEY);
-    CREATE TABLE session_exercises (session_id TEXT);
+    CREATE TABLE session_exercises (session_id TEXT, exercise_id TEXT, original_exercise_id TEXT);
     CREATE TABLE personal_records (session_id TEXT);
   `);
   type P = (string | number | null)[];
   const adapter = new SQLiteStorageAdapter();
   Object.assign(adapter, {
     db: {
-      getAllSync: (q: string, p: P) => db.prepare(q).all(...p),
-      getFirstSync: (q: string, p: P) => db.prepare(q).get(...p) ?? null,
-      runSync: (q: string, p: P) => db.prepare(q).run(...p),
+      getAllSync: (q: string, p: P = []) => db.prepare(q).all(...p),
+      getFirstSync: (q: string, p: P = []) => db.prepare(q).get(...p) ?? null,
+      runSync: (q: string, p: P = []) => db.prepare(q).run(...p),
       execSync: (q: string) => {
         if (!q.startsWith("PRAGMA")) db.exec(q);
       },
@@ -253,6 +260,16 @@ describe.each([
     // Never another user's records.
     expect(s.getTrainingLogRecords("u2", ["srv-a"])).toEqual({});
     expect(s.getTrainingLogRecords("u1", [])).toEqual({});
+  });
+
+  it("rewrites an offline custom exercise's id in logged workouts (Inspector Brad #541)", () => {
+    const w = finished("w", 20);
+    w.exercises[0]!.exerciseId = "local-ex";
+    s.saveTrainingLogEntry("u1", w);
+    s.swapLocalExerciseId("local-ex", "srv-ex");
+    expect(s.getTrainingLogEntry("u1", "w")!.exercises[0]!.exerciseId).toBe(
+      "srv-ex",
+    );
   });
 
   it("stamps when the log started, once", () => {
