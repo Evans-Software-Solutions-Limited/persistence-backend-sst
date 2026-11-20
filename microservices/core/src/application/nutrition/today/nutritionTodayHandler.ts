@@ -2,6 +2,8 @@ import Elysia, { t } from "elysia";
 import { NutritionEntryService } from "../../repositories/nutritionEntryService";
 import { NutritionTargetService } from "../../repositories/nutritionTargetService";
 import { WaterLogService } from "../../repositories/waterLogService";
+import { UserMealService } from "../../repositories/userMealService";
+import { withEffectiveUserMealIds } from "../userMeals/effectiveUserMeal";
 import type {
   NutritionEntryDTO,
   MealSlot,
@@ -50,7 +52,12 @@ export function groupBySlot(entries: NutritionEntryDTO[]): EntriesBySlot {
   return bySlot;
 }
 
-/** GET /nutrition/today?date=YYYY-MM-DD — the Fuel screen aggregate. */
+/**
+ * GET /nutrition/today?date=YYYY-MM-DD — the Fuel screen aggregate.
+ *
+ * `entriesBySlot` is unchanged for older bundles. Each entry also carries
+ * `userMealId` (Design D): its own, or the default meal for its slot.
+ */
 export const nutritionTodayHandler = new Elysia()
   .derive(async ({ headers }) => ({
     user: await getAuthUser(headers.authorization),
@@ -59,17 +66,22 @@ export const nutritionTodayHandler = new Elysia()
   .use(NutritionEntryService)
   .use(NutritionTargetService)
   .use(WaterLogService)
+  .use(UserMealService)
   .get(
     "/nutrition/today",
     async (ctx) => {
       const { sub: userId } = getUser(ctx);
       const date = ctx.query.date;
 
-      const [entries, target, waterCups] = await Promise.all([
+      // Your meals are read without seeding: this route serves older bundles
+      // too, and must stay free of writes for them.
+      const [stored, target, waterCups, meals] = await Promise.all([
         ctx.NutritionEntryRepository.listByDate(userId, date),
         ctx.NutritionTargetRepository.get(userId),
         ctx.WaterLogRepository.getCups(userId, date),
+        ctx.UserMealRepository.listActive(userId),
       ]);
+      const entries = withEffectiveUserMealIds(stored, meals);
 
       const consumed = summariseConsumed(entries);
       const remainingKcal = target ? target.dailyKcal - consumed.kcal : 0;

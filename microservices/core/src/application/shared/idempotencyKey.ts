@@ -32,7 +32,17 @@ export function readIdempotencyKey(
 ): string | null {
   // Elysia lowercases incoming header names; check both for direct-API callers
   // and tests that construct the object by hand.
-  const raw = headers["idempotency-key"] ?? headers["Idempotency-Key"];
+  return normaliseIdempotencyKey(
+    headers["idempotency-key"] ?? headers["Idempotency-Key"],
+  );
+}
+
+/**
+ * The same validation for a key carried in a request BODY (e.g. each entry of
+ * `POST /nutrition/entries/batch`), so header and body keys share one rule and
+ * one column. Null when absent or unusable.
+ */
+export function normaliseIdempotencyKey(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
   const trimmed = raw.trim();
   if (trimmed.length === 0 || trimmed.length > MAX_KEY_LENGTH) return null;

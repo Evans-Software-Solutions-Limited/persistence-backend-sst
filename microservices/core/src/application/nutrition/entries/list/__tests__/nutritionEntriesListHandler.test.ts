@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const entryMocks = { listByDate: vi.fn() };
+const userMealMocks = { listActive: vi.fn(async () => [] as any[]) };
 
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getAuthUser: vi.fn(async (h: string | undefined) =>
@@ -20,6 +21,9 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
 
 vi.mock("../../../../repositories/nutritionEntryRepository", () => ({
   NutritionEntryRepository: vi.fn().mockImplementation(() => entryMocks),
+}));
+vi.mock("../../../../repositories/userMealRepository", () => ({
+  UserMealRepository: vi.fn().mockImplementation(() => userMealMocks),
 }));
 
 describe("nutritionEntriesListHandler", () => {

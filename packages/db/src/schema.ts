@@ -2370,6 +2370,51 @@ export const mealItems = pgTable(
   (t) => [index("meal_items_meal_idx").on(t.mealId)],
 );
 
+// Design D "Your meals" (N1b) — a person's own named meals. See
+// supabase/migrations/20261120143109_your_meals_entry_idempotency.sql.
+// `logSlot` maps each meal onto the four old slots so older bundles still place
+// every entry; `defaultKey` marks the four seeded defaults.
+export const userMeals = pgTable(
+  "user_meals",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+    logSlot: text("log_slot").notNull(),
+    defaultKey: text("default_key"),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    clientRequestId: text("client_request_id"),
+  },
+  (t) => [
+    index("user_meals_user_sort_idx").on(t.userId, t.sortOrder),
+    uniqueIndex("user_meals_user_default_key_idx")
+      .on(t.userId, t.defaultKey)
+      .where(sql`${t.defaultKey} IS NOT NULL`),
+    // ⚠ FULL, not partial — see the nutrition_entries twin below.
+    uniqueIndex("user_meals_user_client_request_idx").on(
+      t.userId,
+      t.clientRequestId,
+    ),
+    check(
+      "user_meals_name_len_chk",
+      sql`char_length(${t.name}) BETWEEN 1 AND 40`,
+    ),
+    check(
+      "user_meals_log_slot_chk",
+      sql`${t.logSlot} IN ('breakfast','lunch','snack','dinner')`,
+    ),
+  ],
+);
+
 export const nutritionEntries = pgTable(
   "nutrition_entries",
   {
@@ -2403,9 +2448,26 @@ export const nutritionEntries = pgTable(
     // Client-supplied label for one-off/AI-estimated entries (no foodId/recipeId/
     // mealId) — stored and returned verbatim, never derived or validated server-side.
     customName: text("custom_name"),
+    // Design D (PER-109) — `userMealId` in the API. NULL for entries logged by
+    // older bundles; reads group those under the default meal for their slot.
+    userMealId: uuid("user_meal_id").references(() => userMeals.id, {
+      onDelete: "set null",
+    }),
+    // Provenance only, no FK (the plan may be deleted; history stays).
+    sourcePlanId: uuid("source_plan_id"),
+    sourcePlanMealId: uuid("source_plan_meal_id"),
+    // `Idempotency-Key` / batch `clientRequestId`. ⚠ MIGRATE BEFORE DEPLOY —
+    // declaring these columns puts them in every SELECT on this table.
+    clientRequestId: text("client_request_id"),
   },
   (t) => [
     index("nutrition_entries_user_date").on(t.userId, t.loggedAt),
+    // ⚠ FULL unique, not partial: Drizzle's onConflict target emits no
+    // predicate, so a partial index raises 42P10 on every keyed insert.
+    uniqueIndex("nutrition_entries_user_client_request_idx").on(
+      t.userId,
+      t.clientRequestId,
+    ),
     index("nutrition_entries_user_slot_date").on(
       t.userId,
       t.mealSlot,
@@ -2822,6 +2884,7 @@ export type MealItem = typeof mealItems.$inferSelect;
 export type NewMealItem = typeof mealItems.$inferInsert;
 export type NutritionEntry = typeof nutritionEntries.$inferSelect;
 export type NewNutritionEntry = typeof nutritionEntries.$inferInsert;
+export type UserMeal = typeof userMeals.$inferSelect;
 export type NutritionTarget = typeof nutritionTargets.$inferSelect;
 export type NewNutritionTarget = typeof nutritionTargets.$inferInsert;
 export type WaterLog = typeof waterLog.$inferSelect;

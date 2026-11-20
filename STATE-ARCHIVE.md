@@ -11,6 +11,22 @@ later sessions changed things.
 
 ---
 
+### 2026-09-21 — Deploy coverage scheduling parity
+
+- Staging run 35630909480 timed out the voucher page's 501-code CSV template
+  test while backend and web coverage ran concurrently. PR checks already
+  serialized workspace suites to prevent runner contention; deploy workflows
+  had missed that fix.
+- Added the same Turbo --concurrency=1 setting to staging and production test
+  steps. Preserve runner-internal parallelism, coverage, failure gating and
+  the existing mobile exclusion. No retries, timeout increases or test changes.
+- Two uncached runs of the complete deploy test command passed: 18 tasks and
+  6,855 tests each (5,143 core; 1,483 web; 229 shared/scripts). The failing
+  voucher test completed in 1.267s and 1.636s against its existing 5s timeout.
+- actionlint, workflow formatting and diff checks passed; local Inspector Brad
+  found no actionable issues. Keep test scheduling aligned across PR, staging
+  and production workflows when changing CI resource controls.
+
 **2026-07-24 (AnyGym readiness sense-check + spec-26 AnyMeal authored — scoping session, docs-only PR off `main` `4cb7a38`, branch `claude/anygym-nutrition-scoping-g4n54n`).**
 
 - **AnyGym verdict: brief-ready, NOT build-ready.** `specs/21-adaptive-workout-ai/` holds only the Phase-0 BRIEF (no triplet); designs are ready per Brad but live off-repo (`~/Downloads/design_handoff_site_and_anygym/` — commit them somewhere durable); 2 data-model decisions open (parent↔variation linkage, saved-gyms — recommended defaults in the brief); tier-gating divergence GTM-brief-vs-pricing-spec must resolve to the pricing spec (hard Premium+ gate; NB the 2026-07-17 site-copy revision dropped the free AI taster — Free's cap is "3 Custom Workouts" — so taster existence is an open Brad call for both AnyGym and AnyMeal). Full sense-check appended to the spec-21 BRIEF. Next step = one authoring session for the triplet.

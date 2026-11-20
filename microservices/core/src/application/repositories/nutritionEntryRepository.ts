@@ -1,6 +1,11 @@
 import { and, eq, desc, sql } from "drizzle-orm";
-import { nutritionEntries, type NutritionEntry } from "@persistence/db";
+import {
+  nutritionEntries,
+  userMeals,
+  type NutritionEntry,
+} from "@persistence/db";
 import { getDb } from "@persistence/db/client";
+import { stripNul } from "../shared/stripNul";
 
 export type MealSlot = "breakfast" | "lunch" | "snack" | "dinner";
 
@@ -27,6 +32,12 @@ export type NutritionEntryDTO = {
   aiEstimated: boolean;
   aiConfidence: number | null;
   customName: string | null;
+  /**
+   * Design D "Your meals". Stored for entries logged with one; on reads,
+   * entries without one (older bundles) are given the user's default meal for
+   * their `mealSlot` — see `withEffectiveUserMealIds`. Older apps ignore it.
+   */
+  userMealId: string | null;
 };
 
 export type CreateEntryInput = {
@@ -43,6 +54,15 @@ export type CreateEntryInput = {
   customName?: string | null;
   aiEstimated?: boolean;
   aiConfidence?: number | null;
+  userMealId?: string | null;
+  /** Provenance for plan meals added to the log (PER-118). No FK. */
+  sourcePlanId?: string | null;
+  sourcePlanMealId?: string | null;
+  /**
+   * `Idempotency-Key` (single POST) or the batch entry's `clientRequestId`.
+   * A second create with the same key for the same user returns the first row.
+   */
+  clientRequestId?: string | null;
 };
 
 export type UpdateEntryInput = Partial<
@@ -79,6 +99,7 @@ function toDTO(row: NutritionEntry): NutritionEntryDTO {
     aiEstimated: row.aiEstimated,
     aiConfidence: row.aiConfidence === null ? null : Number(row.aiConfidence),
     customName: row.customName,
+    userMealId: row.userMealId ?? null,
   };
 }
 
@@ -144,36 +165,92 @@ export class NutritionEntryRepository {
     return rows[0] ? toDTO(rows[0]) : null;
   }
 
+  /**
+   * The caller's entry created under this idempotency key, or null. Checked
+   * before macro derivation so a replay returns the committed row even if the
+   * food it referenced has since been deleted.
+   */
+  async getByClientRequestId(
+    userId: string,
+    clientRequestId: string,
+  ): Promise<NutritionEntryDTO | null> {
+    const db = getDb();
+    const rows = await db
+      .select()
+      .from(nutritionEntries)
+      .where(
+        and(
+          eq(nutritionEntries.userId, userId),
+          eq(nutritionEntries.clientRequestId, clientRequestId),
+        ),
+      )
+      .limit(1);
+    return rows[0] ? toDTO(rows[0]) : null;
+  }
+
+  /**
+   * Insert an entry. With `clientRequestId` the insert is replay-safe: the
+   * FULL unique index `(user_id, client_request_id)` turns a second attempt
+   * into a no-op and the first attempt's row is returned, so a retry after a
+   * lost response is indistinguishable from the original success. Keys are
+   * scoped per user, so two users' identical keys never collide.
+   */
   async create(
     userId: string,
     input: CreateEntryInput,
   ): Promise<NutritionEntryDTO> {
     const db = getDb();
+    const key = input.clientRequestId ?? null;
 
-    const result = await db
+    const values = {
+      userId,
+      foodId: input.foodId ?? null,
+      recipeId: input.recipeId ?? null,
+      mealId: input.mealId ?? null,
+      mealSlot: input.mealSlot,
+      servings: String(input.servings),
+      kcal: String(input.kcal),
+      proteinG: String(input.proteinG),
+      carbsG: String(input.carbsG),
+      fatG: String(input.fatG),
+      loggedAt: new Date(input.loggedAt),
+      customName: input.customName ?? null,
+      aiEstimated: input.aiEstimated ?? false,
+      aiConfidence:
+        input.aiConfidence === undefined || input.aiConfidence === null
+          ? null
+          : String(input.aiConfidence),
+      userMealId: input.userMealId ?? null,
+      sourcePlanId: input.sourcePlanId ?? null,
+      sourcePlanMealId: input.sourcePlanMealId ?? null,
+      clientRequestId: key,
+    };
+
+    if (key === null) {
+      const result = await db
+        .insert(nutritionEntries)
+        .values(values)
+        .returning();
+      return toDTO(result[0]);
+    }
+
+    const inserted = await db
       .insert(nutritionEntries)
-      .values({
-        userId,
-        foodId: input.foodId ?? null,
-        recipeId: input.recipeId ?? null,
-        mealId: input.mealId ?? null,
-        mealSlot: input.mealSlot,
-        servings: String(input.servings),
-        kcal: String(input.kcal),
-        proteinG: String(input.proteinG),
-        carbsG: String(input.carbsG),
-        fatG: String(input.fatG),
-        loggedAt: new Date(input.loggedAt),
-        customName: input.customName ?? null,
-        aiEstimated: input.aiEstimated ?? false,
-        aiConfidence:
-          input.aiConfidence === undefined || input.aiConfidence === null
-            ? null
-            : String(input.aiConfidence),
+      .values(values)
+      .onConflictDoNothing({
+        target: [nutritionEntries.userId, nutritionEntries.clientRequestId],
       })
       .returning();
+    if (inserted[0]) return toDTO(inserted[0]);
 
-    return toDTO(result[0]);
+    // Replay: the first attempt committed this key. Return its row.
+    const existing = await this.getByClientRequestId(userId, key);
+    if (!existing) {
+      // Only reachable if the row was deleted between the conflict and this
+      // read — surface it rather than inventing a row.
+      throw new Error("nutrition entry idempotency conflict without a row");
+    }
+    return existing;
   }
 
   /** Ownership folded into the WHERE — null when not found or not owned (→ 404). */
@@ -185,13 +262,23 @@ export class NutritionEntryRepository {
     const db = getDb();
 
     const patch: Record<string, unknown> = {};
-    if (input.mealSlot !== undefined) patch.mealSlot = input.mealSlot;
+    if (input.mealSlot !== undefined) {
+      patch.mealSlot = input.mealSlot;
+      // Moving an entry to another slot (the only move older bundles can
+      // make) keeps its Your-meals meal only if that meal maps to the new
+      // slot. Otherwise it is cleared, so the entry groups under the default
+      // meal for its new slot instead of staying in a meal of the old one.
+      patch.userMealId = sql`CASE WHEN (SELECT ${userMeals.logSlot} FROM ${userMeals} WHERE ${userMeals.id} = ${nutritionEntries.userMealId} AND ${userMeals.userId} = ${userId}) = ${input.mealSlot} THEN ${nutritionEntries.userMealId} ELSE NULL END`;
+    }
     if (input.servings !== undefined) patch.servings = String(input.servings);
     if (input.kcal !== undefined) patch.kcal = String(input.kcal);
     if (input.proteinG !== undefined) patch.proteinG = String(input.proteinG);
     if (input.carbsG !== undefined) patch.carbsG = String(input.carbsG);
     if (input.fatG !== undefined) patch.fatG = String(input.fatG);
-    if (input.customName !== undefined) patch.customName = input.customName;
+    // NUL stripped: Postgres `text` rejects it (22021), which 500'd the edit.
+    if (input.customName !== undefined)
+      patch.customName =
+        input.customName === null ? null : stripNul(input.customName);
 
     const result = await db
       .update(nutritionEntries)

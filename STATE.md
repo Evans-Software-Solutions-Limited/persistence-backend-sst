@@ -1,5 +1,104 @@
 # Project memory · persistence-backend-sst
 
+### 2026-11-20 — Your meals, food-log idempotency and batch logging ([PER-109](https://linear.app/evans-software-solutions/issue/PER-109), BE-D1; branch `bradleysimmsevans/per-109-be-d1-backend-your-meals-food-log`)
+
+Design D (Linear doc on PER-66), "Your meals" and "Entries" parts only. Meal
+plans, coach plans, recipe sharing and the shopping list are PER-118.
+- **Migration** `20261120143109_your_meals_entry_idempotency.sql` (+ rollback):
+  `user_meals` (name 1–40, `log_slot` CHECK, `default_key`, `archived_at`,
+  `client_request_id`; RLS on, no policies), and on `nutrition_entries`:
+  `user_meal_id` (→ user_meals, SET NULL), `source_plan_id`,
+  `source_plan_meal_id` (no FK), `client_request_id`. Both key indexes are
+  FULL unique `(user_id, client_request_id)`, as in 20260727120100 (a partial
+  index raises 42P10 under Drizzle's predicate-less ON CONFLICT). The
+  `(user_id, default_key)` index is partial; seeding uses a target-less
+  `ON CONFLICT DO NOTHING`, which matches partial indexes. ⚠ Migrate before
+  deploy: the schema declares the new columns, so every `nutrition_entries`
+  read 42703s without them. The staging workflow already runs
+  `supabase db push` before `sst deploy`.
+- **`POST /nutrition/entries`** stores `Idempotency-Key` as
+  `client_request_id`. A replay returns the first row (201, same body), and
+  it's checked before macro derivation, so a replay still works after the
+  food is deleted. The 1.2.0 sync queue already sends the header, so the
+  duplicate food log on retry is fixed for 1.2.0 phones as soon as core
+  deploys. Optional `userMealId` must be the caller's (else 400
+  `user_meal_not_found`); the server then sets `mealSlot` from the meal's
+  `logSlot`. Macro derivation moved to `nutrition/entries/resolveEntryInput.ts`,
+  shared with the batch.
+- **`POST /nutrition/entries/batch`**: ≤ 50 entries, each the single-create
+  body plus a required `clientRequestId` and optional
+  `sourcePlanId`/`sourcePlanMealId` (a non-uuid, e.g. `local-…`, is stored as
+  null). Each entry is idempotent on its own key in the same column, with no
+  batch transaction, so a part-sent batch can be re-sent. It answers 200 with
+  per-entry `{clientRequestId, entry}` or `{clientRequestId, error}`, so one
+  bad entry doesn't strand the others in the queue.
+- **`GET/PUT /nutrition/user-meals`**: GET seeds Breakfast, Lunch, Snack,
+  Dinner (the shipped `MEAL_SLOTS` order and labels) once, safe under
+  concurrent first reads; `?includeArchived=true` adds removed meals. PUT
+  replaces the list in one transaction: an id updates and un-archives, a
+  foreign uuid → 400, a non-uuid id counts as none, `clientRequestId`
+  upserts (a replayed PUT doesn't duplicate), meals left out are archived and
+  their entries keep `user_meal_id`. Last write wins. Responses are
+  `{data: {meals, asOf}}`.
+- **Entry reads** (`/nutrition/entries`, `/nutrition/today`) return
+  `userMealId`: the stored one, or for entries without one the default meal
+  for the slot (`nutrition/userMeals/effectiveUserMeal.ts`: the seeded
+  default if active and still on that slot, else the first active meal on
+  that slot, else null). Reads never seed, so they stay write-free for 1.2.0.
+  `entriesBySlot` is unchanged.
+- **Old-app slot move:** `PUT /nutrition/entries/:id` with a `mealSlot` keeps
+  `user_meal_id` only if that meal maps to the new slot; otherwise it clears
+  it, so the entry regroups under the new slot's default.
+- **Tests** (PGlite with the real migration files; only auth stubbed):
+  `nutrition/__tests__/designD.integration.test.ts` (Design D tests 3 and 4,
+  two-user isolation, user-meals PUT), `repositories/__tests__/yourMealsMigration.integration.test.ts`
+  (test 8: forward twice, down/up, existing entries untouched, index shapes,
+  CHECKs, SET NULL/CASCADE, RLS), and
+  `nutrition/entries/__tests__/entriesContract120.integration.test.ts`, the new
+  1.2.0 entry contract fixtures (`fixtures/entries120.fixture.ts`, recorded
+  from the 1.2.0 app's queue payloads, headers and models), run through the
+  production `nutritionRoutes` tree.
+- **For APP-D1 (PER-132):** create meals with a `clientRequestId` and drain
+  the user-meals PUT before entries that reference them. A `local-…`
+  `userMealId` is rejected (400 on POST, a per-entry error in the batch).
+- **Not verified:** nothing deployed or run against staging/prod Postgres;
+  PGlite only.
+- **Inspector Brad on PR #542, one lead, confirmed and fixed:** one malformed
+  batch entry threw inside the loop. A `local-…` `foodId`/`recipeId`/`mealId`
+  hit the uuid cast (22P02), and a bad `loggedAt` threw `Invalid time value`
+  in the insert. Either one 500'd the whole batch, and every re-send failed
+  at the same entry, so the entries after it were never logged. Reproduced on
+  PGlite, then fixed in `resolveEntryInput`, so the single POST gets it too:
+  a non-uuid reference is `*_not_found` with no query, and an unparseable or
+  unstorable `loggedAt` (outside the years 1900–9999) is `invalid_logged_at`.
+  These are returned errors, not throws. For the single POST, 400 replaces
+  the old 500, which is what 1.2.0's drain expects: a 4xx on a payload still
+  carrying a `local-…` id is deferred and retried after the id swap. Truly
+  unexpected errors (a DB outage) still 500 the batch on purpose. A per-entry
+  200 would tell the phone to give up on entries that would succeed on retry,
+  and the batch is safe to re-send.
+- **Second Inspector Brad sweep, one lead, confirmed and fixed:** only the
+  FIRST reference present (food → recipe → meal) was checked, but all three
+  ids were stored as sent. So `{foodId, mealId: "local-…"}` or a second,
+  unknown uuid failed the insert (22P02 or 23503): a 500 on every re-send.
+  `foodId: ""` slipped past the truthy check, and another user's `recipeId`
+  beside the caller's own food was stored without an ownership check
+  (pre-existing on the single POST). Reproduced on PGlite. Now only the
+  reference the macros came from is stored; the others are dropped, and an
+  empty string counts as no reference.
+- **Third sweep:** both earlier leads were confirmed closed. One low lead,
+  confirmed and fixed: a NUL byte in `customName`, or in a your-meals
+  `name`, passes `t.String()` but Postgres `text` rejects it (22021), so
+  the batch 500'd on every re-send. `shared/stripNul.ts` strips it, keeping
+  the log and the rest of the name; a meal name that is only NULs is blank,
+  so 400. I checked every other client string in this PR: keys pass a
+  regex, ids must be uuids, and `loggedAt` reaches Postgres only as a
+  parsed Date.
+- **Fourth sweep: case closed** on 44b86d0. Its one aside (pre-existing,
+  outside the PR's files): `PUT /nutrition/entries/:id` still wrote
+  `customName` unstripped. Reproduced (500) and fixed in
+  `NutritionEntryRepository.update`, the point every edit write goes through.
+
 ### 2026-11-20 — BE-A1: client profiles, personal invite codes, set-up, several coaches, coach declaration ([PER-108](https://linear.app/evans-software-solutions/issue/PER-108); branch `bradleysimmsevans/per-108-be-a1-backend-client-profiles`)
 
 Foundation backend for Linear "Backend design A — Coaching relationships and
@@ -9288,19 +9387,3 @@ PR not yet raised. NO product code — script + dataset + verdict + spec updates
 - Reused the existing future PERIOD_END_MS fixture in both input and expectation.
   No production subscription/access logic changed. All 91 RevenueCat tests
   passed; formatting and diff checks passed.
-
-### 2026-09-21 — Deploy coverage scheduling parity
-
-- Staging run 35630909480 timed out the voucher page's 501-code CSV template
-  test while backend and web coverage ran concurrently. PR checks already
-  serialized workspace suites to prevent runner contention; deploy workflows
-  had missed that fix.
-- Added the same Turbo --concurrency=1 setting to staging and production test
-  steps. Preserve runner-internal parallelism, coverage, failure gating and
-  the existing mobile exclusion. No retries, timeout increases or test changes.
-- Two uncached runs of the complete deploy test command passed: 18 tasks and
-  6,855 tests each (5,143 core; 1,483 web; 229 shared/scripts). The failing
-  voucher test completed in 1.267s and 1.636s against its existing 5s timeout.
-- actionlint, workflow formatting and diff checks passed; local Inspector Brad
-  found no actionable issues. Keep test scheduling aligned across PR, staging
-  and production workflows when changing CI resource controls.
