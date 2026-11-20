@@ -1,5 +1,69 @@
 # Project memory · persistence-backend-sst
 
+### 2026-11-20 — Your meals, food-log idempotency and batch logging ([PER-109](https://linear.app/evans-software-solutions/issue/PER-109), BE-D1; branch `bradleysimmsevans/per-109-be-d1-backend-your-meals-food-log`)
+
+Design D (Linear doc on PER-66), "Your meals" and "Entries" parts only. Meal
+plans, coach plans, recipe sharing and the shopping list are PER-118.
+- **Migration** `20261120143109_your_meals_entry_idempotency.sql` (+ rollback):
+  `user_meals` (name 1–40, `log_slot` CHECK, `default_key`, `archived_at`,
+  `client_request_id`; RLS on, no policies), and on `nutrition_entries`:
+  `user_meal_id` (→ user_meals, SET NULL), `source_plan_id`,
+  `source_plan_meal_id` (no FK), `client_request_id`. Both key indexes are
+  FULL unique `(user_id, client_request_id)`, as in 20260727120100 (a partial
+  index raises 42P10 under Drizzle's predicate-less ON CONFLICT). The
+  `(user_id, default_key)` index is partial; seeding uses a target-less
+  `ON CONFLICT DO NOTHING`, which matches partial indexes. ⚠ Migrate before
+  deploy: the schema declares the new columns, so every `nutrition_entries`
+  read 42703s without them. The staging workflow already runs
+  `supabase db push` before `sst deploy`.
+- **`POST /nutrition/entries`** stores `Idempotency-Key` as
+  `client_request_id`. A replay returns the first row (201, same body), and
+  it's checked before macro derivation, so a replay still works after the
+  food is deleted. The 1.2.0 sync queue already sends the header, so the
+  duplicate food log on retry is fixed for 1.2.0 phones as soon as core
+  deploys. Optional `userMealId` must be the caller's (else 400
+  `user_meal_not_found`); the server then sets `mealSlot` from the meal's
+  `logSlot`. Macro derivation moved to `nutrition/entries/resolveEntryInput.ts`,
+  shared with the batch.
+- **`POST /nutrition/entries/batch`**: ≤ 50 entries, each the single-create
+  body plus a required `clientRequestId` and optional
+  `sourcePlanId`/`sourcePlanMealId` (a non-uuid, e.g. `local-…`, is stored as
+  null). Each entry is idempotent on its own key in the same column, with no
+  batch transaction, so a part-sent batch can be re-sent. It answers 200 with
+  per-entry `{clientRequestId, entry}` or `{clientRequestId, error}`, so one
+  bad entry doesn't strand the others in the queue.
+- **`GET/PUT /nutrition/user-meals`**: GET seeds Breakfast, Lunch, Snack,
+  Dinner (the shipped `MEAL_SLOTS` order and labels) once, safe under
+  concurrent first reads; `?includeArchived=true` adds removed meals. PUT
+  replaces the list in one transaction: an id updates and un-archives, a
+  foreign uuid → 400, a non-uuid id counts as none, `clientRequestId`
+  upserts (a replayed PUT doesn't duplicate), meals left out are archived and
+  their entries keep `user_meal_id`. Last write wins. Responses are
+  `{data: {meals, asOf}}`.
+- **Entry reads** (`/nutrition/entries`, `/nutrition/today`) return
+  `userMealId`: the stored one, or for entries without one the default meal
+  for the slot (`nutrition/userMeals/effectiveUserMeal.ts`: the seeded
+  default if active and still on that slot, else the first active meal on
+  that slot, else null). Reads never seed, so they stay write-free for 1.2.0.
+  `entriesBySlot` is unchanged.
+- **Old-app slot move:** `PUT /nutrition/entries/:id` with a `mealSlot` keeps
+  `user_meal_id` only if that meal maps to the new slot; otherwise it clears
+  it, so the entry regroups under the new slot's default.
+- **Tests** (PGlite with the real migration files; only auth stubbed):
+  `nutrition/__tests__/designD.integration.test.ts` (Design D tests 3 and 4,
+  two-user isolation, user-meals PUT), `repositories/__tests__/yourMealsMigration.integration.test.ts`
+  (test 8: forward twice, down/up, existing entries untouched, index shapes,
+  CHECKs, SET NULL/CASCADE, RLS), and
+  `nutrition/entries/__tests__/entriesContract120.integration.test.ts`, the new
+  1.2.0 entry contract fixtures (`fixtures/entries120.fixture.ts`, recorded
+  from the 1.2.0 app's queue payloads, headers and models), run through the
+  production `nutritionRoutes` tree.
+- **For APP-D1 (PER-132):** create meals with a `clientRequestId` and drain
+  the user-meals PUT before entries that reference them. A `local-…`
+  `userMealId` is rejected (400 on POST, a per-entry error in the batch).
+- **Not verified:** nothing deployed or run against staging/prod Postgres;
+  PGlite only.
+
 ### 2026-11-16 — Signed-out account's pushes still reached the phone (branch `claude/confident-cerf-xp8bka`)
 
 Brad reported that after signing out of the account Apple used for App Review,

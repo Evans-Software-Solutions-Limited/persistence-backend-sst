@@ -1,7 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const entryMocks = { create: vi.fn() };
+const entryMocks = { create: vi.fn(), getByClientRequestId: vi.fn() };
+const userMealMocks = { getOwned: vi.fn() };
 const foodMocks = { getById: vi.fn() };
 const recipeMocks = { getById: vi.fn() };
 const mealMocks = { getById: vi.fn() };
@@ -32,6 +33,9 @@ vi.mock("../../../../repositories/recipeRepository", () => ({
 }));
 vi.mock("../../../../repositories/mealRepository", () => ({
   MealRepository: vi.fn().mockImplementation(() => mealMocks),
+}));
+vi.mock("../../../../repositories/userMealRepository", () => ({
+  UserMealRepository: vi.fn().mockImplementation(() => userMealMocks),
 }));
 
 function post(body: unknown, auth = true) {

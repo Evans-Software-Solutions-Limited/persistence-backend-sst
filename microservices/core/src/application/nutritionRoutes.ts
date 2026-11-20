@@ -8,6 +8,9 @@ import { nutritionEntriesListHandler } from "./nutrition/entries/list/nutritionE
 import { nutritionEntriesCreateHandler } from "./nutrition/entries/create/nutritionEntriesCreateHandler";
 import { nutritionEntriesUpdateHandler } from "./nutrition/entries/update/nutritionEntriesUpdateHandler";
 import { nutritionEntriesDeleteHandler } from "./nutrition/entries/delete/nutritionEntriesDeleteHandler";
+import { nutritionEntriesBatchHandler } from "./nutrition/entries/batch/nutritionEntriesBatchHandler";
+import { nutritionUserMealsGetHandler } from "./nutrition/userMeals/get/nutritionUserMealsGetHandler";
+import { nutritionUserMealsPutHandler } from "./nutrition/userMeals/put/nutritionUserMealsPutHandler";
 import { nutritionTargetsGetHandler } from "./nutrition/targets/get/nutritionTargetsGetHandler";
 import { nutritionTargetsSetHandler } from "./nutrition/targets/set/nutritionTargetsSetHandler";
 import { nutritionWaterGetHandler } from "./nutrition/water/get/nutritionWaterGetHandler";
@@ -64,6 +67,12 @@ export const nutritionRoutes = new Elysia()
   .use(nutritionEntriesCreateHandler)
   .use(nutritionEntriesUpdateHandler)
   .use(nutritionEntriesDeleteHandler)
+  // Design D (PER-109): POST /nutrition/entries/batch is a static segment, so
+  // Elysia's radix router never confuses it with /nutrition/entries/:id (which
+  // has no POST anyway). Your meals: GET/PUT /nutrition/user-meals.
+  .use(nutritionEntriesBatchHandler)
+  .use(nutritionUserMealsGetHandler)
+  .use(nutritionUserMealsPutHandler)
   .use(nutritionTargetsGetHandler)
   .use(nutritionTargetsSetHandler)
   .use(nutritionWaterGetHandler)

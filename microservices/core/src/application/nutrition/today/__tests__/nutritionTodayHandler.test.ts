@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const entryMocks = { listByDate: vi.fn() };
 const targetMocks = { get: vi.fn() };
 const waterMocks = { getCups: vi.fn() };
+const userMealMocks = { listActive: vi.fn(async () => [] as any[]) };
 
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getAuthUser: vi.fn(async (h: string | undefined) =>
@@ -27,6 +28,9 @@ vi.mock("../../../repositories/nutritionTargetRepository", () => ({
 }));
 vi.mock("../../../repositories/waterLogRepository", () => ({
   WaterLogRepository: vi.fn().mockImplementation(() => waterMocks),
+}));
+vi.mock("../../../repositories/userMealRepository", () => ({
+  UserMealRepository: vi.fn().mockImplementation(() => userMealMocks),
 }));
 
 function entry(
