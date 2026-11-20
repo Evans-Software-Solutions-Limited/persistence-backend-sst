@@ -3149,13 +3149,21 @@ ${indentSyncQueueDdl(12)}
     userId: string,
     range: { from?: string; to?: string } = {},
   ): WorkoutSession[] {
-    const rows = this.getDb().getAllSync(
-      `SELECT payload FROM training_log WHERE user_id = ?
-       ORDER BY started_at ASC`,
-      [userId],
-    ) as { payload: string }[];
     const from = range.from ? Date.parse(range.from) : -Infinity;
     const to = range.to ? Date.parse(range.to) : Infinity;
+    // Bound the read in SQL (the (user_id, started_at) index) so a screen
+    // parses only the window it shows, never the whole history. ISO strings
+    // compare in time order; a day's margin each side covers a start stored
+    // with an offset, and the exact filter below trims it.
+    const DAY = 86_400_000;
+    const lo = Number.isFinite(from) ? new Date(from - DAY).toISOString() : "";
+    const hi = Number.isFinite(to) ? new Date(to + DAY).toISOString() : "~";
+    const rows = this.getDb().getAllSync(
+      `SELECT payload FROM training_log
+       WHERE user_id = ? AND started_at >= ? AND started_at <= ?
+       ORDER BY started_at ASC`,
+      [userId, lo, hi],
+    ) as { payload: string }[];
     return rows
       .map((r) => JSON.parse(r.payload) as WorkoutSession)
       .filter((s) => {

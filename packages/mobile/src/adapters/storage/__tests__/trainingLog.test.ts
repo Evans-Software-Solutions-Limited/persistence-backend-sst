@@ -127,3 +127,39 @@ it("clears the in-memory log on sign-out", () => {
   expect(s.getTrainingLog("u1")).toEqual([]);
   expect(s.getTrainingLogSince("u1")).toBeNull();
 });
+
+it("bounds the read in SQL: rows outside the window are never parsed (Inspector Brad #541)", () => {
+  const { adapter, db } = sqliteAdapter();
+  adapter.saveTrainingLogEntry("u1", finished("in", 20));
+  // A row a month earlier whose payload would throw if it were parsed.
+  db.prepare(
+    "INSERT INTO training_log (id, user_id, started_at, payload, updated_at) VALUES (?, ?, ?, ?, ?)",
+  ).run("old", "u1", "2026-09-01T07:00:00.000Z", "{not json", "x");
+  expect(
+    adapter
+      .getTrainingLog("u1", {
+        from: "2026-10-14T00:00:00.000Z",
+        to: "2026-10-31T00:00:00.000Z",
+      })
+      .map((s) => s.id),
+  ).toEqual(["in"]);
+  // An unbounded read still reaches it.
+  expect(() => adapter.getTrainingLog("u1")).toThrow();
+});
+
+it("keeps a start just inside the window when stored with an offset", () => {
+  const { adapter, db } = sqliteAdapter();
+  const offset = {
+    ...finished("tz", 20),
+    startedAt: "2026-10-20T23:30:00-05:00",
+  };
+  db.prepare(
+    "INSERT INTO training_log (id, user_id, started_at, payload, updated_at) VALUES (?, ?, ?, ?, ?)",
+  ).run("tz", "u1", offset.startedAt, JSON.stringify(offset), "x");
+  // 04:30Z on the 21st, inside a window that starts at 00:00Z on the 21st.
+  expect(
+    adapter
+      .getTrainingLog("u1", { from: "2026-10-21T00:00:00.000Z" })
+      .map((s) => s.id),
+  ).toEqual(["tz"]);
+});

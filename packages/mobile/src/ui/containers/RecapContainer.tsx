@@ -5,6 +5,7 @@ import type { Streak } from "@/domain/models/streak";
 import {
   bodyMapShading,
   buildRecap,
+  previousRecapWindow,
   recapWindow,
   type RecapModel,
   type RecapPeriod,
@@ -193,10 +194,15 @@ export function RecapContainer({
   const unit: WeightUnit = profile.payload?.profile.weightUnit ?? "kg";
   const gender =
     profile.payload?.profile.gender === "female" ? "female" : "male";
-  const log = useTrainingLog(userId);
   const streaks = useGetStreaks();
   const [period, setPeriod] = useState<RecapPeriod>("week");
   const now = useMemo(() => new Date(), []);
+  // Wide enough for every period and the one before it (3 + 3 months).
+  const range = useMemo(
+    () => ({ from: previousRecapWindow("3months", now).from, to: now }),
+    [now],
+  );
+  const log = useTrainingLog(userId, range);
 
   const partial = needsRemote(log.since, recapWindow(period, now).from);
   const [remoteState, setRemoteState] = useState<{

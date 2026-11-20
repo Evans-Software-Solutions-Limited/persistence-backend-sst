@@ -19,6 +19,8 @@ import {
   lastSevenDays,
   musclesForSessions,
   sessionsBetween,
+  startOfDayOffset,
+  toLocalDate,
   topLifts,
   trainingTotals,
 } from "@/domain/services/youPage";
@@ -103,13 +105,12 @@ export function bodyTile(
   },
 ): YouTile {
   const convert = p.convert ?? ((v: number) => v);
-  const sorted = [...readings].sort(
-    (a, b) => Date.parse(a.date) - Date.parse(b.date),
-  );
+  const at = (r: DatedReading) => toLocalDate(r.date).getTime();
+  const sorted = [...readings].sort((a, b) => at(a) - at(b));
   const last = sorted[sorted.length - 1];
   if (!last) return { value: null, unit: p.unit, detail: null, series: [] };
   const since = p.now.getTime() - p.windowDays * 86_400_000;
-  const inWindow = sorted.filter((r) => Date.parse(r.date) >= since);
+  const inWindow = sorted.filter((r) => at(r) >= since);
   const when = whenLabel(last.date, p.now);
   const delta =
     inWindow.length > 1
@@ -130,10 +131,12 @@ function withHealth(
 ): DatedReading[] {
   if (!health) return readings;
   const latest = Math.max(
-    ...readings.map((r) => Date.parse(r.date)),
+    ...readings.map((r) => toLocalDate(r.date).getTime()),
     -Infinity,
   );
-  return Date.parse(health.date) > latest ? [...readings, health] : readings;
+  return toLocalDate(health.date).getTime() > latest
+    ? [...readings, health]
+    : readings;
 }
 
 /**
@@ -163,18 +166,25 @@ export function YouContainer() {
   const prs = useGetPRHistory();
   const health = useHealthData();
   const relationships = useClientRelationships();
-  const log = useTrainingLog(userId);
-
-  // Recomputed per render: the 7-day window moves with the clock.
-  const now = new Date();
-  const dayKeyNow = now.toDateString();
+  // The 7-day window moves with the date; the log reads only that window.
+  const dayKeyNow = new Date().toDateString();
+  const window7 = useMemo(
+    () => ({
+      from: lastSevenDays(new Date()).from,
+      // To the end of today, so a workout finished later today still counts.
+      to: new Date(startOfDayOffset(new Date(), 1).getTime() - 1),
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [dayKeyNow],
+  );
+  const log = useTrainingLog(userId, window7);
   const records = useMemo(
     () => prs.data ?? log.records,
     [prs.data, log.records],
   );
 
   const week = useMemo(() => {
-    const w = lastSevenDays(new Date());
+    const w = window7;
     const sessions = sessionsBetween(log.sessions, w.from, w.to);
     const rows = musclesForSessions(sessions, log.musclesOf);
     const split = trainNextAndRest(rows);
@@ -193,9 +203,7 @@ export function YouContainer() {
         rest,
       } as const,
     };
-    // dayKeyNow re-runs the window when the date changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [log.sessions, log.musclesOf, records, gender, dayKeyNow]);
+  }, [log.sessions, log.musclesOf, records, gender, window7]);
 
   const coaches = useMemo<YouCoach[]>(
     () =>

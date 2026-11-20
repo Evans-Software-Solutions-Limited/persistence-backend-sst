@@ -40,7 +40,7 @@ export function musclesLookup(
 }
 
 export type TrainingLogState = {
-  /** Every finished workout on this phone, oldest first. */
+  /** Finished workouts in the requested window (all when none), oldest first. */
   sessions: WorkoutSession[];
   /** Cached personal records (for gold top lifts and History's ★). */
   records: PersonalRecord[];
@@ -52,12 +52,19 @@ export type TrainingLogState = {
 };
 
 /**
- * The phone's training log for the You page, History and Recap (PER-141).
+ * The phone's training log for the You page, History and Recap (PER-141),
+ * bounded to the window the screen shows.
  * Local and synchronous: no network, so it works offline. The first read
  * stamps when the log started, which tells the containers which ranges
  * need BE-H1 (`application/queries/youRemote.ts`).
  */
-export function useTrainingLog(userId: string | null): TrainingLogState {
+export function useTrainingLog(
+  userId: string | null,
+  /** The window the screen shows; only these workouts are read. */
+  range?: { from: Date; to: Date },
+): TrainingLogState {
+  const fromIso = range?.from.toISOString();
+  const toIso = range?.to.toISOString();
   const { storage } = useAdapters();
   const revision = useCacheRevision(TRAINING_LOG_TABLES);
   const [tick, setTick] = useState(0);
@@ -77,7 +84,7 @@ export function useTrainingLog(userId: string | null): TrainingLogState {
     // Idempotent: only the first read on this phone stamps the start.
     storage.markTrainingLogSince(userId, new Date().toISOString());
     return {
-      sessions: storage.getTrainingLog(userId),
+      sessions: storage.getTrainingLog(userId, { from: fromIso, to: toIso }),
       records: storage.getPersonalRecords(userId),
       since: storage.getTrainingLogSince(userId),
       musclesOf: musclesLookup(
@@ -86,5 +93,5 @@ export function useTrainingLog(userId: string | null): TrainingLogState {
       ),
       reload,
     };
-  }, [storage, userId, revision, tick, reload]);
+  }, [storage, userId, revision, tick, reload, fromIso, toIso]);
 }

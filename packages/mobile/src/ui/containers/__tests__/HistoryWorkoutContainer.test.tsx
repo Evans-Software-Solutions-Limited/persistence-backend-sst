@@ -22,7 +22,7 @@ jest.mock("@/adapters/api", () => ({
   getApiBaseUrl: () => "https://api.test",
 }));
 const mockBack = jest.fn();
-const mockParams: { id?: string } = {};
+const mockParams: { id?: string; at?: string } = {};
 jest.mock("expo-router", () => ({
   router: { back: () => mockBack() },
   useLocalSearchParams: () => mockParams,
@@ -137,6 +137,93 @@ describe("HistoryWorkoutContainer (Y2b)", () => {
     act(() => mockProbe.details!.onBack());
     await waitFor(() => expect(mockProbe.pages).not.toBeNull());
     share.mockRestore();
+  });
+
+  it("stays open when the sync renames the workout (Inspector Brad #541)", async () => {
+    const { storage, adapters } = makeAdapters();
+    // The SQLite update hook wakes subscribers on a write; the in-memory
+    // fake doesn't, so stand in for it here.
+    const listeners = new Set<() => void>();
+    const bus = new Proxy(storage, {
+      get(target, prop, recv) {
+        if (prop === "subscribe")
+          return (_t: readonly string[], cb: () => void) => {
+            listeners.add(cb);
+            return () => listeners.delete(cb);
+          };
+        const v = Reflect.get(target, prop, recv);
+        return typeof v === "function" ? v.bind(target) : v;
+      },
+    });
+    const startedAt = "2026-10-26T07:10:00.000Z";
+    storage.saveTrainingLogEntry(
+      "user-1",
+      finished("local-9", startedAt, { bench: [[95, 5]] }, { name: "Upper A" }),
+    );
+    storage.cachePersonalRecords("user-1", [
+      record("bench", startedAt, { sessionId: "local-9" }),
+    ]);
+    mockParams.id = "local-9";
+    mockParams.at = startedAt;
+    render(
+      <AdapterProvider adapters={{ ...adapters, storage: bus }}>
+        <HistoryWorkoutContainer />
+      </AdapterProvider>,
+    );
+    await waitFor(() => expect(mockProbe.pages?.title).toBe("Upper A"));
+    expect(mockProbe.pages!.records).toHaveLength(1);
+    // The sync drain renames the workout and its record to the server id.
+    // Clear the probe: only a fresh render of the carousel may refill it.
+    mockProbe.pages = null;
+    act(() => {
+      storage.swapLocalSessionId("local-9", "srv-9");
+      listeners.forEach((cb) => cb());
+    });
+    expect(storage.getTrainingLogEntry("user-1", "local-9")).toBeNull();
+    await waitFor(() => expect(mockProbe.pages).not.toBeNull());
+    expect(mockProbe.pages!.title).toBe("Upper A");
+    expect(mockProbe.pages!.records).toHaveLength(1);
+  });
+
+  it("keeps the last workout shown if it leaves the log entirely", async () => {
+    const { storage, adapters } = makeAdapters();
+    const listeners = new Set<() => void>();
+    const bus = new Proxy(storage, {
+      get(target, prop, recv) {
+        if (prop === "subscribe")
+          return (_t: readonly string[], cb: () => void) => {
+            listeners.add(cb);
+            return () => listeners.delete(cb);
+          };
+        const v = Reflect.get(target, prop, recv);
+        return typeof v === "function" ? v.bind(target) : v;
+      },
+    });
+    storage.saveTrainingLogEntry(
+      "user-1",
+      finished(
+        "w5",
+        "2026-10-26T07:10:00.000Z",
+        { bench: [[95, 5]] },
+        {
+          name: "Upper A",
+        },
+      ),
+    );
+    mockParams.id = "w5";
+    mockParams.at = undefined;
+    render(
+      <AdapterProvider adapters={{ ...adapters, storage: bus }}>
+        <HistoryWorkoutContainer />
+      </AdapterProvider>,
+    );
+    await waitFor(() => expect(mockProbe.pages?.title).toBe("Upper A"));
+    mockProbe.pages = null;
+    act(() => {
+      storage.clearAll();
+      listeners.forEach((cb) => cb());
+    });
+    await waitFor(() => expect(mockProbe.pages?.title).toBe("Upper A"));
   });
 
   it("renders nothing for a workout the phone doesn't hold", async () => {

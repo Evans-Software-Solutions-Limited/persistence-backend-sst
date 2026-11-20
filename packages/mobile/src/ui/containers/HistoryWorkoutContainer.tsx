@@ -1,7 +1,8 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Share } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import type { PersonalRecord } from "@/domain/models/record";
+import type { WorkoutSession } from "@/domain/models/session";
 import {
   buildWorkoutSummary,
   muscleShare,
@@ -38,20 +39,39 @@ export function toSummaryRecord(r: PersonalRecord): SummaryRecord {
  * the totals page shows no effort chip here.
  */
 export function HistoryWorkoutContainer() {
-  const { id } = useLocalSearchParams<{ id?: string }>();
+  const { id, at } = useLocalSearchParams<{ id?: string; at?: string }>();
   const { session } = useAuth();
   const userId = session?.userId ?? null;
   const unit = useProfilePage().payload?.profile.weightUnit ?? "kg";
-  const log = useTrainingLog(userId);
+  // Read only the day the workout started (History passes it), not the
+  // whole log.
+  const range = useMemo(() => {
+    const t = at ? Date.parse(at) : NaN;
+    return Number.isFinite(t)
+      ? { from: new Date(t - 86_400_000), to: new Date(t + 86_400_000) }
+      : undefined;
+  }, [at]);
+  const log = useTrainingLog(userId, range);
   const [view, setView] = useState<"pages" | "details">("pages");
 
-  const workout = useMemo(
-    () => log.sessions.find((s) => s.id === id) ?? null,
-    [log.sessions, id],
-  );
+  // The sync can rename an offline workout (`local-…` → server id) while
+  // this modal is open. Follow the rename by the workout's start, and never
+  // drop a workout once shown: a blank modal has no Close button.
+  const shown = useRef<WorkoutSession | null>(null);
+  const workout = useMemo(() => {
+    const prev = shown.current;
+    const found =
+      log.sessions.find((s) => s.id === id) ??
+      (prev ? log.sessions.find((s) => s.startedAt === prev.startedAt) : null);
+    shown.current = found ?? prev;
+    return shown.current;
+  }, [log.sessions, id]);
   const records = useMemo(
-    () => log.records.filter((r) => r.sessionId === id).map(toSummaryRecord),
-    [log.records, id],
+    () =>
+      log.records
+        .filter((r) => r.sessionId === id || r.sessionId === workout?.id)
+        .map(toSummaryRecord),
+    [log.records, id, workout?.id],
   );
   const model = useMemo(
     () =>

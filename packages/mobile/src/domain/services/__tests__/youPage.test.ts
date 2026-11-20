@@ -12,6 +12,7 @@ import {
   sentenceList,
   sessionsBetween,
   sessionTotals,
+  toLocalDate,
   topLifts,
   trainingTotals,
   workedList,
@@ -407,5 +408,22 @@ describe("buildRecap", () => {
     expect(r.volume).toEqual([]);
     expect(r.records).toEqual([]);
     expect(r.together).toEqual({ sessions: 0, names: [] });
+  });
+});
+
+describe("date-only days (Inspector Brad #541)", () => {
+  // `new Date("2026-06-10")` is UTC midnight: the 9th west of Greenwich.
+  // These hold in every zone; run with TZ=America/New_York to see the trap.
+  it("reads YYYY-MM-DD as that local calendar day", () => {
+    expect(dayKey("2026-06-10")).toBe("2026-06-10");
+    expect(toLocalDate("2026-06-10").getTime()).toBe(
+      new Date(2026, 5, 10, 12).getTime(),
+    );
+  });
+
+  it("still converts instants to the local day", () => {
+    const instant = new Date(2026, 5, 10, 23, 30).toISOString();
+    expect(dayKey(instant)).toBe("2026-06-10");
+    expect(toLocalDate(instant).toISOString()).toBe(instant);
   });
 });

@@ -10,6 +10,7 @@ import {
   dayKey,
   historyDay,
   monthCells,
+  toLocalDate,
   workedList,
   type HistoryDayModel,
 } from "@/domain/services/youPage";
@@ -214,7 +215,6 @@ export function HistoryContainer({
   const unit: WeightUnit = profile.payload?.profile.weightUnit ?? "kg";
   const gender =
     profile.payload?.profile.gender === "female" ? "female" : "male";
-  const log = useTrainingLog(userId);
   const health = useHealthData();
 
   const today = useMemo(() => new Date(), []);
@@ -223,6 +223,20 @@ export function HistoryContainer({
     m: today.getMonth(),
   });
   const [selected, setSelected] = useState(dayKey(today));
+  // Read only the month on screen and the selected day (which can sit in
+  // another month after paging).
+  const range = useMemo(() => {
+    const day = toLocalDate(selected);
+    const first = new Date(month.y, month.m, 1);
+    const next = new Date(month.y, month.m + 1, 1);
+    const dayStart = new Date(day.getFullYear(), day.getMonth(), day.getDate());
+    const dayEnd = new Date(dayStart.getTime() + 86_400_000);
+    return {
+      from: first < dayStart ? first : dayStart,
+      to: new Date(Math.max(next.getTime(), dayEnd.getTime()) - 1),
+    };
+  }, [month, selected]);
+  const log = useTrainingLog(userId, range);
   const [cacheTick, setCacheTick] = useState(0);
   const reloadLog = log.reload;
   useFocusEffect(
@@ -326,7 +340,7 @@ export function HistoryContainer({
       onOpenWorkout={(id) =>
         router.push({
           pathname: "/(app)/history-workout",
-          params: { id },
+          params: { id, at: log.sessions.find((s) => s.id === id)?.startedAt },
         } as never)
       }
     />

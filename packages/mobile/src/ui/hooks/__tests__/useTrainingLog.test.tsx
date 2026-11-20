@@ -59,6 +59,26 @@ describe("useTrainingLog", () => {
     expect(result.current.since).toBe(since);
   });
 
+  it("reads only the window it's given", () => {
+    const storage = new InMemoryStorageAdapter();
+    storage.saveTrainingLogEntry(
+      "u1",
+      finished("old", "2026-09-01T07:00:00.000Z", { bench: [[100, 5]] }),
+    );
+    storage.saveTrainingLogEntry(
+      "u1",
+      finished("new", "2026-10-20T07:00:00.000Z", { bench: [[100, 5]] }),
+    );
+    const range = {
+      from: new Date("2026-10-14T00:00:00Z"),
+      to: new Date("2026-10-31T00:00:00Z"),
+    };
+    const { result } = renderHook(() => useTrainingLog("u1", range), {
+      wrapper: wrap(storage),
+    });
+    expect(result.current.sessions.map((s) => s.id)).toEqual(["new"]);
+  });
+
   it("is empty when signed out", () => {
     const storage = new InMemoryStorageAdapter();
     const { result } = renderHook(() => useTrainingLog(null), {

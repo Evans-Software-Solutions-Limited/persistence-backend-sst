@@ -140,6 +140,20 @@ describe("dayExtras", () => {
     expect(extrasLogged(e)).toBe(true);
   });
 
+  it("finds a date-only weigh-in on its own day (Inspector Brad #541)", () => {
+    const e = dayExtras("2026-06-10", {
+      fuel: null,
+      steps: [],
+      body: [
+        { date: "2026-06-09", weightKg: 81, bodyFat: null },
+        { date: "2026-06-10", weightKg: 82.4, bodyFat: null },
+      ],
+      habitConfigs: [],
+      completions: [],
+    });
+    expect(e.weightKg).toBe(82.4);
+  });
+
   it("treats zero steps and nothing cached as nothing logged", () => {
     const e = dayExtras("2026-10-26", {
       fuel: null,
@@ -338,7 +352,7 @@ describe("HistoryContainer", () => {
     act(() => p.onOpenWorkout("w1"));
     expect(mockPush).toHaveBeenCalledWith({
       pathname: "/(app)/history-workout",
-      params: { id: "w1" },
+      params: { id: "w1", at: earlier.toISOString() },
     });
     act(() => p.onBack());
     expect(mockBack).toHaveBeenCalled();

@@ -443,6 +443,17 @@ describe("bodyTile", () => {
     ).toEqual({ value: null, unit: "%", detail: null, series: [] });
   });
 
+  it("labels today's date-only weigh-in Today (Inspector Brad #541)", () => {
+    const t = bodyTile(
+      [
+        { date: "2026-10-27", value: 82 },
+        { date: "2026-10-29", value: 82.4 },
+      ],
+      { unit: "kg", now, windowDays: 7, period: "this week" },
+    );
+    expect(t.detail).toBe("Today · +0.4 this week");
+  });
+
   it("converts to the athlete's unit", () => {
     const t = bodyTile(
       [

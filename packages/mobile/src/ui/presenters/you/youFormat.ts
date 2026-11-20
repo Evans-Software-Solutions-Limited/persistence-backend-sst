@@ -5,7 +5,11 @@
 
 import type { MuscleCreditRow } from "@/domain/services/trainingMetrics/muscleCredit";
 import type { TopLift, TrainingTotals } from "@/domain/services/youPage";
-import { dayThatSorts, sentenceList } from "@/domain/services/youPage";
+import {
+  dayThatSorts,
+  sentenceList,
+  toLocalDate,
+} from "@/domain/services/youPage";
 import type { WeightUnit } from "@/shared/utils";
 import { volumeInUnit, weightInUnit } from "@/shared/utils";
 import type { LiftRowData } from "./youKit";
@@ -46,11 +50,14 @@ export const clockTime = (iso: string) =>
 
 /** "22 Oct". */
 export const dayMonth = (iso: string | Date) =>
-  new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+  (typeof iso === "string" ? toLocalDate(iso) : iso).toLocaleDateString(
+    "en-GB",
+    { day: "numeric", month: "short" },
+  );
 
-/** "Today" for today's date, else "22 Oct". */
+/** "Today" for today's date, else "22 Oct". Date-only strings are local days. */
 export function whenLabel(iso: string, now: Date): string {
-  const d = new Date(iso);
+  const d = toLocalDate(iso);
   return d.toDateString() === now.toDateString() ? "Today" : dayMonth(d);
 }
 

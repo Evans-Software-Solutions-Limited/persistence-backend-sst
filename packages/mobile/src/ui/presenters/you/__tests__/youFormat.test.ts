@@ -139,4 +139,12 @@ describe("youFormat", () => {
     expect(trainNextLine([])).toBeNull();
     expect(restLine([])).toBeNull();
   });
+
+  it("labels a date-only reading by its local day (Inspector Brad #541)", () => {
+    expect(whenLabel("2026-11-20", new Date(2026, 10, 20, 0, 5))).toBe("Today");
+    expect(whenLabel("2026-11-20", new Date(2026, 10, 20, 23, 55))).toBe(
+      "Today",
+    );
+    expect(dayMonth("2026-11-19")).toBe("19 Nov");
+  });
 });

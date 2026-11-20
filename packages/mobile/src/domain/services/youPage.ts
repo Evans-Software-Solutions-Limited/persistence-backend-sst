@@ -32,8 +32,23 @@ export type MusclesOf = (exerciseId: string) => {
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * A stored date as a `Date`. A date-only "YYYY-MM-DD" (body-trend points,
+ * habit days) is a local calendar day, so it reads as local midday: `new
+ * Date("2026-06-10")` would be UTC midnight, the day before anywhere west of
+ * Greenwich. Anything else is an instant.
+ */
+export function toLocalDate(value: string): Date {
+  return DATE_ONLY.test(value)
+    ? new Date(`${value}T12:00:00`)
+    : new Date(value);
+}
+
 /** "2026-10-26" for the phone's local calendar day. */
 export function dayKey(d: Date | string): string {
+  if (typeof d === "string" && DATE_ONLY.test(d)) return d;
   const date = typeof d === "string" ? new Date(d) : d;
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
