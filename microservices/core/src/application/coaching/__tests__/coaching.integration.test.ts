@@ -712,6 +712,30 @@ describe("accepting a personal code", () => {
     expect(res.json.code).toBe("exists");
   });
 
+  it("a coach who soft-deleted their account can't be joined, and nothing is written", async () => {
+    const { profile, code } = await readyCode();
+    await db
+      .update(schema.profiles)
+      .set({ deletedAt: new Date() })
+      .where(eq(schema.profiles.id, COACH_A));
+    const res = await accept(ATHLETE_E, code);
+    expect(res.status).toBe(404);
+    expect(res.json.code).toBe("invalid_code");
+    expect(await relationship(COACH_A, ATHLETE_E)).toBeUndefined();
+    expect(await db.select().from(schema.dataSharingConsents)).toEqual([]);
+    expect(await db.select().from(schema.nutritionTargets)).toEqual([]);
+
+    // Restoring the account brings the code back.
+    await db
+      .update(schema.profiles)
+      .set({ deletedAt: null })
+      .where(eq(schema.profiles.id, COACH_A));
+    expect((await accept(ATHLETE_E, code)).status).toBe(201);
+    expect((await relationship(COACH_A, ATHLETE_E))!.clientProfileId).toBe(
+      profile.id,
+    );
+  });
+
   it("the coach can't redeem their own personal code", async () => {
     const { code } = await readyCode();
     const res = await accept(COACH_A, code);
@@ -980,6 +1004,55 @@ describe("personal code lifecycle", () => {
         clientProfileId: profile.id,
       }),
     ).rejects.toSatisfy(isUniqueViolation);
+  });
+
+  it("resend, cancel and delete lock the code before the profile, like accept", async () => {
+    // PGlite is one connection, so a real deadlock can't be staged. What
+    // prevents one is that every path takes the two row locks in ONE order:
+    // trainer_invite_codes, then coach_client_profiles. Record the order.
+    const locks: string[] = [];
+    const logged = drizzle(pg, {
+      schema,
+      logger: {
+        logQuery: (query: string) => {
+          const m =
+            /from "(trainer_invite_codes|coach_client_profiles)"[\s\S]*for update/i.exec(
+              query,
+            );
+          if (m) locks.push(m[1]!);
+        },
+      },
+    });
+    const lockOrder = async (run: () => Promise<unknown>) => {
+      locks.length = 0;
+      holder.db = logged;
+      try {
+        await run();
+      } finally {
+        holder.db = db;
+      }
+      return locks.slice(0, 2);
+    };
+    const codeFirst = ["trainer_invite_codes", "coach_client_profiles"];
+
+    const { profile } = await readyCode();
+    const path = `/trainers/me/client-profiles/${profile.id}`;
+    expect(
+      await lockOrder(() => http("POST", `${path}/invite`, COACH_A)),
+    ).toEqual(codeFirst);
+    expect(
+      await lockOrder(() => http("DELETE", `${path}/invite`, COACH_A)),
+    ).toEqual(codeFirst);
+    const { code } = await invite(COACH_A, profile.id);
+    expect(await lockOrder(() => http("DELETE", path, COACH_A))).toEqual(
+      codeFirst,
+    );
+
+    const other = await readyCode();
+    expect(await lockOrder(() => accept(ATHLETE_E, other.code))).toEqual(
+      codeFirst,
+    );
+    expect(code).toBeTruthy();
   });
 
   it("expires 7 days after issue, enforced on the server", async () => {

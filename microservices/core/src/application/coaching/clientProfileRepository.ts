@@ -580,6 +580,7 @@ export class ClientProfileRepository {
     clientRequestId: string | null,
   ): Promise<InviteDTO | Refusal> {
     return getDb().transaction(async (tx) => {
+      await this.lockActiveCodes(tx, trainerId, profileId);
       const row = await this.findOwned(trainerId, profileId, tx, true);
       if (!row) return { refused: "not_found" as const };
 
@@ -673,6 +674,7 @@ export class ClientProfileRepository {
     profileId: string,
   ): Promise<true | Refusal> {
     return getDb().transaction(async (tx) => {
+      await this.lockActiveCodes(tx, trainerId, profileId);
       const row = await this.findOwned(trainerId, profileId, tx, true);
       if (!row) return { refused: "not_found" as const };
       if (!EDITABLE.includes(row.status)) {
@@ -701,6 +703,7 @@ export class ClientProfileRepository {
   async remove(trainerId: string, profileId: string): Promise<true | Refusal> {
     if (!isUuid(profileId)) return { refused: "not_found" };
     return getDb().transaction(async (tx) => {
+      await this.lockActiveCodes(tx, trainerId, profileId);
       const rows = await tx
         .select()
         .from(coachClientProfiles)
@@ -725,6 +728,33 @@ export class ClientProfileRepository {
         .where(eq(coachClientProfiles.id, row.id));
       return true as const;
     });
+  }
+
+  /**
+   * ⚠ Lock order. The accept path (`acceptPersonalCode`) can only find the
+   * profile through its code, so it locks the CODE row first and the PROFILE
+   * second. Every write here that touches both — resend, cancel, delete — must
+   * take them in the same order, or a coach tapping one of them while the
+   * athlete redeems can deadlock (40P01 → a 500 to one side). So: lock this
+   * profile's live codes, then the profile.
+   */
+  private async lockActiveCodes(
+    tx: DbOrTx,
+    trainerId: string,
+    profileId: string,
+  ): Promise<void> {
+    if (!isUuid(profileId)) return;
+    await tx
+      .select({ id: trainerInviteCodes.id })
+      .from(trainerInviteCodes)
+      .where(
+        and(
+          eq(trainerInviteCodes.clientProfileId, profileId),
+          eq(trainerInviteCodes.trainerId, trainerId),
+          eq(trainerInviteCodes.status, "active"),
+        ),
+      )
+      .for("update");
   }
 
   private async expireCodes(

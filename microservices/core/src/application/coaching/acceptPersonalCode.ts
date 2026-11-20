@@ -223,11 +223,18 @@ export async function acceptPersonalCode(
 
   // Seat cap, under the same per-trainer lock as a general code. Nothing has
   // been written yet, so a rejection leaves the code and the set-up intact.
-  await tx
-    .select({ id: profiles.id })
+  const trainerRow = await tx
+    .select({ id: profiles.id, deletedAt: profiles.deletedAt })
     .from(profiles)
     .where(eq(profiles.id, trainerId))
     .for("update");
+  // A coach who soft-deleted their account keeps their codes (restoring the
+  // account brings them back), but nobody may join them meanwhile: a personal
+  // code would otherwise make an ACTIVE relationship, consent grant and
+  // set-up with an account that is going away. The preview already refuses.
+  if (!trainerRow[0] || trainerRow[0].deletedAt !== null) {
+    return INVALID_CODE;
+  }
   const seat = await evaluateTrainerJoinSeat(trainerId, tx);
   if (!seat.allowed) {
     return {
