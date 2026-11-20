@@ -191,6 +191,28 @@ describe("SessionSummaryContainer", () => {
     expect(q.queryByText(/this month/)).toBeNull();
   });
 
+  it("keeps the finished workout in the phone's training log (PER-141)", async () => {
+    const storage = new InMemoryStorageAdapter();
+    seedActive(storage);
+    const live = storage.getLatestSession("user-1")!;
+    storage.cacheActiveSession("user-1", {
+      ...live,
+      status: "completed",
+      completedAt: "2026-05-05T11:00:00.000Z",
+    });
+    await renderSummary(storage);
+    expect(storage.getTrainingLogEntry("user-1", "local-1")?.name).toBe(
+      "Push Day",
+    );
+  });
+
+  it("never logs a workout that isn't finished", async () => {
+    const storage = new InMemoryStorageAdapter();
+    seedActive(storage);
+    await renderSummary(storage);
+    expect(storage.getTrainingLog("user-1")).toEqual([]);
+  });
+
   it("hides Muscles worked when the exercise is not in the library", async () => {
     const storage = new InMemoryStorageAdapter();
     seedActive(storage);

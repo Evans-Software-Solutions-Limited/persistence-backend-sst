@@ -996,6 +996,10 @@ export async function processSyncQueue(
             };
             storage.cacheRecordResponse(session.value.userId, summary);
           }
+          // PER-141: the training log moves to the server id, so cached
+          // personal records (server session ids) match the workout.
+          if (entry.entityId && body.data?.id)
+            storage.linkTrainingLogSessionId(entry.entityId, body.data.id);
         } catch (err) {
           // Body wasn't valid JSON, response.json() rejected, or
           // auth.getSession() rejected. Either way: the POST succeeded

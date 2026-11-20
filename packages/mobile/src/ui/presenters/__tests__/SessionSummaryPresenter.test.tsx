@@ -558,3 +558,23 @@ describe("brand and share", () => {
     expect(handlers.onShare.mock.calls.at(-1)![0]).not.toContain("Effort");
   });
 });
+
+describe("opened from History (Y2b, PER-141)", () => {
+  it("names the workout in the top bar and closes instead of Continue", () => {
+    const q = renderSummary({ onContinue: undefined, title: "Upper A" });
+    expect(q.getByTestId("session-summary-title").props.children).toBe(
+      "Upper A",
+    );
+    expect(q.queryByTestId("summary-continue")).toBeNull();
+    fireEvent.press(q.getByTestId("summary-details"));
+    expect(handlers.onDetails).toHaveBeenCalled();
+    fireEvent.press(q.getByTestId("session-summary-close"));
+    expect(handlers.onClose).toHaveBeenCalled();
+  });
+
+  it("keeps the finish flow unchanged without a title", () => {
+    const q = renderSummary();
+    expect(q.queryByTestId("session-summary-title")).toBeNull();
+    expect(q.getByTestId("summary-continue")).toBeTruthy();
+  });
+});

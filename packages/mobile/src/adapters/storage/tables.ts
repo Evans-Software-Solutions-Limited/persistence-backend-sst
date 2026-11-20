@@ -85,3 +85,9 @@ export const RECENT_SETS_TABLES = ["recent_sets"] as const;
  * polling.
  */
 export const SYNC_QUEUE_TABLES = ["sync_queue"] as const;
+
+/**
+ * PER-141: the phone's training log of finished workouts. The You page,
+ * History and Recap read it; the summary screen writes it.
+ */
+export const TRAINING_LOG_TABLES = ["training_log"] as const;

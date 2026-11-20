@@ -810,6 +810,60 @@ export interface StoragePort {
    */
   getLatestSession(userId: string): WorkoutSession | null;
 
+  // -- Training log (PER-141 You page, backend design H) --
+
+  /**
+   * Save a finished workout into the phone's training log, the local
+   * history the You page, History and Recap read from. Upsert by session
+   * id; `swapLocalSessionId` renames the row when the server id lands.
+   * Only `completed` sessions of the athlete themself belong here: a
+   * coach's on-behalf session (`withClient`) is ignored.
+   */
+  saveTrainingLogEntry(userId: string, session: WorkoutSession): void;
+
+  /**
+   * The sync reply path's id swap for the training log: `POST
+   * /sessions/record` returned `serverId` for the workout saved as
+   * `localId`. Renames the row (and its nested session ids) and remembers
+   * the pair, so a summary that saves the workout after the sync drained
+   * still lands under the server id. Personal records carry server session
+   * ids, so History's ★ and the Y2b records page match only after this.
+   * Touches nothing but the training log.
+   */
+  linkTrainingLogSessionId(localId: string, serverId: string): void;
+
+  /**
+   * Each workout's own personal records, from its `/sessions/record` (or
+   * Together) response, keyed by the logged workout id. The PR cache keeps
+   * only the latest best per lift, so a lift beaten twice loses its earlier
+   * record there; these lists keep every record with the workout that set
+   * it. Written by `cacheRecordResponse`; a local id resolves to its
+   * linked server id.
+   */
+  getTrainingLogRecords(
+    userId: string,
+    sessionIds: readonly string[],
+  ): Record<string, RecordResponseSummaryPR[]>;
+
+  /** Finished workouts started in [from, to] (ISO), oldest first. */
+  getTrainingLog(
+    userId: string,
+    range?: { from?: string; to?: string },
+  ): WorkoutSession[];
+
+  /** One finished workout from the training log, or null. */
+  getTrainingLogEntry(userId: string, id: string): WorkoutSession | null;
+
+  /**
+   * When this phone started keeping the training log for the user: before
+   * it, the log is empty and older data needs BE-H1 (PER-113). Null until
+   * `markTrainingLogSince` first runs.
+   */
+  getTrainingLogSince(userId: string): string | null;
+
+  /** Stamp the training log's start for the user; a no-op once set. */
+  markTrainingLogSince(userId: string, at: string): void;
+
   /**
    * Write-through the entire session as a full upsert. Replaces the
    * three nested tables atomically per EXECUTION_PLAN § 3.4 — the

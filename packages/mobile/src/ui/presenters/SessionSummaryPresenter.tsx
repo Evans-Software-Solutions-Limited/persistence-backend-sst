@@ -75,8 +75,15 @@ export type SessionSummaryPresenterProps = {
   together?: SummaryTogether | null;
   initialPage?: number;
   onDetails(): void;
-  onContinue(): void;
+  /**
+   * The finish flow's Continue. Omitted when the carousel is opened from
+   * History (Y2b): there the only exit is Close (×), Workout details fills
+   * the row and `title` names the workout in the top bar.
+   */
+  onContinue?: () => void;
   onClose(): void;
+  /** Y2b: the workout's name, centred in the top bar. */
+  title?: string;
   /** Shares the page on screen; the text comes from `summaryShareText`. */
   onShare(text: string): void;
 };
@@ -180,6 +187,25 @@ export function SessionSummaryPresenter(p: SessionSummaryPresenterProps) {
         >
           <IconX size={20} color={color.$text} />
         </RoundButton>
+        {!!p.title && (
+          <Text
+            flex={1}
+            alignSelf="center"
+            textAlign="center"
+            numberOfLines={1}
+            paddingHorizontal={8}
+            fontFamily="$display"
+            fontWeight="600"
+            fontSize={11}
+            lineHeight={14}
+            letterSpacing={2.6}
+            textTransform="uppercase"
+            color="$text3"
+            testID="session-summary-title"
+          >
+            {p.title}
+          </Text>
+        )}
         <RoundButton
           label="Share this page"
           onPress={() =>
@@ -266,11 +292,13 @@ export function SessionSummaryPresenter(p: SessionSummaryPresenterProps) {
               Workout details
             </OutlineBtn>
           </View>
-          <View flex={1}>
-            <TogetherBtn onPress={p.onContinue} testID="summary-continue">
-              Continue
-            </TogetherBtn>
-          </View>
+          {p.onContinue && (
+            <View flex={1}>
+              <TogetherBtn onPress={p.onContinue} testID="summary-continue">
+                Continue
+              </TogetherBtn>
+            </View>
+          )}
         </View>
       </View>
     </View>

@@ -66,6 +66,7 @@ import type {
   EnqueueMutationInput,
   RecentSetEntry,
   RecordResponseSummary,
+  RecordResponseSummaryPR,
   RestTimerState,
   SyncQueueEntry,
   DeferKind,
@@ -735,6 +736,34 @@ ${indentSyncQueueDdl(8)}
         user_id TEXT PRIMARY KEY,
         payload TEXT NOT NULL,
         synced_at TEXT NOT NULL
+      );
+      -- PER-141: the phone's training log of finished workouts (You page,
+      -- History, Recap). One row per session; payload is the WorkoutSession.
+      CREATE TABLE IF NOT EXISTS training_log (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        started_at TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_training_log_user_started
+        ON training_log(user_id, started_at);
+      -- local-… → server id for workouts already synced (see
+      -- linkTrainingLogSessionId).
+      CREATE TABLE IF NOT EXISTS training_log_ids (
+        local_id TEXT PRIMARY KEY,
+        server_id TEXT NOT NULL
+      );
+      -- Each workout's own personal records, keyed by the id its record
+      -- response named (local or server); see getTrainingLogRecords.
+      CREATE TABLE IF NOT EXISTS training_log_records (
+        session_id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        payload TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS training_log_since (
+        user_id TEXT PRIMARY KEY,
+        since TEXT NOT NULL
       );
       CREATE TABLE IF NOT EXISTS cached_streaks (
         user_id TEXT PRIMARY KEY,
@@ -1712,6 +1741,10 @@ ${indentSyncQueueDdl(12)}
         // `createWorkoutCommand` now writes coach-authored workouts here
         // offline, so this slice holds `local-…` ids too.
         "cached_coach_workout_library",
+        // PER-141: a workout finished offline with a just-created custom
+        // exercise logs its `local-…` id; muscles, gold and per-lift
+        // grouping all key on the server id.
+        "training_log",
       ] as const) {
         const blobs = db.getAllSync(
           `SELECT rowid, payload FROM ${table} WHERE payload LIKE ?`,
@@ -3108,6 +3141,173 @@ ${indentSyncQueueDdl(12)}
     };
   }
 
+  // -- Training log (PER-141) --
+
+  saveTrainingLogEntry(userId: string, saved: WorkoutSession): void {
+    if (saved.status !== "completed" || saved.withClient) return;
+    const linked = this.getDb().getFirstSync(
+      `SELECT server_id FROM training_log_ids WHERE local_id = ?`,
+      [saved.id],
+    ) as { server_id: string } | null;
+    // A Together finish never goes through POST /sessions/record: its
+    // confirmed server id arrives as `together.historyId` instead.
+    const serverId = saved.together?.historyId ?? linked?.server_id;
+    if (saved.together?.historyId && saved.together.historyId !== saved.id)
+      this.getDb().runSync(
+        `INSERT OR REPLACE INTO training_log_ids (local_id, server_id)
+         VALUES (?, ?)`,
+        [saved.id, saved.together.historyId],
+      );
+    const session =
+      serverId && serverId !== saved.id
+        ? renameSession(saved, saved.id, serverId)
+        : saved;
+    this.getDb().runSync(
+      `INSERT INTO training_log (id, user_id, started_at, payload, updated_at)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         started_at = excluded.started_at,
+         payload = excluded.payload,
+         updated_at = excluded.updated_at
+       WHERE training_log.user_id = excluded.user_id`,
+      [
+        session.id,
+        userId,
+        session.startedAt,
+        JSON.stringify(session),
+        new Date().toISOString(),
+      ],
+    );
+    // The log covers the phone from its earliest live workout: one saved
+    // before any screen first read the log must not postdate `since`. A
+    // back-dated (retrospective) workout says when it happened, not when
+    // the phone started keeping a log, so it counts from when it was logged.
+    const since = this.getTrainingLogSince(userId);
+    const at = trainingLogStart(saved);
+    if (since == null || Date.parse(at) < Date.parse(since))
+      this.getDb().runSync(
+        `INSERT INTO training_log_since (user_id, since) VALUES (?, ?)
+         ON CONFLICT(user_id) DO UPDATE SET since = excluded.since`,
+        [userId, at],
+      );
+  }
+
+  linkTrainingLogSessionId(localId: string, serverId: string): void {
+    if (localId === serverId) return;
+    const db = this.getDb();
+    db.withTransactionSync(() => {
+      db.runSync(
+        `INSERT OR REPLACE INTO training_log_ids (local_id, server_id)
+         VALUES (?, ?)`,
+        [localId, serverId],
+      );
+      this.renameTrainingLogRow(localId, serverId);
+    });
+  }
+
+  /** Move a training-log row to a new id, nested session ids included. */
+  private renameTrainingLogRow(localId: string, serverId: string): void {
+    const db = this.getDb();
+    const logged = db.getFirstSync(
+      `SELECT payload FROM training_log WHERE id = ?`,
+      [localId],
+    ) as { payload: string } | null;
+    if (!logged) return;
+    const renamed = renameSession(
+      JSON.parse(logged.payload) as WorkoutSession,
+      localId,
+      serverId,
+    );
+    db.runSync(`DELETE FROM training_log WHERE id = ?`, [serverId]);
+    db.runSync(`UPDATE training_log SET id = ?, payload = ? WHERE id = ?`, [
+      serverId,
+      JSON.stringify(renamed),
+      localId,
+    ]);
+  }
+
+  getTrainingLogRecords(
+    userId: string,
+    sessionIds: readonly string[],
+  ): Record<string, RecordResponseSummaryPR[]> {
+    const out: Record<string, RecordResponseSummaryPR[]> = {};
+    if (!sessionIds.length) return out;
+    const db = this.getDb();
+    const marks = sessionIds.map(() => "?").join(", ");
+    // Every id a logged workout's records may sit under: its own, and the
+    // local ids linked to it.
+    const aliases = db.getAllSync(
+      `SELECT local_id, server_id FROM training_log_ids
+       WHERE server_id IN (${marks})`,
+      [...sessionIds],
+    ) as { local_id: string; server_id: string }[];
+    const owner = new Map<string, string>(sessionIds.map((id) => [id, id]));
+    for (const a of aliases) owner.set(a.local_id, a.server_id);
+    const keys = [...owner.keys()];
+    const rows = db.getAllSync(
+      `SELECT session_id, payload FROM training_log_records
+       WHERE user_id = ? AND session_id IN (${keys.map(() => "?").join(", ")})`,
+      [userId, ...keys],
+    ) as { session_id: string; payload: string }[];
+    for (const row of rows) {
+      const id = owner.get(row.session_id)!;
+      // A server-keyed answer wins over the local one for the same workout.
+      if (out[id] && row.session_id !== id) continue;
+      out[id] = JSON.parse(row.payload) as RecordResponseSummaryPR[];
+    }
+    return out;
+  }
+
+  getTrainingLog(
+    userId: string,
+    range: { from?: string; to?: string } = {},
+  ): WorkoutSession[] {
+    const from = range.from ? Date.parse(range.from) : -Infinity;
+    const to = range.to ? Date.parse(range.to) : Infinity;
+    // Bound the read in SQL (the (user_id, started_at) index) so a screen
+    // parses only the window it shows, never the whole history. ISO strings
+    // compare in time order; a day's margin each side covers a start stored
+    // with an offset, and the exact filter below trims it.
+    const DAY = 86_400_000;
+    const lo = Number.isFinite(from) ? new Date(from - DAY).toISOString() : "";
+    const hi = Number.isFinite(to) ? new Date(to + DAY).toISOString() : "~";
+    const rows = this.getDb().getAllSync(
+      `SELECT payload FROM training_log
+       WHERE user_id = ? AND started_at >= ? AND started_at <= ?
+       ORDER BY started_at ASC`,
+      [userId, lo, hi],
+    ) as { payload: string }[];
+    return rows
+      .map((r) => JSON.parse(r.payload) as WorkoutSession)
+      .filter((s) => {
+        const t = Date.parse(s.startedAt);
+        return t >= from && t <= to;
+      });
+  }
+
+  getTrainingLogEntry(userId: string, id: string): WorkoutSession | null {
+    const row = this.getDb().getFirstSync(
+      `SELECT payload FROM training_log WHERE user_id = ? AND id = ?`,
+      [userId, id],
+    ) as { payload: string } | null;
+    return row ? (JSON.parse(row.payload) as WorkoutSession) : null;
+  }
+
+  getTrainingLogSince(userId: string): string | null {
+    const row = this.getDb().getFirstSync(
+      `SELECT since FROM training_log_since WHERE user_id = ?`,
+      [userId],
+    ) as { since: string } | null;
+    return row?.since ?? null;
+  }
+
+  markTrainingLogSince(userId: string, at: string): void {
+    this.getDb().runSync(
+      `INSERT OR IGNORE INTO training_log_since (user_id, since) VALUES (?, ?)`,
+      [userId, at],
+    );
+  }
+
   cacheActiveSession(userId: string, session: WorkoutSession): void {
     const db = this.getDb();
     const now = new Date().toISOString();
@@ -3245,6 +3445,19 @@ ${indentSyncQueueDdl(12)}
 
   cacheRecordResponse(userId: string, response: RecordResponseSummary): void {
     const db = this.getDb();
+    // PER-141: keep this workout's records with it (the PR cache keeps only
+    // each lift's latest best).
+    db.runSync(
+      `INSERT INTO training_log_records (session_id, user_id, payload)
+       VALUES (?, ?, ?)
+       ON CONFLICT(session_id) DO UPDATE SET payload = excluded.payload
+       WHERE training_log_records.user_id = excluded.user_id`,
+      [
+        response.localSessionId,
+        userId,
+        JSON.stringify(response.personalRecords),
+      ],
+    );
     db.runSync(
       `INSERT INTO record_responses (user_id, payload, cached_at)
        VALUES (?, ?, ?)
@@ -3461,6 +3674,8 @@ ${indentSyncQueueDdl(12)}
         `UPDATE personal_records SET session_id = ? WHERE session_id = ?`,
         [serverId, localId],
       );
+      // PER-141: the training log keeps the session under its server id.
+      this.renameTrainingLogRow(localId, serverId);
     });
   }
 
@@ -3751,6 +3966,10 @@ ${indentSyncQueueDdl(12)}
       DELETE FROM cached_nutrition_target;
       DELETE FROM cached_mealprint_preferences;
       DELETE FROM cached_meal_plans;
+      DELETE FROM training_log;
+      DELETE FROM training_log_since;
+      DELETE FROM training_log_ids;
+      DELETE FROM training_log_records;
     `);
   }
 }
@@ -3959,4 +4178,29 @@ function parseEntitlementVerdict(raw: unknown): EntitlementVerdict | null {
   } catch {
     return null;
   }
+}
+
+/** A session under a new id, with its exercises' session ids rewritten. */
+function renameSession(
+  s: WorkoutSession,
+  localId: string,
+  serverId: string,
+): WorkoutSession {
+  return {
+    ...s,
+    id: serverId,
+    exercises: s.exercises.map((e) =>
+      e.sessionId === localId ? { ...e, sessionId: serverId } : e,
+    ),
+  };
+}
+
+/**
+ * When a saved workout shows the phone was keeping its log: a live finish
+ * from its start; a back-dated (retrospective) one only from now.
+ */
+export function trainingLogStart(session: WorkoutSession): string {
+  return session.retrospectiveCompletedAt
+    ? new Date().toISOString()
+    : session.startedAt;
 }

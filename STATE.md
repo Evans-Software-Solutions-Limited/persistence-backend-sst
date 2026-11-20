@@ -1,5 +1,93 @@
 # Project memory · persistence-backend-sst
 
+### 2026-11-20 — You page Y1–Y4, offline-first (PER-141 APP-H1; branch `bradleysimmsevans/per-141-app-h1-athlete-you-page-y1y4`)
+
+[PER-141](https://linear.app/evans-software-solutions/issue/PER-141), PR #541 (open, no auto-merge). Athlete
+You page rebuilt to the signed-off canvas boards Y1–Y4 (18 Nov). OTA on 1.2.0:
+no native packages, permissions, config plugins or version bump.
+`react-native-body-highlighter@3.2.0` is pure JS (`dist/` only; its one dependency is
+`react-native-svg`, already native in the app) and shipped in 1.2.0 via #513.
+
+- **Muscle credit:** `src/domain/services/trainingMetrics/muscleCredit.ts`,
+  dependency-free so it moves verbatim into `packages/training-metrics` with
+  BE-H1 (PER-113). Primary 1.0 / secondary 0.5 per completed set, summed into
+  the ten Recap groups (per exercise a group gets the larger credit, not
+  both). Hard sets = that credit; shade = hard sets ÷ weekly guide (10, or 6
+  for calves/core/forearms), capped at 1. Assumption for PER-113 to confirm:
+  `hardSets` equals the fractional credit (design H lists both fields).
+- **Gap found in design H:** the phone had NO local history of finished
+  workouts. `active_sessions` holds one row and Continue deletes it. Added a
+  `training_log` SQLite table plus `training_log_since` (StoragePort
+  `saveTrainingLogEntry` / `getTrainingLog` / `getTrainingLogEntry` /
+  `getTrainingLogSince` / `markTrainingLogSince`). `SessionSummaryContainer`
+  writes each finished workout (solo and Together) as the summary opens.
+  `swapLocalSessionId` renames the row; sign-out (`clearAll`) wipes it like
+  `personal_records`. Brad chose (20 Nov): **start empty, no backfill**. The
+  page fills from workouts finished after the update.
+- **BE-H1 seam:** `src/application/queries/youRemote.ts` (`YouRemoteSource`,
+  `needsRemote`). History months and Recap periods that start before
+  `training_log_since` ask it. It answers `unavailable` until PER-113, and
+  the screens then say what the phone covers.
+- **Screens:** Y1 `YouPresenter`/`YouContainer` (one scroll). Y2
+  `/(app)/history`. Y2b `/(app)/history-workout?id=` reuses
+  `SessionSummaryPresenter` with a new `title` prop and an optional
+  `onContinue` (× only). Y4 `/(app)/recap`. Shared primitives are in
+  `presenters/you/youKit.tsx`, wording in `presenters/you/youFormat.ts`.
+  `MuscleMap` gained `gender` (male default) and `gap`.
+- **Brad's calls (20 Nov):** gallery row hidden (`gallery={null}` seam for
+  APP-F1, PER-137). Coach request lines kept under the coaches list until
+  APP-A3 (PER-126) gives them a home. Coaches list = active relationships
+  (seam for APP-A3's `/users/me/coaching`).
+- **Dropped per canvas `yn1` DROPPED list:** streak hero (with the freeze
+  token button; PER-102 reworks it), volume stats card. `StreakHeroPresenter`,
+  `VolumeStatsPresenter` and `TrainerProgressPresenter` are now unused (left
+  in place).
+- **Copy not on the canvas (flagged in the PR for Brad):** Train next hint
+  "an upper day sorts it"; "No lifts in the last 7 days."; the History and
+  Recap coverage lines. History's Y2b has no effort chip, because the rating
+  isn't stored with the workout.
+- **Inspector Brad on #541, eight sweeps, 14 leads, all confirmed and fixed:**
+  - Date-only body-trend days were parsed as UTC midnight, so west of UTC
+    they landed on the wrong day. `toLocalDate` and `dayKey` now treat
+    `YYYY-MM-DD` as a local day.
+  - The Y2b modal went blank when the workout's id was renamed. It now
+    follows the rename by start time and keeps what it has shown.
+  - The training log was parsed in full on every focus. Reads are now
+    bounded in SQL, and each screen asks only for its window.
+  - **Nothing in production called `swapLocalSessionId`**, so logged
+    workouts kept `local-…` ids and never matched server personal records
+    (History's ★ and the Y2b records page stayed empty). The
+    `/sessions/record` reply now calls `linkTrainingLogSessionId`, which
+    touches only the training log. It renames the row and remembers the
+    pair in `training_log_ids`, so the summary's later save lands under
+    the server id. `active_sessions` is deliberately left on the local id:
+    the summary and the Together hydrate compare against it.
+  - Recap's records trio now uses `recordValue` (time and distance PRs
+    were being run through the weight conversion).
+  - Together finishes never hit `/sessions/record`, so saving now prefers
+    the confirmed `together.historyId` as the row id.
+  - `since` was stamped on the first screen read only; every save now pulls
+    it back to the earliest live start. A back-dated (retrospective)
+    workout counts from when it was logged, never its own date, so it
+    can't claim months the phone didn't keep.
+  - Recap's "N more than last week/month" is left out unless the period
+    before is fully on the phone (or BE-H1 answers for it).
+  - Y1 now asks the seam (`lastSevenDays`) when its week starts before the
+    log, like History and Recap. No coverage note on Y1: the canvas has
+    none, and the short first week is the agreed start-empty behaviour.
+  - The PR cache (and the server's PR table) keep only each lift's latest
+    best, so a lift beaten twice lost its earlier record in Recap and
+    History. Each workout's own records are now kept from its record
+    response in `training_log_records` (written by `cacheRecordResponse`,
+    solo and Together). `useTrainingLog` builds its records from those,
+    and the You page no longer reads `useGetPRHistory`.
+  - `swapLocalExerciseId` now rewrites `training_log` too, so a workout
+    with an offline custom exercise keeps its muscles, gold and single lift
+    entry. Y2b keeps each record's "was" value from the workout's response.
+- **Tests:** credit table tests, You-page builders, both storage adapters on
+  real SQLite (`node:sqlite`), presenters (trained, new user, rest day,
+  offline), containers.
+
 ### 2026-11-20 — Your meals, food-log idempotency and batch logging ([PER-109](https://linear.app/evans-software-solutions/issue/PER-109), BE-D1; branch `bradleysimmsevans/per-109-be-d1-backend-your-meals-food-log`)
 
 Design D (Linear doc on PER-66), "Your meals" and "Entries" parts only. Meal
@@ -9378,12 +9466,3 @@ PR not yet raised. NO product code — script + dataset + verdict + spec updates
   final focused backend:177; mobile import/review:105. Typecheck,lint,format and
   non-mobile build passed; local Inspector clean. No deployment/native build or
   paid AI invocation. Browser fixtures checked phone-width paste/review UI.
-
-### 2026-09-21 — RevenueCat CI expiry fixture
-
-- Staging run 35626969128 failed because the ends_at fallback test used a fixed
-  timestamp that expired at 14:13:20 UTC today, entering the existing billing
-  retry path. Reproduced the exact CI assertion locally before changing it.
-- Reused the existing future PERIOD_END_MS fixture in both input and expectation.
-  No production subscription/access logic changed. All 91 RevenueCat tests
-  passed; formatting and diff checks passed.

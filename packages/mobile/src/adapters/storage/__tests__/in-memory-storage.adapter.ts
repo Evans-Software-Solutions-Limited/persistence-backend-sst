@@ -43,6 +43,7 @@ import type {
   EnqueueMutationInput,
   RecentSetEntry,
   RecordResponseSummary,
+  RecordResponseSummaryPR,
   RestTimerState,
 } from "@/domain/ports/storage.port";
 import type {
@@ -560,6 +561,13 @@ export class InMemoryStorageAdapter implements StoragePort {
     for (const workout of this.allCachedWorkouts()) {
       for (const we of workout.exercises ?? []) {
         if (we.exerciseId === localId) we.exerciseId = serverId;
+      }
+    }
+    // PER-141: the training log too (parity with SQLite's blob rewrite).
+    for (const logged of this.trainingLog.values()) {
+      for (const ex of logged.exercises) {
+        if (ex.exerciseId === localId) ex.exerciseId = serverId;
+        if (ex.originalExerciseId === localId) ex.originalExerciseId = serverId;
       }
     }
     for (const e of this.queue) {
@@ -1095,6 +1103,94 @@ export class InMemoryStorageAdapter implements StoragePort {
     return session ? cloneSession(session) : null;
   }
 
+  // -- Training log (PER-141) --
+  private trainingLog = new Map<string, WorkoutSession & { __owner: string }>();
+  private trainingLogSince = new Map<string, string>();
+
+  private trainingLogIds = new Map<string, string>();
+
+  saveTrainingLogEntry(userId: string, saved: WorkoutSession): void {
+    if (saved.status !== "completed" || saved.withClient) return;
+    const serverId =
+      saved.together?.historyId ?? this.trainingLogIds.get(saved.id);
+    if (saved.together?.historyId && saved.together.historyId !== saved.id)
+      this.trainingLogIds.set(saved.id, saved.together.historyId);
+    const session =
+      serverId && serverId !== saved.id
+        ? {
+            ...saved,
+            id: serverId,
+            exercises: saved.exercises.map((ex) =>
+              ex.sessionId === saved.id ? { ...ex, sessionId: serverId } : ex,
+            ),
+          }
+        : saved;
+    const prior = this.trainingLog.get(session.id);
+    if (prior && prior.__owner !== userId) return;
+    this.trainingLog.set(session.id, {
+      ...cloneSession(session),
+      __owner: userId,
+    });
+    // Same rule as SQLite: a back-dated workout counts from when it was logged.
+    const since = this.trainingLogSince.get(userId);
+    const at = saved.retrospectiveCompletedAt
+      ? new Date().toISOString()
+      : session.startedAt;
+    if (since == null || Date.parse(at) < Date.parse(since))
+      this.trainingLogSince.set(userId, at);
+  }
+
+  linkTrainingLogSessionId(localId: string, serverId: string): void {
+    if (localId === serverId) return;
+    this.trainingLogIds.set(localId, serverId);
+    this.renameTrainingLog(localId, serverId);
+  }
+
+  private renameTrainingLog(localId: string, serverId: string): void {
+    const logged = this.trainingLog.get(localId);
+    if (!logged) return;
+    this.trainingLog.delete(localId);
+    this.trainingLog.set(serverId, {
+      ...logged,
+      id: serverId,
+      exercises: logged.exercises.map((ex) =>
+        ex.sessionId === localId ? { ...ex, sessionId: serverId } : ex,
+      ),
+    });
+  }
+
+  getTrainingLog(
+    userId: string,
+    range: { from?: string; to?: string } = {},
+  ): WorkoutSession[] {
+    const from = range.from ? Date.parse(range.from) : -Infinity;
+    const to = range.to ? Date.parse(range.to) : Infinity;
+    return [...this.trainingLog.values()]
+      .filter((s) => s.__owner === userId)
+      .filter((s) => {
+        const t = Date.parse(s.startedAt);
+        return t >= from && t <= to;
+      })
+      .sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt))
+      .map(({ __owner: _owner, ...s }) => cloneSession(s));
+  }
+
+  getTrainingLogEntry(userId: string, id: string): WorkoutSession | null {
+    const s = this.trainingLog.get(id);
+    if (!s || s.__owner !== userId) return null;
+    const { __owner: _owner, ...rest } = s;
+    return cloneSession(rest);
+  }
+
+  getTrainingLogSince(userId: string): string | null {
+    return this.trainingLogSince.get(userId) ?? null;
+  }
+
+  markTrainingLogSince(userId: string, at: string): void {
+    if (!this.trainingLogSince.has(userId))
+      this.trainingLogSince.set(userId, at);
+  }
+
   cacheActiveSession(userId: string, session: WorkoutSession): void {
     this.activeSessions.set(userId, cloneSession(session));
     // Inspector Brad PR #62 (high severity, belt-and-braces): drop a
@@ -1126,7 +1222,36 @@ export class InMemoryStorageAdapter implements StoragePort {
     this.recordResponses.delete(userId);
   }
 
+  private trainingLogRecords = new Map<
+    string,
+    { userId: string; records: RecordResponseSummaryPR[] }
+  >();
+
+  getTrainingLogRecords(
+    userId: string,
+    sessionIds: readonly string[],
+  ): Record<string, RecordResponseSummaryPR[]> {
+    const out: Record<string, RecordResponseSummaryPR[]> = {};
+    const wanted = new Set(sessionIds);
+    const owner = new Map<string, string>(sessionIds.map((id) => [id, id]));
+    for (const [local, server] of this.trainingLogIds)
+      if (wanted.has(server)) owner.set(local, server);
+    for (const [key, id] of owner) {
+      const row = this.trainingLogRecords.get(key);
+      if (!row || row.userId !== userId) continue;
+      if (out[id] && key !== id) continue;
+      out[id] = JSON.parse(JSON.stringify(row.records));
+    }
+    return out;
+  }
+
   cacheRecordResponse(userId: string, response: RecordResponseSummary): void {
+    const prior = this.trainingLogRecords.get(response.localSessionId);
+    if (!prior || prior.userId === userId)
+      this.trainingLogRecords.set(response.localSessionId, {
+        userId,
+        records: JSON.parse(JSON.stringify(response.personalRecords)),
+      });
     // Deep-clone so tests can mutate the returned object without
     // poisoning the cache. Matches the cloneSession pattern used for
     // active_sessions above.
@@ -1264,6 +1389,7 @@ export class InMemoryStorageAdapter implements StoragePort {
 
   swapLocalSessionId(localId: string, serverId: string): void {
     if (localId === serverId) return;
+    this.renameTrainingLog(localId, serverId);
     for (const [userId, session] of this.activeSessions) {
       if (session.id !== localId) continue;
       // Mirror the SQLite adapter (sqlite.adapter.ts § swapLocalSessionId):
@@ -1441,6 +1567,10 @@ export class InMemoryStorageAdapter implements StoragePort {
 
   clearAll(): void {
     this.queue = [];
+    this.trainingLog.clear();
+    this.trainingLogSince.clear();
+    this.trainingLogIds.clear();
+    this.trainingLogRecords.clear();
     this.metadata.clear();
     this.exerciseCache.clear();
     this.referenceLists.clear();

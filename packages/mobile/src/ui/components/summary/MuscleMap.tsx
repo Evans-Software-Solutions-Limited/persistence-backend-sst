@@ -42,9 +42,14 @@ const ALL_PARTS = [
  * `muscleShare`. One accessibility label covers both figures.
  */
 export function MuscleMap(p: {
-  muscles: MuscleShare;
+  muscles: Pick<MuscleShare, "regions" | "accessibilityLabel">;
   /** Figure height; the width is half of it. */
   height?: number;
+  /** Space between the front and back figures (summary 22, You page 2). */
+  gap?: number;
+  /** The figure follows profile sex; male by default (product rule). */
+  gender?: "male" | "female";
+  testID?: string;
 }) {
   const scale = (p.height ?? 280) / 400;
   // The library's own parts carry a grey; every region not worked is set to
@@ -63,6 +68,7 @@ export function MuscleMap(p: {
     <Body
       data={data}
       side={side}
+      gender={p.gender ?? "male"}
       scale={scale}
       colors={MUSCLE_SHADES}
       border="none"
@@ -76,11 +82,11 @@ export function MuscleMap(p: {
     <View
       flexDirection="row"
       justifyContent="center"
-      gap={22}
+      gap={p.gap ?? 22}
       accessible
       accessibilityRole="image"
       accessibilityLabel={p.muscles.accessibilityLabel}
-      testID="muscle-map"
+      testID={p.testID ?? "muscle-map"}
     >
       <View
         accessibilityElementsHidden

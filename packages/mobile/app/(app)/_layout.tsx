@@ -290,6 +290,20 @@ export default function AppLayout() {
           options={{ title: "Achievements", headerShown: true }}
         />
         {/*
+          PER-141 You page: Y2 History (own top bar), Y2b a past workout in
+          the end-of-workout carousel (modal over History, like
+          session/summary — close returns to the same day), and Y4 Recap.
+        */}
+        <Stack.Screen name="history" options={{ headerShown: false }} />
+        <Stack.Screen
+          name="history-workout"
+          options={{ presentation: "modal", headerShown: false }}
+        />
+        <Stack.Screen
+          name="recap"
+          options={{ presentation: "modal", headerShown: false }}
+        />
+        {/*
           Cluster 2b account-deletion soft-delete: the restore-account gate.
           AuthGate (app/_layout.tsx) redirects here for a signed-in user
           whose profile carries a non-null `deletedAt`. No back affordance
