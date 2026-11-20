@@ -1,0 +1,250 @@
+import { useEffect, useMemo, useState } from "react";
+import { Share } from "react-native";
+import { router } from "expo-router";
+import type { Streak } from "@/domain/models/streak";
+import {
+  bodyMapShading,
+  buildRecap,
+  recapWindow,
+  type RecapModel,
+  type RecapPeriod,
+} from "@/domain/services/youPage";
+import {
+  needsRemote,
+  youRemoteUnavailable,
+  type YouRemoteSource,
+} from "@/application/queries/youRemote";
+import type { WeightUnit } from "@/shared/utils";
+import { weightInUnit } from "@/shared/utils";
+import { useAuth } from "@/ui/hooks/useAuth";
+import { useGetStreaks } from "@/ui/hooks/useGetStreaks";
+import { useProfilePage } from "@/ui/hooks/useProfilePage";
+import { useTrainingLog } from "@/ui/hooks/useTrainingLog";
+import { RecapPresenter, type RecapPage } from "@/ui/presenters/RecapPresenter";
+import {
+  dayMonth,
+  hoursMinutes,
+  liftRows,
+  volumeShort,
+} from "@/ui/presenters/you/youFormat";
+import { listNames, recordText } from "@/ui/presenters/summaryFormat";
+
+/** "This week", "October", "Aug – Oct". */
+export function periodLabel(period: RecapPeriod, now: Date): string {
+  if (period === "week") return "This week";
+  const month = (d: Date) => d.toLocaleDateString("en-GB", { month: "long" });
+  if (period === "month") return month(now);
+  const from = recapWindow("3months", now).from;
+  const short = (d: Date) => d.toLocaleDateString("en-GB", { month: "short" });
+  return `${short(from)} – ${short(now)}`;
+}
+
+/** "1 more than last week", "2 fewer than September", "+11% volume vs …". */
+export function comparison(model: RecapModel, now: Date): string {
+  if (model.period === "3months") {
+    const before = model.previous.volumeKg;
+    if (before <= 0) return "";
+    const pct = Math.round(((model.totals.volumeKg - before) / before) * 100);
+    return `${pct >= 0 ? "+" : "−"}${Math.abs(pct)}% volume vs the 3 months before`;
+  }
+  const than =
+    model.period === "week"
+      ? "last week"
+      : new Date(now.getFullYear(), now.getMonth() - 1, 1).toLocaleDateString(
+          "en-GB",
+          { month: "long" },
+        );
+  const diff = model.totals.workouts - model.previous.workouts;
+  if (diff === 0) return `Same as ${than}`;
+  return `${Math.abs(diff)} ${diff > 0 ? "more" : "fewer"} than ${than}`;
+}
+
+/** "6 wk" from the cached workout streak, or "—". */
+export function streakText(streaks: readonly Streak[]): string {
+  const s =
+    streaks.find((x) => x.streakType === "workout_streak") ?? streaks[0];
+  if (!s) return "—";
+  return `${s.currentCount} ${s.period === "weekly" ? "wk" : "d"}`;
+}
+
+/** Every Y4 page with data, in canvas order. */
+export function recapPages(
+  model: RecapModel,
+  p: { now: Date; unit: WeightUnit; streak: string },
+): RecapPage[] {
+  const eb = periodLabel(model.period, p.now);
+  const vol = volumeShort(model.totals.volumeKg, p.unit).split(" ");
+  const pages: RecapPage[] = [
+    {
+      kind: "big",
+      id: "totals",
+      eyebrow: eb,
+      big: String(model.totals.workouts),
+      unit: "workouts",
+      sub: comparison(model, p.now),
+      trio: [
+        { value: volumeShort(model.totals.volumeKg, p.unit), label: "Volume" },
+        { value: hoursMinutes(model.totals.durationSeconds), label: "Time" },
+        { value: p.streak, label: "Streak" },
+      ],
+    },
+  ];
+  const worked = model.muscles
+    .filter((m) => m.credit > 0)
+    .sort((a, b) => b.credit - a.credit);
+  if (worked.length)
+    pages.push({
+      kind: "muscles",
+      id: "muscles",
+      eyebrow: `${eb} · muscle balance`,
+      shading: bodyMapShading(
+        model.muscles,
+        `Muscle balance: ${worked.map((m) => `${m.label} ${m.share} percent`).join(", ")}`,
+        true,
+      ),
+      rows: worked.map((m) => ({ label: m.label, share: m.share })),
+    });
+  if (model.lifts.length)
+    pages.push({
+      kind: "list",
+      id: "lifts",
+      eyebrow: `${eb} · top lifts`,
+      lifts: liftRows(model.lifts, p.unit),
+    });
+  if (model.volume.length)
+    pages.push({
+      kind: "big",
+      id: "volume",
+      eyebrow: `${eb} · volume`,
+      big: vol[0]!,
+      unit: vol[1]!,
+      sub: `Most on ${model.volume[0]!.name}`,
+      trio: model.volume.slice(0, 3).map((v) => ({
+        value: volumeShort(v.volumeKg, p.unit),
+        label: v.name,
+      })),
+    });
+  if (model.records.length) {
+    const top = model.records[0]!;
+    pages.push({
+      kind: "big",
+      id: "records",
+      eyebrow: `${eb} · records`,
+      big: String(model.records.length),
+      unit: model.records.length === 1 ? "PR" : "PRs",
+      sub: `${top.exerciseName} ${recordText(top, top.value, p.unit)}`,
+      trio: model.records.slice(0, 3).map((r) => ({
+        value:
+          r.recordType === "max_reps"
+            ? String(Math.round(r.value))
+            : String(Number(weightInUnit(r.value, p.unit).toFixed(1))),
+        label: r.exerciseName,
+      })),
+      gold: true,
+    });
+  }
+  if (model.together.sessions)
+    pages.push({
+      kind: "big",
+      id: "together",
+      eyebrow: `${eb} · trained together`,
+      big: String(model.together.sessions),
+      unit: model.together.sessions === 1 ? "session" : "sessions",
+      sub: model.together.names.length
+        ? `With ${listNames(model.together.names)}`
+        : "",
+      trio: [],
+    });
+  return pages;
+}
+
+/** What Share sends for a recap page, as text. */
+export function recapShareText(page: RecapPage): string {
+  const head = `Persistence · ${page.eyebrow}`;
+  if (page.kind === "big")
+    return [
+      head,
+      `${page.big} ${page.unit}`,
+      page.sub,
+      ...page.trio.map((t) => `${t.label}: ${t.value}`),
+    ]
+      .filter(Boolean)
+      .join("\n");
+  if (page.kind === "muscles")
+    return [head, ...page.rows.map((r) => `${r.label} ${r.share}%`)].join("\n");
+  return [
+    head,
+    ...page.lifts.map((l) => `${l.rank}. ${l.name} ${l.value}`),
+  ].join("\n");
+}
+
+/**
+ * <RecapContainer> — Y4 See a recap (PER-141). Built on the phone from the
+ * training log; a period that starts before this phone's log goes through
+ * the BE-H1 seam (`youRemote`), unavailable until PER-113 ships, in which
+ * case the page says what it covers.
+ */
+export function RecapContainer({
+  remote = youRemoteUnavailable,
+}: { remote?: YouRemoteSource } = {}) {
+  const { session } = useAuth();
+  const userId = session?.userId ?? null;
+  const profile = useProfilePage();
+  const unit: WeightUnit = profile.payload?.profile.weightUnit ?? "kg";
+  const gender =
+    profile.payload?.profile.gender === "female" ? "female" : "male";
+  const log = useTrainingLog(userId);
+  const streaks = useGetStreaks();
+  const [period, setPeriod] = useState<RecapPeriod>("week");
+  const now = useMemo(() => new Date(), []);
+
+  const partial = needsRemote(log.since, recapWindow(period, now).from);
+  const [remoteState, setRemoteState] = useState<{
+    period: RecapPeriod;
+    ok: boolean;
+  } | null>(null);
+  useEffect(() => {
+    if (!partial) return;
+    let live = true;
+    void remote.recap(period).then((r) => {
+      if (live) setRemoteState({ period, ok: r.status === "ok" });
+    });
+    return () => {
+      live = false;
+    };
+  }, [remote, period, partial]);
+
+  const pages = useMemo(
+    () =>
+      recapPages(
+        buildRecap({
+          period,
+          now,
+          sessions: log.sessions,
+          records: log.records,
+          musclesOf: log.musclesOf,
+        }),
+        { now, unit, streak: streakText(streaks.data ?? []) },
+      ),
+    [period, now, log, unit, streaks.data],
+  );
+
+  const remoteOk = remoteState?.period === period && remoteState.ok;
+  return (
+    <RecapPresenter
+      period={period}
+      pages={pages}
+      gender={gender}
+      coverageNote={
+        partial && !remoteOk && log.since
+          ? `From ${dayMonth(log.since)}, when this phone started keeping your history.`
+          : null
+      }
+      onPeriod={setPeriod}
+      onClose={() => router.back()}
+      onShare={(page) => {
+        void Share.share({ message: recapShareText(page) }).catch(() => {});
+      }}
+    />
+  );
+}

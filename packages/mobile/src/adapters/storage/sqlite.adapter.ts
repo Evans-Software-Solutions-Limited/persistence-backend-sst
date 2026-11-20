@@ -736,6 +736,21 @@ ${indentSyncQueueDdl(8)}
         payload TEXT NOT NULL,
         synced_at TEXT NOT NULL
       );
+      -- PER-141: the phone's training log of finished workouts (You page,
+      -- History, Recap). One row per session; payload is the WorkoutSession.
+      CREATE TABLE IF NOT EXISTS training_log (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        started_at TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_training_log_user_started
+        ON training_log(user_id, started_at);
+      CREATE TABLE IF NOT EXISTS training_log_since (
+        user_id TEXT PRIMARY KEY,
+        since TEXT NOT NULL
+      );
       CREATE TABLE IF NOT EXISTS cached_streaks (
         user_id TEXT PRIMARY KEY,
         payload TEXT NOT NULL,
@@ -3108,6 +3123,70 @@ ${indentSyncQueueDdl(12)}
     };
   }
 
+  // -- Training log (PER-141) --
+
+  saveTrainingLogEntry(userId: string, session: WorkoutSession): void {
+    if (session.status !== "completed" || session.withClient) return;
+    this.getDb().runSync(
+      `INSERT INTO training_log (id, user_id, started_at, payload, updated_at)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         started_at = excluded.started_at,
+         payload = excluded.payload,
+         updated_at = excluded.updated_at
+       WHERE training_log.user_id = excluded.user_id`,
+      [
+        session.id,
+        userId,
+        session.startedAt,
+        JSON.stringify(session),
+        new Date().toISOString(),
+      ],
+    );
+  }
+
+  getTrainingLog(
+    userId: string,
+    range: { from?: string; to?: string } = {},
+  ): WorkoutSession[] {
+    const rows = this.getDb().getAllSync(
+      `SELECT payload FROM training_log WHERE user_id = ?
+       ORDER BY started_at ASC`,
+      [userId],
+    ) as { payload: string }[];
+    const from = range.from ? Date.parse(range.from) : -Infinity;
+    const to = range.to ? Date.parse(range.to) : Infinity;
+    return rows
+      .map((r) => JSON.parse(r.payload) as WorkoutSession)
+      .filter((s) => {
+        const t = Date.parse(s.startedAt);
+        return t >= from && t <= to;
+      });
+  }
+
+  getTrainingLogEntry(userId: string, id: string): WorkoutSession | null {
+    const row = this.getDb().getFirstSync(
+      `SELECT payload FROM training_log WHERE user_id = ? AND id = ?`,
+      [userId, id],
+    ) as { payload: string } | null;
+    return row ? (JSON.parse(row.payload) as WorkoutSession) : null;
+  }
+
+  getTrainingLogSince(userId: string): string | null {
+    const row = this.getDb().getFirstSync(
+      `SELECT since FROM training_log_since WHERE user_id = ?`,
+      [userId],
+    ) as { since: string } | null;
+    return row?.since ?? null;
+  }
+
+  markTrainingLogSince(userId: string, at: string): void {
+    this.getDb().runSync(
+      `INSERT OR IGNORE INTO training_log_since (user_id, since) VALUES (?, ?)`,
+      [userId, at],
+    );
+  }
+
   cacheActiveSession(userId: string, session: WorkoutSession): void {
     const db = this.getDb();
     const now = new Date().toISOString();
@@ -3461,6 +3540,28 @@ ${indentSyncQueueDdl(12)}
         `UPDATE personal_records SET session_id = ? WHERE session_id = ?`,
         [serverId, localId],
       );
+      // PER-141: the training log keeps the session under its server id,
+      // with the nested ids rewritten like active_sessions above.
+      const logged = db.getFirstSync(
+        `SELECT payload FROM training_log WHERE id = ?`,
+        [localId],
+      ) as { payload: string } | null;
+      if (logged) {
+        const s = JSON.parse(logged.payload) as WorkoutSession;
+        const renamed: WorkoutSession = {
+          ...s,
+          id: serverId,
+          exercises: s.exercises.map((e) =>
+            e.sessionId === localId ? { ...e, sessionId: serverId } : e,
+          ),
+        };
+        db.runSync(`DELETE FROM training_log WHERE id = ?`, [serverId]);
+        db.runSync(`UPDATE training_log SET id = ?, payload = ? WHERE id = ?`, [
+          serverId,
+          JSON.stringify(renamed),
+          localId,
+        ]);
+      }
     });
   }
 
@@ -3751,6 +3852,8 @@ ${indentSyncQueueDdl(12)}
       DELETE FROM cached_nutrition_target;
       DELETE FROM cached_mealprint_preferences;
       DELETE FROM cached_meal_plans;
+      DELETE FROM training_log;
+      DELETE FROM training_log_since;
     `);
   }
 }

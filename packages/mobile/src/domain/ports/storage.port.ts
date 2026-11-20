@@ -810,6 +810,36 @@ export interface StoragePort {
    */
   getLatestSession(userId: string): WorkoutSession | null;
 
+  // -- Training log (PER-141 You page, backend design H) --
+
+  /**
+   * Save a finished workout into the phone's training log, the local
+   * history the You page, History and Recap read from. Upsert by session
+   * id; `swapLocalSessionId` renames the row when the server id lands.
+   * Only `completed` sessions of the athlete themself belong here: a
+   * coach's on-behalf session (`withClient`) is ignored.
+   */
+  saveTrainingLogEntry(userId: string, session: WorkoutSession): void;
+
+  /** Finished workouts started in [from, to] (ISO), oldest first. */
+  getTrainingLog(
+    userId: string,
+    range?: { from?: string; to?: string },
+  ): WorkoutSession[];
+
+  /** One finished workout from the training log, or null. */
+  getTrainingLogEntry(userId: string, id: string): WorkoutSession | null;
+
+  /**
+   * When this phone started keeping the training log for the user: before
+   * it, the log is empty and older data needs BE-H1 (PER-113). Null until
+   * `markTrainingLogSince` first runs.
+   */
+  getTrainingLogSince(userId: string): string | null;
+
+  /** Stamp the training log's start for the user; a no-op once set. */
+  markTrainingLogSince(userId: string, at: string): void;
+
   /**
    * Write-through the entire session as a full upsert. Replaces the
    * three nested tables atomically per EXECUTION_PLAN § 3.4 — the

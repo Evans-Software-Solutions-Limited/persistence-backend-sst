@@ -1,5 +1,55 @@
 # Project memory · persistence-backend-sst
 
+### 2026-11-20 — You page Y1–Y4, offline-first (PER-141 APP-H1; branch `bradleysimmsevans/per-141-app-h1-athlete-you-page-y1y4`)
+
+[PER-141](https://linear.app/evans-software-solutions/issue/PER-141). Athlete
+You page rebuilt to the signed-off canvas boards Y1–Y4 (18 Nov). OTA on 1.2.0:
+no native packages, permissions, config plugins or version bump.
+`react-native-body-highlighter@3.2.0` is pure JS (`dist/` only; its one dependency is
+`react-native-svg`, already native in the app) and shipped in 1.2.0 via #513.
+
+- **Muscle credit:** `src/domain/services/trainingMetrics/muscleCredit.ts`,
+  dependency-free so it moves verbatim into `packages/training-metrics` with
+  BE-H1 (PER-113). Primary 1.0 / secondary 0.5 per completed set, summed into
+  the ten Recap groups (per exercise a group gets the larger credit, not
+  both). Hard sets = that credit; shade = hard sets ÷ weekly guide (10, or 6
+  for calves/core/forearms), capped at 1. Assumption for PER-113 to confirm:
+  `hardSets` equals the fractional credit (design H lists both fields).
+- **Gap found in design H:** the phone had NO local history of finished
+  workouts. `active_sessions` holds one row and Continue deletes it. Added a
+  `training_log` SQLite table plus `training_log_since` (StoragePort
+  `saveTrainingLogEntry` / `getTrainingLog` / `getTrainingLogEntry` /
+  `getTrainingLogSince` / `markTrainingLogSince`). `SessionSummaryContainer`
+  writes each finished workout (solo and Together) as the summary opens.
+  `swapLocalSessionId` renames the row; sign-out (`clearAll`) wipes it like
+  `personal_records`. Brad chose (20 Nov): **start empty, no backfill**. The
+  page fills from workouts finished after the update.
+- **BE-H1 seam:** `src/application/queries/youRemote.ts` (`YouRemoteSource`,
+  `needsRemote`). History months and Recap periods that start before
+  `training_log_since` ask it. It answers `unavailable` until PER-113, and
+  the screens then say what the phone covers.
+- **Screens:** Y1 `YouPresenter`/`YouContainer` (one scroll). Y2
+  `/(app)/history`. Y2b `/(app)/history-workout?id=` reuses
+  `SessionSummaryPresenter` with a new `title` prop and an optional
+  `onContinue` (× only). Y4 `/(app)/recap`. Shared primitives are in
+  `presenters/you/youKit.tsx`, wording in `presenters/you/youFormat.ts`.
+  `MuscleMap` gained `gender` (male default) and `gap`.
+- **Brad's calls (20 Nov):** gallery row hidden (`gallery={null}` seam for
+  APP-F1, PER-137). Coach request lines kept under the coaches list until
+  APP-A3 (PER-126) gives them a home. Coaches list = active relationships
+  (seam for APP-A3's `/users/me/coaching`).
+- **Dropped per canvas `yn1` DROPPED list:** streak hero (with the freeze
+  token button; PER-102 reworks it), volume stats card. `StreakHeroPresenter`,
+  `VolumeStatsPresenter` and `TrainerProgressPresenter` are now unused (left
+  in place).
+- **Copy not on the canvas (flagged in the PR for Brad):** Train next hint
+  "an upper day sorts it"; "No lifts in the last 7 days."; the History and
+  Recap coverage lines. History's Y2b has no effort chip, because the rating
+  isn't stored with the workout.
+- **Tests:** credit table tests, You-page builders, both storage adapters on
+  real SQLite (`node:sqlite`), presenters (trained, new user, rest day,
+  offline), containers.
+
 ### 2026-11-16 — Signed-out account's pushes still reached the phone (branch `claude/confident-cerf-xp8bka`)
 
 Brad reported that after signing out of the account Apple used for App Review,

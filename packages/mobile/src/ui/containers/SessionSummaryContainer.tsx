@@ -82,7 +82,13 @@ export function SessionSummaryContainer() {
     if (!userId) return;
     if (capturedForUserIdRef.current === userId) return;
     capturedForUserIdRef.current = userId;
-    setSnapshot(storage.getLatestSession(userId));
+    const latest = storage.getLatestSession(userId);
+    setSnapshot(latest);
+    // PER-141: keep the finished workout in the phone's training log (You
+    // page, History, Recap). Every finish — solo or Together — lands here;
+    // the storage call ignores unfinished and on-behalf sessions.
+    if (latest && latest.userId === userId)
+      storage.saveTrainingLogEntry(userId, latest);
   }, [userId, storage]);
 
   // Subscribe to the cached server response. Polled because the sync

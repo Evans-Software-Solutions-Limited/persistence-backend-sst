@@ -1095,6 +1095,52 @@ export class InMemoryStorageAdapter implements StoragePort {
     return session ? cloneSession(session) : null;
   }
 
+  // -- Training log (PER-141) --
+  private trainingLog = new Map<string, WorkoutSession & { __owner: string }>();
+  private trainingLogSince = new Map<string, string>();
+
+  saveTrainingLogEntry(userId: string, session: WorkoutSession): void {
+    if (session.status !== "completed" || session.withClient) return;
+    const prior = this.trainingLog.get(session.id);
+    if (prior && prior.__owner !== userId) return;
+    this.trainingLog.set(session.id, {
+      ...cloneSession(session),
+      __owner: userId,
+    });
+  }
+
+  getTrainingLog(
+    userId: string,
+    range: { from?: string; to?: string } = {},
+  ): WorkoutSession[] {
+    const from = range.from ? Date.parse(range.from) : -Infinity;
+    const to = range.to ? Date.parse(range.to) : Infinity;
+    return [...this.trainingLog.values()]
+      .filter((s) => s.__owner === userId)
+      .filter((s) => {
+        const t = Date.parse(s.startedAt);
+        return t >= from && t <= to;
+      })
+      .sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt))
+      .map(({ __owner: _owner, ...s }) => cloneSession(s));
+  }
+
+  getTrainingLogEntry(userId: string, id: string): WorkoutSession | null {
+    const s = this.trainingLog.get(id);
+    if (!s || s.__owner !== userId) return null;
+    const { __owner: _owner, ...rest } = s;
+    return cloneSession(rest);
+  }
+
+  getTrainingLogSince(userId: string): string | null {
+    return this.trainingLogSince.get(userId) ?? null;
+  }
+
+  markTrainingLogSince(userId: string, at: string): void {
+    if (!this.trainingLogSince.has(userId))
+      this.trainingLogSince.set(userId, at);
+  }
+
   cacheActiveSession(userId: string, session: WorkoutSession): void {
     this.activeSessions.set(userId, cloneSession(session));
     // Inspector Brad PR #62 (high severity, belt-and-braces): drop a
@@ -1264,6 +1310,17 @@ export class InMemoryStorageAdapter implements StoragePort {
 
   swapLocalSessionId(localId: string, serverId: string): void {
     if (localId === serverId) return;
+    const logged = this.trainingLog.get(localId);
+    if (logged) {
+      this.trainingLog.delete(localId);
+      this.trainingLog.set(serverId, {
+        ...logged,
+        id: serverId,
+        exercises: logged.exercises.map((ex) =>
+          ex.sessionId === localId ? { ...ex, sessionId: serverId } : ex,
+        ),
+      });
+    }
     for (const [userId, session] of this.activeSessions) {
       if (session.id !== localId) continue;
       // Mirror the SQLite adapter (sqlite.adapter.ts § swapLocalSessionId):
@@ -1441,6 +1498,8 @@ export class InMemoryStorageAdapter implements StoragePort {
 
   clearAll(): void {
     this.queue = [];
+    this.trainingLog.clear();
+    this.trainingLogSince.clear();
     this.metadata.clear();
     this.exerciseCache.clear();
     this.referenceLists.clear();

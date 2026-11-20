@@ -8,7 +8,14 @@ import type { Adapters } from "@/shared/types";
 import type { YouPresenterProps } from "@/ui/presenters/YouPresenter";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import { PROFILE_PAGE_FIXTURE } from "@/adapters/api/__tests__/fixtures/profile-page.fixture";
-import { YouContainer, buildMilestoneTiers } from "../YouContainer";
+import type { Exercise } from "@/domain/models/exercise";
+import { session as finished } from "@/domain/services/__tests__/youFixtures";
+import {
+  YouContainer,
+  bodyTile,
+  buildMilestoneTiers,
+  coachSubtitle,
+} from "../YouContainer";
 
 jest.mock("@/adapters/api", () => ({
   ...jest.requireActual("@/adapters/api"),
@@ -114,6 +121,51 @@ function makeAdapters() {
   };
 }
 
+const healthAdapter = (over: Record<string, unknown> = {}) =>
+  ({
+    isAvailable: jest.fn(async () => true),
+    getPermissionStatus: jest.fn(async () => ({
+      steps: "granted",
+      calories: "granted",
+      bodyWeight: "granted",
+      heartRate: "granted",
+    })),
+    getStepsToday: jest.fn(async () => ok(0)),
+    getStepsLastNDays: jest.fn(async () => ok([])),
+    getActiveCaloriesToday: jest.fn(async () => ok(0)),
+    getBasalCaloriesToday: jest.fn(async () => ok(0)),
+    getStandTimeTodayMinutes: jest.fn(async () => ok(0)),
+    getLatestBodyWeight: jest.fn(async () => ok(null)),
+    getHeartRateLatest: jest.fn(async () => ok(null)),
+    getLatestBodyFat: jest.fn(async () => ok(null)),
+    writeBodyWeight: jest.fn(async () => ok(undefined)),
+    ...over,
+  }) as unknown as Adapters["health"];
+
+const ex = (id: string, primary: string[], secondary: string[] = []) =>
+  ({
+    id,
+    name: id,
+    description: null,
+    instructions: null,
+    category: "strength",
+    difficulty: "intermediate",
+    primaryMuscleGroups: primary,
+    secondaryMuscleGroups: secondary,
+    equipment: [],
+    videoUrl: null,
+    thumbnailUrl: null,
+    isCustom: false,
+    createdBy: null,
+  }) as unknown as Exercise;
+
+const renderYou = (adapters: Adapters) =>
+  render(
+    <AdapterProvider adapters={adapters}>
+      <YouContainer />
+    </AdapterProvider>,
+  );
+
 describe("YouContainer", () => {
   beforeEach(() => {
     mockProbe.last = null;
@@ -122,393 +174,305 @@ describe("YouContainer", () => {
     mockPush.mockClear();
   });
 
-  it("routes weight and body fat to their dedicated history pages", async () => {
+  it("routes every Y1 action", async () => {
     const { adapters } = makeAdapters();
-    render(
-      <AdapterProvider adapters={adapters}>
-        <YouContainer />
-      </AdapterProvider>,
-    );
+    renderYou(adapters);
     await waitFor(() => expect(mockProbe.last).not.toBeNull());
-
-    act(() => mockProbe.last?.onOpenWeightHistory?.());
-    expect(mockPush).toHaveBeenLastCalledWith("/(app)/weight-history");
-
-    act(() => mockProbe.last?.onOpenBodyFatHistory?.());
-    expect(mockPush).toHaveBeenLastCalledWith("/(app)/body-fat-history");
+    const p = mockProbe.last!;
+    const cases: [() => void, string][] = [
+      [p.onOpenWeight, "/(app)/weight-history"],
+      [p.onOpenBodyFat, "/(app)/body-fat-history"],
+      [p.onOpenHistory, "/(app)/history"],
+      [p.onOpenRecap, "/(app)/recap"],
+      [p.onOpenBadges, "/(app)/achievements"],
+      [p.onOpenRequests, "/(app)/requests"],
+      [p.onOpenAcceptInvite, "/(app)/accept-invite"],
+    ];
+    for (const [fn, path] of cases) {
+      act(() => fn());
+      expect(mockPush).toHaveBeenLastCalledWith(path);
+    }
+    // Pull-to-refresh fans out to every read without throwing.
+    await act(async () => {
+      p.onRefresh();
+    });
+    // No gallery until APP-F1.
+    expect(p.gallery).toBeNull();
   });
 
-  it("regression: returning to You (focus) reflects a weigh-in logged from another tab, without a re-mount", async () => {
-    // The weigh-in sheet is rendered by the HOME tab, but this (retained) You
-    // tab owns the body-trend chart. An optimistic weigh-in writes the
-    // body-trend cache directly; without a focus-time reload this mounted
-    // screen keeps showing the pre-weigh-in series until a pull-to-refresh.
+  it("new user: an empty week, no Rest group and no lifts", async () => {
+    const { adapters } = makeAdapters();
+    renderYou(adapters);
+    await waitFor(() => expect(mockProbe.last).not.toBeNull());
+    const p = mockProbe.last!;
+    expect(p.lastSevenDays).toEqual({
+      workouts: "0",
+      volume: "0.0 t",
+      time: "0h 00m",
+    });
+    expect(p.muscles.rest).toBeNull();
+    expect(p.muscles.trainNext?.text).toBe("Back, quads, chest");
+    expect(p.muscles.gender).toBe("male");
+    expect(p.topLifts).toEqual([]);
+    expect(p.coaches).toEqual([]);
+    expect(p.badges.map((b) => b.label)).toEqual([
+      "1w",
+      "2w",
+      "4w",
+      "2mo",
+      "3mo",
+    ]);
+    // The first read stamps when this phone started its training log.
+    expect(adapters.storage.getTrainingLogSince("user-1")).not.toBeNull();
+  });
+
+  it("works out muscles, the 7-day strip and top lifts from the training log", async () => {
+    const { adapters } = makeAdapters();
+    adapters.storage.cacheExercises([
+      ex("bench", ["chest"], ["triceps"]),
+      ex("squat", ["quadriceps"]),
+    ]);
+    const yesterday = new Date(Date.now() - 86_400_000).toISOString();
+    const lastMonth = new Date(Date.now() - 20 * 86_400_000).toISOString();
+    adapters.storage.saveTrainingLogEntry(
+      "user-1",
+      finished("s1", yesterday, {
+        bench: Array.from({ length: 10 }, () => [100, 5] as [number, number]),
+        squat: [[120, 7]],
+      }),
+    );
+    adapters.storage.saveTrainingLogEntry(
+      "user-1",
+      finished("old", lastMonth, { squat: [[200, 1]] }),
+    );
+    renderYou(adapters);
+    await waitFor(() => expect(mockProbe.last?.topLifts.length).toBe(2));
+    const p = mockProbe.last!;
+    expect(p.lastSevenDays).toEqual({
+      workouts: "1",
+      volume: "5.8 t",
+      time: "1h 00m",
+    });
+    expect(p.muscles.rest?.text).toBe("Chest");
+    expect(p.muscles.shading.regions).toEqual(
+      expect.arrayContaining([{ slug: "chest", intensity: 4 }]),
+    );
+    expect(p.muscles.shading.accessibilityLabel).toContain("Rest: chest");
+    // Squat 120 × 7 ≈ 148 kg beats bench 100 × 5 ≈ 116.7 kg; last month's
+    // 200 kg single is outside the window.
+    expect(p.topLifts.map((l) => l.name)).toEqual(["Squat", "Bench"]);
+    expect(p.topLifts[0]!.value).toBe("148.0 kg");
+  });
+
+  it("follows profile sex for the figure and shows every active coach", async () => {
+    const { api, adapters } = makeAdapters();
+    api.profilePage = {
+      ...PROFILE_PAGE_FIXTURE,
+      profile: { ...PROFILE_PAGE_FIXTURE.profile, gender: "female" },
+    };
+    const rel = (
+      id: string,
+      name: string,
+      status: "active" | "pending",
+      initiatedBy: "trainer" | "client" = "trainer",
+    ) => ({
+      relationshipId: id,
+      trainerId: `t-${id}`,
+      trainerName: name,
+      trainerRole: "personal_trainer",
+      trainerAvatarUrl: null,
+      status,
+      relationshipReason: null,
+      since: "2026-03-04T00:00:00.000Z",
+      initiatedBy,
+    });
+    api.clientRelationships = [
+      rel("r1", "Ellie Hart", "active"),
+      rel("r2", "Marcus Lee", "active"),
+      rel("r3", "Pat", "pending"),
+      rel("r4", "Sam", "pending", "client"),
+    ];
+    renderYou(adapters);
+    await waitFor(() => expect(mockProbe.last?.coaches).toHaveLength(2));
+    await waitFor(() => expect(mockProbe.last?.muscles.gender).toBe("female"));
+    const p = mockProbe.last!;
+    expect(p.coaches[0]).toEqual({
+      id: "r1",
+      initials: "EH",
+      name: "Ellie Hart",
+      subtitle: "Personal Trainer · since Mar 2026",
+    });
+    expect(p.pendingRequestCount).toBe(1);
+    expect(p.myPendingCoachRequests).toEqual([
+      { relationshipId: "r4", trainerName: "Sam" },
+    ]);
+    expect(p.initials).toBe("BS");
+  });
+
+  it("falls back to the email initial until the profile resolves", async () => {
+    const { adapters } = makeAdapters();
+    renderYou(adapters);
+    await waitFor(() => expect(mockProbe.last).not.toBeNull());
+    expect(mockProbe.last?.initials).toBe("A");
+  });
+
+  it("regression: returning to You (focus) reflects a weigh-in logged from another tab", async () => {
     const { api, adapters } = makeAdapters();
     const initial = [
       { date: "2026-06-20T00:00:00.000Z", weightKg: 80.0, bodyFat: null },
     ];
-    api.bodyTrend = initial; // fetcher matches cache → the mount refresh is a visual no-op
+    api.bodyTrend = initial;
     adapters.storage.cacheBodyTrend("user-1", initial);
-    adapters.health = {
+    adapters.health = healthAdapter({
       isAvailable: jest.fn(async () => false),
-      getPermissionStatus: jest.fn(async () => ({
-        steps: "not_determined",
-        calories: "not_determined",
-        bodyWeight: "not_determined",
-        heartRate: "not_determined",
-      })),
-      getStepsToday: jest.fn(async () => ok(0)),
-      getStepsLastNDays: jest.fn(async () => ok([])),
-      getActiveCaloriesToday: jest.fn(async () => ok(0)),
-      getBasalCaloriesToday: jest.fn(async () => ok(0)),
-      getStandTimeTodayMinutes: jest.fn(async () => ok(0)),
-      getLatestBodyWeight: jest.fn(async () => ok(null)),
-      getHeartRateLatest: jest.fn(async () => ok(null)),
-      getLatestBodyFat: jest.fn(async () => ok(null)),
-    } as unknown as Adapters["health"];
-
-    render(
-      <AdapterProvider adapters={adapters}>
-        <YouContainer />
-      </AdapterProvider>,
-    );
-    await waitFor(() =>
-      expect(mockProbe.last?.bodyTrend.weight.series).toEqual([80.0]),
-    );
-
-    // Weigh-in logged from Home writes the body-trend cache directly (optimistic).
+    });
+    renderYou(adapters);
+    await waitFor(() => expect(mockProbe.last?.weight.series).toEqual([80.0]));
     act(() => {
       adapters.storage.cacheBodyTrend("user-1", [
         ...initial,
         { date: "2026-06-29T00:00:00.000Z", weightKg: 78.5, bodyFat: null },
       ]);
     });
-    // Still stale — the out-of-band cache write didn't push into mounted state.
-    expect(mockProbe.last?.bodyTrend.weight.series).toEqual([80.0]);
-
-    // Return to the You tab → focus fires → reloadBody() re-reads the cache.
+    expect(mockProbe.last?.weight.series).toEqual([80.0]);
     act(() => {
       mockFocus.cb?.();
     });
     await waitFor(() =>
-      expect(mockProbe.last?.bodyTrend.weight.series).toEqual([80.0, 78.5]),
+      expect(mockProbe.last?.weight.series).toEqual([80.0, 78.5]),
     );
+    expect(mockProbe.last?.weight.value).toBe("78.5");
   });
 
-  it("wires the streak + volume + milestone props from the API", async () => {
-    const { api, adapters } = makeAdapters();
-    api.streaks = [
-      {
-        id: "s1",
-        userId: "user-1",
-        streakType: "workout_streak",
-        sourceGoalId: null,
-        period: "weekly",
-        currentCount: 4,
-        longestCount: 8,
-        lastPeriodEnd: "2026-06-07",
-        freezeTokens: 2,
-        status: "active",
-      },
-    ];
-    render(
-      <AdapterProvider adapters={adapters}>
-        <YouContainer />
-      </AdapterProvider>,
-    );
-    await waitFor(() => expect(mockProbe.last?.streak).not.toBeNull());
-    expect(mockProbe.last?.streak?.current).toBe(4);
-    expect(mockProbe.last?.streak?.unit).toBe("weeks");
-    expect(mockProbe.last?.milestones).toHaveLength(5);
-    expect(mockProbe.last?.initials).toBe("A");
-
-    // Exercise the wired callbacks (use-token spends + refreshes; refresh
-    // fans out to every read hook).
-    await act(async () => {
-      await mockProbe.last?.onUseToken();
-    });
-    await act(async () => {
-      mockProbe.last?.onRefresh();
-    });
-  });
-
-  it("derives avatar initials from the profile name once it resolves", async () => {
-    // §2: initials should prefer the profile full name (legacy parity), not the
-    // email. The fixture's "Brad Simms" → "BS"; without the profile the email
-    // ("alex@example.com") would yield "A".
-    const { api, adapters } = makeAdapters();
-    api.profilePage = PROFILE_PAGE_FIXTURE;
-    render(
-      <AdapterProvider adapters={adapters}>
-        <YouContainer />
-      </AdapterProvider>,
-    );
-    await waitFor(() => expect(mockProbe.last?.initials).toBe("BS"));
-  });
-
-  it("falls back to the email initial until the profile resolves", async () => {
-    // No profile fixture configured → getProfilePage 404s → initials fall back
-    // to the email ("alex@example.com" → "A").
+  it("re-reads the training log on focus", async () => {
     const { adapters } = makeAdapters();
-    render(
-      <AdapterProvider adapters={adapters}>
-        <YouContainer />
-      </AdapterProvider>,
-    );
+    renderYou(adapters);
     await waitFor(() => expect(mockProbe.last).not.toBeNull());
-    expect(mockProbe.last?.initials).toBe("A");
+    adapters.storage.saveTrainingLogEntry(
+      "user-1",
+      finished("s1", new Date(Date.now() - 3_600_000).toISOString(), {
+        bench: [[100, 5]],
+      }),
+    );
+    act(() => {
+      mockFocus.cb?.();
+    });
+    await waitFor(() =>
+      expect(mockProbe.last?.lastSevenDays.workouts).toBe("1"),
+    );
   });
 
-  it("surfaces the HealthKit body-fat reading when the app has no in-app fat history", async () => {
-    // Renpho-style flow: weight + body fat are written to Apple Health by a
-    // connected scale, never logged in-app. The /body-trend API therefore
-    // carries no body fat, and the You-page tile would be empty without the
-    // HealthKit fallback.
+  it("surfaces Health weight, body fat and steps when the app has none", async () => {
     const { adapters } = makeAdapters();
-    adapters.health = {
-      isAvailable: jest.fn(async () => true),
-      getPermissionStatus: jest.fn(async () => ({
-        steps: "granted",
-        calories: "granted",
-        bodyWeight: "granted",
-        heartRate: "granted",
-      })),
-      getStepsToday: jest.fn(async () => ok(0)),
-      getStepsLastNDays: jest.fn(async () => ok([])),
-      getActiveCaloriesToday: jest.fn(async () => ok(0)),
-      getBasalCaloriesToday: jest.fn(async () => ok(0)),
-      getStandTimeTodayMinutes: jest.fn(async () => ok(0)),
-      getLatestBodyWeight: jest.fn(async () =>
-        ok({ value: 78.2, unit: "kg", date: "2026-06-29T12:00:00.000Z" }),
+    adapters.health = healthAdapter({
+      getStepsToday: jest.fn(async () => ok(8240)),
+      getStepsLastNDays: jest.fn(async () =>
+        ok([
+          { date: "d1", steps: 6000 },
+          { date: "d2", steps: 0 },
+          { date: "d3", steps: 8000 },
+        ]),
       ),
-      getHeartRateLatest: jest.fn(async () => ok(null)),
+      getLatestBodyWeight: jest.fn(async () =>
+        ok({ value: 180, unit: "lbs", date: "2026-06-29T12:00:00.000Z" }),
+      ),
       getLatestBodyFat: jest.fn(async () =>
         ok({ value: 22.5, date: "2026-06-29T12:00:00.000Z" }),
       ),
-    } as unknown as Adapters["health"];
-
-    render(
-      <AdapterProvider adapters={adapters}>
-        <YouContainer />
-      </AdapterProvider>,
-    );
-
-    await waitFor(() =>
-      expect(mockProbe.last?.bodyTrend.bodyFat.current).toBe(22.5),
-    );
-    expect(mockProbe.last?.bodyTrend.bodyFat.series).toContain(22.5);
-    // The paired weight reading should appear on the weight tile too.
-    expect(mockProbe.last?.bodyTrend.weight.current).toBe(78.2);
+    });
+    renderYou(adapters);
+    await waitFor(() => expect(mockProbe.last?.bodyFat.value).toBe("22.5"));
+    await waitFor(() => expect(mockProbe.last?.steps.today).toBe("8,240"));
+    const p = mockProbe.last!;
+    expect(p.weight.value).toBe("81.6");
+    expect(p.steps.detail).toBe("Avg 7,000 · last 7 days");
+    expect(p.steps.days).toEqual([null, null, null, null, 6000, null, 8000]);
   });
 
-  it("does NOT let a STALE-dated HealthKit fat reading override newer in-app fat history", async () => {
-    // A scale syncing a fresh WEIGHT without a new fat measurement must not
-    // surface a stale fat value as "current". The fat merge compares the fat
-    // sample's OWN date against the last in-app fat point — never the weight's
-    // recency as a proxy (Inspector Brad MEDIUM, PR #143).
+  it("does NOT let a stale Health fat reading override newer in-app history", async () => {
     const { api, adapters } = makeAdapters();
-    api.bodyTrend = [
-      { date: "2026-06-20T00:00:00.000Z", weightKg: 80.0, bodyFat: 20.0 },
-      { date: "2026-06-28T00:00:00.000Z", weightKg: 79.0, bodyFat: 19.5 },
+    const trend = [
+      { date: "2026-06-25T00:00:00.000Z", weightKg: null, bodyFat: 20 },
+      { date: "2026-06-28T00:00:00.000Z", weightKg: null, bodyFat: 19.5 },
     ];
-    adapters.health = {
-      isAvailable: jest.fn(async () => true),
-      getPermissionStatus: jest.fn(async () => ({
-        steps: "granted",
-        calories: "granted",
-        bodyWeight: "granted",
-        heartRate: "granted",
-      })),
-      getStepsToday: jest.fn(async () => ok(0)),
-      getStepsLastNDays: jest.fn(async () => ok([])),
-      getActiveCaloriesToday: jest.fn(async () => ok(0)),
-      getBasalCaloriesToday: jest.fn(async () => ok(0)),
-      getStandTimeTodayMinutes: jest.fn(async () => ok(0)),
-      // A weight newer than the last in-app weigh-in...
-      getLatestBodyWeight: jest.fn(async () =>
-        ok({ value: 78.2, unit: "kg", date: "2026-06-30T12:00:00.000Z" }),
-      ),
-      getHeartRateLatest: jest.fn(async () => ok(null)),
-      // ...but a STALE fat reading from before the last in-app fat log.
-      // Must not become "current".
+    api.bodyTrend = trend;
+    adapters.storage.cacheBodyTrend("user-1", trend);
+    adapters.health = healthAdapter({
       getLatestBodyFat: jest.fn(async () =>
-        ok({ value: 25.0, date: "2026-06-23T12:00:00.000Z" }),
+        ok({ value: 25, date: "2026-06-01T12:00:00.000Z" }),
       ),
-    } as unknown as Adapters["health"];
-
-    render(
-      <AdapterProvider adapters={adapters}>
-        <YouContainer />
-      </AdapterProvider>,
-    );
-
-    // In-app fat history is preserved; the stale HealthKit 25.0 is ignored.
+    });
+    renderYou(adapters);
     await waitFor(() =>
-      expect(mockProbe.last?.bodyTrend.bodyFat.current).toBe(19.5),
+      expect(mockProbe.last?.bodyFat.series).toEqual([20, 19.5]),
     );
-    expect(mockProbe.last?.bodyTrend.bodyFat.series).toEqual([20.0, 19.5]);
-    expect(mockProbe.last?.bodyTrend.bodyFat.series).not.toContain(25.0);
-    // Weight still merges (it HAS a timestamp and is genuinely newer).
-    expect(mockProbe.last?.bodyTrend.weight.current).toBe(78.2);
+    expect(mockProbe.last?.bodyFat.value).toBe("19.5");
   });
+});
 
-  it("merges a HealthKit fat reading NEWER than the last in-app fat log", async () => {
-    // The fat sample now carries its own date, so a fresh connected-scale
-    // reading taken after the last in-app log becomes "current" — the same
-    // rule the weight merge has always used.
-    const { api, adapters } = makeAdapters();
-    api.bodyTrend = [
-      { date: "2026-06-20T00:00:00.000Z", weightKg: 80.0, bodyFat: 20.0 },
-      { date: "2026-06-28T00:00:00.000Z", weightKg: 79.0, bodyFat: 19.5 },
-    ];
-    adapters.health = {
-      isAvailable: jest.fn(async () => true),
-      getPermissionStatus: jest.fn(async () => ({
-        steps: "granted",
-        calories: "granted",
-        bodyWeight: "granted",
-        heartRate: "granted",
-      })),
-      getStepsToday: jest.fn(async () => ok(0)),
-      getStepsLastNDays: jest.fn(async () => ok([])),
-      getActiveCaloriesToday: jest.fn(async () => ok(0)),
-      getBasalCaloriesToday: jest.fn(async () => ok(0)),
-      getStandTimeTodayMinutes: jest.fn(async () => ok(0)),
-      getLatestBodyWeight: jest.fn(async () =>
-        ok({ value: 78.2, unit: "kg", date: "2026-06-30T12:00:00.000Z" }),
-      ),
-      getHeartRateLatest: jest.fn(async () => ok(null)),
-      getLatestBodyFat: jest.fn(async () =>
-        ok({ value: 18.9, date: "2026-06-30T12:00:00.000Z" }),
-      ),
-    } as unknown as Adapters["health"];
-
-    render(
-      <AdapterProvider adapters={adapters}>
-        <YouContainer />
-      </AdapterProvider>,
+describe("bodyTile", () => {
+  const now = new Date(2026, 9, 29, 12);
+  it("shows the latest reading, when, and the change over the window", () => {
+    const t = bodyTile(
+      [
+        { date: new Date(2026, 9, 1).toISOString(), value: 81 },
+        { date: new Date(2026, 9, 24).toISOString(), value: 82 },
+        { date: new Date(2026, 9, 29, 7).toISOString(), value: 82.4 },
+      ],
+      { unit: "kg", now, windowDays: 7, period: "this week" },
     );
-
-    await waitFor(() =>
-      expect(mockProbe.last?.bodyTrend.bodyFat.current).toBe(18.9),
-    );
-    expect(mockProbe.last?.bodyTrend.bodyFat.series).toEqual([
-      20.0, 19.5, 18.9,
-    ]);
-  });
-
-  it("keeps onRefresh referentially stable across re-renders", async () => {
-    // Regression (PR #37): the useCallback deps were the whole hook-result
-    // objects (fresh literals each render), defeating memoisation. Depending on
-    // the stable .refresh callbacks fixes it.
-    const { adapters } = makeAdapters();
-    const { rerender } = render(
-      <AdapterProvider adapters={adapters}>
-        <YouContainer />
-      </AdapterProvider>,
-    );
-    await waitFor(() => expect(mockProbe.last).not.toBeNull());
-    const first = mockProbe.last?.onRefresh;
-    rerender(
-      <AdapterProvider adapters={adapters}>
-        <YouContainer />
-      </AdapterProvider>,
-    );
-    expect(mockProbe.last?.onRefresh).toBe(first);
-  });
-
-  it("surfaces the active trainer and pending-request count", async () => {
-    const { api, adapters } = makeAdapters();
-    api.clientRelationships = [
-      {
-        relationshipId: "rel-active",
-        trainerId: "trainer-1",
-        trainerName: "Coach Carter",
-        trainerRole: "personal_trainer",
-        trainerAvatarUrl: null,
-        status: "active",
-        relationshipReason: null,
-        since: "2026-03-01T00:00:00.000Z",
-        initiatedBy: "trainer",
-      },
-      {
-        relationshipId: "rel-pending",
-        trainerId: "trainer-2",
-        trainerName: "Dr. Lee",
-        trainerRole: "physiotherapist",
-        trainerAvatarUrl: null,
-        status: "pending",
-        relationshipReason: null,
-        since: null,
-        initiatedBy: "trainer",
-      },
-    ];
-    render(
-      <AdapterProvider adapters={adapters}>
-        <YouContainer />
-      </AdapterProvider>,
-    );
-    await waitFor(() => expect(mockProbe.last?.trainer).not.toBeNull());
-    expect(mockProbe.last?.trainer?.name).toBe("Coach Carter");
-    expect(mockProbe.last?.pendingRequestCount).toBe(1);
-    // Exercise the requests-navigation callback.
-    act(() => {
-      mockProbe.last?.onOpenRequests();
+    expect(t).toEqual({
+      value: "82.4",
+      unit: "kg",
+      detail: "Today · +0.4 this week",
+      series: [81, 82, 82.4],
     });
   });
 
-  it("Phase 8: separates client-initiated pendings (awaiting coach accept) from the reviewable trainer-initiated prompt", async () => {
-    const { api, adapters } = makeAdapters();
-    api.clientRelationships = [
-      {
-        relationshipId: "rel-trainer-initiated",
-        trainerId: "trainer-1",
-        trainerName: "Coach Carter",
-        trainerRole: "personal_trainer",
-        trainerAvatarUrl: null,
-        status: "pending",
-        relationshipReason: null,
-        since: null,
-        initiatedBy: "trainer",
-      },
-      {
-        relationshipId: "rel-client-initiated",
-        trainerId: "trainer-2",
-        trainerName: "Dr. Lee",
-        trainerRole: "physiotherapist",
-        trainerAvatarUrl: null,
-        status: "pending",
-        relationshipReason: null,
-        since: null,
-        initiatedBy: "client",
-      },
-    ];
-    render(
-      <AdapterProvider adapters={adapters}>
-        <YouContainer />
-      </AdapterProvider>,
-    );
-    await waitFor(() => expect(mockProbe.last?.pendingRequestCount).toBe(1));
-    expect(mockProbe.last?.myPendingCoachRequests).toEqual([
-      { relationshipId: "rel-client-initiated", trainerName: "Dr. Lee" },
-    ]);
-    // Exercise the accept-invite navigation callback.
-    act(() => {
-      mockProbe.last?.onOpenAcceptInvite();
-    });
+  it("drops the change with one reading in the window, and handles none", () => {
+    expect(
+      bodyTile([{ date: new Date(2026, 9, 22).toISOString(), value: 14.8 }], {
+        unit: "%",
+        now,
+        windowDays: 30,
+        period: "this month",
+      }).detail,
+    ).toBe("22 Oct");
+    expect(
+      bodyTile([], { unit: "%", now, windowDays: 30, period: "this month" }),
+    ).toEqual({ value: null, unit: "%", detail: null, series: [] });
   });
 
-  it("escapes the loader and surfaces the error when a cold-start fetch fails", async () => {
-    const { api, adapters } = makeAdapters();
-    api.shouldFail = true; // empty cache + failing GET
-    render(
-      <AdapterProvider adapters={adapters}>
-        <YouContainer />
-      </AdapterProvider>,
+  it("converts to the athlete's unit", () => {
+    const t = bodyTile(
+      [
+        { date: new Date(2026, 9, 28).toISOString(), value: 80 },
+        { date: new Date(2026, 9, 29).toISOString(), value: 79 },
+      ],
+      {
+        unit: "lb",
+        now,
+        windowDays: 7,
+        period: "this week",
+        convert: (kg) => kg * 2,
+      },
     );
-    // Same loader-trap guard as Home: once the failed streaks fetch settles,
-    // isLoading must drop to false so YouPresenter can render its error state.
-    await waitFor(() => expect(mockProbe.last?.error).not.toBeNull());
-    expect(mockProbe.last?.isLoading).toBe(false);
+    expect(t.value).toBe("158.0");
+    expect(t.detail).toBe("Today · −2.0 this week");
+  });
+});
+
+describe("coachSubtitle", () => {
+  it.each([
+    [
+      "personal_trainer",
+      "2026-03-04T00:00:00Z",
+      "Personal Trainer · since Mar 2026",
+    ],
+    ["physiotherapist", null, "Physiotherapist"],
+    ["admin", "not a date", "Coach"],
+    [null, null, "Trainer"],
+  ])("%p, %p → %p", (role, since, out) => {
+    expect(coachSubtitle(role, since)).toBe(out);
   });
 });

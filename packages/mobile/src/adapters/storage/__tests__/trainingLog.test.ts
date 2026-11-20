@@ -1,0 +1,129 @@
+/** @jest-environment node */
+import { DatabaseSync } from "node:sqlite";
+import type { StoragePort } from "@/domain/ports/storage.port";
+import type { WorkoutSession } from "@/domain/models/session";
+import { session } from "@/domain/services/__tests__/youFixtures";
+import { InMemoryStorageAdapter } from "./in-memory-storage.adapter";
+import { SQLiteStorageAdapter } from "../sqlite.adapter";
+
+/** The SQLite adapter on node's SQLite, with the training-log DDL it ships. */
+function sqliteAdapter(): { adapter: StoragePort; db: DatabaseSync } {
+  const db = new DatabaseSync(":memory:");
+  db.exec(`
+    CREATE TABLE training_log (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      started_at TEXT NOT NULL,
+      payload TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE training_log_since (user_id TEXT PRIMARY KEY, since TEXT NOT NULL);
+    CREATE TABLE active_sessions (id TEXT PRIMARY KEY);
+    CREATE TABLE session_exercises (session_id TEXT);
+    CREATE TABLE personal_records (session_id TEXT);
+  `);
+  type P = (string | number | null)[];
+  const adapter = new SQLiteStorageAdapter();
+  Object.assign(adapter, {
+    db: {
+      getAllSync: (q: string, p: P) => db.prepare(q).all(...p),
+      getFirstSync: (q: string, p: P) => db.prepare(q).get(...p) ?? null,
+      runSync: (q: string, p: P) => db.prepare(q).run(...p),
+      execSync: (q: string) => {
+        if (!q.startsWith("PRAGMA")) db.exec(q);
+      },
+      withTransactionSync: (fn: () => void) => fn(),
+    },
+  });
+  return { adapter, db };
+}
+
+const finished = (
+  id: string,
+  day: number,
+  extra: Partial<WorkoutSession> = {},
+) =>
+  session(
+    id,
+    new Date(Date.UTC(2026, 9, day, 7)).toISOString(),
+    {
+      bench: [[100, 5]],
+    },
+    extra,
+  );
+
+describe.each([
+  ["SQLite", () => sqliteAdapter().adapter],
+  ["in-memory", () => new InMemoryStorageAdapter() as StoragePort],
+])("training log (%s)", (_name, make) => {
+  let s: StoragePort;
+  beforeEach(() => {
+    s = make();
+  });
+
+  it("keeps finished workouts only, oldest first, filtered by range", () => {
+    s.saveTrainingLogEntry("u1", finished("b", 27));
+    s.saveTrainingLogEntry("u1", finished("a", 20));
+    s.saveTrainingLogEntry("u1", finished("c", 28, { status: "cancelled" }));
+    s.saveTrainingLogEntry(
+      "u1",
+      finished("d", 28, {
+        withClient: { id: "client", name: "Lena", initials: "L" },
+      }),
+    );
+    expect(s.getTrainingLog("u1").map((x) => x.id)).toEqual(["a", "b"]);
+    expect(
+      s.getTrainingLog("u1", { from: "2026-10-21T00:00:00Z" }).map((x) => x.id),
+    ).toEqual(["b"]);
+    expect(
+      s.getTrainingLog("u1", { to: "2026-10-21T00:00:00Z" }).map((x) => x.id),
+    ).toEqual(["a"]);
+  });
+
+  it("upserts by id and returns the full session", () => {
+    s.saveTrainingLogEntry("u1", finished("a", 20));
+    s.saveTrainingLogEntry("u1", finished("a", 20, { name: "Upper A" }));
+    expect(s.getTrainingLog("u1")).toHaveLength(1);
+    const entry = s.getTrainingLogEntry("u1", "a")!;
+    expect(entry.name).toBe("Upper A");
+    expect(entry.exercises[0]!.sets[0]!.weightKg).toBe(100);
+    expect(s.getTrainingLogEntry("u1", "missing")).toBeNull();
+  });
+
+  it("never shows or overwrites another user's workouts", () => {
+    s.saveTrainingLogEntry("u1", finished("a", 20, { name: "Mine" }));
+    s.saveTrainingLogEntry("u2", finished("a", 20, { name: "Theirs" }));
+    expect(s.getTrainingLog("u2")).toEqual([]);
+    expect(s.getTrainingLogEntry("u2", "a")).toBeNull();
+    expect(s.getTrainingLogEntry("u1", "a")!.name).toBe("Mine");
+  });
+
+  it("renames a workout to its server id", () => {
+    s.saveTrainingLogEntry("u1", finished("local-1", 20));
+    s.swapLocalSessionId("local-1", "srv-1");
+    expect(s.getTrainingLogEntry("u1", "local-1")).toBeNull();
+    const entry = s.getTrainingLogEntry("u1", "srv-1")!;
+    expect(entry.id).toBe("srv-1");
+    expect(entry.exercises[0]!.sessionId).toBe("srv-1");
+    // A swap with nothing logged is harmless.
+    s.swapLocalSessionId("local-2", "srv-2");
+    expect(s.getTrainingLog("u1")).toHaveLength(1);
+  });
+
+  it("stamps when the log started, once", () => {
+    expect(s.getTrainingLogSince("u1")).toBeNull();
+    s.markTrainingLogSince("u1", "2026-11-20T10:00:00Z");
+    s.markTrainingLogSince("u1", "2026-11-25T10:00:00Z");
+    expect(s.getTrainingLogSince("u1")).toBe("2026-11-20T10:00:00Z");
+    expect(s.getTrainingLogSince("u2")).toBeNull();
+  });
+});
+
+it("clears the in-memory log on sign-out", () => {
+  const s = new InMemoryStorageAdapter();
+  s.saveTrainingLogEntry("u1", finished("a", 20));
+  s.markTrainingLogSince("u1", "2026-11-20T10:00:00Z");
+  s.clearAll();
+  expect(s.getTrainingLog("u1")).toEqual([]);
+  expect(s.getTrainingLogSince("u1")).toBeNull();
+});

@@ -1,113 +1,219 @@
 import { useCallback, useMemo, useRef } from "react";
 import type { ScrollView } from "react-native";
+import { useFocusEffect, useRouter } from "expo-router";
 import { useScrollToTopOnTabPress } from "@/ui/hooks/useScrollToTopOnTabPress";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { useProfilePage } from "@/ui/hooks/useProfilePage";
-import { useGetStreaks } from "@/ui/hooks/useGetStreaks";
 import { useGetAchievements } from "@/ui/hooks/useGetAchievements";
-import { useGetVolumeStats } from "@/ui/hooks/useGetVolumeStats";
 import { useGetBodyMeasurements } from "@/ui/hooks/useGetBodyMeasurements";
 import { useGetPRHistory } from "@/ui/hooks/useGetPRHistory";
-import { useUseFreezeToken } from "@/ui/hooks/useUseFreezeToken";
 import { useHealthData } from "@/ui/hooks/useHealthData";
 import { useHealthWeightSync } from "@/ui/hooks/useHealthWeightSync";
 import { useClientRelationships } from "@/ui/hooks/useClientRelationships";
+import { useTrainingLog } from "@/ui/hooks/useTrainingLog";
 import { useDrawer } from "@/state/drawer";
-import { useFocusEffect, useRouter } from "expo-router";
 import { initialsOf, KG_PER_LB, weightInUnit } from "@/shared/utils";
-import type { Streak } from "@/domain/models/streak";
-import { YouPresenter } from "@/ui/presenters/YouPresenter";
+import type { WeightUnit } from "@/shared/utils";
+import {
+  bodyMapShading,
+  lastSevenDays,
+  musclesForSessions,
+  sessionsBetween,
+  topLifts,
+  trainingTotals,
+} from "@/domain/services/youPage";
+import { trainNextAndRest } from "@/domain/services/trainingMetrics/muscleCredit";
+import {
+  YouPresenter,
+  type YouBadge,
+  type YouCoach,
+  type YouTile,
+} from "@/ui/presenters/YouPresenter";
+import {
+  deltaText,
+  liftRows,
+  restLine,
+  totalsStrip,
+  trainNextLine,
+  whenLabel,
+} from "@/ui/presenters/you/youFormat";
 import { buildMilestoneTiers } from "./buildMilestoneTiers";
 
-// Re-exported so existing callers/tests (`import { buildMilestoneTiers } from
-// "./YouContainer"`) keep working now that the mapping lives in its own
-// module (shared with <AchievementsContainer> — see buildMilestoneTiers.tsx).
+// Re-exported so existing callers/tests keep working (the mapping lives in
+// its own module, shared with <AchievementsContainer>).
 export { buildMilestoneTiers };
 
-/** Pick the streak to feature: the active workout_streak, else the first. */
-function pickPrimaryStreak(streaks: Streak[]): Streak | null {
-  return (
-    streaks.find((s) => s.streakType === "workout_streak") ?? streaks[0] ?? null
+const BADGE_ICONS: YouBadge["icon"][] = [
+  "flame",
+  "bolt",
+  "dumbbell",
+  "medal",
+  "crown",
+];
+
+const MONTHS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+function roleLabel(role: string | null): string {
+  switch (role) {
+    case "physiotherapist":
+      return "Physiotherapist";
+    case "personal_trainer":
+      return "Personal Trainer";
+    case "admin":
+      return "Coach";
+    default:
+      return "Trainer";
+  }
+}
+
+/** "Personal Trainer · since Mar 2026", or the role alone without a date. */
+export function coachSubtitle(role: string | null, since: string | null) {
+  const d = since ? new Date(since) : null;
+  if (!d || Number.isNaN(d.getTime())) return roleLabel(role);
+  return `${roleLabel(role)} · since ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+}
+
+export type DatedReading = { date: string; value: number };
+
+/**
+ * A body tile from dated readings, oldest first: the latest value, when it
+ * was taken, and the change across `windowDays` ("+0.4 this week").
+ */
+export function bodyTile(
+  readings: readonly DatedReading[],
+  p: {
+    unit: string;
+    now: Date;
+    windowDays: number;
+    period: string;
+    convert?: (v: number) => number;
+  },
+): YouTile {
+  const convert = p.convert ?? ((v: number) => v);
+  const sorted = [...readings].sort(
+    (a, b) => Date.parse(a.date) - Date.parse(b.date),
   );
+  const last = sorted[sorted.length - 1];
+  if (!last) return { value: null, unit: p.unit, detail: null, series: [] };
+  const since = p.now.getTime() - p.windowDays * 86_400_000;
+  const inWindow = sorted.filter((r) => Date.parse(r.date) >= since);
+  const when = whenLabel(last.date, p.now);
+  const delta =
+    inWindow.length > 1
+      ? convert(last.value) - convert(inWindow[0]!.value)
+      : null;
+  return {
+    value: convert(last.value).toFixed(1),
+    unit: p.unit,
+    detail: delta == null ? when : `${when} · ${deltaText(delta, p.period)}`,
+    series: sorted.map((r) => convert(r.value)),
+  };
+}
+
+/** Add a Health reading when it's newer than the app's latest. */
+function withHealth(
+  readings: DatedReading[],
+  health: DatedReading | null,
+): DatedReading[] {
+  if (!health) return readings;
+  const latest = Math.max(
+    ...readings.map((r) => Date.parse(r.date)),
+    -Infinity,
+  );
+  return Date.parse(health.date) > latest ? [...readings, health] : readings;
 }
 
 /**
- * <YouContainer> — athlete Progress/You screen (06-progress-goals, STORY-003).
- * Wires the cache-first streak/achievement/volume/body/PR hooks into
- * <YouPresenter>. (Coach You variant is owned by 10-trainer-features.)
+ * <YouContainer> — athlete You page (PER-141, canvas Y1). Offline-first:
+ * muscles, last 7 days and top lifts come from the phone's training log;
+ * tiles from the cached body trend and Health; coaches from the cached
+ * relationships. Coach You is `CoachYouContainer`.
  */
 export function YouContainer() {
   const { session } = useAuth();
+  const userId = session?.userId ?? null;
   const profile = useProfilePage();
-  const weightUnit = profile.payload?.profile.weightUnit ?? "kg";
+  const weightUnit: WeightUnit = profile.payload?.profile.weightUnit ?? "kg";
+  const gender =
+    profile.payload?.profile.gender === "female" ? "female" : "male";
   const openDrawer = useDrawer((s) => s.openDrawer);
   const router = useRouter();
 
   const scrollRef = useRef<ScrollView>(null);
   useScrollToTopOnTabPress(scrollRef);
-
   // Pull any coach-logged weights into HealthKit on open (weight-sync flow).
   useHealthWeightSync();
 
-  // Avatar initials prefer the profile name (legacy parity, mirrors
-  // HomeContainer); cache-first via useProfilePage, with the email as a
-  // fallback until the profile resolves.
   const fullName = profile.payload?.profile.fullName ?? null;
-
-  const streaks = useGetStreaks();
   const achievements = useGetAchievements();
-  const volume = useGetVolumeStats("month");
   const body = useGetBodyMeasurements(30);
   const prs = useGetPRHistory();
-  const freeze = useUseFreezeToken();
-
-  // HealthKit / Health Connect latest body weight. The /body-trend API only
-  // carries weigh-ins logged IN the app, so a user who records weight solely
-  // in Apple Health saw an empty weight tile. We fall back to (or, when more
-  // recent, prefer) the platform health reading. HealthWeight.unit is
-  // "kg" | "lbs"; the trend series is kg, so convert lbs → kg.
   const health = useHealthData();
-  const healthWeight = useMemo(() => {
-    const w = health.latestBodyWeight;
-    if (!w) return null;
-    const kg = w.unit === "lbs" ? w.value * KG_PER_LB : w.value;
-    return { kg, date: w.date };
-  }, [health.latestBodyWeight]);
-  // HealthKit body-fat reading ({ value, date }), same rationale as weight:
-  // the /body-trend API only carries body fat logged IN the app, so a
-  // connected scale (Renpho → Apple Health) left the body-fat tile empty.
-  const healthBodyFat = health.latestBodyFat;
-
-  // Client-side trainer relationships → the "Your trainer" You-page block +
-  // the pending-request prompt (10-trainer-features). Both pending and active
-  // come back in one fetch.
   const relationships = useClientRelationships();
-  const trainer = useMemo(() => {
-    const active = relationships.data.find((r) => r.status === "active");
-    return active
-      ? {
-          name: active.trainerName,
-          role: active.trainerRole,
-          since: active.since,
-        }
-      : null;
-  }, [relationships.data]);
-  // Coach Mode Phase 8 (invite/QR): a `pending` row is either TRAINER-
-  // initiated (an email invite / unredeemed code — the ATHLETE accepts via
-  // the Requests screen) or CLIENT-initiated (the athlete redeemed a coach's
-  // code — the COACH accepts; the athlete just waits). Only the former
-  // counts toward the reviewable prompt; the latter surfaces separately as
-  // an "awaiting acceptance" line.
-  const pendingRequestCount = useMemo(
+  const log = useTrainingLog(userId);
+
+  // Recomputed per render: the 7-day window moves with the clock.
+  const now = new Date();
+  const dayKeyNow = now.toDateString();
+  const records = useMemo(
+    () => prs.data ?? log.records,
+    [prs.data, log.records],
+  );
+
+  const week = useMemo(() => {
+    const w = lastSevenDays(new Date());
+    const sessions = sessionsBetween(log.sessions, w.from, w.to);
+    const rows = musclesForSessions(sessions, log.musclesOf);
+    const split = trainNextAndRest(rows);
+    const trainNext = trainNextLine(split.trainNext);
+    const rest = restLine(split.rest);
+    return {
+      totals: trainingTotals(sessions),
+      lifts: topLifts(sessions, records, w.from),
+      muscles: {
+        shading: bodyMapShading(
+          rows,
+          `Last 7 days.${trainNext ? ` Train next: ${trainNext.text.toLowerCase()}.` : ""}${rest ? ` Rest: ${rest.text.toLowerCase()} have had their week` : ""}`,
+        ),
+        gender,
+        trainNext,
+        rest,
+      } as const,
+    };
+    // dayKeyNow re-runs the window when the date changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [log.sessions, log.musclesOf, records, gender, dayKeyNow]);
+
+  const coaches = useMemo<YouCoach[]>(
     () =>
-      relationships.data.filter(
-        // `!== "client"` (not `=== "trainer"`) so a payload missing initiatedBy
-        // still counts as a reviewable request — matches RequestsContainer's
-        // deploy-ordering-safe default (Inspector Brad).
-        (r) => r.status === "pending" && r.initiatedBy !== "client",
-      ).length,
+      relationships.data
+        .filter((r) => r.status === "active")
+        .map((r) => ({
+          id: r.relationshipId,
+          initials: initialsOf(r.trainerName) || "?",
+          name: r.trainerName,
+          subtitle: coachSubtitle(r.trainerRole, r.since),
+        })),
     [relationships.data],
   );
+  // Kept until APP-A3 (PER-126) re-homes coach requests: TRAINER-initiated
+  // pendings are reviewable here; CLIENT-initiated ones await the coach.
+  const pendingRequestCount = relationships.data.filter(
+    (r) => r.status === "pending" && r.initiatedBy !== "client",
+  ).length;
   const myPendingCoachRequests = useMemo(
     () =>
       relationships.data
@@ -118,228 +224,164 @@ export function YouContainer() {
         })),
     [relationships.data],
   );
-  const onOpenRequests = useCallback(() => {
-    router.push("/(app)/requests" as never);
-  }, [router]);
-  const onOpenAcceptInvite = useCallback(() => {
-    router.push("/(app)/accept-invite" as never);
-  }, [router]);
-  const onOpenWeightHistory = useCallback(() => {
-    router.push("/(app)/weight-history" as never);
-  }, [router]);
-  const onOpenBodyFatHistory = useCallback(() => {
-    router.push("/(app)/body-fat-history" as never);
-  }, [router]);
 
-  const primary = useMemo(
-    () => pickPrimaryStreak(streaks.data ?? []),
-    [streaks.data],
-  );
-
-  const streak = useMemo(() => {
-    if (!primary) return null;
-    return {
-      current: primary.currentCount,
-      longest: primary.longestCount,
-      freezeTokens: primary.freezeTokens,
-      unit: primary.period === "weekly" ? "weeks" : "days",
-    };
-  }, [primary]);
-
-  const milestones = useMemo(
-    () => buildMilestoneTiers(achievements.data ?? []),
+  const badges = useMemo<YouBadge[]>(
+    () =>
+      buildMilestoneTiers(achievements.data ?? []).map((t, i) => ({
+        label: t.label,
+        earned: t.earned,
+        icon: BADGE_ICONS[i] ?? "flame",
+      })),
     [achievements.data],
   );
-  const earnedCount = useMemo(
-    () => milestones.filter((m) => m.earned).length,
-    [milestones],
-  );
 
-  const bodyTrend = useMemo(() => {
+  const tiles = useMemo(() => {
+    const at = new Date();
     const pts = body.data ?? [];
-    const weightSeries = pts
-      .map((p) => p.weightKg)
-      .filter((w): w is number => w != null);
-    const fatSeries = pts
-      .map((p) => p.bodyFat)
-      .filter((f): f is number => f != null);
-    const delta = (s: number[]) => (s.length > 1 ? s[s.length - 1] - s[0] : 0);
-
-    // Merge the platform health weight when the API has none, or when the
-    // health reading is newer than the latest in-app weigh-in. Appending to
-    // the series keeps the sparkline + delta consistent with the displayed
-    // current value.
-    const lastApiWeightDate = [...pts]
-      .reverse()
-      .find((p) => p.weightKg != null)?.date;
-    const healthWeightIsNewer =
-      healthWeight != null &&
-      (weightSeries.length === 0 ||
-        lastApiWeightDate == null ||
-        new Date(healthWeight.date).getTime() >
-          new Date(lastApiWeightDate).getTime());
-
-    let weightSeriesMerged = weightSeries;
-    if (healthWeight != null && healthWeightIsNewer) {
-      weightSeriesMerged = [...weightSeries, healthWeight.kg];
-    }
-
-    // Body fat: same merge rule as weight, on the fat sample's OWN date —
-    // never the weight's recency as a proxy (a scale can sync a fresh weight
-    // without a new fat measurement, which would surface a stale fat value as
-    // "current" and skew the delta).
-    const lastApiFatDate = [...pts]
-      .reverse()
-      .find((p) => p.bodyFat != null)?.date;
-    const healthFatIsNewer =
-      healthBodyFat != null &&
-      (fatSeries.length === 0 ||
-        lastApiFatDate == null ||
-        new Date(healthBodyFat.date).getTime() >
-          new Date(lastApiFatDate).getTime());
-
-    let fatSeriesMerged = fatSeries;
-    if (healthBodyFat != null && healthFatIsNewer) {
-      fatSeriesMerged = [...fatSeries, healthBodyFat.value];
-    }
-
-    const lastWeightKg = weightSeriesMerged[weightSeriesMerged.length - 1];
-
+    const healthWeight = health.latestBodyWeight
+      ? {
+          date: health.latestBodyWeight.date,
+          value:
+            health.latestBodyWeight.unit === "lbs"
+              ? health.latestBodyWeight.value * KG_PER_LB
+              : health.latestBodyWeight.value,
+        }
+      : null;
+    const weights = withHealth(
+      pts.flatMap((p) =>
+        p.weightKg != null ? [{ date: p.date, value: p.weightKg }] : [],
+      ),
+      healthWeight,
+    );
+    const fats = withHealth(
+      pts.flatMap((p) =>
+        p.bodyFat != null ? [{ date: p.date, value: p.bodyFat }] : [],
+      ),
+      health.latestBodyFat,
+    );
+    const days = health.stepsHistory.slice(-7).map((d) => d.steps);
+    const known = days.filter((d) => d > 0);
+    const avg = known.length
+      ? Math.round(known.reduce((a, b) => a + b, 0) / known.length)
+      : null;
     return {
-      weight: {
-        current:
-          lastWeightKg != null ? weightInUnit(lastWeightKg, weightUnit) : null,
-        delta: weightInUnit(delta(weightSeriesMerged), weightUnit),
-        series: weightSeriesMerged,
+      weight: bodyTile(weights, {
         unit: weightUnit,
-      },
-      bodyFat: {
-        current: fatSeriesMerged[fatSeriesMerged.length - 1] ?? null,
-        delta: delta(fatSeriesMerged),
-        series: fatSeriesMerged,
+        now: at,
+        windowDays: 7,
+        period: "this week",
+        convert: (kg) => weightInUnit(kg, weightUnit),
+      }),
+      bodyFat: bodyTile(fats, {
+        unit: "%",
+        now: at,
+        windowDays: 30,
+        period: "this month",
+      }),
+      steps: {
+        today:
+          health.stepsToday != null
+            ? health.stepsToday.toLocaleString("en-GB")
+            : null,
+        detail:
+          avg != null
+            ? `Avg ${avg.toLocaleString("en-GB")} · last 7 days`
+            : null,
+        days: Array.from({ length: 7 }, (_, i) => {
+          const v = days[days.length - 7 + i];
+          return v == null || v <= 0 ? null : v;
+        }),
+        accessibilityLabel: `Steps last 7 days: ${days.length ? days.map((d) => d.toLocaleString("en-GB")).join(", ") : "none"}`,
       },
     };
-  }, [body.data, healthWeight, healthBodyFat, weightUnit]);
+  }, [
+    body.data,
+    health.latestBodyWeight,
+    health.latestBodyFat,
+    health.stepsHistory,
+    health.stepsToday,
+    weightUnit,
+  ]);
 
-  const workoutsLabel = volume.data
-    ? `THIS MONTH · ${volume.data.workouts} WORKOUTS`
-    : "LIFETIME";
+  const push = useCallback(
+    (path: string) => router.push(path as never),
+    [router],
+  );
 
-  // Pull out the stable callbacks so the handlers memoise on THOSE, not the
-  // hook-result objects (fresh literals each render, which would defeat the
-  // useCallbacks — bugbot regression on PR #37). exhaustive-deps can't see that
-  // `streaks.refresh` etc. are stable, so destructuring keeps it correct AND
-  // lint-clean.
-  const refreshStreaks = streaks.refresh;
   const refreshAchievements = achievements.refresh;
-  const refreshVolume = volume.refresh;
   const refreshBody = body.refresh;
   const reloadBody = body.reload;
   const refreshPRs = prs.refresh;
   const refreshHealth = health.refresh;
   const refreshRelationships = relationships.refresh;
-  const spendFreezeToken = freeze.mutate;
+  const reloadLog = log.reload;
   const onRefresh = useCallback(() => {
+    reloadLog();
     void Promise.all([
-      refreshStreaks(),
       refreshAchievements(),
-      refreshVolume(),
       refreshBody(),
       refreshPRs(),
       refreshHealth(),
       refreshRelationships(),
     ]);
   }, [
-    refreshStreaks,
+    reloadLog,
     refreshAchievements,
-    refreshVolume,
     refreshBody,
     refreshPRs,
     refreshHealth,
     refreshRelationships,
   ]);
 
-  // The weigh-in sheet is logged from the HOME tab, but this (retained) You
-  // tab owns the body-trend chart. Tab screens aren't unmounted on blur, so
-  // returning here after a weigh-in would otherwise show a stale chart until a
-  // pull-to-refresh. A focus-time reload() re-reads the (already-written) cache
-  // synchronously — instant + offline-safe — so the new measurement shows the
-  // moment You regains focus. Mirrors ProfileContainer's focus refresh, but a
-  // sync cache read rather than a network GET (the optimistic write is local).
-  // Also re-pull trainer relationships on focus: the "Have a coach's code?"
-  // entry lives on this tab, so returning from the redeem screen lands back
-  // here — without a refresh the "awaiting acceptance" card (Phase 8) would be
-  // computed from pre-redeem data and stay empty until a manual pull-to-refresh
-  // (Inspector Brad). Network GET, unlike the body cache re-read above.
+  // Tab screens stay mounted, so re-read on focus: the training log and body
+  // trend are local (instant, offline); the rest refresh silently.
   useFocusEffect(
     useCallback(() => {
-      // Body trend: silent cache re-read (no spinner) — the weigh-in write is
-      // local, so this reflects it instantly on re-entry.
+      reloadLog();
       reloadBody();
-      // The remaining You reads are network cache-first hooks that otherwise
-      // only auto-fetch once per mount; refresh them on focus so a workout /
-      // achievement / measurement logged elsewhere shows on re-entry rather
-      // than staying stale until a pull-to-refresh.
-      // Silent → background refresh without flashing the pull-to-refresh
-      // spinner on every return to the You tab.
       void refreshRelationships({ silent: true });
-      void refreshStreaks({ silent: true });
       void refreshAchievements({ silent: true });
-      void refreshVolume({ silent: true });
       void refreshPRs({ silent: true });
     }, [
+      reloadLog,
       reloadBody,
       refreshRelationships,
-      refreshStreaks,
       refreshAchievements,
-      refreshVolume,
       refreshPRs,
     ]),
   );
-
-  const onUseToken = useCallback(async () => {
-    if (!primary) return;
-    await spendFreezeToken(primary.id);
-    void refreshStreaks();
-  }, [spendFreezeToken, primary, refreshStreaks]);
 
   return (
     <YouPresenter
       scrollRef={scrollRef}
       initials={initialsOf(fullName ?? session?.email ?? "") || "?"}
-      workoutsLabel={workoutsLabel}
-      streak={streak}
-      milestones={milestones}
-      earnedCount={earnedCount}
-      bodyTrend={bodyTrend}
-      volumeStats={volume.data}
-      prHistory={prs.data ?? []}
-      weightUnit={weightUnit}
-      trainer={trainer}
+      coaches={coaches}
       pendingRequestCount={pendingRequestCount}
       myPendingCoachRequests={myPendingCoachRequests}
-      hasData={
-        profile.payload !== null ||
-        streaks.data !== null ||
-        achievements.data !== null ||
-        volume.data !== null ||
-        body.data !== null ||
-        prs.data !== null
-      }
-      isLoading={
-        (streaks.isRefreshing || (streaks.isStale && streaks.error === null)) &&
-        streaks.data === null
-      }
-      isRefreshing={streaks.isRefreshing}
-      error={streaks.error}
-      busyToken={freeze.isPending}
+      gallery={null}
+      badges={badges}
+      muscles={week.muscles}
+      lastSevenDays={totalsStrip(week.totals, weightUnit)}
+      weight={tiles.weight}
+      bodyFat={tiles.bodyFat}
+      steps={tiles.steps}
+      topLifts={liftRows(week.lifts, weightUnit)}
+      // The training log is local, so the page always has something to draw
+      // once auth resolves; the loader only covers the first profile read.
+      hasData={userId != null}
+      isLoading={userId == null}
+      isRefreshing={achievements.isRefreshing}
+      error={null}
       onRefresh={onRefresh}
       onOpenDrawer={openDrawer}
-      onUseToken={onUseToken}
-      onOpenWeightHistory={onOpenWeightHistory}
-      onOpenBodyFatHistory={onOpenBodyFatHistory}
-      onOpenRequests={onOpenRequests}
-      onOpenAcceptInvite={onOpenAcceptInvite}
+      onOpenSettings={openDrawer}
+      onOpenRequests={() => push("/(app)/requests")}
+      onOpenAcceptInvite={() => push("/(app)/accept-invite")}
+      onOpenBadges={() => push("/(app)/achievements")}
+      onOpenWeight={() => push("/(app)/weight-history")}
+      onOpenBodyFat={() => push("/(app)/body-fat-history")}
+      onOpenHistory={() => push("/(app)/history")}
+      onOpenRecap={() => push("/(app)/recap")}
     />
   );
 }
