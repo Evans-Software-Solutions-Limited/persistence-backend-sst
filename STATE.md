@@ -87,6 +87,11 @@ client onboarding" (approved 20 Nov). Backend only; no app or native change.
   stamps `deleted_at`, scrubs the personal fields and nulls `client_id` and
   `relationship_id`, so `?since=` reports the id. Retention phase B now
   hard-deletes ANY tombstone after 30 days. The CASCADE stays as a backstop.
+- **Inspector Brad fourth sweep (69ba06e), one low lead, confirmed and fixed:**
+  phase A stamped tombstones with the cron's start `now`, read before the
+  other nightly sweeps. A device listing mid-sweep could get an `asOf` past
+  that stamp and miss the deletion. Tombstones now take SQL `now()` (the
+  write's own time); the passed `now` is only for the cutoff arithmetic.
 - **Not done here**: no migration applied to staging/prod; no device test. The
   1.2.0 accept screen still says "awaiting their acceptance" for a personal
   code (known gap, D5); the OTA bundle (PER-126) reads `relationshipStatus`.

@@ -875,8 +875,12 @@ export class ClientProfileRepository {
     const tombstoned = await db
       .update(coachClientProfiles)
       .set({
-        deletedAt: now,
-        updatedAt: now,
+        // The write's own time, not `now`: the cron reads `now` before its
+        // other sweeps, so a tombstone stamped minutes early could fall behind
+        // a coach device's `asOf` and never reach `deletedIds`. `now` is only
+        // for the cutoff arithmetic.
+        deletedAt: sql`now()`,
+        updatedAt: sql`now()`,
         displayName: SCRUBBED_DISPLAY_NAME,
         contactEmail: null,
         contactPhone: null,

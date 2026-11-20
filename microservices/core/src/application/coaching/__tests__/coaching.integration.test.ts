@@ -1888,6 +1888,35 @@ describe("retention purge", () => {
     expect(left.sort()).toEqual([accepted.id, fresh.id].sort());
   });
 
+  it("stamps a tombstone with when it was written, not when the sweep started", async () => {
+    const repo = new ClientProfileRepository();
+    const profile = await newProfile(COACH_A);
+    await db
+      .update(schema.coachClientProfiles)
+      .set({ createdAt: new Date(Date.now() - 100 * 86400_000) })
+      .where(eq(schema.coachClientProfiles.id, profile.id));
+
+    // The cron read its clock 10 minutes ago, before its other sweeps ran.
+    const sweepStarted = new Date(Date.now() - 10 * 60_000);
+    const before = new Date(Date.now() - 1000);
+    expect((await repo.purgeUnaccepted(sweepStarted)).tombstoned).toBe(1);
+    const [row] = await db
+      .select()
+      .from(schema.coachClientProfiles)
+      .where(eq(schema.coachClientProfiles.id, profile.id));
+    expect(row!.deletedAt!.getTime()).toBeGreaterThanOrEqual(before.getTime());
+    expect(row!.updatedAt.getTime()).toBeGreaterThanOrEqual(before.getTime());
+
+    // So a device that listed during the sweep still hears about it.
+    const asOfDuringSweep = new Date(sweepStarted.getTime() + 5 * 60_000);
+    const list = await http(
+      "GET",
+      `/trainers/me/client-profiles?since=${encodeURIComponent(asOfDuringSweep.toISOString())}`,
+      COACH_A,
+    );
+    expect(list.json.deletedIds).toEqual([profile.id]);
+  });
+
   it("hard-deletes a profile the coach deleted, 30 days after the deletion", async () => {
     const repo = new ClientProfileRepository();
     const profile = await newProfile(COACH_A);
