@@ -1,5 +1,67 @@
 # Project memory · persistence-backend-sst
 
+### 2026-11-20 — BE-A1: client profiles, personal invite codes, set-up, several coaches, coach declaration ([PER-108](https://linear.app/evans-software-solutions/issue/PER-108); branch `bradleysimmsevans/per-108-be-a1-backend-client-profiles`)
+
+Foundation backend for Linear "Backend design A — Coaching relationships and
+client onboarding" (approved 20 Nov). Backend only; no app or native change.
+
+- **Migration** `20261120120000_coaching_relationships_client_profiles.sql`
+  (rollback in `supabase/rollbacks/`). New: `coach_client_profiles` (with a
+  `deleted_at` tombstone so `?since=` can return `deletedIds`),
+  `coach_client_setup_items` (with `materialised_at`/`materialised_ref_id`
+  so accept materialises each item once), `coach_client_settings`,
+  `trainer_declarations`. Added: `trainer_invite_codes.client_profile_id` +
+  `client_request_id`, `pt_client_relationships.activated_at` +
+  `client_profile_id`. RLS on, no policies. Backfills touch active rows only.
+  - ⚠ `trainer_invite_codes_trainer_active_uq` (one active code per trainer)
+    is recreated under the same name with `AND client_profile_id IS NULL`, so a
+    coach can hold a general code plus one personal code per profile. Loosened,
+    never tightened. The general-code create handler now filters
+    `client_profile_id IS NULL` everywhere so it never returns a personal code.
+  - `activated_at` is stamped by a trigger whenever status becomes `active`,
+    so every existing accept path sets it without being edited.
+- **Code** in `microservices/core/src/application/coaching/` +
+  `relationships/resolveCoachScope.ts`, mounted via `coachingRoutes` inside
+  `trainersOnBehalfRoutes` (TS2589). Routes: `/trainers/me/client-profiles`
+  CRUD, `setup/:section`, `setup/copy-from`, `preview`, `invite` POST/DELETE;
+  `/trainers/me/clients/:clientId/settings` GET/PATCH;
+  `/trainers/me/declaration` GET/POST; `GET /invites/:code/preview`;
+  `GET /users/me/coaching`. `GET /trainers/me/clients` gains a sibling
+  `invited`; `data` unchanged.
+- **Accept** (`POST /trainers/accept-invite-code`, request unchanged): a
+  personal code takes `coaching/acceptPersonalCode.ts` (active relationship,
+  consent source `personal_invite_redeem`, settings from set-up, private notes
+  → private `trainer_client_notes`, items materialised). A replay by the same
+  athlete returns 200 with the first result; a race serialises on the code
+  row lock. General codes behave as before plus optional
+  `relationshipStatus: 'pending'`, `ready: null`.
+- **Set-up hook** (`coaching/setupSections.ts`): live sections are
+  `nutrition_target` and `welcome_message` (sent as a `coach_brief`
+  notification until chat ships). `programme` (PER-112), `meal_plan`
+  (PER-118), `starter_form`/`repeating_form` (PER-116), `resource` (PER-122)
+  return 422 `section_unavailable` until their ticket adds a handler to
+  `HANDLERS`. Offboarding marks this coach's profile `ended`; comments mark
+  where C/D/E/I add their teardown.
+- **Declaration**: `COACH_DECLARATION_VERSION` env (infra/api.ts; default
+  `2026-11-v1` in `coaching/declaration.ts`). Gates only the new invite route.
+  `statementTextHash` is an optional, additive request field (the design's
+  body is `{statementVersion}`; the text ships in the app).
+- **Retention**: `ClientProfileRepository.purgeUnaccepted` runs in the nightly
+  `accountPurgeCron` (own try/catch + Sentry). It also covers a profile never
+  sent a code (90 days after creation), which the design didn't spell out.
+- **Invite preview rate limit** reuses the in-memory `leads/rateLimit.ts`
+  (per Lambda container, 30/user/hour): a first line, not a wall.
+- **Tests**: `coaching/__tests__/coaching.integration.test.ts` runs the real
+  migration on PGlite through the real handlers: every D7 item (isolation,
+  wrong role, accept/replay/race/expired/resent/cancelled/exists/seat cap,
+  second coach, 1.2.0 fixture `fixtures/contract-1.2.0.json`, code lifecycle,
+  revision, declaration, migration twice/down/up, retention). Changed files
+  ≥ 90% on all four metrics. Existing queue-mock tests for accept, roster and
+  offboarding were updated for the extra query.
+- **Not done here**: no migration applied to staging/prod; no device test. The
+  1.2.0 accept screen still says "awaiting their acceptance" for a personal
+  code (known gap, D5); the OTA bundle (PER-126) reads `relationshipStatus`.
+
 ### 2026-11-16 — Signed-out account's pushes still reached the phone (branch `claude/confident-cerf-xp8bka`)
 
 Brad reported that after signing out of the account Apple used for App Review,

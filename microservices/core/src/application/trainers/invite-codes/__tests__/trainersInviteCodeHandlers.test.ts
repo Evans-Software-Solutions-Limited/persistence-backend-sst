@@ -65,6 +65,14 @@ vi.mock("../../../relationships/recordDataSharingConsent", () => ({
     recordConsent(...(args as [])),
 }));
 
+// PER-108: personal codes have their own path and integration suite
+// (coaching/__tests__/coaching.integration.test.ts). These tests cover the
+// general-code path, so no code here is personal.
+vi.mock("../../../coaching/acceptPersonalCode", () => ({
+  findPersonalCode: vi.fn(async () => null),
+  acceptPersonalCode: vi.fn(),
+}));
+
 const auth = {
   authorization: "Bearer token",
   "Content-Type": "application/json",

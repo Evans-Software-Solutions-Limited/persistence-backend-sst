@@ -1,5 +1,5 @@
 import Elysia, { t } from "elysia";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import {
   trainerInviteCodes,
   ptClientRelationships,
@@ -19,6 +19,11 @@ import {
   notifyTrainerClientLimitReached,
 } from "../seats/trainerSeats";
 import { recordDataSharingConsent } from "../../relationships/recordDataSharingConsent";
+import {
+  acceptPersonalCode,
+  findPersonalCode,
+} from "../../coaching/acceptPersonalCode";
+import type { AcceptPreview } from "../../coaching/setupSections";
 
 /**
  * POST /trainers/accept-invite-code — client enters a trainer's invite code
@@ -55,6 +60,12 @@ import { recordDataSharingConsent } from "../../relationships/recordDataSharingC
 type AcceptInviteCodeTxResult =
   | {
       ok: true;
+      // PER-108: a personal code activates straight away and brings the
+      // coach's set-up with it; a general code is pending, as before.
+      kind: "general" | "personal";
+      replay?: boolean;
+      ready?: AcceptPreview;
+      afterCommit?: (() => Promise<void>)[];
       relationshipId: string;
       trainerId: string;
       trainerName: string;
@@ -104,7 +115,29 @@ export const trainersAcceptInviteCodeHandler = new Elysia()
 
       const result = await db.transaction(
         async (tx): Promise<AcceptInviteCodeTxResult> => {
-          // Find the active, unexpired code
+          // PER-108 (design A D4): a PERSONAL code (tied to one invited
+          // profile) activates the relationship and materialises the set-up.
+          const personal = await findPersonalCode(tx, normalizedCode, userId);
+          if (personal) {
+            const outcome = await acceptPersonalCode(
+              tx,
+              personal,
+              userId,
+              consentVersion,
+            );
+            if ("ok" in outcome) {
+              ctx.set.status = outcome.replay ? 200 : 201;
+              return { ...outcome, kind: "personal" as const };
+            }
+            if ("capReject" in outcome) {
+              ctx.set.status = 409;
+              return outcome;
+            }
+            ctx.set.status = outcome.status;
+            return { code: outcome.code, message: outcome.message };
+          }
+
+          // Find the active, unexpired GENERAL code
           const codeRows = await tx
             .select({
               id: trainerInviteCodes.id,
@@ -116,6 +149,7 @@ export const trainersAcceptInviteCodeHandler = new Elysia()
                 eq(trainerInviteCodes.code, normalizedCode),
                 eq(trainerInviteCodes.status, "active"),
                 sql`${trainerInviteCodes.expiresAt} > NOW()`,
+                isNull(trainerInviteCodes.clientProfileId),
               ),
             )
             .limit(1);
@@ -293,6 +327,7 @@ export const trainersAcceptInviteCodeHandler = new Elysia()
           ctx.set.status = 201;
           return {
             ok: true as const,
+            kind: "general" as const,
             relationshipId,
             trainerId,
             trainerName,
@@ -306,6 +341,23 @@ export const trainersAcceptInviteCodeHandler = new Elysia()
       // commits, so a rollback can't leave an orphan notification. Best-effort:
       // a notification failure must not fail an otherwise-successful join — the
       // relationship already exists and the trainer can still see it.
+      if ("ok" in result && result.kind === "personal") {
+        // A replay already notified everyone the first time.
+        if (!result.replay) {
+          await notifyPersonalAccept(result);
+        }
+        return {
+          data: {
+            success: true,
+            relationshipId: result.relationshipId,
+            trainerName: result.trainerName,
+            message: `You're now connected with ${result.trainerName}`,
+            relationshipStatus: "active" as const,
+            ready: result.ready ?? null,
+          },
+        };
+      }
+
       if ("ok" in result) {
         const isPhysio = result.trainerRole === "physiotherapist";
         try {
@@ -341,6 +393,9 @@ export const trainersAcceptInviteCodeHandler = new Elysia()
             relationshipId: result.relationshipId,
             trainerName: result.trainerName,
             message: `Training request sent to ${result.trainerName}`,
+            // PER-108: optional, additive. 1.2.0 bundles ignore both.
+            relationshipStatus: "pending" as const,
+            ready: null,
           },
         };
       }
@@ -368,3 +423,41 @@ export const trainersAcceptInviteCodeHandler = new Elysia()
       }),
     },
   );
+
+/**
+ * After a personal code commits: tell the coach their invited client joined,
+ * then run each area's post-commit work (the welcome push today; form pushes
+ * and chat provisioning as designs C and E land). Best-effort throughout — the
+ * relationship already exists, so nothing here may fail the accept.
+ */
+async function notifyPersonalAccept(result: {
+  relationshipId: string;
+  trainerId: string;
+  trainerRole: string | null;
+  clientName: string;
+  afterCommit?: (() => Promise<void>)[];
+}): Promise<void> {
+  const isPhysio = result.trainerRole === "physiotherapist";
+  try {
+    await new NotificationDispatcher().createAndDispatch(result.trainerId, {
+      type: isPhysio ? "physio_accepted" : "pt_accepted",
+      title: "Client accepted",
+      message: `${result.clientName} accepted your invite`,
+      relatedEntityType: "pt_relationship",
+      relatedEntityId: result.relationshipId,
+      data: {
+        deeplink: "persistencemobile://clients",
+        relationship_id: result.relationshipId,
+      },
+    });
+  } catch (err) {
+    console.error("[accept-invite-code] failed to notify coach", err);
+  }
+  for (const step of result.afterCommit ?? []) {
+    try {
+      await step();
+    } catch (err) {
+      console.error("[accept-invite-code] post-commit step failed", err);
+    }
+  }
+}

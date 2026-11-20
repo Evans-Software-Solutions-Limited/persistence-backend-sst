@@ -8,6 +8,7 @@ import { aiJobMaintenanceSweep } from "./application/jobs/aiJobMaintenanceSweep"
 import { AiJobRepository } from "./application/jobs/aiJobRepository";
 import { dataRetentionSweep } from "./application/retention/dataRetentionSweep";
 import { DataRetentionRepository } from "./application/retention/dataRetentionRepository";
+import { ClientProfileRepository } from "./application/coaching/clientProfileRepository";
 
 /**
  * Nightly account-purge sweep — scheduled via `sst.aws.Cron` in
@@ -85,6 +86,21 @@ async function baseHandler(): Promise<{
     // a published legal claim false.
     console.error("[data-retention] sweep threw unexpectedly:", err);
     captureFatal(err, { sweep: "data-retention" });
+  }
+
+  // PER-108 (design A D1): invited client profiles that were never accepted
+  // hold a non-user's contact details, so they go 90 days after they were
+  // cancelled, deleted or their last code expired. Same isolation as above.
+  try {
+    const purgedProfiles = await new ClientProfileRepository().purgeUnaccepted(
+      now,
+    );
+    console.log(
+      `[coach-client-profiles-retention:summary] ${JSON.stringify({ purged: purgedProfiles })}`,
+    );
+  } catch (err) {
+    console.error("[coach-client-profiles-retention] sweep threw:", err);
+    captureFatal(err, { sweep: "coach-client-profiles-retention" });
   }
 
   return summary;
