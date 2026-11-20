@@ -359,6 +359,98 @@ describe("Design D test 3 — replay", () => {
     expect(await entryCount(USER_A)).toBe(0);
   });
 
+  // Inspector Brad, second sweep on #542: only the FIRST reference present
+  // was checked, yet all three were stored as sent. A second, unchecked id
+  // then failed the uuid cast or the foreign key inside the insert (a 500 on
+  // every re-send), or stored another user's recipe id unchecked.
+  describe("an entry carrying more than one reference", () => {
+    async function ownFood(): Promise<string> {
+      const res = await pg.query<{ id: string }>(
+        `INSERT INTO foods (name, kcal, protein_g, carbs_g, fat_g, serving_size, serving_unit, source, created_by)
+         VALUES ('Oats', 150, 5, 27, 3, 40, 'g', 'user', $1) RETURNING id`,
+        [USER_A],
+      );
+      return res.rows[0]!.id;
+    }
+    function refEntry(refs: Record<string, string>) {
+      return oldShapeEntry({
+        ...refs,
+        kcal: undefined,
+        proteinG: undefined,
+        carbsG: undefined,
+        fatG: undefined,
+        customName: undefined,
+      });
+    }
+
+    it.each([
+      ["a local meal id", { mealId: "local-meal-9" }],
+      [
+        "an unknown recipe uuid",
+        { recipeId: "22222222-2222-4222-8222-222222222222" },
+      ],
+    ])(
+      "beside a valid food, %s is not stored and doesn't fail the batch",
+      async (_label, extra) => {
+        const foodId = await ownFood();
+        const batch = {
+          entries: [
+            {
+              ...oldShapeEntry({ customName: "Before" }),
+              clientRequestId: "r-1",
+            },
+            { ...refEntry({ foodId, ...extra }), clientRequestId: "r-2" },
+            {
+              ...oldShapeEntry({ customName: "After" }),
+              clientRequestId: "r-3",
+            },
+          ],
+        };
+        const res = await call("A", "POST", "/nutrition/entries/batch", batch);
+        expect(res.status).toBe(200);
+        const [, middle, after] = res.json.data.results;
+        expect(middle.entry).toMatchObject({
+          foodId,
+          recipeId: null,
+          mealId: null,
+          kcal: 150,
+        });
+        expect(after.entry.customName).toBe("After");
+        expect(await entryCount(USER_A)).toBe(3);
+      },
+    );
+
+    it("never stores another user's recipe id beside the caller's own food", async () => {
+      const foodId = await ownFood();
+      const bRecipe = await pg.query<{ id: string }>(
+        `INSERT INTO recipes (user_id, name, servings, total_kcal, total_protein_g, total_carbs_g, total_fat_g)
+         VALUES ($1, 'B secret', 1, 100, 1, 1, 1) RETURNING id`,
+        [USER_B],
+      );
+      const res = await call(
+        "A",
+        "POST",
+        "/nutrition/entries",
+        refEntry({ foodId, recipeId: bRecipe.rows[0]!.id }),
+      );
+      expect(res.status).toBe(201);
+      expect(res.json.data.recipeId).toBeNull();
+      const row = await pg.query(`SELECT recipe_id FROM nutrition_entries`);
+      expect(row.rows).toEqual([{ recipe_id: null }]);
+    });
+
+    it("treats an empty foodId as no reference: a one-off with its own macros", async () => {
+      const res = await call(
+        "A",
+        "POST",
+        "/nutrition/entries",
+        oldShapeEntry({ foodId: "" }),
+      );
+      expect(res.status).toBe(201);
+      expect(res.json.data).toMatchObject({ foodId: null, kcal: 450 });
+    });
+  });
+
   it("stores plan provenance from a batch, and drops a local plan id rather than failing", async () => {
     const planId = "11111111-1111-4111-8111-111111111111";
     const res = await call("A", "POST", "/nutrition/entries/batch", {

@@ -77,6 +77,15 @@ plans, coach plans, recipe sharing and the shopping list are PER-118.
   unexpected errors (a DB outage) still 500 the batch on purpose. A per-entry
   200 would tell the phone to give up on entries that would succeed on retry,
   and the batch is safe to re-send.
+- **Second Inspector Brad sweep, one lead, confirmed and fixed:** only the
+  FIRST reference present (food → recipe → meal) was checked, but all three
+  ids were stored as sent. So `{foodId, mealId: "local-…"}` or a second,
+  unknown uuid failed the insert (22P02 or 23503): a 500 on every re-send.
+  `foodId: ""` slipped past the truthy check, and another user's `recipeId`
+  beside the caller's own food was stored without an ownership check
+  (pre-existing on the single POST). Reproduced on PGlite. Now only the
+  reference the macros came from is stored; the others are dropped, and an
+  empty string counts as no reference.
 
 ### 2026-11-16 — Signed-out account's pushes still reached the phone (branch `claude/confident-cerf-xp8bka`)
 

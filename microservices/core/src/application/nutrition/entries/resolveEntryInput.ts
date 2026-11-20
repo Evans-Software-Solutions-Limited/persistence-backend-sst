@@ -120,23 +120,34 @@ export async function resolveEntryInput(
     return { ok: false, error: "invalid_logged_at" };
   }
 
+  // Only the reference the macros come from is stored: the first present of
+  // food → recipe → meal, the same precedence as the derivation below. Any
+  // other id sent beside it was never checked (format or ownership), so it is
+  // dropped rather than stored — storing it let a stale id fail the insert
+  // (a 500 on every re-send) and let another user's recipe id be stored
+  // unchecked (Inspector Brad, #542). An empty string is no reference.
+  const foodId = body.foodId || null;
+  const recipeId = foodId === null ? body.recipeId || null : null;
+  const mealId =
+    foodId === null && recipeId === null ? body.mealId || null : null;
+
   let kcal = body.kcal;
   let proteinG = body.proteinG;
   let carbsG = body.carbsG;
   let fatG = body.fatG;
 
-  if (body.foodId) {
-    const food = isUuid(body.foodId)
-      ? await repos.FoodRepository.getById(body.foodId, userId)
+  if (foodId !== null) {
+    const food = isUuid(foodId)
+      ? await repos.FoodRepository.getById(foodId, userId)
       : null;
     if (!food) return { ok: false, error: "food_not_found" };
     kcal = food.kcal * body.servings;
     proteinG = food.proteinG * body.servings;
     carbsG = food.carbsG * body.servings;
     fatG = food.fatG * body.servings;
-  } else if (body.recipeId) {
-    const recipe = isUuid(body.recipeId)
-      ? await repos.RecipeRepository.getById(body.recipeId, userId)
+  } else if (recipeId !== null) {
+    const recipe = isUuid(recipeId)
+      ? await repos.RecipeRepository.getById(recipeId, userId)
       : null;
     if (!recipe) return { ok: false, error: "recipe_not_found" };
     // A 0/invalid servings count falls back to 1 to avoid divide-by-zero.
@@ -146,9 +157,9 @@ export async function resolveEntryInput(
     proteinG = (recipe.totalProteinG ?? 0) * factor;
     carbsG = (recipe.totalCarbsG ?? 0) * factor;
     fatG = (recipe.totalFatG ?? 0) * factor;
-  } else if (body.mealId) {
-    const meal = isUuid(body.mealId)
-      ? await repos.MealRepository.getById(body.mealId, userId)
+  } else if (mealId !== null) {
+    const meal = isUuid(mealId)
+      ? await repos.MealRepository.getById(mealId, userId)
       : null;
     if (!meal) return { ok: false, error: "meal_not_found" };
     kcal = meal.totalKcal * body.servings;
@@ -182,9 +193,9 @@ export async function resolveEntryInput(
   return {
     ok: true,
     input: {
-      foodId: body.foodId ?? null,
-      recipeId: body.recipeId ?? null,
-      mealId: body.mealId ?? null,
+      foodId,
+      recipeId,
+      mealId,
       mealSlot,
       servings: body.servings,
       kcal,
