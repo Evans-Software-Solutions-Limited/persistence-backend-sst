@@ -3137,9 +3137,13 @@ ${indentSyncQueueDdl(12)}
       `SELECT server_id FROM training_log_ids WHERE local_id = ?`,
       [saved.id],
     ) as { server_id: string } | null;
-    const session = linked
-      ? renameSession(saved, saved.id, linked.server_id)
-      : saved;
+    // A Together finish never goes through POST /sessions/record: its
+    // confirmed server id arrives as `together.historyId` instead.
+    const serverId = saved.together?.historyId ?? linked?.server_id;
+    const session =
+      serverId && serverId !== saved.id
+        ? renameSession(saved, saved.id, serverId)
+        : saved;
     this.getDb().runSync(
       `INSERT INTO training_log (id, user_id, started_at, payload, updated_at)
        VALUES (?, ?, ?, ?, ?)
@@ -3156,6 +3160,15 @@ ${indentSyncQueueDdl(12)}
         new Date().toISOString(),
       ],
     );
+    // The log covers the phone from its earliest workout: a workout saved
+    // before any screen first read the log must not postdate `since`.
+    const since = this.getTrainingLogSince(userId);
+    if (since == null || Date.parse(session.startedAt) < Date.parse(since))
+      this.getDb().runSync(
+        `INSERT INTO training_log_since (user_id, since) VALUES (?, ?)
+         ON CONFLICT(user_id) DO UPDATE SET since = excluded.since`,
+        [userId, session.startedAt],
+      );
   }
 
   linkTrainingLogSessionId(localId: string, serverId: string): void {

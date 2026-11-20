@@ -132,6 +132,44 @@ describe.each([
     expect(s.getTrainingLogEntry("u1", "srv-1")).not.toBeNull();
   });
 
+  it("keeps a Together workout under its confirmed server id (Inspector Brad #541)", () => {
+    s.saveTrainingLogEntry(
+      "u1",
+      finished("local-t", 22, {
+        together: { sessionId: "t", executionId: "x", historyId: "srv-t" },
+      }),
+    );
+    expect(s.getTrainingLogEntry("u1", "local-t")).toBeNull();
+    const entry = s.getTrainingLogEntry("u1", "srv-t")!;
+    expect(entry.id).toBe("srv-t");
+    expect(entry.exercises[0]!.sessionId).toBe("srv-t");
+    // Not yet confirmed: stays local until a link arrives.
+    s.saveTrainingLogEntry(
+      "u1",
+      finished("local-u", 23, {
+        together: { sessionId: "t", executionId: "y" },
+      }),
+    );
+    expect(s.getTrainingLogEntry("u1", "local-u")).not.toBeNull();
+  });
+
+  it("pulls the log's start back to its earliest workout (Inspector Brad #541)", () => {
+    // Finished on the 18th; no screen had read the log yet.
+    s.saveTrainingLogEntry("u1", finished("a", 18));
+    expect(s.getTrainingLogSince("u1")).toBe(finished("a", 18).startedAt);
+    // Opening You on the 20th doesn't move it later.
+    s.markTrainingLogSince("u1", "2026-10-20T10:00:00.000Z");
+    expect(s.getTrainingLogSince("u1")).toBe(finished("a", 18).startedAt);
+    // A later workout leaves it; an earlier one (logged after the fact) moves it.
+    s.saveTrainingLogEntry("u1", finished("b", 22));
+    expect(s.getTrainingLogSince("u1")).toBe(finished("a", 18).startedAt);
+    s.saveTrainingLogEntry("u1", finished("c", 10));
+    expect(s.getTrainingLogSince("u1")).toBe(finished("c", 10).startedAt);
+    // An unfinished workout never moves it.
+    s.saveTrainingLogEntry("u1", finished("d", 1, { status: "cancelled" }));
+    expect(s.getTrainingLogSince("u1")).toBe(finished("c", 10).startedAt);
+  });
+
   it("stamps when the log started, once", () => {
     expect(s.getTrainingLogSince("u1")).toBeNull();
     s.markTrainingLogSince("u1", "2026-11-20T10:00:00Z");

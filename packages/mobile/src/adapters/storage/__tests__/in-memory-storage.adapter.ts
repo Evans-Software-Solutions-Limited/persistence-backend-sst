@@ -1103,22 +1103,27 @@ export class InMemoryStorageAdapter implements StoragePort {
 
   saveTrainingLogEntry(userId: string, saved: WorkoutSession): void {
     if (saved.status !== "completed" || saved.withClient) return;
-    const serverId = this.trainingLogIds.get(saved.id);
-    const session = serverId
-      ? {
-          ...saved,
-          id: serverId,
-          exercises: saved.exercises.map((ex) =>
-            ex.sessionId === saved.id ? { ...ex, sessionId: serverId } : ex,
-          ),
-        }
-      : saved;
+    const serverId =
+      saved.together?.historyId ?? this.trainingLogIds.get(saved.id);
+    const session =
+      serverId && serverId !== saved.id
+        ? {
+            ...saved,
+            id: serverId,
+            exercises: saved.exercises.map((ex) =>
+              ex.sessionId === saved.id ? { ...ex, sessionId: serverId } : ex,
+            ),
+          }
+        : saved;
     const prior = this.trainingLog.get(session.id);
     if (prior && prior.__owner !== userId) return;
     this.trainingLog.set(session.id, {
       ...cloneSession(session),
       __owner: userId,
     });
+    const since = this.trainingLogSince.get(userId);
+    if (since == null || Date.parse(session.startedAt) < Date.parse(since))
+      this.trainingLogSince.set(userId, session.startedAt);
   }
 
   linkTrainingLogSessionId(localId: string, serverId: string): void {
