@@ -1431,12 +1431,28 @@ describe("invited profiles", () => {
       COACH_A,
     );
     expect(since.json.deletedIds).toEqual([gone.id]);
+    // asOf sits a safety margin behind the server clock, so a write that
+    // was still open while the list ran (its updated_at stamped earlier than
+    // the list, committed after it) is read again on the next sync.
+    expect(Date.parse(all.json.asOf)).toBeLessThan(Date.now() - 60_000);
+    await db
+      .update(schema.coachClientProfiles)
+      .set({ goal: "committed late", updatedAt: new Date(Date.now() - 10_000) })
+      .where(eq(schema.coachClientProfiles.id, keep.id));
     const later = await http(
       "GET",
       `/trainers/me/client-profiles?since=${encodeURIComponent(all.json.asOf)}`,
       COACH_A,
     );
-    expect(later.json.data).toEqual([]);
+    expect(later.json.data).toEqual([
+      expect.objectContaining({ id: keep.id, goal: "committed late" }),
+    ]);
+    const muchLater = await http(
+      "GET",
+      `/trainers/me/client-profiles?since=${encodeURIComponent(new Date(Date.now() + 60_000).toISOString())}`,
+      COACH_A,
+    );
+    expect(muchLater.json.data).toEqual([]);
     const bad = await http(
       "GET",
       "/trainers/me/client-profiles?since=nope",
@@ -1738,6 +1754,18 @@ describe("GET /users/me/coaching", () => {
 // ─── D7.10 Retention ─────────────────────────────────────────────────────────
 
 describe("retention purge", () => {
+  it("purging the athlete's account takes their accepted profile with it", async () => {
+    const { profile, code } = await readyCode();
+    await accept(ATHLETE_E, code);
+    const other = await newProfile(COACH_A, { displayName: "Someone else" });
+    // The account purge's last step (ACCOUNT_DELETION_STEPS) deletes the
+    // profiles row; the relationship, settings and notes cascade from it.
+    await db.delete(schema.profiles).where(eq(schema.profiles.id, ATHLETE_E));
+    const left = await db.select().from(schema.coachClientProfiles);
+    expect(left.map((p) => p.id)).toEqual([other.id]);
+    expect(left.map((p) => p.id)).not.toContain(profile.id);
+  });
+
   it("deletes never-accepted profiles after 90 days and never accepted ones", async () => {
     const repo = new ClientProfileRepository();
     const { profile: accepted, code } = await readyCode();
@@ -1764,11 +1792,58 @@ describe("retention purge", () => {
       .update(schema.trainerInviteCodes)
       .set({ expiresAt: old, createdAt: old });
 
-    expect(await repo.purgeUnaccepted(new Date())).toBe(3);
+    const t0 = new Date(Date.now() - 1000).toISOString();
+    const now = new Date();
+    expect(await repo.purgeUnaccepted(now)).toEqual({
+      tombstoned: 3,
+      purged: 0,
+    });
+
+    // Phase A: hidden, scrubbed, and reported to syncing devices.
+    const list = await http(
+      "GET",
+      `/trainers/me/client-profiles?since=${encodeURIComponent(t0)}`,
+      COACH_A,
+    );
+    expect(list.json.deletedIds.sort()).toEqual(
+      [cancelled.id, neverSent.id, expired.id].sort(),
+    );
+    const scrubbed = await db
+      .select()
+      .from(schema.coachClientProfiles)
+      .where(eq(schema.coachClientProfiles.id, neverSent.id));
+    expect(scrubbed[0]).toMatchObject({
+      displayName: "Removed",
+      contactEmail: null,
+      contactPhone: null,
+      goal: null,
+      privateNotes: null,
+    });
+    // Running again changes nothing until the tombstones age.
+    expect(await repo.purgeUnaccepted(now)).toEqual({
+      tombstoned: 0,
+      purged: 0,
+    });
+
+    // Phase B: 30 days on, the tombstones go for good.
+    const later = new Date(now.getTime() + 31 * 86400_000);
+    expect(await repo.purgeUnaccepted(later)).toEqual({
+      tombstoned: 0,
+      purged: 3,
+    });
     const left = (await db.select().from(schema.coachClientProfiles)).map(
       (p) => p.id,
     );
     expect(left.sort()).toEqual([accepted.id, fresh.id].sort());
+  });
+
+  it("hard-deletes a profile the coach deleted, 30 days after the deletion", async () => {
+    const repo = new ClientProfileRepository();
+    const profile = await newProfile(COACH_A);
+    await http("DELETE", `/trainers/me/client-profiles/${profile.id}`, COACH_A);
+    expect((await repo.purgeUnaccepted(new Date())).purged).toBe(0);
+    const later = new Date(Date.now() + 31 * 86400_000);
+    expect((await repo.purgeUnaccepted(later)).purged).toBe(1);
   });
 });
 
@@ -1837,6 +1912,12 @@ describe(MIGRATION, () => {
     // Twice: a no-op.
     await m.exec(mig);
     expect(await snapshot()).toEqual(first);
+
+    // Purging an athlete's account removes an accepted profile (CASCADE).
+    const fk = await m.query<{ confdeltype: string }>(
+      `select confdeltype from pg_constraint where conname = 'coach_client_profiles_client_id_fkey'`,
+    );
+    expect(fk.rows).toEqual([{ confdeltype: "c" }]);
 
     // RLS on, no policies, on every new table.
     const rls = await m.query<{ relname: string; relrowsecurity: boolean }>(

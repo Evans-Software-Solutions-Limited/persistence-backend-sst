@@ -1871,8 +1871,10 @@ export const coachClientProfiles = pgTable(
     privateNotes: text("private_notes"),
     // 'invited' | 'active' | 'cancelled' | 'ended'
     status: text("status").notNull().default("invited"),
+    // CASCADE: purging the athlete's account must take the accepted profile
+    // (their name, contact details, the coach's notes) with it.
     clientId: uuid("client_id").references(() => profiles.id, {
-      onDelete: "set null",
+      onDelete: "cascade",
     }),
     relationshipId: uuid("relationship_id").references(
       (): AnyPgColumn => ptClientRelationships.id,

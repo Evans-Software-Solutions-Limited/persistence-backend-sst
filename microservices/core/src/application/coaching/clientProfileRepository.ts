@@ -42,6 +42,18 @@ import {
 
 export const PERSONAL_CODE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 export const UNACCEPTED_PROFILE_RETENTION_DAYS = 90;
+/** How long a tombstone stays for offline devices before it is hard-deleted. */
+export const TOMBSTONE_SYNC_DAYS = 30;
+/** What a purged profile's name becomes while its tombstone remains. */
+export const SCRUBBED_DISPLAY_NAME = "Removed";
+/**
+ * `asOf` on a `?since=` list is moved back by this much. Writers stamp
+ * `updated_at` before they commit, so a write still open while the list runs
+ * can commit with an `updated_at` earlier than the list's clock. Moving `asOf`
+ * back past any such transaction (the API Lambda times out at 29 s) means the
+ * next sync re-reads it. Clients upsert by id, so a repeated row is harmless.
+ */
+export const AS_OF_SAFETY_MARGIN_MS = 2 * 60 * 1000;
 
 const TRAINER_ROLES = new Set(["personal_trainer", "physiotherapist", "admin"]);
 const UUID_RE =
@@ -267,7 +279,7 @@ export class ClientProfileRepository {
     opts: { status?: string; since?: Date },
   ): Promise<{ data: ClientProfileDTO[]; deletedIds: string[]; asOf: string }> {
     const db = getDb();
-    const asOf = new Date();
+    const asOf = new Date(Date.now() - AS_OF_SAFETY_MARGIN_MS);
     const live = await db
       .select()
       .from(coachClientProfiles)
@@ -827,35 +839,73 @@ export class ClientProfileRepository {
 
   /**
    * Retention (design A D1): a profile that was never accepted holds a
-   * non-user's contact details, so it is deleted 90 days after it was
-   * cancelled, deleted, or its last code expired — or, if no code was ever
-   * issued, 90 days after it was created. Accepted profiles are never touched.
+   * non-user's contact details, so 90 days after it was cancelled or its last
+   * code expired — or, if no code was ever issued, 90 days after it was
+   * created — the personal data goes. Accepted profiles are never touched.
+   *
+   * Two phases, so offline devices hear about it (Inspector Brad, #540):
+   *   A. a visible profile past the window is TOMBSTONED (`deleted_at`) and
+   *      its personal fields are scrubbed at once, so a coach's phone syncing
+   *      with `?since=` gets its id in `deletedIds`;
+   *   B. a tombstone older than `TOMBSTONE_SYNC_DAYS` is hard-deleted. That
+   *      also covers profiles the coach deleted themselves.
    */
-  async purgeUnaccepted(now: Date): Promise<number> {
+  async purgeUnaccepted(
+    now: Date,
+  ): Promise<{ tombstoned: number; purged: number }> {
+    const day = 24 * 60 * 60 * 1000;
     const cutoff = new Date(
-      now.getTime() - UNACCEPTED_PROFILE_RETENTION_DAYS * 24 * 60 * 60 * 1000,
+      now.getTime() - UNACCEPTED_PROFILE_RETENTION_DAYS * day,
     );
-    // GREATEST ignores NULLs: the latest of created, cancelled, deleted and
-    // the last code's expiry must be older than the cutoff.
+    const tombstoneCutoff = new Date(now.getTime() - TOMBSTONE_SYNC_DAYS * day);
+    const neverAccepted = and(
+      isNull(coachClientProfiles.acceptedAt),
+      isNull(coachClientProfiles.relationshipId),
+      inArray(coachClientProfiles.status, ["invited", "cancelled"]),
+    );
+    // GREATEST ignores NULLs: the latest of created, cancelled and the last
+    // code's expiry must be older than the cutoff.
     const lastCodeExpiry = sql`(
       SELECT max(${trainerInviteCodes.expiresAt}) FROM ${trainerInviteCodes}
        WHERE ${trainerInviteCodes.clientProfileId} = ${coachClientProfiles.id}
     )`;
-    const deleted = await getDb()
-      .delete(coachClientProfiles)
+    const db = getDb();
+
+    const tombstoned = await db
+      .update(coachClientProfiles)
+      .set({
+        deletedAt: now,
+        updatedAt: now,
+        displayName: SCRUBBED_DISPLAY_NAME,
+        contactEmail: null,
+        contactPhone: null,
+        goal: null,
+        privateNotes: null,
+      })
       .where(
         and(
-          isNull(coachClientProfiles.acceptedAt),
-          isNull(coachClientProfiles.relationshipId),
-          inArray(coachClientProfiles.status, ["invited", "cancelled"]),
+          neverAccepted,
+          isNull(coachClientProfiles.deletedAt),
           lt(
-            sql`GREATEST(${coachClientProfiles.createdAt}, ${coachClientProfiles.cancelledAt}, ${coachClientProfiles.deletedAt}, ${lastCodeExpiry})`,
+            sql`GREATEST(${coachClientProfiles.createdAt}, ${coachClientProfiles.cancelledAt}, ${lastCodeExpiry})`,
             cutoff,
           ),
         ),
       )
       .returning({ id: coachClientProfiles.id });
-    return deleted.length;
+
+    const purged = await db
+      .delete(coachClientProfiles)
+      .where(
+        and(
+          neverAccepted,
+          isNotNull(coachClientProfiles.deletedAt),
+          lt(coachClientProfiles.deletedAt, tombstoneCutoff),
+        ),
+      )
+      .returning({ id: coachClientProfiles.id });
+
+    return { tombstoned: tombstoned.length, purged: purged.length };
   }
 }
 

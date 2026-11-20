@@ -28,7 +28,10 @@ CREATE TABLE IF NOT EXISTS coach_client_profiles (
   private_notes     text CHECK (private_notes IS NULL OR char_length(private_notes) <= 4000),
   status            text NOT NULL DEFAULT 'invited'
                       CHECK (status IN ('invited', 'active', 'cancelled', 'ended')),
-  client_id         uuid REFERENCES profiles(id) ON DELETE SET NULL,
+  -- CASCADE, not SET NULL: once the athlete's account is purged, an accepted
+  -- profile still holding their name, contact details and the coach's notes
+  -- would outlive the erasure (the unaccepted-profile purge skips it).
+  client_id         uuid REFERENCES profiles(id) ON DELETE CASCADE,
   relationship_id   uuid REFERENCES pt_client_relationships(id) ON DELETE SET NULL,
   accepted_at       timestamptz,
   cancelled_at      timestamptz,
@@ -40,6 +43,14 @@ CREATE TABLE IF NOT EXISTS coach_client_profiles (
   created_at        timestamptz NOT NULL DEFAULT now(),
   updated_at        timestamptz NOT NULL DEFAULT now()
 );
+
+-- A database that ran an earlier draft of this migration has the client_id
+-- FK as SET NULL. Re-point it to CASCADE; a no-op re-create otherwise.
+ALTER TABLE coach_client_profiles
+  DROP CONSTRAINT IF EXISTS coach_client_profiles_client_id_fkey;
+ALTER TABLE coach_client_profiles
+  ADD CONSTRAINT coach_client_profiles_client_id_fkey
+  FOREIGN KEY (client_id) REFERENCES profiles(id) ON DELETE CASCADE;
 
 CREATE UNIQUE INDEX IF NOT EXISTS coach_client_profiles_client_request_uq
   ON coach_client_profiles (trainer_id, client_request_id);

@@ -92,11 +92,10 @@ async function baseHandler(): Promise<{
   // hold a non-user's contact details, so they go 90 days after they were
   // cancelled, deleted or their last code expired. Same isolation as above.
   try {
-    const purgedProfiles = await new ClientProfileRepository().purgeUnaccepted(
-      now,
-    );
+    const profileRetention =
+      await new ClientProfileRepository().purgeUnaccepted(now);
     console.log(
-      `[coach-client-profiles-retention:summary] ${JSON.stringify({ purged: purgedProfiles })}`,
+      `[coach-client-profiles-retention:summary] ${JSON.stringify(profileRetention)}`,
     );
   } catch (err) {
     console.error("[coach-client-profiles-retention] sweep threw:", err);

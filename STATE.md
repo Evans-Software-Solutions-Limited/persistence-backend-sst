@@ -49,6 +49,7 @@ client onboarding" (approved 20 Nov). Backend only; no app or native change.
 - **Retention**: `ClientProfileRepository.purgeUnaccepted` runs in the nightly
   `accountPurgeCron` (own try/catch + Sentry). It also covers a profile never
   sent a code (90 days after creation), which the design didn't spell out.
+  See the second-sweep note below for the two-phase change.
 - **Invite preview rate limit** reuses the in-memory `leads/rateLimit.ts`
   (per Lambda container, 30/user/hour): a first line, not a wall.
 - **Tests**: `coaching/__tests__/coaching.integration.test.ts` runs the real
@@ -67,6 +68,18 @@ client onboarding" (approved 20 Nov). Backend only; no app or native change.
     and delete locked profile → code (deadlock risk, 40P01). They now lock
     the profile's live codes first (`lockActiveCodes`). A test records the
     `FOR UPDATE` order on all four paths; it fails on the old code.
+- **Inspector Brad second sweep (ec840cd), three leads, all confirmed and fixed:**
+  - `coach_client_profiles.client_id` is now `ON DELETE CASCADE` (the design
+    said SET NULL). Otherwise an accepted profile kept a purged athlete's
+    name, contact details and the coach's notes forever. The migration also
+    re-points the constraint, for any database that ran the earlier draft.
+  - The retention purge is two-phase. It tombstones and scrubs the personal
+    fields at 90 days, so `?since=` reports the id in `deletedIds`, then
+    hard-deletes tombstones after 30 days. The cron log now has
+    `{tombstoned, purged}`. A coach-deleted profile now goes 30 days after
+    the deletion (was 90).
+  - `asOf` on the profiles list is 2 minutes behind the server clock, so a
+    write still open during the list is re-read on the next sync.
 - **Not done here**: no migration applied to staging/prod; no device test. The
   1.2.0 accept screen still says "awaiting their acceptance" for a personal
   code (known gap, D5); the OTA bundle (PER-126) reads `relationshipStatus`.
