@@ -1,4 +1,4 @@
-import { fireEvent } from "@testing-library/react-native";
+import { act, fireEvent } from "@testing-library/react-native";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 import { muscleCredit } from "@/domain/services/trainingMetrics/muscleCredit";
 import { bodyMapShading } from "@/domain/services/youPage";
@@ -127,5 +127,60 @@ describe("RecapPresenter (Y4)", () => {
     });
     expect(q.queryAllByTestId(/^recap-dot-/)).toHaveLength(1);
     expect(q.getByTestId("recap-coverage")).toBeTruthy();
+  });
+});
+
+describe("RecapPresenter swiping", () => {
+  it("a swipe moves the page without the release counting as a tap", () => {
+    const { p, q } = setup();
+    const carousel = q.UNSAFE_getByType(
+      jest.requireMock("react-native-reanimated-carousel").default,
+    );
+    // A swipe lands on page 3: the release press must not page on again.
+    act(() => {
+      carousel.props.onScrollStart();
+      carousel.props.onSnapToItem(2);
+    });
+    fireEvent.press(q.getByTestId("recap-page-lifts"));
+    fireEvent.press(q.getByTestId("recap-share"));
+    expect(p.onShare).toHaveBeenLastCalledWith(pages[2]);
+    // Once it settles, a tap pages again.
+    act(() => carousel.props.onScrollEnd());
+    fireEvent.press(q.getByTestId("recap-page-lifts"));
+    fireEvent.press(q.getByTestId("recap-share"));
+    expect(p.onShare).toHaveBeenLastCalledWith(pages[3]);
+  });
+
+  it("draws an empty bar when every share is zero", () => {
+    const { q } = setup({
+      pages: [
+        {
+          kind: "muscles",
+          id: "muscles",
+          eyebrow: "x",
+          shading: { regions: [], accessibilityLabel: "x" },
+          rows: [{ label: "Back", share: 0 }],
+        },
+      ],
+    });
+    expect(q.getByText("0%")).toBeTruthy();
+  });
+
+  it("waits for a size before drawing the pages", () => {
+    const q = renderWithTheme(
+      <RecapPresenter
+        period="month"
+        pages={pages}
+        gender="female"
+        coverageNote={null}
+        onPeriod={jest.fn()}
+        onClose={jest.fn()}
+        onShare={jest.fn()}
+      />,
+    );
+    fireEvent(q.getByTestId("recap-pages"), "layout", {
+      nativeEvent: { layout: { width: 0, height: 0 } },
+    });
+    expect(q.queryByTestId("recap-page-totals")).toBeNull();
   });
 });
