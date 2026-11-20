@@ -5,7 +5,11 @@ import {
   requireAuth,
 } from "@persistence/api-utils/auth/supabaseAuth";
 import { readIdempotencyKey } from "../shared/idempotencyKey";
-import { inviteGuessLimited, RATE_LIMITED_BODY } from "./inviteGuessLimit";
+import {
+  inviteGuessLimited,
+  RATE_LIMITED_BODY,
+  TRUSTED_SOURCE_IP_HEADER,
+} from "./inviteGuessLimit";
 import { resolveCoachScope } from "../relationships/resolveCoachScope";
 import { CoachClientSettingsRepository } from "./clientSettings";
 import { isActiveTrainer } from "./clientProfileRepository";
@@ -148,7 +152,7 @@ export const invitePreviewHandler = authed().get(
   "/invites/:code/preview",
   async (ctx) => {
     const { sub } = getUser(ctx);
-    if (inviteGuessLimited(sub, ctx.headers["x-forwarded-for"])) {
+    if (inviteGuessLimited(sub, ctx.headers[TRUSTED_SOURCE_IP_HEADER])) {
       ctx.set.status = 429;
       return RATE_LIMITED_BODY;
     }

@@ -96,11 +96,16 @@ client onboarding" (approved 20 Nov). Backend only; no app or native change.
   `POST /trainers/accept-invite-code` had no throttle, and a guessed personal
   code activates a relationship with the coach's set-up. The new
   `coaching/inviteGuessLimit.ts` gives preview and accept ONE shared budget:
-  30/hour per user and 120/hour per IP (`x-forwarded-for`), answering 429
+  30/hour per user and 120/hour per IP, answering 429
   `rate_limited` before any DB work. It's in-memory per Lambda container,
   like `leads/rateLimit.ts`. A durable limiter (table or WAF) is a follow-up
   if Brad wants it. (The lead's "stale active codes past 7 days" point was
   wrong: accept already refuses an expired code.)
+- **Inspector Brad sixth sweep (e3d7f46), one low lead, confirmed and fixed:**
+  the per-IP bucket keyed on the first `X-Forwarded-For` entry, which the
+  caller controls. It now keys on `x-persistence-source-ip`, which
+  `trustedSourceHeaders` (api.ts) sets from the API Gateway context after
+  stripping any client copy, the same header `vouchersHandler` uses.
 - **Not done here**: no migration applied to staging/prod; no device test. The
   1.2.0 accept screen still says "awaiting their acceptance" for a personal
   code (known gap, D5); the OTA bundle (PER-126) reads `relationshipStatus`.

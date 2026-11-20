@@ -27,6 +27,7 @@ import type { AcceptPreview } from "../../coaching/setupSections";
 import {
   inviteGuessLimited,
   RATE_LIMITED_BODY,
+  TRUSTED_SOURCE_IP_HEADER,
 } from "../../coaching/inviteGuessLimit";
 
 /**
@@ -120,7 +121,7 @@ export const trainersAcceptInviteCodeHandler = new Elysia()
       // PER-108: a guessed personal code would activate a relationship and
       // hand over the coach's set-up, so redeem attempts share the invite
       // preview's guessing budget. Checked before any DB work.
-      if (inviteGuessLimited(userId, ctx.headers["x-forwarded-for"])) {
+      if (inviteGuessLimited(userId, ctx.headers[TRUSTED_SOURCE_IP_HEADER])) {
         ctx.set.status = 429;
         return RATE_LIMITED_BODY;
       }

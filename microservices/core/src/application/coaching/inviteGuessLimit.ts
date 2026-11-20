@@ -1,4 +1,4 @@
-import { clientIp, rateLimitExceeded } from "../leads/rateLimit";
+import { rateLimitExceeded } from "../leads/rateLimit";
 
 /**
  * Throttle on guessing invite codes (PER-108; Inspector Brad, #540).
@@ -13,7 +13,12 @@ import { clientIp, rateLimitExceeded } from "../leads/rateLimit";
  *
  *   - per user: stops one account sweeping codes;
  *   - per IP:   stops one caller spreading the sweep over many accounts.
- *     It's higher, because a gym or office can share an address.
+ *     It's higher, because a gym or office can share an address. Keyed on
+ *     the TRUSTED `x-persistence-source-ip` header, which `api.ts` sets from
+ *     API Gateway's `requestContext` after stripping any client-sent copy.
+ *     Never `X-Forwarded-For`: its first entry is whatever the caller sent,
+ *     so a fresh value per request would dodge the cap (and grow the bucket
+ *     map until it clears every window).
  *
  * ⚠ In-memory, so per Lambda container, like `leads/rateLimit.ts`: a first
  * line, not a wall. A durable limiter needs a table (see together's
@@ -23,9 +28,12 @@ export const INVITE_GUESS_LIMIT_PER_USER = 30;
 export const INVITE_GUESS_LIMIT_PER_IP = 120;
 export const INVITE_GUESS_WINDOW_MS = 60 * 60 * 1000;
 
+/** The header `trustedSourceHeaders` sets; read it, never `X-Forwarded-For`. */
+export const TRUSTED_SOURCE_IP_HEADER = "x-persistence-source-ip";
+
 export function inviteGuessLimited(
   userId: string,
-  xForwardedFor: string | undefined,
+  sourceIp: string | undefined,
 ): boolean {
   // Record both hits before deciding, so neither bucket is skipped.
   const byUser = rateLimitExceeded(
@@ -34,7 +42,7 @@ export function inviteGuessLimited(
     INVITE_GUESS_WINDOW_MS,
   );
   const byIp = rateLimitExceeded(
-    `invite-guess:ip:${clientIp(xForwardedFor)}`,
+    `invite-guess:ip:${sourceIp ?? "unknown"}`,
     INVITE_GUESS_LIMIT_PER_IP,
     INVITE_GUESS_WINDOW_MS,
   );

@@ -1207,7 +1207,8 @@ describe("guessing invite codes is throttled", () => {
       athlete,
       { code, consent: true, consentVersion: "v1-2026-07" },
       undefined,
-      ip ? { "x-forwarded-for": ip } : {},
+      // What api.ts's trustedSourceHeaders sets from the API Gateway context.
+      ip ? { "x-persistence-source-ip": ip } : {},
     );
 
   it("an athlete sweeping codes is stopped before reaching a real one", async () => {
@@ -1257,6 +1258,20 @@ describe("guessing invite codes is throttled", () => {
     }
     // A fresh account from the same address is already over the IP budget.
     expect((await guess(randomUUID(), "ZZZZZZ", ip)).status).toBe(429);
+    // A forged X-Forwarded-For doesn't open a fresh bucket: the trusted
+    // source address is what counts.
+    const forged = await http(
+      "POST",
+      "/trainers/accept-invite-code",
+      randomUUID(),
+      { code: "ZZZZZZ", consent: true, consentVersion: "v1-2026-07" },
+      undefined,
+      {
+        "x-persistence-source-ip": ip,
+        "x-forwarded-for": `10.0.0.${Math.floor(Math.random() * 250)}`,
+      },
+    );
+    expect(forged.status).toBe(429);
     // Another address is not.
     expect((await guess(randomUUID(), "ZZZZZZ", "198.51.100.9")).status).toBe(
       404,
