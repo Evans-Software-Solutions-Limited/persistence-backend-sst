@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.28.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.27.0...persistence-v1.28.0) (2026-11-20)
+
+
+### Features
+
+* **coaching:** client profiles, personal invite codes, set-up, several coaches and coach declaration (PER-108) ([#540](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/540)) ([501a3bd](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/501a3bd48d21890cd854973ed9dc230984a5da4d))
+* **mobile:** You page Y1–Y4, offline-first (PER-141) ([#541](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/541)) ([dbe1078](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/dbe1078fadc42d774c1a4412a5c7c10d9fa488ed))
+* **nutrition:** your meals, food-log idempotency and batch logging (PER-109) ([#542](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/542)) ([6399908](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/6399908eafc1e335af2a514a48596d853f85d687))
+
+
+### Bug Fixes
+
+* **mobile:** Android builds again with the Together native modules (PER-64) ([#534](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/534)) ([0ffc5d5](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/0ffc5d58795339a2e4be6d268359ee07c4b97d64))
+* **mobile:** compile together-nearby against Nearby 19.5.0 (PER-64) ([#536](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/536)) ([adb284c](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/adb284c75526dcd8dc5a2f32a08b55c6416d9d0e))
+* **push:** stop a signed-out account's notifications reaching the device ([#537](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/issues/537)) ([e314bc2](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/commit/e314bc2a1b4c73445a949289c1193bbeef2d9bcc))
+
 ## [1.27.0](https://github.com/Evans-Software-Solutions-Limited/persistence-backend-sst/compare/persistence-v1.26.0...persistence-v1.27.0) (2026-11-11)
 
 
