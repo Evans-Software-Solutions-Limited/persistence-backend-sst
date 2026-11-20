@@ -294,6 +294,71 @@ describe("Design D test 3 — replay", () => {
     );
   });
 
+  // Inspector Brad lead on #542: a deterministic per-entry failure (an
+  // unsynced `local-…` reference, an unparseable timestamp) used to throw
+  // inside the loop, 500 the whole batch and fail again on every re-send,
+  // so the entries after it could never be logged.
+  it.each([
+    ["an unsynced local food id", { foodId: "local-food-1" }, "food_not_found"],
+    [
+      "an unsynced local recipe id",
+      { recipeId: "local-recipe-1" },
+      "recipe_not_found",
+    ],
+    ["an unsynced local meal id", { mealId: "local-meal-1" }, "meal_not_found"],
+    ["an unparseable loggedAt", { loggedAt: "garbage" }, "invalid_logged_at"],
+    [
+      "a loggedAt Postgres can't store",
+      { loggedAt: "-271821-04-20T00:00:00.000Z" },
+      "invalid_logged_at",
+    ],
+  ])(
+    "one entry with %s fails alone; the entries around it are logged",
+    async (_label, bad, error) => {
+      const batch = {
+        entries: [
+          {
+            ...oldShapeEntry({ customName: "Before" }),
+            clientRequestId: "m-1",
+          },
+          { ...oldShapeEntry(bad), clientRequestId: "m-2" },
+          { ...oldShapeEntry({ customName: "After" }), clientRequestId: "m-3" },
+        ],
+      };
+      const res = await call("A", "POST", "/nutrition/entries/batch", batch);
+      expect(res.status).toBe(200);
+      const [before, failed, after] = res.json.data.results;
+      expect(before.entry.customName).toBe("Before");
+      expect(failed).toEqual({ clientRequestId: "m-2", error });
+      expect(after.entry.customName).toBe("After");
+      expect(await entryCount(USER_A)).toBe(2);
+
+      // Re-sending the same batch is stable: same answers, still two rows.
+      const again = await call("A", "POST", "/nutrition/entries/batch", batch);
+      expect(again.json.data.results[1]).toEqual(failed);
+      expect(again.json.data.results[2].entry.id).toBe(after.entry.id);
+      expect(await entryCount(USER_A)).toBe(2);
+    },
+  );
+
+  it.each([
+    [{ foodId: "local-food-1" }, "food_not_found"],
+    [{ recipeId: "local-recipe-1" }, "recipe_not_found"],
+    [{ mealId: "local-meal-1" }, "meal_not_found"],
+    [{ loggedAt: "garbage" }, "invalid_logged_at"],
+  ])("a single POST answers 400 (not 500) for %o", async (bad, error) => {
+    const res = await call(
+      "A",
+      "POST",
+      "/nutrition/entries",
+      oldShapeEntry(bad),
+    );
+    // 400 with a `local-…` reference is what 1.2.0's drain treats as
+    // DEFERRED (retried after the id swap), not permanent.
+    expect(res).toEqual({ status: 400, json: { error } });
+    expect(await entryCount(USER_A)).toBe(0);
+  });
+
   it("stores plan provenance from a batch, and drops a local plan id rather than failing", async () => {
     const planId = "11111111-1111-4111-8111-111111111111";
     const res = await call("A", "POST", "/nutrition/entries/batch", {

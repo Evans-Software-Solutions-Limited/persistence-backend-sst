@@ -34,7 +34,11 @@ vi.mock("../../../../repositories/recipeRepository", () => ({
 vi.mock("../../../../repositories/mealRepository", () => ({
   MealRepository: vi.fn().mockImplementation(() => mealMocks),
 }));
-vi.mock("../../../../repositories/userMealRepository", () => ({
+vi.mock("../../../../repositories/userMealRepository", async (orig) => ({
+  // Keep the real `isUuid`: resolveEntryInput guards references with it.
+  ...(await orig<
+    typeof import("../../../../repositories/userMealRepository")
+  >()),
   UserMealRepository: vi.fn().mockImplementation(() => userMealMocks),
 }));
 
@@ -52,7 +56,7 @@ function post(body: unknown, auth = true) {
 const created = {
   id: "e1",
   userId: "test-user-id",
-  foodId: "f1",
+  foodId: "00000000-0000-4000-8000-0000000000f1",
   recipeId: null,
   mealId: null,
   mealSlot: "breakfast",
@@ -96,7 +100,7 @@ describe("nutritionEntriesCreateHandler", () => {
 
   it("re-derives macros server-side from the referenced food × servings", async () => {
     foodMocks.getById.mockResolvedValue({
-      id: "f1",
+      id: "00000000-0000-4000-8000-0000000000f1",
       kcal: 150,
       proteinG: 10,
       carbsG: 20,
@@ -108,7 +112,7 @@ describe("nutritionEntriesCreateHandler", () => {
       await import("../nutritionEntriesCreateHandler");
     const res = await nutritionEntriesCreateHandler.handle(
       post({
-        foodId: "f1",
+        foodId: "00000000-0000-4000-8000-0000000000f1",
         mealSlot: "breakfast",
         servings: 2,
         // client sends bogus macros — server must ignore them for a foodId entry
@@ -122,7 +126,10 @@ describe("nutritionEntriesCreateHandler", () => {
     expect(res.status).toBe(201);
     // Scoped lookup — getById must receive the caller's userId so a foreign
     // private food can't be referenced (PR #124 review).
-    expect(foodMocks.getById).toHaveBeenCalledWith("f1", "test-user-id");
+    expect(foodMocks.getById).toHaveBeenCalledWith(
+      "00000000-0000-4000-8000-0000000000f1",
+      "test-user-id",
+    );
     expect(entryMocks.create).toHaveBeenCalledWith(
       "test-user-id",
       expect.objectContaining({
@@ -137,7 +144,7 @@ describe("nutritionEntriesCreateHandler", () => {
   it("re-derives recipe macros PER SERVING (total / recipe.servings × servings)", async () => {
     // Recipe makes 4 servings totalling 800 kcal → 200 kcal/serving.
     recipeMocks.getById.mockResolvedValue({
-      id: "r1",
+      id: "00000000-0000-4000-8000-0000000000e1",
       servings: 4,
       totalKcal: 800,
       totalProteinG: 40,
@@ -148,14 +155,17 @@ describe("nutritionEntriesCreateHandler", () => {
       await import("../nutritionEntriesCreateHandler");
     const res = await nutritionEntriesCreateHandler.handle(
       post({
-        recipeId: "r1",
+        recipeId: "00000000-0000-4000-8000-0000000000e1",
         mealSlot: "dinner",
         servings: 1, // one portion
         loggedAt: "2026-06-21T19:00:00.000Z",
       }),
     );
     expect(res.status).toBe(201);
-    expect(recipeMocks.getById).toHaveBeenCalledWith("r1", "test-user-id");
+    expect(recipeMocks.getById).toHaveBeenCalledWith(
+      "00000000-0000-4000-8000-0000000000e1",
+      "test-user-id",
+    );
     expect(entryMocks.create).toHaveBeenCalledWith(
       "test-user-id",
       expect.objectContaining({
@@ -169,7 +179,7 @@ describe("nutritionEntriesCreateHandler", () => {
 
   it("treats a recipe with 0/invalid servings as 1 (no divide-by-zero)", async () => {
     recipeMocks.getById.mockResolvedValue({
-      id: "r1",
+      id: "00000000-0000-4000-8000-0000000000e1",
       servings: 0,
       totalKcal: 500,
       totalProteinG: null,
@@ -180,7 +190,7 @@ describe("nutritionEntriesCreateHandler", () => {
       await import("../nutritionEntriesCreateHandler");
     const res = await nutritionEntriesCreateHandler.handle(
       post({
-        recipeId: "r1",
+        recipeId: "00000000-0000-4000-8000-0000000000e1",
         mealSlot: "lunch",
         servings: 1,
         loggedAt: "2026-06-21T12:00:00.000Z",
@@ -199,7 +209,7 @@ describe("nutritionEntriesCreateHandler", () => {
       await import("../nutritionEntriesCreateHandler");
     const res = await nutritionEntriesCreateHandler.handle(
       post({
-        recipeId: "missing",
+        recipeId: "00000000-0000-4000-8000-00000000dead",
         mealSlot: "lunch",
         servings: 1,
         loggedAt: "2026-06-21T12:00:00.000Z",
@@ -211,7 +221,7 @@ describe("nutritionEntriesCreateHandler", () => {
 
   it("re-derives meal macros as the meal total × servings", async () => {
     mealMocks.getById.mockResolvedValue({
-      id: "m1",
+      id: "00000000-0000-4000-8000-0000000000d1",
       totalKcal: 500,
       totalProteinG: 30,
       totalCarbsG: 50,
@@ -221,14 +231,17 @@ describe("nutritionEntriesCreateHandler", () => {
       await import("../nutritionEntriesCreateHandler");
     const res = await nutritionEntriesCreateHandler.handle(
       post({
-        mealId: "m1",
+        mealId: "00000000-0000-4000-8000-0000000000d1",
         mealSlot: "breakfast",
         servings: 2,
         loggedAt: "2026-06-21T08:00:00.000Z",
       }),
     );
     expect(res.status).toBe(201);
-    expect(mealMocks.getById).toHaveBeenCalledWith("m1", "test-user-id");
+    expect(mealMocks.getById).toHaveBeenCalledWith(
+      "00000000-0000-4000-8000-0000000000d1",
+      "test-user-id",
+    );
     expect(entryMocks.create).toHaveBeenCalledWith(
       "test-user-id",
       expect.objectContaining({
@@ -246,7 +259,7 @@ describe("nutritionEntriesCreateHandler", () => {
       await import("../nutritionEntriesCreateHandler");
     const res = await nutritionEntriesCreateHandler.handle(
       post({
-        mealId: "missing",
+        mealId: "00000000-0000-4000-8000-00000000dead",
         mealSlot: "lunch",
         servings: 1,
         loggedAt: "2026-06-21T12:00:00.000Z",
@@ -262,7 +275,7 @@ describe("nutritionEntriesCreateHandler", () => {
       await import("../nutritionEntriesCreateHandler");
     const res = await nutritionEntriesCreateHandler.handle(
       post({
-        foodId: "missing",
+        foodId: "00000000-0000-4000-8000-00000000dead",
         mealSlot: "lunch",
         servings: 1,
         loggedAt: "2026-06-21T12:00:00.000Z",
@@ -364,7 +377,7 @@ describe("nutritionEntriesCreateHandler", () => {
       await import("../nutritionEntriesCreateHandler");
     const res = await nutritionEntriesCreateHandler.handle(
       post({
-        foodId: "f1",
+        foodId: "00000000-0000-4000-8000-0000000000f1",
         mealSlot: "breakfast",
         servings: -3,
         loggedAt: "2026-06-21T08:00:00.000Z",

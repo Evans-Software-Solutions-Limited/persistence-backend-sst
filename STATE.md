@@ -63,6 +63,20 @@ plans, coach plans, recipe sharing and the shopping list are PER-118.
   `userMealId` is rejected (400 on POST, a per-entry error in the batch).
 - **Not verified:** nothing deployed or run against staging/prod Postgres;
   PGlite only.
+- **Inspector Brad on PR #542, one lead, confirmed and fixed:** one malformed
+  batch entry threw inside the loop. A `local-…` `foodId`/`recipeId`/`mealId`
+  hit the uuid cast (22P02), and a bad `loggedAt` threw `Invalid time value`
+  in the insert. Either one 500'd the whole batch, and every re-send failed
+  at the same entry, so the entries after it were never logged. Reproduced on
+  PGlite, then fixed in `resolveEntryInput`, so the single POST gets it too:
+  a non-uuid reference is `*_not_found` with no query, and an unparseable or
+  unstorable `loggedAt` (outside the years 1900–9999) is `invalid_logged_at`.
+  These are returned errors, not throws. For the single POST, 400 replaces
+  the old 500, which is what 1.2.0's drain expects: a 4xx on a payload still
+  carrying a `local-…` id is deferred and retried after the id swap. Truly
+  unexpected errors (a DB outage) still 500 the batch on purpose. A per-entry
+  200 would tell the phone to give up on entries that would succeed on retry,
+  and the batch is safe to re-send.
 
 ### 2026-11-16 — Signed-out account's pushes still reached the phone (branch `claude/confident-cerf-xp8bka`)
 

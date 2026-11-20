@@ -2,7 +2,10 @@ import { t, type Static } from "elysia";
 import type { FoodRepository } from "../../repositories/foodRepository";
 import type { RecipeRepository } from "../../repositories/recipeRepository";
 import type { MealRepository } from "../../repositories/mealRepository";
-import type { UserMealRepository } from "../../repositories/userMealRepository";
+import {
+  isUuid,
+  type UserMealRepository,
+} from "../../repositories/userMealRepository";
 import type {
   CreateEntryInput,
   MealSlot,
@@ -63,7 +66,21 @@ export type EntryError =
   | "recipe_not_found"
   | "meal_not_found"
   | "user_meal_not_found"
-  | "macros_required_for_custom_entry";
+  | "macros_required_for_custom_entry"
+  | "invalid_logged_at";
+
+/**
+ * A `loggedAt` that Postgres can store as a timestamptz. `t.String()` lets
+ * anything through, and `new Date("garbage")` (or a year outside Postgres's
+ * range) used to throw inside the insert: a 500 that a re-send hits again
+ * every time. The bounds are generous; they only exclude the unstorable.
+ */
+export function isStorableLoggedAt(value: string): boolean {
+  const ms = Date.parse(value);
+  if (Number.isNaN(ms)) return false;
+  const year = new Date(ms).getUTCFullYear();
+  return year >= 1900 && year <= 9999;
+}
 
 export type ResolveEntryResult =
   | { ok: true; input: CreateEntryInput }
@@ -84,26 +101,43 @@ export type ResolveEntryResult =
  *
  * Every lookup is owner-scoped by `userId` (the JWT user): another user's
  * food, recipe, saved meal or Your-meals meal resolves to "not found".
+ *
+ * Every deterministic failure is a returned error, never a throw (Inspector
+ * Brad, #542): a non-uuid reference — typically a `local-…` id for a food,
+ * recipe or meal created offline that hasn't synced — is "not found" without a
+ * query (Postgres would raise 22P02 on the uuid cast), and an unstorable
+ * `loggedAt` is `invalid_logged_at`. A thrown error would 500 the whole batch
+ * and recur on every re-send, stranding the entries after it. The 400 also
+ * matches 1.2.0's sync drain, which treats a 4xx on a payload still carrying
+ * a `local-…` id as deferred and retries it after the id swap.
  */
 export async function resolveEntryInput(
   repos: EntryRepos,
   userId: string,
   body: EntryBody,
 ): Promise<ResolveEntryResult> {
+  if (!isStorableLoggedAt(body.loggedAt)) {
+    return { ok: false, error: "invalid_logged_at" };
+  }
+
   let kcal = body.kcal;
   let proteinG = body.proteinG;
   let carbsG = body.carbsG;
   let fatG = body.fatG;
 
   if (body.foodId) {
-    const food = await repos.FoodRepository.getById(body.foodId, userId);
+    const food = isUuid(body.foodId)
+      ? await repos.FoodRepository.getById(body.foodId, userId)
+      : null;
     if (!food) return { ok: false, error: "food_not_found" };
     kcal = food.kcal * body.servings;
     proteinG = food.proteinG * body.servings;
     carbsG = food.carbsG * body.servings;
     fatG = food.fatG * body.servings;
   } else if (body.recipeId) {
-    const recipe = await repos.RecipeRepository.getById(body.recipeId, userId);
+    const recipe = isUuid(body.recipeId)
+      ? await repos.RecipeRepository.getById(body.recipeId, userId)
+      : null;
     if (!recipe) return { ok: false, error: "recipe_not_found" };
     // A 0/invalid servings count falls back to 1 to avoid divide-by-zero.
     const perServing = recipe.servings > 0 ? recipe.servings : 1;
@@ -113,7 +147,9 @@ export async function resolveEntryInput(
     carbsG = (recipe.totalCarbsG ?? 0) * factor;
     fatG = (recipe.totalFatG ?? 0) * factor;
   } else if (body.mealId) {
-    const meal = await repos.MealRepository.getById(body.mealId, userId);
+    const meal = isUuid(body.mealId)
+      ? await repos.MealRepository.getById(body.mealId, userId)
+      : null;
     if (!meal) return { ok: false, error: "meal_not_found" };
     kcal = meal.totalKcal * body.servings;
     proteinG = meal.totalProteinG * body.servings;
