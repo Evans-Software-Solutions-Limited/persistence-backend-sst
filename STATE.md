@@ -58,6 +58,15 @@ client onboarding" (approved 20 Nov). Backend only; no app or native change.
   revision, declaration, migration twice/down/up, retention). Changed files
   ≥ 90% on all four metrics. Existing queue-mock tests for accept, roster and
   offboarding were updated for the extra query.
+- **Inspector Brad (PR #540), two leads, both confirmed and fixed (2fdaf64):**
+  - A soft-deleted coach's personal code still made an active relationship,
+    a consent grant and the set-up (soft-delete leaves codes active). Accept
+    now checks the coach's `deleted_at` under the trainer row lock and answers
+    404 `invalid_code`. Restoring the account brings the codes back.
+  - Lock-order inversion: accept locks code → profile, while resend, cancel
+    and delete locked profile → code (deadlock risk, 40P01). They now lock
+    the profile's live codes first (`lockActiveCodes`). A test records the
+    `FOR UPDATE` order on all four paths; it fails on the old code.
 - **Not done here**: no migration applied to staging/prod; no device test. The
   1.2.0 accept screen still says "awaiting their acceptance" for a personal
   code (known gap, D5); the OTA bundle (PER-126) reads `relationshipStatus`.
