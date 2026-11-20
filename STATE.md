@@ -2,7 +2,7 @@
 
 ### 2026-11-20 — You page Y1–Y4, offline-first (PER-141 APP-H1; branch `bradleysimmsevans/per-141-app-h1-athlete-you-page-y1y4`)
 
-[PER-141](https://linear.app/evans-software-solutions/issue/PER-141). Athlete
+[PER-141](https://linear.app/evans-software-solutions/issue/PER-141), PR #541 (open, no auto-merge). Athlete
 You page rebuilt to the signed-off canvas boards Y1–Y4 (18 Nov). OTA on 1.2.0:
 no native packages, permissions, config plugins or version bump.
 `react-native-body-highlighter@3.2.0` is pure JS (`dist/` only; its one dependency is
