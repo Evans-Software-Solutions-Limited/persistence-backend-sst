@@ -29,10 +29,13 @@ import type {
 } from "@/domain/models/trainingReads";
 import type { ApiPort } from "@/domain/ports/api.port";
 import type { StoragePort } from "@/domain/ports/storage.port";
-import type {
-  HistoryDayModel,
-  RecapModel,
-  RecapPeriod,
+import {
+  dayKey,
+  lastSevenDays,
+  recapWindow,
+  type HistoryDayModel,
+  type RecapModel,
+  type RecapPeriod,
 } from "@/domain/services/youPage";
 import type { ApiError, Result } from "@/shared/errors";
 
@@ -184,12 +187,15 @@ export function remoteRecapModel(r: RemoteRecap, userId: string): RecapModel {
 
 /**
  * The live seam: ask the server, keep the answer by what it covers, and
- * fall back to the kept answer when the server can't be reached.
+ * fall back to the kept answer when the server can't be reached. Every key
+ * names the dates it covers (a recap or week by the day it starts), so an
+ * answer kept for last month or last week is never shown as this one.
  */
 export function createYouRemoteSource(
   api: ApiPort,
   storage: StoragePort,
   userId: string,
+  now: () => Date = () => new Date(),
 ): YouRemoteSource {
   async function read<T>(
     key: string,
@@ -220,7 +226,13 @@ export function createYouRemoteSource(
           remoteWorkouts.set(w.id, remoteWorkoutSession(w, userId));
       return r;
     },
-    recap: (period) => read(`recap:${period}`, () => api.getRecap(period)),
-    lastSevenDays: () => read("week", () => api.getMuscleVolume(7)),
+    recap: (period) =>
+      read(`recap:${period}:${dayKey(recapWindow(period, now()).from)}`, () =>
+        api.getRecap(period),
+      ),
+    lastSevenDays: () =>
+      read(`week:${dayKey(lastSevenDays(now()).from)}`, () =>
+        api.getMuscleVolume(7),
+      ),
   };
 }

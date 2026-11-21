@@ -22,6 +22,8 @@ import {
   youRemoteUnavailable,
 } from "../youRemote";
 
+/** 21 Nov 2026, 10:00 on the phone's clock. */
+const NOW = new Date(2026, 10, 21, 10, 0);
 const totals = remoteTotals;
 const chest = remoteChestRow;
 
@@ -93,7 +95,11 @@ describe("createYouRemoteSource", () => {
   function setup() {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
-    return { api, storage, source: createYouRemoteSource(api, storage, "u1") };
+    return {
+      api,
+      storage,
+      source: createYouRemoteSource(api, storage, "u1", () => NOW),
+    };
   }
 
   it("reads each route, keeping the answer by what it covers", async () => {
@@ -127,17 +133,19 @@ describe("createYouRemoteSource", () => {
       status: "ok",
       data: week,
     });
-    expect(storage.getCachedYouRemote("u1", "recap:3months")?.payload).toEqual(
-      recap,
-    );
-    expect(storage.getCachedYouRemote("u1", "week")?.payload).toEqual(week);
+    expect(
+      storage.getCachedYouRemote("u1", "recap:3months:2026-09-01")?.payload,
+    ).toEqual(recap);
+    expect(
+      storage.getCachedYouRemote("u1", "week:2026-11-15")?.payload,
+    ).toEqual(week);
     // Another user's cache is separate.
-    expect(storage.getCachedYouRemote("u2", "week")).toBeNull();
+    expect(storage.getCachedYouRemote("u2", "week:2026-11-15")).toBeNull();
   });
 
   it("falls back to the kept answer offline, and to unavailable with none", async () => {
     const { api, storage, source } = setup();
-    storage.cacheYouRemote("u1", "recap:month", recap);
+    storage.cacheYouRemote("u1", "recap:month:2026-11-01", recap);
     api.shouldFail = true;
     await expect(source.recap("month")).resolves.toEqual({
       status: "ok",
@@ -145,6 +153,34 @@ describe("createYouRemoteSource", () => {
     });
     await expect(source.historyMonth("2026-09")).resolves.toEqual({
       status: "unavailable",
+    });
+  });
+
+  it("never shows last period's kept answer as this one (Inspector Brad #545)", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    let now = NOW;
+    const source = createYouRemoteSource(api, storage, "u1", () => now);
+    api.recaps.set("month", recap);
+    api.muscleVolume.set(7, week);
+    // Fetched during November…
+    await source.recap("month");
+    await source.lastSevenDays();
+    // …then offline on 1 December: November's month and an old week are
+    // not this month or this week.
+    now = new Date(2026, 11, 1, 9, 0);
+    api.shouldFail = true;
+    await expect(source.recap("month")).resolves.toEqual({
+      status: "unavailable",
+    });
+    await expect(source.lastSevenDays()).resolves.toEqual({
+      status: "unavailable",
+    });
+    // The same day again still finds its own answer.
+    now = new Date(2026, 10, 21, 18, 0);
+    await expect(source.recap("month")).resolves.toEqual({
+      status: "ok",
+      data: recap,
     });
   });
 
