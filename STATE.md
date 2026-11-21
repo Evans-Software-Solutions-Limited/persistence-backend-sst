@@ -74,6 +74,16 @@ Design D (Linear doc on PER-66), plans part of migration 6. Mealprint swaps and
 - **Not verified:** nothing deployed or run against staging/prod Postgres;
   PGlite only. Concurrent-race fallbacks (two simultaneous sends/copies) are
   unexercised (single-connection PGlite).
+- **Inspector Brad on PR #546, two leads, both reproduced and fixed with tests,
+  then case closed on 3408a08:**
+  - 🟠 The shopping list repeated a recipe's ingredient rows (and a saved
+    meal's items) for every added plan that used it, so every use counted N×
+    (one recipe in three plans asked for 1350 g, not 450 g). Each recipe's and
+    saved meal's rows are now merged once (74a289f).
+  - 🟡 `?since=` never reported a coach plan that became unreadable (or
+    readable again) when the coach's account was soft-deleted or restored:
+    those only touch `profiles`. The since query now also matches the coach's
+    `profiles.updated_at` (3408a08).
 
 ### 2026-11-20 — You page Y1–Y4, offline-first (PER-141 APP-H1; branch `bradleysimmsevans/per-141-app-h1-athlete-you-page-y1y4`)
 
