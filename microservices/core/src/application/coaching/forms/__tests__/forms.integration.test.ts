@@ -992,7 +992,8 @@ describe("D7.8 exit form", () => {
       .select()
       .from(schema.coachFormScheduleClients)
       .where(eq(schema.coachFormScheduleClients.scheduleId, weeklyRule.id));
-    expect(targets.map((t) => t.status)).toEqual(["excluded"]);
+    // The targets are removed, so a rejoin starts from the rules as they are.
+    expect(targets).toEqual([]);
 
     // The athlete answers it after coaching has ended.
     const due = (await pending(ATHLETE_C)).json.data.requests;
@@ -1393,9 +1394,10 @@ describe("send rules", () => {
     );
     expect((await requestsFor(ATHLETE_C))[0]!.status).toBe("cancelled");
     expect(await requestsFor(ATHLETE_E)).toHaveLength(1);
-    // Bring C back: same cycle and rule, so no second request.
+    // Bring C back: the cancelled request is sent again (same row).
     await patch({ clientIds: [ATHLETE_C, ATHLETE_E] });
-    expect(await requestsFor(ATHLETE_C)).toHaveLength(1);
+    const cAgain = await requestsFor(ATHLETE_C);
+    expect(cAgain.map((r) => r.status)).toEqual(["pending"]);
     expect((await patch({ clientIds: [ATHLETE_D_NOT_CLIENT] })).status).toBe(
       422,
     );
@@ -1820,8 +1822,9 @@ describe("set-up sections (starter_form, repeating_form)", () => {
       );
     expect(items.map((i) => `${i.section}:${i.refId}`).sort()).toEqual(
       [
+        // Weekly reached F through the all-clients on_join rule, not the
+        // set-up, so it isn't copied as a starter form (Inspector Brad, #543).
         `starter_form:${starter.id}`,
-        `starter_form:${weekly.id}`,
         `repeating_form:${rule.id}`,
         `repeating_form:${once.id}`,
       ].sort(),
@@ -1992,5 +1995,135 @@ describe("on_join for every way a relationship becomes active (Brad, 21 Nov)", (
       audience: "all_clients",
     });
     expect(await requestsFor(ATHLETE_F)).toHaveLength(1);
+  });
+});
+
+describe("Inspector Brad sweep 1 (PR #543)", () => {
+  it("re-activating an excluded client on a once rule sends the form again", async () => {
+    const form = await makeForm(COACH_A, "Goals");
+    await makeSchedule(COACH_A, {
+      formId: form.id,
+      trigger: "once",
+      audience: "all_clients",
+      dueAfterHours: 24,
+    });
+    const setup = (status: string) =>
+      http(
+        "PUT",
+        `/trainers/me/clients/${ATHLETE_C}/forms/${form.id}/setup`,
+        COACH_A,
+        { status },
+      );
+    expect((await setup("excluded")).status).toBe(200);
+    expect((await requestsFor(ATHLETE_C))[0]!.status).toBe("cancelled");
+    const back = await setup("active");
+    expect(back.json.data.pendingRequestId).toBeTruthy();
+    const rows = await requestsFor(ATHLETE_C);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ status: "pending", late: false });
+    expect(rows[0]!.dueAt!.getTime() - rows[0]!.sentAt.getTime()).toBe(
+      24 * 3600_000,
+    );
+    expect(
+      (await pending(ATHLETE_C)).json.data.requests.map((r: Json) => r.id),
+    ).toEqual([rows[0]!.id]);
+  });
+
+  it("a completed once request is never re-sent by re-activating", async () => {
+    const form = await makeForm(COACH_A);
+    await makeSchedule(COACH_A, {
+      formId: form.id,
+      trigger: "once",
+      audience: "all_clients",
+    });
+    const [req] = await requestsFor(ATHLETE_C);
+    await answer(ATHLETE_C, req!.id, { q1: "done" });
+    await http(
+      "PUT",
+      `/trainers/me/clients/${ATHLETE_C}/forms/${form.id}/setup`,
+      COACH_A,
+      { status: "active" },
+    );
+    const rows = await requestsFor(ATHLETE_C);
+    expect(rows.map((r) => r.status)).toEqual(["completed"]);
+  });
+
+  it("offboarding's stops don't carry into the next coaching cycle", async () => {
+    const weekly = await makeForm(COACH_A, "Weekly");
+    const exit = await makeForm(COACH_A, "Exit");
+    await makeSchedule(COACH_A, {
+      formId: weekly.id,
+      trigger: "weekly",
+      audience: "all_clients",
+      weekday: 7,
+      timeLocal: "18:00",
+    });
+    await makeSchedule(COACH_A, {
+      formId: exit.id,
+      trigger: "on_end",
+      audience: "all_clients",
+    });
+    // C has per-client rows on both all-clients rules.
+    for (const formId of [weekly.id, exit.id]) {
+      await http(
+        "PUT",
+        `/trainers/me/clients/${ATHLETE_C}/forms/${formId}/setup`,
+        COACH_A,
+        { status: "active" },
+      );
+    }
+    expect((await end(COACH_A, ATHLETE_C)).ok).toBe(true);
+    // C comes back (the same relationship row is revived).
+    const rel = await relationship(COACH_A, ATHLETE_C);
+    await pg.exec(
+      `update pt_client_relationships set status = 'active' where id = '${rel.id}'`,
+    );
+    const tab = await http(
+      "GET",
+      `/trainers/me/clients/${ATHLETE_C}/forms`,
+      COACH_A,
+    );
+    expect(tab.json.data.map((f: Json) => f.form.title).sort()).toEqual([
+      "Exit",
+      "Weekly",
+    ]);
+    expect((await end(COACH_A, ATHLETE_C)).ok).toBe(true);
+    const exits = (await requestsFor(ATHLETE_C)).filter(
+      (r) => r.trigger === "on_end",
+    );
+    expect(exits).toHaveLength(2);
+  });
+
+  it("a client who joins after an all-clients once rule exists gets it", async () => {
+    const form = await makeForm(COACH_A, "Survey");
+    await makeSchedule(COACH_A, {
+      formId: form.id,
+      trigger: "once",
+      audience: "all_clients",
+    });
+    const [rel] = await db
+      .insert(schema.ptClientRelationships)
+      .values({
+        trainerId: COACH_A,
+        clientId: ATHLETE_F,
+        status: "pending",
+        initiatedBy: "client",
+      })
+      .returning();
+    const res = await http(
+      "POST",
+      `/trainers/me/relationships/${rel!.id}/respond`,
+      COACH_A,
+      { action: "accept" },
+    );
+    expect(res.status).toBe(200);
+    const rows = await requestsFor(ATHLETE_F);
+    expect(rows.map((r) => r.trigger)).toEqual(["once"]);
+    const tab = await http(
+      "GET",
+      `/trainers/me/clients/${ATHLETE_F}/forms`,
+      COACH_A,
+    );
+    expect(tab.json.data[0].pendingRequestId).toBe(rows[0]!.id);
   });
 });

@@ -152,3 +152,21 @@ describe("validateAnswers", () => {
     expect(validateAnswers(QUESTIONS, null).ok).toBe(false);
   });
 });
+
+describe("Inspector Brad sweep 1 (PR #543)", () => {
+  it("an optional question whose id names an Object.prototype member can be skipped", () => {
+    const questions: Question[] = [
+      { id: "constructor", type: "short_text", prompt: "A", required: false },
+      { id: "toString", type: "yes_no", prompt: "B", required: false },
+      { id: "valueOf", type: "number", prompt: "C", required: true },
+    ];
+    expect(validateAnswers(questions, { valueOf: 3 })).toEqual({
+      ok: true,
+      value: { valueOf: 3 },
+    });
+    const missing = validateAnswers(questions, {});
+    expect(!missing.ok && missing.errors).toEqual([
+      { at: "valueOf", message: "required" },
+    ]);
+  });
+});

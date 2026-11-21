@@ -257,8 +257,9 @@ async function readResponse(
 
 /**
  * `POST /users/me/form-requests/:id/response`. A replay with the same
- * `Idempotency-Key` returns the stored response, checked before anything
- * else, so it works even after the request has closed.
+ * `Idempotency-Key` returns the stored response, checked under the request's
+ * row lock and before the closed check, so it works even after the request
+ * has closed and even when the retry overlaps the first submit.
  */
 export async function submitResponse(
   clientId: string,
@@ -268,16 +269,6 @@ export async function submitResponse(
   now = new Date(),
 ): Promise<SubmitResult> {
   return getDb().transaction(async (tx) => {
-    if (clientRequestId) {
-      const replay = await readResponse(
-        tx,
-        and(
-          eq(coachFormResponses.clientId, clientId),
-          eq(coachFormResponses.clientRequestId, clientRequestId),
-        ),
-      );
-      if (replay) return { ok: true as const, replay: true, response: replay };
-    }
     const rows = await tx
       .select()
       .from(coachFormRequests)
@@ -292,6 +283,18 @@ export async function submitResponse(
     const request = rows[0];
     if (!request) {
       return { status: 404 as const, code: "request_not_found" as const };
+    }
+    // After the lock: a retry overlapping the first submit waits here, then
+    // finds the stored response instead of a 409 (Inspector Brad, #543).
+    if (clientRequestId) {
+      const replay = await readResponse(
+        tx,
+        and(
+          eq(coachFormResponses.clientId, clientId),
+          eq(coachFormResponses.clientRequestId, clientRequestId),
+        ),
+      );
+      if (replay) return { ok: true as const, replay: true, response: replay };
     }
     if (!answerable(request, now)) {
       const status = effectiveStatus(request, now);

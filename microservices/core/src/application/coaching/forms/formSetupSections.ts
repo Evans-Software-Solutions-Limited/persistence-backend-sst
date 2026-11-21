@@ -8,7 +8,12 @@ import {
 } from "@persistence/db";
 import type { DbOrTx } from "../../repositories/personalRecordsRepository";
 import type { SetupItemInput, SetupSectionHandler } from "../setupSections";
-import { generateOnce, sendStarterForm } from "./generators";
+import {
+  generateOnce,
+  periodKeys,
+  relationshipCycle,
+  sendStarterForm,
+} from "./generators";
 import { checkRule, MAX_DUE_HOURS, type Trigger } from "./scheduleRepository";
 
 /**
@@ -116,6 +121,7 @@ export const starterFormHandler: SetupSectionHandler = {
   async copyFromClient(db, trainerId, clientId) {
     const relationshipId = await activeRelationshipId(db, trainerId, clientId);
     if (!relationshipId) return [];
+    const cycle = await relationshipCycle(db, relationshipId);
     const rows = await db
       .select({ formId: coachFormRequests.formId })
       .from(coachFormRequests)
@@ -125,6 +131,10 @@ export const starterFormHandler: SetupSectionHandler = {
           eq(coachFormRequests.relationshipId, relationshipId),
           eq(coachFormRequests.trainerId, trainerId),
           eq(coachFormRequests.trigger, "on_join"),
+          // Real starter sends only: not forms from all-clients on_join rules
+          // (schedule_id set), and only this coaching cycle (Inspector Brad, #543).
+          isNull(coachFormRequests.scheduleId),
+          eq(coachFormRequests.periodKey, periodKeys.join(cycle.key)),
           isNull(coachForms.archivedAt),
         ),
       )

@@ -291,7 +291,8 @@ export function validateAnswers(
   }
   const value: Record<string, unknown> = {};
   for (const q of questions) {
-    const given = raw[q.id];
+    // Own keys only: an id like `constructor` must not read Object.prototype.
+    const given = Object.hasOwn(raw, q.id) ? raw[q.id] : undefined;
     if (isBlank(given)) {
       if (!q.required) continue;
       // A required photo can't be answered until BE-F1 either.

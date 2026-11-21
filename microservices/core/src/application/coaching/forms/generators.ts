@@ -1,12 +1,4 @@
-import {
-  and,
-  eq,
-  inArray,
-  isNotNull,
-  isNull,
-  ne,
-  notInArray,
-} from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, ne } from "drizzle-orm";
 import {
   coachFormRequests,
   coachFormScheduleClients,
@@ -207,7 +199,8 @@ export async function sendStarterForm(
 }
 
 /**
- * `on_join` for every active `all_clients` on_join schedule of this coach.
+ * `on_join` for every active `all_clients` on_join schedule of this coach,
+ * then the coach's active `all_clients` `once` rules for this new client.
  * Runs inside the accept transaction, AFTER the set-up items, so a form that
  * is both a starter form and an on_join rule is sent once, in set-up order.
  */
@@ -216,19 +209,20 @@ export async function generateOnJoin(
   ref: RelationshipRef,
   now = new Date(),
 ): Promise<string[]> {
-  const schedules = await db
+  const rules = await db
     .select()
     .from(coachFormSchedules)
     .where(
       and(
         eq(coachFormSchedules.trainerId, ref.trainerId),
-        eq(coachFormSchedules.trigger, "on_join"),
+        inArray(coachFormSchedules.trigger, ["on_join", "once"]),
         eq(coachFormSchedules.audience, "all_clients"),
         eq(coachFormSchedules.status, "active"),
       ),
     )
     .orderBy(coachFormSchedules.createdAt, coachFormSchedules.id);
-  if (schedules.length === 0) return [];
+  if (rules.length === 0) return [];
+  const schedules = rules.filter((s) => s.trigger === "on_join");
   const versions = await liveVersions(
     db,
     ref.trainerId,
@@ -236,7 +230,7 @@ export async function generateOnJoin(
   );
   const cycle = await relationshipCycle(db, ref.relationshipId);
   const sentAt = sendTime(cycle, now);
-  return insertRequests(
+  const ids = await insertRequests(
     db,
     schedules
       .filter((s) => versions.has(s.formId))
@@ -251,6 +245,12 @@ export async function generateOnJoin(
         dueAfterHours: s.dueAfterHours,
       })),
   );
+  // Joining is how a client is added to the coach's all-clients `once`
+  // rules, so they go out now too (Inspector Brad, #543).
+  for (const rule of rules.filter((s) => s.trigger === "once")) {
+    ids.push(...(await generateOnce(db, rule, ref.relationshipId, now)));
+  }
+  return ids;
 }
 
 interface Target extends RelationshipRef {
@@ -326,24 +326,55 @@ export async function generateOnce(
   const versionId = versions.get(schedule.formId);
   if (!versionId) return [];
   const targets = await scheduleTargets(db, schedule, onlyRelationshipId);
-  return insertRequests(
-    db,
-    targets.map((t) => {
-      const cycle = cycleOf(t.activatedAt);
-      return {
-        trainerId: t.trainerId,
-        clientId: t.clientId,
-        relationshipId: t.relationshipId,
-        formId: schedule.formId,
-        formVersionId: versionId,
-        scheduleId: schedule.id,
-        trigger: "once" as const,
-        periodKey: periodKeys.once(schedule.id, cycle.key),
-        sentAt: sendTime(cycle, now),
-        dueAfterHours: effectiveDueAfterHours(schedule, t.override),
-      };
-    }),
-  );
+  const drafts = targets.map((t) => {
+    const cycle = cycleOf(t.activatedAt);
+    return {
+      trainerId: t.trainerId,
+      clientId: t.clientId,
+      relationshipId: t.relationshipId,
+      formId: schedule.formId,
+      formVersionId: versionId,
+      scheduleId: schedule.id,
+      trigger: "once" as const,
+      periodKey: periodKeys.once(schedule.id, cycle.key),
+      sentAt: sendTime(cycle, now),
+      dueAfterHours: effectiveDueAfterHours(schedule, t.override),
+    };
+  });
+  const ids = await insertRequests(db, drafts);
+  // A client taken off the rule (excluded, or removed from `selected`) had
+  // their request cancelled. Bringing them back sends it again: the same
+  // key's cancelled row is revived as a fresh send (Inspector Brad, #543).
+  // A completed request is never re-sent.
+  for (const d of drafts) {
+    const revived = await db
+      .update(coachFormRequests)
+      .set({
+        status: "pending",
+        formVersionId: d.formVersionId,
+        sentAt: d.sentAt,
+        dueAt:
+          d.dueAfterHours === null
+            ? null
+            : new Date(d.sentAt.getTime() + d.dueAfterHours * HOUR_MS),
+        completedAt: null,
+        late: false,
+        remindersSent: 0,
+        updatedAt: d.sentAt,
+      })
+      .where(
+        and(
+          eq(coachFormRequests.relationshipId, d.relationshipId),
+          eq(coachFormRequests.formId, d.formId),
+          eq(coachFormRequests.trigger, "once"),
+          eq(coachFormRequests.periodKey, d.periodKey),
+          eq(coachFormRequests.status, "cancelled"),
+        ),
+      )
+      .returning({ id: coachFormRequests.id });
+    if (revived[0]) ids.push(revived[0].id);
+  }
+  return ids;
 }
 
 /**
@@ -353,7 +384,8 @@ export async function generateOnce(
  *   1. generate the exit form(s): every active `on_end` schedule that reaches
  *      this client. That response stays visible to this coach (Brad, 20 Nov);
  *   2. cancel this coach's other pending requests for the relationship;
- *   3. stop this coach's schedule targets for it (`excluded`).
+ *   3. stop this coach's schedule targets for it (the rows are removed, so
+ *      a later rejoin starts from the rules as they are).
  *
  * Scoped to (this trainer, this relationship): another coach's forms for the
  * same athlete are never touched. Re-running it changes nothing.
@@ -435,15 +467,13 @@ export async function closeFormsOnEnd(
     )
     .returning({ id: coachFormRequests.id });
 
+  // Remove this relationship's targets. A rejoin revives the same
+  // relationship row, so a stop recorded as `excluded` would silently carry
+  // into the next coaching cycle (Inspector Brad, #543). Each cycle starts
+  // from the coach's rules as they are.
   await db
-    .update(coachFormScheduleClients)
-    .set({ status: "excluded", updatedAt: now })
-    .where(
-      and(
-        eq(coachFormScheduleClients.relationshipId, ref.relationshipId),
-        notInArray(coachFormScheduleClients.status, ["excluded"]),
-      ),
-    );
+    .delete(coachFormScheduleClients)
+    .where(eq(coachFormScheduleClients.relationshipId, ref.relationshipId));
 
   return { exitRequestIds, cancelled: cancelled.length };
 }

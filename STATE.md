@@ -66,6 +66,23 @@ notifications are BE-C2 (PER-117).
   its offboarding unit test mocks `closeFormsOnEnd`.
 - **Not verified:** no migration applied to staging/prod; no deploy; no device
   test.
+- **Inspector Brad sweep 1 (59951d8), six leads, all confirmed and fixed**
+  (each with a test that failed first):
+  - Re-activating an excluded client on a `once` rule (or re-adding them to
+    `selected`) hit the cancelled row's key and sent nothing. `generateOnce`
+    now revives that cancelled row as a fresh send (new `sent_at`/`due_at`,
+    current version). A completed request is never re-sent.
+  - Offboarding marked targets `excluded`, which carried into the next cycle
+    after a rejoin (the relationship row is revived). It now deletes this
+    relationship's targets, so a rejoin starts from the rules as they are.
+  - A client joining after an all-clients `once` rule existed never got it.
+    `generateOnJoin` now also runs those rules for the new relationship.
+  - A same-key retry overlapping the first submit got 409. The replay lookup
+    now runs under the request's row lock.
+  - A question id like `constructor` read `Object.prototype` as an answer.
+    Answers are read with `Object.hasOwn`.
+  - Copy-from turned forms sent by all-clients on_join rules into starter
+    forms. It now copies only real starter sends from the current cycle.
 
 ### 2026-11-20 — You page Y1–Y4, offline-first (PER-141 APP-H1; branch `bradleysimmsevans/per-141-app-h1-athlete-you-page-y1y4`)
 
