@@ -13,6 +13,7 @@ import {
   pgTable,
   primaryKey,
   text,
+  time,
   timestamp,
   uniqueIndex,
   uuid,
@@ -202,6 +203,9 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   // the notice is to make a silent disappearance actionable. Companion enum
   // migration: 20260728120000_subscription_transferred_notification_type.sql.
   "subscription_transferred",
+  // Design D (PER-118) — a coach sent the client a meal plan. Added in
+  // 20261121000118_meal_plans_coach_assignments.sql.
+  "meal_plan_assigned",
 ]);
 
 // M4 (06-progress-goals) — streak engine period types. cross-cuts § 3.1.
@@ -277,6 +281,10 @@ export const actionTypeEnum = pgEnum("action_type_enum", [
   // Companion enum migration:
   // 20260720120000_relationship_terminated_audit_value.sql.
   "relationship_terminated",
+  // Design D (PER-118) — a coach sent a meal plan / shared a recipe copy.
+  // Added in 20261121000118_meal_plans_coach_assignments.sql.
+  "meal_plan_assigned",
+  "recipe_shared",
 ]);
 
 // ─── Lookup & Metadata ────────────────────────────────────────────────────────
@@ -2006,6 +2014,241 @@ export const trainerDeclarations = pgTable(
   ],
 );
 
+// ─── Coach forms (PER-116, design C D1, migration 20261120235941) ────────────
+
+/** A coach's form, or a system template (`trainerId` null + `templateKey`). */
+export const coachForms = pgTable(
+  "coach_forms",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    trainerId: uuid("trainer_id").references(() => profiles.id, {
+      onDelete: "cascade",
+    }),
+    templateKey: text("template_key"),
+    title: text("title").notNull(),
+    description: text("description"),
+    currentVersionId: uuid("current_version_id"),
+    available: boolean("available").notNull().default(true),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    revision: integer("revision").notNull().default(1),
+    clientRequestId: text("client_request_id"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("coach_forms_template_key_uq").on(t.templateKey),
+    uniqueIndex("coach_forms_client_request_uq").on(
+      t.trainerId,
+      t.clientRequestId,
+    ),
+    index("coach_forms_trainer_updated_idx").on(t.trainerId, t.updatedAt),
+  ],
+);
+
+export type CoachForm = typeof coachForms.$inferSelect;
+
+/** Immutable question sets (a DB trigger refuses UPDATE). */
+export const coachFormVersions = pgTable(
+  "coach_form_versions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    formId: uuid("form_id")
+      .notNull()
+      .references(() => coachForms.id, { onDelete: "cascade" }),
+    version: integer("version").notNull(),
+    questions: jsonb("questions").$type<unknown[]>().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("coach_form_versions_form_version_uq").on(t.formId, t.version),
+  ],
+);
+
+export type CoachFormVersion = typeof coachFormVersions.$inferSelect;
+
+/** The coach's send rule. */
+export const coachFormSchedules = pgTable(
+  "coach_form_schedules",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    trainerId: uuid("trainer_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    formId: uuid("form_id")
+      .notNull()
+      .references(() => coachForms.id, { onDelete: "cascade" }),
+    // 'on_join' | 'once' | 'weekly' | 'daily' | 'on_end'
+    trigger: text("trigger").notNull(),
+    // 'all_clients' | 'selected'
+    audience: text("audience").notNull(),
+    weekday: smallint("weekday"),
+    timeLocal: time("time_local"),
+    dueAfterHours: integer("due_after_hours"),
+    reminders: jsonb("reminders")
+      .$type<{ afterHours: number }[]>()
+      .notNull()
+      .default([]),
+    // 'active' | 'paused' | 'stopped'
+    status: text("status").notNull().default("active"),
+    revision: integer("revision").notNull().default(1),
+    clientRequestId: text("client_request_id"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("coach_form_schedules_client_request_uq").on(
+      t.trainerId,
+      t.clientRequestId,
+    ),
+    index("coach_form_schedules_trainer_status_idx").on(t.trainerId, t.status),
+    index("coach_form_schedules_form_idx").on(t.formId),
+  ],
+);
+
+export type CoachFormSchedule = typeof coachFormSchedules.$inferSelect;
+
+/** Targets for `selected`, plus a per-client pause, stop or rule (C10j). */
+export const coachFormScheduleClients = pgTable(
+  "coach_form_schedule_clients",
+  {
+    scheduleId: uuid("schedule_id")
+      .notNull()
+      .references(() => coachFormSchedules.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    relationshipId: uuid("relationship_id")
+      .notNull()
+      .references(() => ptClientRelationships.id, { onDelete: "cascade" }),
+    // 'active' | 'paused' | 'excluded'
+    status: text("status").notNull().default("active"),
+    override: jsonb("override").$type<Record<string, unknown>>(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.scheduleId, t.relationshipId] }),
+    index("coach_form_schedule_clients_relationship_idx").on(t.relationshipId),
+  ],
+);
+
+export type CoachFormScheduleClient =
+  typeof coachFormScheduleClients.$inferSelect;
+
+/** One per (relationship, form, trigger, period): the generators' anchor. */
+export const coachFormRequests = pgTable(
+  "coach_form_requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    trainerId: uuid("trainer_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    relationshipId: uuid("relationship_id")
+      .notNull()
+      .references(() => ptClientRelationships.id, { onDelete: "cascade" }),
+    formId: uuid("form_id")
+      .notNull()
+      .references(() => coachForms.id, { onDelete: "cascade" }),
+    formVersionId: uuid("form_version_id")
+      .notNull()
+      .references(() => coachFormVersions.id, { onDelete: "cascade" }),
+    scheduleId: uuid("schedule_id").references(() => coachFormSchedules.id, {
+      onDelete: "set null",
+    }),
+    trigger: text("trigger").notNull(),
+    periodKey: text("period_key").notNull(),
+    sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
+    dueAt: timestamp("due_at", { withTimezone: true }),
+    // 'pending' | 'completed' | 'missed' | 'cancelled'
+    status: text("status").notNull().default("pending"),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    late: boolean("late").notNull().default(false),
+    remindersSent: smallint("reminders_sent").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .default(sql`clock_timestamp()`),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("coach_form_requests_period_uq").on(
+      t.relationshipId,
+      t.formId,
+      t.trigger,
+      t.periodKey,
+    ),
+    index("coach_form_requests_client_status_idx").on(
+      t.clientId,
+      t.status,
+      t.sentAt,
+    ),
+    index("coach_form_requests_client_updated_idx").on(t.clientId, t.updatedAt),
+    index("coach_form_requests_trainer_client_idx").on(
+      t.trainerId,
+      t.clientId,
+      t.sentAt.desc(),
+    ),
+    index("coach_form_requests_schedule_idx").on(t.scheduleId),
+  ],
+);
+
+export type CoachFormRequest = typeof coachFormRequests.$inferSelect;
+
+/** The athlete's answers, a snapshot against the request's own version. */
+export const coachFormResponses = pgTable(
+  "coach_form_responses",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    requestId: uuid("request_id")
+      .notNull()
+      .references(() => coachFormRequests.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    answers: jsonb("answers").$type<Record<string, unknown>>().notNull(),
+    submittedAt: timestamp("submitted_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    reviewedBy: uuid("reviewed_by").references(() => profiles.id, {
+      onDelete: "set null",
+    }),
+    replyText: text("reply_text"),
+    clientRequestId: text("client_request_id"),
+  },
+  (t) => [
+    uniqueIndex("coach_form_responses_request_uq").on(t.requestId),
+    uniqueIndex("coach_form_responses_client_request_uq").on(
+      t.clientId,
+      t.clientRequestId,
+    ),
+    index("coach_form_responses_client_submitted_idx").on(
+      t.clientId,
+      t.submittedAt.desc(),
+    ),
+  ],
+);
+
+export type CoachFormResponse = typeof coachFormResponses.$inferSelect;
+
 export type TrainerInviteCode = typeof trainerInviteCodes.$inferSelect;
 export type NewTrainerInviteCode = typeof trainerInviteCodes.$inferInsert;
 
@@ -2313,8 +2556,25 @@ export const recipes = pgTable(
     totalCarbsG: numeric("total_carbs_g"),
     totalFatG: numeric("total_fat_g"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    // Design D (PER-118) — attribution for a coach → client share or a copy
+    // made by Duplicate. ⚠ MIGRATE BEFORE DEPLOY (every recipe SELECT lists
+    // them). 20261121000118_meal_plans_coach_assignments.sql.
+    sourceRecipeId: uuid("source_recipe_id").references(
+      (): AnyPgColumn => recipes.id,
+      { onDelete: "set null" },
+    ),
+    sharedByUserId: uuid("shared_by_user_id").references(() => profiles.id, {
+      onDelete: "set null",
+    }),
   },
-  (t) => [index("recipes_user_idx").on(t.userId)],
+  (t) => [
+    index("recipes_user_idx").on(t.userId),
+    // FULL unique (42P10): one copy per source per account.
+    uniqueIndex("recipes_user_source_recipe_idx").on(
+      t.userId,
+      t.sourceRecipeId,
+    ),
+  ],
 );
 
 export const recipeIngredients = pgTable(
@@ -2494,6 +2754,40 @@ export const nutritionTargets = pgTable("nutrition_targets", {
   setByUserId: uuid("set_by_user_id").references(() => profiles.id),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 });
+
+/**
+ * Design B D1 (PER-114) — append-only history of `nutrition_targets`, written
+ * by the `nutrition_targets_record_history` trigger (so old app bundles record
+ * it too). Target for a day = the latest row with `effective_at` <= the end of
+ * that day in the athlete's time zone. Backfilled rows have `effective_at` =
+ * epoch. Created by supabase/migrations/20261121000100_nutrition_target_history.sql.
+ */
+export const nutritionTargetHistory = pgTable(
+  "nutrition_target_history",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    dailyKcal: numeric("daily_kcal").notNull(),
+    proteinG: numeric("protein_g").notNull(),
+    carbsG: numeric("carbs_g").notNull(),
+    fatG: numeric("fat_g").notNull(),
+    setByUserId: uuid("set_by_user_id").references(() => profiles.id, {
+      onDelete: "set null",
+    }),
+    effectiveAt: timestamp("effective_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index("nutrition_target_history_user_effective_idx").on(
+      t.userId,
+      t.effectiveAt.desc(),
+    ),
+  ],
+);
 
 /**
  * Mealprint (spec-26 § 2.2) — one row per user, upsert semantics like
@@ -2686,6 +2980,159 @@ export const mealPlanMeals = pgTable(
   (t) => [
     uniqueIndex("meal_plan_meals_plan_order_idx").on(t.planId, t.sortOrder),
     index("meal_plan_meals_entry_idx").on(t.loggedEntryId),
+  ],
+);
+
+// ─── Design D (PER-118): list meal plans and coach assignments ────────────────
+// 20261121000118_meal_plans_coach_assignments.sql. A plan is a named list of
+// meals with no dates and no target of its own. The owner reads and writes; an
+// assigned client reads only (`NutritionPlanRepository.getReadable`).
+export const nutritionPlans = pgTable(
+  "nutrition_plans",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ownerId: uuid("owner_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    notes: text("notes"),
+    // 'manual' | 'mealprint' | 'coach' | 'duplicate' (DB CHECK).
+    source: text("source").notNull().default("manual"),
+    // Provenance only, no FK.
+    sourcePlanId: uuid("source_plan_id"),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    revision: integer("revision").notNull().default(1),
+    clientRequestId: text("client_request_id"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("nutrition_plans_owner_client_request_idx").on(
+      t.ownerId,
+      t.clientRequestId,
+    ),
+    index("nutrition_plans_owner_updated_idx").on(t.ownerId, t.updatedAt),
+  ],
+);
+
+export const nutritionPlanMeals = pgTable(
+  "nutrition_plan_meals",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    planId: uuid("plan_id")
+      .notNull()
+      .references(() => nutritionPlans.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    logSlot: text("log_slot").notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+  },
+  (t) => [index("nutrition_plan_meals_plan_idx").on(t.planId, t.sortOrder)],
+);
+
+export const nutritionPlanItems = pgTable(
+  "nutrition_plan_items",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    planMealId: uuid("plan_meal_id")
+      .notNull()
+      .references(() => nutritionPlanMeals.id, { onDelete: "cascade" }),
+    // Exactly one of the four is set (DB CHECK). No FKs: deleting a recipe a
+    // plan lists must not fail; `displayName` keeps the item readable.
+    foodId: uuid("food_id"),
+    recipeId: uuid("recipe_id"),
+    mealId: uuid("meal_id"),
+    custom: jsonb("custom").$type<{
+      name: string;
+      kcal: number;
+      proteinG: number;
+      carbsG: number;
+      fatG: number;
+    }>(),
+    displayName: text("display_name").notNull().default(""),
+    servings: numeric("servings").notNull(),
+    // Computed by the server on write.
+    kcal: numeric("kcal").notNull(),
+    proteinG: numeric("protein_g").notNull(),
+    carbsG: numeric("carbs_g").notNull(),
+    fatG: numeric("fat_g").notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+  },
+  (t) => [index("nutrition_plan_items_meal_idx").on(t.planMealId, t.sortOrder)],
+);
+
+export const nutritionPlanAssignments = pgTable(
+  "nutrition_plan_assignments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    planId: uuid("plan_id")
+      .notNull()
+      .references(() => nutritionPlans.id, { onDelete: "cascade" }),
+    trainerId: uuid("trainer_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    relationshipId: uuid("relationship_id")
+      .notNull()
+      .references(() => ptClientRelationships.id, { onDelete: "cascade" }),
+    note: text("note"),
+    // 'sent' | 'added' | 'dismissed' | 'removed' (DB CHECK).
+    status: text("status").notNull().default("sent"),
+    seenRevision: integer("seen_revision").notNull().default(0),
+    sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
+    addedAt: timestamp("added_at", { withTimezone: true }),
+    removedAt: timestamp("removed_at", { withTimezone: true }),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    clientRequestId: text("client_request_id"),
+  },
+  (t) => [
+    // ⚠ The partial unique `nutrition_plan_assignments_live_idx`
+    // (plan_id, relationship_id) WHERE status <> 'removed' lives in the
+    // migration only; writes use a target-less ON CONFLICT DO NOTHING.
+    uniqueIndex("nutrition_plan_assignments_trainer_client_request_idx").on(
+      t.trainerId,
+      t.clientRequestId,
+    ),
+    index("nutrition_plan_assignments_client_idx").on(t.clientId, t.updatedAt),
+    index("nutrition_plan_assignments_relationship_idx").on(t.relationshipId),
+  ],
+);
+
+export const shoppingListPlans = pgTable(
+  "shopping_list_plans",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    // Exactly one of the two is set (DB CHECK).
+    nutritionPlanId: uuid("nutrition_plan_id").references(
+      () => nutritionPlans.id,
+      { onDelete: "cascade" },
+    ),
+    mealPlanId: uuid("meal_plan_id").references(() => mealPlans.id, {
+      onDelete: "cascade",
+    }),
+    addedAt: timestamp("added_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("shopping_list_plans_user_nutrition_plan_idx").on(
+      t.userId,
+      t.nutritionPlanId,
+    ),
+    uniqueIndex("shopping_list_plans_user_meal_plan_idx").on(
+      t.userId,
+      t.mealPlanId,
+    ),
   ],
 );
 
@@ -2885,6 +3332,11 @@ export type NewMealItem = typeof mealItems.$inferInsert;
 export type NutritionEntry = typeof nutritionEntries.$inferSelect;
 export type NewNutritionEntry = typeof nutritionEntries.$inferInsert;
 export type UserMeal = typeof userMeals.$inferSelect;
+export type NutritionPlan = typeof nutritionPlans.$inferSelect;
+export type NutritionPlanMeal = typeof nutritionPlanMeals.$inferSelect;
+export type NutritionPlanItem = typeof nutritionPlanItems.$inferSelect;
+export type NutritionPlanAssignment =
+  typeof nutritionPlanAssignments.$inferSelect;
 export type NutritionTarget = typeof nutritionTargets.$inferSelect;
 export type NewNutritionTarget = typeof nutritionTargets.$inferInsert;
 export type WaterLog = typeof waterLog.$inferSelect;

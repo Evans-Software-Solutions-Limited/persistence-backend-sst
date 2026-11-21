@@ -5,6 +5,11 @@ import {
   type CoachClientSetupItem,
 } from "@persistence/db";
 import type { DbOrTx } from "../repositories/personalRecordsRepository";
+// PER-116 (BE-C1): the starter_form and repeating_form sections.
+import {
+  repeatingFormHandler,
+  starterFormHandler,
+} from "./forms/formSetupSections";
 import { NutritionTargetRepository } from "../repositories/nutritionTargetRepository";
 import { NotificationRepository } from "../repositories/notificationRepository";
 import { NotificationDispatcher } from "../notifications/push/notificationDispatcher";
@@ -13,6 +18,7 @@ import {
   type DbTransaction,
 } from "../relationships/auditTrainerAction";
 import { CLIENT_BRIEF_DEEP_LINK } from "../trainers/briefs/sendClientBrief";
+import { mealPlanSetupHandler } from "../nutrition/mealPlans/mealPlanSetupHandler";
 
 /**
  * Set-up sections for an invited client (PER-108, design A D1/D3/D4, canvas
@@ -314,8 +320,12 @@ const welcomeMessageHandler: SetupSectionHandler = {
  * ships — nothing else needs to change.
  */
 const HANDLERS: Partial<Record<SetupSection, SetupSectionHandler>> = {
+  // PER-116 (BE-C1): coach forms.
+  starter_form: starterFormHandler,
+  repeating_form: repeatingFormHandler,
   nutrition_target: nutritionTargetHandler,
   welcome_message: welcomeMessageHandler,
+  meal_plan: mealPlanSetupHandler, // PER-118
 };
 
 /**

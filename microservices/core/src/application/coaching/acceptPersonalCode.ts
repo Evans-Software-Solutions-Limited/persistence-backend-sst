@@ -15,6 +15,7 @@ import { evaluateTrainerJoinSeat } from "../trainers/seats/trainerSeats";
 import { recordDataSharingConsent } from "../relationships/recordDataSharingConsent";
 import type { DbTransaction } from "../relationships/auditTrainerAction";
 import { CoachClientSettingsRepository } from "./clientSettings";
+import { generateOnJoin } from "./forms/generators";
 import {
   buildAcceptPreview,
   sectionHandler,
@@ -382,6 +383,10 @@ export async function acceptPersonalCode(
       );
     if (result.afterCommit) afterCommit.push(result.afterCommit);
   }
+
+  // PER-116 (design C D2): the coach's all-clients on_join forms, after the
+  // set-up's starter forms so a form in both is sent once, in set-up order.
+  await generateOnJoin(tx, { trainerId, clientId: userId, relationshipId });
 
   const clientRows = await tx
     .select({ fullName: profiles.fullName })

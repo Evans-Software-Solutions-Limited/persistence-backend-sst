@@ -11,6 +11,126 @@ later sessions changed things.
 
 ---
 
+### 2026-09-01 — Spec 31 onboarding and experience polish
+
+- Implemented the once-only, seven-page onboarding journey with persisted
+  server/SQLite state, Welcome whole-journey Skip, later page-level Skip, two
+  role tiles, single-select Nutrition/Train choices, and the existing profile,
+  Habit Setup and subscription experiences. Recommended plans retain live store
+  pricing, restore, legal copy, `Show other plans`, and `Continue with Free`.
+- Added separate Weight and Body Fat history pages from You/Progress, an
+  exercise-detail Estimated 1RM banner, OTA-safe block reorder across create,
+  edit and live workouts, and athlete-safe coaching assignments in the existing
+  Train surface. Home and the tab structure remain unchanged.
+- Backend additions: user-scoped onboarding state, analytics allowlisting,
+  exercise performance-summary aggregation, and a purpose-built athlete
+  coaching aggregate;
+  migration `20260901120000_onboarding_states.sql` enables RLS and keeps writes
+  on the authenticated backend rail.
+- Onboarding has no environment rollout switch or account-age cutoff: when
+  this mobile release ships, every existing or new authenticated account with
+  no terminal onboarding state enters at Welcome, while an `in_progress`
+  account resumes at its persisted page. Only `completed` or `dismissed`
+  accounts enter Home directly. Experience-polish surfaces have no environment
+  rollout switch either and ship enabled with this mobile release. Native iPhone
+  16 Pro visual QA and Android emulator QA caught and corrected wrapped headings;
+  evidence is in the Codex visualizations folder for this task. DOB uses the
+  existing JS calendar extraction, so this release needs no new native binary.
+- The local Inspector Brad sweeps found and the implementation now fixes
+  serialized onboarding writes, body-fat-only logging, immediate history
+  refresh, recommendation Skip, relationship focus refresh, legacy brief
+  attribution, assisted 1RM exclusion, coach measurement attribution, and the
+  complete Spec 31 analytics surface. Follow-up findings also hardened
+  same-day measurement merging, queued-measurement identity, relationship
+  cache races, local-date DOB bounds, and cross-coach brief privacy. The final
+  local Inspector Brad sweep returned `INSPECTOR_VERDICT: CLEAN`.
+- Replaced the narrow Estimated 1RM transport with the authenticated
+  `/exercises/:exerciseId/performance-summary` contract. One aggregate query
+  now returns actual 10RM, heaviest set at any rep count, best single-set
+  volume, lifetime exercise volume, estimated 1RM and estimated 10RM with
+  source provenance. Mobile caches the whole user/exercise summary, while Spec
+  31 continues to render only its compact Estimated 1RM banner so a future
+  carousel remains additive.
+- Staging sign-in returned 500 for every core route after the backend merge,
+  including onboarding. CloudWatch identified an Elysia/Memoirist cold-start
+  collision between `/exercises/:id` and the newly registered
+  `/exercises/:exerciseId/performance-summary`; it is unrelated to RevenueCat,
+  and migration `20260901120000_onboarding_states.sql` did apply successfully.
+  Backend hotfix PR #427 standardises the internal parameter name to `:id`
+  without changing the public URL shape and adds a composed-router regression.
+
+### 2026-09-20 — Founding admin actions and cross-email claims
+
+- Added complimentary founding tier changes preserving payment, expiry and
+  founding place, plus admin full-remaining Stripe refunds with automatic
+  access revocation, durable retry tracking and webhook reconciliation.
+- Added signed-in purchase-email verification so Apple private-relay accounts
+  can claim their original pending founding grant without changing accounts.
+  Codes are account-bound, time-limited and rate-limited; activation and proof
+  consumption share one transaction.
+- Local Inspector Brad final sweep: clean. Full checks passed: formatting,
+  typecheck, lint, non-mobile build and unit tests (core 4,984; web 1,415;
+  mobile 6,840). Fixed an existing mobile readiness timeout exposed under full
+  suite load. Desktop and narrow-screen UI previews checked using synthetic
+  data; screenshots retained in the workspace founding-access-review folder.
+- Apply migrations 20260920120000 and 20260920121000 through the normal release
+  pipeline before using these features. No deployment, native app build,
+  live refund or live account change was performed. Apple relay sender
+  configuration was not inspected. Required slack-progress-updates skill was
+  unavailable, so no external completion notification was sent.
+
+### 2026-09-21 — Programme foundations and nutrition recovery
+
+- Nutrition targets now expose required, tappable profile fields with drawer-based DOB,
+  calculation sex, height and weight entry through existing offline commands.
+- Recipe import accepts nested structured recipes and grouped instructions, with
+  a source-preserving paste/manual recovery flow for unreadable pages.
+- PER-5/W1 now has an executable isolated explicit-schedule/revision model and
+  integration contract. It is not wired to production routes. Spec 38 defines
+  coach-authored meal plans and recipient-owned recipe sharing for the next stage.
+- Review screenshots and validation context: docs/reviews/programme-nutrition-2026-09-21.
+  No native app build or deployment initiated. Exact failing recipe URL is still
+  needed to reproduce Brad's reported source.
+- Final validation: core 5,047 tests; mobile 6,894 tests; all remaining
+  workspace test tasks passed. Formatting, typecheck, lint and non-native
+  workspace build passed. Local Inspector Brad full-diff sweep: clean,
+  after fixing delayed-response overwrites of pending and acknowledged edits.
+
+- Review correction: quick-fill uses the shared BottomSheet and DatePickerField,
+  with pinned Save/Cancel actions and keyboard-aware numeric fields. Keep visual
+  evidence outside the PR; screenshots removed from the diff.
+- Drawer correction validation: 6,895 mobile tests passed; typecheck, lint and
+  formatting passed; local Inspector Brad correction sweep clean.
+
+- Measurement follow-up: quick-fill height supports cm, m+cm, inches and ft+in;
+  nutrition weight reuses the shared weigh-in view, now supporting kg, lb,
+  and st+lb. Inputs convert to existing cm/kg storage, accept decimal
+  commas, and preserve target drafts during onboarding.
+- Weight follow-up: removed ounces, unified Geist typography and centred split
+  fields, contained the body-fat percentage, and rounded displayed/saved weights
+  to one decimal including Health prefill. Final mobile suite: 6,953 tests passed;
+  formatting, typecheck, lint and non-mobile build passed; local Inspector clean.
+
+- Calendar follow-up: the weigh-in date icon opens the shared DatePickerField
+  (iOS subdrawer, Android native picker, web calendar), bounded to today. Older
+  dates stay absolute across midnight; recent-day shortcuts remain current.
+  55 focused tests passed, with mobile typecheck and targeted lint; Inspector clean.
+
+- Date-row layout correction: compact proportional shortcuts keep the calendar
+  and all four dates on one line, visually checked at 375px. Onboarding still
+  opens every required profile drawer and preserves the target draft; 73 tests
+  passed across onboarding targets and weigh-in. Local Inspector clean.
+
+- Recipe import follow-up: reproduced Pip Coaching's plain-HTML page and added
+  metadata → labelled HTML → bounded AI fallback. Real public page now extracts
+  17 ingredients,3servings and published macros without AI. AI uses complete
+  source-line ingredients, no tools, guarded fetch, entitlement and atomic
+  per-user daily reservations; review screen identifies its extraction method.
+- Added explicit Paste URL with clipboard validation. Full backend:5,140 tests;
+  final focused backend:177; mobile import/review:105. Typecheck,lint,format and
+  non-mobile build passed; local Inspector clean. No deployment/native build or
+  paid AI invocation. Browser fixtures checked phone-width paste/review UI.
+
 ### 2026-09-21 — RevenueCat CI expiry fixture
 
 - Staging run 35626969128 failed because the ends_at fallback test used a fixed

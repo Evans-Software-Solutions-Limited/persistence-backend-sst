@@ -128,6 +128,8 @@ import {
 } from "../../account/accountDeletionPlan";
 import contract from "./fixtures/contract-1.2.0.json";
 
+const WITH_ADHERENCE = ROSTER.map((c) => ({ ...c, adherenceByArea: null }));
+
 const MIGRATIONS = "../../../../../../supabase/migrations/";
 const ROLLBACKS = "../../../../../../supabase/rollbacks/";
 const read = (dir: string, file: string) =>
@@ -149,6 +151,9 @@ const BASE_TABLES = [
   schema.programAssignments,
   schema.workoutAssignments,
   schema.clientAiSummaries,
+  // PER-118: the offboarding teardown and the meal_plan set-up section read these.
+  schema.nutritionPlans,
+  schema.nutritionPlanAssignments,
 ];
 
 function ddl(table: PgTable): string {
@@ -213,6 +218,12 @@ const ATHLETE_E = randomUUID();
 const ATHLETE_F = randomUUID();
 
 const TRUNCATE = [
+  "coach_form_responses",
+  "coach_form_requests",
+  "coach_form_schedule_clients",
+  "coach_form_schedules",
+  "coach_form_versions",
+  "coach_forms",
   "trainer_declarations",
   "coach_client_settings",
   "coach_client_setup_items",
@@ -340,6 +351,8 @@ const relationship = async (trainerId: string, clientId: string) =>
 beforeAll(async () => {
   pg = await baseDatabase();
   await pg.exec(await read(MIGRATIONS, MIGRATION));
+  // PER-116: the forms set-up sections and offboarding hook read these.
+  await pg.exec(await read(MIGRATIONS, "20261120235941_coach_forms.sql"));
   db = drizzle(pg, { schema });
   holder.db = db;
 });
@@ -963,7 +976,9 @@ describe("1.2.0 contract fixtures", () => {
       contract.trainerClients.request.path,
       COACH_A,
     );
-    expect(before.json.data).toEqual(ROSTER);
+    // PER-114 adds `adherenceByArea` per item (null here: not an active
+    // relationship in this database); every 1.2.0 field is unchanged.
+    expect(before.json.data).toEqual(WITH_ADHERENCE);
     expect(before.json.invited).toEqual([
       {
         profileId: profile.id,
@@ -982,7 +997,7 @@ describe("1.2.0 contract fixtures", () => {
       inviteExpiresAt: expiresAt,
     });
     const none = await http("GET", "/trainers/me/clients", COACH_D);
-    expect(none.json).toEqual({ data: ROSTER, invited: [] });
+    expect(none.json).toEqual({ data: WITH_ADHERENCE, invited: [] });
   });
 });
 
@@ -1633,11 +1648,10 @@ describe("invited profiles", () => {
         COACH_A,
         { items },
       );
+    // meal_plan went live with PER-118 (its own suite covers it).
     for (const section of [
       "programme",
-      "meal_plan",
-      "starter_form",
-      "repeating_form",
+      // starter_form and repeating_form are live since PER-116.
       "resource",
     ]) {
       const res = await put(section, [{ sortOrder: 0, config: {} }]);
@@ -1836,11 +1850,11 @@ describe("fallbacks", () => {
       );
       // Rows a later build might leave behind.
       await db.insert(schema.coachClientSetupItems).values([
-        { profileId: profile.id, section: "meal_plan", sortOrder: 0 },
+        { profileId: profile.id, section: "resource", sortOrder: 0 },
         {
           profileId: profile.id,
           section: "resource",
-          sortOrder: 0,
+          sortOrder: 1,
           materialisedAt: new Date(0),
         },
       ]);
@@ -1850,7 +1864,8 @@ describe("fallbacks", () => {
       expect(materialise).toHaveBeenCalledTimes(1);
       const items = await db.select().from(schema.coachClientSetupItems);
       expect(
-        items.find((i) => i.section === "meal_plan")!.materialisedAt,
+        items.find((i) => i.section === "resource" && i.sortOrder === 0)!
+          .materialisedAt,
       ).toBeNull();
       const [settings] = await db.select().from(schema.coachClientSettings);
       expect(settings).toMatchObject({

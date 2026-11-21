@@ -10,6 +10,8 @@ import { getDb } from "@persistence/db/client";
 import { auditTrainerAction } from "./auditTrainerAction";
 import { recordDataSharingConsent } from "./recordDataSharingConsent";
 import { CONSENT_VERSION } from "./consent";
+import { closeFormsOnEnd } from "../coaching/forms/generators";
+import { removePlanAssignmentsForRelationship } from "../repositories/nutritionPlanRepository";
 
 export interface EndCoachClientRelationshipArgs {
   trainerId: string;
@@ -196,6 +198,16 @@ export async function endCoachClientRelationship({
           eq(coachClientProfiles.status, "active"),
         ),
       );
+
+    // 3c — PER-116 (design C D2): send this coach's exit form(s), cancel their
+    // other pending requests and stop their schedule targets for this client.
+    // The exit response stays visible to this coach (Brad, 20 Nov).
+    await closeFormsOnEnd(tx, { trainerId, clientId, relationshipId: row.id });
+
+    // 3d — Design D (PER-118): this coach's meal-plan assignments for this
+    // relationship become `removed`, so a revived relationship doesn't make
+    // them readable again. The plans stay in the coach's library.
+    await removePlanAssignmentsForRelationship(tx, row.id, trainerId);
 
     await auditTrainerAction({
       trainerId,
