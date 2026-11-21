@@ -431,14 +431,26 @@ describe("window limits (test 2)", () => {
     ).toBe(200);
   });
 
-  it("rejects an unknown coach window", async () => {
-    await relate(COACH_A, ATHLETE_A);
-    const res = await get(
-      `/trainers/me/clients/${ATHLETE_A}/training-review?window=14d`,
-      COACH_A,
-    );
-    expect(res.status).toBe(400);
-  });
+  it.each(["14d", "toString", "constructor", "__proto__"])(
+    "rejects the coach window %s (Inspector Brad #545)",
+    async (window) => {
+      await relate(COACH_A, ATHLETE_A);
+      const res = await get(
+        `/trainers/me/clients/${ATHLETE_A}/training-review?window=${window}`,
+        COACH_A,
+      );
+      expect(res.status).toBe(400);
+      expect(res.json.code).toBe("invalid_window");
+    },
+  );
+
+  it.each(["toString", "constructor"])(
+    "rejects the recap period %s",
+    async (period) => {
+      const res = await get(`/users/me/recap?period=${period}`, ATHLETE_A);
+      expect(res.status).toBe(400);
+    },
+  );
 
   it("needs a signed-in user", async () => {
     expect((await get("/users/me/recap", null)).status).toBe(401);

@@ -200,7 +200,8 @@ export const trainingReviewHandler = authed().get(
   "/trainers/me/clients/:clientId/training-review",
   async (ctx) => {
     const window = (ctx.query.window ?? "7d") as ReviewWindow;
-    if (!(window in REVIEW_DAYS)) {
+    // Own keys only: `in` would let `?window=toString` through.
+    if (!Object.hasOwn(REVIEW_DAYS, window)) {
       ctx.set.status = 400;
       return bad("invalid_window", "window must be 7d or 28d");
     }
