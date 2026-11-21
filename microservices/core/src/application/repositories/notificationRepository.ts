@@ -74,7 +74,12 @@ export type NotificationType =
   // body from mobile's own list. So adding it to mobile FIRST breaks every
   // preferences save until the backend array is extended — extend the array here
   // in the same release or earlier, never later.
-  | "subscription_transferred";
+  | "subscription_transferred"
+  // Design D (PER-118) — a coach sent the client a meal plan. DB enum extended
+  // in 20261121000118_meal_plans_coach_assignments.sql. Off the preferences
+  // list for the same ordering reason as `subscription_transferred`: 1.2.0's
+  // renderer already shows an unknown type.
+  | "meal_plan_assigned";
 
 export const NOTIFICATION_TYPES: readonly NotificationType[] = [
   "workout_assigned",

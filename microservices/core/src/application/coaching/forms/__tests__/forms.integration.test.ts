@@ -88,6 +88,9 @@ const BASE_TABLES = [
   schema.programAssignments,
   schema.workoutAssignments,
   schema.clientAiSummaries,
+  // PER-118: offboarding also sets this coach's meal-plan assignments to removed.
+  schema.nutritionPlans,
+  schema.nutritionPlanAssignments,
 ];
 
 function ddl(table: PgTable): string {

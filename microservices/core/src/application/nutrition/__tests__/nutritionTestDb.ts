@@ -30,6 +30,29 @@ export const BASE_NUTRITION_MIGRATIONS = [
 export const YOUR_MEALS_MIGRATION =
   "20261120143109_your_meals_entry_idempotency.sql";
 
+export const MEAL_PLANS_MIGRATION =
+  "20261121000118_meal_plans_coach_assignments.sql";
+
+/**
+ * PER-118's migration, plus the few objects it builds on that this nutrition-only
+ * schema lacks (stand-ins only). Without it the Drizzle mirror's recipe columns
+ * (`source_recipe_id`, `shared_by_user_id`) 42703 every recipe read, exactly as
+ * production would if core deployed before the migration.
+ */
+export async function applyMealPlansMigration(pg: PGlite): Promise<void> {
+  await pg.exec(`
+    CREATE TABLE IF NOT EXISTS pt_client_relationships (id uuid PRIMARY KEY DEFAULT gen_random_uuid());
+    DO $$ BEGIN CREATE TYPE notification_type AS ENUM ('coach_brief');
+    EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+    DO $$ BEGIN CREATE TYPE action_type_enum AS ENUM ('brief_sent');
+    EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+  `);
+  await pg.exec(
+    migrationSql("migrations", "20260804120000_mealprint_plans.sql"),
+  );
+  await pg.exec(migrationSql("migrations", MEAL_PLANS_MIGRATION));
+}
+
 /**
  * Drop and rebuild `public` (one PGlite per file — a fresh instance per test
  * doesn't give its WASM memory back; see voucher.integration.test.ts), then
@@ -51,5 +74,6 @@ export async function resetNutritionSchema(
   }
   if (opts.withYourMeals ?? true) {
     await pg.exec(migrationSql("migrations", YOUR_MEALS_MIGRATION));
+    await applyMealPlansMigration(pg);
   }
 }
