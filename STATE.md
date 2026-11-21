@@ -69,6 +69,23 @@ call the new paths).
   data, ended relationship / non-coach 403, History day judged against the
   target); mobile `ui/hooks/__tests__/sharedTrainingFixtures.test.ts` holds
   the phone pipeline to the same fixture, plus seam / container tests.
+- **Inspector Brad on #545: six sweeps, seven leads, all confirmed and
+  fixed with a test that fails on the previous commit; case closed on
+  `b53dce9`:**
+  - Kept recap/week answers were keyed by period only, so offline a past
+    period showed as the current one. Keys now carry the start date.
+  - `?window=toString` passed the `in` check and returned 500 →
+    `Object.hasOwn`.
+  - Y1 kept yesterday's server week after midnight → the answer is stamped
+    with the day it was asked for.
+  - The workout-count check could hide an unsynced workout → `sessionIds`
+    on week/recap plus `serverHolds`; ask again when the ids change.
+  - Recap's coverage note and comparison followed "an answer arrived", not
+    "the answer was used" → `usedRecap`.
+  - The server recap's together names included last period's partners →
+    current-period ids only.
+  - A server-only workout opened in Y2b lost its records → the day sends
+    each workout's `personalRecords` (no "was" value on the server).
 - **Not verified:** no device run, no staging deploy (nothing to migrate).
 
 ### 2026-11-20 — You page Y1–Y4, offline-first (PER-141 APP-H1; branch `bradleysimmsevans/per-141-app-h1-athlete-you-page-y1y4`)
