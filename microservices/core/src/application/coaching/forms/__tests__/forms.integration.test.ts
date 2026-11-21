@@ -45,8 +45,14 @@ vi.mock("../../../notifications/push/notificationDispatcher", () => ({
 vi.mock("../../../trainers/seats/trainerSeats", async (original) => ({
   ...(await original<object>()),
   evaluateTrainerJoinSeat: async () => ({ allowed: true }),
+  evaluateTrainerClientsActiveSeat: async () => ({ allowed: true }),
   assertTrainerCanInvite: async () => {},
   notifyTrainerClientLimitReached: vi.fn(async () => {}),
+}));
+
+vi.mock("../../../entitlement/assertEntitlement", async (original) => ({
+  ...(await original<object>()),
+  evaluateTrainerClientsActiveSeat: async () => ({ allowed: true }),
 }));
 
 import Elysia from "elysia";
@@ -54,6 +60,8 @@ import { coreErrorHandler } from "../../../../shared/errorHandler";
 import { coachingRoutes } from "../../../coachingRoutes";
 import { trainersAcceptInviteCodeHandler } from "../../../trainers/invite-codes/trainersAcceptInviteCodeHandler";
 import { endCoachClientRelationship } from "../../../relationships/endCoachClientRelationship";
+import { trainersRespondToRequestHandler } from "../../../trainers/relationships/trainersRespondToRequestHandler";
+import { trainersRespondToClientRequestHandler } from "../../../trainers/relationships/trainersRespondToClientRequestHandler";
 import { currentDeclarationVersion } from "../../declaration";
 import { closeFormsOnEnd, generateOnce } from "../generators";
 import type { DbOrTx } from "../../../repositories/personalRecordsRepository";
@@ -167,7 +175,9 @@ const realDb = () => db as unknown as DbOrTx;
 const app = new Elysia()
   .use(coreErrorHandler)
   .use(coachingRoutes)
-  .use(trainersAcceptInviteCodeHandler);
+  .use(trainersAcceptInviteCodeHandler)
+  .use(trainersRespondToRequestHandler)
+  .use(trainersRespondToClientRequestHandler);
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Json = any;
@@ -1917,5 +1927,70 @@ describe("generator and set-up edges", () => {
     expect(
       await repeatingFormHandler.preview!(realDb(), [item(randomUUID())]),
     ).toEqual({ forms: [] });
+  });
+});
+
+describe("on_join for every way a relationship becomes active (Brad, 21 Nov)", () => {
+  async function joinRule() {
+    const form = await makeForm(COACH_A, "Welcome");
+    await makeSchedule(COACH_A, {
+      formId: form.id,
+      trigger: "on_join",
+      audience: "all_clients",
+    });
+    return form;
+  }
+
+  it("a coach accepting an athlete's request (general code) sends the join forms once", async () => {
+    const form = await joinRule();
+    const [rel] = await db
+      .insert(schema.ptClientRelationships)
+      .values({
+        trainerId: COACH_A,
+        clientId: ATHLETE_F,
+        status: "pending",
+        initiatedBy: "client",
+      })
+      .returning();
+    const path = `/trainers/me/relationships/${rel!.id}/respond`;
+    const res = await http("POST", path, COACH_A, { action: "accept" });
+    expect(res.status).toBe(200);
+    expect(
+      (await http("POST", path, COACH_A, { action: "accept" })).status,
+    ).toBe(404);
+    const rows = await requestsFor(ATHLETE_F);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ formId: form.id, trigger: "on_join" });
+  });
+
+  it("an athlete accepting a coach's request sends the join forms", async () => {
+    const form = await joinRule();
+    const [rel] = await db
+      .insert(schema.ptClientRelationships)
+      .values({
+        trainerId: COACH_A,
+        clientId: ATHLETE_F,
+        status: "pending",
+        initiatedBy: "trainer",
+      })
+      .returning();
+    const res = await http(
+      "POST",
+      `/clients/me/relationships/${rel!.id}/respond`,
+      ATHLETE_F,
+      { action: "accept", consent: true, consentVersion: "v1-2026-07" },
+    );
+    expect(res.status).toBe(200);
+    const rows = await requestsFor(ATHLETE_F);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ formId: form.id, trigger: "on_join" });
+    // Coach B's join rules never reach A's new client.
+    const bForm = await makeForm(COACH_B, "B welcome");
+    await makeSchedule(COACH_B, {
+      formId: bForm.id,
+      trigger: "on_join",
+      audience: "all_clients",
+    });
+    expect(await requestsFor(ATHLETE_F)).toHaveLength(1);
   });
 });

@@ -38,13 +38,19 @@ notifications are BE-C2 (PER-117).
 - **Status without the scheduler:** a pending request past `due_at` reads as
   `missed` and can be answered late for 7 days (`late = true`). BE-C2 will
   store `missed`; reads already treat both the same.
-- **Generators:** `on_join` in `acceptPersonalCode` (set-up starter forms via
-  the `starter_form` handler, then every active all-clients on_join rule;
-  de-duplicated by the key), `once` on schedule create/resume/target add and
+- **Generators:** `on_join` wherever a relationship becomes active (Brad,
+  21 Nov): `acceptPersonalCode` (set-up starter forms via the `starter_form`
+  handler, then every active all-clients on_join rule; de-duplicated by the
+  key), and the two request accepts, `trainersRespondToRequestHandler` (athlete
+  accepts a coach) and `trainersRespondToClientRequestHandler` (coach accepts an
+  athlete, the end of a general-code join). `once` on schedule create/resume/target add and
   per-client `active`, `on_end` in `endCoachClientRelationship` (exit forms,
   then cancel this coach's other pending requests and mark targets
-  `excluded`). ⚠ General-code and request-accept activations don't fire
-  on_join (scope was the PER-108 accept hook) — flagged for Brad.
+  `excluded`).
+- **Brad's calls (21 Nov), on recommendation:** keep the cycle in period keys
+  (rejoiners get starter forms again; coaches see the current cycle plus exit
+  forms); on_join on every activation path (above); a pending request past
+  its due date counts as missed until BE-C2 stores it.
 - **Set-up sections live:** `starter_form` (refId = form) and
   `repeating_form` (refId = once/weekly/daily rule, optional override), with
   preview and copy-from. Added at the top of `HANDLERS` as a self-contained
