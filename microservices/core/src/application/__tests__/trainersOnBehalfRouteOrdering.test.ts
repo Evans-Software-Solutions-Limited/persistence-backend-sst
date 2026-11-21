@@ -38,6 +38,21 @@ vi.mock("../relationships/assertTrainerCanActForClient", () => ({
   assertTrainerCanActForClient: vi.fn(async () => ({ allowed: true })),
 }));
 
+// PER-114: the detail and adherence handlers gate with resolveCoachScope.
+vi.mock("../relationships/resolveCoachScope", () => ({
+  resolveCoachScope: vi.fn(async (trainerId: string, clientId: string) => ({
+    allowed: true,
+    scope: { trainerId, clientId },
+  })),
+}));
+vi.mock("../adherence/coachAdherence", async (original) => ({
+  ...(await original<object>()),
+  clientAdherenceReport: vi.fn(async () => ({
+    asOf: "MARKER-ADHERENCE",
+    windowDays: 7,
+  })),
+}));
+
 // Detail aggregate returns a unique marker so we can tell it apart.
 const DETAIL_MARKER = { client: { id: "MARKER-DETAIL" } };
 vi.mock("../repositories/clientDetailRepository", () => ({
@@ -80,6 +95,16 @@ describe("trainersOnBehalfRoutes — route ordering", () => {
     }
     chain.then = (res: any) => Promise.resolve([]).then(res);
     (getDb as any).mockReturnValue({ select: () => chain });
+  });
+
+  it("GET /trainers/me/clients/:id/adherence resolves to the adherence report (PER-114)", async () => {
+    const res = await trainersOnBehalfRoutes.handle(
+      req("/trainers/me/clients/client-1/adherence"),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as any;
+    expect(body.data.asOf).toBe("MARKER-ADHERENCE");
+    expect(body.data.client).toBeUndefined();
   });
 
   it("GET /trainers/me/clients/:id resolves to the Client Detail aggregate", async () => {

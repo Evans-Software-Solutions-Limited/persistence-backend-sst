@@ -26,6 +26,43 @@ vi.mock("../../../relationships/assertTrainerCanActForClient", () => ({
   assertTrainerCanActForClient: vi.fn(async () => verdict.value),
 }));
 
+// PER-114: the handler gates with resolveCoachScope, which runs the same
+// assertTrainerCanActForClient verdict first. Delegate to the mocked verdict.
+vi.mock("../../../relationships/resolveCoachScope", async () => {
+  const gate =
+    await import("../../../relationships/assertTrainerCanActForClient");
+  return {
+    resolveCoachScope: vi.fn(async (trainerId: string, clientId: string) => {
+      const v: any = await gate.assertTrainerCanActForClient(
+        trainerId,
+        clientId,
+      );
+      return v.allowed ? { allowed: true, scope: { trainerId, clientId } } : v;
+    }),
+  };
+});
+
+// PER-114: the additive adherence fields come from the shared calculation
+// (its own suites cover it); pinned here to one report.
+const REPORT = vi.hoisted(() => ({
+  asOf: "2026-11-20T10:00:00.000Z",
+  windowDays: 7,
+  calories: {
+    from: "2026-11-13",
+    to: "2026-11-19",
+    daysOnTarget: 5,
+    daysCounted: 7,
+    daysNotLogged: 1,
+    daysOver: 1,
+    daysUnder: 0,
+    perDay: [],
+  },
+}));
+vi.mock("../../../adherence/coachAdherence", async (original) => ({
+  ...(await original<object>()),
+  clientAdherenceReport: vi.fn(async () => REPORT),
+}));
+
 const getClientDetail = vi.fn();
 vi.mock("../../../repositories/clientDetailRepository", () => ({
   ClientDetailRepository: vi.fn(() => ({ getClientDetail })),
@@ -149,6 +186,26 @@ describe("trainersClientDetailGetHandler", () => {
       "client-1",
     );
     expect(getClientDetail).toHaveBeenCalledWith("trainer-id", "client-1");
+  });
+
+  it("adds adherenceByArea and last7Days from the shared calculation (PER-114)", async () => {
+    const { trainersClientDetailGetHandler } =
+      await import("../trainersClientDetailGetHandler");
+    const res = await trainersClientDetailGetHandler.handle(get("client-1"));
+    const body = (await res.json()) as any;
+    // Legacy modules pass through untouched.
+    expect(body.data.adherence).toEqual(FULL.adherence);
+    expect(body.data.calorieHit).toBe(null);
+    expect(body.data.adherenceByArea).toEqual({
+      calories: { daysOnTarget: 5, daysCounted: 7, daysNotLogged: 1 },
+    });
+    expect(body.data.last7Days).toEqual({
+      training: null,
+      calories: REPORT.calories,
+      checkIn: null,
+      forms: null,
+      expected: [],
+    });
   });
 
   it("logs a coach read-audit row (category=client_detail_aggregate) after the gate passes", async () => {
