@@ -1,0 +1,203 @@
+-- PER-116 (BE-C1) — Backend design C, migration 4: coach forms, immutable
+-- versions, send rules (schedules), schedule targets, requests and responses
+-- (Linear: "Backend design C — Forms, check-ins and coach notifications", D1).
+--
+-- Additive and idempotent. Re-running it is a no-op; nothing existing changes.
+-- Rollback: supabase/rollbacks/20261120235941_coach_forms.sql
+--
+--   * coach_forms                  — a coach's form, or a system template
+--                                    (trainer_id NULL + template_key)
+--   * coach_form_versions          — immutable question sets
+--   * coach_form_schedules         — the coach's send rule
+--   * coach_form_schedule_clients  — targets / per-client pause, stop, override
+--   * coach_form_requests          — one per (relationship, form, trigger,
+--                                    period): the idempotency anchor for every
+--                                    generator
+--   * coach_form_responses         — the athlete's answers (a snapshot)
+--
+-- No templates are seeded (Brad, 20 Nov). They arrive later as an idempotent
+-- data migration: INSERT … ON CONFLICT (template_key) DO NOTHING.
+--
+-- All new tables are service-role only (RLS on, no policies): they are read
+-- and written through the core API, which authorizes explicitly.
+
+-- ─── coach_forms ─────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS coach_forms (
+  id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  -- NULL = a system template.
+  trainer_id         uuid REFERENCES profiles(id) ON DELETE CASCADE,
+  template_key       text CHECK (template_key IS NULL OR char_length(template_key) BETWEEN 1 AND 64),
+  title              text NOT NULL CHECK (char_length(title) BETWEEN 1 AND 120),
+  description        text CHECK (description IS NULL OR char_length(description) <= 1000),
+  -- FK added below, once coach_form_versions exists.
+  current_version_id uuid,
+  available          boolean NOT NULL DEFAULT true,
+  archived_at        timestamptz,
+  revision           integer NOT NULL DEFAULT 1,
+  client_request_id  text,
+  created_at         timestamptz NOT NULL DEFAULT now(),
+  updated_at         timestamptz NOT NULL DEFAULT now(),
+  -- A template has a key and no owner; a coach's form has an owner and no key.
+  CONSTRAINT coach_forms_owner_or_template_ck CHECK (
+    (trainer_id IS NULL AND template_key IS NOT NULL)
+    OR (trainer_id IS NOT NULL AND template_key IS NULL)
+  )
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS coach_forms_template_key_uq
+  ON coach_forms (template_key);
+CREATE UNIQUE INDEX IF NOT EXISTS coach_forms_client_request_uq
+  ON coach_forms (trainer_id, client_request_id);
+CREATE INDEX IF NOT EXISTS coach_forms_trainer_updated_idx
+  ON coach_forms (trainer_id, updated_at);
+
+ALTER TABLE coach_forms ENABLE ROW LEVEL SECURITY;
+
+-- ─── coach_form_versions (immutable) ─────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS coach_form_versions (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  form_id     uuid NOT NULL REFERENCES coach_forms(id) ON DELETE CASCADE,
+  version     integer NOT NULL CHECK (version >= 1),
+  questions   jsonb NOT NULL CHECK (jsonb_typeof(questions) = 'array'),
+  created_at  timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS coach_form_versions_form_version_uq
+  ON coach_form_versions (form_id, version);
+
+ALTER TABLE coach_form_versions ENABLE ROW LEVEL SECURITY;
+
+-- Past answers keep the questions they were asked: a version never changes.
+CREATE OR REPLACE FUNCTION coach_form_versions_immutable()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RAISE EXCEPTION 'coach_form_versions rows are immutable'
+    USING ERRCODE = 'check_violation';
+END;
+$$;
+
+DROP TRIGGER IF EXISTS coach_form_versions_no_update ON coach_form_versions;
+CREATE TRIGGER coach_form_versions_no_update
+  BEFORE UPDATE ON coach_form_versions
+  FOR EACH ROW EXECUTE FUNCTION coach_form_versions_immutable();
+
+ALTER TABLE coach_forms
+  DROP CONSTRAINT IF EXISTS coach_forms_current_version_fkey;
+ALTER TABLE coach_forms
+  ADD CONSTRAINT coach_forms_current_version_fkey
+  FOREIGN KEY (current_version_id) REFERENCES coach_form_versions(id) ON DELETE SET NULL;
+
+-- ─── coach_form_schedules (the send rule) ────────────────────────────────────
+CREATE TABLE IF NOT EXISTS coach_form_schedules (
+  id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  trainer_id         uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  form_id            uuid NOT NULL REFERENCES coach_forms(id) ON DELETE CASCADE,
+  trigger            text NOT NULL
+                       CHECK (trigger IN ('on_join', 'once', 'weekly', 'daily', 'on_end')),
+  audience           text NOT NULL CHECK (audience IN ('all_clients', 'selected')),
+  -- 1 = Monday … 7 = Sunday (weekly only).
+  weekday            smallint CHECK (weekday IS NULL OR weekday BETWEEN 1 AND 7),
+  -- In the athlete's time zone (weekly/daily; generated by BE-C2's scheduler).
+  time_local         time,
+  due_after_hours    integer CHECK (due_after_hours IS NULL OR due_after_hours BETWEEN 1 AND 2160),
+  -- [{afterHours}], at most 5 (sent by BE-C2's scheduler).
+  reminders          jsonb NOT NULL DEFAULT '[]'::jsonb
+                       CHECK (jsonb_typeof(reminders) = 'array'),
+  status             text NOT NULL DEFAULT 'active'
+                       CHECK (status IN ('active', 'paused', 'stopped')),
+  revision           integer NOT NULL DEFAULT 1,
+  client_request_id  text,
+  created_at         timestamptz NOT NULL DEFAULT now(),
+  updated_at         timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS coach_form_schedules_client_request_uq
+  ON coach_form_schedules (trainer_id, client_request_id);
+CREATE INDEX IF NOT EXISTS coach_form_schedules_trainer_status_idx
+  ON coach_form_schedules (trainer_id, status);
+CREATE INDEX IF NOT EXISTS coach_form_schedules_form_idx
+  ON coach_form_schedules (form_id);
+
+ALTER TABLE coach_form_schedules ENABLE ROW LEVEL SECURITY;
+
+-- ─── coach_form_schedule_clients (targets and per-client rules, C10j) ────────
+CREATE TABLE IF NOT EXISTS coach_form_schedule_clients (
+  schedule_id      uuid NOT NULL REFERENCES coach_form_schedules(id) ON DELETE CASCADE,
+  client_id        uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  relationship_id  uuid NOT NULL REFERENCES pt_client_relationships(id) ON DELETE CASCADE,
+  status           text NOT NULL DEFAULT 'active'
+                     CHECK (status IN ('active', 'paused', 'excluded')),
+  override         jsonb,
+  created_at       timestamptz NOT NULL DEFAULT now(),
+  updated_at       timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (schedule_id, relationship_id)
+);
+
+CREATE INDEX IF NOT EXISTS coach_form_schedule_clients_relationship_idx
+  ON coach_form_schedule_clients (relationship_id);
+
+ALTER TABLE coach_form_schedule_clients ENABLE ROW LEVEL SECURITY;
+
+-- ─── coach_form_requests ─────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS coach_form_requests (
+  id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  trainer_id       uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  client_id        uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  relationship_id  uuid NOT NULL REFERENCES pt_client_relationships(id) ON DELETE CASCADE,
+  form_id          uuid NOT NULL REFERENCES coach_forms(id) ON DELETE CASCADE,
+  -- The version the athlete is asked. Never changes after the send.
+  form_version_id  uuid NOT NULL REFERENCES coach_form_versions(id) ON DELETE CASCADE,
+  schedule_id      uuid REFERENCES coach_form_schedules(id) ON DELETE SET NULL,
+  trigger          text NOT NULL
+                     CHECK (trigger IN ('on_join', 'once', 'weekly', 'daily', 'on_end')),
+  period_key       text NOT NULL CHECK (char_length(period_key) BETWEEN 1 AND 160),
+  sent_at          timestamptz NOT NULL DEFAULT now(),
+  due_at           timestamptz,
+  status           text NOT NULL DEFAULT 'pending'
+                     CHECK (status IN ('pending', 'completed', 'missed', 'cancelled')),
+  completed_at     timestamptz,
+  late             boolean NOT NULL DEFAULT false,
+  reminders_sent   smallint NOT NULL DEFAULT 0,
+  -- clock_timestamp(): rows made in one transaction keep their send order.
+  created_at       timestamptz NOT NULL DEFAULT clock_timestamp(),
+  -- For the athlete's `?since=` list (status changes show up as changes).
+  updated_at       timestamptz NOT NULL DEFAULT now()
+);
+
+-- The idempotency anchor: every generator inserts ON CONFLICT DO NOTHING.
+CREATE UNIQUE INDEX IF NOT EXISTS coach_form_requests_period_uq
+  ON coach_form_requests (relationship_id, form_id, trigger, period_key);
+CREATE INDEX IF NOT EXISTS coach_form_requests_client_status_idx
+  ON coach_form_requests (client_id, status, sent_at);
+CREATE INDEX IF NOT EXISTS coach_form_requests_client_updated_idx
+  ON coach_form_requests (client_id, updated_at);
+CREATE INDEX IF NOT EXISTS coach_form_requests_trainer_client_idx
+  ON coach_form_requests (trainer_id, client_id, sent_at DESC);
+CREATE INDEX IF NOT EXISTS coach_form_requests_schedule_idx
+  ON coach_form_requests (schedule_id);
+
+ALTER TABLE coach_form_requests ENABLE ROW LEVEL SECURITY;
+
+-- ─── coach_form_responses (a snapshot; never edited by the athlete) ──────────
+CREATE TABLE IF NOT EXISTS coach_form_responses (
+  id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  request_id         uuid NOT NULL REFERENCES coach_form_requests(id) ON DELETE CASCADE,
+  client_id          uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  answers            jsonb NOT NULL CHECK (jsonb_typeof(answers) = 'object'),
+  submitted_at       timestamptz NOT NULL DEFAULT now(),
+  reviewed_at        timestamptz,
+  reviewed_by        uuid REFERENCES profiles(id) ON DELETE SET NULL,
+  reply_text         text CHECK (reply_text IS NULL OR char_length(reply_text) <= 2000),
+  client_request_id  text
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS coach_form_responses_request_uq
+  ON coach_form_responses (request_id);
+CREATE UNIQUE INDEX IF NOT EXISTS coach_form_responses_client_request_uq
+  ON coach_form_responses (client_id, client_request_id);
+CREATE INDEX IF NOT EXISTS coach_form_responses_client_submitted_idx
+  ON coach_form_responses (client_id, submitted_at DESC);
+
+ALTER TABLE coach_form_responses ENABLE ROW LEVEL SECURITY;

@@ -26,6 +26,17 @@ vi.mock("../recordDataSharingConsent", () => ({
     recordConsent(...(args as [])),
 }));
 
+// PER-116: the forms teardown (exit form, cancel, stop targets) runs on PGlite
+// in coaching/forms/__tests__/forms.integration.test.ts. Mocked here so the
+// queue below stays the relationship/assignment writes.
+const closeFormsOnEnd = vi.fn(async () => ({
+  exitRequestIds: [],
+  cancelled: 0,
+}));
+vi.mock("../../coaching/forms/generators", () => ({
+  closeFormsOnEnd: (...args: unknown[]) => closeFormsOnEnd(...(args as [])),
+}));
+
 /**
  * Thenable query-builder mock (one queue entry == one awaited query),
  * extended from trainersRespondToClientRequestHandler.test.ts's `executor`
@@ -111,6 +122,13 @@ describe("endCoachClientRelationship", () => {
       programmesRemoved: 1,
       workoutAssignmentsRemoved: 2,
       aiSummariesRemoved: 1,
+    });
+
+    // PER-116: the forms teardown runs in the same tx, scoped to this pair.
+    expect(closeFormsOnEnd).toHaveBeenCalledWith(ex, {
+      trainerId: "trainer-1",
+      clientId: "client-1",
+      relationshipId: "rel-1",
     });
 
     expect(auditTrainerAction).toHaveBeenCalledTimes(1);

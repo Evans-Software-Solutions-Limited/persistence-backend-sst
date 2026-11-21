@@ -215,6 +215,12 @@ const ATHLETE_E = randomUUID();
 const ATHLETE_F = randomUUID();
 
 const TRUNCATE = [
+  "coach_form_responses",
+  "coach_form_requests",
+  "coach_form_schedule_clients",
+  "coach_form_schedules",
+  "coach_form_versions",
+  "coach_forms",
   "trainer_declarations",
   "coach_client_settings",
   "coach_client_setup_items",
@@ -342,6 +348,8 @@ const relationship = async (trainerId: string, clientId: string) =>
 beforeAll(async () => {
   pg = await baseDatabase();
   await pg.exec(await read(MIGRATIONS, MIGRATION));
+  // PER-116: the forms set-up sections and offboarding hook read these.
+  await pg.exec(await read(MIGRATIONS, "20261120235941_coach_forms.sql"));
   db = drizzle(pg, { schema });
   holder.db = db;
 });
@@ -1640,8 +1648,7 @@ describe("invited profiles", () => {
     for (const section of [
       "programme",
       "meal_plan",
-      "starter_form",
-      "repeating_form",
+      // starter_form and repeating_form are live since PER-116.
       "resource",
     ]) {
       const res = await put(section, [{ sortOrder: 0, config: {} }]);

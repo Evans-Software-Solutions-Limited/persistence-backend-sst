@@ -17,6 +17,7 @@ import {
 } from "../../repositories/notificationRepository";
 import { NotificationDispatcher } from "../../notifications/push/notificationDispatcher";
 import { auditTrainerAction } from "../../relationships/auditTrainerAction";
+import { generateOnJoin } from "../../coaching/forms/generators";
 
 /**
  * Where a tapped "coach accepted your request" notification lands: the athlete
@@ -281,6 +282,13 @@ export const trainersRespondToClientRequestHandler = new Elysia()
             targetRowId: row.id,
             payload: {},
             tx,
+          });
+
+          // PER-116 (design C D2): the coach's all-clients on_join forms.
+          await generateOnJoin(tx, {
+            trainerId: userId,
+            clientId: row.clientId,
+            relationshipId: row.id,
           });
 
           return {
