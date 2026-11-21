@@ -37,12 +37,50 @@ vi.mock("../../../coaching/clientProfileRepository", () => ({
   })),
 }));
 
+// PER-114: per-area adherence comes from the shared calculation (covered by
+// adherence/__tests__); pinned here to prove it is merged by client id.
+const rosterAdherenceByArea = vi.fn<
+  (trainerId: string, clientIds: string[]) => Promise<Map<string, unknown>>
+>(
+  async () =>
+    new Map([
+      [
+        "c1",
+        {
+          training: {
+            done: 1,
+            target: 3,
+            label: "1 of 3 in the last 7 days",
+            state: "behind",
+          },
+        },
+      ],
+    ]),
+);
+vi.mock("../../../adherence/coachAdherence", () => ({
+  rosterAdherenceByArea: (trainerId: string, clientIds: string[]) =>
+    rosterAdherenceByArea(trainerId, clientIds),
+}));
+
 describe("trainersClientsListHandler", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.isTrainer.mockResolvedValue(true);
     mocks.getClients.mockResolvedValue([
-      { id: "c1", name: "Al Pha", adherence: 40, band: "atRisk" },
+      {
+        id: "c1",
+        name: "Al Pha",
+        adherence: 40,
+        band: "atRisk",
+        status: "active",
+      },
+      {
+        id: "c2",
+        name: "Be Ta",
+        adherence: null,
+        band: null,
+        status: "pending",
+      },
     ]);
   });
 
@@ -80,9 +118,28 @@ describe("trainersClientsListHandler", () => {
     );
     expect(res.status).toBe(200);
     const body = (await res.json()) as any;
-    expect(body.data).toHaveLength(1);
+    expect(body.data).toHaveLength(2);
     expect(body.data[0].id).toBe("c1");
     expect(mocks.getClients).toHaveBeenCalledWith("trainer-id");
+    // PER-114: legacy fields untouched; adherenceByArea added per client, only
+    // active clients are asked for, and a pending client gets null.
+    expect(body.data[0]).toEqual({
+      id: "c1",
+      name: "Al Pha",
+      adherence: 40,
+      band: "atRisk",
+      status: "active",
+      adherenceByArea: {
+        training: {
+          done: 1,
+          target: 3,
+          label: "1 of 3 in the last 7 days",
+          state: "behind",
+        },
+      },
+    });
+    expect(body.data[1].adherenceByArea).toBeNull();
+    expect(rosterAdherenceByArea).toHaveBeenCalledWith("trainer-id", ["c1"]);
     // PER-108: invited profiles ride alongside as a sibling field.
     expect(body.invited).toEqual([
       { profileId: "p1", displayName: "Lena", inviteStatus: "active" },
