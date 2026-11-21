@@ -10,6 +10,11 @@ import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import { PROFILE_PAGE_FIXTURE } from "@/adapters/api/__tests__/fixtures/profile-page.fixture";
 import type { Exercise } from "@/domain/models/exercise";
 import { session as finished } from "@/domain/services/__tests__/youFixtures";
+import type { RemoteMuscleVolume } from "@/domain/models/trainingReads";
+import {
+  remoteChestRow,
+  remoteTotals,
+} from "@/application/queries/__tests__/youRemoteFixtures";
 import {
   YouContainer,
   bodyTile,
@@ -339,6 +344,51 @@ describe("YouContainer", () => {
     );
     await waitFor(() => expect(mockProbe.last).not.toBeNull());
     expect(lastSevenDays).not.toHaveBeenCalled();
+  });
+
+  it("shows the server's week once BE-H1 answers for a part-kept week", async () => {
+    const week: RemoteMuscleVolume = {
+      days: 7,
+      from: "x",
+      to: "y",
+      timezone: "Europe/London",
+      bodyType: "male",
+      muscles: [{ ...remoteChestRow, credit: 12, ratio: 1, level: 4 }],
+      trainNext: [],
+      rest: ["chest"],
+      totals: { ...remoteTotals, workouts: 3 },
+      topLifts: [
+        {
+          exerciseId: "bench",
+          name: "Bench press",
+          weightKg: 100,
+          reps: 5,
+          startedAt: new Date().toISOString(),
+          oneRepMaxKg: 116.7,
+          isRecord: true,
+        },
+      ],
+      asOf: "x",
+    };
+    const remote = {
+      historyMonth: jest.fn(),
+      recap: jest.fn(),
+      lastSevenDays: jest.fn(async () => ({
+        status: "ok" as const,
+        data: week,
+      })),
+    };
+    const { adapters } = makeAdapters();
+    render(
+      <AdapterProvider adapters={adapters}>
+        <YouContainer remote={remote} />
+      </AdapterProvider>,
+    );
+    await waitFor(() =>
+      expect(mockProbe.last?.lastSevenDays.workouts).toBe("3"),
+    );
+    expect(mockProbe.last!.muscles.rest?.text).toMatch(/chest/i);
+    expect(mockProbe.last!.topLifts[0]).toMatchObject({ name: "Bench press" });
   });
 
   it("falls back to the email initial until the profile resolves", async () => {

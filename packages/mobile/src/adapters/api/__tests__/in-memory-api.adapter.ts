@@ -204,6 +204,12 @@ import type {
 } from "@/domain/models/loadout";
 import { ok, fail, type Result, type ApiError } from "@/shared/errors";
 import type { PaginatedResult, PaginationParams } from "@/shared/types";
+import type {
+  RemoteHistoryDay,
+  RemoteHistoryMonth,
+  RemoteMuscleVolume,
+  RemoteRecap,
+} from "@/domain/models/trainingReads";
 
 /**
  * In-memory API adapter for testing.
@@ -1245,6 +1251,11 @@ export class InMemoryApiAdapter implements ApiPort {
   public recentPRs: PersonalRecord[] = [];
   public achievements: Achievement[] = [];
   public bodyTrend: BodyTrendPoint[] = [];
+  /** BE-H1 reads (PER-113), keyed by days / month / date / period. */
+  public muscleVolume = new Map<number, RemoteMuscleVolume>();
+  public historyMonths = new Map<string, RemoteHistoryMonth>();
+  public historyDays = new Map<string, RemoteHistoryDay>();
+  public recaps = new Map<string, RemoteRecap>();
   public nextRings: Rings = {
     move: { current: 0, target: 10000, pct: 0, unit: "steps" },
     train: { current: 0, target: 500, pct: 0, unit: "kcal" },
@@ -1366,6 +1377,23 @@ export class InMemoryApiAdapter implements ApiPort {
   }
   async getBodyTrend(_window?: string) {
     return this.mayFail<BodyTrendPoint[]>(this.bodyTrend);
+  }
+  private found<T>(value: T | undefined): Result<T, ApiError> {
+    if (value === undefined)
+      return fail({ kind: "api", code: "not_found", message: "Not seeded" });
+    return this.mayFail<T>(value);
+  }
+  async getMuscleVolume(days: number) {
+    return this.found(this.muscleVolume.get(days));
+  }
+  async getHistoryMonth(month: string) {
+    return this.found(this.historyMonths.get(month));
+  }
+  async getHistoryDay(date: string) {
+    return this.found(this.historyDays.get(date));
+  }
+  async getRecap(period: RemoteRecap["period"]) {
+    return this.found(this.recaps.get(period));
   }
   async getAchievements() {
     return this.mayFail<Achievement[]>(this.achievements);

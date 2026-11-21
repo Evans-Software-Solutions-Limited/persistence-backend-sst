@@ -12,9 +12,11 @@ import {
 } from "@/domain/services/youPage";
 import {
   needsRemote,
-  youRemoteUnavailable,
+  remoteRecapModel,
   type YouRemoteSource,
 } from "@/application/queries/youRemote";
+import type { RemoteRecap } from "@/domain/models/trainingReads";
+import { useYouRemote } from "@/ui/hooks/useYouRemote";
 import type { WeightUnit } from "@/shared/utils";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { useGetStreaks } from "@/ui/hooks/useGetStreaks";
@@ -193,12 +195,14 @@ export function recapShareText(page: RecapPage): string {
 /**
  * <RecapContainer> — Y4 See a recap (PER-141). Built on the phone from the
  * training log; a period that starts before this phone's log goes through
- * the BE-H1 seam (`youRemote`), unavailable until PER-113 ships, in which
- * case the page says what it covers.
+ * the BE-H1 seam (`youRemote`, PER-113). Without the server or a kept
+ * answer, the page says what it covers.
  */
 export function RecapContainer({
-  remote = youRemoteUnavailable,
+  remote: remoteProp,
 }: { remote?: YouRemoteSource } = {}) {
+  const live = useYouRemote();
+  const remote = remoteProp ?? live;
   const { session } = useAuth();
   const userId = session?.userId ?? null;
   const profile = useProfilePage();
@@ -221,43 +225,59 @@ export function RecapContainer({
   const currentPartial = needsRemote(log.since, recapWindow(period, now).from);
   const [remoteState, setRemoteState] = useState<{
     period: RecapPeriod;
-    ok: boolean;
+    data: RemoteRecap | null;
   } | null>(null);
   useEffect(() => {
     if (!partial) return;
-    let live = true;
+    let alive = true;
     void remote.recap(period).then((r) => {
-      if (live) setRemoteState({ period, ok: r.status === "ok" });
+      if (alive)
+        setRemoteState({ period, data: r.status === "ok" ? r.data : null });
     });
     return () => {
-      live = false;
+      alive = false;
     };
   }, [remote, period, partial]);
 
-  const remoteOk = remoteState?.period === period && remoteState.ok;
+  const remoteRecap =
+    partial && remoteState?.period === period ? remoteState.data : null;
+  const remoteOk = remoteRecap != null;
   // The comparison needs the whole period before on the phone, or the
   // server's answer for it.
   const previousCovered =
     !needsRemote(log.since, previousRecapWindow(period, now).from) || remoteOk;
-  const pages = useMemo(
-    () =>
-      recapPages(
-        buildRecap({
-          period,
-          now,
-          sessions: log.sessions,
-          records: log.records,
-          musclesOf: log.musclesOf,
-        }),
-        {
-          now,
-          unit,
-          streak: streakText(streaks.data ?? []),
-          compare: previousCovered,
-        },
-      ),
-    [period, now, log, unit, streaks.data, previousCovered],
-  );
+  const pages = useMemo(() => {
+    const local = buildRecap({
+      period,
+      now,
+      sessions: log.sessions,
+      records: log.records,
+      musclesOf: log.musclesOf,
+    });
+    // The server's recap, unless the phone holds workouts it hasn't seen
+    // yet (finished offline, still queued).
+    const model =
+      remoteRecap &&
+      userId &&
+      remoteRecap.totals.workouts >= local.totals.workouts
+        ? remoteRecapModel(remoteRecap, userId)
+        : local;
+    return recapPages(model, {
+      now,
+      unit,
+      streak: streakText(streaks.data ?? []),
+      compare: previousCovered,
+    });
+  }, [
+    period,
+    now,
+    log,
+    unit,
+    streaks.data,
+    previousCovered,
+    remoteRecap,
+    userId,
+  ]);
 
   return (
     <RecapPresenter

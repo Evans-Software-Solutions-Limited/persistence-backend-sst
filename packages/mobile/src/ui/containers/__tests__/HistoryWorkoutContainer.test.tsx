@@ -9,6 +9,8 @@ import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import type { SessionSummaryPresenterProps } from "@/ui/presenters/SessionSummaryPresenter";
 import type { WorkoutDetailsPresenterProps } from "@/ui/presenters/WorkoutDetailsPresenter";
 import { session as finished } from "@/domain/services/__tests__/youFixtures";
+import { createYouRemoteSource } from "@/application/queries/youRemote";
+import { remoteDayFixture } from "@/application/queries/__tests__/youRemoteFixtures";
 import {
   HistoryWorkoutContainer,
   toSummaryRecord,
@@ -106,6 +108,31 @@ describe("HistoryWorkoutContainer (Y2b)", () => {
     mockProbe.pages = null;
     mockProbe.details = null;
     mockBack.mockClear();
+  });
+
+  it("opens a workout History read from the server (BE-H1)", async () => {
+    const { storage, adapters } = makeAdapters();
+    const api = adapters.api as InMemoryApiAdapter;
+    api.historyDays.set("2026-09-14", remoteDayFixture);
+    await createYouRemoteSource(api, storage, "user-1").historyDay!(
+      "2026-09-14",
+    );
+    mockParams.id = "srv-1";
+    mockParams.at = "2026-09-14T07:10:00.000Z";
+    render(
+      <AdapterProvider adapters={adapters}>
+        <HistoryWorkoutContainer />
+      </AdapterProvider>,
+    );
+    await waitFor(() => expect(mockProbe.pages).not.toBeNull());
+    expect(mockProbe.pages!.model).toMatchObject({
+      name: "Upper A",
+      volumeKg: 500,
+      sets: 1,
+      durationSeconds: 600,
+    });
+    delete mockParams.id;
+    delete mockParams.at;
   });
 
   it("opens a past workout in the summary carousel with Close, not Continue", async () => {

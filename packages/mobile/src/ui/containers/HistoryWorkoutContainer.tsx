@@ -10,6 +10,7 @@ import {
   type SummaryRecord,
 } from "@/domain/services/workoutSummary";
 import { sessionTotals } from "@/domain/services/youPage";
+import { remoteWorkout } from "@/application/queries/youRemote";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { useProfilePage } from "@/ui/hooks/useProfilePage";
 import { useTrainingLog } from "@/ui/hooks/useTrainingLog";
@@ -62,7 +63,12 @@ export function HistoryWorkoutContainer() {
     const prev = shown.current;
     const found =
       log.sessions.find((s) => s.id === id) ??
-      (prev ? log.sessions.find((s) => s.startedAt === prev.startedAt) : null);
+      (prev
+        ? log.sessions.find((s) => s.startedAt === prev.startedAt)
+        : null) ??
+      // A workout History read from the server (BE-H1): an older month or
+      // a new phone, never in this phone's log.
+      remoteWorkout(id);
     shown.current = found ?? prev;
     return shown.current;
   }, [log.sessions, id]);

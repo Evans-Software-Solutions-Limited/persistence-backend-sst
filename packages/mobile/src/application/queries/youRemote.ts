@@ -4,24 +4,37 @@
  * The phone works the page out from its own training log (offline-first,
  * backend design H). The log only holds workouts finished on this phone
  * since it started keeping one (`StoragePort.getTrainingLogSince`). Older
- * months, the 3-month Recap and a new phone need the server:
+ * months, the 3-month Recap and a new phone ask the server:
  *
  *   GET /users/me/history?month=YYYY-MM | ?date=YYYY-MM-DD
  *   GET /users/me/recap?period=week|month|3months
  *   GET /users/me/muscle-volume?days=7
  *
- * Those routes don't exist yet, so every source here answers
- * `unavailable`. When BE-H1 merges: add the three calls to `ApiPort`,
- * implement `YouRemoteSource` over them (caching responses by period), and
- * pass it to the containers in place of `youRemoteUnavailable`. Every
- * container (You, History, Recap) already asks `needsRemote` before
- * trusting a range to the phone and calls the seam when it's true; BE-H1
- * only has to use the answers. Y1 has no coverage note on the canvas, so
- * until then a part-kept week simply shows what the phone holds (Brad,
- * 20 Nov: start empty, no backfill).
+ * Every container (You, History, Recap) asks `needsRemote` before trusting
+ * a range to the phone and only calls the seam when it's true. Answers are
+ * cached by what they cover (`StoragePort.cacheYouRemote`), so a range
+ * fetched once still shows offline. With no connection and nothing cached
+ * the answer is `unavailable`, and the screens show what the phone holds.
  */
 
-import type { RecapPeriod } from "@/domain/services/youPage";
+import type { MuscleCreditRow } from "@persistence/training-metrics";
+import type { PersonalRecord } from "@/domain/models/record";
+import type { WorkoutSession } from "@/domain/models/session";
+import type {
+  RemoteHistoryDay,
+  RemoteHistoryWorkout,
+  RemoteMuscleRow,
+  RemoteMuscleVolume,
+  RemoteRecap,
+} from "@/domain/models/trainingReads";
+import type { ApiPort } from "@/domain/ports/api.port";
+import type { StoragePort } from "@/domain/ports/storage.port";
+import type {
+  HistoryDayModel,
+  RecapModel,
+  RecapPeriod,
+} from "@/domain/services/youPage";
+import type { ApiError, Result } from "@/shared/errors";
 
 export type YouRemoteResult<T> =
   | { status: "ok"; data: T }
@@ -31,15 +44,18 @@ export type YouRemoteResult<T> =
 export interface YouRemoteSource {
   /** Day keys with anything logged in a month (`YYYY-MM`). */
   historyMonth(month: string): Promise<YouRemoteResult<readonly string[]>>;
+  /** One History day (`YYYY-MM-DD`) the phone's log doesn't reach. */
+  historyDay?(date: string): Promise<YouRemoteResult<RemoteHistoryDay>>;
   /** A recap the phone can't build on its own. */
-  recap(period: RecapPeriod): Promise<YouRemoteResult<unknown>>;
+  recap(period: RecapPeriod): Promise<YouRemoteResult<RemoteRecap>>;
   /** Y1's last 7 days (`GET /users/me/muscle-volume?days=7`). */
-  lastSevenDays(): Promise<YouRemoteResult<unknown>>;
+  lastSevenDays(): Promise<YouRemoteResult<RemoteMuscleVolume>>;
 }
 
-/** Until BE-H1 (PER-113) ships: the server can't fill any gap yet. */
+/** No server to ask (signed out): every gap stays a gap. */
 export const youRemoteUnavailable: YouRemoteSource = {
   historyMonth: async () => ({ status: "unavailable" }),
+  historyDay: async () => ({ status: "unavailable" }),
   recap: async () => ({ status: "unavailable" }),
   lastSevenDays: async () => ({ status: "unavailable" }),
 };
@@ -52,4 +68,159 @@ export const youRemoteUnavailable: YouRemoteSource = {
 export function needsRemote(since: string | null, from: Date): boolean {
   if (since == null) return true;
   return from.getTime() < Date.parse(since);
+}
+
+/**
+ * Workouts the server returned for History days, by id, so Y2b can open a
+ * workout the phone's log never held. Filled whenever a day is read (from
+ * the network or the cache), so it is there before the workout is tapped.
+ */
+const remoteWorkouts = new Map<string, WorkoutSession>();
+
+/** A workout read from the server for a History day, or null. */
+export function remoteWorkout(id: string | undefined): WorkoutSession | null {
+  return (id && remoteWorkouts.get(id)) || null;
+}
+
+/** The server's History workout as a session the summary carousel reads. */
+export function remoteWorkoutSession(
+  w: RemoteHistoryWorkout,
+  userId: string,
+): WorkoutSession {
+  return {
+    id: w.id,
+    userId,
+    workoutId: null,
+    name: w.name,
+    status: "completed",
+    startedAt: w.startedAt,
+    completedAt: w.completedAt,
+    retrospectiveDurationSeconds: w.durationSeconds,
+    notes: null,
+    exercises: w.exercises.map((e, i) => {
+      const id = `${w.id}:${i}`;
+      return {
+        id,
+        sessionId: w.id,
+        exerciseId: e.exerciseId,
+        exerciseName: e.name,
+        sortOrder: i,
+        supersetGroup: null,
+        isSubstituted: e.isSubstituted,
+        originalExerciseId: null,
+        notes: null,
+        sets: e.sets.map((s, n) => ({
+          id: s.id,
+          sessionExerciseId: id,
+          setNumber: n + 1,
+          weightKg: s.weightKg,
+          reps: s.reps,
+          rpe: null,
+          durationSeconds: null,
+          distanceMeters: null,
+          isCompleted: s.isCompleted,
+          completedAt: null,
+        })),
+      };
+    }),
+  };
+}
+
+/** Server muscle rows as the shared function's rows. */
+export function remoteMuscleRows(
+  rows: readonly RemoteMuscleRow[],
+): MuscleCreditRow[] {
+  return rows.map(({ muscle, ...r }) => ({ group: muscle, ...r }));
+}
+
+/** A server History day as the phone's day model. */
+export function remoteHistoryDayModel(
+  key: string,
+  d: RemoteHistoryDay,
+): HistoryDayModel {
+  return {
+    key,
+    workouts: d.workouts.map((w) => ({
+      id: w.id,
+      name: w.name,
+      startedAt: w.startedAt,
+      totals: {
+        durationSeconds: w.durationSeconds,
+        volumeKg: w.volumeKg,
+        sets: w.sets,
+      },
+      records: w.records,
+    })),
+    muscles: remoteMuscleRows(d.muscles),
+    totals: d.totals,
+  };
+}
+
+/** A server recap as the phone's recap model. */
+export function remoteRecapModel(r: RemoteRecap, userId: string): RecapModel {
+  return {
+    period: r.period,
+    totals: r.totals,
+    previous: r.previous,
+    muscles: remoteMuscleRows(r.muscles),
+    lifts: r.lifts,
+    volume: r.volume,
+    records: r.records.map(
+      (rec, i): PersonalRecord => ({
+        id: `remote:${rec.exerciseId}:${rec.recordType}:${i}`,
+        userId,
+        exerciseId: rec.exerciseId,
+        exerciseName: rec.exerciseName,
+        recordType: rec.recordType,
+        value: rec.value,
+        achievedAt: rec.achievedAt,
+        sessionId: rec.sessionId,
+        setId: null,
+      }),
+    ),
+    together: r.together,
+  };
+}
+
+/**
+ * The live seam: ask the server, keep the answer by what it covers, and
+ * fall back to the kept answer when the server can't be reached.
+ */
+export function createYouRemoteSource(
+  api: ApiPort,
+  storage: StoragePort,
+  userId: string,
+): YouRemoteSource {
+  async function read<T>(
+    key: string,
+    call: () => Promise<Result<T, ApiError>>,
+  ): Promise<YouRemoteResult<T>> {
+    const res = await Promise.resolve()
+      .then(call)
+      .catch(() => null);
+    if (res?.ok) {
+      storage.cacheYouRemote(userId, key, res.value);
+      return { status: "ok", data: res.value };
+    }
+    const hit = storage.getCachedYouRemote(userId, key);
+    return hit
+      ? { status: "ok", data: hit.payload as T }
+      : { status: "unavailable" };
+  }
+
+  return {
+    async historyMonth(month) {
+      const r = await read(`month:${month}`, () => api.getHistoryMonth(month));
+      return r.status === "ok" ? { status: "ok", data: r.data.loggedDays } : r;
+    },
+    async historyDay(date) {
+      const r = await read(`day:${date}`, () => api.getHistoryDay(date));
+      if (r.status === "ok")
+        for (const w of r.data.workouts)
+          remoteWorkouts.set(w.id, remoteWorkoutSession(w, userId));
+      return r;
+    },
+    recap: (period) => read(`recap:${period}`, () => api.getRecap(period)),
+    lastSevenDays: () => read("week", () => api.getMuscleVolume(7)),
+  };
 }

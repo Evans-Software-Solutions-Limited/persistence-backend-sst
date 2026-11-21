@@ -3,7 +3,7 @@
  * `You.dc.html`): "24.1 t", "4h 05m", "120 kg × 7 · Mon", "+0.4 this week".
  */
 
-import type { MuscleCreditRow } from "@/domain/services/trainingMetrics/muscleCredit";
+import type { MuscleCreditRow } from "@persistence/training-metrics";
 import type { TopLift, TrainingTotals } from "@/domain/services/youPage";
 import {
   dayThatSorts,
