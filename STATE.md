@@ -83,6 +83,15 @@ notifications are BE-C2 (PER-117).
     Answers are read with `Object.hasOwn`.
   - Copy-from turned forms sent by all-clients on_join rules into starter
     forms. It now copies only real starter sends from the current cycle.
+- **Inspector Brad sweep 2 (ab13f00), two leads, both confirmed and fixed**
+  (each with a test that failed first). Sweep 1's six fixes were confirmed.
+  - Narrowing a rule from `all_clients` to `selected` left the dropped
+    clients' requests open (they had no target rows). The PATCH now cancels
+    this rule's open requests for every relationship not in the new list,
+    and the narrowing needs `clientIds`.
+  - A question id of `__proto__` hit the prototype setter and the answer was
+    dropped from the stored response. Answers are now written with
+    `Object.defineProperty`.
 
 ### 2026-11-20 — You page Y1–Y4, offline-first (PER-141 APP-H1; branch `bradleysimmsevans/per-141-app-h1-athlete-you-page-y1y4`)
 

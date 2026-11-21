@@ -310,7 +310,14 @@ export function validateAnswers(
       if (q.required) errors.push({ at: q.id, message: "required" });
       continue;
     }
-    value[q.id] = checked.value;
+    // defineProperty, not assignment: an id of `__proto__` would otherwise
+    // hit Object.prototype's setter and drop the answer (Inspector Brad, #543).
+    Object.defineProperty(value, q.id, {
+      value: checked.value,
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    });
   }
   return errors.length > 0 ? { ok: false, photo, errors } : { ok: true, value };
 }

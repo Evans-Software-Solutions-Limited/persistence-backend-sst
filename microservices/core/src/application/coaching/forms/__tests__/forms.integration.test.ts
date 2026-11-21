@@ -2127,3 +2127,28 @@ describe("Inspector Brad sweep 1 (PR #543)", () => {
     expect(tab.json.data[0].pendingRequestId).toBe(rows[0]!.id);
   });
 });
+
+describe("Inspector Brad sweep 2 (PR #543)", () => {
+  it("narrowing a rule from all_clients to selected cancels the dropped clients' requests and needs clientIds", async () => {
+    const form = await makeForm(COACH_A);
+    const s = await makeSchedule(COACH_A, {
+      formId: form.id,
+      trigger: "once",
+      audience: "all_clients",
+    });
+    expect(await requestsFor(ATHLETE_C)).toHaveLength(1);
+    expect(await requestsFor(ATHLETE_E)).toHaveLength(1);
+    const patch = (body: object) =>
+      http("PATCH", `/trainers/me/form-schedules/${s.id}`, COACH_A, body);
+    const noTargets = await patch({ audience: "selected" });
+    expect(noTargets.status).toBe(422);
+    expect(noTargets.json.message).toMatch(/selected needs/);
+    const narrowed = await patch({
+      audience: "selected",
+      clientIds: [ATHLETE_C],
+    });
+    expect(narrowed.status).toBe(200);
+    expect((await requestsFor(ATHLETE_C))[0]!.status).toBe("pending");
+    expect((await requestsFor(ATHLETE_E))[0]!.status).toBe("cancelled");
+  });
+});

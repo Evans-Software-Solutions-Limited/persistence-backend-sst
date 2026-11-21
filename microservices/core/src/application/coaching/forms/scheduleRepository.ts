@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, ne, notInArray, sql } from "drizzle-orm";
 import {
   coachFormRequests,
   coachFormScheduleClients,
@@ -469,9 +469,12 @@ export class CoachFormScheduleRepository {
           : undefined;
       if (
         audience === "selected" &&
-        clientIds !== undefined &&
-        (clientIds.length === 0 || clientIds.length > MAX_SELECTED_CLIENTS)
+        (clientIds !== undefined || current.audience !== "selected") &&
+        (clientIds === undefined ||
+          clientIds.length === 0 ||
+          clientIds.length > MAX_SELECTED_CLIENTS)
       ) {
+        // Narrowing an all-clients rule needs the list it narrows to.
         return invalid(`selected needs 1–${MAX_SELECTED_CLIENTS} clientIds`);
       }
 
@@ -504,8 +507,20 @@ export class CoachFormScheduleRepository {
                 inArray(coachFormScheduleClients.relationshipId, removed),
               ),
             );
-          await cancelScheduleRequests(tx, id, removed);
         }
+        // Anyone the rule no longer reaches loses their open request, including
+        // clients an all-clients rule reached without a target row (Inspector
+        // Brad, #543).
+        await tx
+          .update(coachFormRequests)
+          .set({ status: "cancelled", updatedAt: now })
+          .where(
+            and(
+              eq(coachFormRequests.scheduleId, id),
+              inArray(coachFormRequests.status, ["pending", "missed"]),
+              notInArray(coachFormRequests.relationshipId, [...keep]),
+            ),
+          );
         for (const [clientId, relationshipId] of rels) {
           await tx
             .insert(coachFormScheduleClients)

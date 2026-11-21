@@ -170,3 +170,27 @@ describe("Inspector Brad sweep 1 (PR #543)", () => {
     ]);
   });
 });
+
+describe("Inspector Brad sweep 2 (PR #543)", () => {
+  it("a question id of __proto__ keeps the athlete's answer", () => {
+    const questions: Question[] = [
+      { id: "__proto__", type: "short_text", prompt: "A", required: true },
+      {
+        id: "q2",
+        type: "multiple_choice",
+        prompt: "B",
+        required: false,
+        options: ["x", "y"],
+      },
+    ];
+    const raw = JSON.parse('{"__proto__": "hello", "q2": ["y"]}');
+    const res = validateAnswers(questions, raw);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(Object.hasOwn(res.value, "__proto__")).toBe(true);
+    expect(JSON.parse(JSON.stringify(res.value))).toEqual(
+      JSON.parse('{"__proto__": "hello", "q2": ["y"]}'),
+    );
+    expect(Object.getPrototypeOf(res.value)).toBe(Object.prototype);
+  });
+});
