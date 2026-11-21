@@ -1328,6 +1328,58 @@ describe("shopping list with a Mealprint plan", () => {
   });
 });
 
+describe("shopping list: one recipe in several plans", () => {
+  it("counts a recipe's ingredients once per use, not once per plan holding it", async () => {
+    const RECIPE_P = randomUUID();
+    const DAY1 = randomUUID();
+    const DAY2 = randomUUID();
+    await pg.exec(`
+      insert into subscription_tiers (tier_name, display_name, price_monthly, mealprint_access)
+        values ('premium_plus', 'Premium+', 24.99, true);
+      update user_subscriptions set tier_name = 'premium_plus' where user_id = '${PREMIUM_P}';
+      insert into recipes (id, user_id, name, servings, total_kcal, total_protein_g, total_carbs_g, total_fat_g)
+        values ('${RECIPE_P}', '${PREMIUM_P}', 'Rice bowl', 2, 1000, 40, 180, 10);
+      insert into recipe_ingredients (recipe_id, food_id, quantity, unit, sort_order)
+        values ('${RECIPE_P}', '${RICE}', 300, 'g', 0);
+      insert into meal_plans (id, user_id, status, plan_date, meals_per_day, effort_level,
+          target_kcal, target_protein_g, target_carbs_g, target_fat_g, source)
+        values ('${DAY1}', '${PREMIUM_P}', 'active', '2026-11-21', 1, 'quick', 2000, 150, 200, 60, 'ai'),
+               ('${DAY2}', '${PREMIUM_P}', 'active', '2026-11-22', 1, 'quick', 2000, 150, 200, 60, 'ai');
+      insert into meal_plan_meals (plan_id, sort_order, label, log_slot, recipe_id, kcal, protein_g, carbs_g, fat_g)
+        values ('${DAY1}', 0, 'Lunch', 'lunch', '${RECIPE_P}', 500, 20, 90, 5),
+               ('${DAY2}', 0, 'Lunch', 'lunch', '${RECIPE_P}', 500, 20, 90, 5);
+    `);
+    // A list plan using the same recipe too.
+    const listPlan = await http("POST", "/nutrition/meal-plans", PREMIUM_P, {
+      name: "Bowls",
+      meals: [
+        {
+          name: "Dinner",
+          logSlot: "dinner",
+          items: [{ recipeId: RECIPE_P, servings: 1 }],
+        },
+      ],
+    });
+    expect(listPlan.status).toBe(201);
+    for (const body of [
+      { mealPlanId: DAY1 },
+      { mealPlanId: DAY2 },
+      { nutritionPlanId: listPlan.json.data.id },
+    ]) {
+      expect(
+        (await http("POST", "/nutrition/shopping-list/plans", PREMIUM_P, body))
+          .status,
+      ).toBe(200);
+    }
+    const list = await http("GET", "/nutrition/shopping-list", PREMIUM_P);
+    expect(list.json.data.plans).toHaveLength(3);
+    // Three uses of half the recipe each: 3 × 150 g.
+    expect(list.json.data.aisles.flatMap((a: Json) => a.items)).toEqual([
+      expect.objectContaining({ name: "Rice", quantity: "450g" }),
+    ]);
+  });
+});
+
 describe("set-up section meal_plan (BE-A1 hook)", () => {
   it("is live in HANDLERS and validates, materialises, previews and copies", async () => {
     expect(sectionHandler("meal_plan")).toBe(mealPlanSetupHandler);

@@ -179,8 +179,22 @@ export async function buildShoppingList(
         }
         if (!planSource) continue;
         source.meals.push(...planSource.meals);
-        source.recipeIngredients.push(...planSource.recipeIngredients);
-        source.mealItems.push(...planSource.mealItems);
+        // Each plan's source carries the FULL ingredient rows of every recipe
+        // (and items of every saved meal) it uses. `deriveShoppingList`
+        // applies a recipe's rows once per USE, so the rows themselves must
+        // appear once overall, however many plans share the recipe.
+        const haveRecipes = new Set(
+          source.recipeIngredients.map((r) => r.recipeId),
+        );
+        source.recipeIngredients.push(
+          ...planSource.recipeIngredients.filter(
+            (r) => !haveRecipes.has(r.recipeId),
+          ),
+        );
+        const haveMeals = new Set(source.mealItems.map((m) => m.mealId));
+        source.mealItems.push(
+          ...planSource.mealItems.filter((m) => !haveMeals.has(m.mealId)),
+        );
         source.foods.push(...planSource.foods);
         source.recipeTotals.push(...planSource.recipeTotals);
         source.mealTotals.push(...planSource.mealTotals);
