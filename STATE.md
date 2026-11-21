@@ -1,5 +1,70 @@
 # Project memory · persistence-backend-sst
 
+### 2026-11-21 — BE-B1: adherence over a rolling 7 days, target history, one shared calculation ([PER-114](https://linear.app/evans-software-solutions/issue/PER-114); branch `bradleysimmsevans/per-114-be-b1-backend-adherence-over-a`)
+
+Linear "Backend design B — Adherence and the AI weekly summary", D1–D3 only
+(the AI summary changes, migration 3 and the first-week rule are PER-115).
+Backend only; no app or native change.
+
+- **Migration** `20261121000100_nutrition_target_history.sql` (+ rollback):
+  `nutrition_target_history` (index `(user_id, effective_at DESC)`, RLS on, no
+  policies; `user_id` CASCADE, `set_by_user_id` SET NULL). Trigger
+  `nutrition_targets_record_history` (AFTER INSERT OR UPDATE OF the four macro
+  columns, SECURITY DEFINER) copies the row with `effective_at = now()`, so
+  1.2.0 writes record history with no route change. An UPDATE that leaves all
+  four values as they were writes nothing (both upserts always SET all four).
+  Backfill: one `epoch` row per existing target, skipped for any user who
+  already has history, so a re-run is a no-op.
+  - ⚠ `set_by_user_id` is copied from `nutrition_targets.set_by_user_id`. The
+    self `PUT /nutrition/targets` never clears it (existing behaviour, left
+    unchanged), so an athlete editing a coach-set target is recorded under the
+    coach, same as the current row's "Set by" today. Flagged for Brad.
+- **The one calculation**: `application/adherence/computeAdherence.ts` (pure,
+  table-tested). Training = completed sessions today + previous 6 days (27 for
+  28d) by `completed_at` in `profiles.timezone`, vs `sessions_per_week` (×4 for
+  28d). Calories = last 7/28 completed days, never today; each day judged on
+  the target in force (latest history row whose local day ≤ that day); ±10%
+  inclusive; unlogged = `notLogged` (a miss, counted); no target or target ≤ 0
+  = `noTarget` (excluded); before `activated_at` = `beforeCoaching`
+  (excluded). Area keys only when tracked. Unknown zone → Europe/London.
+  `practiceAdherence` sums per area (training clients without a target add to
+  neither sum). `targetResolver` is exported for other day-by-day readers.
+- **`AdherenceRepository`** (`adherence/adherenceRepository.ts`):
+  `load(clientId, relationshipId, window)` as named in the design,
+  `loadForScope(scope, …)`, `loadMany(subjects, …)` (one query per area over
+  all clients, bounded to the window + 2 days), and
+  **`targetsInForceSince(userIds, since)`**: history rows from `since` plus the
+  row in force at `since`, with all four macros and `setByUserId`. PER-113
+  (History day's calories) should read this with the signed-in user's id.
+- **Scoping**: the new route and client detail call `resolveCoachScope`
+  (unchanged). The roster and overview read every client at once, so they use
+  `AdherenceRepository.subjectsForTrainer(trainerId)`: one query applying the
+  same rule (caller's active non-AI relationships, client not deleted, settings
+  filtered by the caller's `trainer_id`). Calling `resolveCoachScope` per
+  client would be ~4 queries × N clients per roster load.
+- **Routes** (all additive): new `GET /trainers/me/clients/:clientId/adherence
+  ?window=7d|28d` → `{data: AdherenceReport}` (read-audited as
+  `client_adherence`; mounted in `trainersOnBehalfRoutes`). Roster items gain
+  `adherenceByArea` (`null` for pending, `{}` when nothing is tracked). Detail
+  gains `adherenceByArea` and `last7Days {training, calories, checkIn: null,
+  forms: null, expected: []}` (design C fills the last three). Overview `data`
+  gains `adherenceByArea` (practice level). Legacy `adherence`, `band`,
+  `adherenceDelta`, `avgAdherence`, `calorieHit` and the roster sort are
+  untouched (the repositories weren't edited). Detail now gates through
+  `resolveCoachScope`, which runs the same `assertTrainerCanActForClient`
+  verdict first, so every 403 body is unchanged.
+- **Tests**: `adherence/__tests__/computeAdherence.test.ts` (D6 test 1, incl.
+  the Oct clock change and Los Angeles) and
+  `adherence/__tests__/adherence.integration.test.ts` (PGlite, real PER-108 +
+  this migration, real handlers): D6 test 2 (self and coach PUTs write
+  history, other columns/re-saves don't, backfill re-run no-op, forward twice /
+  down / up), 3 (route, roster, detail, overview agree), 4 (new fixture
+  `fixtures/contract-1.2.0-adherence.json` from the 1.2.0 models: every legacy
+  roster/overview/detail field unchanged), 5 (two coaches: own training target,
+  same calories; coach D, a plain user and the wrong coach get 403; two-athlete
+  isolation in the batched read). Summary evidence agreement is PER-115's.
+  Existing handler/route-ordering/PER-108 tests got mocks for the new module;
+  the PER-108 roster contract now expects `adherenceByArea: null` added.
 ### 2026-11-21 — BE-C1: coach forms, send rules, requests, responses and review ([PER-116](https://linear.app/evans-software-solutions/issue/PER-116); branch `bradleysimmsevans/per-116-be-c1-backend-coach-forms-send`)
 
 Linear "Backend design C", D1–D3 (approved 20 Nov). Backend only; no app or
@@ -9511,55 +9576,3 @@ PR not yet raised. NO product code — script + dataset + verdict + spec updates
   live refund or live account change was performed. Apple relay sender
   configuration was not inspected. Required slack-progress-updates skill was
   unavailable, so no external completion notification was sent.
-
-### 2026-09-21 — Programme foundations and nutrition recovery
-
-- Nutrition targets now expose required, tappable profile fields with drawer-based DOB,
-  calculation sex, height and weight entry through existing offline commands.
-- Recipe import accepts nested structured recipes and grouped instructions, with
-  a source-preserving paste/manual recovery flow for unreadable pages.
-- PER-5/W1 now has an executable isolated explicit-schedule/revision model and
-  integration contract. It is not wired to production routes. Spec 38 defines
-  coach-authored meal plans and recipient-owned recipe sharing for the next stage.
-- Review screenshots and validation context: docs/reviews/programme-nutrition-2026-09-21.
-  No native app build or deployment initiated. Exact failing recipe URL is still
-  needed to reproduce Brad's reported source.
-- Final validation: core 5,047 tests; mobile 6,894 tests; all remaining
-  workspace test tasks passed. Formatting, typecheck, lint and non-native
-  workspace build passed. Local Inspector Brad full-diff sweep: clean,
-  after fixing delayed-response overwrites of pending and acknowledged edits.
-
-- Review correction: quick-fill uses the shared BottomSheet and DatePickerField,
-  with pinned Save/Cancel actions and keyboard-aware numeric fields. Keep visual
-  evidence outside the PR; screenshots removed from the diff.
-- Drawer correction validation: 6,895 mobile tests passed; typecheck, lint and
-  formatting passed; local Inspector Brad correction sweep clean.
-
-- Measurement follow-up: quick-fill height supports cm, m+cm, inches and ft+in;
-  nutrition weight reuses the shared weigh-in view, now supporting kg, lb,
-  and st+lb. Inputs convert to existing cm/kg storage, accept decimal
-  commas, and preserve target drafts during onboarding.
-- Weight follow-up: removed ounces, unified Geist typography and centred split
-  fields, contained the body-fat percentage, and rounded displayed/saved weights
-  to one decimal including Health prefill. Final mobile suite: 6,953 tests passed;
-  formatting, typecheck, lint and non-mobile build passed; local Inspector clean.
-
-- Calendar follow-up: the weigh-in date icon opens the shared DatePickerField
-  (iOS subdrawer, Android native picker, web calendar), bounded to today. Older
-  dates stay absolute across midnight; recent-day shortcuts remain current.
-  55 focused tests passed, with mobile typecheck and targeted lint; Inspector clean.
-
-- Date-row layout correction: compact proportional shortcuts keep the calendar
-  and all four dates on one line, visually checked at 375px. Onboarding still
-  opens every required profile drawer and preserves the target draft; 73 tests
-  passed across onboarding targets and weigh-in. Local Inspector clean.
-
-- Recipe import follow-up: reproduced Pip Coaching's plain-HTML page and added
-  metadata → labelled HTML → bounded AI fallback. Real public page now extracts
-  17 ingredients,3servings and published macros without AI. AI uses complete
-  source-line ingredients, no tools, guarded fetch, entitlement and atomic
-  per-user daily reservations; review screen identifies its extraction method.
-- Added explicit Paste URL with clipboard validation. Full backend:5,140 tests;
-  final focused backend:177; mobile import/review:105. Typecheck,lint,format and
-  non-mobile build passed; local Inspector clean. No deployment/native build or
-  paid AI invocation. Browser fixtures checked phone-width paste/review UI.

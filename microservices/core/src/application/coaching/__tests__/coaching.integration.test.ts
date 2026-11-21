@@ -128,6 +128,8 @@ import {
 } from "../../account/accountDeletionPlan";
 import contract from "./fixtures/contract-1.2.0.json";
 
+const WITH_ADHERENCE = ROSTER.map((c) => ({ ...c, adherenceByArea: null }));
+
 const MIGRATIONS = "../../../../../../supabase/migrations/";
 const ROLLBACKS = "../../../../../../supabase/rollbacks/";
 const read = (dir: string, file: string) =>
@@ -971,7 +973,9 @@ describe("1.2.0 contract fixtures", () => {
       contract.trainerClients.request.path,
       COACH_A,
     );
-    expect(before.json.data).toEqual(ROSTER);
+    // PER-114 adds `adherenceByArea` per item (null here: not an active
+    // relationship in this database); every 1.2.0 field is unchanged.
+    expect(before.json.data).toEqual(WITH_ADHERENCE);
     expect(before.json.invited).toEqual([
       {
         profileId: profile.id,
@@ -990,7 +994,7 @@ describe("1.2.0 contract fixtures", () => {
       inviteExpiresAt: expiresAt,
     });
     const none = await http("GET", "/trainers/me/clients", COACH_D);
-    expect(none.json).toEqual({ data: ROSTER, invited: [] });
+    expect(none.json).toEqual({ data: WITH_ADHERENCE, invited: [] });
   });
 });
 

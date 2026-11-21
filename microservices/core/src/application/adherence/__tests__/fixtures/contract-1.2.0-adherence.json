@@ -1,0 +1,71 @@
+{
+  "_source": "Recorded from the 1.2.0 store bundle (commit 3bad31e, chore(mobile): app version 1.2.0). packages/mobile/src/domain/models/trainerClient.ts, coachOverview.ts and clientDetail.ts, read by sst-api.adapter.ts getTrainerClients, getCoachOverview and getClientDetail. PER-114 / design B D6 test 4: every field here keeps its value and type.",
+  "trainerClients": {
+    "request": { "method": "GET", "path": "/trainers/me/clients" },
+    "successEnvelope": "data",
+    "dataIsArray": true,
+    "itemFields": [
+      "id",
+      "name",
+      "initials",
+      "avatarUrl",
+      "status",
+      "programLabel",
+      "programEndDate",
+      "adherence",
+      "band",
+      "lastSeenAt",
+      "flags",
+      "relationshipId",
+      "initiatedBy"
+    ]
+  },
+  "coachOverview": {
+    "request": { "method": "GET", "path": "/trainers/me/overview" },
+    "successEnvelope": "data",
+    "fields": [
+      "trainer",
+      "businessStats",
+      "clientHealthBreakdown",
+      "programStats",
+      "recentActivity"
+    ],
+    "businessStatsFields": [
+      "activeClients",
+      "newClientsThisMonth",
+      "slotsTotal",
+      "slotsOpen",
+      "avgAdherence",
+      "adherenceDelta",
+      "clientPRsThisMonth",
+      "clientsWithPRs",
+      "retentionPct",
+      "churnThisQuarter"
+    ]
+  },
+  "clientDetail": {
+    "request": { "method": "GET", "path": "/trainers/me/clients/:clientId" },
+    "successEnvelope": "data",
+    "fields": [
+      "client",
+      "adherence",
+      "prs",
+      "volume",
+      "calorieHit",
+      "goal",
+      "habits",
+      "aiSummary",
+      "thisWeek",
+      "recentSessions",
+      "notes"
+    ],
+    "adherenceFields": ["overall", "band", "categories"],
+    "calorieHitFields": [
+      "targetKcal",
+      "daysHit",
+      "daysLogged",
+      "todayKcal",
+      "todayRemainingKcal"
+    ]
+  }
+}

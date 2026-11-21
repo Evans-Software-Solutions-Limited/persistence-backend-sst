@@ -5,7 +5,12 @@ import {
   getUser,
 } from "@persistence/api-utils/auth/supabaseAuth";
 import { ClientDetailRepository } from "../../repositories/clientDetailRepository";
-import { assertTrainerCanActForClient } from "../../relationships/assertTrainerCanActForClient";
+import { resolveCoachScope } from "../../relationships/resolveCoachScope";
+import {
+  clientAdherenceReport,
+  last7Days,
+} from "../../adherence/coachAdherence";
+import { adherenceByArea } from "../../adherence/computeAdherence";
 import { auditClientDataRead } from "../../relationships/auditClientDataRead";
 
 /**
@@ -32,6 +37,11 @@ import { auditClientDataRead } from "../../relationships/auditClientDataRead";
  * specific `…/:clientId/active-programme`, `…/:clientId/goals`, etc.; Elysia
  * matches static segments before the terminal `:clientId`, so the bare route
  * does not shadow them (guarded by a route-ordering test).
+ *
+ * PER-114 (design B D3): gated by `resolveCoachScope` (which runs the same
+ * `assertTrainerCanActForClient` verdict first, so every 403 is unchanged) and
+ * `data` gains `adherenceByArea` and `last7Days` from the one shared
+ * calculation. The legacy `adherence` and `calorieHit` modules are unchanged.
  */
 export const trainersClientDetailGetHandler = new Elysia()
   .derive(async ({ headers }) => ({
@@ -44,7 +54,7 @@ export const trainersClientDetailGetHandler = new Elysia()
       const { sub: trainerId } = getUser(ctx);
       const { clientId } = ctx.params as { clientId: string };
 
-      const verdict = await assertTrainerCanActForClient(trainerId, clientId);
+      const verdict = await resolveCoachScope(trainerId, clientId);
       if (!verdict.allowed) {
         ctx.set.status = verdict.status;
         return verdict.body;
@@ -57,10 +67,15 @@ export const trainersClientDetailGetHandler = new Elysia()
         route: "/trainers/me/clients/:clientId",
       }).catch(() => {});
 
-      const data = await new ClientDetailRepository().getClientDetail(
-        trainerId,
-        clientId,
-      );
+      const [detail, report] = await Promise.all([
+        new ClientDetailRepository().getClientDetail(trainerId, clientId),
+        clientAdherenceReport(verdict.scope, "7d"),
+      ]);
+      const data = {
+        ...detail,
+        adherenceByArea: adherenceByArea(report),
+        last7Days: last7Days(report),
+      };
       return { data };
     },
     {
