@@ -477,7 +477,8 @@ describe("RecapContainer", () => {
       </AdapterProvider>,
     );
     await waitFor(() => expect(remote.recap).toHaveBeenCalled());
-    await waitFor(() => expect(mockProbe.last!.coverageNote).toBeNull());
+    // Not used, so the page still says what the phone covers.
+    await waitFor(() => expect(mockProbe.last!.coverageNote).toMatch(/^From /));
     expect(mockProbe.last!.pages[0]).toMatchObject({ big: "1" });
   });
 
@@ -499,8 +500,15 @@ describe("RecapContainer", () => {
       </AdapterProvider>,
     );
     await waitFor(() => expect(remote.recap).toHaveBeenCalled());
-    await waitFor(() => expect(mockProbe.last!.coverageNote).toBeNull());
-    expect(mockProbe.last!.pages[0]).toMatchObject({ big: "1" });
+    // The server's answer wasn't used, so the page still says what the
+    // phone covers and makes no comparison with a week it never held
+    // (Inspector Brad #545, sweep 3).
+    await waitFor(() =>
+      expect(mockProbe.last!.coverageNote).toMatch(
+        /^From .*, when this phone started keeping your history\.$/,
+      ),
+    );
+    expect(mockProbe.last!.pages[0]).toMatchObject({ big: "1", sub: "" });
     r.unmount();
 
     // Once the server counts it, its fuller recap is shown.

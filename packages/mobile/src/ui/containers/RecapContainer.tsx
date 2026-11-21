@@ -251,7 +251,15 @@ export function RecapContainer({
 
   const remoteRecap =
     partial && remoteState?.period === period ? remoteState.data : null;
-  const remoteOk = remoteRecap != null;
+  // The server's recap is used only when it counts every workout the phone
+  // holds for the period (one still queued would otherwise vanish). The
+  // coverage note and the comparison follow whether it was USED, not
+  // whether one arrived.
+  const usedRecap =
+    remoteRecap && userId && serverHolds(remoteRecap.sessionIds, periodSessions)
+      ? remoteRecap
+      : null;
+  const remoteOk = usedRecap != null;
   // The comparison needs the whole period before on the phone, or the
   // server's answer for it.
   const previousCovered =
@@ -264,14 +272,8 @@ export function RecapContainer({
       records: log.records,
       musclesOf: log.musclesOf,
     });
-    // The server's recap, only when it counts every workout the phone
-    // holds for the period (one still queued would otherwise vanish).
     const model =
-      remoteRecap &&
-      userId &&
-      serverHolds(remoteRecap.sessionIds, periodSessions)
-        ? remoteRecapModel(remoteRecap, userId)
-        : local;
+      usedRecap && userId ? remoteRecapModel(usedRecap, userId) : local;
     return recapPages(model, {
       now,
       unit,
@@ -285,9 +287,8 @@ export function RecapContainer({
     unit,
     streaks.data,
     previousCovered,
-    remoteRecap,
+    usedRecap,
     userId,
-    periodSessions,
   ]);
 
   return (
