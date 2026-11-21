@@ -391,6 +391,71 @@ describe("YouContainer", () => {
     expect(mockProbe.last!.topLifts[0]).toMatchObject({ name: "Bench press" });
   });
 
+  it("drops yesterday's server week after midnight when the new ask finds nothing (Inspector Brad #545)", async () => {
+    jest.useFakeTimers({
+      doNotFake: [
+        "setTimeout",
+        "clearTimeout",
+        "setInterval",
+        "clearInterval",
+        "setImmediate",
+        "clearImmediate",
+        "nextTick",
+        "queueMicrotask",
+        "performance",
+        "requestAnimationFrame",
+        "cancelAnimationFrame",
+      ],
+    });
+    try {
+      jest.setSystemTime(new Date(2026, 10, 21, 23, 59));
+      const week: RemoteMuscleVolume = {
+        days: 7,
+        from: "x",
+        to: "y",
+        timezone: "Europe/London",
+        bodyType: "male",
+        muscles: [remoteChestRow],
+        trainNext: ["chest"],
+        rest: [],
+        totals: { ...remoteTotals, workouts: 3 },
+        topLifts: [],
+        asOf: "x",
+      };
+      const lastSevenDays = jest
+        .fn()
+        .mockResolvedValueOnce({ status: "ok" as const, data: week })
+        .mockResolvedValue({ status: "unavailable" as const });
+      const remote = {
+        historyMonth: jest.fn(),
+        recap: jest.fn(),
+        lastSevenDays,
+      };
+      const { adapters } = makeAdapters();
+      const r = render(
+        <AdapterProvider adapters={adapters}>
+          <YouContainer remote={remote} />
+        </AdapterProvider>,
+      );
+      await waitFor(() =>
+        expect(mockProbe.last?.lastSevenDays.workouts).toBe("3"),
+      );
+      // Past midnight, offline: the new day's week has nothing kept.
+      jest.setSystemTime(new Date(2026, 10, 22, 0, 1));
+      r.rerender(
+        <AdapterProvider adapters={adapters}>
+          <YouContainer remote={remote} />
+        </AdapterProvider>,
+      );
+      await waitFor(() => expect(lastSevenDays).toHaveBeenCalledTimes(2));
+      await waitFor(() =>
+        expect(mockProbe.last?.lastSevenDays.workouts).toBe("0"),
+      );
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it("falls back to the email initial until the profile resolves", async () => {
     const { adapters } = makeAdapters();
     renderYou(adapters);

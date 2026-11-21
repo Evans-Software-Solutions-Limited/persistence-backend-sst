@@ -193,18 +193,26 @@ export function YouContainer({
   // coverage note on the canvas).
   // Only once signed in: before auth resolves there's no log to judge.
   const weekPartial = userId != null && needsRemote(log.since, window7.from);
-  const [remoteWeek, setRemoteWeek] = useState<RemoteMuscleVolume | null>(null);
+  // Stamped with the day it was asked for: after midnight yesterday's week
+  // is never shown, whether the new ask is still out or came back empty.
+  const [remoteAnswer, setRemoteAnswer] = useState<{
+    day: string;
+    data: RemoteMuscleVolume | null;
+  } | null>(null);
   useEffect(() => {
     if (!weekPartial) return;
     let alive = true;
+    const day = dayKeyNow;
     void remote.lastSevenDays().then((r) => {
-      if (alive && r.status === "ok") setRemoteWeek(r.data);
+      if (alive)
+        setRemoteAnswer({ day, data: r.status === "ok" ? r.data : null });
     });
     return () => {
       alive = false;
     };
     // A newly logged workout asks again, once it has had a chance to sync.
   }, [remote, weekPartial, dayKeyNow, log.sessions.length]);
+  const remoteWeek = remoteAnswer?.day === dayKeyNow ? remoteAnswer.data : null;
   // Each workout's own records (the PR cache keeps only the latest best).
   const records = log.records;
 
