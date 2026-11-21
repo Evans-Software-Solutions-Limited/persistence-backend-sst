@@ -630,14 +630,42 @@ describe("isolation (Design D test 1)", () => {
   it("hides a plan whose coach account was deleted", async () => {
     const plan = await coachPlan();
     await assign(plan.id);
+    // The plan and assignment are long settled; only the coach's account changes.
+    await pg.exec(`
+      update nutrition_plans set updated_at = now() - interval '1 day';
+      update nutrition_plan_assignments set updated_at = now() - interval '1 day';
+    `);
+    const beforeDelete = new Date(Date.now() - 60_000).toISOString();
+    // As AccountRepository.softDelete writes it.
     await pg.exec(
-      `update profiles set deleted_at = now() where id = '${COACH_A}'`,
+      `update profiles set deleted_at = now(), updated_at = now() where id = '${COACH_A}'`,
     );
     expect(
       (await http("GET", `/nutrition/meal-plans/${plan.id}`, CLIENT_C)).status,
     ).toBe(404);
     const list = await http("GET", "/nutrition/meal-plans", CLIENT_C);
     expect(list.json.data.fromCoaches).toEqual([]);
+    // An offline client syncing with ?since= must learn the plan is gone…
+    const synced = await http(
+      "GET",
+      `/nutrition/meal-plans?since=${encodeURIComponent(beforeDelete)}`,
+      CLIENT_C,
+    );
+    expect(synced.json.data.deletedIds).toEqual([plan.id]);
+    // …and get it back when the coach restores the account.
+    const beforeRestore = new Date(Date.now() - 1000).toISOString();
+    await pg.exec(
+      `update profiles set deleted_at = null, updated_at = now() where id = '${COACH_A}'`,
+    );
+    const restored = await http(
+      "GET",
+      `/nutrition/meal-plans?since=${encodeURIComponent(beforeRestore)}`,
+      CLIENT_C,
+    );
+    expect(restored.json.data.fromCoaches.map((f: Json) => f.plan.id)).toEqual([
+      plan.id,
+    ]);
+    expect(restored.json.data.deletedIds).toEqual([]);
   });
 
   it("rejects assignment ids from another coach or client", async () => {

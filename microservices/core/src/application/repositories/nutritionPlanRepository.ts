@@ -907,9 +907,14 @@ export class NutritionPlanRepository {
         since
           ? and(
               eq(nutritionPlanAssignments.clientId, clientId),
+              // The coach's profile too: soft-delete and restore only
+              // touch `profiles` (deleted_at + updated_at), and either flips
+              // the access rule. Any other profile edit just re-sends the
+              // plan, which is harmless.
               or(
                 gt(nutritionPlanAssignments.updatedAt, since),
                 gt(nutritionPlans.updatedAt, since),
+                gt(profiles.updatedAt, since),
               ),
             )
           : and(
