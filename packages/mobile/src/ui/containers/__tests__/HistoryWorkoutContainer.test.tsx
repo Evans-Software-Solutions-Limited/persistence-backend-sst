@@ -108,6 +108,8 @@ describe("HistoryWorkoutContainer (Y2b)", () => {
     mockProbe.pages = null;
     mockProbe.details = null;
     mockBack.mockClear();
+    delete mockParams.id;
+    delete mockParams.at;
   });
 
   it("opens a workout History read from the server (BE-H1)", async () => {
@@ -142,8 +144,6 @@ describe("HistoryWorkoutContainer (Y2b)", () => {
         setId: "set-1",
       },
     ]);
-    delete mockParams.id;
-    delete mockParams.at;
   });
 
   it("opens a past workout in the summary carousel with Close, not Continue", async () => {
