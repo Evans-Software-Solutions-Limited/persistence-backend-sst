@@ -39,6 +39,9 @@ export type RecipeDTO = {
   totalProteinG: number | null;
   totalCarbsG: number | null;
   totalFatG: number | null;
+  /** Design D (PER-118): set on a copy shared by a coach or made by Duplicate. */
+  sourceRecipeId: string | null;
+  sharedByUserId: string | null;
   ingredients: RecipeIngredientDTO[];
 };
 
@@ -84,6 +87,8 @@ function toRecipeDTO(row: Recipe, ingredients: RecipeIngredient[]): RecipeDTO {
     totalProteinG: numOrNull(row.totalProteinG),
     totalCarbsG: numOrNull(row.totalCarbsG),
     totalFatG: numOrNull(row.totalFatG),
+    sourceRecipeId: row.sourceRecipeId ?? null,
+    sharedByUserId: row.sharedByUserId ?? null,
     ingredients: ingredients
       .slice()
       .sort((a, b) => a.sortOrder - b.sortOrder)

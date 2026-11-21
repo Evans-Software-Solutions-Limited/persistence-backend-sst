@@ -1,5 +1,80 @@
 # Project memory · persistence-backend-sst
 
+### 2026-11-21 — List meal plans, coach plans with live edits, duplicate, recipe share, shopping list ([PER-118](https://linear.app/evans-software-solutions/issue/PER-118), BE-D2; branch `bradleysimmsevans/per-118-be-d2-backend-list-meal-plans`)
+
+Design D (Linear doc on PER-66), plans part of migration 6. Mealprint swaps and
+"save a day as a plan" (`fromMealprintPlanId`) are BE-D3 (PER-119), not here.
+- **Migration** `20261121000118_meal_plans_coach_assignments.sql` (+ rollback):
+  `nutrition_plans` (revision, `client_request_id`, source CHECK),
+  `nutrition_plan_meals`, `nutrition_plan_items` (exactly-one-source CHECK;
+  server-computed macros), `nutrition_plan_assignments` (partial unique
+  `(plan_id, relationship_id) WHERE status <> 'removed'`), `shopping_list_plans`,
+  `recipes.source_recipe_id` / `shared_by_user_id` (FULL unique
+  `(user_id, source_recipe_id)`), enum values `notification_type`
+  'meal_plan_assigned' and `action_type_enum` 'meal_plan_assigned' /
+  'recipe_shared'. RLS on, no policies. ⚠ Migrate before deploy: the recipe
+  columns are in the Drizzle mirror, so every recipe read 42703s without them.
+  - Beyond the design's column lists: item `food_id`/`recipe_id`/`meal_id`
+    have **no FK** (deleting a recipe a plan lists must not fail) plus a
+    `display_name` snapshot; assignments have `updated_at` (so `?since=` can
+    report a removal); `shopping_list_plans` has an `id`.
+- **Access rule** lives only in `repositories/nutritionPlanRepository.ts`
+  `getReadable`: owner, or a client with a `sent`/`added` assignment on an
+  ACTIVE relationship whose coach isn't deleted. Archived plans: nobody. Reads
+  embed food/recipe (with ingredients)/saved-meal summaries and a per-item
+  `logEntry` hint: the owner logs by reference; a client logs coach rows as a
+  one-off with the item's macros (the entry routes are owner-scoped), and
+  shared-catalogue foods by id.
+- **Routes** (`nutrition/mealPlans/`, grouped in `mealPlanRoutes`, mounted once
+  in `nutritionRoutes` so `coachingRoutes` is untouched):
+  `/nutrition/meal-plans` GET `?since=` (`{mine, fromCoaches, deletedIds, asOf}`,
+  `asOf` 2 min behind like PER-108) / POST (`Idempotency-Key`) / GET/PUT
+  (`expectedRevision` → 409 `revision_conflict` + `current`) / DELETE (archive,
+  idempotent 204, assignments → removed); `/:id/duplicate`; `/:id/assignment`
+  (`added`/`dismissed`, `seenRevision` only moves forward, capped at the
+  revision). Coach: `/trainers/me/meal-plans*` (trainer role, own plans only),
+  `/trainers/me/clients/:clientId/meal-plans` GET (usage: `usedDays` = distinct
+  UTC days, `loggedThisWeek` = rolling 7 days; client target) / POST (replay →
+  200 same row; a `dismissed` one is re-sent) / PATCH / DELETE, and
+  `/trainers/me/clients/:clientId/recipes/:recipeId/share`. Shopping:
+  `GET /nutrition/shopping-list`, `POST /nutrition/shopping-list/plans`,
+  `DELETE /nutrition/shopping-list/plans/:planId`.
+- **Writes by a client** on a coach plan → 403 `read_only`; anyone else 404.
+- **Capability `manual_meal_plans`** (`manualMealPlans.ts`): trainer roles, or
+  a live paid tier via `evaluateTogetherEligibility` (same "who is paying"
+  rule). Gates create only; 403 `{error: "manual_meal_plans"}` (not the 402
+  entitlement shape, per the design). Duplicate, edit, archive, logging and
+  the shopping list are open to the owner/reader.
+- **Copies** (`copyGraph.ts`): Duplicate of a coach plan copies coach recipes
+  with attribution (once per source per account), copies the coach's private
+  foods (never dropped), flattens saved meals and deleted sources to one-offs
+  with the same macros. Recipe share checks ownership BEFORE the idempotent
+  existing-copy lookup (found by the tests: coach B could otherwise "share"
+  A's recipe once a copy existed). `RecipeDTO` gains `sourceRecipeId` /
+  `sharedByUserId` (additive).
+- **Push:** assignment writes a `meal_plan_assigned` notification + audit row in
+  the transaction, `dispatchExisting` after commit; deep link `/nutrition`
+  (1.2.0 maps it to the Fuel tab). Not on the preferences list (same ordering
+  trap as `subscription_transferred`).
+- **Set-up:** `meal_plan` handler in `coaching/setupSections.ts` `HANDLERS`
+  (one import + one line); validate/materialise/preview/copy-from in
+  `mealPlanSetupHandler.ts`. **Offboarding:** `endCoachClientRelationship`
+  step 3c calls `removePlanAssignmentsForRelationship`.
+- **Shopping list** reuses `deriveShoppingList` unchanged: food item → a meal
+  of one `{foodId, servings}`; recipe/meal item → its kcal, so the existing
+  kcal ratio gives `servings / recipe.servings`. One-offs add nothing.
+  Mealprint plans count only while `meal_ai` is allowed.
+- **Tests:** `nutrition/mealPlans/__tests__/mealPlans.integration.test.ts`
+  (PGlite, real migrations and handlers; JWT and push stubbed): Design D
+  tests 1, 2, 6 and 7, shopping list, set-up hook, migration forward twice /
+  down / up. Shared fixtures updated: `nutritionTestDb.ts` now applies this
+  migration, the PER-108 coaching suite creates the two plan tables and uses
+  `resource` as its "no handler" section, and the offboarding unit test
+  expects the extra update.
+- **Not verified:** nothing deployed or run against staging/prod Postgres;
+  PGlite only. Concurrent-race fallbacks (two simultaneous sends/copies) are
+  unexercised (single-connection PGlite).
+
 ### 2026-11-20 — You page Y1–Y4, offline-first (PER-141 APP-H1; branch `bradleysimmsevans/per-141-app-h1-athlete-you-page-y1y4`)
 
 [PER-141](https://linear.app/evans-software-solutions/issue/PER-141), PR #541 (open, no auto-merge). Athlete

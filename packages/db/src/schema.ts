@@ -202,6 +202,9 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   // the notice is to make a silent disappearance actionable. Companion enum
   // migration: 20260728120000_subscription_transferred_notification_type.sql.
   "subscription_transferred",
+  // Design D (PER-118) — a coach sent the client a meal plan. Added in
+  // 20261121000118_meal_plans_coach_assignments.sql.
+  "meal_plan_assigned",
 ]);
 
 // M4 (06-progress-goals) — streak engine period types. cross-cuts § 3.1.
@@ -277,6 +280,10 @@ export const actionTypeEnum = pgEnum("action_type_enum", [
   // Companion enum migration:
   // 20260720120000_relationship_terminated_audit_value.sql.
   "relationship_terminated",
+  // Design D (PER-118) — a coach sent a meal plan / shared a recipe copy.
+  // Added in 20261121000118_meal_plans_coach_assignments.sql.
+  "meal_plan_assigned",
+  "recipe_shared",
 ]);
 
 // ─── Lookup & Metadata ────────────────────────────────────────────────────────
@@ -2313,8 +2320,25 @@ export const recipes = pgTable(
     totalCarbsG: numeric("total_carbs_g"),
     totalFatG: numeric("total_fat_g"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    // Design D (PER-118) — attribution for a coach → client share or a copy
+    // made by Duplicate. ⚠ MIGRATE BEFORE DEPLOY (every recipe SELECT lists
+    // them). 20261121000118_meal_plans_coach_assignments.sql.
+    sourceRecipeId: uuid("source_recipe_id").references(
+      (): AnyPgColumn => recipes.id,
+      { onDelete: "set null" },
+    ),
+    sharedByUserId: uuid("shared_by_user_id").references(() => profiles.id, {
+      onDelete: "set null",
+    }),
   },
-  (t) => [index("recipes_user_idx").on(t.userId)],
+  (t) => [
+    index("recipes_user_idx").on(t.userId),
+    // FULL unique (42P10): one copy per source per account.
+    uniqueIndex("recipes_user_source_recipe_idx").on(
+      t.userId,
+      t.sourceRecipeId,
+    ),
+  ],
 );
 
 export const recipeIngredients = pgTable(
@@ -2689,6 +2713,159 @@ export const mealPlanMeals = pgTable(
   ],
 );
 
+// ─── Design D (PER-118): list meal plans and coach assignments ────────────────
+// 20261121000118_meal_plans_coach_assignments.sql. A plan is a named list of
+// meals with no dates and no target of its own. The owner reads and writes; an
+// assigned client reads only (`NutritionPlanRepository.getReadable`).
+export const nutritionPlans = pgTable(
+  "nutrition_plans",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ownerId: uuid("owner_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    notes: text("notes"),
+    // 'manual' | 'mealprint' | 'coach' | 'duplicate' (DB CHECK).
+    source: text("source").notNull().default("manual"),
+    // Provenance only, no FK.
+    sourcePlanId: uuid("source_plan_id"),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    revision: integer("revision").notNull().default(1),
+    clientRequestId: text("client_request_id"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("nutrition_plans_owner_client_request_idx").on(
+      t.ownerId,
+      t.clientRequestId,
+    ),
+    index("nutrition_plans_owner_updated_idx").on(t.ownerId, t.updatedAt),
+  ],
+);
+
+export const nutritionPlanMeals = pgTable(
+  "nutrition_plan_meals",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    planId: uuid("plan_id")
+      .notNull()
+      .references(() => nutritionPlans.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    logSlot: text("log_slot").notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+  },
+  (t) => [index("nutrition_plan_meals_plan_idx").on(t.planId, t.sortOrder)],
+);
+
+export const nutritionPlanItems = pgTable(
+  "nutrition_plan_items",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    planMealId: uuid("plan_meal_id")
+      .notNull()
+      .references(() => nutritionPlanMeals.id, { onDelete: "cascade" }),
+    // Exactly one of the four is set (DB CHECK). No FKs: deleting a recipe a
+    // plan lists must not fail; `displayName` keeps the item readable.
+    foodId: uuid("food_id"),
+    recipeId: uuid("recipe_id"),
+    mealId: uuid("meal_id"),
+    custom: jsonb("custom").$type<{
+      name: string;
+      kcal: number;
+      proteinG: number;
+      carbsG: number;
+      fatG: number;
+    }>(),
+    displayName: text("display_name").notNull().default(""),
+    servings: numeric("servings").notNull(),
+    // Computed by the server on write.
+    kcal: numeric("kcal").notNull(),
+    proteinG: numeric("protein_g").notNull(),
+    carbsG: numeric("carbs_g").notNull(),
+    fatG: numeric("fat_g").notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+  },
+  (t) => [index("nutrition_plan_items_meal_idx").on(t.planMealId, t.sortOrder)],
+);
+
+export const nutritionPlanAssignments = pgTable(
+  "nutrition_plan_assignments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    planId: uuid("plan_id")
+      .notNull()
+      .references(() => nutritionPlans.id, { onDelete: "cascade" }),
+    trainerId: uuid("trainer_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    relationshipId: uuid("relationship_id")
+      .notNull()
+      .references(() => ptClientRelationships.id, { onDelete: "cascade" }),
+    note: text("note"),
+    // 'sent' | 'added' | 'dismissed' | 'removed' (DB CHECK).
+    status: text("status").notNull().default("sent"),
+    seenRevision: integer("seen_revision").notNull().default(0),
+    sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
+    addedAt: timestamp("added_at", { withTimezone: true }),
+    removedAt: timestamp("removed_at", { withTimezone: true }),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    clientRequestId: text("client_request_id"),
+  },
+  (t) => [
+    // ⚠ The partial unique `nutrition_plan_assignments_live_idx`
+    // (plan_id, relationship_id) WHERE status <> 'removed' lives in the
+    // migration only; writes use a target-less ON CONFLICT DO NOTHING.
+    uniqueIndex("nutrition_plan_assignments_trainer_client_request_idx").on(
+      t.trainerId,
+      t.clientRequestId,
+    ),
+    index("nutrition_plan_assignments_client_idx").on(t.clientId, t.updatedAt),
+    index("nutrition_plan_assignments_relationship_idx").on(t.relationshipId),
+  ],
+);
+
+export const shoppingListPlans = pgTable(
+  "shopping_list_plans",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    // Exactly one of the two is set (DB CHECK).
+    nutritionPlanId: uuid("nutrition_plan_id").references(
+      () => nutritionPlans.id,
+      { onDelete: "cascade" },
+    ),
+    mealPlanId: uuid("meal_plan_id").references(() => mealPlans.id, {
+      onDelete: "cascade",
+    }),
+    addedAt: timestamp("added_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("shopping_list_plans_user_nutrition_plan_idx").on(
+      t.userId,
+      t.nutritionPlanId,
+    ),
+    uniqueIndex("shopping_list_plans_user_meal_plan_idx").on(
+      t.userId,
+      t.mealPlanId,
+    ),
+  ],
+);
+
 export const waterLog = pgTable(
   "water_log",
   {
@@ -2885,6 +3062,11 @@ export type NewMealItem = typeof mealItems.$inferInsert;
 export type NutritionEntry = typeof nutritionEntries.$inferSelect;
 export type NewNutritionEntry = typeof nutritionEntries.$inferInsert;
 export type UserMeal = typeof userMeals.$inferSelect;
+export type NutritionPlan = typeof nutritionPlans.$inferSelect;
+export type NutritionPlanMeal = typeof nutritionPlanMeals.$inferSelect;
+export type NutritionPlanItem = typeof nutritionPlanItems.$inferSelect;
+export type NutritionPlanAssignment =
+  typeof nutritionPlanAssignments.$inferSelect;
 export type NutritionTarget = typeof nutritionTargets.$inferSelect;
 export type NewNutritionTarget = typeof nutritionTargets.$inferInsert;
 export type WaterLog = typeof waterLog.$inferSelect;

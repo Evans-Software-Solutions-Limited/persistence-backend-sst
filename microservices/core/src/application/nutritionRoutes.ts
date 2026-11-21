@@ -11,6 +11,8 @@ import { nutritionEntriesDeleteHandler } from "./nutrition/entries/delete/nutrit
 import { nutritionEntriesBatchHandler } from "./nutrition/entries/batch/nutritionEntriesBatchHandler";
 import { nutritionUserMealsGetHandler } from "./nutrition/userMeals/get/nutritionUserMealsGetHandler";
 import { nutritionUserMealsPutHandler } from "./nutrition/userMeals/put/nutritionUserMealsPutHandler";
+// Design D (PER-118): list meal plans, coach library and assignments, shopping list.
+import { mealPlanRoutes } from "./nutrition/mealPlans/mealPlanRoutes";
 import { nutritionTargetsGetHandler } from "./nutrition/targets/get/nutritionTargetsGetHandler";
 import { nutritionTargetsSetHandler } from "./nutrition/targets/set/nutritionTargetsSetHandler";
 import { nutritionWaterGetHandler } from "./nutrition/water/get/nutritionWaterGetHandler";
@@ -73,6 +75,10 @@ export const nutritionRoutes = new Elysia()
   .use(nutritionEntriesBatchHandler)
   .use(nutritionUserMealsGetHandler)
   .use(nutritionUserMealsPutHandler)
+  // PER-118: /nutrition/meal-plans*, /nutrition/shopping-list*,
+  // /trainers/me/meal-plans*, /trainers/me/clients/:clientId/meal-plans* and
+  // the recipe share. All new paths; Mealprint's /nutrition/plans* unchanged.
+  .use(mealPlanRoutes)
   .use(nutritionTargetsGetHandler)
   .use(nutritionTargetsSetHandler)
   .use(nutritionWaterGetHandler)
