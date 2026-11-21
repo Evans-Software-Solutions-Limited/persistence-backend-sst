@@ -149,6 +149,9 @@ const BASE_TABLES = [
   schema.programAssignments,
   schema.workoutAssignments,
   schema.clientAiSummaries,
+  // PER-118: the offboarding teardown and the meal_plan set-up section read these.
+  schema.nutritionPlans,
+  schema.nutritionPlanAssignments,
 ];
 
 function ddl(table: PgTable): string {
@@ -1633,9 +1636,9 @@ describe("invited profiles", () => {
         COACH_A,
         { items },
       );
+    // meal_plan went live with PER-118 (its own suite covers it).
     for (const section of [
       "programme",
-      "meal_plan",
       "starter_form",
       "repeating_form",
       "resource",
@@ -1836,11 +1839,11 @@ describe("fallbacks", () => {
       );
       // Rows a later build might leave behind.
       await db.insert(schema.coachClientSetupItems).values([
-        { profileId: profile.id, section: "meal_plan", sortOrder: 0 },
+        { profileId: profile.id, section: "resource", sortOrder: 0 },
         {
           profileId: profile.id,
           section: "resource",
-          sortOrder: 0,
+          sortOrder: 1,
           materialisedAt: new Date(0),
         },
       ]);
@@ -1850,7 +1853,8 @@ describe("fallbacks", () => {
       expect(materialise).toHaveBeenCalledTimes(1);
       const items = await db.select().from(schema.coachClientSetupItems);
       expect(
-        items.find((i) => i.section === "meal_plan")!.materialisedAt,
+        items.find((i) => i.section === "resource" && i.sortOrder === 0)!
+          .materialisedAt,
       ).toBeNull();
       const [settings] = await db.select().from(schema.coachClientSettings);
       expect(settings).toMatchObject({

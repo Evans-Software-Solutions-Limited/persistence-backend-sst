@@ -10,6 +10,7 @@ import { getDb } from "@persistence/db/client";
 import { auditTrainerAction } from "./auditTrainerAction";
 import { recordDataSharingConsent } from "./recordDataSharingConsent";
 import { CONSENT_VERSION } from "./consent";
+import { removePlanAssignmentsForRelationship } from "../repositories/nutritionPlanRepository";
 
 export interface EndCoachClientRelationshipArgs {
   trainerId: string;
@@ -196,6 +197,11 @@ export async function endCoachClientRelationship({
           eq(coachClientProfiles.status, "active"),
         ),
       );
+
+    // 3c — Design D (PER-118): this coach's meal-plan assignments for this
+    // relationship become `removed`, so a revived relationship doesn't make
+    // them readable again. The plans stay in the coach's library.
+    await removePlanAssignmentsForRelationship(tx, row.id, trainerId);
 
     await auditTrainerAction({
       trainerId,

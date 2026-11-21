@@ -13,6 +13,7 @@ import {
   type DbTransaction,
 } from "../relationships/auditTrainerAction";
 import { CLIENT_BRIEF_DEEP_LINK } from "../trainers/briefs/sendClientBrief";
+import { mealPlanSetupHandler } from "../nutrition/mealPlans/mealPlanSetupHandler";
 
 /**
  * Set-up sections for an invited client (PER-108, design A D1/D3/D4, canvas
@@ -316,6 +317,7 @@ const welcomeMessageHandler: SetupSectionHandler = {
 const HANDLERS: Partial<Record<SetupSection, SetupSectionHandler>> = {
   nutrition_target: nutritionTargetHandler,
   welcome_message: welcomeMessageHandler,
+  meal_plan: mealPlanSetupHandler, // PER-118
 };
 
 /**
