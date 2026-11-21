@@ -1,6 +1,6 @@
 import { fireEvent } from "@testing-library/react-native";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
-import { muscleCredit } from "@/domain/services/trainingMetrics/muscleCredit";
+import { muscleCredit } from "@persistence/training-metrics";
 import { bodyMapShading } from "@/domain/services/youPage";
 import {
   sparklinePoints,

@@ -765,6 +765,15 @@ ${indentSyncQueueDdl(8)}
         user_id TEXT PRIMARY KEY,
         since TEXT NOT NULL
       );
+      -- PER-113: BE-H1 answers for ranges the training log doesn't hold,
+      -- keyed by what they cover (see getCachedYouRemote).
+      CREATE TABLE IF NOT EXISTS cached_you_remote (
+        user_id TEXT NOT NULL,
+        key TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        synced_at TEXT NOT NULL,
+        PRIMARY KEY (user_id, key)
+      );
       CREATE TABLE IF NOT EXISTS cached_streaks (
         user_id TEXT PRIMARY KEY,
         payload TEXT NOT NULL,
@@ -3308,6 +3317,27 @@ ${indentSyncQueueDdl(12)}
     );
   }
 
+  getCachedYouRemote(
+    userId: string,
+    key: string,
+  ): { payload: unknown; syncedAt: string } | null {
+    const row = this.getDb().getFirstSync(
+      `SELECT payload, synced_at FROM cached_you_remote WHERE user_id = ? AND key = ?`,
+      [userId, key],
+    ) as { payload: string; synced_at: string } | null;
+    return row
+      ? { payload: JSON.parse(row.payload), syncedAt: row.synced_at }
+      : null;
+  }
+
+  cacheYouRemote(userId: string, key: string, payload: unknown): void {
+    this.getDb().runSync(
+      `INSERT INTO cached_you_remote (user_id, key, payload, synced_at) VALUES (?, ?, ?, ?)
+       ON CONFLICT(user_id, key) DO UPDATE SET payload = excluded.payload, synced_at = excluded.synced_at`,
+      [userId, key, JSON.stringify(payload), new Date().toISOString()],
+    );
+  }
+
   cacheActiveSession(userId: string, session: WorkoutSession): void {
     const db = this.getDb();
     const now = new Date().toISOString();
@@ -3970,6 +4000,7 @@ ${indentSyncQueueDdl(12)}
       DELETE FROM training_log_since;
       DELETE FROM training_log_ids;
       DELETE FROM training_log_records;
+      DELETE FROM cached_you_remote;
     `);
   }
 }

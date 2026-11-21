@@ -1,8 +1,96 @@
 # Project memory · persistence-backend-sst
 
+### 2026-11-21 — BE-H1: You page and coach training reads, `packages/training-metrics` ([PER-113](https://linear.app/evans-software-solutions/issue/PER-113); branch `bradleysimmsevans/per-113-be-h1-backend-you-page-and-coach`)
+
+PR #545 (open, no auto-merge). Backend design H. Read-only, additive: four new paths, no migration, no
+`schema.ts` change, no native change. 1.2.0 phones are untouched (they never
+call the new paths).
+
+- **`packages/training-metrics`** (new, pure TS, no runtime deps): the
+  muscle-credit function moved out of `packages/mobile`
+  (`domain/services/trainingMetrics/` deleted; mobile imports
+  `@persistence/training-metrics`), plus Epley 1RM, catalogue-name → app
+  muscle key, window maths over a `TrainingSession` shape the server reads,
+  and the shared phone/server fixture (`./fixtures`: one seeded week +
+  `SEEDED_WEEK_EXPECTED`). Mobile Jest needed one mapper
+  (`^@babel/runtime/(.*)$` → mobile's copy) because Babel injects runtime
+  helpers into the package's source; Metro already resolves them through
+  `nodeModulesPaths`.
+- **Hard sets (Brad, 21 Nov):** PER-141 counted a secondary muscle as half a
+  hard set; canvas `n3b_shade` point 2 says sets are "completed sets where it
+  was primary". Brad chose the split: **credit** stays primary 1.0 /
+  secondary 0.5 and drives the shade (credit ÷ weekly guide, so the You page
+  looks the same); **hardSets** = whole completed sets where the group was
+  primary (the coach's "Quads · 14 sets"). Grouping stays once per group per
+  set (a press listing biceps + triceps gives Arms 1.0 per set).
+- **Routes** (`core/src/application/training/`, mounted via
+  `trainingRoutes` inside `trainersOnBehalfRoutes`):
+  - `GET /users/me/muscle-volume?days=1..92` (default 7): rows, Train next /
+    Rest, `bodyType` (profiles.gender, male default), totals, top lifts.
+  - `GET /users/me/history?month=YYYY-MM` (logged days with workout / food /
+    steps / weight / habits flags) and `?date=YYYY-MM-DD` (workouts with
+    their exercises and sets, muscles, totals, calories, steps, weight,
+    water, sleep, habits). Exactly one of the two, else 400.
+  - `GET /users/me/recap?period=week|month|3months`: the phone's
+    `RecapModel` plus the period before.
+  - `GET /trainers/me/clients/:clientId/training-review?window=7d|28d`:
+    `worked` (hard sets, weight lifted in them, `pr`), `strength` (4 weeks,
+    main lift per group, first → latest best e1RM %), `prsHit`.
+    `resolveCoachScope` first; read audited as `training_review`.
+  - Every bad window is 400 `invalid_window`. Local days use
+    `profiles.timezone`; a workout belongs to the day it STARTED (matches
+    the phone's log).
+- **History calories:** judged against the **current** target and marked
+  `calories.targetSource: "current"`. `TrainingReadRepository.targetForDay`
+  is the one place to switch to `nutrition_target_history` once PER-114
+  merges (latest row with `effective_at` ≤ the day's end, then answer
+  `"history"`).
+- **Records** come from `personal_records`, which keeps only each lift's
+  current best, so a record later beaten doesn't show for an older period
+  (the phone's per-workout records cover the days it holds).
+- **Mobile seam wired** (`application/queries/youRemote.ts`,
+  `ui/hooks/useYouRemote.ts`): containers default to the live source.
+  Server answers are cached per period in a new SQLite table
+  `cached_you_remote (user_id, key)` (cleared on sign-out), so a fetched
+  range shows offline; keys carry the dates they cover
+  (`recap:<period>:<start>`, `week:<start>`, `month:…`, `day:…`). Y1 /
+  Recap / a History day use the server's answer only when their range
+  starts before the log AND the answer's `sessionIds` include every workout
+  the phone holds for that window (so an unsynced `local-…` workout never
+  vanishes); they ask again when those ids change (a sync rename). Y1's
+  server week is stamped with the day it was asked for.
+  History gained `historyDay` for days before the log; the phone's own
+  cached Fuel day wins over the server's for that day. Y2b opens a
+  server-only workout from the day response (no blank modal). No UI change.
+- **Tests:** package 54 (credit table incl. the new hard-sets rule, shared
+  week); core `training/__tests__` 53 on PGlite through the real handlers
+  (shared week = fixture, window limits, two-user isolation, two coaches →
+  each 403 on the other's client, two coaches of one athlete see the same
+  data, ended relationship / non-coach 403, History day judged against the
+  target); mobile `ui/hooks/__tests__/sharedTrainingFixtures.test.ts` holds
+  the phone pipeline to the same fixture, plus seam / container tests.
+- **Inspector Brad on #545: six sweeps, seven leads, all confirmed and
+  fixed with a test that fails on the previous commit; case closed on
+  `b53dce9`:**
+  - Kept recap/week answers were keyed by period only, so offline a past
+    period showed as the current one. Keys now carry the start date.
+  - `?window=toString` passed the `in` check and returned 500 →
+    `Object.hasOwn`.
+  - Y1 kept yesterday's server week after midnight → the answer is stamped
+    with the day it was asked for.
+  - The workout-count check could hide an unsynced workout → `sessionIds`
+    on week/recap plus `serverHolds`; ask again when the ids change.
+  - Recap's coverage note and comparison followed "an answer arrived", not
+    "the answer was used" → `usedRecap`.
+  - The server recap's together names included last period's partners →
+    current-period ids only.
+  - A server-only workout opened in Y2b lost its records → the day sends
+    each workout's `personalRecords` (no "was" value on the server).
+- **Not verified:** no device run, no staging deploy (nothing to migrate).
+
 ### 2026-11-20 — You page Y1–Y4, offline-first (PER-141 APP-H1; branch `bradleysimmsevans/per-141-app-h1-athlete-you-page-y1y4`)
 
-[PER-141](https://linear.app/evans-software-solutions/issue/PER-141), PR #541 (open, no auto-merge). Athlete
+[PER-141](https://linear.app/evans-software-solutions/issue/PER-141), PR #541 (merged 20 Nov 2026, squash `dbe1078`). Athlete
 You page rebuilt to the signed-off canvas boards Y1–Y4 (18 Nov). OTA on 1.2.0:
 no native packages, permissions, config plugins or version bump.
 `react-native-body-highlighter@3.2.0` is pure JS (`dist/` only; its one dependency is

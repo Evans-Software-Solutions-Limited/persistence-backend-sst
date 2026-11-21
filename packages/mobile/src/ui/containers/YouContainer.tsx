@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ScrollView } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useScrollToTopOnTabPress } from "@/ui/hooks/useScrollToTopOnTabPress";
@@ -23,7 +23,7 @@ import {
   topLifts,
   trainingTotals,
 } from "@/domain/services/youPage";
-import { trainNextAndRest } from "@/domain/services/trainingMetrics/muscleCredit";
+import { trainNextAndRest } from "@persistence/training-metrics";
 import {
   YouPresenter,
   type YouBadge,
@@ -39,10 +39,14 @@ import {
   whenLabel,
 } from "@/ui/presenters/you/youFormat";
 import {
+  idsKey,
   needsRemote,
-  youRemoteUnavailable,
+  remoteMuscleRows,
+  serverHolds,
   type YouRemoteSource,
 } from "@/application/queries/youRemote";
+import type { RemoteMuscleVolume } from "@/domain/models/trainingReads";
+import { useYouRemote } from "@/ui/hooks/useYouRemote";
 import { buildMilestoneTiers } from "./buildMilestoneTiers";
 
 // Re-exported so existing callers/tests keep working (the mapping lives in
@@ -150,8 +154,10 @@ function withHealth(
  * relationships. Coach You is `CoachYouContainer`.
  */
 export function YouContainer({
-  remote = youRemoteUnavailable,
+  remote: remoteProp,
 }: { remote?: YouRemoteSource } = {}) {
+  const live = useYouRemote();
+  const remote = remoteProp ?? live;
   const { session } = useAuth();
   const userId = session?.userId ?? null;
   const profile = useProfilePage();
@@ -183,28 +189,57 @@ export function YouContainer({
     [dayKeyNow],
   );
   const log = useTrainingLog(userId, window7);
-  // The week before the phone's log began isn't on the phone: ask the BE-H1
-  // seam (unavailable until PER-113). Y1 has no coverage note on the canvas,
-  // so until then the page shows what the phone holds.
-  // When PER-113 lands, its answer replaces the week model below.
+  // A week that starts before the phone's log began isn't all on the phone:
+  // ask the BE-H1 seam (PER-113). Until it answers, or with no connection
+  // and nothing cached, the page shows what the phone holds (Y1 has no
+  // coverage note on the canvas).
   // Only once signed in: before auth resolves there's no log to judge.
   const weekPartial = userId != null && needsRemote(log.since, window7.from);
+  const weekIds = idsKey(
+    sessionsBetween(log.sessions, window7.from, window7.to),
+  );
+  // Stamped with the day it was asked for: after midnight yesterday's week
+  // is never shown, whether the new ask is still out or came back empty.
+  const [remoteAnswer, setRemoteAnswer] = useState<{
+    day: string;
+    data: RemoteMuscleVolume | null;
+  } | null>(null);
   useEffect(() => {
-    if (weekPartial) void remote.lastSevenDays();
-  }, [remote, weekPartial]);
+    if (!weekPartial) return;
+    let alive = true;
+    const day = dayKeyNow;
+    void remote.lastSevenDays().then((r) => {
+      if (alive)
+        setRemoteAnswer({ day, data: r.status === "ok" ? r.data : null });
+    });
+    return () => {
+      alive = false;
+    };
+    // Ask again when the week's workouts change: a new one, or a sync
+    // swapping a `local-…` id for the server's.
+  }, [remote, weekPartial, dayKeyNow, weekIds]);
+  const remoteWeek = remoteAnswer?.day === dayKeyNow ? remoteAnswer.data : null;
   // Each workout's own records (the PR cache keeps only the latest best).
   const records = log.records;
 
   const week = useMemo(() => {
     const w = window7;
     const sessions = sessionsBetween(log.sessions, w.from, w.to);
-    const rows = musclesForSessions(sessions, log.musclesOf);
+    // The server's week, only when it counts every workout the phone holds
+    // (one finished offline and still queued would otherwise vanish).
+    const server =
+      weekPartial && remoteWeek && serverHolds(remoteWeek.sessionIds, sessions)
+        ? remoteWeek
+        : null;
+    const rows = server
+      ? remoteMuscleRows(server.muscles)
+      : musclesForSessions(sessions, log.musclesOf);
     const split = trainNextAndRest(rows);
     const trainNext = trainNextLine(split.trainNext);
     const rest = restLine(split.rest);
     return {
-      totals: trainingTotals(sessions),
-      lifts: topLifts(sessions, records, w.from),
+      totals: server?.totals ?? trainingTotals(sessions),
+      lifts: server?.topLifts ?? topLifts(sessions, records, w.from),
       muscles: {
         shading: bodyMapShading(
           rows,
@@ -215,7 +250,15 @@ export function YouContainer({
         rest,
       } as const,
     };
-  }, [log.sessions, log.musclesOf, records, gender, window7]);
+  }, [
+    log.sessions,
+    log.musclesOf,
+    records,
+    gender,
+    window7,
+    weekPartial,
+    remoteWeek,
+  ]);
 
   const coaches = useMemo<YouCoach[]>(
     () =>

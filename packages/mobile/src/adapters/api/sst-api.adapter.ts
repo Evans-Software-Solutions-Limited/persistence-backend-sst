@@ -240,6 +240,12 @@ import {
   type ApiErrorEntitlementPayload,
 } from "@/shared/errors";
 import type { PaginatedResult, PaginationParams } from "@/shared/types";
+import type {
+  RemoteHistoryDay,
+  RemoteHistoryMonth,
+  RemoteMuscleVolume,
+  RemoteRecap,
+} from "@/domain/models/trainingReads";
 
 type ApiSuccessResponse<T> = { data: T };
 type ApiErrorResponse = { error: string };
@@ -1663,6 +1669,38 @@ export class SSTApiAdapter implements ApiPort {
   ): Promise<Result<BodyTrendPoint[], ApiError>> {
     return this.requestEnvelope<BodyTrendPoint[]>("/users/me/body-trend", {
       params: window ? { window } : undefined,
+    });
+  }
+
+  async getMuscleVolume(
+    days: number,
+  ): Promise<Result<RemoteMuscleVolume, ApiError>> {
+    return this.requestEnvelope<RemoteMuscleVolume>("/users/me/muscle-volume", {
+      params: { days: String(days) },
+    });
+  }
+
+  async getHistoryMonth(
+    month: string,
+  ): Promise<Result<RemoteHistoryMonth, ApiError>> {
+    return this.requestEnvelope<RemoteHistoryMonth>("/users/me/history", {
+      params: { month },
+    });
+  }
+
+  async getHistoryDay(
+    date: string,
+  ): Promise<Result<RemoteHistoryDay, ApiError>> {
+    return this.requestEnvelope<RemoteHistoryDay>("/users/me/history", {
+      params: { date },
+    });
+  }
+
+  async getRecap(
+    period: RemoteRecap["period"],
+  ): Promise<Result<RemoteRecap, ApiError>> {
+    return this.requestEnvelope<RemoteRecap>("/users/me/recap", {
+      params: { period },
     });
   }
 

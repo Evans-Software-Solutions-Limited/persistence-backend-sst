@@ -15,10 +15,14 @@ import {
   type HistoryDayModel,
 } from "@/domain/services/youPage";
 import {
+  idsKey,
   needsRemote,
-  youRemoteUnavailable,
+  remoteHistoryDayModel,
+  serverHolds,
   type YouRemoteSource,
 } from "@/application/queries/youRemote";
+import type { RemoteHistoryDay } from "@/domain/models/trainingReads";
+import { useYouRemote } from "@/ui/hooks/useYouRemote";
 import type { WeightUnit } from "@/shared/utils";
 import { weightInUnit } from "@/shared/utils";
 import { useAdapters } from "@/ui/hooks/useAdapters";
@@ -87,6 +91,62 @@ export function dayExtras(
   };
 }
 
+/**
+ * A server History day's extras (BE-H1), for a day before this phone's
+ * log. The phone's own cache wins where it has the day (a cached Fuel day
+ * carries that day's own target); the server fills the rest. Its calorie
+ * target is today's until target history ships (PER-114), as the response
+ * says (`calories.targetSource`).
+ */
+export function remoteDayExtras(
+  d: RemoteHistoryDay,
+  local: DayExtras,
+): DayExtras {
+  const habits = new Set(local.habits);
+  for (const h of d.habits) habits.add(h as HabitConfig["category"]);
+  const kcal = d.calories.kcal;
+  const target = d.calories.targetKcal;
+  const fuel: FuelToday | null =
+    local.fuel ??
+    (kcal == null && d.waterCups === 0
+      ? null
+      : {
+          date: d.date,
+          // Only the calories are shown for a past day; macros aren't sent.
+          targets:
+            target == null
+              ? null
+              : {
+                  userId: "",
+                  dailyKcal: target,
+                  proteinG: 0,
+                  carbsG: 0,
+                  fatG: 0,
+                  waterCups: 0,
+                  preset: null,
+                  setByUserId: null,
+                  setByName: null,
+                  updatedAt: null,
+                },
+          consumed: {
+            kcal: kcal ?? 0,
+            proteinG: 0,
+            carbsG: 0,
+            fatG: 0,
+            waterCups: d.waterCups,
+          },
+          remainingKcal: target == null ? 0 : target - (kcal ?? 0),
+          entriesBySlot: { breakfast: [], lunch: [], snack: [], dinner: [] },
+        });
+  return {
+    fuel,
+    steps: local.steps ?? d.steps,
+    weightKg: local.weightKg ?? d.weightKg,
+    habits,
+    sleepHours: local.sleepHours ?? d.sleepHours,
+  };
+}
+
 /** True when the day has anything logged besides workouts. */
 export function extrasLogged(e: DayExtras): boolean {
   return (
@@ -97,6 +157,12 @@ export function extrasLogged(e: DayExtras): boolean {
     e.habits.size > 0
   );
 }
+
+/** Local midnight of a `YYYY-MM-DD` day. */
+const startOfLocalDay = (key: string) => {
+  const d = toLocalDate(key);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+};
 
 const plural = (n: number, one: string, many: string) =>
   `${n} ${n === 1 ? one : many}`;
@@ -201,12 +267,15 @@ export function historyDayView(
  * <HistoryContainer> — Y2 History (PER-141). Offline-first from the cache:
  * workouts from the training log, food from cached Fuel days, weight from
  * the body trend, steps from Health, habits from cached completions. Months
- * before this phone's log go through the BE-H1 seam (`youRemote`), which
- * answers `unavailable` until PER-113 ships.
+ * and days before this phone's log go through the BE-H1 seam (`youRemote`,
+ * PER-113), whose answers are kept for offline; with neither the server
+ * nor a kept answer, the page says what the phone covers.
  */
 export function HistoryContainer({
-  remote = youRemoteUnavailable,
+  remote: remoteProp,
 }: { remote?: YouRemoteSource } = {}) {
+  const live = useYouRemote();
+  const remote = remoteProp ?? live;
   const router = useRouter();
   const { storage } = useAdapters();
   const { session } = useAuth();
@@ -300,15 +369,56 @@ export function HistoryContainer({
     return monthCells(month.y, month.m, logged, today);
   }, [log.sessions, month, today, extrasFor, remoteForMonth]);
 
-  const day = useMemo(
-    () =>
-      historyDayView(
-        historyDay(selected, log.sessions, log.records, log.musclesOf),
-        extrasFor(selected),
-        { gender, unit },
-      ),
-    [selected, log, extrasFor, gender, unit],
+  // A selected day before this phone's log: ask the server for it.
+  const dayPartial = needsRemote(log.since, startOfLocalDay(selected));
+  const dayIds = idsKey(
+    log.sessions.filter((s) => dayKey(s.startedAt) === selected),
   );
+  const [remoteDay, setRemoteDay] = useState<{
+    key: string;
+    data: RemoteHistoryDay | null;
+  } | null>(null);
+  useEffect(() => {
+    if (!dayPartial || !remote.historyDay) return;
+    let alive = true;
+    void remote.historyDay(selected).then((r) => {
+      if (alive)
+        setRemoteDay({
+          key: selected,
+          data: r.status === "ok" ? r.data : null,
+        });
+    });
+    return () => {
+      alive = false;
+    };
+    // Ask again when the day's workouts change (a sync renaming one).
+  }, [remote, selected, dayPartial, dayIds]);
+  const remoteForDay =
+    dayPartial && remoteDay?.key === selected ? remoteDay.data : null;
+
+  const day = useMemo(() => {
+    const local = historyDay(
+      selected,
+      log.sessions,
+      log.records,
+      log.musclesOf,
+    );
+    const localExtras = extrasFor(selected);
+    // The server's day, only when it has every workout the phone holds.
+    const server =
+      remoteForDay &&
+      serverHolds(
+        remoteForDay.workouts.map((w) => w.id),
+        local.workouts,
+      )
+        ? remoteForDay
+        : null;
+    return historyDayView(
+      server ? remoteHistoryDayModel(selected, server) : local,
+      server ? remoteDayExtras(server, localExtras) : localExtras,
+      { gender, unit },
+    );
+  }, [selected, log, extrasFor, gender, unit, remoteForDay]);
 
   const isCurrentMonth =
     month.y === today.getFullYear() && month.m === today.getMonth();
@@ -340,7 +450,12 @@ export function HistoryContainer({
       onOpenWorkout={(id) =>
         router.push({
           pathname: "/(app)/history-workout",
-          params: { id, at: log.sessions.find((s) => s.id === id)?.startedAt },
+          params: {
+            id,
+            at:
+              log.sessions.find((s) => s.id === id)?.startedAt ??
+              remoteForDay?.workouts.find((w) => w.id === id)?.startedAt,
+          },
         } as never)
       }
     />

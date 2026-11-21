@@ -124,6 +124,12 @@ import type {
   UpdateProgramInput,
 } from "@/domain/models/program";
 import type {
+  RemoteHistoryDay,
+  RemoteHistoryMonth,
+  RemoteMuscleVolume,
+  RemoteRecap,
+} from "@/domain/models/trainingReads";
+import type {
   AiEstimate,
   CreateFoodInput,
   CreateMealInput,
@@ -664,6 +670,20 @@ export interface ApiPort extends ReferralsPort {
     exerciseId?: string,
   ): Promise<Result<PersonalRecord[], ApiError>>;
   getBodyTrend(window?: string): Promise<Result<BodyTrendPoint[], ApiError>>;
+  /**
+   * BE-H1 (PER-113, design H) — training reads for what the phone's own
+   * training log doesn't reach. New routes; read-only.
+   */
+  /** `GET /users/me/muscle-volume?days=` (1–92, today included). */
+  getMuscleVolume(days: number): Promise<Result<RemoteMuscleVolume, ApiError>>;
+  /** `GET /users/me/history?month=YYYY-MM` */
+  getHistoryMonth(month: string): Promise<Result<RemoteHistoryMonth, ApiError>>;
+  /** `GET /users/me/history?date=YYYY-MM-DD` */
+  getHistoryDay(date: string): Promise<Result<RemoteHistoryDay, ApiError>>;
+  /** `GET /users/me/recap?period=week|month|3months` */
+  getRecap(
+    period: RemoteRecap["period"],
+  ): Promise<Result<RemoteRecap, ApiError>>;
   getAchievements(): Promise<Result<Achievement[], ApiError>>;
   /** Active streak rows for the You/Progress StreakHero. */
   getStreaks(): Promise<Result<Streak[], ApiError>>;

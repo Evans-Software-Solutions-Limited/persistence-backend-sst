@@ -12,11 +12,13 @@ const row = (inputs: MuscleCreditInput[], group: string) =>
   muscleCredit(inputs).find((r) => r.group === group)!;
 
 describe("muscleCredit (n3b_shade, design H)", () => {
-  it.each<[string, MuscleCreditInput, string, number]>([
+  // [case, input, group, credit, hard sets]
+  it.each<[string, MuscleCreditInput, string, number, number]>([
     [
       "primary gets 1.0 per set",
       { primary: ["chest"], secondary: [], completedSets: 4 },
       "chest",
+      4,
       4,
     ],
     [
@@ -24,11 +26,13 @@ describe("muscleCredit (n3b_shade, design H)", () => {
       { primary: ["chest"], secondary: ["triceps"], completedSets: 4 },
       "arms",
       2,
+      0,
     ],
     [
       "two primaries in one group count once per set",
       { primary: ["biceps", "triceps"], secondary: [], completedSets: 3 },
       "arms",
+      3,
       3,
     ],
     [
@@ -36,17 +40,20 @@ describe("muscleCredit (n3b_shade, design H)", () => {
       { primary: ["back"], secondary: ["lats"], completedSets: 3 },
       "back",
       3,
+      3,
     ],
     [
       "secondary listed twice in a group still 0.5",
       { primary: [], secondary: ["lats", "traps"], completedSets: 2 },
       "back",
       1,
+      0,
     ],
     [
       "hip flexors credit core",
       { primary: ["hip_flexors"], secondary: [], completedSets: 2 },
       "core",
+      2,
       2,
     ],
     [
@@ -54,11 +61,13 @@ describe("muscleCredit (n3b_shade, design H)", () => {
       { primary: ["adductors"], secondary: ["abductors"], completedSets: 2 },
       "glutes",
       2,
+      2,
     ],
     [
       "no completed sets earn nothing",
       { primary: ["chest"], secondary: [], completedSets: 0 },
       "chest",
+      0,
       0,
     ],
     [
@@ -66,11 +75,34 @@ describe("muscleCredit (n3b_shade, design H)", () => {
       { primary: ["neck"], secondary: [], completedSets: 3 },
       "chest",
       0,
+      0,
     ],
-  ])("%s", (_name, input, group, credit) => {
+  ])("%s", (_name, input, group, credit, hardSets) => {
     const r = row([input], group);
     expect(r.credit).toBe(credit);
-    expect(r.hardSets).toBe(credit);
+    expect(r.hardSets).toBe(hardSets);
+  });
+
+  it("counts hard sets only where the group was primary (Brad, 21 Nov)", () => {
+    const r = row(
+      [
+        { primary: ["quadriceps"], secondary: ["glutes"], completedSets: 4 },
+        { primary: ["glutes"], secondary: [], completedSets: 3 },
+      ],
+      "glutes",
+    );
+    expect(r.credit).toBe(5);
+    expect(r.hardSets).toBe(3);
+  });
+
+  it("shades by credit, so a secondary muscle still shades", () => {
+    const r = row(
+      [{ primary: ["chest"], secondary: ["triceps"], completedSets: 10 }],
+      "arms",
+    );
+    expect(r.hardSets).toBe(0);
+    expect(r.ratio).toBe(0.5);
+    expect(r.level).toBe(3);
   });
 
   it("sums credit across exercises", () => {
