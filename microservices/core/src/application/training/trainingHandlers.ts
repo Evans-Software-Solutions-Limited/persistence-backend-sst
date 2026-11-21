@@ -19,6 +19,7 @@ import {
   recapModel,
   recapWindows,
   RECAP_PERIODS,
+  sessionDay,
   trainingReviewModel,
   type RecapPeriod,
   type ReviewWindow,
@@ -169,9 +170,12 @@ export const recapHandler = authed().get(
       r.sessions(userId, tz, windows.previous.from, windows.current.to),
       r.records(userId, tz, windows.current.from, windows.current.to),
     ]);
+    // Partners from this period only, as the phone's own recap counts them.
     const together = await r.together(
       userId,
-      sessions.map((s) => s.id),
+      sessions
+        .filter((s) => sessionDay(s, tz) >= windows.current.from)
+        .map((s) => s.id),
     );
     return {
       data: recapModel({

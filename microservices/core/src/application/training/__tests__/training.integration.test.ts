@@ -735,6 +735,32 @@ describe("GET /users/me/recap", () => {
         consentVersion: "v1",
       },
     ] as (typeof schema.togetherParticipants.$inferInsert)[]);
+    // Last week, trained with Ellie: not this week's partner (Inspector
+    // Brad #545).
+    const lastWeek = {
+      ...B_SESSION,
+      id: randomUUID(),
+      name: "Last week together",
+      startedAt: "2026-11-11T12:00:00.000Z",
+      completedAt: "2026-11-11T12:30:00.000Z",
+    };
+    await seedSession(ATHLETE_A, lastWeek);
+    const earlierTogether = randomUUID();
+    await db.insert(schema.togetherParticipants).values([
+      {
+        sessionId: earlierTogether,
+        userId: ATHLETE_A,
+        historyId: lastWeek.id,
+        execution: {},
+        consentVersion: "v1",
+      },
+      {
+        sessionId: earlierTogether,
+        userId: COACH_A,
+        execution: {},
+        consentVersion: "v1",
+      },
+    ] as (typeof schema.togetherParticipants.$inferInsert)[]);
     const res = await get("/users/me/recap?period=week", ATHLETE_A);
     expect(res.status).toBe(200);
     const d = res.json.data;
@@ -746,7 +772,7 @@ describe("GET /users/me/recap", () => {
       previousTo: "2026-11-15",
     });
     expect(d.totals).toEqual(SEEDED_WEEK_EXPECTED.totals);
-    expect(d.previous.workouts).toBe(0);
+    expect(d.previous.workouts).toBe(1);
     expect(d.muscles).toEqual(SEEDED_WEEK_EXPECTED.muscles);
     expect(d.lifts[0]).toMatchObject({ name: "Back squat", isRecord: true });
     expect(d.volume[0]).toEqual({
