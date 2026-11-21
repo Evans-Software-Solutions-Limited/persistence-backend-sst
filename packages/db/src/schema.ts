@@ -2496,6 +2496,40 @@ export const nutritionTargets = pgTable("nutrition_targets", {
 });
 
 /**
+ * Design B D1 (PER-114) — append-only history of `nutrition_targets`, written
+ * by the `nutrition_targets_record_history` trigger (so old app bundles record
+ * it too). Target for a day = the latest row with `effective_at` <= the end of
+ * that day in the athlete's time zone. Backfilled rows have `effective_at` =
+ * epoch. Created by supabase/migrations/20261121000100_nutrition_target_history.sql.
+ */
+export const nutritionTargetHistory = pgTable(
+  "nutrition_target_history",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    dailyKcal: numeric("daily_kcal").notNull(),
+    proteinG: numeric("protein_g").notNull(),
+    carbsG: numeric("carbs_g").notNull(),
+    fatG: numeric("fat_g").notNull(),
+    setByUserId: uuid("set_by_user_id").references(() => profiles.id, {
+      onDelete: "set null",
+    }),
+    effectiveAt: timestamp("effective_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index("nutrition_target_history_user_effective_idx").on(
+      t.userId,
+      t.effectiveAt.desc(),
+    ),
+  ],
+);
+
+/**
  * Mealprint (spec-26 § 2.2) — one row per user, upsert semantics like
  * `nutritionTargets`. Read by EVERY Mealprint generation, so the live values
  * always govern (AC 1.3); nothing snapshots them except an accepted plan.

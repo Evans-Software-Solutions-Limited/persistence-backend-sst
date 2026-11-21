@@ -28,6 +28,15 @@ vi.mock("../../../repositories/trainerRepository", () => ({
   InviteError: class InviteError extends Error {},
 }));
 
+// PER-114: the practice-level adherence comes from the shared calculation
+// (covered by adherence/__tests__); pinned here.
+const PRACTICE = {
+  calories: { daysOnTarget: 3, daysCounted: 7, daysNotLogged: 2, clients: 1 },
+};
+vi.mock("../../../adherence/coachAdherence", () => ({
+  overviewAdherenceByArea: vi.fn(async () => PRACTICE),
+}));
+
 describe("trainersOverviewHandler", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -70,6 +79,7 @@ describe("trainersOverviewHandler", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as any;
     expect(body.data.trainer.name).toBe("T");
+    expect(body.data.adherenceByArea).toEqual(PRACTICE);
     expect(mocks.getOverview).toHaveBeenCalledWith("trainer-id");
   });
 });

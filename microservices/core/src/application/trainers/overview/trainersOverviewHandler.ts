@@ -1,5 +1,6 @@
 import Elysia from "elysia";
 import { TrainerService } from "../../repositories/trainerService";
+import { overviewAdherenceByArea } from "../../adherence/coachAdherence";
 import {
   getAuthUser,
   requireAuth,
@@ -10,6 +11,11 @@ import {
  * GET /trainers/me/overview — single aggregate powering the Coach You
  * dashboard. Trainer-role-gated: returns 403 when the caller is not a
  * trainer / physiotherapist (or admin).
+ *
+ * PER-114 (design B D3): `data` gains `adherenceByArea`, the practice level
+ * per tracked area over the coach's active clients (rolling 7 days, the one
+ * shared calculation). Every existing field, including the legacy
+ * `avgAdherence` / `adherenceDelta`, is unchanged.
  */
 export const trainersOverviewHandler = new Elysia()
   .derive(async ({ headers }) => ({
@@ -25,6 +31,9 @@ export const trainersOverviewHandler = new Elysia()
       return { message: "Forbidden" };
     }
 
-    const overview = await ctx.TrainerRepository.getOverview(userId);
-    return { data: overview };
+    const [overview, adherenceByArea] = await Promise.all([
+      ctx.TrainerRepository.getOverview(userId),
+      overviewAdherenceByArea(userId),
+    ]);
+    return { data: { ...overview, adherenceByArea } };
   });
