@@ -391,6 +391,61 @@ describe("YouContainer", () => {
     expect(mockProbe.last!.topLifts[0]).toMatchObject({ name: "Bench press" });
   });
 
+  it("keeps the phone's week while the server's lacks a workout the phone holds, and asks again after the sync renames it (Inspector Brad #545)", async () => {
+    const week = (ids: string[]): RemoteMuscleVolume => ({
+      days: 7,
+      from: "x",
+      to: "y",
+      timezone: "Europe/London",
+      bodyType: "male",
+      muscles: [remoteChestRow],
+      trainNext: ["chest"],
+      rest: [],
+      totals: { ...remoteTotals, workouts: ids.length },
+      topLifts: [],
+      sessionIds: ids,
+      asOf: "x",
+    });
+    const lastSevenDays = jest
+      .fn()
+      .mockResolvedValueOnce({
+        status: "ok" as const,
+        data: week(["s1", "s2", "s3"]),
+      })
+      .mockResolvedValue({
+        status: "ok" as const,
+        data: week(["s1", "s2", "s3", "srv-a"]),
+      });
+    const remote = { historyMonth: jest.fn(), recap: jest.fn(), lastSevenDays };
+    const { adapters } = makeAdapters();
+    const storage = adapters.storage;
+    storage.saveTrainingLogEntry(
+      "user-1",
+      finished("local-a", new Date().toISOString(), { bench: [[100, 5]] }),
+    );
+    render(
+      <AdapterProvider adapters={adapters}>
+        <YouContainer remote={remote} />
+      </AdapterProvider>,
+    );
+    await waitFor(() => expect(lastSevenDays).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(mockProbe.last?.lastSevenDays.workouts).toBe("1"),
+    );
+    // The sync swaps the local id for the server's: the page asks again
+    // and, now that the server counts it, shows the server's week.
+    // (SQLite's change listener fires on the rename; the in-memory adapter
+    // needs telling.)
+    act(() => {
+      storage.linkTrainingLogSessionId("local-a", "srv-a");
+      (storage as InMemoryStorageAdapter).emitChange("training_log");
+    });
+    await waitFor(() => expect(lastSevenDays).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(mockProbe.last?.lastSevenDays.workouts).toBe("4"),
+    );
+  });
+
   it("drops yesterday's server week after midnight when the new ask finds nothing (Inspector Brad #545)", async () => {
     jest.useFakeTimers({
       doNotFake: [

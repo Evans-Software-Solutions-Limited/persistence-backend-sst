@@ -13,6 +13,8 @@ import {
 import type { ApiPort } from "@/domain/ports/api.port";
 import {
   createYouRemoteSource,
+  idsKey,
+  serverHolds,
   needsRemote,
   remoteHistoryDayModel,
   remoteMuscleRows,
@@ -209,6 +211,21 @@ describe("createYouRemoteSource", () => {
       status: "completed",
       retrospectiveDurationSeconds: 600,
     });
+  });
+});
+
+describe("serverHolds / idsKey", () => {
+  it("trusts the server only when it counts every workout the phone holds", () => {
+    expect(serverHolds(["a", "b"], [{ id: "a" }])).toBe(true);
+    expect(serverHolds(["a", "b"], [])).toBe(true);
+    expect(serverHolds(["a", "b"], [{ id: "local-c" }])).toBe(false);
+    // An answer kept before ids were sent can't vouch for anything.
+    expect(serverHolds(undefined, [{ id: "a" }])).toBe(false);
+    expect(serverHolds(undefined, [])).toBe(true);
+  });
+
+  it("joins ids in order", () => {
+    expect(idsKey([{ id: "a" }, { id: "b" }])).toBe("a,b");
   });
 });
 

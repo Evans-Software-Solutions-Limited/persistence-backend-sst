@@ -129,6 +129,23 @@ export function remoteWorkoutSession(
   };
 }
 
+/**
+ * True when a server answer counts every workout the phone holds for the
+ * same window, so showing it hides nothing. A workout finished offline
+ * keeps a `local-…` id until it syncs, and the server can't have it yet.
+ */
+export function serverHolds(
+  serverIds: readonly string[] | undefined,
+  local: readonly { id: string }[],
+): boolean {
+  const ids = new Set(serverIds ?? []);
+  return local.every((s) => ids.has(s.id));
+}
+
+/** Ids of a window's workouts, as one value an effect can depend on. */
+export const idsKey = (sessions: readonly { id: string }[]): string =>
+  sessions.map((s) => s.id).join(",");
+
 /** Server muscle rows as the shared function's rows. */
 export function remoteMuscleRows(
   rows: readonly RemoteMuscleRow[],

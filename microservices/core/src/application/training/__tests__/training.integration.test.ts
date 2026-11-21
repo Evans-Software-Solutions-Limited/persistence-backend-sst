@@ -297,6 +297,7 @@ describe("GET /users/me/muscle-volume — shared phone/server week (test 5)", ()
     expect(d.trainNext).toEqual(SEEDED_WEEK_EXPECTED.trainNext);
     expect(d.rest).toEqual(SEEDED_WEEK_EXPECTED.rest);
     expect(d.totals).toEqual(SEEDED_WEEK_EXPECTED.totals);
+    expect(d.sessionIds).toEqual(SEEDED_WEEK_SESSIONS.map((s) => s.id));
     expect(
       d.topLifts.map((l: Json) => ({
         exerciseId: l.exerciseId,
@@ -783,6 +784,8 @@ describe("GET /users/me/recap", () => {
     const d = res.json.data;
     expect(d).toMatchObject({ from: "2026-09-01", previousFrom: "2026-06-01" });
     expect(d.totals.workouts).toBe(4);
+    expect(d.sessionIds).toHaveLength(4);
+    expect(d.sessionIds).not.toContain(older.id);
     expect(d.previous.workouts).toBe(1);
     expect(d.records.map((r: Json) => r.exerciseName).sort()).toEqual([
       "Back squat",

@@ -476,6 +476,38 @@ describe("HistoryContainer", () => {
     });
   });
 
+  it("keeps the phone's day while the server's lacks a workout the phone holds (Inspector Brad #545)", async () => {
+    const { storage, adapters } = makeAdapters();
+    const yesterday = new Date(Date.now() - 86_400_000);
+    const key = dayKey(yesterday);
+    // Stamp the log's start first, so yesterday is before it.
+    storage.markTrainingLogSince("user-1", new Date().toISOString());
+    storage.saveTrainingLogEntry(
+      "user-1",
+      finished("local-a", yesterday.toISOString(), { bench: [[100, 5]] }),
+    );
+    const day: RemoteHistoryDay = { ...remoteDayFixture, date: key };
+    const remote: YouRemoteSource = {
+      historyMonth: jest.fn(async () => ({ status: "unavailable" as const })),
+      historyDay: jest.fn(async () => ({ status: "ok" as const, data: day })),
+      recap: jest.fn(),
+      lastSevenDays: jest.fn(),
+    };
+    render(
+      <AdapterProvider adapters={adapters}>
+        <HistoryContainer remote={remote} />
+      </AdapterProvider>,
+    );
+    await waitFor(() => expect(mockProbe.last).not.toBeNull());
+    act(() => mockProbe.last!.onSelectDay(key));
+    await waitFor(() => expect(remote.historyDay).toHaveBeenCalledWith(key));
+    await waitFor(() =>
+      expect(mockProbe.last!.day.workouts.map((w) => w.id)).toEqual([
+        "local-a",
+      ]),
+    );
+  });
+
   it("keeps the phone's day when the server can't answer", async () => {
     const { adapters } = makeAdapters();
     const key = dayKey(new Date(Date.now() - 86_400_000));

@@ -52,9 +52,13 @@ call the new paths).
   `ui/hooks/useYouRemote.ts`): containers default to the live source.
   Server answers are cached per period in a new SQLite table
   `cached_you_remote (user_id, key)` (cleared on sign-out), so a fetched
-  range shows offline. Y1 / Recap / a History day use the server's answer
-  only when their range starts before the log AND the server has at least
-  as many workouts as the phone (so an unsynced workout never vanishes).
+  range shows offline; keys carry the dates they cover
+  (`recap:<period>:<start>`, `week:<start>`, `month:…`, `day:…`). Y1 /
+  Recap / a History day use the server's answer only when their range
+  starts before the log AND the answer's `sessionIds` include every workout
+  the phone holds for that window (so an unsynced `local-…` workout never
+  vanishes); they ask again when those ids change (a sync rename). Y1's
+  server week is stamped with the day it was asked for.
   History gained `historyDay` for days before the log; the phone's own
   cached Fuel day wins over the server's for that day. Y2b opens a
   server-only workout from the day response (no blank modal). No UI change.

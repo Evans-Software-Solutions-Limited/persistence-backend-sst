@@ -154,6 +154,9 @@ export function muscleVolumeModel(p: {
     rest: split.rest.map((r) => r.group),
     totals: windowTotals(p.sessions),
     topLifts: topLifts(p.sessions, recordIds(p.records)),
+    // So the phone can tell whether this answer includes every workout it
+    // holds (one finished offline may not have synced yet).
+    sessionIds: p.sessions.map((s) => s.id),
     asOf: p.asOf,
   };
 }
@@ -302,6 +305,7 @@ export function recapModel(p: {
     previousTo: p.windows.previous.to,
     totals: windowTotals(current),
     previous: windowTotals(previous),
+    sessionIds: current.map((s) => s.id),
     muscles: windowMuscles(current).map(muscleRow),
     lifts: topLifts(current, recordIds(records)),
     volume: exerciseVolumes(current),

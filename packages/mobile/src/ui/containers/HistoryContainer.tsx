@@ -15,8 +15,10 @@ import {
   type HistoryDayModel,
 } from "@/domain/services/youPage";
 import {
+  idsKey,
   needsRemote,
   remoteHistoryDayModel,
+  serverHolds,
   type YouRemoteSource,
 } from "@/application/queries/youRemote";
 import type { RemoteHistoryDay } from "@/domain/models/trainingReads";
@@ -369,6 +371,9 @@ export function HistoryContainer({
 
   // A selected day before this phone's log: ask the server for it.
   const dayPartial = needsRemote(log.since, startOfLocalDay(selected));
+  const dayIds = idsKey(
+    log.sessions.filter((s) => dayKey(s.startedAt) === selected),
+  );
   const [remoteDay, setRemoteDay] = useState<{
     key: string;
     data: RemoteHistoryDay | null;
@@ -386,7 +391,8 @@ export function HistoryContainer({
     return () => {
       alive = false;
     };
-  }, [remote, selected, dayPartial]);
+    // Ask again when the day's workouts change (a sync renaming one).
+  }, [remote, selected, dayPartial, dayIds]);
   const remoteForDay =
     dayPartial && remoteDay?.key === selected ? remoteDay.data : null;
 
@@ -398,9 +404,13 @@ export function HistoryContainer({
       log.musclesOf,
     );
     const localExtras = extrasFor(selected);
-    // The server's day, unless the phone holds workouts it hasn't seen yet.
+    // The server's day, only when it has every workout the phone holds.
     const server =
-      remoteForDay && remoteForDay.workouts.length >= local.workouts.length
+      remoteForDay &&
+      serverHolds(
+        remoteForDay.workouts.map((w) => w.id),
+        local.workouts,
+      )
         ? remoteForDay
         : null;
     return historyDayView(

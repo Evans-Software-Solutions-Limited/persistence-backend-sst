@@ -7,12 +7,15 @@ import {
   buildRecap,
   previousRecapWindow,
   recapWindow,
+  sessionsBetween,
   type RecapModel,
   type RecapPeriod,
 } from "@/domain/services/youPage";
 import {
+  idsKey,
   needsRemote,
   remoteRecapModel,
+  serverHolds,
   type YouRemoteSource,
 } from "@/application/queries/youRemote";
 import type { RemoteRecap } from "@/domain/models/trainingReads";
@@ -223,6 +226,11 @@ export function RecapContainer({
   // before the phone's log.
   const partial = needsRemote(log.since, previousRecapWindow(period, now).from);
   const currentPartial = needsRemote(log.since, recapWindow(period, now).from);
+  const periodSessions = useMemo(() => {
+    const w = recapWindow(period, now);
+    return sessionsBetween(log.sessions, w.from, w.to);
+  }, [period, now, log.sessions]);
+  const periodIds = idsKey(periodSessions);
   const [remoteState, setRemoteState] = useState<{
     period: RecapPeriod;
     data: RemoteRecap | null;
@@ -237,7 +245,9 @@ export function RecapContainer({
     return () => {
       alive = false;
     };
-  }, [remote, period, partial]);
+    // Ask again when the period's workouts change (a new one, or a sync
+    // swapping a `local-…` id for the server's).
+  }, [remote, period, partial, periodIds]);
 
   const remoteRecap =
     partial && remoteState?.period === period ? remoteState.data : null;
@@ -254,12 +264,12 @@ export function RecapContainer({
       records: log.records,
       musclesOf: log.musclesOf,
     });
-    // The server's recap, unless the phone holds workouts it hasn't seen
-    // yet (finished offline, still queued).
+    // The server's recap, only when it counts every workout the phone
+    // holds for the period (one still queued would otherwise vanish).
     const model =
       remoteRecap &&
       userId &&
-      remoteRecap.totals.workouts >= local.totals.workouts
+      serverHolds(remoteRecap.sessionIds, periodSessions)
         ? remoteRecapModel(remoteRecap, userId)
         : local;
     return recapPages(model, {
@@ -277,6 +287,7 @@ export function RecapContainer({
     previousCovered,
     remoteRecap,
     userId,
+    periodSessions,
   ]);
 
   return (

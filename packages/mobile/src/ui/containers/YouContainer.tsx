@@ -39,8 +39,10 @@ import {
   whenLabel,
 } from "@/ui/presenters/you/youFormat";
 import {
+  idsKey,
   needsRemote,
   remoteMuscleRows,
+  serverHolds,
   type YouRemoteSource,
 } from "@/application/queries/youRemote";
 import type { RemoteMuscleVolume } from "@/domain/models/trainingReads";
@@ -193,6 +195,9 @@ export function YouContainer({
   // coverage note on the canvas).
   // Only once signed in: before auth resolves there's no log to judge.
   const weekPartial = userId != null && needsRemote(log.since, window7.from);
+  const weekIds = idsKey(
+    sessionsBetween(log.sessions, window7.from, window7.to),
+  );
   // Stamped with the day it was asked for: after midnight yesterday's week
   // is never shown, whether the new ask is still out or came back empty.
   const [remoteAnswer, setRemoteAnswer] = useState<{
@@ -210,8 +215,9 @@ export function YouContainer({
     return () => {
       alive = false;
     };
-    // A newly logged workout asks again, once it has had a chance to sync.
-  }, [remote, weekPartial, dayKeyNow, log.sessions.length]);
+    // Ask again when the week's workouts change: a new one, or a sync
+    // swapping a `local-…` id for the server's.
+  }, [remote, weekPartial, dayKeyNow, weekIds]);
   const remoteWeek = remoteAnswer?.day === dayKeyNow ? remoteAnswer.data : null;
   // Each workout's own records (the PR cache keeps only the latest best).
   const records = log.records;
@@ -219,10 +225,10 @@ export function YouContainer({
   const week = useMemo(() => {
     const w = window7;
     const sessions = sessionsBetween(log.sessions, w.from, w.to);
-    // The server's week, unless the phone holds workouts it hasn't seen
-    // yet (finished offline, still queued).
+    // The server's week, only when it counts every workout the phone holds
+    // (one finished offline and still queued would otherwise vanish).
     const server =
-      weekPartial && remoteWeek && remoteWeek.totals.workouts >= sessions.length
+      weekPartial && remoteWeek && serverHolds(remoteWeek.sessionIds, sessions)
         ? remoteWeek
         : null;
     const rows = server

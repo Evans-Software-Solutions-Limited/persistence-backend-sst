@@ -57,6 +57,8 @@ export type RemoteMuscleVolume = {
   rest: MuscleDisplayGroup[];
   totals: RemoteTotals;
   topLifts: RemoteTopLift[];
+  /** The workouts this answer counts (absent in answers kept before it). */
+  sessionIds?: string[];
   asOf: string;
 };
 
@@ -132,6 +134,8 @@ export type RemoteRecap = {
   previousTo: string;
   totals: RemoteTotals;
   previous: RemoteTotals;
+  /** The period's workouts (absent in answers kept before it). */
+  sessionIds?: string[];
   muscles: RemoteMuscleRow[];
   lifts: RemoteTopLift[];
   volume: { exerciseId: string; name: string; volumeKg: number }[];
