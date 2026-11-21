@@ -10,6 +10,7 @@ import { getDb } from "@persistence/db/client";
 import { auditTrainerAction } from "./auditTrainerAction";
 import { recordDataSharingConsent } from "./recordDataSharingConsent";
 import { CONSENT_VERSION } from "./consent";
+import { closeFormsOnEnd } from "../coaching/forms/generators";
 
 export interface EndCoachClientRelationshipArgs {
   trainerId: string;
@@ -196,6 +197,11 @@ export async function endCoachClientRelationship({
           eq(coachClientProfiles.status, "active"),
         ),
       );
+
+    // 3c — PER-116 (design C D2): send this coach's exit form(s), cancel their
+    // other pending requests and stop their schedule targets for this client.
+    // The exit response stays visible to this coach (Brad, 20 Nov).
+    await closeFormsOnEnd(tx, { trainerId, clientId, relationshipId: row.id });
 
     await auditTrainerAction({
       trainerId,
