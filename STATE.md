@@ -5,6 +5,9 @@
 PR #545 (open, no auto-merge). Backend design H. Read-only, additive: four new paths, no migration, no
 `schema.ts` change, no native change. 1.2.0 phones are untouched (they never
 call the new paths).
+Ships in the **next store release**, reviewed on staging first (Brad,
+21 Nov: this release is no longer over the air). The You page changes from
+PER-141 and this ticket reach phones with that build, not an OTA update.
 
 - **`packages/training-metrics`** (new, pure TS, no runtime deps): the
   muscle-credit function moved out of `packages/mobile`
