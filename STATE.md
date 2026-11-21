@@ -1,5 +1,66 @@
 # Project memory · persistence-backend-sst
 
+### 2026-11-21 — BE-C1: coach forms, send rules, requests, responses and review ([PER-116](https://linear.app/evans-software-solutions/issue/PER-116); branch `bradleysimmsevans/per-116-be-c1-backend-coach-forms-send`)
+
+Linear "Backend design C", D1–D3 (approved 20 Nov). Backend only; no app or
+native change. Weekly/daily periods, reminders, missed-marking and
+notifications are BE-C2 (PER-117).
+
+- **Migration** `20261120235941_coach_forms.sql` (rollback in
+  `supabase/rollbacks/`): `coach_forms` (template = `trainer_id NULL` +
+  `template_key`, CHECK one or the other), `coach_form_versions` (a trigger
+  refuses UPDATE), `coach_form_schedules`, `coach_form_schedule_clients`,
+  `coach_form_requests` (unique `(relationship_id, form_id, trigger,
+  period_key)`), `coach_form_responses`. RLS on, no policies. **No templates
+  seeded**; a later data migration uses `ON CONFLICT (template_key)`.
+  Additions beyond D1: `coach_form_requests.updated_at` (athlete `?since=`)
+  and `created_at DEFAULT clock_timestamp()` (keeps set-up order inside one
+  accept transaction).
+- **Period keys carry the coaching cycle** (`activated_at`): `join:c<ms>`,
+  `end:c<ms>`, `once:<scheduleId>:c<ms>`. A revived relationship is the same
+  row, so plain `join` would collide and never send again. Coach reads show
+  the current cycle (`sent_at >= activated_at`) plus every exit form;
+  generators never stamp `sent_at` before `activated_at`. BE-C2's weekly/daily
+  keys stay ISO week / local date as designed.
+- **Code** in `microservices/core/src/application/coaching/forms/`, mounted
+  through `coachingRoutes` (one `.use(coachFormsRoutes)`). Routes as in D3:
+  `/trainers/me/forms` (+ `?include=templates&since=`, `fromTemplateKey`,
+  `?version=`), `/trainers/me/form-schedules`,
+  `/trainers/me/clients/:clientId/forms` (Check-ins tab) and
+  `…/forms/:formId/setup`, `…/form-responses` (+ cursor) and `…/:id/review`,
+  `GET /users/me/form-requests`, `POST /users/me/form-requests/:id/response`.
+- **Offline contract:** creates take `Idempotency-Key`; a response replay
+  returns the stored response (checked first, so it works after closing).
+  Closed requests answer 409 `request_closed` with `reason`
+  (`completed`/`cancelled`/`expired`). Form and rule edits take
+  `expectedRevision` → 409 `revision_conflict` with `current`. Lists return
+  `asOf` (2 min behind, like PER-108) and `deletedIds` with `since`.
+- **Status without the scheduler:** a pending request past `due_at` reads as
+  `missed` and can be answered late for 7 days (`late = true`). BE-C2 will
+  store `missed`; reads already treat both the same.
+- **Generators:** `on_join` in `acceptPersonalCode` (set-up starter forms via
+  the `starter_form` handler, then every active all-clients on_join rule;
+  de-duplicated by the key), `once` on schedule create/resume/target add and
+  per-client `active`, `on_end` in `endCoachClientRelationship` (exit forms,
+  then cancel this coach's other pending requests and mark targets
+  `excluded`). ⚠ General-code and request-accept activations don't fire
+  on_join (scope was the PER-108 accept hook) — flagged for Brad.
+- **Set-up sections live:** `starter_form` (refId = form) and
+  `repeating_form` (refId = once/weekly/daily rule, optional override), with
+  preview and copy-from. Added at the top of `HANDLERS` as a self-contained
+  block, so PER-118's `meal_plan` merges cleanly.
+- **Answers:** strict question schema (≤ 40, 8 types). Photo questions can be
+  created; answering one (or a form with a required photo) is 422
+  `photo_unavailable` until BE-F1 (PER-121).
+- **Tests:** `coaching/forms/__tests__/forms.integration.test.ts` runs both
+  migrations on PGlite through the real handlers, accept and offboarding:
+  D7 tests 1, 4, 5, 6, 8, 10 plus the library, rules, per-client setup,
+  Check-ins tab, history paging and set-up sections. `questions.test.ts`
+  covers the validators. PER-108's suite now applies this migration too, and
+  its offboarding unit test mocks `closeFormsOnEnd`.
+- **Not verified:** no migration applied to staging/prod; no deploy; no device
+  test.
+
 ### 2026-11-20 — You page Y1–Y4, offline-first (PER-141 APP-H1; branch `bradleysimmsevans/per-141-app-h1-athlete-you-page-y1y4`)
 
 [PER-141](https://linear.app/evans-software-solutions/issue/PER-141), PR #541 (open, no auto-merge). Athlete

@@ -13,6 +13,7 @@ import {
   pgTable,
   primaryKey,
   text,
+  time,
   timestamp,
   uniqueIndex,
   uuid,
@@ -2005,6 +2006,241 @@ export const trainerDeclarations = pgTable(
     ),
   ],
 );
+
+// ─── Coach forms (PER-116, design C D1, migration 20261120235941) ────────────
+
+/** A coach's form, or a system template (`trainerId` null + `templateKey`). */
+export const coachForms = pgTable(
+  "coach_forms",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    trainerId: uuid("trainer_id").references(() => profiles.id, {
+      onDelete: "cascade",
+    }),
+    templateKey: text("template_key"),
+    title: text("title").notNull(),
+    description: text("description"),
+    currentVersionId: uuid("current_version_id"),
+    available: boolean("available").notNull().default(true),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    revision: integer("revision").notNull().default(1),
+    clientRequestId: text("client_request_id"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("coach_forms_template_key_uq").on(t.templateKey),
+    uniqueIndex("coach_forms_client_request_uq").on(
+      t.trainerId,
+      t.clientRequestId,
+    ),
+    index("coach_forms_trainer_updated_idx").on(t.trainerId, t.updatedAt),
+  ],
+);
+
+export type CoachForm = typeof coachForms.$inferSelect;
+
+/** Immutable question sets (a DB trigger refuses UPDATE). */
+export const coachFormVersions = pgTable(
+  "coach_form_versions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    formId: uuid("form_id")
+      .notNull()
+      .references(() => coachForms.id, { onDelete: "cascade" }),
+    version: integer("version").notNull(),
+    questions: jsonb("questions").$type<unknown[]>().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("coach_form_versions_form_version_uq").on(t.formId, t.version),
+  ],
+);
+
+export type CoachFormVersion = typeof coachFormVersions.$inferSelect;
+
+/** The coach's send rule. */
+export const coachFormSchedules = pgTable(
+  "coach_form_schedules",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    trainerId: uuid("trainer_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    formId: uuid("form_id")
+      .notNull()
+      .references(() => coachForms.id, { onDelete: "cascade" }),
+    // 'on_join' | 'once' | 'weekly' | 'daily' | 'on_end'
+    trigger: text("trigger").notNull(),
+    // 'all_clients' | 'selected'
+    audience: text("audience").notNull(),
+    weekday: smallint("weekday"),
+    timeLocal: time("time_local"),
+    dueAfterHours: integer("due_after_hours"),
+    reminders: jsonb("reminders")
+      .$type<{ afterHours: number }[]>()
+      .notNull()
+      .default([]),
+    // 'active' | 'paused' | 'stopped'
+    status: text("status").notNull().default("active"),
+    revision: integer("revision").notNull().default(1),
+    clientRequestId: text("client_request_id"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("coach_form_schedules_client_request_uq").on(
+      t.trainerId,
+      t.clientRequestId,
+    ),
+    index("coach_form_schedules_trainer_status_idx").on(t.trainerId, t.status),
+    index("coach_form_schedules_form_idx").on(t.formId),
+  ],
+);
+
+export type CoachFormSchedule = typeof coachFormSchedules.$inferSelect;
+
+/** Targets for `selected`, plus a per-client pause, stop or rule (C10j). */
+export const coachFormScheduleClients = pgTable(
+  "coach_form_schedule_clients",
+  {
+    scheduleId: uuid("schedule_id")
+      .notNull()
+      .references(() => coachFormSchedules.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    relationshipId: uuid("relationship_id")
+      .notNull()
+      .references(() => ptClientRelationships.id, { onDelete: "cascade" }),
+    // 'active' | 'paused' | 'excluded'
+    status: text("status").notNull().default("active"),
+    override: jsonb("override").$type<Record<string, unknown>>(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.scheduleId, t.relationshipId] }),
+    index("coach_form_schedule_clients_relationship_idx").on(t.relationshipId),
+  ],
+);
+
+export type CoachFormScheduleClient =
+  typeof coachFormScheduleClients.$inferSelect;
+
+/** One per (relationship, form, trigger, period): the generators' anchor. */
+export const coachFormRequests = pgTable(
+  "coach_form_requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    trainerId: uuid("trainer_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    relationshipId: uuid("relationship_id")
+      .notNull()
+      .references(() => ptClientRelationships.id, { onDelete: "cascade" }),
+    formId: uuid("form_id")
+      .notNull()
+      .references(() => coachForms.id, { onDelete: "cascade" }),
+    formVersionId: uuid("form_version_id")
+      .notNull()
+      .references(() => coachFormVersions.id, { onDelete: "cascade" }),
+    scheduleId: uuid("schedule_id").references(() => coachFormSchedules.id, {
+      onDelete: "set null",
+    }),
+    trigger: text("trigger").notNull(),
+    periodKey: text("period_key").notNull(),
+    sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
+    dueAt: timestamp("due_at", { withTimezone: true }),
+    // 'pending' | 'completed' | 'missed' | 'cancelled'
+    status: text("status").notNull().default("pending"),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    late: boolean("late").notNull().default(false),
+    remindersSent: smallint("reminders_sent").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .default(sql`clock_timestamp()`),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("coach_form_requests_period_uq").on(
+      t.relationshipId,
+      t.formId,
+      t.trigger,
+      t.periodKey,
+    ),
+    index("coach_form_requests_client_status_idx").on(
+      t.clientId,
+      t.status,
+      t.sentAt,
+    ),
+    index("coach_form_requests_client_updated_idx").on(t.clientId, t.updatedAt),
+    index("coach_form_requests_trainer_client_idx").on(
+      t.trainerId,
+      t.clientId,
+      t.sentAt.desc(),
+    ),
+    index("coach_form_requests_schedule_idx").on(t.scheduleId),
+  ],
+);
+
+export type CoachFormRequest = typeof coachFormRequests.$inferSelect;
+
+/** The athlete's answers, a snapshot against the request's own version. */
+export const coachFormResponses = pgTable(
+  "coach_form_responses",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    requestId: uuid("request_id")
+      .notNull()
+      .references(() => coachFormRequests.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    answers: jsonb("answers").$type<Record<string, unknown>>().notNull(),
+    submittedAt: timestamp("submitted_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    reviewedBy: uuid("reviewed_by").references(() => profiles.id, {
+      onDelete: "set null",
+    }),
+    replyText: text("reply_text"),
+    clientRequestId: text("client_request_id"),
+  },
+  (t) => [
+    uniqueIndex("coach_form_responses_request_uq").on(t.requestId),
+    uniqueIndex("coach_form_responses_client_request_uq").on(
+      t.clientId,
+      t.clientRequestId,
+    ),
+    index("coach_form_responses_client_submitted_idx").on(
+      t.clientId,
+      t.submittedAt.desc(),
+    ),
+  ],
+);
+
+export type CoachFormResponse = typeof coachFormResponses.$inferSelect;
 
 export type TrainerInviteCode = typeof trainerInviteCodes.$inferSelect;
 export type NewTrainerInviteCode = typeof trainerInviteCodes.$inferInsert;
