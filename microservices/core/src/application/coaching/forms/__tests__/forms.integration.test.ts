@@ -2152,3 +2152,32 @@ describe("Inspector Brad sweep 2 (PR #543)", () => {
     expect((await requestsFor(ATHLETE_E))[0]!.status).toBe("cancelled");
   });
 });
+
+describe("Inspector Brad sweep 3 (PR #543)", () => {
+  it("editing or stopping an exit rule never cancels an exit form already sent", async () => {
+    const exit = await makeForm(COACH_A, "Exit");
+    const s = await makeSchedule(COACH_A, {
+      formId: exit.id,
+      trigger: "on_end",
+      audience: "selected",
+      clientIds: [ATHLETE_C, ATHLETE_E],
+    });
+    await end(COACH_A, ATHLETE_C);
+    const [sent] = await requestsFor(ATHLETE_C);
+    expect(sent).toMatchObject({ trigger: "on_end", status: "pending" });
+    const patched = await http(
+      "PATCH",
+      `/trainers/me/form-schedules/${s.id}`,
+      COACH_A,
+      { clientIds: [ATHLETE_E] },
+    );
+    expect(patched.status).toBe(200);
+    expect((await requestsFor(ATHLETE_C))[0]!.status).toBe("pending");
+    expect(
+      (await http("DELETE", `/trainers/me/form-schedules/${s.id}`, COACH_A))
+        .status,
+    ).toBe(204);
+    expect((await requestsFor(ATHLETE_C))[0]!.status).toBe("pending");
+    expect((await answer(ATHLETE_C, sent!.id, { q1: "bye" })).status).toBe(201);
+  });
+});

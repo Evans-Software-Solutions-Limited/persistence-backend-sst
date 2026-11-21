@@ -92,6 +92,10 @@ notifications are BE-C2 (PER-117).
   - A question id of `__proto__` hit the prototype setter and the answer was
     dropped from the stored response. Answers are now written with
     `Object.defineProperty`.
+- **Inspector Brad sweep 3 (7b2d119), one lead, confirmed and fixed:** the
+  narrowing cancel (and stopping a rule) also cancelled exit forms already
+  sent to clients who had left. `on_end` requests are now never cancelled by
+  a rule edit or stop; they belong to ended relationships.
 
 ### 2026-11-20 — You page Y1–Y4, offline-first (PER-141 APP-H1; branch `bradleysimmsevans/per-141-app-h1-athlete-you-page-y1y4`)
 

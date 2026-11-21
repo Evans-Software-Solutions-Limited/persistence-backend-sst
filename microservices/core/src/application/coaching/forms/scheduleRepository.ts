@@ -244,6 +244,9 @@ export async function cancelScheduleRequests(
       and(
         eq(coachFormRequests.scheduleId, scheduleId),
         inArray(coachFormRequests.status, ["pending", "missed"]),
+        // Never an exit form: it was sent to an ended relationship, and
+        // stopping or narrowing the rule doesn't take it back (Inspector Brad).
+        ne(coachFormRequests.trigger, "on_end"),
         ...(relationshipIds
           ? [inArray(coachFormRequests.relationshipId, relationshipIds)]
           : []),
@@ -519,6 +522,9 @@ export class CoachFormScheduleRepository {
               eq(coachFormRequests.scheduleId, id),
               inArray(coachFormRequests.status, ["pending", "missed"]),
               notInArray(coachFormRequests.relationshipId, [...keep]),
+              // Exit forms belong to relationships that have already ended;
+              // the rule's audience no longer governs them (Inspector Brad).
+              ne(coachFormRequests.trigger, "on_end"),
             ),
           );
         for (const [clientId, relationshipId] of rels) {
