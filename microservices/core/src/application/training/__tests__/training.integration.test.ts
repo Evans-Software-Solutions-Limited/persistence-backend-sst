@@ -637,6 +637,16 @@ describe("GET /users/me/history", () => {
       sets: 12,
       records: 1,
     });
+    expect(d.workouts[0].personalRecords).toEqual([
+      {
+        exerciseId: SEEDED_WEEK_RECORD_EXERCISE_IDS[0],
+        exerciseName: "Back squat",
+        recordType: "1rm",
+        value: 105,
+        setId: setRowIds.get("squat-3"),
+      },
+    ]);
+    expect(d.workouts[1].personalRecords).toEqual([]);
     expect(d.workouts[0].exercises[0]).toMatchObject({
       name: "Back squat",
       isSubstituted: false,

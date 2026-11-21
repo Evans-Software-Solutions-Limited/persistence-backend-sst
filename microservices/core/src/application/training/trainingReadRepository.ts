@@ -43,6 +43,7 @@ export type WindowRecord = {
   achievedAt: string;
   /** The workout whose set holds the record, when the set still exists. */
   sessionId: string | null;
+  setId: string | null;
 };
 
 /** Everything besides workouts that was logged on one local day. */
@@ -241,6 +242,7 @@ export class TrainingReadRepository {
         value: personalRecords.value,
         achievedAt: personalRecords.achievedAt,
         sessionId: sessionExercises.sessionId,
+        setId: personalRecords.setId,
       })
       .from(personalRecords)
       .innerJoin(exercises, eq(personalRecords.exerciseId, exercises.id))
@@ -264,6 +266,7 @@ export class TrainingReadRepository {
       // Filtered on its local day above, so never null here.
       achievedAt: r.achievedAt!.toISOString(),
       sessionId: r.sessionId ?? null,
+      setId: r.setId ?? null,
     }));
   }
 

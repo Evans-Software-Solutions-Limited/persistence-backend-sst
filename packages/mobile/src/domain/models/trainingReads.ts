@@ -89,6 +89,14 @@ export type RemoteHistoryWorkout = {
   volumeKg: number;
   sets: number;
   records: number;
+  /** The records this workout holds (absent in answers kept before it). */
+  personalRecords?: {
+    exerciseId: string;
+    exerciseName: string;
+    recordType: RecordType;
+    value: number;
+    setId: string | null;
+  }[];
   exercises: {
     exerciseId: string;
     name: string;

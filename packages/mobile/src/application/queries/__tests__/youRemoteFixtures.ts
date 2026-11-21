@@ -30,6 +30,15 @@ export const remoteWorkoutFixture: RemoteHistoryWorkout = {
   volumeKg: 500,
   sets: 5,
   records: 1,
+  personalRecords: [
+    {
+      exerciseId: "bench",
+      exerciseName: "Bench press",
+      recordType: "1rm",
+      value: 100,
+      setId: "set-1",
+    },
+  ],
   exercises: [
     {
       exerciseId: "bench",

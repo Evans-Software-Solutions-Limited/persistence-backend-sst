@@ -19,6 +19,7 @@
 
 import type { MuscleCreditRow } from "@persistence/training-metrics";
 import type { PersonalRecord } from "@/domain/models/record";
+import type { SummaryRecord } from "@/domain/services/workoutSummary";
 import type { WorkoutSession } from "@/domain/models/session";
 import type {
   RemoteHistoryDay,
@@ -78,11 +79,34 @@ export function needsRemote(since: string | null, from: Date): boolean {
  * workout the phone's log never held. Filled whenever a day is read (from
  * the network or the cache), so it is there before the workout is tapped.
  */
-const remoteWorkouts = new Map<string, WorkoutSession>();
+const remoteWorkouts = new Map<
+  string,
+  { session: WorkoutSession; records: SummaryRecord[] }
+>();
 
 /** A workout read from the server for a History day, or null. */
 export function remoteWorkout(id: string | undefined): WorkoutSession | null {
-  return (id && remoteWorkouts.get(id)) || null;
+  return (id && remoteWorkouts.get(id)?.session) || null;
+}
+
+/**
+ * That workout's personal records, for its summary (Y2b). The server keeps
+ * no "was" value, so none is shown.
+ */
+export function remoteWorkoutRecords(id: string | undefined): SummaryRecord[] {
+  return (id && remoteWorkouts.get(id)?.records) || [];
+}
+
+/** A server workout's records as the summary's records. */
+export function remoteSummaryRecords(w: RemoteHistoryWorkout): SummaryRecord[] {
+  return (w.personalRecords ?? []).map((r) => ({
+    exerciseId: r.exerciseId,
+    exerciseName: r.exerciseName,
+    recordType: r.recordType,
+    newValue: r.value,
+    previousValue: null,
+    ...(r.setId ? { setId: r.setId } : {}),
+  }));
 }
 
 /** The server's History workout as a session the summary carousel reads. */
@@ -240,7 +264,10 @@ export function createYouRemoteSource(
       const r = await read(`day:${date}`, () => api.getHistoryDay(date));
       if (r.status === "ok")
         for (const w of r.data.workouts)
-          remoteWorkouts.set(w.id, remoteWorkoutSession(w, userId));
+          remoteWorkouts.set(w.id, {
+            session: remoteWorkoutSession(w, userId),
+            records: remoteSummaryRecords(w),
+          });
       return r;
     },
     recap: (period) =>

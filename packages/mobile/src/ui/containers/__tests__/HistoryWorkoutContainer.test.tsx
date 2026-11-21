@@ -131,6 +131,17 @@ describe("HistoryWorkoutContainer (Y2b)", () => {
       sets: 1,
       durationSeconds: 600,
     });
+    // Its records come with it, without a "was" (Inspector Brad #545).
+    expect(mockProbe.pages!.records).toEqual([
+      {
+        exerciseId: "bench",
+        exerciseName: "Bench press",
+        recordType: "1rm",
+        newValue: 100,
+        previousValue: null,
+        setId: "set-1",
+      },
+    ]);
     delete mockParams.id;
     delete mockParams.at;
   });

@@ -248,6 +248,17 @@ export function historyDayModel(p: {
         volumeKg: t.volumeKg,
         sets: t.sets,
         records: p.records.filter((r) => r.sessionId === s.id).length,
+        // The records themselves, so the summary opened from History (Y2b)
+        // can show them for a workout the phone's log never held.
+        personalRecords: p.records
+          .filter((r) => r.sessionId === s.id)
+          .map((r) => ({
+            exerciseId: r.exerciseId,
+            exerciseName: r.exerciseName,
+            recordType: r.recordType,
+            value: r.value,
+            setId: r.setId,
+          })),
         // The workout itself, so the phone can open its summary (Y2b) when
         // its own log never held it (an older month, a new phone).
         exercises: s.exercises.map((e) => ({

@@ -172,6 +172,7 @@ describe("trainingReviewModel edges", () => {
     value: 100,
     achievedAt: "2026-11-21T10:00:00.000Z",
     sessionId: null,
+    setId: null,
   };
   const model = trainingReviewModel({
     window: "7d",

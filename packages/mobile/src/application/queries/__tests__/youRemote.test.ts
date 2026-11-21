@@ -14,6 +14,8 @@ import type { ApiPort } from "@/domain/ports/api.port";
 import {
   createYouRemoteSource,
   idsKey,
+  remoteSummaryRecords,
+  remoteWorkoutRecords,
   serverHolds,
   needsRemote,
   remoteHistoryDayModel,
@@ -226,6 +228,38 @@ describe("serverHolds / idsKey", () => {
 
   it("joins ids in order", () => {
     expect(idsKey([{ id: "a" }, { id: "b" }])).toBe("a,b");
+  });
+});
+
+describe("remote workout records", () => {
+  it("keeps a day's records with its workouts, and copes with none", () => {
+    expect(remoteWorkoutRecords("never-read")).toEqual([]);
+    expect(
+      remoteSummaryRecords({
+        ...remoteWorkoutFixture,
+        personalRecords: [
+          {
+            exerciseId: "row",
+            exerciseName: "Row",
+            recordType: "1rm",
+            value: 90,
+            setId: null,
+          },
+        ],
+      }),
+    ).toEqual([
+      {
+        exerciseId: "row",
+        exerciseName: "Row",
+        recordType: "1rm",
+        newValue: 90,
+        previousValue: null,
+      },
+    ]);
+    // A day kept before records were sent has none.
+    const { personalRecords: _omit, ...old } = remoteWorkoutFixture;
+    void _omit;
+    expect(remoteSummaryRecords(old)).toEqual([]);
   });
 });
 
