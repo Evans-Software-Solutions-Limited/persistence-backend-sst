@@ -2,7 +2,7 @@
 
 ### 2026-11-21 — BE-H1: You page and coach training reads, `packages/training-metrics` ([PER-113](https://linear.app/evans-software-solutions/issue/PER-113); branch `bradleysimmsevans/per-113-be-h1-backend-you-page-and-coach`)
 
-Backend design H. Read-only, additive: four new paths, no migration, no
+PR #545 (open, no auto-merge). Backend design H. Read-only, additive: four new paths, no migration, no
 `schema.ts` change, no native change. 1.2.0 phones are untouched (they never
 call the new paths).
 
