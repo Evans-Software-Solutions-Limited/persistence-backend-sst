@@ -2,8 +2,8 @@
 
 ### 2026-11-23 — BE-C2: coach events, Today, notifications, quiet hours and the 15-minute scheduler ([PER-117](https://linear.app/evans-software-solutions/issue/PER-117); branch `bradleysimmsevans/per-117-be-c2-backend-coach-events-today`)
 
-Linear "Backend design C", D2 (scheduler) and D4; covers PER-93 (coach
-notification settings). Backend only; no app UI or native change. Ships in the
+PR #548 (open, no auto-merge). Linear "Backend design C", D2 (scheduler) and
+D4; covers PER-93 (coach notification settings). Backend only; no app UI or native change. Ships in the
 next store release, reviewed on staging.
 
 - **Migration** `20261123120117_coach_events_notifications.sql` (+ rollback):
