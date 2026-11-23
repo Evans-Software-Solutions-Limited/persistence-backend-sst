@@ -74,6 +74,9 @@ function WhoForm({ existing: loaded }: { existing: ClientProfile | null }) {
       const patch = changedFields(existing, parsed.input);
       if (Object.keys(patch).length > 0) {
         let updated: ClientProfile;
+        // When a resend happens, the server's 409 copy (newer invite code and
+        // set-up) is what the saved fields land on, not the older cache.
+        let fresh: ClientProfile | null = null;
         try {
           updated = await api.patchProfile(
             existing.id,
@@ -95,11 +98,17 @@ function WhoForm({ existing: loaded }: { existing: ClientProfile | null }) {
               (k) => (latest[k] ?? null) === (existing[k] ?? null),
             );
           if (!latest || !untouched) throw e;
+          fresh = latest;
           updated = await api.patchProfile(existing.id, patch, latest.revision);
         }
         queryClient.setQueryData(
           coachKeys.clientProfile(existing.id),
-          (old: object | undefined) => (old ? { ...old, ...updated } : old),
+          (old: object | undefined) =>
+            fresh
+              ? { ...fresh, ...updated }
+              : old
+                ? { ...old, ...updated }
+                : old,
         );
         void queryClient.invalidateQueries({ queryKey: coachKeys.roster });
       }

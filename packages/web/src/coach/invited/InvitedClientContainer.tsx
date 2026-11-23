@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Navigate, useNavigate, useParams } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { isCoachApiError } from "../api/coachApi";
-import type { ClientProfile } from "../api/types";
+import type { ClientProfile, ClientProfileDetail } from "../api/types";
 import {
   coachKeys,
   useClientProfile,
@@ -106,6 +106,9 @@ export function InvitedClientContainer() {
       const save = (revision: number) =>
         api.patchProfile(detail!.id, { privateNotes: next }, revision);
       let updated: ClientProfile;
+      // The full detail the save lands on: the server's 409 copy when a
+      // resend happens (it carries the newer invite code and set-up).
+      let fresh: ClientProfileDetail = detail!;
       try {
         updated = await save(base.revision);
       } catch (e) {
@@ -113,7 +116,7 @@ export function InvitedClientContainer() {
         // if the notes themselves are as Edit found them, save once more.
         const latest =
           isCoachApiError(e) && e.code === "revision_conflict"
-            ? (e.body?.current as ClientProfile | undefined)
+            ? (e.body?.current as ClientProfileDetail | undefined)
             : undefined;
         if (
           !latest ||
@@ -122,9 +125,10 @@ export function InvitedClientContainer() {
         ) {
           throw e;
         }
+        fresh = latest;
         updated = await save(latest.revision);
       }
-      queryClient.setQueryData(key, { ...detail!, ...updated });
+      queryClient.setQueryData(key, { ...fresh, ...updated });
       setNotesDraft(null);
       setToast("Saved");
     } catch (e) {

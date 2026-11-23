@@ -545,3 +545,96 @@ describe("drafts belong to one client (sweep 11)", () => {
     ).toHaveLength(1);
   });
 });
+
+describe("after a resend the cache keeps the server's newer copy (sweep 12)", () => {
+  const resentOnPhone = detail({
+    revision: 7,
+    invite: {
+      code: "NEW123",
+      link: "l2",
+      expiresAt: "2099-01-01T00:00:00Z",
+      status: "active",
+    },
+  });
+  const conflict = () =>
+    new CoachApiError(409, {
+      code: "revision_conflict",
+      current: resentOnPhone,
+    });
+  // PATCH answers a plain profile: no invite, no set-up.
+  const {
+    invite: _i,
+    setup: _s,
+    ...plain
+  } = detail({
+    revision: 8,
+    privateNotes: "Mine",
+    goal: "Run 5k",
+  });
+  void _i;
+  void _s;
+
+  it("notes: the new code from the other device stays in the cache", async () => {
+    const api = fakeApi({
+      profileDetail: vi.fn().mockResolvedValue(
+        detail({
+          invite: {
+            code: "OLD111",
+            link: "l1",
+            expiresAt: "2099-01-01T00:00:00Z",
+            status: "active",
+          },
+        }),
+      ),
+      patchProfile: vi
+        .fn()
+        .mockRejectedValueOnce(conflict())
+        .mockResolvedValueOnce(plain),
+    });
+    const { queryClient } = renderCoach(<InvitedClientContainer />, {
+      route: `/coach/clients/invited/${PROFILE_ID}`,
+      path: "/coach/clients/invited/:profileId",
+      api,
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("Private notes"), {
+      target: { value: "Mine" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(api.patchProfile).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(
+        (queryClient.getQueryData(key) as { invite: { code: string } }).invite
+          .code,
+      ).toBe("NEW123"),
+    );
+    expect(
+      (queryClient.getQueryData(key) as { revision: number }).revision,
+    ).toBe(8);
+  });
+
+  it("Who: the new code from the other device stays in the cache", async () => {
+    const api = fakeApi({
+      patchProfile: vi
+        .fn()
+        .mockRejectedValueOnce(conflict())
+        .mockResolvedValueOnce(plain),
+    });
+    const { queryClient } = renderCoach(<WhoContainer />, {
+      route: `/coach/clients/invited/${PROFILE_ID}/who`,
+      path: "/coach/clients/invited/:profileId/who",
+      api,
+    });
+    fireEvent.change(await screen.findByLabelText("Goal, optional"), {
+      target: { value: "Run 5k" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Next: set up" }));
+    await waitFor(() => expect(api.patchProfile).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(
+        (queryClient.getQueryData(key) as { invite: { code: string } }).invite
+          .code,
+      ).toBe("NEW123"),
+    );
+  });
+});
