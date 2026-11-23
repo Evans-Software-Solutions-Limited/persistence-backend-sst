@@ -4,7 +4,7 @@ import {
   getAccessToken,
   loadSession,
   refreshSession,
-  saveSession,
+  saveRefreshed,
 } from "./coachAuth";
 import type {
   AcceptPreview,
@@ -115,7 +115,10 @@ export async function coachFetch<T>(
       });
     }
     if (refreshed.kind === "ok") {
-      saveSession(refreshed.session);
+      if (!saveRefreshed(current!, refreshed.session)) {
+        // Signed out while the refresh was running: don't bring it back.
+        throw new CoachApiError(401, { message: "Signed out" });
+      }
       res = await send(refreshed.session.accessToken);
     }
     if (refreshed.kind === "rejected") {

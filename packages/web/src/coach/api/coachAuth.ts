@@ -161,6 +161,20 @@ export async function refreshSession(
   }
 }
 
+/**
+ * Save a refreshed session only if the stored one is still the session that
+ * was refreshed. A refresh that finishes after Sign out (or after another tab
+ * swapped the session) must not write a working token back to storage.
+ */
+export function saveRefreshed(
+  refreshedFrom: CoachSession,
+  next: CoachSession,
+): boolean {
+  if (loadSession()?.refreshToken !== refreshedFrom.refreshToken) return false;
+  saveSession(next);
+  return true;
+}
+
 // ─── Signed-out signal ───────────────────────────────────────────────────────
 
 const signedOutListeners = new Set<() => void>();
@@ -196,8 +210,9 @@ export async function getAccessToken(
   if (!online()) return current.accessToken;
   const result = await refreshSession(current, fetchImpl);
   if (result.kind === "ok") {
-    saveSession(result.session);
-    return result.session.accessToken;
+    return saveRefreshed(current, result.session)
+      ? result.session.accessToken
+      : null;
   }
   if (result.kind === "rejected") {
     endSession();

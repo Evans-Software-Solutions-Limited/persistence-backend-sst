@@ -366,6 +366,31 @@ describe("coach API client", () => {
       expect(loadSession()).toBeNull();
     });
 
+    it("a refresh that finishes after Sign out doesn't write the session back (sweep 3)", async () => {
+      withRefresh();
+      // GoTrue answers the refresh only after the coach has signed out.
+      const lateAuth = async () => {
+        saveSession(null);
+        return res(200, {
+          access_token: jwt({ exp: future() }),
+          refresh_token: "r2",
+        });
+      };
+      await expect(
+        coachFetch("/x", {}, server([res(401, {})], lateAuth)),
+      ).rejects.toMatchObject({ status: 401, message: "Signed out" });
+      expect(loadSession()).toBeNull();
+
+      saveSession({
+        accessToken: jwt({ exp: 1 }),
+        refreshToken: "r1",
+        expiresAt: 1,
+        email: null,
+      });
+      expect(await getAccessToken(vi.fn(lateAuth), () => true)).toBeNull();
+      expect(loadSession()).toBeNull();
+    });
+
     it("a 401 on a token GoTrue just issued keeps the session (sweep 3)", async () => {
       withRefresh();
       const listener = vi.fn();
