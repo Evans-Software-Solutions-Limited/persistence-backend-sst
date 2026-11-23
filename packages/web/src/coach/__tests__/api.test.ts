@@ -464,6 +464,51 @@ describe("coach API client", () => {
       stop();
     });
 
+    it("a late 401 retries with the token another call already stored (sweep 8)", async () => {
+      const sent = jwt({ exp: future() });
+      saveSession({
+        accessToken: sent,
+        refreshToken: "r1",
+        expiresAt: future(),
+        email: null,
+      });
+      const stored = jwt({ exp: future() + 60 });
+      const f = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+        if (String(url).includes("/auth/v1/token")) return res(500, {});
+        const bearer = (init?.headers as Record<string, string>).Authorization;
+        if (bearer === `Bearer ${sent}`) {
+          // While this request was out, another call refreshed.
+          saveSession({
+            accessToken: stored,
+            refreshToken: "r2",
+            expiresAt: future() + 60,
+            email: null,
+          });
+          return res(401, {});
+        }
+        return res(200, { data: "ok" });
+      });
+      expect(await coachFetch("/x", {}, f)).toEqual({ data: "ok" });
+      expect(
+        f.mock.calls.filter(([u]) => String(u).includes("/auth/v1/token")),
+      ).toHaveLength(0);
+      expect(loadSession()?.refreshToken).toBe("r2");
+    });
+
+    it("bounds the refresh request with a timeout (sweep 8)", async () => {
+      withRefresh();
+      let signal: AbortSignal | null | undefined;
+      const f = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+        signal = init?.signal;
+        throw new DOMException("timed out", "TimeoutError");
+      });
+      expect(await refreshSession(loadSession()!, f)).toEqual({
+        kind: "unavailable",
+      });
+      expect(signal).toBeInstanceOf(AbortSignal);
+      expect(f).toHaveBeenCalledTimes(1);
+    });
+
     it("a 401 on a token GoTrue just issued keeps the session (sweep 3)", async () => {
       withRefresh();
       const listener = vi.fn();

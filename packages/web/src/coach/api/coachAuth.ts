@@ -125,6 +125,15 @@ export type RefreshResult =
   | { kind: "rejected" }
   | { kind: "unavailable" };
 
+export const REFRESH_TIMEOUT_MS = 10_000;
+
+function refreshTimeout(): AbortSignal | undefined {
+  return typeof AbortSignal !== "undefined" &&
+    typeof AbortSignal.timeout === "function"
+    ? AbortSignal.timeout(REFRESH_TIMEOUT_MS)
+    : undefined;
+}
+
 export async function refreshSession(
   session: CoachSession,
   fetchImpl: typeof fetch = fetch,
@@ -139,6 +148,10 @@ export async function refreshSession(
         method: "POST",
         headers: { apikey: cfg.anonKey, "Content-Type": "application/json" },
         body: JSON.stringify({ refresh_token: session.refreshToken }),
+        // Bounded: other calls share this request (see refreshStored), so a
+        // stalled socket must not hold the whole tab. A timeout is
+        // `unavailable` via the catch below.
+        signal: refreshTimeout(),
       },
     );
     if (res.status === 400 || res.status === 401 || res.status === 403) {

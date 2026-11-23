@@ -102,7 +102,14 @@ export async function coachFetch<T>(
     // A 401 can mean an expired token, or that the API couldn't check a good
     // one while Supabase Auth is down. Only GoTrue refusing the refresh token
     // ends the session; an outage keeps it and asks the coach to try again.
-    const current = loadSession();
+    let current = loadSession();
+    if (current && current.accessToken !== token) {
+      // Another call already refreshed while this request was out: try its
+      // token first, and only refresh again if that is refused too.
+      res = await send(current.accessToken);
+      if (res.status !== 401) return readBody<T>(res);
+      current = loadSession();
+    }
     const refreshed = current
       ? await refreshStored(current, fetchImpl)
       : ({ kind: "signedOut" } as const);
@@ -130,6 +137,10 @@ export async function coachFetch<T>(
       });
     }
   }
+  return readBody<T>(res);
+}
+
+async function readBody<T>(res: Response): Promise<T> {
   const text = await res.text();
   let body: Record<string, unknown> | null = null;
   try {
