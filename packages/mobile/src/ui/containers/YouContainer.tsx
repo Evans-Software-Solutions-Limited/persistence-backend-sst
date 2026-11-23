@@ -460,7 +460,9 @@ export function YouContainer({
         myCoaches.data === null
           ? undefined
           : (id) =>
-              push(`/(app)/(tabs)/coach?coachId=${encodeURIComponent(id)}`)
+              push(
+                `/(app)/(tabs)/coach?coachId=${encodeURIComponent(id)}&nav=${Date.now()}`,
+              )
       }
       onOpenRequests={() => push("/(app)/requests")}
       onOpenAcceptInvite={() => push("/(app)/accept-invite")}

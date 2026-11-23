@@ -55,9 +55,15 @@ export function toCoachTabCoach(c: MyCoach, now: Date): CoachTabCoach {
  * next coach; with none left the tab layout hides the tab.
  */
 export function CoachTabContainer() {
-  const params = useLocalSearchParams<{ coachId?: string }>();
+  const params = useLocalSearchParams<{ coachId?: string; nav?: string }>();
+  // Each You → Coaching tap carries its own `nav` key, so tapping the same
+  // coach again still wins over an earlier chip choice (Inspector Brad, #547).
+  const navKey =
+    params.coachId === undefined
+      ? undefined
+      : `${params.coachId}|${params.nav ?? ""}`;
   const my = useMyCoaches();
-  // A chip tap wins until You → Coaching opens the tab on another coach.
+  // A chip tap wins until the next You → Coaching navigation.
   const [picked, setPicked] = useState<{
     id: string;
     param: string | undefined;
@@ -69,9 +75,7 @@ export function CoachTabContainer() {
   }, [my.coaches]);
 
   const wanted =
-    picked && picked.param === params.coachId
-      ? picked.id
-      : (params.coachId ?? null);
+    picked && picked.param === navKey ? picked.id : (params.coachId ?? null);
   const selected = coaches.find((c) => c.id === wanted) ?? coaches[0] ?? null;
 
   const refresh = my.refresh;
@@ -87,7 +91,7 @@ export function CoachTabContainer() {
       selected={selected}
       isLoading={my.data === null}
       isRefreshing={my.isRefreshing}
-      onSelect={(id) => setPicked({ id, param: params.coachId })}
+      onSelect={(id) => setPicked({ id, param: navKey })}
       onRefresh={() => void refresh()}
     />
   );

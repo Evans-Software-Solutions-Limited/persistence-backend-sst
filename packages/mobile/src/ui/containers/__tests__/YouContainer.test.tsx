@@ -374,7 +374,9 @@ describe("YouContainer", () => {
     await waitFor(() => expect(mockProbe.last).toBeTruthy());
     mockProbe.last!.onOpenCoach!("rel 1");
     expect(mockPush).toHaveBeenCalledWith(
-      "/(app)/(tabs)/coach?coachId=rel%201",
+      expect.stringMatching(
+        /^\/\(app\)\/\(tabs\)\/coach\?coachId=rel%201&nav=\d+$/,
+      ),
     );
   });
 

@@ -12,7 +12,7 @@ import {
   coachingSince,
 } from "@/ui/containers/CoachTabContainer";
 
-const mockParams: { coachId?: string } = {};
+const mockParams: { coachId?: string; nav?: string } = {};
 const mockFocus: { cb: (() => void) | null } = { cb: null };
 jest.mock("expo-router", () => ({
   useLocalSearchParams: () => mockParams,
@@ -84,17 +84,21 @@ function setup(opts: { server: MyCoach[]; cached?: MyCoach[] | null }) {
     notifications: {} as Adapters["notifications"],
     netInfo: {} as Adapters["netInfo"],
   };
-  const utils = renderWithTheme(
+  const tree = () => (
     <AdapterProvider adapters={adapters}>
       <CoachTabContainer />
-    </AdapterProvider>,
+    </AdapterProvider>
   );
-  return { api, storage, ...utils };
+  const utils = renderWithTheme(tree());
+  /** Re-render as a new navigation to the (still mounted) tab would. */
+  const renavigate = () => utils.rerender(tree());
+  return { api, storage, renavigate, ...utils };
 }
 
 describe("CoachTabContainer", () => {
   beforeEach(() => {
     delete mockParams.coachId;
+    delete mockParams.nav;
   });
 
   it("one coach: C2e header, no chips", async () => {
@@ -128,6 +132,34 @@ describe("CoachTabContainer", () => {
     mockParams.coachId = "rel-marcus";
     const utils = setup({ server: [ELLIE, MARCUS] });
     await act(async () => {});
+    expect(
+      utils.getByTestId("coach-tab-chip-rel-marcus").props.accessibilityState
+        ?.selected,
+    ).toBe(true);
+  });
+
+  it("tapping the same coach again on You overrides an earlier chip choice (Inspector Brad, #547)", async () => {
+    mockParams.coachId = "rel-ellie";
+    mockParams.nav = "1";
+    const utils = setup({ server: [ELLIE, MARCUS] });
+    await act(async () => {});
+    fireEvent.press(utils.getByTestId("coach-tab-chip-rel-marcus"));
+    expect(
+      utils.getByTestId("coach-tab-chip-rel-marcus").props.accessibilityState
+        ?.selected,
+    ).toBe(true);
+
+    // Back to You, tap Ellie again: same coachId, new navigation.
+    mockParams.nav = "2";
+    utils.renavigate();
+    await act(async () => {});
+    expect(
+      utils.getByTestId("coach-tab-chip-rel-ellie").props.accessibilityState
+        ?.selected,
+    ).toBe(true);
+
+    // A chip tap still wins within that navigation.
+    fireEvent.press(utils.getByTestId("coach-tab-chip-rel-marcus"));
     expect(
       utils.getByTestId("coach-tab-chip-rel-marcus").props.accessibilityState
         ?.selected,
