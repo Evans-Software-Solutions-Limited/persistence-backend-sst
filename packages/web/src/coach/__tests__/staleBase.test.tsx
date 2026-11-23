@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { QueryClient } from "@tanstack/react-query";
 import { InviteContainer } from "../invite/InviteContainer";
+import { CoachApiError } from "../api/coachApi";
 import { useNavigate } from "react-router";
 import { InvitedClientContainer } from "../invited/InvitedClientContainer";
 import { SetupContainer } from "../setup/SetupContainer";
@@ -223,5 +224,88 @@ describe("sweep 7", () => {
     expect(await screen.findByText("PH0NE1")).toBeTruthy();
     await new Promise((r) => setTimeout(r, 20));
     expect(api.issueInvite).not.toHaveBeenCalled();
+  });
+});
+
+describe("a 409 from a change outside what the coach edited (sweep 8)", () => {
+  // The phone resent the code: revision moved, nothing the coach edits did.
+  const elsewhere = detail({
+    revision: 7,
+    invite: {
+      code: "NEW123",
+      link: "l",
+      expiresAt: "2099-01-01T00:00:00Z",
+      status: "active",
+    },
+  });
+  const conflict = () =>
+    new CoachApiError(409, { code: "revision_conflict", current: elsewhere });
+
+  it("Set up: saves the draft again on the new revision", async () => {
+    const api = fakeApi({
+      replaceSection: vi
+        .fn()
+        .mockRejectedValueOnce(conflict())
+        .mockResolvedValueOnce(detail({ revision: 8 })),
+    });
+    renderCoach(<SetupContainer />, {
+      route: `/coach/clients/invited/${PROFILE_ID}/setup/welcome_message`,
+      path: "/coach/clients/invited/:profileId/setup/:section?",
+      api,
+    });
+    fireEvent.change(await screen.findByLabelText("Message"), {
+      target: { value: "Hi Lena" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Next: invite" }));
+    await waitFor(() => expect(api.replaceSection).toHaveBeenCalledTimes(2));
+    expect(api.replaceSection.mock.calls[1][3]).toBe(7);
+    expect(screen.queryByText(/Updated on another device/)).toBeNull();
+  });
+
+  it("Who: sends the same change on the new revision", async () => {
+    const api = fakeApi({
+      patchProfile: vi
+        .fn()
+        .mockRejectedValueOnce(conflict())
+        .mockResolvedValueOnce(detail({ revision: 8 })),
+    });
+    renderCoach(<WhoContainer />, {
+      route: `/coach/clients/invited/${PROFILE_ID}/who`,
+      path: "/coach/clients/invited/:profileId/who",
+      api,
+    });
+    fireEvent.change(await screen.findByLabelText("Goal, optional"), {
+      target: { value: "Run 5k" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Next: set up" }));
+    await waitFor(() => expect(api.patchProfile).toHaveBeenCalledTimes(2));
+    expect(api.patchProfile.mock.calls[1]).toEqual([
+      PROFILE_ID,
+      { goal: "Run 5k" },
+      7,
+    ]);
+  });
+
+  it("Invited page: saves the note again on the new revision", async () => {
+    const api = fakeApi({
+      patchProfile: vi
+        .fn()
+        .mockRejectedValueOnce(conflict())
+        .mockResolvedValueOnce(detail({ revision: 8, privateNotes: "Mine" })),
+    });
+    renderCoach(<InvitedClientContainer />, {
+      route: `/coach/clients/invited/${PROFILE_ID}`,
+      path: "/coach/clients/invited/:profileId",
+      api,
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("Private notes"), {
+      target: { value: "Mine" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(api.patchProfile).toHaveBeenCalledTimes(2));
+    expect(api.patchProfile.mock.calls[1][2]).toBe(7);
+    expect(await screen.findByText("Mine")).toBeTruthy();
+    expect(screen.queryByText(/Updated on another device/)).toBeNull();
   });
 });

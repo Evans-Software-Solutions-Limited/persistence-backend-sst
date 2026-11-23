@@ -73,11 +73,29 @@ function WhoForm({ existing: loaded }: { existing: ClientProfile | null }) {
       }
       const patch = changedFields(existing, parsed.input);
       if (Object.keys(patch).length > 0) {
-        const updated = await api.patchProfile(
-          existing.id,
-          patch,
-          existing.revision,
-        );
+        let updated: ClientProfile;
+        try {
+          updated = await api.patchProfile(
+            existing.id,
+            patch,
+            existing.revision,
+          );
+        } catch (e) {
+          // The revision is per profile: a set-up save or a resent code also
+          // moves it. If none of the fields the coach changed moved on the
+          // server, nothing clashes: send the same change on the new revision.
+          const latest =
+            isCoachApiError(e) && e.code === "revision_conflict"
+              ? (e.body?.current as ClientProfile | undefined)
+              : undefined;
+          const untouched =
+            !!latest &&
+            (Object.keys(patch) as (keyof typeof patch)[]).every(
+              (k) => (latest[k] ?? null) === (existing[k] ?? null),
+            );
+          if (!latest || !untouched) throw e;
+          updated = await api.patchProfile(existing.id, patch, latest.revision);
+        }
         queryClient.setQueryData(
           coachKeys.clientProfile(existing.id),
           (old: object | undefined) => (old ? { ...old, ...updated } : old),

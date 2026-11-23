@@ -155,12 +155,30 @@ export function SetupContainer() {
     setSaving(true);
     setError(null);
     try {
-      const next = await api.replaceSection(
-        profileId,
-        current,
-        itemsToSave(current, items),
-        draft!.revision,
-      );
+      const put = (revision: number) =>
+        api.replaceSection(
+          profileId,
+          current,
+          itemsToSave(current, items),
+          revision,
+        );
+      let next: ClientProfileDetail;
+      try {
+        next = await put(draft!.revision);
+      } catch (e) {
+        // The revision is per profile: a 409 can come from a change to
+        // another section, the notes or a resent code. If THIS section is
+        // still as the draft found it, nothing clashes: save once more on
+        // the new revision. Only a real change to this section drops it.
+        const latest =
+          isCoachApiError(e) && e.code === "revision_conflict"
+            ? (e.body?.current as ClientProfileDetail | undefined)
+            : undefined;
+        if (!latest || !sameItems(draft!.base, itemsOf(latest, current))) {
+          throw e;
+        }
+        next = await put(latest.revision);
+      }
       queryClient.setQueryData(detailKey, next);
       // The revision is per profile, so this save moves it for every section.
       // Drafts left in other sections (e.g. after the browser's Back) move to

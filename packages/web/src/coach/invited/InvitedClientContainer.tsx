@@ -103,11 +103,23 @@ export function InvitedClientContainer() {
     setNotesBusy(true);
     setError(null);
     try {
-      const updated = await api.patchProfile(
-        detail!.id,
-        { privateNotes: next },
-        base.revision,
-      );
+      const save = (revision: number) =>
+        api.patchProfile(detail!.id, { privateNotes: next }, revision);
+      let updated: ClientProfile;
+      try {
+        updated = await save(base.revision);
+      } catch (e) {
+        // A 409 from a change elsewhere on the profile (set-up, resend):
+        // if the notes themselves are as Edit found them, save once more.
+        const latest =
+          isCoachApiError(e) && e.code === "revision_conflict"
+            ? (e.body?.current as ClientProfile | undefined)
+            : undefined;
+        if (!latest || (latest.privateNotes ?? null) !== (base.notes ?? null)) {
+          throw e;
+        }
+        updated = await save(latest.revision);
+      }
       queryClient.setQueryData(key, { ...detail!, ...updated });
       setNotesDraft(null);
       setToast("Saved");
