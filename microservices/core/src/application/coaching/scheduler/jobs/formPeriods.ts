@@ -119,6 +119,22 @@ async function missEarlier(
   now: Date,
 ): Promise<{ missed: number; events: string[] }> {
   const db = getDb();
+  const current = await db
+    .select({ sentAt: coachFormRequests.sentAt })
+    .from(coachFormRequests)
+    .where(
+      and(
+        eq(coachFormRequests.relationshipId, relationshipId),
+        eq(coachFormRequests.formId, schedule.formId),
+        eq(coachFormRequests.trigger, schedule.trigger),
+        eq(coachFormRequests.periodKey, currentKey),
+      ),
+    )
+    .limit(1);
+  // The latest period's own request: only requests sent before it are
+  // earlier periods. (It always exists here: its insert has just run, and
+  // requests are never deleted.)
+  if (!current[0]) return { missed: 0, events: [] };
   const missed = await db
     .update(coachFormRequests)
     .set({ status: "missed", updatedAt: now })
@@ -129,7 +145,7 @@ async function missEarlier(
         eq(coachFormRequests.trigger, schedule.trigger),
         eq(coachFormRequests.status, "pending"),
         ne(coachFormRequests.periodKey, currentKey),
-        lt(coachFormRequests.sentAt, now),
+        lt(coachFormRequests.sentAt, current[0].sentAt),
       ),
     )
     .returning({ id: coachFormRequests.id });
@@ -204,27 +220,37 @@ export const formPeriodsJob: SchedulerJob = {
             (target.activatedAt === null || p.at >= target.activatedAt),
         );
         for (const period of periods) {
-          const ids = await insertRequests(db, [
-            {
-              trainerId: target.trainerId,
-              clientId: target.clientId,
-              relationshipId: target.relationshipId,
-              formId: schedule.formId,
-              formVersionId: versionId,
-              scheduleId: schedule.id,
-              trigger: schedule.trigger as "weekly" | "daily",
-              periodKey: period.key,
-              sentAt: now,
-              dueAfterHours: effectiveDueAfterHours(schedule, target.override),
-            },
-          ]);
-          if (ids.length === 0) continue;
-          sent += 1;
+          sent += (
+            await insertRequests(db, [
+              {
+                trainerId: target.trainerId,
+                clientId: target.clientId,
+                relationshipId: target.relationshipId,
+                formId: schedule.formId,
+                formVersionId: versionId,
+                scheduleId: schedule.id,
+                trigger: schedule.trigger as "weekly" | "daily",
+                periodKey: period.key,
+                sentAt: now,
+                dueAfterHours: effectiveDueAfterHours(
+                  schedule,
+                  target.override,
+                ),
+              },
+            ])
+          ).length;
+        }
+        // Every tick, not only when the insert was new: if a run inserted the
+        // period and then failed before this, the next run still marks the
+        // earlier one (Inspector Brad, #548). Idempotent: a conditional
+        // update and the event's dedupe key.
+        const latest = periods[periods.length - 1];
+        if (latest) {
           const ev = await missEarlier(
             schedule,
             target.relationshipId,
             target.clientId,
-            period.key,
+            latest.key,
             now,
           );
           missed += ev.missed;

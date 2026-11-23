@@ -102,6 +102,7 @@ import { formPeriodsJob } from "../../scheduler/jobs/formPeriods";
 import {
   formPushesJob,
   missedFormsJob,
+  reminderCandidates,
   reminderList,
 } from "../../scheduler/jobs/formRequests";
 import { coachPushesJob } from "../../scheduler/jobs/coachPushes";
@@ -584,6 +585,44 @@ describe("D7.2 time zones", () => {
   });
 });
 
+describe("D7.2 a period whose missed-marking failed", () => {
+  it("still marks the previous period missed on the next tick", async () => {
+    // Inspector Brad, #548: the insert succeeded, the missed-marking threw,
+    // and the next tick skipped it because the insert was no longer new.
+    const form = await makeForm(COACH_A, "Daily");
+    const rule = await makeSchedule(COACH_A, {
+      formId: form.id,
+      trigger: "daily",
+      audience: "selected",
+      clientIds: [ATHLETE_C],
+      timeLocal: "09:00",
+    });
+    await formPeriodsJob.run(ctx(new Date("2026-11-22T09:00:00Z")));
+    // Today's request exists, as if the failed run had inserted it.
+    const [yesterday] = await requestsFor(ATHLETE_C);
+    await db.insert(schema.coachFormRequests).values({
+      trainerId: COACH_A,
+      clientId: ATHLETE_C,
+      relationshipId: yesterday!.relationshipId,
+      formId: form.id,
+      formVersionId: yesterday!.formVersionId,
+      scheduleId: rule.id,
+      trigger: "daily",
+      periodKey: "2026-11-23",
+      sentAt: new Date("2026-11-23T09:00:00Z"),
+    });
+    await formPeriodsJob.run(ctx(new Date("2026-11-23T09:15:00Z")));
+    const rows = await requestsFor(ATHLETE_C);
+    expect(rows.map((r) => [r.periodKey, r.status]).sort()).toEqual([
+      ["2026-11-22", "missed"],
+      ["2026-11-23", "pending"],
+    ]);
+    expect(
+      (await eventsOf(COACH_A)).filter((e) => e.kind === "form_missed"),
+    ).toHaveLength(1);
+  });
+});
+
 describe("D7.2 time zones: per-client weekday, archived forms, no clients", () => {
   it("a client's own weekday wins; an archived form or a coach with no clients sends nothing", async () => {
     const form = await makeForm(COACH_A, "Weekly");
@@ -732,6 +771,68 @@ describe("D7.3 reminders", () => {
     expect(
       (await eventsOf(COACH_A)).filter((e) => e.kind === "form_missed"),
     ).toHaveLength(1);
+  });
+
+  it("only requests with a reminder due use the page, so old waiting rows never starve newer ones", async () => {
+    // Inspector Brad, #548: a page of rows still waiting on a later reminder
+    // filled the LIMIT every tick.
+    const form = await makeForm(COACH_A, "Goals");
+    const rule = await makeSchedule(COACH_A, {
+      formId: form.id,
+      trigger: "once",
+      audience: "all_clients",
+      reminders: [{ afterHours: 1 }, { afterHours: 720 }],
+    });
+    const [older, newer] = (
+      await db
+        .select()
+        .from(schema.coachFormRequests)
+        .where(eq(schema.coachFormRequests.scheduleId, rule.id))
+    ).sort((a, b) => a.clientId.localeCompare(b.clientId));
+    // The older one has had its first reminder and waits 30 days for the next.
+    await db
+      .update(schema.coachFormRequests)
+      .set({
+        sentAt: new Date(older!.sentAt.getTime() - 3_600_000 * 5),
+        remindersSent: 1,
+      })
+      .where(eq(schema.coachFormRequests.id, older!.id));
+    const at = hoursAfter(newer!.sentAt, 1);
+    const page = await reminderCandidates(at, 1);
+    expect(page.map((r) => r.id)).toEqual([newer!.id]);
+  });
+
+  it("a missed exit form stays in the coach's feed after coaching ends", async () => {
+    // Inspector Brad, #548: it was pushed but hidden from the feed and Today.
+    const form = await makeForm(COACH_A, "Exit survey");
+    await makeSchedule(COACH_A, {
+      formId: form.id,
+      trigger: "on_end",
+      audience: "all_clients",
+      dueAfterHours: 1,
+    });
+    const { endCoachClientRelationship } =
+      await import("../../../relationships/endCoachClientRelationship");
+    await endCoachClientRelationship({
+      trainerId: COACH_A,
+      clientId: ATHLETE_C,
+      initiatedBy: "client",
+    });
+    const [exit] = (await requestsFor(ATHLETE_C)).filter(
+      (r) => r.trigger === "on_end",
+    );
+    await missedFormsJob.run(ctx(hoursAfter(exit!.sentAt, 2)));
+    expect(pushesTo(COACH_A).map((p) => p.input.title)).toEqual([
+      "Chris missed Exit survey",
+    ]);
+    const feed = await http("GET", "/trainers/me/notifications", COACH_A);
+    expect(feed.json.data.map((e: Json) => e.kind)).toEqual(["form_missed"]);
+    const since = await http(
+      "GET",
+      `/trainers/me/notifications?since=${encodeURIComponent("2020-01-01T00:00:00Z")}`,
+      COACH_A,
+    );
+    expect(since.json.deletedIds).toEqual([]);
   });
 
   it("ignores malformed reminders", () => {
@@ -1067,6 +1168,37 @@ describe("D7.7 events", () => {
     await expect(
       recordCoachEvent(realDb(), { ...input, kind: "nope" as never }),
     ).rejects.toThrow("unknown coach event kind");
+  });
+
+  it("a pending event swept during quiet hours that began after it was written is held, not pushed", async () => {
+    // Inspector Brad, #548: written at 21:58, swept at 22:05 inside quiet hours.
+    await http("PUT", "/trainers/me/notification-settings", COACH_A, {
+      quietHours: { enabled: true, from: "22:00", until: "07:00" },
+    });
+    const id = await recordCoachEvent(
+      realDb(),
+      {
+        trainerId: COACH_A,
+        clientId: ATHLETE_C,
+        relationshipId: await relationshipId(COACH_A, ATHLETE_C),
+        kind: "client_accepted",
+        dedupeKey: "late",
+      },
+      new Date("2026-11-23T21:58:00Z"),
+    );
+    expect(id).not.toBeNull();
+    await db
+      .update(schema.coachEvents)
+      .set({ createdAt: new Date("2026-11-23T21:58:00Z") })
+      .where(eq(schema.coachEvents.id, id!));
+    await coachPushesJob.run(ctx(new Date("2026-11-23T22:05:00Z")));
+    expect(pushes.list).toHaveLength(0);
+    const [event] = await eventsOf(COACH_A);
+    expect(event!.pushState).toBe("held");
+    await coachPushesJob.run(ctx(new Date("2026-11-24T07:00:00Z")));
+    expect(pushesTo(COACH_A).map((p) => p.input.title)).toEqual([
+      "Chris accepted your invite",
+    ]);
   });
 
   it("a pending event left behind is pushed by the next tick", async () => {

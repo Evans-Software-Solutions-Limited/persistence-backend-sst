@@ -191,12 +191,9 @@ export function reminderList(value: unknown): Reminder[] {
     .sort((a, b) => a.afterHours - b.afterHours);
 }
 
-async function sendReminders(
-  now: Date,
-  dispatcher: SchedulerJobContext["dispatcher"],
-): Promise<number> {
-  const db = getDb();
-  const rows = await db
+/** Open requests on an active rule with a reminder to send now, oldest first. */
+export async function reminderCandidates(now: Date, limit = MAX_ROWS) {
+  return getDb()
     .select({
       id: coachFormRequests.id,
       clientId: coachFormRequests.clientId,
@@ -238,15 +235,32 @@ async function sendReminders(
           coachFormRequests.sentAt,
           new Date(now.getTime() - REMINDER_WINDOW_MS),
         ),
-        sql`${coachFormRequests.remindersSent} < jsonb_array_length(
-          case when jsonb_typeof(${coachFormScheduleClients.override} -> 'reminders') = 'array'
-               then ${coachFormScheduleClients.override} -> 'reminders'
-               else ${coachFormSchedules.reminders} end
+        // A reminder is due now: more reminders have reached their time
+        // than were sent. In SQL, so rows still waiting on a later reminder
+        // never fill the page (Inspector Brad, #548).
+        sql`${coachFormRequests.remindersSent} < (
+          select count(*) from jsonb_array_elements(
+            case when jsonb_typeof(${coachFormScheduleClients.override} -> 'reminders') = 'array'
+                 then ${coachFormScheduleClients.override} -> 'reminders'
+                 else ${coachFormSchedules.reminders} end
+          ) as r(reminder)
+          where jsonb_typeof(r.reminder -> 'afterHours') = 'number'
+            and ${coachFormRequests.sentAt}
+                + (r.reminder ->> 'afterHours')::numeric * interval '1 hour'
+                <= ${now.toISOString()}::timestamptz
         )`,
       ),
     )
     .orderBy(asc(coachFormRequests.sentAt))
-    .limit(MAX_ROWS);
+    .limit(limit);
+}
+
+async function sendReminders(
+  now: Date,
+  dispatcher: SchedulerJobContext["dispatcher"],
+): Promise<number> {
+  const db = getDb();
+  const rows = await reminderCandidates(now);
   let sent = 0;
   for (const r of rows) {
     const list = reminderList(

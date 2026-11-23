@@ -44,6 +44,13 @@ import {
 
 const clientProfile = profiles;
 
+/**
+ * An exit form's response, or the exit form going unanswered: the coach still
+ * sees these after coaching ends (Brad, 20 Nov; Inspector Brad, #548).
+ */
+const exitForm = sql`(${coachEvents.kind} in ('form_completed', 'form_missed')
+  and coalesce(${coachEvents.payload} ->> 'trigger', '') = 'on_end')`;
+
 function visible(trainerId: string): SQL {
   return and(
     eq(coachEvents.trainerId, trainerId),
@@ -53,11 +60,7 @@ function visible(trainerId: string): SQL {
         eq(ptClientRelationships.status, "active"),
         isNull(clientProfile.deletedAt),
       ),
-      and(
-        eq(coachEvents.kind, "form_completed"),
-        sql`coalesce(${coachEvents.payload} ->> 'trigger', '') = 'on_end'`,
-        isNull(clientProfile.deletedAt),
-      ),
+      and(exitForm, isNull(clientProfile.deletedAt)),
     ),
   )!;
 }
@@ -211,8 +214,8 @@ export async function listFeed(
           ne(ptClientRelationships.status, "active"),
           gt(ptClientRelationships.updatedAt, q.since),
           ...(q.clientId ? [eq(coachEvents.clientId, q.clientId)] : []),
-          // coalesce: a NULL trigger must not turn the whole NOT into NULL.
-          sql`not (${coachEvents.kind} = 'form_completed' and coalesce(${coachEvents.payload} ->> 'trigger', '') = 'on_end')`,
+          // `exitForm` coalesces the trigger, so the NOT is never NULL.
+          sql`not ${exitForm}`,
         ),
       )
       .limit(FEED_MAX_LIMIT * 5);

@@ -30,7 +30,7 @@ export const coachPushesJob: SchedulerJob = {
   async run({ now, dispatcher }) {
     const db = getDb();
     const pending = await db
-      .select({ id: coachEvents.id })
+      .select({ id: coachEvents.id, trainerId: coachEvents.trainerId })
       .from(coachEvents)
       .where(
         and(
@@ -40,8 +40,32 @@ export const coachPushesJob: SchedulerJob = {
       )
       .orderBy(asc(coachEvents.occurredAt))
       .limit(MAX_EVENTS);
+    // Quiet hours may have begun since the event was written: hold those
+    // instead (Inspector Brad, #548). The release below sends them later.
+    const quiet = new Map<string, boolean>();
+    for (const trainerId of new Set(pending.map((p) => p.trainerId))) {
+      quiet.set(
+        trainerId,
+        isCoachQuiet(await loadCoachPrefs(db, trainerId), now),
+      );
+    }
+    const toHold = pending.filter((p) => quiet.get(p.trainerId));
+    if (toHold.length > 0) {
+      await db
+        .update(coachEvents)
+        .set({ pushState: "held" })
+        .where(
+          and(
+            inArray(
+              coachEvents.id,
+              toHold.map((p) => p.id),
+            ),
+            eq(coachEvents.pushState, "pending"),
+          ),
+        );
+    }
     const pushed = await deliverCoachEvents(
-      pending.map((p) => p.id),
+      pending.filter((p) => !quiet.get(p.trainerId)).map((p) => p.id),
       dispatcher,
     );
 
