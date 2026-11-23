@@ -26,6 +26,11 @@ import {
 import { isUnrecordableSessionPayload } from "./session/complete-session.command";
 import type { UserMeal } from "@/domain/models/userMeals";
 import { applyUserMealsResponse, USER_MEALS_ENTITY } from "./userMeals.command";
+import {
+  applyNutritionPlanConflict,
+  applyNutritionPlanSynced,
+  NUTRITION_PLAN_ENTITY,
+} from "./nutritionPlans.command";
 
 /** A non-OK HTTP response from a sync POST/PUT/DELETE, carrying the status so
  * the drain can classify permanent vs transient failures. */
@@ -1338,10 +1343,43 @@ export async function processSyncQueue(
         }
       }
 
+      // PER-133: a synced plan create, duplicate or edit answers with the
+      // plan. Swap a local id and adopt the server's copy. Non-fatal: the
+      // write already succeeded and the next plans read reconciles.
+      if (
+        entry.entityType === NUTRITION_PLAN_ENTITY &&
+        entry.method !== "DELETE"
+      ) {
+        try {
+          applyNutritionPlanSynced(storage, entry, await response.json());
+        } catch (err) {
+          console.warn(
+            "[sync] meal plan write succeeded but response capture failed; the next read reconciles:",
+            err,
+          );
+        }
+      }
+
       storage.markMutationCompleted(entry.id);
       succeeded++;
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
+
+      // PER-133: a plan edit that lost a revision race (409) keeps the
+      // server's copy and is resolved, not failed.
+      if (
+        err instanceof SyncHttpError &&
+        applyNutritionPlanConflict(
+          storage,
+          entry,
+          err.status,
+          message.slice(message.indexOf(": ") + 2),
+        )
+      ) {
+        storage.markMutationCompleted(entry.id);
+        succeeded++;
+        continue;
+      }
 
       // ⚠ TRANSPORT failure — `fetch` itself rejected, so we never received an
       // answer and cannot know whether the server saw the request. No attempt was

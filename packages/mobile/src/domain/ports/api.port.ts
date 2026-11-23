@@ -154,6 +154,10 @@ import type {
   SetTargetsInput,
   WaterToday,
 } from "@/domain/models/nutrition";
+import type {
+  NutritionPlansResponse,
+  PlansShoppingList,
+} from "@/domain/models/nutritionPlans";
 import type { UserMealsResponse } from "@/domain/models/userMeals";
 
 /**
@@ -1410,6 +1414,17 @@ export interface ApiPort extends ReferralsPort {
    * queue (`PUT /nutrition/user-meals`), never this port.
    */
   getUserMeals(): Promise<Result<UserMealsResponse, ApiError>>;
+
+  /**
+   * PER-133: `GET /nutrition/meal-plans?since=` — my plans and plans from
+   * coaches (`since` omitted for a full read). Writes go through the sync
+   * queue, never this port.
+   */
+  getNutritionPlans(
+    since?: string | null,
+  ): Promise<Result<NutritionPlansResponse, ApiError>>;
+  /** PER-133: `GET /nutrition/shopping-list` — every added plan, by aisle. */
+  getPlansShoppingList(): Promise<Result<PlansShoppingList, ApiError>>;
 
   // -- Client side of the coach↔client handshake (10-trainer-features) --
   /**

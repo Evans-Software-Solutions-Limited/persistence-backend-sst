@@ -212,6 +212,10 @@ import type {
 } from "@/domain/models/trainingReads";
 import type { InvitePreview, MyCoaching } from "@/domain/models/myCoaching";
 import type { UserMeal, UserMealsResponse } from "@/domain/models/userMeals";
+import type {
+  NutritionPlansResponse,
+  PlansShoppingList,
+} from "@/domain/models/nutritionPlans";
 
 /**
  * In-memory API adapter for testing.
@@ -3849,5 +3853,33 @@ export class InMemoryApiAdapter implements ApiPort {
       meals: this.userMeals.map((m) => ({ ...m })),
       asOf: new Date().toISOString(),
     });
+  }
+
+  // PER-133 list meal plans. Tests seed `nutritionPlans` / `plansShopping`.
+  nutritionPlans: NutritionPlansResponse = {
+    mine: [],
+    fromCoaches: [],
+    deletedIds: [],
+    asOf: "2026-11-23T10:00:00.000Z",
+  };
+  nutritionPlansCalls: (string | null)[] = [];
+  async getNutritionPlans(
+    since?: string | null,
+  ): Promise<Result<NutritionPlansResponse, ApiError>> {
+    this.nutritionPlansCalls.push(since ?? null);
+    return this.mayFail<NutritionPlansResponse>(
+      JSON.parse(JSON.stringify(this.nutritionPlans)) as NutritionPlansResponse,
+    );
+  }
+  plansShopping: PlansShoppingList = {
+    aisles: [],
+    totalItems: 0,
+    plans: [],
+    asOf: "2026-11-23T10:00:00.000Z",
+  };
+  async getPlansShoppingList(): Promise<Result<PlansShoppingList, ApiError>> {
+    return this.mayFail<PlansShoppingList>(
+      JSON.parse(JSON.stringify(this.plansShopping)) as PlansShoppingList,
+    );
   }
 }

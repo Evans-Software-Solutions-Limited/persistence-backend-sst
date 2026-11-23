@@ -147,6 +147,11 @@ export function logEntryCommand(
       // PER-132: omitted (not null) when absent, so a slot-only log stays
       // byte-identical to what 1.2.0 sends.
       ...(input.userMealId ? { userMealId: input.userMealId } : {}),
+      // PER-133: plan provenance, batch route only (the single route drops it).
+      ...(input.sourcePlanId ? { sourcePlanId: input.sourcePlanId } : {}),
+      ...(input.sourcePlanMealId
+        ? { sourcePlanMealId: input.sourcePlanMealId }
+        : {}),
     },
     endpoint: "/nutrition/entries",
     method: "POST",

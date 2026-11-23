@@ -8,6 +8,7 @@ import type { AuthSession } from "@/domain/ports/auth.port";
 import { ok } from "@/shared/errors";
 import type { Adapters } from "@/shared/types";
 import { localDayISO, previousDayISO } from "@/shared/utils";
+import { useAddRecipeMenu } from "@/state/add-recipe-menu";
 import { useFuelSheets } from "@/state/fuel-sheets";
 import type {
   Food,
@@ -332,7 +333,7 @@ describe("FuelContainer", () => {
     expect(mockProbe.last?.quickActions.aiLocked).toBe(true);
   });
 
-  it("keeps Mealprint reachable: Plan opens Plan my day, or the locked page (PER-132)", async () => {
+  it("Plan and Meals are sections of Fuel, each with its own content (PER-133)", async () => {
     const { adapters, storage } = makeAdapters();
     storage.cacheFuelToday(USER, localDayISO(), makeFuel());
     render(
@@ -341,16 +342,19 @@ describe("FuelContainer", () => {
       </Wrapper>,
     );
     await waitFor(() => expect(mockProbe.last?.hasData).toBe(true));
+    expect(mockProbe.last!.section).toBe("log");
+    expect(mockProbe.last!.sectionContent).toBeNull();
     act(() => mockProbe.last!.onSection("plan"));
-    expect(mockMealprintEntry.onPlanMyDay).toHaveBeenCalled();
+    expect(mockProbe.last!.section).toBe("plan");
+    expect(mockProbe.last!.sectionContent).not.toBeNull();
+    act(() => mockProbe.last!.onRefresh());
     act(() => mockProbe.last!.onSection("meals"));
-    expect(mockPush).toHaveBeenCalledWith("/(app)/fuel/recipes");
-    act(() => mockProbe.last!.onSection("log"));
-
-    mockMealprintGate.allowed = false;
-    act(() => mockProbe.last!.onSection("plan"));
-    expect(useFuelSheets.getState().sheet).toBe("suggestLocked");
-    act(() => useFuelSheets.getState().close());
+    expect(mockProbe.last!.section).toBe("meals");
+    expect(mockProbe.last!.sectionContent).not.toBeNull();
+    act(() => mockProbe.last!.onNew!());
+    expect(useAddRecipeMenu.getState().open).toBe(true);
+    act(() => useAddRecipeMenu.getState().closeMenu());
+    expect(mockPush).not.toHaveBeenCalledWith("/(app)/fuel/recipes");
   });
 
   it("spec-26 Phase 2 — renders a planned-but-unlogged meal as a ghost row in its mapped slot", async () => {
@@ -762,7 +766,7 @@ describe("FuelContainer", () => {
     await waitFor(() => expect(mockProbe.last?.waterCups).toBe(7));
   });
 
-  it("navigates to the targets + recipes routes", async () => {
+  it("navigates to the targets and Add to a meal routes", async () => {
     const { adapters, storage } = makeAdapters();
     storage.cacheFuelToday(USER, localDayISO(), makeFuel());
     render(
@@ -772,10 +776,8 @@ describe("FuelContainer", () => {
     );
     await waitFor(() => expect(mockProbe.last?.hasData).toBe(true));
     act(() => mockProbe.last!.onOpenTargets());
-    act(() => mockProbe.last!.onSection("meals"));
     act(() => mockProbe.last!.onAddToMeal("slot:lunch"));
     expect(mockPush).toHaveBeenCalledWith("/(app)/fuel/targets");
-    expect(mockPush).toHaveBeenCalledWith("/(app)/fuel/recipes");
     expect(mockPush).toHaveBeenCalledWith(
       "/(app)/fuel/add-to-meal?meal=slot%3Alunch",
     );
