@@ -27,7 +27,9 @@ const mockRouterBack = jest.fn();
 jest.mock("expo-router", () => ({
   __esModule: true,
   router: { back: (...args: unknown[]) => mockRouterBack(...args) },
+  useLocalSearchParams: () => mockSearchParams,
 }));
+let mockSearchParams: Record<string, string> = {};
 
 (globalThis as Record<string, unknown>).fetch = jest.fn(async () => ({
   ok: true,

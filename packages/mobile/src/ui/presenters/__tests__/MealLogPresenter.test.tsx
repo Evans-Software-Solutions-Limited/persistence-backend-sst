@@ -8,9 +8,11 @@ import {
 
 const slots: MealSlotVM[] = [
   {
+    key: "m-breakfast",
     slot: "breakfast",
     label: "Breakfast",
     kcal: 480,
+    macroLine: "62g C · 10g F · 27g P",
     rows: [
       {
         id: "e1",
@@ -32,15 +34,15 @@ const slots: MealSlotVM[] = [
       },
     ],
   },
-  { slot: "lunch", label: "Lunch", kcal: 0, rows: [] },
-  { slot: "snack", label: "Snack", kcal: 0, rows: [] },
-  { slot: "dinner", label: "Dinner", kcal: 0, rows: [] },
+  { key: "m-lunch", slot: "lunch", label: "Lunch", kcal: 0, rows: [] },
+  { key: "m-snack", slot: "snack", label: "Snack", kcal: 0, rows: [] },
+  { key: "m-dinner", slot: "dinner", label: "Dinner", kcal: 0, rows: [] },
 ];
 
 function render(over: Partial<MealLogProps> = {}) {
   const props: MealLogProps = {
     slots,
-    onAddToSlot: jest.fn(),
+    onAddToMeal: jest.fn(),
     onPressRow: jest.fn(),
     ...over,
   };
@@ -48,12 +50,41 @@ function render(over: Partial<MealLogProps> = {}) {
 }
 
 describe("MealLogPresenter", () => {
-  it("renders all four meal sections", () => {
+  it("renders one section per meal, keyed by meal", () => {
     const { getByTestId } = render();
-    expect(getByTestId("fuel-slot-breakfast")).toBeTruthy();
-    expect(getByTestId("fuel-slot-lunch")).toBeTruthy();
-    expect(getByTestId("fuel-slot-snack")).toBeTruthy();
-    expect(getByTestId("fuel-slot-dinner")).toBeTruthy();
+    expect(getByTestId("fuel-meal-m-breakfast")).toBeTruthy();
+    expect(getByTestId("fuel-meal-m-lunch")).toBeTruthy();
+    expect(getByTestId("fuel-meal-m-snack")).toBeTruthy();
+    expect(getByTestId("fuel-meal-m-dinner")).toBeTruthy();
+  });
+
+  it("shows the per-meal calorie and macro summary only when something is logged (PER-132)", () => {
+    const { getByTestId, queryByTestId } = render();
+    expect(getByTestId("fuel-meal-kcal-m-breakfast").props.children).toEqual([
+      "480",
+      " kcal",
+    ]);
+    expect(getByTestId("fuel-meal-macros-m-breakfast").props.children).toBe(
+      "62g C · 10g F · 27g P",
+    );
+    expect(queryByTestId("fuel-meal-kcal-m-lunch")).toBeNull();
+    expect(queryByTestId("fuel-meal-macros-m-lunch")).toBeNull();
+  });
+
+  it("opens a meal's options and Your meals when those are wired", () => {
+    const onMealOptions = jest.fn();
+    const onEditMeals = jest.fn();
+    const { getByTestId } = render({ onMealOptions, onEditMeals });
+    fireEvent.press(getByTestId("fuel-meal-more-m-lunch"));
+    expect(onMealOptions).toHaveBeenCalledWith("m-lunch");
+    fireEvent.press(getByTestId("fuel-edit-meals"));
+    expect(onEditMeals).toHaveBeenCalled();
+  });
+
+  it("hides the options button and the edit chip when not wired", () => {
+    const { queryByTestId } = render();
+    expect(queryByTestId("fuel-meal-more-m-lunch")).toBeNull();
+    expect(queryByTestId("fuel-edit-meals")).toBeNull();
   });
 
   it("renders entry rows with their resolved names", () => {
@@ -67,10 +98,10 @@ describe("MealLogPresenter", () => {
     expect(getAllByText("Nothing logged yet").length).toBe(3);
   });
 
-  it("fires onAddToSlot with the slot", () => {
+  it("fires onAddToMeal with the meal key", () => {
     const { getByTestId, props } = render();
-    fireEvent.press(getByTestId("fuel-slot-add-lunch"));
-    expect(props.onAddToSlot).toHaveBeenCalledWith("lunch");
+    fireEvent.press(getByTestId("fuel-meal-add-m-lunch"));
+    expect(props.onAddToMeal).toHaveBeenCalledWith("m-lunch");
   });
 
   it("fires onPressRow with the entry id + slot", () => {
@@ -109,10 +140,17 @@ describe("MealLogPresenter", () => {
 
   describe("ghost rows", () => {
     const ghostSlots: MealSlotVM[] = [
-      { slot: "breakfast", label: "Breakfast", kcal: 0, rows: [] },
-      { slot: "lunch", label: "Lunch", kcal: 0, rows: [] },
-      { slot: "snack", label: "Snack", kcal: 0, rows: [] },
       {
+        key: "m-breakfast",
+        slot: "breakfast",
+        label: "Breakfast",
+        kcal: 0,
+        rows: [],
+      },
+      { key: "m-lunch", slot: "lunch", label: "Lunch", kcal: 0, rows: [] },
+      { key: "m-snack", slot: "snack", label: "Snack", kcal: 0, rows: [] },
+      {
+        key: "m-dinner",
         slot: "dinner",
         label: "Dinner",
         kcal: 0,
@@ -150,7 +188,7 @@ describe("MealLogPresenter", () => {
       });
       expect(getAllByText("Nothing logged yet")).toHaveLength(3);
       expect(
-        within(getByTestId("fuel-slot-dinner")).queryByText(
+        within(getByTestId("fuel-meal-m-dinner")).queryByText(
           "Nothing logged yet",
         ),
       ).toBeNull();

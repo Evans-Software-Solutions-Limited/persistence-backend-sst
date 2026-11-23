@@ -3,13 +3,20 @@ import { Pressable } from "react-native";
 import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
 import { Btn, Card, IconBtn, Pill } from "@/ui/components/foundation";
 import { toneHex } from "@/ui/components/foundation/tones";
-import { IconPlus, IconSparkles, IconTrash } from "@/ui/components/icons";
+import {
+  IconMore,
+  IconPlus,
+  IconSparkles,
+  IconTrash,
+} from "@/ui/components/icons";
 import type { MealSlot } from "@/domain/models/nutrition";
 
 /**
- * <MealLogPresenter> — the four meal sections (Breakfast/Lunch/Snack/Dinner),
- * each a <Card> with a header (name + kcal sub + Add) and its entry rows (or an
- * empty state). nutrition.jsx:107–164.
+ * <MealLogPresenter> — one section per meal in "Your meals" (PER-132), each a
+ * <Card> with a header (name + kcal + Add + ⋯), the per-meal macro summary
+ * (canvas N1: "32g C · 21g F · 34g P"), then its entry rows (or an empty
+ * state). Brad (18 Nov): keep the shipped row style; add the per-meal summary.
+ * nutrition.jsx:107–164.
  *
  * Pure: rows + handlers are props. The container resolves each entry's display
  * name from the local caches (the backend aggregate carries no name) and sums
@@ -42,9 +49,14 @@ export type MealGhostRowVM = {
 };
 
 export type MealSlotVM = {
+  /** PER-132: the user meal id (or a synthetic `slot:` id) — the section key. */
+  key: string;
+  /** The old slot this meal maps to (entries' `mealSlot`). */
   slot: MealSlot;
   label: string;
   kcal: number;
+  /** "32g C · 21g F · 34g P"; empty when nothing is logged. */
+  macroLine?: string;
   rows: readonly MealRowVM[];
   /** Planned-but-unlogged plan meals mapped to this slot. Empty when there's
    * no active plan, or every plan meal in this slot is already logged. */
@@ -53,7 +65,12 @@ export type MealSlotVM = {
 
 export type MealLogProps = {
   slots: readonly MealSlotVM[];
-  onAddToSlot: (slot: MealSlot) => void;
+  /** + on a meal → the full-page Add to a meal (PER-132). */
+  onAddToMeal: (mealKey: string) => void;
+  /** ⋯ on a meal → its options (copy, save as a meal, edit meals, clear). */
+  onMealOptions?: (mealKey: string) => void;
+  /** "Add or edit meals" chip under the meals → Your meals (N1b). */
+  onEditMeals?: () => void;
   /** Tap a logged row to edit it (optional in M9 — wired to the edit sheet). */
   onPressRow?: (id: string, slot: MealSlot) => void;
   /** Swipe a logged row left to reveal Delete; tap it to remove the entry. */
@@ -260,7 +277,9 @@ function GhostRow({
 
 export function MealLogPresenter({
   slots,
-  onAddToSlot,
+  onAddToMeal,
+  onMealOptions,
+  onEditMeals,
   onPressRow,
   onDeleteEntry,
   onLogGhost,
@@ -268,18 +287,8 @@ export function MealLogPresenter({
 }: MealLogProps) {
   return (
     <View gap={10} testID={testID}>
-      <Text
-        fontFamily="$display"
-        fontWeight="700"
-        fontSize={24}
-        letterSpacing={-0.5}
-        color="$text"
-        paddingHorizontal={2}
-      >
-        Today&apos;s log
-      </Text>
       {slots.map((m) => (
-        <Card key={m.slot} pad={0} radius={14} testID={`fuel-slot-${m.slot}`}>
+        <Card key={m.key} pad={0} radius={14} testID={`fuel-meal-${m.key}`}>
           <View
             flexDirection="row"
             alignItems="center"
@@ -287,32 +296,63 @@ export function MealLogPresenter({
             paddingVertical={12}
             paddingHorizontal={14}
           >
-            <View flexDirection="row" alignItems="center" gap={10}>
-              <Text
-                fontFamily="$display"
-                fontWeight="700"
-                fontSize={14}
-                color="$text"
-              >
-                {m.label}
-              </Text>
-              <Text
-                fontFamily="$mono"
-                fontSize={11}
-                color="$text3"
-                fontVariant={["tabular-nums"]}
-              >
-                {intl(m.kcal)} kcal
-              </Text>
+            <View flex={1} paddingRight={8}>
+              <View flexDirection="row" alignItems="center" gap={10}>
+                <Text
+                  fontFamily="$display"
+                  fontWeight="700"
+                  fontSize={14}
+                  color="$text"
+                  numberOfLines={1}
+                  flexShrink={1}
+                >
+                  {m.label}
+                </Text>
+                {m.kcal > 0 ? (
+                  <Text
+                    fontFamily="$mono"
+                    fontSize={11}
+                    color="$text3"
+                    fontVariant={["tabular-nums"]}
+                    testID={`fuel-meal-kcal-${m.key}`}
+                  >
+                    {intl(m.kcal)} kcal
+                  </Text>
+                ) : null}
+              </View>
+              {m.macroLine ? (
+                <Text
+                  fontFamily="$mono"
+                  fontSize={11}
+                  color="$text3"
+                  fontVariant={["tabular-nums"]}
+                  marginTop={2}
+                  testID={`fuel-meal-macros-${m.key}`}
+                >
+                  {m.macroLine}
+                </Text>
+              ) : null}
             </View>
-            <IconBtn
-              size={28}
-              tone="primary"
-              icon={<IconPlus size={16} strokeWidth={2.2} />}
-              onPress={() => onAddToSlot(m.slot)}
-              testID={`fuel-slot-add-${m.slot}`}
-              accessibilityLabel={`Add to ${m.label}`}
-            />
+            <View flexDirection="row" alignItems="center" gap={8}>
+              <IconBtn
+                size={28}
+                tone="primary"
+                icon={<IconPlus size={16} strokeWidth={2.2} />}
+                onPress={() => onAddToMeal(m.key)}
+                testID={`fuel-meal-add-${m.key}`}
+                accessibilityLabel={`Add to ${m.label}`}
+              />
+              {onMealOptions ? (
+                <IconBtn
+                  size={28}
+                  tone="ghost"
+                  icon={<IconMore size={16} />}
+                  onPress={() => onMealOptions(m.key)}
+                  testID={`fuel-meal-more-${m.key}`}
+                  accessibilityLabel={`${m.label} options: copy, save as meal, clear`}
+                />
+              ) : null}
+            </View>
           </View>
           {m.rows.length > 0 ? (
             m.rows.map((row) => (
@@ -347,6 +387,39 @@ export function MealLogPresenter({
           ))}
         </Card>
       ))}
+      {onEditMeals ? (
+        <Pressable
+          onPress={onEditMeals}
+          accessibilityRole="button"
+          testID="fuel-edit-meals"
+          style={({ pressed }) => ({
+            alignSelf: "flex-start",
+            opacity: pressed ? 0.7 : 1,
+          })}
+        >
+          <View
+            height={32}
+            paddingHorizontal={12}
+            borderRadius={9999}
+            borderWidth={1}
+            borderColor="$border"
+            backgroundColor="$surface"
+            flexDirection="row"
+            alignItems="center"
+            gap={6}
+          >
+            <IconPlus size={14} color="#C2C2CE" />
+            <Text
+              fontFamily="$body"
+              fontSize={12}
+              fontWeight="600"
+              color="$text2"
+            >
+              Add or edit meals
+            </Text>
+          </View>
+        </Pressable>
+      ) : null}
     </View>
   );
 }

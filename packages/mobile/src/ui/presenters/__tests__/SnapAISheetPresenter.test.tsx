@@ -1,7 +1,5 @@
-import { createRef } from "react";
 import { Text } from "react-native";
 import { fireEvent } from "@testing-library/react-native";
-import { CameraView } from "expo-camera";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 import {
   SnapAISheetPresenter,
@@ -31,7 +29,6 @@ function render(over: Partial<SnapAISheetProps> = {}) {
     offline: false,
     hasPermission: true,
     onRequestPermission: jest.fn(),
-    cameraRef: createRef<CameraView>(),
     onShutterPress: jest.fn(),
     onPickFromLibrary: jest.fn(),
     items: [item()],

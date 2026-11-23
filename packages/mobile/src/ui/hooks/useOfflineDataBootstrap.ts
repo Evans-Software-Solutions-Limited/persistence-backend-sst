@@ -109,6 +109,19 @@ export async function warmOfflineData({
     if (result.ok && !shouldStop()) storage.cacheMeals(userId, result.value);
   });
 
+  // PER-132: Your meals, so Log shows (and can edit) the person's own meals
+  // offline from the first launch. A queued edit is newer than the server.
+  await run(async () => {
+    const editQueued = storage
+      .getUncompletedMutations()
+      .some((e) => e.entityType === "user_meals");
+    if (editQueued) return;
+    const result = await api.getUserMeals();
+    if (result.ok && !shouldStop()) {
+      storage.cacheUserMeals(userId, result.value.meals);
+    }
+  });
+
   // Streaks, achievements, volume stats, body trend and recent PRs are
   // written by the cold-start bootstrap (specs/milestones/COLD-START-BOOTSTRAP).
   await run(async () => {

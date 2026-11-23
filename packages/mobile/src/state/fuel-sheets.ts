@@ -28,12 +28,25 @@ export type FuelSheet =
   | "snap"
   | "mealprintSuggest"
   | "mealprintPlan"
+  // PER-132: N2e Quick log (the empty form) and the N26 locked Suggest page.
+  | "quickLog"
+  | "suggestLocked"
+  // PER-132: N1b Your meals, and a meal's ⋯ options.
+  | "yourMeals"
+  | "mealOptions"
   | null;
 
 export interface FuelSheetsState {
   sheet: FuelSheet;
   /** The meal slot a Scan / Quick-add / Snap flow logs into. */
   slot: MealSlot;
+  /**
+   * PER-132: the user meal ("Your meals") the open flow logs into, or null for
+   * a slot-only log. `useLogEntry` attaches it to any log whose `mealSlot`
+   * still equals `slot`; picking another slot in a sheet drops it, so the
+   * entry lands under that slot's default meal. Cleared on close.
+   */
+  userMealId: string | null;
   /** The day (YYYY-MM-DD) a log flow targets — see docblock above. Defaults
    * to today so any caller that never touches Fuel's day-nav (Home's quick
    * "Log meal", a cold app open) still logs to today. */
@@ -44,12 +57,22 @@ export interface FuelSheetsState {
    * (the sheets and screen are separate containers over the same SQLite cache).
    */
   rev: number;
-  openScan: (slot?: MealSlot) => void;
-  openQuickAdd: (slot?: MealSlot) => void;
+  openScan: (slot?: MealSlot, userMealId?: string | null) => void;
+  openQuickAdd: (slot?: MealSlot, userMealId?: string | null) => void;
   /** M9.5 Tier B — open the AI Snap sheet (photo or, via its free-text CTA
    * handoff, the "Or describe it…" flow). Gate-checked by the caller before
    * calling this (aiGate.allowed) — the store itself doesn't re-check. */
-  openSnap: (slot?: MealSlot) => void;
+  openSnap: (slot?: MealSlot, userMealId?: string | null) => void;
+  /** PER-132: N2e Quick log, the empty name/calories/macros form. */
+  openQuickLog: (slot?: MealSlot, userMealId?: string | null) => void;
+  /** PER-132: the locked Mealprint page (N26) for Free and Premium. */
+  openSuggestLocked: () => void;
+  /** PER-132: N1b Your meals. */
+  openYourMeals: () => void;
+  /** PER-132: a meal's ⋯ menu, for the meal with this key. */
+  openMealOptions: (mealKey: string) => void;
+  /** The meal whose ⋯ menu is open. */
+  optionsMealKey: string | null;
   /**
    * spec-26 T-1.5 — open the Mealprint suggest sheet.
    *
@@ -62,8 +85,12 @@ export interface FuelSheetsState {
    *
    * Gate-checked by the caller (`useMealprintEntry`) before this is called — the
    * store does not re-check, matching `openSnap`.
+   *
+   * PER-132 (Brad, 18 Nov): Add to a meal → Suggest opens this preset to that
+   * meal. The suggestion still answers against the whole day's remaining
+   * budget; the target only pre-selects where the chosen idea is logged.
    */
-  openMealprintSuggest: () => void;
+  openMealprintSuggest: (slot?: MealSlot, userMealId?: string | null) => void;
   /**
    * spec-26 Phase 2 — open the "Plan my day" sheet (config → generating →
    * draft review → accept, all one root-mounted sheet — see
@@ -89,12 +116,28 @@ export const useFuelSheets = create<FuelSheetsState>((set) => ({
   slot: "breakfast",
   date: localDayISO(),
   rev: 0,
-  openScan: (slot = "breakfast") => set({ sheet: "scan", slot }),
-  openQuickAdd: (slot = "breakfast") => set({ sheet: "quickAdd", slot }),
-  openSnap: (slot = "breakfast") => set({ sheet: "snap", slot }),
-  openMealprintSuggest: () => set({ sheet: "mealprintSuggest" }),
+  userMealId: null,
+  openScan: (slot = "breakfast", userMealId = null) =>
+    set({ sheet: "scan", slot, userMealId }),
+  openQuickAdd: (slot = "breakfast", userMealId = null) =>
+    set({ sheet: "quickAdd", slot, userMealId }),
+  openSnap: (slot = "breakfast", userMealId = null) =>
+    set({ sheet: "snap", slot, userMealId }),
+  openQuickLog: (slot = "breakfast", userMealId = null) =>
+    set({ sheet: "quickLog", slot, userMealId }),
+  openSuggestLocked: () => set({ sheet: "suggestLocked" }),
+  optionsMealKey: null,
+  openYourMeals: () => set({ sheet: "yourMeals" }),
+  openMealOptions: (mealKey) =>
+    set({ sheet: "mealOptions", optionsMealKey: mealKey }),
+  openMealprintSuggest: (slot, userMealId = null) =>
+    set((s) => ({
+      sheet: "mealprintSuggest",
+      slot: slot ?? s.slot,
+      userMealId,
+    })),
   openMealprintPlan: () => set({ sheet: "mealprintPlan" }),
   setDate: (date) => set({ date }),
-  close: () => set({ sheet: null }),
+  close: () => set({ sheet: null, userMealId: null }),
   notifyMutated: () => set((s) => ({ rev: s.rev + 1 })),
 }));

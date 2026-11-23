@@ -210,6 +210,7 @@ import type {
   RemoteMuscleVolume,
   RemoteRecap,
 } from "@/domain/models/trainingReads";
+import type { UserMeal, UserMealsResponse } from "@/domain/models/userMeals";
 
 /**
  * In-memory API adapter for testing.
@@ -3753,5 +3754,40 @@ export class InMemoryApiAdapter implements ApiPort {
       });
     }
     return ok(list);
+  }
+
+  // PER-132 Your meals. Seeded like the server: four defaults on first read.
+  userMeals: UserMeal[] | null = null;
+  nextGetUserMealsError: { status: number; message: string } | null = null;
+  async getUserMeals(): Promise<Result<UserMealsResponse, ApiError>> {
+    if (this.nextGetUserMealsError) {
+      const { status, message } = this.nextGetUserMealsError;
+      this.nextGetUserMealsError = null;
+      return fail<ApiError>({ kind: "api", code: "server", message, status });
+    }
+    if (this.userMeals === null) {
+      const now = new Date().toISOString();
+      this.userMeals = (
+        [
+          ["breakfast", "Breakfast"],
+          ["lunch", "Lunch"],
+          ["snack", "Snack"],
+          ["dinner", "Dinner"],
+        ] as const
+      ).map(([slot, name], i) => ({
+        id: `00000000-0000-4000-8000-00000000000${i + 1}`,
+        name,
+        logSlot: slot,
+        sortOrder: i,
+        defaultKey: slot,
+        clientRequestId: null,
+        archivedAt: null,
+        updatedAt: now,
+      }));
+    }
+    return this.mayFail<UserMealsResponse>({
+      meals: this.userMeals.map((m) => ({ ...m })),
+      asOf: new Date().toISOString(),
+    });
   }
 }

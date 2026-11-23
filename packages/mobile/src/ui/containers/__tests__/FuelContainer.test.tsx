@@ -249,19 +249,75 @@ describe("FuelContainer", () => {
     const p = mockProbe.last!;
     expect(p.consumedKcal).toBe(300);
     expect(p.targetKcal).toBe(2000);
-    expect(p.remainingKcal).toBe(1700);
-    expect(p.ringPct).toBeCloseTo(0.15, 5);
-    expect(p.macros).toHaveLength(3);
+    expect(p.consumedCarbsG).toBe(50);
+    expect(p.macros.map((m) => m.label)).toEqual(["Protein", "Carbs", "Fat"]);
     expect(p.waterGoal).toBe(10);
     expect(p.waterCups).toBe(4);
     // entry name resolved from the cached food
     const breakfast = p.slots.find((s) => s.slot === "breakfast")!;
     expect(breakfast.rows[0]?.name).toBe("Oatmeal");
-    // Viewing today (the default) reads "Today", not the weekday · month
-    // format — that format is reserved for a past day (BRIEF-7 QA-19).
-    expect(p.dateLabel).toBe("Today");
+    // Canvas N1 day label, and the meal's per-meal summary (PER-132).
+    expect(p.dateLabel).toMatch(/^[A-Z][a-z]{2} \d{1,2} [A-Z][a-z]{2}$/);
     expect(p.selectedDate).toBe(localDayISO());
-    expect(p.canGoNext).toBe(false);
+    expect(breakfast.kcal).toBe(300);
+    expect(breakfast.macroLine).toBe("50g C · 5g F · 10g P");
+    // Before Your meals is fetched, the four defaults are placeholders.
+    expect(p.slots.map((s) => s.label)).toEqual([
+      "Breakfast",
+      "Lunch",
+      "Snack",
+      "Dinner",
+    ]);
+    // The week strip: 7 days, today selected.
+    expect(p.week).toHaveLength(7);
+    expect(p.week.find((d) => d.selected)?.state).toBe("today");
+  });
+
+  it("groups entries under Your meals once fetched; 1.2.0 entries go to their slot's default (PER-132)", async () => {
+    const { adapters, storage } = makeAdapters();
+    storage.cacheFoods([food]);
+    const fuel = makeFuel();
+    const oldEntry = fuel.entriesBySlot.breakfast[0]!;
+    fuel.entriesBySlot.snack = [
+      { ...oldEntry, id: "e-new", mealSlot: "snack", userMealId: "um-pre" },
+      { ...oldEntry, id: "e-old", mealSlot: "snack" },
+    ];
+    storage.cacheFuelToday(USER, localDayISO(), fuel);
+    const meals = [
+      ["um-b", "Breakfast", "breakfast", "breakfast"],
+      ["um-pre", "Pre-workout", "snack", null],
+      ["um-l", "Lunch", "lunch", "lunch"],
+      ["um-s", "Snack", "snack", "snack"],
+      ["um-d", "Dinner", "dinner", "dinner"],
+    ].map(([id, name, logSlot, defaultKey], i) => ({
+      id: id as string,
+      name: name as string,
+      logSlot: logSlot as "snack",
+      sortOrder: i,
+      defaultKey: defaultKey as "snack" | null,
+      clientRequestId: null,
+      archivedAt: null,
+      updatedAt: "2026-11-20T00:00:00.000Z",
+    }));
+    storage.cacheUserMeals(USER, meals);
+    (adapters.api as InMemoryApiAdapter).userMeals = meals;
+    render(
+      <Wrapper adapters={adapters}>
+        <FuelContainer />
+      </Wrapper>,
+    );
+    await waitFor(() => expect(mockProbe.last?.hasData).toBe(true));
+    const p = mockProbe.last!;
+    expect(p.slots.map((s) => s.label)).toEqual([
+      "Breakfast",
+      "Pre-workout",
+      "Lunch",
+      "Snack",
+      "Dinner",
+    ]);
+    expect(p.slots[1]!.rows.map((r) => r.id)).toEqual(["e-new"]);
+    // The entry with no userMealId (1.2.0) sits under the seeded Snack.
+    expect(p.slots[3]!.rows.map((r) => r.id)).toEqual(["e-old"]);
   });
 
   it("locks the AI (Snap) affordance in M9", async () => {
@@ -273,10 +329,10 @@ describe("FuelContainer", () => {
       </Wrapper>,
     );
     await waitFor(() => expect(mockProbe.last?.hasData).toBe(true));
-    expect(mockProbe.last?.aiLocked).toBe(true);
+    expect(mockProbe.last?.quickActions.aiLocked).toBe(true);
   });
 
-  it("threads the Mealprint entry state and handlers into the presenter (spec-26)", async () => {
+  it("keeps Mealprint reachable: Plan opens Plan my day, or the locked page (PER-132)", async () => {
     const { adapters, storage } = makeAdapters();
     storage.cacheFuelToday(USER, localDayISO(), makeFuel());
     render(
@@ -285,26 +341,16 @@ describe("FuelContainer", () => {
       </Wrapper>,
     );
     await waitFor(() => expect(mockProbe.last?.hasData).toBe(true));
-    expect(mockProbe.last?.mealprintState).toBe("unlocked");
-    expect(mockProbe.last?.mealprintNeedsSetup).toBe(false);
-
-    // Each handler must reach the presenter as the hook's own callback, not a
-    // wrapper that drops it — the card's locked and stalled bodies are the only
-    // paths to the paywall and the retry.
-    mockProbe.last?.onMealprint();
-    expect(mockMealprintEntry.onPress).toHaveBeenCalled();
-    mockProbe.last?.onMealprintUpgrade();
-    expect(mockMealprintEntry.onUpgrade).toHaveBeenCalled();
-    mockProbe.last?.onMealprintRetry();
-    expect(mockMealprintEntry.onRetry).toHaveBeenCalled();
-
-    // spec-26 Phase 2 — the second CTA and its handler.
-    mockProbe.last?.onMealprintPlan();
+    act(() => mockProbe.last!.onSection("plan"));
     expect(mockMealprintEntry.onPlanMyDay).toHaveBeenCalled();
+    act(() => mockProbe.last!.onSection("meals"));
+    expect(mockPush).toHaveBeenCalledWith("/(app)/fuel/recipes");
+    act(() => mockProbe.last!.onSection("log"));
 
-    // Amendment 2026-08 § C — the offer card's Preferences link.
-    mockProbe.last?.onMealprintEditPreferences();
-    expect(mockMealprintEntry.onEditPreferences).toHaveBeenCalled();
+    mockMealprintGate.allowed = false;
+    act(() => mockProbe.last!.onSection("plan"));
+    expect(useFuelSheets.getState().sheet).toBe("suggestLocked");
+    act(() => useFuelSheets.getState().close());
   });
 
   it("spec-26 Phase 2 — renders a planned-but-unlogged meal as a ghost row in its mapped slot", async () => {
@@ -361,6 +407,10 @@ describe("FuelContainer", () => {
     await waitFor(() => expect(mockProbe.last?.hasData).toBe(true));
     const dinner = mockProbe.last!.slots.find((s) => s.slot === "dinner")!;
     expect(dinner.ghostRows).toHaveLength(1);
+    // Only the slot's default meal carries the planned rows.
+    expect(
+      mockProbe.last!.slots.filter((s) => (s.ghostRows?.length ?? 0) > 0),
+    ).toHaveLength(1);
     expect(dinner.ghostRows![0]).toMatchObject({
       planId: "plan-1",
       planMealId: "meal-1",
@@ -689,7 +739,7 @@ describe("FuelContainer", () => {
       </Wrapper>,
     );
     await waitFor(() => expect(mockProbe.last?.hasData).toBe(true));
-    expect(mockProbe.last?.celebrate).toBe(true); // day is in-band…
+    expect(mockProbe.last?.consumedKcal).toBe(2000); // day is in-band…
     // …but opening the tab must NOT buzz — the haptic is for a live transition.
     expect(Haptics.notificationAsync as jest.Mock).not.toHaveBeenCalled();
   });
@@ -722,9 +772,13 @@ describe("FuelContainer", () => {
     );
     await waitFor(() => expect(mockProbe.last?.hasData).toBe(true));
     act(() => mockProbe.last!.onOpenTargets());
-    act(() => mockProbe.last!.onRecipes());
+    act(() => mockProbe.last!.onSection("meals"));
+    act(() => mockProbe.last!.onAddToMeal("slot:lunch"));
     expect(mockPush).toHaveBeenCalledWith("/(app)/fuel/targets");
     expect(mockPush).toHaveBeenCalledWith("/(app)/fuel/recipes");
+    expect(mockPush).toHaveBeenCalledWith(
+      "/(app)/fuel/add-to-meal?meal=slot%3Alunch",
+    );
   });
 
   it("opens the scan + quick-add sheets and the calendar modal", async () => {
@@ -737,24 +791,38 @@ describe("FuelContainer", () => {
     );
     await waitFor(() => expect(mockProbe.last?.hasData).toBe(true));
 
-    act(() => mockProbe.last!.onScan());
+    const q = mockProbe.last!.quickActions;
+    act(() => q.onScan());
     expect(useFuelSheets.getState().sheet).toBe("scan");
     act(() => useFuelSheets.getState().close());
 
-    act(() => mockProbe.last!.onSearch());
+    act(() => q.onSearch());
     expect(useFuelSheets.getState().sheet).toBe("quickAdd");
     act(() => useFuelSheets.getState().close());
 
-    act(() => mockProbe.last!.onAddToSlot("dinner"));
-    expect(useFuelSheets.getState().sheet).toBe("quickAdd");
-    expect(useFuelSheets.getState().slot).toBe("dinner");
+    act(() => q.onQuickLog());
+    expect(useFuelSheets.getState().sheet).toBe("quickLog");
     act(() => useFuelSheets.getState().close());
 
-    act(() => mockProbe.last!.onLog());
-    expect(useFuelSheets.getState().sheet).toBe("quickAdd");
+    // Once Your meals is fetched, the drawers aim at a real meal id.
+    await waitFor(() =>
+      expect(
+        mockProbe.last!.slots.every((m) => !m.key.startsWith("slot:")),
+      ).toBe(true),
+    );
+    act(() => mockProbe.last!.quickActions.onScan());
+    expect(useFuelSheets.getState().userMealId).toMatch(/^0000/);
+    act(() => useFuelSheets.getState().close());
+
+    act(() => mockProbe.last!.onMealOptions("slot:lunch"));
+    expect(useFuelSheets.getState().sheet).toBe("mealOptions");
+    expect(useFuelSheets.getState().optionsMealKey).toBe("slot:lunch");
+    act(() => mockProbe.last!.onEditMeals());
+    expect(useFuelSheets.getState().sheet).toBe("yourMeals");
+    act(() => useFuelSheets.getState().close());
 
     // Snap routes to the upgrade prompt (gate stubbed).
-    act(() => mockProbe.last!.onSnap());
+    act(() => q.onSnap());
 
     // The calendar icon opens the month-grid modal (BRIEF-7 QA-19) — no
     // longer the M9 no-op.
@@ -789,23 +857,19 @@ describe("FuelContainer", () => {
       );
       await waitFor(() => expect(mockProbe.last?.hasData).toBe(true));
       expect(mockProbe.last!.consumedKcal).toBe(300);
-      expect(mockProbe.last!.dateLabel).toBe("Today");
-      // Forward is disabled while viewing today (past+today only, Tier A).
-      expect(mockProbe.last!.canGoNext).toBe(false);
+      const todayLabel = mockProbe.last!.dateLabel;
 
-      act(() => mockProbe.last!.onPrevDay());
+      act(() => mockProbe.last!.onSelectDay(yesterday));
       await waitFor(() => expect(mockProbe.last!.consumedKcal).toBe(500));
-      expect(mockProbe.last!.dateLabel).not.toBe("Today");
+      expect(mockProbe.last!.dateLabel).not.toBe(todayLabel);
       expect(mockProbe.last!.selectedDate).toBe(yesterday);
-      expect(mockProbe.last!.canGoNext).toBe(true);
 
-      act(() => mockProbe.last!.onNextDay());
+      act(() => mockProbe.last!.onSelectDay(today));
       await waitFor(() => expect(mockProbe.last!.consumedKcal).toBe(300));
-      expect(mockProbe.last!.dateLabel).toBe("Today");
-      expect(mockProbe.last!.canGoNext).toBe(false);
+      expect(mockProbe.last!.dateLabel).toBe(todayLabel);
     });
 
-    it("onNextDay is a no-op past today (forward-disabled defence in depth)", async () => {
+    it("a future day from the week strip clamps to today (defence in depth)", async () => {
       const { adapters, storage } = makeAdapters();
       storage.cacheFuelToday(USER, localDayISO(), makeFuel());
       render(
@@ -814,7 +878,7 @@ describe("FuelContainer", () => {
         </Wrapper>,
       );
       await waitFor(() => expect(mockProbe.last?.hasData).toBe(true));
-      act(() => mockProbe.last!.onNextDay());
+      act(() => mockProbe.last!.onSelectDay("2999-01-01"));
       await waitFor(() => expect(mockProbe.last!.hasData).toBe(true));
       expect(mockProbe.last!.selectedDate).toBe(localDayISO());
     });
@@ -879,7 +943,7 @@ describe("FuelContainer", () => {
       await waitFor(() => expect(mockProbe.last?.hasData).toBe(true));
       expect(useFuelSheets.getState().date).toBe(today);
 
-      act(() => mockProbe.last!.onPrevDay());
+      act(() => mockProbe.last!.onSelectDay(yesterday));
       await waitFor(() =>
         expect(useFuelSheets.getState().date).toBe(yesterday),
       );

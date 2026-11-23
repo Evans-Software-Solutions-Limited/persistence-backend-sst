@@ -146,6 +146,32 @@ describe("warmOfflineData", () => {
     expect(storage.getCachedVolumeStats(SESSION.userId)).not.toBeNull();
     expect(storage.getCachedExercises()).toHaveLength(1);
     expect(storage.getLastSyncedAt("exercises")).not.toBeNull();
+    // PER-132: Your meals is warmed for offline use.
+    expect(
+      storage.getCachedUserMeals(SESSION.userId)?.map((m) => m.name),
+    ).toEqual(["Breakfast", "Lunch", "Snack", "Dinner"]);
+  });
+
+  it("keeps a queued Your meals edit instead of the server's older list (PER-132)", async () => {
+    const { api, auth, storage } = makeAdapters();
+    storage.enqueueMutation({
+      entityType: "user_meals",
+      entityId: SESSION.userId,
+      operation: "update",
+      payload: { meals: [] },
+      endpoint: "/nutrition/user-meals",
+      method: "PUT",
+    });
+    const spy = jest.spyOn(api, "getUserMeals");
+    await warmOfflineData({
+      api,
+      auth,
+      storage,
+      userId: SESSION.userId,
+      date: "2026-08-31",
+    });
+    expect(spy).not.toHaveBeenCalled();
+    expect(storage.getCachedUserMeals(SESSION.userId)).toBeNull();
   });
 
   it("continues warming other read models when one endpoint fails", async () => {

@@ -109,6 +109,7 @@ export function logEntryCommand(
     aiEstimated: input.aiEstimated ?? false,
     aiConfidence: input.aiEstimated ? (input.aiConfidence ?? null) : null,
     customName: input.customName ?? null,
+    userMealId: input.userMealId ?? null,
   };
 
   const fuel = readFuel(storage, userId, date);
@@ -133,6 +134,9 @@ export function logEntryCommand(
       aiEstimated: input.aiEstimated,
       aiConfidence: input.aiConfidence,
       loggedAt: input.loggedAt,
+      // PER-132: omitted (not null) when absent, so a slot-only log stays
+      // byte-identical to what 1.2.0 sends.
+      ...(input.userMealId ? { userMealId: input.userMealId } : {}),
     },
     endpoint: "/nutrition/entries",
     method: "POST",

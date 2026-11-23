@@ -91,3 +91,6 @@ export const SYNC_QUEUE_TABLES = ["sync_queue"] as const;
  * History and Recap read it; the summary screen writes it.
  */
 export const TRAINING_LOG_TABLES = ["training_log"] as const;
+
+/** PER-132 Your meals (one list per user). */
+export const USER_MEAL_TABLES = ["cached_user_meals"] as const;
