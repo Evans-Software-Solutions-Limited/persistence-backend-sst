@@ -2,7 +2,7 @@
 
 ### 2026-11-23 — APP-D1: Log per-meal calories, Your meals, full-page Add to a meal, offline batch logging ([PER-132](https://linear.app/evans-software-solutions/issue/PER-132); branch `bradleysimmsevans/per-132-app-d1-athlete-log-per-meal`)
 
-PR __PR__ (open, no auto-merge). Mobile only: no backend, migration, native
+PR #550 (open, no auto-merge). Mobile only: no backend, migration, native
 package, permission or version change. Uses PER-109's merged
 `GET/PUT /nutrition/user-meals`, `userMealId` and `POST /nutrition/entries/batch`.
 Ships in the next store release, reviewed on staging.
