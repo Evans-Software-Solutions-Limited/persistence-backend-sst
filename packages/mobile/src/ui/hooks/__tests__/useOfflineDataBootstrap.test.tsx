@@ -179,6 +179,38 @@ describe("warmOfflineData", () => {
     expect(storage.getCachedUserMeals(SESSION.userId)).toHaveLength(4);
   });
 
+  it("an edit saved while the warm-up read was in flight wins over it (Inspector Brad #550)", async () => {
+    const { api, auth, storage } = makeAdapters();
+    const real = api.getUserMeals.bind(api);
+    jest.spyOn(api, "getUserMeals").mockImplementation(async () => {
+      const answer = await real();
+      // The person adds a meal and its PUT is acknowledged meanwhile.
+      storage.cacheUserMeals(SESSION.userId, [
+        {
+          id: "srv-supper",
+          name: "Supper",
+          logSlot: "snack",
+          sortOrder: 0,
+          defaultKey: null,
+          clientRequestId: "k1",
+          archivedAt: null,
+          updatedAt: "2026-11-23T00:00:00.000Z",
+        },
+      ]);
+      return answer;
+    });
+    await warmOfflineData({
+      api,
+      auth,
+      storage,
+      userId: SESSION.userId,
+      date: "2026-08-31",
+    });
+    expect(
+      storage.getCachedUserMeals(SESSION.userId)!.map((m) => m.name),
+    ).toEqual(["Supper"]);
+  });
+
   it("keeps a queued Your meals edit instead of the server's older list (PER-132)", async () => {
     const { api, auth, storage } = makeAdapters();
     storage.enqueueMutation({

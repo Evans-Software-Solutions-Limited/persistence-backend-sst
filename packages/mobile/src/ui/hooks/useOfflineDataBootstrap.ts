@@ -14,10 +14,10 @@ import {
 import type { ApiPort } from "@/domain/ports/api.port";
 import type { AuthPort } from "@/domain/ports/auth.port";
 import type { StoragePort } from "@/domain/ports/storage.port";
-import { isAutoResolvableSyncEntry } from "@/domain/ports/sync.types";
 import { localDayISO } from "@/shared/utils";
 import { useAdapters } from "./useAdapters";
 import { useAuth } from "./useAuth";
+import { liveUserMealEdits } from "./useUserMeals";
 
 type WarmOfflineDataDeps = {
   api: ApiPort;
@@ -111,21 +111,18 @@ export async function warmOfflineData({
   });
 
   // PER-132: Your meals, so Log shows (and can edit) the person's own meals
-  // offline from the first launch. A queued edit is newer than the server.
+  // offline from the first launch. A live edit is newer than the server, and
+  // so is an edit saved (even acknowledged) while this read was in flight:
+  // compare the cache before and after (Inspector Brad, #550).
   await run(async () => {
-    const editQueued = storage
-      .getUncompletedMutations()
-      .some(
-        (e) =>
-          e.entityType === "user_meals" &&
-          e.entityId === userId &&
-          isAutoResolvableSyncEntry(e),
-      );
-    if (editQueued) return;
+    const before = JSON.stringify(storage.getCachedUserMeals(userId));
+    if (liveUserMealEdits(storage, userId).length > 0) return;
     const result = await api.getUserMeals();
-    if (result.ok && !shouldStop()) {
-      storage.cacheUserMeals(userId, result.value.meals);
-    }
+    if (!result.ok || shouldStop()) return;
+    const changed =
+      JSON.stringify(storage.getCachedUserMeals(userId)) !== before;
+    if (changed || liveUserMealEdits(storage, userId).length > 0) return;
+    storage.cacheUserMeals(userId, result.value.meals);
   });
 
   // Streaks, achievements, volume stats, body trend and recent PRs are
