@@ -698,6 +698,16 @@ describe("QuickLogSheetContainer (N2e)", () => {
     expect(useFuelSheets.getState().sheet).toBeNull();
   });
 
+  it("a placeholder meal picked before the list loaded follows to its slot's default (Inspector Brad #550)", async () => {
+    const { Wrapper } = setup();
+    render(<QuickLogSheetContainer />, { wrapper: Wrapper });
+    act(() => useFuelSheets.getState().openQuickLog("lunch"));
+    await waitFor(() => expect(probe.quick?.visible).toBe(true));
+    act(() => probe.quick!.onSelectMeal("slot:lunch"));
+    expect(probe.quick!.mealLabel).toBe("Lunch");
+    expect(probe.quick!.selectedMealKey).toBe("um-l");
+  });
+
   it("defaults to the slot's meal and closes on dismiss", async () => {
     const { Wrapper } = setup();
     render(<QuickLogSheetContainer />, { wrapper: Wrapper });

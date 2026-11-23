@@ -90,6 +90,10 @@ describe("findUserMeal", () => {
     expect(findUserMeal(list, "local-k2")?.id).toBe("local-k2");
     expect(findUserMeal(list, "local-zz")).toBeUndefined();
     expect(findUserMeal(list, "srv-x")).toBeUndefined();
+    // A placeholder from before the list loaded → that slot's default meal.
+    expect(findUserMeal(MEALS, "slot:snack")?.id).toBe("s");
+    expect(findUserMeal(MEALS, "slot:dinner")?.id).toBe("d");
+    expect(findUserMeal(list, "slot:dinner")).toBeUndefined();
   });
 });
 

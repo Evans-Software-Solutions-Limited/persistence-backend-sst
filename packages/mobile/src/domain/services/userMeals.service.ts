@@ -56,18 +56,28 @@ export function syntheticDefaultUserMeals(): UserMeal[] {
 }
 
 /**
- * Find a meal by id, following a meal added offline: once its PUT syncs, a
- * `local-<key>` id held by an open screen or drawer resolves to the server's
- * meal with that `clientRequestId` (Inspector Brad, #550).
+ * Find a meal by id, following ids that a screen or drawer may still hold:
+ * a `local-<key>` resolves to the synced meal with that `clientRequestId`, and
+ * a placeholder `slot:<slot>` to that slot's default meal (Inspector Brad, #550).
  */
 export function findUserMeal(
   meals: readonly UserMeal[],
   id: string,
 ): UserMeal | undefined {
   const exact = meals.find((m) => m.id === id);
-  if (exact || !isLocalUserMealId(id)) return exact;
-  const key = id.slice("local-".length);
-  return meals.find((m) => m.clientRequestId === key);
+  if (exact) return exact;
+  if (isLocalUserMealId(id)) {
+    const key = id.slice("local-".length);
+    return meals.find((m) => m.clientRequestId === key);
+  }
+  // A placeholder `slot:<slot>` held from before the list loaded resolves to
+  // that slot's default meal once it has (Inspector Brad, #550).
+  if (isSyntheticUserMealId(id)) {
+    const slot = id.slice(SYNTHETIC_PREFIX.length) as MealSlot;
+    const defaultId = defaultUserMealIdForSlot(meals, slot);
+    return meals.find((m) => m.id === defaultId);
+  }
+  return undefined;
 }
 
 /** Active meals in display order. */
