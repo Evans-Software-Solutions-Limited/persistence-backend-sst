@@ -65,6 +65,7 @@ import type {
   NutritionTarget,
   Recipe,
 } from "@/domain/models/nutrition";
+import type { MyCoaching } from "@/domain/models/myCoaching";
 
 /**
  * In-memory storage adapter for testing.
@@ -1212,6 +1213,27 @@ export class InMemoryStorageAdapter implements StoragePort {
     });
   }
 
+  // PER-126: cached_my_coaches.
+  private myCoaches = new Map<string, MyCoaching>();
+
+  getCachedMyCoaches(userId: string): MyCoaching | null {
+    const hit = this.myCoaches.get(userId);
+    return hit ? (JSON.parse(JSON.stringify(hit)) as MyCoaching) : null;
+  }
+
+  cacheMyCoaches(userId: string, value: MyCoaching): void {
+    this.myCoaches.set(userId, JSON.parse(JSON.stringify(value)) as MyCoaching);
+  }
+
+  removeCachedMyCoach(userId: string, relationshipId: string): void {
+    const hit = this.myCoaches.get(userId);
+    if (!hit) return;
+    this.myCoaches.set(userId, {
+      ...hit,
+      coaches: hit.coaches.filter((c) => c.relationshipId !== relationshipId),
+    });
+  }
+
   cacheActiveSession(userId: string, session: WorkoutSession): void {
     this.activeSessions.set(userId, cloneSession(session));
     // Inspector Brad PR #62 (high severity, belt-and-braces): drop a
@@ -1591,6 +1613,7 @@ export class InMemoryStorageAdapter implements StoragePort {
     this.trainingLog.clear();
     this.trainingLogSince.clear();
     this.youRemote.clear();
+    this.myCoaches.clear();
     this.trainingLogIds.clear();
     this.trainingLogRecords.clear();
     this.metadata.clear();

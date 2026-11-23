@@ -1,5 +1,61 @@
 # Project memory · persistence-backend-sst
 
+### 2026-11-23 — APP-A3: athlete invite preview and accept, Coach tab chips, You → Coaching ([PER-126](https://linear.app/evans-software-solutions/issue/PER-126); branch `bradleysimmsevans/per-126-app-a3-athlete-invite-preview-and`)
+
+Mobile only, no backend change, no native change, no version bump. Uses the
+merged BE-A1 routes (PER-108, #540): `GET /invites/:code/preview`,
+`POST /trainers/accept-invite-code` (`relationshipStatus`, `ready`) and
+`GET /users/me/coaching`. Ships in the next store release, reviewed on staging.
+
+- **Accept flow** (`AcceptInviteContainer`): enter code → preview (C11j,
+  `InvitePreviewPresenter`) → one consent tick → accept. Personal code
+  (`relationshipStatus: "active"`) refreshes `cached_my_coaches`, lands on the
+  Coach tab and says "You're connected with <coach>". General code, or an
+  older backend without the field, keeps "Request sent … awaiting their
+  acceptance". The old `DataSharingConsentSheet` step is gone from this flow
+  (still used by Requests).
+- **Consent (Brad, 23 Nov):** the C11j "<coach> can see" rows are a fixed,
+  read-only list (backend stores one consent, not per-area choices); a
+  never-pre-ticked "I agree" tick gates Accept.
+- **States:** invalid/expired (404 `invalid_code`; the backend doesn't tell
+  them apart, so one message), expired while open (client clock vs
+  `expiresAt`), seat cap (409), already connected, used, rate limited (429,
+  new `rate_limited` accept code), offline before lookup and before accept.
+- **Coach tab** (`app/(app)/(tabs)/coach.tsx`, `CoachTabContainer` /
+  `CoachTabPresenter`): athlete mode only, only while `coaches.length > 0`
+  (`_layout.tsx`, `athleteTabsWithCoach`). Chips only with 2+ coaches (Brad).
+  Badge = sum of `due.forms`. C2e sections (forms PER-130, messages PER-92,
+  plan PER-140/133, resources PER-122) render as dashed "In development"
+  placeholders (Brad: release waits for the whole platform). No message button
+  until chat ships. The stranded-route guard sends the athlete Home when the
+  last coach goes.
+- **Offline:** new SQLite table `cached_my_coaches` (one JSON payload per
+  user, in the init DDL, cleared in `clearAll`), `useMyCoaches`
+  (`useCachedResource`, `MY_COACHES_TABLES`). Leaving a coach (Profile)
+  calls `storage.removeCachedMyCoach`, so the chip/tab go at once. No queued
+  entity types: accepting is online only.
+- **You → Coaching (Y1):** reads `useMyCoaches`; falls back to active
+  relationships until the first read. Row tap → Coach tab on that coach.
+  Coach requests stay under the list (Brad, 23 Nov).
+- **Verified:** mobile typecheck, lint, repo prettier:check, `bun run build`.
+  Mobile `test:unit`: 9,167 pass, coverage 96.3 / 92.3 / 96.2 / 97.6
+  (stmts/branches/funcs/lines). 32 failures in 3 suites, none touched here:
+  `SubscriptionSelectionContainer` fails on main too (16 alone);
+  `CoachYouContainer` and `useAutoRetryOnWorkoutLimitResolved` pass alone
+  (load timeouts in the full run).
+- **Not verified:** no device or staging run; canvas match checked against
+  board markup only.
+- **Inspector Brad (#547):** 4 sweeps, 5 leads fixed with failing-first tests,
+  closed clean on 8cfae9f.
+  - Every `useMyCoaches` re-reads the cache synchronously on write
+    (`notifyMyCoachesChanged`), so the Coach tab exists before the accept
+    navigates; the storage bus alone is debounced.
+  - The accept opens `coach?coachId=<new>&nav=…` only when the coach is cached
+    and the app is in athlete mode, otherwise You.
+  - Accept stays disabled while the coach loads.
+  - The chip override is keyed on `coachId|nav`.
+  - You rows aren't tappable until coaching has been read.
+
 ### 2026-11-23 — APP-A1: web coach workspace, add client (C11), invited client, C3.9 settings ([PER-124](https://linear.app/evans-software-solutions/issue/PER-124); branch `bradleysimmsevans/per-124-app-a1-web-coach-add-client-c11`)
 
 `packages/web` only; no backend, mobile, native or migration change. Uses the
@@ -5735,72 +5791,6 @@ Visual baselines:
 `/Users/bradleysimms-evans/.codex/visualizations/2026/09/04/01a06cdf-2dcb-78e3-b9c3-b1b10954f357/pricing-live-cta-coaches-dark.png`,
 and
 `/Users/bradleysimms-evans/.codex/visualizations/2026/09/04/01a06cdf-2dcb-78e3-b9c3-b1b10954f357/pricing-live-cta-consumer-mobile.png`.
-### 🟡 2026-09-04 — AUTH + CARDIO/ACTIVITY LOGGING (branch `codex/auth-cardio-logging`)
-
-Password inputs on sign-in, sign-up and password reset now have accessible
-show/hide controls, disable keyboard correction/capitalisation, and show live
-confirmation match state without altering the submitted password. Exercise
-creation supports strength, cardio and plyometric categories; cardio no longer
-requires a muscle group. Active sessions persist each exercise category and
-show category-specific logging: weight/reps for strength, time plus km/mi for
-cardio, and reps plus jump distance in cm/in for plyometrics.
-
-The Workouts screen can start a retrospective workout with a past local date
-and explicit duration. Cardio sessions can be marked indoor/outdoor and given
-an optional location; those values, logged activity time and distance appear in
-the completed-workout summary. Distance and time records are calculated by the
-core service and rendered on exercise detail/progress surfaces. Canonical stored
-units remain seconds and metres. Migration
-`20260904130000_session_activity_metadata.sql` adds session environment,
-location metadata and the per-session exercise-category snapshot, and must be
-applied before deploying the matching API.
-
-Formatting, all nine package typechecks, lint (zero errors), all fourteen build
-tasks and the full unit suite are green (**524 mobile suites / 6,623 tests**;
-**21 workspace tasks**). Visual QA was attempted but is blocked locally: the
-generated iOS build cannot resolve the React-Core-prebuilt pod source, while the
-installed staging dev client lacks ExpoTrackingTransparency and cannot load
-this checkout's bundle. No generated native project was retained.
-
-The mandatory local Inspector Brad pre-PR pass found seven category and edge
-case defects. All are fixed with regressions: cardio PRs are category-gated,
-summary activity totals include completed cardio sets only, offline cardio PR
-prediction matches the server, retrospective mode survives pointer recovery,
-category edits recompute muscle arrays, malformed activity inputs clear stale
-values, and retrospective duration is bounded to 24 hours. The complete gate
-suite above was rerun after these fixes. The follow-up Inspector pass found two
-lifecycle-boundary defects: server PR semantics depended on an exercise's
-current category, and upgraded local active sessions could resume without a
-category. Session exercises now store the category snapshot used when they were
-logged, and SQLite upgrades/backward reads restore it from the cached exercise.
-The complete gate suite is green after both fixes; a closed Inspector re-sweep
-then caught two alternate-entry-path gaps. Trainer-recorded sessions now accept
-the same activity metadata/category fields as self-recording, and piecemeal
-session exercise creation resolves visibility and snapshots the source exercise
-category. Regressions cover both paths, the complete gate suite is green, and
-the final closed local Inspector Brad sweep returned clean.
-
-The PR #434 CI Inspector follow-up found two mobile boundary cases. Cardio
-duration/distance fields now preserve focused, in-progress text while SQLite
-echoes canonical values back through the parent, then canonicalise on blur.
-Retrospective dates are displayed from device-local calendar components rather
-than a UTC string slice, and same-day logging before noon clamps completion to
-the current instant instead of rejecting the selected day. Focused regressions
-cover the command-echo and timezone/calendar-day paths. The full repository
-gate is green (**524 mobile suites / 6,627 tests; 21 workspace tasks**) and the
-local Inspector Brad follow-up is clean.
-
-A second PR #434 CI Inspector follow-up found that retrospective session setup
-backdated the still-live session clock, and that exercise detail filtered a
-globally limited PR response. Retrospective sessions now keep `startedAt` at
-the actual start instant and derive their historical interval only when they
-are finalised. The PR endpoint accepts an exercise scope that is applied in SQL
-before ordering/limiting, with matching offline-cache behaviour. The
-retrospective production date path now uses a direct `date-fns` dependency
-(`4.4.0`) for local-day parsing, validation and date arithmetic. Regression
-tests cover both review leads, and the full repository gate is green (**524
-mobile suites / 6,628 tests; 21 workspace tasks**).
-
 ## ▶ START HERE — next session (rewritten 2026-08-04, post-Mealprint-merge)
 
 ### 🟡 2026-09-03 — FOUNDING-OFFER website work package A implemented (branch `feat/founding-offer-admin`)

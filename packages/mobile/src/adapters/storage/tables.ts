@@ -91,3 +91,6 @@ export const SYNC_QUEUE_TABLES = ["sync_queue"] as const;
  * History and Recap read it; the summary screen writes it.
  */
 export const TRAINING_LOG_TABLES = ["training_log"] as const;
+
+/** PER-126: the athlete's coaches (Coach tab, You → Coaching). */
+export const MY_COACHES_TABLES = ["cached_my_coaches"] as const;

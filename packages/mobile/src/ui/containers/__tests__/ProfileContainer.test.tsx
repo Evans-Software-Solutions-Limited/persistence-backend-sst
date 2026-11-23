@@ -881,6 +881,29 @@ describe("ProfileContainer", () => {
       // Pre-seed Home so we can prove the container invalidates it — an
       // already-empty cache would look identical whether or not it ran.
       storage.cacheHome(userId, homePayload());
+      // PER-126: the coach's chip must go with them.
+      const myCoach = (id: string, name: string) => ({
+        relationshipId: id,
+        trainerId: `t-${id}`,
+        name,
+        avatarUrl: null,
+        since: null,
+        features: {
+          nutrition: true,
+          checkIns: true,
+          photos: true,
+          habits: true,
+          messages: true,
+          resources: true,
+        },
+        due: { forms: 0 },
+        newPlans: 0,
+        resources: 0,
+      });
+      storage.cacheMyCoaches(userId, {
+        coaches: [myCoach("rel-1", "Coach K"), myCoach("rel-2", "Other")],
+        asOf: "2026-11-23T09:00:00Z",
+      });
 
       const { getByTestId } = render(
         <TestWrapper adapters={adapters}>
@@ -909,6 +932,11 @@ describe("ProfileContainer", () => {
 
       expect(api.leaveCoachCalls).toEqual(["rel-1"]);
       expect(storage.getCachedHome(userId)).toBeNull();
+      expect(
+        storage
+          .getCachedMyCoaches(userId)
+          ?.coaches.map((c) => c.relationshipId),
+      ).toEqual(["rel-2"]);
       // A successful leave re-pulls the profile page (so the ex-coach drops
       // off "Active Trainers" without waiting for the next focus).
       await waitFor(() => {

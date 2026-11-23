@@ -40,6 +40,7 @@ import type { Streak } from "@/domain/models/streak";
 import type { Achievement } from "@/domain/models/achievement";
 import type { Goal } from "@/domain/models/goal";
 import type { HabitCompletion } from "@/domain/models/habit-completion";
+import type { MyCoaching } from "@/domain/models/myCoaching";
 import type { HabitConfig } from "@/domain/models/habit-config";
 import type { CoachOverview } from "@/domain/models/coachOverview";
 import type { ClientDetail } from "@/domain/models/clientDetail";
@@ -875,6 +876,16 @@ export interface StoragePort {
     key: string,
   ): { payload: unknown; syncedAt: string } | null;
   cacheYouRemote(userId: string, key: string, payload: unknown): void;
+
+  /**
+   * PER-126 (APP-A3): the athlete's coaches (`GET /users/me/coaching`) in
+   * `cached_my_coaches`, so the Coach tab and You → Coaching work offline.
+   * Null until the first successful read.
+   */
+  getCachedMyCoaches(userId: string): MyCoaching | null;
+  cacheMyCoaches(userId: string, value: MyCoaching): void;
+  /** Drop one coach after leaving them, so their chip goes straight away. */
+  removeCachedMyCoach(userId: string, relationshipId: string): void;
 
   /**
    * Write-through the entire session as a full upsert. Replaces the

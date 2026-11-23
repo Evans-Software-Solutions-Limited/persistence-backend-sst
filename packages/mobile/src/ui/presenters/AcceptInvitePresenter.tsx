@@ -5,7 +5,7 @@ import { Btn, HeaderBar, IconBtn } from "@/ui/components/foundation";
 import { LoadingSpinner } from "@/ui/components/LoadingSpinner";
 import { toneHex } from "@/ui/components/foundation/tones";
 import { IconBack } from "@/ui/components/icons";
-import { DataSharingConsentSheet } from "@/ui/presenters/DataSharingConsentSheet";
+import { WarnNote } from "./coaching/coachingKit";
 
 /**
  * <AcceptInvitePresenter> — the athlete's invite-code redeem screen (Coach
@@ -16,9 +16,9 @@ import { DataSharingConsentSheet } from "@/ui/presenters/DataSharingConsentSheet
  * screen, or from a `persistencemobile://accept-invite?code=…` deep link
  * (the code arrives pre-filled via the container's `useLocalSearchParams`).
  *
- * Submission result (success alert / inline domain-error copy) is handled by
- * the container — this presenter only renders the code field + error state
- * + raises `onSubmit`.
+ * PER-126: "Join" now previews the code (C11j, `InvitePreviewPresenter`),
+ * where consent is given — no consent sheet here. Looking a code up needs a
+ * connection, so offline shows a note and Join is disabled.
  */
 
 export type AcceptInvitePresenterProps = {
@@ -27,14 +27,11 @@ export type AcceptInvitePresenterProps = {
   isSubmitting: boolean;
   /** Inline domain-error copy (empty string = no error shown). */
   errorMessage: string;
-  /** Opens the consent sheet — does NOT redeem the code itself (see `onConsentConfirm`). */
+  /** Looks the code up (preview) — never accepts it. */
   onSubmit: () => void;
   onBack: () => void;
-  /** 28-coach-data-sharing-consent: drives <DataSharingConsentSheet>, opened by `onSubmit`. */
-  consentVisible: boolean;
-  onConsentClose: () => void;
-  /** Only this actually redeems the code — see `AcceptInviteContainer`. */
-  onConsentConfirm: () => void;
+  /** PER-126: no connection, so the code can't be looked up. */
+  isOffline: boolean;
 };
 
 export function AcceptInvitePresenter({
@@ -44,12 +41,10 @@ export function AcceptInvitePresenter({
   errorMessage,
   onSubmit,
   onBack,
-  consentVisible,
-  onConsentClose,
-  onConsentConfirm,
+  isOffline,
 }: AcceptInvitePresenterProps) {
   const insets = useSafeAreaInsets();
-  const submitDisabled = code.trim() === "" || isSubmitting;
+  const submitDisabled = code.trim() === "" || isSubmitting || isOffline;
 
   return (
     <View flex={1} paddingTop={insets.top}>
@@ -110,6 +105,12 @@ export function AcceptInvitePresenter({
           ) : null}
         </View>
 
+        {isOffline && (
+          <WarnNote testID="accept-invite-offline">
+            {"You're offline. Entering a code needs a connection."}
+          </WarnNote>
+        )}
+
         <Btn
           variant="filled"
           tone="trainer"
@@ -121,7 +122,7 @@ export function AcceptInvitePresenter({
               <LoadingSpinner
                 size="sm"
                 color={toneHex("trainer").ink}
-                accessibilityLabel="Joining coach"
+                accessibilityLabel="Checking code"
               />
             ) : undefined
           }
@@ -130,14 +131,6 @@ export function AcceptInvitePresenter({
           Join
         </Btn>
       </View>
-      <DataSharingConsentSheet
-        visible={consentVisible}
-        onClose={onConsentClose}
-        onConfirm={onConsentConfirm}
-        isSubmitting={isSubmitting}
-        confirmLabel="Join"
-        testIDPrefix="accept-invite"
-      />
     </View>
   );
 }
