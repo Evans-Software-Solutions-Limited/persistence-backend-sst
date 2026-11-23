@@ -1,7 +1,4 @@
-import {
-  muscleCredit,
-  trainNextAndRest,
-} from "@/domain/services/trainingMetrics/muscleCredit";
+import { muscleCredit, trainNextAndRest } from "@persistence/training-metrics";
 import {
   clockTime,
   dayMonth,

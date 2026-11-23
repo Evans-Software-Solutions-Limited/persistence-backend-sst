@@ -17,7 +17,7 @@ import {
   trainingTotals,
   workedList,
 } from "../youPage";
-import { muscleCredit } from "../trainingMetrics/muscleCredit";
+import { muscleCredit } from "@persistence/training-metrics";
 import { musclesOf, record, session } from "./youFixtures";
 
 // Thursday 29 Oct 2026, 18:00 local.

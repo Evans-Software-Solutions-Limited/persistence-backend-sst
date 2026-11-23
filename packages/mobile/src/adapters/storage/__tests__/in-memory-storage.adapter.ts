@@ -1106,6 +1106,7 @@ export class InMemoryStorageAdapter implements StoragePort {
   // -- Training log (PER-141) --
   private trainingLog = new Map<string, WorkoutSession & { __owner: string }>();
   private trainingLogSince = new Map<string, string>();
+  private youRemote = new Map<string, { payload: unknown; syncedAt: string }>();
 
   private trainingLogIds = new Map<string, string>();
 
@@ -1189,6 +1190,26 @@ export class InMemoryStorageAdapter implements StoragePort {
   markTrainingLogSince(userId: string, at: string): void {
     if (!this.trainingLogSince.has(userId))
       this.trainingLogSince.set(userId, at);
+  }
+
+  getCachedYouRemote(
+    userId: string,
+    key: string,
+  ): { payload: unknown; syncedAt: string } | null {
+    const hit = this.youRemote.get(`${userId}|${key}`);
+    return hit
+      ? {
+          payload: JSON.parse(JSON.stringify(hit.payload)) as unknown,
+          syncedAt: hit.syncedAt,
+        }
+      : null;
+  }
+
+  cacheYouRemote(userId: string, key: string, payload: unknown): void {
+    this.youRemote.set(`${userId}|${key}`, {
+      payload: JSON.parse(JSON.stringify(payload)) as unknown,
+      syncedAt: new Date().toISOString(),
+    });
   }
 
   cacheActiveSession(userId: string, session: WorkoutSession): void {
@@ -1569,6 +1590,7 @@ export class InMemoryStorageAdapter implements StoragePort {
     this.queue = [];
     this.trainingLog.clear();
     this.trainingLogSince.clear();
+    this.youRemote.clear();
     this.trainingLogIds.clear();
     this.trainingLogRecords.clear();
     this.metadata.clear();

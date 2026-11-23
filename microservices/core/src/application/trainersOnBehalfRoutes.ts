@@ -36,6 +36,9 @@ import { coachClientOffboardingRoutes } from "./coachClientOffboardingRoutes";
 // the coach declaration, invite preview and /users/me/coaching. Nested for the
 // same TS2589 reason; absolute paths, no prefix.
 import { coachingRoutes } from "./coachingRoutes";
+// PER-113 (BE-H1) — You page reads and the coach training review. Nested for
+// the same TS2589 reason; absolute paths, no prefix.
+import { trainingRoutes } from "./trainingRoutes";
 
 export const trainersOnBehalfRoutes = new Elysia()
   // sessions — POST create (header-only), POST .../sessions/record (full
@@ -89,4 +92,6 @@ export const trainersOnBehalfRoutes = new Elysia()
   .use(coachClientOffboardingRoutes)
   // `…/:clientId/settings` is a static segment after `:clientId`, so it never
   // collides with the bare `:clientId` GET above.
-  .use(coachingRoutes);
+  .use(coachingRoutes)
+  // `…/:clientId/training-review` is a static segment after `:clientId`.
+  .use(trainingRoutes);

@@ -865,6 +865,18 @@ export interface StoragePort {
   markTrainingLogSince(userId: string, at: string): void;
 
   /**
+   * BE-H1 (PER-113) answers cached by what they cover (`recap:3months`,
+   * `month:2026-09`, `day:2026-09-14`, `week`), so a range the training log
+   * doesn't hold still shows offline once it has been fetched. Cleared on
+   * sign-out with the training log.
+   */
+  getCachedYouRemote(
+    userId: string,
+    key: string,
+  ): { payload: unknown; syncedAt: string } | null;
+  cacheYouRemote(userId: string, key: string, payload: unknown): void;
+
+  /**
    * Write-through the entire session as a full upsert. Replaces the
    * three nested tables atomically per EXECUTION_PLAN § 3.4 — the
    * storage layer never sees partial sortOrder updates. Idempotent.

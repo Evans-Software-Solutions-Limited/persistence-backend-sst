@@ -18,7 +18,7 @@ import {
   muscleCredit,
   type MuscleCreditRow,
   type MuscleDisplayGroup,
-} from "./trainingMetrics/muscleCredit";
+} from "@persistence/training-metrics";
 import {
   buildWorkoutSummary,
   sessionMuscleInputs,

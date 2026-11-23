@@ -15,6 +15,7 @@ import {
   session as finished,
 } from "@/domain/services/__tests__/youFixtures";
 import type { YouRemoteSource } from "@/application/queries/youRemote";
+import type { RemoteRecap } from "@/domain/models/trainingReads";
 import {
   RecapContainer,
   comparison,
@@ -405,11 +406,40 @@ describe("RecapContainer", () => {
     });
   });
 
-  it("drops the coverage note once BE-H1 answers", async () => {
+  const serverRecap = (workouts: number): RemoteRecap => ({
+    period: "week",
+    timezone: "Europe/London",
+    from: "2026-11-16",
+    to: "2026-11-22",
+    previousFrom: "2026-11-09",
+    previousTo: "2026-11-15",
+    totals: { workouts, durationSeconds: 3600, volumeKg: 5000, sets: 20 },
+    previous: { workouts: 1, durationSeconds: 1800, volumeKg: 1000, sets: 5 },
+    muscles: [],
+    lifts: [],
+    volume: [],
+    records: [
+      {
+        exerciseId: "bench",
+        exerciseName: "Bench press",
+        recordType: "1rm",
+        value: 100,
+        achievedAt: new Date().toISOString(),
+        sessionId: null,
+      },
+    ],
+    together: { sessions: 0, names: [] },
+    asOf: new Date().toISOString(),
+  });
+
+  it("drops the coverage note and shows the server's recap once BE-H1 answers", async () => {
     const { adapters } = makeAdapters();
     const remote: YouRemoteSource = {
       historyMonth: jest.fn(),
-      recap: jest.fn(async () => ({ status: "ok" as const, data: {} })),
+      recap: jest.fn(async () => ({
+        status: "ok" as const,
+        data: serverRecap(4),
+      })),
       lastSevenDays: jest.fn(),
     };
     render(
@@ -419,5 +449,84 @@ describe("RecapContainer", () => {
     );
     await waitFor(() => expect(remote.recap).toHaveBeenCalled());
     await waitFor(() => expect(mockProbe.last!.coverageNote).toBeNull());
+    await waitFor(() =>
+      expect(mockProbe.last!.pages[0]).toMatchObject({
+        id: "totals",
+        big: "4",
+      }),
+    );
+  });
+
+  it("keeps the phone's recap when it holds workouts the server hasn't seen", async () => {
+    const { storage, adapters } = makeAdapters();
+    storage.saveTrainingLogEntry(
+      "user-1",
+      finished("a", new Date().toISOString(), { bench: [[100, 5]] }),
+    );
+    const remote: YouRemoteSource = {
+      historyMonth: jest.fn(),
+      recap: jest.fn(async () => ({
+        status: "ok" as const,
+        data: serverRecap(0),
+      })),
+      lastSevenDays: jest.fn(),
+    };
+    render(
+      <AdapterProvider adapters={adapters}>
+        <RecapContainer remote={remote} />
+      </AdapterProvider>,
+    );
+    await waitFor(() => expect(remote.recap).toHaveBeenCalled());
+    // Not used, so the page still says what the phone covers.
+    await waitFor(() => expect(mockProbe.last!.coverageNote).toMatch(/^From /));
+    expect(mockProbe.last!.pages[0]).toMatchObject({ big: "1" });
+  });
+
+  it("keeps the phone's recap while the server's, though bigger, lacks a workout the phone holds (Inspector Brad #545)", async () => {
+    const { storage, adapters } = makeAdapters();
+    storage.saveTrainingLogEntry(
+      "user-1",
+      finished("local-a", new Date().toISOString(), { bench: [[100, 5]] }),
+    );
+    const lacking = { ...serverRecap(3), sessionIds: ["s1", "s2", "s3"] };
+    const remote: YouRemoteSource = {
+      historyMonth: jest.fn(),
+      recap: jest.fn(async () => ({ status: "ok" as const, data: lacking })),
+      lastSevenDays: jest.fn(),
+    };
+    const r = render(
+      <AdapterProvider adapters={adapters}>
+        <RecapContainer remote={remote} />
+      </AdapterProvider>,
+    );
+    await waitFor(() => expect(remote.recap).toHaveBeenCalled());
+    // The server's answer wasn't used, so the page still says what the
+    // phone covers and makes no comparison with a week it never held
+    // (Inspector Brad #545, sweep 3).
+    await waitFor(() =>
+      expect(mockProbe.last!.coverageNote).toMatch(
+        /^From .*, when this phone started keeping your history\.$/,
+      ),
+    );
+    expect(mockProbe.last!.pages[0]).toMatchObject({ big: "1", sub: "" });
+    r.unmount();
+
+    // Once the server counts it, its fuller recap is shown.
+    const holding = {
+      ...serverRecap(4),
+      sessionIds: ["s1", "s2", "s3", "local-a"],
+    };
+    const remote2: YouRemoteSource = {
+      ...remote,
+      recap: jest.fn(async () => ({ status: "ok" as const, data: holding })),
+    };
+    render(
+      <AdapterProvider adapters={adapters}>
+        <RecapContainer remote={remote2} />
+      </AdapterProvider>,
+    );
+    await waitFor(() =>
+      expect(mockProbe.last!.pages[0]).toMatchObject({ big: "4" }),
+    );
   });
 });

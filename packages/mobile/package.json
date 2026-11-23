@@ -24,6 +24,7 @@
     "@noble/curves": "2.4.0",
     "@noble/hashes": "2.4.0",
     "@persistence/subscription-catalog": "workspace:*",
+    "@persistence/training-metrics": "workspace:*",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-community/datetimepicker": "8.6.0",
     "@react-native-community/netinfo": "11.4.1",
@@ -117,7 +118,8 @@
       "node_modules/(?!(.bun/.*/)?(@noble|react-native|@react-native|@react-native-community|expo|expo-[^/]*|@expo|expo-modules-core|@expo-google-fonts|react-navigation|@react-navigation|@sentry/react-native|native-base|react-native-svg|react-native-body-highlighter|react-native-qrcode-svg|tamagui|@tamagui|react-native-reanimated|react-native-reanimated-dnd|react-native-worklets)/)"
     ],
     "moduleNameMapper": {
-      "^@/(.*)$": "<rootDir>/src/$1"
+      "^@/(.*)$": "<rootDir>/src/$1",
+      "^@babel/runtime/(.*)$": "<rootDir>/node_modules/@babel/runtime/$1"
     },
     "collectCoverageFrom": [
       "src/domain/services/**/*.ts",

@@ -1,23 +1,25 @@
 /**
  * Muscle credit — the one shared weekly-volume calculation behind the You
- * page muscle map (Y1), History's "Muscles worked" (Y2) and Recap's muscle
- * balance (Y4). Backend design H, canvas note `n3b_shade`, You note `yn1`.
- *
- * DEPENDENCY-FREE ON PURPOSE. This file imports nothing so it can move
- * verbatim into `packages/training-metrics` when BE-H1 (PER-113) lands; the
- * server then runs the same function and the phone imports it from there.
+ * page muscle map (Y1), History's "Muscles worked" (Y2), Recap's muscle
+ * balance (Y4) and the coach's Worked map (C3 / C3.1). Backend design H,
+ * canvas note `n3b_shade`, You note `yn1`. The phone (PER-141) and the
+ * server (PER-113) both import it from here, so they always agree.
  *
  * Rules:
  * - For each completed set (reps > 0, exercise not skipped), each primary
- *   muscle gets 1.0 and each secondary muscle 0.5.
+ *   muscle gets 1.0 credit and each secondary muscle 0.5.
  * - Muscles are summed into the ten groups the You page shows (Recap's
- *   muscle-balance list). Within one exercise a group gets the larger of its
- *   two credits, never both: a curl that lists biceps primary and forearms
- *   secondary credits Arms 1.0 and Forearms 0.5, and a press listing biceps
- *   and triceps still gives Arms 1.0 per set, not 2.
- * - Hard sets are those credits, counted as fractional sets.
- * - Shade = hard sets ÷ the group's weekly guide, capped at 1. The guide is
- *   10 for major groups and 6 for calves, core and forearms. It's weekly
+ *   muscle-balance list). Within one exercise a group is credited once per
+ *   set, with the larger of its two credits: a curl that lists biceps
+ *   primary and forearms secondary credits Arms 1.0 and Forearms 0.5, and a
+ *   press listing biceps and triceps still gives Arms 1.0 per set, not 2
+ *   (Brad, 21 Nov).
+ * - Hard sets are whole completed sets where the group was primary
+ *   (`n3b_shade` point 2: "Sets shown = completed sets where it was
+ *   primary"). A secondary muscle earns credit but no hard sets (Brad,
+ *   21 Nov). This is the "Quads · 14 sets" the coach sees.
+ * - Shade = credit ÷ the group's weekly guide, capped at 1. The guide is 10
+ *   for major groups and 6 for calves, core and forearms. It's weekly
  *   volume, not a recovery measurement.
  */
 
@@ -100,10 +102,10 @@ export type MuscleCreditRow = {
   label: string;
   /** Primary 1.0 + secondary 0.5 per completed set. */
   credit: number;
-  /** The same credit read as fractional hard sets. */
+  /** Whole completed sets where the group was primary. */
   hardSets: number;
   weeklyGuide: number;
-  /** hardSets ÷ weeklyGuide, capped at 1. */
+  /** credit ÷ weeklyGuide, capped at 1. */
   ratio: number;
   /** Rounded percentage of all credit; 0 when nothing was trained. */
   share: number;
@@ -129,6 +131,7 @@ export function muscleCredit(
   inputs: readonly MuscleCreditInput[],
 ): MuscleCreditRow[] {
   const credit = new Map<MuscleDisplayGroup, number>();
+  const hardSets = new Map<MuscleDisplayGroup, number>();
   for (const input of inputs) {
     if (!(input.completedSets > 0)) continue;
     const perSet = new Map<MuscleDisplayGroup, number>();
@@ -140,8 +143,11 @@ export function muscleCredit(
       const g = MUSCLE_TO_GROUP[m];
       if (g) perSet.set(g, 1);
     }
-    for (const [g, c] of perSet)
+    for (const [g, c] of perSet) {
       credit.set(g, (credit.get(g) ?? 0) + c * input.completedSets);
+      if (c === 1)
+        hardSets.set(g, (hardSets.get(g) ?? 0) + input.completedSets);
+    }
   }
   const total = [...credit.values()].reduce((a, b) => a + b, 0);
   return MUSCLE_DISPLAY_GROUPS.map((group) => {
@@ -151,7 +157,7 @@ export function muscleCredit(
       group,
       label: MUSCLE_DISPLAY_LABELS[group],
       credit: c,
-      hardSets: c,
+      hardSets: hardSets.get(group) ?? 0,
       weeklyGuide: WEEKLY_GUIDE[group],
       ratio,
       share: total > 0 ? Math.round((c / total) * 100) : 0,

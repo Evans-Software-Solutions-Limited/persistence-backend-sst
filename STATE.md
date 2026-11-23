@@ -1,5 +1,95 @@
 # Project memory · persistence-backend-sst
 
+### 2026-11-21 — BE-H1: You page and coach training reads, `packages/training-metrics` ([PER-113](https://linear.app/evans-software-solutions/issue/PER-113); branch `bradleysimmsevans/per-113-be-h1-backend-you-page-and-coach`)
+
+PR #545 (open, no auto-merge). Backend design H. Read-only, additive: four new paths, no migration, no
+`schema.ts` change, no native change. 1.2.0 phones are untouched (they never
+call the new paths).
+Ships in the **next store release**, reviewed on staging first (Brad,
+21 Nov: this release is no longer over the air). The You page changes from
+PER-141 and this ticket reach phones with that build, not an OTA update.
+
+- **`packages/training-metrics`** (new, pure TS, no runtime deps): the
+  muscle-credit function moved out of `packages/mobile`
+  (`domain/services/trainingMetrics/` deleted; mobile imports
+  `@persistence/training-metrics`), plus Epley 1RM, catalogue-name → app
+  muscle key, window maths over a `TrainingSession` shape the server reads,
+  and the shared phone/server fixture (`./fixtures`: one seeded week +
+  `SEEDED_WEEK_EXPECTED`). Mobile Jest needed one mapper
+  (`^@babel/runtime/(.*)$` → mobile's copy) because Babel injects runtime
+  helpers into the package's source; Metro already resolves them through
+  `nodeModulesPaths`.
+- **Hard sets (Brad, 21 Nov):** PER-141 counted a secondary muscle as half a
+  hard set; canvas `n3b_shade` point 2 says sets are "completed sets where it
+  was primary". Brad chose the split: **credit** stays primary 1.0 /
+  secondary 0.5 and drives the shade (credit ÷ weekly guide, so the You page
+  looks the same); **hardSets** = whole completed sets where the group was
+  primary (the coach's "Quads · 14 sets"). Grouping stays once per group per
+  set (a press listing biceps + triceps gives Arms 1.0 per set).
+- **Routes** (`core/src/application/training/`, mounted via
+  `trainingRoutes` inside `trainersOnBehalfRoutes`):
+  - `GET /users/me/muscle-volume?days=1..92` (default 7): rows, Train next /
+    Rest, `bodyType` (profiles.gender, male default), totals, top lifts.
+  - `GET /users/me/history?month=YYYY-MM` (logged days with workout / food /
+    steps / weight / habits flags) and `?date=YYYY-MM-DD` (workouts with
+    their exercises and sets, muscles, totals, calories, steps, weight,
+    water, sleep, habits). Exactly one of the two, else 400.
+  - `GET /users/me/recap?period=week|month|3months`: the phone's
+    `RecapModel` plus the period before.
+  - `GET /trainers/me/clients/:clientId/training-review?window=7d|28d`:
+    `worked` (hard sets, weight lifted in them, `pr`), `strength` (4 weeks,
+    main lift per group, first → latest best e1RM %), `prsHit`.
+    `resolveCoachScope` first; read audited as `training_review`.
+  - Every bad window is 400 `invalid_window`. Local days use
+    `profiles.timezone`; a workout belongs to the day it STARTED (matches
+    the phone's log).
+- **History calories:** judged against the **current** target and marked
+  `calories.targetSource: "current"`. `TrainingReadRepository.targetForDay`
+  is the one place to switch to `nutrition_target_history` once PER-114
+  merges (latest row with `effective_at` ≤ the day's end, then answer
+  `"history"`).
+- **Records** come from `personal_records`, which keeps only each lift's
+  current best, so a record later beaten doesn't show for an older period
+  (the phone's per-workout records cover the days it holds).
+- **Mobile seam wired** (`application/queries/youRemote.ts`,
+  `ui/hooks/useYouRemote.ts`): containers default to the live source.
+  Server answers are cached per period in a new SQLite table
+  `cached_you_remote (user_id, key)` (cleared on sign-out), so a fetched
+  range shows offline; keys carry the dates they cover
+  (`recap:<period>:<start>`, `week:<start>`, `month:…`, `day:…`). Y1 /
+  Recap / a History day use the server's answer only when their range
+  starts before the log AND the answer's `sessionIds` include every workout
+  the phone holds for that window (so an unsynced `local-…` workout never
+  vanishes); they ask again when those ids change (a sync rename). Y1's
+  server week is stamped with the day it was asked for.
+  History gained `historyDay` for days before the log; the phone's own
+  cached Fuel day wins over the server's for that day. Y2b opens a
+  server-only workout from the day response (no blank modal). No UI change.
+- **Tests:** package 54 (credit table incl. the new hard-sets rule, shared
+  week); core `training/__tests__` 53 on PGlite through the real handlers
+  (shared week = fixture, window limits, two-user isolation, two coaches →
+  each 403 on the other's client, two coaches of one athlete see the same
+  data, ended relationship / non-coach 403, History day judged against the
+  target); mobile `ui/hooks/__tests__/sharedTrainingFixtures.test.ts` holds
+  the phone pipeline to the same fixture, plus seam / container tests.
+- **Inspector Brad on #545: six sweeps, seven leads, all confirmed and
+  fixed with a test that fails on the previous commit; case closed on
+  `b53dce9`:**
+  - Kept recap/week answers were keyed by period only, so offline a past
+    period showed as the current one. Keys now carry the start date.
+  - `?window=toString` passed the `in` check and returned 500 →
+    `Object.hasOwn`.
+  - Y1 kept yesterday's server week after midnight → the answer is stamped
+    with the day it was asked for.
+  - The workout-count check could hide an unsynced workout → `sessionIds`
+    on week/recap plus `serverHolds`; ask again when the ids change.
+  - Recap's coverage note and comparison followed "an answer arrived", not
+    "the answer was used" → `usedRecap`.
+  - The server recap's together names included last period's partners →
+    current-period ids only.
+  - A server-only workout opened in Y2b lost its records → the day sends
+    each workout's `personalRecords` (no "was" value on the server).
+- **Not verified:** no device run, no staging deploy (nothing to migrate).
 ### 2026-11-21 — List meal plans, coach plans with live edits, duplicate, recipe share, shopping list ([PER-118](https://linear.app/evans-software-solutions/issue/PER-118), BE-D2; branch `bradleysimmsevans/per-118-be-d2-backend-list-meal-plans`)
 
 Design D (Linear doc on PER-66), plans part of migration 6. Mealprint swaps and
@@ -248,7 +338,7 @@ notifications are BE-C2 (PER-117).
 
 ### 2026-11-20 — You page Y1–Y4, offline-first (PER-141 APP-H1; branch `bradleysimmsevans/per-141-app-h1-athlete-you-page-y1y4`)
 
-[PER-141](https://linear.app/evans-software-solutions/issue/PER-141), PR #541 (open, no auto-merge). Athlete
+[PER-141](https://linear.app/evans-software-solutions/issue/PER-141), PR #541 (merged 20 Nov 2026, squash `dbe1078`). Athlete
 You page rebuilt to the signed-off canvas boards Y1–Y4 (18 Nov). OTA on 1.2.0:
 no native packages, permissions, config plugins or version bump.
 `react-native-body-highlighter@3.2.0` is pure JS (`dist/` only; its one dependency is
@@ -9593,51 +9683,3 @@ PR not yet raised. NO product code — script + dataset + verdict + spec updates
 - Regression coverage includes PT + physio batching, per-trainer aggregate
   isolation, SQL-enforced per-trainer programme/workout/brief bounds, and an
   untrusted `pending.config.from` collision.
-
-### 2026-09-01 — Spec 31 onboarding and experience polish
-
-- Implemented the once-only, seven-page onboarding journey with persisted
-  server/SQLite state, Welcome whole-journey Skip, later page-level Skip, two
-  role tiles, single-select Nutrition/Train choices, and the existing profile,
-  Habit Setup and subscription experiences. Recommended plans retain live store
-  pricing, restore, legal copy, `Show other plans`, and `Continue with Free`.
-- Added separate Weight and Body Fat history pages from You/Progress, an
-  exercise-detail Estimated 1RM banner, OTA-safe block reorder across create,
-  edit and live workouts, and athlete-safe coaching assignments in the existing
-  Train surface. Home and the tab structure remain unchanged.
-- Backend additions: user-scoped onboarding state, analytics allowlisting,
-  exercise performance-summary aggregation, and a purpose-built athlete
-  coaching aggregate;
-  migration `20260901120000_onboarding_states.sql` enables RLS and keeps writes
-  on the authenticated backend rail.
-- Onboarding has no environment rollout switch or account-age cutoff: when
-  this mobile release ships, every existing or new authenticated account with
-  no terminal onboarding state enters at Welcome, while an `in_progress`
-  account resumes at its persisted page. Only `completed` or `dismissed`
-  accounts enter Home directly. Experience-polish surfaces have no environment
-  rollout switch either and ship enabled with this mobile release. Native iPhone
-  16 Pro visual QA and Android emulator QA caught and corrected wrapped headings;
-  evidence is in the Codex visualizations folder for this task. DOB uses the
-  existing JS calendar extraction, so this release needs no new native binary.
-- The local Inspector Brad sweeps found and the implementation now fixes
-  serialized onboarding writes, body-fat-only logging, immediate history
-  refresh, recommendation Skip, relationship focus refresh, legacy brief
-  attribution, assisted 1RM exclusion, coach measurement attribution, and the
-  complete Spec 31 analytics surface. Follow-up findings also hardened
-  same-day measurement merging, queued-measurement identity, relationship
-  cache races, local-date DOB bounds, and cross-coach brief privacy. The final
-  local Inspector Brad sweep returned `INSPECTOR_VERDICT: CLEAN`.
-- Replaced the narrow Estimated 1RM transport with the authenticated
-  `/exercises/:exerciseId/performance-summary` contract. One aggregate query
-  now returns actual 10RM, heaviest set at any rep count, best single-set
-  volume, lifetime exercise volume, estimated 1RM and estimated 10RM with
-  source provenance. Mobile caches the whole user/exercise summary, while Spec
-  31 continues to render only its compact Estimated 1RM banner so a future
-  carousel remains additive.
-- Staging sign-in returned 500 for every core route after the backend merge,
-  including onboarding. CloudWatch identified an Elysia/Memoirist cold-start
-  collision between `/exercises/:id` and the newly registered
-  `/exercises/:exerciseId/performance-summary`; it is unrelated to RevenueCat,
-  and migration `20260901120000_onboarding_states.sql` did apply successfully.
-  Backend hotfix PR #427 standardises the internal parameter name to `:id`
-  without changing the public URL shape and adds a composed-router regression.

@@ -27,6 +27,7 @@
         "@persistence/api-utils": "workspace:*",
         "@persistence/db": "workspace:*",
         "@persistence/subscription-catalog": "workspace:*",
+        "@persistence/training-metrics": "workspace:*",
         "@sentry/aws-serverless": "^10.65.0",
         "date-fns": "^4.4.0",
         "drizzle-orm": "^0.44.2",
@@ -114,6 +115,7 @@
         "@noble/curves": "2.4.0",
         "@noble/hashes": "2.4.0",
         "@persistence/subscription-catalog": "workspace:*",
+        "@persistence/training-metrics": "workspace:*",
         "@react-native-async-storage/async-storage": "2.2.0",
         "@react-native-community/datetimepicker": "8.6.0",
         "@react-native-community/netinfo": "11.4.1",
@@ -209,6 +211,15 @@
     },
     "packages/subscription-catalog": {
       "name": "@persistence/subscription-catalog",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@tsconfig/node22": "^22",
+        "typescript": "^5",
+        "vitest": "^4.0.18",
+      },
+    },
+    "packages/training-metrics": {
+      "name": "@persistence/training-metrics",
       "version": "0.0.0",
       "devDependencies": {
         "@tsconfig/node22": "^22",
@@ -991,6 +1002,8 @@
     "@persistence/seed": ["@persistence/seed@workspace:packages/seed"],
 
     "@persistence/subscription-catalog": ["@persistence/subscription-catalog@workspace:packages/subscription-catalog"],
+
+    "@persistence/training-metrics": ["@persistence/training-metrics@workspace:packages/training-metrics"],
 
     "@persistence/web": ["@persistence/web@workspace:packages/web"],
 

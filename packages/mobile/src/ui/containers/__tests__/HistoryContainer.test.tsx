@@ -15,8 +15,11 @@ import {
   session as finished,
 } from "@/domain/services/__tests__/youFixtures";
 import type { YouRemoteSource } from "@/application/queries/youRemote";
+import { remoteDayFixture } from "@/application/queries/__tests__/youRemoteFixtures";
+import type { RemoteHistoryDay } from "@/domain/models/trainingReads";
 import {
   HistoryContainer,
+  remoteDayExtras,
   dayExtras,
   extrasLogged,
   historyDayView,
@@ -166,6 +169,50 @@ describe("dayExtras", () => {
     expect(extrasLogged(e)).toBe(false);
     expect(extrasLogged({ ...noExtras, fuel: fuel(0, 2) })).toBe(true);
     expect(extrasLogged({ ...noExtras, fuel: fuel(0, 0) })).toBe(false);
+  });
+});
+
+describe("remoteDayExtras (BE-H1)", () => {
+  it("fills a past day from the server", () => {
+    const e = remoteDayExtras(remoteDayFixture, noExtras);
+    expect(e.fuel?.consumed).toMatchObject({ kcal: 2150, waterCups: 6 });
+    expect(e.fuel?.targets?.dailyKcal).toBe(2000);
+    expect(e.fuel?.remainingKcal).toBe(-150);
+    expect(e).toMatchObject({ steps: 9500, weightKg: 79.8, sleepHours: 7.5 });
+    expect([...e.habits]).toEqual(["sleep"]);
+  });
+
+  it("prefers what the phone cached for the day", () => {
+    const local: DayExtras = {
+      fuel: fuel(1800, 2, 2400),
+      steps: 4000,
+      weightKg: 80,
+      habits: new Set(["water"]),
+      sleepHours: 6,
+    };
+    const e = remoteDayExtras(remoteDayFixture, local);
+    expect(e.fuel).toBe(local.fuel);
+    expect(e).toMatchObject({ steps: 4000, weightKg: 80, sleepHours: 6 });
+    expect([...e.habits].sort()).toEqual(["sleep", "water"]);
+  });
+
+  it("has no Fuel day when nothing was eaten or drunk, and no target when unset", () => {
+    const none: RemoteHistoryDay = {
+      ...remoteDayFixture,
+      calories: {
+        kcal: null,
+        targetKcal: null,
+        result: "notLogged",
+        targetSource: "current",
+      },
+      waterCups: 0,
+    };
+    expect(remoteDayExtras(none, noExtras).fuel).toBeNull();
+    const waterOnly = { ...none, waterCups: 3 };
+    const e = remoteDayExtras(waterOnly, noExtras);
+    expect(e.fuel?.targets).toBeNull();
+    expect(e.fuel?.consumed).toMatchObject({ kcal: 0, waterCups: 3 });
+    expect(e.fuel?.remainingKcal).toBe(0);
   });
 });
 
@@ -387,6 +434,98 @@ describe("HistoryContainer", () => {
     act(() => mockFocus.cb?.());
     act(() => mockProbe.last!.onSelectDay(yesterday));
     await waitFor(() => expect(mockProbe.last!.day.status).toBe("Rest day"));
+  });
+
+  it("reads a day before the phone's log from BE-H1 and opens its workout", async () => {
+    const { adapters } = makeAdapters();
+    const key = dayKey(new Date(Date.now() - 86_400_000));
+    const day: RemoteHistoryDay = {
+      ...remoteDayFixture,
+      date: key,
+      workouts: [
+        { ...remoteDayFixture.workouts[0]!, startedAt: `${key}T07:10:00.000Z` },
+      ],
+    };
+    const remote: YouRemoteSource = {
+      historyMonth: jest.fn(async () => ({ status: "unavailable" as const })),
+      historyDay: jest.fn(async () => ({ status: "ok" as const, data: day })),
+      recap: jest.fn(),
+      lastSevenDays: jest.fn(),
+    };
+    render(
+      <AdapterProvider adapters={adapters}>
+        <HistoryContainer remote={remote} />
+      </AdapterProvider>,
+    );
+    await waitFor(() => expect(mockProbe.last).not.toBeNull());
+    act(() => mockProbe.last!.onSelectDay(key));
+    await waitFor(() =>
+      expect(mockProbe.last!.day.workouts.map((w) => w.id)).toEqual(["srv-1"]),
+    );
+    expect(remote.historyDay).toHaveBeenCalledWith(key);
+    const p = mockProbe.last!;
+    expect(p.day.status).toBe("Training day");
+    expect(p.day.values.find((v) => v.label === "Calories")!.value).toBe(
+      "2,150 / 2,000",
+    );
+    expect(p.day.values.find((v) => v.label === "Steps")!.value).toBe("9,500");
+    act(() => p.onOpenWorkout("srv-1"));
+    expect(mockPush).toHaveBeenCalledWith({
+      pathname: "/(app)/history-workout",
+      params: { id: "srv-1", at: `${key}T07:10:00.000Z` },
+    });
+  });
+
+  it("keeps the phone's day while the server's lacks a workout the phone holds (Inspector Brad #545)", async () => {
+    const { storage, adapters } = makeAdapters();
+    const yesterday = new Date(Date.now() - 86_400_000);
+    const key = dayKey(yesterday);
+    // Stamp the log's start first, so yesterday is before it.
+    storage.markTrainingLogSince("user-1", new Date().toISOString());
+    storage.saveTrainingLogEntry(
+      "user-1",
+      finished("local-a", yesterday.toISOString(), { bench: [[100, 5]] }),
+    );
+    const day: RemoteHistoryDay = { ...remoteDayFixture, date: key };
+    const remote: YouRemoteSource = {
+      historyMonth: jest.fn(async () => ({ status: "unavailable" as const })),
+      historyDay: jest.fn(async () => ({ status: "ok" as const, data: day })),
+      recap: jest.fn(),
+      lastSevenDays: jest.fn(),
+    };
+    render(
+      <AdapterProvider adapters={adapters}>
+        <HistoryContainer remote={remote} />
+      </AdapterProvider>,
+    );
+    await waitFor(() => expect(mockProbe.last).not.toBeNull());
+    act(() => mockProbe.last!.onSelectDay(key));
+    await waitFor(() => expect(remote.historyDay).toHaveBeenCalledWith(key));
+    await waitFor(() =>
+      expect(mockProbe.last!.day.workouts.map((w) => w.id)).toEqual([
+        "local-a",
+      ]),
+    );
+  });
+
+  it("keeps the phone's day when the server can't answer", async () => {
+    const { adapters } = makeAdapters();
+    const key = dayKey(new Date(Date.now() - 86_400_000));
+    const remote: YouRemoteSource = {
+      historyMonth: jest.fn(async () => ({ status: "unavailable" as const })),
+      historyDay: jest.fn(async () => ({ status: "unavailable" as const })),
+      recap: jest.fn(),
+      lastSevenDays: jest.fn(),
+    };
+    render(
+      <AdapterProvider adapters={adapters}>
+        <HistoryContainer remote={remote} />
+      </AdapterProvider>,
+    );
+    await waitFor(() => expect(mockProbe.last).not.toBeNull());
+    act(() => mockProbe.last!.onSelectDay(key));
+    await waitFor(() => expect(remote.historyDay).toHaveBeenCalledWith(key));
+    expect(mockProbe.last!.day.status).toBe("Nothing logged");
   });
 
   it("fills a month from BE-H1 once the seam returns data", async () => {

@@ -10,6 +10,10 @@ import {
   type SummaryRecord,
 } from "@/domain/services/workoutSummary";
 import { sessionTotals } from "@/domain/services/youPage";
+import {
+  remoteWorkout,
+  remoteWorkoutRecords,
+} from "@/application/queries/youRemote";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { useProfilePage } from "@/ui/hooks/useProfilePage";
 import { useTrainingLog } from "@/ui/hooks/useTrainingLog";
@@ -62,20 +66,22 @@ export function HistoryWorkoutContainer() {
     const prev = shown.current;
     const found =
       log.sessions.find((s) => s.id === id) ??
-      (prev ? log.sessions.find((s) => s.startedAt === prev.startedAt) : null);
+      (prev
+        ? log.sessions.find((s) => s.startedAt === prev.startedAt)
+        : null) ??
+      // A workout History read from the server (BE-H1): an older month or
+      // a new phone, never in this phone's log.
+      remoteWorkout(id);
     shown.current = found ?? prev;
     return shown.current;
   }, [log.sessions, id]);
   // The workout's own records, "was" values included, as the finish shows.
-  const records = useMemo(
-    () =>
-      (
-        log.recordsBySession[workout?.id ?? ""] ??
-        log.recordsBySession[id ?? ""] ??
-        []
-      ).map(toSummaryRecord),
-    [log.recordsBySession, id, workout?.id],
-  );
+  const records = useMemo(() => {
+    const own =
+      log.recordsBySession[workout?.id ?? ""] ?? log.recordsBySession[id ?? ""];
+    // A workout read from the server carries its records with it.
+    return own ? own.map(toSummaryRecord) : remoteWorkoutRecords(workout?.id);
+  }, [log.recordsBySession, id, workout?.id]);
   const model = useMemo(
     () =>
       workout

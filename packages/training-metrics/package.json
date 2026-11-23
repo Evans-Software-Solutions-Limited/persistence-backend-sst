@@ -1,0 +1,19 @@
+{
+  "name": "@persistence/training-metrics",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./fixtures": "./src/fixtures.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test:unit": "vitest run"
+  },
+  "devDependencies": {
+    "@tsconfig/node22": "^22",
+    "typescript": "^5",
+    "vitest": "^4.0.18"
+  }
+}
