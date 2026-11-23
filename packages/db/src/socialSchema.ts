@@ -17,6 +17,11 @@ export type SharedTemplatePlan = {
     order: number;
     targetSets: number;
     targetReps?: number;
+    /**
+     * PER-111: reps per set (1–20 sets). When present, `targetSets` is its
+     * length. Absent on shares made before it, or by a 1.2.0 phone.
+     */
+    setTargets?: { reps: number }[];
   }[];
 };
 export const socialProfiles = pgTable("social_profiles", {

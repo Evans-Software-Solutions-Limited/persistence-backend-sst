@@ -1,5 +1,11 @@
 import { and, eq, gt, inArray, or } from "drizzle-orm";
-import { getDb, exercises, workouts, workoutExercises } from "@persistence/db";
+import {
+  getDb,
+  exercises,
+  workouts,
+  workoutExercises,
+  workoutExerciseSetTargets,
+} from "@persistence/db";
 import {
   togetherTemplateShares as shares,
   togetherTemplateCopies as copies,
@@ -21,6 +27,11 @@ import { areFriends } from "../social/socialRepository";
 import { nextPage, pagePosition } from "../social/pagination";
 import { ExerciseRepository } from "../repositories/exerciseRepository";
 import { resolveEstimatedDurationMinutes } from "../workouts/estimateDuration";
+import {
+  cloneSetTargets,
+  deriveFromSetTargets,
+  hasSetTargets,
+} from "../workouts/shared/setTargets";
 /** Sharing grants no access to another coach's custom catalogue. Both parties must already see every exercise. */
 async function validateSharedExercises(
   tx: TogetherTx,
@@ -100,10 +111,17 @@ export const templatesRepository = {
               planExerciseId: e.planExerciseId,
               exerciseId: e.exerciseId,
               order: e.order,
-              targetSets: e.targetSets,
+              // PER-111: with reps per set, the set count is their number, so
+              // a 1.2.0 reader of the share sees the right count.
+              targetSets: hasSetTargets(e.setTargets)
+                ? e.setTargets.length
+                : e.targetSets,
               ...(e.targetReps === undefined
                 ? {}
                 : { targetReps: e.targetReps }),
+              ...(hasSetTargets(e.setTargets)
+                ? { setTargets: cloneSetTargets(e.setTargets) }
+                : {}),
             })),
           };
           const [row] = await tx
@@ -187,12 +205,17 @@ export const templatesRepository = {
                 category: source.category ?? "strength",
               }),
             );
+          // PER-111: a share with reps per set copies them, and the old
+          // columns hold the derived count and range (as on every write).
           const input = row.plan.exercises.map((e) => ({
             exerciseId: ownedIds.get(e.exerciseId)!,
             sortOrder: e.order,
             targetSets: e.targetSets,
             targetRepsMin: e.targetReps ?? 1,
             targetRepsMax: e.targetReps ?? 1,
+            ...(hasSetTargets(e.setTargets)
+              ? deriveFromSetTargets(e.setTargets)
+              : {}),
           }));
           const [workout] = await tx
             .insert(workouts)
@@ -206,10 +229,25 @@ export const templatesRepository = {
               ),
             })
             .returning();
-          if (input.length)
-            await tx
+          if (input.length) {
+            const inserted = await tx
               .insert(workoutExercises)
-              .values(input.map((e) => ({ ...e, workoutId: workout.id })));
+              .values(input.map((e) => ({ ...e, workoutId: workout.id })))
+              .returning({ id: workoutExercises.id });
+            // RETURNING follows VALUES order, so row i is plan exercise i.
+            const targets = inserted.flatMap((we, i) => {
+              const setTargets = row.plan.exercises[i].setTargets;
+              return hasSetTargets(setTargets)
+                ? setTargets.map((s, n) => ({
+                    workoutExerciseId: we.id,
+                    setNumber: n + 1,
+                    targetReps: s.reps,
+                  }))
+                : [];
+            });
+            if (targets.length)
+              await tx.insert(workoutExerciseSetTargets).values(targets);
+          }
           await tx
             .insert(copies)
             .values({ shareId: id, recipientId: actor, workoutId: workout.id });
