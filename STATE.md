@@ -63,6 +63,26 @@ Ships in the next store release, reviewed on staging.
   presenters, containers, the locked Suggest state and 1.2.0 grouping.
 - **Not verified:** nothing run on a device or against staging.
 
+- **Inspector Brad on #550, eight sweeps, 13 leads, all confirmed and fixed;
+  case closed on 7e0e609:**
+  - A Your-meals read no longer beats a live or just-acknowledged edit
+    (`preserveConcurrentCacheWrites` + `pendingWrites` + `reconcile`), and a
+    dead PUT (permanently failed / exhausted) no longer blocks reads
+    (`liveUserMealEdits`, `isAutoResolvableSyncEntry`). The sign-in warm-up
+    snapshots the cache and skips its write if an edit landed meanwhile.
+  - The PUT reply swaps `local-<clientRequestId>` from the server's answer,
+    not the cache. `logEntryCommand` resolves a stale `local-…` id to the
+    synced meal, and `findUserMeal` follows `local-…` and `slot:` ids on every
+    screen (Add to a meal, Quick log, ⋯ menu).
+  - A batch that 5xxs again (any entry already retried) falls back to keyed
+    single sends, so one bad entry can't fail 50.
+  - A sheet handoff (Quick add → Scan/Snap) keeps the meal unless the slot
+    changes.
+  - Save as a meal counts only rows on screen; the ⋯ menu passes food and
+    recipe entries only.
+  - A newer list drops dead older PUTs for the user, carrying forward any
+    meals they added offline (capped at 30), so their food logs still sync.
+
 ### 2026-11-21 — BE-H1: You page and coach training reads, `packages/training-metrics` ([PER-113](https://linear.app/evans-software-solutions/issue/PER-113); branch `bradleysimmsevans/per-113-be-h1-backend-you-page-and-coach`)
 
 PR #545 (open, no auto-merge). Backend design H. Read-only, additive: four new paths, no migration, no
