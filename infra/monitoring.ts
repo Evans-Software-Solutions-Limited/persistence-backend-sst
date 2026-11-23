@@ -1,6 +1,7 @@
 import { getEnvironment } from "../packages/api-utils/src/domains";
 import {
   accountPurgeCron,
+  coachSchedulerCron,
   coreAPI,
   coreRoute,
   offDeltaCron,
@@ -325,6 +326,8 @@ const CRONS = [
   { name: "volume-aggregation", cron: volumeCron },
   { name: "off-delta-refresh", cron: offDeltaCron },
   { name: "account-purge-sweep", cron: accountPurgeCron },
+  // PER-117: every 15 minutes, so a broken job alarms within the hour.
+  { name: "coach-scheduler", cron: coachSchedulerCron },
 ];
 
 export const cronErrorAlarms = CRONS.map(({ name, cron }) =>

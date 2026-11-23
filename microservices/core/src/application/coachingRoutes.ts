@@ -12,6 +12,8 @@ import {
 } from "./coaching/coachingHandlers";
 // PER-116 (BE-C1, design C) — coach forms, send rules, requests and responses.
 import { coachFormsRoutes } from "./coaching/forms/formsHandlers";
+// PER-117 (BE-C2, design C D4) — coach notifications, Today and settings.
+import { coachNotificationsRoutes } from "./coaching/events/coachNotificationsHandlers";
 
 export const coachingRoutes = new Elysia()
   .use(clientProfilesHandler)
@@ -19,4 +21,5 @@ export const coachingRoutes = new Elysia()
   .use(declarationHandler)
   .use(invitePreviewHandler)
   .use(myCoachingHandler)
-  .use(coachFormsRoutes);
+  .use(coachFormsRoutes)
+  .use(coachNotificationsRoutes);

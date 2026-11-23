@@ -88,6 +88,13 @@ vi.mock("../../../repositories/personalRecordsRepository", () => ({
   PersonalRecordsRepository: vi.fn().mockImplementation(() => prMocks),
 }));
 
+// PER-117: the coach-event hook (its own behaviour is tested on PGlite in
+// coaching/events/__tests__).
+const coachEventHook = vi.hoisted(() => vi.fn(async () => {}));
+vi.mock("../../../coaching/events/writers", () => ({
+  safeRecordWorkoutCompleted: coachEventHook,
+}));
+
 // Mock WorkoutRepository so the M10.5-sweep-#2 ownership check in the
 // handler can resolve. The handler skips the entitlement gate ONLY when
 // the referenced workout is owned by the caller — `getById` returns the
@@ -229,6 +236,12 @@ describe("sessionsRecordHandler", () => {
     expect(response.status).toBe(201);
     const body = (await response.json()) as { data: { id: string } };
     expect(body.data.id).toBe("server-session-1");
+    // PER-117: one call per completed record, with the server's session id.
+    expect(coachEventHook).toHaveBeenCalledTimes(1);
+    expect(coachEventHook).toHaveBeenCalledWith(
+      "test-user-id",
+      "server-session-1",
+    );
   });
 
   it("accepts the installed app's duplicated 1-10 difficulty payload", async () => {
@@ -499,6 +512,8 @@ describe("sessionsRecordHandler", () => {
       }),
     );
     expect(response.status).toBe(201);
+    // A discarded workout tells no coach anything (PER-117).
+    expect(coachEventHook).not.toHaveBeenCalled();
   });
 
   // ─── Entitlement gate (M10.5) ─────────────────────────────────────
