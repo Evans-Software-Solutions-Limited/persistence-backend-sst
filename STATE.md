@@ -2,7 +2,7 @@
 
 ### 2026-11-23 — BE-G1a: different reps for each set ([PER-111](https://linear.app/evans-software-solutions/issue/PER-111); branch `bradleysimmsevans/per-111-be-g1a-backend-different-reps-for`)
 
-PR __PR__ (open, no auto-merge). Backend only: design G part 1. No mobile,
+PR #552 (open, no auto-merge). Backend only: design G part 1. No mobile,
 web, native or version change. Unblocks PER-139 (APP-G1); PER-112 (BE-G1b)
 starts after this merges and adds the rest of migration 9.
 
@@ -46,7 +46,11 @@ starts after this merges and adds the rest of migration 9.
   round-trips, preservation cases, 1.2.0 fixture, assignment read, two-user
   isolation, variation carry), template tests in
   `social/__tests__/social.integration.test.ts`, unit tests for the rules and
-  the Loadout engine carry. __CHECKS__
+  the Loadout engine carry.
+- **Verified:** prettier:check, typecheck, lint, build; core `test:unit`
+  430 files / 6,242 tests pass, coverage 98.5 / 94.8 / 98.3 / 98.5;
+  `workoutRepository.ts` 97.4 / 94.9 / 96.4 (stmts / branches / funcs).
+  Mobile/web suites not run (untouched).
 - **Not verified:** nothing run against staging or a device; the 1.2.0
   bundle itself wasn't run (contract held via the recorded fixture).
 
