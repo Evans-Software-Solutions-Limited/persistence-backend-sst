@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Navigate,
   useNavigate,
@@ -86,6 +86,55 @@ export function SetupContainer() {
   const [copyBusy, setCopyBusy] = useState(false);
   const [copyError, setCopyError] = useState<string | null>(null);
 
+  // Leaving by a link that doesn't go through `go()` (the rail, the browser's
+  // own navigation) would lose unsaved edits. "Changes save when you move
+  // on", so on unmount every valid unsaved draft is saved in the background,
+  // one after another, each on the newest revision while its section is
+  // unchanged. Best effort: a failure leaves the server as it was.
+  const draftsRef = useRef<Drafts>({});
+  useEffect(() => {
+    draftsRef.current = drafts;
+  }, [drafts]);
+  useEffect(
+    () => () => {
+      const pending = (
+        Object.entries(draftsRef.current) as [SetupSection, Draft][]
+      ).filter(
+        ([s, dr]) => !sameItems(dr.items, dr.base) && !draftError(s, dr.items),
+      );
+      if (pending.length === 0) return;
+      const key = coachKeys.clientProfile(profileId);
+      void (async () => {
+        let latest: ClientProfileDetail | null = null;
+        for (const [s, dr] of pending) {
+          const revision =
+            latest && sameItems(dr.base, itemsOf(latest, s))
+              ? latest.revision
+              : dr.revision;
+          const put = (rev: number) =>
+            api.replaceSection(profileId, s, itemsToSave(s, dr.items), rev);
+          try {
+            latest = await put(revision);
+          } catch (e) {
+            const current =
+              isCoachApiError(e) && e.code === "revision_conflict"
+                ? (e.body?.current as ClientProfileDetail | undefined)
+                : undefined;
+            // Only when this section is still as the draft found it.
+            if (current && sameItems(dr.base, itemsOf(current, s))) {
+              latest = await put(current.revision).catch(() => current);
+            } else if (current) {
+              latest = current;
+            }
+          }
+          if (latest) queryClient.setQueryData(key, latest);
+        }
+        void queryClient.invalidateQueries({ queryKey: key });
+      })();
+    },
+    [api, profileId, queryClient],
+  );
+
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(null), 2000);
@@ -135,12 +184,17 @@ export function SetupContainer() {
   const dirty = draft !== undefined && !sameItems(draft.items, draft.base);
   const editable = detail.status === "invited" || detail.status === "cancelled";
 
-  const dropDraft = (section: SetupSection) =>
+  const dropDraft = (section: SetupSection) => {
+    // Synchronously too, so the unmount save never resends a saved draft.
+    const rest = { ...draftsRef.current };
+    delete rest[section];
+    draftsRef.current = rest;
     setDrafts((d) => {
       const next = { ...d };
       delete next[section];
       return next;
     });
+  };
 
   async function saveCurrent(): Promise<boolean> {
     if (!dirty) {
@@ -306,15 +360,16 @@ export function SetupContainer() {
       })),
   ];
 
+  const backTo = editing
+    ? { to: base, label: detail.displayName }
+    : { to: "/coach/clients", label: "Clients" };
+
   return (
     <>
       <SetupStepView
         clientFirst={clientFirst}
-        backTo={
-          editing
-            ? { to: base, label: detail.displayName }
-            : { to: "/coach/clients", label: "Clients" }
-        }
+        backTo={backTo}
+        onBackLink={() => void go(backTo.to)}
         editing={editing}
         rows={visible.map((s) => {
           const list = s === current ? items : itemsOf(detail, s);

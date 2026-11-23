@@ -68,11 +68,21 @@ export function InviteContainer() {
     // Issuing always expires the live code, so decide from a fresh read,
     // never from data cached on another page (a code issued on another
     // device would otherwise be voided).
-    if (!detailQ.isFetchedAfterMount || detailQ.isFetching) return;
+    // A failed refetch also counts as "fetched after mount": still cached.
+    if (!detailQ.isFetchedAfterMount || detailQ.isFetching || detailQ.isError) {
+      return;
+    }
     if (state !== "none" || !actions.online) return;
     tried.current = true;
     void actions.issue(detail.id);
-  }, [detail, state, actions, detailQ.isFetchedAfterMount, detailQ.isFetching]);
+  }, [
+    detail,
+    state,
+    actions,
+    detailQ.isFetchedAfterMount,
+    detailQ.isFetching,
+    detailQ.isError,
+  ]);
 
   useEffect(() => {
     if (!copied) return;

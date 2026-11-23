@@ -1,7 +1,13 @@
 import type { ReactNode } from "react";
 import type { SetupSection } from "../api/types";
-import { IconCheck, IconChevron, IconCopy, IconEye } from "../ui/icons";
-import { BackLink, Notice, OfflineBanner, Steps, Toast } from "../ui/parts";
+import {
+  IconBack,
+  IconCheck,
+  IconChevron,
+  IconCopy,
+  IconEye,
+} from "../ui/icons";
+import { Notice, OfflineBanner, Steps, Toast } from "../ui/parts";
 
 /**
  * Add client · 2 Set up (C11b): checklist on the left, the chosen section on
@@ -33,6 +39,8 @@ export interface SetupStepViewProps {
   onPreview: () => void;
   onCancel: () => void;
   onBack: () => void;
+  /** The link above the title: saves, then goes to `backTo`. */
+  onBackLink: () => void;
   onSkip: () => void;
   onNext: () => void;
   children: ReactNode;
@@ -43,7 +51,17 @@ export function SetupStepView(p: SetupStepViewProps) {
   const blocked = p.saving || (offline && p.dirty);
   return (
     <>
-      <BackLink to={p.backTo.to} label={p.backTo.label} />
+      {/* Goes through the same save as the footer's Back. */}
+      <button
+        type="button"
+        className="back-link"
+        style={{ background: "none", border: 0, padding: 0, cursor: "pointer" }}
+        onClick={p.onBackLink}
+        disabled={blocked}
+      >
+        <IconBack size={16} />
+        {p.backTo.label}
+      </button>
       <header>
         <h1 className="h1">Set up {p.clientFirst}</h1>
         <span className="sub">

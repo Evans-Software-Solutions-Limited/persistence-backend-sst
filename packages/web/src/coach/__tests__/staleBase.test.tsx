@@ -7,7 +7,14 @@ import { useNavigate } from "react-router";
 import { InvitedClientContainer } from "../invited/InvitedClientContainer";
 import { SetupContainer } from "../setup/SetupContainer";
 import { WhoContainer } from "../who/WhoContainer";
-import { PROFILE_ID, detail, fakeApi, renderCoach, setOnline } from "./helpers";
+import {
+  PROFILE_ID,
+  currentPath,
+  detail,
+  fakeApi,
+  renderCoach,
+  setOnline,
+} from "./helpers";
 
 /**
  * Inspector Brad, sweep 4 on #549: a refetch while the coach is editing (e.g.
@@ -307,5 +314,103 @@ describe("a 409 from a change outside what the coach edited (sweep 8)", () => {
     expect(api.patchProfile.mock.calls[1][2]).toBe(7);
     expect(await screen.findByText("Mine")).toBeTruthy();
     expect(screen.queryByText(/Updated on another device/)).toBeNull();
+  });
+});
+
+describe("leaving set-up saves (sweep 9)", () => {
+  const SETUP_PATH = "/coach/clients/invited/:profileId/setup/:section?";
+  const welcome = `/coach/clients/invited/${PROFILE_ID}/setup/welcome_message`;
+
+  it("the link above the title saves, like the footer's Back", async () => {
+    const api = fakeApi({
+      replaceSection: vi.fn().mockResolvedValue(detail({ revision: 4 })),
+    });
+    renderCoach(<SetupContainer />, {
+      route: `${welcome}?from=invited`,
+      path: SETUP_PATH,
+      api,
+    });
+    fireEvent.change(await screen.findByLabelText("Message"), {
+      target: { value: "Hi Lena" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Lena Ortiz" }));
+    await waitFor(() =>
+      expect(api.replaceSection).toHaveBeenCalledWith(
+        PROFILE_ID,
+        "welcome_message",
+        [{ refId: null, sortOrder: 0, config: { text: "Hi Lena" } }],
+        3,
+      ),
+    );
+    await waitFor(() =>
+      expect(currentPath()).toBe(`/coach/clients/invited/${PROFILE_ID}`),
+    );
+  });
+
+  it("leaving another way (the rail) saves the unsaved edit in the background", async () => {
+    const api = fakeApi({
+      replaceSection: vi.fn().mockResolvedValue(detail({ revision: 4 })),
+    });
+    const { unmount } = renderCoach(<SetupContainer />, {
+      route: welcome,
+      path: SETUP_PATH,
+      api,
+    });
+    fireEvent.change(await screen.findByLabelText("Message"), {
+      target: { value: "Hi Lena" },
+    });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    unmount();
+    await waitFor(() =>
+      expect(api.replaceSection).toHaveBeenCalledWith(
+        PROFILE_ID,
+        "welcome_message",
+        [{ refId: null, sortOrder: 0, config: { text: "Hi Lena" } }],
+        3,
+      ),
+    );
+  });
+
+  it("an unsaved but invalid draft isn't sent on the way out", async () => {
+    const api = fakeApi();
+    const { unmount } = renderCoach(<SetupContainer />, {
+      route: `/coach/clients/invited/${PROFILE_ID}/setup/nutrition_target`,
+      path: SETUP_PATH,
+      api,
+    });
+    fireEvent.click(await screen.findByRole("radio", { name: "You set them" }));
+    fireEvent.change(screen.getByLabelText("kcal a day"), {
+      target: { value: "2100" },
+    });
+    unmount();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(api.replaceSection).not.toHaveBeenCalled();
+  });
+});
+
+describe("invite step after a failed refetch (sweep 9)", () => {
+  it("doesn't issue from cached data when the fresh read failed", async () => {
+    const api = fakeApi({
+      profileDetail: vi
+        .fn()
+        .mockRejectedValue(
+          new CoachApiError(503, { code: "auth_unavailable" }),
+        ),
+    });
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    queryClient.setQueryData(key, detail());
+    renderCoach(<InviteContainer />, {
+      route: `/coach/clients/invited/${PROFILE_ID}/invite`,
+      path: "/coach/clients/invited/:profileId/invite",
+      api,
+      queryClient,
+    });
+    await waitFor(() => expect(api.profileDetail).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 30));
+    expect(api.issueInvite).not.toHaveBeenCalled();
   });
 });
