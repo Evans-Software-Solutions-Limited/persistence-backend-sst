@@ -457,6 +457,25 @@ describe("AddToMealContainer", () => {
     expect(mockBack).toHaveBeenCalled();
   });
 
+  it("a page opened on a meal's local id follows it once it has synced (Inspector Brad #550)", async () => {
+    mockParams = { meal: "local-k9" };
+    const { Wrapper, storage, api } = setup();
+    const synced = [
+      ...MEALS,
+      {
+        ...MEALS[1]!,
+        id: "srv-9",
+        name: "Supper",
+        sortOrder: 3,
+        clientRequestId: "k9",
+      },
+    ];
+    storage.cacheUserMeals(USER, synced);
+    api.userMeals = synced;
+    render(<AddToMealContainer />, { wrapper: Wrapper });
+    await waitFor(() => expect(probe.add?.mealName).toBe("Supper"));
+  });
+
   it("labels earlier days", () => {
     expect(earlierDayLabel(YESTERDAY, TODAY)).toBe("Yesterday");
     expect(earlierDayLabel("2026-11-18", "2026-11-23")).toMatch(/^Wed 18$/);

@@ -55,6 +55,21 @@ export function syntheticDefaultUserMeals(): UserMeal[] {
   }));
 }
 
+/**
+ * Find a meal by id, following a meal added offline: once its PUT syncs, a
+ * `local-<key>` id held by an open screen or drawer resolves to the server's
+ * meal with that `clientRequestId` (Inspector Brad, #550).
+ */
+export function findUserMeal(
+  meals: readonly UserMeal[],
+  id: string,
+): UserMeal | undefined {
+  const exact = meals.find((m) => m.id === id);
+  if (exact || !isLocalUserMealId(id)) return exact;
+  const key = id.slice("local-".length);
+  return meals.find((m) => m.clientRequestId === key);
+}
+
 /** Active meals in display order. */
 export function activeUserMeals(meals: readonly UserMeal[]): UserMeal[] {
   return meals

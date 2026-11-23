@@ -17,6 +17,7 @@ import {
 } from "@/domain/services";
 import {
   earlierDayGroups,
+  findUserMeal,
   logTargetForUserMeal,
   relogInput,
   type EarlierDay,
@@ -66,7 +67,7 @@ export function AddToMealContainer() {
 
   const mealKey = typeof params.meal === "string" ? params.meal : "";
   const meal =
-    userMeals.meals.find((m) => m.id === mealKey) ??
+    findUserMeal(userMeals.meals, mealKey) ??
     userMeals.meals.find((m) => `slot:${m.logSlot}` === mealKey) ??
     userMeals.meals[0];
 

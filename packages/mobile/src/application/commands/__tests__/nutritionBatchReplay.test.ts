@@ -292,6 +292,25 @@ describe("offline logging and batch replay (PER-132)", () => {
     expect(storage.getPendingMutations()).toHaveLength(0);
   });
 
+  it("a drawer still holding a synced meal's local id logs under the server id (Inspector Brad #550)", async () => {
+    const next = addUserMeal(seeded(), "Supper", "k9", "2026-11-23T00:00:00Z");
+    saveUserMealsCommand({ storage, userId: USER }, next);
+    await processSyncQueue(storage, auth, BASE); // the PUT syncs and swaps
+    const created = server.meals.find((m) => m.clientRequestId === "k9")!;
+    // The drawer was opened before the swap and still holds `local-k9`.
+    log({ mealSlot: "snack", userMealId: "local-k9" });
+    expect(
+      JSON.parse(storage.getPendingMutations()[0]!.payload).userMealId,
+    ).toBe(created.id);
+    await processSyncQueue(storage, auth, BASE);
+    expect(server.rows[0]!.body.userMealId).toBe(created.id);
+    // An unknown local id is left alone (it waits for its own PUT).
+    log({ mealSlot: "snack", userMealId: "local-nope" });
+    expect(
+      JSON.parse(storage.getPendingMutations()[0]!.payload).userMealId,
+    ).toBe("local-nope");
+  });
+
   it("a per-entry error fails only that entry; the rest are logged", async () => {
     log({ userMealId: "um-l" });
     log({ userMealId: "00000000-dead-4000-8000-000000000000" });

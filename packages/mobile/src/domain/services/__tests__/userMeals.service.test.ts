@@ -6,6 +6,7 @@ import {
   cleanUserMealName,
   defaultUserMealIdForSlot,
   earlierDayGroups,
+  findUserMeal,
   groupEntriesByUserMeal,
   isLocalUserMealId,
   isSyntheticUserMealId,
@@ -76,6 +77,20 @@ const entry = (
   aiConfidence: null,
   customName: null,
   ...extra,
+});
+
+describe("findUserMeal", () => {
+  it("finds by id, and follows a local id to its synced meal by key", () => {
+    const list = [
+      meal("srv-9", "Supper", "snack", 0, null, { clientRequestId: "k9" }),
+      meal("local-k2", "Brunch", "lunch", 1, null, { clientRequestId: "k2" }),
+    ];
+    expect(findUserMeal(list, "srv-9")?.name).toBe("Supper");
+    expect(findUserMeal(list, "local-k9")?.id).toBe("srv-9");
+    expect(findUserMeal(list, "local-k2")?.id).toBe("local-k2");
+    expect(findUserMeal(list, "local-zz")).toBeUndefined();
+    expect(findUserMeal(list, "srv-x")).toBeUndefined();
+  });
 });
 
 describe("ids", () => {

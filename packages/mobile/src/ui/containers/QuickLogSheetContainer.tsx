@@ -5,6 +5,7 @@ import { useLogEntry } from "@/ui/hooks/useLogEntry";
 import { useUserMeals } from "@/ui/hooks/useUserMeals";
 import { loggedAtNoonUtc } from "@/shared/utils";
 import {
+  findUserMeal,
   logTargetForUserMeal,
   quickLogDraft,
   type QuickLogValues,
@@ -55,7 +56,7 @@ export function QuickLogSheetContainer() {
   }, [visible]);
 
   const draft = useMemo(() => quickLogDraft(values), [values]);
-  const meal = meals.find((m) => m.id === mealKey) ?? meals[0];
+  const meal = findUserMeal(meals, mealKey) ?? meals[0];
 
   const onClose = useCallback(() => {
     if (visible) close();
