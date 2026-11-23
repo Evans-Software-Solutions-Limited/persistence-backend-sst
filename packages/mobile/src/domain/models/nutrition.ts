@@ -218,7 +218,8 @@ export type LogEntryInput = {
    * `slot:` id (see `isSyntheticUserMealId`); a `local-…` id is allowed and is
    * swapped to the server id before the entry syncs.
    */
-  userMealId?: string;  /**
+  userMealId?: string;
+  /**
    * PER-133: the list meal plan (and plan meal) this entry was added from.
    * Server ids only; provenance, never macros.
    */

@@ -10,6 +10,7 @@ import {
   IconPlus,
   IconSparkles,
 } from "@/ui/components/icons";
+import { toneHex } from "@/ui/components/foundation/tones";
 import type { TargetComparison } from "@/domain/services/nutritionPlans.service";
 
 /**
@@ -22,9 +23,9 @@ import type { TargetComparison } from "@/domain/services/nutritionPlans.service"
  * Pure: <PlanTabContainer> builds the view model.
  */
 
-export const PLAN_CYAN = "#22D3EE";
-export const COACH_VIOLET = "#A78BFA";
-const GOLD = "#F5C518";
+export const PLAN_CYAN = toneHex("primary").base;
+export const COACH_VIOLET = toneHex("trainer").base;
+const GOLD = toneHex("gold").base;
 const MACRO = {
   C: { bg: "rgba(34,211,238,0.12)", fg: "#22D3EE" },
   F: { bg: "rgba(251,146,60,0.12)", fg: "#FB923C" },

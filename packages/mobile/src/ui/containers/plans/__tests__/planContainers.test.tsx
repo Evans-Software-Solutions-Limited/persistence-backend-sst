@@ -152,7 +152,7 @@ jest.mock("@/ui/hooks/useGetNutritionTarget", () => ({
   useGetNutritionTarget: () => ({ data: mockTarget }),
 }));
 
-const MEALS: UserMeal[] = (
+const mockMeals: UserMeal[] = (
   [
     ["um-b", "Breakfast", "breakfast", "breakfast"],
     ["um-l", "Lunch", "lunch", "lunch"],
@@ -168,20 +168,22 @@ const MEALS: UserMeal[] = (
   archivedAt: null,
   updatedAt: "2026-11-20T00:00:00.000Z",
 }));
+const mockMealList = [MEAL];
+const mockRecipeList = [RECIPE];
 const mockSaveMeals = jest.fn(async () => true);
 jest.mock("@/ui/hooks/useUserMeals", () => ({
   useUserMeals: () => ({
-    meals: MEALS,
+    meals: mockMeals,
     isPlaceholder: false,
     save: mockSaveMeals,
     reload: jest.fn(),
   }),
 }));
 jest.mock("@/ui/hooks/useGetMeals", () => ({
-  useGetMeals: () => ({ data: [MEAL] }),
+  useGetMeals: () => ({ data: mockMealList }),
 }));
 jest.mock("@/ui/hooks/useGetRecipes", () => ({
-  useGetRecipes: () => ({ data: [RECIPE] }),
+  useGetRecipes: () => ({ data: mockRecipeList }),
 }));
 
 let mockCache: NutritionPlansCache = {
@@ -191,8 +193,12 @@ let mockCache: NutritionPlansCache = {
   conflictPlanIds: [],
 };
 let mockPlansLoading = false;
-const mockCreate = jest.fn(async (p: NutritionPlan) => p as NutritionPlan | null);
-const mockSavePlan = jest.fn(async (p: NutritionPlan) => p as NutritionPlan | null);
+const mockCreate = jest.fn(
+  async (p: NutritionPlan) => p as NutritionPlan | null,
+);
+const mockSavePlan = jest.fn(
+  async (p: NutritionPlan) => p as NutritionPlan | null,
+);
 const mockRemove = jest.fn(async () => {});
 const mockDuplicate = jest.fn(async (p: NutritionPlan) => ({
   ...p,
@@ -211,7 +217,11 @@ jest.mock("@/ui/hooks/useNutritionPlans", () => ({
   usePlansShoppingList: () => ({ setPlanIncluded: mockSetPlanIncluded }),
 }));
 
-const mockManualGate = { allowed: true, isResolved: true, onUpgrade: jest.fn() };
+const mockManualGate = {
+  allowed: true,
+  isResolved: true,
+  onUpgrade: jest.fn(),
+};
 jest.mock("@/ui/hooks/useManualMealPlansGate", () => ({
   useManualMealPlansGate: () => mockManualGate,
 }));
@@ -292,7 +302,8 @@ const coachPlan = (): NutritionPlan => ({ ...myPlan(), id: "c1", name: "Cut" });
 
 beforeEach(() => {
   jest.clearAllMocks();
-  for (const k of Object.keys(probe)) (probe as Record<string, unknown>)[k] = null;
+  for (const k of Object.keys(probe))
+    (probe as Record<string, unknown>)[k] = null;
   mockParams = {};
   mockTarget = TARGET;
   mockPlansLoading = false;
@@ -397,9 +408,11 @@ describe("NewPlanContainer (N28 → N29 → N33)", () => {
     act(() => b.onBack());
     probe.builder = null;
     act(() => probe.newPlan!.onContinue());
-    act(() => usePlanDraft.getState().addItems(draft().meals[0].id, [
-      planItemFromFood("x", FOOD, 1),
-    ]));
+    act(() =>
+      usePlanDraft
+        .getState()
+        .addItems(draft().meals[0].id, [planItemFromFood("x", FOOD, 1)]),
+    );
     expect(probe.builder!.ctaLabel).toBe("Save plan");
     await act(async () => probe.builder!.onSave());
     expect(mockCreate).toHaveBeenCalledWith(
@@ -409,7 +422,10 @@ describe("NewPlanContainer (N28 → N29 → N33)", () => {
     expect(s).toMatchObject({ name: "Rest day", mealCount: 2, kcal: 198 });
 
     await act(async () => s.onShoppingList());
-    expect(mockSetPlanIncluded).toHaveBeenCalledWith(draft()?.id ?? expect.any(String), true);
+    expect(mockSetPlanIncluded).toHaveBeenCalledWith(
+      expect.stringMatching(/^local-/),
+      true,
+    );
     expect(mockPush).toHaveBeenCalledWith("/(app)/fuel/plans-shopping");
   });
 
@@ -417,9 +433,11 @@ describe("NewPlanContainer (N28 → N29 → N33)", () => {
     render(<NewPlanContainer />);
     act(() => probe.newPlan!.onName("Rest day"));
     act(() => probe.newPlan!.onContinue());
-    act(() => usePlanDraft.getState().addItems(draft().meals[0].id, [
-      planItemFromFood("x", FOOD, 1),
-    ]));
+    act(() =>
+      usePlanDraft
+        .getState()
+        .addItems(draft().meals[0].id, [planItemFromFood("x", FOOD, 1)]),
+    );
     await act(async () => probe.builder!.onSave());
     act(() => probe.saved!.onViewInPlan());
     expect(mockBack).toHaveBeenCalled();
@@ -431,9 +449,11 @@ describe("NewPlanContainer (N28 → N29 → N33)", () => {
     render(<NewPlanContainer />);
     act(() => probe.newPlan!.onName("Rest day"));
     act(() => probe.newPlan!.onContinue());
-    act(() => usePlanDraft.getState().addItems(draft().meals[0].id, [
-      planItemFromFood("x", FOOD, 1),
-    ]));
+    act(() =>
+      usePlanDraft
+        .getState()
+        .addItems(draft().meals[0].id, [planItemFromFood("x", FOOD, 1)]),
+    );
     await act(async () => probe.builder!.onSave());
     expect(probe.builder!.notice).toBe(SAVE_FAILED);
     expect(probe.saved).toBeNull();
@@ -444,30 +464,37 @@ describe("NewPlanContainer (N28 → N29 → N33)", () => {
       YESTERDAY,
       fuelDay(YESTERDAY, [
         entry("e1", { foodId: "f1", kcal: 198 }),
-        entry("e2", { mealSlot: "lunch", userMealId: "um-l", customName: "Soup" }),
+        entry("e2", {
+          mealSlot: "lunch",
+          userMealId: "um-l",
+          customName: "Soup",
+        }),
       ]),
     );
     mockParams = { from: "day" };
     render(<NewPlanContainer />);
-    expect(probe.calendar!.visible).toBe(true);
+    expect(probe.newPlan!.calendarVisible).toBe(true);
     expect(probe.newPlan!.options[1].selected).toBe(true);
 
-    act(() => probe.calendar!.onSelectDate(addDaysISO(TODAY, -5)));
+    act(() => probe.newPlan!.onPickDay(addDaysISO(TODAY, -5)));
     expect(probe.newPlan!.options[1].sub).toBe(DAY_NOT_ON_PHONE);
     act(() => probe.newPlan!.onName("Copy"));
     expect(probe.newPlan!.canContinue).toBe(false);
 
     act(() => probe.newPlan!.onOption("day"));
-    act(() => probe.calendar!.onSelectDate(YESTERDAY));
+    act(() => probe.newPlan!.onPickDay(YESTERDAY));
     expect(probe.newPlan!.options[1].sub).toMatch(
       / · copies what you ate, then edit$/,
     );
     act(() => probe.newPlan!.onContinue());
     const meals = draft().meals;
     expect(meals.map((m) => m.name)).toEqual(["Breakfast", "Lunch", "Snacks"]);
-    expect(meals[0].items[0]).toMatchObject({ kind: "food", name: "Protein bar" });
+    expect(meals[0].items[0]).toMatchObject({
+      kind: "food",
+      name: "Protein bar",
+    });
     expect(meals[1].items[0]).toMatchObject({ kind: "custom", name: "Soup" });
-    act(() => probe.calendar!.onClose());
+    act(() => probe.newPlan!.onCloseCalendar());
   });
 
   it("?from=plan picks one of my plans and copies it", () => {
@@ -531,11 +558,16 @@ describe("PlanEditContainer + builder (N34, N31)", () => {
     expect(b.mode).toBe("edit");
     expect(b.ctaLabel).toBe("Save changes");
     expect(b.canSave).toBe(true);
-    expect(b.meals[0]).toMatchObject({ name: "Breakfast", kcalText: "198 kcal" });
+    expect(b.meals[0]).toMatchObject({
+      name: "Breakfast",
+      kcalText: "198 kcal",
+    });
     expect(b.meals[1].kcalText).toBe("");
     expect(b.summary.comparison.state).toBe("to_plan");
     await act(async () => probe.builder!.onSave());
-    expect(mockSavePlan).toHaveBeenCalledWith(expect.objectContaining({ id: "p1" }));
+    expect(mockSavePlan).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "p1" }),
+    );
     expect(mockBack).toHaveBeenCalled();
   });
 
@@ -598,7 +630,12 @@ describe("PlanEditContainer + builder (N34, N31)", () => {
     days.set(
       YESTERDAY,
       fuelDay(YESTERDAY, [
-        entry("e2", { mealSlot: "lunch", userMealId: "um-l", recipeId: "r1" }),
+        entry("e2", {
+          mealSlot: "lunch",
+          userMealId: "um-l",
+          recipeId: "r1",
+          customName: null,
+        }),
       ]),
     );
     act(() => probe.builder!.onFromPastDay("pm-l"));
@@ -712,8 +749,8 @@ describe("PlanAddFoodContainer (N30)", () => {
       YESTERDAY,
       fuelDay(YESTERDAY, [
         entry("e1", { foodId: "f1", kcal: 198 }),
-        entry("e2", { mealId: "m1", kcal: 520 }),
-        entry("e3", { recipeId: "r1", kcal: 612 }),
+        entry("e2", { mealId: "m1", kcal: 520, customName: null }),
+        entry("e3", { recipeId: "r1", kcal: 612, customName: null }),
         entry("e4", { foodId: "gone", kcal: 50, servings: 2 }),
         entry("e5", { kcal: 80, customName: "Apple" }),
       ]),
@@ -754,7 +791,12 @@ describe("PlanAddFoodContainer (N30)", () => {
     const view = render(<PlanAddFoodContainer />);
     act(() => probe.add!.onTab("meals"));
     expect(probe.add!.rows).toEqual([
-      { key: "m:m1", name: MEAL.name, sub: "My meal · 520 kcal", picked: false },
+      {
+        key: "m:m1",
+        name: MEAL.name,
+        sub: "My meal · 520 kcal",
+        picked: false,
+      },
     ]);
     act(() => probe.add!.onTab("foods"));
     expect(probe.add!.rows.map((r) => r.key)).toEqual(["f:f1"]);
@@ -771,7 +813,10 @@ describe("PlanAddFoodContainer (N30)", () => {
     expect(probe.add!.emptyText).toBe("Searching…");
     mockSearch = { results: [{ ...FOOD, id: "f9" }], isSearching: false };
     view.rerender(<PlanAddFoodContainer />);
-    expect(probe.add!.rows[0]).toMatchObject({ key: "f:f9", name: "Protein bar" });
+    expect(probe.add!.rows[0]).toMatchObject({
+      key: "f:f9",
+      name: "Protein bar",
+    });
     act(() => probe.add!.onToggle("f:f9"));
     act(() => probe.add!.onAdd());
     expect(draft().meals[0].items[1].foodId).toBe("f9");
@@ -839,5 +884,64 @@ describe("PlanAddFoodContainer (N30)", () => {
     act(() => probe.add!.onSelectMeal("pm-l"));
     expect(probe.add!.mealName).toBe("Lunch");
     expect(probe.add!.mealPickerVisible).toBe(false);
+  });
+});
+
+describe("small paths", () => {
+  it("closes sheets and pickers on the Add page", () => {
+    usePlanDraft.getState().start("edit", myPlan());
+    mockParams = { meal: "pm-b" };
+    render(<PlanAddFoodContainer />);
+    expect(probe.add!.rows).toEqual([]);
+    act(() => probe.add!.onOpenMealPicker());
+    act(() => probe.add!.onCloseMealPicker());
+    expect(probe.add!.mealPickerVisible).toBe(false);
+    act(() => probe.add!.onTab("meals"));
+    act(() => probe.add!.onRow("m:m1"));
+    act(() => probe.amount!.onChip(0.5));
+    expect(probe.amount!.amount).toBe("0.5");
+    expect(probe.amount!.chips.find((c) => c.selected)?.label).toBe("½");
+    act(() => probe.amount!.onRemove());
+    expect(probe.amount!.visible).toBe(false);
+    act(() => probe.add!.onRow("m:m1"));
+    act(() => probe.amount!.onClose());
+    act(() => probe.add!.onRow("nope"));
+    expect(probe.amount!.visible).toBe(false);
+    act(() => probe.add!.onQuickLog());
+    act(() => probe.quick!.onAdd());
+    act(() => probe.quick!.onClose());
+    expect(probe.quick!.visible).toBe(false);
+    act(() => probe.add!.onBack());
+    expect(mockBack).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to the first meal for an unknown ?meal", () => {
+    usePlanDraft.getState().start("edit", myPlan());
+    mockParams = { meal: "zzz" };
+    render(<PlanAddFoodContainer />);
+    expect(probe.add!.mealName).toBe("Breakfast");
+  });
+
+  it("N28b guards: unknown rows, a blank rename and a blank meal do nothing", () => {
+    render(<NewPlanContainer />);
+    act(() => probe.newPlan!.onEditMeals());
+    act(() => probe.mealsSheet!.onToggle("zzz"));
+    act(() => probe.mealsSheet!.onRename("zzz", "X"));
+    act(() => probe.mealsSheet!.onAdd("   "));
+    expect(mockSaveMeals).not.toHaveBeenCalled();
+    act(() => probe.mealsSheet!.onRename("um-b", "Brekkie"));
+    act(() => probe.mealsSheet!.onReorder(["um-l", "um-b", "um-s"]));
+    act(() => probe.mealsSheet!.onAdd("Supper"));
+    expect(mockSaveMeals).toHaveBeenCalledTimes(3);
+    act(() => probe.mealsSheet!.onClose());
+    expect(probe.mealsSheet!.visible).toBe(false);
+  });
+
+  it("closes the builder's options", () => {
+    mockParams = { id: "p1" };
+    render(<PlanEditContainer />);
+    act(() => probe.builder!.onOptions());
+    act(() => probe.options!.onClose());
+    expect(probe.options!.view).toBeNull();
   });
 });

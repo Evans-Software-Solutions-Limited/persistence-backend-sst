@@ -271,9 +271,39 @@ describe("PlanMealsSheetPresenter (N28b)", () => {
     expect(props.onClose).toHaveBeenCalled();
   });
 
+  it("moves rows with Move up / Move down and ignores moves off the ends", () => {
+    const { getByTestId, props } = render();
+    fireEvent(getByTestId("reorder-2"), "accessibilityAction", {
+      nativeEvent: { actionName: "decrement" },
+    });
+    expect(props.onReorder).toHaveBeenLastCalledWith(["b", "a"]);
+    fireEvent(getByTestId("reorder-1"), "accessibilityAction", {
+      nativeEvent: { actionName: "decrement" },
+    });
+    fireEvent(getByTestId("reorder-2"), "accessibilityAction", {
+      nativeEvent: { actionName: "increment" },
+    });
+    expect(props.onReorder).toHaveBeenCalledTimes(1);
+  });
+
+  it("cancels a blank new meal and closes from the X", () => {
+    const { getByTestId, props } = render();
+    fireEvent.press(getByTestId("plan-meals-sheet-add"));
+    const add = getByTestId("plan-meals-sheet-new-name");
+    fireEvent(add, "blur");
+    expect(props.onAdd).not.toHaveBeenCalled();
+    fireEvent.press(getByTestId("plan-meals-sheet-close"));
+    expect(props.onClose).toHaveBeenCalled();
+  });
+
   it("is read-only with placeholders", () => {
-    const { getByTestId, queryByTestId } = render({ editable: false });
+    const { getByTestId, queryByTestId, props } = render({ editable: false });
     expect(getByTestId("plan-meals-sheet-offline")).toBeTruthy();
+    act(() => {
+      reorderableTestApi.dragStart("a");
+      reorderableTestApi.drop("a", 1, { a: 1, b: 0 });
+    });
+    expect(props.onReorder).not.toHaveBeenCalled();
     expect(queryByTestId("plan-meal-rename-a")).toBeNull();
   });
 });

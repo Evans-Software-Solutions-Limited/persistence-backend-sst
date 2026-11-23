@@ -112,12 +112,22 @@ export function PlanSwitchSheetPresenter({
     <BottomSheet
       visible={visible}
       onClose={onClose}
-      title="Your plans"
       height="content"
       scrollable={false}
       testID={testID}
     >
       <View gap={14}>
+        {/* A "content" sheet doesn't draw its `title`, so the body does. */}
+        <Text
+          fontFamily="$display"
+          fontSize={22}
+          lineHeight={28}
+          fontWeight="700"
+          color="$text"
+          accessibilityRole="header"
+        >
+          Your plans
+        </Text>
         {groups.map((g) => (
           <View key={g.key} gap={4} testID={`${testID}-group-${g.key}`}>
             <Eyebrow

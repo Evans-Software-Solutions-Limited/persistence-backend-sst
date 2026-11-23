@@ -3,8 +3,10 @@ import { router, type Href } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
-import { useNutritionPlans } from "@/ui/hooks/useNutritionPlans";
-import { usePlansShoppingList } from "@/ui/hooks/useNutritionPlans";
+import {
+  useNutritionPlans,
+  usePlansShoppingList,
+} from "@/ui/hooks/useNutritionPlans";
 import { useUserMeals } from "@/ui/hooks/useUserMeals";
 import { useMealprintGate } from "@/ui/hooks/useMealprintGate";
 import { useManualMealPlansGate } from "@/ui/hooks/useManualMealPlansGate";

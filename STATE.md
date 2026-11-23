@@ -1,5 +1,54 @@
 # Project memory · persistence-backend-sst
 
+### 2026-11-23 — APP-D2: athlete Plan tab (mine and from coaches), New plan, Meals tab, shopping list ([PER-133](https://linear.app/evans-software-solutions/issue/PER-133); branch `bradleysimmsevans/per-133-app-d2-athlete-plan-tab-mine-and`)
+
+Mobile only: no backend, migration, native or version change. Uses the merged
+PER-118 routes (`/nutrition/meal-plans*`, `/nutrition/shopping-list*`) and
+PER-109/132's `/nutrition/entries/batch` replay. Ships in the next store
+release, reviewed on staging.
+
+- **Data layer:** `domain/models/nutritionPlans.ts`,
+  `domain/services/nutritionPlans.service.ts` (Target · Planned · To plan
+  against the person's OWN target, items, drafts, ?since= merge, local-intent
+  overlay, plan → log entries), `application/commands/nutritionPlans.command.ts`.
+  Two new SQLite tables `cached_nutrition_plans` and `cached_plans_shopping`
+  (CREATE TABLE IF NOT EXISTS, no schema-version bump); StoragePort
+  `get/cacheNutritionPlans`, `swapLocalNutritionPlanId`,
+  `get/cachePlansShopping`; ApiPort `getNutritionPlans(since)`,
+  `getPlansShoppingList()`. Warmed in `warmOfflineData`.
+- **Queue entities:** `nutrition_plan` (create/duplicate with local id +
+  Idempotency-Key; PUT with `expectedRevision`, folded edits; DELETE),
+  `nutrition_plan_assignment` (added/dismissed/seenRevision folded per plan),
+  `shopping_list_plan`. `sync.command.ts` gained two hooks: a synced plan
+  reply swaps the local id and adopts the server copy (later PUTs move to the
+  new revision); a PUT 409 keeps the server's `current`, flags the plan
+  (`conflictPlanIds` → "changed on another device" note) and resolves the
+  row; a 409 that IS our own committed edit (lost reply) is not a conflict.
+- **Add to today:** `addPlanToDayCommand` builds entries from the cached plan
+  (item macros, Your meal by name else slot default, `sourcePlanId` /
+  `sourcePlanMealId` for server ids only) and logs each through
+  `logEntryCommand`, so PER-132's batch replay sends them with their own keys.
+  Logged food keeps its own macros; a coach edit only changes the plan.
+- **Screens:** Fuel sections now switch in place (`FuelContainer` section
+  state). Plan = `PlanTabContainer`/`PlanTabPresenter` (N6/N8/N10), root
+  sheets `PlanSheetsContainer` (N7 Your plans, C6 coach plan with Not now /
+  Add to my plans; `state/plan-sheets.ts`). Builder (N28/N28b/N29/N32/N34/
+  N30/N31/N33) in `ui/containers/plans/*`, `ui/presenters/fuel/plans/*`,
+  `state/plan-draft.ts`, routes `fuel/plan-new|plan-edit|plan-add`. Meals tab
+  `MealsTabContainer` (N11/N12) + `LogMealSheet*` (N14) + `AddToPlanSheet*`,
+  wired into the existing meal/recipe detail screens. Shopping list
+  `PlansShoppingListContainer` (N23), route `fuel/plans-shopping`.
+- **Gate:** `useManualMealPlansGate` (Premium, Premium+, coach tiers) gates
+  New plan only; Free can receive, view, duplicate and log coach plans.
+  `liveTierName` added to `useMealprintGate.ts`.
+- **Tests:** offline add-to-today with replay and a lost reply (no
+  duplicates), PUT 409, Free user receiving a coach plan, a coach edit not
+  changing logged food, real-SQLite id swap, hooks, presenters, containers.
+- **Not verified:** nothing run on a device or against staging.
+- **Found, not fixed:** `BottomSheet` with `height="content"` never draws
+  `title`; PER-132's Your meals sheet passes one. PER-133's short sheets draw
+  their own title.
+
 ### 2026-11-23 — APP-D1: Log per-meal calories, Your meals, full-page Add to a meal, offline batch logging ([PER-132](https://linear.app/evans-software-solutions/issue/PER-132); branch `bradleysimmsevans/per-132-app-d1-athlete-log-per-meal`)
 
 PR #550 (open, no auto-merge). Mobile only: no backend, migration, native
@@ -234,108 +283,3 @@ staging.
   - Not changed (outside the ticket, flagged to Brad): `admin/adminAuth.ts`
     Sign out also uses GoTrue's default global scope.
 
-### 2026-11-23 — BE-C2: coach events, Today, notifications, quiet hours and the 15-minute scheduler ([PER-117](https://linear.app/evans-software-solutions/issue/PER-117); branch `bradleysimmsevans/per-117-be-c2-backend-coach-events-today`)
-
-PR #548 (open, no auto-merge). Linear "Backend design C", D2 (scheduler) and
-D4; covers PER-93 (coach notification settings). Backend only; no app UI or native change. Ships in the
-next store release, reviewed on staging.
-
-- **Migration** `20261123120117_coach_events_notifications.sql` (+ rollback):
-  `coach_events` (unique `(trainer_id, dedupe_key)`; `kind` validated in code;
-  `push_state` none/pending/held/sent/skipped; `updated_at` for `?since=`),
-  `coach_notification_settings` (trainer PK, `channels` jsonb, quiet hours,
-  revision), `coach_scheduler_runs` (claims, PK `(job, run_key)`),
-  `notification_type` += `coach_event`, `form_request`, `form_reminder`.
-  RLS on, no policies. **No existing table or column changes.** ⚠ Migrate
-  before deploy: accept, form responses and finished workouts now write
-  `coach_events` (the session hook swallows errors; accept and form submit
-  would 500 without the table).
-- **Events** (`coaching/events/`): `recordCoachEvent` decides the push at
-  write time: client muted → `skipped`; `everything` → push every kind;
-  else the coach's channel or the default (`workout_completed` defaults to
-  in-app only, the rest push); quiet hours (coach's `profiles.timezone`,
-  wraps midnight) → `held`. `deliverCoachEvents` claims `pending → sent`
-  before pushing. Coach pushes are `coach_event` rows in the coach's own inbox
-  with deep link `persistencemobile://clients` (1.2.0 routes it).
-- **Writers, one call each in existing paths:** `PATCH /sessions/:id` →
-  completed and `POST /sessions/record` (not replays/cancelled) call
-  `safeRecordWorkoutCompleted` after commit: one `workout_completed` per active
-  coach (rating 1–5, difficulty 1–10, note), plus `record_hit` when the
-  session's sets hold current PRs; skipped for workouts before that coach's
-  `activated_at`. `submitResponse` → `form_completed` / `check_in_completed`
-  (weekly/daily), pushed after commit. `acceptPersonalCode` →
-  `client_accepted` with **no push** (the accept handler already pushes
-  "Client accepted"); `trainersRespondToRequestHandler` → `client_accepted`
-  (pushed by the next tick). Scheduler: `form_missed`, `invite_expired`
-  (personal code past `expires_at`, profile still invited),
-  `programme_ending` (assignment `end_date` within 7 days, assigned by an
-  active coach; dateless programmes never raise it), `training_behind`
-  (`computeAdherence`, full 7-day window only, at most once per client per 7
-  days). No response shape changed.
-- **Scheduler** `coachSchedulerCron` (`infra/api.ts`, `rate(15 minutes)`,
-  300 s timeout, error + heartbeat alarms in `infra/monitoring.ts`) →
-  `coaching/scheduler/coachScheduler.ts`. Each job claims `(job, slot)`
-  (daily jobs: UTC date, from 08:00 UTC) and stamps `finished_at` when done;
-  a failed job gives its claim back and the cron throws so the alarm fires;
-  an unfinished claim older than 10 min (a run killed at the Lambda timeout)
-  is taken over. Every job pages through all its rows (keyset), so nothing
-  past a page is skipped; sizes in `scheduler/jobs/pageSizes.ts`. Jobs (`scheduler/jobs/index.ts`):
-  `form_periods` (weekly/daily in the athlete's zone, first tick at or after
-  the time, within 6 h, never before the client's `activated_at` or the rule's
-  `created_at`; a new period marks the previous pending one missed),
-  `missed_forms`, `form_pushes` (announce each new request once — any trigger,
-  so on_join/once/on_end forms get a push too, up to 15 min late — and
-  reminders via `reminders_sent`, one push per tick, none while the rule or
-  client is paused), `invite_expiry`, `programme_ending` (daily),
-  `training_behind` (daily), `coach_pushes` (pending sweep after 1 min; quiet
-  release, one push per client, "Sam: 3 updates"). Bounded (500–2000 rows per
-  job). **PER-120 / PER-123 register a job by adding it to that array.**
-- **Generators:** `insertRequests`, `liveVersions`, `scheduleTargets` in
-  `forms/generators.ts` are now exported; the trigger type gained
-  weekly/daily. Nothing else in BE-C1 changed.
-- **Routes** (`coaching/events/coachNotificationsHandlers.ts`, mounted in
-  `coachingRoutes`, trainer role): `GET /trainers/me/notifications`
-  (`kind`, `clientId` via `resolveCoachScope`, `since` → changes +
-  `deletedIds`, keyset `cursor`, `limit` ≤ 200, `unreadCount`, `asOf`),
-  `POST …/notifications/read` (`{ids}` | `{all}`), `GET /trainers/me/today`
-  (`queue` of actionable unactioned kinds with `action`, `counts`,
-  `schedule: []` for design I, `strip` = practice `adherenceByArea`),
-  `POST /trainers/me/today/:eventId/actioned` (also marks read; idempotent),
-  `GET/PUT /trainers/me/notification-settings` (`emailAvailable: false`,
-  channels merge, `expectedRevision` → 409 `revision_conflict`). Events for a
-  relationship that is no longer active are hidden (exit-form responses
-  stay). `/notifications/preferences` unchanged.
-- **1.2.0 (D5) checked, no fallback needed:** the 1.2.0 bundle (3bad31e) has
-  the same `mapApiNotification`, `NotificationRow`, model and deep-link
-  resolver as main: unknown types parse, render with the generic bell row,
-  and tap to Home (athlete rows carry no deep link) or Clients (coach rows).
-  Proven by `packages/mobile/src/adapters/api/__tests__/coachNotificationTypes.test.tsx`.
-  The new types are NOT in `NOTIFICATION_TYPES` (the preferences list).
-- **Tests:** `coaching/events/__tests__/coachEvents.integration.test.ts`
-  (PGlite, real migrations and handlers): D7.2 (weekly Sunday 18:00 London/NY
-  over both clock changes; daily 00:30 on each clock-change night; per-client
-  time/weekday), D7.3 (announce once, reminders at most N, burst → one,
-  paused client/rule, stop, completed, missed once, overlapping runs), D7.7
-  (one event per coach with rating/note, records, replay dedupe, mute,
-  everything, quiet hold/release in London and NY, pending sweep, form
-  events, accept), D7.9 (preferences keys = 1.2.0 fixture; `GET /notifications`
-  rows), two-coach isolation, feed/Today/settings, scheduler claims, migration
-  forward twice / down / up. `scheduler/__tests__/zonedTime.test.ts` (gap and
-  repeated hours, ISO weeks). PER-108/PER-116 suites now apply this migration;
-  session and respond handler unit tests mock the new writers.
-- **Inspector Brad on #548: five sweeps, 13 leads, all confirmed and fixed
-  with a test that failed on the previous commit; case closed on `701b31e`:**
-  - Training behind judged a barely-started "today" → judged on the 7
-    complete days ending yesterday in the client's zone.
-  - Reminder page filled by rows not yet due → due-count filter in SQL.
-  - Missed-marking skipped after a failed run / committed without its event →
-    runs every tick for the latest period, in one transaction with its events.
-  - Missed exit form pushed but hidden → visible in the feed; Today keeps
-    answered exit forms (review) and leaves out missed ones (no nudge).
-  - Pending sweep ignored quiet hours begun since the write → held.
-  - Fixed caps skipped rows past them (rules, behind coaches, held release,
-    invite expiry, programmes ending) → every job pages through all rows.
-  - A run killed at the Lambda timeout kept its claim → `finished_at` and
-    claim takeover after 10 min.
-- **Not verified:** nothing applied to staging; no deploy; no device run;
-  real Postgres concurrency (PGlite is one connection).
