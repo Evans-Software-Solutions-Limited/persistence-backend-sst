@@ -2401,6 +2401,118 @@ describe("SSTApiAdapter Trainer invite-code / QR (Coach Mode Phase 8)", () => {
     });
   });
 
+  // PER-126 (APP-A3)
+  describe("getMyCoaching", () => {
+    it("GETs /users/me/coaching and unwraps the envelope", async () => {
+      const payload = {
+        coaches: [
+          {
+            relationshipId: "rel-1",
+            trainerId: "t-1",
+            name: "Ellie Hart",
+            avatarUrl: null,
+            since: "2026-08-04T09:00:00.000Z",
+            features: {
+              nutrition: true,
+              checkIns: true,
+              photos: true,
+              habits: true,
+              messages: true,
+              resources: true,
+            },
+            due: { forms: 0 },
+            newPlans: 0,
+            resources: 0,
+          },
+        ],
+        asOf: "2026-11-23T09:00:00.000Z",
+      };
+      const fetchMock = installFetchMock(
+        async () =>
+          new Response(JSON.stringify({ data: payload }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+      );
+      const result = await new SSTApiAdapter().getMyCoaching();
+      expect(result).toEqual({ ok: true, value: payload });
+      expect(String(fetchMock.mock.calls[0][0])).toContain(
+        "/users/me/coaching",
+      );
+    });
+  });
+
+  describe("getInvitePreview", () => {
+    it("GETs /invites/:code/preview (encoded) and unwraps the envelope", async () => {
+      const preview = {
+        kind: "general",
+        coach: { name: "Marcus Lee", avatarUrl: null },
+        ready: null,
+        expiresAt: "2026-11-30T09:00:00.000Z",
+      };
+      const fetchMock = installFetchMock(
+        async () =>
+          new Response(JSON.stringify({ data: preview }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+      );
+      const result = await new SSTApiAdapter().getInvitePreview("AB 23");
+      expect(result).toEqual({ ok: true, value: preview });
+      expect(String(fetchMock.mock.calls[0][0])).toContain(
+        "/invites/AB%2023/preview",
+      );
+    });
+
+    it.each([
+      ["invalid_code", 404],
+      ["rate_limited", 429],
+    ] as const)(
+      "stamps %s (status %d) onto acceptCode",
+      async (code, status) => {
+        installFetchMock(
+          async () =>
+            new Response(JSON.stringify({ code, message: `no: ${code}` }), {
+              status,
+              headers: { "Content-Type": "application/json" },
+            }),
+        );
+        const result = await new SSTApiAdapter().getInvitePreview("BAD000");
+        expect(result.ok).toBe(false);
+        if (result.ok) return;
+        expect(result.error.acceptCode).toBe(code);
+        expect(result.error.status).toBe(status);
+        expect(result.error.message).toBe(`no: ${code}`);
+      },
+    );
+
+    it("a body without a domain code keeps the HTTP mapping only", async () => {
+      installFetchMock(
+        async () =>
+          new Response("null", {
+            status: 500,
+            headers: { "Content-Type": "application/json" },
+          }),
+      );
+      const result = await new SSTApiAdapter().getInvitePreview("BAD000");
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.acceptCode).toBeUndefined();
+      expect(result.error.status).toBe(500);
+    });
+
+    it("surfaces a network error without a domain code", async () => {
+      installFetchMock(async () => {
+        throw new Error("DNS lookup failed");
+      });
+      const result = await new SSTApiAdapter().getInvitePreview("AB23CD");
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.code).toBe("network");
+      expect(result.error.acceptCode).toBeUndefined();
+    });
+  });
+
   describe("respondToRelationship", () => {
     it("sends consent + consentVersion on the POST body when accepting (28-coach-data-sharing-consent)", async () => {
       const fetchMock = installFetchMock(async () => {

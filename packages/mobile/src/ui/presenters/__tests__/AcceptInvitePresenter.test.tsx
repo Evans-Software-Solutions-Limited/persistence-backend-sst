@@ -12,9 +12,7 @@ function baseProps(): AcceptInvitePresenterProps {
     errorMessage: "",
     onSubmit: jest.fn(),
     onBack: jest.fn(),
-    consentVisible: false,
-    onConsentClose: jest.fn(),
-    onConsentConfirm: jest.fn(),
+    isOffline: false,
   };
 }
 
@@ -86,40 +84,26 @@ describe("AcceptInvitePresenter", () => {
     expect(getByTestId("accept-invite-code-input").props.editable).toBe(false);
   });
 
-  // 28-coach-data-sharing-consent
-  describe("data-sharing consent sheet", () => {
-    it("does not render the consent sheet's confirm control until it's opened", () => {
-      const { queryByTestId } = renderWithTheme(
-        <AcceptInvitePresenter {...baseProps()} consentVisible={false} />,
-      );
-      expect(queryByTestId("accept-invite-consent-confirm")).toBeNull();
-    });
+  // PER-126: consent moved to the C11j preview; looking a code up needs a
+  // connection.
+  it("offline: says so and disables Join even with a code", () => {
+    const { getByTestId, getByText } = renderWithTheme(
+      <AcceptInvitePresenter {...baseProps()} code="AB23CD" isOffline />,
+    );
+    expect(getByTestId("accept-invite-offline")).toBeTruthy();
+    expect(
+      getByText("You're offline. Entering a code needs a connection."),
+    ).toBeTruthy();
+    expect(
+      getByTestId("accept-invite-submit").props.accessibilityState?.disabled,
+    ).toBe(true);
+  });
 
-    it("renders the consent sheet with an unticked checkbox and a disabled confirm when open", () => {
-      const { getByTestId } = renderWithTheme(
-        <AcceptInvitePresenter {...baseProps()} consentVisible />,
-      );
-      expect(
-        getByTestId("accept-invite-consent-checkbox").props.accessibilityState
-          ?.checked,
-      ).toBe(false);
-      expect(
-        getByTestId("accept-invite-consent-confirm").props.accessibilityState
-          ?.disabled,
-      ).toBe(true);
-    });
-
-    it("cannot confirm until the checkbox is ticked, then confirms with it ticked", () => {
-      const props = { ...baseProps(), consentVisible: true };
-      const { getByTestId } = renderWithTheme(
-        <AcceptInvitePresenter {...props} />,
-      );
-      fireEvent.press(getByTestId("accept-invite-consent-confirm"));
-      expect(props.onConsentConfirm).not.toHaveBeenCalled();
-
-      fireEvent.press(getByTestId("accept-invite-consent-checkbox"));
-      fireEvent.press(getByTestId("accept-invite-consent-confirm"));
-      expect(props.onConsentConfirm).toHaveBeenCalledTimes(1);
-    });
+  it("online: no offline note and no consent sheet on this screen", () => {
+    const { queryByTestId } = renderWithTheme(
+      <AcceptInvitePresenter {...baseProps()} code="AB23CD" />,
+    );
+    expect(queryByTestId("accept-invite-offline")).toBeNull();
+    expect(queryByTestId("accept-invite-consent-sheet")).toBeNull();
   });
 });

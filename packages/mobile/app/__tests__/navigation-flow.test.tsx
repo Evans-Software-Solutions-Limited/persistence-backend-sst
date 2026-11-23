@@ -68,6 +68,10 @@ import { TamaguiProvider } from "@tamagui/core";
 import config from "../../tamagui.config";
 // eslint-disable-next-line import/first
 import { useDrawer } from "../../src/state/drawer";
+// PER-126: no coaches here, so the athlete IA stays four tabs.
+jest.mock("../../src/ui/hooks/useMyCoaches", () => ({
+  useMyCoaches: () => ({ coaches: [] }),
+}));
 // eslint-disable-next-line import/first
 import { useUserMode } from "../../src/state/user-mode";
 // eslint-disable-next-line import/first

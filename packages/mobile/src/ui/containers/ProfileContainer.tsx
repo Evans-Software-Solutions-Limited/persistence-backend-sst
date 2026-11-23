@@ -164,7 +164,12 @@ export function ProfileContainer() {
                 // ex-coach's content. Habits/goals are KEPT under offboarding
                 // (hybrid teardown) so their cache is untouched.
                 const userId = session?.userId;
-                if (userId) storage.invalidateHome(userId);
+                if (userId) {
+                  storage.invalidateHome(userId);
+                  // PER-126: their chip (and, with no coach left, the Coach
+                  // tab) goes now, not on the next coaching refresh.
+                  storage.removeCachedMyCoach(userId, relationshipId);
+                }
                 void refresh();
               } finally {
                 isLeavingCoachRef.current = false;
