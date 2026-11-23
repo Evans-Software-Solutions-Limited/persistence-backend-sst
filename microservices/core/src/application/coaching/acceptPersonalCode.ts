@@ -16,6 +16,7 @@ import { recordDataSharingConsent } from "../relationships/recordDataSharingCons
 import type { DbTransaction } from "../relationships/auditTrainerAction";
 import { CoachClientSettingsRepository } from "./clientSettings";
 import { generateOnJoin } from "./forms/generators";
+import { recordClientAccepted } from "./events/writers";
 import {
   buildAcceptPreview,
   sectionHandler,
@@ -387,6 +388,14 @@ export async function acceptPersonalCode(
   // PER-116 (design C D2): the coach's all-clients on_join forms, after the
   // set-up's starter forms so a form in both is sent once, in set-up order.
   await generateOnJoin(tx, { trainerId, clientId: userId, relationshipId });
+
+  // PER-117 (design C D4): the coach's feed and Today. No push: the accept
+  // handler already sends the coach "Client accepted".
+  await recordClientAccepted(
+    tx,
+    { trainerId, clientId: userId, relationshipId },
+    { noPush: true },
+  );
 
   const clientRows = await tx
     .select({ fullName: profiles.fullName })

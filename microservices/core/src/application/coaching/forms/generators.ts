@@ -17,7 +17,9 @@ import type { DbOrTx } from "../../repositories/personalRecordsRepository";
  *
  * Every insert is `ON CONFLICT DO NOTHING` on
  * `(relationship_id, form_id, trigger, period_key)`, so retries, replays and
- * overlapping runs never duplicate a request.
+ * overlapping runs never duplicate a request. `insertRequests`,
+ * `liveVersions` and `scheduleTargets` are shared with the weekly/daily
+ * generator in `../scheduler/jobs/formPeriods.ts` (PER-117).
  *
  * Period keys carry the relationship's COACHING CYCLE (its `activated_at`): a
  * relationship that ends and is later revived is the same row, and without
@@ -90,17 +92,17 @@ export function effectiveDueAfterHours(
     : (schedule.dueAfterHours ?? null);
 }
 
-interface RequestDraft extends RelationshipRef {
+export interface RequestDraft extends RelationshipRef {
   formId: string;
   formVersionId: string;
   scheduleId: string | null;
-  trigger: "on_join" | "once" | "on_end";
+  trigger: "on_join" | "once" | "on_end" | "weekly" | "daily";
   periodKey: string;
   sentAt: Date;
   dueAfterHours: number | null;
 }
 
-async function insertRequests(
+export async function insertRequests(
   db: DbOrTx,
   drafts: RequestDraft[],
 ): Promise<string[]> {
@@ -134,7 +136,7 @@ async function insertRequests(
 }
 
 /** Current versions of the caller's live (unarchived) forms, by form id. */
-async function liveVersions(
+export async function liveVersions(
   db: DbOrTx,
   trainerId: string,
   formIds: string[],
@@ -253,7 +255,7 @@ export async function generateOnJoin(
   return ids;
 }
 
-interface Target extends RelationshipRef {
+export interface Target extends RelationshipRef {
   activatedAt: Date | null;
   override: Record<string, unknown> | null;
 }
@@ -263,7 +265,7 @@ interface Target extends RelationshipRef {
  * `all_clients`: every active client of the coach, less anyone paused or
  * excluded on this schedule. Only active, human relationships.
  */
-async function scheduleTargets(
+export async function scheduleTargets(
   db: DbOrTx,
   schedule: CoachFormSchedule,
   onlyRelationshipId?: string,

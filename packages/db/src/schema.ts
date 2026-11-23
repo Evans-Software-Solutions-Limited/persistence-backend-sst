@@ -206,6 +206,12 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   // Design D (PER-118) — a coach sent the client a meal plan. Added in
   // 20261121000118_meal_plans_coach_assignments.sql.
   "meal_plan_assigned",
+  // Design C (PER-117) — a coach's push about a client (`coach_event`, to the
+  // coach) and an athlete's due form and its reminders. Added in
+  // 20261123120117_coach_events_notifications.sql.
+  "coach_event",
+  "form_request",
+  "form_reminder",
 ]);
 
 // M4 (06-progress-goals) — streak engine period types. cross-cuts § 3.1.
@@ -2248,6 +2254,104 @@ export const coachFormResponses = pgTable(
 );
 
 export type CoachFormResponse = typeof coachFormResponses.$inferSelect;
+
+// ─── Coach events and notification settings (PER-117, design C D4) ──────────
+// Migration: 20261123120117_coach_events_notifications.sql.
+
+export const coachEvents = pgTable(
+  "coach_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    trainerId: uuid("trainer_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id").references(() => profiles.id, {
+      onDelete: "cascade",
+    }),
+    relationshipId: uuid("relationship_id").references(
+      () => ptClientRelationships.id,
+      { onDelete: "cascade" },
+    ),
+    kind: text("kind").notNull(),
+    entityType: text("entity_type"),
+    entityId: uuid("entity_id"),
+    payload: jsonb("payload")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    occurredAt: timestamp("occurred_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    readAt: timestamp("read_at", { withTimezone: true }),
+    actionedAt: timestamp("actioned_at", { withTimezone: true }),
+    pushState: text("push_state", {
+      enum: ["none", "pending", "held", "sent", "skipped"],
+    })
+      .notNull()
+      .default("none"),
+    dedupeKey: text("dedupe_key").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("coach_events_dedupe_uq").on(t.trainerId, t.dedupeKey),
+    index("coach_events_trainer_occurred_idx").on(
+      t.trainerId,
+      t.occurredAt.desc(),
+    ),
+    index("coach_events_trainer_client_occurred_idx").on(
+      t.trainerId,
+      t.clientId,
+      t.occurredAt.desc(),
+    ),
+    index("coach_events_trainer_updated_idx").on(t.trainerId, t.updatedAt),
+    index("coach_events_push_due_idx")
+      .on(t.pushState, t.occurredAt)
+      .where(sql`${t.pushState} in ('pending', 'held')`),
+  ],
+);
+
+export type CoachEvent = typeof coachEvents.$inferSelect;
+
+export const coachNotificationSettings = pgTable(
+  "coach_notification_settings",
+  {
+    trainerId: uuid("trainer_id")
+      .primaryKey()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    channels: jsonb("channels")
+      .$type<Record<string, string>>()
+      .notNull()
+      .default({}),
+    quietEnabled: boolean("quiet_enabled").notNull().default(false),
+    quietFrom: time("quiet_from"),
+    quietUntil: time("quiet_until"),
+    revision: integer("revision").notNull().default(1),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+);
+
+export type CoachNotificationSettingsRow =
+  typeof coachNotificationSettings.$inferSelect;
+
+export const coachSchedulerRuns = pgTable(
+  "coach_scheduler_runs",
+  {
+    job: text("job").notNull(),
+    runKey: text("run_key").notNull(),
+    ranAt: timestamp("ran_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.job, t.runKey] }),
+    index("coach_scheduler_runs_ran_at_idx").on(t.ranAt),
+  ],
+);
 
 export type TrainerInviteCode = typeof trainerInviteCodes.$inferSelect;
 export type NewTrainerInviteCode = typeof trainerInviteCodes.$inferInsert;

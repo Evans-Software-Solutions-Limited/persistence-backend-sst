@@ -14,6 +14,7 @@ import {
 } from "../seats/trainerSeats";
 import { recordDataSharingConsent } from "../../relationships/recordDataSharingConsent";
 import { generateOnJoin } from "../../coaching/forms/generators";
+import { recordClientAccepted } from "../../coaching/events/writers";
 
 /**
  * Discriminated result of the accept transaction: success, a client-slot cap
@@ -242,6 +243,12 @@ export const trainersRespondToRequestHandler = new Elysia()
 
           // PER-116 (design C D2): the coach's all-clients on_join forms.
           await generateOnJoin(tx, {
+            trainerId: row.trainerId,
+            clientId: userId,
+            relationshipId: row.id,
+          });
+          // PER-117: tell the coach (the scheduler sends the push).
+          await recordClientAccepted(tx, {
             trainerId: row.trainerId,
             clientId: userId,
             relationshipId: row.id,

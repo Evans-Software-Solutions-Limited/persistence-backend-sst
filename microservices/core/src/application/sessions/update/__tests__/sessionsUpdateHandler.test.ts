@@ -32,6 +32,13 @@ vi.mock("../../../repositories/personalRecordsRepository", () => ({
   PersonalRecordsRepository: vi.fn().mockImplementation(() => prMocks),
 }));
 
+// PER-117: the coach-event hook (its own behaviour is tested on PGlite in
+// coaching/events/__tests__).
+const coachEventHook = vi.hoisted(() => vi.fn(async () => {}));
+vi.mock("../../../coaching/events/writers", () => ({
+  safeRecordWorkoutCompleted: coachEventHook,
+}));
+
 describe("SessionsUpdateHandler", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -119,6 +126,9 @@ describe("SessionsUpdateHandler", () => {
       "test-user-id",
       "s1",
     );
+    // PER-117: the athlete's coaches hear about it, once, after the write.
+    expect(coachEventHook).toHaveBeenCalledTimes(1);
+    expect(coachEventHook).toHaveBeenCalledWith("test-user-id", "s1");
   });
 
   it("does NOT re-run PR detection on completed → completed (idempotency)", async () => {
@@ -140,6 +150,7 @@ describe("SessionsUpdateHandler", () => {
       }),
     );
     expect(prMocks.recordPRsForSession).not.toHaveBeenCalled();
+    expect(coachEventHook).not.toHaveBeenCalled();
   });
 
   it("does NOT run PR detection on a non-status PATCH", async () => {
