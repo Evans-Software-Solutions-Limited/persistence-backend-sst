@@ -118,7 +118,18 @@ export async function coachFetch<T>(
       saveSession(refreshed.session);
       res = await send(refreshed.session.accessToken);
     }
-    if (refreshed.kind === "rejected" || res.status === 401) endSession();
+    if (refreshed.kind === "rejected") {
+      endSession();
+    } else if (res.status === 401) {
+      // GoTrue issued this token moments ago, so a 401 means the API couldn't
+      // check it (e.g. its JWKS fetch failed), not that the sign-in is over.
+      // A real revocation shows up as `rejected` on the next refresh.
+      throw new CoachApiError(503, {
+        code: AUTH_UNAVAILABLE,
+        message:
+          "We couldn't confirm your sign-in just now. Try again in a moment.",
+      });
+    }
   }
   const text = await res.text();
   let body: Record<string, unknown> | null = null;

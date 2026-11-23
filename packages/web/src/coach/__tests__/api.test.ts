@@ -354,7 +354,7 @@ describe("coach API client", () => {
       stop();
     });
 
-    it("signs out when the refresh is refused, or the new token is refused too", async () => {
+    it("signs out only when GoTrue refuses the refresh", async () => {
       withRefresh();
       await expect(
         coachFetch(
@@ -364,18 +364,27 @@ describe("coach API client", () => {
         ),
       ).rejects.toMatchObject({ status: 401 });
       expect(loadSession()).toBeNull();
+    });
 
+    it("a 401 on a token GoTrue just issued keeps the session (sweep 3)", async () => {
       withRefresh();
+      const listener = vi.fn();
+      const stop = onSignedOut(listener);
       await expect(
         coachFetch(
           "/x",
           {},
           server([res(401, {}), res(401, {})], async () =>
-            res(200, { access_token: jwt({ exp: future() }) }),
+            res(200, {
+              access_token: jwt({ exp: future() }),
+              refresh_token: "r2",
+            }),
           ),
         ),
-      ).rejects.toMatchObject({ status: 401 });
-      expect(loadSession()).toBeNull();
+      ).rejects.toMatchObject({ status: 503, code: "auth_unavailable" });
+      expect(loadSession()?.refreshToken).toBe("r2");
+      expect(listener).not.toHaveBeenCalled();
+      stop();
     });
   });
 
