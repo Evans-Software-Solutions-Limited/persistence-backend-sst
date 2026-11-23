@@ -37,8 +37,12 @@ merged BE-A1 routes (PER-108, #540): `GET /invites/:code/preview`,
 - **You → Coaching (Y1):** reads `useMyCoaches`; falls back to active
   relationships until the first read. Row tap → Coach tab on that coach.
   Coach requests stay under the list (Brad, 23 Nov).
-- **Verified:** mobile typecheck, lint, repo prettier:check; new and changed
-  suites pass (see PR for the full `test:unit` result).
+- **Verified:** mobile typecheck, lint, repo prettier:check, `bun run build`.
+  Mobile `test:unit`: 9,167 pass, coverage 96.3 / 92.3 / 96.2 / 97.6
+  (stmts/branches/funcs/lines). 32 failures in 3 suites, none touched here:
+  `SubscriptionSelectionContainer` fails on main too (16 alone);
+  `CoachYouContainer` and `useAutoRetryOnWorkoutLimitResolved` pass alone
+  (load timeouts in the full run).
 - **Not verified:** no device or staging run; canvas match checked against
   board markup only.
 
