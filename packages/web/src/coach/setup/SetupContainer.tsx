@@ -355,7 +355,20 @@ export function SetupContainer() {
                   : { sourceProfileId: source.id },
               );
               queryClient.setQueryData(detailKey, next);
-              setDrafts({});
+              // The copy only replaces sections the source has: unsaved edits
+              // in any other section stay, moved to the new revision.
+              setDrafts((d) => {
+                const kept: Drafts = {};
+                for (const [s, dr] of Object.entries(d) as [
+                  SetupSection,
+                  Draft,
+                ][]) {
+                  if (sameItems(dr.base, itemsOf(next, s))) {
+                    kept[s] = { ...dr, revision: next.revision };
+                  }
+                }
+                return kept;
+              });
               setCopyOpen(false);
               setToast(`Copied from ${source.name}`);
               void queryClient.invalidateQueries({

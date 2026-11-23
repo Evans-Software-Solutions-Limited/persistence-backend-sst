@@ -65,10 +65,14 @@ export function InviteContainer() {
 
   useEffect(() => {
     if (!detail || detail.status !== "invited" || tried.current) return;
+    // Issuing always expires the live code, so decide from a fresh read,
+    // never from data cached on another page (a code issued on another
+    // device would otherwise be voided).
+    if (!detailQ.isFetchedAfterMount || detailQ.isFetching) return;
     if (state !== "none" || !actions.online) return;
     tried.current = true;
     void actions.issue(detail.id);
-  }, [detail, state, actions]);
+  }, [detail, state, actions, detailQ.isFetchedAfterMount, detailQ.isFetching]);
 
   useEffect(() => {
     if (!copied) return;
