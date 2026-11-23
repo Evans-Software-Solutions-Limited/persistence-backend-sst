@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, lt } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, lt } from "drizzle-orm";
 import { coachEvents, type CoachEvent } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
 import {
@@ -8,6 +8,7 @@ import {
   pushHeldGroup,
 } from "../../events/coachEvents";
 import type { SchedulerJob } from "../coachScheduler";
+import { PAGE_SIZES } from "./pageSizes";
 
 /**
  * Coach pushes (PER-117, design C D4):
@@ -69,48 +70,60 @@ export const coachPushesJob: SchedulerJob = {
       dispatcher,
     );
 
-    const held = await db
-      .select({ id: coachEvents.id, trainerId: coachEvents.trainerId })
-      .from(coachEvents)
-      .where(eq(coachEvents.pushState, "held"))
-      .orderBy(asc(coachEvents.occurredAt))
-      .limit(MAX_EVENTS);
-    const byTrainer = new Map<string, string[]>();
-    for (const h of held) {
-      byTrainer.set(h.trainerId, [...(byTrainer.get(h.trainerId) ?? []), h.id]);
-    }
+    // Release per coach: page through the coaches who have held pushes and
+    // claim each one's events only once their window has ended, so coaches
+    // still in quiet hours never fill a batch (Inspector Brad, #548).
     let released = 0;
     let groups = 0;
-    for (const [trainerId, ids] of byTrainer) {
-      const prefs = await loadCoachPrefs(db, trainerId);
-      if (isCoachQuiet(prefs, now)) continue;
-      const claimed: CoachEvent[] = await db
-        .update(coachEvents)
-        .set({ pushState: "sent" })
+    let after: string | null = null;
+    for (;;) {
+      const page: { trainerId: string }[] = await db
+        .selectDistinct({ trainerId: coachEvents.trainerId })
+        .from(coachEvents)
         .where(
-          and(inArray(coachEvents.id, ids), eq(coachEvents.pushState, "held")),
+          and(
+            eq(coachEvents.pushState, "held"),
+            ...(after ? [gt(coachEvents.trainerId, after)] : []),
+          ),
         )
-        .returning();
-      released += claimed.length;
-      const byClient = new Map<string, CoachEvent[]>();
-      for (const e of claimed.sort(
-        (a, b) => a.occurredAt.getTime() - b.occurredAt.getTime(),
-      )) {
-        const key = e.clientId ?? `none:${e.id}`;
-        byClient.set(key, [...(byClient.get(key) ?? []), e]);
-      }
-      for (const events of byClient.values()) {
-        if (
-          await pushHeldGroup(
-            trainerId,
-            events[0]!.clientId,
-            events,
-            dispatcher,
+        .orderBy(asc(coachEvents.trainerId))
+        .limit(PAGE_SIZES.heldTrainers);
+      for (const { trainerId } of page) {
+        const prefs = await loadCoachPrefs(db, trainerId);
+        if (isCoachQuiet(prefs, now)) continue;
+        const claimed: CoachEvent[] = await db
+          .update(coachEvents)
+          .set({ pushState: "sent" })
+          .where(
+            and(
+              eq(coachEvents.trainerId, trainerId),
+              eq(coachEvents.pushState, "held"),
+            ),
           )
-        ) {
-          groups += 1;
+          .returning();
+        released += claimed.length;
+        const byClient = new Map<string, CoachEvent[]>();
+        for (const e of claimed.sort(
+          (a, b) => a.occurredAt.getTime() - b.occurredAt.getTime(),
+        )) {
+          const key = e.clientId ?? `none:${e.id}`;
+          byClient.set(key, [...(byClient.get(key) ?? []), e]);
+        }
+        for (const events of byClient.values()) {
+          if (
+            await pushHeldGroup(
+              trainerId,
+              events[0]!.clientId,
+              events,
+              dispatcher,
+            )
+          ) {
+            groups += 1;
+          }
         }
       }
+      if (page.length < PAGE_SIZES.heldTrainers) break;
+      after = page[page.length - 1]!.trainerId;
     }
     return { pushed, released, groups };
   },

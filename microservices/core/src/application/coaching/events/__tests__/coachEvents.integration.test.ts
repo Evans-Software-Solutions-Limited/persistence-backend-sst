@@ -112,6 +112,7 @@ import {
   trainingBehindJob,
 } from "../../scheduler/jobs/coachChecks";
 import { isoWeekKey } from "../../scheduler/zonedTime";
+import { PAGE_SIZES } from "../../scheduler/jobs/pageSizes";
 import preferences120 from "./fixtures/notification-preferences-1.2.0.json";
 
 const MIGRATIONS = "../../../../../../../supabase/migrations/";
@@ -582,6 +583,134 @@ describe("D7.2 time zones", () => {
       "2026-11-23T14:00:00.000Z",
     );
     expect(rule.trigger).toBe("daily");
+  });
+});
+
+describe("batch caps never skip rows (Inspector Brad, #548)", () => {
+  const sizes = { ...PAGE_SIZES };
+  beforeEach(() => {
+    PAGE_SIZES.formRules = 1;
+    PAGE_SIZES.behindTrainers = 1;
+    PAGE_SIZES.heldTrainers = 1;
+    PAGE_SIZES.expiredInvites = 1;
+    PAGE_SIZES.endingProgrammes = 1;
+  });
+  afterAll(() => Object.assign(PAGE_SIZES, sizes));
+
+  it("every expired invite and every programme ending soon is announced in one run", async () => {
+    const now = new Date("2026-11-23T12:00:00Z");
+    for (const name of ["Sam", "Ana"]) {
+      const profileId = randomUUID();
+      await db.insert(schema.coachClientProfiles).values({
+        id: profileId,
+        trainerId: COACH_A,
+        displayName: name,
+        status: "invited",
+      });
+      await db.insert(schema.trainerInviteCodes).values({
+        trainerId: COACH_A,
+        code: `X${name.toUpperCase()}0001`,
+        status: "active",
+        expiresAt: new Date("2026-11-23T11:00:00Z"),
+        clientProfileId: profileId,
+      });
+    }
+    await inviteExpiryJob.run(ctx(now));
+    const program = randomUUID();
+    await db.insert(schema.workoutPrograms).values({
+      id: program,
+      name: "Block 2",
+    } as typeof schema.workoutPrograms.$inferInsert);
+    for (const clientId of [ATHLETE_C, ATHLETE_E]) {
+      await db.insert(schema.programAssignments).values({
+        programId: program,
+        clientId,
+        assignedBy: COACH_A,
+        startDate: "2026-10-01",
+        endDate: "2026-11-27",
+        status: "started",
+      });
+    }
+    await programmeEndingJob.run(ctx(now));
+    const kinds = (await eventsOf(COACH_A)).map((e) => e.kind).sort();
+    expect(kinds).toEqual([
+      "invite_expired",
+      "invite_expired",
+      "programme_ending",
+      "programme_ending",
+    ]);
+  });
+
+  it("every active rule sends, however many there are", async () => {
+    for (const coach of [COACH_A, COACH_B]) {
+      const form = await makeForm(coach, `Daily ${coach}`);
+      await makeSchedule(coach, {
+        formId: form.id,
+        trigger: "daily",
+        audience: "all_clients",
+        timeLocal: "09:00",
+      });
+    }
+    await formPeriodsJob.run(ctx(new Date("2026-11-23T09:00:00Z")));
+    const forC = await requestsFor(ATHLETE_C);
+    expect(forC.map((r) => r.trainerId).sort()).toEqual(
+      [COACH_A, COACH_B].sort(),
+    );
+  });
+
+  it("every coach who tracks training is checked", async () => {
+    await setAlertMode(COACH_A, ATHLETE_C, "default", {
+      trackTraining: true,
+      sessionsPerWeek: 2,
+    });
+    await setAlertMode(COACH_B, ATHLETE_C, "default", {
+      trackTraining: true,
+      sessionsPerWeek: 2,
+    });
+    await trainingBehindJob.run(ctx(new Date("2026-11-23T09:00:00Z")));
+    expect(await eventsOf(COACH_A)).toHaveLength(1);
+    expect(await eventsOf(COACH_B)).toHaveLength(1);
+  });
+
+  it("a coach still in quiet hours never blocks another coach's release", async () => {
+    // B (New York) is still quiet at 07:00 UTC; A (London) is not.
+    await db
+      .update(schema.profiles)
+      .set({ timezone: "America/New_York" })
+      .where(eq(schema.profiles.id, COACH_B));
+    for (const coach of [COACH_B, COACH_A]) {
+      await http("PUT", "/trainers/me/notification-settings", coach, {
+        quietHours: { enabled: true, from: "22:00", until: "07:00" },
+      });
+    }
+    // B's event is older, so it sorts first.
+    await recordCoachEvent(
+      realDb(),
+      {
+        trainerId: COACH_B,
+        clientId: ATHLETE_C,
+        relationshipId: await relationshipId(COACH_B, ATHLETE_C),
+        kind: "form_missed",
+        dedupeKey: "b",
+      },
+      new Date("2026-11-24T03:30:00Z"),
+    );
+    await recordCoachEvent(
+      realDb(),
+      {
+        trainerId: COACH_A,
+        clientId: ATHLETE_E,
+        relationshipId: await relationshipId(COACH_A, ATHLETE_E),
+        kind: "form_missed",
+        dedupeKey: "a",
+      },
+      new Date("2026-11-24T05:00:00Z"),
+    );
+    await coachPushesJob.run(ctx(new Date("2026-11-24T07:00:00Z")));
+    expect(pushesTo(COACH_A).map((p) => p.input.title)).toEqual([
+      "Lena missed a form",
+    ]);
+    expect(pushesTo(COACH_B)).toHaveLength(0);
   });
 });
 
@@ -1449,8 +1578,9 @@ describe("scheduler checks", () => {
       checked: 1,
       events: 1,
     });
+    // Already announced: it no longer even comes back from the query.
     expect(await inviteExpiryJob.run(ctx(now))).toEqual({
-      checked: 1,
+      checked: 0,
       events: 0,
     });
     const [event] = await eventsOf(COACH_A);

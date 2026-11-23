@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, lt, ne } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, lt, ne } from "drizzle-orm";
 import {
   coachFormRequests,
   coachFormSchedules,
@@ -16,6 +16,7 @@ import {
 import { hhmm } from "../../forms/scheduleRepository";
 import { deliverCoachEvents, recordCoachEvent } from "../../events/coachEvents";
 import type { SchedulerJob } from "../coachScheduler";
+import { PAGE_SIZES } from "./pageSizes";
 import {
   addDays,
   isoWeekKey,
@@ -41,8 +42,6 @@ import {
  */
 
 const GRACE_MS = 6 * 60 * 60 * 1000;
-/** Bound per tick. Active weekly/daily rules across every coach. */
-export const MAX_SCHEDULES = 2000;
 
 export interface Period {
   key: string;
@@ -186,79 +185,89 @@ export const formPeriodsJob: SchedulerJob = {
   cadence: "tick",
   async run({ now, dispatcher }) {
     const db = getDb();
-    const schedules = await db
-      .select()
-      .from(coachFormSchedules)
-      .where(
-        and(
-          inArray(coachFormSchedules.trigger, ["weekly", "daily"]),
-          eq(coachFormSchedules.status, "active"),
-        ),
-      )
-      .orderBy(asc(coachFormSchedules.id))
-      .limit(MAX_SCHEDULES);
     let sent = 0;
     let missed = 0;
+    let seen = 0;
     const events: string[] = [];
-    for (const schedule of schedules) {
-      const versionId = (
-        await liveVersions(db, schedule.trainerId, [schedule.formId])
-      ).get(schedule.formId);
-      if (!versionId) continue;
-      const targets = await scheduleTargets(db, schedule);
-      const zones = await timeZones(targets.map((t) => t.clientId));
-      for (const target of targets) {
-        const tz = safeTimeZone(zones.get(target.clientId));
-        const periods = duePeriods(
-          schedule.trigger as "weekly" | "daily",
-          ruleFor(schedule, target.override),
-          tz,
-          now,
-        ).filter(
-          (p) =>
-            p.at >= schedule.createdAt &&
-            (target.activatedAt === null || p.at >= target.activatedAt),
-        );
-        for (const period of periods) {
-          sent += (
-            await insertRequests(db, [
-              {
-                trainerId: target.trainerId,
-                clientId: target.clientId,
-                relationshipId: target.relationshipId,
-                formId: schedule.formId,
-                formVersionId: versionId,
-                scheduleId: schedule.id,
-                trigger: schedule.trigger as "weekly" | "daily",
-                periodKey: period.key,
-                sentAt: now,
-                dueAfterHours: effectiveDueAfterHours(
-                  schedule,
-                  target.override,
-                ),
-              },
-            ])
-          ).length;
-        }
-        // Every tick, not only when the insert was new: if a run inserted the
-        // period and then failed before this, the next run still marks the
-        // earlier one (Inspector Brad, #548). Idempotent: a conditional
-        // update and the event's dedupe key.
-        const latest = periods[periods.length - 1];
-        if (latest) {
-          const ev = await missEarlier(
-            schedule,
-            target.relationshipId,
-            target.clientId,
-            latest.key,
+    // Every active rule, a page at a time (keyset on id), so no rule past a
+    // cap is skipped (Inspector Brad, #548).
+    let after: string | null = null;
+    for (;;) {
+      const schedules: CoachFormSchedule[] = await db
+        .select()
+        .from(coachFormSchedules)
+        .where(
+          and(
+            inArray(coachFormSchedules.trigger, ["weekly", "daily"]),
+            eq(coachFormSchedules.status, "active"),
+            ...(after ? [gt(coachFormSchedules.id, after)] : []),
+          ),
+        )
+        .orderBy(asc(coachFormSchedules.id))
+        .limit(PAGE_SIZES.formRules);
+      seen += schedules.length;
+      for (const schedule of schedules) {
+        const versionId = (
+          await liveVersions(db, schedule.trainerId, [schedule.formId])
+        ).get(schedule.formId);
+        if (!versionId) continue;
+        const targets = await scheduleTargets(db, schedule);
+        const zones = await timeZones(targets.map((t) => t.clientId));
+        for (const target of targets) {
+          const tz = safeTimeZone(zones.get(target.clientId));
+          const periods = duePeriods(
+            schedule.trigger as "weekly" | "daily",
+            ruleFor(schedule, target.override),
+            tz,
             now,
+          ).filter(
+            (p) =>
+              p.at >= schedule.createdAt &&
+              (target.activatedAt === null || p.at >= target.activatedAt),
           );
-          missed += ev.missed;
-          events.push(...ev.events);
+          for (const period of periods) {
+            sent += (
+              await insertRequests(db, [
+                {
+                  trainerId: target.trainerId,
+                  clientId: target.clientId,
+                  relationshipId: target.relationshipId,
+                  formId: schedule.formId,
+                  formVersionId: versionId,
+                  scheduleId: schedule.id,
+                  trigger: schedule.trigger as "weekly" | "daily",
+                  periodKey: period.key,
+                  sentAt: now,
+                  dueAfterHours: effectiveDueAfterHours(
+                    schedule,
+                    target.override,
+                  ),
+                },
+              ])
+            ).length;
+          }
+          // Every tick, not only when the insert was new: if a run inserted the
+          // period and then failed before this, the next run still marks the
+          // earlier one (Inspector Brad, #548). Idempotent: a conditional
+          // update and the event's dedupe key.
+          const latest = periods[periods.length - 1];
+          if (latest) {
+            const ev = await missEarlier(
+              schedule,
+              target.relationshipId,
+              target.clientId,
+              latest.key,
+              now,
+            );
+            missed += ev.missed;
+            events.push(...ev.events);
+          }
         }
       }
+      if (schedules.length < PAGE_SIZES.formRules) break;
+      after = schedules[schedules.length - 1]!.id;
     }
     await deliverCoachEvents(events, dispatcher);
-    return { schedules: schedules.length, sent, missed };
+    return { schedules: seen, sent, missed };
   },
 };
