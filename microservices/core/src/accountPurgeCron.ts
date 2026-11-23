@@ -4,6 +4,9 @@ import { AccountRepository } from "./application/account/accountRepository";
 import { cancelStripeSubscriptions } from "./application/account/cancelUserStripeSubscriptions";
 import { deleteAuthUserWithRetry } from "./application/account/supabaseAdminClient";
 import { deleteUserAvatar } from "./application/account/deleteUserAvatar";
+import { deleteAllUserMedia } from "./application/media/privateMediaStore";
+import { purgeStalePendingSets } from "./application/media/progressPhotoRepository";
+import { purgeStaleMedia } from "./application/media/privateMediaRepository";
 import { aiJobMaintenanceSweep } from "./application/jobs/aiJobMaintenanceSweep";
 import { AiJobRepository } from "./application/jobs/aiJobRepository";
 import { dataRetentionSweep } from "./application/retention/dataRetentionSweep";
@@ -36,6 +39,9 @@ async function baseHandler(): Promise<{
     cancelStripeSubscriptions,
     deleteAuthUser: deleteAuthUserWithRetry,
     deleteAvatar: deleteUserAvatar,
+    deletePrivateMedia: async (userId) => {
+      await deleteAllUserMedia(userId);
+    },
     now,
   });
   console.log(`[account-purge-cron:summary] ${JSON.stringify(summary)}`);
@@ -100,6 +106,20 @@ async function baseHandler(): Promise<{
   } catch (err) {
     console.error("[coach-client-profiles-retention] sweep threw:", err);
     captureFatal(err, { sweep: "coach-client-profiles-retention" });
+  }
+
+  // PER-121 (design F): uploads that were never completed (and form photos
+  // never sent in a response) are deleted with their objects. Same isolation
+  // as the sweeps above.
+  try {
+    const sets = await purgeStalePendingSets(now);
+    const media = await purgeStaleMedia(now);
+    console.log(
+      `[private-media-cleanup:summary] ${JSON.stringify({ sets, media })}`,
+    );
+  } catch (err) {
+    console.error("[private-media-cleanup] sweep threw:", err);
+    captureFatal(err, { sweep: "private-media-cleanup" });
   }
 
   return summary;

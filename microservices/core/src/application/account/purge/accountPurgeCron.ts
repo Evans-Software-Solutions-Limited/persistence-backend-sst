@@ -6,9 +6,10 @@
  * REAL purge + auth-user delete that the old immediate-delete handler used
  * to do synchronously.
  *
- * Per-user order (brief Part D): safety-net Stripe cancel → SQL purge (the
- * corrected `ACCOUNT_DELETION_STEPS` plan, Part A) → Supabase auth-user
- * delete → best-effort avatar S3 cleanup (Part B). One user's failure is
+ * Per-user order (brief Part D): safety-net Stripe cancel → private media
+ * delete (PER-121) → SQL purge (the corrected `ACCOUNT_DELETION_STEPS` plan,
+ * Part A) → Supabase auth-user delete → best-effort avatar S3 cleanup
+ * (Part B). One user's failure is
  * isolated — logged and counted, never aborts the batch — mirroring
  * `volumeCron`/`streakCron`'s per-user try/catch convention.
  */
@@ -34,6 +35,13 @@ export interface AccountPurgeCronDeps {
    * never throws — but typed as a Promise for uniformity with the rest of
    * the per-user pipeline. */
   deleteAvatar: (userId: string) => Promise<void>;
+  /** PER-121 (design F): delete every object the user owns in the private
+   * `CoachPrivateMedia` bucket (progress photos, form photo answers, coach
+   * resource files). Runs BEFORE the SQL purge and is NOT swallowed: photos
+   * are personal data, so a failure leaves the account pending and the whole
+   * purge retries next night (the delete is idempotent). Unlike the public
+   * avatar, nothing could find these objects again once `profiles` is gone. */
+  deletePrivateMedia: (userId: string) => Promise<void>;
   now: Date;
 }
 
@@ -72,6 +80,10 @@ export async function accountPurgeCron(
           err,
         );
       }
+
+      // 1b. PER-121: the user's private media. A failure throws to the
+      //     per-user catch below, so the account is retried next sweep.
+      await deps.deletePrivateMedia(userId);
 
       // 2. The compliance-critical step: SQL purge via the corrected plan.
       //    A failure here is NOT swallowed — it's the one step that must

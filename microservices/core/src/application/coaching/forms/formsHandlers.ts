@@ -631,12 +631,6 @@ export const athleteFormRequestsHandler = authed()
             reason: result.reason,
             message: "This check-in is no longer needed",
           };
-        case "photo_unavailable":
-          return {
-            code: result.code,
-            message: "Photo answers aren't available yet",
-            errors: result.errors,
-          };
         case "invalid_answers":
           return {
             code: result.code,

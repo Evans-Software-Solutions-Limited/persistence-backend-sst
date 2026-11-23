@@ -4164,3 +4164,5 @@ export * from "./togetherSchema";
 export * from "./socialSchema";
 
 export * from "./togetherOfflineSchema";
+// PER-121 (design F): progress photos and private media.
+export * from "./progressPhotosSchema";

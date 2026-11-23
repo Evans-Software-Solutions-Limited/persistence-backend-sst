@@ -25,6 +25,7 @@ function buildDeps(
     cancelStripeSubscriptions?: AccountPurgeCronDeps["cancelStripeSubscriptions"];
     deleteAuthUser?: AccountPurgeCronDeps["deleteAuthUser"];
     deleteAvatar?: AccountPurgeCronDeps["deleteAvatar"];
+    deletePrivateMedia?: AccountPurgeCronDeps["deletePrivateMedia"];
     now?: Date;
   } = {},
 ) {
@@ -33,6 +34,7 @@ function buildDeps(
     cancelStripeSubscriptions: vi.fn(async () => undefined),
     deleteAuthUser: vi.fn(async () => undefined),
     deleteAvatar: vi.fn(async () => undefined),
+    deletePrivateMedia: vi.fn(async () => undefined),
     now: new Date("2026-08-12T00:00:00.000Z"),
     ...overrides,
   } satisfies AccountPurgeCronDeps & { accountRepo: MockAccountRepo };
@@ -48,7 +50,7 @@ describe("accountPurgeCron", () => {
     expect(deps.accountRepo.purgeUserData).not.toHaveBeenCalled();
   });
 
-  it("runs the full per-user pipeline in order: cancel → purge → auth-delete → avatar", async () => {
+  it("runs the full per-user pipeline in order: cancel → private media → purge → auth-delete → avatar", async () => {
     const order: string[] = [];
     const deps = buildDeps({
       accountRepo: {
@@ -66,11 +68,21 @@ describe("accountPurgeCron", () => {
       deleteAvatar: vi.fn(async () => {
         order.push("avatar");
       }),
+      deletePrivateMedia: vi.fn(async () => {
+        order.push("private-media");
+      }),
     });
 
     const summary = await accountPurgeCron(deps);
 
-    expect(order).toEqual(["cancel", "purge", "auth-delete", "avatar"]);
+    expect(order).toEqual([
+      "cancel",
+      "private-media",
+      "purge",
+      "auth-delete",
+      "avatar",
+    ]);
+    expect(deps.deletePrivateMedia).toHaveBeenCalledWith("user-1");
     expect(summary).toEqual({ pending: 1, purged: 1, failed: 0 });
     expect(deps.accountRepo.purgeUserData).toHaveBeenCalledWith("user-1");
     expect(deps.deleteAuthUser).toHaveBeenCalledWith("user-1");
@@ -154,5 +166,23 @@ describe("accountPurgeCron", () => {
     const deps = buildDeps({ now });
     await accountPurgeCron(deps);
     expect(deps.accountRepo.listPendingPurge).toHaveBeenCalledWith(now);
+  });
+
+  it("PER-121: a private media delete failure leaves the account unpurged, to retry next sweep", async () => {
+    const deps = buildDeps({
+      accountRepo: {
+        listPendingPurge: vi.fn(async () => ["user-1", "user-2"]),
+        purgeUserData: vi.fn(async () => undefined),
+      },
+      deletePrivateMedia: vi.fn(async (userId: string) => {
+        if (userId === "user-1") throw new Error("S3 unavailable");
+      }),
+    });
+
+    const summary = await accountPurgeCron(deps);
+
+    expect(summary).toEqual({ pending: 2, purged: 1, failed: 1 });
+    expect(deps.accountRepo.purgeUserData).toHaveBeenCalledTimes(1);
+    expect(deps.accountRepo.purgeUserData).toHaveBeenCalledWith("user-2");
   });
 });
