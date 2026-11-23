@@ -65,11 +65,35 @@ staging.
 - **Tests**: `src/coach/__tests__/` (118): pure libs, auth/API client, and
   every container through a fake API (`CoachApiContext`): save-on-move,
   Cancel, 409 on each write, section_unavailable, offline per screen,
-  expired code, declaration gate, copy-from, preview, end coaching.
-  `src/coach/**` coverage: 97.7% statements, 90.3% branches, 97.0%
-  functions, 98.7% lines.
+  expired code, declaration gate, copy-from, preview, end coaching. After
+  the review: 151 tests in `src/coach`.
 - **Not verified**: no staging run, no real Supabase sign-in, nothing against
   the live API (fake API + Playwright render with mocked routes only).
+- **Inspector Brad on #549: thirteen sweeps, every lead confirmed and fixed
+  with a test that fails on the previous commit; case closed on `222ffc7`.**
+  - Auth: a failed refresh (network, 5xx, 429, timeout) keeps the session;
+    only a rejected refresh token signs out (`refreshSession` → ok /
+    rejected / unavailable, 10 s timeout). A 401 tries the stored token, then
+    one shared refresh, then retries; a 401 on a just-issued token is a
+    retryable 503 `auth_unavailable`, not a sign-out. Refreshes are shared
+    per refresh token in the tab and never write back after Sign out.
+    `endSession()` + `onSignedOut` send the layout to sign-in. Sign out uses
+    `/logout?scope=local` (global also signed the coach out of the phone).
+  - `/coach` is mounted outside the marketing tree in `App.tsx` (no pixel,
+    Tradedoubler, page view or cookie banner while the callback URL holds
+    tokens).
+  - Revisions: Who, set-up drafts and notes keep the baseline they started
+    from (no silent overwrite after a focus refetch); a 409 caused by an
+    unrelated change resends once when what the coach edited is unchanged
+    (also C3.9 settings), never into a profile the client has accepted, and
+    the cache keeps the 409's newer copy. Other drafts follow the coach's own
+    saves and copy-from. Leaving set-up any way saves (the title link via
+    `go()`, anything else in the background on unmount); screens remount per
+    profile id (`PerProfile`).
+  - The invite step only auto-issues after a successful fresh read (a code
+    issued on another device is never voided).
+  - Not changed (outside the ticket, flagged to Brad): `admin/adminAuth.ts`
+    Sign out also uses GoTrue's default global scope.
 
 ### 2026-11-21 — BE-H1: You page and coach training reads, `packages/training-metrics` ([PER-113](https://linear.app/evans-software-solutions/issue/PER-113); branch `bradleysimmsevans/per-113-be-h1-backend-you-page-and-coach`)
 
