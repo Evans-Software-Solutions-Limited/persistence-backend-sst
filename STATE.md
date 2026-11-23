@@ -1,5 +1,76 @@
 # Project memory · persistence-backend-sst
 
+### 2026-11-23 — APP-A1: web coach workspace, add client (C11), invited client, C3.9 settings ([PER-124](https://linear.app/evans-software-solutions/issue/PER-124); branch `bradleysimmsevans/per-124-app-a1-web-coach-add-client-c11`)
+
+`packages/web` only; no backend, mobile, native or migration change. Uses the
+PER-108 routes as merged (plus PER-116 forms and PER-118 meal plans for the
+set-up sections). Ships with the next store release window; Brad reviews on
+staging.
+
+- **New web coach workspace** at `/coach/*` (`src/coach/`, lazy-loaded as its
+  own chunk, not linked from the marketing site). Brad, 23 Nov: build the
+  shell properly in this ticket, because `packages/web` had no coach sign-in,
+  rail, Clients list or client page.
+  - Sign-in: GoTrue magic link (`create_user: false`), session in
+    `localStorage` (`persistence.coach.session`), refresh near expiry, kept
+    while offline. Reuses `admin/adminAuth.ts`'s JWT decode + Supabase config.
+    ⚠ Supabase's redirect allow-list needs `https://<site>/coach/callback`
+    for staging and production (dashboard setting, not in the repo).
+  - Role gate is UX only (`GET /profile` role in personal_trainer /
+    physiotherapist / admin); the API enforces it on every call.
+  - Rail (K layout): Today, Notifications, Library, Messages and You are shown
+    but inert ("Not on the web yet"); Clients is live.
+- **Screens** (container/presenter): Clients list (C11e: Invited above
+  Active, Resend; Active keeps client / programme / last active, the C8
+  Check-in and Adherence columns are PER-129 / PER-127), Add client 1 Who /
+  2 Set up / 3 Invite (C11a–c), Preview as client (C11b2), Copy setup from a
+  client, invited client page (C11d: only Overview open, other tabs locked,
+  Copy link, Resend, Cancel invite, private notes), active client page with
+  the C3.9 Settings tab.
+- **Set-up sections shown**: starter forms, repeating check-ins, calorie and
+  macro target, meal plan, welcome message (`WEB_SECTIONS` in
+  `coach/lib/setup.ts`). Programme (PER-112) and resources (PER-122) have no
+  live handler and no web editor; a section answering 422
+  `section_unavailable` is hidden at run time. Moving to another section,
+  Back, Skip and Next save (PUT with `expectedRevision`); Cancel drops the
+  current section's draft. A repeating check-in's day/time/due/reminders are
+  saved as the per-client `override`; "How often" comes from the send rule
+  and is read-only here.
+- **Coach declaration**: asked before the first personal invite (GET status,
+  then a dialog; a 403 `declaration_required` also opens it). The canvas has
+  no declaration copy, so Brad asked for researched standard wording:
+  `coach/lib/declaration.ts` (DRAFT, version `2026-11-v1`, SHA-256 of the text
+  sent as `statementTextHash`). Changing the text needs the version bumped
+  here and in `COACH_DECLARATION_VERSION`.
+- **C3.9 settings** (Brad's choice): the six backend feature keys (Meal plans
+  + Food logging shown as one "Nutrition" row; Training plan, Workout logging
+  and AI summary rows hidden, no key), plus "Tracked for {name}": Training
+  with a sessions-per-week stepper (1–14, starts at 3) and Calories. Alerts
+  as three exclusive switches. End coaching = `DELETE
+  /trainers/me/clients/:clientId`. The board's "{name} shares with you" and
+  "Coaching" details are hidden: no coach-side API for them.
+- **States**: offline (C9c banner "Offline · showing X as of HH:MM", edits
+  and online-only actions disabled; queries use `networkMode: "always"` so a
+  page opened offline says so instead of loading for ever), 409
+  `revision_conflict` on profile, set-up and settings (server copy replaces
+  ours, "Updated on another device"), expired code ("Code expired" pill,
+  Resend). Resend only issues a new code (the backend sends nothing), so it
+  opens the invite step to share it.
+- **Copy**: the canvas uses she/her for Lena; the web never knows pronouns,
+  so copy uses the first name or they/their.
+- **New dependency**: `qrcode` (+ `@types/qrcode`), web only, for the invite
+  QR (encodes the same `persistencemobile://accept-invite?code=` link as the
+  iPhone sheet). `bun.lock` re-hoisted some vitest coverage entries (same
+  versions).
+- **Tests**: `src/coach/__tests__/` (118): pure libs, auth/API client, and
+  every container through a fake API (`CoachApiContext`): save-on-move,
+  Cancel, 409 on each write, section_unavailable, offline per screen,
+  expired code, declaration gate, copy-from, preview, end coaching.
+  `src/coach/**` coverage: 97.7% statements, 90.3% branches, 97.0%
+  functions, 98.7% lines.
+- **Not verified**: no staging run, no real Supabase sign-in, nothing against
+  the live API (fake API + Playwright render with mocked routes only).
+
 ### 2026-11-21 — BE-H1: You page and coach training reads, `packages/training-metrics` ([PER-113](https://linear.app/evans-software-solutions/issue/PER-113); branch `bradleysimmsevans/per-113-be-h1-backend-you-page-and-coach`)
 
 PR #545 (open, no auto-merge). Backend design H. Read-only, additive: four new paths, no migration, no

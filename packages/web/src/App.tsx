@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { Suspense, lazy, useEffect } from "react";
 import { Navigate, Routes, Route, useLocation } from "react-router";
 import Home from "./pages/Home";
 import Pricing from "./pages/Pricing";
@@ -41,6 +41,9 @@ import { initTradedoubler, teardownTradedoubler } from "./lib/tradedoubler";
 import { hasConsent, subscribe } from "./lib/consent";
 
 const queryClient = new QueryClient();
+
+/** The web coach workspace (PER-124), its own chunk. */
+const CoachApp = lazy(() => import("./coach/CoachApp"));
 
 /**
  * Bridges consent → the Meta Pixel across every route (spec-30 R3.5). On mount
@@ -218,6 +221,19 @@ function App() {
             <Route path="lookup" element={<AdminLookup />} />
             <Route path="audit" element={<AdminAudit />} />
           </Route>
+          {/*
+           * Web coach workspace (PER-124). Signed-in coaches only; the API
+           * enforces the trainer role on every call. Not linked from the
+           * marketing site.
+           */}
+          <Route
+            path="/coach/*"
+            element={
+              <Suspense fallback={null}>
+                <CoachApp />
+              </Suspense>
+            }
+          />
           <Route
             path="/org-admin"
             element={
