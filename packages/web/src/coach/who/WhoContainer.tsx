@@ -9,7 +9,7 @@ import {
   useCoachApi,
   useOnline,
 } from "../hooks/coachQueries";
-import { CONFLICT_NOTICE } from "../lib/draft";
+import { CONFLICT_NOTICE, stillEditable } from "../lib/draft";
 import { EMPTY, changedFields, toInput, valuesFrom } from "../lib/whoForm";
 import { LoadError, Loading } from "../ui/parts";
 import { WhoStepView, type WhoValues } from "./WhoStep";
@@ -90,6 +90,7 @@ function WhoForm({ existing: loaded }: { existing: ClientProfile | null }) {
               : undefined;
           const untouched =
             !!latest &&
+            stillEditable(latest) &&
             (Object.keys(patch) as (keyof typeof patch)[]).every(
               (k) => (latest[k] ?? null) === (existing[k] ?? null),
             );

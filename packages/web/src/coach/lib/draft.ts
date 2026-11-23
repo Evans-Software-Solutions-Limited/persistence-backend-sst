@@ -74,3 +74,12 @@ export function itemsToSave(
   }
   return renumbered;
 }
+
+/**
+ * Only an invited (or cancelled) profile can still be edited. A 409 resend
+ * must not go to a profile the client has just accepted: the 409 handler then
+ * stores it and the screen moves to the client's page.
+ */
+export function stillEditable(profile: { status: string }): boolean {
+  return profile.status === "invited" || profile.status === "cancelled";
+}

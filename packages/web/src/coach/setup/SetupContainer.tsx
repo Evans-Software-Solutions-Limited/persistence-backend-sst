@@ -25,6 +25,7 @@ import {
   draftError,
   itemsToSave,
   sameItems,
+  stillEditable,
 } from "../lib/draft";
 import { clockTime, firstName, initials } from "../lib/people";
 import {
@@ -121,7 +122,11 @@ export function SetupContainer() {
                 ? (e.body?.current as ClientProfileDetail | undefined)
                 : undefined;
             // Only when this section is still as the draft found it.
-            if (current && sameItems(dr.base, itemsOf(current, s))) {
+            if (
+              current &&
+              stillEditable(current) &&
+              sameItems(dr.base, itemsOf(current, s))
+            ) {
               latest = await put(current.revision).catch(() => current);
             } else if (current) {
               latest = current;
@@ -228,7 +233,11 @@ export function SetupContainer() {
           isCoachApiError(e) && e.code === "revision_conflict"
             ? (e.body?.current as ClientProfileDetail | undefined)
             : undefined;
-        if (!latest || !sameItems(draft!.base, itemsOf(latest, current))) {
+        if (
+          !latest ||
+          !stillEditable(latest) ||
+          !sameItems(draft!.base, itemsOf(latest, current))
+        ) {
           throw e;
         }
         next = await put(latest.revision);

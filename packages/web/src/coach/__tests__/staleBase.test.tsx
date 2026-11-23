@@ -7,13 +7,16 @@ import { useNavigate } from "react-router";
 import { InvitedClientContainer } from "../invited/InvitedClientContainer";
 import { SetupContainer } from "../setup/SetupContainer";
 import { WhoContainer } from "../who/WhoContainer";
+import { ClientPage } from "../clients/ClientPage";
 import {
+  CLIENT_ID,
   PROFILE_ID,
   currentPath,
   detail,
   fakeApi,
   renderCoach,
   setOnline,
+  settings,
 } from "./helpers";
 
 /**
@@ -412,5 +415,81 @@ describe("invite step after a failed refetch (sweep 9)", () => {
     await waitFor(() => expect(api.profileDetail).toHaveBeenCalled());
     await new Promise((r) => setTimeout(r, 30));
     expect(api.issueInvite).not.toHaveBeenCalled();
+  });
+});
+
+describe("sweep 10", () => {
+  it("a 409 because the client just accepted goes to their page, without a resend", async () => {
+    const accepted = detail({
+      revision: 7,
+      status: "active",
+      clientId: CLIENT_ID,
+    });
+    const api = fakeApi({
+      replaceSection: vi
+        .fn()
+        .mockRejectedValue(
+          new CoachApiError(409, {
+            code: "revision_conflict",
+            current: accepted,
+          }),
+        ),
+    });
+    renderCoach(<SetupContainer />, {
+      route: `/coach/clients/invited/${PROFILE_ID}/setup/welcome_message`,
+      path: "/coach/clients/invited/:profileId/setup/:section?",
+      api,
+    });
+    fireEvent.change(await screen.findByLabelText("Message"), {
+      target: { value: "Hi" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Next: invite" }));
+    await waitFor(() =>
+      expect(currentPath()).toBe(`/coach/clients/${CLIENT_ID}`),
+    );
+    expect(api.replaceSection).toHaveBeenCalledTimes(1);
+  });
+
+  it("settings: a 409 from a different setting resends this change", async () => {
+    const changedOnPhone = settings({
+      revision: 9,
+      features: { ...settings().features, messages: false },
+    });
+    const api = fakeApi({
+      patchSettings: vi
+        .fn()
+        .mockRejectedValueOnce(
+          new CoachApiError(409, {
+            code: "revision_conflict",
+            current: changedOnPhone,
+          }),
+        )
+        .mockImplementationOnce(async (_c, patch) => ({
+          ...changedOnPhone,
+          ...patch,
+          features: { ...changedOnPhone.features, ...patch.features },
+          revision: 10,
+        })),
+    });
+    renderCoach(<ClientPage />, {
+      route: `/coach/clients/${CLIENT_ID}/settings`,
+      path: "/coach/clients/:clientId/:tab?",
+      api,
+    });
+    fireEvent.click(
+      await screen.findByRole("switch", { name: "Progress photos" }),
+    );
+    await waitFor(() => expect(api.patchSettings).toHaveBeenCalledTimes(2));
+    expect(api.patchSettings.mock.calls[1]).toEqual([
+      CLIENT_ID,
+      { features: { photos: false } },
+      9,
+    ]);
+    expect(screen.queryByText(/Updated on another device/)).toBeNull();
+    expect(
+      screen
+        .getByRole("switch", { name: "Messages" })
+        .getAttribute("aria-checked"),
+    ).toBe("false");
   });
 });

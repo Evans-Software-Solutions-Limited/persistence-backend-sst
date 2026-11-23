@@ -12,7 +12,12 @@ import {
 } from "../hooks/coachQueries";
 import { CONFLICT_NOTICE } from "../lib/draft";
 import { clockTime, firstName, initials, lastActive } from "../lib/people";
-import { applyPatch, clampSessions, trainingPatch } from "../lib/settings";
+import {
+  applyPatch,
+  clampSessions,
+  trainingPatch,
+  untouchedBy,
+} from "../lib/settings";
 import { ClientSettingsView } from "../settings/ClientSettings";
 import { Avatar, BackLink, LoadError, Loading } from "../ui/parts";
 import { ClientTabs, type ClientTab } from "./ClientTabs";
@@ -98,7 +103,20 @@ function ClientSettingsPage({ client }: { client: RosterClient }) {
     setNotice(null);
     queryClient.setQueryData(key, applyPatch(before, patch));
     try {
-      const saved = await api.patchSettings(client.id, patch, before.revision);
+      let saved: ClientSettings;
+      try {
+        saved = await api.patchSettings(client.id, patch, before.revision);
+      } catch (e) {
+        // The revision covers every setting: a change to a different one
+        // (e.g. a feature switch on the phone) also gives a 409. If what this
+        // patch touches is unchanged on the server, send it once more.
+        const latest =
+          isCoachApiError(e) && e.code === "revision_conflict"
+            ? (e.body?.current as ClientSettings | undefined)
+            : undefined;
+        if (!latest || !untouchedBy(patch, before, latest)) throw e;
+        saved = await api.patchSettings(client.id, patch, latest.revision);
+      }
       queryClient.setQueryData(key, saved);
     } catch (e) {
       if (isCoachApiError(e) && e.code === "revision_conflict") {

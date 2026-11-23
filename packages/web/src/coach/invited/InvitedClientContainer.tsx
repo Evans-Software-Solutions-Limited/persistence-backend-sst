@@ -11,7 +11,7 @@ import {
   useOnline,
 } from "../hooks/coachQueries";
 import { useInviteActions } from "../invite/useInviteActions";
-import { CONFLICT_NOTICE } from "../lib/draft";
+import { CONFLICT_NOTICE, stillEditable } from "../lib/draft";
 import { clockTime, firstName, initials } from "../lib/people";
 import {
   WEB_SECTIONS,
@@ -115,7 +115,11 @@ export function InvitedClientContainer() {
           isCoachApiError(e) && e.code === "revision_conflict"
             ? (e.body?.current as ClientProfile | undefined)
             : undefined;
-        if (!latest || (latest.privateNotes ?? null) !== (base.notes ?? null)) {
+        if (
+          !latest ||
+          !stillEditable(latest) ||
+          (latest.privateNotes ?? null) !== (base.notes ?? null)
+        ) {
           throw e;
         }
         updated = await save(latest.revision);

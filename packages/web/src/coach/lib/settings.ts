@@ -37,3 +37,20 @@ export function applyPatch(
     features: { ...settings.features, ...(patch.features ?? {}) },
   };
 }
+
+/** True when none of the settings `patch` changes moved between two reads. */
+export function untouchedBy(
+  patch: SettingsPatch,
+  before: ClientSettings,
+  latest: ClientSettings,
+): boolean {
+  const scalar = (
+    ["trackTraining", "trackCalories", "sessionsPerWeek", "alertMode"] as const
+  ).every((k) => patch[k] === undefined || before[k] === latest[k]);
+  const features = Object.keys(patch.features ?? {}).every(
+    (k) =>
+      before.features[k as keyof ClientSettings["features"]] ===
+      latest.features[k as keyof ClientSettings["features"]],
+  );
+  return scalar && features;
+}
