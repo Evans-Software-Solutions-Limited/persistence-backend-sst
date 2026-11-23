@@ -129,4 +129,32 @@ describe("applyUserMealsResponse", () => {
       "local-k2",
     );
   });
+
+  it("swaps from the reply even when a stale read already dropped the local meal (Inspector Brad #550)", () => {
+    const storage = new InMemoryStorageAdapter();
+    storage.initialize();
+    storage.enqueueMutation({
+      entityType: "nutrition_entry",
+      entityId: "e1",
+      operation: "create",
+      payload: { userMealId: "local-k1", mealSlot: "snack" },
+      endpoint: "/nutrition/entries",
+      method: "POST",
+    });
+    // A GET that started before the edit landed and overwrote the cache.
+    storage.cacheUserMeals(USER, meals());
+    applyUserMealsResponse(storage, USER, [
+      ...meals(),
+      {
+        ...meals()[0]!,
+        id: "srv-9",
+        name: "Supper",
+        clientRequestId: "k1",
+        defaultKey: null,
+      },
+    ]);
+    expect(
+      JSON.parse(storage.getPendingMutations()[0]!.payload).userMealId,
+    ).toBe("srv-9");
+  });
 });

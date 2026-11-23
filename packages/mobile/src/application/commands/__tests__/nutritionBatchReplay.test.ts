@@ -328,6 +328,47 @@ describe("offline logging and batch replay (PER-132)", () => {
     expect(server.rows).toHaveLength(1);
   });
 
+  it("a batch that 500s again is sent singly, so one bad entry can't fail the rest (Inspector Brad #550)", async () => {
+    log();
+    log({ customName: "Poison" });
+    log();
+    // The server throws on one entry, so every batch containing it 500s.
+    const realFetch = server.fetch;
+    (globalThis as Record<string, unknown>).fetch = jest.fn(
+      async (
+        url: string,
+        init: {
+          method: string;
+          headers: Record<string, string>;
+          body?: string;
+        },
+      ) => {
+        const body = init.body ? JSON.parse(init.body) : {};
+        const poisoned = url.endsWith("/batch")
+          ? (body.entries as { customName?: string }[]).some(
+              (e) => e.customName === "Poison",
+            )
+          : body.customName === "Poison";
+        if (poisoned) {
+          return {
+            ok: false,
+            status: 500,
+            json: async () => ({}),
+            text: async () => "boom",
+          };
+        }
+        return realFetch(url, init);
+      },
+    );
+    const first = await processSyncQueue(storage, auth, BASE);
+    expect(first.failed).toBe(3); // first 500: charged as transient
+    const second = await processSyncQueue(storage, auth, BASE, AFTER_BACKOFF);
+    expect(second.succeeded).toBe(2);
+    expect(server.rows).toHaveLength(2);
+    const [left] = storage.getPendingMutations();
+    expect(JSON.parse(left!.payload).customName).toBe("Poison");
+  });
+
   it("a 402 blocks the entries for the upgrade flow", async () => {
     log();
     (globalThis as Record<string, unknown>).fetch = jest.fn(async () => ({

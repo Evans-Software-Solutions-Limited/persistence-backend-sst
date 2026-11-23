@@ -111,20 +111,51 @@ export interface FuelSheetsState {
   notifyMutated: () => void;
 }
 
+/**
+ * The meal a newly opened sheet logs into. Given explicitly (a meal id, or null
+ * for slot-only), it wins. Omitted — a sheet-to-sheet handoff such as Quick add
+ * → Scan — the open flow's meal carries over while the slot is unchanged
+ * (Inspector Brad, #550). `close()` clears it, so a fresh open starts empty.
+ */
+function keptMeal(
+  s: Pick<FuelSheetsState, "slot" | "userMealId">,
+  slot: MealSlot,
+  userMealId: string | null | undefined,
+): string | null {
+  if (userMealId !== undefined) return userMealId;
+  return s.slot === slot ? s.userMealId : null;
+}
+
 export const useFuelSheets = create<FuelSheetsState>((set) => ({
   sheet: null,
   slot: "breakfast",
   date: localDayISO(),
   rev: 0,
   userMealId: null,
-  openScan: (slot = "breakfast", userMealId = null) =>
-    set({ sheet: "scan", slot, userMealId }),
-  openQuickAdd: (slot = "breakfast", userMealId = null) =>
-    set({ sheet: "quickAdd", slot, userMealId }),
-  openSnap: (slot = "breakfast", userMealId = null) =>
-    set({ sheet: "snap", slot, userMealId }),
-  openQuickLog: (slot = "breakfast", userMealId = null) =>
-    set({ sheet: "quickLog", slot, userMealId }),
+  openScan: (slot = "breakfast", userMealId) =>
+    set((s) => ({
+      sheet: "scan",
+      slot,
+      userMealId: keptMeal(s, slot, userMealId),
+    })),
+  openQuickAdd: (slot = "breakfast", userMealId) =>
+    set((s) => ({
+      sheet: "quickAdd",
+      slot,
+      userMealId: keptMeal(s, slot, userMealId),
+    })),
+  openSnap: (slot = "breakfast", userMealId) =>
+    set((s) => ({
+      sheet: "snap",
+      slot,
+      userMealId: keptMeal(s, slot, userMealId),
+    })),
+  openQuickLog: (slot = "breakfast", userMealId) =>
+    set((s) => ({
+      sheet: "quickLog",
+      slot,
+      userMealId: keptMeal(s, slot, userMealId),
+    })),
   openSuggestLocked: () => set({ sheet: "suggestLocked" }),
   optionsMealKey: null,
   openYourMeals: () => set({ sheet: "yourMeals" }),

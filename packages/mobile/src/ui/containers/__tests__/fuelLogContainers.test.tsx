@@ -311,6 +311,28 @@ describe("useMealQuickActions — the five quick buttons for one meal", () => {
   });
 });
 
+describe("useFuelSheets meal target", () => {
+  it("a Quick add → Scan/Snap handoff keeps the meal; another slot or an explicit null drops it (Inspector Brad #550)", () => {
+    const st = () => useFuelSheets.getState();
+    act(() => st().openQuickAdd("snack", "um-pre"));
+    act(() => st().openScan("snack"));
+    expect(st().userMealId).toBe("um-pre");
+    act(() => st().openSnap("snack"));
+    expect(st().userMealId).toBe("um-pre");
+    act(() => st().openQuickLog("snack"));
+    expect(st().userMealId).toBe("um-pre");
+    act(() => st().openScan("lunch"));
+    expect(st().userMealId).toBeNull();
+    act(() => st().openQuickAdd("lunch", "um-l"));
+    act(() => st().openQuickAdd("lunch", null));
+    expect(st().userMealId).toBeNull();
+    act(() => st().openQuickAdd("lunch", "um-l"));
+    act(() => st().close());
+    act(() => st().openScan("lunch"));
+    expect(st().userMealId).toBeNull();
+  });
+});
+
 describe("useLogEntry — logs go into the meal the drawer was opened for", () => {
   it("attaches the meal while the slot matches, not after the slot changes", async () => {
     const { Wrapper, storage } = setup();

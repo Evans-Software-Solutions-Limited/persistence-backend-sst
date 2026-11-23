@@ -42,8 +42,10 @@ export function useUserMeals(enabled = true): UserMealsState {
       return result.ok ? { ok: true, value: result.value.meals } : result;
     },
     write: (s, uid, value) => {
+      // Uncompleted, not pending: an IN-FLIGHT PUT is newer than a GET that
+      // started before it (Inspector Brad, #550).
       const editQueued = s
-        .getPendingMutations()
+        .getUncompletedMutations()
         .some((e) => e.entityType === USER_MEALS_ENTITY && e.entityId === uid);
       if (!editQueued) s.cacheUserMeals(uid, value);
     },

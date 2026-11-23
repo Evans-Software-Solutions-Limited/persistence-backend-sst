@@ -76,13 +76,12 @@ export function applyUserMealsResponse(
   userId: string,
   serverMeals: readonly UserMeal[],
 ): void {
-  const cached = storage.getCachedUserMeals(userId) ?? [];
-  for (const local of cached) {
-    if (!local.id.startsWith("local-") || !local.clientRequestId) continue;
-    const match = serverMeals.find(
-      (m) => m.clientRequestId === local.clientRequestId,
-    );
-    if (match) storage.swapLocalUserMealId(local.id, match.id);
+  // Swap from the server's reply, not the cache: a stale GET may already have
+  // replaced the cached list, but queued entries still carry `local-<key>`.
+  for (const m of serverMeals) {
+    if (m.clientRequestId) {
+      storage.swapLocalUserMealId(`local-${m.clientRequestId}`, m.id);
+    }
   }
   const laterEditQueued = storage
     .getPendingMutations()

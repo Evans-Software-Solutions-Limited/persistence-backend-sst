@@ -1652,7 +1652,15 @@ async function drainNutritionEntryBatch(
         return outcome;
       }
     }
-    if (isPermanentClientError(response.status)) {
+    // A permanent 4xx (schema, or no route) — or a repeat server error, which
+    // may be one entry the server throws on: send singly, so one bad entry
+    // can't fail the whole batch (Inspector Brad, #550). Safe: each single
+    // keeps its key. A first 5xx is charged as transient.
+    const repeatServerError =
+      response.status >= 500 &&
+      batch.length > 1 &&
+      batch.some((e) => e.retryCount > 0);
+    if (isPermanentClientError(response.status) || repeatServerError) {
       for (const e of batch) {
         outcome[
           await sendSingleNutritionCreate(storage, auth, apiBaseUrl, e)
