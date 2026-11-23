@@ -344,6 +344,46 @@ describe("AcceptInviteContainer", () => {
       expect(target).toMatch(/&nav=\d+$/);
     });
 
+    it("Accept stays disabled while the accepted coach is loading (Inspector Brad, #547)", async () => {
+      const utils = await renderFlow();
+      utils.api.nextAcceptInviteCodeResult = {
+        success: true,
+        relationshipId: "rel-ellie",
+        trainerName: "Ellie Hart",
+        message: "ok",
+        relationshipStatus: "active",
+        ready: null,
+      };
+      let release: () => void = () => {};
+      utils.api.getMyCoaching = jest.fn(
+        () =>
+          new Promise((resolve) => {
+            release = () =>
+              resolve(ok({ coaches: [ELLIE], asOf: "2026-11-23T09:00:00Z" }));
+          }),
+      );
+      await previewCode(utils, "ELLIE1");
+      fireEvent.press(utils.getByTestId("invite-preview-agree"));
+      await act(async () => {
+        fireEvent.press(utils.getByTestId("invite-preview-accept"));
+      });
+      expect(
+        utils.getByTestId("invite-preview-accept").props.accessibilityState
+          ?.disabled,
+      ).toBe(true);
+      await act(async () => {
+        fireEvent.press(utils.getByTestId("invite-preview-accept"));
+      });
+      expect(utils.api.acceptInviteCodeCalls).toEqual(["ELLIE1"]);
+
+      await act(async () => {
+        release();
+      });
+      expect(mockReplace).toHaveBeenCalledWith(
+        expect.stringContaining("coachId=rel-ellie"),
+      );
+    });
+
     it("personal code, coaching read fails: lands on You, not bounced Home by the tab guard (Inspector Brad, #547)", async () => {
       const utils = await renderFlow();
       utils.api.nextAcceptInviteCodeResult = {

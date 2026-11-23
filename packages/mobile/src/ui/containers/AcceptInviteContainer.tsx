@@ -54,6 +54,9 @@ export function AcceptInviteContainer() {
   const [agreed, setAgreed] = useState(false);
   const [acceptError, setAcceptError] = useState("");
   const [expired, setExpired] = useState(false);
+  // Accepted, still loading the coach before leaving: keep Accept disabled so
+  // a second tap can't re-submit (Inspector Brad, #547).
+  const [finishing, setFinishing] = useState(false);
 
   // We've arrived on the redeem screen (the code, if any, is now in the URL) —
   // clear the auth-flow stash so it can't resurface on a later sign-in.
@@ -109,6 +112,7 @@ export function AcceptInviteContainer() {
       if (data.relationshipStatus === "active") {
         // Personal code: connected now. Load the coach before landing on the
         // Coach tab, which only shows while someone coaches you.
+        setFinishing(true);
         await myCoaches.refresh({ silent: true });
         // The Coach tab exists only once the coach is cached (every
         // `useMyCoaches` re-reads synchronously on write). If that read
@@ -168,7 +172,7 @@ export function AcceptInviteContainer() {
         initials={coachInitials(name) || "?"}
         readyLine={readyLine(preview.ready)}
         agreed={agreed}
-        isSubmitting={accept.isPending}
+        isSubmitting={accept.isPending || finishing}
         isOffline={!online}
         isExpired={expired}
         errorMessage={acceptError}
