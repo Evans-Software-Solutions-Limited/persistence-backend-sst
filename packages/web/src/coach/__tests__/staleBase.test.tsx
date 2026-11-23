@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import type { QueryClient } from "@tanstack/react-query";
+import { useNavigate } from "react-router";
 import { InvitedClientContainer } from "../invited/InvitedClientContainer";
 import { SetupContainer } from "../setup/SetupContainer";
 import { WhoContainer } from "../who/WhoContainer";
@@ -102,5 +103,58 @@ describe("a refetch while editing keeps the starting point", () => {
         3,
       ),
     );
+  });
+});
+
+describe("a draft left in another section (sweep 6)", () => {
+  let go: (to: string) => void = () => {};
+  function GrabNavigate() {
+    const navigate = useNavigate();
+    go = (to) => navigate(to);
+    return null;
+  }
+
+  it("moves to the new revision after the coach's own save elsewhere", async () => {
+    const afterWelcome = detail({
+      revision: 4,
+      setup: {
+        welcome_message: [
+          { refId: null, config: { text: "Hi" }, sortOrder: 0 },
+        ],
+      },
+    });
+    const api = fakeApi({
+      replaceSection: vi
+        .fn()
+        .mockResolvedValueOnce(afterWelcome)
+        .mockResolvedValueOnce(detail({ revision: 5 })),
+    });
+    const at = (s: string) => `/coach/clients/invited/${PROFILE_ID}/setup/${s}`;
+    renderCoach(
+      <>
+        <SetupContainer />
+        <GrabNavigate />
+      </>,
+      {
+        route: at("meal_plan"),
+        path: "/coach/clients/invited/:profileId/setup/:section?",
+        api,
+      },
+    );
+    // Draft a meal plan, then leave it unsaved the way browser Back does.
+    fireEvent.click((await screen.findAllByRole("button", { name: "Add" }))[0]);
+    act(() => go(at("welcome_message")));
+    fireEvent.change(await screen.findByLabelText("Message"), {
+      target: { value: "Hi" },
+    });
+    // Saving the welcome message moves the profile to revision 4.
+    fireEvent.click(screen.getByRole("button", { name: /Meal plan/ }));
+    await waitFor(() => expect(api.replaceSection).toHaveBeenCalledTimes(1));
+    await screen.findByRole("heading", { name: "Meal plan" });
+    fireEvent.click(screen.getByRole("button", { name: "Next: invite" }));
+    await waitFor(() => expect(api.replaceSection).toHaveBeenCalledTimes(2));
+    const [, section, , revision] = api.replaceSection.mock.calls[1];
+    expect(section).toBe("meal_plan");
+    expect(revision).toBe(4);
   });
 });

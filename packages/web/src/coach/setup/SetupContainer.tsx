@@ -162,7 +162,20 @@ export function SetupContainer() {
         draft!.revision,
       );
       queryClient.setQueryData(detailKey, next);
-      dropDraft(current);
+      // The revision is per profile, so this save moves it for every section.
+      // Drafts left in other sections (e.g. after the browser's Back) move to
+      // the new revision when their section is unchanged on the server; a
+      // real concurrent change to that section still answers 409.
+      setDrafts((d) => {
+        const rest: Drafts = {};
+        for (const [s, dr] of Object.entries(d) as [SetupSection, Draft][]) {
+          if (s === current) continue;
+          rest[s] = sameItems(dr.base, itemsOf(next, s))
+            ? { ...dr, revision: next.revision }
+            : dr;
+        }
+        return rest;
+      });
       setToast("Saved");
       void queryClient.invalidateQueries({ queryKey: coachKeys.roster });
       return true;
