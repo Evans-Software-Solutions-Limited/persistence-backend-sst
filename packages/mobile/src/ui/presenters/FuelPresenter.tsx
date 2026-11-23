@@ -2,147 +2,111 @@ import { type RefObject, useEffect, useState } from "react";
 import { Pressable, RefreshControl, ScrollView } from "react-native";
 import { Text, View } from "@tamagui/core";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { HeaderBar, IconBtn } from "@/ui/components/foundation";
 import { NEUTRAL_HEX, toneHex } from "@/ui/components/foundation/tones";
 import { ErrorState, PLogoDrawLoader } from "@/ui/components";
 import { DateCalendarModal } from "@/ui/components/DatePickerField";
-import {
-  IconCalendar,
-  IconChevronL,
-  IconChevronR,
-  IconEdit,
-  IconTarget,
-  IconTrash,
-} from "@/ui/components/icons";
+import { IconEdit, IconTrash } from "@/ui/components/icons";
 import { localDayISO, type VolumeUnit } from "@/shared/utils";
 import type { ApiError } from "@/shared/errors";
 import type { MealSlot } from "@/domain/models/nutrition";
-import { MacroHeroPresenter, type MacroLineVM } from "./MacroHeroPresenter";
-import { QuickAddRowPresenter } from "./QuickAddRowPresenter";
 import { MealLogPresenter, type MealSlotVM } from "./MealLogPresenter";
 import { WaterTrackerPresenter } from "./WaterTrackerPresenter";
-import {
-  MealprintEntryCard,
-  type MealprintEntryState,
-  type MealprintPlanProgress,
-} from "./mealprint/MealprintEntryCard";
+import type { MealprintPlanProgress } from "./mealprint/MealprintEntryCard";
 import { ClearPlanConfirmDialog } from "./mealprint/ClearPlanConfirmDialog";
+import {
+  FuelLogHeaderPresenter,
+  type FuelSection,
+  type WeekDayVM,
+} from "./fuel/FuelLogHeaderPresenter";
+import {
+  FuelLogSummaryPresenter,
+  type MacroColumnVM,
+} from "./fuel/FuelLogSummaryPresenter";
+import {
+  FuelQuickActionsPresenter,
+  type FuelQuickActionsProps,
+} from "./fuel/FuelQuickActionsPresenter";
 
 /**
- * <FuelPresenter> — the Fuel (nutrition) screen (nutrition.jsx). Composes the
- * day-nav header → macro hero → quick-add row → meal log → water tracker,
- * top-to-bottom, under a large HeaderBar. Pure presentational; <FuelContainer>
- * wires the cache-first day aggregate + mutations + sheet opens + day state.
+ * <FuelPresenter> — the Fuel Log screen, canvas N1 (PER-132): header with
+ * Log · Plan · Meals and the week strip → compact rings with Eaten · Target ·
+ * Left → the five quick buttons → the Mealprint plan row (when the day has
+ * one) → Your meals → water. Pure presentational; <FuelContainer> wires the
+ * cache-first day aggregate, Your meals, mutations, sheet opens and day state.
+ *
+ * Mealprint's entry card is replaced by Suggest (One meal) and the Plan tab
+ * (Brad, 23 Nov: follow the canvas, keep the entry points). Water stays below
+ * the meals so it keeps an entry point.
  *
  * Cache-first: renders whatever day aggregate is present immediately; a blocking
  * loader/error shows only when there's no cache at all.
  *
- * Day navigation (BRIEF-7 QA-19): prev/next chevrons step one day; the
- * calendar icon opens a lightweight month-grid modal for a bigger jump. Both
- * are past+today only — the forward chevron disables on today and the
- * modal's day cells / month-forward chevron disable past today, matching the
- * owner's locked Tier-A scope (targets aren't per-day, so a historical day
- * still shows today's targets — that's just `noTarget`/`targetKcal` computed
- * upstream, nothing this presenter needs to special-case).
+ * Day navigation (BRIEF-7 QA-19, PER-132): the week strip picks a day this
+ * week; the calendar button opens the month-grid modal for earlier weeks.
+ * Both are past+today only (Tier A).
  *
  * Implements: specs/milestones/M9-nutrition/FRONTEND_BRIEF.md § <FuelPresenter>
  *             specs/milestones/GO-LIVE-FINAL/BRIEF-7-device-qa-bugs.md § QA-19
  */
 
 export type FuelPresenterProps = {
-  /** "Today" or "MONDAY · MAR 25" (container-computed, user-local). */
+  /** "Fri 23 Oct" — the viewed day (container-computed, user-local). */
   dateLabel: string;
-  /** The viewed day, `YYYY-MM-DD` — anchors the calendar modal's initial
-   * month + highlighted cell. */
+  /** The viewed day, `YYYY-MM-DD` — anchors the calendar modal. */
   selectedDate: string;
-  /** False when `selectedDate` is today — disables the forward chevron. */
-  canGoNext: boolean;
   hasData: boolean;
   isLoading: boolean;
   isRefreshing: boolean;
   error?: ApiError | null;
   onRefresh: () => void;
 
-  // Day nav
-  onPrevDay: () => void;
-  onNextDay: () => void;
+  // Header (canvas N1): Log · Plan · Meals and the week strip.
+  section: FuelSection;
+  onSection: (section: FuelSection) => void;
+  week: readonly WeekDayVM[];
+  onSelectDay: (dayIso: string) => void;
   calendarOpen: boolean;
+  onOpenCalendar: () => void;
   onCloseCalendar: () => void;
   onSelectDate: (dayIso: string) => void;
 
-  // Hero
-  remainingKcal: number;
+  // Compact rings + Eaten · Target · Left.
   consumedKcal: number;
   targetKcal: number;
-  ringPct: number;
-  macros: readonly MacroLineVM[];
-  celebrate: boolean;
+  consumedProteinG: number;
+  consumedCarbsG: number;
+  consumedFatG: number;
+  macros: readonly MacroColumnVM[];
   noTarget: boolean;
 
-  // Quick add
-  aiLocked: boolean;
-  /** True when offline — Snap is disabled independently of the AI entitlement. */
-  snapOffline?: boolean;
+  // Five quick buttons.
+  quickActions: Omit<FuelQuickActionsProps, "testID">;
 
-  // Mealprint (spec-26 T-0.6 entry point). Four states — see
-  // <MealprintEntryCard> for why `pending` and `stalled` are not synonyms for
-  // `locked`. The container resolves them via `useMealprintEntry`.
-  mealprintState: MealprintEntryState;
-  mealprintNeedsSetup: boolean;
-  /** Present ⇒ the viewed day has an active plan (spec-26 Phase 2, AC 5.1). */
+  /**
+   * Present ⇒ the viewed day has an accepted Mealprint plan (spec-26 Phase 2):
+   * its Edit/Clear row shows above the meals and its meals show as ghost rows.
+   */
   mealprintPlanProgress: MealprintPlanProgress | null;
-  onMealprint: () => void;
-  onMealprintUpgrade: () => void;
-  onMealprintRetry: () => void;
-  /** "Plan my day" — the entry card's second CTA. */
-  onMealprintPlan: () => void;
-  /**
-   * Fuel-page-level "Preferences" entry (amendment 2026-08 § C) — the
-   * two-CTA offer card's header link. See `MealprintEntryCard`'s docstring.
-   */
-  onMealprintEditPreferences: () => void;
-  /**
-   * "Edit plan" (amendment 2026-08-fuel-plan-surfacing § B) — pushes the
-   * Today/plan-config view where per-meal swap ("replace-meal") lives.
-   * Rendered in the plan actions row, only shown when there's an active plan
-   * (`mealprintPlanProgress !== null`).
-   */
   onEditPlan: () => void;
-  /**
-   * "Clear plan" (amendment § B) — the container's DELETE mutation. Called
-   * only after the in-presenter confirm dialog is accepted; logged entries
-   * are never touched (`ON DELETE SET NULL` server-side).
-   */
   onClearPlan: () => void;
-  /** True while the clear-plan DELETE is in flight — disables the dialog's CTAs. */
   clearingPlan?: boolean;
 
-  // Meal log
+  // Meals (Your meals).
   slots: readonly MealSlotVM[];
+  onAddToMeal: (mealKey: string) => void;
+  onMealOptions: (mealKey: string) => void;
+  onEditMeals: () => void;
 
   // Water
   waterCups: number;
   waterGoal: number;
-  /** Preferred display unit for the water tracker (device-QA #5/#7) — "l"
-   *  (default) shows litres, "cups" shows the stored count directly. */
   volumeUnit?: VolumeUnit;
 
-  // Handlers
   onOpenTargets: () => void;
-  onOpenCalendar: () => void;
-  onScan: () => void;
-  onSnap: () => void;
-  onSearch: () => void;
-  onRecipes: () => void;
-  onAddToSlot: (slot: MealSlot) => void;
   onSetWater: (cups: number) => void;
   onPressRow?: (id: string, slot: MealSlot) => void;
-  /** Swipe a logged entry left → tap Delete to remove it (handled in the container). */
   onDeleteEntry?: (id: string, slot: MealSlot) => void;
-  /** "Log it" on a ghost row (spec-26 AC 5.2). */
   onLogGhost?: (planId: string, planMealId: string, slot: MealSlot) => void;
-  onLog: () => void;
-  /** Forwarded by the container for tab-press scroll-to-top. */
   scrollRef?: RefObject<ScrollView | null>;
   testID?: string;
 };
@@ -236,53 +200,43 @@ export function FuelPresenter(props: FuelPresenterProps) {
   const {
     dateLabel,
     selectedDate,
-    canGoNext,
     hasData,
     isLoading,
     isRefreshing,
     error,
     onRefresh,
-    onPrevDay,
-    onNextDay,
+    section,
+    onSection,
+    week,
+    onSelectDay,
     calendarOpen,
+    onOpenCalendar,
     onCloseCalendar,
     onSelectDate,
-    remainingKcal,
     consumedKcal,
     targetKcal,
-    ringPct,
+    consumedProteinG,
+    consumedCarbsG,
+    consumedFatG,
     macros,
-    celebrate,
     noTarget,
-    aiLocked,
-    snapOffline = false,
-    mealprintState,
-    mealprintNeedsSetup,
+    quickActions,
     mealprintPlanProgress,
-    onMealprint,
-    onMealprintUpgrade,
-    onMealprintRetry,
-    onMealprintPlan,
-    onMealprintEditPreferences,
     onEditPlan,
     onClearPlan,
     clearingPlan = false,
     slots,
+    onAddToMeal,
+    onMealOptions,
+    onEditMeals,
     waterCups,
     waterGoal,
     volumeUnit = "l",
     onOpenTargets,
-    onOpenCalendar,
-    onScan,
-    onSnap,
-    onSearch,
-    onRecipes,
-    onAddToSlot,
     onSetWater,
     onPressRow,
     onDeleteEntry,
     onLogGhost,
-    onLog,
     scrollRef,
     testID = "fuel-screen",
   } = props;
@@ -297,99 +251,17 @@ export function FuelPresenter(props: FuelPresenterProps) {
     if (mealprintPlanProgress === null) setConfirmClearOpen(false);
   }, [mealprintPlanProgress]);
 
-  // Protein still owing today, for the Mealprint card's concrete pitch. Derived
-  // from the hero's own view-model rather than added to the container's props, so
-  // the two can never disagree about what "left" means.
-  const proteinLine = macros.find((m) => m.label === "Protein");
-  const remainingProteinG =
-    proteinLine === undefined ? null : proteinLine.target - proteinLine.value;
-
-  // ⚠ Fuel is DAY-NAVIGABLE, and the card's concrete line says "today".
-  //
-  // `remainingKcal`/`macros` describe the VIEWED day, so on a past day the card
-  // would read "You have 1,160 kcal left today" over last Tuesday's numbers —
-  // false, and an invitation to act: the suggest sheet generates and logs against
-  // the active date, so "fill today's gap" would write food to a past day. The
-  // generic subtitle makes no day claim, so it is the safe fallback.
-  //
-  // ⚠ Compared DIRECTLY, not derived from `canGoNext`. An earlier version used
-  // `!canGoNext`, which is equivalent today but only by coincidence: that prop's
-  // contract is "disables the forward chevron". spec-26 is meal PLANNING, so the
-  // day forward-nav is likely to open up — at which point `canGoNext` goes true on
-  // today (silently hiding the line on the one day it is correct) and false on a
-  // future date (putting the false claim straight back).
-  const viewingToday = selectedDate === localDayISO();
-
   const header = (
-    <>
-      <HeaderBar
-        large
-        title="Fuel"
-        trailing={
-          <IconBtn
-            icon={<IconTarget size={18} />}
-            tone="primary"
-            onPress={onOpenTargets}
-            testID="fuel-open-targets"
-            accessibilityLabel="Edit nutrition targets"
-          />
-        }
+    <View paddingHorizontal={20}>
+      <FuelLogHeaderPresenter
+        section={section}
+        onSection={onSection}
+        dayLabel={dateLabel}
+        week={week}
+        onSelectDay={onSelectDay}
+        onOpenCalendar={onOpenCalendar}
+        onOpenTargets={onOpenTargets}
       />
-      {/* Compact day-nav (BRIEF-7 QA-19): ‹ steps back a day (unbounded —
-          past days always readable); the date/calendar area opens the
-          month-grid modal for a bigger jump; › steps forward, disabled on
-          today (Tier A is past+today only). */}
-      <View
-        flexDirection="row"
-        alignItems="center"
-        justifyContent="center"
-        gap={2}
-        marginTop={-8}
-        marginBottom={12}
-        testID="fuel-day-nav"
-      >
-        <IconBtn
-          icon={<IconChevronL size={16} />}
-          tone="ghost"
-          size={30}
-          onPress={onPrevDay}
-          testID="fuel-prev-day"
-          accessibilityLabel="Previous day"
-        />
-        <Pressable
-          onPress={onOpenCalendar}
-          testID="fuel-open-calendar"
-          accessibilityRole="button"
-          accessibilityLabel="Pick a day"
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 6,
-            paddingHorizontal: 10,
-            paddingVertical: 4,
-          }}
-        >
-          <Text
-            fontFamily="$display"
-            fontSize={12.5}
-            fontWeight="600"
-            letterSpacing={0.4}
-            color="$text2"
-          >
-            {dateLabel}
-          </Text>
-          <IconCalendar size={14} color={NEUTRAL_HEX.text3} />
-        </Pressable>
-        <IconBtn
-          icon={<IconChevronR size={16} />}
-          tone="ghost"
-          size={30}
-          disabled={!canGoNext}
-          onPress={onNextDay}
-          testID="fuel-next-day"
-          accessibilityLabel="Next day"
-        />
-      </View>
       <DateCalendarModal
         visible={calendarOpen}
         selectedDate={selectedDate}
@@ -399,7 +271,7 @@ export function FuelPresenter(props: FuelPresenterProps) {
         label="Choose Fuel date"
         testID="fuel-calendar-modal"
       />
-    </>
+    </View>
   );
 
   if (isLoading && !hasData) {
@@ -439,58 +311,21 @@ export function FuelPresenter(props: FuelPresenterProps) {
         }
       >
         {header}
-        <View paddingHorizontal={16} gap={16}>
-          <MacroHeroPresenter
-            remainingKcal={remainingKcal}
-            consumedKcal={consumedKcal}
+        <View paddingHorizontal={20} gap={14}>
+          <FuelLogSummaryPresenter
+            eatenKcal={consumedKcal}
             targetKcal={targetKcal}
-            ringPct={ringPct}
+            eatenProteinG={consumedProteinG}
+            eatenCarbsG={consumedCarbsG}
+            eatenFatG={consumedFatG}
             macros={macros}
-            celebrate={celebrate}
             noTarget={noTarget}
             onOpenTargets={onOpenTargets}
-            onLog={onLog}
           />
-          <QuickAddRowPresenter
-            aiLocked={aiLocked}
-            snapOffline={snapOffline}
-            onScan={onScan}
-            onSnap={onSnap}
-            onSearch={onSearch}
-            onRecipes={onRecipes}
-          />
-          {/* Mealprint sits directly below QuickAddRow (design § 4 item 1):
-              QuickAdd answers "log what I ate", Mealprint answers "what should I
-              eat" — adjacent questions, and this is the point in the scroll where
-              the user has just seen what they have left. */}
-          <MealprintEntryCard
-            state={mealprintState}
-            needsSetup={mealprintNeedsSetup}
-            // The card leads on the actual gap rather than a generic promise
-            // (design § the AnyMeal entry card) — but ONLY for today, and only
-            // with a target set. See `viewingToday` above; and note the card
-            // itself also requires `remainingKcal > 0`, because `computeRemaining`
-            // goes NEGATIVE when the user is over target (it is not 0-floored
-            // except on the no-target branch).
-            remainingKcal={noTarget || !viewingToday ? null : remainingKcal}
-            remainingProteinG={
-              noTarget || !viewingToday ? null : remainingProteinG
-            }
-            // ⚠ Separate from nulling the budget: the FALLBACK subtitles also say
-            // "today", and without this the card contradicted the sheet it opens.
-            isToday={viewingToday}
-            planProgress={mealprintPlanProgress}
-            onPress={onMealprint}
-            onPlanMyDay={onMealprintPlan}
-            onEditPreferences={onMealprintEditPreferences}
-            onUpgrade={onMealprintUpgrade}
-            onRetry={onMealprintRetry}
-          />
-          {/* Edit/Clear for today's active plan (amendment
-              2026-08-fuel-plan-surfacing § B) — "where the plan is shown on
-              Fuel", directly above its planned rows. Gated the same way the
-              ACTIVE entry-card variant is: an active plan is what
-              `mealprintPlanProgress` presence means. */}
+          <FuelQuickActionsPresenter {...quickActions} />
+          {/* Edit/Clear for the day's accepted Mealprint plan (amendment
+              2026-08-fuel-plan-surfacing § B), directly above its planned
+              rows. */}
           {mealprintPlanProgress !== null ? (
             <PlanActionsRow
               onEditPlan={onEditPlan}
@@ -499,7 +334,9 @@ export function FuelPresenter(props: FuelPresenterProps) {
           ) : null}
           <MealLogPresenter
             slots={slots}
-            onAddToSlot={onAddToSlot}
+            onAddToMeal={onAddToMeal}
+            onMealOptions={onMealOptions}
+            onEditMeals={onEditMeals}
             onPressRow={onPressRow}
             onDeleteEntry={onDeleteEntry}
             onLogGhost={onLogGhost}

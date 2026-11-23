@@ -94,3 +94,5 @@ export const TRAINING_LOG_TABLES = ["training_log"] as const;
 
 /** PER-126: the athlete's coaches (Coach tab, You → Coaching). */
 export const MY_COACHES_TABLES = ["cached_my_coaches"] as const;
+/** PER-132 Your meals (one list per user). */
+export const USER_MEAL_TABLES = ["cached_user_meals"] as const;

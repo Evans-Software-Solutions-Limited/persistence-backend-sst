@@ -62,6 +62,13 @@ export type NutritionEntry = {
    * comes from the linked food/recipe/meal cache. See `entryDisplayLabel`.
    */
   customName: string | null;
+  /**
+   * Which of "Your meals" this entry was logged into (PER-132, Design D).
+   * Optional and nullable: older cached days and entries logged by 1.2.0
+   * carry none, and are shown under the default meal for their `mealSlot`
+   * (`groupEntriesByUserMeal`).
+   */
+  userMealId?: string | null;
 };
 
 /** The user's daily kcal/macro/water target (one row per user). */
@@ -206,6 +213,12 @@ export type LogEntryInput = {
   aiConfidence?: number;
   /** ISO timestamp. */
   loggedAt: string;
+  /**
+   * PER-132: the user meal this entry goes into. Never a synthetic
+   * `slot:` id (see `isSyntheticUserMealId`); a `local-…` id is allowed and is
+   * swapped to the server id before the entry syncs.
+   */
+  userMealId?: string;
 };
 
 export type EditEntryInput = {

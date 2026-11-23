@@ -66,6 +66,7 @@ import type {
   Recipe,
 } from "@/domain/models/nutrition";
 import type { MyCoaching } from "@/domain/models/myCoaching";
+import type { UserMeal } from "@/domain/models/userMeals";
 
 /**
  * In-memory storage adapter for testing.
@@ -1608,6 +1609,51 @@ export class InMemoryStorageAdapter implements StoragePort {
     this.mealsCache.get(userId)?.delete(id);
   }
 
+  // PER-132 Your meals.
+  private userMealsCache: Map<string, UserMeal[]> = new Map();
+  getCachedUserMeals(userId: string): UserMeal[] | null {
+    const meals = this.userMealsCache.get(userId);
+    return meals ? meals.map((m) => ({ ...m })) : null;
+  }
+  cacheUserMeals(userId: string, meals: UserMeal[]): void {
+    this.userMealsCache.set(
+      userId,
+      meals.map((m) => ({ ...m })),
+    );
+  }
+  swapLocalUserMealId(localId: string, serverId: string): void {
+    if (localId === serverId) return;
+    for (const [userId, meals] of this.userMealsCache) {
+      if (!meals.some((m) => m.id === localId)) continue;
+      this.userMealsCache.set(
+        userId,
+        meals
+          .filter((m) => m.id !== serverId)
+          .map((m) => (m.id === localId ? { ...m, id: serverId } : m)),
+      );
+    }
+    for (const cached of this.fuelTodayCache.values()) {
+      for (const list of Object.values(cached.payload.entriesBySlot)) {
+        for (const e of list) {
+          if (e.userMealId === localId) e.userMealId = serverId;
+        }
+      }
+    }
+    for (const e of this.queue) {
+      if (e.entityType !== "nutrition_entry" || e.status === "completed")
+        continue;
+      try {
+        const body = JSON.parse(e.payload) as Record<string, unknown>;
+        if (body.userMealId === localId) {
+          body.userMealId = serverId;
+          e.payload = JSON.stringify(body);
+        }
+      } catch {
+        // Leave an unparseable payload for the generic failure path.
+      }
+    }
+  }
+
   clearAll(): void {
     this.queue = [];
     this.trainingLog.clear();
@@ -1643,6 +1689,7 @@ export class InMemoryStorageAdapter implements StoragePort {
     this.mealPlanCache.clear();
     this.recipesCache.clear();
     this.mealsCache.clear();
+    this.userMealsCache.clear();
     this.nextId = 1;
   }
 

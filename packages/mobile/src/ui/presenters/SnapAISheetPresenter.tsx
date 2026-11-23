@@ -1,7 +1,5 @@
 import { useEffect } from "react";
-import type { RefObject } from "react";
 import { Pressable } from "react-native";
-import { CameraView } from "expo-camera";
 import { Text, View } from "@tamagui/core";
 import Animated, {
   useAnimatedStyle,
@@ -50,9 +48,7 @@ export type SnapAISheetProps = {
   offline: boolean;
   hasPermission: boolean;
   onRequestPermission: () => void;
-  /** Forwarded to the mounted <CameraView> — the container calls
-   * `cameraRef.current?.takePictureAsync()` from `onShutterPress`. */
-  cameraRef: RefObject<CameraView | null>;
+  /** Opens the phone's own camera (PER-132); the container owns it. */
   onShutterPress: () => void;
   onPickFromLibrary: () => void;
   /** Draft items for the confirm/added stages. */
@@ -129,7 +125,6 @@ function CaptureStage({
   offline,
   hasPermission,
   onRequestPermission,
-  cameraRef,
   onShutterPress,
   onPickFromLibrary,
 }: Pick<
@@ -137,7 +132,6 @@ function CaptureStage({
   | "offline"
   | "hasPermission"
   | "onRequestPermission"
-  | "cameraRef"
   | "onShutterPress"
   | "onPickFromLibrary"
 >) {
@@ -192,7 +186,14 @@ function CaptureStage({
         testID="snap-camera-wrap"
         style={{ aspectRatio: 4 / 3, position: "relative" }}
       >
-        <CameraView ref={cameraRef} testID="snap-camera" style={{ flex: 1 }} />
+        <View
+          flex={1}
+          alignItems="center"
+          justifyContent="center"
+          testID="snap-camera"
+        >
+          <IconCamera size={40} color={toneHex("gold").base} />
+        </View>
         <View
           position="absolute"
           bottom={16}
@@ -253,7 +254,6 @@ export function SnapAISheetPresenter(props: SnapAISheetProps) {
     offline,
     hasPermission,
     onRequestPermission,
-    cameraRef,
     onShutterPress,
     onPickFromLibrary,
     items,
@@ -285,7 +285,6 @@ export function SnapAISheetPresenter(props: SnapAISheetProps) {
           offline={offline}
           hasPermission={hasPermission}
           onRequestPermission={onRequestPermission}
-          cameraRef={cameraRef}
           onShutterPress={onShutterPress}
           onPickFromLibrary={onPickFromLibrary}
         />

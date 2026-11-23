@@ -20,56 +20,25 @@ jest.mock("@/adapters/api", () => ({
   ...jest.requireActual("@/adapters/api"),
   getApiBaseUrl: () => "https://api.test",
 }));
-// The mock renders <CameraView ref={props.cameraRef} /> ONLY while `visible`
-// (mirroring the real <BottomSheet>'s "camera mounts only while the capture
-// stage is showing" behaviour) so the container's
-// `cameraRef.current.takePictureAsync()` call has something real to hit once
-// opened — a bare `return null` probe (the ScanBarcodeSheet pattern) would
-// leave the ref permanently null since nothing ever attaches to it. Gating on
-// `visible` also lets a test exercise the container's `!cameraRef.current`
-// defensive branch (shutter fired before the sheet — and camera — mounts).
 jest.mock("@/ui/presenters/SnapAISheetPresenter", () => {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports -- jest.mock factories are hoisted above ES imports; require() is the only option here.
-  const { CameraView } = require("expo-camera");
   function MockSnapAISheetPresenter(props: SnapAISheetProps) {
     mockProbe.last = props;
-    return props.visible ? <CameraView ref={props.cameraRef} /> : null;
+    return null;
   }
   return { SnapAISheetPresenter: MockSnapAISheetPresenter };
 });
 
-// Camera ref with an imperative takePictureAsync — the global setup.ts mock
-// (__tests__/setup.ts) forwards a ref but attaches no imperative methods, so
-// this container test overrides it locally to exercise the shutter path.
-jest.mock("expo-camera", () => {
-  /* eslint-disable @typescript-eslint/no-require-imports -- jest.mock factories are hoisted above ES imports; require() is the only option here. */
-  const React = require("react");
-  const { View } = require("react-native");
-  /* eslint-enable @typescript-eslint/no-require-imports */
-  const takePictureAsync = jest.fn(async () => ({
-    uri: "file://captured.jpg",
-  }));
-  const CameraView = React.forwardRef(function MockCameraView(
-    props: Record<string, unknown>,
-    ref: React.Ref<unknown>,
-  ) {
-    React.useImperativeHandle(ref, () => ({ takePictureAsync }));
-    return React.createElement(View, {
-      testID: (props.testID as string) ?? "camera-view",
-    });
-  });
-  return {
-    __esModule: true,
-    CameraView,
-    __takePictureAsync: takePictureAsync,
-    useCameraPermissions: jest.fn(() => [
-      { granted: true, canAskAgain: true, status: "granted" },
-      jest.fn(async () => ({ granted: true, status: "granted" })),
-    ]),
-  };
-});
+jest.mock("expo-camera", () => ({
+  __esModule: true,
+  useCameraPermissions: jest.fn(() => [
+    { granted: true, canAskAgain: true, status: "granted" },
+    jest.fn(async () => ({ granted: true, status: "granted" })),
+  ]),
+}));
 
 jest.mock("expo-image-picker", () => ({
+  // PER-132: the shutter opens the phone's own camera.
+  launchCameraAsync: jest.fn(),
   requestMediaLibraryPermissionsAsync: jest.fn(),
   launchImageLibraryAsync: jest.fn(),
 }));
@@ -84,10 +53,11 @@ const mockedManipulator = ImageManipulator as jest.Mocked<
   typeof ImageManipulator
 >;
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const { __takePictureAsync: mockTakePicture } = require("expo-camera") as {
-  __takePictureAsync: jest.Mock;
-};
+const mockTakePicture = ImagePicker.launchCameraAsync as jest.Mock;
+const capturedPhoto = (uri = "file://captured.jpg") => ({
+  canceled: false,
+  assets: [{ uri, width: 4032, height: 3024 }],
+});
 
 const USER = "user-1";
 
@@ -147,7 +117,7 @@ describe("SnapAISheetContainer", () => {
   beforeEach(() => {
     mockProbe.last = null;
     jest.clearAllMocks();
-    mockTakePicture.mockResolvedValue({ uri: "file://captured.jpg" });
+    mockTakePicture.mockResolvedValue(capturedPhoto());
     mockedManipulator.manipulateAsync.mockResolvedValue({
       uri: "file://manipulated.jpg",
       width: 1080,
@@ -440,7 +410,7 @@ describe("SnapAISheetContainer", () => {
 
   it("does nothing when the shutter capture returns no photo", async () => {
     const { adapters, api } = makeAdapters();
-    mockTakePicture.mockResolvedValueOnce({} as never); // no uri
+    mockTakePicture.mockResolvedValueOnce({ canceled: false, assets: [{}] }); // no uri
     render(
       <Wrapper adapters={adapters}>
         <SnapAISheetContainer />
@@ -565,22 +535,41 @@ describe("SnapAISheetContainer", () => {
     expect(api.estimateFromPhotoCalls[0]?.mealType).toBe("snack");
   });
 
-  it("does nothing on shutter press if the camera hasn't mounted yet (cameraRef.current is null)", async () => {
-    // Simulates a race where the shutter fires before the sheet (and its
-    // camera) mount — visible is still false, so the mocked presenter above
-    // doesn't render <CameraView>, leaving cameraRef.current null.
+  it("does nothing when the person cancels the phone's camera", async () => {
     const { adapters, api } = makeAdapters();
+    mockTakePicture.mockResolvedValueOnce({ canceled: true, assets: null });
     render(
       <Wrapper adapters={adapters}>
         <SnapAISheetContainer />
       </Wrapper>,
     );
-    expect(mockProbe.last?.visible).toBe(false);
+    act(() => useFuelSheets.getState().openSnap());
     await act(async () => {
       await mockProbe.last!.onShutterPress();
     });
-    expect(mockTakePicture).not.toHaveBeenCalled();
+    expect(mockTakePicture).toHaveBeenCalledWith({
+      mediaTypes: ["images"],
+      quality: 1,
+    });
     expect(api.estimateFromPhotoCalls).toHaveLength(0);
+    expect(mockProbe.last!.stage).toBe("capture");
+  });
+
+  it("shows an error when the phone's camera can't open", async () => {
+    const { adapters, api } = makeAdapters();
+    mockTakePicture.mockRejectedValueOnce(new Error("no camera"));
+    render(
+      <Wrapper adapters={adapters}>
+        <SnapAISheetContainer />
+      </Wrapper>,
+    );
+    act(() => useFuelSheets.getState().openSnap());
+    await act(async () => {
+      await mockProbe.last!.onShutterPress();
+    });
+    expect(api.estimateFromPhotoCalls).toHaveLength(0);
+    expect(mockProbe.last!.stage).toBe("error");
+    expect(mockProbe.last!.errorMessage).toMatch(/camera/);
   });
 
   it("a genuine dismiss clears the store; a handoff does not", () => {

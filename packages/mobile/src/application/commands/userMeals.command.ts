@@ -1,0 +1,151 @@
+/**
+ * Your meals (PER-132, Design D N1b) — offline-first writes.
+ *
+ * The list is cached optimistically and sent as one `PUT /nutrition/user-meals`
+ * (a full replace, last write wins). Repeated edits while the PUT is still
+ * queued fold into that one row, so the queue holds at most one list.
+ *
+ * A meal added offline gets a `local-…` id and a `clientRequestId`; the PUT
+ * sends only the key, the server answers with its uuid, and the drain swaps
+ * the id everywhere (`swapLocalUserMealId`). Entries logged into the new meal
+ * meanwhile wait in the queue (a `local-…` reference defers, never fails).
+ */
+import type { StoragePort } from "@/domain/ports/storage.port";
+import type { UserMeal, UserMealPutRow } from "@/domain/models/userMeals";
+import { USER_MEALS_MAX } from "@/domain/models/userMeals";
+import { isAutoResolvableSyncEntry } from "@/domain/ports/sync.types";
+import {
+  activeUserMeals,
+  isSyntheticUserMealId,
+  toUserMealsPutBody,
+} from "@/domain/services/userMeals.service";
+
+export const USER_MEALS_ENTITY = "user_meals";
+export const USER_MEALS_ENDPOINT = "/nutrition/user-meals";
+
+export type UserMealsCommandDeps = {
+  storage: StoragePort;
+  userId: string;
+};
+
+/** Meals in a stored PUT body that the server never confirmed (no `id`). */
+function unsyncedMealsIn(
+  payload: string,
+): { clientRequestId: string; name: string; logSlot: UserMeal["logSlot"] }[] {
+  try {
+    const body = JSON.parse(payload) as { meals?: UserMealPutRow[] };
+    return (body.meals ?? []).flatMap((m) =>
+      !m.id && m.clientRequestId
+        ? [
+            {
+              clientRequestId: m.clientRequestId,
+              name: m.name,
+              logSlot: m.logSlot,
+            },
+          ]
+        : [],
+    );
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Save the whole list (after a rename, reorder or add). Returns the list as
+ * cached. Refuses a list of synthetic placeholders: those exist only before
+ * the real list has been fetched, and sending them would create copies of
+ * the server's seeded defaults.
+ */
+export function saveUserMealsCommand(
+  deps: UserMealsCommandDeps,
+  meals: readonly UserMeal[],
+): UserMeal[] | null {
+  const { storage, userId } = deps;
+  let next = activeUserMeals(meals).map((m, i) =>
+    m.sortOrder === i ? m : { ...m, sortOrder: i },
+  );
+  if (next.length === 0 || next.some((m) => isSyntheticUserMealId(m.id))) {
+    return null;
+  }
+
+  // A dead PUT (permanently failed, retries used up, blocked) carries an older
+  // full list; a later Retry would archive meals added since. This list
+  // replaces it, so drop it (Inspector Brad, #550).
+  //
+  // ⚠ But a meal added offline exists nowhere else: once the dead PUT stops
+  // holding reads back, a server read drops it from the cache, while food
+  // logged into it still waits on `local-<key>`. Meals can't be removed on
+  // the phone, so carry each such meal forward into this list first.
+  const dead = storage
+    .getUncompletedMutations()
+    .filter(
+      (e) =>
+        e.entityType === USER_MEALS_ENTITY &&
+        e.entityId === userId &&
+        !isAutoResolvableSyncEntry(e),
+    );
+  for (const row of dead.flatMap((e) => unsyncedMealsIn(e.payload))) {
+    // Never past the server's cap: a list over it is rejected every time, and
+    // that would stop every later Your-meals edit syncing (Inspector Brad, #550).
+    if (next.length >= USER_MEALS_MAX) break;
+    if (next.some((m) => m.clientRequestId === row.clientRequestId)) continue;
+    next = [
+      ...next,
+      {
+        id: `local-${row.clientRequestId}`,
+        name: row.name,
+        logSlot: row.logSlot,
+        sortOrder: next.length,
+        defaultKey: null,
+        clientRequestId: row.clientRequestId,
+        archivedAt: null,
+        updatedAt: new Date().toISOString(),
+      },
+    ];
+  }
+  if (dead.length > 0) storage.discardEntries(dead.map((e) => e.id));
+  storage.cacheUserMeals(userId, next);
+
+  const payload = toUserMealsPutBody(next);
+  const queued = storage
+    .getPendingMutations()
+    .find((e) => e.entityType === USER_MEALS_ENTITY && e.entityId === userId);
+  if (queued) {
+    // Safe even if an earlier attempt was dispatched: the server matches each
+    // meal by id or clientRequestId, not by the request's Idempotency-Key.
+    storage.updateMutationPayload(queued.id, payload);
+  } else {
+    storage.enqueueMutation({
+      entityType: USER_MEALS_ENTITY,
+      entityId: userId,
+      operation: "update",
+      payload,
+      endpoint: USER_MEALS_ENDPOINT,
+      method: "PUT",
+    });
+  }
+  return next;
+}
+
+/**
+ * Apply a synced PUT's answer: swap each offline meal's `local-…` id for the
+ * server's (matched by `clientRequestId`), then — unless a newer edit is still
+ * queued — adopt the server's list as the cache.
+ */
+export function applyUserMealsResponse(
+  storage: StoragePort,
+  userId: string,
+  serverMeals: readonly UserMeal[],
+): void {
+  // Swap from the server's reply, not the cache: a stale GET may already have
+  // replaced the cached list, but queued entries still carry `local-<key>`.
+  for (const m of serverMeals) {
+    if (m.clientRequestId) {
+      storage.swapLocalUserMealId(`local-${m.clientRequestId}`, m.id);
+    }
+  }
+  const laterEditQueued = storage
+    .getPendingMutations()
+    .some((e) => e.entityType === USER_MEALS_ENTITY && e.entityId === userId);
+  if (!laterEditQueued) storage.cacheUserMeals(userId, [...serverMeals]);
+}

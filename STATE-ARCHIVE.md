@@ -11,6 +11,76 @@ later sessions changed things.
 
 ---
 
+### 🟢 2026-09-04 — FOUNDING-OFFER post-review hardening (branch `feat/founding-offer-admin`)
+
+Security review findings F1–F10 are now captured under
+`specs/milestones/FOUNDING-OFFER/SECURITY_REVIEW-2026-09-04.md`; its seven
+hardening work packages are implemented. The public founding page is
+informational only: bank details, Payment Link buttons, their build variables,
+and deploy wiring are removed. Payment remains out of band and privately
+coordinated.
+
+Founding grants now refuse a live `rc_` subscription unless an admin explicitly
+accepts the sync risk; pending redemption defers against one and writes one
+audit marker. Bank-transfer and privately sent Stripe-link grants require a
+trimmed payment reference. No-account invites and the public page state the
+90-day redemption window.
+
+Applied payment records survive profile deletion through `ON DELETE SET NULL`.
+`applied_at`, not a nullable `user_id`, defines pending state, so a retained
+`account_deleted` grant stays counted and cannot attach to a replacement
+account with the same email. A real PGlite lifecycle test covers retention,
+non-redemption, seat accounting, and a legitimate repurchase.
+
+The web and in-app Privacy Policy copies both carry the 4 September 2026
+founding-purchase retention disclosure. Visual baseline:
+`/Users/bradleysimms-evans/.codex/visualizations/2026/09/04/01a06cdf-2dcb-78e3-b9c3-b1b10954f357/founding-privacy-retention-wp6.png`.
+Production Confirm email was reported ON; staging remains Brad's dashboard task
+and is the first staging smoke-test precondition. The original founding
+migration was verified absent from the connected production migration history
+and founding tables were absent, so it was safely corrected in place.
+
+Verification after WP6: root typecheck **9/9** packages; lint zero errors
+(existing warnings only); root tests green after one isolated rerun of two
+unrelated web timeouts (**353 core files / 4,340 tests; 30 web files / 879
+tests; 523 mobile suites / 6,594 tests**); production web build green. Final
+full gates and the local Inspector Brad sweep remain the WP8 pre-push gate.
+
+WP8's first full-branch Inspector sweep found five additional release defects,
+all fixed before push: the CloudFront CSP now permits the stage Supabase origin
+used by admin magic-link auth; `granted_by` retains an immutable issuer UUID
+without an FK that could block administrator deletion; store-subscription
+guards use the shared expiry-aware live predicate; accounts inside the soft
+deletion window are refused a paid grant; and the once-only deferred audit is
+enforced by a partial unique index plus conflict-ignore insert. Behavioural
+tests cover the CSP input, user lookup/store provenance, deleted-account admin
+rendering, the new 409, expired store rows, issuer deletion, and concurrent
+audit deduplication. The final root gate is green: Prettier; typecheck **9/9**;
+lint zero errors (existing warnings only); build **14/14**; unit tests **21/21**
+tasks, including **354 core files / 4,352 tests**. Hardening-diff coverage is at
+least 90% for statements, branches, functions and lines; the pre-existing
+whole-PR coverage debt remains tracked separately from this post-review scope.
+
+The CI Inspector follow-up on `b0a77209` found a pending-grant/RevenueCat
+TOCTOU. RevenueCat activation and founding subscription writes now share a
+transaction-scoped per-user advisory lock, and both pending application and
+immediate grant creation recheck live store entitlement after taking that lock.
+The default path leaves the seat pending; the admin's explicit store override
+still permits supersession. Regression coverage proves a store winner does not
+populate `user_id`, `applied_at`, or `subscription_id`. The complete root gate
+remains green after the fix: Prettier, typecheck, lint (existing warnings only),
+build, and all unit-test tasks.
+
+The same PR now treats individual and coach pricing as live: every IAP plan
+card links to the existing cross-platform `/#download` section with “Get the
+app” instead of rendering a disabled “Coming soon” placeholder. The
+organisation sales CTAs are unchanged. Regression coverage is revert-checked.
+Visual baselines:
+`/Users/bradleysimms-evans/.codex/visualizations/2026/09/04/01a06cdf-2dcb-78e3-b9c3-b1b10954f357/pricing-live-cta-consumer-cards-light.png`,
+`/Users/bradleysimms-evans/.codex/visualizations/2026/09/04/01a06cdf-2dcb-78e3-b9c3-b1b10954f357/pricing-live-cta-coaches-dark.png`,
+and
+`/Users/bradleysimms-evans/.codex/visualizations/2026/09/04/01a06cdf-2dcb-78e3-b9c3-b1b10954f357/pricing-live-cta-consumer-mobile.png`.
+
 ### 🟡 2026-09-04 — AUTH + CARDIO/ACTIVITY LOGGING (branch `codex/auth-cardio-logging`)
 
 Password inputs on sign-in, sign-up and password reset now have accessible

@@ -24,6 +24,8 @@ import {
   stripSupersededTemplatePreferences,
 } from "./template-preference-queue";
 import { isUnrecordableSessionPayload } from "./session/complete-session.command";
+import type { UserMeal } from "@/domain/models/userMeals";
+import { applyUserMealsResponse, USER_MEALS_ENTITY } from "./userMeals.command";
 
 /** A non-OK HTTP response from a sync POST/PUT/DELETE, carrying the status so
  * the drain can classify permanent vs transient failures. */
@@ -788,8 +790,13 @@ export async function processSyncQueue(
   let succeeded = 0;
   let failed = 0;
   let blocked = 0;
+  // PER-132: entries a food-log batch already sent (or deferred) this drain.
+  // Their snapshot still looks due, so without this a deferred entry would be
+  // claimed again and re-sent in the same pass.
+  const batchHandled = new Set<number>();
 
   for (let entry of entries) {
+    if (batchHandled.has(entry.id)) continue;
     if (
       entry.entityType === "profile" &&
       entry.entityId !== null &&
@@ -839,6 +846,25 @@ export async function processSyncQueue(
     const fresh = storage.getMutationById(entry.id);
     if (fresh === null) continue;
     entry = fresh;
+
+    // PER-132: queued food logs replay through `POST /nutrition/entries/batch`,
+    // each entry idempotent on its own key, so a part-sent batch re-sends
+    // safely and nothing is logged twice. See `drainNutritionEntryBatch`.
+    if (isBatchableNutritionCreate(entry)) {
+      const outcome = await drainNutritionEntryBatch(
+        storage,
+        auth,
+        apiBaseUrl,
+        entry,
+        entries,
+        now(),
+        batchHandled,
+      );
+      succeeded += outcome.succeeded;
+      failed += outcome.failed;
+      blocked += outcome.blocked;
+      continue;
+    }
 
     try {
       // Fetch token per-entry to handle expiry mid-queue
@@ -1292,6 +1318,26 @@ export async function processSyncQueue(
         }
       }
 
+      // PER-132: a synced Your meals PUT answers with the server's list. Swap
+      // each offline meal's `local-…` id (so entries logged into it can sync)
+      // and adopt the list unless a newer edit is queued. Non-fatal: the PUT
+      // already succeeded, and the next Your meals read reconciles.
+      if (entry.entityType === USER_MEALS_ENTITY && entry.entityId) {
+        try {
+          const body = (await response.json()) as {
+            data?: { meals?: UserMeal[] };
+          };
+          if (Array.isArray(body.data?.meals)) {
+            applyUserMealsResponse(storage, entry.entityId, body.data.meals);
+          }
+        } catch (err) {
+          console.warn(
+            "[sync] PUT /nutrition/user-meals succeeded but response capture failed; the next read reconciles:",
+            err,
+          );
+        }
+      }
+
       storage.markMutationCompleted(entry.id);
       succeeded++;
     } catch (err) {
@@ -1414,4 +1460,263 @@ function parseEntitlementBlockedVerdict(
     blockedAt: new Date().toISOString(),
     ...(payload.reason !== undefined ? { reason: payload.reason } : {}),
   };
+}
+
+// -- PER-132: batched food-log replay ---------------------------------------
+
+/** The server's `MAX_BATCH_ENTRIES`. */
+export const NUTRITION_BATCH_MAX = 50;
+
+const NUTRITION_ENTRIES_ENDPOINT = "/nutrition/entries";
+
+/**
+ * A queued food log that can ride in a batch: a plain create with its own
+ * idempotency key, a readable body, and no reference to a dependency that
+ * hasn't synced yet (those wait for their `swapLocal*Id`, then batch).
+ */
+export function isBatchableNutritionCreate(entry: SyncQueueEntry): boolean {
+  return (
+    entry.entityType === "nutrition_entry" &&
+    entry.operation === "create" &&
+    entry.method === "POST" &&
+    entry.endpoint === NUTRITION_ENTRIES_ENDPOINT &&
+    entry.idempotencyKey !== null &&
+    parseObject(entry.payload) !== null &&
+    !referencesUnsyncedLocalId(entry.payload)
+  );
+}
+
+type BatchOutcome = { succeeded: number; failed: number; blocked: number };
+
+type BatchResult =
+  | { clientRequestId: string; entry: { id?: string } }
+  | { clientRequestId: string; error: string };
+
+/** Charge a server-answered failure; report and collapse it if terminal. */
+function chargeAnsweredFailure(
+  storage: StoragePort,
+  entry: SyncQueueEntry,
+  message: string,
+  permanent: boolean,
+): void {
+  const terminal = permanent || entry.retryCount + 1 >= entry.maxRetries;
+  if (permanent) storage.markMutationPermanentlyFailed(entry.id, message);
+  else storage.markMutationFailed(entry.id, message);
+  if (terminal) {
+    reportTerminalFailure(entry, message);
+    collapseStrandedLocalIdSiblings(storage, entry, permanent);
+  }
+}
+
+async function authHeaders(auth: AuthPort): Promise<Record<string, string>> {
+  const token = await auth.getAccessToken();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  return headers;
+}
+
+/**
+ * Send one queued food log on its own (`POST /nutrition/entries` with its
+ * `Idempotency-Key`). The fallback when the batch route itself rejects the
+ * request, so one malformed entry — or a backend without the route — can't
+ * strand the others. Same classification as the main drain.
+ */
+async function sendSingleNutritionCreate(
+  storage: StoragePort,
+  auth: AuthPort,
+  apiBaseUrl: string,
+  entry: SyncQueueEntry,
+): Promise<keyof BatchOutcome> {
+  try {
+    const headers = await authHeaders(auth);
+    if (entry.idempotencyKey !== null) {
+      headers["Idempotency-Key"] = entry.idempotencyKey;
+    }
+    const response = await fetch(`${apiBaseUrl}${entry.endpoint}`, {
+      method: "POST",
+      headers,
+      body: entry.payload,
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      if (response.status === 402) {
+        const verdict = parseEntitlementBlockedVerdict(text);
+        if (verdict !== null) {
+          storage.markMutationBlocked(entry.id, verdict);
+          return "blocked";
+        }
+      }
+      chargeAnsweredFailure(
+        storage,
+        entry,
+        `HTTP ${response.status}: ${text}`,
+        isPermanentClientError(response.status) &&
+          !referencesUnsyncedLocalId(entry.payload),
+      );
+      return "failed";
+    }
+    try {
+      const body = (await response.json()) as { data?: { id?: string } };
+      const serverId = body.data?.id;
+      if (entry.entityId && serverId && serverId !== entry.entityId) {
+        storage.swapLocalNutritionEntryId(entry.entityId, serverId);
+      }
+    } catch (err) {
+      console.warn("[sync] food log id-swap failed:", err);
+    }
+    storage.markMutationCompleted(entry.id);
+    return "succeeded";
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    deferOrCharge(storage, entry, message, "transport");
+    return "failed";
+  }
+}
+
+/**
+ * Replay queued food logs in one `POST /nutrition/entries/batch` (PER-132,
+ * Design D). `first` is already claimed; later batchable entries from the
+ * drain's snapshot are claimed and added, up to the server's cap.
+ *
+ * Every entry carries its queue row's `idempotencyKey` as `clientRequestId`,
+ * the same key the single POST sends as `Idempotency-Key` and stored in the
+ * same column. So a batch whose response was lost, a part-committed batch, or
+ * an entry that went once as a single POST and once in a batch all resolve to
+ * one row.
+ *
+ * Results are per entry, in request order:
+ * - an entry → swap the `local-…` id, complete;
+ * - an error → deferred if the body still holds a `local-…` reference (it
+ *   resolves after that dependency syncs), otherwise permanently failed.
+ * A transport failure defers every entry (nothing answered). A whole-batch
+ * rejection: 402 blocks them, a permanent 4xx (schema, or a backend without
+ * the route) falls back to single sends, anything else is charged.
+ */
+async function drainNutritionEntryBatch(
+  storage: StoragePort,
+  auth: AuthPort,
+  apiBaseUrl: string,
+  first: SyncQueueEntry,
+  snapshot: readonly SyncQueueEntry[],
+  nowMs: number,
+  handled: Set<number>,
+): Promise<BatchOutcome> {
+  const batch: SyncQueueEntry[] = [first];
+  handled.add(first.id);
+  for (const candidate of snapshot) {
+    if (batch.length >= NUTRITION_BATCH_MAX) break;
+    if (handled.has(candidate.id)) continue;
+    if (!isBatchableNutritionCreate(candidate)) continue;
+    if (!isMutationEligible(storage, candidate, nowMs)) continue;
+    const latest = storage.getMutationById(candidate.id);
+    if (latest === null || !isBatchableNutritionCreate(latest)) continue;
+    if (!storage.markMutationInFlight(candidate.id)) continue;
+    handled.add(candidate.id);
+    const claimed = storage.getMutationById(candidate.id);
+    if (claimed !== null) batch.push(claimed);
+  }
+
+  const outcome: BatchOutcome = { succeeded: 0, failed: 0, blocked: 0 };
+  const body = JSON.stringify({
+    entries: batch.map((e) => ({
+      ...parseObject(e.payload),
+      clientRequestId: e.idempotencyKey,
+    })),
+  });
+
+  let response: Response;
+  try {
+    const headers = await authHeaders(auth);
+    for (const e of batch) storage.markMutationDispatched(e.id);
+    response = await fetch(`${apiBaseUrl}${NUTRITION_ENTRIES_ENDPOINT}/batch`, {
+      method: "POST",
+      headers,
+      body,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    for (const e of batch) deferOrCharge(storage, e, message, "transport");
+    outcome.failed += batch.length;
+    return outcome;
+  }
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    if (response.status === 402) {
+      const verdict = parseEntitlementBlockedVerdict(text);
+      if (verdict !== null) {
+        for (const e of batch) storage.markMutationBlocked(e.id, verdict);
+        outcome.blocked += batch.length;
+        return outcome;
+      }
+    }
+    // A permanent 4xx (schema, or no route) — or a repeat server error, which
+    // may be one entry the server throws on: send singly, so one bad entry
+    // can't fail the whole batch (Inspector Brad, #550). Safe: each single
+    // keeps its key. A first 5xx is charged as transient.
+    const repeatServerError =
+      response.status >= 500 &&
+      batch.length > 1 &&
+      batch.some((e) => e.retryCount > 0);
+    if (isPermanentClientError(response.status) || repeatServerError) {
+      for (const e of batch) {
+        outcome[
+          await sendSingleNutritionCreate(storage, auth, apiBaseUrl, e)
+        ]++;
+      }
+      return outcome;
+    }
+    for (const e of batch) {
+      chargeAnsweredFailure(
+        storage,
+        e,
+        `HTTP ${response.status}: ${text}`,
+        false,
+      );
+    }
+    outcome.failed += batch.length;
+    return outcome;
+  }
+
+  let results: BatchResult[] = [];
+  try {
+    const parsed = (await response.json()) as {
+      data?: { results?: BatchResult[] };
+    };
+    results = Array.isArray(parsed.data?.results) ? parsed.data.results : [];
+  } catch (err) {
+    console.warn("[sync] /nutrition/entries/batch reply unreadable:", err);
+  }
+
+  batch.forEach((e, i) => {
+    const result =
+      results[i]?.clientRequestId === e.idempotencyKey
+        ? results[i]
+        : results.find((r) => r.clientRequestId === e.idempotencyKey);
+    if (result && "entry" in result) {
+      const serverId = result.entry?.id;
+      if (e.entityId && serverId && serverId !== e.entityId) {
+        storage.swapLocalNutritionEntryId(e.entityId, serverId);
+      }
+      storage.markMutationCompleted(e.id);
+      outcome.succeeded++;
+      return;
+    }
+    if (result && "error" in result) {
+      if (referencesUnsyncedLocalId(e.payload)) {
+        storage.markMutationDeferred(e.id, result.error, "resolution");
+      } else {
+        chargeAnsweredFailure(storage, e, result.error, true);
+      }
+      outcome.failed++;
+      return;
+    }
+    // Answered 200 without this entry's result: charge it, and the re-send
+    // stays safe because the key is unchanged.
+    chargeAnsweredFailure(storage, e, "missing batch result", false);
+    outcome.failed++;
+  });
+  return outcome;
 }

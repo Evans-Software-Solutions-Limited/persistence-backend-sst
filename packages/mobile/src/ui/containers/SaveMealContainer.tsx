@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { useCreateMeal } from "@/ui/hooks/useCreateMeal";
@@ -42,9 +42,19 @@ export function SaveMealContainer() {
   const userId = session?.userId ?? null;
   const { mutate: createMeal } = useCreateMeal();
 
-  const [name, setName] = useState("");
+  // PER-132: a meal's ⋯ → "Save as a meal" opens this with that meal's
+  // entries ticked and its name filled in.
+  const params = useLocalSearchParams<{ entryIds?: string; name?: string }>();
+  const [name, setName] = useState(
+    typeof params.name === "string" ? params.name : "",
+  );
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(
-    new Set(),
+    () =>
+      new Set(
+        typeof params.entryIds === "string" && params.entryIds.length > 0
+          ? params.entryIds.split(",")
+          : [],
+      ),
   );
   const [isSaving, setIsSaving] = useState(false);
 
@@ -114,7 +124,11 @@ export function SaveMealContainer() {
     });
   }, []);
 
-  const canSave = name.trim().length > 0 && selectedIds.size > 0;
+  // Only ticks on rows shown count: ids passed in from a meal's ⋯ menu may
+  // name entries that can't be saved (Inspector Brad, #550).
+  const canSave =
+    name.trim().length > 0 &&
+    candidates.some((c) => selectedIds.has(c.entry.id));
 
   const onBack = useCallback(() => router.back(), []);
 

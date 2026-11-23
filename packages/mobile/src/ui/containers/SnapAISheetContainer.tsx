@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CameraView, useCameraPermissions } from "expo-camera";
+import { useCameraPermissions } from "expo-camera";
 import * as ImageManipulator from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
 import { resizeToLongEdge } from "@/shared/utils";
@@ -67,7 +67,6 @@ export function SnapAISheetContainer() {
 
   const online = useOnlineStatus();
   const [permission, requestPermission] = useCameraPermissions();
-  const cameraRef = useRef<CameraView>(null);
   const draft = useAiDraftItems();
 
   const [stage, setStage] = useState<SnapStage>("capture");
@@ -120,9 +119,23 @@ export function SnapAISheetContainer() {
     [api, slot, setItems],
   );
 
+  // PER-132 (product rule, 17–18 Nov): photos are taken with the phone's own
+  // camera (`expo-image-picker`, in 1.2.0), not an inline <CameraView>.
   const onShutterPress = useCallback(async () => {
-    if (!cameraRef.current) return;
-    const photo = await cameraRef.current.takePictureAsync({ quality: 1 });
+    let result: ImagePicker.ImagePickerResult;
+    try {
+      // Throws when the camera is unavailable (simulator, in use elsewhere).
+      result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ["images"],
+        quality: 1,
+      });
+    } catch {
+      setErrorMessage("Couldn't open the camera — try the photo library.");
+      setStage("error");
+      return;
+    }
+    if (result.canceled) return;
+    const photo = result.assets?.[0];
     if (!photo?.uri) return;
     const manipulated = await ImageManipulator.manipulateAsync(
       photo.uri,
@@ -194,7 +207,6 @@ export function SnapAISheetContainer() {
       offline={!online}
       hasPermission={permission?.granted ?? false}
       onRequestPermission={() => void requestPermission()}
-      cameraRef={cameraRef}
       onShutterPress={() => void onShutterPress()}
       onPickFromLibrary={() => void onPickFromLibrary()}
       items={draft.items}

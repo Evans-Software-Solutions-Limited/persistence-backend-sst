@@ -19,6 +19,10 @@ import { ScanBarcodeSheetContainer } from "../../src/ui/containers/ScanBarcodeSh
 import { SnapAISheetContainer } from "../../src/ui/containers/SnapAISheetContainer";
 import { MealprintSuggestSheetContainer } from "../../src/ui/containers/MealprintSuggestSheetContainer";
 import { MealprintPlanSheetContainer } from "../../src/ui/containers/MealprintPlanSheetContainer";
+import { YourMealsSheetContainer } from "../../src/ui/containers/YourMealsSheetContainer";
+import { MealOptionsSheetContainer } from "../../src/ui/containers/MealOptionsSheetContainer";
+import { QuickLogSheetContainer } from "../../src/ui/containers/QuickLogSheetContainer";
+import { SuggestLockedSheetContainer } from "../../src/ui/containers/SuggestLockedSheetContainer";
 import { DiscardWorkoutConfirmationContainer } from "../../src/ui/containers/DiscardWorkoutConfirmationContainer";
 import { ExerciseFiltersProvider } from "../../src/ui/hooks/useExerciseFilters";
 import { useAutoRetryOnUpgrade } from "../../src/ui/hooks/useAutoRetryOnUpgrade";
@@ -325,6 +329,11 @@ export default function AppLayout() {
         />
         <Stack.Screen name="fuel/meal/[id]" options={{ headerShown: false }} />
         <Stack.Screen name="fuel/save-meal" options={{ headerShown: false }} />
+        {/* PER-132: Add to a meal is a full page with its own header. */}
+        <Stack.Screen
+          name="fuel/add-to-meal"
+          options={{ headerShown: false }}
+        />
         {/*
           fuel/targets (M9 PR3) owns its own <HeaderBar> (Cancel/Save) —
           native header off, matching every other custom-chrome screen.
@@ -491,6 +500,14 @@ export default function AppLayout() {
         Spec: specs/26-mealprint-meal-planning/design.md § 4 item 4
       */}
       <MealprintPlanSheetContainer />
+      {/*
+        PER-132 Log drawers — Your meals (N1b), a meal's ⋯ menu, Quick log
+        (N2e) and the locked Suggest page (N26). Same root-mounted family.
+      */}
+      <YourMealsSheetContainer />
+      <MealOptionsSheetContainer />
+      <QuickLogSheetContainer />
+      <SuggestLockedSheetContainer />
       {/*
         AddRecipeMenuContainer — the Recipes library "+" bottom sheet
         (Recipes AI PR3). Root-mounted sibling (feedback_sheets_mount_at_root);

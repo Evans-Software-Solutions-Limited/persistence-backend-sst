@@ -247,6 +247,7 @@ import type {
   RemoteMuscleVolume,
   RemoteRecap,
 } from "@/domain/models/trainingReads";
+import type { UserMealsResponse } from "@/domain/models/userMeals";
 
 type ApiSuccessResponse<T> = { data: T };
 type ApiErrorResponse = { error: string };
@@ -2502,6 +2503,10 @@ export class SSTApiAdapter implements ApiPort {
       `/nutrition/plans/${planId}/shopping`,
     );
     return result.ok ? ok(parseShoppingList(result.value)) : result;
+  }
+
+  async getUserMeals(): Promise<Result<UserMealsResponse, ApiError>> {
+    return this.requestEnvelope<UserMealsResponse>("/nutrition/user-meals");
   }
 
   // -- Client side of the coach↔client handshake (10-trainer-features) --

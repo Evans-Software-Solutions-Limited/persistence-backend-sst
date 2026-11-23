@@ -54,6 +54,7 @@ import type {
   NutritionTarget,
   Recipe,
 } from "@/domain/models/nutrition";
+import type { UserMeal } from "@/domain/models/userMeals";
 
 /**
  * One row in the recent-sets cache. Keyed by (userId, exerciseId,
@@ -1228,6 +1229,23 @@ export interface StoragePort {
   cacheMeal(userId: string, meal: Meal): void;
   /** Remove a cached meal after a delete. No-op when absent. */
   removeCachedMeal(userId: string, id: string): void;
+
+  // PER-132 Your meals (Design D N1b).
+  /**
+   * The cached Your meals list (archived ones included, as the server sent
+   * them), or null when it has never been fetched on this device.
+   */
+  getCachedUserMeals(userId: string): UserMeal[] | null;
+  /** Write-through the Your meals list (single row per user). */
+  cacheUserMeals(userId: string, meals: UserMeal[]): void;
+  /**
+   * Once the user-meals PUT syncs, rewrite a meal added offline from its
+   * `local-…` id to the server id: in the cached list, in the `userMealId` of
+   * cached day entries, and in queued `/nutrition/entries` payloads (so
+   * entries logged into the new meal offline sync against the real id).
+   * No-op when the ids match.
+   */
+  swapLocalUserMealId(localId: string, serverId: string): void;
 
   // -- Lifecycle --
   /** Clear all user data (sync queue, cached entities, metadata). Called on sign-out. */

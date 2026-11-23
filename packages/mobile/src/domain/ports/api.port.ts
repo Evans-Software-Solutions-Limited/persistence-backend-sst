@@ -154,6 +154,7 @@ import type {
   SetTargetsInput,
   WaterToday,
 } from "@/domain/models/nutrition";
+import type { UserMealsResponse } from "@/domain/models/userMeals";
 
 /**
  * Port for remote SST API operations.
@@ -1402,6 +1403,13 @@ export interface ApiPort extends ReferralsPort {
    * isn't the caller's plan.
    */
   getShoppingList(planId: string): Promise<Result<ShoppingList, ApiError>>;
+
+  /**
+   * PER-132: `GET /nutrition/user-meals` — Your meals in display order (the
+   * server seeds the four defaults on first read). Writes go through the sync
+   * queue (`PUT /nutrition/user-meals`), never this port.
+   */
+  getUserMeals(): Promise<Result<UserMealsResponse, ApiError>>;
 
   // -- Client side of the coach↔client handshake (10-trainer-features) --
   /**

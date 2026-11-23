@@ -78,6 +78,7 @@ import type {
   SyncOperation,
   SyncStatus,
 } from "@/domain/ports/sync.types";
+import type { UserMeal } from "@/domain/models/userMeals";
 
 const DB_NAME = "persistence.db";
 
@@ -894,6 +895,13 @@ ${indentSyncQueueDdl(8)}
       -- PER-126: the athlete's coaches (GET /users/me/coaching), one JSON
       -- payload per user. Feeds the Coach tab and You → Coaching offline.
       CREATE TABLE IF NOT EXISTS cached_my_coaches (
+        user_id TEXT PRIMARY KEY,
+        payload TEXT NOT NULL,
+        synced_at TEXT NOT NULL
+      );
+      -- PER-132 Your meals (Design D N1b): one list per user. A new TABLE, so
+      -- CREATE TABLE IF NOT EXISTS covers upgrading installs too.
+      CREATE TABLE IF NOT EXISTS cached_user_meals (
         user_id TEXT PRIMARY KEY,
         payload TEXT NOT NULL,
         synced_at TEXT NOT NULL
@@ -3999,6 +4007,77 @@ ${indentSyncQueueDdl(12)}
     );
   }
 
+  // -- PER-132 Your meals --
+
+  getCachedUserMeals(userId: string): UserMeal[] | null {
+    return this.readBlob<UserMeal[]>("cached_user_meals", userId);
+  }
+
+  cacheUserMeals(userId: string, meals: UserMeal[]): void {
+    this.writeBlob("cached_user_meals", userId, meals);
+  }
+
+  swapLocalUserMealId(localId: string, serverId: string): void {
+    if (localId === serverId) return;
+    const db = this.getDb();
+    db.withTransactionSync(() => {
+      const lists = db.getAllSync(
+        `SELECT user_id, payload FROM cached_user_meals`,
+      ) as { user_id: string; payload: string }[];
+      for (const r of lists) {
+        const meals = JSON.parse(r.payload) as UserMeal[];
+        if (!meals.some((m) => m.id === localId)) continue;
+        const next = meals
+          .filter((m) => m.id !== serverId)
+          .map((m) => (m.id === localId ? { ...m, id: serverId } : m));
+        db.runSync(
+          `UPDATE cached_user_meals SET payload = ? WHERE user_id = ?`,
+          [JSON.stringify(next), r.user_id],
+        );
+      }
+      const days = db.getAllSync(
+        `SELECT user_id, date, payload FROM cached_fuel_today`,
+      ) as { user_id: string; date: string; payload: string }[];
+      for (const r of days) {
+        const fuel = JSON.parse(r.payload) as FuelToday;
+        let touched = false;
+        for (const list of Object.values(fuel.entriesBySlot)) {
+          for (const e of list) {
+            if (e.userMealId === localId) {
+              e.userMealId = serverId;
+              touched = true;
+            }
+          }
+        }
+        if (touched) {
+          db.runSync(
+            `UPDATE cached_fuel_today SET payload = ? WHERE user_id = ? AND date = ?`,
+            [JSON.stringify(fuel), r.user_id, r.date],
+          );
+        }
+      }
+      const queued = db.getAllSync(
+        `SELECT id, payload FROM sync_queue
+         WHERE entity_type = 'nutrition_entry' AND status != 'completed'`,
+      ) as { id: number; payload: string }[];
+      for (const r of queued) {
+        let body: Record<string, unknown>;
+        try {
+          body = JSON.parse(r.payload) as Record<string, unknown>;
+        } catch {
+          continue;
+        }
+        if (body.userMealId === localId) {
+          body.userMealId = serverId;
+          db.runSync(`UPDATE sync_queue SET payload = ? WHERE id = ?`, [
+            JSON.stringify(body),
+            r.id,
+          ]);
+        }
+      }
+    });
+  }
+
   clearAll(): void {
     const db = this.getDb();
     db.execSync(`
@@ -4037,6 +4116,7 @@ ${indentSyncQueueDdl(12)}
       DELETE FROM training_log_records;
       DELETE FROM cached_you_remote;
       DELETE FROM cached_my_coaches;
+      DELETE FROM cached_user_meals;
     `);
   }
 }

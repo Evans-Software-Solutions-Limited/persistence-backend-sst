@@ -206,9 +206,17 @@ describe("useAiDraftItems", () => {
     expect(lunch?.[0]?.aiEstimated).toBe(true);
     expect(lunch?.[0]?.aiConfidence).toBe(0.94);
     const fetchMock = globalThis.fetch as unknown as jest.Mock;
+    // PER-132: queued logs replay through the batch endpoint.
     const sent = fetchMock.mock.calls
-      .filter(([url]) => String(url).endsWith("/nutrition/entries"))
-      .map(([, init]) => JSON.parse((init as { body: string }).body));
+      .filter(([url]) => String(url).endsWith("/nutrition/entries/batch"))
+      .flatMap(
+        ([, init]) =>
+          (
+            JSON.parse((init as { body: string }).body) as {
+              entries: unknown[];
+            }
+          ).entries,
+      );
     expect(sent).toContainEqual(
       expect.objectContaining({ aiEstimated: true, aiConfidence: 0.94 }),
     );

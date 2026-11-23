@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, type ScrollView } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, type Href } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { useScrollToTopOnTabPress } from "@/ui/hooks/useScrollToTopOnTabPress";
 import { useAdapters } from "@/ui/hooks/useAdapters";
@@ -12,37 +12,41 @@ import { useGetRecipes } from "@/ui/hooks/useGetRecipes";
 import { useGetMeals } from "@/ui/hooks/useGetMeals";
 import { useSetWater } from "@/ui/hooks/useSetWater";
 import { useDeleteEntry } from "@/ui/hooks/useDeleteEntry";
-import { useNutritionAiGate } from "@/ui/hooks/useNutritionAiGate";
 import { useMealprintEntry } from "@/ui/hooks/useMealprintEntry";
+import { useMealQuickActions } from "@/ui/hooks/useMealQuickActions";
+import { useUserMeals } from "@/ui/hooks/useUserMeals";
 import { useMealprintGate } from "@/ui/hooks/useMealprintGate";
 import { useGetActiveMealPlan } from "@/ui/hooks/useGetActiveMealPlan";
 import { useLogPlanMeal } from "@/ui/hooks/useLogPlanMeal";
-import { useOnlineStatus } from "@/ui/hooks/useOnlineStatus";
 import { useFuelSheets } from "@/state/fuel-sheets";
+import { localDayISO, preferredVolumeUnit } from "@/shared/utils";
 import {
-  addDaysISO,
-  dayLabel,
-  localDayISO,
-  preferredVolumeUnit,
-  previousDayISO,
-} from "@/shared/utils";
-import { toneHex } from "@/ui/components/foundation/tones";
-import {
-  MEAL_SLOTS,
+  defaultMealSlot,
   detectDailyGoalHit,
   entryDisplayLabel,
-  heroRingPct,
-  macroPct,
+  flattenFuelEntries,
   type EntryNameLookups,
 } from "@/domain/services";
+import {
+  defaultUserMealIdForSlot,
+  groupEntriesByUserMeal,
+  mealMacroLine,
+  sumEntryMacros,
+  weekDayState,
+  weekDaysFor,
+} from "@/domain/services/userMeals.service";
 import { plannedMealsForSlot } from "@/domain/models/mealprint";
 import type { MealSlot } from "@/domain/models/nutrition";
 import { FuelPresenter } from "@/ui/presenters/FuelPresenter";
-import type { MacroLineVM } from "@/ui/presenters/MacroHeroPresenter";
 import type {
   MealGhostRowVM,
   MealSlotVM,
 } from "@/ui/presenters/MealLogPresenter";
+import type { WeekDayVM } from "@/ui/presenters/fuel/FuelLogHeaderPresenter";
+import {
+  MACRO_HEX,
+  type MacroColumnVM,
+} from "@/ui/presenters/fuel/FuelLogSummaryPresenter";
 
 /**
  * <FuelContainer> — wires the cache-first day aggregate + water mutation + AI
@@ -54,11 +58,17 @@ import type {
  * Implements: specs/milestones/M9-nutrition/FRONTEND_BRIEF.md § <FuelContainer>
  */
 
-const MACRO_COLORS = {
-  protein: toneHex("primary").base,
-  carbs: toneHex("gold").base,
-  fat: toneHex("ember").base,
-};
+const DAY_LABEL = new Intl.DateTimeFormat("en-GB", {
+  weekday: "short",
+  day: "numeric",
+  month: "short",
+});
+const DAY_NAME = new Intl.DateTimeFormat("en-GB", { weekday: "short" });
+
+/** "Fri 23 Oct" (canvas N1). */
+export function fuelDayLabel(iso: string): string {
+  return DAY_LABEL.format(new Date(`${iso}T12:00:00`)).replace(",", "");
+}
 
 export function FuelContainer() {
   const router = useRouter();
@@ -77,7 +87,6 @@ export function FuelContainer() {
   // the whole day-nav wiring.
   const [date, setDate] = useState(localDayISO());
   const todayIso = localDayISO();
-  const canGoNext = date < todayIso;
 
   const [calendarOpen, setCalendarOpen] = useState(false);
 
@@ -103,8 +112,8 @@ export function FuelContainer() {
   const meals = useGetMeals();
   const setWater = useSetWater();
   const deleteEntry = useDeleteEntry();
-  const aiGate = useNutritionAiGate();
   const mealprintGate = useMealprintGate();
+  const userMeals = useUserMeals();
   // spec-26 Phase 2 — the active plan for the VIEWED day (AC 5.1/5.3). Enabled
   // whenever Mealprint is entitled (unlike the sheets' `visible`-gated reads):
   // Fuel is the tab this feeds directly, but entitlement loss must suppress
@@ -118,10 +127,9 @@ export function FuelContainer() {
   // fan-out); `activePlan.data` is this container's own already-fetched read,
   // not a second subscription.
   const mealprint = useMealprintEntry(visiblePlan);
-  const online = useOnlineStatus();
-  const openScan = useFuelSheets((s) => s.openScan);
-  const openQuickAdd = useFuelSheets((s) => s.openQuickAdd);
-  const openSnap = useFuelSheets((s) => s.openSnap);
+  const openYourMeals = useFuelSheets((s) => s.openYourMeals);
+  const openMealOptions = useFuelSheets((s) => s.openMealOptions);
+  const openSuggestLocked = useFuelSheets((s) => s.openSuggestLocked);
   const sheetRev = useFuelSheets((s) => s.rev);
   const setActiveDate = useFuelSheets((s) => s.setDate);
 
@@ -134,11 +142,8 @@ export function FuelContainer() {
     setActiveDate(date);
   }, [date, setActiveDate]);
 
-  const onPrevDay = useCallback(() => {
-    setDate((d) => previousDayISO(d));
-  }, []);
-  const onNextDay = useCallback(() => {
-    setDate((d) => (d < localDayISO() ? addDaysISO(d, 1) : d));
+  const onSelectDay = useCallback((iso: string) => {
+    setDate(iso > localDayISO() ? localDayISO() : iso);
   }, []);
   const onOpenCalendar = useCallback(() => setCalendarOpen(true), []);
   const onCloseCalendar = useCallback(() => setCalendarOpen(false), []);
@@ -173,35 +178,77 @@ export function FuelContainer() {
     [storage, recipeMap, mealMap],
   );
 
+  // PER-132: entries grouped under Your meals. Entries logged by 1.2.0 (no
+  // `userMealId`) sit under the default meal for their slot; Mealprint plan
+  // ghost rows go to that same default meal.
   const slots: MealSlotVM[] = useMemo(() => {
-    return MEAL_SLOTS.map(({ slot, label }) => {
-      const entries = data?.entriesBySlot[slot] ?? [];
-      const kcal = entries.reduce((a, e) => a + e.kcal, 0);
-      const ghostRows: MealGhostRowVM[] = visiblePlan
-        ? plannedMealsForSlot(visiblePlan, slot).map((meal) => ({
-            planId: visiblePlan.id,
-            planMealId: meal.id,
-            label: meal.label,
-            kcal: meal.kcal,
-          }))
-        : [];
-      return {
-        slot,
-        label,
-        kcal,
-        rows: entries.map((e) => ({
-          id: e.id,
-          name: entryDisplayLabel(e, lookups),
-          sub: `${e.servings} ${e.servings === 1 ? "serving" : "servings"}`,
-          kcal: e.kcal,
-          proteinG: e.proteinG,
-          carbsG: e.carbsG,
-          fatG: e.fatG,
-        })),
-        ghostRows,
-      };
-    });
-  }, [data, lookups, visiblePlan]);
+    const entries = data ? flattenFuelEntries(data) : [];
+    return groupEntriesByUserMeal(entries, userMeals.meals).map(
+      ({ meal, entries: inMeal }) => {
+        const totals = sumEntryMacros(inMeal);
+        const isSlotDefault =
+          defaultUserMealIdForSlot(userMeals.meals, meal.logSlot) === meal.id ||
+          meal.id === `slot:${meal.logSlot}`;
+        const ghostRows: MealGhostRowVM[] =
+          visiblePlan && isSlotDefault
+            ? plannedMealsForSlot(visiblePlan, meal.logSlot).map((pm) => ({
+                planId: visiblePlan.id,
+                planMealId: pm.id,
+                label: pm.label,
+                kcal: pm.kcal,
+              }))
+            : [];
+        return {
+          key: meal.id,
+          slot: meal.logSlot,
+          label: meal.name,
+          kcal: totals.kcal,
+          macroLine: mealMacroLine(totals),
+          rows: inMeal.map((e) => ({
+            id: e.id,
+            name: entryDisplayLabel(e, lookups),
+            sub: `${e.servings} ${e.servings === 1 ? "serving" : "servings"}`,
+            kcal: e.kcal,
+            proteinG: e.proteinG,
+            carbsG: e.carbsG,
+            fatG: e.fatG,
+          })),
+          ghostRows,
+        };
+      },
+    );
+  }, [data, lookups, visiblePlan, userMeals.meals]);
+
+  // The week strip: each day's dot from the offline day cache.
+  const week: WeekDayVM[] = useMemo(() => {
+    return weekDaysFor(date).map((iso) => ({
+      iso,
+      dayName: DAY_NAME.format(new Date(`${iso}T12:00:00`)),
+      dayNum: String(Number(iso.slice(8, 10))),
+      state: weekDayState(
+        iso,
+        todayIso,
+        userId
+          ? iso === date && data
+            ? data
+            : storage.getCachedFuelToday(userId, iso)
+          : null,
+      ),
+      selected: iso === date,
+    }));
+    // `sheetRev` re-reads the cache after a log from a sheet.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [date, todayIso, userId, storage, data, sheetRev]);
+
+  // The quick buttons on Log aim at the meal for the time of day.
+  const quickMeal = useMemo(() => {
+    const slot = defaultMealSlot(new Date());
+    const id = defaultUserMealIdForSlot(userMeals.meals, slot);
+    return (
+      userMeals.meals.find((m) => m.id === id) ?? userMeals.meals[0] ?? null
+    );
+  }, [userMeals.meals]);
+  const quickActions = useMealQuickActions(quickMeal);
 
   const consumed = useMemo(
     () =>
@@ -215,28 +262,25 @@ export function FuelContainer() {
     [data],
   );
 
-  const macros: MacroLineVM[] = useMemo(
+  const macros: MacroColumnVM[] = useMemo(
     () => [
       {
         label: "Protein",
-        value: consumed.proteinG,
-        target: target?.proteinG ?? 0,
-        color: MACRO_COLORS.protein,
-        pct: macroPct(consumed.proteinG, target?.proteinG ?? 0),
+        eatenG: consumed.proteinG,
+        targetG: target?.proteinG ?? 0,
+        color: MACRO_HEX.protein,
       },
       {
         label: "Carbs",
-        value: consumed.carbsG,
-        target: target?.carbsG ?? 0,
-        color: MACRO_COLORS.carbs,
-        pct: macroPct(consumed.carbsG, target?.carbsG ?? 0),
+        eatenG: consumed.carbsG,
+        targetG: target?.carbsG ?? 0,
+        color: MACRO_HEX.carbs,
       },
       {
         label: "Fat",
-        value: consumed.fatG,
-        target: target?.fatG ?? 0,
-        color: MACRO_COLORS.fat,
-        pct: macroPct(consumed.fatG, target?.fatG ?? 0),
+        eatenG: consumed.fatG,
+        targetG: target?.fatG ?? 0,
+        color: MACRO_HEX.fat,
       },
     ],
     [consumed.proteinG, consumed.carbsG, consumed.fatG, target],
@@ -375,6 +419,30 @@ export function FuelContainer() {
     router.push("/(app)/fuel/plan-today");
   }, [router, mealprintGate.allowed, visiblePlan]);
 
+  // Log · Plan · Meals (canvas N1). Plan is PER-133's; until it lands the tab
+  // keeps Mealprint's day plan reachable, which the old entry card offered.
+  // Meals opens the saved meals and recipes library.
+  const onSection = useCallback(
+    (next: "log" | "plan" | "meals") => {
+      if (next === "meals") {
+        router.push("/(app)/fuel/recipes" as Href);
+        return;
+      }
+      if (next !== "plan") return;
+      if (!mealprintGate.isResolved) return;
+      if (!mealprintGate.allowed) {
+        openSuggestLocked();
+        return;
+      }
+      if (visiblePlan !== null) {
+        router.push("/(app)/fuel/plan-today" as Href);
+        return;
+      }
+      mealprint.onPlanMyDay();
+    },
+    [router, mealprintGate, openSuggestLocked, visiblePlan, mealprint],
+  );
+
   const isLoading =
     (fuel.isRefreshing || (fuel.isStale && fuel.error === null)) &&
     data === null;
@@ -382,65 +450,51 @@ export function FuelContainer() {
   return (
     <FuelPresenter
       scrollRef={scrollRef}
-      dateLabel={dayLabel(date)}
+      dateLabel={fuelDayLabel(date)}
       selectedDate={date}
-      canGoNext={canGoNext}
-      onPrevDay={onPrevDay}
-      onNextDay={onNextDay}
-      calendarOpen={calendarOpen}
-      onCloseCalendar={onCloseCalendar}
-      onSelectDate={onSelectDate}
       hasData={data !== null}
       isLoading={isLoading}
       isRefreshing={fuel.isRefreshing}
       error={fuel.error}
-      onRefresh={() => void fuel.refresh()}
-      remainingKcal={data?.remainingKcal ?? 0}
+      onRefresh={() => {
+        void fuel.refresh();
+        userMeals.reload();
+      }}
+      section="log"
+      onSection={onSection}
+      week={week}
+      onSelectDay={onSelectDay}
+      calendarOpen={calendarOpen}
+      onOpenCalendar={onOpenCalendar}
+      onCloseCalendar={onCloseCalendar}
+      onSelectDate={onSelectDate}
       consumedKcal={consumed.kcal}
       targetKcal={target?.dailyKcal ?? 0}
-      ringPct={heroRingPct(target, consumed)}
+      consumedProteinG={consumed.proteinG}
+      consumedCarbsG={consumed.carbsG}
+      consumedFatG={consumed.fatG}
       macros={macros}
-      celebrate={goalHit.all}
       noTarget={target === null}
-      aiLocked={!aiGate.allowed}
-      snapOffline={!online}
-      mealprintState={mealprint.state}
-      mealprintNeedsSetup={mealprint.needsSetup}
+      quickActions={quickActions}
       mealprintPlanProgress={mealprint.planProgress}
-      onMealprint={mealprint.onPress}
-      onMealprintUpgrade={mealprint.onUpgrade}
-      onMealprintRetry={mealprint.onRetry}
-      onMealprintPlan={mealprint.onPlanMyDay}
-      onMealprintEditPreferences={mealprint.onEditPreferences}
       onEditPlan={onEditPlan}
       onClearPlan={onClearPlan}
       clearingPlan={clearingPlan}
       slots={slots}
+      onAddToMeal={(key) =>
+        router.push(
+          `/(app)/fuel/add-to-meal?meal=${encodeURIComponent(key)}` as Href,
+        )
+      }
+      onMealOptions={openMealOptions}
+      onEditMeals={openYourMeals}
       waterCups={consumed.waterCups}
       waterGoal={target?.waterCups ?? 8}
       volumeUnit={volumeUnit}
       onOpenTargets={() => router.push("/(app)/fuel/targets")}
-      onOpenCalendar={onOpenCalendar}
-      onScan={() => openScan("breakfast")}
-      onSnap={() => {
-        // Offline takes precedence — the row button is already disabled in
-        // this state (QuickAddRowPresenter), but defend here too in case a
-        // stale press lands mid-transition. AI calls are online-only and
-        // never queue (design.md § Revised 2026-07-03 › Mobile flow).
-        if (!online) return;
-        if (aiGate.allowed) {
-          openSnap("breakfast");
-          return;
-        }
-        aiGate.gateProps.onUpgrade();
-      }}
-      onSearch={() => openQuickAdd("breakfast")}
-      onRecipes={() => router.push("/(app)/fuel/recipes")}
-      onAddToSlot={(slot: MealSlot) => openQuickAdd(slot)}
       onSetWater={onSetWater}
       onDeleteEntry={onDeleteEntry}
       onLogGhost={onLogGhost}
-      onLog={() => openQuickAdd("breakfast")}
     />
   );
 }

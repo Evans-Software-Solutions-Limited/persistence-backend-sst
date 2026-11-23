@@ -33,6 +33,7 @@ import {
   setFuelWater,
 } from "@/domain/services/nutrition.service";
 import { setHabitCompletion } from "@/application/commands/toggle-habit.command";
+import { findUserMeal } from "@/domain/services/userMeals.service";
 import { cupsToLitres } from "@/shared/utils";
 
 export type NutritionCommandDeps = {
@@ -80,6 +81,15 @@ export function logEntryCommand(
 ): NutritionEntry {
   const { storage, userId } = deps;
   const date = dayKey(input.loggedAt);
+  // PER-132: a `local-…` meal whose PUT has already synced is logged under its
+  // server id — nothing would swap it in this entry later.
+  if (input.userMealId?.startsWith("local-")) {
+    const meal = findUserMeal(
+      storage.getCachedUserMeals(userId) ?? [],
+      input.userMealId,
+    );
+    if (meal) input = { ...input, userMealId: meal.id };
+  }
 
   let macro = {
     kcal: input.kcal ?? 0,
@@ -109,6 +119,7 @@ export function logEntryCommand(
     aiEstimated: input.aiEstimated ?? false,
     aiConfidence: input.aiEstimated ? (input.aiConfidence ?? null) : null,
     customName: input.customName ?? null,
+    userMealId: input.userMealId ?? null,
   };
 
   const fuel = readFuel(storage, userId, date);
@@ -133,6 +144,9 @@ export function logEntryCommand(
       aiEstimated: input.aiEstimated,
       aiConfidence: input.aiConfidence,
       loggedAt: input.loggedAt,
+      // PER-132: omitted (not null) when absent, so a slot-only log stays
+      // byte-identical to what 1.2.0 sends.
+      ...(input.userMealId ? { userMealId: input.userMealId } : {}),
     },
     endpoint: "/nutrition/entries",
     method: "POST",
