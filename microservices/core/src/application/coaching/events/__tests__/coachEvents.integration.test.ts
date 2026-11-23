@@ -1013,6 +1013,37 @@ describe("D7.3 reminders", () => {
     expect(today.json.data.counts.total).toBe(0);
   });
 
+  it("an answered exit form stays in Today to review after coaching ends", async () => {
+    // Inspector Brad, #548: the ended-relationship filter dropped these too.
+    const form = await makeForm(COACH_A, "Exit survey");
+    await makeSchedule(COACH_A, {
+      formId: form.id,
+      trigger: "on_end",
+      audience: "all_clients",
+    });
+    const { endCoachClientRelationship } =
+      await import("../../../relationships/endCoachClientRelationship");
+    await endCoachClientRelationship({
+      trainerId: COACH_A,
+      clientId: ATHLETE_C,
+      initiatedBy: "client",
+    });
+    const [exit] = (await requestsFor(ATHLETE_C)).filter(
+      (r) => r.trigger === "on_end",
+    );
+    const answered = await http(
+      "POST",
+      `/users/me/form-requests/${exit!.id}/response`,
+      ATHLETE_C,
+      { answers: { q1: "Thanks" } },
+    );
+    expect(answered.status).toBe(201);
+    const today = await http("GET", "/trainers/me/today", COACH_A);
+    expect(today.json.data.queue.map((i: Json) => [i.kind, i.action])).toEqual([
+      ["form_completed", "review_response"],
+    ]);
+  });
+
   it("ignores malformed reminders", () => {
     expect(reminderList("nope")).toEqual([]);
     expect(

@@ -263,13 +263,15 @@ export async function todayQueue(trainerId: string): Promise<{
   queue: TodayItem[];
   counts: { total: number; byKind: Record<string, number> };
 }> {
-  // Today only offers actions that can still be taken: an exit form seen in
-  // the feed after coaching ended is not one (Inspector Brad, #548).
+  // Today only offers actions that can still be taken. After coaching ends,
+  // visible() lets only exit forms through: an answered one can still be
+  // reviewed, but a client who left can't be nudged (Inspector Brad, #548).
   const filter = and(
     visible(trainerId),
     or(
       isNull(coachEvents.relationshipId),
       eq(ptClientRelationships.status, "active"),
+      ne(coachEvents.kind, "form_missed"),
     ),
     inArray(coachEvents.kind, TODAY_KINDS),
     isNull(coachEvents.actionedAt),
