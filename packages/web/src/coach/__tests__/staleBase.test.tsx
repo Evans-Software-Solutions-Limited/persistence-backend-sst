@@ -8,6 +8,7 @@ import { InvitedClientContainer } from "../invited/InvitedClientContainer";
 import { SetupContainer } from "../setup/SetupContainer";
 import { WhoContainer } from "../who/WhoContainer";
 import { ClientPage } from "../clients/ClientPage";
+import { PerProfile } from "../CoachApp";
 import {
   CLIENT_ID,
   PROFILE_ID,
@@ -489,5 +490,58 @@ describe("sweep 10", () => {
         .getByRole("switch", { name: "Messages" })
         .getAttribute("aria-checked"),
     ).toBe("false");
+  });
+});
+
+describe("drafts belong to one client (sweep 11)", () => {
+  let go: (to: string) => void = () => {};
+  function GrabNavigate() {
+    const navigate = useNavigate();
+    go = (to) => navigate(to);
+    return null;
+  }
+  const OTHER = "33333333-3333-4333-8333-333333333333";
+
+  it("a jump between two clients' set-up pages never saves one's draft into the other", async () => {
+    const api = fakeApi({
+      profileDetail: vi.fn(async (id: string) =>
+        detail({ id, displayName: id === OTHER ? "Bo Bell" : "Lena Ortiz" }),
+      ),
+      replaceSection: vi.fn(async (id: string) => detail({ id, revision: 4 })),
+    });
+    const setup = (id: string) =>
+      `/coach/clients/invited/${id}/setup/welcome_message`;
+    const { unmount } = renderCoach(
+      <>
+        <PerProfile screen={SetupContainer} />
+        <GrabNavigate />
+      </>,
+      {
+        route: setup(OTHER),
+        path: "/coach/clients/invited/:profileId/setup/:section?",
+        api,
+      },
+    );
+    await screen.findByRole("heading", { name: "Set up Bo" });
+    fireEvent.change(screen.getByLabelText("Message"), {
+      target: { value: "Hi Bo" },
+    });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    act(() => go(setup(PROFILE_ID)));
+    await screen.findByRole("heading", { name: "Set up Lena" });
+    expect(
+      (screen.getByLabelText("Message") as HTMLTextAreaElement).value,
+    ).toBe("");
+    unmount();
+    await new Promise((r) => setTimeout(r, 20));
+    const toLena = api.replaceSection.mock.calls.filter(
+      ([id]) => id === PROFILE_ID,
+    );
+    expect(toLena).toHaveLength(0);
+    expect(
+      api.replaceSection.mock.calls.filter(([id]) => id === OTHER),
+    ).toHaveLength(1);
   });
 });
