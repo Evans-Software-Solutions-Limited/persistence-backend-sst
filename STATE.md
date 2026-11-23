@@ -89,6 +89,20 @@ next store release, reviewed on staging.
   forward twice / down / up. `scheduler/__tests__/zonedTime.test.ts` (gap and
   repeated hours, ISO weeks). PER-108/PER-116 suites now apply this migration;
   session and respond handler unit tests mock the new writers.
+- **Inspector Brad on #548: five sweeps, 13 leads, all confirmed and fixed
+  with a test that failed on the previous commit; case closed on `701b31e`:**
+  - Training behind judged a barely-started "today" → judged on the 7
+    complete days ending yesterday in the client's zone.
+  - Reminder page filled by rows not yet due → due-count filter in SQL.
+  - Missed-marking skipped after a failed run / committed without its event →
+    runs every tick for the latest period, in one transaction with its events.
+  - Missed exit form pushed but hidden → visible in the feed; Today keeps
+    answered exit forms (review) and leaves out missed ones (no nudge).
+  - Pending sweep ignored quiet hours begun since the write → held.
+  - Fixed caps skipped rows past them (rules, behind coaches, held release,
+    invite expiry, programmes ending) → every job pages through all rows.
+  - A run killed at the Lambda timeout kept its claim → `finished_at` and
+    claim takeover after 10 min.
 - **Not verified:** nothing applied to staging; no deploy; no device run;
   real Postgres concurrency (PGlite is one connection).
 
