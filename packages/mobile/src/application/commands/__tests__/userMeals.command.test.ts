@@ -106,6 +106,35 @@ describe("saveUserMealsCommand", () => {
     expect(JSON.parse(mine.payload).meals).toHaveLength(3);
   });
 
+  it("keeps an offline meal from a dead PUT after a server read dropped it (Inspector Brad #550)", () => {
+    const deps = { storage, userId: USER };
+    saveUserMealsCommand(deps, addUserMeal(meals(), "Supper", "k", "t"));
+    const old = storage.getPendingMutations()[0]!;
+    storage.markMutationPermanentlyFailed(old.id, "exhausted");
+    // A server read replaces the cache: Supper is gone from it.
+    storage.cacheUserMeals(USER, meals());
+    // The next edit is built from that cache.
+    const saved = saveUserMealsCommand(
+      deps,
+      renameUserMeal(storage.getCachedUserMeals(USER)!, "srv-1", "Midday"),
+    )!;
+    expect(saved.map((m) => m.id)).toEqual(["srv-0", "srv-1", "local-k"]);
+    const [q] = storage.getPendingMutations();
+    expect(JSON.parse(q!.payload).meals[2]).toEqual({
+      clientRequestId: "k",
+      name: "Supper",
+      logSlot: "snack",
+      sortOrder: 2,
+    });
+    expect(storage.getCachedUserMeals(USER)!.map((m) => m.name)).toContain(
+      "Supper",
+    );
+    // An unreadable dead payload carries nothing forward.
+    storage.markMutationPermanentlyFailed(q!.id, "x");
+    storage.patchQueueEntryForTest(q!.id, { payload: "not json" });
+    expect(saveUserMealsCommand(deps, meals())).toHaveLength(2);
+  });
+
   it("refuses placeholders and an empty list", () => {
     expect(
       saveUserMealsCommand(

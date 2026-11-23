@@ -11,7 +11,7 @@
  * meanwhile wait in the queue (a `local-…` reference defers, never fails).
  */
 import type { StoragePort } from "@/domain/ports/storage.port";
-import type { UserMeal } from "@/domain/models/userMeals";
+import type { UserMeal, UserMealPutRow } from "@/domain/models/userMeals";
 import { isAutoResolvableSyncEntry } from "@/domain/ports/sync.types";
 import {
   activeUserMeals,
@@ -27,6 +27,28 @@ export type UserMealsCommandDeps = {
   userId: string;
 };
 
+/** Meals in a stored PUT body that the server never confirmed (no `id`). */
+function unsyncedMealsIn(
+  payload: string,
+): { clientRequestId: string; name: string; logSlot: UserMeal["logSlot"] }[] {
+  try {
+    const body = JSON.parse(payload) as { meals?: UserMealPutRow[] };
+    return (body.meals ?? []).flatMap((m) =>
+      !m.id && m.clientRequestId
+        ? [
+            {
+              clientRequestId: m.clientRequestId,
+              name: m.name,
+              logSlot: m.logSlot,
+            },
+          ]
+        : [],
+    );
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Save the whole list (after a rename, reorder or add). Returns the list as
  * cached. Refuses a list of synthetic placeholders: those exist only before
@@ -38,17 +60,21 @@ export function saveUserMealsCommand(
   meals: readonly UserMeal[],
 ): UserMeal[] | null {
   const { storage, userId } = deps;
-  const next = activeUserMeals(meals).map((m, i) =>
+  let next = activeUserMeals(meals).map((m, i) =>
     m.sortOrder === i ? m : { ...m, sortOrder: i },
   );
   if (next.length === 0 || next.some((m) => isSyntheticUserMealId(m.id))) {
     return null;
   }
-  storage.cacheUserMeals(userId, next);
 
   // A dead PUT (permanently failed, retries used up, blocked) carries an older
   // full list; a later Retry would archive meals added since. This list
   // replaces it, so drop it (Inspector Brad, #550).
+  //
+  // ⚠ But a meal added offline exists nowhere else: once the dead PUT stops
+  // holding reads back, a server read drops it from the cache, while food
+  // logged into it still waits on `local-<key>`. Meals can't be removed on
+  // the phone, so carry each such meal forward into this list first.
   const dead = storage
     .getUncompletedMutations()
     .filter(
@@ -57,7 +83,24 @@ export function saveUserMealsCommand(
         e.entityId === userId &&
         !isAutoResolvableSyncEntry(e),
     );
+  for (const row of dead.flatMap((e) => unsyncedMealsIn(e.payload))) {
+    if (next.some((m) => m.clientRequestId === row.clientRequestId)) continue;
+    next = [
+      ...next,
+      {
+        id: `local-${row.clientRequestId}`,
+        name: row.name,
+        logSlot: row.logSlot,
+        sortOrder: next.length,
+        defaultKey: null,
+        clientRequestId: row.clientRequestId,
+        archivedAt: null,
+        updatedAt: new Date().toISOString(),
+      },
+    ];
+  }
   if (dead.length > 0) storage.discardEntries(dead.map((e) => e.id));
+  storage.cacheUserMeals(userId, next);
 
   const payload = toUserMealsPutBody(next);
   const queued = storage
