@@ -2,7 +2,7 @@
 
 ### 2026-11-23 — BE-F1: progress photos and the private media service ([PER-121](https://linear.app/evans-software-solutions/issue/PER-121); branch `bradleysimmsevans/per-121-be-f1-backend-progress-photos-and`)
 
-PR: to open (no auto-merge). Linear "Backend design F — Progress photos".
+PR #553 (open, no auto-merge). Linear "Backend design F — Progress photos".
 Backend + infra only; no app, native or version change. Unblocks PER-137,
 PER-138 and PER-122.
 
