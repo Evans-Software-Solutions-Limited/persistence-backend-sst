@@ -62,6 +62,13 @@ vi.mock("../../../relationships/recordDataSharingConsent", () => ({
     recordConsent(...(args as [])),
 }));
 
+// PER-117: the coach's `client_accepted` event is tested on PGlite in
+// coaching/events/__tests__; here only that the accept tx calls it.
+const recordAccepted = vi.hoisted(() => vi.fn(async () => null));
+vi.mock("../../../coaching/events/writers", () => ({
+  recordClientAccepted: recordAccepted,
+}));
+
 const auth = {
   authorization: "Bearer token",
   "Content-Type": "application/json",
@@ -161,6 +168,11 @@ describe("trainersRespondToRequestHandler", () => {
     expect(body.data.status).toBe("active");
     expect(body.data.trainerId).toBe("trainer-1");
     expect(notifyLimitReached).not.toHaveBeenCalled();
+    expect(recordAccepted).toHaveBeenCalledWith(expect.anything(), {
+      trainerId: "trainer-1",
+      clientId: "client-id",
+      relationshipId: "rel-1",
+    });
     // 28-coach-data-sharing-consent: grant recorded in the same tx.
     expect(recordConsent).toHaveBeenCalledWith(
       expect.objectContaining({

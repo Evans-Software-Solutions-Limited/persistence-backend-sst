@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { Suspense, lazy, useEffect } from "react";
 import { Navigate, Routes, Route, useLocation } from "react-router";
 import Home from "./pages/Home";
 import Pricing from "./pages/Pricing";
@@ -41,6 +41,10 @@ import { initTradedoubler, teardownTradedoubler } from "./lib/tradedoubler";
 import { hasConsent, subscribe } from "./lib/consent";
 
 const queryClient = new QueryClient();
+
+/** The web coach workspace (PER-124), its own chunk. */
+const CoachApp = lazy(() => import("./coach/CoachApp"));
+const coachQueryClient = new QueryClient();
 
 /**
  * Bridges consent → the Meta Pixel across every route (spec-30 R3.5). On mount
@@ -103,6 +107,21 @@ function App() {
       <RedemptionBoundary>
         <FoundingAccess />
       </RedemptionBoundary>
+    );
+  }
+  // Web coach workspace (PER-124). Mounted OUTSIDE the marketing tree, like
+  // the redemption pages: the magic-link callback carries the coach's access
+  // and refresh tokens in the URL, so no consent/pixel/affiliate effect may
+  // run on any /coach page. Its own QueryClient keeps coach data apart.
+  if (/^\/coach(?:\/|$)/.test(location.pathname)) {
+    return (
+      <QueryClientProvider client={coachQueryClient}>
+        <Suspense fallback={null}>
+          <Routes>
+            <Route path="/coach/*" element={<CoachApp />} />
+          </Routes>
+        </Suspense>
+      </QueryClientProvider>
     );
   }
   if (/^\/redeem(?:\/|$)/.test(location.pathname)) {

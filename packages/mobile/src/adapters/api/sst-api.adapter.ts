@@ -232,6 +232,7 @@ import type {
   SetTargetsInput,
   WaterToday,
 } from "@/domain/models/nutrition";
+import type { InvitePreview, MyCoaching } from "@/domain/models/myCoaching";
 import {
   ok,
   fail,
@@ -2545,6 +2546,40 @@ export class SSTApiAdapter implements ApiPort {
     return this.requestEnvelope<{ ended: true }>(
       `/clients/me/relationships/${relationshipId}`,
       { method: "DELETE" },
+    );
+  }
+
+  // -- PER-126 (APP-A3): athlete coaching reads --
+
+  async getMyCoaching(): Promise<Result<MyCoaching, ApiError>> {
+    return this.requestEnvelope<MyCoaching>("/users/me/coaching");
+  }
+
+  async getInvitePreview(
+    code: string,
+  ): Promise<Result<InvitePreview, AcceptInviteCodeApiError>> {
+    // Same flat `{ code, message }` error body as `acceptTrainerInviteCode`.
+    const result = await this.requestRaw<
+      { data: InvitePreview } | { code: string; message: string }
+    >(`/invites/${encodeURIComponent(code)}/preview`);
+    if (!result.ok) {
+      return fail<AcceptInviteCodeApiError>(result.error);
+    }
+    const { status, json } = result.value;
+    if (status >= 200 && status < 300 && json !== null && "data" in json) {
+      return ok(json.data);
+    }
+    const domainCode =
+      json !== null && "code" in json && typeof json.code === "string"
+        ? (json.code as AcceptInviteCodeErrorCode)
+        : undefined;
+    const message =
+      json !== null && "message" in json && typeof json.message === "string"
+        ? json.message
+        : "Failed to load the invite";
+    const base = mapHttpErrorToApiError(status, message, json);
+    return fail<AcceptInviteCodeApiError>(
+      domainCode !== undefined ? { ...base, acceptCode: domainCode } : base,
     );
   }
 

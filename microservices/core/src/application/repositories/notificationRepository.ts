@@ -79,7 +79,15 @@ export type NotificationType =
   // in 20261121000118_meal_plans_coach_assignments.sql. Off the preferences
   // list for the same ordering reason as `subscription_transferred`: 1.2.0's
   // renderer already shows an unknown type.
-  | "meal_plan_assigned";
+  | "meal_plan_assigned"
+  // Design C (PER-117) — `coach_event` (a coach's push about a client, in the
+  // coach's own inbox), `form_request` and `form_reminder` (an athlete's form
+  // is due). DB enum extended in 20261123120117_coach_events_notifications.sql.
+  // Off the preferences list for the same reason (so /notifications/
+  // preferences is unchanged); 1.2.0 renders them with the generic row.
+  | "coach_event"
+  | "form_request"
+  | "form_reminder";
 
 export const NOTIFICATION_TYPES: readonly NotificationType[] = [
   "workout_assigned",

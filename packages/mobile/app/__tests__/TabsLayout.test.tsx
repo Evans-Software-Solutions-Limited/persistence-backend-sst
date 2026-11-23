@@ -91,6 +91,16 @@ jest.mock("../../src/state/user-mode", () => ({
     selector({ mode: mockMode() }),
 }));
 
+// PER-126: the athlete's coaches decide whether the Coach tab shows.
+type MockCoach = { relationshipId: string; due: { forms: number } };
+const mockCoaches: { list: MockCoach[] } = { list: [] };
+const mockUseMyCoaches = jest.fn((_opts?: { enabled?: boolean }) => ({
+  coaches: mockCoaches.list,
+}));
+jest.mock("../../src/ui/hooks/useMyCoaches", () => ({
+  useMyCoaches: (opts?: { enabled?: boolean }) => mockUseMyCoaches(opts),
+}));
+
 // eslint-disable-next-line import/first
 import { fireEvent, render, within } from "@testing-library/react-native";
 // eslint-disable-next-line import/first
@@ -105,6 +115,7 @@ import TabsLayout, {
   ATHLETE_TABS,
   COACH_TABS,
   NavTabBar,
+  athleteTabsWithCoach,
   TAB_BAR_BOTTOM_GAP,
   TAB_BAR_CONTENT_HEIGHT,
   tabBarHeight,
@@ -130,6 +141,8 @@ beforeEach(() => {
   capturedNavigatorConfigs.length = 0;
   mockMode.mockReset();
   mockMode.mockReturnValue("athlete");
+  mockCoaches.list = [];
+  mockUseMyCoaches.mockClear();
 });
 
 describe("TabsLayout — route registration", () => {
@@ -137,7 +150,7 @@ describe("TabsLayout — route registration", () => {
     const view = renderLayout();
     const firstNavigator = capturedNavigatorConfigs.at(-1)!;
     const firstScreens = new Map(
-      capturedScreens.slice(-6).map((screen) => [screen.name, screen]),
+      capturedScreens.slice(-7).map((screen) => [screen.name, screen]),
     );
 
     view.rerender(
@@ -150,7 +163,7 @@ describe("TabsLayout — route registration", () => {
 
     const secondNavigator = capturedNavigatorConfigs.at(-1)!;
     const secondScreens = new Map(
-      capturedScreens.slice(-6).map((screen) => [screen.name, screen]),
+      capturedScreens.slice(-7).map((screen) => [screen.name, screen]),
     );
     expect(secondNavigator.screenOptions).toBe(firstNavigator.screenOptions);
     expect(secondNavigator.tabBar).toBe(firstNavigator.tabBar);
@@ -161,6 +174,7 @@ describe("TabsLayout — route registration", () => {
       "fuel",
       "clients",
       "programs",
+      "coach",
     ]) {
       expect(secondScreens.get(name)?.options).toBe(
         firstScreens.get(name)?.options,
@@ -168,11 +182,11 @@ describe("TabsLayout — route registration", () => {
     }
   });
 
-  it("registers all six tab routes regardless of mode", () => {
+  it("registers all seven tab routes regardless of mode", () => {
     renderLayout();
     const names = capturedScreens.map((s) => s.name).sort();
     expect(names).toEqual(
-      ["index", "you", "train", "fuel", "clients", "programs"].sort(),
+      ["index", "you", "train", "fuel", "clients", "programs", "coach"].sort(),
     );
   });
 
@@ -190,6 +204,8 @@ describe("TabsLayout — route registration", () => {
     // Hidden (href null).
     expect(byName.clients).toBeNull();
     expect(byName.programs).toBeNull();
+    // Not coached: no Coach tab (PER-126).
+    expect(byName.coach).toBeNull();
   });
 
   it("coach mode: coach tabs visible, athlete-only tabs hidden (href: null)", () => {
@@ -206,6 +222,71 @@ describe("TabsLayout — route registration", () => {
     // Hidden.
     expect(byName.train).toBeNull();
     expect(byName.fuel).toBeNull();
+    expect(byName.coach).toBeNull();
+  });
+
+  it("coach mode hides the athlete Coach tab even when coached, and doesn't fetch coaches", () => {
+    mockMode.mockReturnValue("coach");
+    mockCoaches.list = [{ relationshipId: "r1", due: { forms: 0 } }];
+    renderLayout();
+    const coach = capturedScreens.find((s) => s.name === "coach");
+    expect(coach?.href).toBeNull();
+    expect(mockUseMyCoaches).toHaveBeenCalledWith({ enabled: false });
+  });
+});
+
+describe("TabsLayout — Coach tab (PER-126, C2e)", () => {
+  it("appears while coached: Home · Train · Fuel · Coach · You", () => {
+    mockCoaches.list = [{ relationshipId: "r1", due: { forms: 0 } }];
+    const { getByTestId } = renderLayout();
+    const coach = capturedScreens.find((s) => s.name === "coach");
+    expect(coach?.href).toBeUndefined();
+    const bar = within(getByTestId("nav-tab-bar"));
+    for (const label of ["Home", "Train", "Fuel", "Coach", "You"]) {
+      expect(bar.getByText(label)).toBeTruthy();
+    }
+    expect(mockUseMyCoaches).toHaveBeenCalledWith({ enabled: true });
+  });
+
+  it("goes when the last coach ends coaching", () => {
+    mockCoaches.list = [{ relationshipId: "r1", due: { forms: 0 } }];
+    const view = renderLayout();
+    expect(
+      within(view.getByTestId("nav-tab-bar")).getByText("Coach"),
+    ).toBeTruthy();
+    mockCoaches.list = [];
+    view.rerender(
+      <SafeAreaProvider initialMetrics={safeAreaMetrics}>
+        <TamaguiProvider config={config} defaultTheme="dark">
+          <TabsLayout />
+        </TamaguiProvider>
+      </SafeAreaProvider>,
+    );
+    expect(
+      within(view.getByTestId("nav-tab-bar")).queryByText("Coach"),
+    ).toBeNull();
+    expect(
+      capturedScreens.filter((s) => s.name === "coach").at(-1)?.href,
+    ).toBeNull();
+  });
+
+  it("badges the forms due across every coach (C11k), none at zero", () => {
+    expect(athleteTabsWithCoach(0).map((t) => t.id)).toEqual([
+      "index",
+      "train",
+      "fuel",
+      "coach",
+      "you",
+    ]);
+    expect(athleteTabsWithCoach(0)[3]!.badge).toBeUndefined();
+    expect(athleteTabsWithCoach(3)[3]!.badge).toBe("3");
+
+    mockCoaches.list = [
+      { relationshipId: "r1", due: { forms: 2 } },
+      { relationshipId: "r2", due: { forms: 1 } },
+    ];
+    const { getByTestId } = renderLayout();
+    expect(within(getByTestId("nav-tab-bar")).getByText("3")).toBeTruthy();
   });
 });
 

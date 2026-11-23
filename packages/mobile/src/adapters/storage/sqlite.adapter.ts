@@ -38,6 +38,7 @@ import type { Streak } from "@/domain/models/streak";
 import type { Achievement } from "@/domain/models/achievement";
 import type { Goal } from "@/domain/models/goal";
 import type { HabitCompletion } from "@/domain/models/habit-completion";
+import type { MyCoaching } from "@/domain/models/myCoaching";
 import type { HabitConfig } from "@/domain/models/habit-config";
 import type {
   ReferenceEntry,
@@ -890,6 +891,13 @@ ${indentSyncQueueDdl(8)}
         payload TEXT NOT NULL,
         synced_at TEXT NOT NULL,
         PRIMARY KEY (user_id, plan_date)
+      );
+      -- PER-126: the athlete's coaches (GET /users/me/coaching), one JSON
+      -- payload per user. Feeds the Coach tab and You → Coaching offline.
+      CREATE TABLE IF NOT EXISTS cached_my_coaches (
+        user_id TEXT PRIMARY KEY,
+        payload TEXT NOT NULL,
+        synced_at TEXT NOT NULL
       );
       -- PER-132 Your meals (Design D N1b): one list per user. A new TABLE, so
       -- CREATE TABLE IF NOT EXISTS covers upgrading installs too.
@@ -3346,6 +3354,33 @@ ${indentSyncQueueDdl(12)}
     );
   }
 
+  getCachedMyCoaches(userId: string): MyCoaching | null {
+    const row = this.getDb().getFirstSync(
+      `SELECT payload FROM cached_my_coaches WHERE user_id = ?`,
+      [userId],
+    ) as { payload: string } | null;
+    return row ? (JSON.parse(row.payload) as MyCoaching) : null;
+  }
+
+  cacheMyCoaches(userId: string, value: MyCoaching): void {
+    this.getDb().runSync(
+      `INSERT INTO cached_my_coaches (user_id, payload, synced_at) VALUES (?, ?, ?)
+       ON CONFLICT(user_id) DO UPDATE SET payload = excluded.payload, synced_at = excluded.synced_at`,
+      [userId, JSON.stringify(value), new Date().toISOString()],
+    );
+  }
+
+  removeCachedMyCoach(userId: string, relationshipId: string): void {
+    const cached = this.getCachedMyCoaches(userId);
+    if (!cached) return;
+    this.cacheMyCoaches(userId, {
+      ...cached,
+      coaches: cached.coaches.filter(
+        (c) => c.relationshipId !== relationshipId,
+      ),
+    });
+  }
+
   cacheActiveSession(userId: string, session: WorkoutSession): void {
     const db = this.getDb();
     const now = new Date().toISOString();
@@ -4080,6 +4115,7 @@ ${indentSyncQueueDdl(12)}
       DELETE FROM training_log_ids;
       DELETE FROM training_log_records;
       DELETE FROM cached_you_remote;
+      DELETE FROM cached_my_coaches;
       DELETE FROM cached_user_meals;
     `);
   }

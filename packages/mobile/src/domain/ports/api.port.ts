@@ -73,6 +73,7 @@ import type {
   WorkoutListType,
   WorkoutQuota,
 } from "@/domain/models/workout";
+import type { InvitePreview, MyCoaching } from "@/domain/models/myCoaching";
 import type { Result, ApiError } from "@/shared/errors";
 import type { ReferralsPort } from "@/domain/ports/referrals.port";
 import type { PaginatedResult, PaginationParams } from "@/shared/types";
@@ -1454,6 +1455,23 @@ export interface ApiPort extends ReferralsPort {
   leaveCoach(
     relationshipId: string,
   ): Promise<Result<{ ended: true }, ApiError>>;
+
+  /**
+   * PER-126 (APP-A3): the athlete's active coaches (`GET /users/me/coaching`,
+   * design A D3). Feeds the Coach tab chips and You → Coaching; cached in
+   * `cached_my_coaches` so both work offline.
+   */
+  getMyCoaching(): Promise<Result<MyCoaching, ApiError>>;
+
+  /**
+   * PER-126: what a code leads to before consenting
+   * (`GET /invites/:code/preview`). 404 `invalid_code` for an unknown,
+   * expired, used or cancelled code; 429 `rate_limited` after too many
+   * guesses — both surfaced on `acceptCode`.
+   */
+  getInvitePreview(
+    code: string,
+  ): Promise<Result<InvitePreview, AcceptInviteCodeApiError>>;
 
   // -- Programs (19-programs, Phase 9 mobile — coach F1) --
   //

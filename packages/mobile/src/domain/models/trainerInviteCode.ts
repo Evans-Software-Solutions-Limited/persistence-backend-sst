@@ -15,6 +15,7 @@
  */
 
 import type { ApiError } from "@/shared/errors";
+import type { AcceptPreview } from "./myCoaching";
 
 /**
  * A minted (or re-fetched still-live) trainer invite code
@@ -38,6 +39,14 @@ export type AcceptInviteCodeResult = {
   relationshipId: string;
   trainerName: string;
   message: string;
+  /**
+   * PER-108 (additive, optional): `active` for a personal code (connected
+   * straight away), `pending` for a general code (the coach still accepts).
+   * Absent from an older backend — treat as `pending`.
+   */
+  relationshipStatus?: "active" | "pending";
+  /** PER-108: what arrived with a personal code; null for a general code. */
+  ready?: AcceptPreview | null;
 };
 
 /**
@@ -60,7 +69,9 @@ export type AcceptInviteCodeErrorCode =
   | "exists"
   | "code_already_used"
   | "coach_client_limit_reached"
-  | "consent_required";
+  | "consent_required"
+  // PER-108: the preview and accept share a 30-an-hour guessing budget (429).
+  | "rate_limited";
 
 /**
  * `ApiError` extended with the structured accept-invite-code domain `code`

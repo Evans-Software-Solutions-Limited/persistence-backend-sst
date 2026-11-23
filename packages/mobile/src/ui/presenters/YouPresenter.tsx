@@ -43,8 +43,9 @@ import {
  * a loader or error only when nothing at all is cached.
  *
  * Seams owned by other tickets:
- * - `coaches` — APP-A3 (PER-126) supplies several coaches; today the
- *   container maps the active relationships it already has.
+ * - `coaches` — APP-A3 (PER-126): several coaches from the cached
+ *   `GET /users/me/coaching`; a row opens that coach in the Coach tab.
+ *   Coach requests stay under the list (Brad, 23 Nov).
  * - `gallery` — APP-F1 (PER-137). Null until then, and the row is hidden.
  */
 

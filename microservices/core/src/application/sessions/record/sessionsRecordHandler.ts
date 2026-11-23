@@ -18,6 +18,7 @@ import { safeEvaluateStreaks, resolveEventTs } from "../../streaks/evaluate";
 import { safeRecomputeVolume } from "../../progress/recompute";
 import { emitEvent } from "../../analytics/emitEvent";
 import { recordedSetValueSchema } from "../sets/setValueSchemas";
+import { safeRecordWorkoutCompleted } from "../../coaching/events/writers";
 
 /**
  * POST /sessions/record
@@ -213,6 +214,8 @@ export const sessionsRecordHandler = new Elysia()
         // Backup volume recompute so Home/You weekly volume is fresh before
         // the 03:00 cron (design.md § Risks — two-write redundancy).
         await safeRecomputeVolume(userId);
+        // PER-117: one event per active coach (never fails the request).
+        await safeRecordWorkoutCompleted(userId, recorded.id);
 
         // Best-effort funnel emit (spec-30 R1.4). Gated on `clientSessionId`:
         // legacy clients that omit it get a fresh row on every sync (no

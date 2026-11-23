@@ -1,0 +1,43 @@
+{
+  "_source": "Recorded from the 1.2.0 store bundle (commit 3bad31e). backendKeys: microservices/core/src/application/repositories/notificationRepository.ts NOTIFICATION_TYPES (the keys GET/POST /notifications/preferences accept and return). appKeys: packages/mobile/src/domain/models/notification.ts NOTIFICATION_TYPES (the keys 1.2.0's preferences screen sends). PER-117 / design C D7 test 9: /notifications/preferences stays exactly as 1.2.0 knows it.",
+  "backendKeys": [
+    "workout_assigned",
+    "friend_request",
+    "pt_request",
+    "pt_accepted",
+    "physio_request",
+    "physio_accepted",
+    "workout_reminder",
+    "goal_milestone",
+    "trainer_feedback",
+    "streak_milestone",
+    "streak_at_risk",
+    "freeze_token_applied",
+    "goal_assigned_by_trainer",
+    "workout_logged_on_behalf",
+    "measurement_logged_on_behalf",
+    "nutrition_target_set_by_trainer",
+    "coach_brief",
+    "trainer_client_limit_reached",
+    "coach_request_accepted",
+    "coaching_relationship_ended"
+  ],
+  "appKeys": [
+    "workout_assigned",
+    "friend_request",
+    "pt_request",
+    "pt_accepted",
+    "physio_request",
+    "physio_accepted",
+    "workout_reminder",
+    "goal_milestone",
+    "trainer_feedback",
+    "goal_assigned_by_trainer",
+    "workout_logged_on_behalf",
+    "measurement_logged_on_behalf",
+    "nutrition_target_set_by_trainer",
+    "coach_brief",
+    "trainer_client_limit_reached",
+    "coach_request_accepted"
+  ]
+}

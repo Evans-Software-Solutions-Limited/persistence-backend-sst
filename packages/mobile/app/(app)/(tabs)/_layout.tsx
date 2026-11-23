@@ -1,10 +1,11 @@
 import { Tabs } from "expo-router";
 import type { ComponentProps } from "react";
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useUserMode } from "../../../src/state/user-mode";
+import { useMyCoaches } from "../../../src/ui/hooks/useMyCoaches";
 import { color } from "../../../src/ui/theme";
 import { TabBar, type TabSpec } from "../../../src/ui/components/foundation";
 import {
@@ -13,6 +14,7 @@ import {
   IconDumbbell,
   IconHome,
   IconLayers,
+  IconMessage,
   IconUsers,
 } from "../../../src/ui/components/icons";
 
@@ -31,7 +33,7 @@ type NavTabBarProps = Parameters<
  *       specs/14-navigation/tasks.md T-14.4.1–T-14.4.4
  *
  * Reads `useUserMode().mode` and swaps the visible tab spec:
- *   athlete → Home · Train · Fuel · You
+ *   athlete → Home · Train · Fuel · You (+ Coach while coached, PER-126)
  *   coach   → Home · Clients · Programs · You
  *
  * All six tab routes stay registered as <Tabs.Screen> regardless of mode;
@@ -54,6 +56,26 @@ export const ATHLETE_TABS: TabSpec[] = [
   { id: "fuel", icon: IconApple, label: "Fuel" },
   { id: "you", icon: IconChart, label: "You" },
 ];
+
+/**
+ * PER-126 (C2e): a 5th athlete tab, Coach, only while someone coaches the
+ * athlete: Home · Train · Fuel · Coach · You. Badge = forms due across
+ * coaches (C11k), hidden at zero.
+ */
+export function athleteTabsWithCoach(dueForms: number): TabSpec[] {
+  return [
+    ATHLETE_TABS[0]!,
+    ATHLETE_TABS[1]!,
+    ATHLETE_TABS[2]!,
+    {
+      id: "coach",
+      icon: IconMessage,
+      label: "Coach",
+      ...(dueForms > 0 ? { badge: String(dueForms) } : {}),
+    },
+    ATHLETE_TABS[3]!,
+  ];
+}
 
 export const COACH_TABS: TabSpec[] = [
   { id: "index", icon: IconHome, label: "Home" },
@@ -82,6 +104,8 @@ const CLIENTS_OPTIONS = { title: "Clients" } as const;
 const CLIENTS_HIDDEN_OPTIONS = { title: "Clients", href: null } as const;
 const PROGRAMS_OPTIONS = { title: "Programs" } as const;
 const PROGRAMS_HIDDEN_OPTIONS = { title: "Programs", href: null } as const;
+const COACH_TAB_OPTIONS = { title: "Coach" } as const;
+const COACH_TAB_HIDDEN_OPTIONS = { title: "Coach", href: null } as const;
 
 /**
  * Tab-bar layout contract (consumed by 05-active-session for the
@@ -169,7 +193,20 @@ export function NavTabBar({
 
 export default function TabsLayout() {
   const mode = useUserMode((s) => s.mode);
-  const tabs = mode === "coach" ? COACH_TABS : ATHLETE_TABS;
+  // Cache-first, so the Coach tab survives offline; ending coaching drops the
+  // coach from the cache, and the tab goes with the last one.
+  const { coaches } = useMyCoaches({ enabled: mode === "athlete" });
+  const showCoachTab = mode === "athlete" && coaches.length > 0;
+  const dueForms = coaches.reduce((n, c) => n + (c.due?.forms ?? 0), 0);
+  const tabs = useMemo(
+    () =>
+      mode === "coach"
+        ? COACH_TABS
+        : showCoachTab
+          ? athleteTabsWithCoach(dueForms)
+          : ATHLETE_TABS,
+    [mode, showCoachTab, dueForms],
+  );
   const renderTabBar = useCallback(
     (props: NavTabBarProps) => (
       <NavTabBar props={props} tabs={tabs} mode={mode} />
@@ -191,6 +228,11 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="fuel"
         options={mode === "coach" ? FUEL_HIDDEN_OPTIONS : FUEL_OPTIONS}
+      />
+      {/* Athlete-only, and only while coached (PER-126). */}
+      <Tabs.Screen
+        name="coach"
+        options={showCoachTab ? COACH_TAB_OPTIONS : COACH_TAB_HIDDEN_OPTIONS}
       />
 
       {/* Coach-only routes — hidden in athlete mode. */}

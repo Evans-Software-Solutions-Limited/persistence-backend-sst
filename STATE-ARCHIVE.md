@@ -11,6 +11,167 @@ later sessions changed things.
 
 ---
 
+### 🟢 2026-09-04 — FOUNDING-OFFER post-review hardening (branch `feat/founding-offer-admin`)
+
+Security review findings F1–F10 are now captured under
+`specs/milestones/FOUNDING-OFFER/SECURITY_REVIEW-2026-09-04.md`; its seven
+hardening work packages are implemented. The public founding page is
+informational only: bank details, Payment Link buttons, their build variables,
+and deploy wiring are removed. Payment remains out of band and privately
+coordinated.
+
+Founding grants now refuse a live `rc_` subscription unless an admin explicitly
+accepts the sync risk; pending redemption defers against one and writes one
+audit marker. Bank-transfer and privately sent Stripe-link grants require a
+trimmed payment reference. No-account invites and the public page state the
+90-day redemption window.
+
+Applied payment records survive profile deletion through `ON DELETE SET NULL`.
+`applied_at`, not a nullable `user_id`, defines pending state, so a retained
+`account_deleted` grant stays counted and cannot attach to a replacement
+account with the same email. A real PGlite lifecycle test covers retention,
+non-redemption, seat accounting, and a legitimate repurchase.
+
+The web and in-app Privacy Policy copies both carry the 4 September 2026
+founding-purchase retention disclosure. Visual baseline:
+`/Users/bradleysimms-evans/.codex/visualizations/2026/09/04/01a06cdf-2dcb-78e3-b9c3-b1b10954f357/founding-privacy-retention-wp6.png`.
+Production Confirm email was reported ON; staging remains Brad's dashboard task
+and is the first staging smoke-test precondition. The original founding
+migration was verified absent from the connected production migration history
+and founding tables were absent, so it was safely corrected in place.
+
+Verification after WP6: root typecheck **9/9** packages; lint zero errors
+(existing warnings only); root tests green after one isolated rerun of two
+unrelated web timeouts (**353 core files / 4,340 tests; 30 web files / 879
+tests; 523 mobile suites / 6,594 tests**); production web build green. Final
+full gates and the local Inspector Brad sweep remain the WP8 pre-push gate.
+
+WP8's first full-branch Inspector sweep found five additional release defects,
+all fixed before push: the CloudFront CSP now permits the stage Supabase origin
+used by admin magic-link auth; `granted_by` retains an immutable issuer UUID
+without an FK that could block administrator deletion; store-subscription
+guards use the shared expiry-aware live predicate; accounts inside the soft
+deletion window are refused a paid grant; and the once-only deferred audit is
+enforced by a partial unique index plus conflict-ignore insert. Behavioural
+tests cover the CSP input, user lookup/store provenance, deleted-account admin
+rendering, the new 409, expired store rows, issuer deletion, and concurrent
+audit deduplication. The final root gate is green: Prettier; typecheck **9/9**;
+lint zero errors (existing warnings only); build **14/14**; unit tests **21/21**
+tasks, including **354 core files / 4,352 tests**. Hardening-diff coverage is at
+least 90% for statements, branches, functions and lines; the pre-existing
+whole-PR coverage debt remains tracked separately from this post-review scope.
+
+The CI Inspector follow-up on `b0a77209` found a pending-grant/RevenueCat
+TOCTOU. RevenueCat activation and founding subscription writes now share a
+transaction-scoped per-user advisory lock, and both pending application and
+immediate grant creation recheck live store entitlement after taking that lock.
+The default path leaves the seat pending; the admin's explicit store override
+still permits supersession. Regression coverage proves a store winner does not
+populate `user_id`, `applied_at`, or `subscription_id`. The complete root gate
+remains green after the fix: Prettier, typecheck, lint (existing warnings only),
+build, and all unit-test tasks.
+
+The same PR now treats individual and coach pricing as live: every IAP plan
+card links to the existing cross-platform `/#download` section with “Get the
+app” instead of rendering a disabled “Coming soon” placeholder. The
+organisation sales CTAs are unchanged. Regression coverage is revert-checked.
+Visual baselines:
+`/Users/bradleysimms-evans/.codex/visualizations/2026/09/04/01a06cdf-2dcb-78e3-b9c3-b1b10954f357/pricing-live-cta-consumer-cards-light.png`,
+`/Users/bradleysimms-evans/.codex/visualizations/2026/09/04/01a06cdf-2dcb-78e3-b9c3-b1b10954f357/pricing-live-cta-coaches-dark.png`,
+and
+`/Users/bradleysimms-evans/.codex/visualizations/2026/09/04/01a06cdf-2dcb-78e3-b9c3-b1b10954f357/pricing-live-cta-consumer-mobile.png`.
+
+### 🟡 2026-09-04 — AUTH + CARDIO/ACTIVITY LOGGING (branch `codex/auth-cardio-logging`)
+
+Password inputs on sign-in, sign-up and password reset now have accessible
+show/hide controls, disable keyboard correction/capitalisation, and show live
+confirmation match state without altering the submitted password. Exercise
+creation supports strength, cardio and plyometric categories; cardio no longer
+requires a muscle group. Active sessions persist each exercise category and
+show category-specific logging: weight/reps for strength, time plus km/mi for
+cardio, and reps plus jump distance in cm/in for plyometrics.
+
+The Workouts screen can start a retrospective workout with a past local date
+and explicit duration. Cardio sessions can be marked indoor/outdoor and given
+an optional location; those values, logged activity time and distance appear in
+the completed-workout summary. Distance and time records are calculated by the
+core service and rendered on exercise detail/progress surfaces. Canonical stored
+units remain seconds and metres. Migration
+`20260904130000_session_activity_metadata.sql` adds session environment,
+location metadata and the per-session exercise-category snapshot, and must be
+applied before deploying the matching API.
+
+Formatting, all nine package typechecks, lint (zero errors), all fourteen build
+tasks and the full unit suite are green (**524 mobile suites / 6,623 tests**;
+**21 workspace tasks**). Visual QA was attempted but is blocked locally: the
+generated iOS build cannot resolve the React-Core-prebuilt pod source, while the
+installed staging dev client lacks ExpoTrackingTransparency and cannot load
+this checkout's bundle. No generated native project was retained.
+
+The mandatory local Inspector Brad pre-PR pass found seven category and edge
+case defects. All are fixed with regressions: cardio PRs are category-gated,
+summary activity totals include completed cardio sets only, offline cardio PR
+prediction matches the server, retrospective mode survives pointer recovery,
+category edits recompute muscle arrays, malformed activity inputs clear stale
+values, and retrospective duration is bounded to 24 hours. The complete gate
+suite above was rerun after these fixes. The follow-up Inspector pass found two
+lifecycle-boundary defects: server PR semantics depended on an exercise's
+current category, and upgraded local active sessions could resume without a
+category. Session exercises now store the category snapshot used when they were
+logged, and SQLite upgrades/backward reads restore it from the cached exercise.
+The complete gate suite is green after both fixes; a closed Inspector re-sweep
+then caught two alternate-entry-path gaps. Trainer-recorded sessions now accept
+the same activity metadata/category fields as self-recording, and piecemeal
+session exercise creation resolves visibility and snapshots the source exercise
+category. Regressions cover both paths, the complete gate suite is green, and
+the final closed local Inspector Brad sweep returned clean.
+
+The PR #434 CI Inspector follow-up found two mobile boundary cases. Cardio
+duration/distance fields now preserve focused, in-progress text while SQLite
+echoes canonical values back through the parent, then canonicalise on blur.
+Retrospective dates are displayed from device-local calendar components rather
+than a UTC string slice, and same-day logging before noon clamps completion to
+the current instant instead of rejecting the selected day. Focused regressions
+cover the command-echo and timezone/calendar-day paths. The full repository
+gate is green (**524 mobile suites / 6,627 tests; 21 workspace tasks**) and the
+local Inspector Brad follow-up is clean.
+
+A second PR #434 CI Inspector follow-up found that retrospective session setup
+backdated the still-live session clock, and that exercise detail filtered a
+globally limited PR response. Retrospective sessions now keep `startedAt` at
+the actual start instant and derive their historical interval only when they
+are finalised. The PR endpoint accepts an exercise scope that is applied in SQL
+before ordering/limiting, with matching offline-cache behaviour. The
+retrospective production date path now uses a direct `date-fns` dependency
+(`4.4.0`) for local-day parsing, validation and date arithmetic. Regression
+tests cover both review leads, and the full repository gate is green (**524
+mobile suites / 6,628 tests; 21 workspace tasks**).
+
+### 🟡 2026-09-03 — FOUNDING-OFFER MOBILE REFERRAL ENTRY (branch `codex/founding-referral-ota`)
+
+Work package B is implemented from store-build base `ea85b774` at app version
+`1.1.2`, isolated from the native Meta/ATT/ExpoSQLite changes on
+`codex/mobile-release-drag-loader-meta`. The mobile adapter now covers
+`GET /referrals/me`, `POST /referrals/claim` and `DELETE /referrals/me`; the
+user-scoped React Query hooks use `['referral', userId]`. The shared plan
+surface shows optional referral entry on both native-IAP and catalogue rails,
+with onboarding success, unlocked Change, locked read-only, verbatim neutral
+server errors, and explicit abort of an in-flight claim when Skip is pressed.
+
+No package, Expo config, permission, runtime-version, or other native change was
+made. Mobile typecheck and lint pass (13 pre-existing warnings, zero errors),
+and the full non-coverage Jest suite passes (**516 suites / 6,516 tests**).
+Changed referral UI/hooks coverage is **100% statements/functions/lines** and
+**93.93% branches**. Staging/production EAS Updates and iOS/Android device checks
+remain deliberately unperformed pending release approval and a deployed staging
+backend.
+
+Brad approved the founding-access copy on 2026-09-03. Rows whose
+`externalSubscriptionId` starts with `founding_` now remain technically
+cancelled-at-period-end but render as active fixed-term access: “Access active”
+and “will not renew automatically”, with no reinstatement instruction. The iOS
+manage screen uses the same semantics.
+
 ### 2026-09-01 — Spec 31 onboarding and experience polish
 
 - Implemented the once-only, seven-page onboarding journey with persisted

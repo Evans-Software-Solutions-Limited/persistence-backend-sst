@@ -1,45 +1,66 @@
 import { useCallback, useEffect, useState } from "react";
-import { Alert } from "react-native";
+import { Alert, Linking } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useAcceptInviteCode } from "@/ui/hooks/useTrainerInviteCodes";
+import { useAdapters } from "@/ui/hooks/useAdapters";
+import { useAuth } from "@/ui/hooks/useAuth";
+import { useMyCoaches } from "@/ui/hooks/useMyCoaches";
+import { useOnlineStatus } from "@/ui/hooks/useOnlineStatus";
 import { usePendingInvite } from "@/state/pending-invite";
-import { CONSENT_VERSION } from "@/domain/models/consent";
+import { useUserMode } from "@/state/user-mode";
+import { CONSENT_VERSION, PRIVACY_POLICY_URL } from "@/domain/models/consent";
+import {
+  firstName,
+  readyLine,
+  type InvitePreview,
+} from "@/domain/models/myCoaching";
+import type { AcceptInviteCodeApiError } from "@/domain/models/trainerInviteCode";
 import { AcceptInvitePresenter } from "@/ui/presenters/AcceptInvitePresenter";
+import { InvitePreviewPresenter } from "@/ui/presenters/InvitePreviewPresenter";
+import { coachInitials } from "@/ui/presenters/coaching/coachingKit";
 
 /**
- * <AcceptInviteContainer> — the athlete's invite-code redeem flow controller
- * (Coach Mode Phase 8 — invite/QR, 10-trainer-features). Reached from the
- * You screen's always-available "Have a coach's code?" entry, or from a
- * `persistencemobile://accept-invite?code=…` deep link (`?code=` pre-fills
- * the field via `useLocalSearchParams`).
+ * <AcceptInviteContainer> — the athlete's invite flow (PER-126, APP-A3):
  *
- * On success this creates a CLIENT-initiated pending relationship the COACH
- * must still accept — the athlete does NOT accept anything after redeeming.
- * We surface that with a one-shot confirmation alert, then navigate back to
- * You. Domain failures map the backend's `acceptCode` to inline copy
- * (NOT a paywall/upsell — `coach_client_limit_reached` is a plain client-
- * facing message, mirroring the backend's own framing).
+ *   enter code → preview (C11j: who, what's ready, what they'll see,
+ *   one consent tick) → accept.
  *
- * 28-coach-data-sharing-consent: redemption is the client's own action AND
- * the point their data starts flowing to the coach (once accepted) — so it's
- * the UK GDPR Art 9(2)(a) explicit-consent moment for this whole flow (the
- * later coach accept needs no consent of its own). Tapping "Join" no longer
- * redeems directly — it opens `<DataSharingConsentSheet>`; only confirming
- * the sheet's affirmative, never-pre-ticked checkbox actually calls
- * `accept.mutate`.
+ * Reached from You → "Have a coach's code?" or a
+ * `persistencemobile://accept-invite?code=…` deep link (`?code=` pre-fills).
+ *
+ * Looking a code up and accepting it both need a connection; offline the
+ * screens say so and the buttons are disabled. With a personal code the
+ * relationship is active straight away (`relationshipStatus: "active"`), so
+ * the athlete is told "You're connected with <coach>" and lands on the Coach
+ * tab (C11k). A general code still creates a request the coach accepts.
+ *
+ * 28-coach-data-sharing-consent: accepting is the explicit-consent moment.
+ * The C11j tick is never pre-ticked and resets for every preview.
  */
 export function AcceptInviteContainer() {
   const router = useRouter();
   const params = useLocalSearchParams<{ code?: string }>();
+  const { api, storage } = useAdapters();
+  const { session } = useAuth();
   const accept = useAcceptInviteCode();
+  const online = useOnlineStatus();
+  // Only refreshed by hand after a personal accept, so the Coach tab is there
+  // when we land on it; no fetch on mount.
+  const myCoaches = useMyCoaches({ enabled: false });
 
   const [code, setCode] = useState(() => (params.code ?? "").toUpperCase());
   const [errorMessage, setErrorMessage] = useState("");
-  const [consentVisible, setConsentVisible] = useState(false);
+  const [isLooking, setIsLooking] = useState(false);
+  const [preview, setPreview] = useState<InvitePreview | null>(null);
+  const [agreed, setAgreed] = useState(false);
+  const [acceptError, setAcceptError] = useState("");
+  const [expired, setExpired] = useState(false);
+  // Accepted, still loading the coach before leaving: keep Accept disabled so
+  // a second tap can't re-submit (Inspector Brad, #547).
+  const [finishing, setFinishing] = useState(false);
 
   // We've arrived on the redeem screen (the code, if any, is now in the URL) —
-  // clear the auth-flow stash so it can't resurface on a later sign-in
-  // (device-QA #2 follow-up; the stash is the carry-through-signup mechanism).
+  // clear the auth-flow stash so it can't resurface on a later sign-in.
   useEffect(() => {
     usePendingInvite.getState().clearPendingCode();
   }, []);
@@ -49,26 +70,74 @@ export function AcceptInviteContainer() {
     else router.replace("/(app)/(tabs)/you");
   }, [router]);
 
-  // "Join" opens the consent sheet — it does NOT redeem the code itself.
-  const handleSubmit = useCallback(() => {
+  const handleSubmit = useCallback(async () => {
+    const trimmed = code.trim();
+    if (trimmed === "" || !online) return;
     setErrorMessage("");
-    if (code.trim() === "") return;
-    setConsentVisible(true);
-  }, [code]);
+    setIsLooking(true);
+    const result = await api.getInvitePreview(trimmed);
+    setIsLooking(false);
+    if (result.ok) {
+      setPreview(result.value);
+      setAgreed(false);
+      setAcceptError("");
+      setExpired(false);
+      return;
+    }
+    setErrorMessage(previewErrorCopy(result.error));
+  }, [api, code, online]);
 
-  const onConsentClose = useCallback(() => {
-    setConsentVisible(false);
+  const onCancelPreview = useCallback(() => {
+    setPreview(null);
+    onBack();
+  }, [onBack]);
+
+  const onToggleAgree = useCallback(() => setAgreed((v) => !v), []);
+
+  const onOpenPrivacyPolicy = useCallback(() => {
+    // Best-effort: a Linking failure must not block the consent flow.
+    Linking.openURL(PRIVACY_POLICY_URL).catch(() => {});
   }, []);
 
-  const handleConsentConfirm = useCallback(async () => {
-    const trimmed = code.trim();
-    if (trimmed === "") return;
-
-    const result = await accept.mutate(trimmed, true, CONSENT_VERSION);
-    setConsentVisible(false);
+  const handleAccept = useCallback(async () => {
+    if (!preview || !agreed || !online) return;
+    if (isPastExpiry(preview)) {
+      setExpired(true);
+      return;
+    }
+    setAcceptError("");
+    const result = await accept.mutate(code.trim(), true, CONSENT_VERSION);
 
     if (result.ok) {
       const data = result.value;
+      if (data.relationshipStatus === "active") {
+        // Personal code: connected now. Load the coach before landing on the
+        // Coach tab, which only shows while someone coaches you.
+        setFinishing(true);
+        await myCoaches.refresh({ silent: true });
+        // The Coach tab exists only once the coach is cached (every
+        // `useMyCoaches` re-reads synchronously on write). If that read
+        // failed, land on You rather than be bounced Home by the tab guard.
+        const userId = session?.userId;
+        const cached = userId ? storage.getCachedMyCoaches(userId) : null;
+        const hasCoach =
+          cached?.coaches.some(
+            (c) => c.relationshipId === data.relationshipId,
+          ) ?? false;
+        // Open on the coach just accepted (with an existing coach it would be
+        // the last chip), as a fresh navigation (Inspector Brad, #547).
+        // The Coach tab is athlete-mode only; a trainer still in coach mode
+        // (QR / deep link) would be bounced Home too (Inspector Brad, #547).
+        router.replace(
+          hasCoach && useUserMode.getState().mode === "athlete"
+            ? `/(app)/(tabs)/coach?coachId=${encodeURIComponent(data.relationshipId)}&nav=${Date.now()}`
+            : "/(app)/(tabs)/you",
+        );
+        Alert.alert(`You're connected with ${data.trainerName}`);
+        return;
+      }
+      // General code (or a backend without `relationshipStatus`): the coach
+      // still has to accept.
       Alert.alert(
         "Request sent",
         `Request sent to ${data.trainerName} — awaiting their acceptance.`,
@@ -77,52 +146,108 @@ export function AcceptInviteContainer() {
       return;
     }
 
-    // Map the backend's domain code to inline copy — every one of these is a
-    // plain client-facing message, NOT a paywall/upsell (coordinator brief
-    // is explicit that `coach_client_limit_reached` stays inline here, unlike
-    // the coach-side 402 entitlement path elsewhere).
-    switch (result.error.acceptCode) {
-      case "invalid_code":
-        setErrorMessage(
-          "Invalid or expired code. Ask your coach for a new one.",
-        );
-        break;
-      case "self_invite":
-        setErrorMessage("You can't use your own code.");
-        break;
-      case "exists":
-        setErrorMessage("You're already connected to this coach.");
-        break;
-      case "code_already_used":
-        setErrorMessage("This code has already been used.");
-        break;
-      case "coach_client_limit_reached":
-        setErrorMessage("This coach's client list is full.");
-        break;
-      case "consent_required":
-        // Should be unreachable — the sheet only confirms with consent:true —
-        // but typed defensively for a client/backend version mismatch.
-        setErrorMessage("Please confirm you agree to share your data.");
-        break;
-      default:
-        setErrorMessage(
-          result.error.message ||
-            "Failed to redeem the code. Please try again.",
-        );
+    if (result.error.acceptCode === "invalid_code" && isPastExpiry(preview)) {
+      setExpired(true);
+      return;
     }
-  }, [code, accept, onBack]);
+    setAcceptError(
+      acceptErrorCopy(result.error, firstName(preview.coach.name)),
+    );
+  }, [
+    preview,
+    agreed,
+    online,
+    accept,
+    code,
+    myCoaches,
+    router,
+    onBack,
+    session,
+    storage,
+  ]);
+
+  if (preview) {
+    const name = preview.coach.name;
+    return (
+      <InvitePreviewPresenter
+        coachName={name}
+        coachFirstName={firstName(name)}
+        initials={coachInitials(name) || "?"}
+        readyLine={readyLine(preview.ready)}
+        agreed={agreed}
+        isSubmitting={accept.isPending || finishing}
+        isOffline={!online}
+        isExpired={expired}
+        errorMessage={acceptError}
+        onToggleAgree={onToggleAgree}
+        onAccept={() => void handleAccept()}
+        onCancel={onCancelPreview}
+        onOpenPrivacyPolicy={onOpenPrivacyPolicy}
+      />
+    );
+  }
 
   return (
     <AcceptInvitePresenter
       code={code}
       onCodeChange={setCode}
-      isSubmitting={accept.isPending}
+      isSubmitting={isLooking}
       errorMessage={errorMessage}
-      onSubmit={handleSubmit}
+      onSubmit={() => void handleSubmit()}
       onBack={onBack}
-      consentVisible={consentVisible}
-      onConsentClose={onConsentClose}
-      onConsentConfirm={handleConsentConfirm}
+      isOffline={!online}
     />
   );
+}
+
+function isPastExpiry(p: InvitePreview): boolean {
+  return new Date(p.expiresAt).getTime() <= Date.now();
+}
+
+const OFFLINE_LOOKUP = "You're offline. Entering a code needs a connection.";
+const OFFLINE_ACCEPT = "You're offline. Accepting needs a connection.";
+const RATE_LIMITED = "Too many tries. Wait a while, then try again.";
+
+function isConnectionError(e: AcceptInviteCodeApiError): boolean {
+  return e.code === "network" || e.code === "timeout";
+}
+
+/** Inline copy for a failed code lookup. */
+export function previewErrorCopy(e: AcceptInviteCodeApiError): string {
+  if (isConnectionError(e)) return OFFLINE_LOOKUP;
+  switch (e.acceptCode) {
+    case "invalid_code":
+      return "Invalid or expired code. Ask your coach for a new one.";
+    case "rate_limited":
+      return RATE_LIMITED;
+    default:
+      return e.message || "Couldn't check the code. Please try again.";
+  }
+}
+
+/** Inline copy for a failed accept, on the C11j screen. */
+export function acceptErrorCopy(
+  e: AcceptInviteCodeApiError,
+  coachFirstName: string,
+): string {
+  if (isConnectionError(e)) return OFFLINE_ACCEPT;
+  switch (e.acceptCode) {
+    case "invalid_code":
+      return `This code no longer works. Ask ${coachFirstName} for a new one.`;
+    case "coach_client_limit_reached":
+      return "This coach's client list is full.";
+    case "exists":
+      return "You're already connected to this coach.";
+    case "code_already_used":
+      return "This code has already been used.";
+    case "self_invite":
+      return "You can't use your own code.";
+    case "rate_limited":
+      return RATE_LIMITED;
+    case "consent_required":
+      // Unreachable from this screen (Accept needs the tick), typed defensively.
+      return "Please confirm you agree to share your data.";
+    default:
+      return e.message || "Couldn't accept the invite. Please try again.";
+  }
 }

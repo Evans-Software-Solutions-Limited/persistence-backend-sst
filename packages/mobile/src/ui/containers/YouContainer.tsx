@@ -9,6 +9,7 @@ import { useGetBodyMeasurements } from "@/ui/hooks/useGetBodyMeasurements";
 import { useHealthData } from "@/ui/hooks/useHealthData";
 import { useHealthWeightSync } from "@/ui/hooks/useHealthWeightSync";
 import { useClientRelationships } from "@/ui/hooks/useClientRelationships";
+import { useMyCoaches } from "@/ui/hooks/useMyCoaches";
 import { useTrainingLog } from "@/ui/hooks/useTrainingLog";
 import { useDrawer } from "@/state/drawer";
 import { initialsOf, KG_PER_LB, weightInUnit } from "@/shared/utils";
@@ -151,7 +152,7 @@ function withHealth(
  * <YouContainer> — athlete You page (PER-141, canvas Y1). Offline-first:
  * muscles, last 7 days and top lifts come from the phone's training log;
  * tiles from the cached body trend and Health; coaches from the cached
- * relationships. Coach You is `CoachYouContainer`.
+ * `GET /users/me/coaching` (PER-126). Coach You is `CoachYouContainer`.
  */
 export function YouContainer({
   remote: remoteProp,
@@ -177,6 +178,8 @@ export function YouContainer({
   const body = useGetBodyMeasurements(30);
   const health = useHealthData();
   const relationships = useClientRelationships();
+  // PER-126: the coaches list reads cached_my_coaches, so it shows offline.
+  const myCoaches = useMyCoaches();
   // The 7-day window moves with the date; the log reads only that window.
   const dayKeyNow = new Date().toDateString();
   const window7 = useMemo(
@@ -260,20 +263,33 @@ export function YouContainer({
     remoteWeek,
   ]);
 
-  const coaches = useMemo<YouCoach[]>(
-    () =>
-      relationships.data
+  const coaches = useMemo<YouCoach[]>(() => {
+    // PER-126: GET /users/me/coaching (cached). Until it has been read once
+    // (first launch after the update, offline), fall back to the active
+    // relationships. The role still comes from the relationship row.
+    if (myCoaches.data === null) {
+      return relationships.data
         .filter((r) => r.status === "active")
         .map((r) => ({
           id: r.relationshipId,
           initials: initialsOf(r.trainerName) || "?",
           name: r.trainerName,
           subtitle: coachSubtitle(r.trainerRole, r.since),
-        })),
-    [relationships.data],
-  );
-  // Kept until APP-A3 (PER-126) re-homes coach requests: TRAINER-initiated
-  // pendings are reviewable here; CLIENT-initiated ones await the coach.
+        }));
+    }
+    const roleOf = new Map(
+      relationships.data.map((r) => [r.relationshipId, r.trainerRole]),
+    );
+    return myCoaches.coaches.map((c) => ({
+      id: c.relationshipId,
+      initials: initialsOf(c.name) || "?",
+      name: c.name,
+      subtitle: coachSubtitle(roleOf.get(c.relationshipId) ?? null, c.since),
+    }));
+  }, [myCoaches.data, myCoaches.coaches, relationships.data]);
+  // Coach requests stay under the coaches list (Brad, 23 Nov, PER-126):
+  // TRAINER-initiated pendings are reviewable here; CLIENT-initiated ones
+  // await the coach.
   const pendingRequestCount = relationships.data.filter(
     (r) => r.status === "pending" && r.initiatedBy !== "client",
   ).length;
@@ -376,6 +392,7 @@ export function YouContainer({
   const reloadBody = body.reload;
   const refreshHealth = health.refresh;
   const refreshRelationships = relationships.refresh;
+  const refreshMyCoaches = myCoaches.refresh;
   const reloadLog = log.reload;
   const onRefresh = useCallback(() => {
     reloadLog();
@@ -384,6 +401,7 @@ export function YouContainer({
       refreshBody(),
       refreshHealth(),
       refreshRelationships(),
+      refreshMyCoaches(),
     ]);
   }, [
     reloadLog,
@@ -391,6 +409,7 @@ export function YouContainer({
     refreshBody,
     refreshHealth,
     refreshRelationships,
+    refreshMyCoaches,
   ]);
 
   // Tab screens stay mounted, so re-read on focus: the training log and body
@@ -400,8 +419,15 @@ export function YouContainer({
       reloadLog();
       reloadBody();
       void refreshRelationships({ silent: true });
+      void refreshMyCoaches({ silent: true });
       void refreshAchievements({ silent: true });
-    }, [reloadLog, reloadBody, refreshRelationships, refreshAchievements]),
+    }, [
+      reloadLog,
+      reloadBody,
+      refreshRelationships,
+      refreshMyCoaches,
+      refreshAchievements,
+    ]),
   );
 
   return (
@@ -428,6 +454,16 @@ export function YouContainer({
       onRefresh={onRefresh}
       onOpenDrawer={openDrawer}
       onOpenSettings={openDrawer}
+      // Only once the coaching list is cached: before that the tab layout has
+      // no Coach tab, and its guard would bounce the tap to Home.
+      onOpenCoach={
+        myCoaches.data === null
+          ? undefined
+          : (id) =>
+              push(
+                `/(app)/(tabs)/coach?coachId=${encodeURIComponent(id)}&nav=${Date.now()}`,
+              )
+      }
       onOpenRequests={() => push("/(app)/requests")}
       onOpenAcceptInvite={() => push("/(app)/accept-invite")}
       onOpenBadges={() => push("/(app)/achievements")}

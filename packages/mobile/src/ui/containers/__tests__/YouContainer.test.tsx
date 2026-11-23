@@ -3,7 +3,7 @@ import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapt
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
 import type { AuthSession } from "@/domain/ports/auth.port";
 import type { Achievement } from "@/domain/models/achievement";
-import { ok } from "@/shared/errors";
+import { fail, ok } from "@/shared/errors";
 import type { Adapters } from "@/shared/types";
 import type { YouPresenterProps } from "@/ui/presenters/YouPresenter";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
@@ -297,6 +297,33 @@ describe("YouContainer", () => {
       rel("r3", "Pat", "pending"),
       rel("r4", "Sam", "pending", "client"),
     ];
+    // PER-126: the list reads GET /users/me/coaching; the role still comes
+    // from the relationship row.
+    const myCoach = (id: string, name: string, since: string) => ({
+      relationshipId: id,
+      trainerId: `t-${id}`,
+      name,
+      avatarUrl: null,
+      since,
+      features: {
+        nutrition: true,
+        checkIns: true,
+        photos: true,
+        habits: true,
+        messages: true,
+        resources: true,
+      },
+      due: { forms: 0 },
+      newPlans: 0,
+      resources: 0,
+    });
+    api.myCoaching = {
+      coaches: [
+        myCoach("r1", "Ellie Hart", "2026-03-04T00:00:00.000Z"),
+        myCoach("r2", "Marcus Lee", "2026-09-10T00:00:00.000Z"),
+      ],
+      asOf: "2026-11-23T09:00:00Z",
+    };
     renderYou(adapters);
     await waitFor(() => expect(mockProbe.last?.coaches).toHaveLength(2));
     await waitFor(() => expect(mockProbe.last?.muscles.gender).toBe("female"));
@@ -307,11 +334,50 @@ describe("YouContainer", () => {
       name: "Ellie Hart",
       subtitle: "Personal Trainer · since Mar 2026",
     });
+    expect(p.coaches[1]!.subtitle).toBe("Personal Trainer · since Sep 2026");
     expect(p.pendingRequestCount).toBe(1);
     expect(p.myPendingCoachRequests).toEqual([
       { relationshipId: "r4", trainerName: "Sam" },
     ]);
     expect(p.initials).toBe("BS");
+  });
+
+  it("PER-126: before coaching has ever been read (offline), lists the active relationships", async () => {
+    const { api, adapters } = makeAdapters();
+    api.getMyCoaching = jest.fn(async () =>
+      fail({ kind: "api" as const, code: "network" as const, message: "x" }),
+    );
+    api.clientRelationships = [
+      {
+        relationshipId: "r1",
+        trainerId: "t-r1",
+        trainerName: "Ellie Hart",
+        trainerRole: "personal_trainer",
+        trainerAvatarUrl: null,
+        status: "active",
+        relationshipReason: null,
+        since: "2026-03-04T00:00:00.000Z",
+        initiatedBy: "trainer",
+      },
+    ];
+    renderYou(adapters);
+    await waitFor(() => expect(mockProbe.last?.coaches).toHaveLength(1));
+    expect(mockProbe.last!.coaches[0]!.name).toBe("Ellie Hart");
+    // The tab layout has no Coach tab yet, so a tap would bounce Home
+    // (Inspector Brad, #547): the rows aren't tappable until coaching is read.
+    expect(mockProbe.last!.onOpenCoach).toBeUndefined();
+  });
+
+  it("PER-126: tapping a coach opens the Coach tab on that coach", async () => {
+    const { adapters } = makeAdapters();
+    renderYou(adapters);
+    await waitFor(() => expect(mockProbe.last).toBeTruthy());
+    mockProbe.last!.onOpenCoach!("rel 1");
+    expect(mockPush).toHaveBeenCalledWith(
+      expect.stringMatching(
+        /^\/\(app\)\/\(tabs\)\/coach\?coachId=rel%201&nav=\d+$/,
+      ),
+    );
   });
 
   it("asks the BE-H1 seam for a week the phone only partly kept (Inspector Brad #541)", async () => {

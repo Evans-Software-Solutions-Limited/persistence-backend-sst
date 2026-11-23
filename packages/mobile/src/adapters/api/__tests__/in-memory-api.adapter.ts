@@ -210,6 +210,7 @@ import type {
   RemoteMuscleVolume,
   RemoteRecap,
 } from "@/domain/models/trainingReads";
+import type { InvitePreview, MyCoaching } from "@/domain/models/myCoaching";
 import type { UserMeal, UserMealsResponse } from "@/domain/models/userMeals";
 
 /**
@@ -2665,6 +2666,65 @@ export class InMemoryApiAdapter implements ApiPort {
       );
     }
     return result;
+  }
+
+  // -- PER-126 (APP-A3): athlete coaching reads --
+
+  /** Fixture for `getMyCoaching`. Leaving a coach drops it from `coaches`. */
+  public myCoaching: MyCoaching = { coaches: [], asOf: "2026-11-23T09:00:00Z" };
+  public getMyCoachingCalls = 0;
+
+  async getMyCoaching(): Promise<Result<MyCoaching, ApiError>> {
+    this.getMyCoachingCalls += 1;
+    return this.mayFail<MyCoaching>({
+      ...this.myCoaching,
+      coaches: this.myCoaching.coaches.filter((c) =>
+        this.leaveCoachCalls.every((id) => id !== c.relationshipId),
+      ),
+    });
+  }
+
+  /** Previews by upper-case code; an unknown code answers 404 `invalid_code`. */
+  public invitePreviews: Record<string, InvitePreview> = {};
+  public getInvitePreviewCalls: string[] = [];
+  /** When set, the next `getInvitePreview` returns this domain error. */
+  public nextInvitePreviewError: {
+    code: AcceptInviteCodeErrorCode;
+    status: number;
+    message: string;
+  } | null = null;
+
+  async getInvitePreview(
+    code: string,
+  ): Promise<Result<InvitePreview, AcceptInviteCodeApiError>> {
+    this.getInvitePreviewCalls.push(code);
+    if (this.shouldFail) {
+      return fail<AcceptInviteCodeApiError>(
+        this.failError as AcceptInviteCodeApiError,
+      );
+    }
+    const err = this.nextInvitePreviewError;
+    if (err !== null) {
+      this.nextInvitePreviewError = null;
+      return fail<AcceptInviteCodeApiError>({
+        kind: "api",
+        code: "server",
+        message: err.message,
+        status: err.status,
+        acceptCode: err.code,
+      });
+    }
+    const preview = this.invitePreviews[code.toUpperCase()];
+    if (!preview) {
+      return fail<AcceptInviteCodeApiError>({
+        kind: "api",
+        code: "not_found",
+        message: "Invalid or expired invite code.",
+        status: 404,
+        acceptCode: "invalid_code",
+      });
+    }
+    return ok(preview);
   }
 
   // -- Programs (19-programs, Phase 9 mobile — coach F1) --
