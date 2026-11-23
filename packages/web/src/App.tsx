@@ -44,6 +44,7 @@ const queryClient = new QueryClient();
 
 /** The web coach workspace (PER-124), its own chunk. */
 const CoachApp = lazy(() => import("./coach/CoachApp"));
+const coachQueryClient = new QueryClient();
 
 /**
  * Bridges consent → the Meta Pixel across every route (spec-30 R3.5). On mount
@@ -106,6 +107,21 @@ function App() {
       <RedemptionBoundary>
         <FoundingAccess />
       </RedemptionBoundary>
+    );
+  }
+  // Web coach workspace (PER-124). Mounted OUTSIDE the marketing tree, like
+  // the redemption pages: the magic-link callback carries the coach's access
+  // and refresh tokens in the URL, so no consent/pixel/affiliate effect may
+  // run on any /coach page. Its own QueryClient keeps coach data apart.
+  if (/^\/coach(?:\/|$)/.test(location.pathname)) {
+    return (
+      <QueryClientProvider client={coachQueryClient}>
+        <Suspense fallback={null}>
+          <Routes>
+            <Route path="/coach/*" element={<CoachApp />} />
+          </Routes>
+        </Suspense>
+      </QueryClientProvider>
     );
   }
   if (/^\/redeem(?:\/|$)/.test(location.pathname)) {
@@ -221,19 +237,6 @@ function App() {
             <Route path="lookup" element={<AdminLookup />} />
             <Route path="audit" element={<AdminAudit />} />
           </Route>
-          {/*
-           * Web coach workspace (PER-124). Signed-in coaches only; the API
-           * enforces the trainer role on every call. Not linked from the
-           * marketing site.
-           */}
-          <Route
-            path="/coach/*"
-            element={
-              <Suspense fallback={null}>
-                <CoachApp />
-              </Suspense>
-            }
-          />
           <Route
             path="/org-admin"
             element={
