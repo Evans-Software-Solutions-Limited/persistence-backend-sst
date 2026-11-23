@@ -3,8 +3,7 @@ import {
   endSession,
   getAccessToken,
   loadSession,
-  refreshSession,
-  saveRefreshed,
+  refreshStored,
 } from "./coachAuth";
 import type {
   AcceptPreview,
@@ -105,8 +104,8 @@ export async function coachFetch<T>(
     // ends the session; an outage keeps it and asks the coach to try again.
     const current = loadSession();
     const refreshed = current
-      ? await refreshSession(current, fetchImpl)
-      : ({ kind: "rejected" } as const);
+      ? await refreshStored(current, fetchImpl)
+      : ({ kind: "signedOut" } as const);
     if (refreshed.kind === "unavailable") {
       throw new CoachApiError(503, {
         code: AUTH_UNAVAILABLE,
@@ -114,19 +113,16 @@ export async function coachFetch<T>(
           "We couldn't confirm your sign-in just now. Try again in a moment.",
       });
     }
-    if (refreshed.kind === "ok") {
-      if (!saveRefreshed(current!, refreshed.session)) {
-        // Signed out while the refresh was running: don't bring it back.
-        throw new CoachApiError(401, { message: "Signed out" });
-      }
-      res = await send(refreshed.session.accessToken);
+    if (refreshed.kind === "signedOut") {
+      // Refused by GoTrue (refreshStored has ended the session), or the coach
+      // signed out while the refresh ran: never bring it back.
+      throw new CoachApiError(401, { message: "Signed out" });
     }
-    if (refreshed.kind === "rejected") {
-      endSession();
-    } else if (res.status === 401) {
-      // GoTrue issued this token moments ago, so a 401 means the API couldn't
-      // check it (e.g. its JWKS fetch failed), not that the sign-in is over.
-      // A real revocation shows up as `rejected` on the next refresh.
+    res = await send(refreshed.session.accessToken);
+    if (res.status === 401) {
+      // A token GoTrue has just issued (or another call just stored) was
+      // refused: the API couldn't check it (e.g. its JWKS fetch failed), not
+      // a sign-out. A real revocation shows up as rejected on the next refresh.
       throw new CoachApiError(503, {
         code: AUTH_UNAVAILABLE,
         message:

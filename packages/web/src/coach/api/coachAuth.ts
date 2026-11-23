@@ -175,6 +175,55 @@ export function saveRefreshed(
   return true;
 }
 
+export type StoredRefresh =
+  | { kind: "ok"; session: CoachSession }
+  | { kind: "signedOut" }
+  | { kind: "unavailable" };
+
+const inflight = new Map<string, Promise<RefreshResult>>();
+
+/**
+ * Refresh the stored session `current`, the one way every caller refreshes.
+ *
+ * - Calls in this tab that refresh the same refresh token share ONE request:
+ *   focus refetches start several at once, and GoTrue rotates refresh tokens,
+ *   so sending the same one twice can be treated as reuse.
+ * - Another call or tab may already have swapped the session. Its stored
+ *   session is used, never treated as a sign-out. Only an empty store (the
+ *   coach signed out meanwhile) answers `signedOut`.
+ * - A rejected refresh ends the session, unless the store already holds a
+ *   newer session (another tab refreshed first; its token is used).
+ */
+export async function refreshStored(
+  current: CoachSession,
+  fetchImpl: typeof fetch = fetch,
+): Promise<StoredRefresh> {
+  const tokenKey = current.refreshToken ?? "";
+  let pending = inflight.get(tokenKey);
+  if (!pending) {
+    pending = refreshSession(current, fetchImpl).finally(() => {
+      inflight.delete(tokenKey);
+    });
+    inflight.set(tokenKey, pending);
+  }
+  const result = await pending;
+  if (result.kind === "unavailable") return result;
+  if (result.kind === "ok" && saveRefreshed(current, result.session)) {
+    return result;
+  }
+  const stored = loadSession();
+  if (stored && stored.refreshToken !== current.refreshToken) {
+    return { kind: "ok", session: stored };
+  }
+  if (result.kind === "ok") {
+    // Same refresh token still stored means another call already saved this
+    // very result; anything else is an empty store.
+    return stored ? { kind: "ok", session: stored } : { kind: "signedOut" };
+  }
+  endSession();
+  return { kind: "signedOut" };
+}
+
 // ─── Signed-out signal ───────────────────────────────────────────────────────
 
 const signedOutListeners = new Set<() => void>();
@@ -208,16 +257,9 @@ export async function getAccessToken(
   if (!current) return null;
   if (!needsRefresh(current)) return current.accessToken;
   if (!online()) return current.accessToken;
-  const result = await refreshSession(current, fetchImpl);
-  if (result.kind === "ok") {
-    return saveRefreshed(current, result.session)
-      ? result.session.accessToken
-      : null;
-  }
-  if (result.kind === "rejected") {
-    endSession();
-    return null;
-  }
+  const result = await refreshStored(current, fetchImpl);
+  if (result.kind === "ok") return result.session.accessToken;
+  if (result.kind === "signedOut") return null;
   return current.accessToken;
 }
 

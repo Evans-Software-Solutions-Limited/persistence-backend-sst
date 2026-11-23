@@ -391,6 +391,79 @@ describe("coach API client", () => {
       expect(loadSession()).toBeNull();
     });
 
+    it("parallel refreshes share one request and nobody is signed out (sweep 5)", async () => {
+      saveSession({
+        accessToken: jwt({ exp: 1 }),
+        refreshToken: "r1",
+        expiresAt: 1,
+        email: null,
+      });
+      const listener = vi.fn();
+      const stop = onSignedOut(listener);
+      const fresh = jwt({ exp: future() });
+      const gotrue = vi.fn(async () => {
+        await new Promise((r) => setTimeout(r, 5));
+        return res(200, { access_token: fresh, refresh_token: "r2" });
+      });
+      const tokens = await Promise.all([
+        getAccessToken(gotrue, () => true),
+        getAccessToken(gotrue, () => true),
+        getAccessToken(gotrue, () => true),
+      ]);
+      expect(tokens).toEqual([fresh, fresh, fresh]);
+      expect(gotrue).toHaveBeenCalledTimes(1);
+      expect(loadSession()?.refreshToken).toBe("r2");
+      expect(listener).not.toHaveBeenCalled();
+      stop();
+    });
+
+    it("two requests refused at once both retry with the refreshed token (sweep 5)", async () => {
+      withRefresh();
+      const fresh = jwt({ exp: future() + 60 });
+      let calls = 0;
+      const f = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+        if (String(url).includes("/auth/v1/token")) {
+          await new Promise((r) => setTimeout(r, 5));
+          return res(200, { access_token: fresh, refresh_token: "r2" });
+        }
+        const bearer = (init?.headers as Record<string, string>).Authorization;
+        calls += 1;
+        return bearer === `Bearer ${fresh}`
+          ? res(200, { data: calls })
+          : res(401, {});
+      });
+      const results = await Promise.all([
+        coachFetch("/a", {}, f),
+        coachFetch("/b", {}, f),
+      ]);
+      expect(results).toHaveLength(2);
+      expect(
+        f.mock.calls.filter(([u]) => String(u).includes("/auth/v1/token")),
+      ).toHaveLength(1);
+      expect(loadSession()?.refreshToken).toBe("r2");
+    });
+
+    it("another tab refreshed first: its session is used, not a sign-out (sweep 5)", async () => {
+      withRefresh();
+      const listener = vi.fn();
+      const stop = onSignedOut(listener);
+      const otherTab = {
+        accessToken: jwt({ exp: future() + 120 }),
+        refreshToken: "r9",
+        expiresAt: future() + 120,
+        email: null,
+      };
+      // GoTrue refuses r1 because the other tab already rotated it.
+      const f = server([res(401, {}), res(200, { data: "ok" })], async () => {
+        saveSession(otherTab);
+        return res(400, { error: "invalid_grant" });
+      });
+      expect(await coachFetch("/x", {}, f)).toEqual({ data: "ok" });
+      expect(loadSession()?.refreshToken).toBe("r9");
+      expect(listener).not.toHaveBeenCalled();
+      stop();
+    });
+
     it("a 401 on a token GoTrue just issued keeps the session (sweep 3)", async () => {
       withRefresh();
       const listener = vi.fn();
