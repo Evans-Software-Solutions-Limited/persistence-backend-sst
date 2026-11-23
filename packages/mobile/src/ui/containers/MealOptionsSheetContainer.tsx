@@ -6,7 +6,10 @@ import { useAuth } from "@/ui/hooks/useAuth";
 import { useDeleteEntry } from "@/ui/hooks/useDeleteEntry";
 import { useUserMeals } from "@/ui/hooks/useUserMeals";
 import { useFuelSheets } from "@/state/fuel-sheets";
-import { groupEntriesByUserMeal } from "@/domain/services/userMeals.service";
+import {
+  findUserMeal,
+  groupEntriesByUserMeal,
+} from "@/domain/services/userMeals.service";
 import { MealOptionsSheetPresenter } from "@/ui/presenters/fuel/MealOptionsSheetPresenter";
 
 /**
@@ -37,10 +40,11 @@ export function MealOptionsSheetContainer() {
     if (!visible || !userId || !mealKey) return null;
     const fuel = storage.getCachedFuelToday(userId, date);
     const entries = fuel ? Object.values(fuel.entriesBySlot).flat() : [];
+    // A `local-…` meal key follows its meal once it has synced.
+    const id = findUserMeal(meals, mealKey)?.id ?? mealKey;
     return (
-      groupEntriesByUserMeal(entries, meals).find(
-        (g) => g.meal.id === mealKey,
-      ) ?? null
+      groupEntriesByUserMeal(entries, meals).find((g) => g.meal.id === id) ??
+      null
     );
   }, [visible, userId, mealKey, storage, date, meals]);
 

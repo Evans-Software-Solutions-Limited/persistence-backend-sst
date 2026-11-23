@@ -637,6 +637,38 @@ describe("MealOptionsSheetContainer", () => {
   });
 });
 
+describe("MealOptionsSheetContainer after a swap", () => {
+  it("a menu opened on a meal's local id still finds it once synced (Inspector Brad #550)", async () => {
+    const { Wrapper, storage, api } = setup();
+    const synced = [
+      ...MEALS,
+      {
+        ...MEALS[1]!,
+        id: "srv-9",
+        name: "Supper",
+        sortOrder: 3,
+        clientRequestId: "k9",
+      },
+    ];
+    storage.cacheUserMeals(USER, synced);
+    api.userMeals = synced;
+    storage.cacheFuelToday(
+      USER,
+      TODAY,
+      day(TODAY, [
+        entry("t9", {
+          userMealId: "srv-9",
+          loggedAt: `${TODAY}T12:00:00.000Z`,
+        }),
+      ]),
+    );
+    render(<MealOptionsSheetContainer />, { wrapper: Wrapper });
+    act(() => useFuelSheets.getState().openMealOptions("local-k9"));
+    await waitFor(() => expect(probe.options?.mealName).toBe("Supper"));
+    expect(probe.options!.hasEntries).toBe(true);
+  });
+});
+
 describe("QuickLogSheetContainer (N2e)", () => {
   it("logs the calories typed into the chosen meal, offline-first", async () => {
     const { Wrapper, storage } = setup();
