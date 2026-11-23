@@ -1,5 +1,68 @@
 # Project memory · persistence-backend-sst
 
+### 2026-11-23 — APP-D1: Log per-meal calories, Your meals, full-page Add to a meal, offline batch logging ([PER-132](https://linear.app/evans-software-solutions/issue/PER-132); branch `bradleysimmsevans/per-132-app-d1-athlete-log-per-meal`)
+
+PR __PR__ (open, no auto-merge). Mobile only: no backend, migration, native
+package, permission or version change. Uses PER-109's merged
+`GET/PUT /nutrition/user-meals`, `userMealId` and `POST /nutrition/entries/batch`.
+Ships in the next store release, reviewed on staging.
+
+- **Brad's calls (23 Nov, in session):** follow canvas N1 (Log · Plan · Meals
+  switch, week strip, compact rings); keep Mealprint and water reachable;
+  N1b per the latest comments (no stale "Days on a plan…" subtitle) with the
+  ⋯ menu; reorder with the existing drag library
+  (`react-native-reanimated-dnd` via `ReorderableList`).
+- **Your meals:** `domain/models/userMeals.ts`,
+  `domain/services/userMeals.service.ts` (grouping, edits, PUT body, week
+  states, recents, Quick log parsing), `application/commands/userMeals.command.ts`.
+  Cached in `cached_user_meals` (new table; `getCachedUserMeals` /
+  `cacheUserMeals` / `swapLocalUserMealId` on StoragePort; `getUserMeals` on
+  ApiPort). Edits are one coalesced `PUT /nutrition/user-meals` (entity
+  `user_meals`). A new meal is `local-<key>` + `clientRequestId`; the PUT
+  reply swaps the id in the list, cached days and queued entry payloads.
+  Before the list is ever fetched, four synthetic `slot:` defaults show and
+  editing is disabled (sending them would copy the server's seeded defaults).
+  Warmed in `warmOfflineData` unless an edit is queued.
+- **Grouping:** same rule as the server's `effectiveUserMeal`: an entry with
+  no (or an archived/unknown) `userMealId` sits under its slot's seeded
+  default, else the first active meal on that slot; a slot with no meal gets
+  its own section. Mealprint ghost rows attach to the slot's default meal.
+- **Logging:** `useLogEntry` attaches the open drawer's `userMealId`
+  (`useFuelSheets.userMealId`) while the log's `mealSlot` still matches; a
+  slot-only log sends no `userMealId` (byte-identical to 1.2.0).
+- **Batch replay** (`sync.command.ts`): a queued `POST /nutrition/entries`
+  with an idempotency key and no `local-…` reference is sent with every
+  other such entry (≤ 50) as one `POST /nutrition/entries/batch`,
+  `clientRequestId` = the queue row's key (the same column the single POST's
+  `Idempotency-Key` fills), so lost replies, part-sent batches and
+  single-then-batch re-sends never duplicate. Per-entry results; a per-entry
+  error is permanent unless the body still holds a local id (deferred). A
+  whole-batch 402 blocks; a permanent 4xx (e.g. no route) falls back to keyed
+  single sends; transport errors defer. Entries a batch handled are skipped
+  for the rest of that drain (found by a test: a deferred entry was being
+  re-sent in the same pass).
+- **Screens:** `FuelPresenter` (N1) = `presenters/fuel/FuelLogHeaderPresenter`
+  + `FuelLogSummaryPresenter` + `FuelQuickActionsPresenter` +
+  `MealLogPresenter` (shipped rows; per-meal kcal + "Cg C · Fg F · Pg P",
+  ⋯, "Add or edit meals"). Full page `/(app)/fuel/add-to-meal?meal=&tab=`
+  (`AddToMealContainer`). Root drawers: `YourMealsSheetContainer`,
+  `MealOptionsSheetContainer`, `QuickLogSheetContainer`,
+  `SuggestLockedSheetContainer`. Snap uses `ImagePicker.launchCameraAsync`.
+  Plan tab → Mealprint day plan (or the locked page) until PER-133; Meals tab
+  → recipes library. The Mealprint entry card, macro hero and 4-button row
+  are no longer rendered (`MacroHeroPresenter`, `QuickAddRowPresenter`,
+  `MealprintEntryCard` component left in place).
+- **Not on the canvas (flagged in the PR):** "Connect to the internet once to
+  edit your meals."; Add to a meal empty states; new meals map to the old
+  `snack` slot; the target cell says "Target" (no plan name); the
+  "This week's nutrition" button is a calendar button; Quick log has no
+  label-photo line (N2d undecided); Clear has no confirm (like swipe delete).
+- **Tests:** service, command, real-SQLite storage, batch replay against a
+  fake idempotent server (offline log, one-call replay, lost reply, single
+  then batch, cap, meal-then-entries, per-entry error, fallbacks, 402, 5xx),
+  presenters, containers, the locked Suggest state and 1.2.0 grouping.
+- **Not verified:** nothing run on a device or against staging.
+
 ### 2026-11-21 — BE-H1: You page and coach training reads, `packages/training-metrics` ([PER-113](https://linear.app/evans-software-solutions/issue/PER-113); branch `bradleysimmsevans/per-113-be-h1-backend-you-page-and-coach`)
 
 PR #545 (open, no auto-merge). Backend design H. Read-only, additive: four new paths, no migration, no

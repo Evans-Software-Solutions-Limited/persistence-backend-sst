@@ -48,6 +48,28 @@ const mockFetch = jest.fn();
  */
 const AFTER_BACKOFF = { now: () => Date.now() + 10 * 60_000 };
 
+/**
+ * PER-132: queued food logs replay through `POST /nutrition/entries/batch`.
+ * A fetch reply that answers every batched entry with `entryId`.
+ */
+const batchReply =
+  (entryId: string) => async (_url: string, opts: { body: string }) => {
+    const { entries } = JSON.parse(opts.body) as {
+      entries: { clientRequestId: string }[];
+    };
+    return {
+      ok: true,
+      json: async () => ({
+        data: {
+          results: entries.map((e) => ({
+            clientRequestId: e.clientRequestId,
+            entry: { id: entryId },
+          })),
+        },
+      }),
+    };
+  };
+
 describe("processSyncQueue", () => {
   let storage: InMemoryStorageAdapter;
   let auth: InMemoryAuthAdapter;
@@ -713,10 +735,10 @@ describe("processSyncQueue", () => {
       if (url.endsWith("/recipes")) {
         return { ok: true, json: async () => ({ data: { id: "srv-r1" } }) };
       }
-      // The log POST: capture whatever recipeId it carried — must be the
-      // swapped server id, never the local one, or the server would 404.
-      sentRecipeIds.push(body.recipeId);
-      return { ok: true, json: async () => ({ data: { id: "srv-e1" } }) };
+      // The log (now in a batch): capture whatever recipeId it carried — must
+      // be the swapped server id, never the local one, or the server would 404.
+      for (const e of body.entries) sentRecipeIds.push(e.recipeId);
+      return batchReply("srv-e1")(url, opts as { body: string });
     });
 
     const result = await processSyncQueue(storage, auth, "https://api.test");
@@ -789,7 +811,9 @@ describe("processSyncQueue", () => {
       method: "POST",
     });
     const id = storage.getPendingMutations()[0].id;
-    mockFetch.mockResolvedValueOnce({
+    // The batch is refused, so the log falls back to a single send, which is
+    // refused too.
+    mockFetch.mockResolvedValue({
       ok: false,
       status: 400,
       text: async () => "bad",
@@ -801,10 +825,7 @@ describe("processSyncQueue", () => {
 
     // Simulate the Retry CTA after an app/server fix — now the POST succeeds.
     storage.resetFailedEntries([id]);
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ data: { id: "e3" } }),
-    });
+    mockFetch.mockImplementationOnce(batchReply("e3"));
     const result = await processSyncQueue(storage, auth, "https://api.test");
     expect(result.succeeded).toBe(1);
     expect(storage.getFailedExhaustedEntries()).toHaveLength(0);
@@ -1274,10 +1295,7 @@ describe("processSyncQueue", () => {
     });
 
     mockFetch
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ data: { id: serverId } }),
-      })
+      .mockImplementationOnce(batchReply(serverId))
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({ data: { id: serverId, deleted: true } }),
