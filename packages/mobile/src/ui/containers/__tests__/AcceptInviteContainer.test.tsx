@@ -10,6 +10,7 @@ import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
 import { usePendingInvite } from "@/state/pending-invite";
+import { useUserMode } from "@/state/user-mode";
 import {
   AcceptInviteContainer,
   acceptErrorCopy,
@@ -382,6 +383,37 @@ describe("AcceptInviteContainer", () => {
       expect(mockReplace).toHaveBeenCalledWith(
         expect.stringContaining("coachId=rel-ellie"),
       );
+    });
+
+    it("a trainer still in coach mode lands on You, not bounced Home (Inspector Brad, #547)", async () => {
+      const before = useUserMode.getState().mode;
+      useUserMode.setState({ mode: "coach" });
+      try {
+        const utils = await renderFlow();
+        utils.api.nextAcceptInviteCodeResult = {
+          success: true,
+          relationshipId: "rel-ellie",
+          trainerName: "Ellie Hart",
+          message: "ok",
+          relationshipStatus: "active",
+          ready: null,
+        };
+        utils.api.myCoaching = {
+          coaches: [ELLIE],
+          asOf: "2026-11-23T09:00:00Z",
+        };
+        await previewCode(utils, "ELLIE1");
+        fireEvent.press(utils.getByTestId("invite-preview-agree"));
+        await act(async () => {
+          fireEvent.press(utils.getByTestId("invite-preview-accept"));
+        });
+        expect(mockReplace).toHaveBeenCalledWith("/(app)/(tabs)/you");
+        expect(alertSpy).toHaveBeenCalledWith(
+          "You're connected with Ellie Hart",
+        );
+      } finally {
+        useUserMode.setState({ mode: before });
+      }
     });
 
     it("personal code, coaching read fails: lands on You, not bounced Home by the tab guard (Inspector Brad, #547)", async () => {

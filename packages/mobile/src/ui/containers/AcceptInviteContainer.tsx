@@ -7,6 +7,7 @@ import { useAuth } from "@/ui/hooks/useAuth";
 import { useMyCoaches } from "@/ui/hooks/useMyCoaches";
 import { useOnlineStatus } from "@/ui/hooks/useOnlineStatus";
 import { usePendingInvite } from "@/state/pending-invite";
+import { useUserMode } from "@/state/user-mode";
 import { CONSENT_VERSION, PRIVACY_POLICY_URL } from "@/domain/models/consent";
 import {
   firstName,
@@ -125,8 +126,10 @@ export function AcceptInviteContainer() {
           ) ?? false;
         // Open on the coach just accepted (with an existing coach it would be
         // the last chip), as a fresh navigation (Inspector Brad, #547).
+        // The Coach tab is athlete-mode only; a trainer still in coach mode
+        // (QR / deep link) would be bounced Home too (Inspector Brad, #547).
         router.replace(
-          hasCoach
+          hasCoach && useUserMode.getState().mode === "athlete"
             ? `/(app)/(tabs)/coach?coachId=${encodeURIComponent(data.relationshipId)}&nav=${Date.now()}`
             : "/(app)/(tabs)/you",
         );
