@@ -1064,7 +1064,7 @@ describe("D7.7 events", () => {
       deliverCoachEvents([first!]),
     ]);
     expect(pushesTo(COACH_A)).toHaveLength(1);
-    expect(() =>
+    await expect(
       recordCoachEvent(realDb(), { ...input, kind: "nope" as never }),
     ).rejects.toThrow("unknown coach event kind");
   });
@@ -1370,6 +1370,34 @@ describe("scheduler checks", () => {
       endDate: "2026-11-27",
     });
     expect(await eventsOf(COACH_B)).toHaveLength(0);
+  });
+
+  it("training behind judges complete days only: a weekly Tuesday-evening client isn't behind on Tuesday morning", async () => {
+    // Inspector Brad, #548: at 08:00 UTC "today" has barely started, so a
+    // window that includes it drops last Tuesday and flags an on-track client.
+    await setAlertMode(COACH_A, ATHLETE_C, "default", {
+      trackTraining: true,
+      sessionsPerWeek: 1,
+    });
+    await completedSession(ATHLETE_C, {
+      completedAt: new Date("2026-11-17T19:00:00Z"),
+    });
+    // New York: Tuesday 03:00 local when the job runs.
+    await setAlertMode(COACH_A, ATHLETE_E, "default", {
+      trackTraining: true,
+      sessionsPerWeek: 1,
+    });
+    await completedSession(ATHLETE_E, {
+      completedAt: new Date("2026-11-17T23:30:00Z"),
+    });
+    const tuesdayMorning = new Date("2026-11-24T08:00:00Z");
+    expect(await trainingBehindJob.run(ctx(tuesdayMorning))).toMatchObject({
+      behind: 0,
+    });
+    // A week later with nothing logged since, both are behind.
+    expect(
+      await trainingBehindJob.run(ctx(new Date("2026-12-01T08:00:00Z"))),
+    ).toMatchObject({ behind: 2 });
   });
 
   it("training behind uses the shared adherence calculation, at most once per client per 7 days", async () => {

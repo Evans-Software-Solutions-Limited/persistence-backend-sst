@@ -21,7 +21,12 @@ import {
 } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
 import { AdherenceRepository } from "../../../adherence/adherenceRepository";
-import { addDays, computeAdherence } from "../../../adherence/computeAdherence";
+import {
+  addDays,
+  computeAdherence,
+  type AdherenceInput,
+} from "../../../adherence/computeAdherence";
+import { localDateIn, safeTimeZone, zonedInstant } from "../zonedTime";
 import { deliverCoachEvents, recordCoachEvent } from "../../events/coachEvents";
 import type { SchedulerJob } from "../coachScheduler";
 
@@ -184,7 +189,18 @@ export const programmeEndingJob: SchedulerJob = {
  * tracks training for, with a target, and coached for the whole window (a
  * new client isn't behind on days before they joined). At most once per
  * client per 7 days.
+ *
+ * Judged on the 7 COMPLETE days up to the end of yesterday in the client's
+ * zone: the job runs in the morning, when "today" has barely started, and a
+ * window ending today would drop last week's session and flag a client who is
+ * on schedule (Inspector Brad, #548).
  */
+export function asOfEndOfYesterday(input: AdherenceInput): AdherenceInput {
+  const tz = safeTimeZone(input.timeZone);
+  const midnight = zonedInstant(localDateIn(input.now, tz), "00:00", tz);
+  return { ...input, now: new Date(midnight.getTime() - 1) };
+}
+
 export const trainingBehindJob: SchedulerJob = {
   name: "training_behind",
   cadence: "daily",
@@ -237,7 +253,7 @@ export const trainingBehindJob: SchedulerJob = {
       const raised = new Set(recent.map((r) => r.relationshipId));
       for (const s of subjects) {
         const training = computeAdherence(
-          inputs.get(s.relationshipId)!,
+          asOfEndOfYesterday(inputs.get(s.relationshipId)!),
         ).training;
         if (!training || training.state !== "behind") continue;
         if (training.from !== addDays(training.to, -6)) continue;
