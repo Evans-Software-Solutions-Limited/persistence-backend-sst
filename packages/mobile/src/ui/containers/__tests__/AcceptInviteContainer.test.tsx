@@ -299,10 +299,49 @@ describe("AcceptInviteContainer", () => {
       expect(utils.storage.getCachedMyCoaches("athlete-1")?.coaches).toEqual([
         ELLIE,
       ]);
-      expect(mockReplace).toHaveBeenCalledWith("/(app)/(tabs)/coach");
+      expect(mockReplace).toHaveBeenCalledWith(
+        expect.stringMatching(
+          /^\/\(app\)\/\(tabs\)\/coach\?coachId=rel-ellie&nav=\d+$/,
+        ),
+      );
       expect(alertSpy).toHaveBeenCalledWith("You're connected with Ellie Hart");
       const copy = JSON.stringify(alertSpy.mock.calls);
       expect(copy).not.toMatch(/awaiting/i);
+    });
+
+    it("a second coach's personal code opens the tab on the new coach, not the existing one (Inspector Brad, #547)", async () => {
+      const utils = await renderFlow();
+      const marcus = {
+        ...ELLIE,
+        relationshipId: "rel-marcus",
+        trainerId: "coach-marcus",
+        name: "Marcus Lee",
+        since: "2026-03-01T09:00:00Z",
+      };
+      utils.storage.cacheMyCoaches("athlete-1", {
+        coaches: [marcus],
+        asOf: "2026-11-22T09:00:00Z",
+      });
+      utils.api.myCoaching = {
+        coaches: [marcus, ELLIE],
+        asOf: "2026-11-23T09:00:00Z",
+      };
+      utils.api.nextAcceptInviteCodeResult = {
+        success: true,
+        relationshipId: "rel-ellie",
+        trainerName: "Ellie Hart",
+        message: "ok",
+        relationshipStatus: "active",
+        ready: null,
+      };
+      await previewCode(utils, "ELLIE1");
+      fireEvent.press(utils.getByTestId("invite-preview-agree"));
+      await act(async () => {
+        fireEvent.press(utils.getByTestId("invite-preview-accept"));
+      });
+      const target = String(mockReplace.mock.calls.at(-1)?.[0]);
+      expect(target).toContain("coachId=rel-ellie");
+      expect(target).toMatch(/&nav=\d+$/);
     });
 
     it("personal code, coaching read fails: lands on You, not bounced Home by the tab guard (Inspector Brad, #547)", async () => {
@@ -324,7 +363,9 @@ describe("AcceptInviteContainer", () => {
         fireEvent.press(utils.getByTestId("invite-preview-accept"));
       });
       expect(mockReplace).toHaveBeenCalledWith("/(app)/(tabs)/you");
-      expect(mockReplace).not.toHaveBeenCalledWith("/(app)/(tabs)/coach");
+      expect(mockReplace).not.toHaveBeenCalledWith(
+        expect.stringContaining("/(app)/(tabs)/coach"),
+      );
       expect(alertSpy).toHaveBeenCalledWith("You're connected with Ellie Hart");
     });
 
@@ -344,7 +385,9 @@ describe("AcceptInviteContainer", () => {
         fireEvent.press(utils.getByTestId("invite-preview-accept"));
       });
 
-      expect(mockReplace).not.toHaveBeenCalledWith("/(app)/(tabs)/coach");
+      expect(mockReplace).not.toHaveBeenCalledWith(
+        expect.stringContaining("/(app)/(tabs)/coach"),
+      );
       expect(alertSpy).toHaveBeenCalledWith(
         "Request sent",
         "Request sent to Marcus Lee — awaiting their acceptance.",

@@ -119,7 +119,13 @@ export function AcceptInviteContainer() {
           cached?.coaches.some(
             (c) => c.relationshipId === data.relationshipId,
           ) ?? false;
-        router.replace(hasCoach ? "/(app)/(tabs)/coach" : "/(app)/(tabs)/you");
+        // Open on the coach just accepted (with an existing coach it would be
+        // the last chip), as a fresh navigation (Inspector Brad, #547).
+        router.replace(
+          hasCoach
+            ? `/(app)/(tabs)/coach?coachId=${encodeURIComponent(data.relationshipId)}&nav=${Date.now()}`
+            : "/(app)/(tabs)/you",
+        );
         Alert.alert(`You're connected with ${data.trainerName}`);
         return;
       }
