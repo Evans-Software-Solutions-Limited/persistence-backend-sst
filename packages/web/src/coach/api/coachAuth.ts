@@ -114,13 +114,24 @@ export async function sendMagicLink(
   }
 }
 
-/** Exchange the refresh token for a new session; null when it can't. */
+/**
+ * What a refresh attempt came to. Only `rejected` (GoTrue refused the refresh
+ * token, or there isn't one) means the session is over; `unavailable` (no
+ * network, a 5xx, a 429 rate limit, an odd reply) keeps it, so a laptop waking
+ * before its Wi-Fi or a Supabase outage never signs the coach out.
+ */
+export type RefreshResult =
+  | { kind: "ok"; session: CoachSession }
+  | { kind: "rejected" }
+  | { kind: "unavailable" };
+
 export async function refreshSession(
   session: CoachSession,
   fetchImpl: typeof fetch = fetch,
-): Promise<CoachSession | null> {
+): Promise<RefreshResult> {
   const cfg = supabaseConfig();
-  if (!cfg || !session.refreshToken) return null;
+  if (!session.refreshToken) return { kind: "rejected" };
+  if (!cfg) return { kind: "unavailable" };
   try {
     const res = await fetchImpl(
       `${cfg.url}/auth/v1/token?grant_type=refresh_token`,
@@ -130,26 +141,50 @@ export async function refreshSession(
         body: JSON.stringify({ refresh_token: session.refreshToken }),
       },
     );
-    if (!res.ok) return null;
+    if (res.status === 400 || res.status === 401 || res.status === 403) {
+      return { kind: "rejected" };
+    }
+    if (!res.ok) return { kind: "unavailable" };
     const body = (await res.json()) as {
       access_token?: string;
       refresh_token?: string;
     };
-    if (!body.access_token) return null;
-    return sessionFromTokens(
-      body.access_token,
-      body.refresh_token ?? session.refreshToken,
-    );
+    const next = body.access_token
+      ? sessionFromTokens(
+          body.access_token,
+          body.refresh_token ?? session.refreshToken,
+        )
+      : null;
+    return next ? { kind: "ok", session: next } : { kind: "unavailable" };
   } catch {
-    return null;
+    return { kind: "unavailable" };
   }
+}
+
+// ─── Signed-out signal ───────────────────────────────────────────────────────
+
+const signedOutListeners = new Set<() => void>();
+
+/** Run `listener` whenever the session ends under the coach's feet. */
+export function onSignedOut(listener: () => void): () => void {
+  signedOutListeners.add(listener);
+  return () => {
+    signedOutListeners.delete(listener);
+  };
+}
+
+/** Clear the session and tell the workspace, which returns to sign-in. */
+export function endSession(): void {
+  saveSession(null);
+  for (const listener of [...signedOutListeners]) listener();
 }
 
 /**
  * The token to use now. Refreshes close to expiry and persists the result.
- * Offline, a refresh can't run: the current token is kept (the API call will
- * fail as offline, not as signed out), so the coach isn't signed out by a
- * dropped connection.
+ * The session is only cleared when GoTrue rejects the refresh token. Offline,
+ * or when the refresh can't get an answer, the current token is kept: the API
+ * call then fails as offline (or as a 401, which signs out), not by wiping
+ * storage.
  */
 export async function getAccessToken(
   fetchImpl: typeof fetch = fetch,
@@ -159,9 +194,16 @@ export async function getAccessToken(
   if (!current) return null;
   if (!needsRefresh(current)) return current.accessToken;
   if (!online()) return current.accessToken;
-  const refreshed = await refreshSession(current, fetchImpl);
-  saveSession(refreshed);
-  return refreshed?.accessToken ?? null;
+  const result = await refreshSession(current, fetchImpl);
+  if (result.kind === "ok") {
+    saveSession(result.session);
+    return result.session.accessToken;
+  }
+  if (result.kind === "rejected") {
+    endSession();
+    return null;
+  }
+  return current.accessToken;
 }
 
 export async function signOut(fetchImpl: typeof fetch = fetch): Promise<void> {

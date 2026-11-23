@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { saveSession } from "../api/coachAuth";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
+import { endSession, loadSession, saveSession } from "../api/coachAuth";
 import { ClientsListContainer } from "../clients/ClientsListContainer";
 import { CoachLayout } from "../shell/CoachLayout";
 import { CoachCallback, CoachSignInView } from "../shell/CoachSignIn";
@@ -42,6 +48,21 @@ describe("CoachLayout", () => {
       api: fakeApi(),
     });
     await waitFor(() => expect(currentPath()).toBe("/coach/login"));
+  });
+
+  it("a session that ends mid-use returns to sign-in and drops cached data (review #549)", async () => {
+    signIn();
+    const { queryClient } = renderCoach(<CoachLayout />, {
+      route: "/coach/clients",
+      path: "/coach/clients",
+      api: fakeApi(),
+    });
+    expect(await screen.findByText("Ellie Hart")).toBeTruthy();
+    expect(queryClient.getQueryData(["coach", "profile"])).toBeTruthy();
+    act(() => endSession());
+    await waitFor(() => expect(currentPath()).toBe("/coach/login"));
+    expect(queryClient.getQueryData(["coach", "profile"])).toBeUndefined();
+    expect(loadSession()).toBeNull();
   });
 
   it("shows the rail with the active count for a coach", async () => {

@@ -1,5 +1,5 @@
 import { apiBase } from "@/admin/adminApi";
-import { getAccessToken, saveSession } from "./coachAuth";
+import { endSession, getAccessToken } from "./coachAuth";
 import type {
   AcceptPreview,
   ClientProfile,
@@ -71,7 +71,10 @@ export async function coachFetch<T>(
   fetchImpl: typeof fetch = fetch,
 ): Promise<T> {
   const token = await getAccessToken();
-  if (!token) throw new CoachApiError(401, { message: "Signed out" });
+  if (!token) {
+    endSession();
+    throw new CoachApiError(401, { message: "Signed out" });
+  }
   let res: Response;
   try {
     res = await fetchImpl(`${apiBase()}${path}`, {
@@ -85,7 +88,7 @@ export async function coachFetch<T>(
   } catch {
     throw new CoachApiError(0, null, true);
   }
-  if (res.status === 401) saveSession(null);
+  if (res.status === 401) endSession();
   const text = await res.text();
   let body: Record<string, unknown> | null = null;
   try {

@@ -8,9 +8,11 @@ import {
 } from "../api/coachApi";
 import {
   COACH_SESSION_KEY,
+  endSession,
   getAccessToken,
   loadSession,
   needsRefresh,
+  onSignedOut,
   parseCallbackHash,
   refreshSession,
   saveSession,
@@ -134,20 +136,37 @@ describe("coach session", () => {
     const ok = vi.fn(async () =>
       res(200, { access_token: fresh, refresh_token: "r2" }),
     );
-    expect((await refreshSession(old, ok))?.refreshToken).toBe("r2");
-    expect(
-      await refreshSession(old, vi.fn().mockResolvedValue(res(400, {}))),
-    ).toBeNull();
-    expect(
-      await refreshSession(old, vi.fn().mockResolvedValue(res(200, {}))),
-    ).toBeNull();
+    const refreshed = await refreshSession(old, ok);
+    expect(refreshed.kind === "ok" && refreshed.session.refreshToken).toBe(
+      "r2",
+    );
+    const answer = (status: number) =>
+      vi.fn().mockResolvedValue(res(status, {}));
+    for (const status of [400, 401, 403]) {
+      expect(await refreshSession(old, answer(status))).toEqual({
+        kind: "rejected",
+      });
+    }
+    for (const status of [429, 500, 503]) {
+      expect(await refreshSession(old, answer(status))).toEqual({
+        kind: "unavailable",
+      });
+    }
+    expect(await refreshSession(old, answer(200))).toEqual({
+      kind: "unavailable",
+    });
     expect(
       await refreshSession(
         old,
         vi.fn().mockRejectedValue(new TypeError("net")),
       ),
-    ).toBeNull();
-    expect(await refreshSession({ ...old, refreshToken: null }, ok)).toBeNull();
+    ).toEqual({ kind: "unavailable" });
+    expect(await refreshSession({ ...old, refreshToken: null }, ok)).toEqual({
+      kind: "rejected",
+    });
+    vi.stubEnv("VITE_SUPABASE_URL", "");
+    expect(await refreshSession(old, ok)).toEqual({ kind: "unavailable" });
+    vi.stubEnv("VITE_SUPABASE_URL", "https://auth.test/");
 
     expect(await getAccessToken(ok, () => true)).toBeNull();
     saveSession(old);
@@ -159,6 +178,44 @@ describe("coach session", () => {
       await getAccessToken(vi.fn().mockResolvedValue(res(401, {})), () => true),
     ).toBeNull();
     expect(loadSession()).toBeNull();
+  });
+
+  it("keeps the session when the refresh can't get an answer (review #549)", async () => {
+    const old = {
+      accessToken: jwt({ exp: 1 }),
+      refreshToken: "r1",
+      expiresAt: 1,
+      email: null,
+    };
+    const outages = [
+      vi.fn().mockRejectedValue(new TypeError("Failed to fetch")),
+      vi.fn().mockResolvedValue(res(503, {})),
+      vi.fn().mockResolvedValue(res(429, {})),
+    ];
+    for (const fetchImpl of outages) {
+      saveSession(old);
+      expect(await getAccessToken(fetchImpl, () => true)).toBe(old.accessToken);
+      expect(loadSession()?.refreshToken).toBe("r1");
+    }
+  });
+
+  it("tells listeners when the session ends", async () => {
+    const listener = vi.fn();
+    const stop = onSignedOut(listener);
+    saveSession({
+      accessToken: jwt({ exp: 1 }),
+      refreshToken: "r1",
+      expiresAt: 1,
+      email: null,
+    });
+    await getAccessToken(
+      vi.fn().mockResolvedValue(res(400, { error: "invalid_grant" })),
+      () => true,
+    );
+    expect(listener).toHaveBeenCalledTimes(1);
+    stop();
+    endSession();
+    expect(listener).toHaveBeenCalledTimes(1);
   });
 
   it("signs out locally even if the server call fails", async () => {

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Navigate, Outlet, useLocation, useNavigate } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import "../coach.css";
-import { getAccessToken, signOut } from "../api/coachAuth";
+import { getAccessToken, onSignedOut, signOut } from "../api/coachAuth";
 import { isCoachApiError } from "../api/coachApi";
 import { COACH_ROLES } from "../api/types";
 import { coachKeys, useCoachProfile, useRoster } from "../hooks/coachQueries";
@@ -32,6 +32,21 @@ export function CoachLayout() {
       cancelled = true;
     };
   }, []);
+
+  // A 401 or a rejected refresh anywhere ends the session: drop the coach's
+  // cached data and go to sign-in, instead of leaving error screens whose
+  // Retry can never succeed.
+  useEffect(
+    () =>
+      onSignedOut(() => {
+        queryClient.removeQueries({ queryKey: coachKeys.all });
+        navigate("/coach/login", {
+          replace: true,
+          state: { from: location.pathname },
+        });
+      }),
+    [queryClient, navigate, location.pathname],
+  );
 
   if (session === "checking") {
     return (
