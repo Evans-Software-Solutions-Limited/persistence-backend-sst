@@ -1,5 +1,11 @@
 import { apiBase } from "@/admin/adminApi";
-import { endSession, getAccessToken } from "./coachAuth";
+import {
+  endSession,
+  getAccessToken,
+  loadSession,
+  refreshSession,
+  saveSession,
+} from "./coachAuth";
 import type {
   AcceptPreview,
   ClientProfile,
@@ -65,30 +71,55 @@ export function newIdempotencyKey(): string {
     : `k-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+/** The sign-in couldn't be checked (Supabase Auth unreachable): try again. */
+export const AUTH_UNAVAILABLE = "auth_unavailable";
+
 export async function coachFetch<T>(
   path: string,
   init: RequestInit = {},
   fetchImpl: typeof fetch = fetch,
 ): Promise<T> {
-  const token = await getAccessToken();
+  const token = await getAccessToken(fetchImpl);
   if (!token) {
     endSession();
     throw new CoachApiError(401, { message: "Signed out" });
   }
-  let res: Response;
-  try {
-    res = await fetchImpl(`${apiBase()}${path}`, {
-      ...init,
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-        ...(init.headers ?? {}),
-      },
-    });
-  } catch {
-    throw new CoachApiError(0, null, true);
+  const send = async (bearer: string): Promise<Response> => {
+    try {
+      return await fetchImpl(`${apiBase()}${path}`, {
+        ...init,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${bearer}`,
+          ...(init.headers ?? {}),
+        },
+      });
+    } catch {
+      throw new CoachApiError(0, null, true);
+    }
+  };
+  let res = await send(token);
+  if (res.status === 401) {
+    // A 401 can mean an expired token, or that the API couldn't check a good
+    // one while Supabase Auth is down. Only GoTrue refusing the refresh token
+    // ends the session; an outage keeps it and asks the coach to try again.
+    const current = loadSession();
+    const refreshed = current
+      ? await refreshSession(current, fetchImpl)
+      : ({ kind: "rejected" } as const);
+    if (refreshed.kind === "unavailable") {
+      throw new CoachApiError(503, {
+        code: AUTH_UNAVAILABLE,
+        message:
+          "We couldn't confirm your sign-in just now. Try again in a moment.",
+      });
+    }
+    if (refreshed.kind === "ok") {
+      saveSession(refreshed.session);
+      res = await send(refreshed.session.accessToken);
+    }
+    if (refreshed.kind === "rejected" || res.status === 401) endSession();
   }
-  if (res.status === 401) endSession();
   const text = await res.text();
   let body: Record<string, unknown> | null = null;
   try {

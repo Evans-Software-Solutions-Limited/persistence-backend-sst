@@ -303,6 +303,81 @@ describe("coach API client", () => {
     });
   });
 
+  describe("a 401 from the API (review #549, sweep 2)", () => {
+    const withRefresh = () =>
+      saveSession({
+        accessToken: jwt({ exp: future() }),
+        refreshToken: "r1",
+        expiresAt: future(),
+        email: null,
+      });
+    /** API answers in turn; GoTrue's token endpoint answers `auth`. */
+    const server = (api: Response[], auth: () => Promise<Response>) =>
+      vi.fn(async (url: string) =>
+        url.includes("/auth/v1/token") ? auth() : api.shift()!,
+      );
+
+    it("refreshes and retries once with the new token", async () => {
+      withRefresh();
+      const fresh = jwt({ exp: future() + 60 });
+      const f = server([res(401, {}), res(200, { data: "ok" })], async () =>
+        res(200, { access_token: fresh, refresh_token: "r2" }),
+      );
+      expect(await coachFetch("/x", {}, f)).toEqual({ data: "ok" });
+      const apiCalls = f.mock.calls.filter(([u]) =>
+        u.startsWith("https://api.test"),
+      );
+      expect(apiCalls).toHaveLength(2);
+      expect((apiCalls[1][1] as RequestInit).headers).toMatchObject({
+        Authorization: `Bearer ${fresh}`,
+      });
+      expect(loadSession()?.refreshToken).toBe("r2");
+    });
+
+    it("keeps the session when Supabase Auth can't answer", async () => {
+      withRefresh();
+      const listener = vi.fn();
+      const stop = onSignedOut(listener);
+      for (const auth of [
+        async () => res(503, {}),
+        async () => {
+          throw new TypeError("Failed to fetch");
+        },
+      ]) {
+        await expect(
+          coachFetch("/x", {}, server([res(401, {})], auth)),
+        ).rejects.toMatchObject({ status: 503, code: "auth_unavailable" });
+        expect(loadSession()?.refreshToken).toBe("r1");
+      }
+      expect(listener).not.toHaveBeenCalled();
+      stop();
+    });
+
+    it("signs out when the refresh is refused, or the new token is refused too", async () => {
+      withRefresh();
+      await expect(
+        coachFetch(
+          "/x",
+          {},
+          server([res(401, {})], async () => res(400, {})),
+        ),
+      ).rejects.toMatchObject({ status: 401 });
+      expect(loadSession()).toBeNull();
+
+      withRefresh();
+      await expect(
+        coachFetch(
+          "/x",
+          {},
+          server([res(401, {}), res(401, {})], async () =>
+            res(200, { access_token: jwt({ exp: future() }) }),
+          ),
+        ),
+      ).rejects.toMatchObject({ status: 401 });
+      expect(loadSession()).toBeNull();
+    });
+  });
+
   it("sends the JWT and parses the body", async () => {
     const f = vi.fn().mockResolvedValue(res(200, { data: 1 }));
     expect(await coachFetch("/thing", { method: "POST" }, f)).toEqual({
