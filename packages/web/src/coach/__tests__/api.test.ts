@@ -313,9 +313,10 @@ describe("coach API client", () => {
       });
     /** API answers in turn; GoTrue's token endpoint answers `auth`. */
     const server = (api: Response[], auth: () => Promise<Response>) =>
-      vi.fn(async (url: string) =>
-        url.includes("/auth/v1/token") ? auth() : api.shift()!,
-      );
+      vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+        void init;
+        return String(url).includes("/auth/v1/token") ? auth() : api.shift()!;
+      });
 
     it("refreshes and retries once with the new token", async () => {
       withRefresh();
@@ -325,10 +326,10 @@ describe("coach API client", () => {
       );
       expect(await coachFetch("/x", {}, f)).toEqual({ data: "ok" });
       const apiCalls = f.mock.calls.filter(([u]) =>
-        u.startsWith("https://api.test"),
+        String(u).startsWith("https://api.test"),
       );
       expect(apiCalls).toHaveLength(2);
-      expect((apiCalls[1][1] as RequestInit).headers).toMatchObject({
+      expect(apiCalls[1][1]?.headers).toMatchObject({
         Authorization: `Bearer ${fresh}`,
       });
       expect(loadSession()?.refreshToken).toBe("r2");
