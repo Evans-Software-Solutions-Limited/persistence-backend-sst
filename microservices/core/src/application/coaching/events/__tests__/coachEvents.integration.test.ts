@@ -752,6 +752,51 @@ describe("D7.2 a period whose missed-marking failed", () => {
   });
 });
 
+describe("D7.2 a form_missed event write that fails", () => {
+  it("rolls the missed status back, so the next tick marks it and tells the coach", async () => {
+    // Inspector Brad, #548: the status committed before the event write.
+    const form = await makeForm(COACH_A, "Daily");
+    await makeSchedule(COACH_A, {
+      formId: form.id,
+      trigger: "daily",
+      audience: "selected",
+      clientIds: [ATHLETE_C],
+      timeLocal: "09:00",
+    });
+    await formPeriodsJob.run(ctx(new Date("2026-11-22T09:00:00Z")));
+    await pg.exec(`
+      create function fail_form_missed() returns trigger language plpgsql as $$
+      begin
+        if new.kind = 'form_missed' then raise exception 'event write failed'; end if;
+        return new;
+      end $$;
+      create trigger fail_form_missed before insert on coach_events
+        for each row execute function fail_form_missed();
+    `);
+    try {
+      await expect(
+        formPeriodsJob.run(ctx(new Date("2026-11-23T09:00:00Z"))),
+      ).rejects.toThrow();
+    } finally {
+      await pg.exec(
+        "drop trigger fail_form_missed on coach_events; drop function fail_form_missed();",
+      );
+    }
+    expect(
+      (await requestsFor(ATHLETE_C)).find((r) => r.periodKey === "2026-11-22")!
+        .status,
+    ).toBe("pending");
+    await formPeriodsJob.run(ctx(new Date("2026-11-23T09:15:00Z")));
+    expect(
+      (await requestsFor(ATHLETE_C)).find((r) => r.periodKey === "2026-11-22")!
+        .status,
+    ).toBe("missed");
+    expect(
+      (await eventsOf(COACH_A)).filter((e) => e.kind === "form_missed"),
+    ).toHaveLength(1);
+  });
+});
+
 describe("D7.2 time zones: per-client weekday, archived forms, no clients", () => {
   it("a client's own weekday wins; an archived form or a coach with no clients sends nothing", async () => {
     const form = await makeForm(COACH_A, "Weekly");
@@ -962,6 +1007,10 @@ describe("D7.3 reminders", () => {
       COACH_A,
     );
     expect(since.json.deletedIds).toEqual([]);
+    // But Today offers no action for a client who has left (Inspector Brad, #548).
+    const today = await http("GET", "/trainers/me/today", COACH_A);
+    expect(today.json.data.queue).toEqual([]);
+    expect(today.json.data.counts.total).toBe(0);
   });
 
   it("ignores malformed reminders", () => {

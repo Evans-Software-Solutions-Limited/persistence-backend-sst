@@ -134,50 +134,56 @@ async function missEarlier(
   // earlier periods. (It always exists here: its insert has just run, and
   // requests are never deleted.)
   if (!current[0]) return { missed: 0, events: [] };
-  const missed = await db
-    .update(coachFormRequests)
-    .set({ status: "missed", updatedAt: now })
-    .where(
-      and(
-        eq(coachFormRequests.relationshipId, relationshipId),
-        eq(coachFormRequests.formId, schedule.formId),
-        eq(coachFormRequests.trigger, schedule.trigger),
-        eq(coachFormRequests.status, "pending"),
-        ne(coachFormRequests.periodKey, currentKey),
-        lt(coachFormRequests.sentAt, current[0].sentAt),
-      ),
-    )
-    .returning({ id: coachFormRequests.id });
-  const title = await db
-    .select({ title: coachForms.title })
-    .from(coachForms)
-    .where(eq(coachForms.id, schedule.formId))
-    .limit(1);
-  const events: string[] = [];
-  for (const r of missed) {
-    const id = await recordCoachEvent(
-      db,
-      {
-        trainerId: schedule.trainerId,
-        clientId,
-        relationshipId,
-        kind: "form_missed",
-        entityType: "coach_form_request",
-        entityId: r.id,
-        payload: {
-          requestId: r.id,
-          formId: schedule.formId,
-          // The request's form: its FK guarantees the row.
-          formTitle: title[0]!.title,
-          trigger: schedule.trigger,
+  const before = current[0].sentAt;
+  // One transaction: the missed status and its event commit together, so a
+  // failed event write rolls the status back and the next tick retries both
+  // (Inspector Brad, #548). The caller pushes after the commit.
+  return db.transaction(async (tx) => {
+    const missed = await tx
+      .update(coachFormRequests)
+      .set({ status: "missed", updatedAt: now })
+      .where(
+        and(
+          eq(coachFormRequests.relationshipId, relationshipId),
+          eq(coachFormRequests.formId, schedule.formId),
+          eq(coachFormRequests.trigger, schedule.trigger),
+          eq(coachFormRequests.status, "pending"),
+          ne(coachFormRequests.periodKey, currentKey),
+          lt(coachFormRequests.sentAt, before),
+        ),
+      )
+      .returning({ id: coachFormRequests.id });
+    const title = await tx
+      .select({ title: coachForms.title })
+      .from(coachForms)
+      .where(eq(coachForms.id, schedule.formId))
+      .limit(1);
+    const events: string[] = [];
+    for (const r of missed) {
+      const id = await recordCoachEvent(
+        tx,
+        {
+          trainerId: schedule.trainerId,
+          clientId,
+          relationshipId,
+          kind: "form_missed",
+          entityType: "coach_form_request",
+          entityId: r.id,
+          payload: {
+            requestId: r.id,
+            formId: schedule.formId,
+            // The request's form: its FK guarantees the row.
+            formTitle: title[0]!.title,
+            trigger: schedule.trigger,
+          },
+          dedupeKey: `form_missed:${r.id}`,
         },
-        dedupeKey: `form_missed:${r.id}`,
-      },
-      now,
-    );
-    if (id) events.push(id);
-  }
-  return { missed: missed.length, events };
+        now,
+      );
+      if (id) events.push(id);
+    }
+    return { missed: missed.length, events };
+  });
 }
 
 export const formPeriodsJob: SchedulerJob = {
