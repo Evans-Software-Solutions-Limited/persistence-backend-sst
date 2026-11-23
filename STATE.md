@@ -41,8 +41,11 @@ next store release, reviewed on staging.
 - **Scheduler** `coachSchedulerCron` (`infra/api.ts`, `rate(15 minutes)`,
   300 s timeout, error + heartbeat alarms in `infra/monitoring.ts`) →
   `coaching/scheduler/coachScheduler.ts`. Each job claims `(job, slot)`
-  (daily jobs: UTC date, from 08:00 UTC); a failed job gives its claim back
-  and the cron throws so the alarm fires. Jobs (`scheduler/jobs/index.ts`):
+  (daily jobs: UTC date, from 08:00 UTC) and stamps `finished_at` when done;
+  a failed job gives its claim back and the cron throws so the alarm fires;
+  an unfinished claim older than 10 min (a run killed at the Lambda timeout)
+  is taken over. Every job pages through all its rows (keyset), so nothing
+  past a page is skipped; sizes in `scheduler/jobs/pageSizes.ts`. Jobs (`scheduler/jobs/index.ts`):
   `form_periods` (weekly/daily in the athlete's zone, first tick at or after
   the time, within 6 h, never before the client's `activated_at` or the rule's
   `created_at`; a new period marks the previous pending one missed),

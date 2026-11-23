@@ -1850,6 +1850,40 @@ describe("coachSchedulerCron", () => {
     expect(defaultContext().now).toBeInstanceOf(Date);
   });
 
+  it("a claim left by a killed run expires, but a finished run is never repeated", async () => {
+    // Inspector Brad, #548: a Lambda timeout skips release(), and a daily
+    // job's claim (the UTC date) then blocked it for the rest of the day.
+    const daily = counting("d", "daily");
+    const at = new Date("2026-11-23T09:00:00Z");
+    await db.insert(schema.coachSchedulerRuns).values({
+      job: "d",
+      runKey: "2026-11-23",
+      ranAt: new Date("2026-11-23T08:45:00Z"),
+    });
+    // Claimed 15 minutes ago and never finished: the run was killed.
+    expect((await runCoachScheduler([daily], ctx(at))).jobs.d).toEqual({
+      status: "ran",
+      summary: { n: 1 },
+    });
+    // That run finished, so later ticks the same day skip it.
+    const later = await runCoachScheduler(
+      [daily],
+      ctx(new Date("2026-11-23T10:00:00Z")),
+    );
+    expect(later.jobs.d).toEqual({ status: "skipped", reason: "already_ran" });
+    // A claim made moments ago may still be running: left alone.
+    const running = counting("r", "daily");
+    await db.insert(schema.coachSchedulerRuns).values({
+      job: "r",
+      runKey: "2026-11-23",
+      ranAt: new Date("2026-11-23T08:58:00Z"),
+    });
+    expect((await runCoachScheduler([running], ctx(at))).jobs.r).toEqual({
+      status: "skipped",
+      reason: "already_ran",
+    });
+  });
+
   it("drops claims older than 30 days", async () => {
     await db.insert(schema.coachSchedulerRuns).values({
       job: "old",

@@ -2346,6 +2346,7 @@ export const coachSchedulerRuns = pgTable(
     job: text("job").notNull(),
     runKey: text("run_key").notNull(),
     ranAt: timestamp("ran_at", { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
   },
   (t) => [
     primaryKey({ columns: [t.job, t.runKey] }),

@@ -1,4 +1,4 @@
-import { and, eq, lt } from "drizzle-orm";
+import { and, eq, isNull, lt } from "drizzle-orm";
 import { coachSchedulerRuns } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
 import { NotificationDispatcher } from "../../notifications/push/notificationDispatcher";
@@ -14,7 +14,9 @@ import { NotificationDispatcher } from "../../notifications/push/notificationDis
  * conditional updates), so even a job run twice changes nothing.
  *
  * A job that throws gives its claim back, so the next tick retries it, and the
- * other jobs still run. The cron then fails, so its error alarm fires.
+ * other jobs still run. The cron then fails, so its error alarm fires. A run
+ * killed mid-job (the Lambda timeout) leaves its claim unfinished; after
+ * `CLAIM_EXPIRY_MS` the next tick takes it over.
  *
  * **Adding a job** (BE-E1b chat retries, BE-I2 session reminders): write a
  * `SchedulerJob` in `./jobs/` and add it to `COACH_SCHEDULER_JOBS` in
@@ -38,6 +40,11 @@ export const TICK_MINUTES = 15;
 /** Daily jobs wait for the UK morning, so their pushes don't land at night. */
 export const DAILY_FROM_HOUR_UTC = 8;
 const RUN_RETENTION_DAYS = 30;
+/**
+ * An unfinished claim older than this belongs to a run that was killed (the
+ * cron's Lambda timeout is 300 s), so another run may take it over.
+ */
+export const CLAIM_EXPIRY_MS = 10 * 60_000;
 
 /** "2026-11-23T09:15" — the 15-minute slot an instant falls in. */
 export function tickKey(now: Date): string {
@@ -55,13 +62,38 @@ export function runKeyFor(job: SchedulerJob, now: Date): string | null {
   return now.toISOString().slice(0, 10);
 }
 
+/**
+ * Claim (job, runKey): a new row, or one whose run never finished and is
+ * older than `CLAIM_EXPIRY_MS` — a Lambda killed at its timeout never reaches
+ * `release`, and a daily job would otherwise be skipped for the rest of the
+ * day (Inspector Brad, #548). A finished run is never claimed again.
+ */
 async function claim(job: string, runKey: string, now: Date): Promise<boolean> {
   const rows = await getDb()
     .insert(coachSchedulerRuns)
     .values({ job, runKey, ranAt: now })
-    .onConflictDoNothing()
+    .onConflictDoUpdate({
+      target: [coachSchedulerRuns.job, coachSchedulerRuns.runKey],
+      set: { ranAt: now },
+      setWhere: and(
+        isNull(coachSchedulerRuns.finishedAt),
+        lt(coachSchedulerRuns.ranAt, new Date(now.getTime() - CLAIM_EXPIRY_MS)),
+      ),
+    })
     .returning({ job: coachSchedulerRuns.job });
   return rows.length === 1;
+}
+
+async function finish(job: string, runKey: string): Promise<void> {
+  await getDb()
+    .update(coachSchedulerRuns)
+    .set({ finishedAt: new Date() })
+    .where(
+      and(
+        eq(coachSchedulerRuns.job, job),
+        eq(coachSchedulerRuns.runKey, runKey),
+      ),
+    );
 }
 
 async function release(job: string, runKey: string): Promise<void> {
@@ -101,7 +133,9 @@ export async function runCoachScheduler(
       continue;
     }
     try {
-      result.jobs[job.name] = { status: "ran", summary: await job.run(ctx) };
+      const summary = await job.run(ctx);
+      await finish(job.name, runKey);
+      result.jobs[job.name] = { status: "ran", summary };
     } catch (err) {
       console.error(`[coach-scheduler] ${job.name} failed`, err);
       await release(job.name, runKey).catch(() => undefined);

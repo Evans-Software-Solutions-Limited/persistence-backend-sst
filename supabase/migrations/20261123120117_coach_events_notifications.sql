@@ -83,12 +83,15 @@ ALTER TABLE coach_notification_settings ENABLE ROW LEVEL SECURITY;
 
 -- ─── coach_scheduler_runs ────────────────────────────────────────────────────
 -- A job claims (job, run_key) before it runs: run_key is the 15-minute slot
--- for every-tick jobs and the UTC date for daily ones. The scheduler deletes
--- rows older than 30 days.
+-- for every-tick jobs and the UTC date for daily ones. finished_at is set when
+-- the run completes; a claim left unfinished past the Lambda timeout (the run
+-- was killed) can be taken over. The scheduler deletes rows older than 30
+-- days.
 CREATE TABLE IF NOT EXISTS coach_scheduler_runs (
-  job      text NOT NULL CHECK (char_length(job) BETWEEN 1 AND 60),
-  run_key  text NOT NULL CHECK (char_length(run_key) BETWEEN 1 AND 60),
-  ran_at   timestamptz NOT NULL DEFAULT now(),
+  job          text NOT NULL CHECK (char_length(job) BETWEEN 1 AND 60),
+  run_key      text NOT NULL CHECK (char_length(run_key) BETWEEN 1 AND 60),
+  ran_at       timestamptz NOT NULL DEFAULT now(),
+  finished_at  timestamptz,
   PRIMARY KEY (job, run_key)
 );
 
