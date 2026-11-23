@@ -77,6 +77,35 @@ describe("saveUserMealsCommand", () => {
     ]);
   });
 
+  it("drops a dead older PUT so a Retry can't re-send a stale list (Inspector Brad #550)", () => {
+    const deps = { storage, userId: USER };
+    saveUserMealsCommand(deps, meals());
+    const old = storage.getPendingMutations()[0]!;
+    storage.markMutationPermanentlyFailed(old.id, "rejected");
+    // Another user's dead PUT is left alone.
+    storage.enqueueMutation({
+      entityType: "user_meals",
+      entityId: "someone-else",
+      operation: "update",
+      payload: { meals: [] },
+      endpoint: USER_MEALS_ENDPOINT,
+      method: "PUT",
+    });
+    const theirs = storage
+      .getPendingMutations()
+      .find((e) => e.entityId === "someone-else")!;
+    storage.markMutationPermanentlyFailed(theirs.id, "rejected");
+
+    saveUserMealsCommand(deps, addUserMeal(meals(), "Supper", "k1", "t"));
+    const rows = storage
+      .getUncompletedMutations()
+      .filter((e) => e.entityType === "user_meals");
+    expect(rows.map((e) => e.entityId).sort()).toEqual(["someone-else", USER]);
+    const mine = rows.find((e) => e.entityId === USER)!;
+    expect(mine.id).not.toBe(old.id);
+    expect(JSON.parse(mine.payload).meals).toHaveLength(3);
+  });
+
   it("refuses placeholders and an empty list", () => {
     expect(
       saveUserMealsCommand(

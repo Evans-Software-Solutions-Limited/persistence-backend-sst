@@ -12,6 +12,7 @@
  */
 import type { StoragePort } from "@/domain/ports/storage.port";
 import type { UserMeal } from "@/domain/models/userMeals";
+import { isAutoResolvableSyncEntry } from "@/domain/ports/sync.types";
 import {
   activeUserMeals,
   isSyntheticUserMealId,
@@ -44,6 +45,19 @@ export function saveUserMealsCommand(
     return null;
   }
   storage.cacheUserMeals(userId, next);
+
+  // A dead PUT (permanently failed, retries used up, blocked) carries an older
+  // full list; a later Retry would archive meals added since. This list
+  // replaces it, so drop it (Inspector Brad, #550).
+  const dead = storage
+    .getUncompletedMutations()
+    .filter(
+      (e) =>
+        e.entityType === USER_MEALS_ENTITY &&
+        e.entityId === userId &&
+        !isAutoResolvableSyncEntry(e),
+    );
+  if (dead.length > 0) storage.discardEntries(dead.map((e) => e.id));
 
   const payload = toUserMealsPutBody(next);
   const queued = storage
