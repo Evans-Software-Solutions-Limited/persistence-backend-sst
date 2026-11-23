@@ -12,6 +12,7 @@
  */
 import type { StoragePort } from "@/domain/ports/storage.port";
 import type { UserMeal, UserMealPutRow } from "@/domain/models/userMeals";
+import { USER_MEALS_MAX } from "@/domain/models/userMeals";
 import { isAutoResolvableSyncEntry } from "@/domain/ports/sync.types";
 import {
   activeUserMeals,
@@ -84,6 +85,9 @@ export function saveUserMealsCommand(
         !isAutoResolvableSyncEntry(e),
     );
   for (const row of dead.flatMap((e) => unsyncedMealsIn(e.payload))) {
+    // Never past the server's cap: a list over it is rejected every time, and
+    // that would stop every later Your-meals edit syncing (Inspector Brad, #550).
+    if (next.length >= USER_MEALS_MAX) break;
     if (next.some((m) => m.clientRequestId === row.clientRequestId)) continue;
     next = [
       ...next,

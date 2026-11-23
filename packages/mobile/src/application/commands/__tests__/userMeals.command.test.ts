@@ -135,6 +135,25 @@ describe("saveUserMealsCommand", () => {
     expect(saveUserMealsCommand(deps, meals())).toHaveLength(2);
   });
 
+  it("never carries meals forward past the server's 30-meal cap (Inspector Brad #550)", () => {
+    const deps = { storage, userId: USER };
+    saveUserMealsCommand(deps, addUserMeal(meals(), "Supper", "k", "t"));
+    const old = storage.getPendingMutations()[0]!;
+    storage.markMutationPermanentlyFailed(old.id, "exhausted");
+    const full: UserMeal[] = Array.from({ length: 30 }, (_, i) => ({
+      ...meals()[0]!,
+      id: `srv-${i}`,
+      name: `Meal ${i}`,
+      sortOrder: i,
+    }));
+    const saved = saveUserMealsCommand(deps, full)!;
+    expect(saved).toHaveLength(30);
+    expect(saved.some((m) => m.clientRequestId === "k")).toBe(false);
+    expect(
+      JSON.parse(storage.getPendingMutations()[0]!.payload).meals,
+    ).toHaveLength(30);
+  });
+
   it("refuses placeholders and an empty list", () => {
     expect(
       saveUserMealsCommand(
