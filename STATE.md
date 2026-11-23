@@ -45,6 +45,16 @@ merged BE-A1 routes (PER-108, #540): `GET /invites/:code/preview`,
   (load timeouts in the full run).
 - **Not verified:** no device or staging run; canvas match checked against
   board markup only.
+- **Inspector Brad (#547):** 4 sweeps, 5 leads fixed with failing-first tests,
+  closed clean on 8cfae9f.
+  - Every `useMyCoaches` re-reads the cache synchronously on write
+    (`notifyMyCoachesChanged`), so the Coach tab exists before the accept
+    navigates; the storage bus alone is debounced.
+  - The accept opens `coach?coachId=<new>&nav=…` only when the coach is cached
+    and the app is in athlete mode, otherwise You.
+  - Accept stays disabled while the coach loads.
+  - The chip override is keyed on `coachId|nav`.
+  - You rows aren't tappable until coaching has been read.
 
 ### 2026-11-21 — BE-H1: You page and coach training reads, `packages/training-metrics` ([PER-113](https://linear.app/evans-software-solutions/issue/PER-113); branch `bradleysimmsevans/per-113-be-h1-backend-you-page-and-coach`)
 
