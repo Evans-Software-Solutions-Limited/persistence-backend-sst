@@ -494,4 +494,33 @@ export const metaCapiForwardCron = new sst.aws.Cron("meta-capi-forward", {
   },
 });
 
+// ─── Coach scheduler (PER-117, design C D2) ─────────────────────────────────
+//
+// Every 15 minutes. Bounded, idempotent jobs (each claims its slot in
+// `coach_scheduler_runs`, so a retried or doubled tick does nothing twice):
+// weekly/daily forms in each athlete's time zone, missed forms, the athlete's
+// form pushes and reminders, invite expiry, programmes ending (daily),
+// training behind (daily), and coach pushes — including releasing pushes held
+// for quiet hours. BE-E1b (chat retries) and BE-I2 (session reminders) add
+// their jobs to `coaching/scheduler/jobs/index.ts`; no infra change.
+//
+// ⚠ The timeout stays well under the 15-minute rate, so two ticks never
+// overlap. Logs `[coach-scheduler:summary]`. Reuses the API route's DB, Expo
+// and Sentry bindings (it pushes through the same dispatcher).
+export const coachSchedulerCron = new sst.aws.Cron("coach-scheduler", {
+  schedule: "rate(15 minutes)",
+  job: {
+    handler: "microservices/core/src/coachSchedulerCron.handler",
+    timeout: "300 seconds",
+    environment: {
+      DATABASE_URL: databaseUrl.value,
+      // Same binding as the API route and the streak cron, so pushes work with
+      // Expo Enhanced Security on.
+      EXPO_ACCESS_TOKEN: expoAccessToken.value,
+      // Sentry crash reporting (optional; empty DSN = disabled).
+      SENTRY_DSN: sentryDsn.value,
+    },
+  },
+});
+
 // api.addAuthorizer

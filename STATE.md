@@ -56,6 +56,207 @@ merged BE-A1 routes (PER-108, #540): `GET /invites/:code/preview`,
   - The chip override is keyed on `coachId|nav`.
   - You rows aren't tappable until coaching has been read.
 
+### 2026-11-23 — APP-A1: web coach workspace, add client (C11), invited client, C3.9 settings ([PER-124](https://linear.app/evans-software-solutions/issue/PER-124); branch `bradleysimmsevans/per-124-app-a1-web-coach-add-client-c11`)
+
+`packages/web` only; no backend, mobile, native or migration change. Uses the
+PER-108 routes as merged (plus PER-116 forms and PER-118 meal plans for the
+set-up sections). Ships with the next store release window; Brad reviews on
+staging.
+
+- **New web coach workspace** at `/coach/*` (`src/coach/`, lazy-loaded as its
+  own chunk, not linked from the marketing site). Brad, 23 Nov: build the
+  shell properly in this ticket, because `packages/web` had no coach sign-in,
+  rail, Clients list or client page.
+  - Sign-in: GoTrue magic link (`create_user: false`), session in
+    `localStorage` (`persistence.coach.session`), refresh near expiry, kept
+    while offline. Reuses `admin/adminAuth.ts`'s JWT decode + Supabase config.
+    ⚠ Supabase's redirect allow-list needs `https://<site>/coach/callback`
+    for staging and production (dashboard setting, not in the repo).
+  - Role gate is UX only (`GET /profile` role in personal_trainer /
+    physiotherapist / admin); the API enforces it on every call.
+  - Rail (K layout): Today, Notifications, Library, Messages and You are shown
+    but inert ("Not on the web yet"); Clients is live.
+- **Screens** (container/presenter): Clients list (C11e: Invited above
+  Active, Resend; Active keeps client / programme / last active, the C8
+  Check-in and Adherence columns are PER-129 / PER-127), Add client 1 Who /
+  2 Set up / 3 Invite (C11a–c), Preview as client (C11b2), Copy setup from a
+  client, invited client page (C11d: only Overview open, other tabs locked,
+  Copy link, Resend, Cancel invite, private notes), active client page with
+  the C3.9 Settings tab.
+- **Set-up sections shown**: starter forms, repeating check-ins, calorie and
+  macro target, meal plan, welcome message (`WEB_SECTIONS` in
+  `coach/lib/setup.ts`). Programme (PER-112) and resources (PER-122) have no
+  live handler and no web editor; a section answering 422
+  `section_unavailable` is hidden at run time. Moving to another section,
+  Back, Skip and Next save (PUT with `expectedRevision`); Cancel drops the
+  current section's draft. A repeating check-in's day/time/due/reminders are
+  saved as the per-client `override`; "How often" comes from the send rule
+  and is read-only here.
+- **Coach declaration**: asked before the first personal invite (GET status,
+  then a dialog; a 403 `declaration_required` also opens it). The canvas has
+  no declaration copy, so Brad asked for researched standard wording:
+  `coach/lib/declaration.ts` (DRAFT, version `2026-11-v1`, SHA-256 of the text
+  sent as `statementTextHash`). Changing the text needs the version bumped
+  here and in `COACH_DECLARATION_VERSION`.
+- **C3.9 settings** (Brad's choice): the six backend feature keys (Meal plans
+  + Food logging shown as one "Nutrition" row; Training plan, Workout logging
+  and AI summary rows hidden, no key), plus "Tracked for {name}": Training
+  with a sessions-per-week stepper (1–14, starts at 3) and Calories. Alerts
+  as three exclusive switches. End coaching = `DELETE
+  /trainers/me/clients/:clientId`. The board's "{name} shares with you" and
+  "Coaching" details are hidden: no coach-side API for them.
+- **States**: offline (C9c banner "Offline · showing X as of HH:MM", edits
+  and online-only actions disabled; queries use `networkMode: "always"` so a
+  page opened offline says so instead of loading for ever), 409
+  `revision_conflict` on profile, set-up and settings (server copy replaces
+  ours, "Updated on another device"), expired code ("Code expired" pill,
+  Resend). Resend only issues a new code (the backend sends nothing), so it
+  opens the invite step to share it.
+- **Copy**: the canvas uses she/her for Lena; the web never knows pronouns,
+  so copy uses the first name or they/their.
+- **New dependency**: `qrcode` (+ `@types/qrcode`), web only, for the invite
+  QR (encodes the same `persistencemobile://accept-invite?code=` link as the
+  iPhone sheet). `bun.lock` re-hoisted some vitest coverage entries (same
+  versions).
+- **Tests**: `src/coach/__tests__/` (118): pure libs, auth/API client, and
+  every container through a fake API (`CoachApiContext`): save-on-move,
+  Cancel, 409 on each write, section_unavailable, offline per screen,
+  expired code, declaration gate, copy-from, preview, end coaching. After
+  the review: 151 tests in `src/coach`.
+- **Not verified**: no staging run, no real Supabase sign-in, nothing against
+  the live API (fake API + Playwright render with mocked routes only).
+- **Inspector Brad on #549: thirteen sweeps, every lead confirmed and fixed
+  with a test that fails on the previous commit; case closed on `222ffc7`.**
+  - Auth: a failed refresh (network, 5xx, 429, timeout) keeps the session;
+    only a rejected refresh token signs out (`refreshSession` → ok /
+    rejected / unavailable, 10 s timeout). A 401 tries the stored token, then
+    one shared refresh, then retries; a 401 on a just-issued token is a
+    retryable 503 `auth_unavailable`, not a sign-out. Refreshes are shared
+    per refresh token in the tab and never write back after Sign out.
+    `endSession()` + `onSignedOut` send the layout to sign-in. Sign out uses
+    `/logout?scope=local` (global also signed the coach out of the phone).
+  - `/coach` is mounted outside the marketing tree in `App.tsx` (no pixel,
+    Tradedoubler, page view or cookie banner while the callback URL holds
+    tokens).
+  - Revisions: Who, set-up drafts and notes keep the baseline they started
+    from (no silent overwrite after a focus refetch); a 409 caused by an
+    unrelated change resends once when what the coach edited is unchanged
+    (also C3.9 settings), never into a profile the client has accepted, and
+    the cache keeps the 409's newer copy. Other drafts follow the coach's own
+    saves and copy-from. Leaving set-up any way saves (the title link via
+    `go()`, anything else in the background on unmount); screens remount per
+    profile id (`PerProfile`).
+  - The invite step only auto-issues after a successful fresh read (a code
+    issued on another device is never voided).
+  - Not changed (outside the ticket, flagged to Brad): `admin/adminAuth.ts`
+    Sign out also uses GoTrue's default global scope.
+
+### 2026-11-23 — BE-C2: coach events, Today, notifications, quiet hours and the 15-minute scheduler ([PER-117](https://linear.app/evans-software-solutions/issue/PER-117); branch `bradleysimmsevans/per-117-be-c2-backend-coach-events-today`)
+
+PR #548 (open, no auto-merge). Linear "Backend design C", D2 (scheduler) and
+D4; covers PER-93 (coach notification settings). Backend only; no app UI or native change. Ships in the
+next store release, reviewed on staging.
+
+- **Migration** `20261123120117_coach_events_notifications.sql` (+ rollback):
+  `coach_events` (unique `(trainer_id, dedupe_key)`; `kind` validated in code;
+  `push_state` none/pending/held/sent/skipped; `updated_at` for `?since=`),
+  `coach_notification_settings` (trainer PK, `channels` jsonb, quiet hours,
+  revision), `coach_scheduler_runs` (claims, PK `(job, run_key)`),
+  `notification_type` += `coach_event`, `form_request`, `form_reminder`.
+  RLS on, no policies. **No existing table or column changes.** ⚠ Migrate
+  before deploy: accept, form responses and finished workouts now write
+  `coach_events` (the session hook swallows errors; accept and form submit
+  would 500 without the table).
+- **Events** (`coaching/events/`): `recordCoachEvent` decides the push at
+  write time: client muted → `skipped`; `everything` → push every kind;
+  else the coach's channel or the default (`workout_completed` defaults to
+  in-app only, the rest push); quiet hours (coach's `profiles.timezone`,
+  wraps midnight) → `held`. `deliverCoachEvents` claims `pending → sent`
+  before pushing. Coach pushes are `coach_event` rows in the coach's own inbox
+  with deep link `persistencemobile://clients` (1.2.0 routes it).
+- **Writers, one call each in existing paths:** `PATCH /sessions/:id` →
+  completed and `POST /sessions/record` (not replays/cancelled) call
+  `safeRecordWorkoutCompleted` after commit: one `workout_completed` per active
+  coach (rating 1–5, difficulty 1–10, note), plus `record_hit` when the
+  session's sets hold current PRs; skipped for workouts before that coach's
+  `activated_at`. `submitResponse` → `form_completed` / `check_in_completed`
+  (weekly/daily), pushed after commit. `acceptPersonalCode` →
+  `client_accepted` with **no push** (the accept handler already pushes
+  "Client accepted"); `trainersRespondToRequestHandler` → `client_accepted`
+  (pushed by the next tick). Scheduler: `form_missed`, `invite_expired`
+  (personal code past `expires_at`, profile still invited),
+  `programme_ending` (assignment `end_date` within 7 days, assigned by an
+  active coach; dateless programmes never raise it), `training_behind`
+  (`computeAdherence`, full 7-day window only, at most once per client per 7
+  days). No response shape changed.
+- **Scheduler** `coachSchedulerCron` (`infra/api.ts`, `rate(15 minutes)`,
+  300 s timeout, error + heartbeat alarms in `infra/monitoring.ts`) →
+  `coaching/scheduler/coachScheduler.ts`. Each job claims `(job, slot)`
+  (daily jobs: UTC date, from 08:00 UTC) and stamps `finished_at` when done;
+  a failed job gives its claim back and the cron throws so the alarm fires;
+  an unfinished claim older than 10 min (a run killed at the Lambda timeout)
+  is taken over. Every job pages through all its rows (keyset), so nothing
+  past a page is skipped; sizes in `scheduler/jobs/pageSizes.ts`. Jobs (`scheduler/jobs/index.ts`):
+  `form_periods` (weekly/daily in the athlete's zone, first tick at or after
+  the time, within 6 h, never before the client's `activated_at` or the rule's
+  `created_at`; a new period marks the previous pending one missed),
+  `missed_forms`, `form_pushes` (announce each new request once — any trigger,
+  so on_join/once/on_end forms get a push too, up to 15 min late — and
+  reminders via `reminders_sent`, one push per tick, none while the rule or
+  client is paused), `invite_expiry`, `programme_ending` (daily),
+  `training_behind` (daily), `coach_pushes` (pending sweep after 1 min; quiet
+  release, one push per client, "Sam: 3 updates"). Bounded (500–2000 rows per
+  job). **PER-120 / PER-123 register a job by adding it to that array.**
+- **Generators:** `insertRequests`, `liveVersions`, `scheduleTargets` in
+  `forms/generators.ts` are now exported; the trigger type gained
+  weekly/daily. Nothing else in BE-C1 changed.
+- **Routes** (`coaching/events/coachNotificationsHandlers.ts`, mounted in
+  `coachingRoutes`, trainer role): `GET /trainers/me/notifications`
+  (`kind`, `clientId` via `resolveCoachScope`, `since` → changes +
+  `deletedIds`, keyset `cursor`, `limit` ≤ 200, `unreadCount`, `asOf`),
+  `POST …/notifications/read` (`{ids}` | `{all}`), `GET /trainers/me/today`
+  (`queue` of actionable unactioned kinds with `action`, `counts`,
+  `schedule: []` for design I, `strip` = practice `adherenceByArea`),
+  `POST /trainers/me/today/:eventId/actioned` (also marks read; idempotent),
+  `GET/PUT /trainers/me/notification-settings` (`emailAvailable: false`,
+  channels merge, `expectedRevision` → 409 `revision_conflict`). Events for a
+  relationship that is no longer active are hidden (exit-form responses
+  stay). `/notifications/preferences` unchanged.
+- **1.2.0 (D5) checked, no fallback needed:** the 1.2.0 bundle (3bad31e) has
+  the same `mapApiNotification`, `NotificationRow`, model and deep-link
+  resolver as main: unknown types parse, render with the generic bell row,
+  and tap to Home (athlete rows carry no deep link) or Clients (coach rows).
+  Proven by `packages/mobile/src/adapters/api/__tests__/coachNotificationTypes.test.tsx`.
+  The new types are NOT in `NOTIFICATION_TYPES` (the preferences list).
+- **Tests:** `coaching/events/__tests__/coachEvents.integration.test.ts`
+  (PGlite, real migrations and handlers): D7.2 (weekly Sunday 18:00 London/NY
+  over both clock changes; daily 00:30 on each clock-change night; per-client
+  time/weekday), D7.3 (announce once, reminders at most N, burst → one,
+  paused client/rule, stop, completed, missed once, overlapping runs), D7.7
+  (one event per coach with rating/note, records, replay dedupe, mute,
+  everything, quiet hold/release in London and NY, pending sweep, form
+  events, accept), D7.9 (preferences keys = 1.2.0 fixture; `GET /notifications`
+  rows), two-coach isolation, feed/Today/settings, scheduler claims, migration
+  forward twice / down / up. `scheduler/__tests__/zonedTime.test.ts` (gap and
+  repeated hours, ISO weeks). PER-108/PER-116 suites now apply this migration;
+  session and respond handler unit tests mock the new writers.
+- **Inspector Brad on #548: five sweeps, 13 leads, all confirmed and fixed
+  with a test that failed on the previous commit; case closed on `701b31e`:**
+  - Training behind judged a barely-started "today" → judged on the 7
+    complete days ending yesterday in the client's zone.
+  - Reminder page filled by rows not yet due → due-count filter in SQL.
+  - Missed-marking skipped after a failed run / committed without its event →
+    runs every tick for the latest period, in one transaction with its events.
+  - Missed exit form pushed but hidden → visible in the feed; Today keeps
+    answered exit forms (review) and leaves out missed ones (no nudge).
+  - Pending sweep ignored quiet hours begun since the write → held.
+  - Fixed caps skipped rows past them (rules, behind coaches, held release,
+    invite expiry, programmes ending) → every job pages through all rows.
+  - A run killed at the Lambda timeout kept its claim → `finished_at` and
+    claim takeover after 10 min.
+- **Not verified:** nothing applied to staging; no deploy; no device run;
+  real Postgres concurrency (PGlite is one connection).
+
 ### 2026-11-21 — BE-H1: You page and coach training reads, `packages/training-metrics` ([PER-113](https://linear.app/evans-software-solutions/issue/PER-113); branch `bradleysimmsevans/per-113-be-h1-backend-you-page-and-coach`)
 
 PR #545 (open, no auto-merge). Backend design H. Read-only, additive: four new paths, no migration, no
@@ -5590,97 +5791,6 @@ Visual baselines:
 `/Users/bradleysimms-evans/.codex/visualizations/2026/09/04/01a06cdf-2dcb-78e3-b9c3-b1b10954f357/pricing-live-cta-coaches-dark.png`,
 and
 `/Users/bradleysimms-evans/.codex/visualizations/2026/09/04/01a06cdf-2dcb-78e3-b9c3-b1b10954f357/pricing-live-cta-consumer-mobile.png`.
-### 🟡 2026-09-04 — AUTH + CARDIO/ACTIVITY LOGGING (branch `codex/auth-cardio-logging`)
-
-Password inputs on sign-in, sign-up and password reset now have accessible
-show/hide controls, disable keyboard correction/capitalisation, and show live
-confirmation match state without altering the submitted password. Exercise
-creation supports strength, cardio and plyometric categories; cardio no longer
-requires a muscle group. Active sessions persist each exercise category and
-show category-specific logging: weight/reps for strength, time plus km/mi for
-cardio, and reps plus jump distance in cm/in for plyometrics.
-
-The Workouts screen can start a retrospective workout with a past local date
-and explicit duration. Cardio sessions can be marked indoor/outdoor and given
-an optional location; those values, logged activity time and distance appear in
-the completed-workout summary. Distance and time records are calculated by the
-core service and rendered on exercise detail/progress surfaces. Canonical stored
-units remain seconds and metres. Migration
-`20260904130000_session_activity_metadata.sql` adds session environment,
-location metadata and the per-session exercise-category snapshot, and must be
-applied before deploying the matching API.
-
-Formatting, all nine package typechecks, lint (zero errors), all fourteen build
-tasks and the full unit suite are green (**524 mobile suites / 6,623 tests**;
-**21 workspace tasks**). Visual QA was attempted but is blocked locally: the
-generated iOS build cannot resolve the React-Core-prebuilt pod source, while the
-installed staging dev client lacks ExpoTrackingTransparency and cannot load
-this checkout's bundle. No generated native project was retained.
-
-The mandatory local Inspector Brad pre-PR pass found seven category and edge
-case defects. All are fixed with regressions: cardio PRs are category-gated,
-summary activity totals include completed cardio sets only, offline cardio PR
-prediction matches the server, retrospective mode survives pointer recovery,
-category edits recompute muscle arrays, malformed activity inputs clear stale
-values, and retrospective duration is bounded to 24 hours. The complete gate
-suite above was rerun after these fixes. The follow-up Inspector pass found two
-lifecycle-boundary defects: server PR semantics depended on an exercise's
-current category, and upgraded local active sessions could resume without a
-category. Session exercises now store the category snapshot used when they were
-logged, and SQLite upgrades/backward reads restore it from the cached exercise.
-The complete gate suite is green after both fixes; a closed Inspector re-sweep
-then caught two alternate-entry-path gaps. Trainer-recorded sessions now accept
-the same activity metadata/category fields as self-recording, and piecemeal
-session exercise creation resolves visibility and snapshots the source exercise
-category. Regressions cover both paths, the complete gate suite is green, and
-the final closed local Inspector Brad sweep returned clean.
-
-The PR #434 CI Inspector follow-up found two mobile boundary cases. Cardio
-duration/distance fields now preserve focused, in-progress text while SQLite
-echoes canonical values back through the parent, then canonicalise on blur.
-Retrospective dates are displayed from device-local calendar components rather
-than a UTC string slice, and same-day logging before noon clamps completion to
-the current instant instead of rejecting the selected day. Focused regressions
-cover the command-echo and timezone/calendar-day paths. The full repository
-gate is green (**524 mobile suites / 6,627 tests; 21 workspace tasks**) and the
-local Inspector Brad follow-up is clean.
-
-A second PR #434 CI Inspector follow-up found that retrospective session setup
-backdated the still-live session clock, and that exercise detail filtered a
-globally limited PR response. Retrospective sessions now keep `startedAt` at
-the actual start instant and derive their historical interval only when they
-are finalised. The PR endpoint accepts an exercise scope that is applied in SQL
-before ordering/limiting, with matching offline-cache behaviour. The
-retrospective production date path now uses a direct `date-fns` dependency
-(`4.4.0`) for local-day parsing, validation and date arithmetic. Regression
-tests cover both review leads, and the full repository gate is green (**524
-mobile suites / 6,628 tests; 21 workspace tasks**).
-
-### 🟡 2026-09-03 — FOUNDING-OFFER MOBILE REFERRAL ENTRY (branch `codex/founding-referral-ota`)
-
-Work package B is implemented from store-build base `ea85b774` at app version
-`1.1.2`, isolated from the native Meta/ATT/ExpoSQLite changes on
-`codex/mobile-release-drag-loader-meta`. The mobile adapter now covers
-`GET /referrals/me`, `POST /referrals/claim` and `DELETE /referrals/me`; the
-user-scoped React Query hooks use `['referral', userId]`. The shared plan
-surface shows optional referral entry on both native-IAP and catalogue rails,
-with onboarding success, unlocked Change, locked read-only, verbatim neutral
-server errors, and explicit abort of an in-flight claim when Skip is pressed.
-
-No package, Expo config, permission, runtime-version, or other native change was
-made. Mobile typecheck and lint pass (13 pre-existing warnings, zero errors),
-and the full non-coverage Jest suite passes (**516 suites / 6,516 tests**).
-Changed referral UI/hooks coverage is **100% statements/functions/lines** and
-**93.93% branches**. Staging/production EAS Updates and iOS/Android device checks
-remain deliberately unperformed pending release approval and a deployed staging
-backend.
-
-Brad approved the founding-access copy on 2026-09-03. Rows whose
-`externalSubscriptionId` starts with `founding_` now remain technically
-cancelled-at-period-end but render as active fixed-term access: “Access active”
-and “will not renew automatically”, with no reinstatement instruction. The iOS
-manage screen uses the same semantics.
-
 ## ▶ START HERE — next session (rewritten 2026-08-04, post-Mealprint-merge)
 
 ### 🟡 2026-09-03 — FOUNDING-OFFER website work package A implemented (branch `feat/founding-offer-admin`)

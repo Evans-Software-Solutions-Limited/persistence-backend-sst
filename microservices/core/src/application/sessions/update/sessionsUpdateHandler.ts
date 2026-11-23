@@ -8,6 +8,7 @@ import {
 } from "@persistence/api-utils/auth/supabaseAuth";
 import { safeEvaluateStreaks, resolveEventTs } from "../../streaks/evaluate";
 import { safeRecomputeVolume } from "../../progress/recompute";
+import { safeRecordWorkoutCompleted } from "../../coaching/events/writers";
 
 export const sessionsUpdateHandler = new Elysia()
   .derive(async ({ headers }) => ({
@@ -118,6 +119,8 @@ export const sessionsUpdateHandler = new Elysia()
           resolveEventTs(body.completedAt),
         );
         await safeRecomputeVolume(userId);
+        // PER-117: one event per active coach (never fails the request).
+        await safeRecordWorkoutCompleted(userId, sessionId);
       }
 
       return { data: session };
