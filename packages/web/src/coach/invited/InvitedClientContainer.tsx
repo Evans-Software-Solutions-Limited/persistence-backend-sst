@@ -37,6 +37,12 @@ export function InvitedClientContainer() {
     navigate(`/coach/clients/invited/${id}/invite`),
   );
   const [notesDraft, setNotesDraft] = useState<string | null>(null);
+  // What the notes were, and the revision, when Edit was pressed: a refetch
+  // while editing must not move them (another device's edit → 409).
+  const [notesBase, setNotesBase] = useState<{
+    notes: string | null;
+    revision: number;
+  } | null>(null);
   const [notesBusy, setNotesBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -86,7 +92,11 @@ export function InvitedClientContainer() {
   async function saveNotes() {
     if (notesDraft === null) return;
     const next = notesDraft.trim() ? notesDraft.trim() : null;
-    if (next === (detail!.privateNotes ?? null)) {
+    const base = notesBase ?? {
+      notes: detail!.privateNotes,
+      revision: detail!.revision,
+    };
+    if (next === (base.notes ?? null)) {
       setNotesDraft(null);
       return;
     }
@@ -96,7 +106,7 @@ export function InvitedClientContainer() {
       const updated = await api.patchProfile(
         detail!.id,
         { privateNotes: next },
-        detail!.revision,
+        base.revision,
       );
       queryClient.setQueryData(key, { ...detail!, ...updated });
       setNotesDraft(null);
@@ -154,7 +164,13 @@ export function InvitedClientContainer() {
             `/coach/clients/invited/${detail.id}/setup/${s}?from=invited`,
           )
         }
-        onEditNotes={() => setNotesDraft(detail.privateNotes ?? "")}
+        onEditNotes={() => {
+          setNotesBase({
+            notes: detail.privateNotes,
+            revision: detail.revision,
+          });
+          setNotesDraft(detail.privateNotes ?? "");
+        }}
         onNotesChange={setNotesDraft}
         onSaveNotes={() => void saveNotes()}
         onCancelNotes={() => setNotesDraft(null)}

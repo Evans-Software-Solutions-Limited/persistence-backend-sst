@@ -50,7 +50,18 @@ import { SetupStepView } from "./SetupStep";
 const NOT_EDITABLE =
   "This client has already accepted or the invite was cancelled, so the set-up can't change here.";
 
-type Drafts = Partial<Record<SetupSection, SetupItem[]>>;
+/**
+ * A section's unsaved edits, with the items and revision they started from.
+ * A background refetch must not move that baseline: the save sends the
+ * revision the coach began editing, so another device's change gives a 409
+ * instead of being silently overwritten.
+ */
+interface Draft {
+  items: SetupItem[];
+  base: SetupItem[];
+  revision: number;
+}
+type Drafts = Partial<Record<SetupSection, Draft>>;
 
 /** Add client · 2 Set up, and editing a section from the invited page. */
 export function SetupContainer() {
@@ -120,8 +131,8 @@ export function SetupContainer() {
   const detailKey = coachKeys.clientProfile(profileId);
   const saved = itemsOf(detail, current);
   const draft = drafts[current];
-  const items = draft ?? saved;
-  const dirty = draft !== undefined && !sameItems(draft, saved);
+  const items = draft?.items ?? saved;
+  const dirty = draft !== undefined && !sameItems(draft.items, draft.base);
   const editable = detail.status === "invited" || detail.status === "cancelled";
 
   const dropDraft = (section: SetupSection) =>
@@ -148,7 +159,7 @@ export function SetupContainer() {
         profileId,
         current,
         itemsToSave(current, items),
-        detail!.revision,
+        draft!.revision,
       );
       queryClient.setQueryData(detailKey, next);
       dropDraft(current);
@@ -200,7 +211,14 @@ export function SetupContainer() {
     clientFirst,
     onChange: (next: SetupItem[]) => {
       setError(null);
-      setDrafts((d) => ({ ...d, [current]: next }));
+      setDrafts((d) => ({
+        ...d,
+        [current]: {
+          items: next,
+          base: d[current]?.base ?? saved,
+          revision: d[current]?.revision ?? detail.revision,
+        },
+      }));
     },
   };
 

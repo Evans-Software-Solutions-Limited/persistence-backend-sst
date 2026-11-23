@@ -32,14 +32,18 @@ export function WhoContainer() {
   );
 }
 
-function WhoForm({ existing }: { existing: ClientProfile | null }) {
+function WhoForm({ existing: loaded }: { existing: ClientProfile | null }) {
   const api = useCoachApi();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const online = useOnline();
   const createKey = useRef(newIdempotencyKey());
+  // The profile as the form loaded it. A background refetch (window focus)
+  // must not move it: edits are compared with, and the revision sent from,
+  // what the coach started from, so another device's change still gives 409.
+  const [existing, setExisting] = useState(loaded);
   const [values, setValues] = useState<WhoValues>(
-    existing ? valuesFrom(existing) : EMPTY,
+    loaded ? valuesFrom(loaded) : EMPTY,
   );
   const [errors, setErrors] = useState<
     Partial<Record<keyof WhoValues, string>>
@@ -89,6 +93,7 @@ function WhoForm({ existing }: { existing: ClientProfile | null }) {
             coachKeys.clientProfile(existing.id),
             latest,
           );
+          setExisting(latest);
           setValues(valuesFrom(latest));
         }
         setNotice(CONFLICT_NOTICE);
