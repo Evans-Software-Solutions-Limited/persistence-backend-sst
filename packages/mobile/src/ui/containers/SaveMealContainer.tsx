@@ -124,7 +124,11 @@ export function SaveMealContainer() {
     });
   }, []);
 
-  const canSave = name.trim().length > 0 && selectedIds.size > 0;
+  // Only ticks on rows shown count: ids passed in from a meal's ⋯ menu may
+  // name entries that can't be saved (Inspector Brad, #550).
+  const canSave =
+    name.trim().length > 0 &&
+    candidates.some((c) => selectedIds.has(c.entry.id));
 
   const onBack = useCallback(() => router.back(), []);
 

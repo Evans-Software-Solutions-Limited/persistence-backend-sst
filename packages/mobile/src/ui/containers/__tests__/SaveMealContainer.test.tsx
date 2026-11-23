@@ -324,6 +324,37 @@ describe("SaveMealContainer", () => {
     expect(mockProbe.last?.canSave).toBe(false); // name cleared
   });
 
+  it("ids passed in from a meal's ⋯ menu tick only rows on screen; none on screen can't save (Inspector Brad #550)", () => {
+    const { adapters, storage } = makeAdapters();
+    storage.cacheFoods([food]);
+    const todayIso = localDayISO();
+    storage.cacheFuelToday(USER, todayIso, {
+      ...emptyFuelToday(todayIso),
+      entriesBySlot: {
+        breakfast: [buildEntry()],
+        lunch: [],
+        snack: [],
+        dinner: [],
+      },
+    });
+    mockSearchParams = { name: "Lunch", entryIds: "custom-only,old-day" };
+    render(
+      <Wrapper adapters={adapters}>
+        <SaveMealContainer />
+      </Wrapper>,
+    );
+    expect(mockProbe.last?.canSave).toBe(false);
+    mockSearchParams = { name: "Lunch", entryIds: "e1" };
+    render(
+      <Wrapper adapters={adapters}>
+        <SaveMealContainer />
+      </Wrapper>,
+    );
+    expect(mockProbe.last?.canSave).toBe(true);
+    expect(mockProbe.last?.rows[0]?.selected).toBe(true);
+    mockSearchParams = {};
+  });
+
   it("Save builds items from the ticked entries and routes back on success", async () => {
     const { adapters, storage } = makeAdapters();
     storage.cacheFoods([food]);

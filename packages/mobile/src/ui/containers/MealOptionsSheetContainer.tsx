@@ -54,6 +54,8 @@ export function MealOptionsSheetContainer() {
 
   const mealName = group?.meal.name ?? "";
   const entries = group?.entries ?? [];
+  // A saved meal can only hold foods and recipes.
+  const savable = entries.filter((e) => e.foodId || e.recipeId);
 
   return (
     <MealOptionsSheetPresenter
@@ -61,6 +63,7 @@ export function MealOptionsSheetContainer() {
       onClose={onClose}
       mealName={mealName}
       hasEntries={entries.length > 0}
+      canSaveAsMeal={savable.length > 0}
       onCopy={() => {
         close();
         if (mealKey) {
@@ -75,10 +78,7 @@ export function MealOptionsSheetContainer() {
           pathname: "/(app)/fuel/save-meal",
           params: {
             name: mealName,
-            entryIds: entries
-              .filter((e) => !e.mealId)
-              .map((e) => e.id)
-              .join(","),
+            entryIds: savable.map((e) => e.id).join(","),
           },
         } as Href);
       }}

@@ -119,7 +119,13 @@ describe("MealOptionsSheetPresenter", () => {
       onClear: jest.fn(),
     };
     const { getByTestId, getByText } = renderWithTheme(
-      <MealOptionsSheetPresenter visible mealName="Lunch" hasEntries {...h} />,
+      <MealOptionsSheetPresenter
+        visible
+        mealName="Lunch"
+        hasEntries
+        canSaveAsMeal
+        {...h}
+      />,
     );
     expect(getByText("Clear Lunch")).toBeTruthy();
     fireEvent.press(getByTestId("meal-options-sheet-copy"));
@@ -136,6 +142,7 @@ describe("MealOptionsSheetPresenter", () => {
         visible
         mealName="Lunch"
         hasEntries={false}
+        canSaveAsMeal={false}
         onClose={jest.fn()}
         onCopy={jest.fn()}
         onSaveAsMeal={jest.fn()}

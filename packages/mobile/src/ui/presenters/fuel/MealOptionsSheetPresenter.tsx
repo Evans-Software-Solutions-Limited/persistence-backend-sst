@@ -13,6 +13,8 @@ export type MealOptionsSheetProps = {
   mealName: string;
   /** False when the meal has nothing logged: Save and Clear are hidden. */
   hasEntries: boolean;
+  /** Some entry is a food or recipe (a saved meal can only hold those). */
+  canSaveAsMeal: boolean;
   onCopy: () => void;
   onSaveAsMeal: () => void;
   onEditMeals: () => void;
@@ -69,6 +71,7 @@ export function MealOptionsSheetPresenter({
   onClose,
   mealName,
   hasEntries,
+  canSaveAsMeal,
   onCopy,
   onSaveAsMeal,
   onEditMeals,
@@ -90,7 +93,7 @@ export function MealOptionsSheetPresenter({
           onPress={onCopy}
           testID={`${testID}-copy`}
         />
-        {hasEntries ? (
+        {canSaveAsMeal ? (
           <Option
             title="Save as a meal"
             sub="Log it again in one tap"

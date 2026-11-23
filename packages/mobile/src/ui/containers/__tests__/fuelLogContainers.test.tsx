@@ -603,7 +603,7 @@ describe("MealOptionsSheetContainer", () => {
       USER,
       TODAY,
       day(TODAY, [
-        entry("t1", { loggedAt: `${TODAY}T12:00:00.000Z` }),
+        entry("t1", { foodId: "f1", loggedAt: `${TODAY}T12:00:00.000Z` }),
         entry("t2", { mealId: "saved", loggedAt: `${TODAY}T12:00:00.000Z` }),
       ]),
     );
@@ -611,6 +611,7 @@ describe("MealOptionsSheetContainer", () => {
     act(() => useFuelSheets.getState().openMealOptions("um-pre"));
     await waitFor(() => expect(probe.options?.mealName).toBe("Pre-workout"));
     expect(probe.options!.hasEntries).toBe(true);
+    expect(probe.options!.canSaveAsMeal).toBe(true);
 
     act(() => probe.options!.onCopy());
     expect(mockPush).toHaveBeenCalledWith(
