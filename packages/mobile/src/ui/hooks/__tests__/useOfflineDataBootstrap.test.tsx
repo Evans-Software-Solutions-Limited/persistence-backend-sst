@@ -152,6 +152,33 @@ describe("warmOfflineData", () => {
     ).toEqual(["Breakfast", "Lunch", "Snack", "Dinner"]);
   });
 
+  it("a dead Your meals edit, or another user's, doesn't block the warm (Inspector Brad #550)", async () => {
+    const { api, auth, storage } = makeAdapters();
+    const put = (userId: string) =>
+      storage.enqueueMutation({
+        entityType: "user_meals",
+        entityId: userId,
+        operation: "update",
+        payload: { meals: [] },
+        endpoint: "/nutrition/user-meals",
+        method: "PUT",
+      });
+    put(SESSION.userId);
+    put("someone-else");
+    const mine = storage
+      .getPendingMutations()
+      .find((e) => e.entityId === SESSION.userId)!;
+    storage.markMutationPermanentlyFailed(mine.id, "rejected");
+    await warmOfflineData({
+      api,
+      auth,
+      storage,
+      userId: SESSION.userId,
+      date: "2026-08-31",
+    });
+    expect(storage.getCachedUserMeals(SESSION.userId)).toHaveLength(4);
+  });
+
   it("keeps a queued Your meals edit instead of the server's older list (PER-132)", async () => {
     const { api, auth, storage } = makeAdapters();
     storage.enqueueMutation({

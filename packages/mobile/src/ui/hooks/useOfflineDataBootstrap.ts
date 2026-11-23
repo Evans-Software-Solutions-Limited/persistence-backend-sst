@@ -14,6 +14,7 @@ import {
 import type { ApiPort } from "@/domain/ports/api.port";
 import type { AuthPort } from "@/domain/ports/auth.port";
 import type { StoragePort } from "@/domain/ports/storage.port";
+import { isAutoResolvableSyncEntry } from "@/domain/ports/sync.types";
 import { localDayISO } from "@/shared/utils";
 import { useAdapters } from "./useAdapters";
 import { useAuth } from "./useAuth";
@@ -114,7 +115,12 @@ export async function warmOfflineData({
   await run(async () => {
     const editQueued = storage
       .getUncompletedMutations()
-      .some((e) => e.entityType === "user_meals");
+      .some(
+        (e) =>
+          e.entityType === "user_meals" &&
+          e.entityId === userId &&
+          isAutoResolvableSyncEntry(e),
+      );
     if (editQueued) return;
     const result = await api.getUserMeals();
     if (result.ok && !shouldStop()) {

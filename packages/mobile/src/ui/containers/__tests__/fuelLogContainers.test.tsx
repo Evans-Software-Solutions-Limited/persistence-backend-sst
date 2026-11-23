@@ -491,6 +491,92 @@ describe("YourMealsSheetContainer", () => {
   });
 });
 
+describe("useUserMeals server reads (Inspector Brad #550)", () => {
+  const edit = (storage: InMemoryStorageAdapter) => {
+    storage.enqueueMutation({
+      entityType: "user_meals",
+      entityId: USER,
+      operation: "update",
+      payload: { meals: [] },
+      endpoint: "/nutrition/user-meals",
+      method: "PUT",
+    });
+    return storage.getPendingMutations()[0]!.id;
+  };
+
+  it("an in-flight edit keeps the local list; a dead one lets the server list in", async () => {
+    const { Wrapper, storage, api } = setup();
+    const local = [{ ...MEALS[0]!, name: "Local name" }];
+    storage.cacheUserMeals(USER, local);
+    const id = edit(storage);
+    storage.markMutationInFlight(id);
+    api.userMeals = MEALS;
+    render(<YourMealsSheetContainer />, { wrapper: Wrapper });
+    act(() => useFuelSheets.getState().openYourMeals());
+    await waitFor(() => expect(probe.your?.visible).toBe(true));
+    await act(async () => {});
+    expect(storage.getCachedUserMeals(USER)![0]!.name).toBe("Local name");
+
+    storage.markMutationPermanentlyFailed(id, "rejected");
+    act(() => useFuelSheets.getState().close());
+    act(() => useFuelSheets.getState().openYourMeals());
+    await waitFor(() =>
+      expect(storage.getCachedUserMeals(USER)!.map((m) => m.name)).toEqual([
+        "Breakfast",
+        "Pre-workout",
+        "Lunch",
+      ]),
+    );
+  });
+});
+
+describe("useUserMeals: a read that started before an edit", () => {
+  it("never overwrites the edit, even if its PUT finished first (Inspector Brad #550)", async () => {
+    const { Wrapper, storage, api } = setup();
+    let answer: ((v: unknown) => void) | null = null;
+    const spy = jest
+      .spyOn(api, "getUserMeals")
+      .mockImplementationOnce(
+        () => new Promise((resolve) => (answer = resolve as never)),
+      );
+    render(<YourMealsSheetContainer />, { wrapper: Wrapper });
+    act(() => useFuelSheets.getState().openYourMeals());
+    await waitFor(() => expect(spy).toHaveBeenCalled());
+    // The edit is saved and its PUT acknowledged while the GET is pending.
+    mockFetch.mockImplementationOnce((async (
+      _url: string,
+      init: { body: string },
+    ) => {
+      const sent = JSON.parse(init.body) as {
+        meals: { id?: string; name: string; clientRequestId?: string }[];
+      };
+      const meals = sent.meals.map((m, i) => ({
+        ...(MEALS.find((x) => x.id === m.id) ?? MEALS[0]!),
+        id: m.id ?? "srv-supper",
+        name: m.name,
+        sortOrder: i,
+        clientRequestId: m.clientRequestId ?? null,
+      }));
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ data: { meals } }),
+        text: async () => "",
+      };
+    }) as never);
+    await act(async () => probe.your!.onAdd("Supper"));
+    expect(storage.getUncompletedMutations()).toHaveLength(0);
+    // The stale pre-edit answer arrives last.
+    await act(async () => {
+      answer!({ ok: true, value: { meals: MEALS, asOf: "old" } });
+    });
+    expect(storage.getCachedUserMeals(USER)!.map((m) => m.name)).toContain(
+      "Supper",
+    );
+    expect(probe.your!.meals.map((m) => m.name)).toContain("Supper");
+  });
+});
+
 describe("MealOptionsSheetContainer", () => {
   it("copies, saves as a meal, edits meals and clears the meal's entries", async () => {
     const { Wrapper, storage } = setup();

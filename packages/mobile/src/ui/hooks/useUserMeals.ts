@@ -7,6 +7,8 @@ import {
   saveUserMealsCommand,
 } from "@/application/commands/userMeals.command";
 import type { UserMeal } from "@/domain/models/userMeals";
+import { isAutoResolvableSyncEntry } from "@/domain/ports/sync.types";
+import type { StoragePort, SyncQueueEntry } from "@/domain/ports/storage.port";
 import {
   activeUserMeals,
   syntheticDefaultUserMeals,
@@ -30,6 +32,21 @@ export type UserMealsState = {
  * offline-first through `saveUserMealsCommand`. A server read never replaces
  * a list whose edit is still queued (the queued PUT is newer).
  */
+/** Your meals edits that can still reach the server on their own. */
+export function liveUserMealEdits(
+  storage: StoragePort,
+  userId: string,
+): SyncQueueEntry[] {
+  return storage
+    .getUncompletedMutations()
+    .filter(
+      (e) =>
+        e.entityType === USER_MEALS_ENTITY &&
+        e.entityId === userId &&
+        isAutoResolvableSyncEntry(e),
+    );
+}
+
 export function useUserMeals(enabled = true): UserMealsState {
   const { auth, storage } = useAdapters();
   const { session } = useAuth();
@@ -41,14 +58,18 @@ export function useUserMeals(enabled = true): UserMealsState {
       const result = await api.getUserMeals();
       return result.ok ? { ok: true, value: result.value.meals } : result;
     },
-    write: (s, uid, value) => {
-      // Uncompleted, not pending: an IN-FLIGHT PUT is newer than a GET that
-      // started before it (Inspector Brad, #550).
-      const editQueued = s
-        .getUncompletedMutations()
-        .some((e) => e.entityType === USER_MEALS_ENTITY && e.entityId === uid);
-      if (!editQueued) s.cacheUserMeals(uid, value);
-    },
+    // A live edit (in flight or retryable) is newer than any read: keep the
+    // local list on screen and in the cache. A dead one (permanently failed,
+    // retries used up) doesn't hold reads back (Inspector Brad, #550).
+    reconcile: (s, uid, value) =>
+      liveUserMealEdits(s, uid).length > 0
+        ? (s.getCachedUserMeals(uid) ?? value)
+        : value,
+    // An edit saved — and even acknowledged — while a read was in flight
+    // beats that read's older answer.
+    preserveConcurrentCacheWrites: true,
+    pendingWrites: liveUserMealEdits,
+    write: (s, uid, value) => s.cacheUserMeals(uid, value),
     tables: USER_MEAL_TABLES,
     enabled,
   });
