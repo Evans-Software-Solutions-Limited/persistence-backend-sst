@@ -426,14 +426,12 @@ describe("sweep 10", () => {
       clientId: CLIENT_ID,
     });
     const api = fakeApi({
-      replaceSection: vi
-        .fn()
-        .mockRejectedValue(
-          new CoachApiError(409, {
-            code: "revision_conflict",
-            current: accepted,
-          }),
-        ),
+      replaceSection: vi.fn().mockRejectedValue(
+        new CoachApiError(409, {
+          code: "revision_conflict",
+          current: accepted,
+        }),
+      ),
     });
     renderCoach(<SetupContainer />, {
       route: `/coach/clients/invited/${PROFILE_ID}/setup/welcome_message`,
