@@ -28,6 +28,7 @@ import type { DbOrTx } from "../../repositories/personalRecordsRepository";
 import { stripNul } from "../../shared/stripNul";
 import { listAsOf } from "./formRepository";
 import { LATE_WINDOW_MS, generateOnce } from "./generators";
+import { deliverCoachEvents, recordCoachEvent } from "../events/coachEvents";
 import { validateAnswers, type FieldError, type Question } from "./questions";
 import {
   cancelScheduleRequests,
@@ -268,7 +269,8 @@ export async function submitResponse(
   clientRequestId: string | null,
   now = new Date(),
 ): Promise<SubmitResult> {
-  return getDb().transaction(async (tx) => {
+  let pendingEvent: string | null = null;
+  const result = await getDb().transaction(async (tx) => {
     const rows = await tx
       .select()
       .from(coachFormRequests)
@@ -346,8 +348,37 @@ export async function submitResponse(
       tx,
       eq(coachFormResponses.id, inserted[0]!.id),
     );
+    // PER-117 (design C D4): the coach hears about it. Recurring check-ins
+    // are `check_in_completed`; every other form is `form_completed`.
+    pendingEvent = await recordCoachEvent(
+      tx,
+      {
+        trainerId: request.trainerId,
+        clientId,
+        relationshipId: request.relationshipId,
+        kind:
+          request.trigger === "weekly" || request.trigger === "daily"
+            ? "check_in_completed"
+            : "form_completed",
+        entityType: "coach_form_response",
+        entityId: response!.id,
+        payload: {
+          requestId: request.id,
+          responseId: response!.id,
+          formId: request.formId,
+          formTitle: response!.title,
+          trigger: request.trigger,
+          late,
+        },
+        occurredAt: now,
+        dedupeKey: `form_completed:${request.id}`,
+      },
+      now,
+    );
     return { ok: true as const, replay: false, response: response! };
   });
+  if (pendingEvent) await deliverCoachEvents([pendingEvent]);
+  return result;
 }
 
 // ─── Coach ───────────────────────────────────────────────────────────────────

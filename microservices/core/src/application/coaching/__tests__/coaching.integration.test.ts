@@ -353,6 +353,13 @@ beforeAll(async () => {
   await pg.exec(await read(MIGRATIONS, MIGRATION));
   // PER-116: the forms set-up sections and offboarding hook read these.
   await pg.exec(await read(MIGRATIONS, "20261120235941_coach_forms.sql"));
+  // PER-117: accept, responses and sessions now write coach events.
+  await pg.exec(
+    "DO $$ BEGIN CREATE TYPE notification_type AS ENUM ('coach_brief'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;",
+  );
+  await pg.exec(
+    await read(MIGRATIONS, "20261123120117_coach_events_notifications.sql"),
+  );
   db = drizzle(pg, { schema });
   holder.db = db;
 });
