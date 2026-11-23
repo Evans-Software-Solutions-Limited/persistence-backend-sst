@@ -269,7 +269,9 @@ export async function signOut(fetchImpl: typeof fetch = fetch): Promise<void> {
   saveSession(null);
   if (!cfg || !current) return;
   try {
-    await fetchImpl(`${cfg.url}/auth/v1/logout`, {
+    // scope=local ends only this browser's session. GoTrue's default (global)
+    // revokes every session, including the coach's phone app.
+    await fetchImpl(`${cfg.url}/auth/v1/logout?scope=local`, {
       method: "POST",
       headers: {
         apikey: cfg.anonKey,

@@ -230,7 +230,7 @@ describe("coach session", () => {
     await signOut(fail);
     expect(loadSession()).toBeNull();
     expect(fail).toHaveBeenCalledWith(
-      "https://auth.test/auth/v1/logout",
+      "https://auth.test/auth/v1/logout?scope=local",
       expect.anything(),
     );
   });
