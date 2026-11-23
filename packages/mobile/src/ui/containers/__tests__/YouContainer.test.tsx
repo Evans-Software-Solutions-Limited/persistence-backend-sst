@@ -363,6 +363,9 @@ describe("YouContainer", () => {
     renderYou(adapters);
     await waitFor(() => expect(mockProbe.last?.coaches).toHaveLength(1));
     expect(mockProbe.last!.coaches[0]!.name).toBe("Ellie Hart");
+    // The tab layout has no Coach tab yet, so a tap would bounce Home
+    // (Inspector Brad, #547): the rows aren't tappable until coaching is read.
+    expect(mockProbe.last!.onOpenCoach).toBeUndefined();
   });
 
   it("PER-126: tapping a coach opens the Coach tab on that coach", async () => {

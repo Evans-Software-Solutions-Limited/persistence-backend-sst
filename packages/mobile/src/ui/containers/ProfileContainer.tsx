@@ -16,6 +16,7 @@ import { useAuth } from "@/ui/hooks/useAuth";
 import { useAvatarUpload } from "@/ui/hooks/useAvatarUpload";
 import { useMySubscription } from "@/ui/hooks/useMySubscription";
 import { useProfilePage } from "@/ui/hooks/useProfilePage";
+import { notifyMyCoachesChanged } from "@/ui/hooks/useMyCoaches";
 import { ProfilePresenter } from "@/ui/presenters/ProfilePresenter";
 
 /**
@@ -169,6 +170,7 @@ export function ProfileContainer() {
                   // PER-126: their chip (and, with no coach left, the Coach
                   // tab) goes now, not on the next coaching refresh.
                   storage.removeCachedMyCoach(userId, relationshipId);
+                  notifyMyCoachesChanged();
                 }
                 void refresh();
               } finally {

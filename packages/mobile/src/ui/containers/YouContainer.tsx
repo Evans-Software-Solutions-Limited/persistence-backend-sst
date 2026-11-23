@@ -454,8 +454,13 @@ export function YouContainer({
       onRefresh={onRefresh}
       onOpenDrawer={openDrawer}
       onOpenSettings={openDrawer}
-      onOpenCoach={(id) =>
-        push(`/(app)/(tabs)/coach?coachId=${encodeURIComponent(id)}`)
+      // Only once the coaching list is cached: before that the tab layout has
+      // no Coach tab, and its guard would bounce the tap to Home.
+      onOpenCoach={
+        myCoaches.data === null
+          ? undefined
+          : (id) =>
+              push(`/(app)/(tabs)/coach?coachId=${encodeURIComponent(id)}`)
       }
       onOpenRequests={() => push("/(app)/requests")}
       onOpenAcceptInvite={() => push("/(app)/accept-invite")}

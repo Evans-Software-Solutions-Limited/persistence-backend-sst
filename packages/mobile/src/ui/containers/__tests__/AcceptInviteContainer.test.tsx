@@ -5,7 +5,7 @@ import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-s
 import type { AuthSession } from "@/domain/ports/auth.port";
 import type { InvitePreview, MyCoach } from "@/domain/models/myCoaching";
 import type { AcceptInviteCodeApiError } from "@/domain/models/trainerInviteCode";
-import { ok } from "@/shared/errors";
+import { fail, ok } from "@/shared/errors";
 import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
@@ -303,6 +303,29 @@ describe("AcceptInviteContainer", () => {
       expect(alertSpy).toHaveBeenCalledWith("You're connected with Ellie Hart");
       const copy = JSON.stringify(alertSpy.mock.calls);
       expect(copy).not.toMatch(/awaiting/i);
+    });
+
+    it("personal code, coaching read fails: lands on You, not bounced Home by the tab guard (Inspector Brad, #547)", async () => {
+      const utils = await renderFlow();
+      utils.api.nextAcceptInviteCodeResult = {
+        success: true,
+        relationshipId: "rel-ellie",
+        trainerName: "Ellie Hart",
+        message: "You're now connected with Ellie Hart",
+        relationshipStatus: "active",
+        ready: null,
+      };
+      utils.api.getMyCoaching = jest.fn(async () =>
+        fail({ kind: "api" as const, code: "server" as const, message: "x" }),
+      );
+      await previewCode(utils, "ELLIE1");
+      fireEvent.press(utils.getByTestId("invite-preview-agree"));
+      await act(async () => {
+        fireEvent.press(utils.getByTestId("invite-preview-accept"));
+      });
+      expect(mockReplace).toHaveBeenCalledWith("/(app)/(tabs)/you");
+      expect(mockReplace).not.toHaveBeenCalledWith("/(app)/(tabs)/coach");
+      expect(alertSpy).toHaveBeenCalledWith("You're connected with Ellie Hart");
     });
 
     it("general code: says the request awaits the coach, then goes back", async () => {

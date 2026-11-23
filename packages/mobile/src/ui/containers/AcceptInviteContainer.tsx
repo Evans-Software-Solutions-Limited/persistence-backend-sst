@@ -3,6 +3,7 @@ import { Alert, Linking } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useAcceptInviteCode } from "@/ui/hooks/useTrainerInviteCodes";
 import { useAdapters } from "@/ui/hooks/useAdapters";
+import { useAuth } from "@/ui/hooks/useAuth";
 import { useMyCoaches } from "@/ui/hooks/useMyCoaches";
 import { useOnlineStatus } from "@/ui/hooks/useOnlineStatus";
 import { usePendingInvite } from "@/state/pending-invite";
@@ -38,7 +39,8 @@ import { coachInitials } from "@/ui/presenters/coaching/coachingKit";
 export function AcceptInviteContainer() {
   const router = useRouter();
   const params = useLocalSearchParams<{ code?: string }>();
-  const { api } = useAdapters();
+  const { api, storage } = useAdapters();
+  const { session } = useAuth();
   const accept = useAcceptInviteCode();
   const online = useOnlineStatus();
   // Only refreshed by hand after a personal accept, so the Coach tab is there
@@ -108,7 +110,16 @@ export function AcceptInviteContainer() {
         // Personal code: connected now. Load the coach before landing on the
         // Coach tab, which only shows while someone coaches you.
         await myCoaches.refresh({ silent: true });
-        router.replace("/(app)/(tabs)/coach");
+        // The Coach tab exists only once the coach is cached (every
+        // `useMyCoaches` re-reads synchronously on write). If that read
+        // failed, land on You rather than be bounced Home by the tab guard.
+        const userId = session?.userId;
+        const cached = userId ? storage.getCachedMyCoaches(userId) : null;
+        const hasCoach =
+          cached?.coaches.some(
+            (c) => c.relationshipId === data.relationshipId,
+          ) ?? false;
+        router.replace(hasCoach ? "/(app)/(tabs)/coach" : "/(app)/(tabs)/you");
         Alert.alert(`You're connected with ${data.trainerName}`);
         return;
       }
@@ -129,7 +140,18 @@ export function AcceptInviteContainer() {
     setAcceptError(
       acceptErrorCopy(result.error, firstName(preview.coach.name)),
     );
-  }, [preview, agreed, online, accept, code, myCoaches, router, onBack]);
+  }, [
+    preview,
+    agreed,
+    online,
+    accept,
+    code,
+    myCoaches,
+    router,
+    onBack,
+    session,
+    storage,
+  ]);
 
   if (preview) {
     const name = preview.coach.name;
