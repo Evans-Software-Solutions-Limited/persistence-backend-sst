@@ -26,6 +26,14 @@ import {
 import { isUnrecordableSessionPayload } from "./session/complete-session.command";
 import type { UserMeal } from "@/domain/models/userMeals";
 import { applyUserMealsResponse, USER_MEALS_ENTITY } from "./userMeals.command";
+import {
+  applyNutritionPlanConflict,
+  applyNutritionPlanSynced,
+  MEAL_PLANS_ENDPOINT,
+  NUTRITION_PLAN_ASSIGNMENT_ENTITY,
+  NUTRITION_PLAN_ENTITY,
+  SHOPPING_LIST_PLAN_ENTITY,
+} from "./nutritionPlans.command";
 
 /** A non-OK HTTP response from a sync POST/PUT/DELETE, carrying the status so
  * the drain can classify permanent vs transient failures. */
@@ -569,6 +577,17 @@ function collapseStrandedLocalIdSiblings(
       return;
     }
 
+    // PER-133: a meal-plan duplicate (`POST …/:id/duplicate`) has no body —
+    // the server copies the source — so an edit folded into it would be lost.
+    // Keep the edit as its own row; the id swap retargets it when the
+    // duplicate lands (Inspector Brad, #554).
+    if (
+      entry.entityType === NUTRITION_PLAN_ENTITY &&
+      entry.endpoint !== MEAL_PLANS_ENDPOINT
+    ) {
+      return;
+    }
+
     // Newest edit wins — later edits supersede earlier ones, and the enqueue order
     // `getQueuedEntriesForEntity` returns is the order they were made in
     // (`created_at ASC, id ASC`, and `id` is the rowid).
@@ -651,6 +670,26 @@ export function isMutationEligible(
   now: number = Date.now(),
 ): boolean {
   if (!isMutationDue(entry, now)) return false;
+  // PER-133: a meal plan's writes (create, edits, delete) are ordered: a
+  // newer PUT must never overtake an older one still waiting to retry, or a
+  // stale edit wins or a false conflict drops the newer one (Inspector Brad,
+  // #554).
+  // The same holds for a plan's shopping-list add/remove and a coach plan's
+  // Add to my plans / Not now: the last answer must land last.
+  if (
+    (entry.entityType === NUTRITION_PLAN_ENTITY ||
+      entry.entityType === SHOPPING_LIST_PLAN_ENTITY ||
+      entry.entityType === NUTRITION_PLAN_ASSIGNMENT_ENTITY) &&
+    entry.entityId !== null
+  ) {
+    // The drain's snapshot may predate an id swap earlier in this drain;
+    // look the row up by its current entity id (Inspector Brad, #554).
+    const entityId =
+      storage.getMutationById(entry.id)?.entityId ?? entry.entityId;
+    return !storage
+      .getQueuedEntriesForEntity(entry.entityType, entityId)
+      .some((older) => older.id < entry.id && isAutoResolvableSyncEntry(older));
+  }
   if (
     entry.entityType !== "profile" ||
     entry.entityId === null ||
@@ -1338,10 +1377,43 @@ export async function processSyncQueue(
         }
       }
 
+      // PER-133: a synced plan create, duplicate or edit answers with the
+      // plan. Swap a local id and adopt the server's copy. Non-fatal: the
+      // write already succeeded and the next plans read reconciles.
+      if (
+        entry.entityType === NUTRITION_PLAN_ENTITY &&
+        entry.method !== "DELETE"
+      ) {
+        try {
+          applyNutritionPlanSynced(storage, entry, await response.json());
+        } catch (err) {
+          console.warn(
+            "[sync] meal plan write succeeded but response capture failed; the next read reconciles:",
+            err,
+          );
+        }
+      }
+
       storage.markMutationCompleted(entry.id);
       succeeded++;
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
+
+      // PER-133: a plan edit that lost a revision race (409) keeps the
+      // server's copy and is resolved, not failed.
+      if (
+        err instanceof SyncHttpError &&
+        applyNutritionPlanConflict(
+          storage,
+          entry,
+          err.status,
+          message.slice(message.indexOf(": ") + 2),
+        )
+      ) {
+        storage.markMutationCompleted(entry.id);
+        succeeded++;
+        continue;
+      }
 
       // ⚠ TRANSPORT failure — `fetch` itself rejected, so we never received an
       // answer and cannot know whether the server saw the request. No attempt was

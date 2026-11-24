@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, type ScrollView } from "react-native";
-import { useRouter, type Href } from "expo-router";
+import { useFocusEffect, useRouter, type Href } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { useScrollToTopOnTabPress } from "@/ui/hooks/useScrollToTopOnTabPress";
 import { useAdapters } from "@/ui/hooks/useAdapters";
@@ -42,7 +42,14 @@ import type {
   MealGhostRowVM,
   MealSlotVM,
 } from "@/ui/presenters/MealLogPresenter";
-import type { WeekDayVM } from "@/ui/presenters/fuel/FuelLogHeaderPresenter";
+import type {
+  FuelSection,
+  WeekDayVM,
+} from "@/ui/presenters/fuel/FuelLogHeaderPresenter";
+import { useNutritionPlans } from "@/ui/hooks/useNutritionPlans";
+import { useAddRecipeMenu } from "@/state/add-recipe-menu";
+import { PlanTabContainer } from "./PlanTabContainer";
+import { MealsTabContainer } from "./MealsTabContainer";
 import {
   MACRO_HEX,
   type MacroColumnVM,
@@ -90,6 +97,16 @@ export function FuelContainer() {
 
   const [calendarOpen, setCalendarOpen] = useState(false);
 
+  // PER-133: whether Fuel is the screen on top. The Plan tab only opens a
+  // coach plan's sheet by itself while it is (not over New plan, say).
+  const [focused, setFocused] = useState(true);
+  useFocusEffect(
+    useCallback(() => {
+      setFocused(true);
+      return () => setFocused(false);
+    }, []),
+  );
+
   const fuel = useGetFuelToday(date);
   // Kept-alive tab — re-pull the day's fuel on re-entry so totals/water/macros
   // reflect logs made elsewhere (skips the mount focus). `fuel.refresh` is a
@@ -129,8 +146,8 @@ export function FuelContainer() {
   const mealprint = useMealprintEntry(visiblePlan);
   const openYourMeals = useFuelSheets((s) => s.openYourMeals);
   const openMealOptions = useFuelSheets((s) => s.openMealOptions);
-  const openSuggestLocked = useFuelSheets((s) => s.openSuggestLocked);
   const sheetRev = useFuelSheets((s) => s.rev);
+  const openAddRecipeMenu = useAddRecipeMenu((s) => s.openMenu);
   const setActiveDate = useFuelSheets((s) => s.setDate);
 
   // Keep the shared sheet store's active day in sync with the day being
@@ -419,29 +436,11 @@ export function FuelContainer() {
     router.push("/(app)/fuel/plan-today");
   }, [router, mealprintGate.allowed, visiblePlan]);
 
-  // Log · Plan · Meals (canvas N1). Plan is PER-133's; until it lands the tab
-  // keeps Mealprint's day plan reachable, which the old entry card offered.
-  // Meals opens the saved meals and recipes library.
-  const onSection = useCallback(
-    (next: "log" | "plan" | "meals") => {
-      if (next === "meals") {
-        router.push("/(app)/fuel/recipes" as Href);
-        return;
-      }
-      if (next !== "plan") return;
-      if (!mealprintGate.isResolved) return;
-      if (!mealprintGate.allowed) {
-        openSuggestLocked();
-        return;
-      }
-      if (visiblePlan !== null) {
-        router.push("/(app)/fuel/plan-today" as Href);
-        return;
-      }
-      mealprint.onPlanMyDay();
-    },
-    [router, mealprintGate, openSuggestLocked, visiblePlan, mealprint],
-  );
+  // Log · Plan · Meals (canvas N1). PER-133: Plan is the meal plans tab
+  // (N6–N10) and Meals the saved meals and recipes library (N11–N12).
+  const [section, setSection] = useState<FuelSection>("log");
+  const plans = useNutritionPlans(section === "plan");
+  const onSection = useCallback((next: FuelSection) => setSection(next), []);
 
   const isLoading =
     (fuel.isRefreshing || (fuel.isStale && fuel.error === null)) &&
@@ -459,9 +458,18 @@ export function FuelContainer() {
       onRefresh={() => {
         void fuel.refresh();
         userMeals.reload();
+        if (section === "plan") void plans.refresh();
       }}
-      section="log"
+      section={section}
       onSection={onSection}
+      sectionContent={
+        section === "plan" ? (
+          <PlanTabContainer active autoOpen={focused} />
+        ) : section === "meals" ? (
+          <MealsTabContainer />
+        ) : null
+      }
+      onNew={openAddRecipeMenu}
       week={week}
       onSelectDay={onSelectDay}
       calendarOpen={calendarOpen}

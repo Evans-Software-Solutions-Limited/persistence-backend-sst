@@ -54,6 +54,10 @@ import type {
   NutritionTarget,
   Recipe,
 } from "@/domain/models/nutrition";
+import type {
+  NutritionPlansCache,
+  PlansShoppingCache,
+} from "@/domain/models/nutritionPlans";
 import type { UserMeal } from "@/domain/models/userMeals";
 
 /**
@@ -1246,6 +1250,22 @@ export interface StoragePort {
    * No-op when the ids match.
    */
   swapLocalUserMealId(localId: string, serverId: string): void;
+
+  // -- PER-133 list meal plans (Design D) --
+  /** The person's plans (mine + from coaches), or null before the first read. */
+  getCachedNutritionPlans(userId: string): NutritionPlansCache | null;
+  /** Write-through the plans cache (single row per user). */
+  cacheNutritionPlans(userId: string, cache: NutritionPlansCache): void;
+  /**
+   * Once a plan created offline syncs, rewrite its `local-…` id to the
+   * server id: in every cached plans and shopping-list row and in queued
+   * meal-plan, shopping list and food-log rows (endpoint, payload, entity
+   * id). No-op when equal.
+   */
+  swapLocalNutritionPlanId(localId: string, serverId: string): void;
+  /** The shopping list across plans and this phone's ticks. */
+  getCachedPlansShopping(userId: string): PlansShoppingCache | null;
+  cachePlansShopping(userId: string, value: PlansShoppingCache): void;
 
   // -- Lifecycle --
   /** Clear all user data (sync queue, cached entities, metadata). Called on sign-out. */

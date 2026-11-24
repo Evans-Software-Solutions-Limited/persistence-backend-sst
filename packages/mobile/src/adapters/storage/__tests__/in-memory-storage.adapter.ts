@@ -67,6 +67,10 @@ import type {
 } from "@/domain/models/nutrition";
 import type { MyCoaching } from "@/domain/models/myCoaching";
 import type { UserMeal } from "@/domain/models/userMeals";
+import type {
+  NutritionPlansCache,
+  PlansShoppingCache,
+} from "@/domain/models/nutritionPlans";
 
 /**
  * In-memory storage adapter for testing.
@@ -1654,8 +1658,63 @@ export class InMemoryStorageAdapter implements StoragePort {
     }
   }
 
+  // PER-133 list meal plans.
+  private nutritionPlansCache: Map<string, NutritionPlansCache> = new Map();
+  private plansShoppingCache: Map<string, PlansShoppingCache> = new Map();
+  getCachedNutritionPlans(userId: string): NutritionPlansCache | null {
+    const v = this.nutritionPlansCache.get(userId);
+    return v ? (JSON.parse(JSON.stringify(v)) as NutritionPlansCache) : null;
+  }
+  cacheNutritionPlans(userId: string, cache: NutritionPlansCache): void {
+    this.nutritionPlansCache.set(
+      userId,
+      JSON.parse(JSON.stringify(cache)) as NutritionPlansCache,
+    );
+  }
+  swapLocalNutritionPlanId(localId: string, serverId: string): void {
+    if (localId === serverId) return;
+    for (const [userId, cache] of this.nutritionPlansCache) {
+      const json = JSON.stringify(cache);
+      if (json.includes(localId)) {
+        this.nutritionPlansCache.set(
+          userId,
+          JSON.parse(json.split(localId).join(serverId)) as NutritionPlansCache,
+        );
+      }
+    }
+    for (const [userId, value] of this.plansShoppingCache) {
+      const json = JSON.stringify(value);
+      if (json.includes(localId)) {
+        this.plansShoppingCache.set(
+          userId,
+          JSON.parse(json.split(localId).join(serverId)) as PlansShoppingCache,
+        );
+      }
+    }
+    for (const e of this.queue) {
+      if (e.status === "completed") continue;
+      if (e.endpoint.includes(localId))
+        e.endpoint = e.endpoint.split(localId).join(serverId);
+      if (e.payload.includes(localId))
+        e.payload = e.payload.split(localId).join(serverId);
+      if (e.entityId === localId) e.entityId = serverId;
+    }
+  }
+  getCachedPlansShopping(userId: string): PlansShoppingCache | null {
+    const v = this.plansShoppingCache.get(userId);
+    return v ? (JSON.parse(JSON.stringify(v)) as PlansShoppingCache) : null;
+  }
+  cachePlansShopping(userId: string, value: PlansShoppingCache): void {
+    this.plansShoppingCache.set(
+      userId,
+      JSON.parse(JSON.stringify(value)) as PlansShoppingCache,
+    );
+  }
+
   clearAll(): void {
     this.queue = [];
+    this.nutritionPlansCache.clear();
+    this.plansShoppingCache.clear();
     this.trainingLog.clear();
     this.trainingLogSince.clear();
     this.youRemote.clear();

@@ -1,4 +1,5 @@
 import { stripNul } from "../../shared/stripNul";
+import { photoAnswerMediaId } from "../../media/privateMediaRepository";
 
 /**
  * Question and answer validators for coach forms (PER-116, design C D1).
@@ -260,7 +261,7 @@ export function validateQuestions(raw: unknown): ValidationResult<Question[]> {
 
 export type AnswersResult =
   | { ok: true; value: Record<string, unknown> }
-  | { ok: false; photo: boolean; errors: FieldError[] };
+  | { ok: false; errors: FieldError[] };
 
 function isBlank(value: unknown): boolean {
   return (
@@ -351,10 +352,15 @@ function checkAnswer(
       }
       return { ok: false, message: "true or false" };
     }
-    case "photo":
-      // Photo answers use BE-F1's media upload (PER-121). Until it ships a
-      // photo question can be created but not answered.
-      return { ok: false, message: "a photo, which can't be answered yet" };
+    case "photo": {
+      // PER-121: a photo answer is the media id of a `form_answer` upload
+      // (`POST /users/me/media/uploads`), as `{mediaId}` or a bare id.
+      // Ownership and upload state are checked when the response is saved.
+      const mediaId = photoAnswerMediaId(value);
+      return mediaId
+        ? { ok: true, value: { mediaId } }
+        : { ok: false, message: "an uploaded photo ({ mediaId })" };
+    }
   }
 }
 
@@ -369,12 +375,10 @@ export function validateAnswers(
   if (!isRecord(raw)) {
     return {
       ok: false,
-      photo: false,
       errors: [{ at: "", message: "answers must be an object" }],
     };
   }
   const errors: FieldError[] = [];
-  let photo = false;
   const known = new Set(questions.map((q) => q.id));
   for (const id of Object.keys(raw)) {
     if (!known.has(id)) errors.push({ at: id, message: "unknown question" });
@@ -385,14 +389,11 @@ export function validateAnswers(
     const given = Object.hasOwn(raw, q.id) ? raw[q.id] : undefined;
     if (isBlank(given)) {
       if (!q.required) continue;
-      // A required photo can't be answered until BE-F1 either.
-      photo ||= q.type === "photo";
       errors.push({ at: q.id, message: "required" });
       continue;
     }
     const checked = checkAnswer(q, given);
     if (!checked.ok) {
-      photo ||= q.type === "photo";
       errors.push({ at: q.id, message: `must be ${checked.message}` });
       continue;
     }
@@ -409,5 +410,5 @@ export function validateAnswers(
       configurable: true,
     });
   }
-  return errors.length > 0 ? { ok: false, photo, errors } : { ok: true, value };
+  return errors.length > 0 ? { ok: false, errors } : { ok: true, value };
 }

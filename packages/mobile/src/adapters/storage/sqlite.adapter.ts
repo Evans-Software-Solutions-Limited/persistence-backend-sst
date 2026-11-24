@@ -79,6 +79,10 @@ import type {
   SyncStatus,
 } from "@/domain/ports/sync.types";
 import type { UserMeal } from "@/domain/models/userMeals";
+import type {
+  NutritionPlansCache,
+  PlansShoppingCache,
+} from "@/domain/models/nutritionPlans";
 
 const DB_NAME = "persistence.db";
 
@@ -902,6 +906,19 @@ ${indentSyncQueueDdl(8)}
       -- PER-132 Your meals (Design D N1b): one list per user. A new TABLE, so
       -- CREATE TABLE IF NOT EXISTS covers upgrading installs too.
       CREATE TABLE IF NOT EXISTS cached_user_meals (
+        user_id TEXT PRIMARY KEY,
+        payload TEXT NOT NULL,
+        synced_at TEXT NOT NULL
+      );
+      -- PER-133 list meal plans (Design D): one plans payload and one
+      -- shopping list (with this phone's ticks) per user. New TABLES, so
+      -- CREATE TABLE IF NOT EXISTS covers upgrading installs too.
+      CREATE TABLE IF NOT EXISTS cached_nutrition_plans (
+        user_id TEXT PRIMARY KEY,
+        payload TEXT NOT NULL,
+        synced_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS cached_plans_shopping (
         user_id TEXT PRIMARY KEY,
         payload TEXT NOT NULL,
         synced_at TEXT NOT NULL
@@ -4078,6 +4095,64 @@ ${indentSyncQueueDdl(12)}
     });
   }
 
+  // -- PER-133 list meal plans --
+
+  getCachedNutritionPlans(userId: string): NutritionPlansCache | null {
+    return this.readBlob<NutritionPlansCache>("cached_nutrition_plans", userId);
+  }
+
+  cacheNutritionPlans(userId: string, cache: NutritionPlansCache): void {
+    this.writeBlob("cached_nutrition_plans", userId, cache);
+  }
+
+  swapLocalNutritionPlanId(localId: string, serverId: string): void {
+    if (localId === serverId) return;
+    const db = this.getDb();
+    db.withTransactionSync(() => {
+      for (const table of ["cached_nutrition_plans", "cached_plans_shopping"]) {
+        const rows = db.getAllSync(`SELECT user_id, payload FROM ${table}`) as {
+          user_id: string;
+          payload: string;
+        }[];
+        for (const r of rows) {
+          if (!r.payload.includes(localId)) continue;
+          db.runSync(`UPDATE ${table} SET payload = ? WHERE user_id = ?`, [
+            r.payload.split(localId).join(serverId),
+            r.user_id,
+          ]);
+        }
+      }
+      // Local ids are random uuids, so a plain text swap can't hit anything else.
+      db.runSync(
+        `UPDATE sync_queue
+           SET endpoint = REPLACE(endpoint, ?, ?),
+               payload = REPLACE(payload, ?, ?),
+               entity_id = CASE WHEN entity_id = ? THEN ? ELSE entity_id END
+         WHERE status != 'completed'
+           AND (endpoint LIKE '%' || ? || '%' OR payload LIKE '%' || ? || '%' OR entity_id = ?)`,
+        [
+          localId,
+          serverId,
+          localId,
+          serverId,
+          localId,
+          serverId,
+          localId,
+          localId,
+          localId,
+        ],
+      );
+    });
+  }
+
+  getCachedPlansShopping(userId: string): PlansShoppingCache | null {
+    return this.readBlob<PlansShoppingCache>("cached_plans_shopping", userId);
+  }
+
+  cachePlansShopping(userId: string, value: PlansShoppingCache): void {
+    this.writeBlob("cached_plans_shopping", userId, value);
+  }
+
   clearAll(): void {
     const db = this.getDb();
     db.execSync(`
@@ -4117,6 +4192,8 @@ ${indentSyncQueueDdl(12)}
       DELETE FROM cached_you_remote;
       DELETE FROM cached_my_coaches;
       DELETE FROM cached_user_meals;
+      DELETE FROM cached_nutrition_plans;
+      DELETE FROM cached_plans_shopping;
     `);
   }
 }
