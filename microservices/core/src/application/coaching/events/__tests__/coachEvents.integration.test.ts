@@ -2500,3 +2500,187 @@ describe(MIGRATION, () => {
     }
   });
 });
+
+// ─── PER-129 (C10j): one client on a different cadence ──────────────────────
+
+describe("per-client trigger override (PER-129, C10j)", () => {
+  const setup = (formId: string, body: object) =>
+    http(
+      "PUT",
+      `/trainers/me/clients/${ATHLETE_C}/forms/${formId}/setup`,
+      COACH_A,
+      body,
+    );
+
+  it("a weekly rule sends daily to the one client switched to daily", async () => {
+    const form = await makeForm(COACH_A);
+    await makeSchedule(COACH_A, {
+      formId: form.id,
+      trigger: "weekly",
+      audience: "all_clients",
+      weekday: 7,
+      timeLocal: "09:00",
+    });
+    const res = await setup(form.id, {
+      status: "active",
+      override: { trigger: "daily", timeLocal: "08:00" },
+    });
+    expect(res.status).toBe(200);
+    expect(res.json.data.rule.override).toEqual({
+      trigger: "daily",
+      timeLocal: "08:00",
+    });
+    // Monday 08:00 UTC (London is GMT): C gets the daily one, E nothing.
+    await formPeriodsJob.run(ctx(new Date("2026-11-23T08:00:00Z")));
+    const forC = await requestsFor(ATHLETE_C);
+    expect(forC.map((r) => [r.trigger, r.periodKey])).toEqual([
+      ["daily", "2026-11-23"],
+    ]);
+    expect(await requestsFor(ATHLETE_E)).toHaveLength(0);
+    // The next day's daily makes Monday's missed (same trigger).
+    await formPeriodsJob.run(ctx(new Date("2026-11-24T08:00:00Z")));
+    const after = await requestsFor(ATHLETE_C);
+    expect(after.find((r) => r.periodKey === "2026-11-23")!.status).toBe(
+      "missed",
+    );
+    // Sunday 09:00 in New York (E's zone): E gets the weekly one; C stays
+    // daily only.
+    await formPeriodsJob.run(ctx(new Date("2026-11-29T14:00:00Z")));
+    expect((await requestsFor(ATHLETE_E)).map((r) => r.trigger)).toEqual([
+      "weekly",
+    ]);
+    expect(
+      (await requestsFor(ATHLETE_C)).every((r) => r.trigger === "daily"),
+    ).toBe(true);
+  });
+
+  it("a once rule switched to weekly for one client is picked up by the scheduler", async () => {
+    const form = await makeForm(COACH_A);
+    await makeSchedule(COACH_A, {
+      formId: form.id,
+      trigger: "once",
+      audience: "selected",
+      clientIds: [ATHLETE_E],
+    });
+    const res = await setup(form.id, {
+      status: "active",
+      override: { trigger: "weekly", weekday: 1, timeLocal: "07:00" },
+    });
+    expect(res.status).toBe(200);
+    // No once request for C: their cadence is weekly now.
+    expect(await requestsFor(ATHLETE_C)).toHaveLength(0);
+    await formPeriodsJob.run(ctx(new Date("2026-11-23T07:00:00Z")));
+    expect(
+      (await requestsFor(ATHLETE_C)).map((r) => [r.trigger, r.periodKey]),
+    ).toEqual([["weekly", isoWeekKey("2026-11-23")]]);
+  });
+
+  it("a weekly rule switched to once sends straight away, and the scheduler skips that client", async () => {
+    const form = await makeForm(COACH_A);
+    await makeSchedule(COACH_A, {
+      formId: form.id,
+      trigger: "weekly",
+      audience: "all_clients",
+      weekday: 1,
+      timeLocal: "07:00",
+    });
+    const res = await setup(form.id, {
+      status: "active",
+      override: { trigger: "once", dueAfterHours: 24 },
+    });
+    expect(res.status).toBe(200);
+    expect((await requestsFor(ATHLETE_C)).map((r) => r.trigger)).toEqual([
+      "once",
+    ]);
+    // 07:00 London, then 07:00 New York (E's zone).
+    await formPeriodsJob.run(ctx(new Date("2026-11-23T07:00:00Z")));
+    await formPeriodsJob.run(ctx(new Date("2026-11-23T12:00:00Z")));
+    expect((await requestsFor(ATHLETE_C)).map((r) => r.trigger)).toEqual([
+      "once",
+    ]);
+    expect((await requestsFor(ATHLETE_E)).map((r) => r.trigger)).toEqual([
+      "weekly",
+    ]);
+  });
+
+  it("rejects an incomplete or impossible cadence change", async () => {
+    const weekly = await makeForm(COACH_A, "Weekly");
+    await makeSchedule(COACH_A, {
+      formId: weekly.id,
+      trigger: "daily",
+      audience: "all_clients",
+      timeLocal: "07:00",
+    });
+    // Weekly needs a day (the daily rule has none to fall back on).
+    const noDay = await setup(weekly.id, {
+      status: "active",
+      override: { trigger: "weekly" },
+    });
+    expect(noDay.status).toBe(422);
+    expect(noDay.json.message).toMatch(/weekday/);
+    // Once takes no time.
+    const onceTime = await setup(weekly.id, {
+      status: "active",
+      override: { trigger: "once", timeLocal: "07:00" },
+    });
+    expect(onceTime.status).toBe(422);
+    // The same trigger is not stored as a change.
+    const same = await setup(weekly.id, {
+      status: "active",
+      override: { trigger: "daily", timeLocal: "06:30" },
+    });
+    expect(same.json.data.rule.override).toEqual({ timeLocal: "06:30" });
+    // A join form can't move to weekly.
+    const join = await makeForm(COACH_A, "Join");
+    await makeSchedule(COACH_A, {
+      formId: join.id,
+      trigger: "on_join",
+      audience: "all_clients",
+    });
+    const moved = await setup(join.id, {
+      status: "active",
+      override: { trigger: "weekly", weekday: 1, timeLocal: "07:00" },
+    });
+    expect(moved.status).toBe(422);
+    expect(moved.json.message).toMatch(/join or end-of-coaching/);
+    // Not a client cadence at all: the route schema refuses it.
+    const bad = await setup(join.id, {
+      status: "active",
+      override: { trigger: "on_end" },
+    });
+    expect(bad.status).toBe(422);
+  });
+});
+
+describe("Inspector Brad #555: cadence switch", () => {
+  it("moving a client from weekly to daily closes the open weekly request", async () => {
+    const form = await makeForm(COACH_A);
+    await makeSchedule(COACH_A, {
+      formId: form.id,
+      trigger: "weekly",
+      audience: "selected",
+      clientIds: [ATHLETE_C],
+      weekday: 1,
+      timeLocal: "07:00",
+    });
+    // Monday 07:00 London: this week's weekly request, no due date.
+    await formPeriodsJob.run(ctx(new Date("2026-11-23T07:00:00Z")));
+    const [weekly] = await requestsFor(ATHLETE_C);
+    expect(weekly).toMatchObject({ trigger: "weekly", status: "pending" });
+    const res = await http(
+      "PUT",
+      `/trainers/me/clients/${ATHLETE_C}/forms/${form.id}/setup`,
+      COACH_A,
+      { status: "active", override: { trigger: "daily", timeLocal: "08:00" } },
+    );
+    expect(res.status).toBe(200);
+    await formPeriodsJob.run(ctx(new Date("2026-11-24T08:00:00Z")));
+    const after = await requestsFor(ATHLETE_C);
+    // Changing the cadence closes the old one's open request at once
+    // (Inspector Brad, #555 sweep 2); the next daily send is unaffected.
+    expect(after.find((r) => r.id === weekly!.id)!.status).toBe("cancelled");
+    expect(
+      after.filter((r) => r.trigger === "daily").map((r) => r.status),
+    ).toEqual(["pending"]);
+  });
+});

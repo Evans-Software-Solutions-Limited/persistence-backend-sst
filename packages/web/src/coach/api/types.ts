@@ -141,11 +141,26 @@ export type QuestionType =
   | "yes_no"
   | string;
 
+/** "Filled for them" sources (questions.ts `PREFILL_SOURCES`, PER-129). */
+export type PrefillSource =
+  | "sessions_done"
+  | "meal_plan_followed"
+  | "steps"
+  | "weight"
+  | "progress_photos";
+
 export interface FormQuestion {
   id: string;
   type: QuestionType;
   prompt: string;
   required: boolean;
+  options?: string[];
+  min?: number;
+  max?: number;
+  unit?: string;
+  help?: string;
+  detailsIfYes?: boolean;
+  prefill?: PrefillSource;
 }
 
 export interface CoachForm {
@@ -153,7 +168,17 @@ export interface CoachForm {
   title: string;
   description: string | null;
   archivedAt: string | null;
-  version: { id: string; version: number; questions: FormQuestion[] } | null;
+  /** Set on a system template (`GET /trainers/me/forms?include=templates`). */
+  templateKey?: string | null;
+  /** Optimistic-concurrency revision (PATCH `expectedRevision`). */
+  revision?: number;
+  updatedAt?: string;
+  version: {
+    id: string;
+    version: number;
+    questions: FormQuestion[];
+    createdAt?: string;
+  } | null;
 }
 
 export interface FormSchedule {
@@ -166,14 +191,116 @@ export interface FormSchedule {
   dueAfterHours: number | null;
   reminders: { afterHours: number }[];
   status: string;
+  revision?: number;
+  clients?: {
+    clientId: string;
+    relationshipId: string;
+    status: string;
+    override: RuleOverride | null;
+  }[];
+  createdAt?: string;
 }
 
 /** A per-client override of a send rule (scheduleRepository.ts `Rule`). */
 export interface RuleOverride {
+  /** PER-129 (C10j): this client gets it once, weekly or daily instead. */
+  trigger?: "once" | "weekly" | "daily" | null;
   weekday?: number | null;
   timeLocal?: string | null;
   dueAfterHours?: number | null;
   reminders?: { afterHours: number }[];
+}
+
+export interface NewSchedule {
+  formId: string;
+  trigger: string;
+  audience: "all_clients" | "selected";
+  clientIds?: string[];
+  weekday?: number | null;
+  timeLocal?: string | null;
+  dueAfterHours?: number | null;
+  reminders?: { afterHours: number }[];
+}
+
+export interface SchedulePatch extends Partial<Omit<NewSchedule, "formId">> {
+  status?: "active" | "paused" | "stopped";
+}
+
+/** `GET /trainers/me/forms/stats` (statsRepository.ts, PER-129). */
+export interface FormStatsClient {
+  clientId: string;
+  name: string | null;
+  requestId: string;
+  status: "done" | "pending" | "missed";
+  late: boolean;
+  sentAt: string;
+  dueAt: string | null;
+  completedAt: string | null;
+  remindersSent: number;
+  lastReminderAt: string | null;
+}
+
+export interface FormStats {
+  forms: {
+    formId: string;
+    reached: number;
+    done: number;
+    outstanding: number;
+    clients: FormStatsClient[];
+  }[];
+  totals: {
+    forms: number;
+    repeating: number;
+    outstanding: number;
+    onTimeRate: number | null;
+    onTimeSample: number;
+  };
+}
+
+export interface ClientFormRule {
+  scheduleId: string;
+  trigger: string;
+  audience: string;
+  status: string;
+  clientStatus: string | null;
+  weekday: number | null;
+  timeLocal: string | null;
+  dueAfterHours: number | null;
+  reminders: { afterHours: number }[];
+  override: RuleOverride | null;
+}
+
+/** One row of the Check-ins tab's "Sent to …" (C3.3). */
+export interface ClientFormEntry {
+  form: { id: string; title: string; archivedAt: string | null };
+  rule: ClientFormRule | null;
+  rules: ClientFormRule[];
+  lastDoneAt: string | null;
+  lastSentAt: string | null;
+  pendingRequestId: string | null;
+  state: "done" | "notDoneYet" | "paused";
+}
+
+export interface ClientSetupInput {
+  status: "active" | "paused" | "excluded";
+  override?: RuleOverride | null;
+  scheduleId?: string;
+}
+
+export interface FormResponse {
+  id: string;
+  requestId: string;
+  formId: string;
+  title: string;
+  trigger: string;
+  periodKey: string;
+  sentAt: string;
+  submittedAt: string;
+  late: boolean;
+  answers: Record<string, unknown>;
+  reviewedAt: string | null;
+  replyText: string | null;
+  version: { id: string; version: number; questions: FormQuestion[] };
 }
 
 // ─── Meal plans (nutrition/mealPlans/mealPlansHandlers.ts) ──────────────────

@@ -632,4 +632,82 @@ describe("coach API client", () => {
       statementTextHash: "h",
     });
   });
+
+  it("PER-129 forms routes: method, path, body and keys", async () => {
+    const calls: { url: string; init: RequestInit }[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init: RequestInit) => {
+        calls.push({ url, init });
+        if (url.includes("include=templates")) {
+          return res(200, { data: { forms: [], templates: ["t"] } });
+        }
+        if (url.includes("/form-responses?")) {
+          return res(200, { data: ["r"], nextCursor: "n" });
+        }
+        if (init?.method === "DELETE") {
+          return new Response(null, { status: 204 });
+        }
+        return res(200, { data: "ok" });
+      }),
+    );
+    expect(await coachApi.templates()).toEqual(["t"]);
+    await coachApi.createFromTemplate("parq", "k1");
+    await coachApi.formStats();
+    await coachApi.createForm({ title: "T", questions: [] }, "k2");
+    await coachApi.patchForm("f/1", { title: "U" }, 3);
+    await coachApi.archiveForm("f/1");
+    await coachApi.createSchedule(
+      { formId: "f", trigger: "once", audience: "all_clients" },
+      "k3",
+    );
+    await coachApi.patchSchedule("s1", { status: "paused" }, 2);
+    await coachApi.clientForms("c1");
+    await coachApi.clientFormSetup("c1", "f1", { status: "paused" });
+    expect(await coachApi.responses("c1")).toEqual({
+      data: ["r"],
+      nextCursor: "n",
+    });
+    await coachApi.responses("c1", "cur");
+    await coachApi.reviewResponse("c1", "r1");
+    await coachApi.reviewResponse("c1", "r1", "Nice");
+    const seen = calls.map(
+      (c) =>
+        `${c.init?.method ?? "GET"} ${c.url.replace("https://api.test", "")}`,
+    );
+    expect(seen).toEqual([
+      "GET /trainers/me/forms?include=templates",
+      "POST /trainers/me/forms",
+      "GET /trainers/me/forms/stats",
+      "POST /trainers/me/forms",
+      "PATCH /trainers/me/forms/f%2F1",
+      "DELETE /trainers/me/forms/f%2F1",
+      "POST /trainers/me/form-schedules",
+      "PATCH /trainers/me/form-schedules/s1",
+      "GET /trainers/me/clients/c1/forms",
+      "PUT /trainers/me/clients/c1/forms/f1/setup",
+      "GET /trainers/me/clients/c1/form-responses?limit=50",
+      "GET /trainers/me/clients/c1/form-responses?limit=50&cursor=cur",
+      "POST /trainers/me/clients/c1/form-responses/r1/review",
+      "POST /trainers/me/clients/c1/form-responses/r1/review",
+    ]);
+    const body = (i: number) => JSON.parse(String(calls[i].init.body));
+    expect(body(1)).toEqual({ fromTemplateKey: "parq" });
+    expect(calls[1].init.headers).toMatchObject({ "Idempotency-Key": "k1" });
+    expect(calls[3].init.headers).toMatchObject({ "Idempotency-Key": "k2" });
+    expect(body(4)).toEqual({ title: "U", expectedRevision: 3 });
+    expect(calls[6].init.headers).toMatchObject({ "Idempotency-Key": "k3" });
+    expect(body(7)).toEqual({ status: "paused", expectedRevision: 2 });
+    expect(body(9)).toEqual({ status: "paused" });
+    expect(body(12)).toEqual({});
+    expect(body(13)).toEqual({ replyText: "Nice" });
+  });
+
+  it("templates: none when the server leaves them out", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => res(200, { data: { forms: [] } })),
+    );
+    expect(await coachApi.templates()).toEqual([]);
+  });
 });

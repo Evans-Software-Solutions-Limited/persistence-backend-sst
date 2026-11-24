@@ -28,6 +28,11 @@ export const coachKeys = {
   forms: ["coach", "forms"] as const,
   schedules: ["coach", "form-schedules"] as const,
   mealPlans: ["coach", "meal-plans"] as const,
+  formStats: ["coach", "form-stats"] as const,
+  templates: ["coach", "form-templates"] as const,
+  clientForms: (clientId: string) =>
+    ["coach", "client-forms", clientId] as const,
+  responses: (clientId: string) => ["coach", "responses", clientId] as const,
   settings: (clientId: string) => ["coach", "settings", clientId] as const,
   declaration: ["coach", "declaration"] as const,
 };

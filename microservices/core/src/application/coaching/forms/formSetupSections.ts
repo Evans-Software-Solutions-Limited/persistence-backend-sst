@@ -14,7 +14,7 @@ import {
   relationshipCycle,
   sendStarterForm,
 } from "./generators";
-import { checkRule, MAX_DUE_HOURS, type Trigger } from "./scheduleRepository";
+import { checkOverride, MAX_DUE_HOURS } from "./scheduleRepository";
 
 /**
  * The forms sections of an invited client's set-up (PER-116, design A D4 +
@@ -204,7 +204,9 @@ export const repeatingFormHandler: SetupSectionHandler = {
       if (typeof raw !== "object" || Array.isArray(raw)) {
         return { ok: false, message: "config.override must be an object" };
       }
-      const checked = checkRule(schedule.trigger as Trigger, raw);
+      // The per-client cadence (`trigger`, PER-129) is checked too, so a
+      // copied set-up keeps it (Inspector Brad, #555).
+      const checked = checkOverride(schedule, raw);
       if (!checked.ok) {
         return { ok: false, message: `config.override: ${checked.message}` };
       }

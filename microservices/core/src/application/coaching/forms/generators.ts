@@ -86,10 +86,24 @@ export function effectiveDueAfterHours(
   schedule: Pick<CoachFormSchedule, "dueAfterHours">,
   override: Record<string, unknown> | null | undefined,
 ): number | null {
-  const fromOverride = override?.dueAfterHours;
-  return typeof fromOverride === "number"
-    ? fromOverride
-    : (schedule.dueAfterHours ?? null);
+  // An explicit null is "no due date" for this client (PER-129).
+  if (override && Object.hasOwn(override, "dueAfterHours")) {
+    const fromOverride = override.dueAfterHours;
+    return typeof fromOverride === "number" ? fromOverride : null;
+  }
+  return schedule.dueAfterHours ?? null;
+}
+
+/**
+ * When this client gets the form (PER-129, C10j): the per-client override's
+ * `trigger` wins (once, weekly or daily), else the rule's own.
+ */
+export function effectiveTrigger(
+  schedule: Pick<CoachFormSchedule, "trigger">,
+  override: Record<string, unknown> | null | undefined,
+): string {
+  const fromOverride = override?.trigger;
+  return typeof fromOverride === "string" ? fromOverride : schedule.trigger;
 }
 
 export interface RequestDraft extends RelationshipRef {
@@ -321,13 +335,19 @@ export async function generateOnce(
   onlyRelationshipId?: string,
   now = new Date(),
 ): Promise<string[]> {
-  if (schedule.trigger !== "once" || schedule.status !== "active") return [];
+  if (schedule.status !== "active") return [];
+  // A weekly or daily rule can send once to one client (PER-129, C10j);
+  // a join or end-of-coaching rule never does.
+  if (!["once", "weekly", "daily"].includes(schedule.trigger)) return [];
+  const targets = (
+    await scheduleTargets(db, schedule, onlyRelationshipId)
+  ).filter((t) => effectiveTrigger(schedule, t.override) === "once");
+  if (targets.length === 0) return [];
   const versions = await liveVersions(db, schedule.trainerId, [
     schedule.formId,
   ]);
   const versionId = versions.get(schedule.formId);
   if (!versionId) return [];
-  const targets = await scheduleTargets(db, schedule, onlyRelationshipId);
   const drafts = targets.map((t) => {
     const cycle = cycleOf(t.activatedAt);
     return {

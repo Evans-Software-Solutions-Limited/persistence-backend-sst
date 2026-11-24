@@ -19,17 +19,28 @@ import {
   untouchedBy,
 } from "../lib/settings";
 import { ClientSettingsView } from "../settings/ClientSettings";
+import { CheckinsContainer } from "../checkins/CheckinsContainer";
 import { Avatar, BackLink, LoadError, Loading } from "../ui/parts";
 import { ClientTabs, type ClientTab } from "./ClientTabs";
 
+/** Tabs built on the web so far, by URL segment. */
+const WEB_TABS: Record<string, ClientTab> = {
+  "check-ins": "Check-ins", // PER-129 (C3.3)
+  settings: "Settings", // PER-124 (C3.9)
+};
+const OPEN_TABS: ClientTab[] = Object.values(WEB_TABS);
+const segmentOf = (tab: ClientTab) =>
+  Object.keys(WEB_TABS).find((k) => WEB_TABS[k] === tab) ?? "settings";
+
 /**
- * An active client's page (C3, K layout). On the web so far only the
- * Settings tab (C3.9) is built; the other tabs come with their tickets.
+ * An active client's page (C3, K layout). On the web so far the Check-ins
+ * (C3.3) and Settings (C3.9) tabs are built; the others come with their
+ * tickets.
  */
 export function ClientPage() {
   const { clientId = "", tab } = useParams();
   const roster = useRoster();
-  if (tab !== "settings") {
+  if (!tab || !WEB_TABS[tab]) {
     return <Navigate to={`/coach/clients/${clientId}/settings`} replace />;
   }
   if (roster.isPending) return <Loading />;
@@ -51,7 +62,25 @@ export function ClientPage() {
       </>
     );
   }
-  return <ClientSettingsPage client={client} />;
+  const selected = WEB_TABS[tab]!;
+  return (
+    <>
+      <BackLink to="/coach/clients" label="Clients" />
+      <ClientHeader client={client} />
+      <ClientTabs
+        selected={selected}
+        open={OPEN_TABS}
+        locked={false}
+        lockedReason=""
+        hrefFor={(t) => `/coach/clients/${client.id}/${segmentOf(t)}`}
+      />
+      {selected === "Check-ins" ? (
+        <CheckinsContainer key={client.id} client={client} />
+      ) : (
+        <ClientSettingsPage client={client} />
+      )}
+    </>
+  );
 }
 
 function ClientHeader({ client }: { client: RosterClient }) {
@@ -138,18 +167,8 @@ function ClientSettingsPage({ client }: { client: RosterClient }) {
     }
   }
 
-  const tabs: ClientTab[] = ["Settings"];
   return (
     <>
-      <BackLink to="/coach/clients" label="Clients" />
-      <ClientHeader client={client} />
-      <ClientTabs
-        selected="Settings"
-        open={tabs}
-        locked={false}
-        lockedReason=""
-        hrefFor={() => `/coach/clients/${client.id}/settings`}
-      />
       {settingsQ.isPending ? (
         <Loading />
       ) : !settingsQ.data ? (
