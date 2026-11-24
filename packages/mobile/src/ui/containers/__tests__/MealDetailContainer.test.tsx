@@ -11,12 +11,31 @@ import { localDayISO, previousDayISO } from "@/shared/utils";
 import { useFuelSheets } from "@/state/fuel-sheets";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import type { MealDetailPresenterProps } from "@/ui/presenters/MealDetailPresenter";
+import type { LogMealSheetProps } from "@/ui/presenters/fuel/LogMealSheetPresenter";
+import type { AddToPlanSheetProps } from "@/ui/presenters/fuel/AddToPlanSheetPresenter";
 import { MealDetailContainer } from "../MealDetailContainer";
 
 const mockProbe: { last: MealDetailPresenterProps | null } = { last: null };
 jest.mock("@/ui/presenters/MealDetailPresenter", () => ({
   MealDetailPresenter: (props: MealDetailPresenterProps) => {
     mockProbe.last = props;
+    return null;
+  },
+}));
+
+const mockSheets: {
+  log: LogMealSheetProps | null;
+  plan: AddToPlanSheetProps | null;
+} = { log: null, plan: null };
+jest.mock("@/ui/presenters/fuel/LogMealSheetPresenter", () => ({
+  LogMealSheetPresenter: (props: LogMealSheetProps) => {
+    mockSheets.log = props;
+    return null;
+  },
+}));
+jest.mock("@/ui/presenters/fuel/AddToPlanSheetPresenter", () => ({
+  AddToPlanSheetPresenter: (props: AddToPlanSheetProps) => {
+    mockSheets.plan = props;
     return null;
   },
 }));
@@ -117,6 +136,8 @@ describe("MealDetailContainer", () => {
   beforeEach(() => {
     mockProbe.last = null;
     mockRouterBack.mockClear();
+    mockSheets.log = null;
+    mockSheets.plan = null;
     jest.clearAllMocks();
     act(() =>
       useFuelSheets.setState({
@@ -237,9 +258,10 @@ describe("MealDetailContainer", () => {
     );
   });
 
-  it("logs the meal to today, notifies mutated, and routes back", async () => {
-    const { adapters, storage } = makeAdapters();
+  it("Log meal opens the Log sheet, which logs the meal to today, notifies mutated, and routes back", async () => {
+    const { adapters, api, storage } = makeAdapters();
     storage.cacheMeal(USER, buildMeal());
+    jest.spyOn(api, "getMeals").mockResolvedValue(ok([buildMeal()]));
     render(
       <Wrapper adapters={adapters}>
         <MealDetailContainer id="m1" />
@@ -247,8 +269,13 @@ describe("MealDetailContainer", () => {
     );
     await waitFor(() => expect(mockProbe.last?.found).toBe(true));
 
+    expect(mockSheets.log?.visible).toBe(false);
+    act(() => mockProbe.last!.onLog());
+    expect(mockSheets.log?.visible).toBe(true);
+    expect(mockSheets.log?.name).toBe("Standard breakfast");
+    expect(mockSheets.log?.portion.selectedKey).toBe("1");
     await act(async () => {
-      mockProbe.last!.onLogToToday();
+      mockSheets.log!.onLog();
     });
 
     const entries = Object.values(
@@ -262,9 +289,10 @@ describe("MealDetailContainer", () => {
     expect(mockRouterBack).toHaveBeenCalledTimes(1);
   });
 
-  it("logs onto the active day (not always today) and reflects it as a day-context CTA (BRIEF-7 QA-20)", async () => {
-    const { adapters, storage } = makeAdapters();
+  it("logs onto the active day (not always today) and starts the Log sheet on it (BRIEF-7 QA-20)", async () => {
+    const { adapters, api, storage } = makeAdapters();
     storage.cacheMeal(USER, buildMeal());
+    jest.spyOn(api, "getMeals").mockResolvedValue(ok([buildMeal()]));
     const pastDay = previousDayISO(previousDayISO(localDayISO()));
     act(() => useFuelSheets.getState().setDate(pastDay));
     render(
@@ -273,10 +301,12 @@ describe("MealDetailContainer", () => {
       </Wrapper>,
     );
     await waitFor(() => expect(mockProbe.last?.found).toBe(true));
-    expect(mockProbe.last?.dayContext).toEqual(expect.any(String));
+    act(() => mockProbe.last!.onLog());
+    // The Log sheet's Day starts on the day Fuel is showing.
+    expect(mockSheets.log?.day.selectedKey).toBe(pastDay);
 
     await act(async () => {
-      mockProbe.last!.onLogToToday();
+      mockSheets.log!.onLog();
     });
 
     const entries = Object.values(
@@ -288,6 +318,27 @@ describe("MealDetailContainer", () => {
       storage.getCachedFuelToday(USER, localDayISO())?.entriesBySlot ?? {},
     ).flat();
     expect(todayEntries).toHaveLength(0);
+  });
+
+  it('"Add to plan" opens the plan sheet and closing it hides it again', async () => {
+    const { adapters, api, storage } = makeAdapters();
+    storage.cacheMeal(USER, buildMeal());
+    jest.spyOn(api, "getMeals").mockResolvedValue(ok([buildMeal()]));
+    render(
+      <Wrapper adapters={adapters}>
+        <MealDetailContainer id="m1" />
+      </Wrapper>,
+    );
+    await waitFor(() => expect(mockProbe.last?.found).toBe(true));
+    expect(mockSheets.plan?.visible).toBe(false);
+    act(() => mockProbe.last!.onAddToPlan());
+    expect(mockSheets.plan?.visible).toBe(true);
+    expect(mockSheets.plan?.itemName).toBe("Standard breakfast");
+    act(() => mockSheets.plan!.onClose());
+    expect(mockSheets.plan?.visible).toBe(false);
+    act(() => mockProbe.last!.onLog());
+    act(() => mockSheets.log!.onClose());
+    expect(mockSheets.log?.visible).toBe(false);
   });
 
   it("Back routes back", async () => {

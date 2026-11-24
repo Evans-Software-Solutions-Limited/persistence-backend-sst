@@ -18,6 +18,8 @@ import { localDayISO } from "@/shared/utils";
 import { useAdapters } from "./useAdapters";
 import { useAuth } from "./useAuth";
 import { liveUserMealEdits } from "./useUserMeals";
+import { livePlanEdits } from "@/application/commands/nutritionPlans.command";
+import { mergePlansResponse } from "@/domain/services/nutritionPlans.service";
 
 type WarmOfflineDataDeps = {
   api: ApiPort;
@@ -123,6 +125,24 @@ export async function warmOfflineData({
       JSON.stringify(storage.getCachedUserMeals(userId)) !== before;
     if (changed || liveUserMealEdits(storage, userId).length > 0) return;
     storage.cacheUserMeals(userId, result.value.meals);
+  });
+
+  // PER-133: meal plans (mine and from coaches), so a plan can be added to
+  // today offline from the first launch. Same guard as Your meals: a live or
+  // concurrent local edit is newer than this read.
+  await run(async () => {
+    const before = JSON.stringify(storage.getCachedNutritionPlans(userId));
+    if (livePlanEdits(storage).length > 0) return;
+    const since = storage.getCachedNutritionPlans(userId)?.asOf ?? null;
+    const result = await api.getNutritionPlans(since);
+    if (!result.ok || shouldStop()) return;
+    const current = storage.getCachedNutritionPlans(userId);
+    if (JSON.stringify(current) !== before) return;
+    if (livePlanEdits(storage).length > 0) return;
+    storage.cacheNutritionPlans(
+      userId,
+      mergePlansResponse(current, result.value, since !== null),
+    );
   });
 
   // Streaks, achievements, volume stats, body trend and recent PRs are

@@ -248,6 +248,10 @@ import type {
   RemoteRecap,
 } from "@/domain/models/trainingReads";
 import type { UserMealsResponse } from "@/domain/models/userMeals";
+import type {
+  NutritionPlansResponse,
+  PlansShoppingList,
+} from "@/domain/models/nutritionPlans";
 
 type ApiSuccessResponse<T> = { data: T };
 type ApiErrorResponse = { error: string };
@@ -2507,6 +2511,20 @@ export class SSTApiAdapter implements ApiPort {
 
   async getUserMeals(): Promise<Result<UserMealsResponse, ApiError>> {
     return this.requestEnvelope<UserMealsResponse>("/nutrition/user-meals");
+  }
+
+  // PER-133 list meal plans (Design D).
+  async getNutritionPlans(
+    since?: string | null,
+  ): Promise<Result<NutritionPlansResponse, ApiError>> {
+    const query = since ? `?since=${encodeURIComponent(since)}` : "";
+    return this.requestEnvelope<NutritionPlansResponse>(
+      `/nutrition/meal-plans${query}`,
+    );
+  }
+
+  async getPlansShoppingList(): Promise<Result<PlansShoppingList, ApiError>> {
+    return this.requestEnvelope<PlansShoppingList>("/nutrition/shopping-list");
   }
 
   // -- Client side of the coach↔client handshake (10-trainer-features) --

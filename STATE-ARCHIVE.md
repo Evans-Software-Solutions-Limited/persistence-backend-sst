@@ -11,6 +11,62 @@ later sessions changed things.
 
 ---
 
+### 2026-11-23 — APP-A3: athlete invite preview and accept, Coach tab chips, You → Coaching ([PER-126](https://linear.app/evans-software-solutions/issue/PER-126); branch `bradleysimmsevans/per-126-app-a3-athlete-invite-preview-and`)
+
+Mobile only, no backend change, no native change, no version bump. Uses the
+merged BE-A1 routes (PER-108, #540): `GET /invites/:code/preview`,
+`POST /trainers/accept-invite-code` (`relationshipStatus`, `ready`) and
+`GET /users/me/coaching`. Ships in the next store release, reviewed on staging.
+
+- **Accept flow** (`AcceptInviteContainer`): enter code → preview (C11j,
+  `InvitePreviewPresenter`) → one consent tick → accept. Personal code
+  (`relationshipStatus: "active"`) refreshes `cached_my_coaches`, lands on the
+  Coach tab and says "You're connected with <coach>". General code, or an
+  older backend without the field, keeps "Request sent … awaiting their
+  acceptance". The old `DataSharingConsentSheet` step is gone from this flow
+  (still used by Requests).
+- **Consent (Brad, 23 Nov):** the C11j "<coach> can see" rows are a fixed,
+  read-only list (backend stores one consent, not per-area choices); a
+  never-pre-ticked "I agree" tick gates Accept.
+- **States:** invalid/expired (404 `invalid_code`; the backend doesn't tell
+  them apart, so one message), expired while open (client clock vs
+  `expiresAt`), seat cap (409), already connected, used, rate limited (429,
+  new `rate_limited` accept code), offline before lookup and before accept.
+- **Coach tab** (`app/(app)/(tabs)/coach.tsx`, `CoachTabContainer` /
+  `CoachTabPresenter`): athlete mode only, only while `coaches.length > 0`
+  (`_layout.tsx`, `athleteTabsWithCoach`). Chips only with 2+ coaches (Brad).
+  Badge = sum of `due.forms`. C2e sections (forms PER-130, messages PER-92,
+  plan PER-140/133, resources PER-122) render as dashed "In development"
+  placeholders (Brad: release waits for the whole platform). No message button
+  until chat ships. The stranded-route guard sends the athlete Home when the
+  last coach goes.
+- **Offline:** new SQLite table `cached_my_coaches` (one JSON payload per
+  user, in the init DDL, cleared in `clearAll`), `useMyCoaches`
+  (`useCachedResource`, `MY_COACHES_TABLES`). Leaving a coach (Profile)
+  calls `storage.removeCachedMyCoach`, so the chip/tab go at once. No queued
+  entity types: accepting is online only.
+- **You → Coaching (Y1):** reads `useMyCoaches`; falls back to active
+  relationships until the first read. Row tap → Coach tab on that coach.
+  Coach requests stay under the list (Brad, 23 Nov).
+- **Verified:** mobile typecheck, lint, repo prettier:check, `bun run build`.
+  Mobile `test:unit`: 9,167 pass, coverage 96.3 / 92.3 / 96.2 / 97.6
+  (stmts/branches/funcs/lines). 32 failures in 3 suites, none touched here:
+  `SubscriptionSelectionContainer` fails on main too (16 alone);
+  `CoachYouContainer` and `useAutoRetryOnWorkoutLimitResolved` pass alone
+  (load timeouts in the full run).
+- **Not verified:** no device or staging run; canvas match checked against
+  board markup only.
+- **Inspector Brad (#547):** 4 sweeps, 5 leads fixed with failing-first tests,
+  closed clean on 8cfae9f.
+  - Every `useMyCoaches` re-reads the cache synchronously on write
+    (`notifyMyCoachesChanged`), so the Coach tab exists before the accept
+    navigates; the storage bus alone is debounced.
+  - The accept opens `coach?coachId=<new>&nav=…` only when the coach is cached
+    and the app is in athlete mode, otherwise You.
+  - Accept stays disabled while the coach loads.
+  - The chip override is keyed on `coachId|nav`.
+  - You rows aren't tappable until coaching has been read.
+
 ### 2026-11-23 — APP-A1: web coach workspace, add client (C11), invited client, C3.9 settings ([PER-124](https://linear.app/evans-software-solutions/issue/PER-124); branch `bradleysimmsevans/per-124-app-a1-web-coach-add-client-c11`)
 
 `packages/web` only; no backend, mobile, native or migration change. Uses the

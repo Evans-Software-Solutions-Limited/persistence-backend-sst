@@ -1,5 +1,69 @@
 # Project memory · persistence-backend-sst
 
+### 2026-11-23 — APP-D2: athlete Plan tab (mine and from coaches), New plan, Meals tab, shopping list ([PER-133](https://linear.app/evans-software-solutions/issue/PER-133); branch `bradleysimmsevans/per-133-app-d2-athlete-plan-tab-mine-and`)
+
+PR #554 (open, no auto-merge). Mobile only: no backend, migration, native or
+version change. Uses the merged PER-118 routes (`/nutrition/meal-plans*`, `/nutrition/shopping-list*`) and
+PER-109/132's `/nutrition/entries/batch` replay. Ships in the next store
+release, reviewed on staging.
+
+- **Data layer:** `domain/models/nutritionPlans.ts`,
+  `domain/services/nutritionPlans.service.ts` (Target · Planned · To plan
+  against the person's OWN target, items, drafts, ?since= merge, local-intent
+  overlay, plan → log entries), `application/commands/nutritionPlans.command.ts`.
+  Two new SQLite tables `cached_nutrition_plans` and `cached_plans_shopping`
+  (CREATE TABLE IF NOT EXISTS, no schema-version bump); StoragePort
+  `get/cacheNutritionPlans`, `swapLocalNutritionPlanId`,
+  `get/cachePlansShopping`; ApiPort `getNutritionPlans(since)`,
+  `getPlansShoppingList()`. Warmed in `warmOfflineData`.
+- **Queue entities:** `nutrition_plan` (create/duplicate with local id +
+  Idempotency-Key; PUT with `expectedRevision`, folded edits; DELETE),
+  `nutrition_plan_assignment` (added/dismissed/seenRevision folded per plan),
+  `shopping_list_plan`. `sync.command.ts` gained two hooks: a synced plan
+  reply swaps the local id and adopts the server copy (later PUTs move to the
+  new revision); a PUT 409 keeps the server's `current`, flags the plan
+  (`conflictPlanIds` → "changed on another device" note) and resolves the
+  row; a 409 that IS our own committed edit (lost reply) is not a conflict.
+- **Add to today:** `addPlanToDayCommand` builds entries from the cached plan
+  (item macros, Your meal by name else slot default, `sourcePlanId` /
+  `sourcePlanMealId` for server ids only) and logs each through
+  `logEntryCommand`, so PER-132's batch replay sends them with their own keys.
+  Logged food keeps its own macros; a coach edit only changes the plan.
+- **Screens:** Fuel sections now switch in place (`FuelContainer` section
+  state). Plan = `PlanTabContainer`/`PlanTabPresenter` (N6/N8/N10), root
+  sheets `PlanSheetsContainer` (N7 Your plans, C6 coach plan with Not now /
+  Add to my plans; `state/plan-sheets.ts`). Builder (N28/N28b/N29/N32/N34/
+  N30/N31/N33) in `ui/containers/plans/*`, `ui/presenters/fuel/plans/*`,
+  `state/plan-draft.ts`, routes `fuel/plan-new|plan-edit|plan-add`. Meals tab
+  `MealsTabContainer` (N11/N12) + `LogMealSheet*` (N14) + `AddToPlanSheet*`,
+  wired into the existing meal/recipe detail screens. Shopping list
+  `PlansShoppingListContainer` (N23), route `fuel/plans-shopping`.
+- **Gate:** `useManualMealPlansGate` (Premium, Premium+, coach tiers) gates
+  New plan only; Free can receive, view, duplicate and log coach plans.
+  `liveTierName` added to `useMealprintGate.ts`.
+- **Tests:** offline add-to-today with replay and a lost reply (no
+  duplicates), PUT 409, Free user receiving a coach plan, a coach edit not
+  changing logged food, real-SQLite id swap, hooks, presenters, containers.
+- **Verified:** prettier:check, typecheck, lint, build. test:unit: web and
+  core pass; mobile 699/701 suites (96.2 / 92.0 stmts/branches).
+  `SubscriptionSelectionContainer` hangs (failing on main too);
+  `PlanTodayContainer` timed out under load, passes alone.
+- **Inspector Brad on #554: nineteen sweeps, case closed on `548d126`
+  (24 Nov).** Every lead was confirmed and fixed with a failing-first
+  regression test. Main themes: one-off macros sent per serving; local-id
+  aliases and own revisions so synced plans keep picks, notices and edits;
+  per-entity ordering holds in the queue; shopping-list read races and
+  retries; C6 auto-open waits for focus and other sheets. Late sweeps added
+  the server's caps on the phone: servings floor at 0.01; at most 20 meals
+  (empty meals dropped first) and 50 items a meal. Full meals say "… is
+  full. Pick another meal." / "… has room for N more items." and turn the
+  action off, and New plan refuses a logged day with more than 20 meals with
+  food. That last copy is not on the canvas.
+- **Not verified:** nothing run on a device or against staging.
+- **Found, not fixed:** `BottomSheet` with `height="content"` never draws
+  `title`; PER-132's Your meals sheet passes one. PER-133's short sheets draw
+  their own title.
+
 ### 2026-11-23 — BE-F1: progress photos and the private media service ([PER-121](https://linear.app/evans-software-solutions/issue/PER-121); branch `bradleysimmsevans/per-121-be-f1-backend-progress-photos-and`)
 
 PR #553 (open, no auto-merge). Linear "Backend design F — Progress photos".
@@ -225,59 +289,3 @@ Ships in the next store release, reviewed on staging.
     recipe entries only.
   - A newer list drops dead older PUTs for the user, carrying forward any
     meals they added offline (capped at 30), so their food logs still sync.
-
-### 2026-11-23 — APP-A3: athlete invite preview and accept, Coach tab chips, You → Coaching ([PER-126](https://linear.app/evans-software-solutions/issue/PER-126); branch `bradleysimmsevans/per-126-app-a3-athlete-invite-preview-and`)
-
-Mobile only, no backend change, no native change, no version bump. Uses the
-merged BE-A1 routes (PER-108, #540): `GET /invites/:code/preview`,
-`POST /trainers/accept-invite-code` (`relationshipStatus`, `ready`) and
-`GET /users/me/coaching`. Ships in the next store release, reviewed on staging.
-
-- **Accept flow** (`AcceptInviteContainer`): enter code → preview (C11j,
-  `InvitePreviewPresenter`) → one consent tick → accept. Personal code
-  (`relationshipStatus: "active"`) refreshes `cached_my_coaches`, lands on the
-  Coach tab and says "You're connected with <coach>". General code, or an
-  older backend without the field, keeps "Request sent … awaiting their
-  acceptance". The old `DataSharingConsentSheet` step is gone from this flow
-  (still used by Requests).
-- **Consent (Brad, 23 Nov):** the C11j "<coach> can see" rows are a fixed,
-  read-only list (backend stores one consent, not per-area choices); a
-  never-pre-ticked "I agree" tick gates Accept.
-- **States:** invalid/expired (404 `invalid_code`; the backend doesn't tell
-  them apart, so one message), expired while open (client clock vs
-  `expiresAt`), seat cap (409), already connected, used, rate limited (429,
-  new `rate_limited` accept code), offline before lookup and before accept.
-- **Coach tab** (`app/(app)/(tabs)/coach.tsx`, `CoachTabContainer` /
-  `CoachTabPresenter`): athlete mode only, only while `coaches.length > 0`
-  (`_layout.tsx`, `athleteTabsWithCoach`). Chips only with 2+ coaches (Brad).
-  Badge = sum of `due.forms`. C2e sections (forms PER-130, messages PER-92,
-  plan PER-140/133, resources PER-122) render as dashed "In development"
-  placeholders (Brad: release waits for the whole platform). No message button
-  until chat ships. The stranded-route guard sends the athlete Home when the
-  last coach goes.
-- **Offline:** new SQLite table `cached_my_coaches` (one JSON payload per
-  user, in the init DDL, cleared in `clearAll`), `useMyCoaches`
-  (`useCachedResource`, `MY_COACHES_TABLES`). Leaving a coach (Profile)
-  calls `storage.removeCachedMyCoach`, so the chip/tab go at once. No queued
-  entity types: accepting is online only.
-- **You → Coaching (Y1):** reads `useMyCoaches`; falls back to active
-  relationships until the first read. Row tap → Coach tab on that coach.
-  Coach requests stay under the list (Brad, 23 Nov).
-- **Verified:** mobile typecheck, lint, repo prettier:check, `bun run build`.
-  Mobile `test:unit`: 9,167 pass, coverage 96.3 / 92.3 / 96.2 / 97.6
-  (stmts/branches/funcs/lines). 32 failures in 3 suites, none touched here:
-  `SubscriptionSelectionContainer` fails on main too (16 alone);
-  `CoachYouContainer` and `useAutoRetryOnWorkoutLimitResolved` pass alone
-  (load timeouts in the full run).
-- **Not verified:** no device or staging run; canvas match checked against
-  board markup only.
-- **Inspector Brad (#547):** 4 sweeps, 5 leads fixed with failing-first tests,
-  closed clean on 8cfae9f.
-  - Every `useMyCoaches` re-reads the cache synchronously on write
-    (`notifyMyCoachesChanged`), so the Coach tab exists before the accept
-    navigates; the storage bus alone is debounced.
-  - The accept opens `coach?coachId=<new>&nav=…` only when the coach is cached
-    and the app is in athlete mode, otherwise You.
-  - Accept stays disabled while the coach loads.
-  - The chip override is keyed on `coachId|nav`.
-  - You rows aren't tappable until coaching has been read.

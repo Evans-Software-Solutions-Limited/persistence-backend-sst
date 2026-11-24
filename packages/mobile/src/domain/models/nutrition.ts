@@ -219,6 +219,12 @@ export type LogEntryInput = {
    * swapped to the server id before the entry syncs.
    */
   userMealId?: string;
+  /**
+   * PER-133: the list meal plan (and plan meal) this entry was added from.
+   * Server ids only; provenance, never macros.
+   */
+  sourcePlanId?: string;
+  sourcePlanMealId?: string;
 };
 
 export type EditEntryInput = {
