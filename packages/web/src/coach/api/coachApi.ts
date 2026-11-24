@@ -10,13 +10,20 @@ import type {
   ClientProfile,
   ClientProfileDetail,
   ClientSettings,
+  ClientFormEntry,
+  ClientSetupInput,
   CoachForm,
   CoachProfile,
   DeclarationStatus,
+  FormResponse,
   FormSchedule,
+  FormStats,
+  FormQuestion,
   IssuedInvite,
   MealPlan,
   NewProfileInput,
+  NewSchedule,
+  SchedulePatch,
   Roster,
   SettingsPatch,
   SetupItem,
@@ -262,6 +269,127 @@ export const coachApi = {
         "/trainers/me/form-schedules",
       )
     ).data.schedules,
+
+  // ─── Forms (PER-129, C10 and C3.3) ────────────────────────────────────────
+
+  templates: async () =>
+    (
+      await coachFetch<Data<{ templates?: CoachForm[] }>>(
+        "/trainers/me/forms?include=templates",
+      )
+    ).data.templates ?? [],
+
+  createFromTemplate: async (templateKey: string, idempotencyKey: string) =>
+    (
+      await coachFetch<Data<CoachForm>>(
+        "/trainers/me/forms",
+        json(
+          "POST",
+          { fromTemplateKey: templateKey },
+          { "Idempotency-Key": idempotencyKey },
+        ),
+      )
+    ).data,
+
+  formStats: async () =>
+    (await coachFetch<Data<FormStats>>("/trainers/me/forms/stats")).data,
+
+  createForm: async (
+    input: {
+      title: string;
+      description?: string | null;
+      questions: FormQuestion[];
+    },
+    idempotencyKey: string,
+  ) =>
+    (
+      await coachFetch<Data<CoachForm>>(
+        "/trainers/me/forms",
+        json("POST", input, { "Idempotency-Key": idempotencyKey }),
+      )
+    ).data,
+
+  patchForm: async (
+    id: string,
+    patch: {
+      title?: string;
+      description?: string | null;
+      questions?: FormQuestion[];
+    },
+    expectedRevision?: number,
+  ) =>
+    (
+      await coachFetch<Data<CoachForm>>(
+        `/trainers/me/forms/${encodeURIComponent(id)}`,
+        json("PATCH", { ...patch, expectedRevision }),
+      )
+    ).data,
+
+  archiveForm: async (id: string) => {
+    await coachFetch<null>(
+      `/trainers/me/forms/${encodeURIComponent(id)}`,
+      json("DELETE"),
+    );
+  },
+
+  createSchedule: async (input: NewSchedule, idempotencyKey: string) =>
+    (
+      await coachFetch<Data<FormSchedule>>(
+        "/trainers/me/form-schedules",
+        json("POST", input, { "Idempotency-Key": idempotencyKey }),
+      )
+    ).data,
+
+  patchSchedule: async (
+    id: string,
+    patch: SchedulePatch,
+    expectedRevision?: number,
+  ) =>
+    (
+      await coachFetch<Data<FormSchedule>>(
+        `/trainers/me/form-schedules/${encodeURIComponent(id)}`,
+        json("PATCH", { ...patch, expectedRevision }),
+      )
+    ).data,
+
+  clientForms: async (clientId: string) =>
+    (
+      await coachFetch<Data<ClientFormEntry[]>>(
+        `/trainers/me/clients/${encodeURIComponent(clientId)}/forms`,
+      )
+    ).data,
+
+  clientFormSetup: async (
+    clientId: string,
+    formId: string,
+    input: ClientSetupInput,
+  ) =>
+    (
+      await coachFetch<Data<ClientFormEntry | null>>(
+        `/trainers/me/clients/${encodeURIComponent(clientId)}/forms/${encodeURIComponent(formId)}/setup`,
+        json("PUT", input),
+      )
+    ).data,
+
+  responses: async (clientId: string, cursor?: string) => {
+    const q = new URLSearchParams({ limit: "50" });
+    if (cursor) q.set("cursor", cursor);
+    return coachFetch<{ data: FormResponse[]; nextCursor: string | null }>(
+      `/trainers/me/clients/${encodeURIComponent(clientId)}/form-responses?${q}`,
+    );
+  },
+
+  reviewResponse: async (
+    clientId: string,
+    responseId: string,
+    replyText?: string,
+  ) =>
+    (
+      await coachFetch<Data<FormResponse>>(
+        `/trainers/me/clients/${encodeURIComponent(clientId)}/form-responses/${encodeURIComponent(responseId)}/review`,
+        json("POST", replyText === undefined ? {} : { replyText }),
+      )
+    ).data,
 
   mealPlans: async () =>
     (await coachFetch<Data<{ plans: MealPlan[] }>>("/trainers/me/meal-plans"))

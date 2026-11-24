@@ -141,6 +141,9 @@ function SignedIn({ onSignOut }: { onSignOut: () => void }) {
   const name = profile.data!.fullName ?? "Coach";
   return (
     <CoachShell
+      active={
+        location.pathname.startsWith("/coach/library") ? "library" : "clients"
+      }
       coachName={name}
       coachInitials={initials(name)}
       activeCount={
