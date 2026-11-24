@@ -86,10 +86,12 @@ export function effectiveDueAfterHours(
   schedule: Pick<CoachFormSchedule, "dueAfterHours">,
   override: Record<string, unknown> | null | undefined,
 ): number | null {
-  const fromOverride = override?.dueAfterHours;
-  return typeof fromOverride === "number"
-    ? fromOverride
-    : (schedule.dueAfterHours ?? null);
+  // An explicit null is "no due date" for this client (PER-129).
+  if (override && Object.hasOwn(override, "dueAfterHours")) {
+    const fromOverride = override.dueAfterHours;
+    return typeof fromOverride === "number" ? fromOverride : null;
+  }
+  return schedule.dueAfterHours ?? null;
 }
 
 /**

@@ -142,6 +142,7 @@ export function checkOverride(
     trigger: string;
     weekday: number | null;
     timeLocal: string | null;
+    dueAfterHours?: number | null;
   },
   raw: Rule & { trigger?: unknown },
 ): OverrideCheck {
@@ -171,10 +172,15 @@ export function checkOverride(
     timeLocal: checked.rule.timeLocal ?? hhmm(schedule.timeLocal),
   });
   if (missing) return { ok: false, message: missing };
-  return {
-    ok: true,
-    rule: changed ? { ...checked.rule, trigger: changed } : checked.rule,
-  };
+  const rule: Rule & { trigger?: ClientTrigger } = changed
+    ? { ...checked.rule, trigger: changed }
+    : { ...checked.rule };
+  // "No due date" for this client when the rule has one: an explicit null
+  // is kept, so it wins over the rule's due time (Inspector Brad, #555).
+  if (raw.dueAfterHours === null && schedule.dueAfterHours != null) {
+    rule.dueAfterHours = null;
+  }
+  return { ok: true, rule };
 }
 
 /** A whole schedule's rule must be complete for its trigger. */

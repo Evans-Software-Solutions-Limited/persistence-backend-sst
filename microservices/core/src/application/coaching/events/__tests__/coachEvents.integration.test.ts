@@ -2653,7 +2653,7 @@ describe("per-client trigger override (PER-129, C10j)", () => {
 });
 
 describe("Inspector Brad #555: cadence switch", () => {
-  it("moving a client from weekly to daily marks the open weekly request missed", async () => {
+  it("moving a client from weekly to daily closes the open weekly request", async () => {
     const form = await makeForm(COACH_A);
     await makeSchedule(COACH_A, {
       formId: form.id,
@@ -2676,7 +2676,9 @@ describe("Inspector Brad #555: cadence switch", () => {
     expect(res.status).toBe(200);
     await formPeriodsJob.run(ctx(new Date("2026-11-24T08:00:00Z")));
     const after = await requestsFor(ATHLETE_C);
-    expect(after.find((r) => r.id === weekly!.id)!.status).toBe("missed");
+    // Changing the cadence closes the old one's open request at once
+    // (Inspector Brad, #555 sweep 2); the next daily send is unaffected.
+    expect(after.find((r) => r.id === weekly!.id)!.status).toBe("cancelled");
     expect(
       after.filter((r) => r.trigger === "daily").map((r) => r.status),
     ).toEqual(["pending"]);

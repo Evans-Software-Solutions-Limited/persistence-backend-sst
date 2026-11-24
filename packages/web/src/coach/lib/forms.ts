@@ -685,3 +685,17 @@ export function clientTriggers(rule: ClientFormRule): string[] {
     ? ["once", "weekly", "daily"]
     : [rule.trigger];
 }
+
+/**
+ * Paused for THIS client: their own target on every rule (or the one rule).
+ * A rule paused for everyone isn't a pause for them, so Save and Resume
+ * don't write one (Inspector Brad, #555 sweep 2).
+ */
+export function pausedForClient(entry: {
+  rule: ClientFormRule | null;
+  rules: ClientFormRule[];
+}): boolean {
+  const rules =
+    entry.rules.length > 0 ? entry.rules : entry.rule ? [entry.rule] : [];
+  return rules.length > 0 && rules.every((r) => r.clientStatus === "paused");
+}

@@ -27,7 +27,7 @@ import { getDb } from "@persistence/db/client";
 import type { DbOrTx } from "../../repositories/personalRecordsRepository";
 import { stripNul } from "../../shared/stripNul";
 import { listAsOf } from "./formRepository";
-import { LATE_WINDOW_MS, generateOnce } from "./generators";
+import { LATE_WINDOW_MS, effectiveTrigger, generateOnce } from "./generators";
 import { deliverCoachEvents, recordCoachEvent } from "../events/coachEvents";
 import { validateAnswers, type FieldError, type Question } from "./questions";
 import {
@@ -735,6 +735,18 @@ export async function setClientFormSetup(
         override = checked.rule as Record<string, unknown>;
       }
       const now = new Date();
+      // The client's cadence before this write (PER-129, C10j).
+      const before = await tx
+        .select({ override: coachFormScheduleClients.override })
+        .from(coachFormScheduleClients)
+        .where(
+          and(
+            eq(coachFormScheduleClients.scheduleId, s.id),
+            eq(coachFormScheduleClients.relationshipId, view.relationshipId),
+          ),
+        )
+        .limit(1);
+      const wasTrigger = effectiveTrigger(s, before[0]?.override ?? null);
       await tx
         .insert(coachFormScheduleClients)
         .values({
@@ -757,6 +769,25 @@ export async function setClientFormSetup(
         });
       if (input.status === "excluded") {
         await cancelScheduleRequests(tx, s.id, [view.relationshipId]);
+      } else if (override !== undefined) {
+        // A cadence change closes the old cadence's open request, so the
+        // athlete isn't left with a form from a cadence they're no longer
+        // on (Inspector Brad, #555).
+        const nowTrigger = effectiveTrigger(s, override);
+        if (nowTrigger !== wasTrigger) {
+          await tx
+            .update(coachFormRequests)
+            .set({ status: "cancelled", updatedAt: now })
+            .where(
+              and(
+                eq(coachFormRequests.scheduleId, s.id),
+                eq(coachFormRequests.relationshipId, view.relationshipId),
+                inArray(coachFormRequests.status, ["pending", "missed"]),
+                ne(coachFormRequests.trigger, nowTrigger),
+                ne(coachFormRequests.trigger, "on_end"),
+              ),
+            );
+        }
       }
       if (input.status === "active") {
         await generateOnce(tx, s, view.relationshipId);

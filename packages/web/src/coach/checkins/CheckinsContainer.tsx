@@ -14,7 +14,12 @@ import {
   useCoachApi,
   useOnline,
 } from "../hooks/coachQueries";
-import { clientOverride, clientRule, defaultRule } from "../lib/forms";
+import {
+  clientOverride,
+  clientRule,
+  defaultRule,
+  pausedForClient,
+} from "../lib/forms";
 import { clockTime, firstName } from "../lib/people";
 import type { EffectiveRule } from "../lib/schedule";
 import { LoadError, Loading } from "../ui/parts";
@@ -188,9 +193,7 @@ export function CheckinsContainer({ client }: { client: RosterClient }) {
     (f) => !f.archivedAt && !sentIds.has(f.id),
   );
   const status = (e: ClientFormEntry) =>
-    e.rule?.clientStatus === "paused" || e.state === "paused"
-      ? ("paused" as const)
-      : ("active" as const);
+    pausedForClient(e) ? ("paused" as const) : ("active" as const);
 
   return (
     <>
@@ -261,27 +264,19 @@ export function CheckinsContainer({ client }: { client: RosterClient }) {
           }
           onPause={() =>
             void setup(
-              {
-                status: "paused",
-                // One rule at a time: without scheduleId the server applies
-                // the override to every live rule of the form (Inspector
-                // Brad, #555).
-                scheduleId: panelEntry.rule!.scheduleId,
-                override: clientOverride(panelEntry.rule!, draft!),
-              },
+              // Every rule of the form, each keeping its own override, so
+              // the form shows Paused and can be resumed (Inspector Brad,
+              // #555 sweep 2).
+              { status: "paused" },
               `${panelEntry.form.title} is paused for ${clientFirst}.`,
             )
           }
           onResume={() =>
             void setup(
-              {
-                status: "active",
-                // One rule at a time: without scheduleId the server applies
-                // the override to every live rule of the form (Inspector
-                // Brad, #555).
-                scheduleId: panelEntry.rule!.scheduleId,
-                override: clientOverride(panelEntry.rule!, draft!),
-              },
+              // Every rule of the form, each keeping its own override, so
+              // the form shows Paused and can be resumed (Inspector Brad,
+              // #555 sweep 2).
+              { status: "active" },
               `${panelEntry.form.title} is back on for ${clientFirst}.`,
             )
           }

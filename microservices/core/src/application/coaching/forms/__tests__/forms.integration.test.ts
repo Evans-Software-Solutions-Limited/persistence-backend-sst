@@ -2497,3 +2497,100 @@ describe("Inspector Brad #555", () => {
     expect(stats.forms.map((f: Json) => f.formId)).toEqual([kept.id]);
   });
 });
+
+describe("Inspector Brad #555 sweep 2", () => {
+  const setup = (formId: string, body: object) =>
+    http(
+      "PUT",
+      `/trainers/me/clients/${ATHLETE_C}/forms/${formId}/setup`,
+      COACH_A,
+      body,
+    );
+
+  it("No due date for one client is kept, and their next request has no due time", async () => {
+    const form = await makeForm(COACH_A);
+    const s = await makeSchedule(COACH_A, {
+      formId: form.id,
+      trigger: "once",
+      audience: "selected",
+      clientIds: [ATHLETE_E],
+      dueAfterHours: 24,
+    });
+    const res = await setup(form.id, {
+      status: "active",
+      scheduleId: s.id,
+      override: { dueAfterHours: null },
+    });
+    expect(res.status).toBe(200);
+    expect(res.json.data.rule.override).toEqual({ dueAfterHours: null });
+    const [row] = await requestsFor(ATHLETE_C);
+    expect(row!.dueAt).toBeNull();
+    // A rule with no due time has nothing to clear: nothing stored.
+    const plain = await makeForm(COACH_A, "Plain");
+    await makeSchedule(COACH_A, {
+      formId: plain.id,
+      trigger: "once",
+      audience: "selected",
+      clientIds: [ATHLETE_E],
+    });
+    const none = await setup(plain.id, {
+      status: "active",
+      override: { dueAfterHours: null },
+    });
+    expect(none.json.data.rule.override).toEqual({});
+  });
+
+  it("switching a client from weekly to once cancels their open weekly request", async () => {
+    const form = await makeForm(COACH_A);
+    const s = await makeSchedule(COACH_A, {
+      formId: form.id,
+      trigger: "weekly",
+      audience: "selected",
+      clientIds: [ATHLETE_C],
+      weekday: 1,
+      timeLocal: "07:00",
+    });
+    const rel = await relationship(COACH_A, ATHLETE_C);
+    const [version] = await db
+      .select()
+      .from(schema.coachFormVersions)
+      .where(eq(schema.coachFormVersions.formId, form.id));
+    await db.insert(schema.coachFormRequests).values({
+      trainerId: COACH_A,
+      clientId: ATHLETE_C,
+      relationshipId: rel.id,
+      formId: form.id,
+      formVersionId: version!.id,
+      scheduleId: s.id,
+      trigger: "weekly",
+      periodKey: "2026-W47",
+    });
+    await setup(form.id, {
+      status: "active",
+      scheduleId: s.id,
+      override: { trigger: "once" },
+    });
+    const rows = await requestsFor(ATHLETE_C);
+    expect(rows.map((r) => [r.trigger, r.status]).sort()).toEqual([
+      ["once", "pending"],
+      ["weekly", "cancelled"],
+    ]);
+    // And back to weekly: the once request is cancelled, not left open.
+    await setup(form.id, {
+      status: "active",
+      scheduleId: s.id,
+      override: null,
+    });
+    const after = await requestsFor(ATHLETE_C);
+    expect(after.find((r) => r.trigger === "once")!.status).toBe("cancelled");
+    // Saving without a cadence change cancels nothing.
+    await setup(form.id, {
+      status: "active",
+      scheduleId: s.id,
+      override: { timeLocal: "08:00" },
+    });
+    expect(
+      (await requestsFor(ATHLETE_C)).filter((r) => r.status === "pending"),
+    ).toHaveLength(0);
+  });
+});

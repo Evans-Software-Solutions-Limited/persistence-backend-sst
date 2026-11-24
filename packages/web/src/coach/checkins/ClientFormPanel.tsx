@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { ClientFormEntry } from "../api/types";
 import { RuleFields } from "../forms/RuleFields";
-import { clientTriggers, statusPill } from "../lib/forms";
+import { clientTriggers, pausedForClient, statusPill } from "../lib/forms";
 import type { EffectiveRule } from "../lib/schedule";
 import { IconX } from "../ui/icons";
 import { Notice } from "../ui/parts";
@@ -46,7 +46,7 @@ export function ClientFormPanel({
     ref.current?.focus();
   }, []);
   const pill = statusPill(entry.state, entry.lastDoneAt);
-  const paused = entry.state === "paused";
+  const paused = pausedForClient(entry);
   return (
     <aside
       ref={ref}
