@@ -531,3 +531,35 @@ describe("Inspector Brad #555 sweep 4", () => {
     });
   });
 });
+
+describe("Inspector Brad #555 sweep 4: partial failure", () => {
+  it("a Pause that fails partway reloads Sam's forms so the panel isn't stale", async () => {
+    const entry = {
+      ...CLIENT_FORMS[0]!,
+      rules: [
+        CLIENT_FORMS[0]!.rule!,
+        { ...CLIENT_FORMS[1]!.rule!, scheduleId: "s-join", trigger: "on_join" },
+      ],
+    };
+    const clientForms = vi.fn().mockResolvedValue([entry]);
+    const api = fakeApi({
+      clientForms,
+      clientFormSetup: vi
+        .fn()
+        .mockResolvedValueOnce(entry)
+        .mockRejectedValueOnce(apiError(0, null, true)),
+    });
+    renderCoach(<ClientPage />, { route: ROUTE, path: PATH, api });
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Weekly check-in: set up/ }),
+    );
+    const panel = await screen.findByRole("dialog", { name: /for Sam only/ });
+    fireEvent.click(within(panel).getByRole("button", { name: "Pause" }));
+    expect(
+      await within(panel).findByText(
+        /Changes for one client need a connection/,
+      ),
+    ).toBeTruthy();
+    await waitFor(() => expect(clientForms).toHaveBeenCalledTimes(2));
+  });
+});

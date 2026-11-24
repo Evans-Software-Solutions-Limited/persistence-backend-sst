@@ -154,6 +154,7 @@ export function CheckinsContainer({ client }: { client: RosterClient }) {
     if (!panelEntry) return;
     setBusy(true);
     setPanelError(null);
+    let wrote = 0;
     try {
       let updated: ClientFormEntry | null = null;
       for (const input of Array.isArray(inputs) ? inputs : [inputs]) {
@@ -162,6 +163,7 @@ export function CheckinsContainer({ client }: { client: RosterClient }) {
           panelEntry.form.id,
           input,
         );
+        wrote += 1;
       }
       queryClient.setQueryData<ClientFormEntry[]>(
         coachKeys.clientForms(client.id),
@@ -178,6 +180,13 @@ export function CheckinsContainer({ client }: { client: RosterClient }) {
       setNotice(done);
     } catch (e) {
       setConfirmStop(false);
+      // Some rules were already written: reload so the panel shows what the
+      // server has (Inspector Brad, #555 sweep 4).
+      if (wrote > 0) {
+        void queryClient.invalidateQueries({
+          queryKey: coachKeys.clientForms(client.id),
+        });
+      }
       setPanelError(
         failure(
           e,
