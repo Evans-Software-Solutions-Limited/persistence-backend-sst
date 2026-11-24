@@ -328,4 +328,46 @@ describe("height=content", () => {
     expect(r.queryByTestId("bottom-sheet-static-body")).toBeNull();
     expect(r.UNSAFE_queryByType(BottomSheetScrollView)).toBeNull();
   });
+
+  it("draws the eyebrow and title as a header above the body (PER-132 Your meals)", () => {
+    const r = renderWithTheme(
+      <BottomSheet
+        visible
+        onClose={() => {}}
+        height="content"
+        title="Your meals"
+        eyebrow="Mealprint"
+        scrollable={false}
+        testID="fit-sheet"
+      >
+        <Text>Breakfast</Text>
+      </BottomSheet>,
+    );
+    const sheet = within(r.getByTestId("fit-sheet"));
+    expect(sheet.getByRole("header", { name: "Your meals" })).toBeTruthy();
+    expect(sheet.getByText("Mealprint")).toBeTruthy();
+    // The header sits outside the padded body, as in the scrolling branch.
+    expect(
+      within(r.getByTestId("bottom-sheet-content-body")).queryByText(
+        "Your meals",
+      ),
+    ).toBeNull();
+    expect(
+      within(r.getByTestId("bottom-sheet-content-body")).getByText("Breakfast"),
+    ).toBeTruthy();
+  });
+
+  it("draws no header when neither title nor eyebrow is passed", () => {
+    const r = renderWithTheme(
+      <BottomSheet
+        visible
+        onClose={() => {}}
+        height="content"
+        testID="fit-sheet"
+      >
+        <Text>Leave?</Text>
+      </BottomSheet>,
+    );
+    expect(r.queryByRole("header")).toBeNull();
+  });
 });
