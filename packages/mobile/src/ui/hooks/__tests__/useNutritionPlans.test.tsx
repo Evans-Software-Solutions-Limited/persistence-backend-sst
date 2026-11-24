@@ -315,6 +315,10 @@ describe("usePlansShoppingList", () => {
     await act(async () => {
       await hook.result.current.setPlanIncluded("B", true);
     });
+    // The first follow-up fires while that slow read is still out: dropped.
+    await act(async () => {
+      jest.advanceTimersByTime(1500);
+    });
     await act(async () => {
       release();
       await first;
@@ -329,6 +333,44 @@ describe("usePlansShoppingList", () => {
     await act(async () => {});
     expect(spy.mock.calls.length).toBeGreaterThanOrEqual(2);
     jest.useRealTimers();
+  });
+
+  it("ticking an item while the list loads still takes the fresh list (Inspector Brad #554)", async () => {
+    const { api, wrapper } = setup();
+    let release: () => void = () => {};
+    let requested: () => void = () => {};
+    const getSent = new Promise<void>((r) => (requested = r));
+    const fresh = {
+      aisles: [
+        {
+          aisle: "Bakery",
+          items: [{ id: "bagels", name: "Plain bagels", quantity: "2" }],
+        },
+      ],
+      totalItems: 1,
+      plans: [],
+      asOf: "t2",
+    };
+    jest.spyOn(api, "getPlansShoppingList").mockImplementationOnce(async () => {
+      requested();
+      await new Promise<void>((r) => (release = r));
+      return { ok: true as const, value: fresh };
+    });
+    const hook = renderHook(() => usePlansShoppingList(false), { wrapper });
+    let first: Promise<boolean> = Promise.resolve(true);
+    act(() => {
+      first = hook.result.current.refresh();
+    });
+    await act(async () => {
+      await getSent;
+    });
+    act(() => hook.result.current.toggleTick("chicken"));
+    await act(async () => {
+      release();
+      await first;
+    });
+    expect(hook.result.current.value.list!.totalItems).toBe(1);
+    expect(hook.result.current.value.ticked).toEqual(["chicken"]);
   });
 
   it("does nothing without a signed-in user", async () => {

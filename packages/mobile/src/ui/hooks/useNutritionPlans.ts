@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import { getApiBaseUrl } from "@/adapters/api";
 import {
   NUTRITION_PLAN_TABLES,
@@ -8,7 +8,6 @@ import { localIdFactory } from "@/application/commands/localId";
 import {
   NUTRITION_PLAN_ASSIGNMENT_ENTITY,
   NUTRITION_PLAN_ENTITY,
-  SHOPPING_LIST_PLAN_ENTITY,
   addPlanToDayCommand,
   answerCoachPlanCommand,
   applyShoppingListRead,
@@ -34,7 +33,6 @@ import type {
 import { emptyPlansCache } from "@/domain/models/nutritionPlans";
 import type { UserMeal } from "@/domain/models/userMeals";
 import type { StoragePort } from "@/domain/ports/storage.port";
-import { isAutoResolvableSyncEntry } from "@/domain/ports/sync.types";
 import {
   mergePlansResponse,
   overlayLocalPlans,
@@ -248,6 +246,10 @@ export function useNutritionPlans(enabled = true): NutritionPlansState {
   };
 }
 
+/** Follow-up reads after a plan is added or removed (1.5s apart). */
+const SHOPPING_REREAD_ATTEMPTS = 8;
+const SHOPPING_REREAD_MS = 1500;
+
 export type PlansShoppingState = {
   value: PlansShoppingCache;
   isLoading: boolean;
@@ -267,39 +269,52 @@ export function usePlansShoppingList(enabled = true): PlansShoppingState {
   const { session } = useAuth();
   const userId = session?.userId ?? null;
 
+  const plansChangedDuringRead = useRef(false);
   const resource = useCachedResource<PlansShoppingCache>({
     read: (s, uid) => ({ value: s.getCachedPlansShopping(uid), isStale: true }),
     fetcher: async (api) => {
+      // A plan added or removed while this read is out beats the read's older
+      // plan list; ticks never count (they stay on the phone either way).
+      // Inspector Brad, #554.
+      const plansKey = () =>
+        JSON.stringify(
+          userId
+            ? (readShoppingCache(storage, userId).list?.plans ?? null)
+            : null,
+        );
+      const before = plansKey();
+      plansChangedDuringRead.current = false;
       const result = await api.getPlansShoppingList();
       if (!result.ok) return result;
+      const local = userId ? readShoppingCache(storage, userId) : null;
+      const changed = plansKey() !== before && local?.list;
+      plansChangedDuringRead.current = Boolean(changed);
       return {
         ok: true,
         value: {
-          list: result.value,
-          ticked: userId ? readShoppingCache(storage, userId).ticked : [],
+          list: changed
+            ? { ...result.value, plans: local.list!.plans }
+            : result.value,
+          ticked: local?.ticked ?? [],
         },
       };
     },
     // Plan chips changed on the phone but not yet sent stay; ticks stay.
     reconcile: (s, uid, value) =>
       value.list ? applyShoppingListRead(s, uid, value.list) : value,
-    // A plan toggled (or an item ticked) while a read is out beats that
-    // read's older answer (Inspector Brad, #554).
-    preserveConcurrentCacheWrites: true,
-    pendingWrites: (s) =>
-      s
-        .getUncompletedMutations()
-        .filter(
-          (e) =>
-            e.entityType === SHOPPING_LIST_PLAN_ENTITY &&
-            isAutoResolvableSyncEntry(e),
-        ),
     write: (s, uid, value) => s.cachePlansShopping(uid, value),
     tables: PLANS_SHOPPING_TABLES,
     enabled,
   });
 
   const { reload, refresh } = resource;
+  const readUntilCurrent = useCallback(async () => {
+    for (let attempt = 0; attempt < SHOPPING_REREAD_ATTEMPTS; attempt++) {
+      const ran = await refresh({ silent: true });
+      if (ran && !plansChangedDuringRead.current) return;
+      await new Promise((r) => setTimeout(r, SHOPPING_REREAD_MS));
+    }
+  }, [refresh]);
   const toggleTick = useCallback(
     (itemId: string) => {
       if (!userId) return;
@@ -323,13 +338,11 @@ export function usePlansShoppingList(enabled = true): PlansShoppingState {
         console.error("[usePlansShoppingList] queue flush failed:", err);
       }
       // The aisles change server-side once the plan is in; read them again.
-      // A read already out may predate this change and drops this one, so
-      // read once more shortly after (Inspector Brad, #554).
-      void refresh({ silent: true }).then((ran) => {
-        if (!ran) setTimeout(() => void refresh({ silent: true }), 1500);
-      });
+      // A read already out (or one that saw the plans change under it) can't
+      // show them, so keep trying until a read runs clean (Inspector Brad, #554).
+      void readUntilCurrent();
     },
-    [auth, storage, userId, reload, refresh],
+    [auth, storage, userId, reload, readUntilCurrent],
   );
 
   return {

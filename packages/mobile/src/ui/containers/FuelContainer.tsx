@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, type ScrollView } from "react-native";
-import { useRouter, type Href } from "expo-router";
+import { useFocusEffect, useRouter, type Href } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { useScrollToTopOnTabPress } from "@/ui/hooks/useScrollToTopOnTabPress";
 import { useAdapters } from "@/ui/hooks/useAdapters";
@@ -96,6 +96,16 @@ export function FuelContainer() {
   const todayIso = localDayISO();
 
   const [calendarOpen, setCalendarOpen] = useState(false);
+
+  // PER-133: whether Fuel is the screen on top. The Plan tab only opens a
+  // coach plan's sheet by itself while it is (not over New plan, say).
+  const [focused, setFocused] = useState(true);
+  useFocusEffect(
+    useCallback(() => {
+      setFocused(true);
+      return () => setFocused(false);
+    }, []),
+  );
 
   const fuel = useGetFuelToday(date);
   // Kept-alive tab — re-pull the day's fuel on re-entry so totals/water/macros
@@ -454,7 +464,7 @@ export function FuelContainer() {
       onSection={onSection}
       sectionContent={
         section === "plan" ? (
-          <PlanTabContainer active />
+          <PlanTabContainer active={focused} />
         ) : section === "meals" ? (
           <MealsTabContainer />
         ) : null

@@ -398,6 +398,17 @@ describe("PlanTabContainer", () => {
     });
   });
 
+  it("a waiting coach plan doesn't open while the tab isn't on top (Inspector Brad #554)", () => {
+    mockPlans.cache = {
+      ...emptyPlansCache(),
+      fromCoaches: [coach({ status: "sent" })],
+    };
+    const r = render(<PlanTabContainer active={false} />);
+    expect(usePlanSheets.getState().sheet).toBeNull();
+    r.rerender(<PlanTabContainer active />);
+    expect(usePlanSheets.getState().coachPlanId).toBe("c1");
+  });
+
   it("a waiting coach plan doesn't replace an open Your plans sheet", () => {
     usePlanSheets.setState({ sheet: "switch" });
     mockPlans.cache = {

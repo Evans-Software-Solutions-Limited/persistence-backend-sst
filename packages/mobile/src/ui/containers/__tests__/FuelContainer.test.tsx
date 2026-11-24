@@ -347,6 +347,11 @@ describe("FuelContainer", () => {
     act(() => mockProbe.last!.onSection("plan"));
     expect(mockProbe.last!.section).toBe("plan");
     expect(mockProbe.last!.sectionContent).not.toBeNull();
+    // The Plan tab is active only while Fuel is the focused screen.
+    const content = mockProbe.last!.sectionContent as {
+      props: { active: boolean };
+    };
+    expect(content.props.active).toBe(true);
     act(() => mockProbe.last!.onRefresh());
     act(() => mockProbe.last!.onSection("meals"));
     expect(mockProbe.last!.section).toBe("meals");
