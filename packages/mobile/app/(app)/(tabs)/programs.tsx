@@ -1,15 +1,12 @@
-import { CoachLibraryHubContainer } from "@/ui/containers/CoachLibraryHubContainer";
+import { Redirect } from "expo-router";
 
 /**
- * Programs tab — coach-mode only (specs/19-programs STORY-002). Visibility is
- * gated to coach mode by `<TabsLayout>` (href: null in athlete mode); the
- * programme editor + assign flows live as sibling routes under
- * `app/(app)/programs/*`.
- *
- * specs/24-coach-authoring STORY-001: the tab now renders the unified coach
- * library hub (Programmes | Workouts | Exercises) instead of the bare
- * programmes list.
+ * The old coach Programs tab (specs/19-programs STORY-002). PER-129's K
+ * shell moved programmes into Library → Programmes; this route stays so
+ * existing links and pushes still land there.
  */
 export default function ProgramsTab() {
-  return <CoachLibraryHubContainer />;
+  return (
+    <Redirect href={"/(app)/(tabs)/library?segment=programmes" as never} />
+  );
 }

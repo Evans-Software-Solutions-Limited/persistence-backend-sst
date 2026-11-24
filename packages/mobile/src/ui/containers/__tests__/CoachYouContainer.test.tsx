@@ -252,7 +252,7 @@ describe("CoachYouContainer", () => {
   // QA-16 (device-QA batch, BRIEF-7): "Programmes" in coach You was wired to
   // a no-op. Must pin the Coach Library hub's segment to "Programmes" AND
   // navigate to the Programs tab.
-  it("view-all-programmes pins the Programmes segment and navigates to the Programs tab", async () => {
+  it("view-all-programmes pins the Programmes segment and opens Library → Programmes (PER-129)", async () => {
     const { adapters, api } = makeAdapters();
     api.coachOverview = makeCoachOverview();
     useCoachLibrarySegment.setState({ segment: "Workouts" });
@@ -264,7 +264,9 @@ describe("CoachYouContainer", () => {
     await waitFor(() => expect(mockProbe.last).not.toBeNull());
     act(() => mockProbe.last?.onViewAllPrograms?.());
     expect(useCoachLibrarySegment.getState().segment).toBe("Programmes");
-    expect(mockRouterPush).toHaveBeenCalledWith("/(app)/(tabs)/programs");
+    expect(mockRouterPush).toHaveBeenCalledWith(
+      "/(app)/(tabs)/library?segment=programmes",
+    );
   });
 
   it("opens the AddClient sheet (registering the overview refresh) on invite", async () => {

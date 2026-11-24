@@ -159,7 +159,8 @@ export function CoachYouContainer() {
   // whatever it last showed, then navigate.
   const onViewAllPrograms = useCallback(() => {
     useCoachLibrarySegment.getState().setSegment("Programmes");
-    router.push("/(app)/(tabs)/programs" as never);
+    // PER-129 K shell: programmes live in Library → Programmes.
+    router.push("/(app)/(tabs)/library?segment=programmes" as never);
   }, []);
 
   return (

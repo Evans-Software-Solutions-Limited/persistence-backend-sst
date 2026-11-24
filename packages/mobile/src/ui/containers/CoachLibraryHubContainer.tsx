@@ -48,7 +48,16 @@ const CONTEXTUAL_ACTION: Record<
   Exercises: { label: "Create", route: "/(app)/exercises/create" },
 };
 
-export function CoachLibraryHubContainer() {
+export function CoachLibraryHubContainer({
+  embedded = false,
+}: {
+  /**
+   * PER-129 K shell: shown inside the Library tab's Programmes segment,
+   * which already draws the "Library" label, the title and the safe area.
+   * Keeps the create action and the switcher.
+   */
+  embedded?: boolean;
+} = {}) {
   const segment = useCoachLibrarySegment((s) => s.segment);
   const setSegment = useCoachLibrarySegment((s) => s.setSegment);
   // The hub applies the top safe-area inset itself so the header doesn't
@@ -70,17 +79,21 @@ export function CoachLibraryHubContainer() {
   };
 
   return (
-    <View flex={1} paddingTop={insets.top} testID="coach-library-hub">
+    <View
+      flex={1}
+      paddingTop={embedded ? 0 : insets.top}
+      testID="coach-library-hub"
+    >
       <View
         testID="coach-library-header"
         paddingHorizontal={20}
-        paddingTop={8}
+        paddingTop={embedded ? 12 : 8}
         paddingBottom={12}
         flexDirection="row"
         alignItems="flex-end"
-        justifyContent="space-between"
+        justifyContent={embedded ? "flex-end" : "space-between"}
       >
-        <View flex={1}>
+        <View flex={1} display={embedded ? "none" : "flex"}>
           <Text
             fontFamily="$display"
             fontSize={10.5}
