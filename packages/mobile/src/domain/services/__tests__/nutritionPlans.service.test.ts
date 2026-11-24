@@ -42,6 +42,7 @@ import {
   planItemFromRecipe,
   planItemFromSavedMeal,
   planMealsFromDay,
+  recomputePlan,
   removeItem,
   replaceItem,
   shoppingProgress,
@@ -355,6 +356,22 @@ describe("plan meals and drafts", () => {
     const next = withPlanMeals(draft(), many, newId, many);
     expect(next.meals).toHaveLength(PLAN_MEALS_MAX);
     expect(next.meals[0]!.name).toBe("Meal 1");
+  });
+
+  it("at the meal cap, drops empty meals before any meal with food", () => {
+    // A 20-meal plan with food in every meal that Your meals don't know
+    // (a coach's), plus one new tick: the tick's empty meal goes, not food.
+    const full = recomputePlan({
+      ...draft(),
+      meals: Array.from({ length: PLAN_MEALS_MAX }, (_, i) => ({
+        ...emptyPlanMeal(`c${i}`, `Coach ${i}`, "snack", i),
+        items: [planItemFromFood(`f${i}`, food, 1)],
+      })),
+    });
+    const next = withPlanMeals(full, [userMeals[0]!], newId, userMeals);
+    expect(next.meals).toHaveLength(PLAN_MEALS_MAX);
+    expect(next.meals.every((m) => m.items.length === 1)).toBe(true);
+    expect(next.meals.map((m) => m.id)).toContain(`c${PLAN_MEALS_MAX - 1}`);
   });
 
   it("keeps plan meals that aren't one of Your meals", () => {

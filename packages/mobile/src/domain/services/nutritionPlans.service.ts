@@ -651,11 +651,29 @@ export function withPlanMeals(
   );
   return recomputePlan({
     ...plan,
-    // The server takes at most PLAN_MEALS_MAX meals (Inspector Brad, #554).
-    meals: [...kept, ...extra]
-      .slice(0, PLAN_MEALS_MAX)
-      .map((m, i) => ({ ...m, sortOrder: i })),
+    meals: capPlanMeals([...kept, ...extra]).map((m, i) => ({
+      ...m,
+      sortOrder: i,
+    })),
   });
+}
+
+/**
+ * The server takes at most PLAN_MEALS_MAX meals. Over that, empty meals go
+ * first (from the end), so a meal with food is never dropped to make room
+ * for an empty one (Inspector Brad, #554).
+ */
+function capPlanMeals(meals: readonly PlanMeal[]): PlanMeal[] {
+  let over = meals.length - PLAN_MEALS_MAX;
+  if (over <= 0) return [...meals];
+  const drop = new Set<string>();
+  for (let i = meals.length - 1; i >= 0 && over > 0; i--) {
+    if (meals[i]!.items.length === 0) {
+      drop.add(meals[i]!.id);
+      over--;
+    }
+  }
+  return meals.filter((m) => !drop.has(m.id)).slice(0, PLAN_MEALS_MAX);
 }
 
 /** A new plan drafted on the phone (N28). Never logs anything. */
