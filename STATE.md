@@ -48,6 +48,17 @@ release, reviewed on staging.
   core pass; mobile 699/701 suites (96.2 / 92.0 stmts/branches).
   `SubscriptionSelectionContainer` hangs (failing on main too);
   `PlanTodayContainer` timed out under load, passes alone.
+- **Inspector Brad on #554: nineteen sweeps, case closed on `548d126`
+  (24 Nov).** Every lead was confirmed and fixed with a failing-first
+  regression test. Main themes: one-off macros sent per serving; local-id
+  aliases and own revisions so synced plans keep picks, notices and edits;
+  per-entity ordering holds in the queue; shopping-list read races and
+  retries; C6 auto-open waits for focus and other sheets. Late sweeps added
+  the server's caps on the phone: servings floor at 0.01; at most 20 meals
+  (empty meals dropped first) and 50 items a meal. Full meals say "… is
+  full. Pick another meal." / "… has room for N more items." and turn the
+  action off, and New plan refuses a logged day with more than 20 meals with
+  food. That last copy is not on the canvas.
 - **Not verified:** nothing run on a device or against staging.
 - **Found, not fixed:** `BottomSheet` with `height="content"` never draws
   `title`; PER-132's Your meals sheet passes one. PER-133's short sheets draw
