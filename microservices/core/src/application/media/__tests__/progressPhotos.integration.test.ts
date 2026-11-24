@@ -74,7 +74,10 @@ async function runPurgeNight(deps: { accountRepo: AccountPurgeCronRepo }) {
   const summary = await accountPurgeCron({
     accountRepo: deps.accountRepo,
     cancelStripeSubscriptions: async () => {},
-    deleteAuthUser: async () => {},
+    // Like Supabase: deleting the auth user cascades to profiles.
+    deleteAuthUser: async (userId: string) => {
+      await pg.exec(`delete from profiles where id = '${userId}'`);
+    },
     deleteAvatar: async () => {},
     queuePrivateMediaPurge,
     now: new Date(),
@@ -609,16 +612,24 @@ describe("Inspector Brad #553 sweep 2", () => {
       accountRepo: {
         listPendingPurge: async () => [ATHLETE_A],
         // The user taps Restore while the sweep runs: purgeUserData's own
-        // deleted_at re-check then aborts, deleting nothing.
+        // deleted_at re-check then aborts, deleting nothing, and says so.
         purgeUserData: async () => {
           await db
             .update(schema.profiles)
             .set({ deletedAt: null })
             .where(eq(schema.profiles.id, ATHLETE_A));
+          return false;
         },
       },
     });
-    expect(summary.failed).toBe(0);
+    expect(summary).toMatchObject({ purged: 0, restored: 1, failed: 0 });
+    // The auth user (and so the profile) survives the restore.
+    expect(
+      await db
+        .select()
+        .from(schema.profiles)
+        .where(eq(schema.profiles.id, ATHLETE_A)),
+    ).toHaveLength(1);
     expect(summary.drained).toMatchObject({ restored: 1, deleted: 0 });
     expect(bucket.keys(`progress/${ATHLETE_A}/`)).toHaveLength(3);
     expect(await db.select().from(schema.privateMediaPurges)).toEqual([]);
@@ -631,6 +642,7 @@ describe("Inspector Brad #553 sweep 2", () => {
       listPendingPurge: async () => [ATHLETE_A],
       purgeUserData: async () => {
         await pg.exec(`delete from profiles where id = '${ATHLETE_A}'`);
+        return true;
       },
     };
     bucket.failures.set("DeleteObjectsCommand", new Error("S3 down"));

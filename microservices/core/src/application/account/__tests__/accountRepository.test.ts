@@ -61,12 +61,12 @@ describe("AccountRepository.purgeUserData", () => {
   it("runs every deletion step, in plan order, inside a single transaction", async () => {
     const executed: SQL[] = [];
     const tx = makeTx(executed);
-    const transaction = vi.fn(async (cb: (t: typeof tx) => Promise<void>) =>
+    const transaction = vi.fn(async (cb: (t: typeof tx) => Promise<unknown>) =>
       cb(tx),
     );
     (getDb as any).mockReturnValue({ transaction });
 
-    await new AccountRepository().purgeUserData("user-9");
+    expect(await new AccountRepository().purgeUserData("user-9")).toBe(true);
 
     // One transaction, one execute per plan step.
     expect(transaction).toHaveBeenCalledTimes(1);
@@ -95,10 +95,12 @@ describe("AccountRepository.purgeUserData", () => {
         ? ([{ id: "p-1" }, { id: "p-2" }] as never)
         : (undefined as never);
     });
-    const transaction = vi.fn(async (cb: (t: typeof tx) => Promise<void>) => {
-      await cb(tx);
-      order.push("commit");
-    });
+    const transaction = vi.fn(
+      async (cb: (t: typeof tx) => Promise<unknown>) => {
+        await cb(tx);
+        order.push("commit");
+      },
+    );
     restampTombstones.mockImplementationOnce(async () => {
       order.push("restamp");
     });
@@ -120,7 +122,9 @@ describe("AccountRepository.purgeUserData", () => {
         : ({ rows: [] } as never);
     });
     (getDb as any).mockReturnValue({
-      transaction: vi.fn(async (cb: (t: typeof tx) => Promise<void>) => cb(tx)),
+      transaction: vi.fn(async (cb: (t: typeof tx) => Promise<unknown>) =>
+        cb(tx),
+      ),
     });
     await new AccountRepository().purgeUserData("athlete-2");
     expect(restampTombstones).toHaveBeenCalledWith(["p-9"]);
@@ -144,13 +148,15 @@ describe("AccountRepository.purgeUserData", () => {
         : (undefined as never),
     );
     (getDb as any).mockReturnValue({
-      transaction: vi.fn(async (cb: (t: typeof tx) => Promise<void>) => cb(tx)),
+      transaction: vi.fn(async (cb: (t: typeof tx) => Promise<unknown>) =>
+        cb(tx),
+      ),
     });
     restampTombstones.mockRejectedValueOnce(new Error("db blip"));
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     await expect(
       new AccountRepository().purgeUserData("athlete-4"),
-    ).resolves.toBeUndefined();
+    ).resolves.toBe(true);
     expect(spy).toHaveBeenCalled();
     spy.mockRestore();
   });
@@ -166,7 +172,7 @@ describe("AccountRepository.purgeUserData", () => {
     // appeared in ACCOUNT_DELETION_STEPS at all.
     const executed: SQL[] = [];
     const tx = makeTx(executed);
-    const transaction = vi.fn(async (cb: (t: typeof tx) => Promise<void>) =>
+    const transaction = vi.fn(async (cb: (t: typeof tx) => Promise<unknown>) =>
       cb(tx),
     );
     (getDb as any).mockReturnValue({ transaction });
@@ -216,12 +222,16 @@ describe("AccountRepository.purgeUserData", () => {
     // run NO deletion steps, so the restored account survives intact.
     const executed: SQL[] = [];
     const tx = makeTx(executed, []);
-    const transaction = vi.fn(async (cb: (t: typeof tx) => Promise<void>) =>
+    const transaction = vi.fn(async (cb: (t: typeof tx) => Promise<unknown>) =>
       cb(tx),
     );
     (getDb as any).mockReturnValue({ transaction });
 
-    await new AccountRepository().purgeUserData("restored-user");
+    // PER-121 / Inspector Brad #553: reports that nothing was purged, so
+    // the cron skips the auth-user delete.
+    expect(await new AccountRepository().purgeUserData("restored-user")).toBe(
+      false,
+    );
 
     expect(transaction).toHaveBeenCalledTimes(1);
     expect(tx.select).toHaveBeenCalledTimes(1);

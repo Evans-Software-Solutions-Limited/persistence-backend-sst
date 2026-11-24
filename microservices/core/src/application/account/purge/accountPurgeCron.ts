@@ -15,7 +15,9 @@
  */
 export interface AccountPurgeCronRepo {
   listPendingPurge(now: Date): Promise<string[]>;
-  purgeUserData(userId: string): Promise<void>;
+  /** False when the account was restored before the purge took its lock:
+   * nothing was deleted and nothing else may be. */
+  purgeUserData(userId: string): Promise<boolean>;
 }
 
 export interface AccountPurgeCronDeps {
@@ -51,6 +53,9 @@ export interface AccountPurgeCronSummary {
   /** Successfully purged (SQL data gone — auth-delete/avatar failures still
    * count as purged, since the compliance-critical step succeeded). */
   purged: number;
+  /** Restored before the purge locked the profile: nothing was deleted, and
+   * the auth-user and avatar deletes were skipped (Inspector Brad, #553). */
+  restored: number;
   /** The SQL purge itself failed for this user — retried on the next sweep
    * (idempotent: `purgeUserData` deletes zero rows for an already-purged
    * user, and the user still matches `listPendingPurge` because `profiles`
@@ -65,6 +70,7 @@ export async function accountPurgeCron(
   const summary: AccountPurgeCronSummary = {
     pending: userIds.length,
     purged: 0,
+    restored: 0,
     failed: 0,
   };
 
@@ -88,7 +94,14 @@ export async function accountPurgeCron(
       // 2. The compliance-critical step: SQL purge via the corrected plan.
       //    A failure here is NOT swallowed — it's the one step that must
       //    retry on the next sweep rather than being marked done.
-      await deps.accountRepo.purgeUserData(userId);
+      const purged = await deps.accountRepo.purgeUserData(userId);
+      if (!purged) {
+        // Restored mid-sweep. The Supabase auth-user delete would cascade to
+        // `profiles` and destroy the restored account (and the drain would
+        // then delete its photos), so stop here.
+        summary.restored += 1;
+        continue;
+      }
       summary.purged += 1;
 
       // 3. Supabase auth-user delete. Non-fatal (data is already gone).
