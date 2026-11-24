@@ -8,6 +8,7 @@ import { useGetStreaks } from "@/ui/hooks/useGetStreaks";
 import { useRefreshOnFocus } from "@/ui/hooks/useRefreshOnFocus";
 import { useModeSwitch } from "@/ui/hooks/useModeSwitch";
 import { useDrawer } from "@/state/drawer";
+import { useCoachLibraryTab } from "@/state/coach-library-tab";
 import { useAddClientSheet } from "@/state/add-client-sheet";
 import { initialsOf } from "@/shared/utils";
 import type { Streak } from "@/domain/models/streak";
@@ -159,7 +160,11 @@ export function CoachYouContainer() {
   // whatever it last showed, then navigate.
   const onViewAllPrograms = useCallback(() => {
     useCoachLibrarySegment.getState().setSegment("Programmes");
-    router.push("/(app)/(tabs)/programs" as never);
+    // PER-129 K shell: programmes live in Library → Programmes. The Library
+    // tab stays mounted, so a repeat push with the same ?segment= doesn't
+    // re-run its param effect: set its segment too (Inspector Brad #556).
+    useCoachLibraryTab.getState().setSegment("programmes");
+    router.push("/(app)/(tabs)/library?segment=programmes" as never);
   }, []);
 
   return (

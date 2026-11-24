@@ -34,6 +34,11 @@ import {
   NUTRITION_PLAN_ENTITY,
   SHOPPING_LIST_PLAN_ENTITY,
 } from "./nutritionPlans.command";
+import {
+  applyCoachFormsConflict,
+  applyCoachFormsSyncSuccess,
+  COACH_FORMS_ENTITIES,
+} from "./coachForms.command";
 
 /** A non-OK HTTP response from a sync POST/PUT/DELETE, carrying the status so
  * the drain can classify permanent vs transient failures. */
@@ -1020,6 +1025,17 @@ export async function processSyncQueue(
             continue;
           }
         }
+        // PER-129: a coach form or send rule edited on another device. The
+        // cache takes the server copy, the queued edits are dropped (never
+        // retried) and the screens say "Edited on another device".
+        if (
+          response.status === 409 &&
+          COACH_FORMS_ENTITIES.includes(entry.entityType) &&
+          applyCoachFormsConflict(storage, entry, body)
+        ) {
+          failed++;
+          continue;
+        }
         throw new SyncHttpError(
           response.status,
           `HTTP ${response.status}: ${body}`,
@@ -1389,6 +1405,21 @@ export async function processSyncQueue(
         } catch (err) {
           console.warn(
             "[sync] meal plan write succeeded but response capture failed; the next read reconciles:",
+            err,
+          );
+        }
+      }
+
+      // PER-129: a coach-forms write synced. Take the server's copy, swap an
+      // offline create's `local-…` id and rebase later queued edits onto the
+      // new revision. Non-fatal: the request already succeeded.
+      if (COACH_FORMS_ENTITIES.includes(entry.entityType)) {
+        try {
+          const body = (await response.json()) as { data?: unknown };
+          applyCoachFormsSyncSuccess(storage, entry, body.data ?? null);
+        } catch (err) {
+          console.warn(
+            "[sync] coach forms write succeeded but response capture failed; the next read reconciles:",
             err,
           );
         }

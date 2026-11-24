@@ -100,3 +100,21 @@ export const USER_MEAL_TABLES = ["cached_user_meals"] as const;
 export const NUTRITION_PLAN_TABLES = ["cached_nutrition_plans"] as const;
 /** PER-133 shopping list across plans, with this phone's ticks. */
 export const PLANS_SHOPPING_TABLES = ["cached_plans_shopping"] as const;
+/** PER-129 coach forms library (with current versions), per coach. */
+export const COACH_FORMS_TABLES = [
+  "cached_coach_forms",
+  "coach_form_conflicts",
+] as const;
+/** PER-129 send rules, per coach. */
+export const COACH_FORM_SCHEDULES_TABLES = [
+  "cached_coach_form_schedules",
+  "coach_form_conflicts",
+] as const;
+/** PER-129 C10g counts, per coach. */
+export const COACH_FORM_STATS_TABLES = ["cached_coach_form_stats"] as const;
+/** PER-129 a client's "Sent to" forms. */
+export const COACH_CLIENT_FORMS_TABLES = ["cached_coach_client_forms"] as const;
+/** PER-129 a client's form responses. */
+export const COACH_FORM_RESPONSES_TABLES = [
+  "cached_coach_form_responses",
+] as const;

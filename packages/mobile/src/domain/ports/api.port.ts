@@ -159,6 +159,13 @@ import type {
   PlansShoppingList,
 } from "@/domain/models/nutritionPlans";
 import type { UserMealsResponse } from "@/domain/models/userMeals";
+import type {
+  ClientForm,
+  CoachFormStats,
+  CoachFormsLibrary,
+  FormResponsesPage,
+  FormSchedule,
+} from "@/domain/models/coachForms";
 
 /**
  * Port for remote SST API operations.
@@ -1727,6 +1734,27 @@ export interface ApiPort extends ReferralsPort {
   scanEquipment(
     input: EquipmentScanInput,
   ): Promise<Result<EquipmentScanDraft, LoadoutApiError>>;
+
+  // -- PER-129 (APP-C1): coach forms reads --
+  //
+  // Writes (form create/edit, send rules, per-client setup, review) go through
+  // the offline queue (`coachForms.command.ts`), never through this port.
+
+  /** `GET /trainers/me/forms?include=templates`: library + current versions. */
+  getCoachForms(): Promise<Result<CoachFormsLibrary, ApiError>>;
+  /** `GET /trainers/me/forms/stats`: C10g "N/M" counts and totals. */
+  getCoachFormStats(): Promise<Result<CoachFormStats, ApiError>>;
+  /** `GET /trainers/me/form-schedules`: every send rule. */
+  getCoachFormSchedules(): Promise<Result<FormSchedule[], ApiError>>;
+  /** `GET /trainers/me/clients/:clientId/forms`: C3.3 "Sent to". */
+  getCoachClientForms(
+    clientId: string,
+  ): Promise<Result<ClientForm[], ApiError>>;
+  /** `GET /trainers/me/clients/:clientId/form-responses`, newest first. */
+  getCoachFormResponses(
+    clientId: string,
+    opts?: { formId?: string; cursor?: string; limit?: number },
+  ): Promise<Result<FormResponsesPage, ApiError>>;
 }
 
 /**

@@ -11,6 +11,63 @@ later sessions changed things.
 
 ---
 
+### 2026-11-23 — BE-G1a: different reps for each set ([PER-111](https://linear.app/evans-software-solutions/issue/PER-111); branch `bradleysimmsevans/per-111-be-g1a-backend-different-reps-for`)
+
+PR #552 (open, no auto-merge). Backend only: design G part 1. No mobile,
+web, native or version change. Unblocks PER-139 (APP-G1); PER-112 (BE-G1b)
+starts after this merges and adds the rest of migration 9.
+
+- **Migration** `supabase/migrations/20261123230809_workout_exercise_set_targets.sql`
+  (+ rollback): `workout_exercise_set_targets` (workout_exercise_id → CASCADE,
+  set_number 1–20, target_reps 1–100, unique per set, RLS on, no policies).
+  Mirrored as `workoutExerciseSetTargets` in `packages/db/src/schema.ts`
+  (inserted after `workoutExercises`; import block untouched).
+- **API (additive):** `setTargets?: [{reps}] | null` on each exercise of
+  `POST /workouts`, `PATCH /workouts/:id` and the Loadout variation bodies
+  (shared `workoutExerciseInputSchema`), and on Together template plans.
+  Every workout read (`GET /workouts`, `/workouts/:id`, bootstrap, variation
+  201, Loadout preview rows) returns `setTargets` per exercise, **omitted**
+  when there are none. Shared rules in `workouts/shared/setTargets.ts`.
+- **Old columns:** whenever set targets are written, `target_sets` /
+  `target_reps_min` / `target_reps_max` = count / lowest / highest
+  (`withDerivedTargets`), whatever the client sent; the duration estimate
+  uses them too. 10/8/8 reads as 3 × 8–10 on 1.2.0.
+- **Preservation rule** (`preservedSetTargets`): an update exercise sent
+  without `setTargets` keeps the stored rows when same `exercise_id` + `sort_order`
+  and the sent sets/range equal the derived values; otherwise they're
+  dropped. `null` drops them explicitly. 1.2.0 sends no `exercises` on a
+  rename and the full 7-field list on a plan edit (recorded in
+  `workouts/__tests__/fixtures/workouts120.fixture.ts` from c1bf892).
+- **Reads:** one correlated `json_agg` subquery (`setTargetsJson`) on the
+  existing selects. ⚠ Its columns are qualified by hand: Drizzle renders
+  `${workoutExercises.id}` as a bare `"id"` in a single-table select, which
+  inside the subquery silently matched the set-target row itself (found by
+  the PGlite test; mocked unit tests can't see it).
+- **Copy paths** (everything that writes `workout_exercises`): workout create,
+  update (delete + reinsert, preserved), Loadout `createVariation` /
+  `replaceVariation` (parent's rows carried to kept and swapped rows by the
+  same rule, matching a swap on `substitutedFromExerciseId`; preview carries
+  them through the engine), Together template create/read/copy. Programme
+  assignment, programme reads, the active programme and design A's copy-setup
+  only reference workouts by id, so assigned clients get `setTargets` through
+  `GET /workouts/:id` and `?type=assigned` (tested). No backend Duplicate
+  endpoint exists (the app duplicates via `POST /workouts`).
+- **Tests:** `workouts/__tests__/designG.setTargets.integration.test.ts`
+  (PGlite + shipped migration: forward twice / down / up, CHECKs, cascade,
+  round-trips, preservation cases, 1.2.0 fixture, assignment read, two-user
+  isolation, variation carry), template tests in
+  `social/__tests__/social.integration.test.ts`, unit tests for the rules and
+  the Loadout engine carry.
+- **Verified:** prettier:check, typecheck, lint, build; core `test:unit`
+  430 files / 6,242 tests pass, coverage 98.5 / 94.8 / 98.3 / 98.5;
+  `workoutRepository.ts` 97.4 / 94.9 / 96.4 (stmts / branches / funcs).
+  Mobile/web suites not run (untouched).
+- **Not verified:** nothing run against staging or a device; the 1.2.0
+  bundle itself wasn't run (contract held via the recorded fixture).
+- **Inspector Brad (#552):** 1 sweep, 0 findings, case closed on 1b5fec1.
+  Its only note: copies assume `INSERT … RETURNING` returns rows in VALUES
+  order (true in practice, not formally promised; documented in code).
+
 ### 2026-11-23 — APP-D1: Log per-meal calories, Your meals, full-page Add to a meal, offline batch logging ([PER-132](https://linear.app/evans-software-solutions/issue/PER-132); branch `bradleysimmsevans/per-132-app-d1-athlete-log-per-meal`)
 
 PR #550 (open, no auto-merge). Mobile only: no backend, migration, native

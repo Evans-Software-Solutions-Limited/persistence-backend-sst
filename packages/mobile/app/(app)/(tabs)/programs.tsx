@@ -1,15 +1,23 @@
-import { CoachLibraryHubContainer } from "@/ui/containers/CoachLibraryHubContainer";
+import { Redirect } from "expo-router";
+import { useEffect } from "react";
+
+import { useCoachLibraryTab } from "@/state/coach-library-tab";
 
 /**
- * Programs tab — coach-mode only (specs/19-programs STORY-002). Visibility is
- * gated to coach mode by `<TabsLayout>` (href: null in athlete mode); the
- * programme editor + assign flows live as sibling routes under
- * `app/(app)/programs/*`.
+ * The old coach Programs tab (specs/19-programs STORY-002). PER-129's K
+ * shell moved programmes into Library → Programmes; this route stays so
+ * existing links and pushes still land there.
  *
- * specs/24-coach-authoring STORY-001: the tab now renders the unified coach
- * library hub (Programmes | Workouts | Exercises) instead of the bare
- * programmes list.
+ * The Library tab stays mounted, so a repeat redirect with the same
+ * `?segment=` doesn't re-run its param effect: set its segment as well
+ * (Inspector Brad #556 sweep 2). In an effect, not during render: the
+ * mounted Library subscribes to it.
  */
 export default function ProgramsTab() {
-  return <CoachLibraryHubContainer />;
+  useEffect(() => {
+    useCoachLibraryTab.getState().setSegment("programmes");
+  }, []);
+  return (
+    <Redirect href={"/(app)/(tabs)/library?segment=programmes" as never} />
+  );
 }

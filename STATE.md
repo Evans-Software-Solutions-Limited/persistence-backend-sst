@@ -1,5 +1,47 @@
 # Project memory · persistence-backend-sst
 
+### 2026-11-24 — APP-C1 iPhone: K-layout coach shell, Library → Forms, send sheet, editor, Check-ins tab ([PER-129](https://linear.app/evans-software-solutions/issue/PER-129); branch `bradleysimmsevans/per-129-app-c1-iphone`)
+
+Mobile half of PER-129 (PR 2 of 2; stacked on PR 1, #555, which has the
+backend, the web screens and the BRIEF). Contract: `specs/per-129-coach-forms/BRIEF.md`.
+No native change, no version bump, no local-DB schema bump.
+
+- **K shell (coach mode):** Today · Clients · Library · Messages · You
+  (`COACH_TABS`). Library (`(tabs)/library.tsx`, `CoachLibraryContainer`):
+  Workouts · Programmes · Meals · Resources · Forms in the C10g board's order,
+  Forms open first; Programmes embeds the existing hub
+  (`CoachLibraryHubContainer embedded`); Workouts/Meals/Resources and the
+  Messages tab are dashed "In development". `(tabs)/programs.tsx` redirects to
+  `library?segment=programmes` (stranded-route guard skips it in coach mode).
+- **Screens:** C10g (`FormsLibraryPresenter`), form page + C10h send sheet
+  (`/coach-forms/[id]`, `?send=1&sendTo=&trigger=&scheduleId=`), C10b editor
+  (`/coach-forms/edit[?id=]`), client tab strip on `/clients/[id]`
+  (`?tab=`; Overview unchanged, Habits opens the habits screen, others
+  placeholders), C3.3b (`ClientCheckInsContainer`) with C10j sheet and the
+  review screen (`/clients/[id]/responses/[responseId]`).
+- **Offline:** caches `cached_coach_forms`, `cached_coach_form_schedules`,
+  `cached_coach_form_stats`, `cached_coach_client_forms`,
+  `cached_coach_form_responses`, plus `coach_form_conflicts` (init DDL,
+  cleared in `clearAll`). Queue entity types (`coachForms.command.ts`):
+  `coach_form` (keyed POST / PATCH + `expectedRevision`),
+  `coach_form_schedule` (same), `coach_client_form_setup` (PUT),
+  `coach_form_review` (POST). Edits fold into never-sent rows; later queued
+  PATCHes rebase onto the server's new revision; offline creates swap
+  `local-…` ids in caches and queued rows (`swapLocalCoachForm*Id`).
+- **409 `revision_conflict`** (`applyCoachFormsConflict`, hooked in
+  `sync.command.ts`): cache takes `current`, every queued PATCH of that
+  form/rule is discarded (never retried), conflict recorded → "Edited on
+  another device" on the library row, form page, editor and send sheet.
+- **Known limit:** a PATCH whose reply is lost after the server committed is
+  retried with the old revision and 409s against its own change, so the
+  notice can show for the coach's own edit (content is still theirs).
+- **Verified:** mobile typecheck, lint, prettier on changed files. Mobile
+  `test:unit`: 9,389 pass, coverage 96.4 / 92.2 / 96.4 / 97.7
+  (stmts/branches/funcs/lines). 34 failures in 2 suites, neither touched here:
+  `SubscriptionSelectionContainer` (fails on main) and
+  `AddClientSheetContainer` (361 s under load; 24/24 pass alone).
+- **Not verified:** nothing run on a device or against staging.
+
 ### 2026-11-24 — APP-C1 (web + backend): coach forms library, editor, send, Check-ins tab ([PER-129](https://linear.app/evans-software-solutions/issue/PER-129); branch `bradleysimmsevans/per-129-app-c1-coach-web-iphone-forms`)
 
 PR 1 of 2 on PER-129: backend extensions and the web screens. The iPhone half
@@ -203,60 +245,3 @@ PER-138 and PER-122.
 - **Not verified:** no deploy, no real S3 (presigned PUT, HeadObject,
   CopyObject and the lifecycle untested against AWS), migration not applied
   anywhere, infra files not type-checked locally (`.sst/platform` absent).
-
-### 2026-11-23 — BE-G1a: different reps for each set ([PER-111](https://linear.app/evans-software-solutions/issue/PER-111); branch `bradleysimmsevans/per-111-be-g1a-backend-different-reps-for`)
-
-PR #552 (open, no auto-merge). Backend only: design G part 1. No mobile,
-web, native or version change. Unblocks PER-139 (APP-G1); PER-112 (BE-G1b)
-starts after this merges and adds the rest of migration 9.
-
-- **Migration** `supabase/migrations/20261123230809_workout_exercise_set_targets.sql`
-  (+ rollback): `workout_exercise_set_targets` (workout_exercise_id → CASCADE,
-  set_number 1–20, target_reps 1–100, unique per set, RLS on, no policies).
-  Mirrored as `workoutExerciseSetTargets` in `packages/db/src/schema.ts`
-  (inserted after `workoutExercises`; import block untouched).
-- **API (additive):** `setTargets?: [{reps}] | null` on each exercise of
-  `POST /workouts`, `PATCH /workouts/:id` and the Loadout variation bodies
-  (shared `workoutExerciseInputSchema`), and on Together template plans.
-  Every workout read (`GET /workouts`, `/workouts/:id`, bootstrap, variation
-  201, Loadout preview rows) returns `setTargets` per exercise, **omitted**
-  when there are none. Shared rules in `workouts/shared/setTargets.ts`.
-- **Old columns:** whenever set targets are written, `target_sets` /
-  `target_reps_min` / `target_reps_max` = count / lowest / highest
-  (`withDerivedTargets`), whatever the client sent; the duration estimate
-  uses them too. 10/8/8 reads as 3 × 8–10 on 1.2.0.
-- **Preservation rule** (`preservedSetTargets`): an update exercise sent
-  without `setTargets` keeps the stored rows when same `exercise_id` + `sort_order`
-  and the sent sets/range equal the derived values; otherwise they're
-  dropped. `null` drops them explicitly. 1.2.0 sends no `exercises` on a
-  rename and the full 7-field list on a plan edit (recorded in
-  `workouts/__tests__/fixtures/workouts120.fixture.ts` from c1bf892).
-- **Reads:** one correlated `json_agg` subquery (`setTargetsJson`) on the
-  existing selects. ⚠ Its columns are qualified by hand: Drizzle renders
-  `${workoutExercises.id}` as a bare `"id"` in a single-table select, which
-  inside the subquery silently matched the set-target row itself (found by
-  the PGlite test; mocked unit tests can't see it).
-- **Copy paths** (everything that writes `workout_exercises`): workout create,
-  update (delete + reinsert, preserved), Loadout `createVariation` /
-  `replaceVariation` (parent's rows carried to kept and swapped rows by the
-  same rule, matching a swap on `substitutedFromExerciseId`; preview carries
-  them through the engine), Together template create/read/copy. Programme
-  assignment, programme reads, the active programme and design A's copy-setup
-  only reference workouts by id, so assigned clients get `setTargets` through
-  `GET /workouts/:id` and `?type=assigned` (tested). No backend Duplicate
-  endpoint exists (the app duplicates via `POST /workouts`).
-- **Tests:** `workouts/__tests__/designG.setTargets.integration.test.ts`
-  (PGlite + shipped migration: forward twice / down / up, CHECKs, cascade,
-  round-trips, preservation cases, 1.2.0 fixture, assignment read, two-user
-  isolation, variation carry), template tests in
-  `social/__tests__/social.integration.test.ts`, unit tests for the rules and
-  the Loadout engine carry.
-- **Verified:** prettier:check, typecheck, lint, build; core `test:unit`
-  430 files / 6,242 tests pass, coverage 98.5 / 94.8 / 98.3 / 98.5;
-  `workoutRepository.ts` 97.4 / 94.9 / 96.4 (stmts / branches / funcs).
-  Mobile/web suites not run (untouched).
-- **Not verified:** nothing run against staging or a device; the 1.2.0
-  bundle itself wasn't run (contract held via the recorded fixture).
-- **Inspector Brad (#552):** 1 sweep, 0 findings, case closed on 1b5fec1.
-  Its only note: copies assume `INSERT … RETURNING` returns rows in VALUES
-  order (true in practice, not formally promised; documented in code).

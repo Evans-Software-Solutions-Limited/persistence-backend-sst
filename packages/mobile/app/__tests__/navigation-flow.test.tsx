@@ -5,7 +5,7 @@
  * allows — the cross-cutting flow that no single phase's unit tests cover:
  *
  *   athlete: Home · Train (Workouts|Exercises) · Fuel · You
- *   trainer: open drawer → switch to coach → Home · Clients · Programs · You
+ *   trainer: open drawer → switch to coach → Today · Clients · Library · Messages · You
  *
  * Spec: specs/14-navigation/tasks.md T-14.9.4 + Acceptance gate
  *       specs/14-navigation/requirements.md STORY-001, STORY-002, STORY-003,
@@ -123,7 +123,7 @@ describe("navigation acceptance flow", () => {
     expect(useDrawer.getState().open).toBe(true);
   });
 
-  it("an eligible trainer switching to coach sees Home / Clients / Programs / You", async () => {
+  it("an eligible trainer switching to coach sees the K shell: Today / Clients / Library / Messages / You", async () => {
     // Eligibility resolved (trainer tier) → switchTo('coach') takes effect.
     await act(async () => {
       useUserMode.setState({ isTrainerEligible: true });
@@ -132,7 +132,7 @@ describe("navigation acceptance flow", () => {
 
     const { getByTestId } = renderTabs();
     const bar = within(getByTestId("nav-tab-bar"));
-    for (const label of ["Home", "Clients", "Programs", "You"]) {
+    for (const label of ["Today", "Clients", "Library", "Messages", "You"]) {
       expect(bar.getByText(label)).toBeTruthy();
     }
     expect(bar.queryByText("Train")).toBeNull();
