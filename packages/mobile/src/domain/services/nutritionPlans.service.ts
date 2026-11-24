@@ -615,12 +615,23 @@ export function withPlanMeals(
   yourMeals: readonly UserMeal[],
 ): NutritionPlan {
   const key = (n: string) => n.trim().toLowerCase();
+  const used = new Set<string>();
   const kept: PlanMeal[] = ticked.map((um) => {
-    const existing = plan.meals.find((m) => key(m.name) === key(um.name));
+    const existing = plan.meals.find(
+      (m) => !used.has(m.id) && key(m.name) === key(um.name),
+    );
+    if (existing) used.add(existing.id);
     return existing ?? emptyPlanMeal(newId(), um.name, um.logSlot, 0);
   });
+  const tickedNames = new Set(ticked.map((u) => key(u.name)));
   const known = new Set([...yourMeals, ...ticked].map((u) => key(u.name)));
-  const extra = plan.meals.filter((m) => !known.has(key(m.name)));
+  // Keep meals that aren't Your meals, and a second plan meal with a ticked
+  // meal's name (plan meal names needn't be unique; Inspector Brad, #554).
+  const extra = plan.meals.filter(
+    (m) =>
+      !used.has(m.id) &&
+      (!known.has(key(m.name)) || tickedNames.has(key(m.name))),
+  );
   return recomputePlan({
     ...plan,
     meals: [...kept, ...extra].map((m, i) => ({ ...m, sortOrder: i })),

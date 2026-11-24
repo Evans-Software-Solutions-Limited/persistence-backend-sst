@@ -341,6 +341,31 @@ describe("plan meals and drafts", () => {
     ).toEqual(["Breakfast", "Meal 5"]);
   });
 
+  it("a second plan meal with a Your-meals name keeps its food (Inspector Brad #554)", () => {
+    let p = {
+      ...draft(),
+      meals: [
+        emptyPlanMeal("s1", "Snack", "snack", 0),
+        emptyPlanMeal("s2", "Snack", "snack", 1),
+      ],
+    };
+    p = addItemToMeal(p, "s1", planItemFromFood("f1", food, 1));
+    p = addItemToMeal(p, "s2", planItemFromSavedMeal("f2", savedMeal, 1));
+    const snack = userMeals.find((m) => m.name === "Snack")!;
+    const out = withPlanMeals(p, [snack, userMeals[4]!], newId, userMeals);
+    expect(out.meals.map((m) => [m.name, m.items.length])).toEqual([
+      ["Snack", 1],
+      ["Dinner", 0],
+      ["Snack", 1],
+    ]);
+    // Unticking Snack drops both.
+    expect(
+      withPlanMeals(p, [userMeals[4]!], newId, userMeals).meals.map(
+        (m) => m.name,
+      ),
+    ).toEqual(["Dinner"]);
+  });
+
   it("copies a plan's meals with fresh ids", () => {
     const p = addItemToMeal(draft(), "m1", planItemFromFood("i1", food, 1));
     const copy = copyPlanMeals(p, newId);
