@@ -144,6 +144,12 @@ export type NutritionPlansCache = {
    * 404). Inspector Brad, #554.
    */
   serverDeletedIds?: string[];
+  /**
+   * Revisions this phone's own writes produced, per plan. A draft opened
+   * before its own earlier edit synced may be rebased past these, but never
+   * past a revision made on another device (Inspector Brad, #554).
+   */
+  ownRevisions?: Record<string, number[]>;
 };
 
 /** One body for `POST` / `PUT /nutrition/meal-plans`. */

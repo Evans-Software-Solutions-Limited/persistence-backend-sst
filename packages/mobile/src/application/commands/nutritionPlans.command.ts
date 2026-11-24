@@ -74,6 +74,22 @@ function writeMine(
   storage.cacheNutritionPlans(userId, { ...cache, mine: update(cache.mine) });
 }
 
+/**
+ * Every revision after `from` up to `to` was made by this phone's own writes,
+ * so an edit based on `from` is really based on `to` (Inspector Brad, #554).
+ */
+function onlyOwnRevisionsSince(
+  cache: NutritionPlansCache,
+  planId: string,
+  from: number,
+  to: number,
+): boolean {
+  if (to <= from) return false;
+  const own = new Set(cache.ownRevisions?.[planId] ?? []);
+  for (let r = from + 1; r <= to; r++) if (!own.has(r)) return false;
+  return true;
+}
+
 /** Follow a synced plan's local id to its server id. */
 function currentPlanId(
   storage: StoragePort,
@@ -168,16 +184,15 @@ export function savePlanCommand(
   // revision 0; the edit is based on what the create sent, which is the
   // synced plan's first revision (Inspector Brad, #554).
   const id = currentPlanId(storage, userId, plan.id);
+  const cache = readPlansCache(storage, userId);
+  const cachedRevision = cache.mine.find((p) => p.id === id)?.revision;
   const base =
-    id === plan.id
-      ? plan
-      : {
-          ...plan,
-          id,
-          revision:
-            readPlansCache(storage, userId).mine.find((p) => p.id === id)
-              ?.revision ?? plan.revision,
-        };
+    id !== plan.id
+      ? { ...plan, id, revision: cachedRevision ?? plan.revision }
+      : cachedRevision !== undefined &&
+          onlyOwnRevisionsSince(cache, id, plan.revision, cachedRevision)
+        ? { ...plan, revision: cachedRevision }
+        : plan;
   const next = recomputePlan({ ...base, updatedAt: nowIso(deps) });
   writeMine(storage, userId, (mine) =>
     mine.map((p) => (p.id === next.id ? next : p)),
@@ -628,6 +643,20 @@ export function applyNutritionPlanSynced(
       storage.cacheNutritionPlans(userId, {
         ...withAlias,
         aliases: { ...withAlias.aliases, [localId]: data.id },
+      });
+    }
+  }
+  // Remember the revision this write produced (see `ownRevisions`).
+  const withOwn = storage.getCachedNutritionPlans(userId);
+  if (withOwn) {
+    const seen = withOwn.ownRevisions?.[data.id] ?? [];
+    if (!seen.includes(data.revision)) {
+      storage.cacheNutritionPlans(userId, {
+        ...withOwn,
+        ownRevisions: {
+          ...withOwn.ownRevisions,
+          [data.id]: [...seen, data.revision].slice(-20),
+        },
       });
     }
   }

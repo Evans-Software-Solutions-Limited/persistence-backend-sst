@@ -22,6 +22,7 @@ import {
 import { addDaysISO, localDayISO } from "@/shared/utils";
 import { useFuelSheets } from "@/state/fuel-sheets";
 import { usePlanDraft } from "@/state/plan-draft";
+import { usePlanSheets } from "@/state/plan-sheets";
 import type { DateCalendarModalProps } from "@/ui/components/DatePickerField";
 import type { NewPlanProps } from "@/ui/presenters/fuel/plans/NewPlanPresenter";
 import type { PlanSavedProps } from "@/ui/presenters/fuel/plans/PlanSavedPresenter";
@@ -439,9 +440,13 @@ describe("NewPlanContainer (N28 → N29 → N33)", () => {
         .addItems(draft().meals[0].id, [planItemFromFood("x", FOOD, 1)]),
     );
     await act(async () => probe.builder!.onSave());
+    const savedId = usePlanDraft.getState().draft!.id;
+    usePlanSheets.setState({ selectedPlanId: "some-other-plan" });
     act(() => probe.saved!.onViewInPlan());
     expect(mockBack).toHaveBeenCalled();
     expect(usePlanDraft.getState().draft).toBeNull();
+    // The Plan tab opens on the plan just saved (Inspector Brad #554).
+    expect(usePlanSheets.getState().selectedPlanId).toBe(savedId);
   });
 
   it("shows a note when a save fails", async () => {

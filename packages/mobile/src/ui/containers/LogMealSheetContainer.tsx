@@ -86,7 +86,11 @@ export function LogMealSheetContainer({
   // day and one portion.
   useEffect(() => {
     if (!visible) return;
-    setDayIso(viewedDate > today ? today : viewedDate);
+    // Only a day the sheet offers (Inspector Brad, #554).
+    const oldest = addDaysISO(today, -(LOG_DAYS - 1));
+    setDayIso(
+      viewedDate > today ? today : viewedDate < oldest ? today : viewedDate,
+    );
     setMealId(null);
     setPortion(1);
     setOpenField(null);

@@ -651,6 +651,13 @@ describe("LogMealSheetContainer (N14)", () => {
     expect(probe.log?.canLog).toBe(true);
   });
 
+  it("a Fuel day older than the sheet's 7 days starts on today (Inspector Brad #554)", () => {
+    act(() => useFuelSheets.getState().setDate(addDaysISO(TODAY, -10)));
+    mount();
+    expect(probe.log?.day.selectedKey).toBe(TODAY);
+    act(() => useFuelSheets.getState().setDate(TODAY));
+  });
+
   it("picking a day, meal and portion changes the log and the note", async () => {
     const yesterday = addDaysISO(TODAY, -1);
     days.set(yesterday, day(yesterday, [], 2400, 2500));

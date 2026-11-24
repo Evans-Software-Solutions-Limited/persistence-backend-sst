@@ -239,7 +239,10 @@ export function mergePlansResponse(
   isDelta: boolean,
 ): NutritionPlansCache {
   const conflictPlanIds = cache?.conflictPlanIds ?? [];
-  const aliases = cache?.aliases ? { aliases: cache.aliases } : {};
+  const aliases = {
+    ...(cache?.aliases ? { aliases: cache.aliases } : {}),
+    ...(cache?.ownRevisions ? { ownRevisions: cache.ownRevisions } : {}),
+  };
   if (!isDelta || !cache) {
     return {
       mine: response.mine,

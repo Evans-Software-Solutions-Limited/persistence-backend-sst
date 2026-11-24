@@ -16,6 +16,7 @@ import {
 import { addDaysISO, localDayISO } from "@/shared/utils";
 import { useFuelSheets } from "@/state/fuel-sheets";
 import { usePlanDraft } from "@/state/plan-draft";
+import { usePlanSheets } from "@/state/plan-sheets";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { useGetMeals } from "@/ui/hooks/useGetMeals";
@@ -187,7 +188,12 @@ export function NewPlanContainer() {
         kcal={saved.totals.kcal}
         proteinG={saved.totals.proteinG}
         onClose={leave}
-        onViewInPlan={leave}
+        onViewInPlan={() => {
+          // Show the plan just saved, not the tab's earlier pick
+          // (Inspector Brad, #554). findPlan follows its id once synced.
+          usePlanSheets.getState().select(saved.id);
+          leave();
+        }}
         addingToList={addingToList}
         onShoppingList={() => {
           setAddingToList(true);

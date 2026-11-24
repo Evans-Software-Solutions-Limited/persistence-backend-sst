@@ -1005,6 +1005,47 @@ describe("my plans: create, edit, revision conflicts, delete", () => {
     expect(server.plans.get(mine[0]!.id)!.name).toBe("My version");
   });
 
+  it("a draft opened before its own earlier edit synced saves without a false conflict (Inspector Brad #554)", async () => {
+    const base = plan("srv-p1", USER, 2, [
+      ["m1", "Lunch", [item("a", "Wrap", 450)]],
+    ]);
+    server.plans.set(base.id, base);
+    storage.cacheNutritionPlans(USER, { ...emptyPlansCache(), mine: [base] });
+    server.offline = true;
+    savePlanCommand(deps(), { ...base, name: "Edit A" });
+    await drain();
+    // The builder reopens on the cached plan (still revision 2)…
+    const draft = readPlansCache(storage, USER).mine[0]!;
+    expect(draft.revision).toBe(2);
+    // …and the edit syncs meanwhile.
+    server.offline = false;
+    await drainLater();
+    expect(readPlansCache(storage, USER).mine[0]!.revision).toBe(3);
+
+    savePlanCommand(deps(), { ...draft, name: "Edit B" });
+    await drainLater();
+    expect(server.plans.get("srv-p1")!.name).toBe("Edit B");
+    expect(readPlansCache(storage, USER).conflictPlanIds).toEqual([]);
+  });
+
+  it("a draft behind an edit from ANOTHER device still conflicts", async () => {
+    const base = plan("srv-p1", USER, 2, [
+      ["m1", "Lunch", [item("a", "Wrap", 450)]],
+    ]);
+    storage.cacheNutritionPlans(USER, { ...emptyPlansCache(), mine: [base] });
+    // A read brings revision 3 made elsewhere.
+    const elsewhere = { ...base, name: "From the iPad", revision: 3 };
+    server.plans.set(base.id, elsewhere);
+    storage.cacheNutritionPlans(USER, {
+      ...emptyPlansCache(),
+      mine: [elsewhere],
+    });
+    savePlanCommand(deps(), { ...base, name: "Stale draft" });
+    expect(JSON.parse(queued()[0]!.payload).expectedRevision).toBe(2);
+    await drain();
+    expect(readPlansCache(storage, USER).conflictPlanIds).toEqual(["srv-p1"]);
+  });
+
   it("deleting a plan that never left the phone forgets it and its shopping row", () => {
     server.offline = true;
     const p = createPlanCommand(deps(), draft());
