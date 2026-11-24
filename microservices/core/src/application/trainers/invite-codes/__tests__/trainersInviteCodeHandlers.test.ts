@@ -34,9 +34,11 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
 // assertions below are unchanged; only the mocked module + method name moved.
 const notificationCreate = vi.fn(async () => ({}));
 vi.mock("../../../notifications/push/notificationDispatcher", () => ({
-  NotificationDispatcher: vi.fn(() => ({
-    createAndDispatch: notificationCreate,
-  })),
+  NotificationDispatcher: vi.fn(function () {
+    return {
+      createAndDispatch: notificationCreate,
+    };
+  }),
 }));
 
 // Seat gates are unit-tested against the DB mock in trainerSeats.test.ts; here

@@ -5,10 +5,12 @@ const findByExternalIdMock = vi.fn();
 const updateByIdMock = vi.fn();
 
 vi.mock("../../../repositories/subscriptionRepository", () => ({
-  SubscriptionRepository: vi.fn().mockImplementation(() => ({
-    findByExternalId: findByExternalIdMock,
-    updateById: updateByIdMock,
-  })),
+  SubscriptionRepository: vi.fn().mockImplementation(function () {
+    return {
+      findByExternalId: findByExternalIdMock,
+      updateById: updateByIdMock,
+    };
+  }),
 }));
 
 import { handleSubscriptionDeleted } from "../../eventHandlers/subscriptionDeleted";

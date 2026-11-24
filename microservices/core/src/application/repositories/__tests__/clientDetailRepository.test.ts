@@ -34,22 +34,34 @@ const assignment = {
 const coaching = { get: vi.fn(async () => assignment) };
 
 vi.mock("../homeReadRepository", () => ({
-  HomeReadRepository: vi.fn(() => home),
+  HomeReadRepository: vi.fn(function () {
+    return home;
+  }),
 }));
 vi.mock("../volumeRepository", () => ({
-  VolumeRepository: vi.fn(() => volume),
+  VolumeRepository: vi.fn(function () {
+    return volume;
+  }),
 }));
 vi.mock("../nutritionTargetRepository", () => ({
-  NutritionTargetRepository: vi.fn(() => nutrition),
+  NutritionTargetRepository: vi.fn(function () {
+    return nutrition;
+  }),
 }));
 vi.mock("../streakRepository", () => ({
-  StreakRepository: vi.fn(() => streaks),
+  StreakRepository: vi.fn(function () {
+    return streaks;
+  }),
 }));
 vi.mock("../programAssignmentRepository", () => ({
-  ProgramAssignmentRepository: vi.fn(() => programmes),
+  ProgramAssignmentRepository: vi.fn(function () {
+    return programmes;
+  }),
 }));
 vi.mock("../coachingAggregateRepository", () => ({
-  CoachingAggregateRepository: vi.fn(() => coaching),
+  CoachingAggregateRepository: vi.fn(function () {
+    return coaching;
+  }),
 }));
 
 // Module g reads (only exercised when a client_ai_summaries row exists). The
@@ -64,9 +76,11 @@ vi.mock("../../entitlement/assertEntitlement", () => ({
 }));
 const countSummaryTodayMock = vi.hoisted(() => vi.fn(async () => 0));
 vi.mock("../aiUsageLogRepository", () => ({
-  AiUsageLogRepository: vi.fn(() => ({
-    countForUserToday: countSummaryTodayMock,
-  })),
+  AiUsageLogRepository: vi.fn(function () {
+    return {
+      countForUserToday: countSummaryTodayMock,
+    };
+  }),
 }));
 
 import { ClientDetailRepository } from "../clientDetailRepository";

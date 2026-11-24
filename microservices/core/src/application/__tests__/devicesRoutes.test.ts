@@ -17,7 +17,9 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
 }));
 
 vi.mock("../repositories/userDeviceRepository", () => ({
-  UserDeviceRepository: vi.fn().mockImplementation(() => mocks),
+  UserDeviceRepository: vi.fn().mockImplementation(function () {
+    return mocks;
+  }),
 }));
 
 function post(path: string, body: unknown) {

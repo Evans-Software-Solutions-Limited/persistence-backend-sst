@@ -75,7 +75,7 @@ export function AdminLayout() {
               size="sm"
               onClick={async () => {
                 await signOut();
-                navigate("/admin/login", { replace: true });
+                void navigate("/admin/login", { replace: true });
               }}
             >
               <IconLogout size={16} aria-hidden="true" /> Sign out

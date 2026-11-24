@@ -14,10 +14,12 @@ const ensureWorkoutStreak = vi.hoisted(() =>
 );
 const reconcileWorkoutStreakHistory = vi.hoisted(() => vi.fn(async () => {}));
 vi.mock("../../repositories/streakRepository", () => ({
-  StreakRepository: vi.fn().mockImplementation(() => ({
-    ensureWorkoutStreak,
-    reconcileWorkoutStreakHistory,
-  })),
+  StreakRepository: vi.fn().mockImplementation(function () {
+    return {
+      ensureWorkoutStreak,
+      reconcileWorkoutStreakHistory,
+    };
+  }),
 }));
 
 import { evaluateStreaks } from "../engine";

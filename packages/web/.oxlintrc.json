@@ -1,6 +1,9 @@
 {
   "$schema": "../../node_modules/oxlint/configuration_schema.json",
-  "plugins": [],
+  "options": {
+    "typeAware": true
+  },
+  "plugins": ["typescript", "react"],
   "categories": {
     "correctness": "off"
   },
@@ -8,6 +11,18 @@
     "builtin": true
   },
   "ignorePatterns": ["dist"],
+  "rules": {
+    "typescript/await-thenable": "error",
+    "typescript/no-floating-promises": "error",
+    "typescript/no-misused-promises": [
+      "error",
+      {
+        "checksVoidReturn": {
+          "attributes": false
+        }
+      }
+    ]
+  },
   "overrides": [
     {
       "files": ["**/*.{ts,tsx}"],

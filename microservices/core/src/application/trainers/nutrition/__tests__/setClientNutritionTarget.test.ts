@@ -16,10 +16,12 @@ vi.mock("../../../relationships/auditTrainerAction", () => ({
 const repoUpsertForClient = vi.fn();
 const repoGet = vi.fn();
 vi.mock("../../../repositories/nutritionTargetRepository", () => ({
-  NutritionTargetRepository: vi.fn(() => ({
-    upsertForClient: repoUpsertForClient,
-    get: repoGet,
-  })),
+  NutritionTargetRepository: vi.fn(function () {
+    return {
+      upsertForClient: repoUpsertForClient,
+      get: repoGet,
+    };
+  }),
 }));
 
 vi.mock("../../onBehalfNotifications", () => ({

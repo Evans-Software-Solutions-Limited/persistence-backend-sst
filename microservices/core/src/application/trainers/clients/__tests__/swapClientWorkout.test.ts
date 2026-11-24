@@ -15,7 +15,9 @@ vi.mock("../../../relationships/auditTrainerAction", () => ({
 
 const repoSwap = vi.fn();
 vi.mock("../../../repositories/programAssignmentRepository", () => ({
-  ProgramAssignmentRepository: vi.fn(() => ({ swapAssignment: repoSwap })),
+  ProgramAssignmentRepository: vi.fn(function () {
+    return { swapAssignment: repoSwap };
+  }),
 }));
 
 vi.mock("../../onBehalfNotifications", () => ({

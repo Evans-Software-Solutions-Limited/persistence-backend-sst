@@ -38,11 +38,15 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
 }));
 
 vi.mock("../../repositories/programRepository", () => ({
-  ProgramRepository: vi.fn().mockImplementation(() => programMocks),
+  ProgramRepository: vi.fn().mockImplementation(function () {
+    return programMocks;
+  }),
   LIVE_ASSIGNMENT_STATUSES: ["assigned", "started"],
 }));
 vi.mock("../../repositories/programAssignmentRepository", () => ({
-  ProgramAssignmentRepository: vi.fn().mockImplementation(() => ({})),
+  ProgramAssignmentRepository: vi.fn().mockImplementation(function () {
+    return {};
+  }),
 }));
 
 const authed = (url: string) =>

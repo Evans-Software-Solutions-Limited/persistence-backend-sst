@@ -1,3 +1,4 @@
+import type { Mock } from "vitest";
 import { webcrypto } from "node:crypto";
 import {
   cleanup,
@@ -24,7 +25,10 @@ const tokens = {
   refresh_token: "test-refresh",
   expires_in: 3600,
 };
-let fetcher: ReturnType<typeof vi.fn>;
+// Call arguments stay untyped (assertions read them freely); the return
+// type is what makes async implementations type-check as fetch-like.
+// eslint-disable-next-line typescript/no-explicit-any -- assertions read call args freely
+let fetcher: Mock<(...args: any[]) => Promise<Response>>;
 
 beforeEach(() => {
   sessionStorage.clear();

@@ -207,7 +207,7 @@ function ClientSettingsPage({ client }: { client: RosterClient }) {
               await queryClient.invalidateQueries({
                 queryKey: coachKeys.roster,
               });
-              navigate("/coach/clients");
+              void navigate("/coach/clients");
             } catch (e) {
               setConfirmEnd(false);
               setError(

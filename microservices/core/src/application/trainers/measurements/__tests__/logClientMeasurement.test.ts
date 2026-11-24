@@ -19,7 +19,9 @@ vi.mock("../../../streaks/evaluate", () => ({
 
 const repoCreate = vi.fn();
 vi.mock("../../../repositories/measurementRepository", () => ({
-  MeasurementRepository: vi.fn(() => ({ create: repoCreate })),
+  MeasurementRepository: vi.fn(function () {
+    return { create: repoCreate };
+  }),
 }));
 
 vi.mock("../../onBehalfNotifications", () => ({

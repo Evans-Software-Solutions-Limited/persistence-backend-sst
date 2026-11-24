@@ -81,11 +81,15 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
 }));
 
 vi.mock("../../../repositories/sessionRepository", () => ({
-  SessionRepository: vi.fn().mockImplementation(() => sessionMocks),
+  SessionRepository: vi.fn().mockImplementation(function () {
+    return sessionMocks;
+  }),
 }));
 
 vi.mock("../../../repositories/personalRecordsRepository", () => ({
-  PersonalRecordsRepository: vi.fn().mockImplementation(() => prMocks),
+  PersonalRecordsRepository: vi.fn().mockImplementation(function () {
+    return prMocks;
+  }),
 }));
 
 // PER-117: the coach-event hook (its own behaviour is tested on PGlite in
@@ -101,7 +105,9 @@ vi.mock("../../../coaching/events/writers", () => ({
 // workout if visible (including ownership), else null. Tests dial in
 // per-case.
 vi.mock("../../../repositories/workoutRepository", () => ({
-  WorkoutRepository: vi.fn().mockImplementation(() => workoutMocks),
+  WorkoutRepository: vi.fn().mockImplementation(function () {
+    return workoutMocks;
+  }),
 }));
 
 // Mock the entitlement helper so handler tests don't hit live DB. The

@@ -62,22 +62,26 @@ vi.mock("../repositories/exerciseRepository", async () => {
   >("../repositories/exerciseRepository");
   return {
     ...actual,
-    ExerciseRepository: vi
-      .fn()
-      .mockImplementation(() => exerciseRepositoryMocks),
+    ExerciseRepository: vi.fn().mockImplementation(function () {
+      return exerciseRepositoryMocks;
+    }),
   };
 });
 
 vi.mock("../repositories/savedGymRepository", () => ({
-  SavedGymRepository: vi.fn().mockImplementation(() => ({
-    findUnknownEquipmentTypeIds: vi.fn(async () => []),
-  })),
+  SavedGymRepository: vi.fn().mockImplementation(function () {
+    return {
+      findUnknownEquipmentTypeIds: vi.fn(async () => []),
+    };
+  }),
 }));
 
 vi.mock("../repositories/exercisePerformanceRepository", () => ({
-  ExercisePerformanceRepository: vi.fn().mockImplementation(() => ({
-    getSummary: getPerformanceSummary,
-  })),
+  ExercisePerformanceRepository: vi.fn().mockImplementation(function () {
+    return {
+      getSummary: getPerformanceSummary,
+    };
+  }),
 }));
 
 const SOURCE_ID = "11111111-1111-4111-8111-111111111111";

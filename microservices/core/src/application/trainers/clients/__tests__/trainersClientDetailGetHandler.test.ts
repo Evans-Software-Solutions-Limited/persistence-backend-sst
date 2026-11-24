@@ -65,7 +65,9 @@ vi.mock("../../../adherence/coachAdherence", async (original) => ({
 
 const getClientDetail = vi.fn();
 vi.mock("../../../repositories/clientDetailRepository", () => ({
-  ClientDetailRepository: vi.fn(() => ({ getClientDetail })),
+  ClientDetailRepository: vi.fn(function () {
+    return { getClientDetail };
+  }),
 }));
 
 const auditClientDataReadMock = vi.fn(async () => undefined);

@@ -31,7 +31,9 @@ vi.mock("../../../repositories/notificationRepository", async (orig) => {
     await orig<typeof import("../../../repositories/notificationRepository")>();
   return {
     ...actual,
-    NotificationRepository: vi.fn().mockImplementation(() => mocks),
+    NotificationRepository: vi.fn().mockImplementation(function () {
+      return mocks;
+    }),
   };
 });
 

@@ -24,7 +24,9 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
 }));
 
 vi.mock("../../../repositories/notificationRepository", () => ({
-  NotificationRepository: vi.fn().mockImplementation(() => mocks),
+  NotificationRepository: vi.fn().mockImplementation(function () {
+    return mocks;
+  }),
 }));
 
 describe("NotificationsUpdateAllHandler", () => {

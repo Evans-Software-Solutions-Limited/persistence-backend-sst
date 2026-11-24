@@ -60,7 +60,9 @@ const workoutRepositoryMocks = {
 };
 
 vi.mock("../repositories/workoutRepository", () => ({
-  WorkoutRepository: vi.fn().mockImplementation(() => workoutRepositoryMocks),
+  WorkoutRepository: vi.fn().mockImplementation(function () {
+    return workoutRepositoryMocks;
+  }),
 }));
 
 const savedGymRepositoryMocks = {
@@ -77,29 +79,35 @@ const savedGymRepositoryMocks = {
 };
 
 vi.mock("../repositories/savedGymRepository", () => ({
-  SavedGymRepository: vi.fn().mockImplementation(() => savedGymRepositoryMocks),
+  SavedGymRepository: vi.fn().mockImplementation(function () {
+    return savedGymRepositoryMocks;
+  }),
 }));
 
 vi.mock("../repositories/exerciseRepository", () => ({
-  ExerciseRepository: vi.fn().mockImplementation(() => ({
-    findUnreadableExerciseIds: vi.fn(async () => []),
-    findEquipmentRequirements: vi.fn(async () => new Map()),
-    listAdaptationCandidates: vi.fn(async () => ({
-      candidates: [],
-      truncated: false,
-    })),
-    listPreviouslyLoggedExerciseIds: vi.fn(async () => []),
-    findEquipmentTypeIdsByName: vi.fn(async () => []),
-    getMuscleGroups: vi.fn(async () => []),
-    getEquipmentTypes: vi.fn(async () => []),
-  })),
+  ExerciseRepository: vi.fn().mockImplementation(function () {
+    return {
+      findUnreadableExerciseIds: vi.fn(async () => []),
+      findEquipmentRequirements: vi.fn(async () => new Map()),
+      listAdaptationCandidates: vi.fn(async () => ({
+        candidates: [],
+        truncated: false,
+      })),
+      listPreviouslyLoggedExerciseIds: vi.fn(async () => []),
+      findEquipmentTypeIdsByName: vi.fn(async () => []),
+      getMuscleGroups: vi.fn(async () => []),
+      getEquipmentTypes: vi.fn(async () => []),
+    };
+  }),
 }));
 
 vi.mock("../repositories/aiUsageLogRepository", () => ({
-  AiUsageLogRepository: vi.fn().mockImplementation(() => ({
-    record: vi.fn(async () => undefined),
-    countForUserToday: vi.fn(async () => 0),
-  })),
+  AiUsageLogRepository: vi.fn().mockImplementation(function () {
+    return {
+      record: vi.fn(async () => undefined),
+      countForUserToday: vi.fn(async () => 0),
+    };
+  }),
 }));
 
 vi.mock("../entitlement/assertEntitlement", async () => {

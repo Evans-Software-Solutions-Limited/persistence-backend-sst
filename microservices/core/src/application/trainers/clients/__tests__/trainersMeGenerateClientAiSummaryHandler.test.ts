@@ -94,25 +94,31 @@ vi.mock("../../../repositories/clientAiSummaryRepository", async () => {
   >("../../../repositories/clientAiSummaryRepository");
   return {
     ...actual, // keep AI_COACH_SUMMARY_ENDPOINT + AI_COACH_SUMMARY_DAILY_LIMIT
-    ClientAiSummaryRepository: vi.fn(() => ({
-      getForDay: getForDayMock,
-      insertInitial: insertInitialMock,
-      updateRefresh: updateRefreshMock,
-    })),
+    ClientAiSummaryRepository: vi.fn(function () {
+      return {
+        getForDay: getForDayMock,
+        insertInitial: insertInitialMock,
+        updateRefresh: updateRefreshMock,
+      };
+    }),
   };
 });
 
 vi.mock("../../../repositories/aiUsageLogRepository", () => ({
-  AiUsageLogRepository: vi.fn(() => ({
-    countForUserToday: countForUserTodayMock,
-    record: recordMock,
-  })),
+  AiUsageLogRepository: vi.fn(function () {
+    return {
+      countForUserToday: countForUserTodayMock,
+      record: recordMock,
+    };
+  }),
 }));
 
 vi.mock("../../../repositories/clientDetailRepository", () => ({
-  ClientDetailRepository: vi.fn(() => ({
-    getClientDetail: getClientDetailMock,
-  })),
+  ClientDetailRepository: vi.fn(function () {
+    return {
+      getClientDetail: getClientDetailMock,
+    };
+  }),
 }));
 
 // getDb serves only resolveClientTz's profiles read here.

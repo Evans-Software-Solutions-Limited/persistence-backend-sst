@@ -1,6 +1,6 @@
 # Project memory · persistence-backend-sst
 
-### 2026-11-24 — Tooling: TypeScript 7 + Oxlint with tsrs type-aware linting ([PER-148](https://linear.app/evans-software-solutions/issue/PER-148); branch `claude/brave-dirac-h9ianz`)
+### 2026-11-24 — Tooling: TypeScript 7, Oxlint (tsrs type-aware), Vitest 5, Vite 8 ([PER-148](https://linear.app/evans-software-solutions/issue/PER-148); branch `claude/brave-dirac-h9ianz`)
 
 Cuts check time, which was the cause of CI and local timeouts. No CI caching
 was added (Brad: CI should always run cold). No runtime, app or native change.
@@ -24,22 +24,43 @@ was added (Brad: CI should always run cold). No runtime, app or native change.
   Oxlint JS plugins; its override exemptions are an `off` override because
   Oxlint has no `ignores` inside overrides. `eslint` stays in mobile only for
   the rule's `RuleTester` unit test.
-- **Type-aware (tsrs):** core, other-service, api-utils and seed set
+- **Type-aware (tsrs):** core, other-service, api-utils, seed and web set
   `options.typeAware` with `no-floating-promises`, `no-misused-promises` and
-  `await-thenable` as errors. All four were already clean apart from two
+  `await-thenable` as errors. Backend was clean apart from two
   `await-thenable` cases in `progressPhotos.integration.test.ts` (narrowing of
-  a callback-assigned `let`; now restated). Web (~87) and mobile (~264)
-  findings are a follow-up, so those two configs match their old ESLint rules.
-  Gotcha: root `typescript/*` rules are silently ignored unless `typescript`
-  is in the root `plugins` list.
+  a callback-assigned `let`; now restated). Web: `no-misused-promises` has
+  `checksVoidReturn.attributes: false` (async JSX handlers; React ignores the
+  return); the 23 floating promises (mostly react-router `navigate()`) get
+  `void` (no runtime change); test `fetcher` mocks are typed to return
+  `Promise<Response>`. Mobile (~264 findings, mostly tests) still matches its
+  old ESLint rules. Gotcha: root `typescript/*` rules are silently ignored
+  unless `typescript` is in the root `plugins` list.
+- **Vitest 2.1.9 / 4.0.18 → 5.1.1** everywhere it is used (core,
+  other-service, scripts, api-utils, subscription-catalog, training-metrics,
+  web). Since Vitest 4 a mock called with `new` needs a constructible
+  implementation, so 265 class mocks (`Repo: vi.fn(() => mocks)`,
+  `.mockImplementation(() => …)`) became `function () { return …; }` — same
+  objects, no assertion changed. Vitest 5 also types mocks more strictly
+  (`MockInstance<typeof console.warn>` for spies; `vi.fn<(userId: string) =>
+  Promise<boolean>>` in `accountPurgeCron.test.ts`). `clearMocks` is now on by
+  default; no test depended on history carried between tests.
+- **Vite 7.3 → 8.3.8** in web (Rolldown), with `@vitejs/plugin-react-swc`
+  4.3.3, `vite-plugin-pwa` 1.3.0 (kept on 1.x; the plugin is due for removal),
+  `tailwindcss`/`@tailwindcss/vite` 4.3.5. `vite.config.ts` uses
+  `import.meta.dirname`. Same 40 output files and 1.5 MB as Vite 7.
 - Oxlint also found 3 `no-unsafe-optional-chaining` cases ESLint missed (core
   `sessionRepository.test.ts`, web `coach/__tests__/api.test.ts`), now fixed,
   and 7 non-blocking `import/no-named-as-default-member` warnings in mobile.
 - **Measured** (4 cores, `--force --concurrency=1`): typecheck 79s → 17s,
-  lint 63s → 5s; mobile typecheck 21.5s → 2.8s; core lint 9.8s → 0.1s
-  (1.7s type-aware). Build 30s, passes.
+  lint 63s → 6s; mobile typecheck 21.5s → 2.8s; core lint 9.8s → 0.1s
+  (1.7s type-aware); web `vite build` 4.59s → 0.75s; web tests 68s → 59s.
 - **Verified:** prettier, typecheck, lint, build (all packages, uncached).
-  Unit tests: see below.
+  Unit tests on Vitest 5: core 434 files / 6,352 tests (same as on Vitest 2),
+  web 99 / 1,978, scripts 245, api-utils 27, training-metrics 54,
+  subscription-catalog 14 — all pass. Core coverage 97.56 / 93.12 / 97.9 /
+  98.06 (was 98.52 / 94.94 / 98.35 / 98.52 on Vitest 2: v4+ counts branches
+  more precisely; still above the 90% thresholds). Mobile (Jest, untouched): 9,677 pass,
+  34 fail in the two suites already known to fail (see the PER-129 entry).
 
 ### 2026-11-24 — APP-C1 iPhone: K-layout coach shell, Library → Forms, send sheet, editor, Check-ins tab ([PER-129](https://linear.app/evans-software-solutions/issue/PER-129); branch `bradleysimmsevans/per-129-app-c1-iphone`)
 

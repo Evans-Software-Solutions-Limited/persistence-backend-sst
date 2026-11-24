@@ -24,7 +24,9 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
 }));
 
 vi.mock("../../../repositories/trainerRepository", () => ({
-  TrainerRepository: vi.fn().mockImplementation(() => mocks),
+  TrainerRepository: vi.fn().mockImplementation(function () {
+    return mocks;
+  }),
   InviteError: class InviteError extends Error {},
 }));
 
@@ -32,9 +34,11 @@ const invitedSummaries = vi.fn(async () => [
   { profileId: "p1", displayName: "Lena", inviteStatus: "active" },
 ]);
 vi.mock("../../../coaching/clientProfileRepository", () => ({
-  ClientProfileRepository: vi.fn().mockImplementation(() => ({
-    invitedSummaries,
-  })),
+  ClientProfileRepository: vi.fn().mockImplementation(function () {
+    return {
+      invitedSummaries,
+    };
+  }),
 }));
 
 // PER-114: per-area adherence comes from the shared calculation (covered by

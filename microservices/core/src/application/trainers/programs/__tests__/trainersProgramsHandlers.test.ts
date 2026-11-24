@@ -78,16 +78,20 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
 }));
 
 vi.mock("../../../repositories/programRepository", () => ({
-  ProgramRepository: vi.fn().mockImplementation(() => programMocks),
+  ProgramRepository: vi.fn().mockImplementation(function () {
+    return programMocks;
+  }),
   LIVE_ASSIGNMENT_STATUSES: ["assigned", "started"],
 }));
 vi.mock("../../../repositories/programAssignmentRepository", () => ({
-  ProgramAssignmentRepository: vi
-    .fn()
-    .mockImplementation(() => assignmentMocks),
+  ProgramAssignmentRepository: vi.fn().mockImplementation(function () {
+    return assignmentMocks;
+  }),
 }));
 vi.mock("../../../repositories/trainerRepository", () => ({
-  TrainerRepository: vi.fn().mockImplementation(() => trainerMocks),
+  TrainerRepository: vi.fn().mockImplementation(function () {
+    return trainerMocks;
+  }),
 }));
 vi.mock("../../relationships/activeRelationshipGuard", () => ({
   hasActiveRelationship: (...args: unknown[]) =>

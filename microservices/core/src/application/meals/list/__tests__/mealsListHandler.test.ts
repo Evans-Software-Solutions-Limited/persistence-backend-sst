@@ -18,7 +18,9 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getUser: vi.fn((ctx) => ctx.user || { sub: "test-user-id" }),
 }));
 vi.mock("../../../repositories/mealRepository", () => ({
-  MealRepository: vi.fn().mockImplementation(() => mealMocks),
+  MealRepository: vi.fn().mockImplementation(function () {
+    return mealMocks;
+  }),
 }));
 
 describe("mealsListHandler", () => {

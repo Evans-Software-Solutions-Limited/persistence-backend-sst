@@ -11,17 +11,23 @@ vi.mock("../../../relationships/auditTrainerAction", () => ({
 
 const recordSession = vi.fn();
 vi.mock("../../../repositories/sessionRepository", () => ({
-  SessionRepository: vi.fn(() => ({ recordSession })),
+  SessionRepository: vi.fn(function () {
+    return { recordSession };
+  }),
 }));
 
 const recordPRsForSession = vi.fn(async () => []);
 vi.mock("../../../repositories/personalRecordsRepository", () => ({
-  PersonalRecordsRepository: vi.fn(() => ({ recordPRsForSession })),
+  PersonalRecordsRepository: vi.fn(function () {
+    return { recordPRsForSession };
+  }),
 }));
 
 const linkCompletedSession = vi.fn(async () => {});
 vi.mock("../../../repositories/programAssignmentRepository", () => ({
-  ProgramAssignmentRepository: vi.fn(() => ({ linkCompletedSession })),
+  ProgramAssignmentRepository: vi.fn(function () {
+    return { linkCompletedSession };
+  }),
 }));
 
 vi.mock("../../../streaks/evaluate", () => ({

@@ -24,7 +24,9 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
 }));
 
 vi.mock("../../../../repositories/sessionRepository", () => ({
-  SessionRepository: vi.fn().mockImplementation(() => mocks),
+  SessionRepository: vi.fn().mockImplementation(function () {
+    return mocks;
+  }),
 }));
 
 describe("SetsGetHandler", () => {

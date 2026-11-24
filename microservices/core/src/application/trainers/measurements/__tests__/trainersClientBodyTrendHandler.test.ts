@@ -45,7 +45,9 @@ const repo = {
   ]),
 };
 vi.mock("../../../repositories/homeReadRepository", () => ({
-  HomeReadRepository: vi.fn(() => repo),
+  HomeReadRepository: vi.fn(function () {
+    return repo;
+  }),
 }));
 
 const DENY = {

@@ -56,9 +56,11 @@ vi.mock("../adherence/coachAdherence", async (original) => ({
 // Detail aggregate returns a unique marker so we can tell it apart.
 const DETAIL_MARKER = { client: { id: "MARKER-DETAIL" } };
 vi.mock("../repositories/clientDetailRepository", () => ({
-  ClientDetailRepository: vi.fn(() => ({
-    getClientDetail: vi.fn(async () => DETAIL_MARKER),
-  })),
+  ClientDetailRepository: vi.fn(function () {
+    return {
+      getClientDetail: vi.fn(async () => DETAIL_MARKER),
+    };
+  }),
 }));
 
 // M18 Start-live — the on-behalf record core is stubbed with a marker so the

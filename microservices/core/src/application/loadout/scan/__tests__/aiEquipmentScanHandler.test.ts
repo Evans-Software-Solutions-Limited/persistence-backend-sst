@@ -108,16 +108,22 @@ vi.mock("../equipmentScanModel", async () => {
 });
 
 vi.mock("../../../repositories/exerciseRepository", () => ({
-  ExerciseRepository: vi.fn().mockImplementation(() => exerciseRepo),
+  ExerciseRepository: vi.fn().mockImplementation(function () {
+    return exerciseRepo;
+  }),
 }));
 vi.mock("../../../repositories/savedGymRepository", () => ({
-  SavedGymRepository: vi.fn().mockImplementation(() => savedGymRepo),
+  SavedGymRepository: vi.fn().mockImplementation(function () {
+    return savedGymRepo;
+  }),
 }));
 vi.mock("../../../repositories/aiUsageLogRepository", () => ({
-  AiUsageLogRepository: vi.fn().mockImplementation(() => ({
-    record: usageLogRecordMock,
-    countForUserToday: usageLogCountMock,
-  })),
+  AiUsageLogRepository: vi.fn().mockImplementation(function () {
+    return {
+      record: usageLogRecordMock,
+      countForUserToday: usageLogCountMock,
+    };
+  }),
 }));
 
 function request(body: unknown, authed = true) {

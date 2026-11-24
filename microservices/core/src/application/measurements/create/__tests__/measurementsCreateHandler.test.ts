@@ -24,7 +24,9 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
 }));
 
 vi.mock("../../../repositories/measurementRepository", () => ({
-  MeasurementRepository: vi.fn().mockImplementation(() => mocks),
+  MeasurementRepository: vi.fn().mockImplementation(function () {
+    return mocks;
+  }),
 }));
 
 const streakMocks = { safeEvaluateStreaks: vi.fn(async () => ({})) };

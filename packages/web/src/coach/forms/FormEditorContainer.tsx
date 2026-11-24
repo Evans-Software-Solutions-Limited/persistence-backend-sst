@@ -146,7 +146,7 @@ export function FormEditorContainer() {
         );
         await queryClient.invalidateQueries({ queryKey: coachKeys.forms });
         const when = search.get("when");
-        navigate(
+        void navigate(
           `/coach/library/forms/${created.id}${when ? `/send?when=${when}` : ""}`,
         );
         return;
@@ -163,7 +163,7 @@ export function FormEditorContainer() {
       setBase(updated);
       setTitle(updated.title);
       setQuestions(updated.version?.questions ?? []);
-      navigate(`/coach/library/forms/${updated.id}`);
+      void navigate(`/coach/library/forms/${updated.id}`);
     } catch (e) {
       if (isCoachApiError(e) && e.code === "revision_conflict") {
         const current = e.body?.current as CoachForm | undefined;

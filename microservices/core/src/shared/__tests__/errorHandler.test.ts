@@ -1,5 +1,13 @@
 import Elysia, { t } from "elysia";
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+  afterEach,
+  type MockInstance,
+} from "vitest";
 import { coreErrorHandler } from "../errorHandler";
 import { EntitlementError } from "../../application/entitlement/assertEntitlement";
 import { captureServerError } from "../sentry";
@@ -8,7 +16,7 @@ import { TogetherError } from "../../application/together/shared";
 vi.mock("../sentry", () => ({ captureServerError: vi.fn() }));
 
 describe("coreErrorHandler", () => {
-  let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
+  let consoleErrorSpy: MockInstance<typeof console.error>;
   const originalStage = process.env.SST_STAGE;
 
   beforeEach(() => {

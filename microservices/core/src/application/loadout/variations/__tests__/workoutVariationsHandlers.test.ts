@@ -66,15 +66,21 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
 }));
 
 vi.mock("../../../repositories/workoutRepository", () => ({
-  WorkoutRepository: vi.fn().mockImplementation(() => workoutRepositoryMocks),
+  WorkoutRepository: vi.fn().mockImplementation(function () {
+    return workoutRepositoryMocks;
+  }),
 }));
 
 vi.mock("../../../repositories/exerciseRepository", () => ({
-  ExerciseRepository: vi.fn().mockImplementation(() => exerciseRepositoryMocks),
+  ExerciseRepository: vi.fn().mockImplementation(function () {
+    return exerciseRepositoryMocks;
+  }),
 }));
 
 vi.mock("../../../repositories/savedGymRepository", () => ({
-  SavedGymRepository: vi.fn().mockImplementation(() => savedGymRepositoryMocks),
+  SavedGymRepository: vi.fn().mockImplementation(function () {
+    return savedGymRepositoryMocks;
+  }),
 }));
 
 // The real EntitlementError is re-exported so the handler's throw still reaches

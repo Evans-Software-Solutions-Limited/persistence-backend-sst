@@ -34,7 +34,9 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
 }));
 
 vi.mock("../../../repositories/savedGymRepository", () => ({
-  SavedGymRepository: vi.fn().mockImplementation(() => savedGymRepositoryMocks),
+  SavedGymRepository: vi.fn().mockImplementation(function () {
+    return savedGymRepositoryMocks;
+  }),
 }));
 
 vi.mock("../../../entitlement/assertEntitlement", async () => {

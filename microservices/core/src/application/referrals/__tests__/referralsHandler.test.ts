@@ -28,7 +28,9 @@ const repo = {
   remove: vi.fn(),
 };
 vi.mock("../../repositories/referralRepository", () => ({
-  ReferralRepository: vi.fn().mockImplementation(() => repo),
+  ReferralRepository: vi.fn().mockImplementation(function () {
+    return repo;
+  }),
 }));
 
 const applied = {

@@ -9,7 +9,9 @@ import { getDb } from "@persistence/db/client";
 
 const createAndDispatch = vi.fn(async () => ({}) as any);
 vi.mock("../../notifications/push/notificationDispatcher", () => ({
-  NotificationDispatcher: vi.fn(() => ({ createAndDispatch })),
+  NotificationDispatcher: vi.fn(function () {
+    return { createAndDispatch };
+  }),
 }));
 
 /** Thenable select builder — one queued row-set per awaited query. */

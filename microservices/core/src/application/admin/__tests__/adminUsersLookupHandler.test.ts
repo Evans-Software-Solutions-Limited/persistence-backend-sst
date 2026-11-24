@@ -28,13 +28,19 @@ const subscriptions = vi.hoisted(() => ({ findForUser: vi.fn() }));
 const referrals = vi.hoisted(() => ({ findAppliedForUser: vi.fn() }));
 
 vi.mock("../../repositories/foundingGrantRepository", () => ({
-  FoundingGrantRepository: vi.fn(() => grants),
+  FoundingGrantRepository: vi.fn(function () {
+    return grants;
+  }),
 }));
 vi.mock("../../repositories/subscriptionRepository", () => ({
-  SubscriptionRepository: vi.fn(() => subscriptions),
+  SubscriptionRepository: vi.fn(function () {
+    return subscriptions;
+  }),
 }));
 vi.mock("../../repositories/referralRepository", () => ({
-  ReferralRepository: vi.fn(() => referrals),
+  ReferralRepository: vi.fn(function () {
+    return referrals;
+  }),
 }));
 
 import { adminUsersLookupHandler } from "../users/adminUsersLookupHandler";

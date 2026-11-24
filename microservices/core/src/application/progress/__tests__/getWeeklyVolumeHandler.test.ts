@@ -12,10 +12,14 @@ const habitConfigMock = vi.hoisted(() => ({
 }));
 
 vi.mock("../../repositories/volumeRepository", () => ({
-  VolumeRepository: vi.fn().mockImplementation(() => repoMock),
+  VolumeRepository: vi.fn().mockImplementation(function () {
+    return repoMock;
+  }),
 }));
 vi.mock("../../repositories/habitConfigRepository", () => ({
-  HabitConfigRepository: vi.fn().mockImplementation(() => habitConfigMock),
+  HabitConfigRepository: vi.fn().mockImplementation(function () {
+    return habitConfigMock;
+  }),
 }));
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getAuthUser: vi.fn(async (h: string | undefined) =>

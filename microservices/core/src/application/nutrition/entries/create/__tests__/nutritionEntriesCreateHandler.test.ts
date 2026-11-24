@@ -23,23 +23,33 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
 }));
 
 vi.mock("../../../../repositories/nutritionEntryRepository", () => ({
-  NutritionEntryRepository: vi.fn().mockImplementation(() => entryMocks),
+  NutritionEntryRepository: vi.fn().mockImplementation(function () {
+    return entryMocks;
+  }),
 }));
 vi.mock("../../../../repositories/foodRepository", () => ({
-  FoodRepository: vi.fn().mockImplementation(() => foodMocks),
+  FoodRepository: vi.fn().mockImplementation(function () {
+    return foodMocks;
+  }),
 }));
 vi.mock("../../../../repositories/recipeRepository", () => ({
-  RecipeRepository: vi.fn().mockImplementation(() => recipeMocks),
+  RecipeRepository: vi.fn().mockImplementation(function () {
+    return recipeMocks;
+  }),
 }));
 vi.mock("../../../../repositories/mealRepository", () => ({
-  MealRepository: vi.fn().mockImplementation(() => mealMocks),
+  MealRepository: vi.fn().mockImplementation(function () {
+    return mealMocks;
+  }),
 }));
 vi.mock("../../../../repositories/userMealRepository", async (orig) => ({
   // Keep the real `isUuid`: resolveEntryInput guards references with it.
   ...(await orig<
     typeof import("../../../../repositories/userMealRepository")
   >()),
-  UserMealRepository: vi.fn().mockImplementation(() => userMealMocks),
+  UserMealRepository: vi.fn().mockImplementation(function () {
+    return userMealMocks;
+  }),
 }));
 
 function post(body: unknown, auth = true) {

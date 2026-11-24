@@ -201,7 +201,7 @@ Every PR must pass:
 ```bash
 bun run prettier:check   # Format check
 bun run typecheck         # TypeScript strict mode
-bun run lint              # Oxlint (type-aware via tsrs in backend packages)
+bun run lint              # Oxlint (type-aware via tsrs in backend packages and web)
 bun run build             # All packages build
 bun run test:unit         # 90% coverage threshold
 ```

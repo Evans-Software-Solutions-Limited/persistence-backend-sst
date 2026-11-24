@@ -18,7 +18,9 @@ const evaluateMock = vi
   .mockResolvedValue({ advanced: [], milestones: [] });
 
 vi.mock("../../repositories/habitRepository", () => ({
-  HabitRepository: vi.fn().mockImplementation(() => habitMock),
+  HabitRepository: vi.fn().mockImplementation(function () {
+    return habitMock;
+  }),
 }));
 vi.mock("../../streaks/evaluate", async (importOriginal) => {
   const actual =

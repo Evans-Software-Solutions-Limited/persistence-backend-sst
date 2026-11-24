@@ -6,10 +6,12 @@ const updateByIdMock = vi.fn();
 const subscriptionsRetrieveMock = vi.fn();
 
 vi.mock("../../../repositories/subscriptionRepository", () => ({
-  SubscriptionRepository: vi.fn().mockImplementation(() => ({
-    findByExternalId: findByExternalIdMock,
-    updateById: updateByIdMock,
-  })),
+  SubscriptionRepository: vi.fn().mockImplementation(function () {
+    return {
+      findByExternalId: findByExternalIdMock,
+      updateById: updateByIdMock,
+    };
+  }),
 }));
 
 vi.mock("../../stripeClient", () => ({

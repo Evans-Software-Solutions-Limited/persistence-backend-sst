@@ -2,22 +2,24 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { muscleGroupsHandler } from "../muscleGroupsHandler";
 
 vi.mock("../../../repositories/exerciseRepository", () => ({
-  ExerciseRepository: vi.fn().mockImplementation(() => ({
-    getMuscleGroups: vi.fn().mockResolvedValue([
-      {
-        id: "mg-1",
-        name: "Chest",
-        description: "Chest muscles",
-        displayName: "Chest",
-      },
-      {
-        id: "mg-2",
-        name: "Back",
-        description: "Back muscles",
-        displayName: "Back",
-      },
-    ]),
-  })),
+  ExerciseRepository: vi.fn().mockImplementation(function () {
+    return {
+      getMuscleGroups: vi.fn().mockResolvedValue([
+        {
+          id: "mg-1",
+          name: "Chest",
+          description: "Chest muscles",
+          displayName: "Chest",
+        },
+        {
+          id: "mg-2",
+          name: "Back",
+          description: "Back muscles",
+          displayName: "Back",
+        },
+      ]),
+    };
+  }),
 }));
 
 describe("MuscleGroupsHandler", () => {

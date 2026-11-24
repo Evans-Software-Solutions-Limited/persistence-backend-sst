@@ -210,7 +210,7 @@ export function FormsLibraryContainer() {
             ]
           : []),
       ]);
-      close();
+      void close();
     } catch (e) {
       if (isCoachApiError(e) && e.code === "revision_conflict") {
         const current = e.body?.current as FormSchedule | undefined;
@@ -221,7 +221,7 @@ export function FormsLibraryContainer() {
         }
         void queryClient.invalidateQueries({ queryKey: coachKeys.schedules });
         setNotice(EDITED_ELSEWHERE);
-        close();
+        void close();
       } else {
         setSendError(
           errorText(
@@ -258,7 +258,7 @@ export function FormsLibraryContainer() {
         error={error}
         onSelect={(id) => {
           setShowAll(false);
-          go(`/${id}`);
+          void go(`/${id}`);
         }}
         onNew={(when) =>
           navigate(`/coach/library/forms/new${when ? `?when=${when}` : ""}`)
@@ -276,7 +276,7 @@ export function FormsLibraryContainer() {
               newIdempotencyKey(),
             );
             await queryClient.invalidateQueries({ queryKey: coachKeys.forms });
-            go(`/${created.id}/edit`);
+            void go(`/${created.id}/edit`);
           } catch (e) {
             setError(
               errorText(

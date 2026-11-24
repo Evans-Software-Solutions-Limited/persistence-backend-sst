@@ -33,7 +33,9 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
 }));
 
 vi.mock("../../../repositories/exerciseRepository", () => ({
-  ExerciseRepository: vi.fn().mockImplementation(() => exerciseRepositoryMocks),
+  ExerciseRepository: vi.fn().mockImplementation(function () {
+    return exerciseRepositoryMocks;
+  }),
 }));
 
 describe("ExercisesDeleteHandler", () => {

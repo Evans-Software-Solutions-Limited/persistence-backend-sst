@@ -133,7 +133,7 @@ export function CoachCallback() {
   useEffect(() => {
     if (!parsed.session) return;
     saveSession(parsed.session);
-    navigate("/coach/clients", { replace: true });
+    void navigate("/coach/clients", { replace: true });
   }, [parsed, navigate]);
   return (
     <div className="persistence-coach">

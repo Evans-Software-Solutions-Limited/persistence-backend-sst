@@ -53,7 +53,9 @@ vi.mock("../aiJobRepository", async (importOriginal) => {
   const actual = (await importOriginal()) as Record<string, unknown>;
   return {
     ...actual,
-    AiJobRepository: vi.fn().mockImplementation(() => mocks),
+    AiJobRepository: vi.fn().mockImplementation(function () {
+      return mocks;
+    }),
   };
 });
 

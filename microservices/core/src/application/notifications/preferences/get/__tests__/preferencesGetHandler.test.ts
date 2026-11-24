@@ -34,7 +34,9 @@ vi.mock(
       >();
     return {
       ...actual,
-      ProfileRepository: vi.fn().mockImplementation(() => mocks),
+      ProfileRepository: vi.fn().mockImplementation(function () {
+        return mocks;
+      }),
     };
   },
 );

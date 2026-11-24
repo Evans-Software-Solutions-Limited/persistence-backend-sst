@@ -19,7 +19,9 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
 }));
 
 vi.mock("../../../../repositories/nutritionEntryRepository", () => ({
-  NutritionEntryRepository: vi.fn().mockImplementation(() => entryMocks),
+  NutritionEntryRepository: vi.fn().mockImplementation(function () {
+    return entryMocks;
+  }),
 }));
 
 function del(auth = true) {

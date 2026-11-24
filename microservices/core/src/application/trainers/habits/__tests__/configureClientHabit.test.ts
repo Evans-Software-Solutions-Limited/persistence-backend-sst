@@ -12,15 +12,19 @@ vi.mock("../../../relationships/auditTrainerAction", () => ({
 const repoUpsert = vi.fn();
 const repoGetAssigner = vi.fn();
 vi.mock("../../../repositories/habitConfigRepository", () => ({
-  HabitConfigRepository: vi.fn(() => ({
-    upsert: repoUpsert,
-    getAssigner: repoGetAssigner,
-  })),
+  HabitConfigRepository: vi.fn(function () {
+    return {
+      upsert: repoUpsert,
+      getAssigner: repoGetAssigner,
+    };
+  }),
 }));
 
 const repoGetTarget = vi.fn();
 vi.mock("../../../repositories/nutritionTargetRepository", () => ({
-  NutritionTargetRepository: vi.fn(() => ({ get: repoGetTarget })),
+  NutritionTargetRepository: vi.fn(function () {
+    return { get: repoGetTarget };
+  }),
 }));
 
 import { getDb } from "@persistence/db/client";

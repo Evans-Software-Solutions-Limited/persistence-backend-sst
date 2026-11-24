@@ -33,7 +33,9 @@ vi.mock("../../../relationships/auditClientDataRead", () => ({
 
 const repoList = vi.fn();
 vi.mock("../../../repositories/goalRepository", () => ({
-  GoalRepository: vi.fn(() => ({ list: repoList })),
+  GoalRepository: vi.fn(function () {
+    return { list: repoList };
+  }),
 }));
 
 import { assertTrainerCanActForClient } from "../../../relationships/assertTrainerCanActForClient";

@@ -8,7 +8,9 @@ const repoMock = {
 };
 
 vi.mock("../../../repositories/habitHolidayRepository", () => ({
-  HabitHolidayRepository: vi.fn().mockImplementation(() => repoMock),
+  HabitHolidayRepository: vi.fn().mockImplementation(function () {
+    return repoMock;
+  }),
 }));
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getAuthUser: vi.fn(async (h: string | undefined) =>

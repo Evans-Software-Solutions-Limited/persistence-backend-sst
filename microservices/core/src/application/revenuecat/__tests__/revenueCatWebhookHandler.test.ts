@@ -38,16 +38,18 @@ const {
 
 vi.mock("../../repositories/subscriptionRepository", () => ({
   LIVE_SUBSCRIPTION_STATUSES: ["active", "pending", "trialing", "past_due"],
-  SubscriptionRepository: vi.fn().mockImplementation(() => ({
-    findByExternalId: findByExternalIdMock,
-    updateById: updateByIdMock,
-    insert: insertMock,
-    upsertByExternalId: upsertByExternalIdMock,
-    cancelLiveSubscriptions: cancelLiveMock,
-    withUserSubscriptionLock: withUserSubscriptionLockMock,
-    cancelLiveByExternalId: cancelLiveByExternalIdMock,
-    userExists: userExistsMock,
-  })),
+  SubscriptionRepository: vi.fn().mockImplementation(function () {
+    return {
+      findByExternalId: findByExternalIdMock,
+      updateById: updateByIdMock,
+      insert: insertMock,
+      upsertByExternalId: upsertByExternalIdMock,
+      cancelLiveSubscriptions: cancelLiveMock,
+      withUserSubscriptionLock: withUserSubscriptionLockMock,
+      cancelLiveByExternalId: cancelLiveByExternalIdMock,
+      userExists: userExistsMock,
+    };
+  }),
 }));
 
 // FOUNDING-OFFER: the sync's best-effort attribution lock is a DB write.
@@ -56,11 +58,13 @@ vi.mock("../../referrals/lockReferralAttribution", () => ({
 }));
 
 vi.mock("../../repositories/revenuecatWebhookEventsRepository", () => ({
-  RevenueCatWebhookEventsRepository: vi.fn().mockImplementation(() => ({
-    claim: claimMock,
-    markDone: markDoneMock,
-    markFailed: markFailedMock,
-  })),
+  RevenueCatWebhookEventsRepository: vi.fn().mockImplementation(function () {
+    return {
+      claim: claimMock,
+      markDone: markDoneMock,
+      markFailed: markFailedMock,
+    };
+  }),
 }));
 
 vi.mock("../revenueCatClient", () => ({
@@ -69,9 +73,11 @@ vi.mock("../revenueCatClient", () => ({
 }));
 
 vi.mock("../../notifications/push/notificationDispatcher", () => ({
-  NotificationDispatcher: vi.fn().mockImplementation(() => ({
-    createAndDispatch: createAndDispatchMock,
-  })),
+  NotificationDispatcher: vi.fn().mockImplementation(function () {
+    return {
+      createAndDispatch: createAndDispatchMock,
+    };
+  }),
 }));
 
 vi.mock("../../analytics/emitEvent", () => ({

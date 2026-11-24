@@ -6,10 +6,12 @@ const findByExternalIdMock = vi.fn();
 const insertMock = vi.fn();
 
 vi.mock("../../../repositories/subscriptionRepository", () => ({
-  SubscriptionRepository: vi.fn().mockImplementation(() => ({
-    findByExternalId: findByExternalIdMock,
-    insert: insertMock,
-  })),
+  SubscriptionRepository: vi.fn().mockImplementation(function () {
+    return {
+      findByExternalId: findByExternalIdMock,
+      insert: insertMock,
+    };
+  }),
 }));
 
 import {

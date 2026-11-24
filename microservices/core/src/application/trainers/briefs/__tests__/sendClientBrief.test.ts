@@ -15,12 +15,16 @@ vi.mock("../../../relationships/auditTrainerAction", () => ({
 
 const notificationCreate = vi.fn();
 vi.mock("../../../repositories/notificationRepository", () => ({
-  NotificationRepository: vi.fn(() => ({ create: notificationCreate })),
+  NotificationRepository: vi.fn(function () {
+    return { create: notificationCreate };
+  }),
 }));
 
 const dispatchExisting = vi.fn();
 vi.mock("../../../notifications/push/notificationDispatcher", () => ({
-  NotificationDispatcher: vi.fn(() => ({ dispatchExisting })),
+  NotificationDispatcher: vi.fn(function () {
+    return { dispatchExisting };
+  }),
 }));
 
 import { getDb } from "@persistence/db/client";

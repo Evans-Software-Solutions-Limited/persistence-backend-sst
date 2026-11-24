@@ -26,15 +26,15 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
 
 const applyPendingMock = vi.fn(async () => false);
 vi.mock("../../../founding/foundingGrantService", () => ({
-  FoundingGrantService: vi
-    .fn()
-    .mockImplementation(() => ({ applyPendingForUser: applyPendingMock })),
+  FoundingGrantService: vi.fn().mockImplementation(function () {
+    return { applyPendingForUser: applyPendingMock };
+  }),
 }));
 
 vi.mock("../../../repositories/subscriptionRepository", () => ({
-  SubscriptionRepository: vi
-    .fn()
-    .mockImplementation(() => subscriptionRepositoryMocks),
+  SubscriptionRepository: vi.fn().mockImplementation(function () {
+    return subscriptionRepositoryMocks;
+  }),
 }));
 
 const fakeMySubscription = {

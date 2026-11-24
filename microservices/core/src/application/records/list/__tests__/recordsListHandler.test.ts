@@ -24,7 +24,9 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
 }));
 
 vi.mock("../../../repositories/recordRepository", () => ({
-  RecordRepository: vi.fn().mockImplementation(() => mocks),
+  RecordRepository: vi.fn().mockImplementation(function () {
+    return mocks;
+  }),
 }));
 
 describe("RecordsListHandler", () => {

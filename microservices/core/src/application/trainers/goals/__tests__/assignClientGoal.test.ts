@@ -15,7 +15,9 @@ vi.mock("../../../relationships/auditTrainerAction", () => ({
 
 const repoCreate = vi.fn();
 vi.mock("../../../repositories/goalRepository", () => ({
-  GoalRepository: vi.fn(() => ({ create: repoCreate })),
+  GoalRepository: vi.fn(function () {
+    return { create: repoCreate };
+  }),
 }));
 
 vi.mock("../../onBehalfNotifications", () => ({
