@@ -11,8 +11,8 @@ import type { NutritionPlansCache } from "@/domain/models/nutritionPlans";
 import {
   compareWithTarget,
   defaultPlanId,
+  findPlan,
   macrosVsTarget,
-  resolvePlanId,
   visibleCoachPlans,
   visibleMyPlans,
 } from "@/domain/services/nutritionPlans.service";
@@ -30,9 +30,9 @@ export function switchGroups(
   cache: NutritionPlansCache,
   selectedId: string | null,
 ): SwitchGroupVM[] {
-  const current = selectedId
-    ? resolvePlanId(cache, selectedId)
-    : defaultPlanId(cache);
+  // The same fallback as the Plan tab: a pick that's gone shows the default.
+  const picked = selectedId ? findPlan(cache, selectedId) : null;
+  const current = picked ? picked.plan.id : defaultPlanId(cache);
   const byCoach = new Map<string, SwitchGroupVM>();
   for (const c of visibleCoachPlans(cache)) {
     const key = `coach-${c.coach.id}`;

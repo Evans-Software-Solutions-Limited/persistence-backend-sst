@@ -249,6 +249,12 @@ describe("helpers", () => {
       "local-p1",
     );
     expect(aliased[1]!.rows[0]!.selected).toBe(true);
+    // A pick that's gone (deleted, removed by the coach) ticks the plan the
+    // tab falls back to (Inspector Brad #554).
+    const gone = switchGroups(cache, "deleted-plan");
+    expect(gone.flatMap((g) => g.rows).filter((r) => r.selected)).toHaveLength(
+      1,
+    );
   });
 });
 
