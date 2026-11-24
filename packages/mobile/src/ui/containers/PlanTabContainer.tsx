@@ -163,6 +163,13 @@ export function PlanTabContainer({ active }: { active: boolean }) {
     if (active && coachRef && isUpdated) void markSeen(coachRef.plan.id);
   }, [active, coachRef, isUpdated, markSeen]);
 
+  // Once its plan leaves the screen a notice is done; coming back doesn't
+  // show it again (Inspector Brad, #554).
+  useEffect(() => {
+    if (notice && (!ref || resolvePlanId(cache, notice.planId) !== ref.plan.id))
+      setNoticeFor(null);
+  }, [notice, ref, cache]);
+
   const target = userId ? storage.getCachedNutritionTarget(userId) : null;
   const vm = useMemo(
     () =>

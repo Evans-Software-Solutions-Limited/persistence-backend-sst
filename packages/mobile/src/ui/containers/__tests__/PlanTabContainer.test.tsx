@@ -363,6 +363,11 @@ describe("PlanTabContainer", () => {
     act(() => usePlanSheets.getState().select("p1"));
     r.rerender(<PlanTabContainer active />);
     expect(mockProbe.tab!.notice).toBeNull();
+    // …and coming back doesn't bring an old notice back.
+    act(() => usePlanSheets.getState().select("srv-copy"));
+    r.rerender(<PlanTabContainer active />);
+    expect(mockProbe.tab!.plan!.id).toBe("srv-copy");
+    expect(mockProbe.tab!.notice).toBeNull();
   });
 
   it("a coach plan waiting for an answer opens C6 once", () => {
