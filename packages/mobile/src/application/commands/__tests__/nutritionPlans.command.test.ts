@@ -5,7 +5,7 @@
  * 409 with `current`), and food logs are idempotent on their own key (the
  * PER-109 batch route).
  */
-import { processSyncQueue } from "../sync.command";
+import { isMutationEligible, processSyncQueue } from "../sync.command";
 import {
   NUTRITION_PLAN_ASSIGNMENT_ENTITY,
   NUTRITION_PLAN_ENTITY,
@@ -1207,6 +1207,18 @@ describe("shopping list", () => {
     await drainLater();
     expect(server.shoppingPlans).toEqual([]);
     expect(queued()).toHaveLength(0);
+  });
+
+  it("the per-plan hold still applies to a snapshot taken before the id swap (Inspector Brad #554)", () => {
+    setPlanInShoppingListCommand(deps(), "local-X", true);
+    const add = queued()[0]!;
+    storage.markMutationDispatched(add.id); // sent once, so not cancelled
+    setPlanInShoppingListCommand(deps(), "local-X", false);
+    const snapshot = queued().find((e) => e.method === "DELETE")!;
+    expect(snapshot.entityId).toBe("local-X");
+    // The plan's create syncs earlier in the same drain.
+    storage.swapLocalNutritionPlanId("local-X", "srv-X");
+    expect(isMutationEligible(storage, snapshot)).toBe(false);
   });
 
   it("adding then removing before sending cancels out; a read keeps unsent chips", () => {

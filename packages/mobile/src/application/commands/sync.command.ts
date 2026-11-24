@@ -682,8 +682,12 @@ export function isMutationEligible(
       entry.entityType === NUTRITION_PLAN_ASSIGNMENT_ENTITY) &&
     entry.entityId !== null
   ) {
+    // The drain's snapshot may predate an id swap earlier in this drain;
+    // look the row up by its current entity id (Inspector Brad, #554).
+    const entityId =
+      storage.getMutationById(entry.id)?.entityId ?? entry.entityId;
     return !storage
-      .getQueuedEntriesForEntity(entry.entityType, entry.entityId)
+      .getQueuedEntriesForEntity(entry.entityType, entityId)
       .some((older) => older.id < entry.id && isAutoResolvableSyncEntry(older));
   }
   if (
