@@ -47,6 +47,7 @@ import {
   removeItem,
   replaceItem,
   shoppingProgress,
+  tooManyMealsWithFood,
   userMealForPlanMeal,
   withPlanMeals,
   withServings,
@@ -384,6 +385,17 @@ describe("plan meals and drafts", () => {
     expect(next.meals).toHaveLength(PLAN_MEALS_MAX);
     expect(next.meals.every((m) => m.items.length === 1)).toBe(true);
     expect(next.meals.map((m) => m.id)).toContain(`c${PLAN_MEALS_MAX - 1}`);
+  });
+
+  it("says when ticks would leave more meals with food than a plan holds", () => {
+    const meals = Array.from({ length: PLAN_MEALS_MAX + 1 }, (_, i) => ({
+      ...emptyPlanMeal(`d${i}`, `Day ${i}`, "snack" as const, i),
+      items: [planItemFromFood(`f${i}`, food, 1)],
+    }));
+    const big = recomputePlan({ ...draft(), meals });
+    expect(tooManyMealsWithFood(big, [], userMeals)).toBe(true);
+    const fits = recomputePlan({ ...draft(), meals: meals.slice(1) });
+    expect(tooManyMealsWithFood(fits, [userMeals[0]!], userMeals)).toBe(false);
   });
 
   it("keeps plan meals that aren't one of Your meals", () => {

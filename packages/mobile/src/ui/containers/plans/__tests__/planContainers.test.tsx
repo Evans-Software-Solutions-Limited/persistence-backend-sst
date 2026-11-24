@@ -34,7 +34,11 @@ import type { PlanOptionsSheetProps } from "@/ui/presenters/fuel/plans/PlanOptio
 import type { PlanAddFoodProps } from "@/ui/presenters/fuel/plans/PlanAddFoodPresenter";
 import type { PlanQuickItemSheetProps } from "@/ui/presenters/fuel/plans/PlanQuickItemSheetPresenter";
 import { FOOD, MEAL, RECIPE } from "./planFixtures";
-import { NewPlanContainer, DAY_NOT_ON_PHONE } from "../NewPlanContainer";
+import {
+  NewPlanContainer,
+  DAY_NOT_ON_PHONE,
+  DAY_TOO_MANY_MEALS,
+} from "../NewPlanContainer";
 import { PlanEditContainer } from "../PlanEditContainer";
 import { PlanAddFoodContainer } from "../PlanAddFoodContainer";
 import { NOT_ON_PHONE, SAVE_FAILED } from "../PlanBuilderContainer";
@@ -501,6 +505,43 @@ describe("NewPlanContainer (N28 → N29 → N33)", () => {
     });
     expect(meals[1].items[0]).toMatchObject({ kind: "custom", name: "Soup" });
     act(() => probe.newPlan!.onCloseCalendar());
+  });
+
+  it("won't copy a day with food in more meals than a plan holds", () => {
+    // Inspector Brad, #554: 22 of Your meals, food logged in each.
+    const extra: UserMeal[] = Array.from({ length: 22 }, (_, i) => ({
+      ...mockMeals[2],
+      id: `um-x${i}`,
+      name: `Extra ${i}`,
+      defaultKey: null,
+      sortOrder: 3 + i,
+    }));
+    mockMeals.push(...extra);
+    try {
+      days.set(
+        YESTERDAY,
+        fuelDay(
+          YESTERDAY,
+          extra.map((m, i) =>
+            entry(`x${i}`, {
+              mealSlot: "snack",
+              userMealId: m.id,
+              customName: `Food ${i}`,
+            }),
+          ),
+        ),
+      );
+      mockParams = { from: "day" };
+      render(<NewPlanContainer />);
+      act(() => probe.newPlan!.onPickDay(YESTERDAY));
+      act(() => probe.newPlan!.onName("Big day"));
+      expect(probe.newPlan!.options[1].sub).toBe(DAY_TOO_MANY_MEALS);
+      expect(probe.newPlan!.canContinue).toBe(false);
+      act(() => probe.newPlan!.onContinue());
+      expect(usePlanDraft.getState().draft).toBeNull();
+    } finally {
+      mockMeals.splice(3);
+    }
   });
 
   it("?from=plan picks one of my plans and copies it", () => {

@@ -2,7 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { router, useLocalSearchParams, type Href } from "expo-router";
 import { localIdFactory } from "@/application/commands/localId";
 import type { FuelToday } from "@/domain/models/nutrition";
-import type { NutritionPlan, PlanMeal } from "@/domain/models/nutritionPlans";
+import {
+  PLAN_MEALS_MAX,
+  type NutritionPlan,
+  type PlanMeal,
+} from "@/domain/models/nutritionPlans";
 import type { UserMeal } from "@/domain/models/userMeals";
 import { entryDisplayLabel } from "@/domain/services";
 import {
@@ -12,6 +16,7 @@ import {
   planMealsFromDay,
   visibleMyPlans,
   resolvePlanId,
+  tooManyMealsWithFood,
   withPlanMeals,
 } from "@/domain/services/nutritionPlans.service";
 import { addDaysISO, localDayISO } from "@/shared/utils";
@@ -53,6 +58,8 @@ export function pastDayLabel(iso: string): string {
 
 export const DAY_NOT_ON_PHONE =
   "That day isn't saved on this phone. Pick another day.";
+
+export const DAY_TOO_MANY_MEALS = `A plan holds up to ${PLAN_MEALS_MAX} meals and that day has more with food. Untick some meals or pick another day.`;
 
 function startFromParam(v: unknown): StartFrom {
   return v === "day" || v === "plan" ? v : "empty";
@@ -126,12 +133,28 @@ export function NewPlanContainer() {
     [storage, recipes.data, savedMeals.data],
   );
 
+  // A day with food in more meals than a plan holds can't be copied whole;
+  // say so rather than drop meals (Inspector Brad, #554).
+  const dayTooBig = useMemo(() => {
+    if (from !== "day" || !dayFuel || !userId) return false;
+    let n = 0;
+    const probeId = () => `probe-${n++}`;
+    const dayPlan = newDraftPlan({
+      id: "probe",
+      ownerId: userId,
+      name: "probe",
+      meals: planMealsFromDay(dayFuel, userMeals.meals, probeId),
+      now: new Date(0).toISOString(),
+    });
+    return tooManyMealsWithFood(dayPlan, ticked, userMeals.meals);
+  }, [from, dayFuel, userId, userMeals.meals, ticked]);
+
   const cleanName = cleanPlanName(name);
   const canContinue =
     from === "mealprint" ||
     (cleanName !== null &&
       ticked.length > 0 &&
-      (from !== "day" || dayFuel !== null) &&
+      (from !== "day" || (dayFuel !== null && !dayTooBig)) &&
       (from !== "plan" || sourcePlan !== null));
 
   const onContinue = useCallback(() => {
@@ -144,7 +167,7 @@ export function NewPlanContainer() {
       }
       return;
     }
-    if (!cleanName || !userId) return;
+    if (!cleanName || !userId || (from === "day" && dayTooBig)) return;
     let base: PlanMeal[] = [];
     if (from === "day" && dayFuel) {
       base = planMealsFromDay(dayFuel, userMeals.meals, localIdFactory, (e) =>
@@ -170,6 +193,7 @@ export function NewPlanContainer() {
     mealprintGate.allowed,
     cleanName,
     userId,
+    dayTooBig,
     dayFuel,
     userMeals.meals,
     nameFor,
@@ -227,9 +251,11 @@ export function NewPlanContainer() {
 
   const daySub = !day
     ? "Copies what you ate, then edit"
-    : dayFuel
-      ? `${pastDayLabel(day)} · copies what you ate, then edit`
-      : DAY_NOT_ON_PHONE;
+    : !dayFuel
+      ? DAY_NOT_ON_PHONE
+      : dayTooBig
+        ? DAY_TOO_MANY_MEALS
+        : `${pastDayLabel(day)} · copies what you ate, then edit`;
   const planSub = sourcePlan
     ? `Duplicate ${sourcePlan.name} and change it`
     : myPlans.length > 0

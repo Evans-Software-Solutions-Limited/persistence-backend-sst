@@ -653,6 +653,38 @@ export function withPlanMeals(
   newId: () => string,
   yourMeals: readonly UserMeal[],
 ): NutritionPlan {
+  return recomputePlan({
+    ...plan,
+    meals: capPlanMeals(tickedPlanMeals(plan, ticked, newId, yourMeals)).map(
+      (m, i) => ({ ...m, sortOrder: i }),
+    ),
+  });
+}
+
+/**
+ * True when the ticks would leave more meals with food than the server takes
+ * (PLAN_MEALS_MAX): capping would drop food, so the caller must say so
+ * instead (Inspector Brad, #554).
+ */
+export function tooManyMealsWithFood(
+  plan: NutritionPlan,
+  ticked: readonly UserMeal[],
+  yourMeals: readonly UserMeal[],
+): boolean {
+  let n = 0;
+  return (
+    tickedPlanMeals(plan, ticked, () => `probe-${n++}`, yourMeals).filter(
+      (m) => m.items.length > 0,
+    ).length > PLAN_MEALS_MAX
+  );
+}
+
+function tickedPlanMeals(
+  plan: NutritionPlan,
+  ticked: readonly UserMeal[],
+  newId: () => string,
+  yourMeals: readonly UserMeal[],
+): PlanMeal[] {
   const key = (n: string) => n.trim().toLowerCase();
   const used = new Set<string>();
   const kept: PlanMeal[] = ticked.map((um) => {
@@ -671,13 +703,7 @@ export function withPlanMeals(
       !used.has(m.id) &&
       (!known.has(key(m.name)) || tickedNames.has(key(m.name))),
   );
-  return recomputePlan({
-    ...plan,
-    meals: capPlanMeals([...kept, ...extra]).map((m, i) => ({
-      ...m,
-      sortOrder: i,
-    })),
-  });
+  return [...kept, ...extra];
 }
 
 /**
