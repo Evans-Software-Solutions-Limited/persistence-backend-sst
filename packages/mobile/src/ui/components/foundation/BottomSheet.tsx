@@ -29,7 +29,8 @@ import { toneHex, toneTokens } from "./tones";
  *
  * Default 78% height; `peek` drops to 60%, `tall` rises to 88%. Backdrop tap
  * dismisses. The header (eyebrow + title + drag handle) is fixed; children
- * scroll. `accent` tints the eyebrow + drag-handle.
+ * scroll. `height="content"` sheets draw the same header above their body.
+ * `accent` tints the eyebrow + drag-handle.
  *
  * ## `footer` — a pinned region below the scroll
  *
@@ -122,6 +123,59 @@ function accentToken(accent?: BottomSheetAccent): string {
 function accentHex(accent?: BottomSheetAccent): string {
   if (!accent) return "rgba(255,255,255,0.16)";
   return toneHex(accent).base;
+}
+
+/**
+ * The fixed sheet header (eyebrow + title). Shared by the scrolling and the
+ * `content` branches so every height draws `title`/`eyebrow` the same way.
+ */
+function SheetHeader({
+  title,
+  eyebrow,
+  accent,
+}: {
+  title?: string;
+  eyebrow?: string;
+  accent?: BottomSheetAccent;
+}) {
+  if (!title && !eyebrow) return null;
+  return (
+    <View
+      paddingHorizontal={20}
+      paddingTop={4}
+      paddingBottom={12}
+      borderBottomWidth={1}
+      borderColor="$border"
+    >
+      {eyebrow ? (
+        <Text
+          fontFamily="$display"
+          fontSize={10.5}
+          fontWeight="600"
+          letterSpacing={1.7}
+          textTransform="uppercase"
+          color={accentToken(accent)}
+          marginBottom={4}
+        >
+          {eyebrow}
+        </Text>
+      ) : null}
+      {title ? (
+        <Text
+          fontFamily="$display"
+          fontWeight="700"
+          fontSize={20}
+          letterSpacing={-0.4}
+          color="$text"
+          // a11y: announce the sheet title as a heading so screen-reader
+          // users get the sheet's purpose on focus + can navigate by header.
+          accessibilityRole="header"
+        >
+          {title}
+        </Text>
+      ) : null}
+    </View>
+  );
 }
 
 export function BottomSheet({
@@ -269,16 +323,22 @@ export function BottomSheet({
     >
       {fitContent ? (
         <BottomSheetView
-          style={{
-            paddingHorizontal: 20,
-            paddingTop: padTop,
-            paddingBottom: padBottom,
-          }}
           testID={testID}
           accessibilityViewIsModal
           importantForAccessibility="yes"
         >
-          {children}
+          {/* Same fixed header as the scrolling branch: a `content` sheet that
+              passes `title`/`eyebrow` must show them (PER-132's "Your meals"
+              rendered untitled before this). */}
+          <SheetHeader title={title} eyebrow={eyebrow} accent={accent} />
+          <View
+            paddingHorizontal={20}
+            paddingTop={padTop}
+            paddingBottom={padBottom}
+            testID="bottom-sheet-content-body"
+          >
+            {children}
+          </View>
         </BottomSheetView>
       ) : (
         <View
@@ -328,43 +388,7 @@ export function BottomSheet({
           accessibilityViewIsModal
           importantForAccessibility="yes"
         >
-          {title || eyebrow ? (
-            <View
-              paddingHorizontal={20}
-              paddingTop={4}
-              paddingBottom={12}
-              borderBottomWidth={1}
-              borderColor="$border"
-            >
-              {eyebrow ? (
-                <Text
-                  fontFamily="$display"
-                  fontSize={10.5}
-                  fontWeight="600"
-                  letterSpacing={1.7}
-                  textTransform="uppercase"
-                  color={accentToken(accent)}
-                  marginBottom={4}
-                >
-                  {eyebrow}
-                </Text>
-              ) : null}
-              {title ? (
-                <Text
-                  fontFamily="$display"
-                  fontWeight="700"
-                  fontSize={20}
-                  letterSpacing={-0.4}
-                  color="$text"
-                  // a11y: announce the sheet title as a heading so screen-reader
-                  // users get the sheet's purpose on focus + can navigate by header.
-                  accessibilityRole="header"
-                >
-                  {title}
-                </Text>
-              ) : null}
-            </View>
-          ) : null}
+          <SheetHeader title={title} eyebrow={eyebrow} accent={accent} />
 
           {scrollable ? (
             <BottomSheetScrollView
