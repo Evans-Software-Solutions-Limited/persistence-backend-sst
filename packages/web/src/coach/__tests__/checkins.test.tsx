@@ -496,3 +496,38 @@ describe("Inspector Brad #555 sweep 2: the client's own pause", () => {
     expect(api.clientFormSetup.mock.calls[0]![2].status).toBe("active");
   });
 });
+
+describe("Inspector Brad #555 sweep 4", () => {
+  it("Save keeps the edited rule's own pause, even when another rule isn't paused", async () => {
+    const weekly = { ...CLIENT_FORMS[0]!.rule!, clientStatus: "paused" };
+    const entry = {
+      ...CLIENT_FORMS[0]!,
+      rule: weekly,
+      rules: [
+        weekly,
+        {
+          ...CLIENT_FORMS[1]!.rule!,
+          scheduleId: "s-join",
+          trigger: "on_join",
+          clientStatus: null,
+        },
+      ],
+    };
+    const api = fakeApi({
+      clientForms: vi.fn().mockResolvedValue([entry]),
+      clientFormSetup: vi.fn().mockResolvedValue(entry),
+    });
+    renderCoach(<ClientPage />, { route: ROUTE, path: PATH, api });
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Weekly check-in: set up/ }),
+    );
+    const panel = await screen.findByRole("dialog", { name: /for Sam only/ });
+    expect(within(panel).getByRole("button", { name: "Pause" })).toBeTruthy();
+    fireEvent.click(within(panel).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(api.clientFormSetup).toHaveBeenCalled());
+    expect(api.clientFormSetup.mock.calls[0]![2]).toMatchObject({
+      status: "paused",
+      scheduleId: "s-weekly",
+    });
+  });
+});

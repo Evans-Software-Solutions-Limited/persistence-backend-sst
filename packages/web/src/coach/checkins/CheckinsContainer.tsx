@@ -14,12 +14,7 @@ import {
   useCoachApi,
   useOnline,
 } from "../hooks/coachQueries";
-import {
-  clientOverride,
-  clientRule,
-  defaultRule,
-  pausedForClient,
-} from "../lib/forms";
+import { clientOverride, clientRule, defaultRule } from "../lib/forms";
 import { clockTime, firstName } from "../lib/people";
 import type { EffectiveRule } from "../lib/schedule";
 import { LoadError, Loading } from "../ui/parts";
@@ -201,8 +196,6 @@ export function CheckinsContainer({ client }: { client: RosterClient }) {
   );
   const reachingRules = (e: ClientFormEntry) =>
     e.rules.length > 0 ? e.rules : e.rule ? [e.rule] : [];
-  const status = (e: ClientFormEntry) =>
-    pausedForClient(e) ? ("paused" as const) : ("active" as const);
 
   return (
     <>
@@ -261,7 +254,12 @@ export function CheckinsContainer({ client }: { client: RosterClient }) {
           onSave={() =>
             void setup(
               {
-                status: status(panelEntry),
+                // Save writes only the edited rule, so it keeps that rule's
+                // own pause (Inspector Brad, #555 sweep 4).
+                status:
+                  panelEntry.rule!.clientStatus === "paused"
+                    ? "paused"
+                    : "active",
                 // One rule at a time: without scheduleId the server applies
                 // the override to every live rule of the form (Inspector
                 // Brad, #555).
