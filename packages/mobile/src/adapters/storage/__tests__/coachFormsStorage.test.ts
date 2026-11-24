@@ -184,6 +184,46 @@ describe.each([
     ]);
   });
 
+  it("swaps offline form and rule ids in every client's C10j forms", () => {
+    const s = make();
+    const rule = {
+      scheduleId: "local-s",
+      trigger: "weekly" as const,
+      audience: "selected" as const,
+      status: "active" as const,
+      clientStatus: "active" as const,
+      weekday: 7,
+      timeLocal: "09:00",
+      dueAfterHours: 27,
+      reminders: [],
+      override: null,
+    };
+    const offline: ClientForm = {
+      ...clientForm,
+      form: { id: "local-f", title: "Mine", archivedAt: null },
+      rule,
+      rules: [rule, { ...rule, scheduleId: "s9" }],
+    };
+    s.cacheCoachClientForms("u1", "c1", [offline, clientForm]);
+    s.cacheCoachClientForms("u1", "c2", [offline]);
+    s.cacheCoachClientForms("u2", "c1", [offline]);
+
+    s.swapLocalCoachFormId("u1", "local-f", "f7");
+    s.swapLocalCoachFormScheduleId("u1", "local-s", "s7");
+
+    for (const cid of ["c1", "c2"]) {
+      const [first] = s.getCachedCoachClientForms("u1", cid) ?? [];
+      expect(first?.form.id).toBe("f7");
+      expect(first?.rule?.scheduleId).toBe("s7");
+      expect(first?.rules.map((r) => r.scheduleId)).toEqual(["s7", "s9"]);
+    }
+    expect(s.getCachedCoachClientForms("u1", "c1")?.[1]).toEqual(clientForm);
+    // Another coach's cache is untouched.
+    expect(s.getCachedCoachClientForms("u2", "c1")?.[0]?.form.id).toBe(
+      "local-f",
+    );
+  });
+
   it("clearAll drops every coach forms cache", () => {
     const s = make();
     s.cacheCoachForms("u1", { forms: [form("f1")], templates: [], asOf: "a" });

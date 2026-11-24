@@ -337,7 +337,7 @@ export function FieldLabel(p: { children: ReactNode; top?: number }) {
 
 /** Canvas `.seg`: equal-width segmented buttons. */
 export function SegRow<T extends string>(p: {
-  options: readonly { value: T; label: string }[];
+  options: readonly { value: T; label: string; disabled?: boolean }[];
   value: T | null;
   onChange: (value: T) => void;
   label: string;
@@ -363,8 +363,9 @@ export function SegRow<T extends string>(p: {
             key={o.value}
             style={{ flex: 1 }}
             onPress={() => p.onChange(o.value)}
+            disabled={o.disabled}
             accessibilityRole="radio"
-            accessibilityState={{ selected: on }}
+            accessibilityState={{ selected: on, disabled: !!o.disabled }}
             testID={p.testID ? `${p.testID}-${o.value}` : undefined}
           >
             <View
@@ -375,6 +376,7 @@ export function SegRow<T extends string>(p: {
               backgroundColor={on ? "rgba(167,139,250,0.18)" : "transparent"}
               borderWidth={1}
               borderColor={on ? "rgba(167,139,250,0.5)" : "transparent"}
+              opacity={o.disabled ? 0.45 : 1}
             >
               <Text
                 fontFamily="$body"

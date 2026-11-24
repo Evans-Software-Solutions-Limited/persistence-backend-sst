@@ -66,11 +66,30 @@ export function initialSetup(form: ClientForm): SetupState {
   };
 }
 
+/**
+ * Whether this client is paused on the rule the sheet edits (`form.rule`).
+ * Pause, Resume and Save name that rule (`scheduleId`): without it the
+ * server applies the write to every live rule of the form.
+ */
+export function setupPaused(form: ClientForm): boolean {
+  return form.rule
+    ? form.rule.clientStatus === "paused"
+    : form.state === "paused";
+}
+
+/** The PUT body for Pause / Resume: this client on the edited rule. */
+export function setupPauseInput(form: ClientForm): ClientSetupInput {
+  return {
+    status: setupPaused(form) ? "active" : "paused",
+    ...(form.rule ? { scheduleId: form.rule.scheduleId } : {}),
+  };
+}
+
 /** The PUT body for Save: keep this client's status, send the override. */
 export function setupSaveInput(s: SetupState): ClientSetupInput {
   const rule = fitRuleToTrigger(s.trigger, s.rule);
   return {
-    status: s.form.state === "paused" ? "paused" : "active",
+    status: setupPaused(s.form) ? "paused" : "active",
     override: {
       ...(CLIENT_TRIGGERS.includes(s.baseTrigger)
         ? {
@@ -150,7 +169,7 @@ export function ClientCheckInsContainer(p: {
   );
 
   const status = setup
-    ? setup.form.state === "paused"
+    ? setup.form.state === "paused" || setupPaused(setup.form)
       ? "Paused"
       : setup.form.state === "done" && setup.form.lastDoneAt
         ? `Last done ${shortDate(setup.form.lastDoneAt)}`
@@ -209,7 +228,7 @@ export function ClientCheckInsContainer(p: {
           trigger={setup.trigger}
           rule={setup.rule}
           onRule={(rule) => setSetup({ ...setup, rule })}
-          paused={setup.form.state === "paused"}
+          paused={setupPaused(setup.form)}
           canSave={
             setup.trigger === "weekly"
               ? !!setup.rule.weekday && !!setup.rule.timeLocal
@@ -219,10 +238,9 @@ export function ClientCheckInsContainer(p: {
           }
           offline={!online}
           onPause={() =>
-            void runSetup(setup.form.form.id, {
-              status: setup.form.state === "paused" ? "active" : "paused",
-            })
+            void runSetup(setup.form.form.id, setupPauseInput(setup.form))
           }
+          // Stop names no rule: this client leaves every rule of the form.
           onStop={() =>
             void runSetup(setup.form.form.id, {
               status: "excluded",

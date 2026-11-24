@@ -3,6 +3,7 @@
  * row once its create has synced. Shared by the SQLite adapter and its
  * in-memory double so both swap identically.
  */
+import type { ClientForm, ClientFormRule } from "@/domain/models/coachForms";
 
 /** Queue entity types for coach forms (see `coachForms.command.ts`). */
 export const COACH_FORMS_QUEUE_ENTITIES = [
@@ -63,4 +64,35 @@ export function swapIdInQueueRow(
     // An unreadable payload is left for the drain's generic failure path.
   }
   return changed ? { entityId, endpoint, payload } : null;
+}
+
+/**
+ * One client's C10j forms with a synced create's `local-…` form id (or send
+ * rule id) swapped for the server's; null when none of them mention it.
+ */
+export function swapIdInClientForms(
+  forms: ClientForm[],
+  localId: string,
+  serverId: string,
+  kind: "form" | "schedule",
+): ClientForm[] | null {
+  let changed = false;
+  const swapRule = (r: ClientFormRule): ClientFormRule => {
+    if (kind !== "schedule" || r.scheduleId !== localId) return r;
+    changed = true;
+    return { ...r, scheduleId: serverId };
+  };
+  const next = forms.map((f) => {
+    if (kind === "form") {
+      if (f.form.id !== localId) return f;
+      changed = true;
+      return { ...f, form: { ...f.form, id: serverId } };
+    }
+    return {
+      ...f,
+      rule: f.rule ? swapRule(f.rule) : null,
+      rules: f.rules.map(swapRule),
+    };
+  });
+  return changed ? next : null;
 }

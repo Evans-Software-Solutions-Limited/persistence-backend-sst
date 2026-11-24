@@ -82,6 +82,17 @@ type SheetState = {
   rule: RuleFields;
 };
 
+/**
+ * "When they join" rules go to every new client: the server rejects them
+ * for chosen clients (422), so the sheet keeps them on All clients.
+ */
+export function audienceFor(
+  trigger: FormTrigger,
+  audience: FormAudience,
+): FormAudience {
+  return trigger === "on_join" ? "all_clients" : audience;
+}
+
 /** The send sheet's starting state: a live rule to change, or a new send. */
 export function initialSheet(
   schedule: FormSchedule | null,
@@ -90,7 +101,7 @@ export function initialSheet(
   if (schedule) {
     return {
       scheduleId: schedule.id,
-      audience: schedule.audience,
+      audience: audienceFor(schedule.trigger, schedule.audience),
       selectedIds: schedule.clients
         .filter((c) => c.status !== "excluded")
         .map((c) => c.clientId),
@@ -101,7 +112,7 @@ export function initialSheet(
   const trigger = opts.trigger ?? "weekly";
   return {
     scheduleId: null,
-    audience: "selected",
+    audience: audienceFor(trigger, "selected"),
     selectedIds: opts.sendTo ? [opts.sendTo] : [],
     trigger,
     rule: defaultRule(trigger),
@@ -110,6 +121,9 @@ export function initialSheet(
 
 /** Whether the sheet can save: someone to send to and a complete rule. */
 export function canSendSheet(sheet: SheetState): boolean {
+  if (audienceFor(sheet.trigger, sheet.audience) !== sheet.audience) {
+    return false;
+  }
   if (sheet.audience === "selected" && sheet.selectedIds.length === 0) {
     return false;
   }
@@ -225,7 +239,7 @@ export function CoachFormContainer() {
       ...(current.scheduleId ? { scheduleId: current.scheduleId } : {}),
       formId: form.id,
       trigger: current.trigger,
-      audience: current.audience,
+      audience: audienceFor(current.trigger, current.audience),
       clientIds: current.selectedIds,
     });
     reloadAll();
@@ -278,7 +292,12 @@ export function CoachFormContainer() {
           formTitle={form.title}
           editing={sheet.scheduleId !== null}
           audience={sheet.audience}
-          onAudience={(audience) => setSheet({ ...sheet, audience })}
+          onAudience={(audience) =>
+            setSheet({
+              ...sheet,
+              audience: audienceFor(sheet.trigger, audience),
+            })
+          }
           clients={activeClients}
           selectedIds={sheet.selectedIds}
           onToggleClient={(cid) =>
@@ -294,6 +313,7 @@ export function CoachFormContainer() {
             setSheet({
               ...sheet,
               trigger,
+              audience: audienceFor(trigger, sheet.audience),
               rule:
                 trigger === sheet.trigger ? sheet.rule : defaultRule(trigger),
             })

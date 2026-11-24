@@ -788,6 +788,123 @@ describe("send rules (schedule create and edit)", () => {
   });
 });
 
+describe("Inspector Brad #556", () => {
+  it("switching a queued rule edit to All clients drops its stale clientIds", async () => {
+    seedForm("f-1");
+    const s: FormSchedule = {
+      id: "s-1",
+      formId: "f-1",
+      trigger: "weekly",
+      audience: "selected",
+      weekday: 7,
+      timeLocal: "09:00",
+      dueAfterHours: 27,
+      reminders: [],
+      status: "active",
+      revision: 2,
+      clients: [],
+      createdAt: "x",
+      updatedAt: "x",
+    };
+    server.schedules.push({ ...s });
+    storage.cacheCoachFormSchedules(USER, [s]);
+    const base = {
+      scheduleId: "s-1",
+      formId: "f-1",
+      trigger: "weekly" as const,
+      audience: "selected" as const,
+      clientIds: ["c1", "c2"],
+      weekday: 7,
+      timeLocal: "09:00",
+      dueAfterHours: 27,
+      reminders: [],
+    };
+    saveScheduleCommand(deps(), base);
+    saveScheduleCommand(deps(), { ...base, audience: "all_clients" });
+    expect(queued()).toHaveLength(1);
+    const body = JSON.parse(queued()[0]!.payload) as Record<string, unknown>;
+    expect(body.audience).toBe("all_clients");
+    expect(body).not.toHaveProperty("clientIds");
+
+    // The same for an offline create nothing has sent yet.
+    const created = saveScheduleCommand(deps(), {
+      ...base,
+      scheduleId: undefined,
+      trigger: "daily",
+      weekday: null,
+    });
+    saveScheduleCommand(deps(), {
+      ...base,
+      scheduleId: created.id,
+      trigger: "daily",
+      weekday: null,
+      audience: "all_clients",
+    });
+    const post = queued().find((e) => e.method === "POST")!;
+    expect(JSON.parse(post.payload)).not.toHaveProperty("clientIds");
+  });
+
+  it("C10j set-up after an offline form and rule synced sends their server ids", async () => {
+    server.offline = true;
+    const local = saveFormCommand(deps(), {
+      title: "A",
+      description: null,
+      questions: [Q("q1")],
+    });
+    storage.cacheCoachClientForms(USER, "c1", []);
+    const rule = saveScheduleCommand(deps(), {
+      formId: local.id,
+      trigger: "weekly",
+      audience: "selected",
+      clientIds: ["c1"],
+      weekday: 7,
+      timeLocal: "09:00",
+      dueAfterHours: 27,
+      reminders: [],
+    });
+    server.offline = false;
+    await drain();
+    const formId = server.forms[0]!.id;
+    const scheduleId = server.schedules[0]!.id;
+    // The client's cached "Sent to" row follows the synced ids...
+    const cached = storage.getCachedCoachClientForms(USER, "c1")![0]!;
+    expect(cached.form.id).toBe(formId);
+    expect(cached.rule?.scheduleId).toBe(scheduleId);
+    // ...and a screen still holding the local ids resolves them.
+    setClientFormSetupCommand(deps(), "c1", local.id, {
+      status: "paused",
+      scheduleId: rule.id,
+    });
+    const put = queued()[0]!;
+    expect(put.endpoint).toBe(`/trainers/me/clients/c1/forms/${formId}/setup`);
+    expect(JSON.parse(put.payload)).toEqual({ status: "paused", scheduleId });
+  });
+
+  it("C10j set-up folds only same-rule writes, and a pause keeps a queued override", () => {
+    setClientFormSetupCommand(deps(), "c1", "f-1", {
+      status: "active",
+      override: { timeLocal: "07:00" },
+      scheduleId: "s-1",
+    });
+    setClientFormSetupCommand(deps(), "c1", "f-1", {
+      status: "paused",
+      scheduleId: "s-1",
+    });
+    expect(queued()).toHaveLength(1);
+    expect(JSON.parse(queued()[0]!.payload)).toEqual({
+      status: "paused",
+      override: { timeLocal: "07:00" },
+      scheduleId: "s-1",
+    });
+    // Stop applies to every rule: its own row, no scheduleId inherited.
+    setClientFormSetupCommand(deps(), "c1", "f-1", { status: "excluded" });
+    expect(queued().map((e) => JSON.parse(e.payload))).toEqual([
+      { status: "paused", override: { timeLocal: "07:00" }, scheduleId: "s-1" },
+      { status: "excluded" },
+    ]);
+  });
+});
+
 describe("per-client setup (C10j) and review", () => {
   const clientForm = (state: ClientForm["state"]): ClientForm => ({
     form: { id: "f-1", title: "Weekly check-in", archivedAt: null },
@@ -826,7 +943,10 @@ describe("per-client setup (C10j) and review", () => {
   it("pause, then save an override: optimistic, one PUT (last write wins), server copy adopted", async () => {
     storage.cacheCoachClientForms(USER, "c1", [clientForm("done")]);
     server.offline = true;
-    setClientFormSetupCommand(deps(), "c1", "f-1", { status: "paused" });
+    setClientFormSetupCommand(deps(), "c1", "f-1", {
+      status: "paused",
+      scheduleId: "s-1",
+    });
     expect(storage.getCachedCoachClientForms(USER, "c1")![0]!.state).toBe(
       "paused",
     );

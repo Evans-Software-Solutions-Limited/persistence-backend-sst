@@ -77,6 +77,7 @@ import type {
 } from "@/domain/models/coachForms";
 import {
   COACH_FORMS_QUEUE_ENTITIES,
+  swapIdInClientForms,
   swapIdInQueueRow,
 } from "../coachFormsQueueSwap";
 
@@ -2004,6 +2005,18 @@ export class InMemoryStorageAdapter implements StoragePort {
       e.payload = next.payload;
     }
   }
+  private swapCoachClientFormsId(
+    userId: string,
+    localId: string,
+    serverId: string,
+    kind: "form" | "schedule",
+  ): void {
+    for (const [key, forms] of this.coachClientForms) {
+      if (!key.startsWith(`${userId}|`)) continue;
+      const next = swapIdInClientForms(forms, localId, serverId, kind);
+      if (next) this.coachClientForms.set(key, next);
+    }
+  }
   swapLocalCoachFormId(
     userId: string,
     localId: string,
@@ -2028,6 +2041,7 @@ export class InMemoryStorageAdapter implements StoragePort {
         ),
       );
     }
+    this.swapCoachClientFormsId(userId, localId, serverId, "form");
     this.swapCoachFormsQueueId(localId, serverId, "formId");
   }
   swapLocalCoachFormScheduleId(
@@ -2045,6 +2059,7 @@ export class InMemoryStorageAdapter implements StoragePort {
           .map((r) => (r.id === localId ? { ...r, id: serverId } : r)),
       );
     }
+    this.swapCoachClientFormsId(userId, localId, serverId, "schedule");
     this.swapCoachFormsQueueId(localId, serverId, "scheduleId");
   }
   /** Test-only: drop every PER-129 cache (clearAll calls it too). */

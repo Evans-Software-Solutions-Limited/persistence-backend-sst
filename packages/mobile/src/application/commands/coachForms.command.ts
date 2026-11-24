@@ -422,8 +422,14 @@ function patchSchedule(
     .filter(isFoldable)
     .at(-1);
   if (foldInto) {
-    const prev = parseObject(foldInto.payload) ?? {};
-    storage.updateMutationPayload(foldInto.id, { ...prev, ...body });
+    const merged: Record<string, unknown> = {
+      ...(parseObject(foldInto.payload) ?? {}),
+      ...body,
+    };
+    // An earlier Selected edit's clients don't carry over to All clients:
+    // the server rejects clientIds there (422).
+    if (merged.audience === "all_clients") delete merged.clientIds;
+    storage.updateMutationPayload(foldInto.id, merged);
     return;
   }
   storage.enqueueMutation({
@@ -466,15 +472,22 @@ function applySetupLocally(
 
 /**
  * C10j Pause / Stop / Save for one client. PUT, no revision (last write
- * wins), so a newer choice simply replaces a queued one nothing sent yet.
+ * wins), so a newer choice for the same rule (`scheduleId`, or every rule
+ * when absent) folds into a queued one nothing sent yet; fields it leaves
+ * out (a Pause's override) keep the queued value, as they would on the
+ * server. Offline-created ids resolve to the server's once synced.
  */
 export function setClientFormSetupCommand(
   deps: CoachFormsDeps,
   clientId: string,
-  formId: string,
-  input: ClientSetupInput,
+  rawFormId: string,
+  rawInput: ClientSetupInput,
 ): void {
   const { storage, userId } = deps;
+  const formId = resolveCoachFormsId(rawFormId);
+  const input: ClientSetupInput = rawInput.scheduleId
+    ? { ...rawInput, scheduleId: resolveCoachFormsId(rawInput.scheduleId) }
+    : rawInput;
   const cached = storage.getCachedCoachClientForms(userId, clientId);
   if (cached) {
     storage.cacheCoachClientForms(
@@ -488,15 +501,12 @@ export function setClientFormSetupCommand(
     );
   }
   const entityId = `${userId}:${clientId}:${formId}`;
-  const foldInto = liveEntries(
-    storage,
-    COACH_CLIENT_FORM_SETUP_ENTITY,
-    entityId,
-  )
+  const last = liveEntries(storage, COACH_CLIENT_FORM_SETUP_ENTITY, entityId)
     .filter(isFoldable)
     .at(-1);
-  if (foldInto) {
-    storage.updateMutationPayload(foldInto.id, input);
+  const prev = last ? parseObject(last.payload) : null;
+  if (last && prev && prev.scheduleId === input.scheduleId) {
+    storage.updateMutationPayload(last.id, { ...prev, ...input });
     return;
   }
   storage.enqueueMutation({

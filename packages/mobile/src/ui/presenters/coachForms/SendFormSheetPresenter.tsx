@@ -128,13 +128,28 @@ export function SendFormSheetPresenter(p: SendFormSheetPresenterProps) {
       <SegRow
         label="Who"
         options={[
-          { value: "selected", label: "Select clients" },
+          {
+            value: "selected",
+            label: "Select clients",
+            disabled: p.trigger === "on_join",
+          },
           { value: "all_clients", label: "All clients" },
         ]}
         value={p.audience}
         onChange={p.onAudience}
         testID="send-form-who"
       />
+      {p.trigger === "on_join" ? (
+        <Text
+          fontFamily="$body"
+          fontSize={12.5}
+          color="$text3"
+          marginTop={6}
+          testID="send-form-join-hint"
+        >
+          Forms for when they join go to every new client.
+        </Text>
+      ) : null}
       {p.audience === "selected" ? (
         <View marginTop={8}>
           <FieldButton

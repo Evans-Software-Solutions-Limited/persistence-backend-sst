@@ -89,6 +89,7 @@ import type {
 } from "@/domain/models/coachForms";
 import {
   COACH_FORMS_QUEUE_ENTITIES,
+  swapIdInClientForms,
   swapIdInQueueRow,
 } from "./coachFormsQueueSwap";
 
@@ -4278,6 +4279,28 @@ ${indentSyncQueueDdl(12)}
     }
   }
 
+  /** Swap a synced create's id in every client's cached C10j forms. */
+  private swapCoachClientFormsId(
+    userId: string,
+    localId: string,
+    serverId: string,
+    kind: "form" | "schedule",
+  ): void {
+    const rows = this.getDb().getAllSync(
+      `SELECT client_id, payload FROM cached_coach_client_forms WHERE user_id = ?`,
+      [userId],
+    ) as { client_id: string; payload: string }[];
+    for (const r of rows) {
+      const next = swapIdInClientForms(
+        JSON.parse(r.payload) as ClientForm[],
+        localId,
+        serverId,
+        kind,
+      );
+      if (next) this.cacheCoachClientForms(userId, r.client_id, next);
+    }
+  }
+
   swapLocalCoachFormId(
     userId: string,
     localId: string,
@@ -4304,6 +4327,7 @@ ${indentSyncQueueDdl(12)}
           ),
         );
       }
+      this.swapCoachClientFormsId(userId, localId, serverId, "form");
       this.swapCoachFormsQueueId(localId, serverId, "formId");
     });
   }
@@ -4325,6 +4349,7 @@ ${indentSyncQueueDdl(12)}
             .map((r) => (r.id === localId ? { ...r, id: serverId } : r)),
         );
       }
+      this.swapCoachClientFormsId(userId, localId, serverId, "schedule");
       this.swapCoachFormsQueueId(localId, serverId, "scheduleId");
     });
   }

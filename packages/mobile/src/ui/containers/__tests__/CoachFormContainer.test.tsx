@@ -267,6 +267,55 @@ describe("CoachFormContainer (form page + C10h send sheet)", () => {
     expect(view.getByText("1 client")).toBeTruthy();
   });
 
+  it("Inspector Brad #556: When they join goes to all clients, never Select clients", async () => {
+    const h = setupCoachForms();
+    seed(h);
+    const view = h.render(<CoachFormContainer />);
+    fireEvent.press(view.getByTestId("form-page-send"));
+    // Starts on Select clients; switching When to join moves Who to All.
+    fireEvent.press(view.getByTestId("send-form-when"));
+    fireEvent.press(view.getByTestId("send-form-when-on_join"));
+    expect(
+      view.getByTestId("send-form-who-all_clients").props.accessibilityState,
+    ).toMatchObject({ selected: true });
+    expect(
+      view.getByTestId("send-form-who-selected").props.accessibilityState,
+    ).toMatchObject({ selected: false, disabled: true });
+    expect(
+      view.getByText("Forms for when they join go to every new client."),
+    ).toBeTruthy();
+    // Select clients can't be chosen back.
+    fireEvent.press(view.getByTestId("send-form-who-selected"));
+    expect(
+      view.getByTestId("send-form-who-all_clients").props.accessibilityState,
+    ).toMatchObject({ selected: true });
+    await waitFor(() =>
+      expect(view.getByText("Send to 2 clients")).toBeTruthy(),
+    );
+    fireEvent.press(view.getByTestId("send-form-submit"));
+    await waitFor(() =>
+      expect(
+        h.server.calls.find((c) => c.url.endsWith("/form-schedules")),
+      ).toBeTruthy(),
+    );
+    const post = h.server.calls.find((c) => c.url.endsWith("/form-schedules"))!;
+    expect(post.body).toMatchObject({
+      trigger: "on_join",
+      audience: "all_clients",
+    });
+    expect(post.body.clientIds).toBeUndefined();
+  });
+
+  it("Inspector Brad #556: a join deep link opens on All clients", async () => {
+    const h = setupCoachForms();
+    seed(h);
+    mockParams = { id: "f-week", send: "1", sendTo: "c2", trigger: "on_join" };
+    const view = h.render(<CoachFormContainer />);
+    await waitFor(() =>
+      expect(view.getByText("Send to 2 clients")).toBeTruthy(),
+    );
+  });
+
   it("says when the form isn't in the library", () => {
     const h = setupCoachForms();
     h.storage.cacheCoachForms(COACH, { forms: [], templates: [], asOf: "a" });
@@ -324,6 +373,18 @@ describe("send sheet rules", () => {
       }),
     ).toBe(false);
     expect(canSendSheet({ ...base, trigger: "once" })).toBe(true);
+    // Inspector Brad #556: the server rejects join rules for chosen clients.
+    expect(canSendSheet({ ...base, trigger: "on_join" })).toBe(false);
+    expect(
+      canSendSheet({ ...base, trigger: "on_join", audience: "all_clients" }),
+    ).toBe(true);
+    expect(initialSheet(null, { trigger: "on_join" }).audience).toBe(
+      "all_clients",
+    );
+    expect(
+      initialSheet(makeSchedule("s2", "f", "on_join", { audience: "selected" }))
+        .audience,
+    ).toBe("all_clients");
   });
 
   it("outstanding rows: done, missed, not done", () => {

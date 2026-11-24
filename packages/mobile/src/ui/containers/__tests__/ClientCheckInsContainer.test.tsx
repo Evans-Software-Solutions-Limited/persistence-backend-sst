@@ -126,7 +126,10 @@ describe("ClientCheckInsContainer (C3.3b)", () => {
       method: "PUT",
       endpoint: "/trainers/me/clients/c1/forms/f-week/setup",
     });
-    expect(JSON.parse(queued(h)[0]!.payload)).toEqual({ status: "paused" });
+    expect(JSON.parse(queued(h)[0]!.payload)).toEqual({
+      status: "paused",
+      scheduleId: "s-f-week",
+    });
     await waitFor(() =>
       expect(view.getByLabelText(/^Weekly check-in, Paused\./)).toBeTruthy(),
     );
@@ -140,6 +143,7 @@ describe("ClientCheckInsContainer (C3.3b)", () => {
     await waitFor(() =>
       expect(JSON.parse(queued(h).at(-1)!.payload)).toEqual({
         status: "active",
+        scheduleId: "s-f-week",
       }),
     );
 
@@ -151,6 +155,51 @@ describe("ClientCheckInsContainer (C3.3b)", () => {
     expect(JSON.parse(queued(h).at(-1)!.payload)).toEqual({
       status: "excluded",
     });
+  });
+
+  it("Inspector Brad #556: on a two-rule form, pause and resume name the rule; Stop covers every rule", async () => {
+    const h = setupCoachForms({ online: false });
+    const weekly = makeClientForm("f-two", "Check-in", "notDoneYet");
+    const join = makeClientForm("f-two", "Check-in", "notDoneYet", "on_join");
+    const two = {
+      ...weekly,
+      rules: [weekly.rule!, { ...join.rule!, scheduleId: "s-join" }],
+    };
+    h.storage.cacheCoachClientForms(COACH, "c1", [two]);
+    h.storage.cacheCoachFormResponses(COACH, "c1", []);
+    h.api.coachClientForms.c1 = [two];
+    h.api.coachFormResponses.c1 = [];
+    h.server.offline = true;
+    const view = h.render(
+      <ClientCheckInsContainer clientId="c1" clientName="Sam Patel" />,
+    );
+    await waitFor(() =>
+      expect(view.getByTestId("checkins-sentto-f-two")).toBeTruthy(),
+    );
+    fireEvent.press(view.getByTestId("checkins-sentto-f-two"));
+    fireEvent.press(view.getByTestId("client-setup-pause"));
+    await waitFor(() => expect(queued(h)).toHaveLength(1));
+    expect(JSON.parse(queued(h)[0]!.payload)).toEqual({
+      status: "paused",
+      scheduleId: "s-f-two",
+    });
+    // Only the weekly rule is paused, and the sheet says so.
+    fireEvent.press(view.getByTestId("checkins-sentto-f-two"));
+    expect(view.getByText("Resume")).toBeTruthy();
+    fireEvent.press(view.getByTestId("client-setup-pause"));
+    await waitFor(() =>
+      expect(JSON.parse(queued(h).at(-1)!.payload)).toEqual({
+        status: "active",
+        scheduleId: "s-f-two",
+      }),
+    );
+    fireEvent.press(view.getByTestId("checkins-sentto-f-two"));
+    fireEvent.press(view.getByTestId("client-setup-stop"));
+    await waitFor(() =>
+      expect(JSON.parse(queued(h).at(-1)!.payload)).toEqual({
+        status: "excluded",
+      }),
+    );
   });
 
   it("C10j: change the cadence for one client and Save sends the override", async () => {
