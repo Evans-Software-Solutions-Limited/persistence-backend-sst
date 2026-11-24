@@ -2,8 +2,8 @@
 
 ### 2026-11-23 — APP-D2: athlete Plan tab (mine and from coaches), New plan, Meals tab, shopping list ([PER-133](https://linear.app/evans-software-solutions/issue/PER-133); branch `bradleysimmsevans/per-133-app-d2-athlete-plan-tab-mine-and`)
 
-Mobile only: no backend, migration, native or version change. Uses the merged
-PER-118 routes (`/nutrition/meal-plans*`, `/nutrition/shopping-list*`) and
+PR #554 (open, no auto-merge). Mobile only: no backend, migration, native or
+version change. Uses the merged PER-118 routes (`/nutrition/meal-plans*`, `/nutrition/shopping-list*`) and
 PER-109/132's `/nutrition/entries/batch` replay. Ships in the next store
 release, reviewed on staging.
 
@@ -44,6 +44,10 @@ release, reviewed on staging.
 - **Tests:** offline add-to-today with replay and a lost reply (no
   duplicates), PUT 409, Free user receiving a coach plan, a coach edit not
   changing logged food, real-SQLite id swap, hooks, presenters, containers.
+- **Verified:** prettier:check, typecheck, lint, build. test:unit: web and
+  core pass; mobile 699/701 suites (96.2 / 92.0 stmts/branches).
+  `SubscriptionSelectionContainer` hangs (failing on main too);
+  `PlanTodayContainer` timed out under load, passes alone.
 - **Not verified:** nothing run on a device or against staging.
 - **Found, not fixed:** `BottomSheet` with `height="content"` never draws
   `title`; PER-132's Your meals sheet passes one. PER-133's short sheets draw
