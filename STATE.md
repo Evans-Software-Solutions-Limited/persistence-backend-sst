@@ -1,5 +1,47 @@
 # Project memory · persistence-backend-sst
 
+### 2026-11-24 — APP-C1 iPhone: K-layout coach shell, Library → Forms, send sheet, editor, Check-ins tab ([PER-129](https://linear.app/evans-software-solutions/issue/PER-129); branch `bradleysimmsevans/per-129-app-c1-iphone`)
+
+Mobile half of PER-129 (PR 2 of 2; stacked on PR 1, #555, which has the
+backend, the web screens and the BRIEF). Contract: `specs/per-129-coach-forms/BRIEF.md`.
+No native change, no version bump, no local-DB schema bump.
+
+- **K shell (coach mode):** Today · Clients · Library · Messages · You
+  (`COACH_TABS`). Library (`(tabs)/library.tsx`, `CoachLibraryContainer`):
+  Workouts · Programmes · Meals · Resources · Forms in the C10g board's order,
+  Forms open first; Programmes embeds the existing hub
+  (`CoachLibraryHubContainer embedded`); Workouts/Meals/Resources and the
+  Messages tab are dashed "In development". `(tabs)/programs.tsx` redirects to
+  `library?segment=programmes` (stranded-route guard skips it in coach mode).
+- **Screens:** C10g (`FormsLibraryPresenter`), form page + C10h send sheet
+  (`/coach-forms/[id]`, `?send=1&sendTo=&trigger=&scheduleId=`), C10b editor
+  (`/coach-forms/edit[?id=]`), client tab strip on `/clients/[id]`
+  (`?tab=`; Overview unchanged, Habits opens the habits screen, others
+  placeholders), C3.3b (`ClientCheckInsContainer`) with C10j sheet and the
+  review screen (`/clients/[id]/responses/[responseId]`).
+- **Offline:** caches `cached_coach_forms`, `cached_coach_form_schedules`,
+  `cached_coach_form_stats`, `cached_coach_client_forms`,
+  `cached_coach_form_responses`, plus `coach_form_conflicts` (init DDL,
+  cleared in `clearAll`). Queue entity types (`coachForms.command.ts`):
+  `coach_form` (keyed POST / PATCH + `expectedRevision`),
+  `coach_form_schedule` (same), `coach_client_form_setup` (PUT),
+  `coach_form_review` (POST). Edits fold into never-sent rows; later queued
+  PATCHes rebase onto the server's new revision; offline creates swap
+  `local-…` ids in caches and queued rows (`swapLocalCoachForm*Id`).
+- **409 `revision_conflict`** (`applyCoachFormsConflict`, hooked in
+  `sync.command.ts`): cache takes `current`, every queued PATCH of that
+  form/rule is discarded (never retried), conflict recorded → "Edited on
+  another device" on the library row, form page, editor and send sheet.
+- **Known limit:** a PATCH whose reply is lost after the server committed is
+  retried with the old revision and 409s against its own change, so the
+  notice can show for the coach's own edit (content is still theirs).
+- **Verified:** mobile typecheck, lint, prettier on changed files. Mobile
+  `test:unit`: 9,389 pass, coverage 96.4 / 92.2 / 96.4 / 97.7
+  (stmts/branches/funcs/lines). 34 failures in 2 suites, neither touched here:
+  `SubscriptionSelectionContainer` (fails on main) and
+  `AddClientSheetContainer` (361 s under load; 24/24 pass alone).
+- **Not verified:** nothing run on a device or against staging.
+
 ### 2026-11-24 — APP-C1 (web + backend): coach forms library, editor, send, Check-ins tab ([PER-129](https://linear.app/evans-software-solutions/issue/PER-129); branch `bradleysimmsevans/per-129-app-c1-coach-web-iphone-forms`)
 
 PR 1 of 2 on PER-129: backend extensions and the web screens. The iPhone half
@@ -192,98 +234,3 @@ merged BE-A1 routes (PER-108, #540): `GET /invites/:code/preview`,
   - Accept stays disabled while the coach loads.
   - The chip override is keyed on `coachId|nav`.
   - You rows aren't tappable until coaching has been read.
-
-### 2026-11-23 — APP-A1: web coach workspace, add client (C11), invited client, C3.9 settings ([PER-124](https://linear.app/evans-software-solutions/issue/PER-124); branch `bradleysimmsevans/per-124-app-a1-web-coach-add-client-c11`)
-
-`packages/web` only; no backend, mobile, native or migration change. Uses the
-PER-108 routes as merged (plus PER-116 forms and PER-118 meal plans for the
-set-up sections). Ships with the next store release window; Brad reviews on
-staging.
-
-- **New web coach workspace** at `/coach/*` (`src/coach/`, lazy-loaded as its
-  own chunk, not linked from the marketing site). Brad, 23 Nov: build the
-  shell properly in this ticket, because `packages/web` had no coach sign-in,
-  rail, Clients list or client page.
-  - Sign-in: GoTrue magic link (`create_user: false`), session in
-    `localStorage` (`persistence.coach.session`), refresh near expiry, kept
-    while offline. Reuses `admin/adminAuth.ts`'s JWT decode + Supabase config.
-    ⚠ Supabase's redirect allow-list needs `https://<site>/coach/callback`
-    for staging and production (dashboard setting, not in the repo).
-  - Role gate is UX only (`GET /profile` role in personal_trainer /
-    physiotherapist / admin); the API enforces it on every call.
-  - Rail (K layout): Today, Notifications, Library, Messages and You are shown
-    but inert ("Not on the web yet"); Clients is live.
-- **Screens** (container/presenter): Clients list (C11e: Invited above
-  Active, Resend; Active keeps client / programme / last active, the C8
-  Check-in and Adherence columns are PER-129 / PER-127), Add client 1 Who /
-  2 Set up / 3 Invite (C11a–c), Preview as client (C11b2), Copy setup from a
-  client, invited client page (C11d: only Overview open, other tabs locked,
-  Copy link, Resend, Cancel invite, private notes), active client page with
-  the C3.9 Settings tab.
-- **Set-up sections shown**: starter forms, repeating check-ins, calorie and
-  macro target, meal plan, welcome message (`WEB_SECTIONS` in
-  `coach/lib/setup.ts`). Programme (PER-112) and resources (PER-122) have no
-  live handler and no web editor; a section answering 422
-  `section_unavailable` is hidden at run time. Moving to another section,
-  Back, Skip and Next save (PUT with `expectedRevision`); Cancel drops the
-  current section's draft. A repeating check-in's day/time/due/reminders are
-  saved as the per-client `override`; "How often" comes from the send rule
-  and is read-only here.
-- **Coach declaration**: asked before the first personal invite (GET status,
-  then a dialog; a 403 `declaration_required` also opens it). The canvas has
-  no declaration copy, so Brad asked for researched standard wording:
-  `coach/lib/declaration.ts` (DRAFT, version `2026-11-v1`, SHA-256 of the text
-  sent as `statementTextHash`). Changing the text needs the version bumped
-  here and in `COACH_DECLARATION_VERSION`.
-- **C3.9 settings** (Brad's choice): the six backend feature keys (Meal plans
-  + Food logging shown as one "Nutrition" row; Training plan, Workout logging
-  and AI summary rows hidden, no key), plus "Tracked for {name}": Training
-  with a sessions-per-week stepper (1–14, starts at 3) and Calories. Alerts
-  as three exclusive switches. End coaching = `DELETE
-  /trainers/me/clients/:clientId`. The board's "{name} shares with you" and
-  "Coaching" details are hidden: no coach-side API for them.
-- **States**: offline (C9c banner "Offline · showing X as of HH:MM", edits
-  and online-only actions disabled; queries use `networkMode: "always"` so a
-  page opened offline says so instead of loading for ever), 409
-  `revision_conflict` on profile, set-up and settings (server copy replaces
-  ours, "Updated on another device"), expired code ("Code expired" pill,
-  Resend). Resend only issues a new code (the backend sends nothing), so it
-  opens the invite step to share it.
-- **Copy**: the canvas uses she/her for Lena; the web never knows pronouns,
-  so copy uses the first name or they/their.
-- **New dependency**: `qrcode` (+ `@types/qrcode`), web only, for the invite
-  QR (encodes the same `persistencemobile://accept-invite?code=` link as the
-  iPhone sheet). `bun.lock` re-hoisted some vitest coverage entries (same
-  versions).
-- **Tests**: `src/coach/__tests__/` (118): pure libs, auth/API client, and
-  every container through a fake API (`CoachApiContext`): save-on-move,
-  Cancel, 409 on each write, section_unavailable, offline per screen,
-  expired code, declaration gate, copy-from, preview, end coaching. After
-  the review: 151 tests in `src/coach`.
-- **Not verified**: no staging run, no real Supabase sign-in, nothing against
-  the live API (fake API + Playwright render with mocked routes only).
-- **Inspector Brad on #549: thirteen sweeps, every lead confirmed and fixed
-  with a test that fails on the previous commit; case closed on `222ffc7`.**
-  - Auth: a failed refresh (network, 5xx, 429, timeout) keeps the session;
-    only a rejected refresh token signs out (`refreshSession` → ok /
-    rejected / unavailable, 10 s timeout). A 401 tries the stored token, then
-    one shared refresh, then retries; a 401 on a just-issued token is a
-    retryable 503 `auth_unavailable`, not a sign-out. Refreshes are shared
-    per refresh token in the tab and never write back after Sign out.
-    `endSession()` + `onSignedOut` send the layout to sign-in. Sign out uses
-    `/logout?scope=local` (global also signed the coach out of the phone).
-  - `/coach` is mounted outside the marketing tree in `App.tsx` (no pixel,
-    Tradedoubler, page view or cookie banner while the callback URL holds
-    tokens).
-  - Revisions: Who, set-up drafts and notes keep the baseline they started
-    from (no silent overwrite after a focus refetch); a 409 caused by an
-    unrelated change resends once when what the coach edited is unchanged
-    (also C3.9 settings), never into a profile the client has accepted, and
-    the cache keeps the 409's newer copy. Other drafts follow the coach's own
-    saves and copy-from. Leaving set-up any way saves (the title link via
-    `go()`, anything else in the background on unmount); screens remount per
-    profile id (`PerProfile`).
-  - The invite step only auto-issues after a successful fresh read (a code
-    issued on another device is never voided).
-  - Not changed (outside the ticket, flagged to Brad): `admin/adminAuth.ts`
-    Sign out also uses GoTrue's default global scope.
