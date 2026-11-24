@@ -68,7 +68,7 @@ export function useNotificationPermissions(enabled: boolean): void {
     if (requestedRef.current) return;
 
     let cancelled = false;
-    (async () => {
+    void (async () => {
       try {
         const alreadyRequested = await AsyncStorage.getItem(
           PERMISSION_REQUESTED_KEY,

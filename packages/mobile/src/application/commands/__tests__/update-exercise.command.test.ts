@@ -36,7 +36,7 @@ describe("updateExerciseCommand", () => {
 
   beforeEach(() => {
     storage = new InMemoryStorageAdapter();
-    storage.initialize();
+    void storage.initialize();
   });
 
   it("returns a validation error and touches nothing when input is invalid", () => {

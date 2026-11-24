@@ -54,9 +54,9 @@ export function useCreateSubscription() {
       // two keys are legacy-parity invalidations — any future hook that
       // reads `['user-profile']` or `['profile-data']` from Tanstack
       // will see fresh data after a subscription change too.
-      queryClient.invalidateQueries({ queryKey: ["user-subscription"] });
-      queryClient.invalidateQueries({ queryKey: ["user-profile"] });
-      queryClient.invalidateQueries({ queryKey: ["profile-data"] });
+      void queryClient.invalidateQueries({ queryKey: ["user-subscription"] });
+      void queryClient.invalidateQueries({ queryKey: ["user-profile"] });
+      void queryClient.invalidateQueries({ queryKey: ["profile-data"] });
     },
   });
 }

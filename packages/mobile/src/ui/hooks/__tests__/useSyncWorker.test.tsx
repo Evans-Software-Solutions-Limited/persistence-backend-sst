@@ -78,7 +78,7 @@ describe("useSyncWorker", () => {
 
   it("does NOT flush when there is no session", () => {
     const storage = new InMemoryStorageAdapter();
-    storage.initialize();
+    void storage.initialize();
     storage.enqueueMutation({
       entityType: "workout",
       entityId: "w1",
@@ -96,7 +96,7 @@ describe("useSyncWorker", () => {
 
   it("flushes the queue once on mount when authenticated", async () => {
     const storage = new InMemoryStorageAdapter();
-    storage.initialize();
+    void storage.initialize();
     storage.enqueueMutation({
       entityType: "workout",
       entityId: "w1",
@@ -121,7 +121,7 @@ describe("useSyncWorker", () => {
 
   it("re-flushes when AppState transitions to active", async () => {
     const storage = new InMemoryStorageAdapter();
-    storage.initialize();
+    void storage.initialize();
     mockFetch.mockResolvedValue({ ok: true, json: async () => ({}) });
     const auth = new InMemoryAuthAdapter();
     const adapters = makeAdapters(storage, auth, session);
@@ -161,7 +161,7 @@ describe("useSyncWorker", () => {
 
   it("does not double-flush when triggered concurrently", async () => {
     const storage = new InMemoryStorageAdapter();
-    storage.initialize();
+    void storage.initialize();
     storage.enqueueMutation({
       entityType: "workout",
       entityId: "w1",
@@ -206,7 +206,7 @@ describe("useSyncWorker", () => {
   // ── M13 sync-hardening — flush coalescing (do/while reflush loop) ─────────
   it("coalesces a concurrent flush request into ONE additional processSyncQueue pass", async () => {
     const storage = new InMemoryStorageAdapter();
-    storage.initialize();
+    void storage.initialize();
     storage.enqueueMutation({
       entityType: "workout",
       entityId: "w1",
@@ -264,7 +264,7 @@ describe("useSyncWorker", () => {
 
   it("with no concurrent trigger, flush runs processSyncQueue exactly once (no infinite reflush loop)", async () => {
     const storage = new InMemoryStorageAdapter();
-    storage.initialize();
+    void storage.initialize();
     mockFetch.mockResolvedValue({ ok: true, json: async () => ({}) });
     const auth = new InMemoryAuthAdapter();
     const adapters = makeAdapters(storage, auth, session);
@@ -281,7 +281,7 @@ describe("useSyncWorker", () => {
 
   it("does not spin while a newer template preference waits behind a backed-off one", async () => {
     const storage = new InMemoryStorageAdapter();
-    storage.initialize();
+    void storage.initialize();
     for (const showTemplateWorkouts of [false, true]) {
       storage.enqueueMutation({
         entityType: "profile",
@@ -327,7 +327,7 @@ describe("useSyncWorker", () => {
 
     it("does NOT flush on a non-active AppState transition (e.g. background)", async () => {
       const storage = new InMemoryStorageAdapter();
-      storage.initialize();
+      void storage.initialize();
       mockFetch.mockResolvedValue({ ok: true, json: async () => ({}) });
       const auth = new InMemoryAuthAdapter();
       const netInfo = new InMemoryNetInfoAdapter(true);
@@ -362,7 +362,7 @@ describe("useSyncWorker", () => {
 
     it("swallows an isConnected() probe rejection without breaking subsequent reconnect handling", async () => {
       const storage = new InMemoryStorageAdapter();
-      storage.initialize();
+      void storage.initialize();
       mockFetch.mockResolvedValue({ ok: true, json: async () => ({}) });
       const auth = new InMemoryAuthAdapter();
       const netInfo = new InMemoryNetInfoAdapter(true);
@@ -397,7 +397,7 @@ describe("useSyncWorker", () => {
 
     it("a late-resolving probe does NOT clobber a fresher value the subscribe stream already produced", async () => {
       const storage = new InMemoryStorageAdapter();
-      storage.initialize();
+      void storage.initialize();
       mockFetch.mockResolvedValue({ ok: true, json: async () => ({}) });
       const auth = new InMemoryAuthAdapter();
       const netInfo = new InMemoryNetInfoAdapter(true);
@@ -451,7 +451,7 @@ describe("useSyncWorker", () => {
 
     it("triggers a flush on a false→true reconnect transition, without an AppState event", async () => {
       const storage = new InMemoryStorageAdapter();
-      storage.initialize();
+      void storage.initialize();
       mockFetch.mockResolvedValue({ ok: true, json: async () => ({}) });
       const auth = new InMemoryAuthAdapter();
       const netInfo = new InMemoryNetInfoAdapter(true);
@@ -487,7 +487,7 @@ describe("useSyncWorker", () => {
 
     it("does NOT flush on a true→false (going offline) transition", async () => {
       const storage = new InMemoryStorageAdapter();
-      storage.initialize();
+      void storage.initialize();
       mockFetch.mockResolvedValue({ ok: true, json: async () => ({}) });
       const auth = new InMemoryAuthAdapter();
       const netInfo = new InMemoryNetInfoAdapter(true);
@@ -516,7 +516,7 @@ describe("useSyncWorker", () => {
 
     it("resets exhausted entries ONCE on reconnect, then drains them", async () => {
       const storage = new InMemoryStorageAdapter();
-      storage.initialize();
+      void storage.initialize();
       storage.enqueueMutation({
         entityType: "session",
         entityId: "s1",
@@ -562,7 +562,7 @@ describe("useSyncWorker", () => {
 
     it("resurrects an exhausted ON-BEHALF session-record entry (coach Start-live) on reconnect", async () => {
       const storage = new InMemoryStorageAdapter();
-      storage.initialize();
+      void storage.initialize();
       storage.enqueueMutation({
         entityType: "session",
         entityId: "s1",
@@ -609,7 +609,7 @@ describe("useSyncWorker", () => {
       // auto-re-POSTing it could duplicate a row that actually committed — it
       // stays for an explicit, user-acknowledged Retry on /sync-failed.
       const storage = new InMemoryStorageAdapter();
-      storage.initialize();
+      void storage.initialize();
 
       const exhaust = (id: number) => {
         storage.markMutationFailed(id, "e1");
@@ -682,7 +682,7 @@ describe("useSyncWorker", () => {
       // getFailedExhaustedEntries between the reset and the re-failure, so the
       // /sync-failed banner flickers each time.
       const storage = new InMemoryStorageAdapter();
-      storage.initialize();
+      void storage.initialize();
       storage.enqueueMutation({
         entityType: "workout",
         entityId: "w-rejected",
@@ -731,7 +731,7 @@ describe("useSyncWorker", () => {
       // `machine` → "Machine" mapping needs a migration applied by hand to prod, so
       // every exercise saved with the Machine option before that lands is this case.
       const storage = new InMemoryStorageAdapter();
-      storage.initialize();
+      void storage.initialize();
       storage.enqueueMutation({
         entityType: "exercise",
         entityId: "local-ex-unresolvable",
@@ -782,7 +782,7 @@ describe("useSyncWorker", () => {
       // connectivity blip — visible only in the window between exhausting and the
       // next transition, which on a phone that moves is potentially never.
       const storage = new InMemoryStorageAdapter();
-      storage.initialize();
+      void storage.initialize();
       storage.enqueueMutation({
         entityType: "exercise",
         entityId: "local-ex-unresolvable",
@@ -832,7 +832,7 @@ describe("useSyncWorker", () => {
       // the next list refresh consuming a quota slot. Strictly worse than doing
       // nothing.
       const storage = new InMemoryStorageAdapter();
-      storage.initialize();
+      void storage.initialize();
       const exhaust = (id: number) => {
         storage.markMutationFailed(id, "e1");
         storage.markMutationFailed(id, "e2");
@@ -888,7 +888,7 @@ describe("useSyncWorker", () => {
       // unresolvable catalogue member, which `canRewriteWithoutReplayingKey` refuses
       // to coalesce into the dispatched create and which is therefore a sibling.
       const storage = new InMemoryStorageAdapter();
-      storage.initialize();
+      void storage.initialize();
       const exhaust = (id: number) => {
         storage.markMutationFailed(id, "e1");
         storage.markMutationFailed(id, "e2");
@@ -949,7 +949,7 @@ describe("useSyncWorker", () => {
       // `nextAttemptAt`, so the flush that follows actually sends now rather than
       // waiting out a window set while there was no network.
       const storage = new InMemoryStorageAdapter();
-      storage.initialize();
+      void storage.initialize();
       storage.enqueueMutation({
         entityType: "workout",
         entityId: "w-deferred",
@@ -987,7 +987,7 @@ describe("useSyncWorker", () => {
 
     it("debounces rapid toggles — only flushes once for a burst of transitions", async () => {
       const storage = new InMemoryStorageAdapter();
-      storage.initialize();
+      void storage.initialize();
       mockFetch.mockResolvedValue({ ok: true, json: async () => ({}) });
       const auth = new InMemoryAuthAdapter();
       const netInfo = new InMemoryNetInfoAdapter(true);
@@ -1027,7 +1027,7 @@ describe("useSyncWorker", () => {
 
     it("a persistently-failing mutation re-exhausts on later drains instead of resurrecting in a loop", async () => {
       const storage = new InMemoryStorageAdapter();
-      storage.initialize();
+      void storage.initialize();
       storage.enqueueMutation({
         entityType: "session",
         entityId: "s1",
@@ -1113,7 +1113,7 @@ describe("useSyncWorker", () => {
 
     it("logs and swallows an unexpected flush-level throw (shell-level failure, not a per-entry one)", async () => {
       const storage = new InMemoryStorageAdapter();
-      storage.initialize();
+      void storage.initialize();
       const consoleSpy = jest
         .spyOn(console, "error")
         .mockImplementation(() => {});
@@ -1140,7 +1140,7 @@ describe("useSyncWorker", () => {
 
     it("logs and continues when the reconnect resurrect step itself throws", async () => {
       const storage = new InMemoryStorageAdapter();
-      storage.initialize();
+      void storage.initialize();
       mockFetch.mockResolvedValue({ ok: true, json: async () => ({}) });
       const consoleSpy = jest
         .spyOn(console, "error")
@@ -1192,7 +1192,7 @@ describe("useSyncWorker", () => {
 
     it("clears a pending debounce timer on unmount instead of firing after the effect tears down", async () => {
       const storage = new InMemoryStorageAdapter();
-      storage.initialize();
+      void storage.initialize();
       mockFetch.mockResolvedValue({ ok: true, json: async () => ({}) });
       const auth = new InMemoryAuthAdapter();
       const netInfo = new InMemoryNetInfoAdapter(true);

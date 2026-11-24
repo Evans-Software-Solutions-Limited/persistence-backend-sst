@@ -145,7 +145,7 @@ describe("RecapPresenter swiping", () => {
     fireEvent.press(q.getByTestId("recap-share"));
     expect(p.onShare).toHaveBeenLastCalledWith(pages[2]);
     // Once it settles, a tap pages again.
-    act(() => carousel.props.onScrollEnd());
+    void act(() => carousel.props.onScrollEnd());
     fireEvent.press(q.getByTestId("recap-page-lifts"));
     fireEvent.press(q.getByTestId("recap-share"));
     expect(p.onShare).toHaveBeenLastCalledWith(pages[3]);

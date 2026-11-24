@@ -35,9 +35,9 @@ export function usePurchasePackage() {
       return result.value;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["user-subscription"] });
-      queryClient.invalidateQueries({ queryKey: ["user-profile"] });
-      queryClient.invalidateQueries({ queryKey: ["profile-data"] });
+      void queryClient.invalidateQueries({ queryKey: ["user-subscription"] });
+      void queryClient.invalidateQueries({ queryKey: ["user-profile"] });
+      void queryClient.invalidateQueries({ queryKey: ["profile-data"] });
     },
   });
 }

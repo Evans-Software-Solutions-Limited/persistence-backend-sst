@@ -28,7 +28,7 @@ describe("saveUserMealsCommand", () => {
   let storage: InMemoryStorageAdapter;
   beforeEach(() => {
     storage = new InMemoryStorageAdapter();
-    storage.initialize();
+    void storage.initialize();
   });
 
   it("caches the list and queues one PUT", () => {
@@ -190,7 +190,7 @@ describe("applyUserMealsResponse", () => {
 
   it("keeps a newer queued edit's cache, still swapping ids", () => {
     const storage = new InMemoryStorageAdapter();
-    storage.initialize();
+    void storage.initialize();
     const local = addUserMeal(meals(), "Supper", "k1", "t");
     saveUserMealsCommand({ storage, userId: USER }, local);
     applyUserMealsResponse(storage, USER, [
@@ -209,7 +209,7 @@ describe("applyUserMealsResponse", () => {
 
   it("swaps from the reply even when a stale read already dropped the local meal (Inspector Brad #550)", () => {
     const storage = new InMemoryStorageAdapter();
-    storage.initialize();
+    void storage.initialize();
     storage.enqueueMutation({
       entityType: "nutrition_entry",
       entityId: "e1",

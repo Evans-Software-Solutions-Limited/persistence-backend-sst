@@ -55,7 +55,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   const setThemePreference = useCallback((preference: ThemePreference) => {
     setThemePreferenceState(preference);
-    AsyncStorage.setItem(STORAGE_KEY, preference);
+    void AsyncStorage.setItem(STORAGE_KEY, preference);
   }, []);
 
   const effectiveTheme = resolveTheme(themePreference, systemScheme);

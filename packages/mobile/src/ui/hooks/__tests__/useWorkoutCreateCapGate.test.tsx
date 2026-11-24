@@ -41,7 +41,7 @@ function wrap(adapters: Adapters) {
 
 async function renderGate(seed?: (s: InMemoryStorageAdapter) => void) {
   const storage = new InMemoryStorageAdapter();
-  storage.initialize();
+  void storage.initialize();
   seed?.(storage);
   const adapters = makeAdapters(storage);
   // `useAuth` resolves the session through the adapter's auth-state
@@ -134,7 +134,7 @@ describe("useWorkoutCreateCapGate", () => {
 
   it("allows when there is no signed-in user", async () => {
     const storage = new InMemoryStorageAdapter();
-    storage.initialize();
+    void storage.initialize();
     const adapters = makeAdapters(storage);
     const { result } = renderHook(() => useWorkoutCreateCapGate(), {
       wrapper: wrap(adapters),

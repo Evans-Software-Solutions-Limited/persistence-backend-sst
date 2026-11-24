@@ -32,9 +32,14 @@ was added (Brad: CI should always run cold). No runtime, app or native change.
   `checksVoidReturn.attributes: false` (async JSX handlers; React ignores the
   return); the 23 floating promises (mostly react-router `navigate()`) get
   `void` (no runtime change); test `fetcher` mocks are typed to return
-  `Promise<Response>`. Mobile (~264 findings, mostly tests) still matches its
-  old ESLint rules. Gotcha: root `typescript/*` rules are silently ignored
-  unless `typescript` is in the root `plugins` list.
+  `Promise<Response>`. Mobile has the same rules too: 145 floating promises
+  (in-memory `storage.initialize()`, which completes synchronously, `act()`,
+  `invalidateQueries()`, Supabase auto-refresh, `AsyncStorage.setItem`) get
+  `void`; `checksVoidReturn.properties` is off for `Alert` button `onPress`
+  handlers; `await-thenable` is off in mobile tests only, where awaiting a
+  void-typed presenter callback is how a test waits for the container's
+  async work. Gotcha: root `typescript/*` rules are silently ignored unless
+  `typescript` is in the root `plugins` list.
 - **Vitest 2.1.9 / 4.0.18 → 5.1.1** everywhere it is used (core,
   other-service, scripts, api-utils, subscription-catalog, training-metrics,
   web). Since Vitest 4 a mock called with `new` needs a constructible

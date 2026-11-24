@@ -19,7 +19,7 @@ describe("createExerciseCommand", () => {
 
   beforeEach(() => {
     storage = new InMemoryStorageAdapter();
-    storage.initialize();
+    void storage.initialize();
     generateId = jest.fn().mockReturnValue("abc123");
   });
 

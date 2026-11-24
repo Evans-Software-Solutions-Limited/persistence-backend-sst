@@ -403,7 +403,7 @@ describe("PrivacySettingsContainer — delete account", () => {
     expect(firstBody).toContain("scheduled for deletion");
     expect(firstBody).toContain("30 days");
     expect(firstBody).toContain("restore your account by signing in again");
-    pressByText(alertButtons(0), "Delete Account");
+    void pressByText(alertButtons(0), "Delete Account");
 
     // Second (last-chance) dialog → tap Delete.
     expect(Alert.alert).toHaveBeenCalledTimes(2);
@@ -419,7 +419,7 @@ describe("PrivacySettingsContainer — delete account", () => {
   it("shows the purge date after a successful deletion", async () => {
     render(<PrivacySettingsContainer />);
     mockProbe.props!.onDeleteAccount();
-    pressByText(alertButtons(0), "Delete Account");
+    void pressByText(alertButtons(0), "Delete Account");
     await act(async () => {
       await pressByText(alertButtons(1), "Delete");
     });
@@ -435,7 +435,7 @@ describe("PrivacySettingsContainer — delete account", () => {
   it("does nothing when the user cancels the first dialog", async () => {
     render(<PrivacySettingsContainer />);
     mockProbe.props!.onDeleteAccount();
-    pressByText(alertButtons(0), "Cancel");
+    void pressByText(alertButtons(0), "Cancel");
     expect(Alert.alert).toHaveBeenCalledTimes(1);
     expect(deleteAccount).not.toHaveBeenCalled();
     await act(async () => {
@@ -446,8 +446,8 @@ describe("PrivacySettingsContainer — delete account", () => {
   it("does not delete if the user cancels the second dialog", async () => {
     render(<PrivacySettingsContainer />);
     mockProbe.props!.onDeleteAccount();
-    pressByText(alertButtons(0), "Delete Account");
-    pressByText(alertButtons(1), "Cancel");
+    void pressByText(alertButtons(0), "Delete Account");
+    void pressByText(alertButtons(1), "Cancel");
     expect(deleteAccount).not.toHaveBeenCalled();
     await act(async () => {
       await Promise.resolve();
@@ -458,7 +458,7 @@ describe("PrivacySettingsContainer — delete account", () => {
     deleteAccount.mockRejectedValueOnce(new Error("network"));
     render(<PrivacySettingsContainer />);
     mockProbe.props!.onDeleteAccount();
-    pressByText(alertButtons(0), "Delete Account");
+    void pressByText(alertButtons(0), "Delete Account");
     await act(async () => {
       await pressByText(alertButtons(1), "Delete");
     });

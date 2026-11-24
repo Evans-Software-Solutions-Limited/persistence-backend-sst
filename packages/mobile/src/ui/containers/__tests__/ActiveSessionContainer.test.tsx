@@ -495,7 +495,7 @@ describe("ActiveSessionContainer", () => {
       ],
     };
     storage.cacheActiveSession("user-1", newer);
-    act(() => staleEdit("Home gym"));
+    void act(() => staleEdit("Home gym"));
     expect(storage.getActiveSession("user-1")).toEqual({
       ...newer,
       locationName: "Home gym",
@@ -504,12 +504,12 @@ describe("ActiveSessionContainer", () => {
     jest.spyOn(storage, "cacheActiveSession").mockImplementationOnce(() => {
       throw new Error("workout-version-conflict");
     });
-    act(() => staleEdit("Garage"));
+    void act(() => staleEdit("Garage"));
     expect(alert).toHaveBeenCalledWith("Change not saved", expect.any(String));
     expect(storage.getActiveSession("user-1")?.locationName).toBe("Home gym");
     const replacement = { ...newer, id: "different", exercises: [] };
     storage.cacheActiveSession("user-1", replacement);
-    act(() => staleEdit("Stale location"));
+    void act(() => staleEdit("Stale location"));
     expect(storage.getActiveSession("user-1")).toEqual(replacement);
   });
   it("does not seed a new session from a retained Loadout template after entitlement loss", async () => {
@@ -2286,18 +2286,18 @@ describe("Together active workout integration", () => {
       save.mockImplementationOnce(() => {
         throw new Error("disk full");
       });
-      act(() => presenter().onStartRest("e"));
+      void act(() => presenter().onStartRest("e"));
       expect(storage.getActiveSession("user-1")!.restEndsAt).toBeUndefined();
-      act(() => presenter().onStartRest("e"));
+      void act(() => presenter().onStartRest("e"));
       expect(
         Date.parse(storage.getActiveSession("user-1")!.restEndsAt!),
       ).toBeGreaterThan(Date.now());
       save.mockImplementationOnce(() => {
         throw new Error("disk full");
       });
-      act(() => presenter().restTimer.onDismiss());
+      void act(() => presenter().restTimer.onDismiss());
       expect(storage.getActiveSession("user-1")!.restEndsAt).not.toBeNull();
-      act(() => presenter().restTimer.onSkip());
+      void act(() => presenter().restTimer.onSkip());
       save.mockRestore();
       alert.mockRestore();
       expect(storage.getActiveSession("user-1")!.restEndsAt).toBeNull();

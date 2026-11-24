@@ -177,7 +177,7 @@ describe("NotificationsListContainer", () => {
   it("marks arriving push notifications read when the screen is open (mark-on-view, #8)", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
-    storage.initialize();
+    void storage.initialize();
     // An old (pre-mark-all) unread row.
     api.notifications = [
       makeNotification({ id: "old", createdAt: "2020-01-01T00:00:00.000Z" }),
@@ -359,7 +359,7 @@ describe("NotificationsListContainer", () => {
   it("does not clobber an un-flushed optimistic read on refresh (Inspector #5)", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
-    storage.initialize();
+    void storage.initialize();
     // A mark-read for "x" is queued but not yet flushed.
     storage.enqueueMutation({
       entityType: "notification",
@@ -466,7 +466,7 @@ describe("NotificationsListContainer", () => {
   it("keeps a page-2 mark-read out of the unread count on the next merge (Inspector)", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
-    storage.initialize();
+    void storage.initialize();
     // The user has optimistically read a row that lives on page 2 (not in
     // the page-1 fetch). Its mark-read sits in the queue.
     storage.enqueueMutation({

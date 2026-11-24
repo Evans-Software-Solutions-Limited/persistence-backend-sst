@@ -328,7 +328,7 @@ const drainLater = () => processSyncQueue(storage, auth, BASE, AFTER_BACKOFF);
 beforeEach(() => {
   n = 0;
   storage = new InMemoryStorageAdapter();
-  storage.initialize();
+  void storage.initialize();
   auth = new InMemoryAuthAdapter();
   server = new FakeServer();
   (globalThis as Record<string, unknown>).fetch = jest.fn(server.fetch);

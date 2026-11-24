@@ -204,7 +204,7 @@ it("does not open a production store for internal variants and ignores late cach
   const r = show();
   await waitFor(() => expect(r.getByText(/testing distribution/)).toBeTruthy());
   const controls = r.UNSAFE_getByType(RequiredUpdatePresenter).props;
-  act(() => controls.onUpdate());
+  void act(() => controls.onUpdate());
   expect(Linking.openURL).not.toHaveBeenCalled();
   r.unmount();
   let finish!: (v: typeof policy) => void;

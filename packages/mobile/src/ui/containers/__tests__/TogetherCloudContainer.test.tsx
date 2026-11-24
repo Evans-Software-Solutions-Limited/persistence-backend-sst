@@ -973,7 +973,9 @@ it("does not remove someone after the removal dialog account has changed", async
   await act(async () => confirm());
   expect(h.cloud.remove).not.toHaveBeenCalled();
   r.rerender(<TogetherCloudContainer {...h.props} />);
-  act(() => r.UNSAFE_getByType(TogetherSharingPresenter).props.onRemove("v"));
+  void act(() =>
+    r.UNSAFE_getByType(TogetherSharingPresenter).props.onRemove("v"),
+  );
   await act(async () =>
     alert.mock.calls.at(-1)![2]!.find((b) => b.text === "Remove")!.onPress!(),
   );
@@ -1431,7 +1433,7 @@ it("scans an online token but requires a deliberate Join and handles camera deni
   await waitFor(() =>
     expect(r.getByTestId("together-online-qr-camera")).toBeTruthy(),
   );
-  act(() =>
+  void act(() =>
     r
       .getByTestId("together-online-qr-camera")
       .props.onBarcodeScanned({ data: "server-token" }),
@@ -1483,7 +1485,7 @@ it("does not publish a late generated invitation or scan after lifecycle interru
   const scan = page.getByTestId("together-online-qr-camera").props
     .onBarcodeScanned;
   act(() => listener.mock.calls.at(-1)![1]("background"));
-  act(() => scan({ data: "late-secret" }));
+  void act(() => scan({ data: "late-secret" }));
   expect(ui(page).code).toBe("");
   expect(join.cloud.join).not.toHaveBeenCalled();
 });

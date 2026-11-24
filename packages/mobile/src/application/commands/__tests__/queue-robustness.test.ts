@@ -71,7 +71,7 @@ describe("idempotency key", () => {
 
   beforeEach(() => {
     storage = new InMemoryStorageAdapter();
-    storage.initialize();
+    void storage.initialize();
     auth = new InMemoryAuthAdapter();
     mockFetch.mockReset();
   });
@@ -173,7 +173,7 @@ describe("idempotency key", () => {
 describe("in-flight recovery", () => {
   it("returns stranded in_flight entries to pending and reports the count", () => {
     const storage = new InMemoryStorageAdapter();
-    storage.initialize();
+    void storage.initialize();
     storage.enqueueMutation({
       entityType: "session",
       entityId: "s1",
@@ -194,7 +194,7 @@ describe("in-flight recovery", () => {
 
   it("is a no-op when nothing is in flight", () => {
     const storage = new InMemoryStorageAdapter();
-    storage.initialize();
+    void storage.initialize();
     expect(storage.recoverInFlightMutations()).toBe(0);
   });
 });
@@ -210,7 +210,7 @@ describe("refreshWorkouts write-through", () => {
 
   beforeEach(() => {
     storage = new InMemoryStorageAdapter();
-    storage.initialize();
+    void storage.initialize();
   });
 
   it("preserves an optimistic local row the server does not know about", async () => {
@@ -312,7 +312,7 @@ describe("deferral does not consume the retry budget", () => {
 
   beforeEach(() => {
     storage = new InMemoryStorageAdapter();
-    storage.initialize();
+    void storage.initialize();
     auth = new InMemoryAuthAdapter();
     mockFetch.mockReset();
   });

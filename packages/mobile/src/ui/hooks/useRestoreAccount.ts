@@ -29,8 +29,8 @@ export function useRestoreAccount() {
       return result.value;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["user-profile"] });
-      queryClient.invalidateQueries({ queryKey: ["profile-data"] });
+      void queryClient.invalidateQueries({ queryKey: ["user-profile"] });
+      void queryClient.invalidateQueries({ queryKey: ["profile-data"] });
     },
   });
 }

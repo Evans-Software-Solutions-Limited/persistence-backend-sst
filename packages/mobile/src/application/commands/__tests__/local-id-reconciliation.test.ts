@@ -34,7 +34,7 @@ describe("unsynced local-id handling", () => {
 
   beforeEach(() => {
     storage = new InMemoryStorageAdapter();
-    storage.initialize();
+    void storage.initialize();
     auth = new InMemoryAuthAdapter();
     mockFetch.mockReset();
   });

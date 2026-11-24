@@ -160,7 +160,7 @@ describe("offline logging and batch replay (PER-132)", () => {
 
   beforeEach(() => {
     storage = new InMemoryStorageAdapter();
-    storage.initialize();
+    void storage.initialize();
     auth = new InMemoryAuthAdapter();
     server = new FakeServer();
     server.meals = seeded();

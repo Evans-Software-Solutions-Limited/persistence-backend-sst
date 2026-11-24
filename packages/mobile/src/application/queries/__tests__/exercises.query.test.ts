@@ -32,7 +32,7 @@ describe("getExercisesQuery", () => {
 
   beforeEach(() => {
     storage = new InMemoryStorageAdapter();
-    storage.initialize();
+    void storage.initialize();
   });
 
   it("returns empty result and isStale=true when cache is empty", () => {
@@ -110,7 +110,7 @@ describe("getExerciseQuery", () => {
   beforeEach(() => {
     api = new InMemoryApiAdapter();
     storage = new InMemoryStorageAdapter();
-    storage.initialize();
+    void storage.initialize();
   });
 
   it("returns the cached exercise without calling the API", async () => {
@@ -148,7 +148,7 @@ describe("refreshExerciseCache", () => {
   beforeEach(() => {
     api = new InMemoryApiAdapter();
     storage = new InMemoryStorageAdapter();
-    storage.initialize();
+    void storage.initialize();
   });
 
   it("populates the cache and records last-synced timestamp on success", async () => {

@@ -292,7 +292,7 @@ describe("WorkoutDetailContainer", () => {
     await act(async () => {});
     // Exercise the container's action boundary even if a late UI event arrives
     // while auth is unresolved/signed out; the visible detail is loading.
-    act(() =>
+    void act(() =>
       r
         .UNSAFE_getByType(WorkoutDetailPresenter)
         .props.onStartWorkout("w-1", "invite-only"),
