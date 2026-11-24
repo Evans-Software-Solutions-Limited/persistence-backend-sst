@@ -53,6 +53,9 @@ starts after this merges and adds the rest of migration 9.
   Mobile/web suites not run (untouched).
 - **Not verified:** nothing run against staging or a device; the 1.2.0
   bundle itself wasn't run (contract held via the recorded fixture).
+- **Inspector Brad (#552):** 1 sweep, 0 findings, case closed on 1b5fec1.
+  Its only note: copies assume `INSERT … RETURNING` returns rows in VALUES
+  order (true in practice, not formally promised; documented in code).
 
 ### 2026-11-23 — APP-D1: Log per-meal calories, Your meals, full-page Add to a meal, offline batch logging ([PER-132](https://linear.app/evans-software-solutions/issue/PER-132); branch `bradleysimmsevans/per-132-app-d1-athlete-log-per-meal`)
 
