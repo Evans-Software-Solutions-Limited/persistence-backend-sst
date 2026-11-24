@@ -154,7 +154,18 @@ import type {
   SetTargetsInput,
   WaterToday,
 } from "@/domain/models/nutrition";
+import type {
+  NutritionPlansResponse,
+  PlansShoppingList,
+} from "@/domain/models/nutritionPlans";
 import type { UserMealsResponse } from "@/domain/models/userMeals";
+import type {
+  ClientForm,
+  CoachFormStats,
+  CoachFormsLibrary,
+  FormResponsesPage,
+  FormSchedule,
+} from "@/domain/models/coachForms";
 
 /**
  * Port for remote SST API operations.
@@ -1411,6 +1422,17 @@ export interface ApiPort extends ReferralsPort {
    */
   getUserMeals(): Promise<Result<UserMealsResponse, ApiError>>;
 
+  /**
+   * PER-133: `GET /nutrition/meal-plans?since=` — my plans and plans from
+   * coaches (`since` omitted for a full read). Writes go through the sync
+   * queue, never this port.
+   */
+  getNutritionPlans(
+    since?: string | null,
+  ): Promise<Result<NutritionPlansResponse, ApiError>>;
+  /** PER-133: `GET /nutrition/shopping-list` — every added plan, by aisle. */
+  getPlansShoppingList(): Promise<Result<PlansShoppingList, ApiError>>;
+
   // -- Client side of the coach↔client handshake (10-trainer-features) --
   /**
    * List the CURRENT user's trainer relationships as a client
@@ -1712,6 +1734,27 @@ export interface ApiPort extends ReferralsPort {
   scanEquipment(
     input: EquipmentScanInput,
   ): Promise<Result<EquipmentScanDraft, LoadoutApiError>>;
+
+  // -- PER-129 (APP-C1): coach forms reads --
+  //
+  // Writes (form create/edit, send rules, per-client setup, review) go through
+  // the offline queue (`coachForms.command.ts`), never through this port.
+
+  /** `GET /trainers/me/forms?include=templates`: library + current versions. */
+  getCoachForms(): Promise<Result<CoachFormsLibrary, ApiError>>;
+  /** `GET /trainers/me/forms/stats`: C10g "N/M" counts and totals. */
+  getCoachFormStats(): Promise<Result<CoachFormStats, ApiError>>;
+  /** `GET /trainers/me/form-schedules`: every send rule. */
+  getCoachFormSchedules(): Promise<Result<FormSchedule[], ApiError>>;
+  /** `GET /trainers/me/clients/:clientId/forms`: C3.3 "Sent to". */
+  getCoachClientForms(
+    clientId: string,
+  ): Promise<Result<ClientForm[], ApiError>>;
+  /** `GET /trainers/me/clients/:clientId/form-responses`, newest first. */
+  getCoachFormResponses(
+    clientId: string,
+    opts?: { formId?: string; cursor?: string; limit?: number },
+  ): Promise<Result<FormResponsesPage, ApiError>>;
 }
 
 /**

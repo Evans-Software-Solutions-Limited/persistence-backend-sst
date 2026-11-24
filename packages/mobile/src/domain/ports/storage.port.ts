@@ -54,7 +54,19 @@ import type {
   NutritionTarget,
   Recipe,
 } from "@/domain/models/nutrition";
+import type {
+  NutritionPlansCache,
+  PlansShoppingCache,
+} from "@/domain/models/nutritionPlans";
 import type { UserMeal } from "@/domain/models/userMeals";
+import type {
+  ClientForm,
+  CoachFormConflict,
+  CoachFormStats,
+  CoachFormsLibrary,
+  FormResponse,
+  FormSchedule,
+} from "@/domain/models/coachForms";
 
 /**
  * One row in the recent-sets cache. Keyed by (userId, exerciseId,
@@ -1246,6 +1258,77 @@ export interface StoragePort {
    * No-op when the ids match.
    */
   swapLocalUserMealId(localId: string, serverId: string): void;
+
+  // -- PER-133 list meal plans (Design D) --
+  /** The person's plans (mine + from coaches), or null before the first read. */
+  getCachedNutritionPlans(userId: string): NutritionPlansCache | null;
+  /** Write-through the plans cache (single row per user). */
+  cacheNutritionPlans(userId: string, cache: NutritionPlansCache): void;
+  /**
+   * Once a plan created offline syncs, rewrite its `local-…` id to the
+   * server id: in every cached plans and shopping-list row and in queued
+   * meal-plan, shopping list and food-log rows (endpoint, payload, entity
+   * id). No-op when equal.
+   */
+  swapLocalNutritionPlanId(localId: string, serverId: string): void;
+  /** The shopping list across plans and this phone's ticks. */
+  getCachedPlansShopping(userId: string): PlansShoppingCache | null;
+  cachePlansShopping(userId: string, value: PlansShoppingCache): void;
+
+  // -- PER-129 (APP-C1): coach forms, send rules and Check-ins --
+  /**
+   * The coach's form library (`GET /trainers/me/forms`, each form with its
+   * current version) in `cached_coach_forms`, one payload per coach. Null
+   * until the first read. Forms created offline sit here under `local-…` ids.
+   */
+  getCachedCoachForms(userId: string): CoachFormsLibrary | null;
+  cacheCoachForms(userId: string, value: CoachFormsLibrary): void;
+  /** Send rules (`GET /trainers/me/form-schedules`), `cached_coach_form_schedules`. */
+  getCachedCoachFormSchedules(userId: string): FormSchedule[] | null;
+  cacheCoachFormSchedules(userId: string, value: FormSchedule[]): void;
+  /** C10g counts (`GET /trainers/me/forms/stats`), `cached_coach_form_stats`. */
+  getCachedCoachFormStats(userId: string): CoachFormStats | null;
+  cacheCoachFormStats(userId: string, value: CoachFormStats): void;
+  /** One client's "Sent to" list (`GET …/clients/:id/forms`). */
+  getCachedCoachClientForms(
+    userId: string,
+    clientId: string,
+  ): ClientForm[] | null;
+  cacheCoachClientForms(
+    userId: string,
+    clientId: string,
+    value: ClientForm[],
+  ): void;
+  /** One client's responses, newest first (`GET …/clients/:id/form-responses`). */
+  getCachedCoachFormResponses(
+    userId: string,
+    clientId: string,
+  ): FormResponse[] | null;
+  cacheCoachFormResponses(
+    userId: string,
+    clientId: string,
+    value: FormResponse[],
+  ): void;
+  /**
+   * 409 `revision_conflict`s the queue resolved by taking the server copy
+   * (`coach_form_conflicts`), so the screens can say "Edited on another
+   * device" until the coach has seen it.
+   */
+  getCoachFormConflicts(userId: string): CoachFormConflict[];
+  recordCoachFormConflict(userId: string, key: string): void;
+  clearCoachFormConflict(userId: string, key: string): void;
+  /**
+   * A form created offline got its server id: rewrite it in the cached
+   * library, in cached send rules' `formId`, and in queued coach-form and
+   * send-rule rows (entity id, endpoint, payload `formId`).
+   */
+  swapLocalCoachFormId(userId: string, localId: string, serverId: string): void;
+  /** Same for a send rule created offline (cache, queued rows, `scheduleId`). */
+  swapLocalCoachFormScheduleId(
+    userId: string,
+    localId: string,
+    serverId: string,
+  ): void;
 
   // -- Lifecycle --
   /** Clear all user data (sync queue, cached entities, metadata). Called on sign-out. */

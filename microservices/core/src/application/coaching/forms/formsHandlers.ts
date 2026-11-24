@@ -15,6 +15,7 @@ import {
   DESCRIPTION_MAX,
 } from "./formRepository";
 import { validateQuestions } from "./questions";
+import { formStats } from "./statsRepository";
 import {
   AUDIENCES,
   CoachFormScheduleRepository,
@@ -122,6 +123,11 @@ const BAD_SINCE = { code: "invalid_since", message: "since must be a date" };
 // ─── Library ─────────────────────────────────────────────────────────────────
 
 export const coachFormsLibraryHandler = trainerOnly()
+  // PER-129 (C10a/C10g): each form's current round across active clients.
+  .get("/trainers/me/forms/stats", async (ctx) => {
+    const asOf = listAsOf();
+    return { data: { ...(await formStats(getUser(ctx).sub)), asOf } };
+  })
   .get(
     "/trainers/me/forms",
     async (ctx) => {
@@ -499,7 +505,21 @@ export const coachClientFormsHandler = authed()
         ]),
         override: t.Optional(
           t.Union([
-            t.Object(ruleFields, { additionalProperties: false }),
+            t.Object(
+              {
+                ...ruleFields,
+                // PER-129 (C10j): this client gets it on another cadence.
+                trigger: t.Optional(
+                  t.Union([
+                    t.Literal("once"),
+                    t.Literal("weekly"),
+                    t.Literal("daily"),
+                    t.Null(),
+                  ]),
+                ),
+              },
+              { additionalProperties: false },
+            ),
             t.Null(),
           ]),
         ),
@@ -630,12 +650,6 @@ export const athleteFormRequestsHandler = authed()
             code: result.code,
             reason: result.reason,
             message: "This check-in is no longer needed",
-          };
-        case "photo_unavailable":
-          return {
-            code: result.code,
-            message: "Photo answers aren't available yet",
-            errors: result.errors,
           };
         case "invalid_answers":
           return {

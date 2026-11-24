@@ -915,3 +915,221 @@ button.row[aria-current="true"] {
   justify-content: center;
   padding: 24px;
 }
+
+/* ─── Forms (PER-129, canvas C10a–c, C10j, C3.3) ───────────────────────── */
+.strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-top: 1px solid var(--line-2);
+  border-bottom: 1px solid var(--line-2);
+  padding: 12px 0;
+}
+.strip > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-left: 14px;
+  border-left: 1px solid var(--line);
+  min-width: 0;
+}
+.strip > div:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+.strip b {
+  font: 700 20px/24px var(--mono);
+  letter-spacing: -0.5px;
+  color: var(--ink);
+}
+.strip b i {
+  font: 500 12px/14px var(--mono);
+  color: var(--muted);
+  font-style: normal;
+  margin-left: 2px;
+}
+.strip span {
+  font: 600 10px/12px var(--font);
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.more {
+  font: 600 13px/18px var(--font);
+  color: var(--violet);
+  padding: 12px 0 0;
+  background: none;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+}
+.grp {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line-2);
+  flex-wrap: wrap;
+}
+.grp .hint {
+  margin: 0;
+  font-size: 12.5px;
+}
+.forms-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
+  gap: 48px;
+  min-height: 0;
+}
+.kv {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line-3);
+  font: 400 13.5px var(--font);
+}
+.kv span {
+  color: var(--muted);
+}
+.kv b {
+  font-weight: 600;
+  color: var(--ink);
+  text-align: right;
+}
+.pl.ok {
+  background: rgba(52, 211, 153, 0.12);
+  color: var(--green);
+}
+.pl.warn {
+  background: rgba(251, 191, 36, 0.12);
+  color: #fbbf24;
+}
+.pl.idle {
+  background: var(--raised);
+  color: var(--ink-2);
+}
+.chip {
+  height: 34px;
+  padding: 0 13px;
+  border-radius: 9999px;
+  border: 1px solid var(--line-2);
+  background: var(--surface);
+  color: var(--ink-2);
+  font: 600 13px/1 var(--font);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  flex: none;
+  white-space: nowrap;
+}
+.chip.on {
+  background: rgba(167, 139, 250, 0.14);
+  border-color: rgba(167, 139, 250, 0.5);
+  color: var(--ink);
+}
+.qtypes {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+.qtypes button {
+  height: 44px;
+  border-radius: 10px;
+  cursor: pointer;
+  font: 600 12.5px/1 var(--font);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--ink-2);
+}
+.qtypes button[aria-checked="true"] {
+  background: rgba(167, 139, 250, 0.16);
+  border-color: rgba(167, 139, 250, 0.6);
+  color: var(--ink);
+}
+.editor-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  min-height: 0;
+}
+.editor-grid > :first-child {
+  min-width: 0;
+  padding-right: 32px;
+}
+.editor-grid > :last-child {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  border-left: 1px solid var(--line);
+  padding-left: 32px;
+}
+.checkins-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.7fr);
+  gap: 40px;
+}
+.cmp {
+  display: grid;
+  grid-template-columns: 1.1fr 1.3fr 1fr;
+  gap: 14px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line-3);
+  align-items: center;
+  font: 400 13px/18px var(--font);
+}
+.cmp.head {
+  padding: 0 0 8px;
+  border-bottom: 1px solid var(--line-2);
+}
+.cmp > :first-child {
+  color: var(--muted);
+}
+.cmp > :nth-child(2) {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  color: var(--ink);
+  font-weight: 500;
+}
+.cmp > :nth-child(3) {
+  color: var(--faint);
+}
+.side {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(440px, 100%);
+  background: var(--surface);
+  border-left: 1px solid var(--line-2);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow-y: auto;
+  z-index: 40;
+}
+@media (max-width: 960px) {
+  .forms-grid,
+  .editor-grid,
+  .checkins-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+  }
+  .editor-grid > :first-child {
+    padding-right: 0;
+  }
+  .editor-grid > :last-child {
+    border-left: 0;
+    padding-left: 0;
+  }
+  .strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    row-gap: 12px;
+  }
+  .qtypes {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

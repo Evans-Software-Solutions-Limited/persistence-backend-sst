@@ -1,4 +1,5 @@
 import { stripNul } from "../../shared/stripNul";
+import { photoAnswerMediaId } from "../../media/privateMediaRepository";
 
 /**
  * Question and answer validators for coach forms (PER-116, design C D1).
@@ -31,6 +32,23 @@ export const MAX_LONG_TEXT = 5000;
 export const SCALE_MIN = 1;
 export const SCALE_MAX = 5;
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+export const MAX_HELP = 300;
+export const MAX_DETAILS = 500;
+
+/**
+ * PER-129 (C10b "Filled for them"): what the athlete's app fills in from
+ * what they already log. They can still change it before sending. Each
+ * source fits one answer type; `weight` and `progress_photos` also save to
+ * Body / Photos on the athlete's side (PER-130).
+ */
+export const PREFILL_SOURCES = {
+  sessions_done: "number",
+  meal_plan_followed: "number",
+  steps: "number",
+  weight: "number",
+  progress_photos: "photo",
+} as const satisfies Record<string, QuestionType>;
+export type PrefillSource = keyof typeof PREFILL_SOURCES;
 
 export interface Question {
   id: string;
@@ -41,6 +59,12 @@ export interface Question {
   min?: number;
   max?: number;
   unit?: string;
+  /** Help text under the prompt (PER-129, C10b). */
+  help?: string;
+  /** yes/no only: show a details box when they answer yes (C10b). */
+  detailsIfYes?: boolean;
+  /** Filled for them from what they already log (C10b). */
+  prefill?: PrefillSource;
 }
 
 export interface FieldError {
@@ -89,6 +113,9 @@ function validateQuestion(
     "min",
     "max",
     "unit",
+    "help",
+    "detailsIfYes",
+    "prefill",
   ]);
   const unknown = Object.keys(raw).filter((k) => !allowed.has(k));
   if (unknown.length > 0) return fail(`unknown field ${unknown[0]}`);
@@ -165,6 +192,41 @@ function validateQuestion(
   ) {
     return fail("only number questions have min, max or unit");
   }
+
+  if (raw.help !== undefined && raw.help !== null) {
+    if (typeof raw.help !== "string") return fail("help must be text");
+    const help = stripNul(raw.help).trim();
+    if (help.length > MAX_HELP) {
+      return fail(`help must be at most ${MAX_HELP} characters`);
+    }
+    if (help.length > 0) question.help = help;
+  }
+  if (raw.detailsIfYes !== undefined) {
+    if (typeof raw.detailsIfYes !== "boolean") {
+      return fail("detailsIfYes must be a boolean");
+    }
+    if (raw.type !== "yes_no" && raw.detailsIfYes) {
+      return fail("only yes/no questions ask for details");
+    }
+    if (raw.detailsIfYes) question.detailsIfYes = true;
+  }
+  if (raw.prefill !== undefined && raw.prefill !== null) {
+    if (
+      typeof raw.prefill !== "string" ||
+      !Object.hasOwn(PREFILL_SOURCES, raw.prefill)
+    ) {
+      return fail(
+        `prefill must be one of ${Object.keys(PREFILL_SOURCES).join(", ")}`,
+      );
+    }
+    const source = raw.prefill as PrefillSource;
+    if (PREFILL_SOURCES[source] !== raw.type) {
+      return fail(
+        `prefill ${source} needs a ${PREFILL_SOURCES[source]} question`,
+      );
+    }
+    question.prefill = source;
+  }
   return question;
 }
 
@@ -199,7 +261,7 @@ export function validateQuestions(raw: unknown): ValidationResult<Question[]> {
 
 export type AnswersResult =
   | { ok: true; value: Record<string, unknown> }
-  | { ok: false; photo: boolean; errors: FieldError[] };
+  | { ok: false; errors: FieldError[] };
 
 function isBlank(value: unknown): boolean {
   return (
@@ -257,14 +319,48 @@ function checkAnswer(
       // Keep the coach's option order, without duplicates.
       return { ok: true, value: q.options!.filter((o) => picked.has(o)) };
     }
-    case "yes_no":
-      return typeof value === "boolean"
-        ? { ok: true, value }
-        : { ok: false, message: "true or false" };
-    case "photo":
-      // Photo answers use BE-F1's media upload (PER-121). Until it ships a
-      // photo question can be created but not answered.
-      return { ok: false, message: "a photo, which can't be answered yet" };
+    case "yes_no": {
+      if (typeof value === "boolean") return { ok: true, value };
+      // PER-129: a details-if-yes question may send `{value, details}`.
+      // Stored as that object only when there are details to keep.
+      if (
+        q.detailsIfYes &&
+        isRecord(value) &&
+        typeof value.value === "boolean"
+      ) {
+        const extra = Object.keys(value).filter(
+          (k) => k !== "value" && k !== "details",
+        );
+        if (extra.length > 0) return { ok: false, message: "true or false" };
+        if (value.details !== undefined && typeof value.details !== "string") {
+          return { ok: false, message: "details as text" };
+        }
+        const details =
+          value.value && typeof value.details === "string"
+            ? stripNul(value.details).trim()
+            : "";
+        if (details.length > MAX_DETAILS) {
+          return {
+            ok: false,
+            message: `details of at most ${MAX_DETAILS} characters`,
+          };
+        }
+        return {
+          ok: true,
+          value: details ? { value: value.value, details } : value.value,
+        };
+      }
+      return { ok: false, message: "true or false" };
+    }
+    case "photo": {
+      // PER-121: a photo answer is the media id of a `form_answer` upload
+      // (`POST /users/me/media/uploads`), as `{mediaId}` or a bare id.
+      // Ownership and upload state are checked when the response is saved.
+      const mediaId = photoAnswerMediaId(value);
+      return mediaId
+        ? { ok: true, value: { mediaId } }
+        : { ok: false, message: "an uploaded photo ({ mediaId })" };
+    }
   }
 }
 
@@ -279,12 +375,10 @@ export function validateAnswers(
   if (!isRecord(raw)) {
     return {
       ok: false,
-      photo: false,
       errors: [{ at: "", message: "answers must be an object" }],
     };
   }
   const errors: FieldError[] = [];
-  let photo = false;
   const known = new Set(questions.map((q) => q.id));
   for (const id of Object.keys(raw)) {
     if (!known.has(id)) errors.push({ at: id, message: "unknown question" });
@@ -295,14 +389,11 @@ export function validateAnswers(
     const given = Object.hasOwn(raw, q.id) ? raw[q.id] : undefined;
     if (isBlank(given)) {
       if (!q.required) continue;
-      // A required photo can't be answered until BE-F1 either.
-      photo ||= q.type === "photo";
       errors.push({ at: q.id, message: "required" });
       continue;
     }
     const checked = checkAnswer(q, given);
     if (!checked.ok) {
-      photo ||= q.type === "photo";
       errors.push({ at: q.id, message: `must be ${checked.message}` });
       continue;
     }
@@ -319,5 +410,5 @@ export function validateAnswers(
       configurable: true,
     });
   }
-  return errors.length > 0 ? { ok: false, photo, errors } : { ok: true, value };
+  return errors.length > 0 ? { ok: false, errors } : { ok: true, value };
 }

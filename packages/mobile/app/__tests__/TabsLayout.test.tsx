@@ -6,7 +6,8 @@
  *     <Tabs.Screen>; the active mode decides which are VISIBLE via
  *     `options.href` (null hides while keeping the route navigable).
  *  2. The visible tab spec: athlete → Home/Train/Fuel/You,
- *     coach → Home/Clients/Programs/You — driven by useUserMode().mode.
+ *     coach → Today/Clients/Library/Messages/You (PER-129 K shell) — driven
+ *     by useUserMode().mode.
  *
  * Spec: specs/14-navigation/design.md § <TabsLayout> + § Route registration
  *       specs/14-navigation/requirements.md STORY-001, STORY-002, STORY-003
@@ -55,6 +56,8 @@ jest.mock("expo-router", () => {
               "fuel",
               "clients",
               "programs",
+              "library",
+              "messages",
             ],
           },
           navigation: { navigate: jest.fn() },
@@ -150,7 +153,7 @@ describe("TabsLayout — route registration", () => {
     const view = renderLayout();
     const firstNavigator = capturedNavigatorConfigs.at(-1)!;
     const firstScreens = new Map(
-      capturedScreens.slice(-7).map((screen) => [screen.name, screen]),
+      capturedScreens.slice(-9).map((screen) => [screen.name, screen]),
     );
 
     view.rerender(
@@ -163,7 +166,7 @@ describe("TabsLayout — route registration", () => {
 
     const secondNavigator = capturedNavigatorConfigs.at(-1)!;
     const secondScreens = new Map(
-      capturedScreens.slice(-7).map((screen) => [screen.name, screen]),
+      capturedScreens.slice(-9).map((screen) => [screen.name, screen]),
     );
     expect(secondNavigator.screenOptions).toBe(firstNavigator.screenOptions);
     expect(secondNavigator.tabBar).toBe(firstNavigator.tabBar);
@@ -174,6 +177,8 @@ describe("TabsLayout — route registration", () => {
       "fuel",
       "clients",
       "programs",
+      "library",
+      "messages",
       "coach",
     ]) {
       expect(secondScreens.get(name)?.options).toBe(
@@ -182,11 +187,21 @@ describe("TabsLayout — route registration", () => {
     }
   });
 
-  it("registers all seven tab routes regardless of mode", () => {
+  it("registers all nine tab routes regardless of mode", () => {
     renderLayout();
     const names = capturedScreens.map((s) => s.name).sort();
     expect(names).toEqual(
-      ["index", "you", "train", "fuel", "clients", "programs", "coach"].sort(),
+      [
+        "index",
+        "you",
+        "train",
+        "fuel",
+        "clients",
+        "programs",
+        "library",
+        "messages",
+        "coach",
+      ].sort(),
     );
   });
 
@@ -204,6 +219,9 @@ describe("TabsLayout — route registration", () => {
     // Hidden (href null).
     expect(byName.clients).toBeNull();
     expect(byName.programs).toBeNull();
+    // PER-129: the K shell's Library and Messages are coach-only.
+    expect(byName.library).toBeNull();
+    expect(byName.messages).toBeNull();
     // Not coached: no Coach tab (PER-126).
     expect(byName.coach).toBeNull();
   });
@@ -214,12 +232,14 @@ describe("TabsLayout — route registration", () => {
     const byName = Object.fromEntries(
       capturedScreens.map((s) => [s.name, s.href]),
     );
-    // Visible.
+    // Visible (PER-129 K shell).
     expect(byName.index).toBeUndefined();
     expect(byName.clients).toBeUndefined();
-    expect(byName.programs).toBeUndefined();
+    expect(byName.library).toBeUndefined();
+    expect(byName.messages).toBeUndefined();
     expect(byName.you).toBeUndefined();
-    // Hidden.
+    // Hidden: the old Programs tab redirects to Library → Programmes.
+    expect(byName.programs).toBeNull();
     expect(byName.train).toBeNull();
     expect(byName.fuel).toBeNull();
     expect(byName.coach).toBeNull();
@@ -303,15 +323,39 @@ describe("TabsLayout — visible tab spec (STORY-009 AC 9.3)", () => {
     expect(bar.queryByText("Programs")).toBeNull();
   });
 
-  it("renders exactly the four coach tabs with their labels", () => {
+  it("renders the five K-shell coach tabs with their labels (PER-129)", () => {
     mockMode.mockReturnValue("coach");
     const { getByTestId } = renderLayout();
     const bar = within(getByTestId("nav-tab-bar"));
-    for (const label of ["Home", "Clients", "Programs", "You"]) {
+    for (const label of ["Today", "Clients", "Library", "Messages", "You"]) {
       expect(bar.getByText(label)).toBeTruthy();
     }
+    expect(COACH_TABS.map((t) => t.label)).toEqual([
+      "Today",
+      "Clients",
+      "Library",
+      "Messages",
+      "You",
+    ]);
+    expect(bar.queryByText("Home")).toBeNull();
+    expect(bar.queryByText("Programs")).toBeNull();
     expect(bar.queryByText("Train")).toBeNull();
     expect(bar.queryByText("Fuel")).toBeNull();
+  });
+
+  it("athlete mode is unchanged by the K shell", () => {
+    mockMode.mockReturnValue("athlete");
+    const { getByTestId } = renderLayout();
+    const bar = within(getByTestId("nav-tab-bar"));
+    expect(ATHLETE_TABS.map((t) => t.label)).toEqual([
+      "Home",
+      "Train",
+      "Fuel",
+      "You",
+    ]);
+    for (const label of ["Library", "Messages", "Today"]) {
+      expect(bar.queryByText(label)).toBeNull();
+    }
   });
 
   it("shows the COACH chrome dot only in coach mode", () => {
@@ -485,5 +529,25 @@ describe("NavTabBar — tabPress contract + stranded-route guard (review #87)", 
       mode: "coach",
     });
     expect(navigation.navigate).not.toHaveBeenCalledWith("index");
+  });
+
+  it("leaves the old Programs route to its own Library redirect in coach mode (PER-129)", () => {
+    const { navigation } = renderNavTabBar({
+      activeIndex: 5, // programs
+      routeNames: ATHLETE_ROUTES,
+      tabs: COACH_TABS,
+      mode: "coach",
+    });
+    expect(navigation.navigate).not.toHaveBeenCalledWith("index");
+  });
+
+  it("still sends an athlete parked on the old Programs route Home", () => {
+    const { navigation } = renderNavTabBar({
+      activeIndex: 5, // programs
+      routeNames: ATHLETE_ROUTES,
+      tabs: ATHLETE_TABS,
+      mode: "athlete",
+    });
+    expect(navigation.navigate).toHaveBeenCalledWith("index");
   });
 });

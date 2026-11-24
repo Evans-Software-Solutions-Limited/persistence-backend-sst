@@ -194,3 +194,85 @@ describe("Inspector Brad sweep 2 (PR #543)", () => {
     expect(Object.getPrototypeOf(res.value)).toBe(Object.prototype);
   });
 });
+
+// PER-129 (C10b): help text, details if yes, filled for them.
+describe("C10b question extras", () => {
+  it("keeps help, detailsIfYes and prefill", () => {
+    const res = validateQuestions([
+      q({ id: "a", help: "  Where is it?  " }),
+      q({ id: "b", type: "yes_no", detailsIfYes: true }),
+      q({ id: "c", type: "number", unit: "kg", prefill: "weight" }),
+      q({ id: "d", type: "photo", prefill: "progress_photos" }),
+      q({ id: "e", help: "  ", detailsIfYes: false, prefill: null }),
+    ]);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.value[0]!.help).toBe("Where is it?");
+    expect(res.value[1]!.detailsIfYes).toBe(true);
+    expect(res.value[2]!.prefill).toBe("weight");
+    expect(res.value[3]!.prefill).toBe("progress_photos");
+    // Blank help and a false flag are dropped, not stored.
+    expect(res.value[4]).toEqual({
+      id: "e",
+      type: "short_text",
+      prompt: "Prompt",
+      required: false,
+    });
+  });
+
+  it.each([
+    ["help not text", q({ help: 3 }), /help must be text/],
+    ["long help", q({ help: "x".repeat(301) }), /help must be at most/],
+    ["details flag type", q({ detailsIfYes: "yes" }), /boolean/],
+    ["details on text", q({ detailsIfYes: true }), /only yes\/no/],
+    ["unknown prefill", q({ prefill: "mood" }), /prefill must be one of/],
+    ["prefill not a string", q({ prefill: 1 }), /prefill must be one of/],
+    ["prefill on proto key", q({ prefill: "constructor" }), /prefill must/],
+    ["prefill wrong type", q({ prefill: "weight" }), /needs a number/],
+  ])("rejects %s", (_name, raw, message) => {
+    expect(firstError(raw)).toMatch(message);
+  });
+
+  const yes: Question = {
+    id: "pain",
+    type: "yes_no",
+    prompt: "Any pain?",
+    required: true,
+    detailsIfYes: true,
+  };
+
+  it("takes details with a yes and drops them with a no", () => {
+    const withDetails = validateAnswers([yes], {
+      pain: { value: true, details: "  Left knee  " },
+    });
+    expect(withDetails).toEqual({
+      ok: true,
+      value: { pain: { value: true, details: "Left knee" } },
+    });
+    expect(
+      validateAnswers([yes], { pain: { value: false, details: "x" } }),
+    ).toEqual({ ok: true, value: { pain: false } });
+    expect(validateAnswers([yes], { pain: { value: true } })).toEqual({
+      ok: true,
+      value: { pain: true },
+    });
+    expect(validateAnswers([yes], { pain: true })).toEqual({
+      ok: true,
+      value: { pain: true },
+    });
+  });
+
+  it.each([
+    ["extra key", { value: true, colour: "red" }],
+    ["details not text", { value: true, details: 4 }],
+    ["long details", { value: true, details: "x".repeat(501) }],
+    ["no value", { details: "x" }],
+  ])("rejects a details answer with %s", (_name, answer) => {
+    expect(validateAnswers([yes], { pain: answer }).ok).toBe(false);
+  });
+
+  it("only details-if-yes questions take the object form", () => {
+    const plain: Question = { ...yes, detailsIfYes: undefined };
+    expect(validateAnswers([plain], { pain: { value: true } }).ok).toBe(false);
+  });
+});

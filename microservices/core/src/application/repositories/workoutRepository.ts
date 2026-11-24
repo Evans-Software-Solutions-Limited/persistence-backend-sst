@@ -12,6 +12,7 @@ import {
 import {
   workouts,
   workoutExercises,
+  workoutExerciseSetTargets,
   exercises,
   friendships,
   workoutAssignments,
@@ -26,6 +27,14 @@ import {
 } from "@persistence/db";
 import { getDb, type Db } from "@persistence/db/client";
 import { resolveWorkoutRepRange } from "../workouts/shared/repRange";
+import {
+  cloneSetTargets,
+  deriveFromSetTargets,
+  hasSetTargets,
+  indexStoredSetTargets,
+  preservedSetTargets,
+  type SetTarget,
+} from "../workouts/shared/setTargets";
 import type { AdaptationCandidate } from "./exerciseRepository";
 import {
   estimateWorkoutDurationMinutes,
@@ -71,6 +80,13 @@ export interface WorkoutExerciseRow {
   substitutedFromExerciseId: string | null;
   substitutionReason: unknown;
   isUserOverride: boolean;
+  /**
+   * PER-111: reps per set in set order, e.g. 10 / 8 / 8. OMITTED (not null,
+   * not []) when the exercise has none, so 1.2.0 readers see exactly today's
+   * shape. When present, targetSets / targetRepsMin / targetRepsMax hold the
+   * derived count / lowest / highest reps.
+   */
+  setTargets?: SetTarget[];
   exercise: {
     id: string;
     name: string;
@@ -128,6 +144,12 @@ export interface CreateWorkoutExerciseInput {
   targetDurationSeconds?: number | null;
   restSeconds?: number | null;
   notes?: string | null;
+  /**
+   * PER-111. A non-empty list writes per-set rows and the derived old columns.
+   * `null` = no per-set rows. `undefined` = not sent (an old bundle): on
+   * update the design G preservation rule applies; on create, none.
+   */
+  setTargets?: SetTarget[] | null;
 }
 
 export interface CreateWorkoutInput {
@@ -192,6 +214,8 @@ export interface WorkoutAdaptationRow {
   targetDurationSeconds: number | null;
   restSeconds: number | null;
   notes: string | null;
+  /** PER-111: the parent's reps per set, carried into the preview. Omitted when none. */
+  setTargets?: SetTarget[];
   source: AdaptationCandidate;
 }
 
@@ -242,6 +266,33 @@ export interface WorkoutHistory {
 // the singleton or a transaction handle. Using a structural alias keeps the
 // helper free of Drizzle's deep generic types.
 type DbOrTx = Db | Parameters<Parameters<Db["transaction"]>[0]>[0];
+
+/**
+ * PER-111: a workout exercise's reps per set as one JSON array in set order,
+ * `[{"reps":10},{"reps":8},{"reps":8}]`, or NULL when it has none. A correlated
+ * subquery (like `swapCount`) so every read stays ONE query and the per-set
+ * rows can never be fetched without the exercise row that authorizes them.
+ *
+ * ⚠ Every column is table-QUALIFIED by hand. In a single-table select (no
+ * join) Drizzle renders `${workoutExercises.id}` as a bare "id", which inside
+ * this subquery resolves to workout_exercise_set_targets.id — the predicate
+ * silently compares a row with itself and the update's preservation read
+ * finds nothing. Caught by designG.setTargets.integration.test.ts.
+ */
+const st = sql.identifier("workout_exercise_set_targets");
+const we = sql.identifier("workout_exercises");
+const setTargetsJson = sql<SetTarget[] | null>`(
+  select json_agg(json_build_object('reps', ${st}.${sql.identifier("target_reps")}) order by ${st}.${sql.identifier("set_number")})
+  from ${workoutExerciseSetTargets}
+  where ${st}.${sql.identifier("workout_exercise_id")} = ${we}.${sql.identifier("id")}
+)`;
+
+/** A row to insert plus the per-set targets to write under it (null = none). */
+interface ExerciseInsert {
+  values: ReturnType<WorkoutRepository["toWorkoutExerciseInsert"]> &
+    Partial<ProvenanceFields>;
+  setTargets: SetTarget[] | null;
+}
 
 /** The three Loadout provenance columns, as carried across an exercise replace. */
 interface ProvenanceFields {
@@ -623,6 +674,9 @@ export class WorkoutRepository {
   ): Promise<WorkoutWithExercises> {
     const db = getDb();
     const key = clientRequestId ?? null;
+    // Per-set targets fix the old columns to their derived values BEFORE
+    // anything (the duration estimate included) reads them.
+    const planned = input.exercises?.map((ex) => this.withDerivedTargets(ex));
 
     return db.transaction(async (tx) => {
       const values = {
@@ -633,7 +687,7 @@ export class WorkoutRepository {
         // estimateDuration.ts. The old `?? 30` stored every workout as 30 min.
         estimatedDurationMinutes: resolveEstimatedDurationMinutes(
           input.estimatedDurationMinutes,
-          input.exercises,
+          planned,
         ),
         // Absent => true (personal). Coach-authoring flow sends false.
         showInOwnerLibrary: input.showInOwnerLibrary ?? true,
@@ -680,14 +734,16 @@ export class WorkoutRepository {
         }
       }
 
-      if (input.exercises && input.exercises.length > 0) {
-        await tx
-          .insert(workoutExercises)
-          .values(
-            input.exercises.map((ex) =>
-              this.toWorkoutExerciseInsert(workout!.id, ex),
-            ),
-          );
+      if (planned && planned.length > 0) {
+        await this.insertExercises(
+          tx,
+          planned.map((ex) => ({
+            values: this.toWorkoutExerciseInsert(workout!.id, ex),
+            setTargets: hasSetTargets(ex.setTargets)
+              ? cloneSetTargets(ex.setTargets)
+              : null,
+          })),
+        );
       }
 
       return this.fetchWorkoutWithExercises(tx, workout!);
@@ -700,6 +756,7 @@ export class WorkoutRepository {
     data: UpdateWorkoutInput,
   ): Promise<WorkoutWithExercises | null> {
     const db = getDb();
+    const planned = data.exercises?.map((ex) => this.withDerivedTargets(ex));
 
     return db.transaction(async (tx) => {
       const metadata: Partial<Workout> = {};
@@ -718,10 +775,9 @@ export class WorkoutRepository {
       // a PATCH that empties the plan wipes the junction rows but must NOT
       // rewrite the duration to 0 — there is nothing left to estimate from, so
       // the last meaningful value is better than a fabricated zero.
-      else if (data.exercises !== undefined && data.exercises.length > 0)
-        metadata.estimatedDurationMinutes = estimateWorkoutDurationMinutes(
-          data.exercises,
-        );
+      else if (planned !== undefined && planned.length > 0)
+        metadata.estimatedDurationMinutes =
+          estimateWorkoutDurationMinutes(planned);
       // Present-only: a partial PATCH that omits the flag leaves it untouched.
       if (data.showInOwnerLibrary !== undefined)
         metadata.showInOwnerLibrary = data.showInOwnerLibrary;
@@ -738,7 +794,7 @@ export class WorkoutRepository {
 
       if (!updated) return null;
 
-      if (data.exercises !== undefined) {
+      if (planned !== undefined) {
         // Loadout (spec-21 AC-3.3): capture swap provenance BEFORE the wipe.
         //
         // This is a full delete-and-reinsert, and `toWorkoutExerciseInsert`
@@ -754,19 +810,36 @@ export class WorkoutRepository {
         // contains the same exercise twice keeps both rows' provenance in order.
         // A row whose exercise CHANGED gets no provenance, which is correct: it
         // is a different exercise now, so the old reason no longer describes it.
-        const provenanceByExercise = await this.captureProvenance(tx, id);
+        //
+        // PER-111: the same read captures the stored reps per set, because
+        // the wipe below cascades them away. An exercise sent WITHOUT
+        // `setTargets` (a 1.2.0 bundle) keeps them under design G's rule —
+        // see `preservedSetTargets`.
+        const { provenanceByExercise, storedSetTargets } =
+          await this.captureProvenance(tx, id);
 
         // Full-replacement: wipe junction rows + insert new array.
         await tx
           .delete(workoutExercises)
           .where(eq(workoutExercises.workoutId, id));
 
-        if (data.exercises.length > 0) {
-          await tx.insert(workoutExercises).values(
-            data.exercises.map((ex) => ({
-              ...this.toWorkoutExerciseInsert(id, ex),
-              ...(provenanceByExercise.get(ex.exerciseId)?.shift() ?? {}),
-            })),
+        if (planned.length > 0) {
+          await this.insertExercises(
+            tx,
+            planned.map((ex) => {
+              const values = this.toWorkoutExerciseInsert(id, ex);
+              return {
+                values: {
+                  ...values,
+                  ...(provenanceByExercise.get(ex.exerciseId)?.shift() ?? {}),
+                },
+                setTargets: this.resolveSetTargets(
+                  ex,
+                  values,
+                  storedSetTargets,
+                ),
+              };
+            }),
           );
         }
       }
@@ -863,6 +936,7 @@ export class WorkoutRepository {
         targetDurationSeconds: workoutExercises.targetDurationSeconds,
         restSeconds: workoutExercises.restSeconds,
         notes: workoutExercises.notes,
+        setTargets: setTargetsJson,
         exerciseId: exercises.id,
         name: exercises.name,
         category: exercises.category,
@@ -888,6 +962,9 @@ export class WorkoutRepository {
       targetDurationSeconds: row.targetDurationSeconds,
       restSeconds: row.restSeconds,
       notes: row.notes,
+      ...(hasSetTargets(row.setTargets)
+        ? { setTargets: cloneSetTargets(row.setTargets) }
+        : {}),
       source: {
         id: row.exerciseId,
         name: row.name,
@@ -981,6 +1058,7 @@ export class WorkoutRepository {
     input: CreateVariationInput,
   ): Promise<WorkoutWithExercises> {
     const db = getDb();
+    const planned = input.exercises.map((ex) => this.withDerivedTargets(ex));
 
     return db.transaction(async (tx) => {
       const [variation] = await tx
@@ -992,7 +1070,7 @@ export class WorkoutRepository {
           visibility: "private",
           estimatedDurationMinutes: resolveEstimatedDurationMinutes(
             input.estimatedDurationMinutes,
-            input.exercises,
+            planned,
           ),
           createdBy: userId,
           parentWorkoutId: parentId,
@@ -1002,14 +1080,10 @@ export class WorkoutRepository {
         })
         .returning();
 
-      if (input.exercises.length > 0) {
-        await tx.insert(workoutExercises).values(
-          input.exercises.map((ex) => ({
-            ...this.toWorkoutExerciseInsert(variation.id, ex),
-            substitutedFromExerciseId: ex.substitutedFromExerciseId ?? null,
-            substitutionReason: ex.substitutionReason ?? null,
-            isUserOverride: ex.isUserOverride ?? false,
-          })),
+      if (planned.length > 0) {
+        await this.insertExercises(
+          tx,
+          await this.variationRows(tx, parentId, variation.id, planned),
         );
       }
 
@@ -1033,6 +1107,7 @@ export class WorkoutRepository {
     input: ReplaceVariationInput,
   ): Promise<WorkoutVariationSummary | null> {
     const db = getDb();
+    const planned = input.exercises.map((ex) => this.withDerivedTargets(ex));
 
     return db.transaction(async (tx) => {
       const [variation] = await tx
@@ -1043,7 +1118,7 @@ export class WorkoutRepository {
           visibility: "private",
           estimatedDurationMinutes: resolveEstimatedDurationMinutes(
             input.estimatedDurationMinutes,
-            input.exercises,
+            planned,
           ),
           sourceGymId: input.sourceGymId ?? null,
           sourceEquipmentTypeIds: input.sourceEquipmentTypeIds,
@@ -1065,14 +1140,10 @@ export class WorkoutRepository {
         .delete(workoutExercises)
         .where(eq(workoutExercises.workoutId, variationId));
 
-      if (input.exercises.length > 0) {
-        await tx.insert(workoutExercises).values(
-          input.exercises.map((ex) => ({
-            ...this.toWorkoutExerciseInsert(variationId, ex),
-            substitutedFromExerciseId: ex.substitutedFromExerciseId ?? null,
-            substitutionReason: ex.substitutionReason ?? null,
-            isUserOverride: ex.isUserOverride ?? false,
-          })),
+      if (planned.length > 0) {
+        await this.insertExercises(
+          tx,
+          await this.variationRows(tx, parentId, variationId, planned),
         );
       }
 
@@ -1329,6 +1400,8 @@ export class WorkoutRepository {
         substitutedFromExerciseId: workoutExercises.substitutedFromExerciseId,
         substitutionReason: workoutExercises.substitutionReason,
         isUserOverride: workoutExercises.isUserOverride,
+        // PER-111 — see `setTargetsJson`.
+        setTargets: setTargetsJson,
         exercise: {
           id: exercises.id,
           name: exercises.name,
@@ -1346,9 +1419,14 @@ export class WorkoutRepository {
       .orderBy(workoutExercises.workoutId, workoutExercises.sortOrder);
 
     for (const row of rows) {
-      const { workoutId, ...rest } = row;
+      const { workoutId, setTargets, ...rest } = row;
       const list = grouped.get(workoutId) ?? [];
-      list.push(rest);
+      // Omitted, not null, when there are none: 1.2.0 sees today's shape.
+      list.push(
+        hasSetTargets(setTargets)
+          ? { ...rest, setTargets: cloneSetTargets(setTargets) }
+          : rest,
+      );
       grouped.set(workoutId, list);
     }
 
@@ -1367,7 +1445,10 @@ export class WorkoutRepository {
   private async captureProvenance(
     db: DbOrTx,
     workoutId: string,
-  ): Promise<Map<string, ProvenanceFields[]>> {
+  ): Promise<{
+    provenanceByExercise: Map<string, ProvenanceFields[]>;
+    storedSetTargets: Map<string, SetTarget[][]>;
+  }> {
     const rows = await db
       .select({
         exerciseId: workoutExercises.exerciseId,
@@ -1375,10 +1456,19 @@ export class WorkoutRepository {
         substitutedFromExerciseId: workoutExercises.substitutedFromExerciseId,
         substitutionReason: workoutExercises.substitutionReason,
         isUserOverride: workoutExercises.isUserOverride,
+        setTargets: setTargetsJson,
       })
       .from(workoutExercises)
       .where(eq(workoutExercises.workoutId, workoutId))
       .orderBy(workoutExercises.sortOrder);
+
+    const storedSetTargets = indexStoredSetTargets(
+      rows.map((row) => ({
+        exerciseId: row.exerciseId,
+        sortOrder: row.sortOrder,
+        setTargets: row.setTargets ?? [],
+      })),
+    );
 
     const grouped = new Map<string, ProvenanceFields[]>();
     for (const row of rows) {
@@ -1394,7 +1484,119 @@ export class WorkoutRepository {
       });
       grouped.set(row.exerciseId, list);
     }
-    return grouped;
+    return { provenanceByExercise: grouped, storedSetTargets };
+  }
+
+  // ─── Reps per set (PER-111, design G part 1) ─────────────────────────
+
+  /**
+   * The input with its old columns replaced by the values derived from its
+   * per-set targets, when it has any. So the stored `target_sets` /
+   * `target_reps_min` / `target_reps_max` (and the duration estimate) always
+   * agree with the per-set rows, whatever the client sent alongside them.
+   */
+  private withDerivedTargets<T extends CreateWorkoutExerciseInput>(ex: T): T {
+    return hasSetTargets(ex.setTargets)
+      ? { ...ex, ...deriveFromSetTargets(ex.setTargets) }
+      : ex;
+  }
+
+  /**
+   * What to write under one exercise of an update: the sent list; nothing for
+   * an explicit `null`; and for an exercise sent without the field (an old
+   * bundle), the stored rows when design G's preservation rule allows.
+   */
+  private resolveSetTargets(
+    ex: CreateWorkoutExerciseInput,
+    values: ReturnType<WorkoutRepository["toWorkoutExerciseInsert"]>,
+    stored: Map<string, SetTarget[][]>,
+  ): SetTarget[] | null {
+    if (hasSetTargets(ex.setTargets)) return cloneSetTargets(ex.setTargets);
+    if (ex.setTargets !== undefined) return null;
+    return preservedSetTargets(stored, values);
+  }
+
+  /**
+   * A Loadout variation's rows, with the parent's reps per set carried over.
+   *
+   * A row that sends `setTargets` keeps them (the preview returns the
+   * parent's, so an updated phone echoes them). A row sent WITHOUT the field —
+   * a 1.2.0 bundle, which never saw `setTargets` — gets the parent row's under
+   * the same rule as an old-bundle edit: same position, same exercise (the
+   * replaced one, for a swap) and the derived sets / range unchanged. So an
+   * adaptation keeps 10 / 8 / 8 whichever bundle saved it.
+   */
+  private async variationRows(
+    tx: DbOrTx,
+    parentId: string,
+    variationId: string,
+    planned: CreateVariationExerciseInput[],
+  ): Promise<ExerciseInsert[]> {
+    const parentRows = await tx
+      .select({
+        exerciseId: workoutExercises.exerciseId,
+        sortOrder: workoutExercises.sortOrder,
+        setTargets: setTargetsJson,
+      })
+      .from(workoutExercises)
+      .where(eq(workoutExercises.workoutId, parentId))
+      .orderBy(workoutExercises.sortOrder);
+    const stored = indexStoredSetTargets(
+      parentRows.map((row) => ({
+        exerciseId: row.exerciseId,
+        sortOrder: row.sortOrder,
+        setTargets: row.setTargets ?? [],
+      })),
+    );
+
+    return planned.map((ex) => {
+      const values = this.toWorkoutExerciseInsert(variationId, ex);
+      return {
+        values: {
+          ...values,
+          substitutedFromExerciseId: ex.substitutedFromExerciseId ?? null,
+          substitutionReason: ex.substitutionReason ?? null,
+          isUserOverride: ex.isUserOverride ?? false,
+        },
+        setTargets: this.resolveSetTargets(
+          ex,
+          {
+            ...values,
+            exerciseId: ex.substitutedFromExerciseId ?? ex.exerciseId,
+          },
+          stored,
+        ),
+      };
+    });
+  }
+
+  /**
+   * Insert exercise rows, then the per-set rows under them.
+   *
+   * With no per-set targets anywhere this is exactly the old single INSERT.
+   * Otherwise the INSERT returns ids in VALUES order (one multi-row INSERT
+   * … RETURNING), and each row's targets are written as set 1…n.
+   */
+  private async insertExercises(
+    tx: DbOrTx,
+    rows: ExerciseInsert[],
+  ): Promise<void> {
+    if (!rows.some((row) => row.setTargets !== null)) {
+      await tx.insert(workoutExercises).values(rows.map((row) => row.values));
+      return;
+    }
+    const inserted = await tx
+      .insert(workoutExercises)
+      .values(rows.map((row) => row.values))
+      .returning({ id: workoutExercises.id });
+    const targetRows = inserted.flatMap((row, i) =>
+      (rows[i].setTargets ?? []).map((target, n) => ({
+        workoutExerciseId: row.id,
+        setNumber: n + 1,
+        targetReps: target.reps,
+      })),
+    );
+    await tx.insert(workoutExerciseSetTargets).values(targetRows);
   }
 
   private toWorkoutExerciseInsert(

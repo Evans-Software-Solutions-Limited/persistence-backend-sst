@@ -1,10 +1,11 @@
 import { Pressable, ScrollView } from "react-native";
 import { Text, View } from "@tamagui/core";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Btn, HeaderBar, Pill } from "@/ui/components/foundation";
+import { HeaderBar, Pill } from "@/ui/components/foundation";
 import { ErrorState, PLogoDrawLoader, EmptyState } from "@/ui/components";
-import { IconBack, IconPlus, IconClipboard } from "@/ui/components/icons";
+import { IconBack, IconClipboard } from "@/ui/components/icons";
 import type { ApiError } from "@/shared/errors";
+import { MealDetailActionsPresenter } from "./fuel/MealDetailActionsPresenter";
 
 /**
  * <MealDetailPresenter> — read-only saved-meal viewer (recipes.jsx
@@ -29,12 +30,10 @@ export type MealDetailPresenterProps = {
   proteinG: number;
   carbsG: number;
   fatG: number;
-  onLogToToday: () => void;
-  isLogging: boolean;
-  /** "TUESDAY · JUL 21" — set ONLY when Fuel is viewing a day other than
-   * today (BRIEF-7 QA-20 day-context). Undefined on today: the button keeps
-   * its original "Log to today" copy. */
-  dayContext?: string;
+  /** Opens the N14 Log sheet (PER-133). */
+  onLog: () => void;
+  /** Opens the Add to plan sheet (PER-133). */
+  onAddToPlan: () => void;
   testID?: string;
 };
 
@@ -50,9 +49,8 @@ export function MealDetailPresenter({
   proteinG,
   carbsG,
   fatG,
-  onLogToToday,
-  isLogging,
-  dayContext,
+  onLog,
+  onAddToPlan,
   testID = "meal-detail-screen",
 }: MealDetailPresenterProps) {
   const insets = useSafeAreaInsets();
@@ -171,18 +169,11 @@ export function MealDetailPresenter({
           </View>
         </View>
 
-        <Btn
-          full
-          variant="filled"
-          tone="primary"
-          size="lg"
-          icon={<IconPlus size={15} />}
-          onPress={onLogToToday}
-          disabled={isLogging}
-          testID="meal-detail-log"
-        >
-          {dayContext ? `Log to ${dayContext}` : "Log to today"}
-        </Btn>
+        <MealDetailActionsPresenter
+          onAddToPlan={onAddToPlan}
+          onLog={onLog}
+          testID="meal-detail"
+        />
       </ScrollView>
     </View>
   );

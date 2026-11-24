@@ -84,6 +84,7 @@ export function partitionPlan(
       targetDurationSeconds: row.targetDurationSeconds,
       restSeconds: row.restSeconds,
       notes: row.notes,
+      ...(row.setTargets ? { setTargets: row.setTargets } : {}),
     };
   });
 }
@@ -157,6 +158,7 @@ function targetsOf(row: PlanRow) {
     targetDurationSeconds: row.targetDurationSeconds,
     restSeconds: row.restSeconds,
     notes: row.notes,
+    ...(row.setTargets ? { setTargets: row.setTargets } : {}),
   };
 }
 

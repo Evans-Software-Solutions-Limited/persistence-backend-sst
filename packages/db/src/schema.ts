@@ -886,6 +886,36 @@ export const workoutExercises = pgTable(
   ],
 );
 
+// ─── Reps per set (PER-111, design G part 1) ─────────────────────────────────
+// One optional row per prescribed set (10 / 8 / 8). No rows = today's single
+// range. When rows exist, the parent row's target_sets / target_reps_min /
+// target_reps_max always hold the derived count / lowest / highest reps, so
+// 1.2.0 readers stay correct. Migration
+// 20261123230809_workout_exercise_set_targets.sql.
+export const workoutExerciseSetTargets = pgTable(
+  "workout_exercise_set_targets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workoutExerciseId: uuid("workout_exercise_id")
+      .notNull()
+      .references(() => workoutExercises.id, { onDelete: "cascade" }),
+    // 1–20 (CHECK in the migration).
+    setNumber: smallint("set_number").notNull(),
+    // 1–100 (CHECK in the migration).
+    targetReps: smallint("target_reps").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    // The migration's UNIQUE constraint, whose backing index has this name.
+    uniqueIndex("workout_exercise_set_targets_exercise_set_key").on(
+      t.workoutExerciseId,
+      t.setNumber,
+    ),
+  ],
+);
+
 // ─── Workout Sessions ──────────────────────────────────────────────────────────
 
 export const workoutSessions = pgTable(
@@ -2473,6 +2503,8 @@ export type NewWorkout = typeof workouts.$inferInsert;
 
 export type WorkoutExercise = typeof workoutExercises.$inferSelect;
 export type NewWorkoutExercise = typeof workoutExercises.$inferInsert;
+export type WorkoutExerciseSetTarget =
+  typeof workoutExerciseSetTargets.$inferSelect;
 
 export type WorkoutSession = typeof workoutSessions.$inferSelect;
 export type NewWorkoutSession = typeof workoutSessions.$inferInsert;
@@ -4164,3 +4196,5 @@ export * from "./togetherSchema";
 export * from "./socialSchema";
 
 export * from "./togetherOfflineSchema";
+// PER-121 (design F): progress photos and private media.
+export * from "./progressPhotosSchema";

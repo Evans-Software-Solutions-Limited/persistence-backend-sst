@@ -11,11 +11,14 @@ import {
 import { Avatar } from "../ui/parts";
 
 /**
- * The K-layout rail (canvas C11a/C3.9/C8). Only Clients is on the web so far;
+ * The K-layout rail (canvas C11a/C3.9/C8). Clients and Library (forms,
+ * PER-129) are on the web so far;
  * the other places keep their slot so the rail matches the canvas, and say so
  * rather than link to an empty page.
  */
 export interface CoachShellProps {
+  /** Which place is open (PER-129 adds Library). */
+  active?: "clients" | "library";
   coachName: string;
   coachInitials: string;
   activeCount: number | null;
@@ -36,6 +39,7 @@ function Later({ icon, label }: { icon: ReactNode; label: string }) {
 }
 
 export function CoachShell({
+  active = "clients",
   coachName,
   coachInitials,
   activeCount,
@@ -60,7 +64,7 @@ export function CoachShell({
           <Link
             to="/coach/clients"
             className="coach-nav-item"
-            aria-current="page"
+            aria-current={active === "clients" ? "page" : undefined}
           >
             <IconUsers />
             <span style={{ flex: 1 }}>Clients</span>
@@ -68,7 +72,14 @@ export function CoachShell({
               <span className="count mono">{activeCount}</span>
             )}
           </Link>
-          <Later icon={<IconBook />} label="Library" />
+          <Link
+            to="/coach/library/forms"
+            className="coach-nav-item"
+            aria-current={active === "library" ? "page" : undefined}
+          >
+            <IconBook />
+            <span style={{ flex: 1 }}>Library</span>
+          </Link>
           <Later icon={<IconChat />} label="Messages" />
           <Later icon={<IconUser />} label="You" />
         </nav>

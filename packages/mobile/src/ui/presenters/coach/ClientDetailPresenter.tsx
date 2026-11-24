@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { RefreshControl, ScrollView, Pressable } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text, View } from "@tamagui/core";
@@ -130,6 +131,13 @@ export type ClientDetailProps = {
    * action on the menu today.
    */
   onRemoveClient: () => void;
+  /** PER-129: the C3 tab strip, under the header. */
+  tabStrip?: ReactNode;
+  /**
+   * PER-129: the open tab's body when it isn't Overview. Overview (null) is
+   * the single-scroll content below, unchanged.
+   */
+  tabBody?: ReactNode;
 };
 
 export function ClientDetailPresenter(props: ClientDetailProps) {
@@ -203,69 +211,74 @@ export function ClientDetailPresenter(props: ClientDetailProps) {
           onBack={onBack}
           onRemoveClient={onRemoveClient}
         />
+        {props.tabStrip}
 
-        <View paddingHorizontal={16} gap={16} marginTop={4}>
-          <LiveSessionCTA activeProgramme={activeProgramme} />
+        {props.tabBody ? (
+          props.tabBody
+        ) : (
+          <View paddingHorizontal={16} gap={16} marginTop={4}>
+            <LiveSessionCTA activeProgramme={activeProgramme} />
 
-          <QuickActionsRow
-            onAssignWorkout={onAssignWorkout}
-            onEditTargets={onEditTargets}
-            onAssignGoal={onAssignGoal}
-            onSendBrief={onSendBrief}
-          />
-
-          <AISummaryCard
-            aiSummary={detail?.aiSummary ?? null}
-            isGenerating={isGeneratingSummary}
-            online={online}
-            onRegenerate={onRegenerateSummary}
-          />
-
-          {detail?.goal ? (
-            <GoalCard
-              goal={detail.goal}
-              weightUnit={weightUnit}
-              onEdit={onEditGoal}
+            <QuickActionsRow
+              onAssignWorkout={onAssignWorkout}
+              onEditTargets={onEditTargets}
+              onAssignGoal={onAssignGoal}
+              onSendBrief={onSendBrief}
             />
-          ) : null}
 
-          {/* Body-trend + Log-weight kept from #146 (open decision ②),
+            <AISummaryCard
+              aiSummary={detail?.aiSummary ?? null}
+              isGenerating={isGeneratingSummary}
+              online={online}
+              onRegenerate={onRegenerateSummary}
+            />
+
+            {detail?.goal ? (
+              <GoalCard
+                goal={detail.goal}
+                weightUnit={weightUnit}
+                onEdit={onEditGoal}
+              />
+            ) : null}
+
+            {/* Body-trend + Log-weight kept from #146 (open decision ②),
               slotted after the goal per the brief. */}
-          <BodyTrendSection
-            bodyTrend={bodyTrend}
-            isLoading={isLoading}
-            error={error}
-            onLogWeight={onLogWeight}
-          />
+            <BodyTrendSection
+              bodyTrend={bodyTrend}
+              isLoading={isLoading}
+              error={error}
+              onLogWeight={onLogWeight}
+            />
 
-          <TargetsCard
-            calorieHit={detail?.calorieHit ?? null}
-            habits={detail?.habits ?? null}
-            onEditCalories={onEditTargets}
-            onManageHabits={onManageHabits}
-          />
+            <TargetsCard
+              calorieHit={detail?.calorieHit ?? null}
+              habits={detail?.habits ?? null}
+              onEditCalories={onEditTargets}
+              onManageHabits={onManageHabits}
+            />
 
-          <AdherenceBreakdown adherence={detail?.adherence ?? null} />
+            <AdherenceBreakdown adherence={detail?.adherence ?? null} />
 
-          <ProgrammeSection
-            activeProgramme={activeProgramme}
-            onOpenProgramme={onOpenProgramme}
-            onAssignProgramme={onAssignProgramme}
-            onAssignWorkout={onAssignWorkout}
-          />
+            <ProgrammeSection
+              activeProgramme={activeProgramme}
+              onOpenProgramme={onOpenProgramme}
+              onAssignProgramme={onAssignProgramme}
+              onAssignWorkout={onAssignWorkout}
+            />
 
-          <UpcomingSessionsCard
-            assignments={assignments}
-            onSwap={onSwapWorkout}
-            onStart={onStartSession}
-          />
+            <UpcomingSessionsCard
+              assignments={assignments}
+              onSwap={onSwapWorkout}
+              onStart={onStartSession}
+            />
 
-          <CoachNotesCard
-            notes={detail?.notes ?? []}
-            onAddNote={onAddNote}
-            onEditNote={onEditNote}
-          />
-        </View>
+            <CoachNotesCard
+              notes={detail?.notes ?? []}
+              onAddNote={onAddNote}
+              onEditNote={onEditNote}
+            />
+          </View>
+        )}
       </ScrollView>
     </View>
   );

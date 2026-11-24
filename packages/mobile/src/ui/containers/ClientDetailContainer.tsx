@@ -30,6 +30,21 @@ import {
   type WeightUnit,
 } from "@/shared/utils";
 import { useProfilePage } from "@/ui/hooks/useProfilePage";
+import { View } from "@tamagui/core";
+import {
+  CLIENT_TAB_LABELS,
+  ClientTabStrip,
+  isClientTab,
+  type ClientTab,
+} from "@/ui/presenters/coachForms/ClientTabStrip";
+import { InDevelopment } from "@/ui/presenters/coachForms/kit";
+import { ClientCheckInsContainer } from "@/ui/containers/ClientCheckInsContainer";
+
+/** PER-129: placeholder tabs whose feature has its own ticket. */
+const TAB_TICKETS: Partial<Record<ClientTab, string>> = {
+  messages: "PER-92",
+  resources: "PER-122",
+};
 
 /**
  * Build the <BodyTrendPresenter> props from a trend series — the same
@@ -83,7 +98,16 @@ export function buildClientBodyTrend(
  */
 export function ClientDetailContainer() {
   const router = useRouter();
-  const { id, name } = useLocalSearchParams<{ id: string; name?: string }>();
+  const {
+    id,
+    name,
+    tab: tabParam,
+  } = useLocalSearchParams<{ id: string; name?: string; tab?: string }>();
+  // PER-129: the C3 tab strip. Overview is the single-scroll content below.
+  const [tab, setTab] = useState<ClientTab>(
+    isClientTab(tabParam) ? tabParam : "overview",
+  );
+  const [tabRefreshKey, setTabRefreshKey] = useState(0);
   const detail = useGetClientDetail(id);
   const trend = useGetClientBodyTrend(id);
   const { api, netInfo, storage } = useAdapters();
@@ -410,7 +434,10 @@ export function ClientDetailContainer() {
       }
       isRefreshing={detail.isRefreshing}
       error={detail.error}
-      onRefresh={refreshAll}
+      onRefresh={() => {
+        refreshAll();
+        setTabRefreshKey((k) => k + 1);
+      }}
       onBack={onBack}
       onLogWeight={onLogWeight}
       onManageHabits={onManageHabits}
@@ -429,6 +456,33 @@ export function ClientDetailContainer() {
       online={online}
       onRegenerateSummary={onRegenerateSummary}
       onRemoveClient={onRemoveClient}
+      tabStrip={
+        <ClientTabStrip
+          active={tab}
+          onChange={(next) => {
+            // Habits already has its own screen (18-habit-setup).
+            if (next === "habits") onManageHabits();
+            else setTab(next);
+          }}
+        />
+      }
+      tabBody={
+        tab === "overview" || !id ? null : tab === "check-ins" ? (
+          <ClientCheckInsContainer
+            clientId={id}
+            clientName={detail.data?.client.name ?? name ?? null}
+            refreshKey={tabRefreshKey}
+          />
+        ) : (
+          <View paddingHorizontal={20}>
+            <InDevelopment
+              title={CLIENT_TAB_LABELS[tab]}
+              ticket={TAB_TICKETS[tab]}
+              testID={`client-tab-placeholder-${tab}`}
+            />
+          </View>
+        )
+      }
     />
   );
 }

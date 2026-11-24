@@ -71,6 +71,57 @@ function assemble(
   });
 }
 
+describe("PER-111: reps per set ride through the adaptation unchanged", () => {
+  const setTargets = [{ reps: 10 }, { reps: 8 }, { reps: 8 }];
+
+  it("partitionPlan carries the parent's set targets and omits them when there are none", () => {
+    const [withSets, without] = partitionPlan(
+      [
+        row(0, ex({ id: "a", name: "A" }), {
+          targetSets: 3,
+          targetRepsMin: 8,
+          targetRepsMax: 10,
+          setTargets,
+        }),
+        row(1, ex({ id: "b", name: "B" })),
+      ],
+      [],
+    );
+    expect(withSets.setTargets).toEqual(setTargets);
+    expect(without).not.toHaveProperty("setTargets");
+  });
+
+  it("kept, swapped and unresolved rows all keep them", () => {
+    const keptSource = ex({ id: "kept", name: "Kept" });
+    const needs = ex({ id: "src", name: "Src", equipmentRequired: [BARBELL] });
+    const sub = ex({ id: "sub", name: "Sub", equipmentRequired: [DUMBBELL] });
+    const lost = ex({ id: "lost", name: "Lost", equipmentRequired: [BARBELL] });
+    const plan = partitionPlan(
+      [
+        row(0, keptSource, { setTargets }),
+        row(1, needs, { setTargets }),
+        row(2, lost, { setTargets }),
+      ],
+      [DUMBBELL],
+    );
+    const shortlistByRow = shortlistPerRow(plan, [sub], noLogs);
+    const selections = new Map<number, RemapSelection>([
+      [1, { exerciseId: "sub", reason: "" } as RemapSelection],
+    ]);
+    const result = assemble({
+      plan,
+      shortlistByRow,
+      selections,
+      equipmentTypeIds: [DUMBBELL],
+      candidateCount: 1,
+    });
+    const statuses = result.rows.map((r) => r.status);
+    expect(statuses).toEqual(["kept", "swapped", "unresolved"]);
+    for (const adapted of result.rows)
+      expect(adapted.setTargets).toEqual(setTargets);
+  });
+});
+
 describe("partitionPlan", () => {
   it("KEEPS a row whose equipment is fully contained by the context", () => {
     const plan = partitionPlan(

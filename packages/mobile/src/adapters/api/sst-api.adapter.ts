@@ -248,6 +248,17 @@ import type {
   RemoteRecap,
 } from "@/domain/models/trainingReads";
 import type { UserMealsResponse } from "@/domain/models/userMeals";
+import type {
+  NutritionPlansResponse,
+  PlansShoppingList,
+} from "@/domain/models/nutritionPlans";
+import type {
+  ClientForm,
+  CoachFormStats,
+  CoachFormsLibrary,
+  FormResponsesPage,
+  FormSchedule,
+} from "@/domain/models/coachForms";
 
 type ApiSuccessResponse<T> = { data: T };
 type ApiErrorResponse = { error: string };
@@ -2509,6 +2520,20 @@ export class SSTApiAdapter implements ApiPort {
     return this.requestEnvelope<UserMealsResponse>("/nutrition/user-meals");
   }
 
+  // PER-133 list meal plans (Design D).
+  async getNutritionPlans(
+    since?: string | null,
+  ): Promise<Result<NutritionPlansResponse, ApiError>> {
+    const query = since ? `?since=${encodeURIComponent(since)}` : "";
+    return this.requestEnvelope<NutritionPlansResponse>(
+      `/nutrition/meal-plans${query}`,
+    );
+  }
+
+  async getPlansShoppingList(): Promise<Result<PlansShoppingList, ApiError>> {
+    return this.requestEnvelope<PlansShoppingList>("/nutrition/shopping-list");
+  }
+
   // -- Client side of the coach↔client handshake (10-trainer-features) --
   async getClientRelationships(
     status?: ClientRelationshipStatus,
@@ -3084,6 +3109,63 @@ export class SSTApiAdapter implements ApiPort {
       ...(planErrorCode !== undefined ? { planErrorCode } : {}),
       ...(unresolvableItems !== undefined ? { unresolvableItems } : {}),
       ...(activePlanDate !== undefined ? { activePlanDate } : {}),
+    });
+  }
+
+  // -- PER-129 (APP-C1): coach forms reads --
+
+  async getCoachForms(): Promise<Result<CoachFormsLibrary, ApiError>> {
+    const result = await this.requestEnvelope<{
+      forms: CoachFormsLibrary["forms"];
+      templates?: CoachFormsLibrary["templates"];
+      asOf: string;
+    }>("/trainers/me/forms", { params: { include: "templates" } });
+    if (!result.ok) return result;
+    return ok({
+      forms: result.value.forms ?? [],
+      templates: result.value.templates ?? [],
+      asOf: result.value.asOf,
+    });
+  }
+
+  async getCoachFormStats(): Promise<Result<CoachFormStats, ApiError>> {
+    return this.requestEnvelope<CoachFormStats>("/trainers/me/forms/stats");
+  }
+
+  async getCoachFormSchedules(): Promise<Result<FormSchedule[], ApiError>> {
+    const result = await this.requestEnvelope<{ schedules: FormSchedule[] }>(
+      "/trainers/me/form-schedules",
+    );
+    if (!result.ok) return result;
+    return ok(result.value.schedules ?? []);
+  }
+
+  async getCoachClientForms(
+    clientId: string,
+  ): Promise<Result<ClientForm[], ApiError>> {
+    return this.requestEnvelope<ClientForm[]>(
+      `/trainers/me/clients/${encodeURIComponent(clientId)}/forms`,
+    );
+  }
+
+  async getCoachFormResponses(
+    clientId: string,
+    opts: { formId?: string; cursor?: string; limit?: number } = {},
+  ): Promise<Result<FormResponsesPage, ApiError>> {
+    const result = await this.request<{
+      data: FormResponsesPage["responses"];
+      nextCursor?: string | null;
+    }>(`/trainers/me/clients/${encodeURIComponent(clientId)}/form-responses`, {
+      params: {
+        formId: opts.formId,
+        cursor: opts.cursor,
+        limit: opts.limit,
+      },
+    });
+    if (!result.ok) return result;
+    return ok({
+      responses: result.value.data ?? [],
+      nextCursor: result.value.nextCursor ?? null,
     });
   }
 }

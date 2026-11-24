@@ -27,14 +27,18 @@ import { getDb } from "@persistence/db/client";
 import type { DbOrTx } from "../../repositories/personalRecordsRepository";
 import { stripNul } from "../../shared/stripNul";
 import { listAsOf } from "./formRepository";
-import { LATE_WINDOW_MS, generateOnce } from "./generators";
+import { LATE_WINDOW_MS, effectiveTrigger, generateOnce } from "./generators";
 import { deliverCoachEvents, recordCoachEvent } from "../events/coachEvents";
 import { validateAnswers, type FieldError, type Question } from "./questions";
 import {
+  attachPhotoAnswers,
+  finalisePhotoAnswers,
+  lockPhotoAnswers,
+} from "../../media/privateMediaRepository";
+import {
   cancelScheduleRequests,
-  checkRule,
+  checkOverride,
   hhmm,
-  type Trigger,
 } from "./scheduleRepository";
 
 /**
@@ -193,7 +197,7 @@ export type SubmitResult =
     }
   | {
       status: 422;
-      code: "invalid_answers" | "photo_unavailable";
+      code: "invalid_answers";
       errors: FieldError[];
     };
 
@@ -270,6 +274,9 @@ export async function submitResponse(
   now = new Date(),
 ): Promise<SubmitResult> {
   let pendingEvent: string | null = null;
+  // PER-121: HeadObject pending photo answers before the request row is
+  // locked; the transaction below then only reads their state.
+  await finalisePhotoAnswers(clientId, answers);
   const result = await getDb().transaction(async (tx) => {
     const rows = await tx
       .select()
@@ -323,10 +330,28 @@ export async function submitResponse(
     if (!checked.ok) {
       return {
         status: 422 as const,
-        code: checked.photo
-          ? ("photo_unavailable" as const)
-          : ("invalid_answers" as const),
+        code: "invalid_answers" as const,
         errors: checked.errors,
+      };
+    }
+    // PER-121: each photo answer must be the athlete's own finished upload,
+    // not already used in another response.
+    const photoAnswers = (version[0]!.questions as Question[])
+      .filter((q) => q.type === "photo" && Object.hasOwn(checked.value, q.id))
+      .map((q) => ({
+        at: q.id,
+        mediaId: (checked.value[q.id] as { mediaId: string }).mediaId,
+      }));
+    const photoIds = photoAnswers.map((p) => p.mediaId);
+    const problems = await lockPhotoAnswers(tx, clientId, photoIds);
+    if (problems.length > 0) {
+      return {
+        status: 422 as const,
+        code: "invalid_answers" as const,
+        errors: problems.map((p) => ({
+          at: photoAnswers.find((a) => a.mediaId === p.mediaId)!.at,
+          message: p.message,
+        })),
       };
     }
     const late = effectiveStatus(request, now) === "missed";
@@ -340,6 +365,7 @@ export async function submitResponse(
         clientRequestId,
       })
       .returning({ id: coachFormResponses.id });
+    await attachPhotoAnswers(tx, clientId, photoIds, inserted[0]!.id);
     await tx
       .update(coachFormRequests)
       .set({ status: "completed", completedAt: now, late, updatedAt: now })
@@ -400,7 +426,12 @@ export type CoachView =
     }
   | { kind: "ended"; trainerId: string; clientId: string };
 
-function visibleRequests(view: CoachView) {
+/**
+ * Which of a client's requests this coach may see. Exported for PER-121:
+ * a photo answer is visible to a coach under exactly the same rule as the
+ * response it belongs to.
+ */
+export function visibleRequests(view: CoachView) {
   const base = and(
     eq(coachFormRequests.trainerId, view.trainerId),
     eq(coachFormRequests.clientId, view.clientId),
@@ -725,7 +756,7 @@ export async function setClientFormSetup(
       let override: Record<string, unknown> | null | undefined = undefined;
       if (input.override === null) override = null;
       else if (input.override !== undefined) {
-        const checked = checkRule(s.trigger as Trigger, input.override);
+        const checked = checkOverride(s, input.override);
         if (!checked.ok) {
           return {
             status: 422 as const,
@@ -736,6 +767,18 @@ export async function setClientFormSetup(
         override = checked.rule as Record<string, unknown>;
       }
       const now = new Date();
+      // The client's cadence before this write (PER-129, C10j).
+      const before = await tx
+        .select({ override: coachFormScheduleClients.override })
+        .from(coachFormScheduleClients)
+        .where(
+          and(
+            eq(coachFormScheduleClients.scheduleId, s.id),
+            eq(coachFormScheduleClients.relationshipId, view.relationshipId),
+          ),
+        )
+        .limit(1);
+      const wasTrigger = effectiveTrigger(s, before[0]?.override ?? null);
       await tx
         .insert(coachFormScheduleClients)
         .values({
@@ -758,6 +801,25 @@ export async function setClientFormSetup(
         });
       if (input.status === "excluded") {
         await cancelScheduleRequests(tx, s.id, [view.relationshipId]);
+      } else if (override !== undefined) {
+        // A cadence change closes the old cadence's open request, so the
+        // athlete isn't left with a form from a cadence they're no longer
+        // on (Inspector Brad, #555).
+        const nowTrigger = effectiveTrigger(s, override);
+        if (nowTrigger !== wasTrigger) {
+          await tx
+            .update(coachFormRequests)
+            .set({ status: "cancelled", updatedAt: now })
+            .where(
+              and(
+                eq(coachFormRequests.scheduleId, s.id),
+                eq(coachFormRequests.relationshipId, view.relationshipId),
+                inArray(coachFormRequests.status, ["pending", "missed"]),
+                ne(coachFormRequests.trigger, nowTrigger),
+                ne(coachFormRequests.trigger, "on_end"),
+              ),
+            );
+        }
       }
       if (input.status === "active") {
         await generateOnce(tx, s, view.relationshipId);

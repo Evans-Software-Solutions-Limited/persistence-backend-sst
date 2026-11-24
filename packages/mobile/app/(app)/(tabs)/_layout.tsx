@@ -34,7 +34,7 @@ type NavTabBarProps = Parameters<
  *
  * Reads `useUserMode().mode` and swaps the visible tab spec:
  *   athlete → Home · Train · Fuel · You (+ Coach while coached, PER-126)
- *   coach   → Home · Clients · Programs · You
+ *   coach   → Today · Clients · Library · Messages · You (K shell, PER-129)
  *
  * All six tab routes stay registered as <Tabs.Screen> regardless of mode;
  * the mode determines which are VISIBLE. Cross-mode routes get `href: null`
@@ -77,12 +77,26 @@ export function athleteTabsWithCoach(dueForms: number): TabSpec[] {
   ];
 }
 
+/**
+ * PER-129 K shell (canvas C2/C10g): Today · Clients · Library · Messages ·
+ * You. Today is the coach home (index); the old Programs tab now lives in
+ * Library → Programmes, and its route redirects there.
+ */
 export const COACH_TABS: TabSpec[] = [
-  { id: "index", icon: IconHome, label: "Home" },
+  { id: "index", icon: IconHome, label: "Today" },
   { id: "clients", icon: IconUsers, label: "Clients" },
-  { id: "programs", icon: IconLayers, label: "Programs" },
+  { id: "library", icon: IconLayers, label: "Library" },
+  { id: "messages", icon: IconMessage, label: "Messages" },
   { id: "you", icon: IconChart, label: "You" },
 ];
+
+/**
+ * Hidden routes that redirect to a visible tab on their own (the old Programs
+ * tab → Library). The stranded-route guard leaves them alone so it doesn't
+ * race their redirect back to Today.
+ */
+const SELF_REDIRECTING_ROUTES: Record<"athlete" | "coach", readonly string[]> =
+  { athlete: [], coach: ["programs"] };
 
 // React Navigation treats these values as navigator configuration, not ordinary
 // presentational props. Keep their identities stable across unrelated parent
@@ -102,8 +116,11 @@ const FUEL_OPTIONS = { title: "Fuel" } as const;
 const FUEL_HIDDEN_OPTIONS = { title: "Fuel", href: null } as const;
 const CLIENTS_OPTIONS = { title: "Clients" } as const;
 const CLIENTS_HIDDEN_OPTIONS = { title: "Clients", href: null } as const;
-const PROGRAMS_OPTIONS = { title: "Programs" } as const;
 const PROGRAMS_HIDDEN_OPTIONS = { title: "Programs", href: null } as const;
+const LIBRARY_OPTIONS = { title: "Library" } as const;
+const LIBRARY_HIDDEN_OPTIONS = { title: "Library", href: null } as const;
+const MESSAGES_OPTIONS = { title: "Messages" } as const;
+const MESSAGES_HIDDEN_OPTIONS = { title: "Messages", href: null } as const;
 const COACH_TAB_OPTIONS = { title: "Coach" } as const;
 const COACH_TAB_HIDDEN_OPTIONS = { title: "Coach", href: null } as const;
 
@@ -145,7 +162,9 @@ export function NavTabBar({
 }) {
   const insets = useSafeAreaInsets();
   const activeRoute = props.state.routeNames[props.state.index];
-  const activeInTabs = tabs.some((t) => t.id === activeRoute);
+  const activeInTabs =
+    tabs.some((t) => t.id === activeRoute) ||
+    SELF_REDIRECTING_ROUTES[mode].includes(activeRoute ?? "");
 
   // Stranded-route guard: when the mode flips (e.g. the eligibility watchdog
   // demotes coach→athlete while the user is on /clients or /programs), the
@@ -241,9 +260,16 @@ export default function TabsLayout() {
         options={mode === "coach" ? CLIENTS_OPTIONS : CLIENTS_HIDDEN_OPTIONS}
       />
       <Tabs.Screen
-        name="programs"
-        options={mode === "coach" ? PROGRAMS_OPTIONS : PROGRAMS_HIDDEN_OPTIONS}
+        name="library"
+        options={mode === "coach" ? LIBRARY_OPTIONS : LIBRARY_HIDDEN_OPTIONS}
       />
+      <Tabs.Screen
+        name="messages"
+        options={mode === "coach" ? MESSAGES_OPTIONS : MESSAGES_HIDDEN_OPTIONS}
+      />
+      {/* PER-129: the old Programs tab, kept so its route still resolves;
+          it redirects to Library → Programmes. */}
+      <Tabs.Screen name="programs" options={PROGRAMS_HIDDEN_OPTIONS} />
     </Tabs>
   );
 }

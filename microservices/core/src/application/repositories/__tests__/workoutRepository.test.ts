@@ -1606,6 +1606,8 @@ describe("WorkoutRepository", () => {
         }),
         select: vi
           .fn()
+          // PER-111: the parent's rows (for reps-per-set carry) are read first.
+          .mockReturnValueOnce(makeProvenanceCaptureChain([]))
           .mockReturnValue(
             makeExercisesByWorkoutChain([
               { ...swappedRowWithProvenance, workoutId: "wo-var-1" },
@@ -1954,7 +1956,14 @@ describe("WorkoutRepository", () => {
       });
       const tx = {
         insert,
-        select: vi.fn().mockReturnValue(makeExercisesByWorkoutChain([])),
+        // Serves both reads: the parent's rows for reps-per-set carry
+        // (from→where→orderBy, PER-111) and the 201 body (from→leftJoin…).
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            ...makeExercisesByWorkoutChain([]).from(),
+            ...makeProvenanceCaptureChain([]).from(),
+          }),
+        }),
       };
       return { tx, workoutValues, exerciseValues };
     }
@@ -2134,6 +2143,8 @@ describe("WorkoutRepository", () => {
       summaryChain.leftJoin = vi.fn().mockReturnValue(summaryChain);
       summaryChain.where = vi.fn().mockReturnValue(summaryChain);
       summaryChain.limit = vi.fn().mockResolvedValue([summary]);
+      // PER-111: the parent's rows (for reps-per-set carry).
+      summaryChain.orderBy = vi.fn().mockResolvedValue([]);
       const tx = {
         update: vi.fn().mockReturnValue({
           set: updateSet.mockImplementation((value) => {

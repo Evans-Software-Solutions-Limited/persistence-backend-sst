@@ -1,5 +1,6 @@
-import { act, render, waitFor } from "@testing-library/react-native";
-import type { ReactNode } from "react";
+import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
+import type { ReactElement, ReactNode } from "react";
+import { renderWithTheme } from "../../../../__tests__/test-utils";
 import { Alert } from "react-native";
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
 import { InMemoryAuthAdapter } from "@/adapters/auth/__tests__/in-memory-auth.adapter";
@@ -21,7 +22,7 @@ jest.mock("@/adapters/api", () => ({
 
 const mockPush = jest.fn();
 const mockBack = jest.fn();
-const mockParams: { id?: string; name?: string } = {
+const mockParams: { id?: string; name?: string; tab?: string } = {
   id: "client-1",
   name: "Jordan",
 };
@@ -40,6 +41,11 @@ jest.mock("expo-router", () => ({
     focusCallbacks.length = 0;
     focusCallbacks.push(cb);
   },
+}));
+
+// PER-129: the Check-ins tab body has its own suite.
+jest.mock("@/ui/containers/ClientCheckInsContainer", () => ({
+  ClientCheckInsContainer: () => null,
 }));
 
 const mockCaptured: { props: ClientDetailProps | null } = { props: null };
@@ -851,5 +857,97 @@ describe("ClientDetailContainer — degraded", () => {
       expect(alertSpy).toHaveBeenCalledTimes(2);
       expect(api.removeClientCalls).toEqual([]);
     });
+  });
+});
+
+describe("ClientDetailContainer — C3 tab strip (PER-129)", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockParams.id = "client-1";
+    mockParams.name = "Jordan";
+    delete mockParams.tab;
+  });
+
+  function strip() {
+    return renderWithTheme(<>{props().tabStrip}</>);
+  }
+
+  it("opens on Overview: the single-scroll content, no tab body", async () => {
+    const { adapters, api } = makeAdapters();
+    api.clientDetails["client-1"] = fullDetail();
+    renderWith(adapters);
+    await waitFor(() => expect(props().detail).not.toBeNull());
+    expect(props().tabBody).toBeNull();
+    const view = strip();
+    for (const label of [
+      "Overview",
+      "Training",
+      "Nutrition",
+      "Check-ins",
+      "Photos",
+      "Body",
+      "Habits",
+      "Messages",
+      "Resources",
+      "Notes",
+      "Settings",
+    ]) {
+      expect(view.getByText(label)).toBeTruthy();
+    }
+  });
+
+  it("Check-ins renders the C3.3b tab for this client; others are In development", async () => {
+    const { adapters, api } = makeAdapters();
+    api.clientDetails["client-1"] = fullDetail();
+    renderWith(adapters);
+    await waitFor(() => expect(props().detail).not.toBeNull());
+    fireEvent.press(strip().getByTestId("client-tab-check-ins"));
+    const body = props().tabBody as ReactElement<{
+      clientId: string;
+      clientName: string;
+      refreshKey: number;
+    }>;
+    expect(body.props).toMatchObject({
+      clientId: "client-1",
+      clientName: "Jordan Blake",
+      refreshKey: 0,
+    });
+    act(() => props().onRefresh());
+    expect(
+      (props().tabBody as ReactElement<{ refreshKey: number }>).props
+        .refreshKey,
+    ).toBe(1);
+
+    fireEvent.press(strip().getByTestId("client-tab-messages"));
+    const placeholder = renderWithTheme(<>{props().tabBody}</>);
+    expect(
+      placeholder.getByText("In development (PER-92). Not in this build yet."),
+    ).toBeTruthy();
+    fireEvent.press(strip().getByTestId("client-tab-photos"));
+    expect(
+      renderWithTheme(<>{props().tabBody}</>).getByTestId(
+        "client-tab-placeholder-photos",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("Habits opens the existing habits screen", async () => {
+    const { adapters, api } = makeAdapters();
+    api.clientDetails["client-1"] = fullDetail();
+    renderWith(adapters);
+    await waitFor(() => expect(props().detail).not.toBeNull());
+    fireEvent.press(strip().getByTestId("client-tab-habits"));
+    expect(mockPush).toHaveBeenCalledWith({
+      pathname: "/(app)/clients/[id]/habits",
+      params: { id: "client-1", name: "Jordan" },
+    });
+    expect(props().tabBody).toBeNull();
+  });
+
+  it("?tab=check-ins opens on Check-ins", async () => {
+    mockParams.tab = "check-ins";
+    const { adapters } = makeAdapters();
+    renderWith(adapters);
+    await waitFor(() => expect(props().tabBody).not.toBeNull());
   });
 });

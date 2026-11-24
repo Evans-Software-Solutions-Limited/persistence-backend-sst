@@ -24,8 +24,8 @@ function render(over: Partial<RecipeDetailPresenterProps> = {}) {
       { id: "i2", label: "Jasmine rice · 200 g" },
     ],
     instructions: "1. Marinate. 2. Cook rice. 3. Sear chicken.",
-    onLogToToday: jest.fn(),
-    isLogging: false,
+    onLog: jest.fn(),
+    onAddToPlan: jest.fn(),
     ...over,
   };
   return { ...renderWithTheme(<RecipeDetailPresenter {...props} />), props };
@@ -71,25 +71,20 @@ describe("RecipeDetailPresenter", () => {
     expect(queryByTestId("recipe-detail-instructions")).toBeNull();
   });
 
-  it("Back and Log to today fire their handlers", () => {
+  it("Back, Log meal and Add to plan fire their handlers", () => {
     const { getByTestId, props } = render();
     fireEvent.press(getByTestId("recipe-detail-back"));
     fireEvent.press(getByTestId("recipe-detail-log"));
     expect(props.onBack).toHaveBeenCalledTimes(1);
-    expect(props.onLogToToday).toHaveBeenCalledTimes(1);
+    expect(props.onLog).toHaveBeenCalledTimes(1);
+    fireEvent.press(getByTestId("recipe-detail-add-to-plan"));
+    expect(props.onAddToPlan).toHaveBeenCalledTimes(1);
   });
 
-  it('reads "Log to today" with no day-context', () => {
+  it('shows "Add to plan" next to "Log meal" (N13)', () => {
     const { getByText } = render();
-    expect(getByText("Log to today")).toBeTruthy();
-  });
-
-  it('reads "Log to <day>" when Fuel is viewing a past day (BRIEF-7 QA-20)', () => {
-    const { getByText, queryByText } = render({
-      dayContext: "TUESDAY · JUL 21",
-    });
-    expect(getByText("Log to TUESDAY · JUL 21")).toBeTruthy();
-    expect(queryByText("Log to today")).toBeNull();
+    expect(getByText("Add to plan")).toBeTruthy();
+    expect(getByText("Log meal")).toBeTruthy();
   });
 
   it("shows a blocking loader while loading with nothing found yet", () => {

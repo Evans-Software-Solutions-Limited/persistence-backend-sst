@@ -79,6 +79,23 @@ import type {
   SyncStatus,
 } from "@/domain/ports/sync.types";
 import type { UserMeal } from "@/domain/models/userMeals";
+import type {
+  NutritionPlansCache,
+  PlansShoppingCache,
+} from "@/domain/models/nutritionPlans";
+import type {
+  ClientForm,
+  CoachFormConflict,
+  CoachFormStats,
+  CoachFormsLibrary,
+  FormResponse,
+  FormSchedule,
+} from "@/domain/models/coachForms";
+import {
+  COACH_FORMS_QUEUE_ENTITIES,
+  swapIdInClientForms,
+  swapIdInQueueRow,
+} from "./coachFormsQueueSwap";
 
 const DB_NAME = "persistence.db";
 
@@ -905,6 +922,56 @@ ${indentSyncQueueDdl(8)}
         user_id TEXT PRIMARY KEY,
         payload TEXT NOT NULL,
         synced_at TEXT NOT NULL
+      );
+      -- PER-133 list meal plans (Design D): one plans payload and one
+      -- shopping list (with this phone's ticks) per user. New TABLES, so
+      -- CREATE TABLE IF NOT EXISTS covers upgrading installs too.
+      CREATE TABLE IF NOT EXISTS cached_nutrition_plans (
+        user_id TEXT PRIMARY KEY,
+        payload TEXT NOT NULL,
+        synced_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS cached_plans_shopping (
+        user_id TEXT PRIMARY KEY,
+        payload TEXT NOT NULL,
+        synced_at TEXT NOT NULL
+      );
+      -- PER-129 coach forms (C10) and Check-ins (C3.3). New TABLEs, so
+      -- CREATE TABLE IF NOT EXISTS covers upgrading installs too.
+      CREATE TABLE IF NOT EXISTS cached_coach_forms (
+        user_id TEXT PRIMARY KEY,
+        payload TEXT NOT NULL,
+        synced_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS cached_coach_form_schedules (
+        user_id TEXT PRIMARY KEY,
+        payload TEXT NOT NULL,
+        synced_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS cached_coach_form_stats (
+        user_id TEXT PRIMARY KEY,
+        payload TEXT NOT NULL,
+        synced_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS cached_coach_client_forms (
+        user_id TEXT NOT NULL,
+        client_id TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        synced_at TEXT NOT NULL,
+        PRIMARY KEY (user_id, client_id)
+      );
+      CREATE TABLE IF NOT EXISTS cached_coach_form_responses (
+        user_id TEXT NOT NULL,
+        client_id TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        synced_at TEXT NOT NULL,
+        PRIMARY KEY (user_id, client_id)
+      );
+      CREATE TABLE IF NOT EXISTS coach_form_conflicts (
+        user_id TEXT NOT NULL,
+        entity_key TEXT NOT NULL,
+        at TEXT NOT NULL,
+        PRIMARY KEY (user_id, entity_key)
       );
 
       CREATE INDEX IF NOT EXISTS idx_sync_queue_status ON sync_queue(status, created_at);
@@ -4078,6 +4145,296 @@ ${indentSyncQueueDdl(12)}
     });
   }
 
+  // -- PER-133 list meal plans --
+
+  getCachedNutritionPlans(userId: string): NutritionPlansCache | null {
+    return this.readBlob<NutritionPlansCache>("cached_nutrition_plans", userId);
+  }
+
+  cacheNutritionPlans(userId: string, cache: NutritionPlansCache): void {
+    this.writeBlob("cached_nutrition_plans", userId, cache);
+  }
+
+  swapLocalNutritionPlanId(localId: string, serverId: string): void {
+    if (localId === serverId) return;
+    const db = this.getDb();
+    db.withTransactionSync(() => {
+      for (const table of ["cached_nutrition_plans", "cached_plans_shopping"]) {
+        const rows = db.getAllSync(`SELECT user_id, payload FROM ${table}`) as {
+          user_id: string;
+          payload: string;
+        }[];
+        for (const r of rows) {
+          if (!r.payload.includes(localId)) continue;
+          db.runSync(`UPDATE ${table} SET payload = ? WHERE user_id = ?`, [
+            r.payload.split(localId).join(serverId),
+            r.user_id,
+          ]);
+        }
+      }
+      // Local ids are random uuids, so a plain text swap can't hit anything else.
+      db.runSync(
+        `UPDATE sync_queue
+           SET endpoint = REPLACE(endpoint, ?, ?),
+               payload = REPLACE(payload, ?, ?),
+               entity_id = CASE WHEN entity_id = ? THEN ? ELSE entity_id END
+         WHERE status != 'completed'
+           AND (endpoint LIKE '%' || ? || '%' OR payload LIKE '%' || ? || '%' OR entity_id = ?)`,
+        [
+          localId,
+          serverId,
+          localId,
+          serverId,
+          localId,
+          serverId,
+          localId,
+          localId,
+          localId,
+        ],
+      );
+    });
+  }
+
+  getCachedPlansShopping(userId: string): PlansShoppingCache | null {
+    return this.readBlob<PlansShoppingCache>("cached_plans_shopping", userId);
+  }
+
+  cachePlansShopping(userId: string, value: PlansShoppingCache): void {
+    this.writeBlob("cached_plans_shopping", userId, value);
+  }
+
+  // -- PER-129 (APP-C1): coach forms, send rules and Check-ins --
+
+  getCachedCoachForms(userId: string): CoachFormsLibrary | null {
+    return this.readBlob<CoachFormsLibrary>("cached_coach_forms", userId);
+  }
+
+  cacheCoachForms(userId: string, value: CoachFormsLibrary): void {
+    this.writeBlob("cached_coach_forms", userId, value);
+  }
+
+  getCachedCoachFormSchedules(userId: string): FormSchedule[] | null {
+    return this.readBlob<FormSchedule[]>("cached_coach_form_schedules", userId);
+  }
+
+  cacheCoachFormSchedules(userId: string, value: FormSchedule[]): void {
+    this.writeBlob("cached_coach_form_schedules", userId, value);
+  }
+
+  getCachedCoachFormStats(userId: string): CoachFormStats | null {
+    return this.readBlob<CoachFormStats>("cached_coach_form_stats", userId);
+  }
+
+  cacheCoachFormStats(userId: string, value: CoachFormStats): void {
+    this.writeBlob("cached_coach_form_stats", userId, value);
+  }
+
+  private readClientBlob<T>(
+    table: string,
+    userId: string,
+    clientId: string,
+  ): T | null {
+    const row = this.getDb().getFirstSync(
+      `SELECT payload FROM ${table} WHERE user_id = ? AND client_id = ?`,
+      [userId, clientId],
+    ) as { payload: string } | null;
+    return row ? (JSON.parse(row.payload) as T) : null;
+  }
+
+  private writeClientBlob(
+    table: string,
+    userId: string,
+    clientId: string,
+    value: unknown,
+  ): void {
+    this.getDb().runSync(
+      `INSERT INTO ${table} (user_id, client_id, payload, synced_at) VALUES (?, ?, ?, ?)
+       ON CONFLICT(user_id, client_id) DO UPDATE SET payload = excluded.payload, synced_at = excluded.synced_at`,
+      [userId, clientId, JSON.stringify(value), new Date().toISOString()],
+    );
+  }
+
+  getCachedCoachClientForms(
+    userId: string,
+    clientId: string,
+  ): ClientForm[] | null {
+    return this.readClientBlob<ClientForm[]>(
+      "cached_coach_client_forms",
+      userId,
+      clientId,
+    );
+  }
+
+  cacheCoachClientForms(
+    userId: string,
+    clientId: string,
+    value: ClientForm[],
+  ): void {
+    this.writeClientBlob("cached_coach_client_forms", userId, clientId, value);
+  }
+
+  getCachedCoachFormResponses(
+    userId: string,
+    clientId: string,
+  ): FormResponse[] | null {
+    return this.readClientBlob<FormResponse[]>(
+      "cached_coach_form_responses",
+      userId,
+      clientId,
+    );
+  }
+
+  cacheCoachFormResponses(
+    userId: string,
+    clientId: string,
+    value: FormResponse[],
+  ): void {
+    this.writeClientBlob(
+      "cached_coach_form_responses",
+      userId,
+      clientId,
+      value,
+    );
+  }
+
+  getCoachFormConflicts(userId: string): CoachFormConflict[] {
+    const rows = this.getDb().getAllSync(
+      `SELECT entity_key, at FROM coach_form_conflicts WHERE user_id = ? ORDER BY at ASC`,
+      [userId],
+    ) as { entity_key: string; at: string }[];
+    return rows.map((r) => ({ key: r.entity_key, at: r.at }));
+  }
+
+  recordCoachFormConflict(userId: string, key: string): void {
+    this.getDb().runSync(
+      `INSERT INTO coach_form_conflicts (user_id, entity_key, at) VALUES (?, ?, ?)
+       ON CONFLICT(user_id, entity_key) DO UPDATE SET at = excluded.at`,
+      [userId, key, new Date().toISOString()],
+    );
+  }
+
+  clearCoachFormConflict(userId: string, key: string): void {
+    this.getDb().runSync(
+      `DELETE FROM coach_form_conflicts WHERE user_id = ? AND entity_key = ?`,
+      [userId, key],
+    );
+  }
+
+  /**
+   * Rewrite one id in every coach forms row not yet completed. In-flight rows
+   * too, like the other local-id swaps: a dependent write in flight while its
+   * form's create completes would otherwise keep `local-…` forever. The
+   * just-synced create's own row is harmless to rewrite: its success handler
+   * works from the entry it was given, and the rebase skips it.
+   */
+  private swapCoachFormsQueueId(
+    localId: string,
+    serverId: string,
+    payloadKey: "formId" | "scheduleId",
+  ): void {
+    const db = this.getDb();
+    const placeholders = COACH_FORMS_QUEUE_ENTITIES.map(() => "?").join(", ");
+    const rows = db.getAllSync(
+      `SELECT id, entity_id, endpoint, payload FROM sync_queue
+       WHERE entity_type IN (${placeholders})
+       AND status != 'completed'`,
+      [...COACH_FORMS_QUEUE_ENTITIES],
+    ) as {
+      id: number;
+      entity_id: string | null;
+      endpoint: string;
+      payload: string;
+    }[];
+    for (const r of rows) {
+      const next = swapIdInQueueRow(
+        { entityId: r.entity_id, endpoint: r.endpoint, payload: r.payload },
+        localId,
+        serverId,
+        payloadKey,
+      );
+      if (!next) continue;
+      db.runSync(
+        `UPDATE sync_queue SET entity_id = ?, endpoint = ?, payload = ? WHERE id = ?`,
+        [next.entityId, next.endpoint, next.payload, r.id],
+      );
+    }
+  }
+
+  /** Swap a synced create's id in every client's cached C10j forms. */
+  private swapCoachClientFormsId(
+    userId: string,
+    localId: string,
+    serverId: string,
+    kind: "form" | "schedule",
+  ): void {
+    const rows = this.getDb().getAllSync(
+      `SELECT client_id, payload FROM cached_coach_client_forms WHERE user_id = ?`,
+      [userId],
+    ) as { client_id: string; payload: string }[];
+    for (const r of rows) {
+      const next = swapIdInClientForms(
+        JSON.parse(r.payload) as ClientForm[],
+        localId,
+        serverId,
+        kind,
+      );
+      if (next) this.cacheCoachClientForms(userId, r.client_id, next);
+    }
+  }
+
+  swapLocalCoachFormId(
+    userId: string,
+    localId: string,
+    serverId: string,
+  ): void {
+    if (localId === serverId) return;
+    const db = this.getDb();
+    db.withTransactionSync(() => {
+      const library = this.getCachedCoachForms(userId);
+      if (library?.forms.some((f) => f.id === localId)) {
+        this.cacheCoachForms(userId, {
+          ...library,
+          forms: library.forms
+            .filter((f) => f.id !== serverId)
+            .map((f) => (f.id === localId ? { ...f, id: serverId } : f)),
+        });
+      }
+      const schedules = this.getCachedCoachFormSchedules(userId);
+      if (schedules?.some((r) => r.formId === localId)) {
+        this.cacheCoachFormSchedules(
+          userId,
+          schedules.map((r) =>
+            r.formId === localId ? { ...r, formId: serverId } : r,
+          ),
+        );
+      }
+      this.swapCoachClientFormsId(userId, localId, serverId, "form");
+      this.swapCoachFormsQueueId(localId, serverId, "formId");
+    });
+  }
+
+  swapLocalCoachFormScheduleId(
+    userId: string,
+    localId: string,
+    serverId: string,
+  ): void {
+    if (localId === serverId) return;
+    const db = this.getDb();
+    db.withTransactionSync(() => {
+      const schedules = this.getCachedCoachFormSchedules(userId);
+      if (schedules?.some((r) => r.id === localId)) {
+        this.cacheCoachFormSchedules(
+          userId,
+          schedules
+            .filter((r) => r.id !== serverId)
+            .map((r) => (r.id === localId ? { ...r, id: serverId } : r)),
+        );
+      }
+      this.swapCoachClientFormsId(userId, localId, serverId, "schedule");
+      this.swapCoachFormsQueueId(localId, serverId, "scheduleId");
+    });
+  }
+
   clearAll(): void {
     const db = this.getDb();
     db.execSync(`
@@ -4117,6 +4474,14 @@ ${indentSyncQueueDdl(12)}
       DELETE FROM cached_you_remote;
       DELETE FROM cached_my_coaches;
       DELETE FROM cached_user_meals;
+      DELETE FROM cached_nutrition_plans;
+      DELETE FROM cached_plans_shopping;
+      DELETE FROM cached_coach_forms;
+      DELETE FROM cached_coach_form_schedules;
+      DELETE FROM cached_coach_form_stats;
+      DELETE FROM cached_coach_client_forms;
+      DELETE FROM cached_coach_form_responses;
+      DELETE FROM coach_form_conflicts;
     `);
   }
 }

@@ -1,10 +1,11 @@
 import { Pressable, ScrollView } from "react-native";
 import { Text, View } from "@tamagui/core";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Btn, HeaderBar, Pill } from "@/ui/components/foundation";
+import { HeaderBar, Pill } from "@/ui/components/foundation";
 import { ErrorState, PLogoDrawLoader, EmptyState } from "@/ui/components";
-import { IconBack, IconPlus, IconBook } from "@/ui/components/icons";
+import { IconBack, IconBook } from "@/ui/components/icons";
 import type { ApiError } from "@/shared/errors";
+import { MealDetailActionsPresenter } from "./fuel/MealDetailActionsPresenter";
 
 /**
  * <RecipeDetailPresenter> — read-only recipe viewer (recipes.jsx
@@ -36,14 +37,10 @@ export type RecipeDetailPresenterProps = {
   fatG: number | null;
   ingredients: readonly RecipeIngredientVM[];
   instructions: string | null;
-  onLogToToday: () => void;
-  isLogging: boolean;
-  /** "TUESDAY · JUL 21" — set ONLY when Fuel is viewing a day other than
-   * today (BRIEF-7 QA-20 day-context), so the CTA doesn't silently log to
-   * today while the user thinks they're logging onto the day they navigated
-   * to. Undefined on today: the button keeps its original "Log to today"
-   * copy. */
-  dayContext?: string;
+  /** Opens the N14 Log sheet (PER-133). */
+  onLog: () => void;
+  /** Opens the Add to plan sheet (PER-133). */
+  onAddToPlan: () => void;
   testID?: string;
 };
 
@@ -62,9 +59,8 @@ export function RecipeDetailPresenter({
   fatG,
   ingredients,
   instructions,
-  onLogToToday,
-  isLogging,
-  dayContext,
+  onLog,
+  onAddToPlan,
   testID = "recipe-detail-screen",
 }: RecipeDetailPresenterProps) {
   const insets = useSafeAreaInsets();
@@ -271,18 +267,11 @@ export function RecipeDetailPresenter({
           </View>
         ) : null}
 
-        <Btn
-          full
-          variant="filled"
-          tone="gold"
-          size="lg"
-          icon={<IconPlus size={15} />}
-          onPress={onLogToToday}
-          disabled={isLogging}
-          testID="recipe-detail-log"
-        >
-          {dayContext ? `Log to ${dayContext}` : "Log to today"}
-        </Btn>
+        <MealDetailActionsPresenter
+          onAddToPlan={onAddToPlan}
+          onLog={onLog}
+          testID="recipe-detail"
+        />
       </ScrollView>
     </View>
   );
