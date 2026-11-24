@@ -17,7 +17,7 @@ import {
   turnstileSecret,
 } from "./secrets";
 import { coreApiDomain, hostedZoneId, supabaseUrl, webDomain } from "./domains";
-import { avatarsBucket } from "./storage";
+import { avatarsBucket, coachPrivateMediaBucket } from "./storage";
 import { aiJobQueue } from "./jobs";
 import { togetherEnvironment, togetherQueue } from "./together";
 
@@ -115,7 +115,17 @@ export const coreRoute = coreAPI.route("$default", {
   // `Resource.AiJobQueue.url`, which `application/jobs/jobQueue.ts` reads. The
   // API route never CONSUMES the queue; that is `aiJobWorker`, wired in
   // `infra/jobs.ts`.
-  link: [avatarsBucket, aiJobQueue, ...(togetherQueue ? [togetherQueue] : [])],
+  //
+  // `coachPrivateMediaBucket` (PER-121): presigned upload/view URLs, HeadObject
+  // on complete, re-tagging and deletes for progress photos and private media.
+  // The link grants `s3:*` on that bucket only and injects
+  // `Resource.CoachPrivateMedia.name` (`application/media/privateMediaStore.ts`).
+  link: [
+    avatarsBucket,
+    coachPrivateMediaBucket,
+    aiJobQueue,
+    ...(togetherQueue ? [togetherQueue] : []),
+  ],
   // ⚠ EXPLICIT, and load-bearing for every AI endpoint. SST defaults a Lambda to
   // **20 seconds** (`.sst/platform/src/components/aws/function.ts` —
   // `timeout ?? "20 seconds"`), NOT the 30 s API Gateway integration ceiling that
@@ -439,13 +449,16 @@ export const offDeltaCron = new sst.aws.Cron("off-delta-refresh", {
 // each run; per-user failures are isolated (see accountPurgeCron.ts) so one
 // bad user never blocks the rest of the batch. `link: [avatarsBucket]` grants
 // the same `s3:*Object` access `profilesAvatarHandler` gets on the API route,
-// for the DeleteObjectCommand in `deleteUserAvatar.ts`.
+// for the DeleteObjectCommand in `deleteUserAvatar.ts`. `coachPrivateMediaBucket`
+// (PER-121): the purge deletes every object under the user's prefixes
+// (progress photos, form photo answers, coach resource files), and the nightly
+// clean-up removes uploads that were never completed.
 export const accountPurgeCron = new sst.aws.Cron("account-purge-sweep", {
   schedule: "cron(0 5 * * ? *)",
   job: {
     handler: "microservices/core/src/accountPurgeCron.handler",
     timeout: "300 seconds",
-    link: [avatarsBucket],
+    link: [avatarsBucket, coachPrivateMediaBucket],
     environment: {
       DATABASE_URL: databaseUrl.value,
       SUPABASE_URL: supabaseUrl,

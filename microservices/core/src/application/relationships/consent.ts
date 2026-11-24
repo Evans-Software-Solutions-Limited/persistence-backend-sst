@@ -27,5 +27,8 @@ export type ConsentSource =
   // PER-108: a personal invite code (one invited client) — the relationship
   // goes active on redeem, so this is the only consent capture point.
   | "personal_invite_redeem"
+  // PER-121 (design F): the one-time "Share progress photos with your
+  // coaches" prompt; one `grant` row per active coach.
+  | "photo_sharing_prompt"
   | "leave_coach"
   | "coach_removed";
