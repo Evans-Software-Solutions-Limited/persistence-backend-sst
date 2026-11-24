@@ -29,6 +29,7 @@ import { applyUserMealsResponse, USER_MEALS_ENTITY } from "./userMeals.command";
 import {
   applyNutritionPlanConflict,
   applyNutritionPlanSynced,
+  MEAL_PLANS_ENDPOINT,
   NUTRITION_PLAN_ASSIGNMENT_ENTITY,
   NUTRITION_PLAN_ENTITY,
   SHOPPING_LIST_PLAN_ENTITY,
@@ -573,6 +574,17 @@ function collapseStrandedLocalIdSiblings(
       if (nothingCommitted) {
         storage.discardEntries([entry.id, ...stranded.map((s) => s.id)]);
       }
+      return;
+    }
+
+    // PER-133: a meal-plan duplicate (`POST …/:id/duplicate`) has no body —
+    // the server copies the source — so an edit folded into it would be lost.
+    // Keep the edit as its own row; the id swap retargets it when the
+    // duplicate lands (Inspector Brad, #554).
+    if (
+      entry.entityType === NUTRITION_PLAN_ENTITY &&
+      entry.endpoint !== MEAL_PLANS_ENDPOINT
+    ) {
       return;
     }
 

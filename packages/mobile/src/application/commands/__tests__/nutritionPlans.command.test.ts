@@ -975,6 +975,36 @@ describe("my plans: create, edit, revision conflicts, delete", () => {
     },
   );
 
+  it("an edit to a duplicate survives the duplicate failing and being retried (Inspector Brad #554)", async () => {
+    const src = plan("srv-src", USER, 1, [
+      ["m1", "Lunch", [item("a", "Wrap", 450)]],
+    ]);
+    storage.cacheNutritionPlans(USER, { ...emptyPlansCache(), mine: [src] });
+    const copy = duplicatePlanCommand(deps(), src);
+    savePlanCommand(deps(), { ...copy, name: "My version" });
+    // The source isn't on the server yet: the duplicate 404s for good.
+    await drain();
+    const rows = storage.getUncompletedMutations();
+    const put = rows.find((e) => e.method === "PUT");
+    expect(put).toBeDefined();
+    expect(
+      JSON.parse(rows.find((e) => e.endpoint.endsWith("/duplicate"))!.payload),
+    ).toEqual({});
+
+    // Retry once the source exists.
+    server.plans.set(src.id, src);
+    storage.resetFailedEntries(
+      storage.getUncompletedMutations().map((e) => e.id),
+    );
+    await drainLater();
+    await drainLater();
+    const mine = readPlansCache(storage, USER).mine.filter(
+      (p) => p.id !== "srv-src",
+    );
+    expect(mine.map((p) => p.name)).toEqual(["My version"]);
+    expect(server.plans.get(mine[0]!.id)!.name).toBe("My version");
+  });
+
   it("deleting a plan that never left the phone forgets it and its shopping row", () => {
     server.offline = true;
     const p = createPlanCommand(deps(), draft());
