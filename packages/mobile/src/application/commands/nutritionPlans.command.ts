@@ -75,19 +75,20 @@ function writeMine(
 }
 
 /**
- * Every revision after `from` up to `to` was made by this phone's own writes,
- * so an edit based on `from` is really based on `to` (Inspector Brad, #554).
+ * The newest revision reachable from `from` through revisions this phone's
+ * own writes produced, up to `to`. An edit based on `from` is really based on
+ * that one (Inspector Brad, #554).
  */
-function onlyOwnRevisionsSince(
+function lastOwnRevision(
   cache: NutritionPlansCache,
   planId: string,
   from: number,
   to: number,
-): boolean {
-  if (to <= from) return false;
+): number {
   const own = new Set(cache.ownRevisions?.[planId] ?? []);
-  for (let r = from + 1; r <= to; r++) if (!own.has(r)) return false;
-  return true;
+  let r = from;
+  while (r < to && own.has(r + 1)) r++;
+  return r;
 }
 
 /** Follow a synced plan's local id to its server id. */
@@ -186,13 +187,13 @@ export function savePlanCommand(
   const id = currentPlanId(storage, userId, plan.id);
   const cache = readPlansCache(storage, userId);
   const cachedRevision = cache.mine.find((p) => p.id === id)?.revision;
-  const base =
-    id !== plan.id
-      ? { ...plan, id, revision: cachedRevision ?? plan.revision }
-      : cachedRevision !== undefined &&
-          onlyOwnRevisionsSince(cache, id, plan.revision, cachedRevision)
-        ? { ...plan, revision: cachedRevision }
-        : plan;
+  // Rebase only across revisions this phone's own writes made; an edit made
+  // on another device stays ahead, so it still conflicts (Inspector Brad, #554).
+  const revision =
+    cachedRevision === undefined
+      ? plan.revision
+      : lastOwnRevision(cache, id, plan.revision, cachedRevision);
+  const base = { ...plan, id, revision };
   const next = recomputePlan({ ...base, updatedAt: nowIso(deps) });
   writeMine(storage, userId, (mine) =>
     mine.map((p) => (p.id === next.id ? next : p)),

@@ -1028,6 +1028,31 @@ describe("my plans: create, edit, revision conflicts, delete", () => {
     expect(readPlansCache(storage, USER).conflictPlanIds).toEqual([]);
   });
 
+  it("a local-id draft isn't rebased past another device's edit (Inspector Brad #554)", async () => {
+    const p = createPlanCommand(
+      deps(),
+      plan("local-d", USER, 0, [["m1", "Lunch", [item("a", "Wrap", 450)]]]),
+    );
+    await drain(); // created at revision 1 (this phone's own)
+    const serverId = readPlansCache(storage, USER).mine[0]!.id;
+    // Another device edits it; a read brings revision 2.
+    const elsewhere = {
+      ...server.plans.get(serverId)!,
+      name: "From the iPad",
+      revision: 2,
+    };
+    server.plans.set(serverId, elsewhere);
+    const cache = readPlansCache(storage, USER);
+    storage.cacheNutritionPlans(USER, { ...cache, mine: [elsewhere] });
+
+    savePlanCommand(deps(), { ...p, name: "Open builder" });
+    const put = queued().find((e) => e.method === "PUT")!;
+    expect(JSON.parse(put.payload).expectedRevision).toBe(1);
+    await drainLater();
+    expect(server.plans.get(serverId)!.name).toBe("From the iPad");
+    expect(readPlansCache(storage, USER).conflictPlanIds).toEqual([serverId]);
+  });
+
   it("a draft behind an edit from ANOTHER device still conflicts", async () => {
     const base = plan("srv-p1", USER, 2, [
       ["m1", "Lunch", [item("a", "Wrap", 450)]],
