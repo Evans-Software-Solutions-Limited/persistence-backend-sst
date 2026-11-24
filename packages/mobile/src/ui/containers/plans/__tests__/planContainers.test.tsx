@@ -866,6 +866,33 @@ describe("PlanAddFoodContainer (N30)", () => {
     expect(draft().meals[0].items[1].foodId).toBe("f9");
   });
 
+  it("a food ticked from search stays picked after the search clears", () => {
+    // Inspector Brad, #554.
+    days.set(
+      YESTERDAY,
+      fuelDay(YESTERDAY, [entry("e5", { kcal: 80, customName: "Apple" })]),
+    );
+    start("pm-l");
+    const view = render(<PlanAddFoodContainer />);
+    act(() => probe.add!.onQuery("ban"));
+    mockSearch = {
+      results: [{ ...FOOD, id: "f9", name: "Banana" }],
+      isSearching: false,
+    };
+    view.rerender(<PlanAddFoodContainer />);
+    act(() => probe.add!.onToggle("f:f9"));
+    act(() => probe.add!.onQuery(""));
+    mockSearch = { results: [], isSearching: false };
+    view.rerender(<PlanAddFoodContainer />);
+    act(() => probe.add!.onToggle("e:e5"));
+    expect(probe.add!.ctaLabel).toBe("Add 2 items to Lunch");
+    act(() => probe.add!.onAdd());
+    expect(draft().meals[1].items.map((i) => i.name)).toEqual([
+      "Banana",
+      "Apple",
+    ]);
+  });
+
   it("empty tabs say so", () => {
     start();
     render(<PlanAddFoodContainer />);

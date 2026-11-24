@@ -102,6 +102,11 @@ export function PlanAddFoodContainer() {
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<PlanAddTab>("all");
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
+  // Foods ticked from search results, kept so clearing the search doesn't
+  // drop them (Inspector Brad, #554).
+  const [pickedFoods, setPickedFoods] = useState<ReadonlyMap<string, Food>>(
+    new Map(),
+  );
   const [amount, setAmount] = useState<{
     key: string;
     text: string;
@@ -153,6 +158,7 @@ export function PlanAddFoodContainer() {
   // Every row the page can show, by key.
   const sources = useMemo(() => {
     const m = new Map<string, Source>();
+    for (const [key, food] of pickedFoods) m.set(key, { kind: "food", food });
     for (const h of history)
       m.set(`e:${h.entry.id}`, { kind: "entry", entry: h.entry });
     for (const h of history) {
@@ -168,7 +174,14 @@ export function PlanAddFoodContainer() {
     for (const r of recipes.data ?? [])
       m.set(`r:${r.id}`, { kind: "recipe", recipe: r });
     return m;
-  }, [history, storage, search.results, savedMeals.data, recipes.data]);
+  }, [
+    pickedFoods,
+    history,
+    storage,
+    search.results,
+    savedMeals.data,
+    recipes.data,
+  ]);
 
   const itemFor = useCallback(
     (key: string, servings?: number): PlanItem | null => {
@@ -309,14 +322,17 @@ export function PlanAddFoodContainer() {
         sectionTitle={searching ? "Results" : "History"}
         rows={rows}
         emptyText={emptyText}
-        onToggle={(key) =>
+        onToggle={(key) => {
+          const s = sources.get(key);
+          if (s?.kind === "food" && !picked.has(key))
+            setPickedFoods((prev) => new Map(prev).set(key, s.food));
           setPicked((prev) => {
             const next = new Set(prev);
             if (next.has(key)) next.delete(key);
             else next.add(key);
             return next;
-          })
-        }
+          });
+        }}
         onRow={(key) => {
           const item = itemFor(key);
           if (item)
