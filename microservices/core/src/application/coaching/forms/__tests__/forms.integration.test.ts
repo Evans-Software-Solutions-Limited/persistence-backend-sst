@@ -357,6 +357,10 @@ beforeAll(async () => {
   await pg.exec(
     await read(MIGRATIONS, "20261123120117_coach_events_notifications.sql"),
   );
+  // PER-121: photo answers are checked against private_media.
+  await pg.exec(
+    await read(MIGRATIONS, "20261123230832_progress_photos_private_media.sql"),
+  );
   db = drizzle(pg, { schema });
   holder.db = db;
 });
@@ -871,21 +875,28 @@ describe("D7.6 answers", () => {
     expect((await answer(ATHLETE_C, req.id, "nope")).status).toBe(422);
   });
 
-  it("photo questions can be created but answering one is a 422 until BE-F1", async () => {
+  it("a photo answer must be the athlete's own uploaded photo (PER-121)", async () => {
     const req = await sendAll();
-    const optionalPhoto = await answer(ATHLETE_C, req.id, {
+    // A media id that isn't one of the athlete's uploads.
+    const notMine = await answer(ATHLETE_C, req.id, {
       mood: 3,
       front: { mediaId: randomUUID() },
     });
-    expect(optionalPhoto.status).toBe(422);
-    expect(optionalPhoto.json.code).toBe("photo_unavailable");
-    // A form with a REQUIRED photo can't be submitted at all yet.
+    expect(notMine.status).toBe(422);
+    expect(notMine.json).toMatchObject({
+      code: "invalid_answers",
+      errors: [{ at: "front", message: "must be a photo you uploaded" }],
+    });
+    // A REQUIRED photo left blank is an ordinary "required" error.
     const required = await sendAll([
       { id: "front", type: "photo", prompt: "Front", required: true },
     ]);
     const res = await answer(ATHLETE_C, required.id, {});
     expect(res.status).toBe(422);
-    expect(res.json.code).toBe("photo_unavailable");
+    expect(res.json).toMatchObject({
+      code: "invalid_answers",
+      errors: [{ at: "front", message: "required" }],
+    });
   });
 
   it("a missed request can be answered late for 7 days, then it's closed", async () => {

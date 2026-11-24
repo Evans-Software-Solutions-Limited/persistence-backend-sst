@@ -32,10 +32,10 @@ export class AccountRepository {
    * after this commits, because `auth.users` lives outside the application
    * database role.
    */
-  async purgeUserData(userId: string): Promise<void> {
+  async purgeUserData(userId: string): Promise<boolean> {
     const db = getDb();
     const tombstoned: string[] = [];
-    await db.transaction(async (tx) => {
+    const purged = await db.transaction(async (tx) => {
       // Serialize with POST /account/restore before deleting anything.
       // `listPendingPurge` is snapshotted once at the top of the nightly
       // sweep and the deletion steps key only on `userId`, so without this
@@ -52,7 +52,10 @@ export class AccountRepository {
         .from(profiles)
         .where(and(eq(profiles.id, userId), isNotNull(profiles.deletedAt)))
         .for("update");
-      if (stillSoftDeleted.length === 0) return;
+      // Returns false so the cron skips the auth-user delete: that delete
+      // cascades to profiles and would destroy the restored account anyway
+      // (Inspector Brad, #553).
+      if (stillSoftDeleted.length === 0) return false;
 
       for (const step of ACCOUNT_DELETION_STEPS) {
         const result = await tx.execute(buildStatement(step, userId));
@@ -62,6 +65,7 @@ export class AccountRepository {
           }
         }
       }
+      return true;
     });
 
     // PER-108: the coach-profile tombstones were stamped with the transaction's
@@ -79,6 +83,7 @@ export class AccountRepository {
         );
       }
     }
+    return purged;
   }
 
   /**

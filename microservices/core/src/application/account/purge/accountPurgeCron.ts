@@ -6,15 +6,18 @@
  * REAL purge + auth-user delete that the old immediate-delete handler used
  * to do synchronously.
  *
- * Per-user order (brief Part D): safety-net Stripe cancel → SQL purge (the
- * corrected `ACCOUNT_DELETION_STEPS` plan, Part A) → Supabase auth-user
- * delete → best-effort avatar S3 cleanup (Part B). One user's failure is
+ * Per-user order (brief Part D): safety-net Stripe cancel → queue the
+ * private media delete (PER-121) → SQL purge (the corrected
+ * `ACCOUNT_DELETION_STEPS` plan, Part A) → Supabase auth-user delete →
+ * best-effort avatar S3 cleanup (Part B). One user's failure is
  * isolated — logged and counted, never aborts the batch — mirroring
  * `volumeCron`/`streakCron`'s per-user try/catch convention.
  */
 export interface AccountPurgeCronRepo {
   listPendingPurge(now: Date): Promise<string[]>;
-  purgeUserData(userId: string): Promise<void>;
+  /** False when the account was restored before the purge took its lock:
+   * nothing was deleted and nothing else may be. */
+  purgeUserData(userId: string): Promise<boolean>;
 }
 
 export interface AccountPurgeCronDeps {
@@ -34,6 +37,13 @@ export interface AccountPurgeCronDeps {
    * never throws — but typed as a Promise for uniformity with the rest of
    * the per-user pipeline. */
   deleteAvatar: (userId: string) => Promise<void>;
+  /** PER-121 (design F): record that this user's private bucket objects
+   * (progress photos, form photo answers, coach resource files) must go.
+   * Runs BEFORE the SQL purge and is NOT swallowed, so no purged account is
+   * ever forgotten. The objects themselves are deleted later by
+   * `drainPrivateMediaPurges`, and only once the profile is gone: deleting
+   * them here would lose a restored account's photos (Inspector Brad, #553). */
+  queuePrivateMediaPurge: (userId: string) => Promise<void>;
   now: Date;
 }
 
@@ -43,6 +53,9 @@ export interface AccountPurgeCronSummary {
   /** Successfully purged (SQL data gone — auth-delete/avatar failures still
    * count as purged, since the compliance-critical step succeeded). */
   purged: number;
+  /** Restored before the purge locked the profile: nothing was deleted, and
+   * the auth-user and avatar deletes were skipped (Inspector Brad, #553). */
+  restored: number;
   /** The SQL purge itself failed for this user — retried on the next sweep
    * (idempotent: `purgeUserData` deletes zero rows for an already-purged
    * user, and the user still matches `listPendingPurge` because `profiles`
@@ -57,6 +70,7 @@ export async function accountPurgeCron(
   const summary: AccountPurgeCronSummary = {
     pending: userIds.length,
     purged: 0,
+    restored: 0,
     failed: 0,
   };
 
@@ -73,10 +87,21 @@ export async function accountPurgeCron(
         );
       }
 
+      // 1b. PER-121: queue the user's private media. A failure throws to
+      //     the per-user catch below, so the account is retried next sweep.
+      await deps.queuePrivateMediaPurge(userId);
+
       // 2. The compliance-critical step: SQL purge via the corrected plan.
       //    A failure here is NOT swallowed — it's the one step that must
       //    retry on the next sweep rather than being marked done.
-      await deps.accountRepo.purgeUserData(userId);
+      const purged = await deps.accountRepo.purgeUserData(userId);
+      if (!purged) {
+        // Restored mid-sweep. The Supabase auth-user delete would cascade to
+        // `profiles` and destroy the restored account (and the drain would
+        // then delete its photos), so stop here.
+        summary.restored += 1;
+        continue;
+      }
       summary.purged += 1;
 
       // 3. Supabase auth-user delete. Non-fatal (data is already gone).
