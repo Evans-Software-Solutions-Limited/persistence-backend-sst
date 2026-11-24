@@ -1,5 +1,11 @@
 import { t } from "elysia";
 import { resolveWorkoutRepRange } from "./repRange";
+import {
+  deriveFromSetTargets,
+  hasSetTargets,
+  setTargetsInputSchema,
+  type SetTarget,
+} from "./setTargets";
 
 /**
  * Wire-format schema for a nested `WorkoutExercise` body entry. Shared
@@ -23,6 +29,10 @@ export const workoutExerciseInputSchema = t.Object({
   targetDurationSeconds: t.Optional(t.Union([t.Number(), t.Null()])),
   restSeconds: t.Optional(t.Union([t.Number(), t.Null()])),
   notes: t.Optional(t.Union([t.String(), t.Null()])),
+  // PER-111: optional reps per set, e.g. [{reps:10},{reps:8},{reps:8}]. When
+  // sent, targetSets / targetRepsMin / targetRepsMax are stored as the derived
+  // values. Absent = today's behaviour (and, on update, the preservation rule).
+  setTargets: setTargetsInputSchema,
 });
 
 export type WorkoutExerciseInputBody = {
@@ -35,6 +45,7 @@ export type WorkoutExerciseInputBody = {
   targetDurationSeconds?: number | null;
   restSeconds?: number | null;
   notes?: string | null;
+  setTargets?: SetTarget[] | null;
 };
 
 /**
@@ -48,8 +59,13 @@ export function findInvalidRepRangeIndex(
 ): number | null {
   for (let i = 0; i < exercises.length; i++) {
     const ex = exercises[i];
-    const { targetRepsMin: min, targetRepsMax: max } =
-      resolveWorkoutRepRange(ex);
+    // Per-set targets replace the sent range with the derived one, which is
+    // ordered by construction.
+    const { targetRepsMin: min, targetRepsMax: max } = hasSetTargets(
+      ex.setTargets,
+    )
+      ? deriveFromSetTargets(ex.setTargets)
+      : resolveWorkoutRepRange(ex);
     if (min > max) return i;
   }
   return null;

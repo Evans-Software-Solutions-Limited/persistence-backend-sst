@@ -7,6 +7,10 @@ import {
 import { templatesRepository as repo } from "./templatesRepository";
 import { TogetherError, withActors, enforceRateLimit } from "./shared";
 import {
+  MAX_SET_TARGETS,
+  MAX_SET_TARGET_REPS,
+} from "../workouts/shared/setTargets";
+import {
   socialMutationHeaders,
   socialPageQuery,
 } from "../social/socialHandler";
@@ -22,6 +26,18 @@ export const templatePlanSchema = t.Object(
           order: t.Integer({ minimum: 0, maximum: 99 }),
           targetSets: t.Integer({ minimum: 0, maximum: 100 }),
           targetReps: t.Optional(t.Integer({ minimum: 0, maximum: 10000 })),
+          // PER-111: optional reps per set, copied into the recipient's workout.
+          setTargets: t.Optional(
+            t.Array(
+              t.Object(
+                {
+                  reps: t.Integer({ minimum: 1, maximum: MAX_SET_TARGET_REPS }),
+                },
+                { additionalProperties: false },
+              ),
+              { minItems: 1, maxItems: MAX_SET_TARGETS },
+            ),
+          ),
         },
         { additionalProperties: false },
       ),

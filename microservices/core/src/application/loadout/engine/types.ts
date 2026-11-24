@@ -8,6 +8,7 @@
 
 import type { AdaptationCandidate } from "../../repositories/exerciseRepository";
 import type { SubstitutionReason } from "./reasons";
+import type { SetTarget } from "../../workouts/shared/setTargets";
 
 /**
  * The parent's training targets, which are carried across UNCHANGED — design § 1
@@ -22,6 +23,11 @@ export interface PlanTargets {
   targetDurationSeconds: number | null;
   restSeconds: number | null;
   notes: string | null;
+  /**
+   * PER-111: the parent's reps per set, carried across unchanged like every
+   * other target. Omitted when the parent row has none.
+   */
+  setTargets?: SetTarget[];
 }
 
 /** One parent row, partitioned into KEPT / needs-swap by stage 1. */
