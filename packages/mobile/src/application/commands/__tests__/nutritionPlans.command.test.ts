@@ -171,10 +171,31 @@ class FakeServer {
               fatG: number;
             }
           | undefined;
-        const base = c
-          ? planItemCustom(`srv-item-${++this.seq}`, c.name, c)
-          : foodItem(`srv-item-${++this.seq}`, it.foodId as string, 200);
-        return { ...base, servings: it.servings as number };
+        // Like `resolvePlanInput`: a one-off's macros are PER SERVING; the
+        // item stores per-serving × servings, and the DTO's `custom` echoes
+        // the per-serving values.
+        const servings = it.servings as number;
+        if (c) {
+          const total = {
+            kcal: c.kcal * servings,
+            proteinG: c.proteinG * servings,
+            carbsG: c.carbsG * servings,
+            fatG: c.fatG * servings,
+          };
+          return {
+            ...planItemCustom(
+              `srv-item-${++this.seq}`,
+              c.name,
+              total,
+              servings,
+            ),
+            custom: { ...c },
+          };
+        }
+        return {
+          ...foodItem(`srv-item-${++this.seq}`, it.foodId as string, 200),
+          servings,
+        };
       }),
     }));
     const p = recomputePlan({
@@ -680,6 +701,58 @@ describe("my plans: create, edit, revision conflicts, delete", () => {
     ).toBe(false);
   });
 
+  it("re-saving a plan never multiplies a one-off's macros by its servings (Inspector Brad #554)", async () => {
+    const soup = withServings(item("c", "Soup", 150), 2); // 300 kcal total
+    const p = createPlanCommand(deps(), {
+      ...plan("local-s", USER, 0, [["m1", "Lunch", [soup]]]),
+    });
+    await drain();
+    const synced = () => readPlansCache(storage, USER).mine[0]!;
+    expect(synced().id).not.toBe(p.id);
+    expect(synced().totals.kcal).toBe(300);
+
+    // Rename twice: the whole plan is re-sent each time.
+    savePlanCommand(deps(), { ...synced(), name: "Renamed" });
+    await drainLater();
+    savePlanCommand(deps(), { ...synced(), name: "Renamed again" });
+    await drainLater();
+    expect(synced().totals.kcal).toBe(300);
+    expect(synced().meals[0]!.items[0]).toMatchObject({
+      servings: 2,
+      kcal: 300,
+    });
+    const last = server.calls.filter((c) => c.method === "PUT").pop()!;
+    const sent = (
+      last.body.meals as { items: { custom: { kcal: number } }[] }[]
+    )[0]!.items[0]!.custom;
+    expect(sent.kcal).toBe(150);
+  });
+
+  it("an edit to a duplicate that hasn't synced yet survives the sync (Inspector Brad #554)", async () => {
+    const src = plan("srv-src", USER, 1, [
+      ["m1", "Lunch", [item("a", "Wrap", 450)]],
+    ]);
+    server.plans.set(src.id, src);
+    storage.cacheNutritionPlans(USER, { ...emptyPlansCache(), mine: [src] });
+    server.offline = true;
+    const copy = duplicatePlanCommand(deps(), src);
+    savePlanCommand(deps(), { ...copy, name: "My version" });
+    const dup = queued().find((e) => e.endpoint.endsWith("/duplicate"))!;
+    // The duplicate request has no body for the edit to hide in.
+    expect(JSON.parse(dup.payload)).toEqual({});
+
+    server.offline = false;
+    await drainLater();
+    await drainLater();
+    const mine = readPlansCache(storage, USER).mine.filter(
+      (p) => p.id !== "srv-src",
+    );
+    expect(mine).toHaveLength(1);
+    expect(mine[0]!.name).toBe("My version");
+    expect(server.plans.get(mine[0]!.id)!.name).toBe("My version");
+    expect(queued()).toHaveLength(0);
+  });
+
   it("deleting a plan that never left the phone forgets it and its shopping row", () => {
     server.offline = true;
     const p = createPlanCommand(deps(), draft());
@@ -735,7 +808,7 @@ describe("my plans: create, edit, revision conflicts, delete", () => {
     ]);
   });
 
-  it("toPlanInput sends references, one-offs with their macros", () => {
+  it("toPlanInput sends references, one-offs with per-serving macros", () => {
     const p = plan("p", USER, 1, [
       [
         "m",
@@ -769,7 +842,8 @@ describe("my plans: create, edit, revision conflicts, delete", () => {
     expect(body.meals[0]!.items).toEqual([
       { foodId: "food-1", servings: 1, sortOrder: 0 },
       {
-        custom: { name: "Soup", kcal: 200, proteinG: 10, carbsG: 20, fatG: 5 },
+        // Per serving: the server multiplies by `servings`.
+        custom: { name: "Soup", kcal: 100, proteinG: 5, carbsG: 10, fatG: 2.5 },
         servings: 2,
         sortOrder: 1,
       },

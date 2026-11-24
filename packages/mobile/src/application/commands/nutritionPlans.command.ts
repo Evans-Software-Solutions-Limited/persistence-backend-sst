@@ -159,8 +159,14 @@ export function savePlanCommand(
   const body = toPlanInput(next);
 
   // Still only on the phone: fold into the create.
+  // A plain create only: the /duplicate request has no body (the server
+  // copies the source), so an edit to an unsynced duplicate becomes a PUT that
+  // the id swap retargets once the copy exists (Inspector Brad, #554).
   const create = unsentFor(storage, NUTRITION_PLAN_ENTITY, next.id).find(
-    (e) => e.operation === "create" && e.method === "POST",
+    (e) =>
+      e.operation === "create" &&
+      e.method === "POST" &&
+      e.endpoint === MEAL_PLANS_ENDPOINT,
   );
   if (create) {
     storage.updateMutationPayload(create.id, body);

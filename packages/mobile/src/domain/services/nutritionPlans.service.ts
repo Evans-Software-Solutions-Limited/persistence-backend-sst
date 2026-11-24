@@ -311,14 +311,17 @@ export function toPlanInput(plan: NutritionPlan): PlanInput {
           return { ...base, recipeId: it.recipeId };
         if (it.kind === "meal" && it.mealId)
           return { ...base, mealId: it.mealId };
+        // The server reads a one-off's macros PER SERVING and multiplies by
+        // `servings` itself (`resolvePlanInput`); the item holds the total.
+        const per = perServingOf(it);
         return {
           ...base,
           custom: {
             name: it.name,
-            kcal: it.kcal,
-            proteinG: it.proteinG,
-            carbsG: it.carbsG,
-            fatG: it.fatG,
+            kcal: per.kcal,
+            proteinG: per.proteinG,
+            carbsG: per.carbsG,
+            fatG: per.fatG,
           },
         };
       }),
@@ -450,7 +453,18 @@ export function planItemCustom(
     ...total,
     kind: "custom",
     name,
-    custom: { name, ...total },
+    // Per serving, as the server stores and returns it.
+    custom: {
+      name,
+      ...(servings > 0 && servings !== 1
+        ? {
+            kcal: total.kcal / servings,
+            proteinG: total.proteinG / servings,
+            carbsG: total.carbsG / servings,
+            fatG: total.fatG / servings,
+          }
+        : total),
+    },
     logEntry: { customName: name, servings, ...total },
   };
 }
@@ -481,7 +495,6 @@ export function withServings(item: PlanItem, servings: number): PlanItem {
     ...item,
     ...totals,
     servings: s,
-    custom: item.custom ? { ...item.custom, ...totals } : null,
     logEntry,
   };
 }

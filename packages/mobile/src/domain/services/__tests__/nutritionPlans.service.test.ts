@@ -261,7 +261,8 @@ describe("items", () => {
     );
     expect(c.kcal).toBe(200);
     expect(c.logEntry).toMatchObject({ kcal: 200, servings: 2 });
-    expect(c.custom).toMatchObject({ kcal: 200 });
+    // `custom` stays per serving, as the server keeps it.
+    expect(c.custom).toMatchObject({ kcal: 100 });
     expect(perServingOf({ ...c, servings: 0, custom: null })).toMatchObject({
       kcal: 200,
     });
