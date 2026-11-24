@@ -23,6 +23,7 @@ import { YourMealsSheetContainer } from "../../src/ui/containers/YourMealsSheetC
 import { MealOptionsSheetContainer } from "../../src/ui/containers/MealOptionsSheetContainer";
 import { QuickLogSheetContainer } from "../../src/ui/containers/QuickLogSheetContainer";
 import { SuggestLockedSheetContainer } from "../../src/ui/containers/SuggestLockedSheetContainer";
+import { PlanSheetsContainer } from "../../src/ui/containers/PlanSheetsContainer";
 import { DiscardWorkoutConfirmationContainer } from "../../src/ui/containers/DiscardWorkoutConfirmationContainer";
 import { ExerciseFiltersProvider } from "../../src/ui/hooks/useExerciseFilters";
 import { useAutoRetryOnUpgrade } from "../../src/ui/hooks/useAutoRetryOnUpgrade";
@@ -334,6 +335,14 @@ export default function AppLayout() {
           name="fuel/add-to-meal"
           options={{ headerShown: false }}
         />
+        {/* PER-133: New / Edit plan (N5), adding food to a plan, shopping list. */}
+        <Stack.Screen name="fuel/plan-new" options={{ headerShown: false }} />
+        <Stack.Screen name="fuel/plan-edit" options={{ headerShown: false }} />
+        <Stack.Screen name="fuel/plan-add" options={{ headerShown: false }} />
+        <Stack.Screen
+          name="fuel/plans-shopping"
+          options={{ headerShown: false }}
+        />
         {/*
           fuel/targets (M9 PR3) owns its own <HeaderBar> (Cancel/Save) —
           native header off, matching every other custom-chrome screen.
@@ -508,6 +517,8 @@ export default function AppLayout() {
       <MealOptionsSheetContainer />
       <QuickLogSheetContainer />
       <SuggestLockedSheetContainer />
+      {/* PER-133 Plan tab sheets: N7 Your plans and C6 a plan from a coach. */}
+      <PlanSheetsContainer />
       {/*
         AddRecipeMenuContainer — the Recipes library "+" bottom sheet
         (Recipes AI PR3). Root-mounted sibling (feedback_sheets_mount_at_root);

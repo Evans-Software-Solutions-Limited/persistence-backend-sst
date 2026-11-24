@@ -1,7 +1,7 @@
 import { Pressable } from "react-native";
 import { Text, View } from "@tamagui/core";
 import { NEUTRAL_HEX } from "@/ui/components/foundation/tones";
-import { IconCalendar, IconTarget } from "@/ui/components/icons";
+import { IconCalendar, IconPlus, IconTarget } from "@/ui/components/icons";
 import type { WeekDayState } from "@/domain/services/userMeals.service";
 
 /**
@@ -35,6 +35,12 @@ export type FuelLogHeaderProps = {
   onSelectDay: (iso: string) => void;
   onOpenCalendar: () => void;
   onOpenTargets: () => void;
+  /**
+   * PER-133: Meals (N11) has one round "New meal or recipe" button instead
+   * of the calendar and targets; Plan (N6) has only targets. Neither shows
+   * the day label or week strip (plans have no days).
+   */
+  onNew?: () => void;
   testID?: string;
 };
 
@@ -127,8 +133,10 @@ export function FuelLogHeaderPresenter({
   onSelectDay,
   onOpenCalendar,
   onOpenTargets,
+  onNew,
   testID = "fuel-log-header",
 }: FuelLogHeaderProps) {
+  const isLog = section === "log";
   const sections: { key: FuelSection; label: string }[] = [
     { key: "log", label: "Log" },
     { key: "plan", label: "Plan" },
@@ -153,20 +161,32 @@ export function FuelLogHeaderPresenter({
           Fuel
         </Text>
         <View flexDirection="row" gap={8}>
-          <RoundBtn
-            label="Pick a day"
-            onPress={onOpenCalendar}
-            testID="fuel-open-calendar"
-          >
-            <IconCalendar size={20} color="#F4F4F8" />
-          </RoundBtn>
-          <RoundBtn
-            label="Edit nutrition targets"
-            onPress={onOpenTargets}
-            testID="fuel-open-targets"
-          >
-            <IconTarget size={20} color="#F4F4F8" />
-          </RoundBtn>
+          {isLog ? (
+            <RoundBtn
+              label="Pick a day"
+              onPress={onOpenCalendar}
+              testID="fuel-open-calendar"
+            >
+              <IconCalendar size={20} color="#F4F4F8" />
+            </RoundBtn>
+          ) : null}
+          {section === "meals" ? (
+            <RoundBtn
+              label="New meal or recipe"
+              onPress={onNew ?? (() => {})}
+              testID="fuel-new-meal"
+            >
+              <IconPlus size={20} color="#F4F4F8" />
+            </RoundBtn>
+          ) : (
+            <RoundBtn
+              label="Edit nutrition targets"
+              onPress={onOpenTargets}
+              testID="fuel-open-targets"
+            >
+              <IconTarget size={20} color="#F4F4F8" />
+            </RoundBtn>
+          )}
         </View>
       </View>
 
@@ -217,72 +237,76 @@ export function FuelLogHeaderPresenter({
             );
           })}
         </View>
-        <Text
-          fontFamily="$mono"
-          fontSize={12}
-          color="$text3"
-          testID="fuel-day-label"
-        >
-          {dayLabel}
-        </Text>
+        {isLog ? (
+          <Text
+            fontFamily="$mono"
+            fontSize={12}
+            color="$text3"
+            testID="fuel-day-label"
+          >
+            {dayLabel}
+          </Text>
+        ) : null}
       </View>
 
-      <View
-        flexDirection="row"
-        marginTop={16}
-        accessibilityRole="tablist"
-        accessibilityLabel="Days this week"
-        testID="fuel-week"
-      >
-        {week.map((d) => {
-          const st = dotStyle(d.state);
-          const disabled = d.state === "future";
-          return (
-            <Pressable
-              key={d.iso}
-              style={{ flex: 1 }}
-              onPress={disabled ? undefined : () => onSelectDay(d.iso)}
-              disabled={disabled}
-              accessibilityRole="tab"
-              accessibilityState={{ selected: d.selected, disabled }}
-              accessibilityLabel={`${d.dayName} ${d.dayNum}, ${STATE_WORDS[d.state]}`}
-              testID={`fuel-week-${d.iso}`}
-            >
-              <View
-                alignItems="center"
-                gap={6}
-                paddingVertical={6}
-                borderRadius={14}
-                backgroundColor={d.selected ? "$surface" : "transparent"}
+      {isLog ? (
+        <View
+          flexDirection="row"
+          marginTop={16}
+          accessibilityRole="tablist"
+          accessibilityLabel="Days this week"
+          testID="fuel-week"
+        >
+          {week.map((d) => {
+            const st = dotStyle(d.state);
+            const disabled = d.state === "future";
+            return (
+              <Pressable
+                key={d.iso}
+                style={{ flex: 1 }}
+                onPress={disabled ? undefined : () => onSelectDay(d.iso)}
+                disabled={disabled}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: d.selected, disabled }}
+                accessibilityLabel={`${d.dayName} ${d.dayNum}, ${STATE_WORDS[d.state]}`}
+                testID={`fuel-week-${d.iso}`}
               >
-                <Text fontFamily="$body" fontSize={11} color="$text3">
-                  {d.dayName}
-                </Text>
                 <View
-                  width={36}
-                  height={36}
-                  borderRadius={9999}
-                  borderWidth={2}
-                  borderColor={st.borderColor}
-                  borderStyle={st.borderStyle}
-                  backgroundColor={st.backgroundColor}
                   alignItems="center"
-                  justifyContent="center"
+                  gap={6}
+                  paddingVertical={6}
+                  borderRadius={14}
+                  backgroundColor={d.selected ? "$surface" : "transparent"}
                 >
-                  <Text
-                    fontFamily="$mono"
-                    fontSize={13}
-                    fontWeight="600"
-                    color={st.color}
-                  >
-                    {d.dayNum}
+                  <Text fontFamily="$body" fontSize={11} color="$text3">
+                    {d.dayName}
                   </Text>
+                  <View
+                    width={36}
+                    height={36}
+                    borderRadius={9999}
+                    borderWidth={2}
+                    borderColor={st.borderColor}
+                    borderStyle={st.borderStyle}
+                    backgroundColor={st.backgroundColor}
+                    alignItems="center"
+                    justifyContent="center"
+                  >
+                    <Text
+                      fontFamily="$mono"
+                      fontSize={13}
+                      fontWeight="600"
+                      color={st.color}
+                    >
+                      {d.dayNum}
+                    </Text>
+                  </View>
                 </View>
-              </View>
-            </Pressable>
-          );
-        })}
-      </View>
+              </Pressable>
+            );
+          })}
+        </View>
+      ) : null}
     </View>
   );
 }

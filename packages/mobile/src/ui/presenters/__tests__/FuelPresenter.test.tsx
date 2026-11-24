@@ -1,3 +1,4 @@
+import { Text } from "react-native";
 import { fireEvent } from "@testing-library/react-native";
 import { localDayISO, previousDayISO } from "@/shared/utils";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
@@ -95,6 +96,28 @@ function render(over: Partial<FuelPresenterProps> = {}) {
 }
 
 describe("FuelPresenter", () => {
+  it("Plan (N6) and Meals (N11) show their own content with no days (PER-133)", () => {
+    const plan = render({
+      section: "plan",
+      sectionContent: <Text>plan tab body</Text>,
+    });
+    expect(plan.getByText("plan tab body")).toBeTruthy();
+    expect(plan.getByTestId("fuel-open-targets")).toBeTruthy();
+    expect(plan.queryByTestId("fuel-week")).toBeNull();
+    expect(plan.queryByTestId("fuel-day-label")).toBeNull();
+    expect(plan.queryByTestId("fuel-open-calendar")).toBeNull();
+    expect(plan.queryByTestId("fuel-log-summary")).toBeNull();
+
+    const onNew = jest.fn();
+    const meals = render({ section: "meals", onNew });
+    expect(meals.queryByTestId("fuel-open-targets")).toBeNull();
+    fireEvent.press(meals.getByTestId("fuel-new-meal"));
+    expect(onNew).toHaveBeenCalled();
+    // No handler: the button is inert rather than crashing.
+    const bare = render({ section: "meals" });
+    fireEvent.press(bare.getByTestId("fuel-new-meal"));
+  });
+
   it("renders canvas N1: header, week, compact rings, quick buttons, meals and water", () => {
     const { getByTestId, queryByTestId } = render();
     expect(getByTestId("fuel-log-header")).toBeTruthy();

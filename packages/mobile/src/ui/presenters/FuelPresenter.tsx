@@ -1,4 +1,4 @@
-import { type RefObject, useEffect, useState } from "react";
+import { type ReactNode, type RefObject, useEffect, useState } from "react";
 import { Pressable, RefreshControl, ScrollView } from "react-native";
 import { Text, View } from "@tamagui/core";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -108,6 +108,13 @@ export type FuelPresenterProps = {
   onDeleteEntry?: (id: string, slot: MealSlot) => void;
   onLogGhost?: (planId: string, planMealId: string, slot: MealSlot) => void;
   scrollRef?: RefObject<ScrollView | null>;
+  /**
+   * PER-133: the Plan (N6–N10) or Meals (N11–N12) section's content, shown
+   * under the header instead of the day's log when `section` isn't "log".
+   */
+  sectionContent?: ReactNode;
+  /** Meals: the header's "New meal or recipe" button. */
+  onNew?: () => void;
   testID?: string;
 };
 
@@ -238,6 +245,8 @@ export function FuelPresenter(props: FuelPresenterProps) {
     onDeleteEntry,
     onLogGhost,
     scrollRef,
+    sectionContent,
+    onNew,
     testID = "fuel-screen",
   } = props;
 
@@ -261,6 +270,7 @@ export function FuelPresenter(props: FuelPresenterProps) {
         onSelectDay={onSelectDay}
         onOpenCalendar={onOpenCalendar}
         onOpenTargets={onOpenTargets}
+        onNew={onNew}
       />
       <DateCalendarModal
         visible={calendarOpen}
@@ -273,6 +283,29 @@ export function FuelPresenter(props: FuelPresenterProps) {
       />
     </View>
   );
+
+  if (section !== "log") {
+    return (
+      <View flex={1} paddingTop={insets.top} testID={testID}>
+        <ScrollView
+          ref={scrollRef}
+          contentContainerStyle={{ paddingBottom: 140 }}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={onRefresh}
+              tintColor="#22D3EE"
+            />
+          }
+        >
+          {header}
+          <View paddingHorizontal={20} testID={`${testID}-${section}`}>
+            {sectionContent}
+          </View>
+        </ScrollView>
+      </View>
+    );
+  }
 
   if (isLoading && !hasData) {
     return (

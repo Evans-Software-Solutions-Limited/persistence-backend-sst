@@ -147,6 +147,26 @@ export function computeMealprintVerdict(
   return TIER_GRANTS_MEALPRINT[tierName] === true;
 }
 
+/**
+ * PER-133: the tier the person is paying for right now (same lapse and
+ * scheduled-change rules as the Mealprint verdict), or null when nothing
+ * paid is live. Every non-free tier qualifies here because the grant tables
+ * are per feature.
+ */
+export function liveTierName(
+  subscription: MySubscription | null,
+  nowMs = Date.now(),
+): SubscriptionTierName | null {
+  if (subscription === null) return null;
+  // The verdict's live-payment rules, asked about a tier the Mealprint table
+  // grants, so only "is a payment live" decides.
+  const live = computeMealprintVerdict(
+    { ...subscription, tierName: "premium_plus", scheduledChange: null },
+    nowMs,
+  );
+  return live ? effectiveAdaptiveTier(subscription, nowMs) : null;
+}
+
 function effectiveAdaptiveTier(
   subscription: MySubscription,
   nowMs: number,

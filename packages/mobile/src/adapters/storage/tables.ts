@@ -96,6 +96,10 @@ export const TRAINING_LOG_TABLES = ["training_log"] as const;
 export const MY_COACHES_TABLES = ["cached_my_coaches"] as const;
 /** PER-132 Your meals (one list per user). */
 export const USER_MEAL_TABLES = ["cached_user_meals"] as const;
+/** PER-133 list meal plans (mine + from coaches; one payload per user). */
+export const NUTRITION_PLAN_TABLES = ["cached_nutrition_plans"] as const;
+/** PER-133 shopping list across plans, with this phone's ticks. */
+export const PLANS_SHOPPING_TABLES = ["cached_plans_shopping"] as const;
 /** PER-129 coach forms library (with current versions), per coach. */
 export const COACH_FORMS_TABLES = [
   "cached_coach_forms",

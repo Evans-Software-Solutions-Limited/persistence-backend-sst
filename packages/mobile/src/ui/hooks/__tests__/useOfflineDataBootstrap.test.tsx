@@ -233,6 +233,62 @@ describe("warmOfflineData", () => {
     expect(storage.getCachedUserMeals(SESSION.userId)).toBeNull();
   });
 
+  it("warms meal plans, then asks only for changes since the last read (PER-133)", async () => {
+    const { api, auth, storage } = makeAdapters();
+    const run = () =>
+      warmOfflineData({
+        api,
+        auth,
+        storage,
+        userId: SESSION.userId,
+        date: "2026-08-31",
+      });
+    await run();
+    expect(storage.getCachedNutritionPlans(SESSION.userId)?.asOf).toBe(
+      "2026-11-23T10:00:00.000Z",
+    );
+    await run();
+    expect(api.nutritionPlansCalls).toEqual([null, "2026-11-23T10:00:00.000Z"]);
+  });
+
+  it("a queued plan edit, or one saved mid-read, keeps the local plans (PER-133)", async () => {
+    const { api, auth, storage } = makeAdapters();
+    const local = {
+      mine: [],
+      fromCoaches: [],
+      asOf: "local",
+      conflictPlanIds: [],
+    };
+    const real = api.getNutritionPlans.bind(api);
+    jest.spyOn(api, "getNutritionPlans").mockImplementation(async (since) => {
+      const answer = await real(since);
+      storage.cacheNutritionPlans(SESSION.userId, local);
+      return answer;
+    });
+    const run = () =>
+      warmOfflineData({
+        api,
+        auth,
+        storage,
+        userId: SESSION.userId,
+        date: "2026-08-31",
+      });
+    await run();
+    expect(storage.getCachedNutritionPlans(SESSION.userId)).toEqual(local);
+
+    storage.enqueueMutation({
+      entityType: "nutrition_plan",
+      entityId: "local-p",
+      operation: "create",
+      payload: {},
+      endpoint: "/nutrition/meal-plans",
+      method: "POST",
+    });
+    jest.mocked(api.getNutritionPlans).mockClear();
+    await run();
+    expect(api.getNutritionPlans).not.toHaveBeenCalled();
+  });
+
   it("continues warming other read models when one endpoint fails", async () => {
     const { api, auth, storage } = makeAdapters();
     jest

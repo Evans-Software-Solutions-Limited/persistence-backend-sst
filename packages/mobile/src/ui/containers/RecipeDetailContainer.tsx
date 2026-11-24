@@ -1,26 +1,24 @@
 import { useCallback, useMemo, useState } from "react";
 import { router } from "expo-router";
-import * as Haptics from "expo-haptics";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useGetRecipe } from "@/ui/hooks/useGetRecipe";
-import { useLogEntry } from "@/ui/hooks/useLogEntry";
-import { useFuelSheets } from "@/state/fuel-sheets";
-import { dayLabel, loggedAtNoonUtc, localDayISO } from "@/shared/utils";
-import { defaultMealSlot, perServingDivisor } from "@/domain/services";
+import { perServingDivisor } from "@/domain/services";
 import {
   RecipeDetailPresenter,
   type RecipeIngredientVM,
 } from "@/ui/presenters/RecipeDetailPresenter";
+import { LogMealSheetContainer } from "./LogMealSheetContainer";
+import { AddToPlanSheetContainer } from "./AddToPlanSheetContainer";
 
 /**
  * <RecipeDetailContainer> — `/(app)/fuel/recipe/[id]` (recipes.jsx
  * `RecipeDetail`, `kind: 'recipe'` branch). Read-only in PR1 — no edit/
  * delete affordance yet.
  *
- * "Log to today" mirrors <QuickAddSheetContainer>'s log flow: noon-UTC
- * `loggedAt` anchor, optimistic macros re-derived server-side (so the client
- * only sends the ref + servings), haptic feedback, `notifyMutated()` so the
- * Fuel screen's day aggregate refreshes on return, then `router.back()`.
+ * PER-133 (N13/N14): "Log meal" opens the Log sheet (day, meal, portion;
+ * noon-UTC `loggedAt`, ref + servings only, `notifyMutated()`, then
+ * `router.back()`) and "Add to plan" adds one portion to one of the
+ * person's own plans.
  *
  * Implements: specs/milestones (Fuel → Recipes PR1 brief) § <RecipeDetailContainer>
  */
@@ -28,16 +26,7 @@ import {
 export function RecipeDetailContainer({ id }: { id: string }) {
   const { storage } = useAdapters();
   const recipe = useGetRecipe(id);
-  const logEntry = useLogEntry();
-  const notifyMutated = useFuelSheets((s) => s.notifyMutated);
-  // The day Fuel is viewing (QA-20) — kept in sync by <FuelContainer>, so
-  // logging a recipe from a past-day view lands on that day, not today.
-  const activeDate = useFuelSheets((s) => s.date);
-  // Day-context (QA-20) — only surfaced on a past day so "Log to today"
-  // doesn't silently mislead while Fuel is viewing history.
-  const dayContext =
-    activeDate === localDayISO() ? undefined : dayLabel(activeDate);
-  const [isLogging, setIsLogging] = useState(false);
+  const [sheet, setSheet] = useState<"log" | "plan" | null>(null);
 
   const found = recipe.data !== null;
   const isLoading =
@@ -82,42 +71,53 @@ export function RecipeDetailContainer({ id }: { id: string }) {
     void recipe.refresh();
   }, [recipe]);
 
-  const onLogToToday = useCallback(async () => {
-    setIsLogging(true);
-    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    try {
-      await logEntry.mutate({
-        recipeId: id,
-        mealSlot: defaultMealSlot(new Date()),
-        servings: 1,
-        loggedAt: loggedAtNoonUtc(activeDate),
-      });
-      notifyMutated();
-      router.back();
-    } finally {
-      setIsLogging(false);
-    }
-  }, [id, logEntry, notifyMutated, activeDate]);
+  const onCloseSheet = useCallback(() => setSheet(null), []);
+  const onLogged = useCallback(() => {
+    setSheet(null);
+    router.back();
+  }, []);
 
+  const r = recipe.data;
   return (
-    <RecipeDetailPresenter
-      found={found}
-      isLoading={isLoading}
-      error={recipe.error}
-      onRetry={onRetry}
-      onBack={onBack}
-      name={recipe.data?.name ?? ""}
-      emoji="🥘"
-      secondaryLine={secondaryLine}
-      kcal={perServingMacro(recipe.data?.totalKcal ?? null)}
-      proteinG={perServingMacro(recipe.data?.totalProteinG ?? null)}
-      carbsG={perServingMacro(recipe.data?.totalCarbsG ?? null)}
-      fatG={perServingMacro(recipe.data?.totalFatG ?? null)}
-      ingredients={ingredients}
-      instructions={recipe.data?.instructions ?? null}
-      onLogToToday={() => void onLogToToday()}
-      isLogging={isLogging}
-      dayContext={dayContext}
-    />
+    <>
+      <RecipeDetailPresenter
+        found={found}
+        isLoading={isLoading}
+        error={recipe.error}
+        onRetry={onRetry}
+        onBack={onBack}
+        name={recipe.data?.name ?? ""}
+        emoji="🥘"
+        secondaryLine={secondaryLine}
+        kcal={perServingMacro(recipe.data?.totalKcal ?? null)}
+        proteinG={perServingMacro(recipe.data?.totalProteinG ?? null)}
+        carbsG={perServingMacro(recipe.data?.totalCarbsG ?? null)}
+        fatG={perServingMacro(recipe.data?.totalFatG ?? null)}
+        ingredients={ingredients}
+        instructions={recipe.data?.instructions ?? null}
+        onLog={() => setSheet("log")}
+        onAddToPlan={() => setSheet("plan")}
+      />
+      <LogMealSheetContainer
+        visible={sheet === "log" && r !== null}
+        item={
+          r
+            ? {
+                kind: "recipe",
+                id: r.id,
+                name: r.name,
+                kcal: (r.totalKcal ?? 0) / perServingDiv,
+              }
+            : null
+        }
+        onClose={onCloseSheet}
+        onLogged={onLogged}
+      />
+      <AddToPlanSheetContainer
+        visible={sheet === "plan" && r !== null}
+        source={r ? { kind: "recipe", recipe: r } : null}
+        onClose={onCloseSheet}
+      />
+    </>
   );
 }
