@@ -1,6 +1,7 @@
-import { and, asc, eq, gt, inArray, lt, ne } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, lt, ne, or, sql } from "drizzle-orm";
 import {
   coachFormRequests,
+  coachFormScheduleClients,
   coachFormSchedules,
   coachForms,
   profiles,
@@ -9,6 +10,7 @@ import {
 import { getDb } from "@persistence/db/client";
 import {
   effectiveDueAfterHours,
+  effectiveTrigger,
   insertRequests,
   liveVersions,
   scheduleTargets,
@@ -112,6 +114,7 @@ async function timeZones(clientIds: string[]): Promise<Map<string, string>> {
  */
 async function missEarlier(
   schedule: CoachFormSchedule,
+  trigger: "weekly" | "daily",
   relationshipId: string,
   clientId: string,
   currentKey: string,
@@ -125,7 +128,7 @@ async function missEarlier(
       and(
         eq(coachFormRequests.relationshipId, relationshipId),
         eq(coachFormRequests.formId, schedule.formId),
-        eq(coachFormRequests.trigger, schedule.trigger),
+        eq(coachFormRequests.trigger, trigger),
         eq(coachFormRequests.periodKey, currentKey),
       ),
     )
@@ -146,7 +149,7 @@ async function missEarlier(
         and(
           eq(coachFormRequests.relationshipId, relationshipId),
           eq(coachFormRequests.formId, schedule.formId),
-          eq(coachFormRequests.trigger, schedule.trigger),
+          eq(coachFormRequests.trigger, trigger),
           eq(coachFormRequests.status, "pending"),
           ne(coachFormRequests.periodKey, currentKey),
           lt(coachFormRequests.sentAt, before),
@@ -174,7 +177,7 @@ async function missEarlier(
             formId: schedule.formId,
             // The request's form: its FK guarantees the row.
             formTitle: title[0]!.title,
-            trigger: schedule.trigger,
+            trigger,
           },
           dedupeKey: `form_missed:${r.id}`,
         },
@@ -204,7 +207,25 @@ export const formPeriodsJob: SchedulerJob = {
         .from(coachFormSchedules)
         .where(
           and(
-            inArray(coachFormSchedules.trigger, ["weekly", "daily"]),
+            or(
+              inArray(coachFormSchedules.trigger, ["weekly", "daily"]),
+              // A once rule that one client gets weekly or daily (PER-129).
+              and(
+                eq(coachFormSchedules.trigger, "once"),
+                inArray(
+                  coachFormSchedules.id,
+                  db
+                    .select({ id: coachFormScheduleClients.scheduleId })
+                    .from(coachFormScheduleClients)
+                    .where(
+                      inArray(
+                        sql`${coachFormScheduleClients.override}->>'trigger'`,
+                        ["weekly", "daily"],
+                      ),
+                    ),
+                ),
+              ),
+            ),
             eq(coachFormSchedules.status, "active"),
             ...(after ? [gt(coachFormSchedules.id, after)] : []),
           ),
@@ -220,9 +241,12 @@ export const formPeriodsJob: SchedulerJob = {
         const targets = await scheduleTargets(db, schedule);
         const zones = await timeZones(targets.map((t) => t.clientId));
         for (const target of targets) {
+          // Per client: their own cadence wins (PER-129, C10j).
+          const trigger = effectiveTrigger(schedule, target.override);
+          if (trigger !== "weekly" && trigger !== "daily") continue;
           const tz = safeTimeZone(zones.get(target.clientId));
           const periods = duePeriods(
-            schedule.trigger as "weekly" | "daily",
+            trigger,
             ruleFor(schedule, target.override),
             tz,
             now,
@@ -241,7 +265,7 @@ export const formPeriodsJob: SchedulerJob = {
                   formId: schedule.formId,
                   formVersionId: versionId,
                   scheduleId: schedule.id,
-                  trigger: schedule.trigger as "weekly" | "daily",
+                  trigger,
                   periodKey: period.key,
                   sentAt: now,
                   dueAfterHours: effectiveDueAfterHours(
@@ -260,6 +284,7 @@ export const formPeriodsJob: SchedulerJob = {
           if (latest) {
             const ev = await missEarlier(
               schedule,
+              trigger,
               target.relationshipId,
               target.clientId,
               latest.key,

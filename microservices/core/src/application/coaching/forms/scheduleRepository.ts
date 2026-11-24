@@ -113,6 +113,70 @@ export function checkRule(trigger: Trigger, raw: Rule): RuleCheck {
   return { ok: true, rule };
 }
 
+/**
+ * PER-129 (C10j): the triggers one client's rule can switch between. A
+ * join or end-of-coaching form stays what it is.
+ */
+export const CLIENT_TRIGGERS = ["once", "weekly", "daily"] as const;
+export type ClientTrigger = (typeof CLIENT_TRIGGERS)[number];
+
+export function isClientTrigger(value: unknown): value is ClientTrigger {
+  return (
+    typeof value === "string" &&
+    (CLIENT_TRIGGERS as readonly string[]).includes(value)
+  );
+}
+
+export type OverrideCheck =
+  | { ok: true; rule: Rule & { trigger?: ClientTrigger } }
+  | { ok: false; message: string };
+
+/**
+ * A per-client override (C10j): the rule fields, plus `trigger` when this
+ * client gets the form on a different cadence (once, weekly or daily). The
+ * result must be complete for that cadence, with the rule's own day and
+ * time filling any gap. `trigger` is only stored when it differs.
+ */
+export function checkOverride(
+  schedule: {
+    trigger: string;
+    weekday: number | null;
+    timeLocal: string | null;
+  },
+  raw: Rule & { trigger?: unknown },
+): OverrideCheck {
+  let trigger = schedule.trigger as Trigger;
+  let changed: ClientTrigger | null = null;
+  if (raw.trigger !== undefined && raw.trigger !== null) {
+    if (!isClientTrigger(raw.trigger)) {
+      return { ok: false, message: "trigger must be once, weekly or daily" };
+    }
+    if (
+      raw.trigger !== schedule.trigger &&
+      !isClientTrigger(schedule.trigger)
+    ) {
+      return {
+        ok: false,
+        message: "a join or end-of-coaching form can't change when it's sent",
+      };
+    }
+    trigger = raw.trigger;
+    if (raw.trigger !== schedule.trigger) changed = raw.trigger;
+  }
+  const checked = checkRule(trigger, raw);
+  if (!checked.ok) return checked;
+  const missing = checkComplete(trigger, {
+    ...checked.rule,
+    weekday: checked.rule.weekday ?? schedule.weekday,
+    timeLocal: checked.rule.timeLocal ?? hhmm(schedule.timeLocal),
+  });
+  if (missing) return { ok: false, message: missing };
+  return {
+    ok: true,
+    rule: changed ? { ...checked.rule, trigger: changed } : checked.rule,
+  };
+}
+
 /** A whole schedule's rule must be complete for its trigger. */
 function checkComplete(trigger: Trigger, rule: Rule): string | null {
   if (trigger === "weekly" && (!rule.weekday || !rule.timeLocal)) {

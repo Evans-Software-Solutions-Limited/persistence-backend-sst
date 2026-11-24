@@ -2191,3 +2191,248 @@ describe("Inspector Brad sweep 3 (PR #543)", () => {
     expect((await answer(ATHLETE_C, sent!.id, { q1: "bye" })).status).toBe(201);
   });
 });
+
+// ─── PER-129: library stats (C10a/C10g) and C10b question extras ────────────
+
+describe("form stats (PER-129, C10a/C10g)", () => {
+  const stats = async (coach = COACH_A) => {
+    const res = await http("GET", "/trainers/me/forms/stats", coach);
+    expect(res.status).toBe(200);
+    return res.json.data as Json;
+  };
+
+  it("counts each client's latest request, lists outstanding first with the last reminder", async () => {
+    const weekly = await makeForm(COACH_A, "Weekly check-in");
+    const goals = await makeForm(COACH_A, "Goals");
+    await makeForm(COACH_A, "Unsent");
+    const rule = await makeSchedule(COACH_A, {
+      formId: goals.id,
+      trigger: "once",
+      audience: "all_clients",
+      dueAfterHours: 24,
+      reminders: [{ afterHours: 2 }, { afterHours: 9 }],
+    });
+    await makeSchedule(COACH_A, {
+      formId: weekly.id,
+      trigger: "weekly",
+      audience: "all_clients",
+      weekday: 7,
+      timeLocal: "09:00",
+    });
+    // C answers; E has had one reminder and is still pending.
+    const forC = (await pending(ATHLETE_C)).json.data.requests[0];
+    expect((await answer(ATHLETE_C, forC.id, { q1: "Squat" })).status).toBe(
+      201,
+    );
+    const relE = await relationship(COACH_A, ATHLETE_E);
+    await db
+      .update(schema.coachFormRequests)
+      .set({ remindersSent: 1 })
+      .where(eq(schema.coachFormRequests.relationshipId, relE.id));
+
+    const data = await stats();
+    expect(data.totals).toMatchObject({
+      forms: 3,
+      repeating: 1,
+      outstanding: 1,
+      onTimeRate: null,
+      onTimeSample: 0,
+    });
+    expect(data.forms).toHaveLength(1);
+    const g = data.forms[0];
+    expect(g).toMatchObject({
+      formId: goals.id,
+      reached: 2,
+      done: 1,
+      outstanding: 1,
+    });
+    expect(g.clients.map((c: Json) => [c.name, c.status])).toEqual([
+      ["Lena", "pending"],
+      ["Chris", "done"],
+    ]);
+    const lena = g.clients[0];
+    expect(
+      new Date(lena.lastReminderAt).getTime() - new Date(lena.sentAt).getTime(),
+    ).toBe(2 * 3600_000);
+    expect(g.clients[1].lastReminderAt).toBeNull();
+    expect(rule.id).toBeTruthy();
+    // Coach B sees none of it; D has an empty library.
+    expect((await stats(COACH_B)).forms).toEqual([]);
+    expect((await stats(COACH_D)).totals.forms).toBe(0);
+  });
+
+  it("on time is over requests due in the last 4 weeks; missed counts as outstanding", async () => {
+    const form = await makeForm(COACH_A);
+    await makeSchedule(COACH_A, {
+      formId: form.id,
+      trigger: "once",
+      audience: "all_clients",
+      dueAfterHours: 1,
+    });
+    const [c] = (await pending(ATHLETE_C)).json.data.requests;
+    await answer(ATHLETE_C, c.id, { q1: "Done" });
+    // Both were due an hour ago, so both count; E's is now missed.
+    const sent = new Date(Date.now() - 2 * 3600_000);
+    await db
+      .update(schema.ptClientRelationships)
+      .set({ activatedAt: new Date(Date.now() - 24 * 3600_000) });
+    await db
+      .update(schema.coachFormRequests)
+      .set({ sentAt: sent, dueAt: new Date(sent.getTime() + 3600_000) });
+    await db
+      .update(schema.coachFormRequests)
+      .set({ completedAt: new Date(sent.getTime() + 600_000) })
+      .where(eq(schema.coachFormRequests.clientId, ATHLETE_C));
+    const data = await stats();
+    expect(data.totals).toMatchObject({
+      outstanding: 1,
+      onTimeRate: 0.5,
+      onTimeSample: 2,
+    });
+    expect(data.forms[0].clients.map((x: Json) => x.status)).toEqual([
+      "missed",
+      "done",
+    ]);
+    // A client who left drops out of the counts.
+    await end(COACH_A, ATHLETE_E);
+    expect((await stats()).forms[0]).toMatchObject({ reached: 1, done: 1 });
+  });
+
+  it("a client override's reminders give the last reminder time; cancelled requests are left out", async () => {
+    const form = await makeForm(COACH_A);
+    const s = await makeSchedule(COACH_A, {
+      formId: form.id,
+      trigger: "once",
+      audience: "selected",
+      clientIds: [ATHLETE_C, ATHLETE_E],
+      reminders: [{ afterHours: 2 }],
+    });
+    await http(
+      "PUT",
+      `/trainers/me/clients/${ATHLETE_C}/forms/${form.id}/setup`,
+      COACH_A,
+      { status: "active", override: { reminders: [{ afterHours: 5 }] } },
+    );
+    await http(
+      "PUT",
+      `/trainers/me/clients/${ATHLETE_E}/forms/${form.id}/setup`,
+      COACH_A,
+      { status: "excluded", scheduleId: s.id },
+    );
+    await db
+      .update(schema.coachFormRequests)
+      .set({ remindersSent: 3 })
+      .where(eq(schema.coachFormRequests.clientId, ATHLETE_C));
+    const data = await stats();
+    const [only] = data.forms[0].clients;
+    expect(data.forms[0].reached).toBe(1);
+    expect(
+      new Date(only.lastReminderAt).getTime() - new Date(only.sentAt).getTime(),
+    ).toBe(5 * 3600_000);
+  });
+
+  it("no rule (a starter form) or no name still reports, with no reminder time", async () => {
+    const form = await makeForm(COACH_A);
+    await makeSchedule(COACH_A, {
+      formId: form.id,
+      trigger: "once",
+      audience: "selected",
+      clientIds: [ATHLETE_C, ATHLETE_E],
+      reminders: [{ afterHours: 4 }],
+    });
+    // C: an override without reminders keeps the rule's; E: no rule at all.
+    await http(
+      "PUT",
+      `/trainers/me/clients/${ATHLETE_C}/forms/${form.id}/setup`,
+      COACH_A,
+      { status: "active", override: { dueAfterHours: 12 } },
+    );
+    await db.update(schema.coachFormRequests).set({ remindersSent: 1 });
+    await db
+      .update(schema.coachFormRequests)
+      .set({ scheduleId: null })
+      .where(eq(schema.coachFormRequests.clientId, ATHLETE_E));
+    await db
+      .update(schema.profiles)
+      .set({ fullName: null })
+      .where(eq(schema.profiles.id, ATHLETE_E));
+    const clients = (await stats()).forms[0].clients as Json[];
+    const c = clients.find((x) => x.clientId === ATHLETE_C);
+    const e = clients.find((x) => x.clientId === ATHLETE_E);
+    expect(
+      new Date(c.lastReminderAt).getTime() - new Date(c.sentAt).getTime(),
+    ).toBe(4 * 3600_000);
+    expect(e).toMatchObject({ name: null, lastReminderAt: null });
+  });
+
+  it("a client's earlier coaching cycle doesn't count", async () => {
+    const form = await makeForm(COACH_A);
+    await makeSchedule(COACH_A, {
+      formId: form.id,
+      trigger: "once",
+      audience: "selected",
+      clientIds: [ATHLETE_C],
+    });
+    await db
+      .update(schema.ptClientRelationships)
+      .set({ activatedAt: new Date(Date.now() + 60_000) })
+      .where(
+        and(
+          eq(schema.ptClientRelationships.trainerId, COACH_A),
+          eq(schema.ptClientRelationships.clientId, ATHLETE_C),
+        ),
+      );
+    expect((await stats()).forms).toEqual([]);
+  });
+});
+
+describe("C10b question extras over HTTP (PER-129)", () => {
+  it("stores help, details if yes and filled-for-them, and takes a details answer", async () => {
+    const form = await makeForm(COACH_A, "Weekly", [
+      {
+        id: "pain",
+        type: "yes_no",
+        prompt: "Any pain or niggles?",
+        help: "Where is it, and how bad?",
+        detailsIfYes: true,
+        required: true,
+      },
+      {
+        id: "weight",
+        type: "number",
+        prompt: "Weight",
+        unit: "kg",
+        prefill: "weight",
+      },
+    ]);
+    expect(form.version.questions[0]).toMatchObject({
+      help: "Where is it, and how bad?",
+      detailsIfYes: true,
+    });
+    expect(form.version.questions[1].prefill).toBe("weight");
+    await makeSchedule(COACH_A, {
+      formId: form.id,
+      trigger: "once",
+      audience: "selected",
+      clientIds: [ATHLETE_C],
+    });
+    const [req] = (await pending(ATHLETE_C)).json.data.requests;
+    expect(req.version.questions[0].detailsIfYes).toBe(true);
+    const res = await answer(ATHLETE_C, req.id, {
+      pain: { value: true, details: "Left knee, mild" },
+      weight: 82.4,
+    });
+    expect(res.status).toBe(201);
+    expect(res.json.data.answers.pain).toEqual({
+      value: true,
+      details: "Left knee, mild",
+    });
+    const bad = await makeFormRaw([
+      { id: "x", type: "short_text", prompt: "X", prefill: "steps" },
+    ]);
+    expect(bad.status).toBe(422);
+  });
+
+  const makeFormRaw = (questions: unknown[]) =>
+    http("POST", "/trainers/me/forms", COACH_A, { title: "T", questions });
+});

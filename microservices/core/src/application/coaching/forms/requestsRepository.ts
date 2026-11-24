@@ -32,9 +32,8 @@ import { deliverCoachEvents, recordCoachEvent } from "../events/coachEvents";
 import { validateAnswers, type FieldError, type Question } from "./questions";
 import {
   cancelScheduleRequests,
-  checkRule,
+  checkOverride,
   hhmm,
-  type Trigger,
 } from "./scheduleRepository";
 
 /**
@@ -725,7 +724,7 @@ export async function setClientFormSetup(
       let override: Record<string, unknown> | null | undefined = undefined;
       if (input.override === null) override = null;
       else if (input.override !== undefined) {
-        const checked = checkRule(s.trigger as Trigger, input.override);
+        const checked = checkOverride(s, input.override);
         if (!checked.ok) {
           return {
             status: 422 as const,
