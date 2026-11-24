@@ -133,9 +133,11 @@ export function FormsLibraryContainer() {
       const s = sending.schedule;
       setDraftRule(ruleOf(s));
       setAll(s.audience === "all_clients");
+      // Paused clients stay on the rule: a target missing from `clientIds`
+      // is excluded and loses its open requests (Inspector Brad, #555).
       setPicked(
         (s.clients ?? [])
-          .filter((c) => c.status === "active")
+          .filter((c) => c.status !== "excluded")
           .map((c) => c.clientId),
       );
     } else {

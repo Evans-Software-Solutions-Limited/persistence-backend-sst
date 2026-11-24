@@ -784,3 +784,49 @@ describe("Rule fields: due and reminders as a day and time (C10c)", () => {
     expect(currentPath()).toBe("/coach/library/forms/f-life");
   });
 });
+
+describe("Inspector Brad #555", () => {
+  it("Change keeps a paused client on a selected rule (only excluded ones drop)", async () => {
+    const api = fakeApi({
+      formSchedules: vi.fn().mockResolvedValue([
+        {
+          ...weekly,
+          clients: [
+            {
+              clientId: CLIENT_ID,
+              relationshipId: "r1",
+              status: "active",
+              override: null,
+            },
+            {
+              clientId: "c-paused",
+              relationshipId: "r2",
+              status: "paused",
+              override: null,
+            },
+            {
+              clientId: "c-gone",
+              relationshipId: "r3",
+              status: "excluded",
+              override: null,
+            },
+          ],
+        },
+      ]),
+      patchSchedule: vi.fn().mockResolvedValue(weekly),
+    });
+    library(api, "/coach/library/forms/f-weekly/change");
+    const dlg = await screen.findByRole("dialog", {
+      name: "Change Weekly check-in",
+    });
+    fireEvent.change(within(dlg).getByLabelText("Time"), {
+      target: { value: "10:00" },
+    });
+    fireEvent.click(within(dlg).getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(api.patchSchedule).toHaveBeenCalled());
+    expect(api.patchSchedule.mock.calls[0]![1].clientIds).toEqual([
+      CLIENT_ID,
+      "c-paused",
+    ]);
+  });
+});
