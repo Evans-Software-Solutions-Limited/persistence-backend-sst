@@ -11,6 +11,92 @@ later sessions changed things.
 
 ---
 
+### 2026-11-23 — BE-F1: progress photos and the private media service ([PER-121](https://linear.app/evans-software-solutions/issue/PER-121); branch `bradleysimmsevans/per-121-be-f1-backend-progress-photos-and`)
+
+PR #553 (open, no auto-merge). Linear "Backend design F — Progress photos".
+Backend + infra only; no app, native or version change. Unblocks PER-137,
+PER-138 and PER-122.
+
+- **Migration** `20261123230832_progress_photos_private_media.sql` (+ rollback):
+  `progress_photo_sets` (tombstone `deleted_at`, `updated_at` for `?since=`,
+  unique `(user_id, client_request_id)`), `progress_photos` (unique
+  `(set_id, pose)`), `private_media` (+ `form_response_id`, set once, and
+  `client_request_id`, both beyond the design), `private_media_purges` (purge
+  queue, no FK). RLS on, no policies. Drizzle in
+  `packages/db/src/progressPhotosSchema.ts`, re-exported by one line at the end
+  of `schema.ts`. ⚠ If PER-111's migration merges with a later timestamp,
+  rename this one and its references in `progressPhotos.integration` and
+  `forms.integration`.
+- **Infra** (`infra/storage.ts`, `infra/api.ts`): private `CoachPrivateMedia`
+  bucket (SST public-access block, HTTPS-only, explicit SSE-S3 via
+  `aws.s3.BucketServerSideEncryptionConfigurationV2`, CORS GET/HEAD/PUT for
+  the web origin only; lifecycle: `pending/` expires after 1 day). Linked to
+  the API route and the account-purge cron.
+- **S3 layer** `application/media/privateMediaStore.ts`: presigned PUTs go to
+  the staging key `pending/<key>`, signing content-type and content-length.
+  The client uses `requestChecksumCalculation: "WHEN_REQUIRED"` (otherwise an
+  empty-body CRC32 is baked into the URL and S3 rejects the real PUT).
+  `checkUpload` = HeadObject the staged copy, type/size check, CopyObject to
+  the final key, delete the staged copy; no client link can write a final
+  key. Views 15 min (owner) / 5 min (coach). The presigner vs client-s3
+  `@smithy/types` skew is bridged with a type-only cast.
+- **Routes** (`application/media/mediaHandlers.ts`, mounted in
+  `coachingRoutes.ts`): `GET/POST /users/me/progress-photos`,
+  `POST …/:setId/complete`, `DELETE …/:setId`,
+  `GET/POST /users/me/progress-photos/sharing`,
+  `GET /trainers/me/clients/:clientId/progress-photos`,
+  `POST /users/me/media/uploads` (form_answer: JPEG ≤ 10 MB),
+  `GET /users/me/media/:mediaId`, `POST /trainers/me/media/uploads`
+  (resource: PDF/JPEG/PNG ≤ 25 MB, design I),
+  `GET /trainers/me/clients/:clientId/media/:mediaId`.
+  - Create body is `{takenOn, poses:[{pose, bytes, width?, height?}]}`:
+    `bytes` is needed to pin the size in a PUT. A replay with the same
+    `Idempotency-Key` returns the set with fresh links for poses not yet
+    complete (how the phone renews expired links).
+- **Consent** (`application/media/photoSharing.ts`): grant rows
+  `photo_sharing_prompt` per active non-AI coach; a grant counts only if newer
+  than the relationship's `activated_at` and the pair's last `withdraw`.
+  `PHOTO_SHARING_COPY` / `PHOTO_SHARING_CONSENT_VERSION` are **placeholders**
+  for Brad's wording. `needsPrompt` is true while any active coach lacks a
+  grant.
+- **Form photo answers** (PER-116's 422 lifted): answer = `{mediaId}` or a bare
+  id. `finalisePhotoAnswers` HeadObjects pending uploads before the submit
+  transaction; inside it `lockPhotoAnswers` requires own, ready, unattached
+  media; `attachPhotoAnswers` sets `form_response_id`. `photo_unavailable` is
+  gone (a blank required photo is a normal `required`). Coach view of a photo
+  answer: `resolveCoachScope` + the forms' own `visibleRequests` predicate
+  (now exported from `requestsRepository.ts`); no photo switch/consent check
+  there (decision for Brad).
+- **Purge:** `queuePrivateMediaPurge` (before the SQL purge, not swallowed)
+  adds the user to `private_media_purges`; `drainPrivateMediaPurges`
+  (`media/privateMediaPurge.ts`, nightly) deletes `progress/`, `forms/`,
+  `resources/` and their `pending/` copies only once the profile is gone,
+  drops the row if the account was restored, keeps it otherwise.
+  `AccountRepository.purgeUserData` now returns `boolean`; on `false`
+  (restored mid-sweep) the cron counts `restored` and skips the auth-user and
+  avatar deletes. That fixes a pre-existing bug: the auth delete cascaded to
+  `profiles`. Nightly clean-up: pending sets/media > 2 days and unattached
+  form photos > 7 days; rows are deleted first (RETURNING keys), then the
+  objects, in one transaction.
+- **Tests:** `media/__tests__/` — `progressPhotos.integration` (PGlite, real
+  migrations, an in-memory bucket behind a real S3Client: design F tests 1–5,
+  two users, two coaches, ended coaching, no consent, switch off, migration
+  twice/down/up, the purge cascade), `privateMediaStore`,
+  `progressPhotoRepository` (pure), `noAiPhotos` (design F test 6: static
+  import closure of every AI module, mutation-checked). Media files 97–100%
+  branches. Core `test:unit` 6,283 pass.
+- **Inspector Brad on #553: four sweeps, 6 leads, all confirmed and fixed
+  with a test that failed first; case closed on 7d1a6ff.**
+  - The coach's photo-answer view follows the forms' cycle rule.
+  - Uploads are staged under `pending/`, so a late duplicate PUT can't get a
+    ready photo expired.
+  - Both clean-up sweeps delete rows before objects.
+  - The purge queues media and drains only once the profile is gone.
+  - An aborted purge skips the auth-user delete.
+- **Not verified:** no deploy, no real S3 (presigned PUT, HeadObject,
+  CopyObject and the lifecycle untested against AWS), migration not applied
+  anywhere, infra files not type-checked locally (`.sst/platform` absent).
+
 ### 2026-11-23 — BE-G1a: different reps for each set ([PER-111](https://linear.app/evans-software-solutions/issue/PER-111); branch `bradleysimmsevans/per-111-be-g1a-backend-different-reps-for`)
 
 PR #552 (open, no auto-merge). Backend only: design G part 1. No mobile,

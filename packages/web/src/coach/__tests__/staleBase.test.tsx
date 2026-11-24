@@ -123,7 +123,7 @@ describe("a draft left in another section (sweep 6)", () => {
   let go: (to: string) => void = () => {};
   function GrabNavigate() {
     const navigate = useNavigate();
-    go = (to) => navigate(to);
+    go = (to) => void navigate(to);
     return null;
   }
 
@@ -497,7 +497,7 @@ describe("drafts belong to one client (sweep 11)", () => {
   let go: (to: string) => void = () => {};
   function GrabNavigate() {
     const navigate = useNavigate();
-    go = (to) => navigate(to);
+    go = (to) => void navigate(to);
     return null;
   }
   const OTHER = "33333333-3333-4333-8333-333333333333";

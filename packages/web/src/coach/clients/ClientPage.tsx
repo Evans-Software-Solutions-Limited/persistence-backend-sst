@@ -57,7 +57,7 @@ export function ClientPage() {
               ? "This client isn't one of your active clients."
               : "We couldn't load this client."
           }
-          onRetry={() => roster.refetch()}
+          onRetry={() => void roster.refetch()}
         />
       </>
     );
@@ -167,6 +167,29 @@ function ClientSettingsPage({ client }: { client: RosterClient }) {
     }
   }
 
+  async function endCoaching() {
+    setEnding(true);
+    setError(null);
+    try {
+      await api.endCoaching(client.id);
+      await queryClient.invalidateQueries({
+        queryKey: coachKeys.roster,
+      });
+      void navigate("/coach/clients");
+    } catch (e) {
+      setConfirmEnd(false);
+      setError(
+        isCoachApiError(e) && e.offline
+          ? "You're offline. Ending coaching needs a connection."
+          : isCoachApiError(e)
+            ? e.message
+            : "We couldn't end coaching. Try again.",
+      );
+    } finally {
+      setEnding(false);
+    }
+  }
+
   return (
     <>
       {settingsQ.isPending ? (
@@ -178,7 +201,7 @@ function ClientSettingsPage({ client }: { client: RosterClient }) {
               ? "We couldn't load these settings."
               : "You're offline. Settings load when you're back online."
           }
-          onRetry={() => settingsQ.refetch()}
+          onRetry={() => void settingsQ.refetch()}
         />
       ) : (
         <ClientSettingsView
@@ -199,28 +222,7 @@ function ClientSettingsPage({ client }: { client: RosterClient }) {
           onAlert={(mode) => void save({ alertMode: mode })}
           onAskEnd={() => setConfirmEnd(true)}
           onKeep={() => setConfirmEnd(false)}
-          onConfirmEnd={async () => {
-            setEnding(true);
-            setError(null);
-            try {
-              await api.endCoaching(client.id);
-              await queryClient.invalidateQueries({
-                queryKey: coachKeys.roster,
-              });
-              navigate("/coach/clients");
-            } catch (e) {
-              setConfirmEnd(false);
-              setError(
-                isCoachApiError(e) && e.offline
-                  ? "You're offline. Ending coaching needs a connection."
-                  : isCoachApiError(e)
-                    ? e.message
-                    : "We couldn't end coaching. Try again.",
-              );
-            } finally {
-              setEnding(false);
-            }
-          }}
+          onConfirmEnd={() => void endCoaching()}
         />
       )}
     </>

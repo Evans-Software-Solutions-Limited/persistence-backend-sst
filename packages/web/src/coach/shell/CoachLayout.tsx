@@ -25,7 +25,7 @@ export function CoachLayout() {
 
   useEffect(() => {
     let cancelled = false;
-    getAccessToken().then((token) => {
+    void getAccessToken().then((token) => {
       if (!cancelled) setSession(token ? "ok" : "none");
     });
     return () => {
@@ -40,7 +40,7 @@ export function CoachLayout() {
     () =>
       onSignedOut(() => {
         queryClient.removeQueries({ queryKey: coachKeys.all });
-        navigate("/coach/login", {
+        void navigate("/coach/login", {
           replace: true,
           state: { from: location.pathname },
         });
@@ -62,15 +62,13 @@ export function CoachLayout() {
       <Navigate to="/coach/login" replace state={{ from: location.pathname }} />
     );
   }
-  return (
-    <SignedIn
-      onSignOut={async () => {
-        await signOut();
-        queryClient.removeQueries({ queryKey: coachKeys.all });
-        navigate("/coach/login", { replace: true });
-      }}
-    />
-  );
+  async function handleSignOut() {
+    await signOut();
+    queryClient.removeQueries({ queryKey: coachKeys.all });
+    void navigate("/coach/login", { replace: true });
+  }
+
+  return <SignedIn onSignOut={() => void handleSignOut()} />;
 }
 
 function SignedIn({ onSignOut }: { onSignOut: () => void }) {
@@ -110,7 +108,7 @@ function SignedIn({ onSignOut }: { onSignOut: () => void }) {
                 ? "You're offline. Connect to open your coach workspace."
                 : "We couldn't load your account."
             }
-            onRetry={() => profile.refetch()}
+            onRetry={() => void profile.refetch()}
           />
         </div>
       </div>

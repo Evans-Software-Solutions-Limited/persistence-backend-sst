@@ -33,8 +33,8 @@ export function InvitedClientContainer() {
   const online = useOnline();
   const detailQ = useClientProfile(profileId);
   const library = useLibrary();
-  const actions = useInviteActions((id) =>
-    navigate(`/coach/clients/invited/${id}/invite`),
+  const actions = useInviteActions(
+    (id) => void navigate(`/coach/clients/invited/${id}/invite`),
   );
   const [notesDraft, setNotesDraft] = useState<string | null>(null);
   // What the notes were, and the revision, when Edit was pressed: a refetch
@@ -77,7 +77,7 @@ export function InvitedClientContainer() {
               ? "We couldn't load this client."
               : "You're offline. This client loads when you're back online."
         }
-        onRetry={() => detailQ.refetch()}
+        onRetry={() => void detailQ.refetch()}
       />
     );
   }
@@ -151,6 +151,25 @@ export function InvitedClientContainer() {
     }
   }
 
+  const copyLink = async () => {
+    if (!detail.invite || state !== "active") return;
+    try {
+      await navigator.clipboard.writeText(detail.invite.link);
+      setCopied(true);
+    } catch {
+      setError(
+        "Your browser didn't allow copying. Open the invite to see the code.",
+      );
+    }
+  };
+
+  const confirmCancelInvite = async () => {
+    if (await actions.cancel(detail.id)) {
+      setConfirmCancel(false);
+      void navigate("/coach/clients");
+    }
+  };
+
   return (
     <>
       <InvitedClientView
@@ -180,7 +199,7 @@ export function InvitedClientContainer() {
         error={actions.error ?? error}
         toast={toast}
         onOpen={(s) =>
-          navigate(
+          void navigate(
             `/coach/clients/invited/${detail.id}/setup/${s}?from=invited`,
           )
         }
@@ -194,26 +213,11 @@ export function InvitedClientContainer() {
         onNotesChange={setNotesDraft}
         onSaveNotes={() => void saveNotes()}
         onCancelNotes={() => setNotesDraft(null)}
-        onCopyLink={async () => {
-          if (!detail.invite || state !== "active") return;
-          try {
-            await navigator.clipboard.writeText(detail.invite.link);
-            setCopied(true);
-          } catch {
-            setError(
-              "Your browser didn't allow copying. Open the invite to see the code.",
-            );
-          }
-        }}
+        onCopyLink={() => void copyLink()}
         onResend={() => void actions.issue(detail.id)}
         onAskCancel={() => setConfirmCancel(true)}
         onKeepInvite={() => setConfirmCancel(false)}
-        onConfirmCancel={async () => {
-          if (await actions.cancel(detail.id)) {
-            setConfirmCancel(false);
-            navigate("/coach/clients");
-          }
-        }}
+        onConfirmCancel={() => void confirmCancelInvite()}
       />
       {actions.dialog}
     </>

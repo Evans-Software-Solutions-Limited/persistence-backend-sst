@@ -318,7 +318,7 @@ export function CheckinsContainer({ client }: { client: RosterClient }) {
           forms={addable}
           onClose={() => setAdding(false)}
           onPick={(id) =>
-            navigate(`/coach/library/forms/${id}/send?client=${client.id}`)
+            void navigate(`/coach/library/forms/${id}/send?client=${client.id}`)
           }
         />
       )}

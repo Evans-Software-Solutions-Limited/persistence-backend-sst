@@ -1,3 +1,4 @@
+import type { Mock } from "vitest";
 import { webcrypto } from "node:crypto";
 import * as auth from "../auth";
 const tokens = {
@@ -10,7 +11,17 @@ const user = {
   email: "new@example.test",
   email_confirmed_at: "2026-09-22",
 };
-let fetcher: ReturnType<typeof vi.fn>;
+/** The `fetch` calls under test: string URLs, JSON string bodies, plain headers. */
+type Fetcher = (
+  url: string,
+  init: {
+    method?: string;
+    body: string;
+    headers: Record<string, string>;
+    signal?: AbortSignal;
+  },
+) => Promise<Response>;
+let fetcher: Mock<Fetcher>;
 beforeEach(() => {
   sessionStorage.clear();
   localStorage.clear();

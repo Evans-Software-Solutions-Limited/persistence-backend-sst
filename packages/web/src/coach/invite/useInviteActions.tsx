@@ -152,7 +152,7 @@ export function useInviteActions(
     <DeclarationDialog
       busy={declarationBusy}
       error={declarationError}
-      onConfirm={confirmDeclaration}
+      onConfirm={() => void confirmDeclaration()}
       onClose={() => setDeclarationFor(null)}
     />
   ) : null;

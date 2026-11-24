@@ -1,7 +1,17 @@
-import { beforeEach, afterEach, expect, it, vi } from "vitest";
+import { beforeEach, afterEach, expect, it, vi, type Mock } from "vitest";
 import { voucherApi } from "../api";
 import { saveSession, loadSession } from "../auth";
-let fetcher: ReturnType<typeof vi.fn>;
+/** The `fetch` calls under test: string URLs, JSON string bodies, plain headers. */
+type Fetcher = (
+  url: string,
+  init: {
+    method?: string;
+    body: string;
+    headers: Record<string, string>;
+    signal?: AbortSignal;
+  },
+) => Promise<Response>;
+let fetcher: Mock<Fetcher>;
 beforeEach(() => {
   sessionStorage.clear();
   saveSession({
@@ -10,7 +20,7 @@ beforeEach(() => {
     expiresAt: Date.now() / 1000 + 3600,
   });
   vi.stubEnv("VITE_CORE_API_URL", "https://api.example.com/");
-  fetcher = vi.fn();
+  fetcher = vi.fn<Fetcher>();
   vi.stubGlobal("fetch", fetcher);
 });
 afterEach(() => {

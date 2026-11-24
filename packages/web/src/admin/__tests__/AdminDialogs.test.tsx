@@ -8,11 +8,11 @@ function Consumer() {
   return (
     <>
       <button
-        onClick={async () => result(await prompt("Audit reason", "Initial"))}
+        onClick={() => void prompt("Audit reason", "Initial").then(result)}
       >
         Request input
       </button>
-      <button onClick={async () => result(await confirm("Archive this code?"))}>
+      <button onClick={() => void confirm("Archive this code?").then(result)}>
         Request confirmation
       </button>
     </>

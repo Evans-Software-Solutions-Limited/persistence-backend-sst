@@ -284,7 +284,7 @@ export function AdminCodes() {
                         <Button
                           size="xs"
                           variant="ghost"
-                          onClick={() => copy(c)}
+                          onClick={() => void copy(c)}
                         >
                           {copied === c.id ? "Copied" : "Copy link"}
                         </Button>
@@ -326,18 +326,17 @@ export function AdminCodes() {
                           <Button
                             size="xs"
                             variant="destructive"
-                            onClick={async () => {
-                              if (
-                                await confirm(
-                                  `Archive ${c.displayCode}? It can't be claimed again.`,
-                                )
-                              ) {
-                                update.mutate({
-                                  id: c.id,
-                                  patch: { status: "archived" },
-                                });
-                              }
-                            }}
+                            onClick={() =>
+                              void confirm(
+                                `Archive ${c.displayCode}? It can't be claimed again.`,
+                              ).then((ok) => {
+                                if (ok)
+                                  update.mutate({
+                                    id: c.id,
+                                    patch: { status: "archived" },
+                                  });
+                              })
+                            }
                           >
                             Archive
                           </Button>

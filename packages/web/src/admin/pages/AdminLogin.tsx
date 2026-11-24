@@ -51,7 +51,7 @@ export function AdminLogin() {
           Built for consistency. Managed with care.
         </span>
       </div>
-      <form onSubmit={onSubmit} className="admin-login-form">
+      <form onSubmit={(e) => void onSubmit(e)} className="admin-login-form">
         <div>
           <IconShieldLock
             className="admin-login-icon"

@@ -397,7 +397,7 @@ export function AdminVoucherBatch() {
                   <Input
                     type="file"
                     accept=".csv,text/csv"
-                    onChange={async (e) => {
+                    onChange={(e) => {
                       const file = e.target.files?.[0];
                       if (!file) return;
                       setPreview(null);
@@ -406,11 +406,7 @@ export function AdminVoucherBatch() {
                         setError(new Error("CSV must be smaller than 1 MB."));
                         return;
                       }
-                      try {
-                        setCsv(await file.text());
-                      } catch (err) {
-                        setError(err);
-                      }
+                      file.text().then(setCsv, setError);
                     }}
                   />
                 </label>

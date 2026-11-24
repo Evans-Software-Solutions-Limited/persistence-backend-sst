@@ -38,6 +38,14 @@ export function AdminLookup() {
       void qc.invalidateQueries({ queryKey: ["admin", "lookup"] }),
   });
 
+  async function promptAttribution(userId: string) {
+    const code = await prompt("Referral code to attribute this user to:");
+    if (!code) return;
+    const reason = await prompt("Reason (goes in the audit log):");
+    if (reason && reason.trim().length >= 3)
+      attribute.mutate({ userId, code: code.trim(), reason: reason.trim() });
+  }
+
   function submit(e: FormEvent) {
     e.preventDefault();
     setEmail(input.trim().toLowerCase());
@@ -107,21 +115,7 @@ export function AdminLookup() {
                     variant="ghost"
                     className="ml-2"
                     disabled={attribute.isPending}
-                    onClick={async () => {
-                      const code = await prompt(
-                        "Referral code to attribute this user to:",
-                      );
-                      if (!code) return;
-                      const reason = await prompt(
-                        "Reason (goes in the audit log):",
-                      );
-                      if (reason && reason.trim().length >= 3)
-                        attribute.mutate({
-                          userId: account.id,
-                          code: code.trim(),
-                          reason: reason.trim(),
-                        });
-                    }}
+                    onClick={() => void promptAttribution(account.id)}
                   >
                     {account.attribution ? "Change" : "Set"}
                   </Button>

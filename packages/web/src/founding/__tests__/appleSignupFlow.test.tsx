@@ -1,3 +1,4 @@
+import type { Mock } from "vitest";
 import { webcrypto } from "node:crypto";
 import {
   cleanup,
@@ -24,7 +25,17 @@ const tokens = {
   refresh_token: "test-refresh",
   expires_in: 3600,
 };
-let fetcher: ReturnType<typeof vi.fn>;
+/** The `fetch` calls under test: string URLs, JSON string bodies, plain headers. */
+type Fetcher = (
+  url: string,
+  init: {
+    method?: string;
+    body: string;
+    headers: Record<string, string>;
+    signal?: AbortSignal;
+  },
+) => Promise<Response>;
+let fetcher: Mock<Fetcher>;
 
 beforeEach(() => {
   sessionStorage.clear();

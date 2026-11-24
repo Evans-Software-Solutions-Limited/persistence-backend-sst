@@ -111,7 +111,7 @@ export function BatchIssuance({
           issue more codes.
         </p>
       ) : (
-        <form onSubmit={submit} className="admin-form-grid">
+        <form onSubmit={(e) => void submit(e)} className="admin-form-grid">
           <label>
             Number of new codes
             <Input

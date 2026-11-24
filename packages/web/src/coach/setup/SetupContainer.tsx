@@ -170,7 +170,7 @@ export function SetupContainer() {
               ? "We couldn't load this client."
               : "You're offline. This client loads when you're back online."
         }
-        onRetry={() => detailQ.refetch()}
+        onRetry={() => void detailQ.refetch()}
       />
     );
   }
@@ -294,7 +294,7 @@ export function SetupContainer() {
   const go = async (path: string) => {
     if (await saveCurrent()) {
       setNotice(null);
-      navigate(path);
+      void navigate(path);
     }
   };
 
@@ -373,6 +373,54 @@ export function SetupContainer() {
     ? { to: base, label: detail.displayName }
     : { to: "/coach/clients", label: "Clients" };
 
+  async function openPreview() {
+    if (await saveCurrent()) preview.open();
+  }
+
+  async function copySetup(source: CopySource) {
+    if (!online) {
+      setCopyError("You're offline. Copying needs a connection.");
+      return;
+    }
+    setCopyBusy(true);
+    setCopyError(null);
+    try {
+      const next = await api.copyFrom(
+        profileId,
+        source.kind === "client"
+          ? { sourceClientId: source.id }
+          : { sourceProfileId: source.id },
+      );
+      queryClient.setQueryData(detailKey, next);
+      // The copy only replaces sections the source has: unsaved edits
+      // in any other section stay, moved to the new revision.
+      setDrafts((d) => {
+        const kept: Drafts = {};
+        for (const [s, dr] of Object.entries(d) as [SetupSection, Draft][]) {
+          if (sameItems(dr.base, itemsOf(next, s))) {
+            kept[s] = { ...dr, revision: next.revision };
+          }
+        }
+        return kept;
+      });
+      setCopyOpen(false);
+      setToast(`Copied from ${source.name}`);
+      void queryClient.invalidateQueries({
+        queryKey: coachKeys.roster,
+      });
+    } catch (e) {
+      setCopyError(
+        isCoachApiError(e) && e.offline
+          ? "You're offline. Copying needs a connection."
+          : isCoachApiError(e)
+            ? e.message
+            : "We couldn't copy that set-up.",
+      );
+    } finally {
+      setCopyBusy(false);
+    }
+  }
+
   return (
     <>
       <SetupStepView
@@ -402,9 +450,7 @@ export function SetupContainer() {
           setCopyError(null);
           setCopyOpen(true);
         }}
-        onPreview={async () => {
-          if (await saveCurrent()) preview.open();
-        }}
+        onPreview={() => void openPreview()}
         onCancel={() => {
           dropDraft(current);
           setError(null);
@@ -422,52 +468,7 @@ export function SetupContainer() {
           error={copyError}
           clientFirst={clientFirst}
           onClose={() => setCopyOpen(false)}
-          onCopy={async (source) => {
-            if (!online) {
-              setCopyError("You're offline. Copying needs a connection.");
-              return;
-            }
-            setCopyBusy(true);
-            setCopyError(null);
-            try {
-              const next = await api.copyFrom(
-                profileId,
-                source.kind === "client"
-                  ? { sourceClientId: source.id }
-                  : { sourceProfileId: source.id },
-              );
-              queryClient.setQueryData(detailKey, next);
-              // The copy only replaces sections the source has: unsaved edits
-              // in any other section stay, moved to the new revision.
-              setDrafts((d) => {
-                const kept: Drafts = {};
-                for (const [s, dr] of Object.entries(d) as [
-                  SetupSection,
-                  Draft,
-                ][]) {
-                  if (sameItems(dr.base, itemsOf(next, s))) {
-                    kept[s] = { ...dr, revision: next.revision };
-                  }
-                }
-                return kept;
-              });
-              setCopyOpen(false);
-              setToast(`Copied from ${source.name}`);
-              void queryClient.invalidateQueries({
-                queryKey: coachKeys.roster,
-              });
-            } catch (e) {
-              setCopyError(
-                isCoachApiError(e) && e.offline
-                  ? "You're offline. Copying needs a connection."
-                  : isCoachApiError(e)
-                    ? e.message
-                    : "We couldn't copy that set-up.",
-              );
-            } finally {
-              setCopyBusy(false);
-            }
-          }}
+          onCopy={(source) => void copySetup(source)}
         />
       )}
       {preview.panel}

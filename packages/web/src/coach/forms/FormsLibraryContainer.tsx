@@ -167,12 +167,14 @@ export function FormsLibraryContainer() {
     );
   }
 
-  const go = (path: string) => navigate(`/coach/library/forms${path}`);
+  const go = (path: string) => {
+    void navigate(`/coach/library/forms${path}`);
+  };
   const backTo = search.get("client");
-  const close = () =>
-    backTo
-      ? navigate(`/coach/clients/${backTo}/check-ins`)
-      : go(routeFormId ? `/${routeFormId}` : "");
+  const close = () => {
+    if (backTo) void navigate(`/coach/clients/${backTo}/check-ins`);
+    else go(routeFormId ? `/${routeFormId}` : "");
+  };
 
   async function submit() {
     if (!sending || !draftRule) return;
@@ -243,6 +245,23 @@ export function FormsLibraryContainer() {
     ? forms.data.find((f) => f.id === preview)
     : undefined;
 
+  async function copyTemplate(key: string) {
+    setError(null);
+    try {
+      const created = await api.createFromTemplate(key, newIdempotencyKey());
+      await queryClient.invalidateQueries({ queryKey: coachKeys.forms });
+      go(`/${created.id}/edit`);
+    } catch (e) {
+      setError(
+        errorText(
+          e,
+          "You're offline. Using a template needs a connection.",
+          "We couldn't copy that template.",
+        ),
+      );
+    }
+  }
+
   return (
     <>
       <FormsLibrary
@@ -261,32 +280,16 @@ export function FormsLibraryContainer() {
           go(`/${id}`);
         }}
         onNew={(when) =>
-          navigate(`/coach/library/forms/new${when ? `?when=${when}` : ""}`)
+          void navigate(
+            `/coach/library/forms/new${when ? `?when=${when}` : ""}`,
+          )
         }
         onEdit={(id) => go(`/${id}/edit`)}
         onSend={(id) => go(`/${id}/send`)}
         onChange={(id) => go(`/${id}/change`)}
         onPreview={setPreview}
         onToggleTemplates={() => setShowTemplates((v) => !v)}
-        onUseTemplate={async (key) => {
-          setError(null);
-          try {
-            const created = await api.createFromTemplate(
-              key,
-              newIdempotencyKey(),
-            );
-            await queryClient.invalidateQueries({ queryKey: coachKeys.forms });
-            go(`/${created.id}/edit`);
-          } catch (e) {
-            setError(
-              errorText(
-                e,
-                "You're offline. Using a template needs a connection.",
-                "We couldn't copy that template.",
-              ),
-            );
-          }
-        }}
+        onUseTemplate={(key) => void copyTemplate(key)}
         onToggleOutstanding={() => setShowAll((v) => !v)}
       />
       {sending && sendingForm && draftRule && (

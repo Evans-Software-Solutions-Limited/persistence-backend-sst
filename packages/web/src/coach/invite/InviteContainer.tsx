@@ -95,7 +95,7 @@ export function InviteContainer() {
     return (
       <LoadError
         message="We couldn't load this client."
-        onRetry={() => detailQ.refetch()}
+        onRetry={() => void detailQ.refetch()}
       />
     );
   }
@@ -107,6 +107,16 @@ export function InviteContainer() {
   const base = `/coach/clients/invited/${detail.id}`;
   const coachName = coach.data?.fullName ?? "Your coach";
   const days = live ? daysLeft(live.expiresAt) : null;
+
+  async function copyLink() {
+    if (!live) return;
+    try {
+      await navigator.clipboard.writeText(live.link);
+      setCopied(true);
+    } catch {
+      // Clipboard refused (permissions); the code is on screen to copy.
+    }
+  }
 
   return (
     <>
@@ -140,19 +150,11 @@ export function InviteContainer() {
             ? "This invite was cancelled. Send a new one to invite them again."
             : null)
         }
-        onCopyLink={async () => {
-          if (!live) return;
-          try {
-            await navigator.clipboard.writeText(live.link);
-            setCopied(true);
-          } catch {
-            // Clipboard refused (permissions); the code is on screen to copy.
-          }
-        }}
+        onCopyLink={() => void copyLink()}
         onIssue={() => void actions.issue(detail.id)}
         onPreview={preview.open}
-        onBack={() => navigate(`${base}/setup`)}
-        onDone={() => navigate(base)}
+        onBack={() => void navigate(`${base}/setup`)}
+        onDone={() => void navigate(base)}
       />
       {preview.panel}
       {actions.dialog}

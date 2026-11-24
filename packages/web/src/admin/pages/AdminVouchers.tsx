@@ -102,7 +102,7 @@ export function NewVoucherBatch({
   }
   return (
     <Panel title="Create a membership batch">
-      <form onSubmit={submit} className="admin-form-grid">
+      <form onSubmit={(e) => void submit(e)} className="admin-form-grid">
         <label>
           Business name
           <Input

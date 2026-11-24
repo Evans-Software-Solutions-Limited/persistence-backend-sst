@@ -23,7 +23,7 @@ export function WhoContainer() {
     return (
       <LoadError
         message="We couldn't load this client."
-        onRetry={() => detailQ.refetch()}
+        onRetry={() => void detailQ.refetch()}
       />
     );
   }
@@ -68,7 +68,7 @@ function WhoForm({ existing: loaded }: { existing: ClientProfile | null }) {
           createKey.current,
         );
         void queryClient.invalidateQueries({ queryKey: coachKeys.roster });
-        navigate(`/coach/clients/invited/${created.id}/setup`);
+        void navigate(`/coach/clients/invited/${created.id}/setup`);
         return;
       }
       const patch = changedFields(existing, parsed.input);
@@ -112,7 +112,7 @@ function WhoForm({ existing: loaded }: { existing: ClientProfile | null }) {
         );
         void queryClient.invalidateQueries({ queryKey: coachKeys.roster });
       }
-      navigate(`/coach/clients/invited/${existing.id}/setup`);
+      void navigate(`/coach/clients/invited/${existing.id}/setup`);
     } catch (e) {
       if (isCoachApiError(e) && e.code === "revision_conflict" && existing) {
         const latest = e.body?.current as ClientProfile | undefined;
@@ -149,7 +149,7 @@ function WhoForm({ existing: loaded }: { existing: ClientProfile | null }) {
       notice={notice}
       error={error}
       onCancel={() =>
-        navigate(
+        void navigate(
           existing ? `/coach/clients/invited/${existing.id}` : "/coach/clients",
         )
       }

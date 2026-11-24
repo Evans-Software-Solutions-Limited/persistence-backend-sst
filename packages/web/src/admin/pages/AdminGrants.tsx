@@ -52,6 +52,24 @@ export function AdminGrants() {
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["admin"] }),
   });
 
+  async function promptExtend(g: GrantRow) {
+    const rawMonths = await prompt("How many extra months?", "1");
+    if (!rawMonths) return;
+    const months = Number(rawMonths);
+    if (!Number.isInteger(months) || months < 1 || months > 120) return;
+    const reason = await prompt(`Why extend ${g.email}'s access?`);
+    if (reason && reason.trim().length >= 3)
+      extend.mutate({ id: g.id, months, reason: reason.trim() });
+  }
+
+  async function promptRevoke(g: GrantRow) {
+    const reason = await prompt(
+      `Revoke ${g.email}'s ${g.tierLabel ?? g.tierName}? Reason:`,
+    );
+    if (reason && reason.trim().length >= 3)
+      revoke.mutate({ id: g.id, reason: reason.trim() });
+  }
+
   return (
     <>
       <PageHeader title="Access grants">
@@ -217,29 +235,7 @@ export function AdminGrants() {
                           size="xs"
                           variant="ghost"
                           disabled={extend.isPending || !!action}
-                          onClick={async () => {
-                            const rawMonths = await prompt(
-                              "How many extra months?",
-                              "1",
-                            );
-                            if (!rawMonths) return;
-                            const months = Number(rawMonths);
-                            if (
-                              !Number.isInteger(months) ||
-                              months < 1 ||
-                              months > 120
-                            )
-                              return;
-                            const reason = await prompt(
-                              `Why extend ${g.email}'s access?`,
-                            );
-                            if (reason && reason.trim().length >= 3)
-                              extend.mutate({
-                                id: g.id,
-                                months,
-                                reason: reason.trim(),
-                              });
-                          }}
+                          onClick={() => void promptExtend(g)}
                         >
                           Extend
                         </Button>
@@ -255,16 +251,7 @@ export function AdminGrants() {
                           size="xs"
                           variant="destructive"
                           disabled={revoke.isPending || !!action}
-                          onClick={async () => {
-                            const reason = await prompt(
-                              `Revoke ${g.email}'s ${g.tierLabel ?? g.tierName}? Reason:`,
-                            );
-                            if (reason && reason.trim().length >= 3)
-                              revoke.mutate({
-                                id: g.id,
-                                reason: reason.trim(),
-                              });
-                          }}
+                          onClick={() => void promptRevoke(g)}
                         >
                           Revoke
                         </Button>

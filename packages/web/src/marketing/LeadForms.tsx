@@ -207,7 +207,7 @@ export function WaitlistForm() {
   }
 
   return (
-    <form className="lead-form" onSubmit={onSubmit} noValidate>
+    <form className="lead-form" onSubmit={(e) => void onSubmit(e)} noValidate>
       <div className="lead-row">
         <input
           type="email"
@@ -300,7 +300,11 @@ export function CoachEnquiryForm() {
   }
 
   return (
-    <form className="lead-form lead-form-stack" onSubmit={onSubmit} noValidate>
+    <form
+      className="lead-form lead-form-stack"
+      onSubmit={(e) => void onSubmit(e)}
+      noValidate
+    >
       <div className="lead-grid">
         <input
           type="text"

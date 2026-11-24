@@ -17,13 +17,14 @@ export function RequireAdmin({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      const token = await getAccessToken();
-      if (cancelled) return;
-      if (!token) return setState("none");
-      const session = loadSession();
-      setState(session?.isAdmin ? "ok" : "not-admin");
-    })();
+    void getAccessToken()
+      .catch(() => null)
+      .then((token) => {
+        if (cancelled) return;
+        if (!token) return setState("none");
+        const session = loadSession();
+        setState(session?.isAdmin ? "ok" : "not-admin");
+      });
     return () => {
       cancelled = true;
     };

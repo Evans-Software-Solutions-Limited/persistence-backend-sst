@@ -250,9 +250,11 @@ describe("business voucher administration", () => {
       const navigate = useNavigate();
       return (
         <>
-          <button onClick={() => navigate("/away")}>Leave by button</button>
-          <button onClick={() => navigate(-1)}>History back</button>
-          <button onClick={() => navigate(1)}>History forward</button>
+          <button onClick={() => void navigate("/away")}>
+            Leave by button
+          </button>
+          <button onClick={() => void navigate(-1)}>History back</button>
+          <button onClick={() => void navigate(1)}>History forward</button>
         </>
       );
     }

@@ -97,26 +97,28 @@ export function CoachSignIn() {
   const [email, setEmail] = useState("");
   const [state, setState] = useState<"idle" | "sending" | "sent">("idle");
   const [error, setError] = useState<string | null>(null);
+  async function sendLink() {
+    setState("sending");
+    setError(null);
+    try {
+      await sendMagicLink(
+        email.trim(),
+        `${window.location.origin}/coach/callback`,
+      );
+      setState("sent");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Sign-in failed");
+      setState("idle");
+    }
+  }
+
   return (
     <CoachSignInView
       email={email}
       onEmail={setEmail}
       state={state}
       error={error}
-      onSubmit={async () => {
-        setState("sending");
-        setError(null);
-        try {
-          await sendMagicLink(
-            email.trim(),
-            `${window.location.origin}/coach/callback`,
-          );
-          setState("sent");
-        } catch (e) {
-          setError(e instanceof Error ? e.message : "Sign-in failed");
-          setState("idle");
-        }
-      }}
+      onSubmit={() => void sendLink()}
     />
   );
 }
@@ -133,7 +135,7 @@ export function CoachCallback() {
   useEffect(() => {
     if (!parsed.session) return;
     saveSession(parsed.session);
-    navigate("/coach/clients", { replace: true });
+    void navigate("/coach/clients", { replace: true });
   }, [parsed, navigate]);
   return (
     <div className="persistence-coach">
