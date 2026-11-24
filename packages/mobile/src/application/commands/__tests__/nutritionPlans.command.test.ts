@@ -924,6 +924,40 @@ describe("my plans: create, edit, revision conflicts, delete", () => {
     expect(readPlansCache(storage, USER).conflictPlanIds).toEqual([]);
   });
 
+  it.each([
+    ["never reached the server", "offline"],
+    ["committed but its reply was lost", "lost"],
+  ])(
+    "a newer edit never goes out before an older one waiting to retry (A %s; Inspector Brad #554)",
+    async (_label, mode) => {
+      const base = plan("srv-p1", USER, 2, [
+        ["m1", "Lunch", [item("a", "Wrap", 450)]],
+      ]);
+      server.plans.set(base.id, base);
+      storage.cacheNutritionPlans(USER, { ...emptyPlansCache(), mine: [base] });
+      savePlanCommand(deps(), { ...base, name: "Edit A" });
+      if (mode === "offline") server.offline = true;
+      else server.loseNextResponse = true;
+      await drain(); // A fails in transport and waits for its backoff
+      server.offline = false;
+
+      // The user edits again; `save` drains straight away.
+      savePlanCommand(deps(), {
+        ...readPlansCache(storage, USER).mine[0]!,
+        name: "Edit B",
+      });
+      await drain();
+      await drainLater();
+      await drainLater();
+
+      expect(server.plans.get("srv-p1")!.name).toBe("Edit B");
+      const cache = readPlansCache(storage, USER);
+      expect(cache.mine[0]!.name).toBe("Edit B");
+      expect(cache.conflictPlanIds).toEqual([]);
+      expect(queued()).toHaveLength(0);
+    },
+  );
+
   it("deleting a plan that never left the phone forgets it and its shopping row", () => {
     server.offline = true;
     const p = createPlanCommand(deps(), draft());

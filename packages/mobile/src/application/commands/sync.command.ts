@@ -656,6 +656,15 @@ export function isMutationEligible(
   now: number = Date.now(),
 ): boolean {
   if (!isMutationDue(entry, now)) return false;
+  // PER-133: a meal plan's writes (create, edits, delete) are ordered: a
+  // newer PUT must never overtake an older one still waiting to retry, or a
+  // stale edit wins or a false conflict drops the newer one (Inspector Brad,
+  // #554).
+  if (entry.entityType === NUTRITION_PLAN_ENTITY && entry.entityId !== null) {
+    return !storage
+      .getQueuedEntriesForEntity(NUTRITION_PLAN_ENTITY, entry.entityId)
+      .some((older) => older.id < entry.id && isAutoResolvableSyncEntry(older));
+  }
   if (
     entry.entityType !== "profile" ||
     entry.entityId === null ||
