@@ -335,6 +335,25 @@ describe("usePlansShoppingList", () => {
     jest.useRealTimers();
   });
 
+  it("a failed read after a plan toggle is retried (Inspector Brad #554)", async () => {
+    jest.useFakeTimers();
+    const { api, wrapper } = setup();
+    const spy = jest.spyOn(api, "getPlansShoppingList").mockResolvedValueOnce({
+      ok: false,
+      error: { kind: "api", code: "timeout", message: "timed out", status: 0 },
+    } as never);
+    const hook = renderHook(() => usePlansShoppingList(false), { wrapper });
+    await act(async () => {
+      await hook.result.current.setPlanIncluded("B", true);
+    });
+    await act(async () => {
+      jest.advanceTimersByTime(1500);
+    });
+    await act(async () => {});
+    expect(spy.mock.calls.length).toBeGreaterThanOrEqual(2);
+    jest.useRealTimers();
+  });
+
   it("ticking an item while the list loads still takes the fresh list (Inspector Brad #554)", async () => {
     const { api, wrapper } = setup();
     let release: () => void = () => {};

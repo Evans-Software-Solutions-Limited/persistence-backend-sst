@@ -113,7 +113,19 @@ export function planViewModel(
  * list and the Mealprint entry points. A coach plan waiting for an answer
  * opens the C6 sheet once.
  */
-export function PlanTabContainer({ active }: { active: boolean }) {
+export function PlanTabContainer({
+  active,
+  autoOpen = active,
+}: {
+  /** The Plan section is showing: read and refresh its data. */
+  active: boolean;
+  /**
+   * Fuel is the screen on top: a waiting coach plan may open its sheet.
+   * Separate from `active` so focus changes don't re-fetch (Inspector Brad,
+   * #554).
+   */
+  autoOpen?: boolean;
+}) {
   const { storage } = useAdapters();
   const { session } = useAuth();
   const userId = session?.userId ?? null;
@@ -146,13 +158,16 @@ export function PlanTabContainer({ active }: { active: boolean }) {
   // A coach plan that's waiting for an answer opens C6 once per session, and
   // only when no other plan sheet is open: one at a time (Inspector Brad, #554).
   const sheetOpen = usePlanSheets((s) => s.sheet !== null);
+  // Root Fuel sheets (Mealprint, Scan, Quick add…) don't blur Fuel, so wait
+  // for those too (Inspector Brad, #554).
+  const fuelSheetOpen = useFuelSheets((s) => s.sheet !== null);
   useEffect(() => {
-    if (!active || sheetOpen) return;
+    if (!autoOpen || sheetOpen || fuelSheetOpen) return;
     const waiting = newCoachPlans(cache).find(
       (c) => !autoShown.includes(c.plan.id),
     );
     if (waiting) openCoachPlan(waiting.plan.id, true);
-  }, [active, sheetOpen, cache, autoShown, openCoachPlan]);
+  }, [autoOpen, sheetOpen, fuelSheetOpen, cache, autoShown, openCoachPlan]);
 
   // Opening a coach plan clears its "updated" marker on the server; the
   // marker stays on screen for this visit.

@@ -347,11 +347,12 @@ describe("FuelContainer", () => {
     act(() => mockProbe.last!.onSection("plan"));
     expect(mockProbe.last!.section).toBe("plan");
     expect(mockProbe.last!.sectionContent).not.toBeNull();
-    // The Plan tab is active only while Fuel is the focused screen.
+    // The Plan tab reads its data whenever it shows, and opens a coach
+    // plan's sheet only while Fuel is focused.
     const content = mockProbe.last!.sectionContent as {
-      props: { active: boolean };
+      props: { active: boolean; autoOpen: boolean };
     };
-    expect(content.props.active).toBe(true);
+    expect(content.props).toMatchObject({ active: true, autoOpen: true });
     act(() => mockProbe.last!.onRefresh());
     act(() => mockProbe.last!.onSection("meals"));
     expect(mockProbe.last!.section).toBe("meals");

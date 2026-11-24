@@ -403,8 +403,21 @@ describe("PlanTabContainer", () => {
       ...emptyPlansCache(),
       fromCoaches: [coach({ status: "sent" })],
     };
-    const r = render(<PlanTabContainer active={false} />);
+    const r = render(<PlanTabContainer active autoOpen={false} />);
     expect(usePlanSheets.getState().sheet).toBeNull();
+    r.rerender(<PlanTabContainer active autoOpen />);
+    expect(usePlanSheets.getState().coachPlanId).toBe("c1");
+  });
+
+  it("a waiting coach plan waits while a Fuel sheet (e.g. Mealprint) is open (Inspector Brad #554)", () => {
+    act(() => useFuelSheets.getState().openMealprintPlan());
+    mockPlans.cache = {
+      ...emptyPlansCache(),
+      fromCoaches: [coach({ status: "sent" })],
+    };
+    const r = render(<PlanTabContainer active />);
+    expect(usePlanSheets.getState().sheet).toBeNull();
+    act(() => useFuelSheets.getState().close());
     r.rerender(<PlanTabContainer active />);
     expect(usePlanSheets.getState().coachPlanId).toBe("c1");
   });

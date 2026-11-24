@@ -464,7 +464,7 @@ export function FuelContainer() {
       onSection={onSection}
       sectionContent={
         section === "plan" ? (
-          <PlanTabContainer active={focused} />
+          <PlanTabContainer active autoOpen={focused} />
         ) : section === "meals" ? (
           <MealsTabContainer />
         ) : null

@@ -283,7 +283,9 @@ export function usePlansShoppingList(enabled = true): PlansShoppingState {
             : null,
         );
       const before = plansKey();
-      plansChangedDuringRead.current = false;
+      // Not current until a read succeeds: a failed GET retries too
+      // (Inspector Brad, #554). The success path below sets it properly.
+      plansChangedDuringRead.current = true;
       const result = await api.getPlansShoppingList();
       if (!result.ok) return result;
       const local = userId ? readShoppingCache(storage, userId) : null;
