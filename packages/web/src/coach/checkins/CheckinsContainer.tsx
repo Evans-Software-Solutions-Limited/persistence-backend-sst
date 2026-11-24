@@ -250,6 +250,10 @@ export function CheckinsContainer({ client }: { client: RosterClient }) {
             void setup(
               {
                 status: status(panelEntry),
+                // One rule at a time: without scheduleId the server applies
+                // the override to every live rule of the form (Inspector
+                // Brad, #555).
+                scheduleId: panelEntry.rule!.scheduleId,
                 override: clientOverride(panelEntry.rule!, draft!),
               },
               `${panelEntry.form.title} is set up for ${clientFirst}.`,
@@ -259,6 +263,10 @@ export function CheckinsContainer({ client }: { client: RosterClient }) {
             void setup(
               {
                 status: "paused",
+                // One rule at a time: without scheduleId the server applies
+                // the override to every live rule of the form (Inspector
+                // Brad, #555).
+                scheduleId: panelEntry.rule!.scheduleId,
                 override: clientOverride(panelEntry.rule!, draft!),
               },
               `${panelEntry.form.title} is paused for ${clientFirst}.`,
@@ -268,6 +276,10 @@ export function CheckinsContainer({ client }: { client: RosterClient }) {
             void setup(
               {
                 status: "active",
+                // One rule at a time: without scheduleId the server applies
+                // the override to every live rule of the form (Inspector
+                // Brad, #555).
+                scheduleId: panelEntry.rule!.scheduleId,
                 override: clientOverride(panelEntry.rule!, draft!),
               },
               `${panelEntry.form.title} is back on for ${clientFirst}.`,

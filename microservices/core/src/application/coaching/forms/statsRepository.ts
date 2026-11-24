@@ -161,7 +161,11 @@ export async function formStats(
   const scheduleById = new Map(schedules.map((s) => [s.id, s]));
 
   // Current cycle only: a client who left and came back starts again.
+  // Archived forms are hidden in the library, so they don't count either
+  // (Inspector Brad, #555).
+  const live = new Set(liveForms.map((f) => f.id));
   const current = requests.filter((r) => {
+    if (!live.has(r.formId)) return false;
     const rel = relById.get(r.relationshipId);
     return !rel?.activatedAt || r.sentAt >= rel.activatedAt;
   });

@@ -1823,7 +1823,7 @@ describe("set-up sections (starter_form, repeating_form)", () => {
         sections: ["starter_form", "repeating_form"],
       },
     );
-    expect(copied.status).toBe(200);
+    expect([copied.status, copied.json?.message]).toEqual([200, undefined]);
     const items = await db
       .select()
       .from(schema.coachClientSetupItems)
@@ -2435,4 +2435,65 @@ describe("C10b question extras over HTTP (PER-129)", () => {
 
   const makeFormRaw = (questions: unknown[]) =>
     http("POST", "/trainers/me/forms", COACH_A, { title: "T", questions });
+});
+
+describe("Inspector Brad #555", () => {
+  it("copy set-up keeps one client's own cadence (override.trigger)", async () => {
+    const form = await makeForm(COACH_A);
+    const s = await makeSchedule(COACH_A, {
+      formId: form.id,
+      trigger: "once",
+      audience: "selected",
+      clientIds: [ATHLETE_C],
+    });
+    const set = await http(
+      "PUT",
+      `/trainers/me/clients/${ATHLETE_C}/forms/${form.id}/setup`,
+      COACH_A,
+      {
+        status: "active",
+        scheduleId: s.id,
+        override: { trigger: "weekly", weekday: 1, timeLocal: "07:00" },
+      },
+    );
+    expect(set.status).toBe(200);
+    const profile = await http(
+      "POST",
+      "/trainers/me/client-profiles",
+      COACH_A,
+      { displayName: "Frankie" },
+    );
+    const copied = await http(
+      "POST",
+      `/trainers/me/client-profiles/${profile.json.data.id}/setup/copy-from`,
+      COACH_A,
+      { sourceClientId: ATHLETE_C },
+    );
+    expect([copied.status, copied.json?.message]).toEqual([200, undefined]);
+    expect(copied.json.data.setup.repeating_form[0].config.override).toEqual({
+      trigger: "weekly",
+      weekday: 1,
+      timeLocal: "07:00",
+    });
+  });
+
+  it("library totals leave out archived forms", async () => {
+    const kept = await makeForm(COACH_A, "Kept");
+    const gone = await makeForm(COACH_A, "Gone");
+    for (const f of [kept, gone]) {
+      await makeSchedule(COACH_A, {
+        formId: f.id,
+        trigger: "once",
+        audience: "selected",
+        clientIds: [ATHLETE_C],
+      });
+    }
+    expect(
+      (await http("DELETE", `/trainers/me/forms/${gone.id}`, COACH_A)).status,
+    ).toBe(204);
+    const stats = (await http("GET", "/trainers/me/forms/stats", COACH_A)).json
+      .data;
+    expect(stats.totals).toMatchObject({ forms: 1, outstanding: 1 });
+    expect(stats.forms.map((f: Json) => f.formId)).toEqual([kept.id]);
+  });
 });
