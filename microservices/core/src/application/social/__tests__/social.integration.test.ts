@@ -153,6 +153,17 @@ beforeAll(async () => {
   await pg.exec(
     "create unique index exercises_client_request_test on exercises(created_by,client_request_id); alter table workout_exercises add constraint test_exercise_fk foreign key(exercise_id) references exercises(id) on delete cascade;",
   );
+  // PER-111: the real set-targets table (FK cascades with workout_exercises,
+  // so the truncate below clears it).
+  await pg.exec(
+    await readFile(
+      new URL(
+        "../../../../../../supabase/migrations/20261123230809_workout_exercise_set_targets.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
   await pg.exec("create role anon; create role authenticated;");
   await pg.exec(
     await readFile(
@@ -475,6 +486,123 @@ describe("production sanitized template persistence", () => {
     ]);
     expect(results[0]).toEqual(results[1]);
     expect(await db.select().from(schema.workouts)).toHaveLength(1);
+  });
+});
+describe("PER-111: Together templates carry reps per set", () => {
+  const perSet = () => {
+    const p = plan();
+    return {
+      ...p,
+      exercises: [
+        {
+          ...p.exercises[0],
+          // Wrong on purpose: the share stores the per-set count.
+          targetSets: 5,
+          setTargets: [{ reps: 10 }, { reps: 8 }, { reps: 8 }],
+        },
+      ],
+    };
+  };
+  it("stores, returns and copies 10/8/8 with the derived old columns", async () => {
+    await friends();
+    const share = await templates.create(a, key(), b, perSet());
+    const read = await templates.get(b, share.shareId);
+    expect(read.plan.exercises[0]).toMatchObject({
+      targetSets: 3,
+      targetReps: 8,
+      setTargets: [{ reps: 10 }, { reps: 8 }, { reps: 8 }],
+    });
+    expect(
+      (await templates.list(b)).data[0].plan.exercises[0].setTargets,
+    ).toHaveLength(3);
+
+    const copy = await templates.copy(b, share.shareId, key());
+    const [ex] = await db
+      .select()
+      .from(schema.workoutExercises)
+      .where(eq(schema.workoutExercises.workoutId, copy.workoutId!));
+    expect(ex).toMatchObject({
+      targetSets: 3,
+      targetRepsMin: 8,
+      targetRepsMax: 10,
+    });
+    const rows = await db
+      .select({
+        setNumber: schema.workoutExerciseSetTargets.setNumber,
+        targetReps: schema.workoutExerciseSetTargets.targetReps,
+      })
+      .from(schema.workoutExerciseSetTargets)
+      .where(eq(schema.workoutExerciseSetTargets.workoutExerciseId, ex.id))
+      .orderBy(schema.workoutExerciseSetTargets.setNumber);
+    expect(rows).toEqual([
+      { setNumber: 1, targetReps: 10 },
+      { setNumber: 2, targetReps: 8 },
+      { setNumber: 3, targetReps: 8 },
+    ]);
+    // The recipient owns an independent copy; the sender has no rows.
+    const [workout] = await db
+      .select()
+      .from(schema.workouts)
+      .where(eq(schema.workouts.id, copy.workoutId!));
+    expect(workout.createdBy).toBe(b);
+    await expect(templates.get(c, share.shareId)).rejects.toMatchObject({
+      status: 404,
+    });
+  });
+  it("copies a share without set targets exactly as before", async () => {
+    await friends();
+    const share = await templates.create(a, key(), b, plan());
+    expect(
+      (await templates.get(b, share.shareId)).plan.exercises[0],
+    ).not.toHaveProperty("setTargets");
+    await templates.copy(b, share.shareId, key());
+    expect(await db.select().from(schema.workoutExerciseSetTargets)).toEqual(
+      [],
+    );
+  });
+  it("rejects out-of-range set targets at the route and never stores a weight", async () => {
+    await friends();
+    for (const setTargets of [
+      [{ reps: 0 }],
+      [{ reps: 101 }],
+      [],
+      Array.from({ length: 21 }, () => ({ reps: 8 })),
+    ]) {
+      const p = plan();
+      const res = await http(
+        "/together/templates",
+        a,
+        "POST",
+        {
+          recipientUserId: b,
+          plan: { ...p, exercises: [{ ...p.exercises[0], setTargets }] },
+        },
+        key(),
+      );
+      expect(res.status, JSON.stringify(setTargets).slice(0, 40)).toBe(400);
+    }
+    // A prescription has no weight (C5): an extra key never reaches storage.
+    const p = plan();
+    const res = await http(
+      "/together/templates",
+      a,
+      "POST",
+      {
+        recipientUserId: b,
+        plan: {
+          ...p,
+          exercises: [
+            { ...p.exercises[0], setTargets: [{ reps: 8, weightKg: 100 }] },
+          ],
+        },
+      },
+      key(),
+    );
+    const shareId = ((await res.json()) as { data: { shareId: string } }).data
+      .shareId;
+    expect(
+      (await templates.get(b, shareId)).plan.exercises[0].setTargets,
+    ).toEqual([{ reps: 8 }]);
   });
 });
 describe("authenticated D9 routes with production repositories", () => {
