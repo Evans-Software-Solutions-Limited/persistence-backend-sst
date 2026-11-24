@@ -2,6 +2,8 @@ import { fireEvent, waitFor } from "@testing-library/react-native";
 import {
   ClientCheckInsContainer,
   initialSetup,
+  setupPauseInputs,
+  setupPaused,
   setupSaveInput,
 } from "@/ui/containers/ClientCheckInsContainer";
 import { FormResponseContainer } from "@/ui/containers/FormResponseContainer";
@@ -157,13 +159,20 @@ describe("ClientCheckInsContainer (C3.3b)", () => {
     });
   });
 
-  it("Inspector Brad #556: on a two-rule form, pause and resume name the rule; Stop covers every rule", async () => {
+  it("Inspector Brad #556 sweep 2: on a two-rule form, pause and resume queue one scoped PUT per rule; Stop covers every rule", async () => {
     const h = setupCoachForms({ online: false });
     const weekly = makeClientForm("f-two", "Check-in", "notDoneYet");
     const join = makeClientForm("f-two", "Check-in", "notDoneYet", "on_join");
     const two = {
       ...weekly,
-      rules: [weekly.rule!, { ...join.rule!, scheduleId: "s-join" }],
+      rules: [
+        weekly.rule!,
+        {
+          ...join.rule!,
+          scheduleId: "s-join",
+          override: { dueAfterHours: 48 },
+        },
+      ],
     };
     h.storage.cacheCoachClientForms(COACH, "c1", [two]);
     h.storage.cacheCoachFormResponses(COACH, "c1", []);
@@ -178,21 +187,32 @@ describe("ClientCheckInsContainer (C3.3b)", () => {
     );
     fireEvent.press(view.getByTestId("checkins-sentto-f-two"));
     fireEvent.press(view.getByTestId("client-setup-pause"));
-    await waitFor(() => expect(queued(h)).toHaveLength(1));
-    expect(JSON.parse(queued(h)[0]!.payload)).toEqual({
-      status: "paused",
-      scheduleId: "s-f-two",
-    });
-    // Only the weekly rule is paused, and the sheet says so.
+    // One PUT per rule that reaches Sam, no override: each rule keeps its own.
+    await waitFor(() => expect(queued(h)).toHaveLength(2));
+    expect(queued(h).map((e) => JSON.parse(e.payload))).toEqual([
+      { status: "paused", scheduleId: "s-f-two" },
+      { status: "paused", scheduleId: "s-join" },
+    ]);
+    // Every rule is paused for Sam, so the sheet offers Resume...
+    await waitFor(() =>
+      expect(view.getByLabelText(/^Check-in, Paused\./)).toBeTruthy(),
+    );
     fireEvent.press(view.getByTestId("checkins-sentto-f-two"));
     expect(view.getByText("Resume")).toBeTruthy();
+    // ...and the join rule's own override is still there.
+    expect(
+      h.storage.getCachedCoachClientForms(COACH, "c1")![0]!.rules[1]!.override,
+    ).toEqual({ dueAfterHours: 48 });
     fireEvent.press(view.getByTestId("client-setup-pause"));
-    await waitFor(() =>
-      expect(JSON.parse(queued(h).at(-1)!.payload)).toEqual({
-        status: "active",
-        scheduleId: "s-f-two",
-      }),
-    );
+    await waitFor(() => expect(queued(h)).toHaveLength(4));
+    expect(
+      queued(h)
+        .slice(2)
+        .map((e) => JSON.parse(e.payload)),
+    ).toEqual([
+      { status: "active", scheduleId: "s-f-two" },
+      { status: "active", scheduleId: "s-join" },
+    ]);
     fireEvent.press(view.getByTestId("checkins-sentto-f-two"));
     fireEvent.press(view.getByTestId("client-setup-stop"));
     await waitFor(() =>
@@ -200,6 +220,132 @@ describe("ClientCheckInsContainer (C3.3b)", () => {
         status: "excluded",
       }),
     );
+  });
+
+  it("Inspector Brad #556 sweep 2: a rule that doesn't reach the client gets no pause", () => {
+    const weekly = makeClientForm("f-two", "Check-in", "notDoneYet");
+    const join = makeClientForm("f-two", "Check-in", "notDoneYet", "on_join");
+    const form = {
+      ...weekly,
+      rules: [
+        weekly.rule!,
+        { ...join.rule!, scheduleId: "s-join", clientStatus: "excluded" },
+      ],
+    };
+    expect(setupPauseInputs(form)).toEqual([
+      { status: "paused", scheduleId: "s-f-two" },
+    ]);
+    // A rule-less form: one write for the form.
+    expect(setupPauseInputs({ ...form, rule: null, rules: [] })).toEqual([
+      { status: "paused" },
+    ]);
+  });
+
+  it("Inspector Brad #556 sweep 2: paused comes from Sam's own targets, not a rule paused for everyone", () => {
+    const h = setupCoachForms();
+    const base = makeClientForm("f-week", "Weekly check-in", "notDoneYet");
+    const pausedForAll = {
+      ...base,
+      state: "paused" as const,
+      rule: { ...base.rule!, status: "paused" },
+      rules: [{ ...base.rule!, status: "paused" }],
+    };
+    h.storage.cacheCoachClientForms(COACH, "c1", [pausedForAll]);
+    h.storage.cacheCoachFormResponses(COACH, "c1", []);
+    h.api.coachClientForms.c1 = [pausedForAll];
+    h.api.coachFormResponses.c1 = [];
+    const view = h.render(
+      <ClientCheckInsContainer clientId="c1" clientName="Sam" />,
+    );
+    fireEvent.press(view.getByTestId("checkins-sentto-f-week"));
+    // Not paused for Sam: Pause, not Resume; Save keeps Sam active.
+    expect(view.getByText("Pause")).toBeTruthy();
+    expect(view.queryByText("Resume")).toBeNull();
+    expect(setupSaveInput(initialSetup(pausedForAll)).status).toBe("active");
+    // Paused on one rule of two isn't paused for the form.
+    const two = {
+      ...base,
+      rules: [
+        { ...base.rule!, clientStatus: "paused" },
+        { ...base.rule!, scheduleId: "s-2" },
+      ],
+    };
+    expect(setupPaused(two)).toBe(false);
+    expect(
+      setupPaused({
+        ...two,
+        rules: two.rules.map((r) => ({ ...r, clientStatus: "paused" })),
+      }),
+    ).toBe(true);
+    // No rules: the one rule's own target.
+    expect(
+      setupPaused({
+        ...base,
+        rule: { ...base.rule!, clientStatus: "paused" },
+        rules: [],
+      }),
+    ).toBe(true);
+    expect(
+      setupPaused({ ...base, state: "paused", rule: null, rules: [] }),
+    ).toBe(false);
+  });
+
+  it("Inspector Brad #555 sweep 4: Save keeps the edited rule's own pause, even when the form isn't paused", async () => {
+    const h = setupCoachForms();
+    const weekly = makeClientForm("f-two", "Check-in", "notDoneYet");
+    const join = makeClientForm("f-two", "Check-in", "notDoneYet", "on_join");
+    const pausedWeekly = { ...weekly.rule!, clientStatus: "paused" };
+    const two = {
+      ...weekly,
+      rule: pausedWeekly,
+      rules: [pausedWeekly, { ...join.rule!, scheduleId: "s-join" }],
+    };
+    h.storage.cacheCoachClientForms(COACH, "c1", [two]);
+    h.storage.cacheCoachFormResponses(COACH, "c1", []);
+    h.api.coachClientForms.c1 = [two];
+    h.api.coachFormResponses.c1 = [];
+    const view = h.render(
+      <ClientCheckInsContainer clientId="c1" clientName="Sam" />,
+    );
+    fireEvent.press(view.getByTestId("checkins-sentto-f-two"));
+    // Only the weekly rule is paused for Sam: the form isn't, so Pause.
+    expect(view.getByText("Pause")).toBeTruthy();
+    expect(view.queryByText("Resume")).toBeNull();
+    fireEvent.press(view.getByTestId("client-setup-save"));
+    await waitFor(() =>
+      expect(h.server.calls.some((c) => c.method === "PUT")).toBe(true),
+    );
+    const put = h.server.calls.find((c) => c.method === "PUT")!;
+    expect(put.body).toMatchObject({
+      status: "paused",
+      scheduleId: "s-f-two",
+    });
+  });
+
+  it("Inspector Brad #556 sweep 2: No due date for one client sends null and reads back as none", async () => {
+    const h = setupCoachForms();
+    seed(h);
+    const view = h.render(
+      <ClientCheckInsContainer clientId="c1" clientName="Sam Patel" />,
+    );
+    fireEvent.press(view.getByTestId("checkins-sentto-f-week"));
+    fireEvent.press(view.getByTestId("client-setup-rule-due"));
+    fireEvent.press(view.getByTestId("client-setup-rule-due-editor-clear"));
+    fireEvent.press(view.getByTestId("client-setup-save"));
+    await waitFor(() =>
+      expect(h.server.calls.some((c) => c.method === "PUT")).toBe(true),
+    );
+    const put = h.server.calls.find((c) => c.method === "PUT")!;
+    expect(
+      (put.body as { override: Record<string, unknown> }).override,
+    ).toMatchObject({ dueAfterHours: null });
+    // The server keeps the null; reopening shows No due date, not the rule's.
+    const f = makeClientForm("f-week", "Weekly check-in", "done");
+    const s = initialSetup({
+      ...f,
+      rule: { ...f.rule!, override: { dueAfterHours: null } },
+    });
+    expect(s.rule.dueAfterHours).toBeNull();
   });
 
   it("C10j: change the cadence for one client and Save sends the override", async () => {

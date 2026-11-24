@@ -705,6 +705,88 @@ describe("send rules (schedule create and edit)", () => {
     ]);
   });
 
+  it("Inspector Brad #556 sweep 2: a 409 on the stop of a cadence change re-sends the stop at the server's revision", async () => {
+    seedForm("f-1");
+    const s: FormSchedule = {
+      id: "s-1",
+      formId: "f-1",
+      trigger: "weekly",
+      audience: "all_clients",
+      weekday: 7,
+      timeLocal: "09:00",
+      dueAfterHours: 27,
+      reminders: [],
+      status: "active",
+      revision: 1,
+      clients: [],
+      createdAt: "x",
+      updatedAt: "x",
+    };
+    // Edited on another device since this phone read it.
+    server.schedules.push({ ...s, revision: 2, timeLocal: "07:00" });
+    storage.cacheCoachFormSchedules(USER, [s]);
+    saveScheduleCommand(deps(), {
+      scheduleId: "s-1",
+      formId: "f-1",
+      trigger: "daily",
+      audience: "all_clients",
+      clientIds: [],
+      weekday: null,
+      timeLocal: "08:00",
+      dueAfterHours: 4,
+      reminders: [],
+    });
+    await drain();
+    await drain();
+    // The old cadence is stopped, so the form doesn't go out on both.
+    expect(server.schedules.map((x) => [x.trigger, x.status])).toEqual([
+      ["weekly", "stopped"],
+      ["daily", "active"],
+    ]);
+    const stops = server.calls.filter(
+      (c) => c.method === "PATCH" && c.url.endsWith("/s-1"),
+    );
+    expect(stops.map((c) => c.body)).toEqual([
+      { status: "stopped", expectedRevision: 1 },
+      { status: "stopped", expectedRevision: 2 },
+    ]);
+    expect(queued()).toHaveLength(0);
+    expect(
+      storage.getCachedCoachFormSchedules(USER)!.find((x) => x.id === "s-1"),
+    ).toMatchObject({ status: "stopped", revision: 3 });
+  });
+
+  it("a 409 on a stop the server already has just takes the server copy", () => {
+    const entry = {
+      id: 1,
+      entityType: COACH_FORM_SCHEDULE_ENTITY,
+      entityId: `${USER}:s-1`,
+      method: "PATCH",
+      payload: JSON.stringify({ status: "stopped", expectedRevision: 1 }),
+    } as unknown as Parameters<typeof applyCoachFormsConflict>[1];
+    storage.enqueueMutation({
+      entityType: COACH_FORM_SCHEDULE_ENTITY,
+      entityId: `${USER}:s-1`,
+      operation: "update",
+      payload: { status: "stopped", expectedRevision: 1 },
+      endpoint: "/trainers/me/form-schedules/s-1",
+      method: "PATCH",
+    });
+    const row = queued()[0]!;
+    expect(
+      applyCoachFormsConflict(
+        storage,
+        { ...entry, id: row.id },
+        JSON.stringify({
+          code: "revision_conflict",
+          current: { id: "s-1", status: "stopped", revision: 4 },
+        }),
+      ),
+    ).toBe(true);
+    expect(queued()).toHaveLength(0);
+    expect(storage.getCoachFormConflicts(USER)).toEqual([]);
+  });
+
   it("changing the cadence of a rule nothing has sent just replaces it", () => {
     seedForm("f-1");
     const draft = {
@@ -901,6 +983,71 @@ describe("Inspector Brad #556", () => {
     expect(queued().map((e) => JSON.parse(e.payload))).toEqual([
       { status: "paused", override: { timeLocal: "07:00" }, scheduleId: "s-1" },
       { status: "excluded" },
+    ]);
+  });
+});
+
+describe("Inspector Brad #556 sweep 2: per-rule pause and resume", () => {
+  it("fold per rule, keep each rule's queued override, and stop at a whole-form write", () => {
+    setClientFormSetupCommand(deps(), "c1", "f-1", {
+      status: "active",
+      override: { timeLocal: "07:00" },
+      scheduleId: "s-1",
+    });
+    // Pause: one PUT per rule.
+    setClientFormSetupCommand(deps(), "c1", "f-1", {
+      status: "paused",
+      scheduleId: "s-1",
+    });
+    setClientFormSetupCommand(deps(), "c1", "f-1", {
+      status: "paused",
+      scheduleId: "s-2",
+    });
+    // Resume, before anything was sent.
+    setClientFormSetupCommand(deps(), "c1", "f-1", {
+      status: "active",
+      scheduleId: "s-1",
+    });
+    setClientFormSetupCommand(deps(), "c1", "f-1", {
+      status: "active",
+      scheduleId: "s-2",
+    });
+    expect(queued().map((e) => JSON.parse(e.payload))).toEqual([
+      { status: "active", override: { timeLocal: "07:00" }, scheduleId: "s-1" },
+      { status: "active", scheduleId: "s-2" },
+    ]);
+    // Stop covers every rule; a later rule write doesn't jump ahead of it.
+    setClientFormSetupCommand(deps(), "c1", "f-1", { status: "excluded" });
+    setClientFormSetupCommand(deps(), "c1", "f-1", {
+      status: "paused",
+      scheduleId: "s-1",
+    });
+    expect(queued().map((e) => JSON.parse(e.payload))).toEqual([
+      { status: "active", override: { timeLocal: "07:00" }, scheduleId: "s-1" },
+      { status: "active", scheduleId: "s-2" },
+      { status: "excluded" },
+      { status: "paused", scheduleId: "s-1" },
+    ]);
+  });
+
+  it("a write for a rule whose last row was already sent queues its own", () => {
+    setClientFormSetupCommand(deps(), "c1", "f-1", {
+      status: "paused",
+      scheduleId: "s-1",
+    });
+    storage.markMutationDispatched(queued()[0]!.id);
+    setClientFormSetupCommand(deps(), "c1", "f-1", {
+      status: "paused",
+      scheduleId: "s-2",
+    });
+    setClientFormSetupCommand(deps(), "c1", "f-1", {
+      status: "active",
+      scheduleId: "s-1",
+    });
+    expect(queued().map((e) => JSON.parse(e.payload))).toEqual([
+      { status: "paused", scheduleId: "s-1" },
+      { status: "paused", scheduleId: "s-2" },
+      { status: "active", scheduleId: "s-1" },
     ]);
   });
 });

@@ -10,6 +10,7 @@ import type { CoachYouPresenterProps } from "@/ui/presenters/CoachYouPresenter";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import { useAddClientSheet } from "@/state/add-client-sheet";
 import { useCoachLibrarySegment } from "@/ui/hooks/useCoachLibrarySegment";
+import { useCoachLibraryTab } from "@/state/coach-library-tab";
 import { CoachYouContainer, buildSessionCaption } from "../CoachYouContainer";
 import { makeCoachOverview } from "@/ui/presenters/coach/__tests__/coachOverview.fixture";
 
@@ -256,6 +257,10 @@ describe("CoachYouContainer", () => {
     const { adapters, api } = makeAdapters();
     api.coachOverview = makeCoachOverview();
     useCoachLibrarySegment.setState({ segment: "Workouts" });
+    // The Library tab stays mounted, so a repeat push with the same
+    // ?segment= doesn't re-run its param effect: the outer segment must be
+    // set too, or the second use lands on Forms (Inspector Brad #556 sweep 2).
+    useCoachLibraryTab.setState({ segment: "forms" });
     render(
       <Wrapper adapters={adapters}>
         <CoachYouContainer />
@@ -264,6 +269,7 @@ describe("CoachYouContainer", () => {
     await waitFor(() => expect(mockProbe.last).not.toBeNull());
     act(() => mockProbe.last?.onViewAllPrograms?.());
     expect(useCoachLibrarySegment.getState().segment).toBe("Programmes");
+    expect(useCoachLibraryTab.getState().segment).toBe("programmes");
     expect(mockRouterPush).toHaveBeenCalledWith(
       "/(app)/(tabs)/library?segment=programmes",
     );

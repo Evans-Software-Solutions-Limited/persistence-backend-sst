@@ -292,18 +292,27 @@ export const TRIGGER_LABELS: Record<FormTrigger, string> = {
   on_end: "When coaching ends",
 };
 
-/** A rule as one client gets it: the override's fields win. */
+/**
+ * A rule as one client gets it: the override's fields win. A due time the
+ * override sets to null is "No due date" for this client: the server keeps
+ * that null and it wins over the rule's (`effectiveDueAfterHours`).
+ */
 export function effectiveRule(rule: ClientFormRule): RuleFields & {
   trigger: FormTrigger;
 } {
   const o = rule.override ?? {};
   const pick = <T>(key: string, fallback: T): T =>
     o[key] !== undefined && o[key] !== null ? (o[key] as T) : fallback;
+  const due = o.dueAfterHours;
   return {
     trigger: pick<FormTrigger>("trigger", rule.trigger),
     weekday: pick("weekday", rule.weekday),
     timeLocal: pick("timeLocal", rule.timeLocal),
-    dueAfterHours: pick("dueAfterHours", rule.dueAfterHours),
+    dueAfterHours: Object.hasOwn(o, "dueAfterHours")
+      ? typeof due === "number"
+        ? due
+        : null
+      : rule.dueAfterHours,
     reminders: pick("reminders", rule.reminders),
   };
 }

@@ -23,7 +23,10 @@
  * A 409 `revision_conflict` means someone else edited it: the cache takes the
  * server copy (`current`), every queued edit of it is dropped (each was based
  * on the old revision and would 409 too) and the conflict is recorded so the
- * screens say "Edited on another device".
+ * screens say "Edited on another device". The exception is a rule's
+ * status-only stop (a new "When" queues it beside the new rule's POST): it
+ * goes again at the server's revision, so the form never goes out on both
+ * cadences.
  */
 import type { StoragePort, SyncQueueEntry } from "@/domain/ports/storage.port";
 import { isAutoResolvableSyncEntry } from "@/domain/ports/sync.types";
@@ -471,11 +474,38 @@ function applySetupLocally(
 }
 
 /**
+ * The queued setup row a new write for `scheduleId` folds into, if any.
+ * Writes are keyed by rule: from the newest row back, rows for other rules
+ * are passed over (they're independent), the newest row for the same rule
+ * is the one, if nothing has sent it yet. A whole-form write (no
+ * `scheduleId`, e.g. Stop) is a barrier either way: nothing folds across it,
+ * so the order the server sees stays the coach's.
+ */
+function setupFoldTarget(
+  rows: SyncQueueEntry[],
+  scheduleId: string | undefined,
+): { row: SyncQueueEntry; prev: Record<string, unknown> } | null {
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const row = rows[i]!;
+    const prev = parseObject(row.payload);
+    if (!prev) return null;
+    const rowRule = typeof prev.scheduleId === "string" ? prev.scheduleId : "";
+    if (rowRule === (scheduleId ?? "")) {
+      return isFoldable(row) ? { row, prev } : null;
+    }
+    if (!rowRule || !scheduleId) return null;
+  }
+  return null;
+}
+
+/**
  * C10j Pause / Stop / Save for one client. PUT, no revision (last write
  * wins), so a newer choice for the same rule (`scheduleId`, or every rule
  * when absent) folds into a queued one nothing sent yet; fields it leaves
  * out (a Pause's override) keep the queued value, as they would on the
- * server. Offline-created ids resolve to the server's once synced.
+ * server. Pause and Resume come one per rule (`setupPauseInputs`), so each
+ * rule's write stays its own row. Offline-created ids resolve to the
+ * server's once synced.
  */
 export function setClientFormSetupCommand(
   deps: CoachFormsDeps,
@@ -501,12 +531,15 @@ export function setClientFormSetupCommand(
     );
   }
   const entityId = `${userId}:${clientId}:${formId}`;
-  const last = liveEntries(storage, COACH_CLIENT_FORM_SETUP_ENTITY, entityId)
-    .filter(isFoldable)
-    .at(-1);
-  const prev = last ? parseObject(last.payload) : null;
-  if (last && prev && prev.scheduleId === input.scheduleId) {
-    storage.updateMutationPayload(last.id, { ...prev, ...input });
+  const foldInto = setupFoldTarget(
+    liveEntries(storage, COACH_CLIENT_FORM_SETUP_ENTITY, entityId),
+    input.scheduleId,
+  );
+  if (foldInto) {
+    storage.updateMutationPayload(foldInto.row.id, {
+      ...foldInto.prev,
+      ...input,
+    });
     return;
   }
   storage.enqueueMutation({
@@ -795,6 +828,13 @@ export function applyCoachFormsConflict(
     return false;
   }
   const id = current.id;
+  if (
+    entry.entityType === COACH_FORM_SCHEDULE_ENTITY &&
+    isStatusOnlyStop(entry)
+  ) {
+    resendStop(storage, userId, entry, current as FormSchedule);
+    return true;
+  }
   const stale = storage
     .getQueuedEntriesForEntity(entry.entityType, `${userId}:${id}`)
     .filter((e) => e.id === entry.id || e.status !== "in_flight")
@@ -831,6 +871,50 @@ export function applyCoachFormsConflict(
   }
   storage.recordCoachFormConflict(userId, scheduleConflictKey(id));
   return true;
+}
+
+/** `{status: "stopped"}` and its revision: the stop of a cadence change. */
+function isStatusOnlyStop(entry: SyncQueueEntry): boolean {
+  const body = parseObject(entry.payload);
+  if (!body || body.status !== "stopped") return false;
+  return Object.keys(body).every(
+    (k) => k === "status" || k === "expectedRevision",
+  );
+}
+
+/**
+ * A 409 on a rule's stop. A new "When" queues this stop and a POST for the
+ * new rule; dropping the stop would leave the form going out on both
+ * cadences, and someone else's edit doesn't change that the coach stopped
+ * this one. So the stop goes again at the server's revision (one retry
+ * charged, so a rule that keeps changing still ends). If the server has it
+ * stopped already, there's nothing left to send.
+ */
+function resendStop(
+  storage: StoragePort,
+  userId: string,
+  entry: SyncQueueEntry,
+  server: FormSchedule,
+): void {
+  const alreadyStopped = server.status === "stopped";
+  if (alreadyStopped) {
+    storage.discardEntries([entry.id]);
+  } else {
+    storage.markMutationFailed(entry.id, "revision_conflict: stop re-sent");
+    storage.updateMutationPayload(entry.id, {
+      status: "stopped",
+      expectedRevision: server.revision,
+    });
+  }
+  const schedules = storage.getCachedCoachFormSchedules(userId);
+  if (!schedules) return;
+  const next: FormSchedule = { ...server, status: "stopped" };
+  storage.cacheCoachFormSchedules(
+    userId,
+    schedules.some((s) => s.id === server.id)
+      ? schedules.map((s) => (s.id === server.id ? next : s))
+      : [...schedules, next],
+  );
 }
 
 // ── Reads: keep queued intent over an older server answer ───────────────────

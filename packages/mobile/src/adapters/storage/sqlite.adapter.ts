@@ -4245,7 +4245,13 @@ ${indentSyncQueueDdl(12)}
     );
   }
 
-  /** Rewrite one id in every queued, not-yet-sent coach forms row. */
+  /**
+   * Rewrite one id in every coach forms row not yet completed. In-flight rows
+   * too, like the other local-id swaps: a dependent write in flight while its
+   * form's create completes would otherwise keep `local-…` forever. The
+   * just-synced create's own row is harmless to rewrite: its success handler
+   * works from the entry it was given, and the rebase skips it.
+   */
   private swapCoachFormsQueueId(
     localId: string,
     serverId: string,
@@ -4256,7 +4262,7 @@ ${indentSyncQueueDdl(12)}
     const rows = db.getAllSync(
       `SELECT id, entity_id, endpoint, payload FROM sync_queue
        WHERE entity_type IN (${placeholders})
-       AND status NOT IN ('completed', 'in_flight')`,
+       AND status != 'completed'`,
       [...COACH_FORMS_QUEUE_ENTITIES],
     ) as {
       id: number;

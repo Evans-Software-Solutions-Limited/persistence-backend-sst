@@ -265,6 +265,24 @@ describe("due and reminders as day + time (BRIEF)", () => {
     });
     expect(effectiveRule({ ...rule, override: null }).trigger).toBe("weekly");
   });
+
+  it("an override's null due time is No due date for this client (Inspector Brad #556 sweep 2)", () => {
+    const rule: ClientFormRule = {
+      scheduleId: "s",
+      trigger: "weekly",
+      audience: "all_clients",
+      status: "active",
+      clientStatus: "active",
+      weekday: 7,
+      timeLocal: "09:00",
+      dueAfterHours: 27,
+      reminders: [],
+      override: { dueAfterHours: null },
+    };
+    expect(effectiveRule(rule).dueAfterHours).toBeNull();
+    // Left out of the override: the rule's own due time.
+    expect(effectiveRule({ ...rule, override: {} }).dueAfterHours).toBe(27);
+  });
 });
 
 describe("C10g groupLibrary", () => {

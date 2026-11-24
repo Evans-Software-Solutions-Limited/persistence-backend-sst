@@ -1993,8 +1993,7 @@ export class InMemoryStorageAdapter implements StoragePort {
         !(COACH_FORMS_QUEUE_ENTITIES as readonly string[]).includes(
           e.entityType,
         ) ||
-        e.status === "completed" ||
-        e.status === "in_flight"
+        e.status === "completed"
       ) {
         continue;
       }

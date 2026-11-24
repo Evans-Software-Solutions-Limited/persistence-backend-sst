@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 
 import type {
   ClientForm,
+  ClientFormRule,
   ClientSetupInput,
   ClientTrigger,
   FormTrigger,
@@ -66,30 +67,48 @@ export function initialSetup(form: ClientForm): SetupState {
   };
 }
 
+/** The rules that reach this client (the one `rule` when `rules` is empty). */
+function clientRules(form: ClientForm): ClientFormRule[] {
+  const rules =
+    form.rules.length > 0 ? form.rules : form.rule ? [form.rule] : [];
+  return rules.filter((r) => r.clientStatus !== "excluded");
+}
+
 /**
- * Whether this client is paused on the rule the sheet edits (`form.rule`).
- * Pause, Resume and Save name that rule (`scheduleId`): without it the
- * server applies the write to every live rule of the form.
+ * Paused for THIS client: their own target on every rule that reaches them.
+ * A rule paused for everyone (or the form's `state`) isn't a pause for
+ * them, so Save and Resume don't write one. Mirrors web `pausedForClient`
+ * (Inspector Brad #556 sweep 2).
  */
 export function setupPaused(form: ClientForm): boolean {
-  return form.rule
-    ? form.rule.clientStatus === "paused"
-    : form.state === "paused";
+  const rules = clientRules(form);
+  return rules.length > 0 && rules.every((r) => r.clientStatus === "paused");
 }
 
-/** The PUT body for Pause / Resume: this client on the edited rule. */
-export function setupPauseInput(form: ClientForm): ClientSetupInput {
-  return {
-    status: setupPaused(form) ? "active" : "paused",
-    ...(form.rule ? { scheduleId: form.rule.scheduleId } : {}),
-  };
+/**
+ * The PUT bodies for Pause / Resume: one per rule that reaches this client,
+ * each naming its rule and leaving `override` out so each keeps its own. A
+ * PUT without `scheduleId` would add a target on every live rule of the
+ * form, rules this client was never on included (Inspector Brad #556 sweep
+ * 2). A rule-less form takes one write for the form.
+ */
+export function setupPauseInputs(form: ClientForm): ClientSetupInput[] {
+  const status = setupPaused(form) ? "active" : "paused";
+  const rules = clientRules(form);
+  return rules.length > 0
+    ? rules.map((r) => ({ status, scheduleId: r.scheduleId }))
+    : [{ status }];
 }
 
-/** The PUT body for Save: keep this client's status, send the override. */
+/**
+ * The PUT body for Save: the edited rule only (`scheduleId` + override), so
+ * its status is that rule's own target for this client, not the all-rules
+ * check behind Pause / Resume (Inspector Brad #555 sweep 4).
+ */
 export function setupSaveInput(s: SetupState): ClientSetupInput {
   const rule = fitRuleToTrigger(s.trigger, s.rule);
   return {
-    status: setupPaused(s.form) ? "paused" : "active",
+    status: s.form.rule?.clientStatus === "paused" ? "paused" : "active",
     override: {
       ...(CLIENT_TRIGGERS.includes(s.baseTrigger)
         ? {
@@ -160,9 +179,11 @@ export function ClientCheckInsContainer(p: {
   }, [forms, responses]);
 
   const runSetup = useCallback(
-    async (formId: string, input: ClientSetupInput) => {
+    async (formId: string, inputs: ClientSetupInput[]) => {
       setSetup(null);
-      await actions.setClientSetup(p.clientId, formId, input);
+      for (const input of inputs) {
+        await actions.setClientSetup(p.clientId, formId, input);
+      }
       reloadAll();
     },
     [actions, p.clientId, reloadAll],
@@ -238,16 +259,14 @@ export function ClientCheckInsContainer(p: {
           }
           offline={!online}
           onPause={() =>
-            void runSetup(setup.form.form.id, setupPauseInput(setup.form))
+            void runSetup(setup.form.form.id, setupPauseInputs(setup.form))
           }
           // Stop names no rule: this client leaves every rule of the form.
           onStop={() =>
-            void runSetup(setup.form.form.id, {
-              status: "excluded",
-            })
+            void runSetup(setup.form.form.id, [{ status: "excluded" }])
           }
           onSave={() =>
-            void runSetup(setup.form.form.id, setupSaveInput(setup))
+            void runSetup(setup.form.form.id, [setupSaveInput(setup)])
           }
         />
       ) : null}

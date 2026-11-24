@@ -245,7 +245,7 @@ describe.each([
 });
 
 describe("queued rows follow a synced create's id", () => {
-  it("SQLite rewrites entity id, endpoint and payload of unsent coach-forms rows", () => {
+  it("SQLite rewrites entity id, endpoint and payload of coach-forms rows not yet completed", () => {
     const { adapter, db } = sqliteAdapter();
     const insert = db.prepare(
       `INSERT INTO sync_queue (entity_type, entity_id, endpoint, payload, status) VALUES (?, ?, ?, ?, ?)`,
@@ -285,6 +285,22 @@ describe("queued rows follow a synced create's id", () => {
       "not json",
       "pending",
     );
+    // A rule POST for the form, in flight while the form's create completes
+    // (Inspector Brad #556 sweep 2): it must follow, or it keeps local-1.
+    insert.run(
+      "coach_form_schedule",
+      "u1:local-t",
+      "/trainers/me/form-schedules",
+      '{"formId":"local-1"}',
+      "in_flight",
+    );
+    insert.run(
+      "coach_form",
+      "u1:local-1",
+      "/trainers/me/forms/local-1",
+      "{}",
+      "completed",
+    );
 
     adapter.swapLocalCoachFormId("u1", "local-1", "f1");
     const rows = db
@@ -297,8 +313,11 @@ describe("queued rows follow a synced create's id", () => {
       endpoint: "/trainers/me/forms/f1",
     });
     expect(JSON.parse(rows[1]!.payload)).toEqual({ formId: "f1" });
-    // In flight: the drain owns it.
-    expect(rows[2]!.entity_id).toBe("u1:local-1");
+    // In flight too: its request may fail and be re-sent, so it follows
+    // (only completed rows are left alone, like the other local-id swaps).
+    expect(rows[2]!.entity_id).toBe("u1:f1");
+    expect(JSON.parse(rows[5]!.payload)).toEqual({ formId: "f1" });
+    expect(rows[6]!.entity_id).toBe("u1:local-1");
     // Other entity types are left alone.
     expect(rows[3]!.endpoint).toBe("/x/local-1");
     expect(rows[4]!.payload).toBe("not json");
@@ -331,6 +350,14 @@ describe("queued rows follow a synced create's id", () => {
       method: "PUT",
     });
     s.enqueueMutation({
+      entityType: "coach_form_schedule",
+      entityId: "u1:local-t",
+      operation: "create",
+      payload: { formId: "local-1" },
+      endpoint: "/trainers/me/form-schedules",
+      method: "POST",
+    });
+    s.enqueueMutation({
       entityType: "recipe",
       entityId: "local-1",
       operation: "update",
@@ -338,9 +365,15 @@ describe("queued rows follow a synced create's id", () => {
       endpoint: "/recipes/local-1",
       method: "PATCH",
     });
+    // In flight while the form's create completes (Inspector Brad #556
+    // sweep 2): it still follows.
+    expect(s.markMutationInFlight(s.getUncompletedMutations()[2]!.id)).toBe(
+      true,
+    );
     s.swapLocalCoachFormId("u1", "local-1", "f1");
     s.swapLocalCoachFormScheduleId("u1", "local-s", "s1");
-    const [a, b, c] = s.getUncompletedMutations();
+    const [a, b, t, c] = s.getUncompletedMutations();
+    expect(JSON.parse(t!.payload)).toEqual({ formId: "f1" });
     expect(a).toMatchObject({
       entityId: "u1:f1",
       endpoint: "/trainers/me/forms/f1",
