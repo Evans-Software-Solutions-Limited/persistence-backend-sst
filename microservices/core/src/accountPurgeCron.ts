@@ -4,7 +4,10 @@ import { AccountRepository } from "./application/account/accountRepository";
 import { cancelStripeSubscriptions } from "./application/account/cancelUserStripeSubscriptions";
 import { deleteAuthUserWithRetry } from "./application/account/supabaseAdminClient";
 import { deleteUserAvatar } from "./application/account/deleteUserAvatar";
-import { deleteAllUserMedia } from "./application/media/privateMediaStore";
+import {
+  drainPrivateMediaPurges,
+  queuePrivateMediaPurge,
+} from "./application/media/privateMediaPurge";
 import { purgeStalePendingSets } from "./application/media/progressPhotoRepository";
 import { purgeStaleMedia } from "./application/media/privateMediaRepository";
 import { aiJobMaintenanceSweep } from "./application/jobs/aiJobMaintenanceSweep";
@@ -39,9 +42,7 @@ async function baseHandler(): Promise<{
     cancelStripeSubscriptions,
     deleteAuthUser: deleteAuthUserWithRetry,
     deleteAvatar: deleteUserAvatar,
-    deletePrivateMedia: async (userId) => {
-      await deleteAllUserMedia(userId);
-    },
+    queuePrivateMediaPurge,
     now,
   });
   console.log(`[account-purge-cron:summary] ${JSON.stringify(summary)}`);
@@ -111,6 +112,24 @@ async function baseHandler(): Promise<{
   // PER-121 (design F): uploads that were never completed (and form photos
   // never sent in a response) are deleted with their objects. Same isolation
   // as the sweeps above.
+  // PER-121: delete the bucket objects of accounts the purge above (or an
+  // earlier night) actually removed. Restored accounts keep theirs.
+  try {
+    const drained = await drainPrivateMediaPurges();
+    console.log(`[private-media-purge:summary] ${JSON.stringify(drained)}`);
+    if (drained.failed > 0) {
+      captureFatal(
+        new Error(`${drained.failed} private media purge(s) failed`),
+        {
+          sweep: "private-media-purge",
+        },
+      );
+    }
+  } catch (err) {
+    console.error("[private-media-purge] sweep threw:", err);
+    captureFatal(err, { sweep: "private-media-purge" });
+  }
+
   try {
     const sets = await purgeStalePendingSets(now);
     const media = await purgeStaleMedia(now);

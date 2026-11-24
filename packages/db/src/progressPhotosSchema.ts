@@ -129,3 +129,14 @@ export const privateMedia = pgTable(
 );
 
 export type PrivateMedia = typeof privateMedia.$inferSelect;
+
+/**
+ * Accounts whose bucket objects the account purge still has to delete. No
+ * foreign key on purpose: the row outlives the profile it names.
+ */
+export const privateMediaPurges = pgTable("private_media_purges", {
+  userId: uuid("user_id").primaryKey(),
+  queuedAt: timestamp("queued_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});

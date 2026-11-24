@@ -10,6 +10,8 @@
 --                           CoachPrivateMedia bucket under s3_key
 --   * private_media       — single uploads: form photo answers (design C) and
 --                           coach resource files (design I)
+--   * private_media_purges — accounts whose bucket objects the account purge
+--                           still has to delete (drained nightly)
 --
 -- The image bytes are never in the database, only the bucket key. All new
 -- tables are service-role only (RLS on, no policies): they are read and
@@ -100,6 +102,19 @@ CREATE INDEX IF NOT EXISTS private_media_pending_idx
 
 ALTER TABLE private_media ENABLE ROW LEVEL SECURITY;
 
+-- ─── private_media_purges ────────────────────────────────────────────────────
+-- The account purge queues a user here BEFORE its SQL purge. A nightly drain
+-- deletes the user's objects only once their profile is gone, drops the row
+-- if the account was restored instead, and keeps it (retrying) otherwise. No
+-- foreign key: the row must outlive the profile it names.
+CREATE TABLE IF NOT EXISTS private_media_purges (
+  user_id    uuid PRIMARY KEY,
+  queued_at  timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE private_media_purges ENABLE ROW LEVEL SECURITY;
+
 COMMENT ON TABLE progress_photo_sets IS 'Progress photo sets (PER-121, design F). Private to the athlete and their current coaches (photos switch + photo-sharing consent). Never sent to AI. Backend-only: RLS on, no policies.';
 COMMENT ON TABLE progress_photos IS 'One pose of a progress photo set; the JPEG lives in the private CoachPrivateMedia bucket at s3_key. Backend-only: RLS on, no policies.';
 COMMENT ON TABLE private_media IS 'Single private uploads: form photo answers and coach resource files (PER-121, designs C/F/I). Backend-only: RLS on, no policies.';
+COMMENT ON TABLE private_media_purges IS 'Accounts whose private media objects the nightly purge still has to delete (PER-121). Backend-only: RLS on, no policies.';

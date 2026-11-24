@@ -60,6 +60,27 @@ import {
   PHOTO_SHARING_COPY,
 } from "../photoSharing";
 import { FakeBucket } from "./fakeS3";
+import {
+  drainPrivateMediaPurges,
+  queuePrivateMediaPurge,
+} from "../privateMediaPurge";
+import {
+  accountPurgeCron,
+  type AccountPurgeCronRepo,
+} from "../../account/purge/accountPurgeCron";
+
+/** The nightly purge as the cron runs it, with the edges stubbed. */
+async function runPurgeNight(deps: { accountRepo: AccountPurgeCronRepo }) {
+  const summary = await accountPurgeCron({
+    accountRepo: deps.accountRepo,
+    cancelStripeSubscriptions: async () => {},
+    deleteAuthUser: async () => {},
+    deleteAvatar: async () => {},
+    queuePrivateMediaPurge,
+    now: new Date(),
+  });
+  return { ...summary, drained: await drainPrivateMediaPurges() };
+}
 
 const MIGRATIONS = "../../../../../../supabase/migrations/";
 const ROLLBACKS = "../../../../../../supabase/rollbacks/";
@@ -158,7 +179,12 @@ const COACH_C = randomUUID(); // coaches A
 const COACH_E = randomUUID(); // also coaches A (two coaches)
 const COACH_D = randomUUID(); // coaches nobody
 
-const NEW_TABLES = ["private_media", "progress_photos", "progress_photo_sets"];
+const NEW_TABLES = [
+  "private_media_purges",
+  "private_media",
+  "progress_photos",
+  "progress_photo_sets",
+];
 const TRUNCATE = [
   ...NEW_TABLES,
   "coach_events",
@@ -569,6 +595,83 @@ describe("Inspector Brad #553 sweep 1", () => {
         bucket.objects.has(`forms/${ATHLETE_A}/${media.mediaId}.jpg`),
       ).toBe(true);
     }
+  });
+});
+
+describe("Inspector Brad #553 sweep 2", () => {
+  it("an account restored during the purge sweep keeps its photos", async () => {
+    await readySet(ATHLETE_A);
+    await db
+      .update(schema.profiles)
+      .set({ deletedAt: new Date(Date.now() - 31 * 864e5) })
+      .where(eq(schema.profiles.id, ATHLETE_A));
+    const summary = await runPurgeNight({
+      accountRepo: {
+        listPendingPurge: async () => [ATHLETE_A],
+        // The user taps Restore while the sweep runs: purgeUserData's own
+        // deleted_at re-check then aborts, deleting nothing.
+        purgeUserData: async () => {
+          await db
+            .update(schema.profiles)
+            .set({ deletedAt: null })
+            .where(eq(schema.profiles.id, ATHLETE_A));
+        },
+      },
+    });
+    expect(summary.failed).toBe(0);
+    expect(summary.drained).toMatchObject({ restored: 1, deleted: 0 });
+    expect(bucket.keys(`progress/${ATHLETE_A}/`)).toHaveLength(3);
+    expect(await db.select().from(schema.privateMediaPurges)).toEqual([]);
+  });
+
+  it("a purged account's objects are deleted once its profile is gone; a failure is retried next night", async () => {
+    await readySet(ATHLETE_A);
+    await readySet(ATHLETE_B);
+    const purgeA = {
+      listPendingPurge: async () => [ATHLETE_A],
+      purgeUserData: async () => {
+        await pg.exec(`delete from profiles where id = '${ATHLETE_A}'`);
+      },
+    };
+    bucket.failures.set("DeleteObjectsCommand", new Error("S3 down"));
+    const first = await runPurgeNight({ accountRepo: purgeA });
+    expect(first.drained).toMatchObject({ failed: 1, deleted: 0 });
+    expect(bucket.keys(`progress/${ATHLETE_A}/`)).toHaveLength(3);
+    expect(await db.select().from(schema.privateMediaPurges)).toHaveLength(1);
+
+    bucket.failures.clear();
+    const next = await drainPrivateMediaPurges();
+    expect(next).toMatchObject({ deleted: 1, failed: 0 });
+    expect(bucket.keys(`progress/${ATHLETE_A}/`)).toEqual([]);
+    expect(bucket.keys(`progress/${ATHLETE_B}/`)).toHaveLength(3);
+    expect(await db.select().from(schema.privateMediaPurges)).toEqual([]);
+  });
+
+  it("a queued account whose purge hasn't happened yet keeps its objects and its queue row", async () => {
+    await readySet(ATHLETE_A);
+    await db
+      .update(schema.profiles)
+      .set({ deletedAt: new Date() })
+      .where(eq(schema.profiles.id, ATHLETE_A));
+    await queuePrivateMediaPurge(ATHLETE_A);
+    await queuePrivateMediaPurge(ATHLETE_A); // idempotent
+    expect(await drainPrivateMediaPurges()).toEqual({
+      deleted: 0,
+      restored: 0,
+      waiting: 1,
+      failed: 0,
+    });
+    expect(bucket.keys(`progress/${ATHLETE_A}/`)).toHaveLength(3);
+    expect(await db.select().from(schema.privateMediaPurges)).toHaveLength(1);
+  });
+
+  it("an empty queue does nothing", async () => {
+    expect(await drainPrivateMediaPurges()).toEqual({
+      deleted: 0,
+      restored: 0,
+      waiting: 0,
+      failed: 0,
+    });
   });
 });
 
@@ -1443,17 +1546,20 @@ describe("migration", () => {
       await fresh.exec(sql);
       await fresh.exec(await read(ROLLBACKS, MIGRATION));
       const gone = await fresh.query<{ n: number }>(
-        "select count(*)::int as n from pg_tables where tablename in ('progress_photo_sets','progress_photos','private_media')",
+        "select count(*)::int as n from pg_tables where tablename in ('progress_photo_sets','progress_photos','private_media','private_media_purges')",
       );
       expect(gone.rows[0]!.n).toBe(0);
       await fresh.exec(sql);
       const tables = await fresh.query<{ tablename: string; rls: boolean }>(
-        "select tablename, rowsecurity as rls from pg_tables where tablename in ('progress_photo_sets','progress_photos','private_media') order by 1",
+        "select tablename, rowsecurity as rls from pg_tables where tablename in ('progress_photo_sets','progress_photos','private_media','private_media_purges') order by 1",
       );
       expect(tables.rows).toEqual(
-        ["private_media", "progress_photo_sets", "progress_photos"].map(
-          (tablename) => ({ tablename, rls: true }),
-        ),
+        [
+          "private_media",
+          "private_media_purges",
+          "progress_photo_sets",
+          "progress_photos",
+        ].map((tablename) => ({ tablename, rls: true })),
       );
       const policies = await fresh.query<{ n: number }>(
         "select count(*)::int as n from pg_policies where tablename in ('progress_photo_sets','progress_photos','private_media')",
