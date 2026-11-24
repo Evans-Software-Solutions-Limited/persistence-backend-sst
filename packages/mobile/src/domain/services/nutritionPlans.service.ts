@@ -266,6 +266,7 @@ export function mergePlansResponse(
     asOf: response.asOf,
     conflictPlanIds,
     ...aliases,
+    serverDeletedIds: response.deletedIds,
   };
 }
 
@@ -281,8 +282,10 @@ export function overlayLocalPlans(
   liveAssignmentPlanIds: ReadonlySet<string>,
 ): NutritionPlansCache {
   if (!local) return server;
+  const goneOnServer = new Set(server.serverDeletedIds ?? []);
   let mine = server.mine;
   for (const id of livePlanIds) {
+    if (goneOnServer.has(id)) continue;
     const localPlan = local.mine.find((p) => p.id === id);
     mine = mine.filter((p) => p.id !== id);
     if (localPlan) mine = [...mine, localPlan];

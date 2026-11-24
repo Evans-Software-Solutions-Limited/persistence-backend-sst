@@ -29,7 +29,9 @@ import { applyUserMealsResponse, USER_MEALS_ENTITY } from "./userMeals.command";
 import {
   applyNutritionPlanConflict,
   applyNutritionPlanSynced,
+  NUTRITION_PLAN_ASSIGNMENT_ENTITY,
   NUTRITION_PLAN_ENTITY,
+  SHOPPING_LIST_PLAN_ENTITY,
 } from "./nutritionPlans.command";
 
 /** A non-OK HTTP response from a sync POST/PUT/DELETE, carrying the status so
@@ -660,9 +662,16 @@ export function isMutationEligible(
   // newer PUT must never overtake an older one still waiting to retry, or a
   // stale edit wins or a false conflict drops the newer one (Inspector Brad,
   // #554).
-  if (entry.entityType === NUTRITION_PLAN_ENTITY && entry.entityId !== null) {
+  // The same holds for a plan's shopping-list add/remove and a coach plan's
+  // Add to my plans / Not now: the last answer must land last.
+  if (
+    (entry.entityType === NUTRITION_PLAN_ENTITY ||
+      entry.entityType === SHOPPING_LIST_PLAN_ENTITY ||
+      entry.entityType === NUTRITION_PLAN_ASSIGNMENT_ENTITY) &&
+    entry.entityId !== null
+  ) {
     return !storage
-      .getQueuedEntriesForEntity(NUTRITION_PLAN_ENTITY, entry.entityId)
+      .getQueuedEntriesForEntity(entry.entityType, entry.entityId)
       .some((older) => older.id < entry.id && isAutoResolvableSyncEntry(older));
   }
   if (

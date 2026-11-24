@@ -138,6 +138,12 @@ export type NutritionPlansCache = {
    * every lookup and write follows this (Inspector Brad, #554).
    */
   aliases?: Record<string, string>;
+  /**
+   * The last read's `deletedIds`: a plan the server says is gone stays out of
+   * `mine` even while an edit for it is queued (that edit then fails with a
+   * 404). Inspector Brad, #554.
+   */
+  serverDeletedIds?: string[];
 };
 
 /** One body for `POST` / `PUT /nutrition/meal-plans`. */

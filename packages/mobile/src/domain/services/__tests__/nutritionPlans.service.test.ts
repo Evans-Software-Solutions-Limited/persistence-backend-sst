@@ -513,6 +513,18 @@ describe("reading the cache", () => {
     ).toBe("t");
   });
 
+  it("a plan deleted on another device stays gone even with an edit queued (Inspector Brad #554)", () => {
+    const local: NutritionPlansCache = { ...emptyPlansCache(), mine: [a, b] };
+    const server = mergePlansResponse(
+      local,
+      { mine: [], fromCoaches: [], deletedIds: ["a"], asOf: "t2" },
+      true,
+    );
+    expect(server.serverDeletedIds).toEqual(["a"]);
+    const out = overlayLocalPlans(server, local, new Set(["a"]), new Set());
+    expect(out.mine.map((p) => p.id)).toEqual(["b"]);
+  });
+
   it("keeps local intent over a read", () => {
     const server: NutritionPlansCache = {
       ...emptyPlansCache(),

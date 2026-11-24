@@ -242,7 +242,9 @@ class FakeServer {
     const one = path.match(/^\/nutrition\/meal-plans\/([^/]+)$/);
     if (one && method === "PUT") {
       const cur = this.plans.get(one[1]!);
-      if (!cur) return { status: 404, json: { error: "not_found" } };
+      // `getOwned` skips archived plans.
+      if (!cur || cur.archivedAt)
+        return { status: 404, json: { error: "not_found" } };
       if (cur.ownerId !== USER)
         return { status: 403, json: { error: "read_only" } };
       const expected = body.expectedRevision as number | undefined;
@@ -509,6 +511,21 @@ describe("a Free user receives a coach plan", () => {
     await drainLater();
     expect(server.assignments).toEqual([
       { planId: "coach-p", status: "added", seenRevision: 4 },
+    ]);
+  });
+
+  it("a later Not now never lands before an earlier Add to my plans (Inspector Brad #554)", async () => {
+    answerCoachPlanCommand(deps(), "coach-p", true);
+    server.offline = true;
+    await drain(); // the add fails in transport and waits to retry
+    server.offline = false;
+    answerCoachPlanCommand(deps(), "coach-p", false);
+    await drain();
+    await drainLater();
+    await drainLater();
+    expect(server.assignments.map((a) => a.status)).toEqual([
+      "added",
+      "dismissed",
     ]);
   });
 
@@ -1081,6 +1098,18 @@ describe("shopping list", () => {
     expect(readShoppingCache(storage, USER).ticked).toEqual(["chicken"]);
     toggleShoppingTickCommand(storage, USER, "chicken");
     expect(readShoppingCache(storage, USER).ticked).toEqual([]);
+    expect(queued()).toHaveLength(0);
+  });
+
+  it("removing a plan never overtakes an add still waiting to retry (Inspector Brad #554)", async () => {
+    setPlanInShoppingListCommand(deps(), "p1", true);
+    server.loseNextResponse = true; // the add commits, its reply is lost
+    await drain();
+    setPlanInShoppingListCommand(deps(), "p1", false);
+    await drain(); // as setPlanIncluded does
+    await drainLater();
+    await drainLater();
+    expect(server.shoppingPlans).toEqual([]);
     expect(queued()).toHaveLength(0);
   });
 
