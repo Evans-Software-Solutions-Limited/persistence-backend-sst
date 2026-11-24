@@ -12,6 +12,7 @@ import {
   compareWithTarget,
   defaultPlanId,
   macrosVsTarget,
+  resolvePlanId,
   visibleCoachPlans,
   visibleMyPlans,
 } from "@/domain/services/nutritionPlans.service";
@@ -29,7 +30,9 @@ export function switchGroups(
   cache: NutritionPlansCache,
   selectedId: string | null,
 ): SwitchGroupVM[] {
-  const current = selectedId ?? defaultPlanId(cache);
+  const current = selectedId
+    ? resolvePlanId(cache, selectedId)
+    : defaultPlanId(cache);
   const byCoach = new Map<string, SwitchGroupVM>();
   for (const c of visibleCoachPlans(cache)) {
     const key = `coach-${c.coach.id}`;

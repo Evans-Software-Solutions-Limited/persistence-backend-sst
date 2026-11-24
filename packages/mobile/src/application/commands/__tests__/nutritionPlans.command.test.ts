@@ -39,6 +39,7 @@ import { emptyPlansCache } from "@/domain/models/nutritionPlans";
 import type { UserMeal } from "@/domain/models/userMeals";
 import type { SyncQueueEntry } from "@/domain/ports/storage.port";
 import {
+  findPlan,
   mergePlansResponse,
   planItemCustom,
   recomputePlan,
@@ -751,6 +752,73 @@ describe("my plans: create, edit, revision conflicts, delete", () => {
     expect(mine[0]!.name).toBe("My version");
     expect(server.plans.get(mine[0]!.id)!.name).toBe("My version");
     expect(queued()).toHaveLength(0);
+  });
+
+  it("a local id still held after the create synced follows it to the server id (Inspector Brad #554)", async () => {
+    // Online: the create syncs inside the same tap, so screens still hold
+    // the local id (Saved → Shopping list, an open builder draft).
+    const p = createPlanCommand(
+      deps(),
+      plan("local-d", USER, 0, [["m1", "Lunch", [item("a", "Wrap", 450)]]]),
+    );
+    await drain();
+    const serverId = readPlansCache(storage, USER).mine[0]!.id;
+    expect(serverId).toMatch(/^srv-plan-/);
+    expect(findPlan(readPlansCache(storage, USER), p.id)!.plan.id).toBe(
+      serverId,
+    );
+
+    setPlanInShoppingListCommand(deps(), p.id, true);
+    expect(
+      readShoppingCache(storage, USER).list!.plans[0]!.nutritionPlanId,
+    ).toBe(serverId);
+
+    // The builder draft still has the local id and revision 0.
+    savePlanCommand(deps(), { ...p, name: "Edited in the open builder" });
+    const put = queued().find((e) => e.method === "PUT")!;
+    expect(put.endpoint).toBe(`/nutrition/meal-plans/${serverId}`);
+    expect(JSON.parse(put.payload).expectedRevision).toBe(1);
+    expect(
+      readPlansCache(storage, USER).mine.map((x) => [x.id, x.name]),
+    ).toEqual([[serverId, "Edited in the open builder"]]);
+    await drainLater();
+    expect(server.plans.get(serverId)!.name).toBe("Edited in the open builder");
+    expect(
+      queued().filter((e) => e.entityType !== SHOPPING_LIST_PLAN_ENTITY),
+    ).toHaveLength(0);
+
+    // A delete by the old id deletes the real plan.
+    deletePlanCommand(deps(), p.id);
+    expect(queued().find((e) => e.method === "DELETE")!.endpoint).toBe(
+      `/nutrition/meal-plans/${serverId}`,
+    );
+  });
+
+  it("a duplicate made online is found by the copy's local id (Inspector Brad #554)", async () => {
+    const src = plan("srv-src", USER, 1, [
+      ["m1", "Lunch", [item("a", "Wrap", 450)]],
+    ]);
+    server.plans.set(src.id, src);
+    storage.cacheNutritionPlans(USER, { ...emptyPlansCache(), mine: [src] });
+    const copy = duplicatePlanCommand(deps(), src);
+    await drain();
+    const found = findPlan(readPlansCache(storage, USER), copy.id)!;
+    expect(found.plan.id).not.toBe(copy.id);
+    expect(found.plan.id).toMatch(/^srv-plan-/);
+  });
+
+  it("a write that lands after the plan was deleted doesn't bring it back (Inspector Brad #554)", () => {
+    const synced = plan("srv-p1", USER, 2, []);
+    storage.cacheNutritionPlans(USER, { ...emptyPlansCache(), mine: [synced] });
+    savePlanCommand(deps(), { ...synced, name: "x" });
+    const put = queued()[0]!;
+    storage.markMutationInFlight(put.id);
+    storage.markMutationDispatched(put.id);
+    deletePlanCommand(deps(), "srv-p1");
+    applyNutritionPlanSynced(storage, put, {
+      data: { ...synced, name: "x", revision: 3 },
+    });
+    expect(readPlansCache(storage, USER).mine).toEqual([]);
   });
 
   it("deleting a plan that never left the phone forgets it and its shopping row", () => {

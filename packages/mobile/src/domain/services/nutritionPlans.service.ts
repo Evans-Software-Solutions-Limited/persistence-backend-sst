@@ -186,10 +186,19 @@ export function visibleMyPlans(cache: NutritionPlansCache): NutritionPlan[] {
   return cache.mine.filter((p) => p.archivedAt === null);
 }
 
+/** A plan id after following a synced local id to its server id. */
+export function resolvePlanId(
+  cache: NutritionPlansCache | null,
+  planId: string,
+): string {
+  return cache?.aliases?.[planId] ?? planId;
+}
+
 export function findPlan(
   cache: NutritionPlansCache,
-  planId: string,
+  rawId: string,
 ): PlanRef | null {
+  const planId = resolvePlanId(cache, rawId);
   const mine = visibleMyPlans(cache).find((p) => p.id === planId);
   if (mine) return { kind: "mine", plan: mine };
   const coach = visibleCoachPlans(cache).find((c) => c.plan.id === planId);
@@ -230,12 +239,14 @@ export function mergePlansResponse(
   isDelta: boolean,
 ): NutritionPlansCache {
   const conflictPlanIds = cache?.conflictPlanIds ?? [];
+  const aliases = cache?.aliases ? { aliases: cache.aliases } : {};
   if (!isDelta || !cache) {
     return {
       mine: response.mine,
       fromCoaches: response.fromCoaches,
       asOf: response.asOf,
       conflictPlanIds,
+      ...aliases,
     };
   }
   const gone = new Set(response.deletedIds);
@@ -249,7 +260,13 @@ export function mergePlansResponse(
   const fromCoaches = cache.fromCoaches
     .filter((c) => !gone.has(c.plan.id) && !coachById.has(c.plan.id))
     .concat(response.fromCoaches);
-  return { mine, fromCoaches, asOf: response.asOf, conflictPlanIds };
+  return {
+    mine,
+    fromCoaches,
+    asOf: response.asOf,
+    conflictPlanIds,
+    ...aliases,
+  };
 }
 
 /**
@@ -352,6 +369,22 @@ function baseItem(
   };
 }
 
+/**
+ * A food, recipe or saved meal created offline still has a `local-…` id. The
+ * sync swaps it in food logs but not inside plans, so a plan keeps such an
+ * item as a one-off with its name and macros (Inspector Brad, #554).
+ */
+function localSourceAsOneOff(
+  id: string,
+  sourceId: string,
+  name: string,
+  per: PlanMacros,
+  servings: number,
+): PlanItem | null {
+  if (!sourceId.startsWith("local-")) return null;
+  return planItemCustom(id, name, scale(per, servings), servings);
+}
+
 export function planItemFromFood(
   id: string,
   food: Food,
@@ -364,6 +397,8 @@ export function planItemFromFood(
     carbsG: food.carbsG,
     fatG: food.fatG,
   };
+  const oneOff = localSourceAsOneOff(id, food.id, food.name, per, s);
+  if (oneOff) return oneOff;
   return {
     ...baseItem(id, s),
     ...scale(per, s),
@@ -394,6 +429,8 @@ export function planItemFromRecipe(
     carbsG: (recipe.totalCarbsG ?? 0) / portions,
     fatG: (recipe.totalFatG ?? 0) / portions,
   };
+  const oneOff = localSourceAsOneOff(id, recipe.id, recipe.name, per, s);
+  if (oneOff) return oneOff;
   return {
     ...baseItem(id, s),
     ...scale(per, s),
@@ -425,6 +462,8 @@ export function planItemFromSavedMeal(
     carbsG: meal.totalCarbsG,
     fatG: meal.totalFatG,
   };
+  const oneOff = localSourceAsOneOff(id, meal.id, meal.name, per, s);
+  if (oneOff) return oneOff;
   return {
     ...baseItem(id, s),
     ...scale(per, s),
@@ -656,13 +695,18 @@ export function planMealsFromDay(
       fatG: e.fatG,
     };
     const label = nameFor(e) ?? e.customName ?? "Logged food";
-    const kind: PlanItem["kind"] | null = e.foodId
-      ? "food"
-      : e.recipeId
-        ? "recipe"
-        : e.mealId
-          ? "meal"
-          : null;
+    const localRef = [e.foodId, e.recipeId, e.mealId].some((r) =>
+      r?.startsWith("local-"),
+    );
+    const kind: PlanItem["kind"] | null = localRef
+      ? null
+      : e.foodId
+        ? "food"
+        : e.recipeId
+          ? "recipe"
+          : e.mealId
+            ? "meal"
+            : null;
     const logEntry: PlanItem["logEntry"] | null = e.foodId
       ? { foodId: e.foodId, servings: e.servings }
       : e.recipeId

@@ -132,6 +132,12 @@ export type NutritionPlansCache = {
    * was kept. The Plan screen says so once, then forgets.
    */
   conflictPlanIds: string[];
+  /**
+   * `local-…` → server id for plans created or duplicated on this phone that
+   * have synced. A screen opened before the sync still holds the local id;
+   * every lookup and write follows this (Inspector Brad, #554).
+   */
+  aliases?: Record<string, string>;
 };
 
 /** One body for `POST` / `PUT /nutrition/meal-plans`. */

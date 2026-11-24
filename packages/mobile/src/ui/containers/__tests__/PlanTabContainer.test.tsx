@@ -243,6 +243,12 @@ describe("helpers", () => {
     ]);
     expect(g[1]!.rows[0]!.selected).toBe(true);
     expect(switchGroups(emptyPlansCache(), null)).toEqual([]);
+    // A local id that has synced still ticks its plan (Inspector Brad #554).
+    const aliased = switchGroups(
+      { ...cache, aliases: { "local-p1": "p1" } },
+      "local-p1",
+    );
+    expect(aliased[1]!.rows[0]!.selected).toBe(true);
   });
 });
 

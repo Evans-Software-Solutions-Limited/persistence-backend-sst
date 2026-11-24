@@ -35,6 +35,7 @@ import {
   logInputsForPlan,
   logInputsForPlanMeal,
   recomputePlan,
+  resolvePlanId,
   toPlanInput,
 } from "@/domain/services/nutritionPlans.service";
 import { logEntryCommand } from "./nutrition.command";
@@ -69,6 +70,15 @@ function writeMine(
 ): void {
   const cache = readPlansCache(storage, userId);
   storage.cacheNutritionPlans(userId, { ...cache, mine: update(cache.mine) });
+}
+
+/** Follow a synced plan's local id to its server id. */
+function currentPlanId(
+  storage: StoragePort,
+  userId: string,
+  planId: string,
+): string {
+  return resolvePlanId(storage.getCachedNutritionPlans(userId), planId);
 }
 
 function parse(payload: string): Record<string, unknown> | null {
@@ -152,7 +162,21 @@ export function savePlanCommand(
   plan: NutritionPlan,
 ): NutritionPlan {
   const { storage, userId } = deps;
-  const next = recomputePlan({ ...plan, updatedAt: nowIso(deps) });
+  // A builder opened before the create synced still holds the local id and
+  // revision 0; the edit is based on what the create sent, which is the
+  // synced plan's first revision (Inspector Brad, #554).
+  const id = currentPlanId(storage, userId, plan.id);
+  const base =
+    id === plan.id
+      ? plan
+      : {
+          ...plan,
+          id,
+          revision:
+            readPlansCache(storage, userId).mine.find((p) => p.id === id)
+              ?.revision ?? plan.revision,
+        };
+  const next = recomputePlan({ ...base, updatedAt: nowIso(deps) });
   writeMine(storage, userId, (mine) =>
     mine.map((p) => (p.id === next.id ? next : p)),
   );
@@ -209,9 +233,10 @@ export function savePlanCommand(
 /** Delete (archive) one of my plans. Food already logged stays. */
 export function deletePlanCommand(
   deps: NutritionPlansCommandDeps,
-  planId: string,
+  rawId: string,
 ): void {
   const { storage, userId } = deps;
+  const planId = currentPlanId(storage, userId, rawId);
   writeMine(storage, userId, (mine) => mine.filter((p) => p.id !== planId));
   removeFromShoppingCache(storage, userId, planId);
 
@@ -426,10 +451,11 @@ function removeFromShoppingCache(
  */
 export function setPlanInShoppingListCommand(
   deps: NutritionPlansCommandDeps,
-  planId: string,
+  rawId: string,
   include: boolean,
 ): void {
   const { storage, userId } = deps;
+  const planId = currentPlanId(storage, userId, rawId);
   const cache = readShoppingCache(storage, userId);
   const list: PlansShoppingList = cache.list ?? {
     aisles: [],
@@ -557,10 +583,24 @@ export function applyNutritionPlanSynced(
   const data = (responseBody as { data?: unknown } | null)?.data;
   if (!isPlanDto(data)) return;
   const localId = entry.entityId;
+  const userId = data.ownerId;
   if (localId && localId !== data.id && localId.startsWith("local-")) {
     storage.swapLocalNutritionPlanId(localId, data.id);
+    // Screens opened before the sync keep the local id; remember where it
+    // went (Inspector Brad, #554).
+    const withAlias = storage.getCachedNutritionPlans(userId);
+    if (withAlias) {
+      storage.cacheNutritionPlans(userId, {
+        ...withAlias,
+        aliases: { ...withAlias.aliases, [localId]: data.id },
+      });
+    }
   }
-  const userId = data.ownerId;
+  // Deleted while this write was in flight: don't bring it back.
+  const deleted = storage
+    .getQueuedEntriesForEntity(NUTRITION_PLAN_ENTITY, data.id)
+    .some((e) => e.id !== entry.id && e.method === "DELETE");
+  if (deleted) return;
   const laterEdits = storage
     .getQueuedEntriesForEntity(NUTRITION_PLAN_ENTITY, data.id)
     .filter((e) => e.id !== entry.id && e.method === "PUT");

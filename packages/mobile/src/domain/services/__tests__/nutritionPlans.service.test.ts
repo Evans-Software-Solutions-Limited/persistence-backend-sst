@@ -246,6 +246,30 @@ describe("items", () => {
     });
   });
 
+  it("a food, recipe or saved meal still only on the phone goes in as a one-off (Inspector Brad #554)", () => {
+    // A plan can't keep up with a local id once it syncs, so the item keeps
+    // its name and macros instead of a reference.
+    const r = planItemFromRecipe("i", { ...recipe, id: "local-r" }, 2);
+    expect(r).toMatchObject({
+      kind: "custom",
+      recipeId: null,
+      name: "Turkey chilli",
+      kcal: 840,
+      servings: 2,
+    });
+    expect(r.logEntry).toMatchObject({
+      customName: "Turkey chilli",
+      kcal: 840,
+    });
+    expect(
+      planItemFromSavedMeal("i", { ...savedMeal, id: "local-m" }, 1),
+    ).toMatchObject({ kind: "custom", mealId: null });
+    expect(planItemFromFood("i", { ...food, id: "local-f" }, 1)).toMatchObject({
+      kind: "custom",
+      foodId: null,
+    });
+  });
+
   it("changes an amount from the per-serving macros; log hints follow", () => {
     const f = withServings(planItemFromFood("i1", food, 1), 1.5);
     expect(f).toMatchObject({ servings: 1.5, kcal: 108 });
