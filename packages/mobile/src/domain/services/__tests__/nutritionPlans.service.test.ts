@@ -11,7 +11,11 @@ import type {
   NutritionPlansCache,
   PlanFromCoach,
 } from "@/domain/models/nutritionPlans";
-import { emptyPlansCache } from "@/domain/models/nutritionPlans";
+import {
+  emptyPlansCache,
+  PLAN_ITEMS_PER_MEAL_MAX,
+  PLAN_MEALS_MAX,
+} from "@/domain/models/nutritionPlans";
 import type { UserMeal } from "@/domain/models/userMeals";
 import {
   addItemToMeal,
@@ -24,6 +28,7 @@ import {
   findPlan,
   firstEmptyMeal,
   isPlanInShoppingList,
+  isPlanMealFull,
   logInputsForPlan,
   logInputsForPlanMeal,
   macrosVsTarget,
@@ -297,6 +302,17 @@ describe("items", () => {
     expect(clampServings(Number.NaN)).toBe(1);
     expect(clampServings(500)).toBe(100);
     expect(clampServings(1.234)).toBe(1.23);
+    // A tiny amount never rounds to 0, which the server refuses.
+    expect(clampServings(0.004)).toBe(0.01);
+  });
+
+  it("a full meal takes no more items (the server's 50-item cap)", () => {
+    let p = draft();
+    for (let i = 0; i < PLAN_ITEMS_PER_MEAL_MAX + 3; i++)
+      p = addItemToMeal(p, "m1", planItemFromFood(`i${i}`, food, 1));
+    expect(p.meals[0]!.items).toHaveLength(PLAN_ITEMS_PER_MEAL_MAX);
+    expect(isPlanMealFull(p, "m1")).toBe(true);
+    expect(isPlanMealFull(p, "m2")).toBe(false);
   });
 
   it("adds, replaces and removes items with totals recomputed", () => {
@@ -327,6 +343,18 @@ describe("plan meals and drafts", () => {
     expect(next.meals.map((m) => m.name)).toEqual(["Pre-workout", "Lunch"]);
     expect(next.meals[1]!.items).toHaveLength(1);
     expect(next.meals[0]!.id).toBe("local-n1");
+  });
+
+  it("never gives a plan more meals than the server takes", () => {
+    // 30 of Your meals, all ticked (Inspector Brad, #554).
+    const many: UserMeal[] = Array.from({ length: 30 }, (_, i) => ({
+      ...userMeals[0]!,
+      id: `um-${i}`,
+      name: `Meal ${i + 1}`,
+    }));
+    const next = withPlanMeals(draft(), many, newId, many);
+    expect(next.meals).toHaveLength(PLAN_MEALS_MAX);
+    expect(next.meals[0]!.name).toBe("Meal 1");
   });
 
   it("keeps plan meals that aren't one of Your meals", () => {

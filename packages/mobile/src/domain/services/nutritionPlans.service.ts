@@ -28,7 +28,9 @@ import type {
   PlansShoppingList,
 } from "@/domain/models/nutritionPlans";
 import {
+  PLAN_ITEMS_PER_MEAL_MAX,
   PLAN_ITEM_SERVINGS_MAX,
+  PLAN_MEALS_MAX,
   PLAN_MEAL_NAME_MAX,
   PLAN_NAME_MAX,
 } from "@/domain/models/nutritionPlans";
@@ -354,7 +356,10 @@ export function toPlanInput(plan: NutritionPlan): PlanInput {
 
 export function clampServings(servings: number): number {
   if (!Number.isFinite(servings) || servings <= 0) return 1;
-  return Math.min(PLAN_ITEM_SERVINGS_MAX, Math.round(servings * 100) / 100);
+  // Round first, then floor: a tiny amount must never save as 0 servings,
+  // which the server refuses (Inspector Brad, #554).
+  const rounded = Math.max(0.01, Math.round(servings * 100) / 100);
+  return Math.min(PLAN_ITEM_SERVINGS_MAX, rounded);
 }
 
 function baseItem(
@@ -560,10 +565,19 @@ export function addItemToMeal(
   mealId: string,
   item: PlanItem,
 ): NutritionPlan {
-  return updateMeal(plan, mealId, (m) => ({
-    ...m,
-    items: [...m.items, { ...item, sortOrder: m.items.length }],
-  }));
+  // The server takes at most PLAN_ITEMS_PER_MEAL_MAX items a meal; a full
+  // meal takes no more (Inspector Brad, #554).
+  return updateMeal(plan, mealId, (m) =>
+    m.items.length >= PLAN_ITEMS_PER_MEAL_MAX
+      ? m
+      : { ...m, items: [...m.items, { ...item, sortOrder: m.items.length }] },
+  );
+}
+
+/** True when a plan meal can't take another item. */
+export function isPlanMealFull(plan: NutritionPlan, mealId: string): boolean {
+  const meal = plan.meals.find((m) => m.id === mealId);
+  return (meal?.items.length ?? 0) >= PLAN_ITEMS_PER_MEAL_MAX;
 }
 
 export function replaceItem(
@@ -637,7 +651,10 @@ export function withPlanMeals(
   );
   return recomputePlan({
     ...plan,
-    meals: [...kept, ...extra].map((m, i) => ({ ...m, sortOrder: i })),
+    // The server takes at most PLAN_MEALS_MAX meals (Inspector Brad, #554).
+    meals: [...kept, ...extra]
+      .slice(0, PLAN_MEALS_MAX)
+      .map((m, i) => ({ ...m, sortOrder: i })),
   });
 }
 
@@ -705,6 +722,7 @@ export function planMealsFromDay(
       order.push(k);
     }
     const meal = groups.get(k) as PlanMeal;
+    if (meal.items.length >= PLAN_ITEMS_PER_MEAL_MAX) continue;
     const macros = {
       kcal: e.kcal,
       proteinG: e.proteinG,

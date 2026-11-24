@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { NutritionPlan, PlanItem } from "@/domain/models/nutritionPlans";
 import {
   addItemToMeal,
+  isPlanMealFull,
   recomputePlan,
   removeItem,
   replaceItem,
@@ -52,7 +53,10 @@ export const usePlanDraft = create<PlanDraftState>((set) => {
       edit((p) =>
         fromMealId === toMealId
           ? replaceItem(p, fromMealId, item)
-          : addItemToMeal(removeItem(p, fromMealId, item.id), toMealId, item),
+          : isPlanMealFull(p, toMealId)
+            ? // A full meal can't take it: keep it where it was.
+              replaceItem(p, fromMealId, item)
+            : addItemToMeal(removeItem(p, fromMealId, item.id), toMealId, item),
       ),
     clear: () => set({ mode: null, draft: null }),
   };

@@ -11,6 +11,7 @@ import {
   newDraftPlan,
   planMealsFromDay,
   visibleMyPlans,
+  resolvePlanId,
   withPlanMeals,
 } from "@/domain/services/nutritionPlans.service";
 import { addDaysISO, localDayISO } from "@/shared/utils";
@@ -107,7 +108,11 @@ export function NewPlanContainer() {
   }, [gate]);
 
   const myPlans = visibleMyPlans(plans.cache);
-  const sourcePlan = myPlans.find((p) => p.id === sourcePlanId) ?? null;
+  // Follow the pick through a synced local id (Inspector Brad, #554).
+  const sourceId = sourcePlanId
+    ? resolvePlanId(plans.cache, sourcePlanId)
+    : null;
+  const sourcePlan = myPlans.find((p) => p.id === sourceId) ?? null;
   const ticked = userMeals.meals.filter((m) => !unticked.has(m.id));
   const dayFuel: FuelToday | null =
     day && userId ? storage.getCachedFuelToday(userId, day) : null;

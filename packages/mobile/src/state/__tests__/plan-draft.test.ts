@@ -1,4 +1,5 @@
 import type { Food } from "@/domain/models/nutrition";
+import { PLAN_ITEMS_PER_MEAL_MAX } from "@/domain/models/nutritionPlans";
 import {
   emptyPlanMeal,
   newDraftPlan,
@@ -82,5 +83,24 @@ describe("usePlanDraft", () => {
     expect(usePlanDraft.getState().draft!.name).toBe("Other");
     s.clear();
     expect(usePlanDraft.getState()).toMatchObject({ mode: null, draft: null });
+  });
+
+  it("moving an item into a full meal keeps it where it was", () => {
+    // Inspector Brad, #554: the server takes 50 items a meal.
+    const s = usePlanDraft.getState();
+    s.start("new", plan());
+    s.addItems(
+      "m2",
+      Array.from({ length: PLAN_ITEMS_PER_MEAL_MAX }, (_, i) =>
+        planItemFromFood(`f${i}`, food, 1),
+      ),
+    );
+    s.addItems("m1", [planItemFromFood("mover", food, 1)]);
+    const mover = usePlanDraft.getState().draft!.meals[0].items[0];
+    s.moveItem("m1", "m2", { ...mover, servings: 2 });
+    const d = usePlanDraft.getState().draft!;
+    expect(d.meals[0].items.map((i) => i.id)).toEqual(["mover"]);
+    expect(d.meals[0].items[0].servings).toBe(2);
+    expect(d.meals[1].items).toHaveLength(PLAN_ITEMS_PER_MEAL_MAX);
   });
 });

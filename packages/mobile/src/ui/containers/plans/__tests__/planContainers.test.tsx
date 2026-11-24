@@ -520,6 +520,28 @@ describe("NewPlanContainer (N28 → N29 → N33)", () => {
     act(() => probe.newPlan!.onClosePlanPicker());
   });
 
+  it("keeps the picked plan when its local id syncs to a server id", () => {
+    // Inspector Brad, #554: the pick followed the alias.
+    mockCache = {
+      ...mockCache,
+      mine: [{ ...myPlan(), id: "local-a" }],
+    };
+    mockParams = { from: "plan" };
+    const { rerender } = render(<NewPlanContainer />);
+    act(() => probe.newPlan!.onPickPlan("local-a"));
+    act(() => probe.newPlan!.onName("Copy"));
+    mockCache = {
+      ...mockCache,
+      mine: [myPlan()],
+      aliases: { "local-a": "p1" },
+    };
+    rerender(<NewPlanContainer />);
+    expect(probe.newPlan!.options[2].sub).toBe(
+      "Duplicate Training day and change it",
+    );
+    expect(probe.newPlan!.canContinue).toBe(true);
+  });
+
   it("Let Mealprint fill it opens Mealprint, or the locked page", () => {
     render(<NewPlanContainer />);
     act(() => probe.newPlan!.onOption("mealprint"));
