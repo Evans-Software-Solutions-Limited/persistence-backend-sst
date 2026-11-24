@@ -90,7 +90,31 @@
     "typescript/triple-slash-reference": "error",
     "typescript/await-thenable": "error",
     "typescript/no-floating-promises": "error",
-    "typescript/no-misused-promises": "error"
+    "typescript/no-misused-promises": "error",
+    "typescript/switch-exhaustiveness-check": [
+      "error",
+      {
+        "considerDefaultExhaustiveForUnions": true
+      }
+    ],
+    "typescript/only-throw-error": [
+      "error",
+      {
+        "allowThrowingUnknown": true
+      }
+    ],
+    "typescript/prefer-promise-reject-errors": [
+      "error",
+      {
+        "allowThrowingUnknown": true
+      }
+    ],
+    "typescript/no-base-to-string": [
+      "error",
+      {
+        "checkUnknown": false
+      }
+    ]
   },
   "overrides": [
     {
@@ -116,6 +140,13 @@
         "prefer-const": "error",
         "prefer-rest-params": "error",
         "prefer-spread": "error"
+      }
+    },
+    {
+      "files": ["**/__tests__/**", "**/*.test.ts", "**/*.test.tsx"],
+      "rules": {
+        "typescript/only-throw-error": "off",
+        "typescript/prefer-promise-reject-errors": "off"
       }
     }
   ]

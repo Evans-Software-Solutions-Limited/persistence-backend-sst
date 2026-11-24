@@ -21,6 +21,30 @@
           "attributes": false
         }
       }
+    ],
+    "typescript/switch-exhaustiveness-check": [
+      "error",
+      {
+        "considerDefaultExhaustiveForUnions": true
+      }
+    ],
+    "typescript/only-throw-error": [
+      "error",
+      {
+        "allowThrowingUnknown": true
+      }
+    ],
+    "typescript/prefer-promise-reject-errors": [
+      "error",
+      {
+        "allowThrowingUnknown": true
+      }
+    ],
+    "typescript/no-base-to-string": [
+      "error",
+      {
+        "checkUnknown": false
+      }
     ]
   },
   "overrides": [
@@ -1310,6 +1334,13 @@
         "react/only-export-components": "off"
       },
       "plugins": ["react"]
+    },
+    {
+      "files": ["**/__tests__/**", "**/*.test.ts", "**/*.test.tsx"],
+      "rules": {
+        "typescript/only-throw-error": "off",
+        "typescript/prefer-promise-reject-errors": "off"
+      }
     }
   ]
 }

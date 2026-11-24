@@ -520,6 +520,18 @@ export function numericAnswer(raw: unknown): number | null {
  * One answer as the coach reads it (BRIEF): scale "4 / 5", number value +
  * unit, yes/no "Yes"/"No" (+ details), choices joined, photo "Photo".
  */
+/** Answer JSON as text: an unexpected object shows its JSON, not "[object Object]". */
+function answerText(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (
+    typeof value === "number" ||
+    typeof value === "boolean" ||
+    typeof value === "bigint"
+  )
+    return String(value);
+  return JSON.stringify(value) ?? "";
+}
+
 export function formatAnswer(question: Question, raw: unknown): string {
   if (raw === undefined || raw === null || raw === "") return "—";
   switch (question.type) {
@@ -543,8 +555,8 @@ export function formatAnswer(question: Question, raw: unknown): string {
     }
     case "single_choice":
     case "multiple_choice":
-      if (Array.isArray(raw)) return raw.map(String).join(", ") || "—";
-      return String(raw);
+      if (Array.isArray(raw)) return raw.map(answerText).join(", ") || "—";
+      return answerText(raw);
     case "photo":
       return "Photo";
     case "short_text":

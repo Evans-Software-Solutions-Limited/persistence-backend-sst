@@ -555,7 +555,7 @@ export class HabitConfigRepository {
           .set({
             targetValue:
               pending.targetValue != null
-                ? String(pending.targetValue)
+                ? String(pending.targetValue as string | number)
                 : row.targetValue,
             daysPerWeek:
               pending.daysPerWeek !== undefined
@@ -563,7 +563,7 @@ export class HabitConfigRepository {
                 : row.daysPerWeek,
             tolerancePct:
               pending.tolerancePct != null
-                ? String(pending.tolerancePct)
+                ? String(pending.tolerancePct as string | number)
                 : row.tolerancePct,
             updatedAt: new Date(),
           })

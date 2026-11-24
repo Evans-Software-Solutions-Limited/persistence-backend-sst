@@ -201,9 +201,9 @@ describe("ClientDetailPresenter — header", () => {
     // Meta shows only the programme (age/height dropped); the name also
     // appears in the LiveSessionCTA + ProgrammeCard, so assert via the meta
     // node's text directly.
-    expect(getByTestId("client-detail-meta").children.join("")).toBe(
-      "Hypertrophy 8wk",
-    );
+    expect(
+      (getByTestId("client-detail-meta").children as string[]).join(""),
+    ).toBe("Hypertrophy 8wk");
     expect(getAllByText("Hypertrophy 8wk").length).toBeGreaterThanOrEqual(1);
   });
 

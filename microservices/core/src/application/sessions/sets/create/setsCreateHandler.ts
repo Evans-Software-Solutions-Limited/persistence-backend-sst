@@ -19,6 +19,8 @@ export const setsCreateHandler = new Elysia()
       const { sub: userId } = getUser(ctx);
       const { sessionId, sessionExerciseId } = ctx.params;
       const body = ctx.body as Record<string, unknown>;
+      // Numeric fields below are validated by the route schema as
+      // `string | number`, hence the `as string | number` before `String()`.
 
       const session = await ctx.SessionRepository.getById(sessionId, userId);
       if (!session) {
@@ -67,11 +69,13 @@ export const setsCreateHandler = new Elysia()
         setNumber: (body.setNumber as number) ?? 1,
         reps: body.reps as number | undefined | null,
         weightKg:
-          body.weightKg !== undefined ? String(body.weightKg) : undefined,
+          body.weightKg !== undefined
+            ? String(body.weightKg as string | number)
+            : undefined,
         durationSeconds: body.durationSeconds as number | undefined | null,
         distanceMeters:
           body.distanceMeters !== undefined
-            ? String(body.distanceMeters)
+            ? String(body.distanceMeters as string | number)
             : undefined,
         rpe: body.rpe as number | undefined | null,
         restAfterSeconds: body.restAfterSeconds as number | undefined | null,

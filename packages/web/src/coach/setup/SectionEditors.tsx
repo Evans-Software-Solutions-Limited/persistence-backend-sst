@@ -846,7 +846,7 @@ export function WelcomeEditor({
   clientFirst,
 }: EditorBase) {
   const ref = useRef<HTMLTextAreaElement>(null);
-  const text = String(items[0]?.config.text ?? "");
+  const text = String((items[0]?.config.text as string | undefined) ?? "");
   const setText = (next: string) =>
     onChange(
       next === ""

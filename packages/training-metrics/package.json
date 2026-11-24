@@ -9,7 +9,8 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test:unit": "vitest run"
+    "test:unit": "vitest run",
+    "lint": "oxlint"
   },
   "devDependencies": {
     "@tsconfig/node22": "^22",

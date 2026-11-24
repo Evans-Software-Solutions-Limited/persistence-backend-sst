@@ -19,6 +19,8 @@ export const setsUpdateHandler = new Elysia()
       const { sub: userId } = getUser(ctx);
       const { sessionId, sessionExerciseId, setId } = ctx.params;
       const body = ctx.body as Record<string, unknown>;
+      // Numeric fields below are validated by the route schema as
+      // `string | number`, hence the `as string | number` before `String()`.
 
       const set = await ctx.SessionRepository.getSetInSession(
         sessionId,
@@ -34,11 +36,13 @@ export const setsUpdateHandler = new Elysia()
       const updateData: Record<string, unknown> = {};
       if (body.reps !== undefined) updateData.reps = body.reps;
       if (body.weightKg !== undefined)
-        updateData.weightKg = String(body.weightKg);
+        updateData.weightKg = String(body.weightKg as string | number);
       if (body.durationSeconds !== undefined)
         updateData.durationSeconds = body.durationSeconds;
       if (body.distanceMeters !== undefined)
-        updateData.distanceMeters = String(body.distanceMeters);
+        updateData.distanceMeters = String(
+          body.distanceMeters as string | number,
+        );
       if (body.rpe !== undefined) updateData.rpe = body.rpe;
       if (body.restAfterSeconds !== undefined)
         updateData.restAfterSeconds = body.restAfterSeconds;

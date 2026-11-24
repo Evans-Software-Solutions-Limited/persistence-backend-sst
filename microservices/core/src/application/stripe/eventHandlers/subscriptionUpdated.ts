@@ -15,6 +15,7 @@ import {
   resolveExpiresAt,
   unixSecondsToDate,
 } from "./_helpers";
+import { errorMessage } from "../../../shared/errorMessage";
 
 /**
  * Handler for `customer.subscription.updated` — the heaviest of the
@@ -85,7 +86,7 @@ function isAlreadyCanceledError(err: unknown): boolean {
     (err as { code?: unknown }).code ??
     (err as { raw?: { code?: unknown } }).raw?.code;
   if (code === "resource_missing") return true;
-  const message = err instanceof Error ? err.message : String(err);
+  const message = errorMessage(err);
   return /already\s+cancell?ed|has been cancell?ed/i.test(message);
 }
 
@@ -115,7 +116,7 @@ async function cancelOldSubscriptionWithRetry(oldId: string): Promise<boolean> {
         );
         return true;
       }
-      const message = err instanceof Error ? err.message : String(err);
+      const message = errorMessage(err);
       console.warn(
         `[stripe:subscription.updated] cancel attempt ${attempt} for ${oldId} failed: ${message}`,
       );
@@ -286,9 +287,9 @@ export async function handleSubscriptionUpdated(
       })
       .catch((err) => {
         console.error(
-          `[stripe:subscription.updated] ledger record failed for ${existing.id}: ${
-            err instanceof Error ? err.message : String(err)
-          }`,
+          `[stripe:subscription.updated] ledger record failed for ${existing.id}: ${errorMessage(
+            err,
+          )}`,
         );
       });
   }
@@ -428,7 +429,7 @@ export async function handleSubscriptionUpdated(
       // user's local row would still point at the failed sub id, and
       // future webhook events for the original sub would land in the
       // "no local row" branch.
-      const message = err instanceof Error ? err.message : String(err);
+      const message = errorMessage(err);
       console.error(
         `[stripe:subscription.updated] fallback restoration for ${oldStripeSubId}: ${message}`,
       );

@@ -97,6 +97,52 @@
           "properties": false
         }
       }
+    ],
+    "typescript/switch-exhaustiveness-check": [
+      "error",
+      {
+        "considerDefaultExhaustiveForUnions": true
+      }
+    ],
+    "typescript/only-throw-error": [
+      "error",
+      {
+        "allowThrowingUnknown": true,
+        "allow": [
+          {
+            "from": "file",
+            "name": [
+              "ApiError",
+              "StorageError",
+              "AuthError",
+              "ValidationError"
+            ],
+            "path": "src/shared/errors/result.ts"
+          },
+          {
+            "from": "file",
+            "name": "PurchasesError",
+            "path": "src/domain/ports/purchases.port.ts"
+          },
+          {
+            "from": "file",
+            "name": "TogetherOfflineApiError",
+            "path": "src/domain/ports/togetherOfflineApi.port.ts"
+          }
+        ]
+      }
+    ],
+    "typescript/prefer-promise-reject-errors": [
+      "error",
+      {
+        "allowThrowingUnknown": true
+      }
+    ],
+    "typescript/no-base-to-string": [
+      "error",
+      {
+        "checkUnknown": false
+      }
     ]
   },
   "overrides": [
@@ -204,7 +250,9 @@
     {
       "files": ["**/__tests__/**", "**/*.test.ts", "**/*.test.tsx"],
       "rules": {
-        "typescript/await-thenable": "off"
+        "typescript/await-thenable": "off",
+        "typescript/only-throw-error": "off",
+        "typescript/prefer-promise-reject-errors": "off"
       }
     }
   ]

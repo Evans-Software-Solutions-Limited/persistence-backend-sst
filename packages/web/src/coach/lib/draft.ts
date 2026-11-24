@@ -56,7 +56,9 @@ export function draftError(
     }
   }
   if (section === "welcome_message" && items.length > 0) {
-    const text = String(items[0].config.text ?? "").trim();
+    const text = String(
+      (items[0].config.text as string | undefined) ?? "",
+    ).trim();
     if (text.length > 1000) return "Keep the message under 1,000 characters.";
   }
   return null;
@@ -69,7 +71,9 @@ export function itemsToSave(
 ): SetupItem[] {
   const renumbered = items.map((i, index) => ({ ...i, sortOrder: index }));
   if (section === "welcome_message") {
-    const text = String(renumbered[0]?.config.text ?? "").trim();
+    const text = String(
+      (renumbered[0]?.config.text as string | undefined) ?? "",
+    ).trim();
     return text ? [{ refId: null, sortOrder: 0, config: { text } }] : [];
   }
   return renumbered;

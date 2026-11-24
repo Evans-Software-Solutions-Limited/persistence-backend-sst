@@ -439,6 +439,15 @@ describe("answers (C3.3)", () => {
     expect(formatAnswer(q({}), undefined)).toBe("");
   });
 
+  it("shows a malformed object answer as JSON, not [object Object]", () => {
+    expect(formatAnswer(q({ type: "short_text" }), { text: "Fine" })).toBe(
+      '“{"text":"Fine"}”',
+    );
+    expect(formatAnswer(q({ type: "scale" }), { score: 4 })).toBe(
+      '{"score":4} / 5',
+    );
+  });
+
   it("trends numbers only", () => {
     expect(trend(q({ type: "scale" }), 4, 3)).toBe("up");
     expect(trend(q({ type: "number" }), 6.5, 7)).toBe("down");

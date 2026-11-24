@@ -310,9 +310,9 @@ describe("AssignGoalSheet — edit mode", () => {
     await waitFor(() =>
       expect(screen.getByTestId("assign-goal-error")).toBeTruthy(),
     );
-    expect(screen.getByTestId("assign-goal-error").children.join("")).toMatch(
-      /you assigned/i,
-    );
+    expect(
+      (screen.getByTestId("assign-goal-error").children as string[]).join(""),
+    ).toMatch(/you assigned/i);
     expect(useAssignGoalSheet.getState().open).toBe(true);
   });
 });

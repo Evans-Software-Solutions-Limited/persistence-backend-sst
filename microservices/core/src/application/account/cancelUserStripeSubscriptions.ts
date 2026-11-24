@@ -1,5 +1,6 @@
 import { SubscriptionRepository } from "../repositories/subscriptionRepository";
 import { getStripe } from "../stripe/stripeClient";
+import { errorMessage } from "../../shared/errorMessage";
 
 /**
  * Detect Stripe errors meaning "the subscription is already cancelled/gone."
@@ -14,7 +15,7 @@ function isAlreadyCanceledError(err: unknown): boolean {
     (err as { code?: unknown }).code ??
     (err as { raw?: { code?: unknown } }).raw?.code;
   if (code === "resource_missing") return true;
-  const message = err instanceof Error ? err.message : String(err);
+  const message = errorMessage(err);
   return /already\s+cancell?ed|has been cancell?ed/i.test(message);
 }
 

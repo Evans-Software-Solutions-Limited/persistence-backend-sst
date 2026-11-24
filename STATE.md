@@ -40,6 +40,22 @@ was added (Brad: CI should always run cold). No runtime, app or native change.
   void-typed presenter callback is how a test waits for the container's
   async work. Gotcha: root `typescript/*` rules are silently ignored unless
   `typescript` is in the root `plugins` list.
+- **More type-aware rules, every package:** `switch-exhaustiveness-check`
+  (`considerDefaultExhaustiveForUnions`: an explicit `default:` counts),
+  `only-throw-error` and `prefer-promise-reject-errors` (rethrowing a caught
+  `unknown` allowed; off in tests, which throw strings on purpose; mobile
+  allows its Result error types `ApiError`/`StorageError`/`AuthError`/
+  `ValidationError`/`TogetherOfflineApiError`/`PurchasesError`, which hooks
+  throw into TanStack Query), and `no-base-to-string`. Real fixes: new
+  `errorMessage()` helper (core `src/shared/errorMessage.ts`, copied to mobile
+  `src/shared/errors/`) so non-`Error` rejections log their message/JSON
+  instead of "[object Object]" (errorHandler, the three "already cancelled"
+  checks, mobile requestLog); coach form answers render malformed objects as
+  JSON (web `forms.ts`, mobile `coachForms.service.ts`); web admin voucher form
+  fields read via `field()` (a missing field was the string "null"); mobile
+  `cloudSchema` checks `audience` is a string. Elsewhere `String(x as …)`
+  states schema-validated or stored types. `db`, `training-metrics`,
+  `subscription-catalog` and `scripts` now lint too (clean).
 - **Vitest 2.1.9 / 4.0.18 → 5.1.1** everywhere it is used (core,
   other-service, scripts, api-utils, subscription-catalog, training-metrics,
   web). Since Vitest 4 a mock called with `new` needs a constructible
@@ -60,7 +76,8 @@ was added (Brad: CI should always run cold). No runtime, app or native change.
   lint 63s → 6s; mobile typecheck 21.5s → 2.8s; core lint 9.8s → 0.1s
   (1.7s type-aware); web `vite build` 4.59s → 0.75s; web tests 68s → 59s.
 - **Verified:** prettier, typecheck, lint, build (all packages, uncached).
-  Unit tests on Vitest 5: core 434 files / 6,352 tests (same as on Vitest 2),
+  Unit tests on Vitest 5: core 435 files / 6,357 tests (434 / 6,352 on Vitest 2,
+  plus the new errorMessage tests),
   web 99 / 1,978, scripts 245, api-utils 27, training-metrics 54,
   subscription-catalog 14 — all pass. Core coverage 97.56 / 93.12 / 97.9 /
   98.06 (was 98.52 / 94.94 / 98.35 / 98.52 on Vitest 2: v4+ counts branches

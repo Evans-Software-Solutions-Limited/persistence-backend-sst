@@ -1,3 +1,4 @@
+import { errorMessage } from "../../shared/errors/errorMessage";
 /**
  * The last requests the API client made: method, path, status and timing.
  *
@@ -56,7 +57,7 @@ export class RequestLog {
           ? error.name === "AbortError"
             ? "aborted"
             : error.message || error.name
-          : String(error);
+          : errorMessage(error);
   }
 
   /** Oldest first; copies so callers cannot mutate the log. */

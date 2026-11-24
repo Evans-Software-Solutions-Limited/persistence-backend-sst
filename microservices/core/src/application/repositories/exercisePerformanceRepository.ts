@@ -89,7 +89,7 @@ function setSource(
     completedAt:
       completedAt instanceof Date
         ? completedAt.toISOString()
-        : String(completedAt),
+        : String(completedAt as string),
   };
 }
 

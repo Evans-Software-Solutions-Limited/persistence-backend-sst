@@ -233,7 +233,7 @@ describe("M3 regression: complete offline → queue holds flush → reconnect �
     expect(init?.headers).toMatchObject({
       Authorization: "Bearer test-token",
     });
-    const body = JSON.parse(String(init?.body ?? "{}"));
+    const body = JSON.parse(String((init?.body as string | undefined) ?? "{}"));
     expect(body.status).toBe("completed");
     expect(body.exercises[0].sets[0].weightKg).toBe(80);
   });

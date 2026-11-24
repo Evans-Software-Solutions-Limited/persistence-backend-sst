@@ -24,11 +24,12 @@ export function usePurchasePackage() {
   return useMutation<ActiveEntitlement[], PurchasesError, string>({
     mutationFn: async (packageId) => {
       if (purchases === null) {
-        throw {
+        const notConfigured: PurchasesError = {
           kind: "not_configured",
           code: null,
           message: "Purchases are unavailable on this device.",
-        } satisfies PurchasesError;
+        };
+        throw notConfigured;
       }
       const result = await purchases.purchase(packageId);
       if (!result.ok) throw result.error;

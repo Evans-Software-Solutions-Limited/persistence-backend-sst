@@ -21,11 +21,12 @@ export function useRestorePurchases() {
   return useMutation<ActiveEntitlement[], PurchasesError, void>({
     mutationFn: async () => {
       if (purchases === null) {
-        throw {
+        const notConfigured: PurchasesError = {
           kind: "not_configured",
           code: null,
           message: "Purchases are unavailable on this device.",
-        } satisfies PurchasesError;
+        };
+        throw notConfigured;
       }
       const result = await purchases.restore();
       if (!result.ok) throw result.error;

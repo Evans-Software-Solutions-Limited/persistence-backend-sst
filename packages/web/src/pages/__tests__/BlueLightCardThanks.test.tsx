@@ -69,7 +69,7 @@ describe("BlueLightCardThanks", () => {
         .getAttribute("href"),
     ).toMatch(/^https:\/\/play\.google\.com\//);
     expect(screen.queryByRole("link", { name: "See our plans" })).toBeNull();
-    expect(String(mock.mock.calls[0][0])).toMatch(
+    expect(String(mock.mock.calls[0][0] as string)).toMatch(
       /\/blc\/checkout\/cs_test_1\/status$/,
     );
   });

@@ -9,6 +9,7 @@ import {
 import { SubscriptionRepository } from "../../repositories/subscriptionRepository";
 import { getStripe } from "../../stripe/stripeClient";
 import { deriveCancelBaseKey, opKey } from "../../stripe/stripeIdempotency";
+import { errorMessage } from "../../../shared/errorMessage";
 
 /**
  * POST /subscriptions/:id/cancel — cancel a subscription either at the
@@ -82,7 +83,7 @@ function isAlreadyCanceledError(err: unknown): boolean {
     (err as { code?: unknown }).code ??
     (err as { raw?: { code?: unknown } }).raw?.code;
   if (code === "resource_missing") return true;
-  const message = err instanceof Error ? err.message : String(err);
+  const message = errorMessage(err);
   return /already\s+cancell?ed|has been cancell?ed/i.test(message);
 }
 
@@ -227,7 +228,7 @@ export const subscriptionsCancelHandler = new Elysia()
             // stamps `cancelledAt` (now) for endsAt, matching what we'd
             // get if Stripe returned a sub with no canceled_at.
           } else {
-            const message = err instanceof Error ? err.message : String(err);
+            const message = errorMessage(err);
             console.error(
               `[subscriptions:cancel] stripe.subscriptions.cancel failed for ${stripeSubscriptionId}: ${message}`,
             );
@@ -270,7 +271,7 @@ export const subscriptionsCancelHandler = new Elysia()
               `[subscriptions:cancel] ${stripeSubscriptionId} already cancelled on Stripe — period-end retry treated as success, writing local row as cancelled`,
             );
           } else {
-            const message = err instanceof Error ? err.message : String(err);
+            const message = errorMessage(err);
             console.error(
               `[subscriptions:cancel] stripe.subscriptions.update(cancel_at_period_end) failed for ${stripeSubscriptionId}: ${message}`,
             );

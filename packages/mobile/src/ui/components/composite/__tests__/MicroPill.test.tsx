@@ -41,7 +41,9 @@ describe("MicroPill", () => {
     const value = getByText("2.4L");
     expect(JSON.stringify(value.props)).toContain("tabular-nums");
     const flat = flatten(value.props.style);
-    expect(String(flat.fontFamily ?? "")).toMatch(/mono/i);
+    expect(String((flat.fontFamily as string | undefined) ?? "")).toMatch(
+      /mono/i,
+    );
   });
 
   it.each(TONES)("renders tone %s", (tone) => {

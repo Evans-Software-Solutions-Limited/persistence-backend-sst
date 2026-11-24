@@ -29,7 +29,8 @@ export function cloudSnapshot(v: unknown): boolean {
     (v.hostId === null || uuid(v.hostId)) &&
     (v.audience === undefined ||
       v.audience === null ||
-      ["private", "friends", "nearby"].includes(String(v.audience))) &&
+      (typeof v.audience === "string" &&
+        ["private", "friends", "nearby"].includes(v.audience))) &&
     (v.endsAt === undefined ||
       v.endsAt === null ||
       (typeof v.endsAt === "string" &&
