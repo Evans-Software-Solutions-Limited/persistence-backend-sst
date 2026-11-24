@@ -149,7 +149,16 @@ async function missEarlier(
         and(
           eq(coachFormRequests.relationshipId, relationshipId),
           eq(coachFormRequests.formId, schedule.formId),
-          eq(coachFormRequests.trigger, trigger),
+          // This cadence's earlier periods, and this rule's open weekly or
+          // daily request from before the client's cadence changed
+          // (Inspector Brad, #555).
+          or(
+            eq(coachFormRequests.trigger, trigger),
+            and(
+              eq(coachFormRequests.scheduleId, schedule.id),
+              inArray(coachFormRequests.trigger, ["weekly", "daily"]),
+            ),
+          ),
           eq(coachFormRequests.status, "pending"),
           ne(coachFormRequests.periodKey, currentKey),
           lt(coachFormRequests.sentAt, before),

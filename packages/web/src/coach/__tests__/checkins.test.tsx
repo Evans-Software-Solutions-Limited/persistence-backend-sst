@@ -295,6 +295,7 @@ describe("Set it up for one client (C10j)", () => {
     expect([clientId, formId]).toEqual([CLIENT_ID, "f-weekly"]);
     expect(input).toEqual({
       status: "active",
+      scheduleId: "s-weekly",
       override: { trigger: "daily", weekday: null, timeLocal: "07:00" },
     });
     expect(
@@ -323,6 +324,7 @@ describe("Set it up for one client (C10j)", () => {
     ).toBeTruthy();
     expect(api.clientFormSetup.mock.calls[0]![2]).toEqual({
       status: "paused",
+      scheduleId: "s-weekly",
       override: null,
     });
     expect(screen.getByText("Paused")).toBeTruthy();
@@ -333,6 +335,7 @@ describe("Set it up for one client (C10j)", () => {
     ).toBeTruthy();
     expect(api.clientFormSetup.mock.calls[1]![2]).toEqual({
       status: "active",
+      scheduleId: "s-weekly",
       override: null,
     });
   });
@@ -418,5 +421,48 @@ describe("Set it up for one client (C10j)", () => {
     expect(within(panel).getByText(/no live send rule/)).toBeTruthy();
     expect(within(panel).queryByRole("button", { name: "Save" })).toBeNull();
     expect(screen.getByText(/Old form: no answers from Sam yet/)).toBeTruthy();
+  });
+});
+
+describe("Inspector Brad #555: one rule at a time", () => {
+  it("save, pause and resume change only the rule being edited; Stop covers them all", async () => {
+    const entry = {
+      ...CLIENT_FORMS[0]!,
+      rules: [
+        CLIENT_FORMS[0]!.rule!,
+        { ...CLIENT_FORMS[1]!.rule!, scheduleId: "s-join", trigger: "on_join" },
+      ],
+    };
+    const api = fakeApi({
+      clientForms: vi.fn().mockResolvedValue([entry]),
+      clientFormSetup: vi.fn().mockResolvedValue(entry),
+    });
+    renderCoach(<ClientPage />, { route: ROUTE, path: PATH, api });
+    const open = async () => {
+      fireEvent.click(
+        await screen.findByRole("button", { name: /Weekly check-in: set up/ }),
+      );
+      return screen.findByRole("dialog", { name: /for Sam only/ });
+    };
+    let panel = await open();
+    fireEvent.click(within(panel).getByRole("button", { name: "Wednesday" }));
+    fireEvent.click(within(panel).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(api.clientFormSetup).toHaveBeenCalledTimes(1));
+    expect(api.clientFormSetup.mock.calls[0]![2]).toEqual({
+      status: "active",
+      scheduleId: "s-weekly",
+      override: { weekday: 3 },
+    });
+    panel = await open();
+    fireEvent.click(within(panel).getByRole("button", { name: "Pause" }));
+    await waitFor(() => expect(api.clientFormSetup).toHaveBeenCalledTimes(2));
+    expect(api.clientFormSetup.mock.calls[1]![2].scheduleId).toBe("s-weekly");
+    panel = await open();
+    fireEvent.click(within(panel).getByRole("button", { name: "Stop" }));
+    fireEvent.click(within(panel).getAllByRole("button", { name: "Stop" })[0]!);
+    await waitFor(() => expect(api.clientFormSetup).toHaveBeenCalledTimes(3));
+    expect(api.clientFormSetup.mock.calls[2]![2]).toEqual({
+      status: "excluded",
+    });
   });
 });

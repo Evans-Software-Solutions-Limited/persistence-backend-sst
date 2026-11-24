@@ -2651,3 +2651,34 @@ describe("per-client trigger override (PER-129, C10j)", () => {
     expect(bad.status).toBe(422);
   });
 });
+
+describe("Inspector Brad #555: cadence switch", () => {
+  it("moving a client from weekly to daily marks the open weekly request missed", async () => {
+    const form = await makeForm(COACH_A);
+    await makeSchedule(COACH_A, {
+      formId: form.id,
+      trigger: "weekly",
+      audience: "selected",
+      clientIds: [ATHLETE_C],
+      weekday: 1,
+      timeLocal: "07:00",
+    });
+    // Monday 07:00 London: this week's weekly request, no due date.
+    await formPeriodsJob.run(ctx(new Date("2026-11-23T07:00:00Z")));
+    const [weekly] = await requestsFor(ATHLETE_C);
+    expect(weekly).toMatchObject({ trigger: "weekly", status: "pending" });
+    const res = await http(
+      "PUT",
+      `/trainers/me/clients/${ATHLETE_C}/forms/${form.id}/setup`,
+      COACH_A,
+      { status: "active", override: { trigger: "daily", timeLocal: "08:00" } },
+    );
+    expect(res.status).toBe(200);
+    await formPeriodsJob.run(ctx(new Date("2026-11-24T08:00:00Z")));
+    const after = await requestsFor(ATHLETE_C);
+    expect(after.find((r) => r.id === weekly!.id)!.status).toBe("missed");
+    expect(
+      after.filter((r) => r.trigger === "daily").map((r) => r.status),
+    ).toEqual(["pending"]);
+  });
+});
