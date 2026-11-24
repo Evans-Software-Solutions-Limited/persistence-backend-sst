@@ -29,6 +29,7 @@ import {
   firstEmptyMeal,
   isPlanInShoppingList,
   isPlanMealFull,
+  planMealFullText,
   logInputsForPlan,
   logInputsForPlanMeal,
   macrosVsTarget,
@@ -314,6 +315,17 @@ describe("items", () => {
     expect(p.meals[0]!.items).toHaveLength(PLAN_ITEMS_PER_MEAL_MAX);
     expect(isPlanMealFull(p, "m1")).toBe(true);
     expect(isPlanMealFull(p, "m2")).toBe(false);
+    expect(planMealFullText(p, "m1", 1)).toBe(
+      "Breakfast is full. Pick another meal.",
+    );
+    expect(planMealFullText(p, "m2", 2)).toBeNull();
+    const nearly = removeItem(removeItem(p, "m1", "i0"), "m1", "i1");
+    expect(planMealFullText(nearly, "m1", 3)).toBe(
+      "Breakfast has room for 2 more items.",
+    );
+    expect(planMealFullText(p, "gone", PLAN_ITEMS_PER_MEAL_MAX + 1)).toBe(
+      "This meal has room for 50 more items.",
+    );
   });
 
   it("adds, replaces and removes items with totals recomputed", () => {

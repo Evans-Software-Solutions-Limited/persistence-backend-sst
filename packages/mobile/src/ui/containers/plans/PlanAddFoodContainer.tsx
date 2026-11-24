@@ -10,10 +10,12 @@ import type {
 import type { PlanItem } from "@/domain/models/nutritionPlans";
 import { entryDisplayLabel, perServingDivisor } from "@/domain/services";
 import {
+  isPlanMealFull,
   planItemCustom,
   planItemFromFood,
   planItemFromRecipe,
   planItemFromSavedMeal,
+  planMealFullText,
   withServings,
 } from "@/domain/services/nutritionPlans.service";
 import {
@@ -256,16 +258,21 @@ export function PlanAddFoodContainer() {
     : EMPTY_TEXT[tab];
 
   const n = picked.size;
+  // The server takes 50 items a meal: say so rather than drop the extras
+  // (Inspector Brad, #554).
+  const fullText = planMealFullText(draft, meal.id, Math.max(n, 1));
   const ctaLabel =
-    n > 0
+    fullText ??
+    (n > 0
       ? `Add ${n} ${n === 1 ? "item" : "items"} to ${meal.name}`
-      : "Tap + to add, or tap a food for its amount";
+      : "Tap + to add, or tap a food for its amount");
 
   const onAdd = () => {
     const items = [...picked]
       .map((k) => itemFor(k))
       .filter((x): x is PlanItem => x !== null);
-    if (items.length === 0) return;
+    if (items.length === 0 || planMealFullText(draft, meal.id, items.length))
+      return;
     addItems(meal.id, items);
     router.back();
   };
@@ -320,7 +327,7 @@ export function PlanAddFoodContainer() {
             });
         }}
         ctaLabel={ctaLabel}
-        canAdd={n > 0}
+        canAdd={n > 0 && fullText === null}
         onAdd={onAdd}
       />
 
@@ -342,9 +349,10 @@ export function PlanAddFoodContainer() {
         onMeal={(id) => amount && setAmount({ ...amount, toMealId: id })}
         kcal={preview?.kcal ?? 0}
         macros={preview ? macroShares(preview) : []}
-        canSave={typed !== null}
+        canSave={typed !== null && !isPlanMealFull(draft, toMeal.id)}
         onSave={() => {
           if (!amount || !base || typed === null) return;
+          if (isPlanMealFull(draft, toMeal.id)) return;
           addItems(toMeal.id, [withServings(base, typed)]);
           setAmount(null);
           router.back();
@@ -360,13 +368,15 @@ export function PlanAddFoodContainer() {
         mealName={meal.name}
         kcalLabel={q.kcal !== null && q.kcal > 0 ? fmt(q.kcal) : ""}
         warning={
-          q.mismatch && q.macroKcal !== null && q.kcal !== null
+          planMealFullText(draft, meal.id, 1) ??
+          (q.mismatch && q.macroKcal !== null && q.kcal !== null
             ? `Your macros add up to ${fmt(q.macroKcal)} kcal. We'll add the ${fmt(q.kcal)} you typed.`
-            : null
+            : null)
         }
-        canAdd={q.canLog}
+        canAdd={q.canLog && !isPlanMealFull(draft, meal.id)}
         onAdd={() => {
           if (!q.canLog || q.kcal === null) return;
+          if (isPlanMealFull(draft, meal.id)) return;
           addItems(meal.id, [
             planItemCustom(`local-${localIdFactory()}`, q.name ?? "Quick log", {
               kcal: q.kcal,

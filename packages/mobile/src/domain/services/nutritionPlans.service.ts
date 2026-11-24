@@ -574,10 +574,32 @@ export function addItemToMeal(
   );
 }
 
+/** How many more items a plan meal takes before the server's cap. */
+export function planMealRoom(plan: NutritionPlan, mealId: string): number {
+  const meal = plan.meals.find((m) => m.id === mealId);
+  return Math.max(0, PLAN_ITEMS_PER_MEAL_MAX - (meal?.items.length ?? 0));
+}
+
 /** True when a plan meal can't take another item. */
 export function isPlanMealFull(plan: NutritionPlan, mealId: string): boolean {
-  const meal = plan.meals.find((m) => m.id === mealId);
-  return (meal?.items.length ?? 0) >= PLAN_ITEMS_PER_MEAL_MAX;
+  return planMealRoom(plan, mealId) === 0;
+}
+
+/**
+ * What to tell the person when `count` items won't fit in a plan meal, or
+ * null when they fit (Inspector Brad, #554).
+ */
+export function planMealFullText(
+  plan: NutritionPlan,
+  mealId: string,
+  count: number,
+): string | null {
+  const room = planMealRoom(plan, mealId);
+  if (count <= room) return null;
+  const name = plan.meals.find((m) => m.id === mealId)?.name ?? "This meal";
+  return room === 0
+    ? `${name} is full. Pick another meal.`
+    : `${name} has room for ${room} more ${room === 1 ? "item" : "items"}.`;
 }
 
 export function replaceItem(

@@ -8,7 +8,9 @@ import {
   cleanPlanName,
   compareWithTarget,
   findPlan,
+  isPlanMealFull,
   macrosVsTarget,
+  planMealFullText,
   planMealsFromDay,
   withPlanMeals,
   withServings,
@@ -150,7 +152,7 @@ export function PlanBuilderContainer({
       const mealId = pastDayMeal;
       setPastDayMeal(null);
       const meal = draft?.meals.find((m) => m.id === mealId);
-      if (!meal || !userId) return;
+      if (!draft || !meal || !userId) return;
       const fuel = storage.getCachedFuelToday(userId, iso);
       if (!fuel) {
         setNotice(NOT_ON_PHONE);
@@ -166,6 +168,11 @@ export function PlanBuilderContainer({
         dayMeals.find((m) => sameName(m.name, meal.name))?.items ?? [];
       if (items.length === 0) {
         setNotice(`Nothing was logged in ${meal.name} that day.`);
+        return;
+      }
+      const full = planMealFullText(draft, meal.id, items.length);
+      if (full) {
+        setNotice(full);
         return;
       }
       setNotice(null);
@@ -190,6 +197,11 @@ export function PlanBuilderContainer({
   const toMeal = amount
     ? draft.meals.find((m) => m.id === amount.toMealId)
     : undefined;
+  // Moving into a full meal isn't possible (Inspector Brad, #554).
+  const moveBlocked =
+    !!amount &&
+    amount.toMealId !== amount.mealId &&
+    isPlanMealFull(draft, amount.toMealId);
 
   const original = findPlan(plans.cache, draft.id);
 
@@ -292,9 +304,9 @@ export function PlanBuilderContainer({
         onMeal={(id) => amount && setAmount({ ...amount, toMealId: id })}
         kcal={preview?.kcal ?? 0}
         macros={preview ? macroShares(preview) : []}
-        canSave={typed !== null}
+        canSave={typed !== null && !moveBlocked}
         onSave={() => {
-          if (!amount || !amountItem || typed === null) return;
+          if (!amount || !amountItem || typed === null || moveBlocked) return;
           moveItem(
             amount.mealId,
             amount.toMealId,

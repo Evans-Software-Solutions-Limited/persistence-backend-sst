@@ -13,6 +13,7 @@ import type {
   NutritionPlan,
   NutritionPlansCache,
 } from "@/domain/models/nutritionPlans";
+import { PLAN_ITEMS_PER_MEAL_MAX } from "@/domain/models/nutritionPlans";
 import type { UserMeal } from "@/domain/models/userMeals";
 import {
   emptyPlanMeal,
@@ -927,6 +928,90 @@ describe("PlanAddFoodContainer (N30)", () => {
     act(() => probe.add!.onSelectMeal("pm-l"));
     expect(probe.add!.mealName).toBe("Lunch");
     expect(probe.add!.mealPickerVisible).toBe(false);
+  });
+});
+
+describe("full plan meals (Inspector Brad, #554)", () => {
+  // Lunch holding `n` items; the server takes 50 a meal.
+  const withLunch = (n: number): NutritionPlan => {
+    const p = myPlan();
+    p.meals[1].items = Array.from({ length: n }, (_, i) =>
+      planItemFromFood(`l${i}`, FOOD, 1),
+    );
+    return p;
+  };
+
+  it("the Add page says how much room is left and adds nothing over it", () => {
+    days.set(
+      YESTERDAY,
+      fuelDay(YESTERDAY, [
+        entry("e1", { foodId: "f1", kcal: 198 }),
+        entry("e5", { kcal: 80, customName: "Apple" }),
+      ]),
+    );
+    usePlanDraft
+      .getState()
+      .start("edit", withLunch(PLAN_ITEMS_PER_MEAL_MAX - 1));
+    mockParams = { meal: "pm-l" };
+    render(<PlanAddFoodContainer />);
+    act(() => probe.add!.onToggle("e:e1"));
+    expect(probe.add!.canAdd).toBe(true);
+    act(() => probe.add!.onToggle("e:e5"));
+    expect(probe.add!.ctaLabel).toBe("Lunch has room for 1 more item.");
+    expect(probe.add!.canAdd).toBe(false);
+    act(() => probe.add!.onAdd());
+    expect(draft().meals[1].items).toHaveLength(PLAN_ITEMS_PER_MEAL_MAX - 1);
+    expect(mockBack).not.toHaveBeenCalled();
+  });
+
+  it("a full meal can't take an amount-sheet add or a quick log", () => {
+    usePlanDraft.getState().start("edit", withLunch(PLAN_ITEMS_PER_MEAL_MAX));
+    mockParams = { meal: "pm-l" };
+    render(<PlanAddFoodContainer />);
+    expect(probe.add!.ctaLabel).toBe("Lunch is full. Pick another meal.");
+    act(() => probe.add!.onTab("recipes"));
+    act(() => probe.add!.onRow("r:r1"));
+    expect(probe.amount!.canSave).toBe(false);
+    act(() => probe.amount!.onSave());
+    act(() => probe.amount!.onMeal("pm-b"));
+    expect(probe.amount!.canSave).toBe(true);
+    act(() => probe.amount!.onClose());
+
+    act(() => probe.add!.onQuickLog());
+    act(() => probe.quick!.onChange("kcal", "450"));
+    expect(probe.quick!.warning).toBe("Lunch is full. Pick another meal.");
+    expect(probe.quick!.canAdd).toBe(false);
+    act(() => probe.quick!.onAdd());
+    expect(draft().meals[1].items).toHaveLength(PLAN_ITEMS_PER_MEAL_MAX);
+    expect(mockBack).not.toHaveBeenCalled();
+  });
+
+  it("the builder won't move into, or copy a day into, a full meal", () => {
+    mockCache = { ...mockCache, mine: [withLunch(PLAN_ITEMS_PER_MEAL_MAX)] };
+    mockParams = { id: "p1" };
+    render(<PlanEditContainer />);
+    act(() => probe.builder!.onItem("pm-b", "it-1"));
+    act(() => probe.amount!.onMeal("pm-l"));
+    expect(probe.amount!.canSave).toBe(false);
+    act(() => probe.amount!.onSave());
+    expect(draft().meals[0].items).toHaveLength(1);
+    act(() => probe.amount!.onClose());
+
+    days.set(
+      YESTERDAY,
+      fuelDay(YESTERDAY, [
+        entry("e2", {
+          mealSlot: "lunch",
+          userMealId: "um-l",
+          recipeId: "r1",
+          customName: null,
+        }),
+      ]),
+    );
+    act(() => probe.builder!.onFromPastDay("pm-l"));
+    act(() => probe.calendar!.onSelectDate(YESTERDAY));
+    expect(probe.builder!.notice).toBe("Lunch is full. Pick another meal.");
+    expect(draft().meals[1].items).toHaveLength(PLAN_ITEMS_PER_MEAL_MAX);
   });
 });
 
