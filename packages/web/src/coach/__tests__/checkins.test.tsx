@@ -322,14 +322,20 @@ describe("Set it up for one client (C10j)", () => {
     expect(
       await screen.findByText("Weekly check-in is paused for Sam."),
     ).toBeTruthy();
-    expect(api.clientFormSetup.mock.calls[0]![2]).toEqual({ status: "paused" });
+    expect(api.clientFormSetup.mock.calls[0]![2]).toEqual({
+      status: "paused",
+      scheduleId: "s-weekly",
+    });
     expect(screen.getByText("Paused")).toBeTruthy();
     panel = await panelFor(/Weekly check-in: set up/);
     fireEvent.click(within(panel).getByRole("button", { name: "Resume" }));
     expect(
       await screen.findByText("Weekly check-in is back on for Sam."),
     ).toBeTruthy();
-    expect(api.clientFormSetup.mock.calls[1]![2]).toEqual({ status: "active" });
+    expect(api.clientFormSetup.mock.calls[1]![2]).toEqual({
+      status: "active",
+      scheduleId: "s-weekly",
+    });
   });
 
   it("Stop asks first, then removes the form for Sam", async () => {
@@ -447,15 +453,20 @@ describe("Inspector Brad #555: one rule at a time", () => {
     });
     panel = await open();
     fireEvent.click(within(panel).getByRole("button", { name: "Pause" }));
-    await waitFor(() => expect(api.clientFormSetup).toHaveBeenCalledTimes(2));
-    // Pause and Resume cover every rule and keep each one's override, so a
-    // multi-rule form shows Paused and can be resumed (Inspector Brad, #555).
-    expect(api.clientFormSetup.mock.calls[1]![2]).toEqual({ status: "paused" });
+    await waitFor(() => expect(api.clientFormSetup).toHaveBeenCalledTimes(3));
+    // Pause covers every rule that reaches Sam, one rule at a time, so no
+    // rule he isn't on gains a target (Inspector Brad, #555 sweep 3).
+    expect(api.clientFormSetup.mock.calls.slice(1, 3).map((c) => c[2])).toEqual(
+      [
+        { status: "paused", scheduleId: "s-weekly" },
+        { status: "paused", scheduleId: "s-join" },
+      ],
+    );
     panel = await open();
     fireEvent.click(within(panel).getByRole("button", { name: "Stop" }));
     fireEvent.click(within(panel).getAllByRole("button", { name: "Stop" })[0]!);
-    await waitFor(() => expect(api.clientFormSetup).toHaveBeenCalledTimes(3));
-    expect(api.clientFormSetup.mock.calls[2]![2]).toEqual({
+    await waitFor(() => expect(api.clientFormSetup).toHaveBeenCalledTimes(4));
+    expect(api.clientFormSetup.mock.calls[3]![2]).toEqual({
       status: "excluded",
     });
   });

@@ -151,16 +151,23 @@ export function CheckinsContainer({ client }: { client: RosterClient }) {
     }
   }
 
-  async function setup(input: ClientSetupInput, done: string) {
+  /** One or more set-up writes, in order; the last answer is kept. */
+  async function setup(
+    inputs: ClientSetupInput | ClientSetupInput[],
+    done: string,
+  ) {
     if (!panelEntry) return;
     setBusy(true);
     setPanelError(null);
     try {
-      const updated = await api.clientFormSetup(
-        client.id,
-        panelEntry.form.id,
-        input,
-      );
+      let updated: ClientFormEntry | null = null;
+      for (const input of Array.isArray(inputs) ? inputs : [inputs]) {
+        updated = await api.clientFormSetup(
+          client.id,
+          panelEntry.form.id,
+          input,
+        );
+      }
       queryClient.setQueryData<ClientFormEntry[]>(
         coachKeys.clientForms(client.id),
         (old) =>
@@ -192,6 +199,8 @@ export function CheckinsContainer({ client }: { client: RosterClient }) {
   const addable = (libraryQ.data ?? []).filter(
     (f) => !f.archivedAt && !sentIds.has(f.id),
   );
+  const reachingRules = (e: ClientFormEntry) =>
+    e.rules.length > 0 ? e.rules : e.rule ? [e.rule] : [];
   const status = (e: ClientFormEntry) =>
     pausedForClient(e) ? ("paused" as const) : ("active" as const);
 
@@ -264,19 +273,25 @@ export function CheckinsContainer({ client }: { client: RosterClient }) {
           }
           onPause={() =>
             void setup(
-              // Every rule of the form, each keeping its own override, so
-              // the form shows Paused and can be resumed (Inspector Brad,
-              // #555 sweep 2).
-              { status: "paused" },
+              // Each rule that reaches this client, keeping its own
+              // override: the form shows Paused and can be resumed, and no
+              // rule they aren't on gains a target (Inspector Brad, #555).
+              reachingRules(panelEntry).map((r) => ({
+                status: "paused" as const,
+                scheduleId: r.scheduleId,
+              })),
               `${panelEntry.form.title} is paused for ${clientFirst}.`,
             )
           }
           onResume={() =>
             void setup(
-              // Every rule of the form, each keeping its own override, so
-              // the form shows Paused and can be resumed (Inspector Brad,
-              // #555 sweep 2).
-              { status: "active" },
+              // Each rule that reaches this client, keeping its own
+              // override: the form shows Paused and can be resumed, and no
+              // rule they aren't on gains a target (Inspector Brad, #555).
+              reachingRules(panelEntry).map((r) => ({
+                status: "active" as const,
+                scheduleId: r.scheduleId,
+              })),
               `${panelEntry.form.title} is back on for ${clientFirst}.`,
             )
           }
