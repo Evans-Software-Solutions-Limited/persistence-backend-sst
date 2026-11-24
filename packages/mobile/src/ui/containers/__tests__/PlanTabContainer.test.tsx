@@ -376,6 +376,38 @@ describe("PlanTabContainer", () => {
     expect(mockProbe.tab!.notice).toBeNull();
   });
 
+  it("two waiting coach plans open one at a time (Inspector Brad #554)", () => {
+    const b = { ...plan("c2", "coach-1"), id: "c2" };
+    mockPlans.cache = {
+      ...emptyPlansCache(),
+      fromCoaches: [
+        coach({ status: "sent" }),
+        coach({ plan: b, status: "sent" }),
+      ],
+    };
+    const r = render(<PlanTabContainer active />);
+    expect(usePlanSheets.getState()).toMatchObject({
+      sheet: "coachPlan",
+      coachPlanId: "c1",
+    });
+    act(() => usePlanSheets.getState().close());
+    r.rerender(<PlanTabContainer active />);
+    expect(usePlanSheets.getState()).toMatchObject({
+      sheet: "coachPlan",
+      coachPlanId: "c2",
+    });
+  });
+
+  it("a waiting coach plan doesn't replace an open Your plans sheet", () => {
+    usePlanSheets.setState({ sheet: "switch" });
+    mockPlans.cache = {
+      ...emptyPlansCache(),
+      fromCoaches: [coach({ status: "sent" })],
+    };
+    render(<PlanTabContainer active />);
+    expect(usePlanSheets.getState().sheet).toBe("switch");
+  });
+
   it("a coach plan waiting for an answer opens C6 once", () => {
     mockPlans.cache = {
       ...emptyPlansCache(),

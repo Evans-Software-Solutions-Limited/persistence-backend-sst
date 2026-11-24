@@ -279,6 +279,58 @@ describe("usePlansShoppingList", () => {
     ).toEqual(["p1"]);
   });
 
+  it("a plan toggled while the list is being read survives that read, and the list is read again (Inspector Brad #554)", async () => {
+    jest.useFakeTimers();
+    const { api, storage, wrapper } = setup();
+    // The drain sends B's add and the server acknowledges it.
+    mockProcessSyncQueue.mockImplementation(async () => {
+      for (const e of storage.getPendingMutations())
+        storage.markMutationCompleted(e.id);
+      return {};
+    });
+    const stale = await api.getPlansShoppingList();
+    let release: () => void = () => {};
+    let requested: () => void = () => {};
+    const getSent = new Promise<void>((r) => (requested = r));
+    const spy = jest
+      .spyOn(api, "getPlansShoppingList")
+      .mockImplementationOnce(async () => {
+        requested();
+        await new Promise<void>((r) => (release = r));
+        return stale; // the server's list from before B was added
+      });
+    const hook = renderHook(() => usePlansShoppingList(false), { wrapper });
+    let first: Promise<boolean> = Promise.resolve(true);
+    act(() => {
+      first = hook.result.current.refresh();
+    });
+    await act(async () => {
+      await getSent;
+    });
+    // B is toggled while that read is outstanding; its own refresh is dropped.
+    api.plansShopping = {
+      ...api.plansShopping,
+      plans: [{ nutritionPlanId: "B", mealPlanId: null, addedAt: "t" }],
+    };
+    await act(async () => {
+      await hook.result.current.setPlanIncluded("B", true);
+    });
+    await act(async () => {
+      release();
+      await first;
+    });
+    expect(
+      hook.result.current.value.list!.plans.map((p) => p.nutritionPlanId),
+    ).toEqual(["B"]);
+    // A follow-up read picks up B's aisles.
+    await act(async () => {
+      jest.runOnlyPendingTimers();
+    });
+    await act(async () => {});
+    expect(spy.mock.calls.length).toBeGreaterThanOrEqual(2);
+    jest.useRealTimers();
+  });
+
   it("does nothing without a signed-in user", async () => {
     const { wrapper } = setup(false);
     const hook = renderHook(() => usePlansShoppingList(false), { wrapper });

@@ -8,6 +8,7 @@ import { localIdFactory } from "@/application/commands/localId";
 import {
   NUTRITION_PLAN_ASSIGNMENT_ENTITY,
   NUTRITION_PLAN_ENTITY,
+  SHOPPING_LIST_PLAN_ENTITY,
   addPlanToDayCommand,
   answerCoachPlanCommand,
   applyShoppingListRead,
@@ -33,6 +34,7 @@ import type {
 import { emptyPlansCache } from "@/domain/models/nutritionPlans";
 import type { UserMeal } from "@/domain/models/userMeals";
 import type { StoragePort } from "@/domain/ports/storage.port";
+import { isAutoResolvableSyncEntry } from "@/domain/ports/sync.types";
 import {
   mergePlansResponse,
   overlayLocalPlans,
@@ -281,6 +283,17 @@ export function usePlansShoppingList(enabled = true): PlansShoppingState {
     // Plan chips changed on the phone but not yet sent stay; ticks stay.
     reconcile: (s, uid, value) =>
       value.list ? applyShoppingListRead(s, uid, value.list) : value,
+    // A plan toggled (or an item ticked) while a read is out beats that
+    // read's older answer (Inspector Brad, #554).
+    preserveConcurrentCacheWrites: true,
+    pendingWrites: (s) =>
+      s
+        .getUncompletedMutations()
+        .filter(
+          (e) =>
+            e.entityType === SHOPPING_LIST_PLAN_ENTITY &&
+            isAutoResolvableSyncEntry(e),
+        ),
     write: (s, uid, value) => s.cachePlansShopping(uid, value),
     tables: PLANS_SHOPPING_TABLES,
     enabled,
@@ -310,7 +323,11 @@ export function usePlansShoppingList(enabled = true): PlansShoppingState {
         console.error("[usePlansShoppingList] queue flush failed:", err);
       }
       // The aisles change server-side once the plan is in; read them again.
-      void refresh({ silent: true });
+      // A read already out may predate this change and drops this one, so
+      // read once more shortly after (Inspector Brad, #554).
+      void refresh({ silent: true }).then((ran) => {
+        if (!ran) setTimeout(() => void refresh({ silent: true }), 1500);
+      });
     },
     [auth, storage, userId, reload, refresh],
   );

@@ -143,14 +143,16 @@ export function PlanTabContainer({ active }: { active: boolean }) {
     return id ? findPlan(cache, id) : null;
   }, [cache, selectedPlanId]);
 
-  // A coach plan that's waiting for an answer opens C6 once per session.
+  // A coach plan that's waiting for an answer opens C6 once per session, and
+  // only when no other plan sheet is open: one at a time (Inspector Brad, #554).
+  const sheetOpen = usePlanSheets((s) => s.sheet !== null);
   useEffect(() => {
-    if (!active) return;
+    if (!active || sheetOpen) return;
     const waiting = newCoachPlans(cache).find(
       (c) => !autoShown.includes(c.plan.id),
     );
     if (waiting) openCoachPlan(waiting.plan.id, true);
-  }, [active, cache, autoShown, openCoachPlan]);
+  }, [active, sheetOpen, cache, autoShown, openCoachPlan]);
 
   // Opening a coach plan clears its "updated" marker on the server; the
   // marker stays on screen for this visit.
