@@ -470,7 +470,6 @@ export async function completeSet(
       continue;
     }
     failures.push({ pose, reason: result.reason });
-    if (result.reason !== "missing") await deleteKeys([photo.s3Key]);
   }
   const ready = await getDb().transaction(async (tx) => {
     if (checked.length > 0) {
@@ -497,9 +496,9 @@ export async function completeSet(
         ),
       )
       .returning();
-    return rows[0]!;
+    return rows[0] ?? null;
   });
-  if (!ready) {
+  if (failures.length > 0) {
     return {
       ok: false,
       status: 422,
@@ -507,6 +506,8 @@ export async function completeSet(
       poses: failures,
     };
   }
+  // Removed while we checked (the stale-upload sweep).
+  if (!ready) return { ok: false, status: 404, code: "set_not_found" };
   const [dto] = await setDtos(userId, [ready], viewSeconds, now);
   return { ok: true, set: dto! };
 }
@@ -594,32 +595,37 @@ export const STALE_PENDING_MS = 2 * DAY_MS;
  */
 export async function purgeStalePendingSets(now = new Date()): Promise<number> {
   const cutoff = new Date(now.getTime() - STALE_PENDING_MS);
-  const stale = await getDb()
-    .select({ id: progressPhotoSets.id, userId: progressPhotoSets.userId })
-    .from(progressPhotoSets)
-    .where(
-      and(
-        eq(progressPhotoSets.status, "pending"),
-        lt(progressPhotoSets.createdAt, cutoff),
-      ),
-    )
-    .limit(500);
-  if (stale.length === 0) return 0;
-  await deleteKeys(
-    stale.flatMap((s) =>
-      PROGRESS_PHOTO_POSES.map((pose) => photoKey(s.userId, s.id, pose)),
-    ),
-  );
-  await getDb()
-    .delete(progressPhotoSets)
-    .where(
-      and(
-        inArray(
-          progressPhotoSets.id,
-          stale.map((s) => s.id),
+  // Rows first, objects second, in one transaction: only sets this delete
+  // actually removed lose their objects, and an S3 failure rolls the rows
+  // back so the next night retries (Inspector Brad, #553).
+  return getDb().transaction(async (tx) => {
+    const stale = tx
+      .select({ id: progressPhotoSets.id })
+      .from(progressPhotoSets)
+      .where(
+        and(
+          eq(progressPhotoSets.status, "pending"),
+          lt(progressPhotoSets.createdAt, cutoff),
         ),
-        eq(progressPhotoSets.status, "pending"),
+      )
+      .limit(500);
+    const removed = await tx
+      .delete(progressPhotoSets)
+      .where(
+        and(
+          inArray(progressPhotoSets.id, stale),
+          eq(progressPhotoSets.status, "pending"),
+        ),
+      )
+      .returning({
+        id: progressPhotoSets.id,
+        userId: progressPhotoSets.userId,
+      });
+    await deleteKeys(
+      removed.flatMap((s) =>
+        PROGRESS_PHOTO_POSES.map((pose) => photoKey(s.userId, s.id, pose)),
       ),
     );
-  return stale.length;
+    return removed.length;
+  });
 }

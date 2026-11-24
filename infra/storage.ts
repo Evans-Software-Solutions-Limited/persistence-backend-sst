@@ -24,21 +24,22 @@ export const avatarsBucket = new sst.aws.Bucket("Avatars", {
 //   progress/<userId>/<setId>/<pose>.jpg
 //   forms/<userId>/<mediaId>.jpg
 //   resources/<trainerId>/<mediaId>/file.<ext>
+//   pending/<any of the above>   ← where presigned uploads land
 //
 // - No public access: `access` is unset, so SST's BucketPublicAccessBlock
 //   blocks every public ACL and policy, and `enforceHttps` (SST default true)
 //   denies plain-HTTP requests.
-// - Phones and the coach web upload straight to S3 with presigned PUTs pinned
-//   to the key, Content-Type, Content-Length and the `upload=pending` tag
-//   (`application/media/privateMediaStore.ts`), then call the API's complete,
-//   which checks the object with HeadObject and re-tags it `upload=complete`.
+// - Phones and the coach web upload straight to S3 with presigned PUTs to
+//   `pending/<key>`, pinned to the key, Content-Type and Content-Length
+//   (`application/media/privateMediaStore.ts`). The API's complete checks the
+//   staged object with HeadObject and copies it to the final key. No client
+//   link can write a final key, so a late or replayed PUT only lands in
+//   `pending/`.
 // - Views are presigned GETs minted per request after the access check: 15
 //   minutes for the owner, 5 for a coach. Nothing here is ever public.
 // - CORS is only for the coach web (browsers); the native app sends no Origin.
-//   PUT needs `x-amz-tagging` and `content-type` allowed.
-// - Lifecycle: an upload that was never completed still carries
-//   `upload=pending` and is deleted after 1 day. SST's `lifecycle` only
-//   filters by prefix, so the transform swaps the filter for the tag.
+// - Lifecycle: anything still under `pending/` (an upload never completed, or
+//   a late duplicate) is deleted after 1 day.
 const privateMediaOrigins = webDomain
   ? [`https://${webDomain}`]
   : // Personal / dev stages: the local Vite dev server.
@@ -48,27 +49,16 @@ export const coachPrivateMediaBucket = new sst.aws.Bucket("CoachPrivateMedia", {
   cors: {
     allowMethods: ["GET", "HEAD", "PUT"],
     allowOrigins: privateMediaOrigins,
-    allowHeaders: ["content-type", "x-amz-tagging"],
+    allowHeaders: ["content-type"],
     maxAge: "1 hour",
   },
   lifecycle: [
     {
       id: "expire-uncompleted-uploads",
+      prefix: "pending/",
       expiresIn: "1 day",
     },
   ],
-  transform: {
-    lifecycle: (args) => {
-      args.rules = [
-        {
-          id: "expire-uncompleted-uploads",
-          status: "Enabled",
-          expiration: { days: 1 },
-          filter: { tag: { key: "upload", value: "pending" } },
-        },
-      ];
-    },
-  },
 });
 
 // Explicit server-side encryption (SSE-S3, AES-256) rather than relying on

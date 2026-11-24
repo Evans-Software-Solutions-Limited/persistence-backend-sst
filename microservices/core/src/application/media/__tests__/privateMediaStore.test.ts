@@ -30,7 +30,7 @@ afterEach(() => setS3ClientForTests(null));
 const params = (url: string) => new URL(url).searchParams;
 
 describe("presignUpload (design F: pinned to key, type and size)", () => {
-  it("signs the key, Content-Type, Content-Length and the pending tag, for 10 minutes", async () => {
+  it("signs the staging key, Content-Type and Content-Length, for 10 minutes", async () => {
     const now = new Date("2026-11-23T10:00:00Z");
     const upload = await presignUpload(
       "progress/u1/s1/front.jpg",
@@ -40,14 +40,13 @@ describe("presignUpload (design F: pinned to key, type and size)", () => {
     );
     const url = new URL(upload.url);
     expect(url.host).toBe("private-media-test.s3.eu-west-2.amazonaws.com");
-    expect(url.pathname).toBe("/progress/u1/s1/front.jpg");
+    // Uploads land under pending/; only complete writes the final key.
+    expect(url.pathname).toBe("/pending/progress/u1/s1/front.jpg");
     const q = params(upload.url);
     expect(q.get("X-Amz-SignedHeaders")).toBe(
-      "content-length;content-type;host;x-amz-tagging",
+      "content-length;content-type;host",
     );
     expect(q.get("X-Amz-Expires")).toBe("600");
-    // The tag is a signed HEADER, never a query parameter (S3 ignores it there).
-    expect(q.has("x-amz-tagging")).toBe(false);
     // No checksum of an empty body baked into the link.
     expect(q.has("x-amz-checksum-crc32")).toBe(false);
     expect(upload).toMatchObject({
@@ -55,7 +54,6 @@ describe("presignUpload (design F: pinned to key, type and size)", () => {
       headers: {
         "Content-Type": "image/jpeg",
         "Content-Length": "123456",
-        "x-amz-tagging": "upload=pending",
       },
       expiresAt: "2026-11-23T10:10:00.000Z",
     });
@@ -81,10 +79,30 @@ describe("checkUpload (HeadObject on complete)", () => {
     bytes: 500,
   };
 
-  it("accepts a matching object and re-tags it complete, so the lifecycle rule keeps it", async () => {
-    bucket.put("k", "image/jpeg", 500);
+  it("accepts a matching staged object and promotes it to the final key", async () => {
+    bucket.put("pending/progress/u/s/front.jpg", "image/jpeg", 500);
+    expect(await checkUpload("progress/u/s/front.jpg", expected)).toEqual({
+      ok: true,
+      bytes: 500,
+    });
+    expect(bucket.keys()).toEqual(["progress/u/s/front.jpg"]);
+    expect(bucket.objects.get("progress/u/s/front.jpg")!.contentType).toBe(
+      "image/jpeg",
+    );
+  });
+
+  it("counts an already-promoted object as done (complete retried after the copy)", async () => {
+    bucket.put("k", "image/jpeg", 500, { upload: "complete" });
     expect(await checkUpload("k", expected)).toEqual({ ok: true, bytes: 500 });
-    expect(bucket.objects.get("k")!.tags).toEqual({ upload: "complete" });
+    expect(bucket.sent).not.toContain("CopyObjectCommand");
+  });
+
+  it("a late duplicate PUT only reaches pending/, which the lifecycle rule clears", async () => {
+    bucket.put("pending/k", "image/jpeg", 500);
+    await checkUpload("k", expected);
+    bucket.put("pending/k", "image/jpeg", 500); // the late PUT
+    expect(bucket.expireLifecycle()).toEqual(["pending/k"]);
+    expect(bucket.keys()).toEqual(["k"]);
   });
 
   it("reports a missing object", async () => {
@@ -94,10 +112,10 @@ describe("checkUpload (HeadObject on complete)", () => {
     });
   });
 
-  it("refuses the wrong type, an oversize object and a size mismatch, leaving the tag pending", async () => {
-    bucket.put("png", "image/png", 500);
-    bucket.put("big", "image/jpeg", 10 * 1024 * 1024 + 1);
-    bucket.put("odd", "image/jpeg", 499);
+  it("refuses the wrong type, an oversize object and a size mismatch, and deletes the staged upload", async () => {
+    bucket.put("pending/png", "image/png", 500);
+    bucket.put("pending/big", "image/jpeg", 10 * 1024 * 1024 + 1);
+    bucket.put("pending/odd", "image/jpeg", 499);
     expect(await checkUpload("png", expected)).toMatchObject({
       reason: "wrong_type",
     });
@@ -107,7 +125,7 @@ describe("checkUpload (HeadObject on complete)", () => {
     expect(await checkUpload("odd", expected)).toMatchObject({
       reason: "size_mismatch",
     });
-    expect(bucket.objects.get("odd")!.tags).toEqual({ upload: "pending" });
+    expect(bucket.keys()).toEqual([]);
   });
 
   it("treats a missing content type as the wrong type", async () => {
@@ -158,9 +176,12 @@ describe("deleting objects", () => {
     await expect(deleteKeys(["a"])).rejects.toThrow(/failed for 1 object/);
   });
 
-  it("deleteKeys sends at most 1000 keys per request", async () => {
-    const keys = Array.from({ length: 1001 }, (_, i) => `k${i}`);
-    for (const k of keys) bucket.put(k, "image/jpeg", 1);
+  it("deleteKeys also deletes each key's staged upload, at most 1000 keys per request", async () => {
+    const keys = Array.from({ length: 501 }, (_, i) => `k${i}`);
+    for (const k of keys) {
+      bucket.put(k, "image/jpeg", 1);
+      bucket.put(`pending/${k}`, "image/jpeg", 1);
+    }
     await deleteKeys(keys);
     expect(
       bucket.sent.filter((s) => s === "DeleteObjectsCommand"),
@@ -199,12 +220,16 @@ describe("deleting objects", () => {
     ]) {
       bucket.put(k, "image/jpeg", 1);
     }
+    bucket.put("pending/progress/u1/s3/front.jpg", "image/jpeg", 1);
     expect(userPrefixes("u1")).toEqual([
       "progress/u1/",
       "forms/u1/",
       "resources/u1/",
+      "pending/progress/u1/",
+      "pending/forms/u1/",
+      "pending/resources/u1/",
     ]);
-    expect(await deleteAllUserMedia("u1")).toBe(5);
+    expect(await deleteAllUserMedia("u1")).toBe(6);
     expect(bucket.keys()).toEqual([...keep].sort());
   });
 });

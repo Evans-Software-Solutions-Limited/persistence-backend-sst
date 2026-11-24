@@ -222,8 +222,8 @@ async function finaliseRow(
     bytes: row.bytes,
   });
   if (!check.ok) {
+    // checkUpload already deleted a bad staged object.
     if (check.reason !== "missing") {
-      await deleteKeys([row.s3Key]);
       await getDb()
         .delete(privateMedia)
         .where(
@@ -460,35 +460,40 @@ export const UNUSED_FORM_PHOTO_MS = 7 * 24 * 60 * 60 * 1000;
 export async function purgeStaleMedia(now = new Date()): Promise<number> {
   const pendingCutoff = new Date(now.getTime() - STALE_UPLOAD_MS);
   const unusedCutoff = new Date(now.getTime() - UNUSED_FORM_PHOTO_MS);
-  const stale = await getDb()
-    .select({ id: privateMedia.id, key: privateMedia.s3Key })
-    .from(privateMedia)
-    .where(
-      or(
+  // Rows first, objects second, in one transaction: a submit attaching one
+  // of these photos waits on the row lock and then finds it gone, so no
+  // response can point at a deleted object; an S3 failure rolls the rows
+  // back so the next night retries (Inspector Brad, #553).
+  return getDb().transaction(async (tx) => {
+    const stale = tx
+      .select({ id: privateMedia.id })
+      .from(privateMedia)
+      .where(
         and(
-          eq(privateMedia.status, "pending"),
-          lt(privateMedia.createdAt, pendingCutoff),
-        ),
-        and(
-          eq(privateMedia.purpose, "form_answer"),
           isNull(privateMedia.formResponseId),
-          lt(privateMedia.createdAt, unusedCutoff),
+          or(
+            and(
+              eq(privateMedia.status, "pending"),
+              lt(privateMedia.createdAt, pendingCutoff),
+            ),
+            and(
+              eq(privateMedia.purpose, "form_answer"),
+              lt(privateMedia.createdAt, unusedCutoff),
+            ),
+          ),
         ),
-      ),
-    )
-    .limit(500);
-  if (stale.length === 0) return 0;
-  await deleteKeys(stale.map((s) => s.key));
-  await getDb()
-    .delete(privateMedia)
-    .where(
-      and(
-        inArray(
-          privateMedia.id,
-          stale.map((s) => s.id),
+      )
+      .limit(500);
+    const removed = await tx
+      .delete(privateMedia)
+      .where(
+        and(
+          inArray(privateMedia.id, stale),
+          isNull(privateMedia.formResponseId),
         ),
-        isNull(privateMedia.formResponseId),
-      ),
-    );
-  return stale.length;
+      )
+      .returning({ key: privateMedia.s3Key });
+    await deleteKeys(removed.map((r) => r.key));
+    return removed.length;
+  });
 }

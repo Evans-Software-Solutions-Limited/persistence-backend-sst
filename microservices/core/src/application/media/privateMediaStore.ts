@@ -1,10 +1,10 @@
 import {
+  CopyObjectCommand,
   DeleteObjectsCommand,
   GetObjectCommand,
   HeadObjectCommand,
   ListObjectsV2Command,
   PutObjectCommand,
-  PutObjectTaggingCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
@@ -14,24 +14,31 @@ import { Resource } from "sst";
  * The private media store (PER-121, backend design F): the only code that
  * talks to the private `CoachPrivateMedia` bucket (infra/storage.ts).
  *
- * Upload: a presigned PUT pinned to the key, `Content-Type`, `Content-Length`
- * and the `upload=pending` tag. The phone sends the exact headers returned in
- * `headers`; any other key, type, size or tag fails S3's signature check.
- * The bucket's lifecycle rule deletes objects still tagged `upload=pending`
+ * Upload: a presigned PUT pinned to the STAGING key `pending/<key>`, plus
+ * `Content-Type` and `Content-Length`. The phone sends the exact headers
+ * returned in `headers`; any other key, type or size fails S3's signature
+ * check. The bucket's lifecycle rule deletes everything under `pending/`
  * after a day, so an upload that is never completed goes on its own.
  *
- * Complete: `checkUpload` reads the object with HeadObject and checks its
- * type and size, then re-tags it `upload=complete`.
+ * Complete: `checkUpload` reads the staged object with HeadObject, checks its
+ * type and size, then copies it to the final key and deletes the staged copy.
+ * No client link can write the final key, so a late or replayed PUT only ever
+ * lands in `pending/` and expires (Inspector Brad, #553).
  *
- * View: presigned GETs, minted per request after the caller's access check
- * and never stored.
+ * View: presigned GETs of the final key, minted per request after the
+ * caller's access check and never stored.
  */
 
 export const UPLOAD_URL_SECONDS = 10 * 60;
 export const OWNER_VIEW_SECONDS = 15 * 60;
 export const COACH_VIEW_SECONDS = 5 * 60;
 export const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
-export const PENDING_TAG = "upload=pending";
+export const STAGING_PREFIX = "pending/";
+
+/** Where a presigned upload for `key` lands until complete promotes it. */
+export function stagingKey(key: string): string {
+  return `${STAGING_PREFIX}${key}`;
+}
 
 // SST's generated `sst-env.d.ts` only learns about a new resource after the
 // next `sst dev` / `sst deploy`; this cast keeps `tsc` green until then
@@ -85,17 +92,14 @@ export async function presignUpload(
     s3() as unknown as PresignClient,
     new PutObjectCommand({
       Bucket: bucketName(),
-      Key: key,
+      Key: stagingKey(key),
       ContentType: contentType,
       ContentLength: bytes,
-      Tagging: PENDING_TAG,
     }) as unknown as PresignCommand,
     {
       expiresIn: UPLOAD_URL_SECONDS,
-      // Pin type and size into the signature. The tag must stay a signed
-      // HEADER: S3 ignores x-amz-tagging when it is hoisted into the query.
+      // Pin type and size into the signature.
       signableHeaders: new Set(["content-type", "content-length"]),
-      unhoistableHeaders: new Set(["x-amz-tagging"]),
     },
   );
   return {
@@ -104,7 +108,6 @@ export async function presignUpload(
     headers: {
       "Content-Type": contentType,
       "Content-Length": String(bytes),
-      "x-amz-tagging": PENDING_TAG,
     },
     expiresAt: new Date(
       now.getTime() + UPLOAD_URL_SECONDS * 1000,
@@ -150,10 +153,41 @@ function isNotFound(err: unknown): boolean {
   );
 }
 
+async function head(key: string) {
+  try {
+    return await s3().send(
+      new HeadObjectCommand({ Bucket: bucketName(), Key: key }),
+    );
+  } catch (err) {
+    if (isNotFound(err)) return null;
+    throw err;
+  }
+}
+
+function judge(
+  found: { ContentType?: string; ContentLength?: number },
+  expected: {
+    contentTypes: readonly string[];
+    maxBytes: number;
+    bytes: number;
+  },
+): UploadCheck {
+  const type = (found.ContentType ?? "").toLowerCase();
+  const size = found.ContentLength ?? 0;
+  if (!expected.contentTypes.includes(type)) {
+    return { ok: false, reason: "wrong_type" };
+  }
+  if (size > expected.maxBytes) return { ok: false, reason: "too_large" };
+  if (size !== expected.bytes) return { ok: false, reason: "size_mismatch" };
+  return { ok: true, bytes: size };
+}
+
 /**
- * HeadObject the upload and check it against what the link pinned. A good
- * object is re-tagged `upload=complete` so the lifecycle rule keeps it.
- * Any other S3 error is thrown (the caller answers 5xx; complete is retried).
+ * Check the staged upload for `key` against what the link pinned, then
+ * promote it to `key`. A staged object of the wrong type or size is deleted,
+ * so the phone uploads again. If nothing is staged but `key` already holds a
+ * good object (a complete retried after the copy), that counts as done. Any
+ * other S3 error is thrown (the caller answers 5xx; complete is retried).
  */
 export async function checkUpload(
   key: string,
@@ -163,34 +197,33 @@ export async function checkUpload(
     bytes: number;
   },
 ): Promise<UploadCheck> {
-  let head;
-  try {
-    head = await s3().send(
-      new HeadObjectCommand({ Bucket: bucketName(), Key: key }),
-    );
-  } catch (err) {
-    if (isNotFound(err)) return { ok: false, reason: "missing" };
-    throw err;
+  const staged = await head(stagingKey(key));
+  if (!staged) {
+    const promoted = await head(key);
+    return promoted
+      ? judge(promoted, expected)
+      : { ok: false, reason: "missing" };
   }
-  const type = (head.ContentType ?? "").toLowerCase();
-  const size = head.ContentLength ?? 0;
-  if (!expected.contentTypes.includes(type)) {
-    return { ok: false, reason: "wrong_type" };
+  const verdict = judge(staged, expected);
+  if (!verdict.ok) {
+    await deleteExact([stagingKey(key)]);
+    return verdict;
   }
-  if (size > expected.maxBytes) return { ok: false, reason: "too_large" };
-  if (size !== expected.bytes) return { ok: false, reason: "size_mismatch" };
   await s3().send(
-    new PutObjectTaggingCommand({
+    new CopyObjectCommand({
       Bucket: bucketName(),
       Key: key,
-      Tagging: { TagSet: [{ Key: "upload", Value: "complete" }] },
+      CopySource: `${bucketName()}/${stagingKey(key)
+        .split("/")
+        .map(encodeURIComponent)
+        .join("/")}`,
     }),
   );
-  return { ok: true, bytes: size };
+  await deleteExact([stagingKey(key)]);
+  return verdict;
 }
 
-/** Delete these keys (missing keys are fine). Throws if S3 reports errors. */
-export async function deleteKeys(keys: readonly string[]): Promise<void> {
+async function deleteExact(keys: readonly string[]): Promise<void> {
   for (let i = 0; i < keys.length; i += 1000) {
     const chunk = keys.slice(i, i + 1000);
     const res = await s3().send(
@@ -205,6 +238,14 @@ export async function deleteKeys(keys: readonly string[]): Promise<void> {
       );
     }
   }
+}
+
+/**
+ * Delete these keys and their staged uploads (missing keys are fine).
+ * Throws if S3 reports errors.
+ */
+export async function deleteKeys(keys: readonly string[]): Promise<void> {
+  await deleteExact(keys.flatMap((k) => [k, stagingKey(k)]));
 }
 
 /** Delete every object under `prefix`. Returns how many were deleted. */
@@ -222,7 +263,7 @@ export async function deletePrefix(prefix: string): Promise<number> {
     const keys = (page.Contents ?? [])
       .map((o) => o.Key)
       .filter((k): k is string => typeof k === "string");
-    await deleteKeys(keys);
+    await deleteExact(keys);
     deleted += keys.length;
     token = page.IsTruncated ? page.NextContinuationToken : undefined;
   } while (token);
@@ -231,7 +272,12 @@ export async function deletePrefix(prefix: string): Promise<number> {
 
 /** Every key prefix that holds a user's objects (design F key layout). */
 export function userPrefixes(userId: string): string[] {
-  return [`progress/${userId}/`, `forms/${userId}/`, `resources/${userId}/`];
+  const own = [
+    `progress/${userId}/`,
+    `forms/${userId}/`,
+    `resources/${userId}/`,
+  ];
+  return [...own, ...own.map(stagingKey)];
 }
 
 /**

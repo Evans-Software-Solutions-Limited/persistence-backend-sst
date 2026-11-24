@@ -1,4 +1,5 @@
 import {
+  CopyObjectCommand,
   DeleteObjectsCommand,
   HeadObjectCommand,
   ListObjectsV2Command,
@@ -26,6 +27,22 @@ export class FakeBucket {
   pageSize = 1000;
   /** DeleteObjects reports these keys as failed. */
   deleteErrors = new Set<string>();
+  /** Called (not awaited) when DeleteObjects runs, to stage a race. */
+  onDelete: ((keys: string[]) => void) | null = null;
+
+  /**
+   * What the bucket lifecycle rule would delete a day later: anything under
+   * the `pending/` staging prefix, or still tagged `upload=pending`.
+   */
+  expireLifecycle(): string[] {
+    const gone = this.keys().filter(
+      (k) =>
+        k.startsWith("pending/") ||
+        this.objects.get(k)!.tags.upload === "pending",
+    );
+    for (const k of gone) this.objects.delete(k);
+    return gone;
+  }
 
   put(
     key: string,
@@ -80,8 +97,23 @@ export class FakeBucket {
         obj.tags = Object.fromEntries(tagSet.map((t) => [t.Key, t.Value]));
       return {};
     }
+    if (cmd instanceof CopyObjectCommand) {
+      const source = decodeURIComponent(
+        (input.CopySource as string).split("/").slice(1).join("/"),
+      );
+      const obj = this.objects.get(source);
+      if (!obj) {
+        throw Object.assign(new Error("NoSuchKey"), {
+          name: "NoSuchKey",
+          $metadata: { httpStatusCode: 404 },
+        });
+      }
+      this.objects.set(input.Key as string, { ...obj, tags: {} });
+      return {};
+    }
     if (cmd instanceof DeleteObjectsCommand) {
       const objects = (input.Delete as { Objects: { Key: string }[] }).Objects;
+      this.onDelete?.(objects.map((o) => o.Key));
       const errors = [];
       for (const { Key } of objects) {
         if (this.deleteErrors.has(Key)) {

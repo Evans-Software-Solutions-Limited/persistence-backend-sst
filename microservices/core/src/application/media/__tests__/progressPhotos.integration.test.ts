@@ -298,15 +298,14 @@ describe("design F test 2: uploads are pinned to key, type and size", () => {
     for (const u of uploads) {
       const url = new URL(u.url);
       expect(url.pathname).toBe(
-        `/progress/${ATHLETE_A}/${set.id}/${u.pose}.jpg`,
+        `/pending/progress/${ATHLETE_A}/${set.id}/${u.pose}.jpg`,
       );
       expect(url.searchParams.get("X-Amz-SignedHeaders")).toBe(
-        "content-length;content-type;host;x-amz-tagging",
+        "content-length;content-type;host",
       );
       expect(url.searchParams.get("X-Amz-Expires")).toBe("600");
       expect(u.method).toBe("PUT");
       expect(u.headers["Content-Type"]).toBe("image/jpeg");
-      expect(u.headers["x-amz-tagging"]).toBe("upload=pending");
     }
     expect(uploads.map((u: Json) => u.headers["Content-Length"])).toEqual([
       "1000",
@@ -379,13 +378,12 @@ describe("design F test 2: uploads are pinned to key, type and size", () => {
       code: "upload_incomplete",
       poses: [{ pose: "back", reason: "missing" }],
     });
-    // The two good poses were checked and kept (re-tagged complete).
-    expect(
-      bucket.objects.get(`progress/${ATHLETE_A}/${created.set.id}/front.jpg`)!
-        .tags,
-    ).toEqual({
-      upload: "complete",
-    });
+    // The two good poses were checked and promoted out of pending/.
+    expect(bucket.keys(`progress/${ATHLETE_A}/${created.set.id}/`)).toEqual([
+      `progress/${ATHLETE_A}/${created.set.id}/front.jpg`,
+      `progress/${ATHLETE_A}/${created.set.id}/side.jpg`,
+    ]);
+    expect(bucket.keys("pending/")).toEqual([]);
     uploadAll(created.uploads.slice(2));
     const second = await http(
       "POST",
@@ -416,7 +414,7 @@ describe("design F test 2: uploads are pinned to key, type and size", () => {
   it("complete refuses an object that is too large, not a JPEG or not the pinned size, and deletes it", async () => {
     const created = (await createSet(ATHLETE_A)).json.data;
     const key = (pose: string) =>
-      `progress/${ATHLETE_A}/${created.set.id}/${pose}.jpg`;
+      `pending/progress/${ATHLETE_A}/${created.set.id}/${pose}.jpg`;
     bucket.put(key("front"), "image/jpeg", 10 * 1024 * 1024 + 5);
     bucket.put(key("side"), "image/heic", 2000);
     bucket.put(key("back"), "image/jpeg", 2999);
@@ -468,6 +466,109 @@ describe("design F test 2: uploads are pinned to key, type and size", () => {
     });
     expect(new URL(front.url).searchParams.get("X-Amz-Expires")).toBe("900");
     expect(JSON.stringify(sets)).not.toContain('"s3Key"');
+  });
+});
+
+describe("Inspector Brad #553 sweep 1", () => {
+  it("a late duplicate PUT after complete can't get a ready photo deleted by the lifecycle rule", async () => {
+    const created = (await createSet(ATHLETE_A)).json.data;
+    uploadAll(created.uploads);
+    const id = created.set.id;
+    expect(
+      (
+        await http(
+          "POST",
+          `/users/me/progress-photos/${id}/complete`,
+          ATHLETE_A,
+        )
+      ).status,
+    ).toBe(200);
+    // The phone's first, timed-out PUT lands late through the same links.
+    uploadAll(created.uploads);
+    bucket.expireLifecycle();
+    for (const pose of ["front", "side", "back"]) {
+      expect(
+        bucket.objects.has(`progress/${ATHLETE_A}/${id}/${pose}.jpg`),
+      ).toBe(true);
+    }
+  });
+
+  it("a complete racing the stale-set sweep answers 404 once the set is gone", async () => {
+    const created = (await createSet(ATHLETE_A)).json.data;
+    uploadAll(created.uploads);
+    let removal: Promise<unknown> | null = null;
+    bucket.onDelete = () => {
+      bucket.onDelete = null;
+      removal = pg.exec(
+        `delete from progress_photo_sets where id = '${created.set.id}'`,
+      );
+    };
+    const res = await http(
+      "POST",
+      `/users/me/progress-photos/${created.set.id}/complete`,
+      ATHLETE_A,
+    );
+    await removal;
+    expect(res.status).toBe(404);
+    expect(res.json.code).toBe("set_not_found");
+  });
+
+  it("the stale-upload sweep never deletes the object of a photo attached while it runs", async () => {
+    const req = await (async () => {
+      const form = await http("POST", "/trainers/me/forms", COACH_C, {
+        title: "Check-in",
+        questions: [
+          { id: "mood", type: "scale", prompt: "Mood", required: true },
+        ],
+      });
+      await http("POST", "/trainers/me/form-schedules", COACH_C, {
+        formId: form.json.data.id,
+        trigger: "once",
+        audience: "selected",
+        clientIds: [ATHLETE_A],
+      });
+      const list = await http("GET", "/users/me/form-requests", ATHLETE_A);
+      return list.json.data.requests[0];
+    })();
+    const response = await http(
+      "POST",
+      `/users/me/form-requests/${req.id}/response`,
+      ATHLETE_A,
+      { answers: { mood: 3 } },
+    );
+    const media = (
+      await http("POST", "/users/me/media/uploads", ATHLETE_A, {
+        purpose: "form_answer",
+        contentType: "image/jpeg",
+        bytes: 10,
+      })
+    ).json.data;
+    await http("GET", `/users/me/media/${media.mediaId}`, ATHLETE_A); // 409
+    bucket.put(`forms/${ATHLETE_A}/${media.mediaId}.jpg`, "image/jpeg", 10, {
+      upload: "complete",
+    });
+    await pg.exec(
+      `update private_media set status = 'ready', created_at = now() - interval '8 days' where id = '${media.mediaId}'`,
+    );
+    // A submit attaches the photo while the sweep is deleting objects.
+    let attach: Promise<unknown> | null = null;
+    bucket.onDelete = () => {
+      bucket.onDelete = null;
+      attach = db
+        .update(schema.privateMedia)
+        .set({ formResponseId: response.json.data.id })
+        .where(eq(schema.privateMedia.id, media.mediaId))
+        .execute(); // drizzle builders are lazy: start it now
+    };
+    await purgeStaleMedia();
+    await attach;
+    const rows = await db.select().from(schema.privateMedia);
+    // Either the row went with its object, or both are still there.
+    if (rows.length > 0) {
+      expect(
+        bucket.objects.has(`forms/${ATHLETE_A}/${media.mediaId}.jpg`),
+      ).toBe(true);
+    }
   });
 });
 
@@ -909,9 +1010,11 @@ describe("POST /users/me/media/uploads and /trainers/me/media/uploads", () => {
       status: "pending",
     });
     const url = new URL(media.upload.url);
-    expect(url.pathname).toBe(`/forms/${ATHLETE_A}/${media.mediaId}.jpg`);
+    expect(url.pathname).toBe(
+      `/pending/forms/${ATHLETE_A}/${media.mediaId}.jpg`,
+    );
     expect(url.searchParams.get("X-Amz-SignedHeaders")).toBe(
-      "content-length;content-type;host;x-amz-tagging",
+      "content-length;content-type;host",
     );
     const replay = await http(
       "POST",
@@ -961,7 +1064,7 @@ describe("POST /users/me/media/uploads and /trainers/me/media/uploads", () => {
     });
     expect(res.status).toBe(201);
     expect(new URL(res.json.data.upload.url).pathname).toBe(
-      `/resources/${COACH_C}/${res.json.data.mediaId}/file.pdf`,
+      `/pending/resources/${COACH_C}/${res.json.data.mediaId}/file.pdf`,
     );
     const png = await http("POST", "/trainers/me/media/uploads", COACH_C, {
       purpose: "resource",
@@ -1006,7 +1109,11 @@ describe("POST /users/me/media/uploads and /trainers/me/media/uploads", () => {
       code: "upload_incomplete",
       reason: "missing",
     });
-    bucket.put(`forms/${ATHLETE_A}/${media.mediaId}.jpg`, "image/jpeg", 50);
+    bucket.put(
+      `pending/forms/${ATHLETE_A}/${media.mediaId}.jpg`,
+      "image/jpeg",
+      50,
+    );
     const view = await http(
       "GET",
       `/users/me/media/${media.mediaId}`,
@@ -1088,7 +1195,11 @@ describe("POST /users/me/media/uploads and /trainers/me/media/uploads", () => {
         bytes: 50,
       })
     ).json.data;
-    bucket.put(`forms/${ATHLETE_A}/${media.mediaId}.jpg`, "image/jpeg", 49);
+    bucket.put(
+      `pending/forms/${ATHLETE_A}/${media.mediaId}.jpg`,
+      "image/jpeg",
+      49,
+    );
     const view = await http(
       "GET",
       `/users/me/media/${media.mediaId}`,
@@ -1134,7 +1245,11 @@ describe("form photo answers (lifts PER-116's 422)", () => {
       })
     ).json.data;
     if (upload)
-      bucket.put(`forms/${athlete}/${media.mediaId}.jpg`, "image/jpeg", 777);
+      bucket.put(
+        `pending/forms/${athlete}/${media.mediaId}.jpg`,
+        "image/jpeg",
+        777,
+      );
     return media.mediaId as string;
   }
 
