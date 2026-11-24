@@ -222,6 +222,51 @@ describe("ClientCheckInsContainer (C3.3b)", () => {
     );
   });
 
+  it("Inspector Brad #556 sweep 3: pause queues every rule's PUT before the drain sends any", async () => {
+    const h = setupCoachForms();
+    const weekly = makeClientForm("f-two", "Check-in", "notDoneYet");
+    const join = makeClientForm("f-two", "Check-in", "notDoneYet", "on_join");
+    const two = {
+      ...weekly,
+      rules: [weekly.rule!, { ...join.rule!, scheduleId: "s-join" }],
+    };
+    h.storage.cacheCoachClientForms(COACH, "c1", [two]);
+    h.storage.cacheCoachFormResponses(COACH, "c1", []);
+    h.api.coachClientForms.c1 = [two];
+    h.api.coachFormResponses.c1 = [];
+    // What the queue held when the first PUT left: an app killed mid-drain
+    // must not leave Sam paused on one rule only.
+    const queuedAtFirstPut: number[] = [];
+    const send = h.server.fetch;
+    (globalThis as Record<string, unknown>).fetch = jest.fn(
+      (url: string, init: Parameters<typeof send>[1]) => {
+        if (init.method === "PUT" && queuedAtFirstPut.length === 0) {
+          queuedAtFirstPut.push(
+            h.storage
+              .getUncompletedMutations()
+              .filter((e) => e.method === "PUT").length,
+          );
+        }
+        return send(url, init);
+      },
+    );
+    const view = h.render(
+      <ClientCheckInsContainer clientId="c1" clientName="Sam" />,
+    );
+    fireEvent.press(view.getByTestId("checkins-sentto-f-two"));
+    fireEvent.press(view.getByTestId("client-setup-pause"));
+    await waitFor(() =>
+      expect(h.server.calls.filter((c) => c.method === "PUT")).toHaveLength(2),
+    );
+    expect(queuedAtFirstPut).toEqual([2]);
+    expect(
+      h.server.calls.filter((c) => c.method === "PUT").map((c) => c.body),
+    ).toEqual([
+      { status: "paused", scheduleId: "s-f-two" },
+      { status: "paused", scheduleId: "s-join" },
+    ]);
+  });
+
   it("Inspector Brad #556 sweep 2: a rule that doesn't reach the client gets no pause", () => {
     const weekly = makeClientForm("f-two", "Check-in", "notDoneYet");
     const join = makeClientForm("f-two", "Check-in", "notDoneYet", "on_join");

@@ -181,9 +181,8 @@ export function ClientCheckInsContainer(p: {
   const runSetup = useCallback(
     async (formId: string, inputs: ClientSetupInput[]) => {
       setSetup(null);
-      for (const input of inputs) {
-        await actions.setClientSetup(p.clientId, formId, input);
-      }
+      // Every write queued first, then one drain (Inspector Brad #556 sweep 3).
+      await actions.setClientSetups(p.clientId, formId, inputs);
       reloadAll();
     },
     [actions, p.clientId, reloadAll],

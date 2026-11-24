@@ -756,6 +756,109 @@ describe("send rules (schedule create and edit)", () => {
     ).toMatchObject({ status: "stopped", revision: 3 });
   });
 
+  describe("Inspector Brad #556 sweep 3: a stop survives a 409", () => {
+    const rule: FormSchedule = {
+      id: "s-1",
+      formId: "f-1",
+      trigger: "weekly",
+      audience: "all_clients",
+      weekday: 7,
+      timeLocal: "09:00",
+      dueAfterHours: 27,
+      reminders: [],
+      status: "active",
+      revision: 1,
+      clients: [],
+      createdAt: "x",
+      updatedAt: "x",
+    };
+    const edit = (timeLocal: string, trigger: "weekly" | "daily" = "weekly") =>
+      saveScheduleCommand(deps(), {
+        scheduleId: "s-1",
+        formId: "f-1",
+        trigger,
+        audience: "all_clients",
+        clientIds: [],
+        weekday: trigger === "weekly" ? 7 : null,
+        timeLocal,
+        dueAfterHours: 27,
+        reminders: [],
+      });
+    const stops = () =>
+      server.calls
+        .filter((c) => c.method === "PATCH" && c.url.endsWith("/s-1"))
+        .map((c) => c.body);
+
+    beforeEach(() => {
+      seedForm("f-1");
+      // Edited on another device since this phone read it.
+      server.schedules.push({ ...rule, revision: 2, timeLocal: "07:00" });
+      storage.cacheCoachFormSchedules(USER, [rule]);
+    });
+
+    it("a stop folded into a queued edit is re-sent as a stop", async () => {
+      edit("10:00");
+      edit("08:00", "daily");
+      // The stop folded into the edit nothing had sent.
+      expect(JSON.parse(queued()[0]!.payload)).toMatchObject({
+        timeLocal: "10:00",
+        status: "stopped",
+        expectedRevision: 1,
+      });
+      await drain();
+      await drain();
+      expect(server.schedules.map((x) => [x.trigger, x.status])).toEqual([
+        ["weekly", "stopped"],
+        ["daily", "active"],
+      ]);
+      expect(stops().at(-1)).toEqual({
+        status: "stopped",
+        expectedRevision: 2,
+      });
+      expect(queued()).toHaveLength(0);
+    });
+
+    it("a 409 on an earlier edit keeps the queued stop, rebased", async () => {
+      edit("10:00");
+      storage.markMutationDispatched(queued()[0]!.id); // the edit went once
+      edit("08:00", "daily");
+      expect(queued().map((e) => JSON.parse(e.payload).status)).toEqual([
+        undefined,
+        "stopped",
+        undefined,
+      ]);
+      await drain();
+      await drain();
+      expect(server.schedules.map((x) => [x.trigger, x.status])).toEqual([
+        ["weekly", "stopped"],
+        ["daily", "active"],
+      ]);
+      expect(stops()).toEqual([
+        expect.objectContaining({ timeLocal: "10:00", expectedRevision: 1 }),
+        { status: "stopped", expectedRevision: 2 },
+      ]);
+      expect(queued()).toHaveLength(0);
+    });
+
+    it("…and drops it when the server has the rule stopped already", () => {
+      edit("10:00");
+      storage.markMutationDispatched(queued()[0]!.id);
+      edit("08:00", "daily");
+      const [first] = queued();
+      expect(
+        applyCoachFormsConflict(
+          storage,
+          first!,
+          JSON.stringify({
+            code: "revision_conflict",
+            current: { ...rule, status: "stopped", revision: 5 },
+          }),
+        ),
+      ).toBe(true);
+      expect(queued().map((e) => e.method)).toEqual(["POST"]);
+    });
+  });
+
   it("a 409 on a stop the server already has just takes the server copy", () => {
     const entry = {
       id: 1,

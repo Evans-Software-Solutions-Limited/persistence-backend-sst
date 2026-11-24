@@ -194,10 +194,15 @@ export function useCoachFormConflicts(): {
 export type CoachFormsActions = {
   saveForm: (draft: FormDraft) => Promise<CoachForm | null>;
   saveSchedule: (draft: ScheduleDraft) => Promise<FormSchedule | null>;
-  setClientSetup: (
+  /**
+   * C10j writes for one form (Pause / Resume: one per rule), all
+   * queued before one drain, so an app killed mid-drain never leaves the
+   * client half-paused and the screen never redraws in between.
+   */
+  setClientSetups: (
     clientId: string,
     formId: string,
-    input: ClientSetupInput,
+    inputs: readonly ClientSetupInput[],
   ) => Promise<boolean>;
   review: (
     clientId: string,
@@ -250,10 +255,16 @@ export function useCoachFormsActions(
     [storage, userId, drain],
   );
 
-  const setClientSetup = useCallback(
-    async (clientId: string, formId: string, input: ClientSetupInput) => {
+  const setClientSetups = useCallback(
+    async (
+      clientId: string,
+      formId: string,
+      inputs: readonly ClientSetupInput[],
+    ) => {
       if (!userId) return false;
-      setClientFormSetupCommand({ storage, userId }, clientId, formId, input);
+      for (const input of inputs) {
+        setClientFormSetupCommand({ storage, userId }, clientId, formId, input);
+      }
       await drain();
       return true;
     },
@@ -275,5 +286,5 @@ export function useCoachFormsActions(
     [storage, userId, drain],
   );
 
-  return { saveForm, saveSchedule, setClientSetup, review };
+  return { saveForm, saveSchedule, setClientSetups, review };
 }

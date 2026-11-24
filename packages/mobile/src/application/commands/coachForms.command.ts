@@ -828,19 +828,28 @@ export function applyCoachFormsConflict(
     return false;
   }
   const id = current.id;
-  if (
-    entry.entityType === COACH_FORM_SCHEDULE_ENTITY &&
-    isStatusOnlyStop(entry)
-  ) {
+  if (entry.entityType === COACH_FORM_SCHEDULE_ENTITY && isStop(entry)) {
     resendStop(storage, userId, entry, current as FormSchedule);
     return true;
   }
-  const stale = storage
+  const queuedPatches = storage
     .getQueuedEntriesForEntity(entry.entityType, `${userId}:${id}`)
-    .filter((e) => e.id === entry.id || e.status !== "in_flight")
-    .filter((e) => e.method === "PATCH")
+    .filter((e) => e.id !== entry.id && e.status !== "in_flight")
+    .filter((e) => e.method === "PATCH");
+  // A queued stop of this rule outlives the conflict: rebased onto the
+  // server's revision, not dropped (Inspector Brad #556 sweep 3).
+  const keptStops =
+    entry.entityType === COACH_FORM_SCHEDULE_ENTITY
+      ? queuedPatches.filter(isStop)
+      : [];
+  const stale = queuedPatches
+    .filter((e) => !keptStops.includes(e))
     .map((e) => e.id);
-  storage.discardEntries([...new Set([entry.id, ...stale])]);
+  storage.discardEntries([entry.id, ...stale]);
+  if (keptStops.length > 0) {
+    rebaseStops(storage, userId, keptStops, current as FormSchedule);
+    return true;
+  }
 
   if (entry.entityType === COACH_FORM_ENTITY) {
     const server = current as CoachForm;
@@ -873,22 +882,23 @@ export function applyCoachFormsConflict(
   return true;
 }
 
-/** `{status: "stopped"}` and its revision: the stop of a cadence change. */
-function isStatusOnlyStop(entry: SyncQueueEntry): boolean {
-  const body = parseObject(entry.payload);
-  if (!body || body.status !== "stopped") return false;
-  return Object.keys(body).every(
-    (k) => k === "status" || k === "expectedRevision",
-  );
+/**
+ * A rule PATCH that stops it: `{status: "stopped"}`, or a stop folded into an
+ * earlier queued edit (the rule's body plus `status: "stopped"`). Either
+ * way the coach stopped this rule.
+ */
+function isStop(entry: SyncQueueEntry): boolean {
+  return parseObject(entry.payload)?.status === "stopped";
 }
 
 /**
  * A 409 on a rule's stop. A new "When" queues this stop and a POST for the
  * new rule; dropping the stop would leave the form going out on both
  * cadences, and someone else's edit doesn't change that the coach stopped
- * this one. So the stop goes again at the server's revision (one retry
- * charged, so a rule that keeps changing still ends). If the server has it
- * stopped already, there's nothing left to send.
+ * this one. So the stop goes again at the server's revision as a plain
+ * `{status: "stopped"}` (one retry charged, so a rule that keeps changing
+ * still ends). If the server has it stopped already, there's nothing left
+ * to send.
  */
 function resendStop(
   storage: StoragePort,
@@ -896,8 +906,7 @@ function resendStop(
   entry: SyncQueueEntry,
   server: FormSchedule,
 ): void {
-  const alreadyStopped = server.status === "stopped";
-  if (alreadyStopped) {
+  if (server.status === "stopped") {
     storage.discardEntries([entry.id]);
   } else {
     storage.markMutationFailed(entry.id, "revision_conflict: stop re-sent");
@@ -906,6 +915,38 @@ function resendStop(
       expectedRevision: server.revision,
     });
   }
+  cacheStopped(storage, userId, server);
+}
+
+/**
+ * A 409 on an earlier PATCH of a rule that has a stop queued behind it: the
+ * stop (not yet sent) moves to the server's revision as a plain stop, or
+ * goes if the server has the rule stopped already.
+ */
+function rebaseStops(
+  storage: StoragePort,
+  userId: string,
+  stops: SyncQueueEntry[],
+  server: FormSchedule,
+): void {
+  if (server.status === "stopped") {
+    storage.discardEntries(stops.map((e) => e.id));
+  } else {
+    for (const e of stops) {
+      storage.updateMutationPayload(e.id, {
+        status: "stopped",
+        expectedRevision: server.revision,
+      });
+    }
+  }
+  cacheStopped(storage, userId, server);
+}
+
+function cacheStopped(
+  storage: StoragePort,
+  userId: string,
+  server: FormSchedule,
+): void {
   const schedules = storage.getCachedCoachFormSchedules(userId);
   if (!schedules) return;
   const next: FormSchedule = { ...server, status: "stopped" };
