@@ -821,6 +821,109 @@ describe("my plans: create, edit, revision conflicts, delete", () => {
     expect(readPlansCache(storage, USER).mine).toEqual([]);
   });
 
+  it("a new edit isn't folded into a PUT that already went out; both land (Inspector Brad #554)", async () => {
+    const base = plan("srv-p1", USER, 2, [
+      ["m1", "Lunch", [item("a", "Wrap", 450)]],
+    ]);
+    server.plans.set(base.id, base);
+    storage.cacheNutritionPlans(USER, { ...emptyPlansCache(), mine: [base] });
+    savePlanCommand(deps(), { ...base, name: "Edit A" });
+    // A commits but its reply is lost.
+    server.loseNextResponse = true;
+    await drain();
+    expect(server.plans.get("srv-p1")!.name).toBe("Edit A");
+    savePlanCommand(deps(), {
+      ...readPlansCache(storage, USER).mine[0]!,
+      name: "Edit B",
+    });
+    expect(queued().filter((e) => e.method === "PUT")).toHaveLength(2);
+
+    await drainLater();
+    await drainLater();
+    expect(server.plans.get("srv-p1")!.name).toBe("Edit B");
+    const cache = readPlansCache(storage, USER);
+    expect(cache.mine[0]!.name).toBe("Edit B");
+    expect(cache.conflictPlanIds).toEqual([]);
+    expect(queued()).toHaveLength(0);
+  });
+
+  it("a dead PUT doesn't hold back the cache or get a new revision (Inspector Brad #554)", async () => {
+    const base = plan("srv-p1", USER, 2, []);
+    server.plans.set(base.id, base);
+    storage.cacheNutritionPlans(USER, { ...emptyPlansCache(), mine: [base] });
+    savePlanCommand(deps(), { ...base, name: "Dead" });
+    const dead = queued()[0]!;
+    storage.markMutationPermanentlyFailed(dead.id, "rejected");
+    savePlanCommand(deps(), { ...base, name: "B" });
+    await drain();
+    expect(readPlansCache(storage, USER).mine[0]).toMatchObject({
+      name: "B",
+      revision: 3,
+    });
+    expect(
+      JSON.parse(
+        storage.getUncompletedMutations().find((e) => e.id === dead.id)!
+          .payload,
+      ).expectedRevision,
+    ).toBe(2);
+  });
+
+  it("an offline duplicate of a coach plan holds no coach-owned references (Inspector Brad #554)", async () => {
+    const coachPlan = plan("coach-p", COACH, 1, [
+      [
+        "cm1",
+        "Lunch",
+        [
+          {
+            ...foodItem("x", "coach-food", 200),
+            logEntry: {
+              customName: "Coach chicken",
+              servings: 1,
+              kcal: 200,
+              proteinG: 10,
+              carbsG: 20,
+              fatG: 5,
+            },
+          },
+          { ...foodItem("y", "off-food", 100) },
+        ],
+      ],
+    ]);
+    server.plans.set(coachPlan.id, coachPlan);
+    server.offline = true;
+    const copy = duplicatePlanCommand(deps(), coachPlan);
+    // The coach's private food becomes a one-off; a catalogue food the
+    // client may log by id stays a reference.
+    expect(copy.meals[0]!.items.map((i) => [i.kind, i.foodId])).toEqual([
+      ["custom", null],
+      ["food", "off-food"],
+    ]);
+    savePlanCommand(deps(), { ...copy, name: "Mine now" });
+    const put = queued().find((e) => e.method === "PUT")!;
+    expect(put.payload).not.toContain("coach-food");
+  });
+
+  it("a 409 that lands after the plan was deleted doesn't bring it back (Inspector Brad #554)", () => {
+    const base = plan("srv-p1", USER, 2, []);
+    storage.cacheNutritionPlans(USER, { ...emptyPlansCache(), mine: [base] });
+    savePlanCommand(deps(), { ...base, name: "x" });
+    const put = queued()[0]!;
+    storage.markMutationInFlight(put.id);
+    storage.markMutationDispatched(put.id);
+    deletePlanCommand(deps(), "srv-p1");
+    const current = { ...base, name: "From the iPad", revision: 3 };
+    expect(
+      applyNutritionPlanConflict(
+        storage,
+        put,
+        409,
+        JSON.stringify({ current }),
+      ),
+    ).toBe(true);
+    expect(readPlansCache(storage, USER).mine).toEqual([]);
+    expect(readPlansCache(storage, USER).conflictPlanIds).toEqual([]);
+  });
+
   it("deleting a plan that never left the phone forgets it and its shopping row", () => {
     server.offline = true;
     const p = createPlanCommand(deps(), draft());

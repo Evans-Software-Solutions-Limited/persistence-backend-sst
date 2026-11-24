@@ -25,6 +25,7 @@ import type {
   NutritionPlan,
   NutritionPlansCache,
   PlanAssignmentStatus,
+  PlanItem,
   PlansShoppingCache,
   PlansShoppingList,
 } from "@/domain/models/nutritionPlans";
@@ -34,6 +35,7 @@ import { isAutoResolvableSyncEntry } from "@/domain/ports/sync.types";
 import {
   logInputsForPlan,
   logInputsForPlanMeal,
+  planItemCustom,
   recomputePlan,
   resolvePlanId,
   toPlanInput,
@@ -203,6 +205,9 @@ export function savePlanCommand(
       (e) =>
         e.method === "PUT" &&
         (e.status === "pending" || e.status === "failed") &&
+        // A PUT that already went out runs as sent, so a lost-reply replay
+        // still matches what the server committed (Inspector Brad, #554).
+        (e.dispatchCount ?? 0) === 0 &&
         isAutoResolvableSyncEntry(e),
     );
   if (queuedPut) {
@@ -287,7 +292,11 @@ export function duplicatePlanCommand(
     meals: source.meals.map((m) => ({
       ...m,
       id: `local-${deps.idFactory()}`,
-      items: m.items.map((it) => ({ ...it, id: `local-${deps.idFactory()}` })),
+      items: m.items.map((it) =>
+        source.ownerId === userId
+          ? { ...it, id: `local-${deps.idFactory()}` }
+          : asClientItem(it, `local-${deps.idFactory()}`),
+      ),
     })),
   };
   writeMine(storage, userId, (mine) => [...mine, copy]);
@@ -300,6 +309,32 @@ export function duplicatePlanCommand(
     method: "POST",
   });
   return copy;
+}
+
+/**
+ * An item of someone else's plan as the client may hold it. The server's
+ * duplicate copies the coach's foods and recipes into the client's account,
+ * but until it syncs the phone only has the coach's private ids, which the
+ * client can't reference: an edit sent before the sync would fail. So, like
+ * the item's own log hint, keep a reference only to what the client may use
+ * (a catalogue food) and make the rest one-offs (Inspector Brad, #554).
+ */
+function asClientItem(item: PlanItem, id: string): PlanItem {
+  if ("foodId" in item.logEntry && item.foodId) return { ...item, id };
+  return {
+    ...planItemCustom(
+      id,
+      item.name,
+      {
+        kcal: item.kcal,
+        proteinG: item.proteinG,
+        carbsG: item.carbsG,
+        fatG: item.fatG,
+      },
+      item.servings,
+    ),
+    sortOrder: item.sortOrder,
+  };
 }
 
 // -- From coaches: Add to my plans, Not now, seen --------------------------------
@@ -597,13 +632,15 @@ export function applyNutritionPlanSynced(
     }
   }
   // Deleted while this write was in flight: don't bring it back.
-  const deleted = storage
-    .getQueuedEntriesForEntity(NUTRITION_PLAN_ENTITY, data.id)
-    .some((e) => e.id !== entry.id && e.method === "DELETE");
-  if (deleted) return;
+  if (hasLiveDelete(storage, data.id, entry.id)) return;
   const laterEdits = storage
     .getQueuedEntriesForEntity(NUTRITION_PLAN_ENTITY, data.id)
-    .filter((e) => e.id !== entry.id && e.method === "PUT");
+    // Only edits that can still be sent: a dead PUT neither holds the cache
+    // back nor gets a revision it was never based on (Inspector Brad, #554).
+    .filter(
+      (e) =>
+        e.id !== entry.id && e.method === "PUT" && isAutoResolvableSyncEntry(e),
+    );
   for (const e of laterEdits) {
     const body = parse(e.payload);
     if (body && e.status !== "in_flight") {
@@ -623,6 +660,22 @@ export function applyNutritionPlanSynced(
       ? cache.mine.map((p) => (p.id === data.id ? data : p))
       : [...cache.mine, data],
   });
+}
+
+/** A DELETE for the plan that can still be sent (Inspector Brad, #554). */
+function hasLiveDelete(
+  storage: StoragePort,
+  planId: string,
+  exceptId: number,
+): boolean {
+  return storage
+    .getQueuedEntriesForEntity(NUTRITION_PLAN_ENTITY, planId)
+    .some(
+      (e) =>
+        e.id !== exceptId &&
+        e.method === "DELETE" &&
+        isAutoResolvableSyncEntry(e),
+    );
 }
 
 /** The same plan content, ignoring ids (a replay of our own write). */
@@ -659,17 +712,24 @@ export function applyNutritionPlanConflict(
   }
   if (!isPlanDto(current)) return false;
   const userId = current.ownerId;
-  const cache = readPlansCache(storage, userId);
   const replay = samePlanContent(parse(entry.payload), current);
+  if (replay) {
+    // Our own write, committed before its reply was lost: it succeeded.
+    // Edits queued behind it move onto its revision (Inspector Brad, #554).
+    applyNutritionPlanSynced(storage, entry, { data: current });
+    return true;
+  }
+  // Deleted since this PUT went out: nothing to bring back or flag.
+  if (hasLiveDelete(storage, current.id, entry.id)) return true;
+  const cache = readPlansCache(storage, userId);
   storage.cacheNutritionPlans(userId, {
     ...cache,
     mine: cache.mine.some((p) => p.id === current.id)
       ? cache.mine.map((p) => (p.id === current.id ? current : p))
       : [...cache.mine, current],
-    conflictPlanIds:
-      replay || cache.conflictPlanIds.includes(current.id)
-        ? cache.conflictPlanIds
-        : [...cache.conflictPlanIds, current.id],
+    conflictPlanIds: cache.conflictPlanIds.includes(current.id)
+      ? cache.conflictPlanIds
+      : [...cache.conflictPlanIds, current.id],
   });
   return true;
 }

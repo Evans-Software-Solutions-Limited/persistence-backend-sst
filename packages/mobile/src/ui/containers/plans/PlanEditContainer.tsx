@@ -34,7 +34,9 @@ export function PlanEditContainer() {
     }
   }, [mine, isLoading, start]);
 
-  if (!mine || draftId !== mine.id) return null;
+  // A draft started from the route's local id stays open after its create
+  // syncs (the id then resolves to the server plan; Inspector Brad, #554).
+  if (!mine || (draftId !== mine.id && draftId !== id)) return null;
   return (
     <PlanBuilderContainer
       mode="edit"

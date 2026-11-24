@@ -553,6 +553,22 @@ describe("PlanEditContainer + builder (N34, N31)", () => {
     expect(mockBack).toHaveBeenCalledTimes(1);
   });
 
+  it("stays open when the plan's create syncs while it's being edited (Inspector Brad #554)", () => {
+    mockCache = { ...mockCache, mine: [{ ...myPlan(), id: "local-x" }] };
+    mockParams = { id: "local-x" };
+    const r = render(<PlanEditContainer />);
+    expect(probe.builder).not.toBeNull();
+    // A drain swaps the id and records where it went.
+    mockCache = {
+      ...mockCache,
+      mine: [myPlan()],
+      aliases: { "local-x": "p1" },
+    };
+    probe.builder = null;
+    r.rerender(<PlanEditContainer />);
+    expect(probe.builder).not.toBeNull();
+  });
+
   it("opens my plan in edit mode and saves changes", async () => {
     const b = open();
     expect(b.mode).toBe("edit");
