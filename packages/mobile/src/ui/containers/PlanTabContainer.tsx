@@ -26,6 +26,7 @@ import {
   isPlanInShoppingList,
   macrosVsTarget,
   newCoachPlans,
+  resolvePlanId,
   type PlanRef,
 } from "@/domain/services/nutritionPlans.service";
 import {
@@ -127,7 +128,12 @@ export function PlanTabContainer({ active }: { active: boolean }) {
   const openSwitch = usePlanSheets((s) => s.openSwitch);
   const openCoachPlan = usePlanSheets((s) => s.openCoachPlan);
   const autoShown = usePlanSheets((s) => s.autoShown);
-  const [notice, setNotice] = useState<string | null>(null);
+  // A notice belongs to one plan and shows only while that plan is on screen,
+  // followed through a synced local id (Inspector Brad, #554).
+  const [notice, setNoticeFor] = useState<{
+    planId: string;
+    text: string;
+  } | null>(null);
 
   const cache = plans.cache;
   const ref = useMemo(() => {
@@ -157,8 +163,6 @@ export function PlanTabContainer({ active }: { active: boolean }) {
     if (active && coachRef && isUpdated) void markSeen(coachRef.plan.id);
   }, [active, coachRef, isUpdated, markSeen]);
 
-  useEffect(() => setNotice(null), [ref?.plan.id]);
-
   const target = userId ? storage.getCachedNutritionTarget(userId) : null;
   const vm = useMemo(
     () =>
@@ -186,11 +190,12 @@ export function PlanTabContainer({ active }: { active: boolean }) {
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       notifyMutated();
       const meal = mealId ? plan.meals.find((m) => m.id === mealId) : null;
-      setNotice(
-        meal
+      setNoticeFor({
+        planId: plan.id,
+        text: meal
           ? `Added ${meal.name} to today's log.`
           : `Added ${plan.name} to today's log.`,
-      );
+      });
     },
     [plans, userMeals.meals, notifyMutated],
   );
@@ -222,7 +227,11 @@ export function PlanTabContainer({ active }: { active: boolean }) {
     <PlanTabPresenter
       state={state}
       plan={vm}
-      notice={notice}
+      notice={
+        notice && ref && resolvePlanId(cache, notice.planId) === ref.plan.id
+          ? notice.text
+          : null
+      }
       onOpenSwitch={openSwitch}
       onOwnerAction={() => {
         if (!ref) return;
@@ -235,7 +244,10 @@ export function PlanTabContainer({ active }: { active: boolean }) {
         void plans.duplicate(ref.plan).then((copy) => {
           if (!copy) return;
           select(copy.id);
-          setNotice(`Duplicated into your plans as ${copy.name}.`);
+          setNoticeFor({
+            planId: copy.id,
+            text: `Duplicated into your plans as ${copy.name}.`,
+          });
         });
       }}
       onOpenMeal={() => {

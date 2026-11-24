@@ -328,6 +328,43 @@ describe("PlanTabContainer", () => {
     expect(usePlanSheets.getState().selectedPlanId).toBe("local-copy");
   });
 
+  it("the Duplicated notice shows on the copy, and survives its id swap (Inspector Brad #554)", async () => {
+    const c = coach();
+    mockPlans.cache = { ...emptyPlansCache(), fromCoaches: [c] };
+    // The real command puts the copy in `mine` right away.
+    mockPlans.duplicate.mockImplementation(async (p: NutritionPlan) => {
+      const copy = { ...p, id: "local-copy", ownerId: "u1" };
+      mockPlans.cache = { ...mockPlans.cache, mine: [copy] };
+      return copy;
+    });
+    const r = render(<PlanTabContainer active />);
+    await act(async () => mockProbe.tab!.onOwnerAction());
+    r.rerender(<PlanTabContainer active />);
+    expect(mockProbe.tab!.plan!.id).toBe("local-copy");
+    expect(mockProbe.tab!.notice).toBe(
+      "Duplicated into your plans as Training day.",
+    );
+    // The copy syncs: same plan, new id.
+    mockPlans.cache = {
+      ...mockPlans.cache,
+      mine: [{ ...mockPlans.cache.mine[0]!, id: "srv-copy" }],
+      aliases: { "local-copy": "srv-copy" },
+    };
+    r.rerender(<PlanTabContainer active />);
+    expect(mockProbe.tab!.plan!.id).toBe("srv-copy");
+    expect(mockProbe.tab!.notice).toBe(
+      "Duplicated into your plans as Training day.",
+    );
+    // Moving to another plan drops it.
+    mockPlans.cache = {
+      ...mockPlans.cache,
+      mine: [...mockPlans.cache.mine, plan("p1", "u1")],
+    };
+    act(() => usePlanSheets.getState().select("p1"));
+    r.rerender(<PlanTabContainer active />);
+    expect(mockProbe.tab!.notice).toBeNull();
+  });
+
   it("a coach plan waiting for an answer opens C6 once", () => {
     mockPlans.cache = {
       ...emptyPlansCache(),
