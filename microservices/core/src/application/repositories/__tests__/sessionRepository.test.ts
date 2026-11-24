@@ -1553,7 +1553,9 @@ describe("SessionRepository", () => {
       // Repo substituted now() — the inserted completedAt must be a
       // Date within the test execution window.
       expect(capturedValues?.completedAt).toBeInstanceOf(Date);
-      const insertedAt = (capturedValues?.completedAt as Date).getTime();
+      const insertedAt = (
+        capturedValues?.completedAt as Date | undefined
+      )?.getTime();
       expect(insertedAt).toBeGreaterThanOrEqual(before);
       expect(insertedAt).toBeLessThanOrEqual(after);
     });

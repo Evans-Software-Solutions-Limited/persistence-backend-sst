@@ -26,9 +26,11 @@
   },
   "devDependencies": {
     "@tsconfig/node22": "^22",
+    "oxlint": "1.95.0",
     "prettier": "3.8.1",
+    "tsrs": "7.1.0-beta.tsrs5",
     "turbo": "^2.3.3",
-    "typescript": "^5"
+    "typescript": "^7.0.2"
   },
   "dependencies": {
     "sst": "^3"

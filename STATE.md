@@ -1,5 +1,46 @@
 # Project memory · persistence-backend-sst
 
+### 2026-11-24 — Tooling: TypeScript 7 + Oxlint with tsrs type-aware linting ([PER-148](https://linear.app/evans-software-solutions/issue/PER-148); branch `claude/brave-dirac-h9ianz`)
+
+Cuts check time, which was the cause of CI and local timeouts. No CI caching
+was added (Brad: CI should always run cold). No runtime, app or native change.
+
+- **TypeScript 7.0.2** in every workspace. TS 7 has no automatic `@types`
+  loading and no `baseUrl`, so `packages/db` and `packages/mobile` list
+  `types`, and `packages/web` drops `baseUrl` (`paths` now resolve from the
+  tsconfig). `noUncheckedSideEffectImports` is on by default, so the web
+  fontsource imports name `index.css` explicitly (same file).
+- **Mobile keeps `typescript@~5.9`** as its `typescript` module because
+  Expo's config loader (`@expo/require-utils`, used by `expo start`/EAS for
+  `app.config.ts`) calls `ts.transpileModule`, which the TS 7 package does not
+  export. Mobile typechecks with TS 7 through the `typescript-7` npm alias
+  (`node node_modules/typescript-7/bin/tsc`). Drop the alias once Expo
+  supports TS 7.
+- **ESLint → Oxlint 1.95** (`oxlint` + `tsrs` at the root). Each package's
+  `eslint.config.js` was converted with `@oxlint/migrate` into `.oxlintrc.json`
+  (same rules). typescript-eslint (≤ 8.74) does not load under TS 7, so ESLint
+  could not stay. Mobile: `oxlint src app` (the folders `expo lint` covered);
+  `eslint-plugin-expo` and the custom `eslint-rules/no-raw-hex-colors.js` run as
+  Oxlint JS plugins; its override exemptions are an `off` override because
+  Oxlint has no `ignores` inside overrides. `eslint` stays in mobile only for
+  the rule's `RuleTester` unit test.
+- **Type-aware (tsrs):** core, other-service, api-utils and seed set
+  `options.typeAware` with `no-floating-promises`, `no-misused-promises` and
+  `await-thenable` as errors. All four were already clean apart from two
+  `await-thenable` cases in `progressPhotos.integration.test.ts` (narrowing of
+  a callback-assigned `let`; now restated). Web (~87) and mobile (~264)
+  findings are a follow-up, so those two configs match their old ESLint rules.
+  Gotcha: root `typescript/*` rules are silently ignored unless `typescript`
+  is in the root `plugins` list.
+- Oxlint also found 3 `no-unsafe-optional-chaining` cases ESLint missed (core
+  `sessionRepository.test.ts`, web `coach/__tests__/api.test.ts`), now fixed,
+  and 7 non-blocking `import/no-named-as-default-member` warnings in mobile.
+- **Measured** (4 cores, `--force --concurrency=1`): typecheck 79s → 17s,
+  lint 63s → 5s; mobile typecheck 21.5s → 2.8s; core lint 9.8s → 0.1s
+  (1.7s type-aware). Build 30s, passes.
+- **Verified:** prettier, typecheck, lint, build (all packages, uncached).
+  Unit tests: see below.
+
 ### 2026-11-24 — APP-C1 iPhone: K-layout coach shell, Library → Forms, send sheet, editor, Check-ins tab ([PER-129](https://linear.app/evans-software-solutions/issue/PER-129); branch `bradleysimmsevans/per-129-app-c1-iphone`)
 
 Mobile half of PER-129 (PR 2 of 2; stacked on PR 1, #555, which has the

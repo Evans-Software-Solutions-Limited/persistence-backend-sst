@@ -537,7 +537,9 @@ describe("Inspector Brad #553 sweep 1", () => {
       `/users/me/progress-photos/${created.set.id}/complete`,
       ATHLETE_A,
     );
-    await removal;
+    // Assigned inside the onDelete callback, which TypeScript's narrowing does
+    // not see, so restate the declared type rather than let it read as `null`.
+    await (removal as Promise<unknown> | null);
     expect(res.status).toBe(404);
     expect(res.json.code).toBe("set_not_found");
   });
@@ -590,7 +592,8 @@ describe("Inspector Brad #553 sweep 1", () => {
         .execute(); // drizzle builders are lazy: start it now
     };
     await purgeStaleMedia();
-    await attach;
+    // Assigned in the onDelete callback (see the race test above).
+    await (attach as Promise<unknown> | null);
     const rows = await db.select().from(schema.privateMedia);
     // Either the row went with its object, or both are still there.
     if (rows.length > 0) {

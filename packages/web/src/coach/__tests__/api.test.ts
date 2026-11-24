@@ -426,7 +426,8 @@ describe("coach API client", () => {
           await new Promise((r) => setTimeout(r, 5));
           return res(200, { access_token: fresh, refresh_token: "r2" });
         }
-        const bearer = (init?.headers as Record<string, string>).Authorization;
+        const bearer = (init?.headers as Record<string, string> | undefined)
+          ?.Authorization;
         calls += 1;
         return bearer === `Bearer ${fresh}`
           ? res(200, { data: calls })
@@ -475,7 +476,8 @@ describe("coach API client", () => {
       const stored = jwt({ exp: future() + 60 });
       const f = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
         if (String(url).includes("/auth/v1/token")) return res(500, {});
-        const bearer = (init?.headers as Record<string, string>).Authorization;
+        const bearer = (init?.headers as Record<string, string> | undefined)
+          ?.Authorization;
         if (bearer === `Bearer ${sent}`) {
           // While this request was out, another call refreshed.
           saveSession({
