@@ -1,5 +1,59 @@
 # Project memory · persistence-backend-sst
 
+### 2026-11-24 — APP-C1 (web + backend): coach forms library, editor, send, Check-ins tab ([PER-129](https://linear.app/evans-software-solutions/issue/PER-129); branch `bradleysimmsevans/per-129-app-c1-coach-web-iphone-forms`)
+
+PR 1 of 2 on PER-129: backend extensions and the web screens. The iPhone half
+(K-layout coach shell, C10g/h/j, C3.3b, offline) is PR 2 on
+`bradleysimmsevans/per-129-app-c1-iphone`, stacked on this branch's backend
+commit. Brief: `specs/per-129-coach-forms/BRIEF.md`. No migration; no native,
+version or mobile change in this PR.
+
+- **Brad's calls (24 Nov, in session):** close the API gaps here rather than
+  hide canvas items; build the iPhone K shell in this ticket.
+- **Backend (additive, 1.2.0-safe; no migration, everything is jsonb or a new
+  read):**
+  - `GET /trainers/me/forms/stats` (`coaching/forms/statsRepository.ts`): per
+    form, each active client's LATEST request in the current coaching cycle
+    (reached / done / outstanding, `lastReminderAt` from the rule or the
+    client's override), and totals (live forms, repeating, outstanding, on
+    time over requests due in the last 28 days). Cancelled requests and ended
+    relationships are left out.
+  - Questions take `help` (≤ 300), `detailsIfYes` (yes/no only; an answer may
+    be `{value, details}`, stored as the object only when there are details)
+    and `prefill` (`sessions_done`, `meal_plan_followed`, `steps`, `weight` on
+    number questions; `progress_photos` on photo). The athlete app fills and
+    saves them (PER-130).
+  - Per-client cadence (C10j): `override.trigger` ∈ once/weekly/daily on a
+    once/weekly/daily rule (`checkOverride`, completeness falls back to the
+    rule's day/time; stored only when it differs). `generateOnce` sends to
+    targets whose effective cadence is once; `formPeriodsJob` also picks up
+    once rules with a weekly/daily override and uses the effective trigger
+    for periods, keys and missed marks. Join/exit forms can't change cadence.
+- **Web (`packages/web/src/coach`):** Library is live in the rail
+  (`/coach/library/forms`); `forms/FormsLibrary(+Container)` C10a + C10c send
+  dialog (`/:formId/send`, `/:formId/change`, `?when=`, `?client=`),
+  `forms/FormEditor(+Container)` C10b (`/new`, `/:formId/edit`),
+  `forms/RuleFields` (when/day/time/due/reminders; hours after the send shown
+  as day + time), `checkins/CheckinsTab(+Container)` C3.3a at
+  `/coach/clients/:id/check-ins`, `checkins/ClientFormPanel` C10j side panel.
+  Pure rules in `lib/forms.ts`. 409 on a form or rule → server copy +
+  "Edited on another device. You're seeing the latest."
+- **Not on the canvas / differences:** "Opened, not sent" isn't tracked
+  (rows say "Reminder sent …" or "Sent …"); no voice replies; "Synced to
+  Body" and filled-for-them values come from PER-130; reorder is Move up /
+  Move down in the question panel (the grip is visual); a Templates empty
+  state (none seeded); a "Not sent yet" group for forms with no rule; one
+  photo per photo question (canvas: front, side, back); no global stop for a
+  rule (only per client, as scoped).
+- **Tests:** backend PGlite — stats (latest per client, reminders from rule
+  and override, on-time, cycles, isolation), question extras over HTTP,
+  per-client cadence in the scheduler (weekly→daily, once→weekly,
+  weekly→once, invalid changes); web — containers (library, send, change +
+  409, editor all 8 types + 409 + errors, Check-ins compare/review/reply,
+  C10j cadence/pause/resume/stop, offline), presenters, `lib/forms`, API.
+- **Not verified:** nothing run against staging or in a browser against the
+  live API (screenshots are off for this release).
+
 ### 2026-11-23 — APP-D1: Log per-meal calories, Your meals, full-page Add to a meal, offline batch logging ([PER-132](https://linear.app/evans-software-solutions/issue/PER-132); branch `bradleysimmsevans/per-132-app-d1-athlete-log-per-meal`)
 
 PR #550 (open, no auto-merge). Mobile only: no backend, migration, native
@@ -233,109 +287,3 @@ staging.
     issued on another device is never voided).
   - Not changed (outside the ticket, flagged to Brad): `admin/adminAuth.ts`
     Sign out also uses GoTrue's default global scope.
-
-### 2026-11-23 — BE-C2: coach events, Today, notifications, quiet hours and the 15-minute scheduler ([PER-117](https://linear.app/evans-software-solutions/issue/PER-117); branch `bradleysimmsevans/per-117-be-c2-backend-coach-events-today`)
-
-PR #548 (open, no auto-merge). Linear "Backend design C", D2 (scheduler) and
-D4; covers PER-93 (coach notification settings). Backend only; no app UI or native change. Ships in the
-next store release, reviewed on staging.
-
-- **Migration** `20261123120117_coach_events_notifications.sql` (+ rollback):
-  `coach_events` (unique `(trainer_id, dedupe_key)`; `kind` validated in code;
-  `push_state` none/pending/held/sent/skipped; `updated_at` for `?since=`),
-  `coach_notification_settings` (trainer PK, `channels` jsonb, quiet hours,
-  revision), `coach_scheduler_runs` (claims, PK `(job, run_key)`),
-  `notification_type` += `coach_event`, `form_request`, `form_reminder`.
-  RLS on, no policies. **No existing table or column changes.** ⚠ Migrate
-  before deploy: accept, form responses and finished workouts now write
-  `coach_events` (the session hook swallows errors; accept and form submit
-  would 500 without the table).
-- **Events** (`coaching/events/`): `recordCoachEvent` decides the push at
-  write time: client muted → `skipped`; `everything` → push every kind;
-  else the coach's channel or the default (`workout_completed` defaults to
-  in-app only, the rest push); quiet hours (coach's `profiles.timezone`,
-  wraps midnight) → `held`. `deliverCoachEvents` claims `pending → sent`
-  before pushing. Coach pushes are `coach_event` rows in the coach's own inbox
-  with deep link `persistencemobile://clients` (1.2.0 routes it).
-- **Writers, one call each in existing paths:** `PATCH /sessions/:id` →
-  completed and `POST /sessions/record` (not replays/cancelled) call
-  `safeRecordWorkoutCompleted` after commit: one `workout_completed` per active
-  coach (rating 1–5, difficulty 1–10, note), plus `record_hit` when the
-  session's sets hold current PRs; skipped for workouts before that coach's
-  `activated_at`. `submitResponse` → `form_completed` / `check_in_completed`
-  (weekly/daily), pushed after commit. `acceptPersonalCode` →
-  `client_accepted` with **no push** (the accept handler already pushes
-  "Client accepted"); `trainersRespondToRequestHandler` → `client_accepted`
-  (pushed by the next tick). Scheduler: `form_missed`, `invite_expired`
-  (personal code past `expires_at`, profile still invited),
-  `programme_ending` (assignment `end_date` within 7 days, assigned by an
-  active coach; dateless programmes never raise it), `training_behind`
-  (`computeAdherence`, full 7-day window only, at most once per client per 7
-  days). No response shape changed.
-- **Scheduler** `coachSchedulerCron` (`infra/api.ts`, `rate(15 minutes)`,
-  300 s timeout, error + heartbeat alarms in `infra/monitoring.ts`) →
-  `coaching/scheduler/coachScheduler.ts`. Each job claims `(job, slot)`
-  (daily jobs: UTC date, from 08:00 UTC) and stamps `finished_at` when done;
-  a failed job gives its claim back and the cron throws so the alarm fires;
-  an unfinished claim older than 10 min (a run killed at the Lambda timeout)
-  is taken over. Every job pages through all its rows (keyset), so nothing
-  past a page is skipped; sizes in `scheduler/jobs/pageSizes.ts`. Jobs (`scheduler/jobs/index.ts`):
-  `form_periods` (weekly/daily in the athlete's zone, first tick at or after
-  the time, within 6 h, never before the client's `activated_at` or the rule's
-  `created_at`; a new period marks the previous pending one missed),
-  `missed_forms`, `form_pushes` (announce each new request once — any trigger,
-  so on_join/once/on_end forms get a push too, up to 15 min late — and
-  reminders via `reminders_sent`, one push per tick, none while the rule or
-  client is paused), `invite_expiry`, `programme_ending` (daily),
-  `training_behind` (daily), `coach_pushes` (pending sweep after 1 min; quiet
-  release, one push per client, "Sam: 3 updates"). Bounded (500–2000 rows per
-  job). **PER-120 / PER-123 register a job by adding it to that array.**
-- **Generators:** `insertRequests`, `liveVersions`, `scheduleTargets` in
-  `forms/generators.ts` are now exported; the trigger type gained
-  weekly/daily. Nothing else in BE-C1 changed.
-- **Routes** (`coaching/events/coachNotificationsHandlers.ts`, mounted in
-  `coachingRoutes`, trainer role): `GET /trainers/me/notifications`
-  (`kind`, `clientId` via `resolveCoachScope`, `since` → changes +
-  `deletedIds`, keyset `cursor`, `limit` ≤ 200, `unreadCount`, `asOf`),
-  `POST …/notifications/read` (`{ids}` | `{all}`), `GET /trainers/me/today`
-  (`queue` of actionable unactioned kinds with `action`, `counts`,
-  `schedule: []` for design I, `strip` = practice `adherenceByArea`),
-  `POST /trainers/me/today/:eventId/actioned` (also marks read; idempotent),
-  `GET/PUT /trainers/me/notification-settings` (`emailAvailable: false`,
-  channels merge, `expectedRevision` → 409 `revision_conflict`). Events for a
-  relationship that is no longer active are hidden (exit-form responses
-  stay). `/notifications/preferences` unchanged.
-- **1.2.0 (D5) checked, no fallback needed:** the 1.2.0 bundle (3bad31e) has
-  the same `mapApiNotification`, `NotificationRow`, model and deep-link
-  resolver as main: unknown types parse, render with the generic bell row,
-  and tap to Home (athlete rows carry no deep link) or Clients (coach rows).
-  Proven by `packages/mobile/src/adapters/api/__tests__/coachNotificationTypes.test.tsx`.
-  The new types are NOT in `NOTIFICATION_TYPES` (the preferences list).
-- **Tests:** `coaching/events/__tests__/coachEvents.integration.test.ts`
-  (PGlite, real migrations and handlers): D7.2 (weekly Sunday 18:00 London/NY
-  over both clock changes; daily 00:30 on each clock-change night; per-client
-  time/weekday), D7.3 (announce once, reminders at most N, burst → one,
-  paused client/rule, stop, completed, missed once, overlapping runs), D7.7
-  (one event per coach with rating/note, records, replay dedupe, mute,
-  everything, quiet hold/release in London and NY, pending sweep, form
-  events, accept), D7.9 (preferences keys = 1.2.0 fixture; `GET /notifications`
-  rows), two-coach isolation, feed/Today/settings, scheduler claims, migration
-  forward twice / down / up. `scheduler/__tests__/zonedTime.test.ts` (gap and
-  repeated hours, ISO weeks). PER-108/PER-116 suites now apply this migration;
-  session and respond handler unit tests mock the new writers.
-- **Inspector Brad on #548: five sweeps, 13 leads, all confirmed and fixed
-  with a test that failed on the previous commit; case closed on `701b31e`:**
-  - Training behind judged a barely-started "today" → judged on the 7
-    complete days ending yesterday in the client's zone.
-  - Reminder page filled by rows not yet due → due-count filter in SQL.
-  - Missed-marking skipped after a failed run / committed without its event →
-    runs every tick for the latest period, in one transaction with its events.
-  - Missed exit form pushed but hidden → visible in the feed; Today keeps
-    answered exit forms (review) and leaves out missed ones (no nudge).
-  - Pending sweep ignored quiet hours begun since the write → held.
-  - Fixed caps skipped rows past them (rules, behind coaches, held release,
-    invite expiry, programmes ending) → every job pages through all rows.
-  - A run killed at the Lambda timeout kept its claim → `finished_at` and
-    claim takeover after 10 min.
-- **Not verified:** nothing applied to staging; no deploy; no device run;
-  real Postgres concurrency (PGlite is one connection).
