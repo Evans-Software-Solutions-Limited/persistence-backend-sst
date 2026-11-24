@@ -322,22 +322,14 @@ describe("Set it up for one client (C10j)", () => {
     expect(
       await screen.findByText("Weekly check-in is paused for Sam."),
     ).toBeTruthy();
-    expect(api.clientFormSetup.mock.calls[0]![2]).toEqual({
-      status: "paused",
-      scheduleId: "s-weekly",
-      override: null,
-    });
+    expect(api.clientFormSetup.mock.calls[0]![2]).toEqual({ status: "paused" });
     expect(screen.getByText("Paused")).toBeTruthy();
     panel = await panelFor(/Weekly check-in: set up/);
     fireEvent.click(within(panel).getByRole("button", { name: "Resume" }));
     expect(
       await screen.findByText("Weekly check-in is back on for Sam."),
     ).toBeTruthy();
-    expect(api.clientFormSetup.mock.calls[1]![2]).toEqual({
-      status: "active",
-      scheduleId: "s-weekly",
-      override: null,
-    });
+    expect(api.clientFormSetup.mock.calls[1]![2]).toEqual({ status: "active" });
   });
 
   it("Stop asks first, then removes the form for Sam", async () => {
@@ -425,7 +417,7 @@ describe("Set it up for one client (C10j)", () => {
 });
 
 describe("Inspector Brad #555: one rule at a time", () => {
-  it("save, pause and resume change only the rule being edited; Stop covers them all", async () => {
+  it("save changes only the rule being edited; pause and stop cover every rule", async () => {
     const entry = {
       ...CLIENT_FORMS[0]!,
       rules: [
@@ -456,7 +448,9 @@ describe("Inspector Brad #555: one rule at a time", () => {
     panel = await open();
     fireEvent.click(within(panel).getByRole("button", { name: "Pause" }));
     await waitFor(() => expect(api.clientFormSetup).toHaveBeenCalledTimes(2));
-    expect(api.clientFormSetup.mock.calls[1]![2].scheduleId).toBe("s-weekly");
+    // Pause and Resume cover every rule and keep each one's override, so a
+    // multi-rule form shows Paused and can be resumed (Inspector Brad, #555).
+    expect(api.clientFormSetup.mock.calls[1]![2]).toEqual({ status: "paused" });
     panel = await open();
     fireEvent.click(within(panel).getByRole("button", { name: "Stop" }));
     fireEvent.click(within(panel).getAllByRole("button", { name: "Stop" })[0]!);
@@ -464,5 +458,30 @@ describe("Inspector Brad #555: one rule at a time", () => {
     expect(api.clientFormSetup.mock.calls[2]![2]).toEqual({
       status: "excluded",
     });
+  });
+});
+
+describe("Inspector Brad #555 sweep 2: the client's own pause", () => {
+  it("a rule paused for everyone isn't saved as a pause for this client", async () => {
+    const entry = {
+      ...CLIENT_FORMS[0]!,
+      state: "paused" as const,
+      rule: { ...CLIENT_FORMS[0]!.rule!, status: "paused", clientStatus: null },
+    };
+    const api = fakeApi({
+      clientForms: vi.fn().mockResolvedValue([entry]),
+      clientFormSetup: vi.fn().mockResolvedValue(entry),
+    });
+    renderCoach(<ClientPage />, { route: ROUTE, path: PATH, api });
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Weekly check-in: set up/ }),
+    );
+    const panel = await screen.findByRole("dialog", { name: /for Sam only/ });
+    // Not paused for Sam: the panel offers Pause, not Resume.
+    expect(within(panel).getByRole("button", { name: "Pause" })).toBeTruthy();
+    expect(within(panel).queryByRole("button", { name: "Resume" })).toBeNull();
+    fireEvent.click(within(panel).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(api.clientFormSetup).toHaveBeenCalled());
+    expect(api.clientFormSetup.mock.calls[0]![2].status).toBe("active");
   });
 });
