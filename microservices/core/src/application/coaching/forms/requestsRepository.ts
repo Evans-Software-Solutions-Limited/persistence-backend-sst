@@ -427,7 +427,12 @@ export type CoachView =
     }
   | { kind: "ended"; trainerId: string; clientId: string };
 
-function visibleRequests(view: CoachView) {
+/**
+ * Which of a client's requests this coach may see. Exported for PER-121:
+ * a photo answer is visible to a coach under exactly the same rule as the
+ * response it belongs to.
+ */
+export function visibleRequests(view: CoachView) {
   const base = and(
     eq(coachFormRequests.trainerId, view.trainerId),
     eq(coachFormRequests.clientId, view.clientId),

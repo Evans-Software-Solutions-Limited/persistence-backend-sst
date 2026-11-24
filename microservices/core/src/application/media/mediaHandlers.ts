@@ -347,8 +347,15 @@ export const coachMediaHandler = trainerOnly()
         return scope.body;
       }
       const result = await coachFormAnswerView(
-        trainerId,
-        clientId,
+        {
+          kind: "active",
+          trainerId,
+          clientId,
+          relationshipId: scope.scope.relationshipId,
+          activatedAt: scope.scope.activatedAt
+            ? new Date(scope.scope.activatedAt)
+            : null,
+        },
         mediaId,
         COACH_VIEW_SECONDS,
       );

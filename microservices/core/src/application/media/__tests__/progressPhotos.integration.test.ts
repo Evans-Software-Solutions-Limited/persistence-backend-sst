@@ -1201,6 +1201,37 @@ describe("form photo answers (lifts PER-116's 422)", () => {
     ).toBe(403);
   });
 
+  it("Inspector Brad #553: a photo answer from a past coaching cycle stays hidden after the coach is re-accepted", async () => {
+    const req = await photoRequest();
+    const mediaId = await uploadedPhoto();
+    expect((await submit(req.id, { mood: 4, front: { mediaId } })).status).toBe(
+      201,
+    );
+    await endCoachClientRelationship({
+      trainerId: COACH_C,
+      clientId: ATHLETE_A,
+      initiatedBy: "client",
+    });
+    // Coaching starts again: a new cycle (activated_at moves on).
+    await db
+      .update(schema.ptClientRelationships)
+      .set({ status: "active" })
+      .where(eq(schema.ptClientRelationships.trainerId, COACH_C));
+    // The response list hides the old cycle, and so must the photo.
+    const responses = await http(
+      "GET",
+      `/trainers/me/clients/${ATHLETE_A}/form-responses`,
+      COACH_C,
+    );
+    expect(JSON.stringify(responses.json)).not.toContain(mediaId);
+    const view = await http(
+      "GET",
+      `/trainers/me/clients/${ATHLETE_A}/media/${mediaId}`,
+      COACH_C,
+    );
+    expect(view.status).toBe(404);
+  });
+
   it("a bare media id is accepted and stored as { mediaId }", async () => {
     const req = await photoRequest();
     const mediaId = await uploadedPhoto();

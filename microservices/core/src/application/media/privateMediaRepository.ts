@@ -9,6 +9,10 @@ import {
 import { getDb } from "@persistence/db/client";
 import type { DbOrTx } from "../repositories/personalRecordsRepository";
 import {
+  visibleRequests,
+  type CoachView,
+} from "../coaching/forms/requestsRepository";
+import {
   checkUpload,
   deleteKeys,
   MAX_PHOTO_BYTES,
@@ -402,12 +406,13 @@ export async function ownerView(
 
 /**
  * A coach's view of a client's photo answer: only a ready `form_answer` the
- * client submitted in a response to one of THIS coach's form requests. The
- * caller has already passed `resolveCoachScope` (active coaching).
+ * client submitted in a response this coach can see — the same
+ * `visibleRequests` rule as the forms' response list (current coaching cycle,
+ * or an exit form). The handler only builds an ACTIVE view: photos are never
+ * shown to a coach after coaching ends (Brad, design F), exit forms included.
  */
 export async function coachFormAnswerView(
-  trainerId: string,
-  clientId: string,
+  view: Extract<CoachView, { kind: "active" }>,
   mediaId: string,
   seconds: number,
   now = new Date(),
@@ -426,12 +431,11 @@ export async function coachFormAnswerView(
     .where(
       and(
         eq(privateMedia.id, mediaId),
-        eq(privateMedia.ownerId, clientId),
+        eq(privateMedia.ownerId, view.clientId),
         eq(privateMedia.purpose, "form_answer"),
         eq(privateMedia.status, "ready"),
-        eq(coachFormResponses.clientId, clientId),
-        eq(coachFormRequests.clientId, clientId),
-        eq(coachFormRequests.trainerId, trainerId),
+        eq(coachFormResponses.clientId, view.clientId),
+        visibleRequests(view),
       ),
     )
     .limit(1);
