@@ -67,6 +67,18 @@ import type {
 } from "@/domain/models/nutrition";
 import type { MyCoaching } from "@/domain/models/myCoaching";
 import type { UserMeal } from "@/domain/models/userMeals";
+import type {
+  ClientForm,
+  CoachFormConflict,
+  CoachFormStats,
+  CoachFormsLibrary,
+  FormResponse,
+  FormSchedule,
+} from "@/domain/models/coachForms";
+import {
+  COACH_FORMS_QUEUE_ENTITIES,
+  swapIdInQueueRow,
+} from "../coachFormsQueueSwap";
 
 /**
  * In-memory storage adapter for testing.
@@ -1690,6 +1702,7 @@ export class InMemoryStorageAdapter implements StoragePort {
     this.recipesCache.clear();
     this.mealsCache.clear();
     this.userMealsCache.clear();
+    this.clearCoachFormsForTest();
     this.nextId = 1;
   }
 
@@ -1884,6 +1897,164 @@ export class InMemoryStorageAdapter implements StoragePort {
         e.entityId = `${serverGoalId}${e.entityId.slice(localGoalId.length)}`;
       }
     }
+  }
+
+  // -- PER-129 (APP-C1): coach forms, send rules and Check-ins --
+  private coachForms = new Map<string, CoachFormsLibrary>();
+  private coachFormSchedules = new Map<string, FormSchedule[]>();
+  private coachFormStats = new Map<string, CoachFormStats>();
+  private coachClientForms = new Map<string, ClientForm[]>();
+  private coachFormResponses = new Map<string, FormResponse[]>();
+  private coachFormConflicts = new Map<string, CoachFormConflict[]>();
+
+  private static copy<T>(value: T): T {
+    return JSON.parse(JSON.stringify(value)) as T;
+  }
+
+  getCachedCoachForms(userId: string): CoachFormsLibrary | null {
+    const hit = this.coachForms.get(userId);
+    return hit ? InMemoryStorageAdapter.copy(hit) : null;
+  }
+  cacheCoachForms(userId: string, value: CoachFormsLibrary): void {
+    this.coachForms.set(userId, InMemoryStorageAdapter.copy(value));
+  }
+  getCachedCoachFormSchedules(userId: string): FormSchedule[] | null {
+    const hit = this.coachFormSchedules.get(userId);
+    return hit ? InMemoryStorageAdapter.copy(hit) : null;
+  }
+  cacheCoachFormSchedules(userId: string, value: FormSchedule[]): void {
+    this.coachFormSchedules.set(userId, InMemoryStorageAdapter.copy(value));
+  }
+  getCachedCoachFormStats(userId: string): CoachFormStats | null {
+    const hit = this.coachFormStats.get(userId);
+    return hit ? InMemoryStorageAdapter.copy(hit) : null;
+  }
+  cacheCoachFormStats(userId: string, value: CoachFormStats): void {
+    this.coachFormStats.set(userId, InMemoryStorageAdapter.copy(value));
+  }
+  getCachedCoachClientForms(
+    userId: string,
+    clientId: string,
+  ): ClientForm[] | null {
+    const hit = this.coachClientForms.get(`${userId}|${clientId}`);
+    return hit ? InMemoryStorageAdapter.copy(hit) : null;
+  }
+  cacheCoachClientForms(
+    userId: string,
+    clientId: string,
+    value: ClientForm[],
+  ): void {
+    this.coachClientForms.set(
+      `${userId}|${clientId}`,
+      InMemoryStorageAdapter.copy(value),
+    );
+  }
+  getCachedCoachFormResponses(
+    userId: string,
+    clientId: string,
+  ): FormResponse[] | null {
+    const hit = this.coachFormResponses.get(`${userId}|${clientId}`);
+    return hit ? InMemoryStorageAdapter.copy(hit) : null;
+  }
+  cacheCoachFormResponses(
+    userId: string,
+    clientId: string,
+    value: FormResponse[],
+  ): void {
+    this.coachFormResponses.set(
+      `${userId}|${clientId}`,
+      InMemoryStorageAdapter.copy(value),
+    );
+  }
+  getCoachFormConflicts(userId: string): CoachFormConflict[] {
+    return [...(this.coachFormConflicts.get(userId) ?? [])];
+  }
+  recordCoachFormConflict(userId: string, key: string): void {
+    const rows = (this.coachFormConflicts.get(userId) ?? []).filter(
+      (c) => c.key !== key,
+    );
+    rows.push({ key, at: new Date().toISOString() });
+    this.coachFormConflicts.set(userId, rows);
+  }
+  clearCoachFormConflict(userId: string, key: string): void {
+    this.coachFormConflicts.set(
+      userId,
+      (this.coachFormConflicts.get(userId) ?? []).filter((c) => c.key !== key),
+    );
+  }
+  private swapCoachFormsQueueId(
+    localId: string,
+    serverId: string,
+    payloadKey: "formId" | "scheduleId",
+  ): void {
+    for (const e of this.queue) {
+      if (
+        !(COACH_FORMS_QUEUE_ENTITIES as readonly string[]).includes(
+          e.entityType,
+        ) ||
+        e.status === "completed" ||
+        e.status === "in_flight"
+      ) {
+        continue;
+      }
+      const next = swapIdInQueueRow(e, localId, serverId, payloadKey);
+      if (!next) continue;
+      e.entityId = next.entityId;
+      e.endpoint = next.endpoint;
+      e.payload = next.payload;
+    }
+  }
+  swapLocalCoachFormId(
+    userId: string,
+    localId: string,
+    serverId: string,
+  ): void {
+    if (localId === serverId) return;
+    const library = this.coachForms.get(userId);
+    if (library?.forms.some((f) => f.id === localId)) {
+      this.coachForms.set(userId, {
+        ...library,
+        forms: library.forms
+          .filter((f) => f.id !== serverId)
+          .map((f) => (f.id === localId ? { ...f, id: serverId } : f)),
+      });
+    }
+    const schedules = this.coachFormSchedules.get(userId);
+    if (schedules) {
+      this.coachFormSchedules.set(
+        userId,
+        schedules.map((r) =>
+          r.formId === localId ? { ...r, formId: serverId } : r,
+        ),
+      );
+    }
+    this.swapCoachFormsQueueId(localId, serverId, "formId");
+  }
+  swapLocalCoachFormScheduleId(
+    userId: string,
+    localId: string,
+    serverId: string,
+  ): void {
+    if (localId === serverId) return;
+    const schedules = this.coachFormSchedules.get(userId);
+    if (schedules?.some((r) => r.id === localId)) {
+      this.coachFormSchedules.set(
+        userId,
+        schedules
+          .filter((r) => r.id !== serverId)
+          .map((r) => (r.id === localId ? { ...r, id: serverId } : r)),
+      );
+    }
+    this.swapCoachFormsQueueId(localId, serverId, "scheduleId");
+  }
+  /** Test-only: drop every PER-129 cache (clearAll calls it too). */
+  clearCoachFormsForTest(): void {
+    this.coachForms.clear();
+    this.coachFormSchedules.clear();
+    this.coachFormStats.clear();
+    this.coachClientForms.clear();
+    this.coachFormResponses.clear();
+    this.coachFormConflicts.clear();
   }
 }
 

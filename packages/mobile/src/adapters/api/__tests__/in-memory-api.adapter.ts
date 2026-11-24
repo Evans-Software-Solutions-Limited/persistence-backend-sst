@@ -212,6 +212,13 @@ import type {
 } from "@/domain/models/trainingReads";
 import type { InvitePreview, MyCoaching } from "@/domain/models/myCoaching";
 import type { UserMeal, UserMealsResponse } from "@/domain/models/userMeals";
+import type {
+  ClientForm,
+  CoachFormStats,
+  CoachFormsLibrary,
+  FormResponsesPage,
+  FormSchedule,
+} from "@/domain/models/coachForms";
 
 /**
  * In-memory API adapter for testing.
@@ -3848,6 +3855,67 @@ export class InMemoryApiAdapter implements ApiPort {
     return this.mayFail<UserMealsResponse>({
       meals: this.userMeals.map((m) => ({ ...m })),
       asOf: new Date().toISOString(),
+    });
+  }
+
+  // -- PER-129 (APP-C1): coach forms reads --
+
+  /** Fixtures for the coach forms reads. */
+  public coachFormsLibrary: CoachFormsLibrary = {
+    forms: [],
+    templates: [],
+    asOf: "2026-11-24T09:00:00Z",
+  };
+  public coachFormStats: CoachFormStats = {
+    forms: [],
+    totals: {
+      forms: 0,
+      repeating: 0,
+      outstanding: 0,
+      onTimeRate: null,
+      onTimeSample: 0,
+    },
+    asOf: "2026-11-24T09:00:00Z",
+  };
+  public coachFormSchedules: FormSchedule[] = [];
+  public coachClientForms: Record<string, ClientForm[]> = {};
+  public coachFormResponses: Record<string, FormResponsesPage["responses"]> =
+    {};
+  public coachFormsCalls: string[] = [];
+
+  async getCoachForms(): Promise<Result<CoachFormsLibrary, ApiError>> {
+    this.coachFormsCalls.push("forms");
+    return this.mayFail(JSON.parse(JSON.stringify(this.coachFormsLibrary)));
+  }
+
+  async getCoachFormStats(): Promise<Result<CoachFormStats, ApiError>> {
+    this.coachFormsCalls.push("stats");
+    return this.mayFail(JSON.parse(JSON.stringify(this.coachFormStats)));
+  }
+
+  async getCoachFormSchedules(): Promise<Result<FormSchedule[], ApiError>> {
+    this.coachFormsCalls.push("schedules");
+    return this.mayFail(JSON.parse(JSON.stringify(this.coachFormSchedules)));
+  }
+
+  async getCoachClientForms(
+    clientId: string,
+  ): Promise<Result<ClientForm[], ApiError>> {
+    this.coachFormsCalls.push(`client-forms:${clientId}`);
+    return this.mayFail(
+      JSON.parse(JSON.stringify(this.coachClientForms[clientId] ?? [])),
+    );
+  }
+
+  async getCoachFormResponses(
+    clientId: string,
+  ): Promise<Result<FormResponsesPage, ApiError>> {
+    this.coachFormsCalls.push(`responses:${clientId}`);
+    return this.mayFail({
+      responses: JSON.parse(
+        JSON.stringify(this.coachFormResponses[clientId] ?? []),
+      ),
+      nextCursor: null,
     });
   }
 }
