@@ -8,6 +8,7 @@ import {
 } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
 import { auditTrainerAction } from "./auditTrainerAction";
+import { cancelBookingsForRelationship } from "../coaching/sessions/sessionRepository";
 import { recordDataSharingConsent } from "./recordDataSharingConsent";
 import { CONSENT_VERSION } from "./consent";
 import { closeFormsOnEnd } from "../coaching/forms/generators";
@@ -236,6 +237,11 @@ export async function endCoachClientRelationship({
       source: initiatedBy === "client" ? "leave_coach" : "coach_removed",
       tx,
     });
+
+    // 4b — Design I (PER-123): this relationship's bookings on sessions that
+    // haven't started are cancelled. The sessions stay on the coach's
+    // calendar (a group session goes on for the others).
+    await cancelBookingsForRelationship(tx, row.id);
 
     return {
       relationshipId: row.id,
