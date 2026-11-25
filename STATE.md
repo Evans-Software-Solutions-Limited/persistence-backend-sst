@@ -28,6 +28,39 @@ The coach workspace is only for coaches with an active coach subscription
   founding, lapsed, cancelled, athlete, no sub, signed out, mid-session lapse,
   nested sub-apps, sibling groups); web `shellAndList`, `api`, `Pricing`.
 
+### 2026-11-25 — BE-I1 coach resources: library, assignment, opened ([PER-122](https://linear.app/evans-software-solutions/issue/PER-122); branch `claude/per-122-coach-resources`)
+
+Backend design I, resources part (C3.7, C5b, athlete resources). Additive; no
+existing route changes. Migration `20261125101829_coach_resources.sql`
+(rollback in `supabase/rollbacks/`): `coach_resources` (file via
+`private_media` purpose `resource`, or https link; CHECKs pin kind/url/media),
+`coach_resource_assignments` (live-unique `(resource_id, relationship_id)
+WHERE removed_at IS NULL`). Drizzle in `packages/db/src/coachResourcesSchema.ts`
+(re-exported from `schema.ts`, like PER-121).
+
+- Code: `microservices/core/src/application/coaching/resources/`
+  (repository, handlers, `resource` set-up handler). Mounted as
+  `coachResourcesRoutes` in `coachingRoutes.ts`; `api.ts` untouched.
+- Routes: `GET/POST /trainers/me/resources`, `PATCH/DELETE
+  /trainers/me/resources/:id`, `POST /trainers/me/resources/assign`,
+  `GET /trainers/me/clients/:clientId/resources`, `DELETE
+  /trainers/me/clients/:clientId/resources/:assignmentId`, `GET
+  /users/me/resources?since=`, `POST /users/me/resources/:assignmentId/opened`.
+  Files are checked with design F's `finaliseMedia` on save; athletes get a
+  15-minute signed link. Archiving a resource hides its assignments from
+  clients (`deletedIds`).
+- Offboarding step 3e removes this coach's assignments on the relationship
+  (`removeResourceAssignmentsForRelationship`), so a revived relationship
+  doesn't bring them back. Set-up section `resource` is live.
+- ⚠ PER-146's coach-subscription guard must be applied to
+  `coachResourcesHandler` (the coach group) once both are merged.
+- Not done (out of brief): `/users/me/coaching` `resources` count stays 0;
+  the C3.9 `resources` switch is not enforced server-side; unused ready
+  resource uploads are not purged.
+- Tests: `resources.integration.test.ts` (PGlite, real migrations; design I
+  tests 1, 2, 5, set-up, migration twice/rollback). Other offboarding suites
+  now create the two tables.
+
 ### 2026-11-24 — Tooling: TypeScript 7, Oxlint (tsrs type-aware), Vitest 5, Vite 8 ([PER-148](https://linear.app/evans-software-solutions/issue/PER-148); branch `claude/brave-dirac-h9ianz`)
 
 Cuts check time, which was the cause of CI and local timeouts. No CI caching
