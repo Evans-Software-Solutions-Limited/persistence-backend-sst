@@ -5,22 +5,14 @@
  */
 import {
   MAX_DUE_HOURS,
-  MAX_HELP,
-  MAX_OPTIONS,
-  MAX_PROMPT,
-  MAX_QUESTIONS,
   MAX_REMINDER_HOURS,
-  MAX_UNIT,
-  MIN_OPTIONS,
   PREFILL_SOURCES,
-  TITLE_MAX,
   formConflictKey,
   type ClientForm,
   type ClientFormRule,
   type CoachForm,
   type CoachFormConflict,
   type CoachFormStats,
-  type FormDraft,
   type FormResponse,
   type FormSchedule,
   type FormTrigger,
@@ -879,44 +871,4 @@ export function cleanQuestion(q: Question): Question {
     else delete out.unit;
   }
   return out;
-}
-
-/** The first thing stopping a save, in the coach's words; null when fine. */
-export function draftProblem(draft: FormDraft): string | null {
-  const title = draft.title.trim();
-  if (!title) return "Give the form a title.";
-  if (title.length > TITLE_MAX)
-    return `Keep the title to ${TITLE_MAX} characters.`;
-  if (draft.questions.length === 0) return "Add at least one question.";
-  if (draft.questions.length > MAX_QUESTIONS) {
-    return `A form can have up to ${MAX_QUESTIONS} questions.`;
-  }
-  for (const [i, raw] of draft.questions.entries()) {
-    const q = cleanQuestion(raw);
-    const n = i + 1;
-    if (!q.prompt) return `Question ${n} needs a question.`;
-    if (q.prompt.length > MAX_PROMPT) {
-      return `Question ${n} is over ${MAX_PROMPT} characters.`;
-    }
-    if ((q.help?.length ?? 0) > MAX_HELP) {
-      return `Question ${n}'s help text is over ${MAX_HELP} characters.`;
-    }
-    if (q.options) {
-      if (q.options.length < MIN_OPTIONS || q.options.length > MAX_OPTIONS) {
-        return `Question ${n} needs ${MIN_OPTIONS}–${MAX_OPTIONS} options.`;
-      }
-      if (q.options.some((o) => !o))
-        return `Question ${n} has an empty option.`;
-      if (new Set(q.options).size !== q.options.length) {
-        return `Question ${n} has the same option twice.`;
-      }
-    }
-    if (q.min !== undefined && q.max !== undefined && q.min > q.max) {
-      return `Question ${n}: the lowest value is above the highest.`;
-    }
-    if ((q.unit?.length ?? 0) > MAX_UNIT) {
-      return `Question ${n}'s unit is over ${MAX_UNIT} characters.`;
-    }
-  }
-  return null;
 }

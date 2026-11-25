@@ -17,7 +17,6 @@ import {
   dailyDayLabel,
   dayMonth,
   defaultRule,
-  draftProblem,
   duplicateQuestion,
   effectiveRule,
   fitRuleToTrigger,
@@ -840,52 +839,6 @@ describe("C10b editor rules", () => {
         unit: " kg ",
       }).unit,
     ).toBe("kg");
-  });
-
-  it("explains the first thing stopping a save", () => {
-    const ok: Question = {
-      id: "q",
-      type: "short_text",
-      prompt: "Hi",
-      required: true,
-    };
-    const d = (questions: Question[], title = "Form") =>
-      draftProblem({ title, description: null, questions });
-    expect(d([ok])).toBeNull();
-    expect(d([ok], " ")).toBe("Give the form a title.");
-    expect(d([ok], "x".repeat(121))).toBe("Keep the title to 120 characters.");
-    expect(d([])).toBe("Add at least one question.");
-    expect(
-      d(Array.from({ length: 41 }, (_, i) => ({ ...ok, id: `q${i}` }))),
-    ).toBe("A form can have up to 40 questions.");
-    expect(d([{ ...ok, prompt: " " }])).toBe("Question 1 needs a question.");
-    expect(d([{ ...ok, prompt: "x".repeat(301) }])).toBe(
-      "Question 1 is over 300 characters.",
-    );
-    expect(d([{ ...ok, help: "x".repeat(301) }])).toBe(
-      "Question 1's help text is over 300 characters.",
-    );
-    const choice: Question = {
-      ...ok,
-      type: "single_choice",
-      options: ["a", "b"],
-    };
-    expect(d([{ ...choice, options: ["a"] }])).toBe(
-      "Question 1 needs 2–12 options.",
-    );
-    expect(d([{ ...choice, options: ["a", " "] }])).toBe(
-      "Question 1 has an empty option.",
-    );
-    expect(d([{ ...choice, options: ["a", "a"] }])).toBe(
-      "Question 1 has the same option twice.",
-    );
-    const num: Question = { ...ok, type: "number" };
-    expect(d([{ ...num, min: 5, max: 1 }])).toBe(
-      "Question 1: the lowest value is above the highest.",
-    );
-    expect(d([{ ...num, unit: "x".repeat(21) }])).toBe(
-      "Question 1's unit is over 20 characters.",
-    );
   });
 
   it("subtitles and filled-for-them sources", () => {

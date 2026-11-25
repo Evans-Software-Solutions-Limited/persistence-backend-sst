@@ -1,5 +1,30 @@
 # Project memory · persistence-backend-sst
 
+### 2026-11-25 — Mobile forms on react-hook-form + TypeBox ([PER-147](https://linear.app/evans-software-solutions/issue/PER-147), 2 of 2; branch `claude/per-147-rhf-mobile`)
+
+Every mobile form added since 1.2.0 validates through `react-hook-form` with
+a TypeBox schema resolver. Same copy, layout and offline queueing; no native
+change (`react-hook-form`, `@hookform/resolvers` v6 and `@sinclair/typebox`
+0.34 are pure JS). Web is PR 1 of 2 (`packages/web/src/lib/form`, same API).
+
+- **Pattern (PER-130 builds on it):** `src/shared/form/` (`schemaResolver`
+  with `prepare(values, context)` and `refine`, `schemaAccepts` for a button
+  that is off until valid, `applyServerErrors` reading `{ status, body }` or
+  the adapter's raw `{ status, json }`). Schemas live in `src/ui/forms/*.ts`;
+  containers own `useForm` and submit with `handleSubmit`. Rules that depend
+  on screen state (meals ticked, a full meal) go in through RHF `context`.
+- **Forms:** invite code + C11j consent tick, Your meals rename/add and the
+  plan's meals sheet, Quick log and a plan's quick item, New plan, builder
+  Save, item amount (add and edit), plan rename, coach form editor, send
+  sheet (C10h), one-client set-up (C10j), check-in reply.
+- **Removed hand-rolled checks:** `draftProblem` (coachForms.service, now the
+  editor schema + `firstFormProblem`, same lines and order) and
+  `QuickLogDraft.canLog`. `canSendSheet` stays as a name, backed by the
+  schema.
+- Submits are async now; NameInputs guard against return-then-blur
+  submitting twice. Queued saves still report 409s through the queue's
+  conflict state.
+
 ### 2026-11-24 — Tooling: TypeScript 7, Oxlint (tsrs type-aware), Vitest 5, Vite 8 ([PER-148](https://linear.app/evans-software-solutions/issue/PER-148); branch `claude/brave-dirac-h9ianz`)
 
 Cuts check time, which was the cause of CI and local timeouts. No CI caching
