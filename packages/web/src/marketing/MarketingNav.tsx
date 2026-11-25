@@ -1,3 +1,4 @@
+import { COACH_SIGN_IN_PATH } from "@/lib/coachPlans";
 import { Link, useLocation } from "react-router";
 import { downloadSectionPath } from "./campaign";
 import { useScrolled } from "./hooks";
@@ -52,6 +53,8 @@ export function MarketingNav({ current }: { current?: "pricing" }) {
             >
               Pricing
             </Link>
+            {/* A full page load, so no marketing script carries into /coach. */}
+            <a href={COACH_SIGN_IN_PATH}>Coach sign in</a>
           </div>
           <button
             type="button"

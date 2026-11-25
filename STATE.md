@@ -1,5 +1,33 @@
 # Project memory · persistence-backend-sst
 
+### 2026-11-25 — Coach platform access: coach subscription required ([PER-146](https://linear.app/evans-software-solutions/issue/PER-146); branch `claude/per-146-coach-platform-access`)
+
+The coach workspace is only for coaches with an active coach subscription
+(Brad, 24 Nov). No migration, no native change, no mobile change.
+
+- **Backend:** `application/entitlement/coachSubscriptionGuard.ts`.
+  `coachWorkspaceGuard` is mounted once at the top of `src/api.ts` as a global
+  `onBeforeHandle`; it refuses every coach workspace route (route pattern
+  `/trainers/me` / `/trainers/me/*`, plus legacy `/clients/:clientId/measurements`
+  and `/clients/:clientId/body-trend`) with `403 { code:
+  "coach_subscription_required" }` unless the caller's effective tier is a coach
+  tier. "Coach tier" reuses `resolveTrainerClientsEntitlement().isTrainerTier`
+  (catalog `is_trainer_tier`, lapse/cancel/scheduled-change rules shared with the
+  seat cap); founding/admin grants count. No valid JWT → steps aside, the route's
+  own 401 answers. New `/trainers/me/*` routes (e.g. PER-122) are covered with no
+  code; a coach group outside that prefix adds `.use(coachSubscriptionGuard)`.
+- **1.2.0 effect:** coaches without an active coach subscription now get 403 on
+  the coach screens' calls; paying coaches are unchanged. Route list in the PR.
+- **Web:** `CoachLayout` sends non-coach roles and a roster refused with the code
+  to `/pricing?for=coaches&from=coach` (replaces the "isn't a coach account"
+  dead end); `coachFetch` notifies `onCoachSubscriptionRequired` on any refused
+  call, so a mid-session lapse redirects too. Pricing opens the Coaches tab on
+  `?for=coaches` and explains the coach plan when `from=coach`. Marketing nav and
+  footer gain "Coach sign in" (`/coach/login`, full page load).
+- **Tests:** `coachSubscriptionGuard.test.ts` (PGlite, real resolver: active,
+  founding, lapsed, cancelled, athlete, no sub, signed out, mid-session lapse,
+  nested sub-apps, sibling groups); web `shellAndList`, `api`, `Pricing`.
+
 ### 2026-11-25 — BE-I1 coach resources: library, assignment, opened ([PER-122](https://linear.app/evans-software-solutions/issue/PER-122); branch `claude/per-122-coach-resources`)
 
 Backend design I, resources part (C3.7, C5b, athlete resources). Additive; no
