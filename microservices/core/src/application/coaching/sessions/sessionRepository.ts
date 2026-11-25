@@ -9,6 +9,7 @@ import {
   lt,
   ne,
   sql,
+  type SQL,
 } from "drizzle-orm";
 import {
   coachFormRequests,
@@ -293,6 +294,36 @@ export interface CreateResult {
   sessions: CoachSessionDTO[];
   /** False when this was a replay: nothing new to announce. */
   created: boolean;
+  /** The attendees actually booked (still active when written). */
+  attendees: AttendeeRef[];
+}
+
+/**
+ * The attendees whose relationship is still active, inside the write's
+ * transaction. The rows are locked FOR SHARE, so offboarding (which updates
+ * the relationship) waits for this booking to commit and then cancels it;
+ * a relationship that ended first is left out (Inspector Brad, #568).
+ */
+async function stillActive(
+  tx: DbOrTx,
+  attendees: AttendeeRef[],
+): Promise<AttendeeRef[]> {
+  if (attendees.length === 0) return [];
+  const rows = await tx
+    .select({ id: ptClientRelationships.id })
+    .from(ptClientRelationships)
+    .where(
+      and(
+        inArray(
+          ptClientRelationships.id,
+          attendees.map((a) => a.relationshipId),
+        ),
+        eq(ptClientRelationships.status, "active"),
+      ),
+    )
+    .for("share");
+  const live = new Set(rows.map((r) => r.id));
+  return attendees.filter((a) => live.has(a.relationshipId));
 }
 
 /**
@@ -332,8 +363,9 @@ export async function createSessions(
     if (!inserted[0]) {
       // Same key, created by a concurrent request.
       const replay = await findCreated(trainerId, clientRequestId!, tx);
-      return { sessions: replay ?? [], created: false };
+      return { sessions: replay ?? [], created: false, attendees: [] };
     }
+    const booked = await stillActive(tx, attendees);
     const ids = [inserted[0].id];
     if (values.length > 1) {
       const rest = await tx
@@ -342,10 +374,10 @@ export async function createSessions(
         .returning({ id: coachSessions.id });
       ids.push(...rest.map((r) => r.id));
     }
-    if (attendees.length > 0) {
+    if (booked.length > 0) {
       await tx.insert(coachSessionAttendees).values(
         ids.flatMap((sessionId) =>
-          attendees.map((a) => ({
+          booked.map((a) => ({
             sessionId,
             clientId: a.clientId,
             relationshipId: a.relationshipId,
@@ -356,7 +388,11 @@ export async function createSessions(
         ),
       );
     }
-    return { sessions: await loadSessions(tx, trainerId, ids), created: true };
+    return {
+      sessions: await loadSessions(tx, trainerId, ids),
+      created: true,
+      attendees: booked,
+    };
   });
 }
 
@@ -479,7 +515,12 @@ export async function patchSessions(
         patch.startsAt.getTime() !== session.startsAt.getTime()) ||
       (patch.reminderMinutes !== undefined &&
         patch.reminderMinutes !== session.reminderMinutes);
-    const { attendees: wantedAttendees, startsAt, ...fields } = patch;
+    const { attendees: requested, startsAt, ...fields } = patch;
+    // Only clients still coached when this commits are booked (see
+    // stillActive); one whose coaching just ended is left off.
+    const wantedAttendees = requested
+      ? await stillActive(tx, requested)
+      : undefined;
 
     const added = new Map<string, AttendeeRef[]>();
     const removed = new Map<string, AttendeeRef[]>();
@@ -770,6 +811,25 @@ export async function athleteSessions(
   from: Date,
   to: Date,
 ): Promise<AthleteCoachSessionDTO[]> {
+  return athleteRows(
+    clientId,
+    and(gte(coachSessions.startsAt, from), lt(coachSessions.startsAt, to))!,
+  );
+}
+
+/** One of the athlete's sessions by id, on the same terms as the list. */
+export async function athleteSession(
+  clientId: string,
+  sessionId: string,
+): Promise<AthleteCoachSessionDTO | null> {
+  const rows = await athleteRows(clientId, eq(coachSessions.id, sessionId));
+  return rows[0] ?? null;
+}
+
+async function athleteRows(
+  clientId: string,
+  filter: SQL,
+): Promise<AthleteCoachSessionDTO[]> {
   const rows = await getDb()
     .select({
       session: coachSessions,
@@ -794,8 +854,7 @@ export async function athleteSessions(
         eq(ptClientRelationships.clientId, clientId),
         eq(ptClientRelationships.status, "active"),
         isNull(profiles.deletedAt),
-        gte(coachSessions.startsAt, from),
-        lt(coachSessions.startsAt, to),
+        filter,
       ),
     )
     .orderBy(asc(coachSessions.startsAt), asc(coachSessions.id));
@@ -920,15 +979,17 @@ export async function respondToSession(
       }
     }
   }
-  const list = await athleteSessions(
-    clientId,
-    booking!.startsAt,
-    new Date(booking!.startsAt.getTime() + 1),
-  );
-  return { ok: true, session: list.find((s) => s.id === sessionId)! };
+  // By id, so a move landing meanwhile still finds it (Inspector Brad, #568).
+  const session = await athleteSession(clientId, sessionId);
+  if (!session) return { ok: false, reason: "not_found" };
+  return { ok: true, session };
 }
 
-/** The athlete's booking on a session, through an active relationship. */
+/**
+ * The athlete's booking on a session, through an active relationship with a
+ * coach whose account isn't deleted: the same terms as the athlete's list,
+ * so a session they can't see can't be answered either (404).
+ */
 async function readBooking(
   clientId: string,
   sessionId: string,
@@ -949,11 +1010,13 @@ async function readBooking(
       ptClientRelationships,
       eq(ptClientRelationships.id, coachSessionAttendees.relationshipId),
     )
+    .innerJoin(profiles, eq(profiles.id, coachSessions.trainerId))
     .where(
       and(
         eq(coachSessionAttendees.sessionId, sessionId),
         eq(coachSessionAttendees.clientId, clientId),
         eq(ptClientRelationships.status, "active"),
+        isNull(profiles.deletedAt),
       ),
     )
     .limit(1);

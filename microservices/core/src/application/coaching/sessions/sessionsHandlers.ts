@@ -289,7 +289,8 @@ export const coachSessionsHandler = trainerOnly()
           {
             action: "booked",
             session: first,
-            attendees: (checked.attendees ?? []).map((a) => ({ ...a })),
+            // Only the attendees actually booked inside the transaction.
+            attendees: result.attendees,
             occurrences: result.sessions.length,
           },
         ]);

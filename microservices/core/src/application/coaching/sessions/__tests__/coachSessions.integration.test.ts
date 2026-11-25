@@ -253,6 +253,59 @@ const reminders = () =>
 
 const FUTURE = "2027-03-23T09:00:00.000Z"; // Tue, GMT in London
 
+/**
+ * Runs `concurrent` SQL at the first `db.update(…)…returning()` (just before
+ * that write executes) or the first `db.transaction(…)` (just before it
+ * opens): someone else's write lands between this code's read and its write.
+ */
+async function withRace<T>(
+  at: "update" | "transaction",
+  concurrent: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const real = db;
+  let armed = true;
+  holder.db = new Proxy(real, {
+    get(target, prop) {
+      if (prop === at && armed) {
+        armed = false;
+        if (at === "transaction") {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          return async (cb: any) => {
+            await pg.exec(concurrent);
+            return target.transaction(cb);
+          };
+        }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return (table: any) => ({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          set: (values: any) => ({
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            where: (cond: any) => ({
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              returning: async (cols: any) => {
+                await pg.exec(concurrent);
+                return target
+                  .update(table)
+                  .set(values)
+                  .where(cond)
+                  .returning(cols);
+              },
+            }),
+          }),
+        });
+      }
+      const value = Reflect.get(target, prop, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  try {
+    return await fn();
+  } finally {
+    holder.db = real;
+  }
+}
+
 beforeAll(async () => {
   pg = await baseDatabase();
   await pg.exec(await read(MIGRATIONS, MIGRATION));
@@ -1154,6 +1207,96 @@ describe("athlete accept or decline", () => {
     expect(await statusOf(starting.data.id)).toBe("invited");
   });
 
+  it("returns the session by id even if a move lands meanwhile (Inspector Brad, #568)", async () => {
+    const { data } = await book(COACH_A, {
+      startsAt: FUTURE,
+      clientIds: [ATHLETE_C],
+    });
+    const res = await withRace(
+      "update",
+      `update coach_sessions set starts_at = '2027-03-23T12:00:00Z' where id = '${data.id}'`,
+      () =>
+        http("POST", `/users/me/coach-sessions/${data.id}/respond`, ATHLETE_C, {
+          status: "accepted",
+        }),
+    );
+    expect(res.status).toBe(200);
+    expect(res.json.data).toMatchObject({
+      id: data.id,
+      status: "accepted",
+      startsAt: "2027-03-23T12:00:00.000Z",
+    });
+  });
+
+  it("a session whose coach's account is deleted can't be seen or answered", async () => {
+    const { data } = await book(COACH_A, {
+      startsAt: FUTURE,
+      clientIds: [ATHLETE_C],
+    });
+    await pg.exec(
+      `update profiles set deleted_at = now() where id = '${COACH_A}'`,
+    );
+    const list = await http(
+      "GET",
+      "/users/me/coach-sessions?from=2027-03-01&to=2027-04-01",
+      ATHLETE_C,
+    );
+    expect(list.json.data.sessions).toEqual([]);
+    const res = await http(
+      "POST",
+      `/users/me/coach-sessions/${data.id}/respond`,
+      ATHLETE_C,
+      { status: "accepted" },
+    );
+    expect(res.status).toBe(404);
+    expect((await attendeeRows())[0]!.status).toBe("invited");
+  });
+});
+
+describe("bookings racing offboarding (Inspector Brad, #568)", () => {
+  it("a client whose coaching ends before the booking commits is left off it, and not told", async () => {
+    const relC = await relationshipId(COACH_A, ATHLETE_C);
+    const end = `update pt_client_relationships set status = 'terminated' where id = '${relC}'`;
+    const res = await withRace("transaction", end, () =>
+      http("POST", "/trainers/me/sessions", COACH_A, {
+        kind: "in_person",
+        durationMin: 60,
+        startsAt: FUTURE,
+        clientIds: [ATHLETE_C, ATHLETE_E],
+      }),
+    );
+    expect(res.status).toBe(201);
+    expect(res.json.data.attendees.map((a: Json) => a.clientId)).toEqual([
+      ATHLETE_E,
+    ]);
+    expect(pushesTo(ATHLETE_C)).toHaveLength(0);
+    expect(pushesTo(ATHLETE_E)).toHaveLength(1);
+    const events = await db.select().from(schema.coachEvents);
+    expect(events.map((e) => e.clientId)).toEqual([ATHLETE_E]);
+  });
+
+  it("an edit adding a client whose coaching just ended doesn't book them", async () => {
+    const { data } = await book(COACH_A, {
+      startsAt: FUTURE,
+      clientIds: [ATHLETE_E],
+    });
+    pushes.list = [];
+    const relC = await relationshipId(COACH_A, ATHLETE_C);
+    const res = await withRace(
+      "transaction",
+      `update pt_client_relationships set status = 'terminated' where id = '${relC}'`,
+      () =>
+        http("PATCH", `/trainers/me/sessions/${data.id}`, COACH_A, {
+          clientIds: [ATHLETE_E, ATHLETE_C],
+        }),
+    );
+    expect(res.status).toBe(200);
+    expect(res.json.data.attendees.map((a: Json) => a.clientId)).toEqual([
+      ATHLETE_E,
+    ]);
+    expect(pushes.list).toHaveLength(0);
+  });
+
   it("lists upcoming sessions by default and checks the range", async () => {
     const soon = new Date(Date.now() + 86_400_000).toISOString();
     const { data } = await book(COACH_A, {
@@ -1458,6 +1601,64 @@ describe("design I test 4: reminders", () => {
     expect(reminders()).toHaveLength(1);
     const [row] = await attendeeRows();
     expect(row!.remindedAt!.toISOString()).toBe("2027-03-23T09:00:00.000Z");
+  });
+
+  it("a move, cancel or removal between the read and the claim sends no stale reminder (Inspector Brad, #568)", async () => {
+    const runAt = (iso: string) =>
+      sessionRemindersJob.run({
+        now: new Date(iso),
+        dispatcher: new NotificationDispatcher(),
+      });
+    const { data } = await book(COACH_A, {
+      startsAt: FUTURE,
+      clientIds: [ATHLETE_C],
+      reminderMinutes: 60,
+    });
+    pushes.list = [];
+    // Moved to 11:00 just before the claim (a move clears reminded_at).
+    const moved = await withRace(
+      "update",
+      `update coach_sessions set starts_at = '2027-03-23T11:00:00Z' where id = '${data.id}';
+       update coach_session_attendees set reminded_at = null where session_id = '${data.id}';`,
+      () => runAt("2027-03-23T08:15:00Z"),
+    );
+    expect(moved).toEqual({ claimed: 0, sent: 0 });
+    expect(reminders()).toHaveLength(0);
+    expect((await attendeeRows())[0]!.remindedAt).toBeNull();
+    // The new time is still reminded.
+    expect(await runAt("2027-03-23T10:00:00Z")).toEqual({
+      claimed: 1,
+      sent: 1,
+    });
+    expect(reminders()[0]!.input.message).toBe("In person · Tue 23 Mar, 11:00");
+
+    const cancelled = await book(COACH_A, {
+      startsAt: "2027-03-24T09:00:00Z",
+      clientIds: [ATHLETE_C],
+      reminderMinutes: 60,
+    });
+    pushes.list = [];
+    expect(
+      await withRace(
+        "update",
+        `update coach_sessions set cancelled_at = now() where id = '${cancelled.data.id}'`,
+        () => runAt("2027-03-24T08:15:00Z"),
+      ),
+    ).toEqual({ claimed: 0, sent: 0 });
+
+    const removed = await book(COACH_A, {
+      startsAt: "2027-03-25T09:00:00Z",
+      clientIds: [ATHLETE_C],
+      reminderMinutes: 60,
+    });
+    expect(
+      await withRace(
+        "update",
+        `update coach_session_attendees set status = 'cancelled' where session_id = '${removed.data.id}'`,
+        () => runAt("2027-03-25T08:15:00Z"),
+      ),
+    ).toEqual({ claimed: 0, sent: 0 });
+    expect(reminders()).toHaveLength(0);
   });
 
   it("runs as the last job of coachSchedulerCron", () => {

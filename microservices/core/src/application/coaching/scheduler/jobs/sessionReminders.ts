@@ -80,6 +80,21 @@ export const sessionRemindersJob: SchedulerJob = {
         due.flatMap((r) => [r.trainerId, r.clientId]),
       );
       for (const r of due) {
+        // The claim re-checks what the read saw: still booked, the session
+        // not cancelled and still at the time this push would show. A move,
+        // cancel or removal in between wins: no stale push, and a moved
+        // session (reminded_at cleared) is reminded at its new time
+        // (Inspector Brad, #568).
+        const unchanged = db
+          .select({ id: coachSessions.id })
+          .from(coachSessions)
+          .where(
+            and(
+              eq(coachSessions.id, r.sessionId),
+              eq(coachSessions.startsAt, r.startsAt),
+              isNull(coachSessions.cancelledAt),
+            ),
+          );
         const won = await db
           .update(coachSessionAttendees)
           .set({ remindedAt: now, updatedAt: now })
@@ -88,6 +103,8 @@ export const sessionRemindersJob: SchedulerJob = {
               eq(coachSessionAttendees.sessionId, r.sessionId),
               eq(coachSessionAttendees.relationshipId, r.relationshipId),
               isNull(coachSessionAttendees.remindedAt),
+              inArray(coachSessionAttendees.status, BOOKED_STATUSES),
+              inArray(coachSessionAttendees.sessionId, unchanged),
             ),
           )
           .returning({ sessionId: coachSessionAttendees.sessionId });
