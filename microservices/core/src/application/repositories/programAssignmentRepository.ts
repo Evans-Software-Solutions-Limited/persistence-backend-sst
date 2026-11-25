@@ -637,9 +637,22 @@ export class ProgramAssignmentRepository {
           inArray(workoutAssignments.status, [...LIVE_ASSIGNMENT_STATUSES]),
         ),
       )
-      // Earliest due first; undated rows after, a sequence programme's in
-      // programme order (PER-112) and ad-hoc rows last.
+      // 1. dated rows due today or earlier (earliest first);
+      // 2. a sequence programme's rows, in programme order (PER-112): Next
+      //    before a dated row that isn't due yet, so doing Next can't
+      //    complete a future dated occurrence of the same workout instead
+      //    (Inspector Brad, #564);
+      // 3. future dated rows (earliest first);
+      // 4. undated ad-hoc rows.
+      // With no sequence rows this is exactly the old `due_date asc nulls
+      // last` order.
       .orderBy(
+        sql`case
+          when ${workoutAssignments.dueDate} is not null and ${workoutAssignments.dueDate} <= ${new Date().toISOString().slice(0, 10)} then 0
+          when ${workoutAssignments.sequenceIndex} is not null then 1
+          when ${workoutAssignments.dueDate} is not null then 2
+          else 3
+        end`,
         sql`${workoutAssignments.dueDate} asc nulls last`,
         sql`${workoutAssignments.sequenceIndex} asc nulls last`,
       )

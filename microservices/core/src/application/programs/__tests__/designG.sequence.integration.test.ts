@@ -76,6 +76,8 @@ import { programmeEndingJob } from "../../coaching/scheduler/jobs/coachChecks";
 import { PAGE_SIZES } from "../../coaching/scheduler/jobs/pageSizes";
 import { NotificationDispatcher } from "../../notifications/push/notificationDispatcher";
 import { assignProgrammeInSequence } from "../assignProgrammeInSequence";
+import { loadSequenceProgress } from "../sequenceProgress";
+import { addDays } from "../scheduling";
 
 const MIGRATIONS = "../../../../../../supabase/migrations/";
 const ROLLBACKS = "../../../../../../supabase/rollbacks/";
@@ -469,6 +471,73 @@ describe("Next", () => {
       .from(schema.programAssignments)
       .where(eq(schema.programAssignments.id, assignment.id));
     expect(pa!.status).toBe("completed");
+  });
+
+  it("with the same workout in a dated programme too, Next is linked before a dated row that isn't due yet", async () => {
+    // Inspector Brad, #564: a future dated occurrence must not swallow Next.
+    const dated = await makeProgram(COACH_A, {
+      durationWeeks: null, // indefinite: 28 days of future rows
+      daysPerWeek: 1,
+      cycle: [W_A],
+      name: "Dated",
+    });
+    const sequence = await makeProgram(COACH_A, {
+      durationWeeks: 1,
+      daysPerWeek: 2,
+      cycle: [W_A, W_B],
+      name: "Sequence",
+    });
+    const res = await http(
+      "POST",
+      `/trainers/me/programs/${dated}/assign`,
+      COACH_A,
+      { clientId: ATHLETE_C, startDate: addDays(today(), 1) },
+    );
+    expect(res.status).toBe(201);
+    const datedRows = await workoutsOf(res.json.data.id);
+    expect(datedRows.length).toBeGreaterThan(1);
+    expect(datedRows.every((r) => r.dueDate! > today())).toBe(true);
+    const seq = await assignNoDate(sequence);
+    const seqRows = await workoutsOf(seq.id);
+
+    await complete(ATHLETE_C, W_A);
+    expect((await workoutsOf(seq.id)).map((r) => r.status)).toEqual([
+      "completed",
+      "assigned",
+    ]);
+    expect(
+      (await workoutsOf(res.json.data.id)).every(
+        (r) => r.status === "assigned",
+      ),
+    ).toBe(true);
+    // Next has moved on in the sequence programme.
+    const progress = await loadSequenceProgress(db as never, [seq.id]);
+    expect(progress.get(seq.id)?.nextAssignmentId).toBe(seqRows[1]!.id);
+  });
+
+  it("a dated row due today still comes before the sequence's Next", async () => {
+    const dated = await makeProgram(COACH_A, {
+      durationWeeks: 1,
+      daysPerWeek: 1,
+      cycle: [W_A],
+      name: "Dated",
+    });
+    const sequence = await makeProgram(COACH_A, {
+      durationWeeks: 1,
+      daysPerWeek: 1,
+      cycle: [W_A],
+      name: "Sequence",
+    });
+    const res = await http(
+      "POST",
+      `/trainers/me/programs/${dated}/assign`,
+      COACH_A,
+      { clientId: ATHLETE_C, startDate: today() },
+    );
+    const seq = await assignNoDate(sequence);
+    await complete(ATHLETE_C, W_A);
+    expect((await workoutsOf(res.json.data.id))[0]!.status).toBe("completed");
+    expect((await workoutsOf(seq.id))[0]!.status).toBe("assigned");
   });
 
   it("weekOfProgramme follows Next, not the calendar", async () => {
