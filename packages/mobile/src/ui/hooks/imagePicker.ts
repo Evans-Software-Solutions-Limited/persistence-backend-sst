@@ -1,5 +1,6 @@
 import { Alert } from "react-native";
 import * as ImagePicker from "expo-image-picker";
+import { runNativePermissionRequest } from "@/lib/nativePermissionQueue";
 
 /**
  * The app's photo-picking flow, shared by the profile picture
@@ -39,10 +40,13 @@ export async function pickImage(
   source: ImageSource,
   opts: { allowsEditing?: boolean; aspect?: [number, number] } = {},
 ): Promise<PickImageResult> {
-  const permission =
+  // Through the shared queue: iOS drops a permission sheet shown while
+  // another (ATT, notifications) is pending.
+  const permission = await runNativePermissionRequest(() =>
     source === "camera"
-      ? await ImagePicker.requestCameraPermissionsAsync()
-      : await ImagePicker.requestMediaLibraryPermissionsAsync();
+      ? ImagePicker.requestCameraPermissionsAsync()
+      : ImagePicker.requestMediaLibraryPermissionsAsync(),
+  );
   if (!permission.granted) return { status: "denied" };
   const options: ImagePicker.ImagePickerOptions = {
     mediaTypes: ["images"],

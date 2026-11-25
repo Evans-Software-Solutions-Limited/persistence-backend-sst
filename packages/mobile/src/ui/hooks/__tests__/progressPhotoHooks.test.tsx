@@ -46,8 +46,10 @@ jest.mock("expo-image-picker", () => ({
   launchCameraAsync: jest.fn(),
   launchImageLibraryAsync: jest.fn(),
 }));
+const mockPermissionQueue = jest.fn((fn: () => Promise<unknown>) => fn());
 jest.mock("@/lib/nativePermissionQueue", () => ({
-  runNativePermissionRequest: (fn: () => Promise<unknown>) => fn(),
+  runNativePermissionRequest: (fn: () => Promise<unknown>) =>
+    mockPermissionQueue(fn),
 }));
 
 const USER = "athlete-1";
@@ -370,6 +372,9 @@ describe("prepareProgressPhoto / useProgressPhotoCapture", () => {
       uri: "file:///out.jpg",
       bytes: 2,
     });
+    // The permission prompt waits its turn in the shared native queue.
+    expect(mockPermissionQueue).toHaveBeenCalledTimes(1);
+    expect(picker.requestCameraPermissionsAsync).toHaveBeenCalledTimes(1);
     expect(picker.launchCameraAsync).toHaveBeenCalledWith({
       mediaTypes: ["images"],
       quality: 1,
