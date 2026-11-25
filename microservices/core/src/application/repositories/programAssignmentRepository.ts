@@ -48,11 +48,6 @@ export interface AssignProgramInput {
   scheduleMode?: ScheduleMode;
   showInPlan?: boolean;
   showInLibrary?: boolean;
-  /**
-   * Also allow a PUBLIC programme the caller doesn't own ("Me", design G
-   * part 2). Coach → client assignment stays owner-only.
-   */
-  allowPublicProgram?: boolean;
 }
 
 export type AssignProgramResult =
@@ -148,12 +143,7 @@ export class ProgramAssignmentRepository {
         .where(
           and(
             eq(workoutPrograms.id, programId),
-            input.allowPublicProgram
-              ? or(
-                  eq(workoutPrograms.createdBy, trainerId),
-                  eq(workoutPrograms.isPublic, true),
-                )
-              : eq(workoutPrograms.createdBy, trainerId),
+            eq(workoutPrograms.createdBy, trainerId),
           ),
         )
         .limit(1);

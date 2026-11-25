@@ -26,7 +26,7 @@ import * as schema from "@persistence/db/schema";
  * of order; dated assignments behave as before (the existing
  * scheduling.test.ts is unchanged); offboarding still removes only this
  * coach's assignments; the migration runs forward twice, down and up, with
- * existing rows unchanged. Plus "Me", the design A set-up section, the read
+ * existing rows unchanged. Plus "Me" (own programmes only), the design A set-up section, the read
  * fields, the indefinite top-up, programme_ending and two-user isolation.
  */
 
@@ -722,22 +722,31 @@ describe("POST /users/me/program-assignments (Me)", () => {
     expect(all).toHaveLength(1);
   });
 
-  it("allows a public programme, but not another coach's private one", async () => {
+  it("accepts only the caller's own programme: another trainer's, public or private, is a 404 like an unknown id", async () => {
+    // Design G's "or public" is deferred pending Brad (Inspector Brad, #564).
     const publicOne = await makeProgram(COACH_B, { isPublic: true });
     const privateOne = await makeProgram(COACH_B);
-    expect((await me(COACH_A, publicOne)).status).toBe(201);
-    const res = await me(COACH_A, privateOne);
-    expect(res.status).toBe(404);
-    expect(res.json).toMatchObject({ code: "not_found" });
+    for (const programId of [publicOne, privateOne, randomUUID()]) {
+      const res = await me(COACH_A, programId);
+      expect([res.status, res.json?.code]).toEqual([404, "not_found"]);
+    }
+    expect(await db.select().from(schema.programAssignments)).toEqual([]);
+    expect(await db.select().from(schema.workoutAssignments)).toEqual([]);
+    // The caller's own programme still works.
+    const own = await makeProgram(COACH_A);
+    expect((await me(COACH_A, own)).status).toBe(201);
   });
 
-  it("a programme a coach assigned you live is a 409; an empty one is a 422", async () => {
-    const program = await makeProgram(COACH_B, { isPublic: true });
-    await assignProgrammeInSequence({
-      assignerId: COACH_B,
-      clientId: COACH_A,
+  it("a live copy of your programme from someone else is a 409; an empty one is a 422", async () => {
+    // Not reachable through the API today (only an owner can assign their
+    // programme), so the row is written directly.
+    const program = await makeProgram(COACH_A);
+    await db.insert(schema.programAssignments).values({
       programId: program,
-      today: today(),
+      clientId: COACH_A,
+      assignedBy: COACH_B,
+      startDate: today(),
+      status: "assigned",
     });
     expect((await me(COACH_A, program)).json).toMatchObject({
       code: "already_assigned",
@@ -747,7 +756,7 @@ describe("POST /users/me/program-assignments (Me)", () => {
   });
 
   it("is 403 without the trainer role and 401 without a token", async () => {
-    const program = await makeProgram(COACH_A, { isPublic: true });
+    const program = await makeProgram(COACH_A);
     const res = await me(ATHLETE_C, program);
     expect(res.status).toBe(403);
     expect(res.json).toMatchObject({ code: "planning_not_available" });

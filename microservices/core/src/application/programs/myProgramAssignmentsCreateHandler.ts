@@ -14,7 +14,13 @@ import { assignProgrammeInSequence } from "./assignProgrammeInSequence";
  * spec 36's owner route): assign a programme to yourself. Always `sequence`
  * mode (no dates, programme order with Next).
  *
- * - The programme must be the caller's own or public (else 404, no leak).
+ * - The programme must be the caller's OWN. Anything else, public or not, is
+ *   404 `not_found`, the same as an unknown id (no leak). Design G's "or
+ *   public" is deferred pending Brad: assigning another coach's public
+ *   programme to yourself would list you in that coach's programme detail,
+ *   block their delete, and give you read access to private workouts in it
+ *   through the materialised workout assignments (Inspector Brad, #564). No V2
+ *   code writes `is_public` on programmes yet.
  * - The caller needs the trainer role ("coaches' own training is free with
  *   every trainer subscription", Brad 28 Oct). There's no athlete planning
  *   capability in the backend yet, so other callers get 403
@@ -53,7 +59,6 @@ export const myProgramAssignmentsCreateHandler = new Elysia()
         today: todayIso(),
         showInPlan: ctx.body.showInPlan,
         showInLibrary: ctx.body.showInLibrary,
-        allowPublicProgram: true,
         repository: ctx.ProgramAssignmentRepository,
       });
 
@@ -67,7 +72,9 @@ export const myProgramAssignmentsCreateHandler = new Elysia()
             userId,
             ctx.body.programId,
           );
-          if (live && live.assignedBy === userId) {
+          // `live` always exists here (the 409 was for this programme and
+          // caller); only the assigner decides between replay and conflict.
+          if (live?.assignedBy === userId) {
             ctx.set.status = 200;
             return { data: live };
           }

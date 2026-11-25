@@ -26,8 +26,6 @@ export async function assignProgrammeInSequence(params: {
   today: string;
   showInPlan?: boolean;
   showInLibrary?: boolean;
-  /** "Me" may use a public programme as well as the caller's own. */
-  allowPublicProgram?: boolean;
   /** Run inside this transaction (the set-up accept). */
   tx?: DbOrTx;
   repository?: ProgramAssignmentRepository;
@@ -41,7 +39,6 @@ export async function assignProgrammeInSequence(params: {
       scheduleMode: "sequence",
       showInPlan: params.showInPlan,
       showInLibrary: params.showInLibrary,
-      allowPublicProgram: params.allowPublicProgram,
     },
     params.today,
     params.tx,
