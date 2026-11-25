@@ -81,6 +81,10 @@ export const coachSessions = pgTable(
       sql`${t.kind} IN ('in_person', 'video', 'check_in_call', 'own_training')`,
     ),
     check(
+      "coach_sessions_reminder_minutes_check",
+      sql`${t.reminderMinutes} IS NULL OR ${t.reminderMinutes} BETWEEN 15 AND 10080`,
+    ),
+    check(
       "coach_sessions_duration_min_check",
       sql`${t.durationMin} BETWEEN 5 AND 720`,
     ),

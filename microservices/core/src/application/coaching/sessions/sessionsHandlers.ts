@@ -30,6 +30,7 @@ import {
 } from "./sessionRepository";
 import { announceSessionChanges } from "./sessionNotifications";
 import { MAX_OCCURRENCES } from "./sessionTimes";
+import { TICK_MINUTES } from "../scheduler/coachScheduler";
 
 /**
  * PER-123 (BE-I2, design I C4): the coach calendar, booking sessions (with
@@ -63,6 +64,13 @@ const trainerOnly = () =>
 const uuid = t.String({ format: "uuid" });
 const DAY_MS = 86_400_000;
 
+/**
+ * Reminders are sent by the 15-minute coach scheduler, so one shorter than a
+ * tick could fall between two runs and never go (Inspector Brad, #568). The
+ * migration's CHECK holds the same floor.
+ */
+export const MIN_REMINDER_MINUTES = TICK_MINUTES;
+
 const kindSchema = t.Union([
   t.Literal("in_person"),
   t.Literal("video"),
@@ -79,7 +87,10 @@ const sessionFields = {
   workoutId: t.Optional(t.Union([uuid, t.Null()])),
   notes: nullableText(NOTES_MAX),
   reminderMinutes: t.Optional(
-    t.Union([t.Integer({ minimum: 0, maximum: 10080 }), t.Null()]),
+    t.Union([
+      t.Integer({ minimum: MIN_REMINDER_MINUTES, maximum: 10080 }),
+      t.Null(),
+    ]),
   ),
   clientIds: t.Optional(t.Array(uuid, { maxItems: MAX_ATTENDEES })),
 };

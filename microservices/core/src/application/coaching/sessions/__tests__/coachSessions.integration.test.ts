@@ -745,6 +745,46 @@ describe("booking rules", () => {
     expect(today.json.data.counts.total).toBe(0);
   });
 
+  it("a second cancellation for the same attendee is its own feed event (Inspector Brad, #568)", async () => {
+    const { data } = await book(COACH_A, {
+      startsAt: FUTURE,
+      clientIds: [ATHLETE_C],
+    });
+    const path = `/trainers/me/sessions/${data.id}`;
+    // Taken off, put back, taken off again.
+    await http("PATCH", path, COACH_A, { clientIds: [] });
+    await http("PATCH", path, COACH_A, { clientIds: [ATHLETE_C] });
+    await http("PATCH", path, COACH_A, { clientIds: [] });
+    const events = await db
+      .select()
+      .from(schema.coachEvents)
+      .where(eq(schema.coachEvents.trainerId, COACH_A));
+    const actions = events.map((e) => (e.payload as Json).action).sort();
+    expect(actions).toEqual(["booked", "booked", "cancelled", "cancelled"]);
+    expect(new Set(events.map((e) => e.dedupeKey)).size).toBe(4);
+    // A replayed write still dedupes: the same change again adds nothing.
+    await announceSessionChanges(COACH_A, [
+      {
+        action: "cancelled",
+        // The last removal was revision 4.
+        session: { ...data, revision: 4 },
+        attendees: [
+          {
+            clientId: ATHLETE_C,
+            relationshipId: await relationshipId(COACH_A, ATHLETE_C),
+          },
+        ],
+        occurrences: 1,
+      },
+    ]);
+    expect(
+      await db
+        .select()
+        .from(schema.coachEvents)
+        .where(eq(schema.coachEvents.trainerId, COACH_A)),
+    ).toHaveLength(4);
+  });
+
   it("a failed push or event write never fails the booking", async () => {
     pushes.failFor = ATHLETE_C;
     const { data } = await book(COACH_A, {
@@ -991,6 +1031,127 @@ describe("athlete accept or decline", () => {
     );
     expect(r3.status).toBe(409);
     expect(r3.json.code).toBe("session_started");
+  });
+
+  /**
+   * Runs `concurrent` SQL just before the respond UPDATE executes, after its
+   * read: the coach's write lands between the athlete's check and write.
+   */
+  async function respondRacing(
+    sessionId: string,
+    concurrent: string,
+    status: "accepted" | "declined" = "accepted",
+  ) {
+    const real = db;
+    let armed = true;
+    holder.db = new Proxy(real, {
+      get(target, prop) {
+        if (prop === "update" && armed) {
+          armed = false;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          return (table: any) => ({
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            set: (values: any) => ({
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              where: (cond: any) => ({
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                returning: async (cols: any) => {
+                  await pg.exec(concurrent);
+                  return target
+                    .update(table)
+                    .set(values)
+                    .where(cond)
+                    .returning(cols);
+                },
+              }),
+            }),
+          });
+        }
+        const value = Reflect.get(target, prop, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    try {
+      return await http(
+        "POST",
+        `/users/me/coach-sessions/${sessionId}/respond`,
+        ATHLETE_C,
+        { status },
+      );
+    } finally {
+      holder.db = real;
+    }
+  }
+
+  it("a coach's concurrent removal, cancel or offboarding always wins over a response (Inspector Brad, #568)", async () => {
+    const statusOf = async (sessionId: string) =>
+      (await attendeeRows()).find(
+        (r) => r.sessionId === sessionId && r.clientId === ATHLETE_C,
+      )!.status;
+
+    const removed = await book(COACH_A, {
+      startsAt: FUTURE,
+      clientIds: [ATHLETE_C],
+    });
+    const r1 = await respondRacing(
+      removed.data.id,
+      `update coach_session_attendees set status = 'cancelled' where session_id = '${removed.data.id}'`,
+    );
+    expect(r1.status).toBe(409);
+    expect(r1.json.code).toBe("not_booked");
+    expect(await statusOf(removed.data.id)).toBe("cancelled");
+
+    const cancelled = await book(COACH_A, {
+      startsAt: FUTURE,
+      clientIds: [ATHLETE_C],
+    });
+    const r2 = await respondRacing(
+      cancelled.data.id,
+      `update coach_sessions set cancelled_at = now() where id = '${cancelled.data.id}'`,
+    );
+    expect(r2.status).toBe(409);
+    expect(r2.json.code).toBe("session_cancelled");
+    expect(await statusOf(cancelled.data.id)).toBe("invited");
+
+    const ended = await book(COACH_A, {
+      startsAt: FUTURE,
+      clientIds: [ATHLETE_C],
+    });
+    const relC = await relationshipId(COACH_A, ATHLETE_C);
+    const r3 = await respondRacing(
+      ended.data.id,
+      `update pt_client_relationships set status = 'terminated' where id = '${relC}'`,
+    );
+    expect(r3.status).toBe(404);
+    expect(await statusOf(ended.data.id)).toBe("invited");
+    await pg.exec(
+      `update pt_client_relationships set status = 'active' where id = '${relC}'`,
+    );
+
+    // The same answer landing first (a replayed request) is still a success.
+    const same = await book(COACH_A, {
+      startsAt: FUTURE,
+      clientIds: [ATHLETE_C],
+    });
+    const r4 = await respondRacing(
+      same.data.id,
+      `update coach_session_attendees set status = 'accepted' where session_id = '${same.data.id}'`,
+    );
+    expect(r4.status).toBe(200);
+    expect(r4.json.data.status).toBe("accepted");
+
+    // The session started between the read and the write.
+    const starting = await book(COACH_A, {
+      startsAt: FUTURE,
+      clientIds: [ATHLETE_C],
+    });
+    const r5 = await respondRacing(
+      starting.data.id,
+      `update coach_sessions set starts_at = now() - interval '1 minute' where id = '${starting.data.id}'`,
+    );
+    expect(r5.status).toBe(409);
+    expect(r5.json.code).toBe("session_started");
+    expect(await statusOf(starting.data.id)).toBe("invited");
   });
 
   it("lists upcoming sessions by default and checks the range", async () => {
@@ -1258,6 +1419,47 @@ describe("design I test 4: reminders", () => {
     expect(summary).toEqual({ claimed: 2, sent: 2 });
   });
 
+  it("refuses a reminder shorter than one scheduler tick (Inspector Brad, #568)", async () => {
+    for (const reminderMinutes of [0, 14]) {
+      const res = await http("POST", "/trainers/me/sessions", COACH_A, {
+        kind: "in_person",
+        durationMin: 60,
+        startsAt: FUTURE,
+        reminderMinutes,
+      });
+      expect(res.status).toBe(422);
+    }
+    expect(await sessionRows()).toHaveLength(0);
+    const { data } = await book(COACH_A, {
+      startsAt: FUTURE,
+      reminderMinutes: 15,
+    });
+    expect(data.reminderMinutes).toBe(15);
+    const edit = await http(
+      "PATCH",
+      `/trainers/me/sessions/${data.id}`,
+      COACH_A,
+      { reminderMinutes: 14 },
+    );
+    expect(edit.status).toBe(422);
+    expect((await sessionRows())[0]!.reminderMinutes).toBe(15);
+  });
+
+  it("a 15-minute reminder always lands on a tick before an off-tick start", async () => {
+    // 09:07 start: due 08:52, so the 09:00 tick sends it, before the start.
+    const { data } = await book(COACH_A, {
+      startsAt: "2027-03-23T09:07:00Z",
+      clientIds: [ATHLETE_C],
+      reminderMinutes: 15,
+    });
+    expect(data.startsAt).toBe("2027-03-23T09:07:00.000Z");
+    pushes.list = [];
+    await tickThrough("2027-03-23T08:00:00Z", "2027-03-23T09:30:00Z");
+    expect(reminders()).toHaveLength(1);
+    const [row] = await attendeeRows();
+    expect(row!.remindedAt!.toISOString()).toBe("2027-03-23T09:00:00.000Z");
+  });
+
   it("runs as the last job of coachSchedulerCron", () => {
     expect(COACH_SCHEDULER_JOBS.at(-1)).toBe(sessionRemindersJob);
     expect(sessionRemindersJob.cadence).toBe("tick");
@@ -1321,6 +1523,14 @@ describe(MIGRATION, () => {
         insert("kind, client_request_id", "'video', 'k'"),
       ).rejects.toThrow();
       await expect(insert("kind", "'party'")).rejects.toThrow();
+      // Reminders are at least one scheduler tick (15 minutes).
+      await expect(
+        insert("kind, reminder_minutes", "'video', 14"),
+      ).rejects.toThrow();
+      await expect(
+        insert("kind, reminder_minutes", "'video', 0"),
+      ).rejects.toThrow();
+      await insert("kind, reminder_minutes", "'video', 15");
       await expect(
         insert("kind, video_url", "'video', 'http://x'"),
       ).rejects.toThrow();

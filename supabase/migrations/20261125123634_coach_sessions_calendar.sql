@@ -42,8 +42,10 @@ CREATE TABLE IF NOT EXISTS coach_sessions (
   -- Shared by the occurrences of one weekly repeat; NULL for a one-off.
   series_id          uuid,
   notes              text CHECK (notes IS NULL OR char_length(notes) <= 2000),
-  -- Minutes before starts_at to remind attendees; NULL = no reminder.
-  reminder_minutes   integer CHECK (reminder_minutes IS NULL OR reminder_minutes BETWEEN 0 AND 10080),
+  -- Minutes before starts_at to remind attendees; NULL = no reminder. At
+  -- least 15: the reminder is sent by the 15-minute coach scheduler, so a
+  -- shorter one could fall between two runs and never go (C4 shows "2 h").
+  reminder_minutes   integer CHECK (reminder_minutes IS NULL OR reminder_minutes BETWEEN 15 AND 10080),
   cancelled_at       timestamptz,
   revision           integer NOT NULL DEFAULT 1,
   client_request_id  text CHECK (client_request_id IS NULL OR char_length(client_request_id) <= 200),

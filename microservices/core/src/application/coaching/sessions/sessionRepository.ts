@@ -832,9 +832,40 @@ export type RespondResult =
         | "session_started";
     };
 
+type RespondRefusal = Extract<RespondResult, { ok: false }>["reason"];
+
+interface Booking {
+  relationshipId: string;
+  attendeeStatus: CoachSessionAttendeeStatus;
+  startsAt: Date;
+  cancelledAt: Date | null;
+}
+
+/** Why a response is refused, or null when it may be recorded. */
+function refusalFor(
+  booking: Booking | null,
+  status: "accepted" | "declined",
+  now: Date,
+): RespondRefusal | null {
+  if (!booking) return "not_found";
+  if (booking.cancelledAt) return "session_cancelled";
+  if (booking.attendeeStatus === "cancelled") return "not_booked";
+  // The same answer again is a harmless replay, even after the start.
+  if (booking.attendeeStatus !== status && booking.startsAt <= now) {
+    return "session_started";
+  }
+  return null;
+}
+
 /**
  * The athlete accepts or declines their booking. Idempotent; allowed until
  * the session starts. Writes no coach event (Brad, 25 Nov).
+ *
+ * The UPDATE carries every precondition itself (still booked, session not
+ * cancelled and not started, relationship active), so a coach removing the
+ * athlete, cancelling the session or coaching ending between the read and
+ * the write always wins (Inspector Brad, #568). When it updates nothing,
+ * the booking is read again and refused the same way the check would.
  */
 export async function respondToSession(
   clientId: string,
@@ -843,7 +874,66 @@ export async function respondToSession(
   now: Date = new Date(),
 ): Promise<RespondResult> {
   const db = getDb();
-  const rows = await db
+  let booking = await readBooking(clientId, sessionId);
+  let refusal = refusalFor(booking, status, now);
+  if (refusal) return { ok: false, reason: refusal };
+  if (booking!.attendeeStatus !== status) {
+    const live = db
+      .select({ id: coachSessions.id })
+      .from(coachSessions)
+      .where(
+        and(
+          eq(coachSessions.id, sessionId),
+          isNull(coachSessions.cancelledAt),
+          gt(coachSessions.startsAt, now),
+        ),
+      );
+    const active = db
+      .select({ id: ptClientRelationships.id })
+      .from(ptClientRelationships)
+      .where(
+        and(
+          eq(ptClientRelationships.clientId, clientId),
+          eq(ptClientRelationships.status, "active"),
+        ),
+      );
+    const updated = await db
+      .update(coachSessionAttendees)
+      .set({ status, updatedAt: now })
+      .where(
+        and(
+          eq(coachSessionAttendees.sessionId, sessionId),
+          eq(coachSessionAttendees.clientId, clientId),
+          eq(coachSessionAttendees.relationshipId, booking!.relationshipId),
+          ne(coachSessionAttendees.status, "cancelled"),
+          inArray(coachSessionAttendees.sessionId, live),
+          inArray(coachSessionAttendees.relationshipId, active),
+        ),
+      )
+      .returning({ sessionId: coachSessionAttendees.sessionId });
+    if (updated.length === 0) {
+      booking = await readBooking(clientId, sessionId);
+      refusal = refusalFor(booking, status, now);
+      // Nothing changed, and not because the same answer landed first.
+      if (refusal || booking!.attendeeStatus !== status) {
+        return { ok: false, reason: refusal ?? "session_started" };
+      }
+    }
+  }
+  const list = await athleteSessions(
+    clientId,
+    booking!.startsAt,
+    new Date(booking!.startsAt.getTime() + 1),
+  );
+  return { ok: true, session: list.find((s) => s.id === sessionId)! };
+}
+
+/** The athlete's booking on a session, through an active relationship. */
+async function readBooking(
+  clientId: string,
+  sessionId: string,
+): Promise<Booking | null> {
+  const rows = await getDb()
     .select({
       relationshipId: coachSessionAttendees.relationshipId,
       attendeeStatus: coachSessionAttendees.status,
@@ -867,29 +957,7 @@ export async function respondToSession(
       ),
     )
     .limit(1);
-  const row = rows[0];
-  if (!row) return { ok: false, reason: "not_found" };
-  if (row.cancelledAt) return { ok: false, reason: "session_cancelled" };
-  if (row.attendeeStatus === "cancelled")
-    return { ok: false, reason: "not_booked" };
-  if (row.attendeeStatus !== status) {
-    if (row.startsAt <= now) return { ok: false, reason: "session_started" };
-    await db
-      .update(coachSessionAttendees)
-      .set({ status, updatedAt: now })
-      .where(
-        and(
-          eq(coachSessionAttendees.sessionId, sessionId),
-          eq(coachSessionAttendees.relationshipId, row.relationshipId),
-        ),
-      );
-  }
-  const list = await athleteSessions(
-    clientId,
-    row.startsAt,
-    new Date(row.startsAt.getTime() + 1),
-  );
-  return { ok: true, session: list.find((s) => s.id === sessionId)! };
+  return rows[0] ?? null;
 }
 
 /**

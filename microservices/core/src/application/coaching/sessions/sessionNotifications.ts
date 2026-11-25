@@ -153,9 +153,10 @@ export async function pushToAthlete(
 /** The dedupe key of one change's event for one attendee. */
 function dedupeKey(change: SessionChange, relationshipId: string): string {
   const s = change.session;
-  // A move or re-booking is a new revision; a cancel happens once.
-  const version = change.action === "cancelled" ? "" : `:r${s.revision}`;
-  return `session_booked:${change.action}:${s.id}${version}:${relationshipId}`;
+  // Every write bumps the revision, so each booking, move or cancellation
+  // (an attendee taken off, re-added and taken off again) is its own event,
+  // while a replay of the same write still dedupes (Inspector Brad, #568).
+  return `session_booked:${change.action}:${s.id}:r${s.revision}:${relationshipId}`;
 }
 
 /** Events and pushes for some committed changes. Never throws. */
