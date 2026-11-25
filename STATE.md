@@ -1,5 +1,41 @@
 # Project memory · persistence-backend-sst
 
+### 2026-11-25 — APP-F1 athlete progress photos: gallery, phone-camera capture, portrait viewer, offline uploads ([PER-137](https://linear.app/evans-software-solutions/issue/PER-137); branch `claude/per-137-athlete-photos`)
+
+Mobile only, over the air on 1.2.0, no native change. Uses BE-F1 (#553).
+
+- **Screens:** Y1 You page gallery row (latest set; "See all"; with no
+  photos it reads "Gallery" + "Add photos", not on the canvas), Y3 Gallery
+  (`/(app)/progress-photos`), Y3b Add photos (`/(app)/progress-photos-add`),
+  Y3c viewer in portrait (`/(app)/progress-photo-viewer?setId=&pose=`, full
+  screen). Delete is a trash button in the viewer (not on the canvas).
+- **Capture:** `expo-image-picker` camera or library → `expo-image-manipulator`
+  JPEG, long edge ≤ 2048 px (`resizeToLongEdge`), size measured for the
+  pinned upload.
+- **Offline:** a saved set is a `pending_progress_photos` row (new SQLite
+  table, one JSON payload per set). `processProgressPhotoUploads` (end of
+  `sync.command.ts`) runs create (same `Idempotency-Key` every try) → PUT
+  each photo to the presigned link → complete, with back-off 5 s → 1 h and no
+  give-up on transport/5xx/408/429/upload errors; other API 4xx → `rejected`,
+  a gone file → `file_missing` (both stop, shown "Couldn't upload").
+  `useProgressPhotoUploadWorker` (mounted beside `useSyncWorker`) runs it on
+  mount, save, foreground, reconnect and when the next retry is due.
+  Delete and the sharing grant use the JSON sync queue.
+- **`expo-file-system`:** in the 1.2.0 binary (55.0.22, a dependency of
+  `expo`), but not importable without adding it to
+  `packages/mobile/package.json` (out of bounds while PER-147 edits it). So
+  the design's fallback is used: unsent photos stay where the manipulator
+  wrote them (the cache directory) and the gallery warns they could be lost.
+  Files are read with RN `fetch(file://…).blob()`.
+- **Gallery cache:** `cached_progress_photos` (full read each time; links
+  last 15 min); images cached by `expo-image` with `cacheKey` = photo id.
+- **Sharing prompt:** after Save, if `photoSharing.needsPrompt` and the
+  athlete hasn't answered for those coaches on this phone; body is the
+  server's `copy` (`PHOTO_SHARING_COPY` placeholder from PER-121).
+- **Copy Brad still has to write/confirm:** the sharing wording; the pending
+  warning, "Uploading", "Couldn't upload", the delete confirm and the
+  permission alerts (not on the canvas).
+
 ### 2026-11-24 — Tooling: TypeScript 7, Oxlint (tsrs type-aware), Vitest 5, Vite 8 ([PER-148](https://linear.app/evans-software-solutions/issue/PER-148); branch `claude/brave-dirac-h9ianz`)
 
 Cuts check time, which was the cause of CI and local timeouts. No CI caching
