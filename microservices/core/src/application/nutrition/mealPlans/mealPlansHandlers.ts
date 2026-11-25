@@ -18,6 +18,11 @@ import {
   MANUAL_MEAL_PLANS_DENIED,
 } from "./manualMealPlans";
 import { duplicatePlan } from "./copyGraph";
+import { MealPlanRepository } from "../../repositories/mealPlanRepository";
+import {
+  MEALPRINT_PLAN_DEFAULT_NAME,
+  planInputFromMealprint,
+} from "./fromMealprint";
 import { clientUpdateAssignment } from "./assignments";
 
 /**
@@ -97,6 +102,11 @@ const READ_ONLY = {
   message:
     "Plans from your coach can be read, duplicated and logged, not edited",
 } as const;
+const MEALPRINT_PLAN_NOT_FOUND = { error: "mealprint_plan_not_found" } as const;
+const MEALPRINT_NUTRITION_UNAVAILABLE = {
+  error: "plan_meal_nutrition_unavailable",
+  message: "Some foods in this Mealprint day are no longer available",
+} as const;
 const NOT_A_TRAINER = {
   error: "not_a_trainer",
   message: "Coach actions require a trainer role",
@@ -135,6 +145,60 @@ async function createPlan(
   }
   // A replay answers exactly like the first create (201, same body), as
   // `POST /nutrition/entries` does.
+  ctx.set.status = 201;
+  return { data: result.plan };
+}
+
+/**
+ * PER-119 — `POST /nutrition/meal-plans {fromMealprintPlanId}`. Same
+ * capability, `Idempotency-Key` and 201 answer as a manual create; the plan
+ * is `source: 'mealprint'` with `sourcePlanId` = the dated plan, which is
+ * left unchanged. A replay answers with the first plan even if the dated
+ * plan has gone since.
+ */
+async function createFromMealprint(
+  ctx: Ctx & { headers: Record<string, string | undefined> },
+  userId: string,
+  body: { fromMealprintPlanId: string; name?: string },
+) {
+  if (!(await canCreateManualMealPlans(userId))) {
+    ctx.set.status = 403;
+    return MANUAL_MEAL_PLANS_DENIED;
+  }
+  const key = readIdempotencyKey(ctx.headers);
+  if (key) {
+    const existing = await repo().findByKey(userId, key);
+    if (existing) {
+      ctx.set.status = 201;
+      return { data: await repo().getDto(userId, existing) };
+    }
+  }
+  const source = await new MealPlanRepository().get(
+    userId,
+    body.fromMealprintPlanId,
+  );
+  if (!source) {
+    ctx.set.status = 404;
+    return MEALPRINT_PLAN_NOT_FOUND;
+  }
+  const built = await planInputFromMealprint(
+    userId,
+    source,
+    body.name ?? MEALPRINT_PLAN_DEFAULT_NAME,
+  );
+  if (!built.ok) {
+    ctx.set.status = 409;
+    return { ...MEALPRINT_NUTRITION_UNAVAILABLE, items: built.items };
+  }
+  const result = await repo().create(userId, built.input, {
+    source: "mealprint",
+    sourcePlanId: source.id,
+    clientRequestId: key,
+  });
+  if (!result.ok) {
+    ctx.set.status = 400;
+    return { error: result.error };
+  }
   ctx.set.status = 201;
   return { data: result.plan };
 }
@@ -201,8 +265,25 @@ export const nutritionMealPlansHandlers = authed()
   )
   .post(
     "/nutrition/meal-plans",
-    async (ctx) => createPlan(ctx, getUser(ctx).sub, ctx.body, "manual"),
-    { body: t.Object(planBodyFields) },
+    async (ctx) => {
+      const { sub: userId } = getUser(ctx);
+      const body = ctx.body;
+      if ("fromMealprintPlanId" in body) {
+        return createFromMealprint(ctx, userId, body);
+      }
+      return createPlan(ctx, userId, body, "manual");
+    },
+    {
+      // `{name, meals}`, or (PER-119, N21) `{fromMealprintPlanId, name?}`:
+      // save a Mealprint day as a list plan with no weekdays.
+      body: t.Union([
+        t.Object(planBodyFields),
+        t.Object({
+          fromMealprintPlanId: t.String({ format: "uuid" }),
+          name: t.Optional(t.String({ minLength: 1, maxLength: 80 })),
+        }),
+      ]),
+    },
   )
   .get(
     "/nutrition/meal-plans/:id",

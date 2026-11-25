@@ -62,6 +62,8 @@ interface VerifiedPlanMeal {
   name: string;
   reason: string;
   logSlot: string;
+  /** PER-119: the person's meal name — present only when `meals` was sent. */
+  label?: string;
   items: Array<{
     candidateId: string;
     kind: MealprintCandidate["kind"];
@@ -171,7 +173,12 @@ export const nutritionAiPlanGenerateHandler = new Elysia()
           ctx.NutritionTargetRepository.get(userId),
           ctx.NutritionPreferenceRepository.get(userId),
         ]);
-        const mealsPerDay = ctx.body.mealsPerDay ?? preferences.mealsPerDay;
+        // PER-119: `meals` (the person's own meals) replaces `mealsPerDay` —
+        // one generated meal per entry, in order, labelled with its name.
+        // Absent keeps the 1.2.0 contract exactly.
+        const namedMeals = ctx.body.meals;
+        const mealsPerDay =
+          namedMeals?.length ?? ctx.body.mealsPerDay ?? preferences.mealsPerDay;
 
         const respondEmpty = (
           emptyReason: "no_targets" | "no_candidates",
@@ -307,9 +314,22 @@ export const nutritionAiPlanGenerateHandler = new Elysia()
             savedEffortLevel: preferences.effortLevel,
             effortLevel,
             locale,
+            ...(namedMeals ? { namedMeals } : {}),
           },
           { timeoutMs: attemptMs },
         );
+
+        // With `meals`, each composed meal fills the requested meal at its
+        // position: it takes that meal's slot (not the model's choice) and its
+        // name as `label`. Extra meals beyond the request are discarded.
+        const composedMeals = namedMeals
+          ? result.meals
+              .filter((meal) => meal.position < namedMeals.length)
+              .map((meal) => ({
+                ...meal,
+                logSlot: namedMeals[meal.position]!.logSlot,
+              }))
+          : result.meals;
 
         // Stage 3 — recompute every macro from the candidate rows handed to the
         // model, and re-run avoidance per item (defence in depth). The model's
@@ -319,7 +339,7 @@ export const nutritionAiPlanGenerateHandler = new Elysia()
           assembly.candidates.map((candidate) => [candidate.id, candidate]),
         );
 
-        const verifiedMeals: VerifiedPlanMeal[] = result.meals.map((meal) => {
+        const verifiedMeals: VerifiedPlanMeal[] = composedMeals.map((meal) => {
           let kcal = 0;
           let proteinG = 0;
           let carbsG = 0;
@@ -373,6 +393,9 @@ export const nutritionAiPlanGenerateHandler = new Elysia()
             name: meal.name,
             reason: meal.reason,
             logSlot: meal.logSlot,
+            // Only with `meals`: the person's meal name, for
+            // `POST /nutrition/plans` `meals[].label` on accept.
+            ...(namedMeals ? { label: namedMeals[meal.position]!.name } : {}),
             items,
             kcal: round(kcal),
             proteinG: round(proteinG),
@@ -484,6 +507,23 @@ export const nutritionAiPlanGenerateHandler = new Elysia()
         ),
         steer: t.Optional(t.String({ maxLength: 200 })),
         notWantedMeals: notWantedMealsSchema,
+        // PER-119 (Design D): the person's own meals ("Your meals"), in order,
+        // in place of `mealsPerDay`. Same 2–6 bound as `mealsPerDay`; names
+        // are Your meals' 1–40 characters.
+        meals: t.Optional(
+          t.Array(
+            t.Object({
+              name: t.String({ minLength: 1, maxLength: 40 }),
+              logSlot: t.Union([
+                t.Literal("breakfast"),
+                t.Literal("lunch"),
+                t.Literal("snack"),
+                t.Literal("dinner"),
+              ]),
+            }),
+            { minItems: 2, maxItems: 6 },
+          ),
+        ),
       }),
     },
   );

@@ -539,3 +539,131 @@ it("preserves the entire bounded rejection history", async () => {
     notWantedMeals,
   );
 });
+
+// PER-119 (Design D) — `meals: [{name, logSlot}]` in place of `mealsPerDay`.
+describe("POST /nutrition/ai/plan-generate with Your meals", () => {
+  const MEALS = [
+    { name: "Pre-gym", logSlot: "breakfast" },
+    { name: "Desk lunch", logSlot: "lunch" },
+    { name: "Family dinner", logSlot: "dinner" },
+  ];
+  const composed = (position: number, logSlot: string, id: string) => ({
+    name: `Dish ${position}`,
+    reason: "fits",
+    logSlot,
+    position,
+    items: [{ candidateId: id, servings: 1 }],
+  });
+  const usage = {
+    modelId: "m",
+    latencyMs: 10,
+    inputTokens: 1,
+    outputTokens: 1,
+  };
+
+  it("composes one meal per named meal and labels each with its name and slot", async () => {
+    composeDayPlanMock.mockResolvedValue({
+      meals: [
+        composed(0, "snack", "c1"), // the model's slot is overridden
+        composed(1, "lunch", "c2"),
+        composed(2, "dinner", "c3"),
+        composed(3, "snack", "c1"), // beyond the request: discarded
+      ],
+      usage,
+    });
+    const res = await app.handle(post({ meals: MEALS, mealsPerDay: 5 }));
+    expect(res.status).toBe(200);
+    const parsed = await body(res);
+    expect(parsed.data.mealsPerDay).toBe(3);
+    expect(
+      parsed.data.meals.map((m: any) => [m.label, m.logSlot, m.name]),
+    ).toEqual([
+      ["Pre-gym", "breakfast", "Dish 0"],
+      ["Desk lunch", "lunch", "Dish 1"],
+      ["Family dinner", "dinner", "Dish 2"],
+    ]);
+    const arg = composeDayPlanMock.mock.calls[0]![0];
+    expect(arg.mealsPerDay).toBe(3);
+    expect(arg.namedMeals).toEqual(MEALS);
+  });
+
+  it("keeps each label on its own meal when the composer dropped one", async () => {
+    composeDayPlanMock.mockResolvedValue({
+      meals: [composed(0, "breakfast", "c1"), composed(2, "dinner", "c3")],
+      usage,
+    });
+    const parsed = await body(await app.handle(post({ meals: MEALS })));
+    expect(parsed.data.meals.map((m: any) => m.label)).toEqual([
+      "Pre-gym",
+      "Family dinner",
+    ]);
+  });
+
+  it("uses the snack ceiling for a named meal in the snack slot", async () => {
+    candidateMocks.listCuratedCandidates.mockResolvedValue([
+      candidate("c1", { kcal: 550 }),
+    ]);
+    composeDayPlanMock.mockResolvedValue({
+      meals: [composed(0, "breakfast", "c1"), composed(2, "breakfast", "c1")],
+      usage,
+    });
+    // 4 meals of 2,000 kcal: meal ceiling 675, snack ceiling 375.
+    const parsed = await body(
+      await app.handle(
+        post({
+          meals: [
+            { name: "Big breakfast", logSlot: "breakfast" },
+            { name: "Lunch", logSlot: "lunch" },
+            { name: "Afternoon", logSlot: "snack" },
+            { name: "Dinner", logSlot: "dinner" },
+          ],
+        }),
+      ),
+    );
+    expect(parsed.data.meals.map((m: any) => m.logSlot)).toEqual([
+      "breakfast",
+      "snack",
+    ]);
+    expect(parsed.data.meals.map((m: any) => m.flaggedPortion)).toEqual([
+      false,
+      true,
+    ]);
+  });
+
+  it("leaves the 1.2.0 response unchanged without meals (no label)", async () => {
+    const parsed = await body(await app.handle(post({})));
+    expect(parsed.data.mealsPerDay).toBe(3);
+    for (const meal of parsed.data.meals) {
+      expect(meal).not.toHaveProperty("label");
+    }
+    expect(composeDayPlanMock.mock.calls[0]![0]).not.toHaveProperty(
+      "namedMeals",
+    );
+  });
+
+  it.each([
+    [[{ name: "Only one", logSlot: "lunch" }]],
+    [Array.from({ length: 7 }, () => ({ name: "M", logSlot: "lunch" }))],
+    [
+      [
+        { name: "", logSlot: "lunch" },
+        { name: "B", logSlot: "dinner" },
+      ],
+    ],
+    [
+      [
+        { name: "x".repeat(41), logSlot: "lunch" },
+        { name: "B", logSlot: "dinner" },
+      ],
+    ],
+    [
+      [
+        { name: "A", logSlot: "brunch" },
+        { name: "B", logSlot: "dinner" },
+      ],
+    ],
+  ])("rejects an invalid meals list before inference", async (meals) => {
+    expect((await app.handle(post({ meals }))).status).toBe(422);
+    expect(composeDayPlanMock).not.toHaveBeenCalled();
+  });
+});
