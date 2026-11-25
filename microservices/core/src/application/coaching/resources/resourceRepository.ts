@@ -511,15 +511,61 @@ export async function ownLiveResources(
     );
 }
 
+export type BulkAssignResult =
+  | { ok: true; assignments: ClientResourceDTO[]; created: number }
+  /** These clients' relationships ended after the handler's check. */
+  | { ok: false; endedClientIds: string[] };
+
+/**
+ * Bulk assign in one transaction. The target relationships are locked
+ * `FOR UPDATE` and re-checked as this trainer's ACTIVE ones first, so an
+ * ending that commits between the handler's `resolveCoachScope` and the
+ * insert can't leave a live assignment on an ended relationship (offboarding
+ * updates the same row, so it waits for this, or this waits for it and sees
+ * it ended). If any target ended, nothing is assigned (Inspector Brad, #563).
+ */
 export async function bulkAssign(
   trainerId: string,
   resources: CoachResource[],
   targets: AssignTarget[],
   clientRequestId: string | null,
-): Promise<{ assignments: ClientResourceDTO[]; created: number }> {
-  return getDb().transaction((tx) =>
-    assignInTx(tx, trainerId, resources, targets, clientRequestId),
-  );
+): Promise<BulkAssignResult> {
+  return getDb().transaction(async (tx) => {
+    const locked =
+      targets.length === 0
+        ? []
+        : await tx
+            .select({
+              id: ptClientRelationships.id,
+              clientId: ptClientRelationships.clientId,
+            })
+            .from(ptClientRelationships)
+            .where(
+              and(
+                inArray(
+                  ptClientRelationships.id,
+                  targets.map((t) => t.relationshipId),
+                ),
+                eq(ptClientRelationships.trainerId, trainerId),
+                eq(ptClientRelationships.status, "active"),
+              ),
+            )
+            .orderBy(asc(ptClientRelationships.id))
+            .for("update");
+    const active = new Set(locked.map((r) => `${r.id}:${r.clientId}`));
+    const ended = targets
+      .filter((t) => !active.has(`${t.relationshipId}:${t.clientId}`))
+      .map((t) => t.clientId);
+    if (ended.length > 0) return { ok: false, endedClientIds: ended };
+    const result = await assignInTx(
+      tx,
+      trainerId,
+      resources,
+      targets,
+      clientRequestId,
+    );
+    return { ok: true, ...result };
+  });
 }
 
 /** The client's Resources tab (C3.7): this coach's live assignments. */
@@ -644,6 +690,17 @@ export async function listAthleteResources(
               gt(ptClientRelationships.updatedAt, since),
               // Soft-delete and restore of the coach only touch profiles.
               gt(profiles.updatedAt, since),
+              // Every visible FILE comes back on each delta too: its signed
+              // link lasts 15 minutes, so an offline-first cache would
+              // otherwise keep a dead URL (Inspector Brad, #563). Links
+              // don't expire and only come back when they change.
+              and(
+                eq(coachResources.kind, "file"),
+                isNull(coachResourceAssignments.removedAt),
+                isNull(coachResources.archivedAt),
+                eq(ptClientRelationships.status, "active"),
+                isNull(profiles.deletedAt),
+              ),
             ),
           )
         : and(

@@ -290,8 +290,19 @@ export const coachResourcesHandler = trainerOnly()
         targets,
         readIdempotencyKey(ctx.headers),
       );
+      if (!result.ok) {
+        // Coaching ended after the check above: same answer, nothing assigned.
+        ctx.set.status = 403;
+        return {
+          code: "not_your_client",
+          message: "You can only act for your active clients",
+          clientIds: result.endedClientIds,
+        };
+      }
       ctx.set.status = result.created > 0 ? 201 : 200;
-      return { data: result };
+      return {
+        data: { assignments: result.assignments, created: result.created },
+      };
     },
     {
       body: t.Object({

@@ -69,7 +69,7 @@ import { setS3ClientForTests } from "../../../media/privateMediaStore";
 import { FakeBucket } from "../../../media/__tests__/fakeS3";
 import { currentDeclarationVersion } from "../../declaration";
 import { availableSections } from "../../setupSections";
-import { cleanUrl } from "../resourceRepository";
+import { bulkAssign, cleanUrl, ownLiveResources } from "../resourceRepository";
 
 const MIGRATIONS = "../../../../../../../supabase/migrations/";
 const ROLLBACKS = "../../../../../../../supabase/rollbacks/";
@@ -1083,6 +1083,69 @@ describe("set-up section: resource", () => {
     expect(copied.json.data.setup.resource.map((i: Json) => i.refId)).toEqual([
       mineRes.id,
     ]);
+  });
+});
+
+// ─── Inspector Brad #563 ────────────────────────────────────────────────────
+
+describe("Inspector Brad #563", () => {
+  it("a ?since= list re-sends every visible file with a fresh link, but not an unchanged link", async () => {
+    const pdf = await file(COACH_C);
+    const web = await link(COACH_C);
+    await assign(COACH_C, [pdf.id, web.id], [ATHLETE_A]);
+    // Nothing changed after this point (asOf trails the clock, so use a
+    // time after every write).
+    const since = new Date(Date.now() + 60_000).toISOString();
+    const res = await mine(ATHLETE_A, `?since=${encodeURIComponent(since)}`);
+    expect(res.status).toBe(200);
+    expect(res.json.data.deletedIds).toEqual([]);
+    expect(res.json.data.resources).toHaveLength(1);
+    const [row] = res.json.data.resources;
+    expect(row).toMatchObject({ resourceId: pdf.id, kind: "file" });
+    expect(new URL(row.url).pathname).toBe(
+      `/resources/${COACH_C}/${pdf.mediaId}/file.pdf`,
+    );
+    expect(Date.parse(row.urlExpiresAt)).toBeGreaterThan(Date.now());
+    // Once coaching ends the file isn't re-sent as visible.
+    await end(COACH_C, ATHLETE_A);
+    const after = await mine(ATHLETE_A, `?since=${encodeURIComponent(since)}`);
+    expect(after.json.data.resources).toEqual([]);
+  });
+
+  it("bulk assign aborts when a relationship ends between the check and the insert", async () => {
+    const res = await link(COACH_C);
+    const rels = await db
+      .select()
+      .from(schema.ptClientRelationships)
+      .where(eq(schema.ptClientRelationships.trainerId, COACH_C));
+    const target = (clientId: string) => ({
+      clientId,
+      relationshipId: rels.find((r) => r.clientId === clientId)!.id,
+    });
+    const targets = [target(ATHLETE_A), target(ATHLETE_B)];
+    const resources = await ownLiveResources(COACH_C, [res.id]);
+    // The handler's resolveCoachScope passed; then A leaves.
+    expect((await end(COACH_C, ATHLETE_A)).ok).toBe(true);
+    const result = await bulkAssign(COACH_C, resources, targets, null);
+    expect(result).toEqual({ ok: false, endedClientIds: [ATHLETE_A] });
+    expect(await db.select().from(schema.coachResourceAssignments)).toEqual([]);
+    // Another coach's relationship id is refused the same way.
+    const eRel = (
+      await db
+        .select()
+        .from(schema.ptClientRelationships)
+        .where(eq(schema.ptClientRelationships.trainerId, COACH_E))
+    )[0]!;
+    expect(
+      await bulkAssign(
+        COACH_C,
+        resources,
+        [{ clientId: ATHLETE_A, relationshipId: eRel.id }],
+        null,
+      ),
+    ).toEqual({ ok: false, endedClientIds: [ATHLETE_A] });
+    const ok = await bulkAssign(COACH_C, resources, [target(ATHLETE_B)], null);
+    expect(ok).toMatchObject({ ok: true, created: 1 });
   });
 });
 
