@@ -160,3 +160,17 @@ export const togetherOfflineAuthority = new sst.Secret(
   "TogetherOfflineAuthority",
   "",
 );
+
+// Stream — coach–client chat (PER-92; PER-110 spike, Design E). The backend
+// issues Stream user tokens and manages channels with the API secret; the
+// API key is public-safe but travels with it for per-stage wiring.
+//
+// OPTIONAL + fail-safe (empty default), like `ResendApiKey`: nothing reads these
+// yet, so a stage without them deploys exactly as before. Whoever builds the
+// chat backend links them to the API Lambda and treats empty as "chat not
+// configured". The secret is server-only and never shipped to any client.
+//
+// Set per-stage from CI (STREAM_API_KEY / STREAM_API_SECRET on the staging and
+// Production GitHub environments). Never file-commit values — the repo is public.
+export const streamApiKey = new sst.Secret("StreamApiKey", "");
+export const streamApiSecret = new sst.Secret("StreamApiSecret", "");
