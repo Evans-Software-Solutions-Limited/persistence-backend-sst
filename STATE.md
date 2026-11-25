@@ -31,6 +31,50 @@ native change. Mobile is PR 2 of 2.
 - **New copy** (approved by Brad, 25 Nov) appears only where the server
   refuses what the form allowed (e.g. "Choose a day to send it.").
 
+### 2026-11-25 — BE-D3: Mealprint 3 swap options, Your meals in generation, save a day as a plan ([PER-119](https://linear.app/evans-software-solutions/issue/PER-119); branch `claude/per-119-mealprint-swaps`)
+
+Design D "Mealprint (PER-41)" section. Additive only; no migration, no
+schema change, no native change. `nutritionRoutes.ts` untouched.
+
+- **`POST /nutrition/ai/plan-meal-swap` `count?: 1 | 3`.** Absent = the
+  1.2.0 body exactly (`data.meal`, no `options`; pinned by a recorded-shape
+  test). With `count`, `data.options[]` is added, `options[0]` deep-equals
+  `data.meal`, and the empty bodies carry `options: []`. `count: 3` is ONE
+  model call (`composeDayPlan` with `alternatives: 3`, a separate prompt:
+  each option fits the remaining target alone, options must differ). Each
+  option is verified on its own (`verifySwapMeal`: portion policy, macros
+  recomputed, avoidance re-run) and a failing one is dropped, as is a repeat
+  (same normalised name or same food names) or a match for `notWantedMeals`
+  by name or by ingredient set (`selectSwapOptions`). Never padded: it can
+  return 1–2 options; none left → 422 `ai_unreadable`. `count` 1 and absent
+  keep the old 422-on-any-failure behaviour. One call = one swap against the
+  10/day ceiling. The `meal_plan_swap` cost profile in
+  `subscription-catalog/aiCosts.ts` still assumes ~300 output tokens (not
+  changed: outside the brief).
+- **`POST /nutrition/ai/plan-generate` `meals?: [{name (1–40), logSlot}]`
+  (2–6)** replaces `mealsPerDay` (meals.length wins). The names go into the
+  prompt as bounded JSON data; each composed meal fills the requested meal
+  at its model-output `position` (new `ComposedPlanMeal.position`, kept
+  when a non-member meal is dropped), takes that meal's slot and gets
+  `label` = its name (only when `meals` was sent) for `POST /nutrition/plans`.
+- **`POST /nutrition/meal-plans {fromMealprintPlanId, name?}`** (body is a
+  union with the manual `{name, meals}`): `fromMealprint.ts` turns the
+  owner's dated `meal_plans` row into a list plan (`source: 'mealprint'`,
+  `sourcePlanId` = dated plan; the dated plan is only read). Default name
+  `Mealprint`. Food servings convert from Mealprint's pack serving to the
+  row's `serving_size` units (`foodServingScale`, now exported from
+  `mealprintCandidateRepository`); recipe/saved-meal servings are recovered
+  as `(meal.kcal − foods) / (recipe per serving + meal kcal)`; a row whose
+  sources were all deleted keeps its frozen macros as a one-off item. A
+  source that no longer resolves → 409 `plan_meal_nutrition_unavailable`
+  with `items`; another user's or unknown dated plan → 404
+  `mealprint_plan_not_found`; `manual_meal_plans` capability and
+  `Idempotency-Key` as for manual create.
+- Tests: `planSwapOptions.test.ts` (real composer + assembly + avoidance,
+  fake Bedrock client; no provider calls), generate `meals` cases,
+  `planModel` prompt modes, `fromMealprint.test.ts`, and a PGlite block in
+  `mealPlans.integration.test.ts`.
+
 ### 2026-11-25 — Coach platform access: coach subscription required ([PER-146](https://linear.app/evans-software-solutions/issue/PER-146); branch `claude/per-146-coach-platform-access`)
 
 The coach workspace is only for coaches with an active coach subscription

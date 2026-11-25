@@ -1558,3 +1558,169 @@ describe("migration (forward twice, down, up)", () => {
     await fresh.close();
   });
 });
+
+describe("save a Mealprint day as a list plan (PER-119, Design D test 5)", () => {
+  const DATED = randomUUID();
+  const OWN_FOOD = randomUUID(); // Pat's food: 200 kcal per 50 g, pack serving 100 g
+  const OWN_RECIPE = randomUUID(); // Pat's recipe: 4 servings, 2000 kcal
+  const OWN_MEAL = randomUUID(); // Pat's saved meal: 300 kcal
+  const LONG_LABEL =
+    "Post-training protein-packed chicken rice bowl with greens";
+
+  async function seedDated(owner = PREMIUM_P, recipe = OWN_RECIPE) {
+    await pg.exec(`
+      insert into foods (id, name, kcal, protein_g, carbs_g, fat_g, serving_size, serving_unit, serving_quantity, source, created_by)
+        values ('${OWN_FOOD}', 'Pat yogurt', 200, 20, 10, 5, 50, 'g', 100, 'user', '${PREMIUM_P}');
+      insert into recipes (id, user_id, name, servings, total_kcal, total_protein_g, total_carbs_g, total_fat_g)
+        values ('${OWN_RECIPE}', '${PREMIUM_P}', 'Pat chilli', 4, 2000, 160, 200, 40);
+      insert into meals (id, user_id, name, total_kcal, total_protein_g, total_carbs_g, total_fat_g)
+        values ('${OWN_MEAL}', '${PREMIUM_P}', 'Pat shake', 300, 30, 20, 5);
+      insert into meal_plans (id, user_id, status, plan_date, meals_per_day, effort_level,
+          target_kcal, target_protein_g, target_carbs_g, target_fat_g, source, accepted_at)
+        values ('${DATED}', '${owner}', 'active', '2026-11-20', 4, 'balanced', 2400, 180, 250, 70, 'ai', now());
+      insert into meal_plan_meals (plan_id, sort_order, label, log_slot, recipe_id, meal_id, items, kcal, protein_g, carbs_g, fat_g, ai_reason, state)
+        values
+        ('${DATED}', 0, 'Yogurt bowl', 'breakfast', null, null,
+          '[{"foodId":"${OWN_FOOD}","servings":1.5}]', 600, 60, 30, 15, 'r', 'planned'),
+        ('${DATED}', 1, '${LONG_LABEL}', 'lunch', '${recipe}', null,
+          '[{"foodId":"${OATS}","servings":1}]', 1130, 133, 210, 22, 'r', 'logged'),
+        ('${DATED}', 2, 'Shake', 'snack', null, '${OWN_MEAL}', null, 600, 60, 40, 10, 'r', 'planned'),
+        ('${DATED}', 3, 'Leftovers', 'dinner', null, null, null, 450, 35, 40, 12, 'r', 'planned');
+    `);
+  }
+
+  async function datedSnapshot() {
+    const plan = await pg.query(
+      `select status, plan_date::text from meal_plans where id = '${DATED}'`,
+    );
+    const meals = await pg.query(
+      `select sort_order, label, state, kcal::float from meal_plan_meals where plan_id = '${DATED}' order by sort_order`,
+    );
+    return { plan: plan.rows, meals: meals.rows };
+  }
+
+  async function saveDay(actor: string, body: object, key?: string) {
+    return http("POST", "/nutrition/meal-plans", actor, body, key);
+  }
+
+  it("creates a list plan with no dates and leaves the dated plan unchanged", async () => {
+    await seedDated();
+    const before = await datedSnapshot();
+    const res = await saveDay(PREMIUM_P, { fromMealprintPlanId: DATED });
+    expect(res.status).toBe(201);
+    const plan = res.json.data;
+    expect(plan).toMatchObject({
+      ownerId: PREMIUM_P,
+      name: "Mealprint",
+      source: "mealprint",
+      sourcePlanId: DATED,
+      revision: 1,
+    });
+    expect(JSON.stringify(plan)).not.toContain("2026-11-20");
+    expect(plan.meals.map((m: Json) => [m.name, m.logSlot])).toEqual([
+      ["Yogurt bowl", "breakfast"],
+      [LONG_LABEL.slice(0, 40).trim(), "lunch"],
+      ["Shake", "snack"],
+      ["Leftovers", "dinner"],
+    ]);
+    const [breakfast, lunch, snack, dinner] = plan.meals;
+    // 1.5 pack servings of 100 g = 3 × the 50 g row.
+    expect(breakfast.items).toMatchObject([
+      { kind: "food", foodId: OWN_FOOD, servings: 3, kcal: 600 },
+    ]);
+    expect(breakfast.totals.kcal).toBe(600);
+    // (1130 − 380 oats) / 500 per serving = 1.5 servings of the recipe.
+    expect(lunch.items).toMatchObject([
+      { kind: "recipe", recipeId: OWN_RECIPE, servings: 1.5, kcal: 750 },
+      { kind: "food", foodId: OATS, servings: 1, kcal: 380 },
+    ]);
+    expect(lunch.totals.kcal).toBe(1130);
+    expect(snack.items).toMatchObject([
+      { kind: "meal", mealId: OWN_MEAL, servings: 2, kcal: 600 },
+    ]);
+    // Every source gone: the frozen macros survive as a one-off.
+    expect(dinner.items).toMatchObject([
+      {
+        kind: "custom",
+        servings: 1,
+        custom: {
+          name: "Leftovers",
+          kcal: 450,
+          proteinG: 35,
+          carbsG: 40,
+          fatG: 12,
+        },
+      },
+    ]);
+    expect(await datedSnapshot()).toEqual(before);
+
+    const list = await http("GET", "/nutrition/meal-plans", PREMIUM_P);
+    expect(list.json.data.mine.map((p: Json) => p.id)).toEqual([plan.id]);
+  });
+
+  it("takes a name and is replay-safe on its Idempotency-Key", async () => {
+    await seedDated();
+    const key = randomUUID();
+    const body = { fromMealprintPlanId: DATED, name: "Training day" };
+    const first = await saveDay(PREMIUM_P, body, key);
+    expect(first.status).toBe(201);
+    expect(first.json.data.name).toBe("Training day");
+    // A replay answers with the first plan, even after the dated plan went.
+    await pg.exec(`delete from meal_plans where id = '${DATED}'`);
+    const again = await saveDay(PREMIUM_P, body, key);
+    expect(again.status).toBe(201);
+    expect(again.json.data.id).toBe(first.json.data.id);
+    const count = await pg.query<{ n: number }>(
+      `select count(*)::int as n from nutrition_plans where owner_id = '${PREMIUM_P}'`,
+    );
+    expect(count.rows[0].n).toBe(1);
+  });
+
+  it("404s another person's or an unknown Mealprint plan", async () => {
+    await seedDated(ATHLETE_D);
+    const other = await saveDay(PREMIUM_P, { fromMealprintPlanId: DATED });
+    expect(other.status).toBe(404);
+    expect(other.json).toEqual({ error: "mealprint_plan_not_found" });
+    const unknown = await saveDay(PREMIUM_P, {
+      fromMealprintPlanId: randomUUID(),
+    });
+    expect(unknown.status).toBe(404);
+  });
+
+  it("needs manual_meal_plans like any create", async () => {
+    await seedDated(ATHLETE_D);
+    const res = await saveDay(ATHLETE_D, { fromMealprintPlanId: DATED });
+    expect(res.status).toBe(403);
+    expect(res.json.error).toBe("manual_meal_plans");
+  });
+
+  it("409s when a source no longer resolves for the owner", async () => {
+    // Coach A's recipe in Pat's day: not Pat's, so it never resolves.
+    await seedDated(PREMIUM_P, RECIPE_A);
+    const res = await saveDay(PREMIUM_P, { fromMealprintPlanId: DATED });
+    expect(res.status).toBe(409);
+    expect(res.json).toMatchObject({
+      error: "plan_meal_nutrition_unavailable",
+      items: [`recipe:${RECIPE_A}`],
+    });
+    const count = await pg.query<{ n: number }>(
+      "select count(*)::int as n from nutrition_plans",
+    );
+    expect(count.rows[0].n).toBe(0);
+  });
+
+  it("rejects a malformed id and still accepts the manual body", async () => {
+    const bad = await saveDay(PREMIUM_P, { fromMealprintPlanId: "not-a-uuid" });
+    expect(bad.status).toBe(422);
+    await seedDated();
+    const blank = await saveDay(PREMIUM_P, {
+      fromMealprintPlanId: DATED,
+      name: "   ",
+    });
+    expect(blank.status).toBe(400);
+    expect(blank.json).toEqual({ error: "invalid_plan_name" });
+    const manual = await saveDay(PREMIUM_P, { name: "Mine", meals: [] });
+    expect(manual.status).toBe(201);
+    expect(manual.json.data.source).toBe("manual");
+  });
+});
