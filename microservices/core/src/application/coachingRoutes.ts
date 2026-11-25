@@ -19,6 +19,8 @@ import { coachNotificationsRoutes } from "./coaching/events/coachNotificationsHa
 // PER-121 (BE-F1, design F) — progress photos, the coach gallery and private
 // media uploads (form photo answers, coach resource files).
 import { privateMediaRoutes } from "./media/mediaHandlers";
+// PER-122 (BE-I1, design I) — coach resources library, assignment, opened.
+import { coachResourcesRoutes } from "./coaching/resources/resourcesHandlers";
 
 export const coachingRoutes = new Elysia()
   .use(clientProfilesHandler)
@@ -29,4 +31,5 @@ export const coachingRoutes = new Elysia()
   .use(coachSessionsRoutes)
   .use(coachFormsRoutes)
   .use(coachNotificationsRoutes)
-  .use(privateMediaRoutes);
+  .use(privateMediaRoutes)
+  .use(coachResourcesRoutes);

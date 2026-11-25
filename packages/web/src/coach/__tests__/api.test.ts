@@ -3,8 +3,11 @@ import {
   CoachApiError,
   coachApi,
   coachFetch,
+  COACH_SUBSCRIPTION_REQUIRED,
   isCoachApiError,
+  isCoachSubscriptionRequired,
   newIdempotencyKey,
+  onCoachSubscriptionRequired,
 } from "../api/coachApi";
 import {
   COACH_SESSION_KEY,
@@ -720,5 +723,59 @@ describe("coach API client", () => {
       vi.fn(async () => res(200, { data: { forms: [] } })),
     );
     expect(await coachApi.templates()).toEqual([]);
+  });
+});
+
+// PER-146: the API's 403 coach_subscription_required.
+describe("coach subscription refusals", () => {
+  const signedIn = () =>
+    saveSession({
+      accessToken: jwt({ exp: future() }),
+      refreshToken: "r",
+      expiresAt: future(),
+      email: "e@x.co",
+    });
+
+  it("recognises only a 403 with the subscription code", () => {
+    const refusal = new CoachApiError(403, {
+      code: COACH_SUBSCRIPTION_REQUIRED,
+    });
+    expect(isCoachSubscriptionRequired(refusal)).toBe(true);
+    expect(isCoachSubscriptionRequired(new CoachApiError(403, null))).toBe(
+      false,
+    );
+    expect(
+      isCoachSubscriptionRequired(
+        new CoachApiError(402, { code: COACH_SUBSCRIPTION_REQUIRED }),
+      ),
+    ).toBe(false);
+    expect(isCoachSubscriptionRequired(new Error("x"))).toBe(false);
+  });
+
+  it("tells listeners when any call is refused, and stops after unsubscribe", async () => {
+    signedIn();
+    const listener = vi.fn();
+    const stop = onCoachSubscriptionRequired(listener);
+    const refused = vi.fn(async () =>
+      res(403, { code: COACH_SUBSCRIPTION_REQUIRED, message: "Get a plan" }),
+    );
+
+    const error = await coachFetch("/trainers/me/forms", {}, refused).catch(
+      (e: unknown) => e,
+    );
+    expect(isCoachSubscriptionRequired(error)).toBe(true);
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    // Another 403 (e.g. the route's own role check) is not a subscription refusal.
+    await coachFetch(
+      "/trainers/me/forms",
+      {},
+      vi.fn(async () => res(403, { message: "Forbidden" })),
+    ).catch(() => undefined);
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    stop();
+    await coachFetch("/trainers/me/forms", {}, refused).catch(() => undefined);
+    expect(listener).toHaveBeenCalledTimes(1);
   });
 });

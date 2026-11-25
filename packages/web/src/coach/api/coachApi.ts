@@ -71,6 +71,33 @@ export function isCoachApiError(e: unknown): e is CoachApiError {
   return e instanceof CoachApiError;
 }
 
+/**
+ * PER-146: the API refuses every coach route without an active coach
+ * subscription (403 with this code), including when one lapses mid-session.
+ */
+export const COACH_SUBSCRIPTION_REQUIRED = "coach_subscription_required";
+
+export function isCoachSubscriptionRequired(e: unknown): boolean {
+  return (
+    isCoachApiError(e) &&
+    e.status === 403 &&
+    e.code === COACH_SUBSCRIPTION_REQUIRED
+  );
+}
+
+const subscriptionRequiredListeners = new Set<() => void>();
+
+/**
+ * Called whenever any coach call is refused for want of a coach subscription,
+ * so the workspace can leave for the coach plans page. Returns an unsubscribe.
+ */
+export function onCoachSubscriptionRequired(listener: () => void): () => void {
+  subscriptionRequiredListeners.add(listener);
+  return () => {
+    subscriptionRequiredListeners.delete(listener);
+  };
+}
+
 export function newIdempotencyKey(): string {
   return typeof crypto !== "undefined" && "randomUUID" in crypto
     ? crypto.randomUUID()
@@ -155,7 +182,13 @@ async function readBody<T>(res: Response): Promise<T> {
   } catch {
     body = null;
   }
-  if (!res.ok) throw new CoachApiError(res.status, body);
+  if (!res.ok) {
+    const error = new CoachApiError(res.status, body);
+    if (isCoachSubscriptionRequired(error)) {
+      for (const listener of [...subscriptionRequiredListeners]) listener();
+    }
+    throw error;
+  }
   return body as T;
 }
 

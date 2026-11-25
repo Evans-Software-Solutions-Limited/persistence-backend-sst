@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from "react";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
   ADAPTIVE_SUITE_LABEL,
@@ -26,6 +26,7 @@ import { downloadSectionPath } from "@/marketing/campaign";
 import { TEAMS_MAILTO } from "@/marketing/config";
 import { useReveal } from "@/marketing/hooks";
 import { useSeo } from "@/marketing/seo";
+import { COACH_SIGN_IN_PATH } from "@/lib/coachPlans";
 
 const AUDIENCE_TABS: readonly {
   id: SubscriptionAudience;
@@ -369,9 +370,22 @@ function TierMatrix() {
   );
 }
 
+/**
+ * `?for=coaches` opens the Coaches tab directly (PER-146: the coach plans
+ * page). Anything else opens Individuals, as before.
+ */
+function audienceFromSearch(value: string | null): SubscriptionAudience {
+  return value === "coaches" ? "coach" : "consumer";
+}
+
 export function Pricing() {
   const revealRef = useReveal<HTMLDivElement>();
-  const [audience, setAudience] = useState<SubscriptionAudience>("consumer");
+  const [searchParams] = useSearchParams();
+  // Sent here by /coach without coach access (PER-146).
+  const fromCoachPlatform = searchParams.get("from") === "coach";
+  const [audience, setAudience] = useState<SubscriptionAudience>(() =>
+    audienceFromSearch(searchParams.get("for")),
+  );
   const [cadence, setCadence] = useState<BillingCadence>("annual");
   const active = AUDIENCE_TABS.find((tab) => tab.id === audience)!;
   const tiers = useMemo(() => tiersFor(audience), [audience]);
@@ -438,6 +452,17 @@ export function Pricing() {
                 <CadenceToggle cadence={cadence} onChange={setCadence} />
               )}
             </div>
+
+            {fromCoachPlatform && audience === "coach" && (
+              <div className="catalog-note coach-access-note" role="status">
+                <IconInfoCircle size={18} />
+                <span>
+                  <b>The coach platform needs a coach plan.</b> Get one in the
+                  Persistence app from the App Store or Google Play, then{" "}
+                  <a href={COACH_SIGN_IN_PATH}>sign in again</a>.
+                </span>
+              </div>
+            )}
 
             {audience !== "consumer" && (
               <div className="suite-definition">
