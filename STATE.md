@@ -1,5 +1,33 @@
 # Project memory · persistence-backend-sst
 
+### 2026-11-25 — Web forms on react-hook-form + TypeBox ([PER-147](https://linear.app/evans-software-solutions/issue/PER-147), 1 of 2; branch `claude/per-147-rhf-web`)
+
+Every web form added since 1.2.0 validates through `react-hook-form` with a
+TypeBox schema resolver. Same copy, layout and save behaviour; no backend or
+native change. Mobile is PR 2 of 2.
+
+- **Shared helpers:** `packages/web/src/lib/form/`. `schemaResolver(schema,
+  { prepare, refine })` wraps `@hookform/resolvers/typebox` (v6, which uses
+  `@sinclair/typebox` 0.34, the same TypeBox Elysia uses; v7 moved to `typebox`
+  1.x). Copy comes from `errorMessage` on the schema (one string, or one per
+  `ValueErrorType` name), via a TypeBox error function installed on import.
+  `prepare` checks trimmed values (the server trims); `refine` adds
+  cross-field rules (weekly needs a day, min ≤ max). `applyServerErrors` puts
+  422/409 field errors (`validation[].path`, `errors[].at`, `field`, or a field
+  named in the message) onto mapped fields with the form's copy, else returns
+  false and the old banner shows.
+- **Forms:** Who, set-up sections (one form per open section; drafts still
+  drive the unmount save, whose check is now the same schema via
+  `setupProblem`), declaration tick, C3.9 settings (each change is checked
+  before it saves), form editor (live problems from RHF errors;
+  `questionProblems` removed), send dialog, one-client rule (C10j), check-in
+  reply, coach sign in. Schemas live in `coach/lib/*Form.ts`.
+- **Limits** are copied from the Elysia routes, not imported: the route
+  schemas are inline and unexported, and exporting them would mean editing
+  `microservices/`. Follow-up if wanted: a shared limits export.
+- **New copy** appears only where the server refuses what the form allowed
+  (e.g. "Choose a day to send it.", "Keep the reply under 2,000 characters.").
+
 ### 2026-11-24 — Tooling: TypeScript 7, Oxlint (tsrs type-aware), Vitest 5, Vite 8 ([PER-148](https://linear.app/evans-software-solutions/issue/PER-148); branch `claude/brave-dirac-h9ianz`)
 
 Cuts check time, which was the cause of CI and local timeouts. No CI caching

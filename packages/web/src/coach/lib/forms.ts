@@ -143,37 +143,7 @@ export function prefillFor(type: QuestionType): PrefillSource[] {
   );
 }
 
-/** What the server would refuse, said in words, per question index. */
-export function questionProblems(
-  questions: FormQuestion[],
-): Map<number, string> {
-  const out = new Map<number, string>();
-  questions.forEach((q, i) => {
-    const prompt = q.prompt.trim();
-    if (!prompt) out.set(i, "Write the question.");
-    else if (prompt.length > MAX_PROMPT) {
-      out.set(i, `Keep the question under ${MAX_PROMPT} characters.`);
-    } else if ((q.help ?? "").trim().length > MAX_HELP) {
-      out.set(i, `Keep the help text under ${MAX_HELP} characters.`);
-    } else if (q.type === "single_choice" || q.type === "multiple_choice") {
-      const opts = (q.options ?? []).map((o) => o.trim());
-      if (opts.length < 2 || opts.length > MAX_OPTIONS) {
-        out.set(i, `Give 2 to ${MAX_OPTIONS} options.`);
-      } else if (opts.some((o) => !o)) out.set(i, "Fill in every option.");
-      else if (new Set(opts).size !== opts.length) {
-        out.set(i, "Options must be different.");
-      }
-    } else if (
-      q.type === "number" &&
-      q.min !== undefined &&
-      q.max !== undefined &&
-      q.min > q.max
-    ) {
-      out.set(i, "The lowest number must not be above the highest.");
-    }
-  });
-  return out;
-}
+/* What the server would refuse is the editor's schema: formEditorForm.ts. */
 
 /** Trimmed questions in the shape the API stores. */
 export function cleanQuestions(questions: FormQuestion[]): FormQuestion[] {

@@ -466,6 +466,35 @@ describe("Client settings (C3.9)", () => {
     expect(screen.queryByText("Training plan")).toBeNull();
   });
 
+  it("a 422 on sessions a week rolls back and says why (PER-147)", async () => {
+    const api = fakeApi({
+      settings: vi.fn().mockResolvedValue({
+        ...settings(),
+        trackTraining: true,
+        sessionsPerWeek: 3,
+      }),
+      patchSettings: vi.fn().mockRejectedValue(
+        apiError(422, {
+          code: "VALIDATION",
+          validation: [{ path: "/sessionsPerWeek", message: "max 14" }],
+        }),
+      ),
+    });
+    renderCoach(<ClientPage />, { route: PAGE, path: PATH, api });
+    fireEvent.click(
+      await screen.findByRole("button", { name: "More sessions" }),
+    );
+    expect(
+      await screen.findByText("Choose 1 to 14 sessions a week."),
+    ).toBeTruthy();
+    expect(api.patchSettings).toHaveBeenCalledWith(
+      CLIENT_ID,
+      { sessionsPerWeek: 4 },
+      4,
+    );
+    await waitFor(() => expect(screen.getByText("3")).toBeTruthy());
+  });
+
   it("each switch saves with the revision", async () => {
     const api = fakeApi({
       patchSettings: vi.fn().mockImplementation(async (_c, patch) => ({

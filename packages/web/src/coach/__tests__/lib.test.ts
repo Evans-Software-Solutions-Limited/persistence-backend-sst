@@ -599,15 +599,7 @@ describe("settings", () => {
 
 describe("who form", () => {
   it("turns the form into profile fields", () => {
-    expect(
-      toInput({ first: "", last: "", contact: "x", goal: "", notes: "" }),
-    ).toEqual({
-      ok: false,
-      errors: {
-        first: "Add a first name.",
-        contact: "Enter an email address or a mobile number.",
-      },
-    });
+    // Validation is the resolver's job (formSchemas.test.ts).
     expect(
       toInput({
         first: "Lena",
@@ -617,14 +609,26 @@ describe("who form", () => {
         notes: "n",
       }),
     ).toEqual({
-      ok: true,
-      input: {
-        displayName: "Lena Ortiz",
-        contactEmail: null,
-        contactPhone: "07700 900123",
-        goal: null,
-        privateNotes: "n",
-      },
+      displayName: "Lena Ortiz",
+      contactEmail: null,
+      contactPhone: "07700 900123",
+      goal: null,
+      privateNotes: "n",
+    });
+    expect(
+      toInput({
+        first: " Lena ",
+        last: "",
+        contact: " lena@example.com ",
+        goal: "",
+        notes: "",
+      }),
+    ).toEqual({
+      displayName: "Lena",
+      contactEmail: "lena@example.com",
+      contactPhone: null,
+      goal: null,
+      privateNotes: null,
     });
   });
 

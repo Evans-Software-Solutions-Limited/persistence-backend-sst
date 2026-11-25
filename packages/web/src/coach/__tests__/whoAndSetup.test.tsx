@@ -115,6 +115,43 @@ describe("Add client · 1 Who (C11a)", () => {
     ).toBeTruthy();
   });
 
+  it("a server 422 lands on the field it names (PER-147)", async () => {
+    const api = fakeApi({
+      createProfile: vi
+        .fn()
+        .mockRejectedValueOnce(
+          apiError(422, {
+            code: "VALIDATION",
+            validation: [{ path: "/contactEmail", message: "Expected email" }],
+          }),
+        )
+        .mockRejectedValueOnce(apiError(422, { code: "VALIDATION" })),
+    });
+    renderCoach(<WhoContainer />, {
+      route: "/coach/clients/new",
+      path: "/coach/clients/new",
+      api,
+    });
+    fireEvent.change(screen.getByLabelText("First name"), {
+      target: { value: "Lena" },
+    });
+    fireEvent.change(screen.getByLabelText("Email or mobile"), {
+      target: { value: "lena@example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Next: set up" }));
+    const message = await screen.findByText(
+      "Enter an email address or a mobile number.",
+    );
+    expect(message.id).toBe("who-contact-err");
+    // A refusal naming no field still shows as before, in the banner; the
+    // next press clears the field error.
+    fireEvent.click(screen.getByRole("button", { name: "Next: set up" }));
+    expect(await screen.findByText("Request failed (422)")).toBeTruthy();
+    expect(
+      screen.queryByText("Enter an email address or a mobile number."),
+    ).toBeNull();
+  });
+
   it("going Back edits only what changed, with the revision", async () => {
     const api = fakeApi({
       patchProfile: vi
@@ -697,6 +734,30 @@ describe("Add client · 2 Set up (C11b)", () => {
     expect(
       await screen.findByText(/already accepted or the invite was cancelled/),
     ).toBeTruthy();
+  });
+
+  it("a 422 on the welcome message shows the form's message (PER-147)", async () => {
+    const api = fakeApi({
+      replaceSection: vi.fn().mockRejectedValue(
+        apiError(422, {
+          code: "VALIDATION",
+          validation: [{ path: "/items/0/config/text", message: "too long" }],
+        }),
+      ),
+    });
+    renderCoach(<SetupContainer />, {
+      route: at("welcome_message"),
+      path: SETUP,
+      api,
+    });
+    fireEvent.change(await screen.findByLabelText("Message"), {
+      target: { value: "Hi" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Next: invite" }));
+    expect(
+      await screen.findByText("Keep the message under 1,000 characters."),
+    ).toBeTruthy();
+    expect(currentPath()).toBe(at("welcome_message"));
   });
 
   it("reports other save failures", async () => {
