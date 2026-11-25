@@ -516,11 +516,12 @@ export async function patchSessions(
       (patch.reminderMinutes !== undefined &&
         patch.reminderMinutes !== session.reminderMinutes);
     const { attendees: requested, startsAt, ...fields } = patch;
-    // Only clients still coached when this commits are booked (see
-    // stillActive); one whose coaching just ended is left off.
-    const wantedAttendees = requested
-      ? await stillActive(tx, requested)
-      : undefined;
+    // Only clients still coached when this commits are ADDED (see
+    // stillActive); one whose coaching just ended is left off. Removals come
+    // from the list the coach sent, so a client leaving meanwhile is never
+    // treated as taken off by the coach: offboarding's own step cancels
+    // their bookings (Inspector Brad, #568).
+    const addable = requested ? await stillActive(tx, requested) : undefined;
 
     const added = new Map<string, AttendeeRef[]>();
     const removed = new Map<string, AttendeeRef[]>();
@@ -546,10 +547,10 @@ export async function patchSessions(
           .set({ remindedAt: null, updatedAt: now })
           .where(eq(coachSessionAttendees.sessionId, target.id));
       }
-      if (wantedAttendees) {
+      if (requested && addable) {
         const mine = existing.filter((a) => a.sessionId === target.id);
-        const wantedIds = new Set(wantedAttendees.map((a) => a.relationshipId));
-        const toAdd = wantedAttendees.filter(
+        const wantedIds = new Set(requested.map((a) => a.relationshipId));
+        const toAdd = addable.filter(
           (w) =>
             !mine.some(
               (a) =>

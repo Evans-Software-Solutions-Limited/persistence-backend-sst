@@ -1278,6 +1278,49 @@ describe("bookings racing offboarding (Inspector Brad, #568)", () => {
     expect(events.map((e) => e.clientId)).toEqual([ATHLETE_E]);
   });
 
+  it("an edit keeping a client who offboards meanwhile doesn't take them off itself (Inspector Brad, #568)", async () => {
+    // Offboarding commits its relationship end and step 4b together. Step
+    // 4b leaves a booking that already started, so that row shows whether
+    // the PATCH treated the leaving client as removed by the coach.
+    const started = await book(COACH_A, {
+      startsAt: "2026-01-06T09:00:00Z",
+      clientIds: [ATHLETE_C, ATHLETE_E],
+    });
+    const upcoming = await book(COACH_A, {
+      startsAt: FUTURE,
+      clientIds: [ATHLETE_C, ATHLETE_E],
+    });
+    pushes.list = [];
+    await db.delete(schema.coachEvents);
+    const relC = await relationshipId(COACH_A, ATHLETE_C);
+    const offboard = `update pt_client_relationships set status = 'terminated' where id = '${relC}';
+      update coach_session_attendees set status = 'cancelled'
+        where relationship_id = '${relC}' and session_id = '${upcoming.data.id}';`;
+    for (const id of [started.data.id, upcoming.data.id]) {
+      // Still coached when the PATCH's own checks run.
+      await pg.exec(
+        `update pt_client_relationships set status = 'active' where id = '${relC}'`,
+      );
+      const res = await withRace("transaction", offboard, () =>
+        http("PATCH", `/trainers/me/sessions/${id}`, COACH_A, {
+          clientIds: [ATHLETE_C, ATHLETE_E],
+          notes: "Bring a band",
+        }),
+      );
+      expect(res.status).toBe(200);
+    }
+    const statusOf = async (sessionId: string) =>
+      (await attendeeRows()).find(
+        (r) => r.sessionId === sessionId && r.clientId === ATHLETE_C,
+      )!.status;
+    // The started booking is untouched; the upcoming one is offboarding's.
+    expect(await statusOf(started.data.id)).toBe("invited");
+    expect(await statusOf(upcoming.data.id)).toBe("cancelled");
+    // The PATCH wrote no cancelled event and pushed nobody.
+    expect(await db.select().from(schema.coachEvents)).toHaveLength(0);
+    expect(pushes.list).toHaveLength(0);
+  });
+
   it("an edit adding a client whose coaching just ended doesn't book them", async () => {
     const { data } = await book(COACH_A, {
       startsAt: FUTURE,
