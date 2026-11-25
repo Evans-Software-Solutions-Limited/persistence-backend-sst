@@ -1,5 +1,50 @@
 # Project memory · persistence-backend-sst
 
+### 2026-11-25 — BE-E1b Stream chat: tokens, channels per relationship, freeze on end, webhook ([PER-120](https://linear.app/evans-software-solutions/issue/PER-120); branch `claude/per-120-stream-chat-backend`)
+
+Backend design E (C3.6, C6). Additive; no existing route changes, no native
+change, no new dependency (native `fetch` + HS256 via `jose` in api-utils).
+Migration `20261125162525_chat_channels.sql` (rollback in
+`supabase/rollbacks/`): `chat_channels` (PK `relationship_id` → relationships
+CASCADE, `messaging` / `coach-<relationshipId>`, state
+`pending|active|frozen`, `frozen_at`). Drizzle in
+`packages/db/src/chatSchema.ts` (re-exported from `schema.ts`).
+
+- **Production gate:** Stream DPA, privacy policy and data region are Brad's
+  to finish before this reaches production. Merging deploys staging only.
+- Code: `microservices/core/src/application/chat/` (`streamClient.ts` REST
+  client + config, `chatChannels.ts` provisioning/freeze/reconcile/list,
+  `chatHandlers.ts`, `streamWebhookHandler.ts`). Keys: optional
+  `StreamApiKey`/`StreamApiSecret` (#560) passed as `STREAM_API_KEY` /
+  `STREAM_API_SECRET` to the API route and the coach-scheduler cron. **Empty =
+  chat not configured:** `POST /chat/token` 503 `chat_not_configured`, webhook
+  503, every hook and the job no-op without touching the DB or Stream.
+- Routes (coach and athlete, explicit auth, not under `/trainers/me`):
+  `POST /chat/token` (24 h token for the caller's own Stream user only; upserts
+  the user; 403 `chat_not_available` without an active/frozen channel; 502
+  `chat_unavailable`), `GET /chat/channels` (coach: active + frozen; athlete:
+  active and relationship active). `POST /chat/stream-webhook` on the raw Hono
+  app (Stream signs with the API secret: hex HMAC-SHA256 `X-Signature`; no new
+  secret). Client `message.new` → `message_received` coach event deduped on the
+  message id (quiet hours/mute/channel via `recordCoachEvent`); text never
+  stored; push "<name> sent you a message".
+- Provisioning after commit on: personal-code accept (`afterCommit`), athlete
+  accepting an invite, coach accepting a request. Posts the set-up welcome
+  message as the first message (`welcome-<setupItemId>`, idempotent). The
+  coach_brief notification is kept for 1.2.0. Offboarding step 5 (after the
+  commit): remove client + freeze. `chat_channels` scheduler job (last in the
+  list) converges both ways, 50 per tick: provisions active relationships
+  without an `active` channel (also backfills pre-chat relationships once keys
+  are set; a revived relationship re-adds the client and unfreezes) and freezes
+  `active` channels whose relationship ended.
+- Not done (out of brief): Stream user re-upsert on profile edit (it happens on
+  the next token instead); moderation (PER-21); coach Stream-device push config
+  (app, PER-136).
+- Tests: `chat/__tests__/chat.integration.test.ts` (PGlite, real migrations,
+  fake Stream behind the real client; design E tests 1–4, not-configured,
+  migration twice/rollback), `streamClient.test.ts`, api-utils
+  `signHs256.test.ts`.
+
 ### 2026-11-25 — Coach platform access: coach subscription required ([PER-146](https://linear.app/evans-software-solutions/issue/PER-146); branch `claude/per-146-coach-platform-access`)
 
 The coach workspace is only for coaches with an active coach subscription

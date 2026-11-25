@@ -19,6 +19,8 @@ import { coachNotificationsRoutes } from "./coaching/events/coachNotificationsHa
 import { privateMediaRoutes } from "./media/mediaHandlers";
 // PER-122 (BE-I1, design I) — coach resources library, assignment, opened.
 import { coachResourcesRoutes } from "./coaching/resources/resourcesHandlers";
+// PER-120 (BE-E1b, design E) — chat tokens and channels (coaches and athletes).
+import { chatRoutes } from "./chat/chatHandlers";
 
 export const coachingRoutes = new Elysia()
   .use(clientProfilesHandler)
@@ -29,4 +31,5 @@ export const coachingRoutes = new Elysia()
   .use(coachFormsRoutes)
   .use(coachNotificationsRoutes)
   .use(privateMediaRoutes)
-  .use(coachResourcesRoutes);
+  .use(coachResourcesRoutes)
+  .use(chatRoutes);

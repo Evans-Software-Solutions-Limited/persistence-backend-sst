@@ -11,6 +11,8 @@ import {
   revenueCatProjectId,
   revenueCatWebhookSecret,
   sentryDsn,
+  streamApiKey,
+  streamApiSecret,
   stripeSecretKey,
   stripeWebhookSecret,
   supabaseServiceRoleKey,
@@ -228,6 +230,13 @@ export const coreRoute = coreAPI.route("$default", {
     // (spec-30 WS3). OPTIONAL + fail-safe: empty = verification skipped (forms
     // behave as before). Set before the forms are publicly linked.
     TURNSTILE_SECRET: turnstileSecret.value,
+    // Stream chat (PER-120, design E). OPTIONAL + fail-safe: empty = "chat not
+    // configured" — `/chat/*` answers 503 `chat_not_configured` and the
+    // provisioning/freeze hooks no-op. The secret signs Stream user and
+    // server tokens and verifies Stream's webhook signature (Stream signs
+    // webhooks with the API secret, so there is no separate webhook secret).
+    STREAM_API_KEY: streamApiKey.value,
+    STREAM_API_SECRET: streamApiSecret.value,
     // Blue Light Card web subscription rail (PER-3). Plain stage config, not
     // secrets: a Stripe Coupon id and Tradedoubler's organisation / event ids
     // are identifiers, not credentials. All OPTIONAL + fail-safe — an empty
@@ -532,6 +541,10 @@ export const coachSchedulerCron = new sst.aws.Cron("coach-scheduler", {
       EXPO_ACCESS_TOKEN: expoAccessToken.value,
       // Sentry crash reporting (optional; empty DSN = disabled).
       SENTRY_DSN: sentryDsn.value,
+      // PER-120: the chat_channels job provisions and freezes Stream channels.
+      // Optional; empty = chat not configured and the job no-ops.
+      STREAM_API_KEY: streamApiKey.value,
+      STREAM_API_SECRET: streamApiSecret.value,
     },
   },
 });

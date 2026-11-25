@@ -15,6 +15,7 @@ import {
 import { recordDataSharingConsent } from "../../relationships/recordDataSharingConsent";
 import { generateOnJoin } from "../../coaching/forms/generators";
 import { recordClientAccepted } from "../../coaching/events/writers";
+import { safeProvisionChatChannel } from "../../chat/chatChannels";
 
 /**
  * Discriminated result of the accept transaction: success, a client-slot cap
@@ -270,6 +271,12 @@ export const trainersRespondToRequestHandler = new Elysia()
       if ("capReject" in result) {
         await notifyTrainerClientLimitReached(result.trainerId, result.verdict);
         return { code: result.code, message: result.message };
+      }
+
+      // PER-120 (design E): the relationship's chat channel, after the
+      // commit. Never throws; the coach scheduler retries a failure.
+      if ("data" in result) {
+        await safeProvisionChatChannel(result.data.relationshipId);
       }
 
       return result;

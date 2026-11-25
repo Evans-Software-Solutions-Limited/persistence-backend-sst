@@ -18,6 +18,7 @@ import {
 import { NotificationDispatcher } from "../../notifications/push/notificationDispatcher";
 import { auditTrainerAction } from "../../relationships/auditTrainerAction";
 import { generateOnJoin } from "../../coaching/forms/generators";
+import { safeProvisionChatChannel } from "../../chat/chatChannels";
 
 /**
  * Where a tapped "coach accepted your request" notification lands: the athlete
@@ -310,6 +311,9 @@ export const trainersRespondToClientRequestHandler = new Elysia()
           result.clientId,
           result.notification,
         );
+        // PER-120 (design E): the relationship's chat channel. Never throws;
+        // the coach scheduler retries a failure.
+        await safeProvisionChatChannel(result.data.relationshipId);
         return { data: result.data };
       }
 

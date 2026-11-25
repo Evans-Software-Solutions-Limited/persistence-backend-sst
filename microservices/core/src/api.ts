@@ -75,6 +75,7 @@ import { getAchievementsHandler } from "./application/progress/getAchievementsHa
 import { streaksRoutes } from "./application/streaksRoutes";
 import { handleStripeWebhook } from "./application/stripe/stripeWebhookHandler";
 import { handleRevenueCatWebhook } from "./application/revenuecat/revenueCatWebhookHandler";
+import { handleStreamWebhook } from "./application/chat/streamWebhookHandler";
 import { subscriptionsRoutes } from "./application/subscriptionsRoutes";
 import { notificationsListHandler } from "./application/notifications/list/notificationsListHandler";
 import { notificationsUpdateAllHandler } from "./application/notifications/updateAll/notificationsUpdateAllHandler";
@@ -285,6 +286,9 @@ honoApp.post("/stripe/webhook", (c) => handleStripeWebhook(c.req.raw));
 // entitlement source of truth across both rails (Apple IAP + Stripe); this
 // keeps user_subscriptions in sync (M12).
 honoApp.post("/revenuecat/webhook", (c) => handleRevenueCatWebhook(c.req.raw));
+// PER-120: `/chat/stream-webhook` — Stream signs the exact body (HMAC-SHA256
+// with the API secret), so it needs the raw bytes like Stripe.
+honoApp.post("/chat/stream-webhook", (c) => handleStreamWebhook(c.req.raw));
 // Keep Together's separately exported typed contract out of the existing Eden
 // API type's instantiation limit. Preserve full paths for its Elysia handlers.
 for (const prefix of ["/together/*", "/social/*", "/places/*"]) {
