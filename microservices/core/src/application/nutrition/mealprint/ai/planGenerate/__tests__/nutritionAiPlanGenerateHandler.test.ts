@@ -564,11 +564,11 @@ describe("POST /nutrition/ai/plan-generate with Your meals", () => {
   it("composes one meal per named meal and labels each with its name and slot", async () => {
     composeDayPlanMock.mockResolvedValue({
       meals: [
-        composed(0, "snack", "c1"), // the model's slot is overridden
+        composed(0, "breakfast", "c1"),
         composed(1, "lunch", "c2"),
         composed(2, "dinner", "c3"),
-        composed(3, "snack", "c1"), // beyond the request: discarded
       ],
+      outputCount: 3,
       usage,
     });
     const res = await app.handle(post({ meals: MEALS, mealsPerDay: 5 }));
@@ -587,24 +587,108 @@ describe("POST /nutrition/ai/plan-generate with Your meals", () => {
     expect(arg.namedMeals).toEqual(MEALS);
   });
 
-  it("keeps each label on its own meal when the composer dropped one", async () => {
+  it("keeps each label on its own meal when the composer dropped one (index kept)", async () => {
+    // The model returned 3 meals; meal 2 was dropped for a non-member id.
     composeDayPlanMock.mockResolvedValue({
       meals: [composed(0, "breakfast", "c1"), composed(2, "dinner", "c3")],
+      outputCount: 3,
       usage,
     });
     const parsed = await body(await app.handle(post({ meals: MEALS })));
-    expect(parsed.data.meals.map((m: any) => m.label)).toEqual([
-      "Pre-gym",
-      "Family dinner",
+    expect(parsed.data.meals.map((m: any) => [m.label, m.name])).toEqual([
+      ["Pre-gym", "Dish 0"],
+      ["Family dinner", "Dish 2"],
     ]);
   });
+
+  it("realigns by slot when the model SKIPPED a meal", async () => {
+    // Only 2 meals returned for 3: index 1 is really the dinner.
+    composeDayPlanMock.mockResolvedValue({
+      meals: [composed(0, "breakfast", "c1"), composed(1, "dinner", "c3")],
+      outputCount: 2,
+      usage,
+    });
+    const parsed = await body(await app.handle(post({ meals: MEALS })));
+    expect(
+      parsed.data.meals.map((m: any) => [m.label, m.logSlot, m.name]),
+    ).toEqual([
+      ["Pre-gym", "breakfast", "Dish 0"],
+      ["Family dinner", "dinner", "Dish 1"],
+    ]);
+  });
+
+  it("realigns by slot when the model REORDERED the meals", async () => {
+    composeDayPlanMock.mockResolvedValue({
+      meals: [
+        composed(0, "dinner", "c3"),
+        composed(1, "breakfast", "c1"),
+        composed(2, "lunch", "c2"),
+      ],
+      outputCount: 3,
+      usage,
+    });
+    const parsed = await body(await app.handle(post({ meals: MEALS })));
+    expect(
+      parsed.data.meals.map((m: any) => [m.label, m.logSlot, m.name]),
+    ).toEqual([
+      ["Pre-gym", "breakfast", "Dish 1"],
+      ["Desk lunch", "lunch", "Dish 2"],
+      ["Family dinner", "dinner", "Dish 0"],
+    ]);
+  });
+
+  it.each([
+    [
+      "an ambiguous slot (two requested snacks) after a skip",
+      [
+        { name: "Morning snack", logSlot: "snack" },
+        { name: "Lunch", logSlot: "lunch" },
+        { name: "Evening snack", logSlot: "snack" },
+      ],
+      [composed(0, "snack", "c1"), composed(1, "lunch", "c2")],
+      2,
+    ],
+    [
+      "a slot no requested meal has",
+      MEALS,
+      [composed(0, "breakfast", "c1"), composed(1, "snack", "c2")],
+      2,
+    ],
+    [
+      "two meals claiming the same slot",
+      MEALS,
+      [
+        composed(0, "breakfast", "c1"),
+        composed(1, "breakfast", "c2"),
+        composed(2, "dinner", "c3"),
+      ],
+      3,
+    ],
+    ["no meals left to label", MEALS, [], 2],
+  ])(
+    "422s ai_unreadable for %s, and still counts the call",
+    async (_label, meals, composedMeals, outputCount) => {
+      composeDayPlanMock.mockResolvedValue({
+        meals: composedMeals,
+        outputCount,
+        usage,
+      });
+      const res = await app.handle(post({ meals }));
+      expect(res.status).toBe(422);
+      expect(await body(res)).toEqual({ error: "ai_unreadable" });
+      // Same as every unreadable generate: the model was reached, so it
+      // counts against the daily ceiling.
+      expect(usageMocks.record).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it("uses the snack ceiling for a named meal in the snack slot", async () => {
     candidateMocks.listCuratedCandidates.mockResolvedValue([
       candidate("c1", { kcal: 550 }),
     ]);
     composeDayPlanMock.mockResolvedValue({
-      meals: [composed(0, "breakfast", "c1"), composed(2, "breakfast", "c1")],
+      meals: [composed(0, "breakfast", "c1"), composed(2, "snack", "c1")],
+      outputCount: 4,
       usage,
     });
     // 4 meals of 2,000 kcal: meal ceiling 675, snack ceiling 375.

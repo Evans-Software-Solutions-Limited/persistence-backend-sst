@@ -38,6 +38,8 @@ import {
   minUsefulPlanTokens,
   planMaxTokens,
   PLAN_TIMEOUT_MS,
+  type ComposedPlanMeal,
+  type NamedPlanMeal,
 } from "../planModel";
 import { assessCompositionPortion, maxMealKcal } from "../portionPolicy";
 
@@ -319,17 +321,12 @@ export const nutritionAiPlanGenerateHandler = new Elysia()
           { timeoutMs: attemptMs },
         );
 
-        // With `meals`, each composed meal fills the requested meal at its
-        // position: it takes that meal's slot (not the model's choice) and its
-        // name as `label`. Extra meals beyond the request are discarded.
-        const composedMeals = namedMeals
-          ? result.meals
-              .filter((meal) => meal.position < namedMeals.length)
-              .map((meal) => ({
-                ...meal,
-                logSlot: namedMeals[meal.position]!.logSlot,
-              }))
-          : result.meals;
+        // With `meals`, each composed meal is matched to the requested meal it
+        // fills (see `alignNamedMeals`) and takes that meal's slot and name.
+        const composedMeals: Array<ComposedPlanMeal & { label?: string }> =
+          namedMeals
+            ? alignNamedMeals(result.meals, result.outputCount, namedMeals)
+            : result.meals;
 
         // Stage 3 — recompute every macro from the candidate rows handed to the
         // model, and re-run avoidance per item (defence in depth). The model's
@@ -395,7 +392,7 @@ export const nutritionAiPlanGenerateHandler = new Elysia()
             logSlot: meal.logSlot,
             // Only with `meals`: the person's meal name, for
             // `POST /nutrition/plans` `meals[].label` on accept.
-            ...(namedMeals ? { label: namedMeals[meal.position]!.name } : {}),
+            ...(meal.label !== undefined ? { label: meal.label } : {}),
             items,
             kcal: round(kcal),
             proteinG: round(proteinG),
@@ -527,3 +524,66 @@ export const nutritionAiPlanGenerateHandler = new Elysia()
       }),
     },
   );
+
+/**
+ * PER-119 — match each composed meal to the requested meal (`meals`) it fills.
+ * It takes that meal's `logSlot` (which also picks its snack/meal ceiling) and
+ * its name as `label`.
+ *
+ * The output index is trusted only when the model returned exactly one meal
+ * per requested meal AND every kept meal's own `logSlot` agrees with the
+ * requested slot at its index (composed meals dropped for non-member ids keep
+ * their index, so gaps are fine). Otherwise the model skipped, added or
+ * reordered meals, and each meal is matched by its slot instead — only when
+ * that slot belongs to exactly one requested meal and isn't already taken.
+ * Anything else is unreadable (422): a label is never guessed.
+ */
+export function alignNamedMeals(
+  meals: readonly ComposedPlanMeal[],
+  outputCount: number,
+  named: readonly NamedPlanMeal[],
+): Array<ComposedPlanMeal & { label: string }> {
+  const assign = (meal: ComposedPlanMeal, index: number) => ({
+    ...meal,
+    logSlot: named[index]!.logSlot,
+    label: named[index]!.name,
+  });
+
+  const indexAligned =
+    outputCount === named.length &&
+    meals.every(
+      (meal) =>
+        meal.position < named.length &&
+        named[meal.position]!.logSlot === meal.logSlot,
+    );
+  const aligned = indexAligned
+    ? meals.map((meal) => assign(meal, meal.position))
+    : alignBySlot(meals, named).map(([meal, index]) => assign(meal, index));
+
+  if (aligned.length === 0) {
+    throw new AiUnreadableError("ai_no_meal: no composed meal to label");
+  }
+  return aligned;
+}
+
+function alignBySlot(
+  meals: readonly ComposedPlanMeal[],
+  named: readonly NamedPlanMeal[],
+): Array<[ComposedPlanMeal, number]> {
+  const taken = new Set<number>();
+  const pairs: Array<[ComposedPlanMeal, number]> = [];
+  for (const meal of meals) {
+    const matches = named.flatMap((entry, index) =>
+      entry.logSlot === meal.logSlot ? [index] : [],
+    );
+    if (matches.length !== 1 || taken.has(matches[0]!)) {
+      throw new AiUnreadableError(
+        `ai_meal_alignment: cannot match a ${meal.logSlot} meal to one requested meal`,
+      );
+    }
+    taken.add(matches[0]!);
+    pairs.push([meal, matches[0]!]);
+  }
+  // Back in the person's order.
+  return pairs.sort((a, b) => a[1] - b[1]);
+}

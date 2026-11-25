@@ -472,5 +472,7 @@ describe("PER-119 prompt modes", () => {
     expect(result.meals.map((m) => [m.name, m.position])).toEqual([
       ["Good", 1],
     ]);
+    // What the model returned, before the non-member meal was dropped.
+    expect(result.outputCount).toBe(2);
   });
 });

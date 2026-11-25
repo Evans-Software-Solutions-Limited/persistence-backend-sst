@@ -143,6 +143,12 @@ export interface PlanUsage {
 
 export interface PlanResult {
   meals: ComposedPlanMeal[];
+  /**
+   * How many meals the model returned (after the six-meal cap), BEFORE any
+   * were dropped for non-member ids. PER-119 uses it to tell a skipped meal
+   * from a dropped one when matching `namedMeals`.
+   */
+  outputCount: number;
   usage: PlanUsage;
 }
 
@@ -570,6 +576,7 @@ export async function composeDayPlan(
 
   return {
     meals: usable,
+    outputCount: meals.length,
     usage: {
       modelId,
       latencyMs,
