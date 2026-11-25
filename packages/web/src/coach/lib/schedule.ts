@@ -1,3 +1,4 @@
+import { FORM_SCHEDULE_LIMITS } from "@persistence/form-limits";
 import type { FormSchedule, RuleOverride } from "../api/types";
 
 /**
@@ -20,7 +21,7 @@ export const WEEKDAY_LONG = [
 ];
 
 const HOURS_IN_WEEK = 168;
-export const MAX_REMINDERS = 5;
+export const MAX_REMINDERS = FORM_SCHEDULE_LIMITS.maxReminders;
 
 export interface EffectiveRule {
   trigger: string;
