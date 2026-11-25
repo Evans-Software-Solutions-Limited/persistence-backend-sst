@@ -1,3 +1,4 @@
+import { COACH_FORM_LIMITS } from "@persistence/form-limits";
 import type {
   ClientFormRule,
   CoachForm,
@@ -42,11 +43,11 @@ export const QUESTION_TYPES: { type: QuestionType; label: string }[] = [
   { type: "yes_no", label: "Yes / no" },
 ];
 
-export const MAX_QUESTIONS = 40;
-export const MAX_PROMPT = 300;
-export const MAX_HELP = 300;
-export const MAX_OPTIONS = 12;
-export const MAX_TITLE = 120;
+export const MAX_QUESTIONS = COACH_FORM_LIMITS.maxQuestions;
+export const MAX_PROMPT = COACH_FORM_LIMITS.promptMax;
+export const MAX_HELP = COACH_FORM_LIMITS.helpMax;
+export const MAX_OPTIONS = COACH_FORM_LIMITS.maxOptions;
+export const MAX_TITLE = COACH_FORM_LIMITS.titleMax;
 
 export const PREFILL: Record<
   PrefillSource,

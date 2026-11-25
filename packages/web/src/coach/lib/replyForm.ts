@@ -1,3 +1,4 @@
+import { FORM_REPLY_MAX } from "@persistence/form-limits";
 import { Type } from "@sinclair/typebox";
 import { schemaResolver, trimmed } from "@/lib/form";
 
@@ -9,7 +10,7 @@ export interface ReplyValues {
   reply: string;
 }
 
-export const REPLY_MAX = 2000;
+export const REPLY_MAX = FORM_REPLY_MAX;
 
 export const replySchema = Type.Object({
   reply: Type.String({

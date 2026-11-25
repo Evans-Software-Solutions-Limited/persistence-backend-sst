@@ -1,3 +1,4 @@
+import { CLIENT_PROFILE_LIMITS } from "@persistence/form-limits";
 import { Type } from "@sinclair/typebox";
 import { schemaResolver, trimmed, type ServerFieldMap } from "@/lib/form";
 import type { ClientProfile, NewProfileInput } from "../api/types";
@@ -35,7 +36,7 @@ export function valuesFrom(p: ClientProfile): WhoValues {
  */
 const EMAIL = String.raw`^[^\s@]+@[^\s@]+\.[^\s@]+$`;
 const PHONE = String.raw`^\+?[0-9 ()-]{6,}$`;
-export const NAME_MAX = 80;
+export const NAME_MAX = CLIENT_PROFILE_LIMITS.displayNameMax;
 export const CONTACT_MESSAGE = "Enter an email address or a mobile number.";
 export const NAME_MESSAGE = `Keep the name to ${NAME_MAX} characters.`;
 const GOAL_MESSAGE = "Keep the goal under 200 characters.";
@@ -47,13 +48,25 @@ export const whoSchema = Type.Object({
   contact: Type.Union(
     [
       Type.String({ maxLength: 0 }),
-      Type.String({ pattern: EMAIL, maxLength: 320 }),
-      Type.String({ pattern: PHONE, maxLength: 40 }),
+      Type.String({
+        pattern: EMAIL,
+        maxLength: CLIENT_PROFILE_LIMITS.contactEmailMax,
+      }),
+      Type.String({
+        pattern: PHONE,
+        maxLength: CLIENT_PROFILE_LIMITS.contactPhoneMax,
+      }),
     ],
     { errorMessage: CONTACT_MESSAGE },
   ),
-  goal: Type.String({ maxLength: 200, errorMessage: GOAL_MESSAGE }),
-  notes: Type.String({ maxLength: 4000, errorMessage: NOTES_MESSAGE }),
+  goal: Type.String({
+    maxLength: CLIENT_PROFILE_LIMITS.goalMax,
+    errorMessage: GOAL_MESSAGE,
+  }),
+  notes: Type.String({
+    maxLength: CLIENT_PROFILE_LIMITS.privateNotesMax,
+    errorMessage: NOTES_MESSAGE,
+  }),
 });
 
 export const whoResolver = schemaResolver<WhoValues>(whoSchema, {

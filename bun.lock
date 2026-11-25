@@ -241,6 +241,7 @@
         "@fontsource/instrument-serif": "^5.2.8",
         "@hookform/resolvers": "^6.0.2",
         "@persistence/core": "workspace:*",
+        "@persistence/form-limits": "workspace:*",
         "@persistence/subscription-catalog": "workspace:*",
         "@sinclair/typebox": "^0.34.49",
         "@tabler/icons-react": "^3.36.1",

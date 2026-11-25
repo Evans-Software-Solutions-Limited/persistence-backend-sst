@@ -1,3 +1,4 @@
+import { CLIENT_SETTINGS_LIMITS } from "@persistence/form-limits";
 import { Type } from "@sinclair/typebox";
 import { schemaResolver, type ServerFieldMap } from "@/lib/form";
 import type { AlertMode, ClientSettings, FeatureKey } from "../api/types";
@@ -23,7 +24,13 @@ export const settingsSchema = Type.Object({
   trackTraining: Type.Boolean(),
   trackCalories: Type.Boolean(),
   sessionsPerWeek: Type.Union(
-    [Type.Integer({ minimum: 1, maximum: 14 }), Type.Null()],
+    [
+      Type.Integer({
+        minimum: CLIENT_SETTINGS_LIMITS.sessionsPerWeekMin,
+        maximum: CLIENT_SETTINGS_LIMITS.sessionsPerWeekMax,
+      }),
+      Type.Null(),
+    ],
     { errorMessage: SESSIONS_MESSAGE },
   ),
   alertMode: Type.Union([

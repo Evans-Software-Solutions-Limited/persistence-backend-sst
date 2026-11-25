@@ -1,3 +1,4 @@
+import { FORM_SCHEDULE_LIMITS } from "@persistence/form-limits";
 import { Type } from "@sinclair/typebox";
 import { schemaResolver, type ServerFieldMap } from "@/lib/form";
 import type { EffectiveRule } from "./schedule";
@@ -9,10 +10,10 @@ import type { EffectiveRule } from "./schedule";
  * due 1–2,160 hours after the send, up to 5 reminders of 1–720 hours.
  */
 
-export const MAX_DUE_HOURS = 2160;
-export const MAX_REMINDER_HOURS = 720;
-export const MAX_RULE_REMINDERS = 5;
-export const MAX_SELECTED_CLIENTS = 500;
+export const MAX_DUE_HOURS = FORM_SCHEDULE_LIMITS.maxDueHours;
+export const MAX_REMINDER_HOURS = FORM_SCHEDULE_LIMITS.maxReminderHours;
+export const MAX_RULE_REMINDERS = FORM_SCHEDULE_LIMITS.maxReminders;
+export const MAX_SELECTED_CLIENTS = FORM_SCHEDULE_LIMITS.maxSelectedClients;
 const TIME = "^([01]\\d|2[0-3]):([0-5]\\d)(:([0-5]\\d))?$";
 
 export const TIME_MESSAGE = "Choose a time to send it.";
@@ -22,9 +23,18 @@ export const REMINDER_MESSAGE = "Check the reminders.";
 export const WHO_MESSAGE = "Add at least one client.";
 
 export const ruleFields = {
-  weekday: Type.Union([Type.Integer({ minimum: 1, maximum: 7 }), Type.Null()], {
-    errorMessage: DAY_MESSAGE,
-  }),
+  weekday: Type.Union(
+    [
+      Type.Integer({
+        minimum: FORM_SCHEDULE_LIMITS.weekdayMin,
+        maximum: FORM_SCHEDULE_LIMITS.weekdayMax,
+      }),
+      Type.Null(),
+    ],
+    {
+      errorMessage: DAY_MESSAGE,
+    },
+  ),
   timeLocal: Type.Union([Type.String({ pattern: TIME }), Type.Null()], {
     errorMessage: TIME_MESSAGE,
   }),

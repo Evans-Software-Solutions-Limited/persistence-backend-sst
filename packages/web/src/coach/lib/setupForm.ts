@@ -1,3 +1,4 @@
+import { CLIENT_SETUP_LIMITS } from "@persistence/form-limits";
 import { Type, type TObject } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import type { Resolver } from "react-hook-form";
@@ -25,8 +26,8 @@ export const TARGETS_MESSAGE =
   "Enter calories and all three macros, or choose who sets them.";
 export const WELCOME_MESSAGE = "Keep the message under 1,000 characters.";
 
-const MAX_KCAL = 20_000;
-const MAX_MACRO_G = 2_000;
+const MAX_KCAL = CLIENT_SETUP_LIMITS.maxKcal;
+const MAX_MACRO_G = CLIENT_SETUP_LIMITS.maxMacroG;
 
 const amount = (maximum: number) =>
   Type.Number({ minimum: 0, maximum, errorMessage: TARGETS_MESSAGE });
@@ -73,7 +74,10 @@ export const SETUP_SCHEMAS: Record<SetupSection, TObject> = {
     items: Type.Array(
       item(
         Type.Object({
-          text: Type.String({ maxLength: 1000, errorMessage: WELCOME_MESSAGE }),
+          text: Type.String({
+            maxLength: CLIENT_SETUP_LIMITS.welcomeMessageMax,
+            errorMessage: WELCOME_MESSAGE,
+          }),
         }),
       ),
       { maxItems: 1 },

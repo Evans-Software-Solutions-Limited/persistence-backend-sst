@@ -22,11 +22,14 @@ native change. Mobile is PR 2 of 2.
   before it saves), form editor (live problems from RHF errors;
   `questionProblems` removed), send dialog, one-client rule (C10j), check-in
   reply, coach sign in. Schemas live in `coach/lib/*Form.ts`.
-- **Limits** are copied from the Elysia routes, not imported: the route
-  schemas are inline and unexported, and exporting them would mean editing
-  `microservices/`. Follow-up if wanted: a shared limits export.
-- **New copy** appears only where the server refuses what the form allowed
-  (e.g. "Choose a day to send it.", "Keep the reply under 2,000 characters.").
+- **Shared limits (Brad, 25 Nov):** new dependency-free package
+  `@persistence/form-limits` (plain constants). The Elysia routes (client
+  profiles, set-up, C3.9, coach forms, send rules, reply, user meals, meal
+  plans) and the web form schemas both import it. Same values as before,
+  pinned in the package test and core `coaching/__tests__/formLimits.test.ts`;
+  no API behaviour change. Mobile (#566) carries the identical commit.
+- **New copy** (approved by Brad, 25 Nov) appears only where the server
+  refuses what the form allowed (e.g. "Choose a day to send it.").
 
 ### 2026-11-24 — Tooling: TypeScript 7, Oxlint (tsrs type-aware), Vitest 5, Vite 8 ([PER-148](https://linear.app/evans-software-solutions/issue/PER-148); branch `claude/brave-dirac-h9ianz`)
 
