@@ -13,6 +13,7 @@ import { CoachLayout } from "../shell/CoachLayout";
 import { CoachCallback, CoachSignInView } from "../shell/CoachSignIn";
 import { render } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
+import { QueryClient } from "@tanstack/react-query";
 import {
   PROFILE_ID,
   ROSTER,
@@ -119,6 +120,51 @@ describe("CoachLayout", () => {
       route: "/coach/clients",
       path: "/coach/clients",
       api,
+    });
+    await waitFor(() =>
+      expect(currentPath()).toBe("/pricing?for=coaches&from=coach"),
+    );
+    expect(screen.queryByRole("navigation", { name: "Main" })).toBeNull();
+  });
+
+  // Production retries the roster (React Query's default 3, with backoff).
+  // The shell waits only for the FIRST attempt, never the retries.
+  const retryingClient = () =>
+    new QueryClient({
+      defaultOptions: { queries: { retry: 3, retryDelay: 60_000 } },
+    });
+
+  it("shows the shell after the roster's first failure, without waiting out its retries", async () => {
+    signIn();
+    const roster = vi.fn().mockRejectedValue(apiError(500, null));
+    const { queryClient } = renderCoach(<CoachLayout />, {
+      route: "/coach/clients",
+      path: "/coach/clients",
+      api: fakeApi({ roster }),
+      queryClient: retryingClient(),
+    });
+    expect(await screen.findByText("Ellie Hart")).toBeTruthy();
+    // Still retrying in the background (next attempt a minute away).
+    expect(roster).toHaveBeenCalledTimes(1);
+    expect(queryClient.getQueryState(["coach", "roster"])?.status).toBe(
+      "pending",
+    );
+    expect(currentPath()).toBe("/coach/clients");
+  });
+
+  it("still leaves for coach plans on a refused first attempt when the roster would retry", async () => {
+    signIn();
+    renderCoach(<CoachLayout />, {
+      route: "/coach/clients",
+      path: "/coach/clients",
+      api: fakeApi({
+        roster: vi
+          .fn()
+          .mockRejectedValue(
+            apiError(403, { code: COACH_SUBSCRIPTION_REQUIRED, message: "x" }),
+          ),
+      }),
+      queryClient: retryingClient(),
     });
     await waitFor(() =>
       expect(currentPath()).toBe("/pricing?for=coaches&from=coach"),

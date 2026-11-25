@@ -137,12 +137,17 @@ function SignedIn({ onSignOut }: { onSignOut: () => void }) {
       </div>
     );
   }
-  if (!isCoach || isCoachSubscriptionRequired(roster.error)) {
+  if (
+    !isCoach ||
+    isCoachSubscriptionRequired(roster.error ?? roster.failureReason)
+  ) {
     return <Navigate to={COACH_PLANS_REDIRECT} replace />;
   }
   // The roster is the first call the API checks the coach subscription on:
-  // wait for it so a coach without one never sees the workspace flash up.
-  if (roster.isPending) {
+  // wait for its FIRST attempt so a coach without one never sees the
+  // workspace flash up. Any other failure shows the shell straight away
+  // (the roster keeps retrying in the background), as before.
+  if (roster.isPending && roster.failureCount === 0) {
     return (
       <div className="persistence-coach">
         <div className="center-page">

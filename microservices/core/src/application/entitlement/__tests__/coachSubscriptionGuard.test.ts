@@ -49,6 +49,22 @@ const ATHLETE = "00000000-0000-4000-8000-000000000003"; // active `premium`
 const NO_SUB = "00000000-0000-4000-8000-000000000004"; // no row at all
 const FOUNDING = "00000000-0000-4000-8000-000000000005"; // granted, cancelled, paid through
 const CANCELLED = "00000000-0000-4000-8000-000000000006"; // cancelled, period over
+// Period-end tier changes whose renewal webhook hasn't landed yet: the row
+// still names the outgoing tier and its `expires_at` has passed.
+const COACH_TO_PREMIUM = "00000000-0000-4000-8000-000000000007";
+const PREMIUM_TO_COACH = "00000000-0000-4000-8000-000000000008";
+const COACH_TO_PREMIUM_LATER = "00000000-0000-4000-8000-000000000009"; // not yet effective
+const COACH_TO_GHOST = "00000000-0000-4000-8000-00000000000a"; // scheduled tier off-catalog
+
+const scheduled = (tier: string, when: "past" | "future") =>
+  JSON.stringify({
+    scheduled_change: {
+      next_tier_name: tier,
+      effective_at: new Date(
+        Date.now() + (when === "past" ? -1 : 1) * 3_600_000,
+      ).toISOString(),
+    },
+  });
 
 let pg: PGlite;
 
@@ -94,6 +110,12 @@ beforeEach(async () => {
       ('${ATHLETE}', 'premium', 'active', now() + interval '20 days', NULL),
       ('${FOUNDING}', 'individual_trainer', 'cancelled', now() + interval '300 days', now()),
       ('${CANCELLED}', 'coach', 'cancelled', now() - interval '1 day', now() - interval '30 days');
+    INSERT INTO user_subscriptions
+      (user_id, tier_name, payment_status, expires_at, metadata) VALUES
+      ('${COACH_TO_PREMIUM}', 'coach', 'active', now() - interval '1 hour', '${scheduled("premium", "past")}'),
+      ('${PREMIUM_TO_COACH}', 'premium', 'active', now() - interval '1 hour', '${scheduled("coach", "past")}'),
+      ('${COACH_TO_PREMIUM_LATER}', 'coach', 'active', now() + interval '1 day', '${scheduled("premium", "future")}'),
+      ('${COACH_TO_GHOST}', 'coach', 'active', now() - interval '1 hour', '${scheduled("retired_tier", "past")}');
   `);
 });
 
@@ -178,6 +200,17 @@ describe("hasActiveCoachSubscription (reuses the catalog's is_trainer_tier)", ()
     expect(await hasActiveCoachSubscription(LAPSED)).toBe(false);
     expect(await hasActiveCoachSubscription(CANCELLED)).toBe(false);
   });
+  it("follows a period-end tier change once it has taken effect, even before the webhook", async () => {
+    // Coach → Premium past effective_at: no longer a coach.
+    expect(await hasActiveCoachSubscription(COACH_TO_PREMIUM)).toBe(false);
+    // Premium → coach past effective_at: a coach now.
+    expect(await hasActiveCoachSubscription(PREMIUM_TO_COACH)).toBe(true);
+    // Not yet effective: the original tier still decides.
+    expect(await hasActiveCoachSubscription(COACH_TO_PREMIUM_LATER)).toBe(true);
+    // A scheduled tier with no catalog row is free rules, so not a coach.
+    expect(await hasActiveCoachSubscription(COACH_TO_GHOST)).toBe(false);
+  });
+
   it("is false for an athlete tier or no subscription", async () => {
     expect(await hasActiveCoachSubscription(ATHLETE)).toBe(false);
     expect(await hasActiveCoachSubscription(NO_SUB)).toBe(false);
@@ -199,11 +232,24 @@ describe("coachWorkspaceGuard on the root app", () => {
     expect((await call("/trainers/me/clients", FOUNDING)).status).toBe(200);
   });
 
+  it("follows a scheduled tier change on the route (in effect, and not yet)", async () => {
+    expect((await call("/trainers/me/clients", PREMIUM_TO_COACH)).status).toBe(
+      200,
+    );
+    expect(
+      (await call("/trainers/me/clients", COACH_TO_PREMIUM_LATER)).status,
+    ).toBe(200);
+  });
+
   it.each([
     ["a coach whose subscription lapsed", LAPSED],
     ["a coach whose cancelled period ended", CANCELLED],
     ["an athlete on Premium", ATHLETE],
     ["an account with no subscription", NO_SUB],
+    [
+      "a coach whose scheduled move to Premium has taken effect",
+      COACH_TO_PREMIUM,
+    ],
   ])("refuses %s with 403 coach_subscription_required", async (_, userId) => {
     for (const [path, method] of [
       ["/trainers/me/clients", "GET"],

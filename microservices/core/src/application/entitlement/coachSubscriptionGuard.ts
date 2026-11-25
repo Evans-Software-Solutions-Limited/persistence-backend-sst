@@ -1,6 +1,13 @@
 import Elysia from "elysia";
 import { getAuthUser } from "@persistence/api-utils/auth/supabaseAuth";
-import { resolveTrainerClientsEntitlement } from "./assertEntitlement";
+import { desc, eq } from "drizzle-orm";
+import { userSubscriptions } from "@persistence/db";
+import { getDb } from "@persistence/db/client";
+import {
+  loadTier,
+  resolveEffectiveScheduledTier,
+  resolveTrainerClientsEntitlement,
+} from "./assertEntitlement";
 
 /**
  * Coach platform access (PER-146, Brad 24 Nov 2026): the coach workspace is
@@ -59,12 +66,36 @@ export function isCoachWorkspaceRoute(route: string | undefined): boolean {
   );
 }
 
-/** True when the user's effective subscription is on a coach catalog tier. */
+/**
+ * True when the user's effective subscription is on a coach catalog tier.
+ *
+ * Status (lapse / cancellation) comes from `resolveTrainerClientsEntitlement`.
+ * A period-end tier change whose `effective_at` has passed then decides the
+ * TIER, exactly as `create_workout` / Loadout / Mealprint do: the renewal
+ * webhook may be late, so the row's own `tier_name` can still be the outgoing
+ * tier. A coach moving to a consumer tier loses access at `effective_at`; a
+ * consumer moving to a coach tier gains it. Done here rather than in the
+ * shared resolver so the seat cap's behaviour is unchanged.
+ */
 export async function hasActiveCoachSubscription(
   userId: string,
 ): Promise<boolean> {
-  const ctx = await resolveTrainerClientsEntitlement(userId);
-  return ctx.isTrainerTier;
+  const db = getDb();
+  const ctx = await resolveTrainerClientsEntitlement(userId, db);
+  // Lapsed / cancelled / unpaid: reverted to free rules, never a coach.
+  if (ctx.baseDenyReason !== "tier") return false;
+
+  const rows = await db
+    .select({ metadata: userSubscriptions.metadata })
+    .from(userSubscriptions)
+    .where(eq(userSubscriptions.userId, userId))
+    .orderBy(desc(userSubscriptions.createdAt))
+    .limit(1);
+  const scheduledTier = resolveEffectiveScheduledTier(rows[0]?.metadata);
+  if (scheduledTier === null) return ctx.isTrainerTier;
+  // No catalog row for the scheduled tier → free rules, so not a coach.
+  const scheduled = await loadTier(db, scheduledTier);
+  return scheduled?.isTrainerTier ?? false;
 }
 
 interface GuardContext {
