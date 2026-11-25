@@ -7,8 +7,10 @@ import {
 } from "@/domain/services/userMeals.service";
 
 /**
- * Fuel forms on react-hook-form (PER-147). Limits match the API: a meal name
- * is 1–40 characters once trimmed (`PUT /nutrition/user-meals`); a quick
+ * Fuel forms on react-hook-form (PER-147). A meal name is 1–40 characters
+ * once trimmed: what `user_meals` stores (`user_meals_name_len_chk`). The
+ * route's schema (`USER_MEAL_LIMITS.nameMax`, shared) allows 80, but the
+ * database refuses more than 40, so the form keeps the stored limit. A quick
  * entry has 1–10,000 kcal and macros of 0 or more.
  */
 

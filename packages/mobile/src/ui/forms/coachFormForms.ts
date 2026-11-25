@@ -9,6 +9,7 @@ import {
   MAX_QUESTIONS,
   MAX_UNIT,
   MIN_OPTIONS,
+  REPLY_MAX,
   TITLE_MAX,
   type Question,
 } from "@/domain/models/coachForms";
@@ -161,11 +162,11 @@ export interface ReplyValues {
   reply: string;
 }
 
-/** The API takes up to 2,000 characters (`REPLY_MAX`). */
+/** The API takes up to 2,000 characters (`REPLY_MAX`, shared). */
 export const replySchema = Type.Object({
   reply: Type.String({
     minLength: 1,
-    maxLength: 2000,
+    maxLength: REPLY_MAX,
     errorMessage: {
       StringMinLength: "Write a reply.",
       StringMaxLength: "Keep the reply under 2,000 characters.",

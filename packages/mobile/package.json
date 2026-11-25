@@ -24,6 +24,7 @@
     "@noble/ciphers": "2.4.0",
     "@noble/curves": "2.4.0",
     "@noble/hashes": "2.4.0",
+    "@persistence/form-limits": "workspace:*",
     "@persistence/subscription-catalog": "workspace:*",
     "@persistence/training-metrics": "workspace:*",
     "@react-native-async-storage/async-storage": "2.2.0",

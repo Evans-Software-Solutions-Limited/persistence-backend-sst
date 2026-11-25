@@ -1,7 +1,9 @@
+import { FORM_SCHEDULE_LIMITS } from "@persistence/form-limits";
 import { Type } from "@sinclair/typebox";
 import { schemaAccepts, schemaResolver } from "@/shared/form";
 import {
   MAX_DUE_HOURS,
+  MAX_REMINDERS,
   MAX_REMINDER_HOURS,
   type FormAudience,
   type FormTrigger,
@@ -19,7 +21,13 @@ import {
 const TIME = "^([01]\\d|2[0-3]):([0-5]\\d)(:([0-5]\\d))?$";
 
 export const ruleFieldsSchema = Type.Object({
-  weekday: Type.Union([Type.Integer({ minimum: 1, maximum: 7 }), Type.Null()]),
+  weekday: Type.Union([
+    Type.Integer({
+      minimum: FORM_SCHEDULE_LIMITS.weekdayMin,
+      maximum: FORM_SCHEDULE_LIMITS.weekdayMax,
+    }),
+    Type.Null(),
+  ]),
   timeLocal: Type.Union([Type.String({ pattern: TIME }), Type.Null()]),
   dueAfterHours: Type.Union([
     Type.Integer({ minimum: 1, maximum: MAX_DUE_HOURS }),
@@ -29,7 +37,7 @@ export const ruleFieldsSchema = Type.Object({
     Type.Object({
       afterHours: Type.Integer({ minimum: 1, maximum: MAX_REMINDER_HOURS }),
     }),
-    { maxItems: 5 },
+    { maxItems: MAX_REMINDERS },
   ),
 });
 
@@ -72,7 +80,9 @@ export interface SendSheetValues extends ClientRuleValues {
 export const sendSheetSchema = Type.Object({
   trigger: Type.String(),
   audience: Type.Union([Type.Literal("all_clients"), Type.Literal("selected")]),
-  selectedIds: Type.Array(Type.String(), { maxItems: 500 }),
+  selectedIds: Type.Array(Type.String(), {
+    maxItems: FORM_SCHEDULE_LIMITS.maxSelectedClients,
+  }),
   rule: ruleFieldsSchema,
 });
 

@@ -24,6 +24,11 @@ change (`react-hook-form`, `@hookform/resolvers` v6 and `@sinclair/typebox`
 - Submits are async now; NameInputs guard against return-then-blur
   submitting twice. Queued saves still report 409s through the queue's
   conflict state.
+- **Shared limits (Brad, 25 Nov):** `@persistence/form-limits` (same commit
+  as web #561: package + core routes). Mobile's coach-form, schedule, reply,
+  user-meal count and plan-name constants now come from it. Meal names stay
+  at 40: `user_meals_name_len_chk` stores 1–40 although the route's schema
+  says 80 (left unchanged; flagged to Brad).
 
 ### 2026-11-24 — Tooling: TypeScript 7, Oxlint (tsrs type-aware), Vitest 5, Vite 8 ([PER-148](https://linear.app/evans-software-solutions/issue/PER-148); branch `claude/brave-dirac-h9ianz`)
 
