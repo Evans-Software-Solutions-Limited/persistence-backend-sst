@@ -55,21 +55,8 @@ function plan(meals: MealPlanMealDTO[]): MealPlanDTO {
   return { id: "p", meals } as MealPlanDTO;
 }
 
-function candidates(
-  rows: {
-    kind: string;
-    id: string;
-    kcal: number;
-    proteinG?: number;
-    carbsG?: number;
-    fatG?: number;
-  }[],
-) {
-  return {
-    resolveByIds: vi.fn(async () =>
-      rows.map((row) => ({ proteinG: 0, carbsG: 0, fatG: 0, ...row })),
-    ),
-  } as never;
+function candidates(rows: { kind: string; id: string; kcal: number }[]) {
+  return { resolveByIds: vi.fn(async () => rows) } as never;
 }
 
 describe("planInputFromMealprint", () => {
@@ -172,53 +159,46 @@ describe("planInputFromMealprint", () => {
     });
   });
 
-  it("keeps a deleted recipe's part as a one-off when its foods remain", async () => {
-    // Accepted as a 600-kcal recipe + 200-kcal rice; the recipe was deleted
-    // since, so recipe_id is NULL and only the rice is left on the row.
+  it("adds nothing when an OFF refresh lowered a foods-only meal's food", async () => {
+    // Accepted at 2 × 250 kcal; the food row now says 200.
     foodRows.rows = [{ id: FOOD, servingSize: "100", servingQuantity: null }];
     const result = await planInputFromMealprint(
       "u",
-      plan([
-        meal({
-          label: "Chilli & rice",
-          items: [{ foodId: FOOD, servings: 1 }],
-          kcal: 800,
-          proteinG: 50,
-          carbsG: 90,
-          fatG: 20,
-        }),
-      ]),
-      "Day",
-      candidates([
-        { kind: "food", id: FOOD, kcal: 200, proteinG: 4, carbsG: 44, fatG: 1 },
-      ]),
-    );
-    expect(result.ok && result.input.meals[0].items).toEqual([
-      {
-        custom: {
-          name: "Chilli & rice",
-          kcal: 600,
-          proteinG: 46,
-          carbsG: 46,
-          fatG: 19,
-        },
-        servings: 1,
-        sortOrder: 0,
-      },
-      { foodId: FOOD, servings: 1, sortOrder: 1 },
-    ]);
-  });
-
-  it("adds no one-off when the foods account for the meal (rounding noise)", async () => {
-    foodRows.rows = [{ id: FOOD, servingSize: "100", servingQuantity: null }];
-    const result = await planInputFromMealprint(
-      "u",
-      plan([meal({ items: [{ foodId: FOOD, servings: 2 }], kcal: 405 })]),
+      plan([meal({ items: [{ foodId: FOOD, servings: 2 }], kcal: 500 })]),
       "Day",
       candidates([{ kind: "food", id: FOOD, kcal: 200 }]),
     );
     expect(result.ok && result.input.meals[0].items).toEqual([
       { foodId: FOOD, servings: 2, sortOrder: 0 },
+    ]);
+  });
+
+  it("saves only the foods when the recipe was deleted (documented limitation)", async () => {
+    // A 600-kcal recipe + 200-kcal rice; the recipe was deleted, so its
+    // recipe_id is NULL and the row looks like a foods-only meal.
+    foodRows.rows = [{ id: FOOD, servingSize: "100", servingQuantity: null }];
+    const result = await planInputFromMealprint(
+      "u",
+      plan([meal({ items: [{ foodId: FOOD, servings: 1 }], kcal: 800 })]),
+      "Day",
+      candidates([{ kind: "food", id: FOOD, kcal: 200 }]),
+    );
+    expect(result.ok && result.input.meals[0].items).toEqual([
+      { foodId: FOOD, servings: 1, sortOrder: 0 },
+    ]);
+  });
+
+  it("keeps the surviving backing when one of two was deleted (documented limitation)", async () => {
+    // Accepted as 1 × recipe (400) + 1 × saved meal (200) = 600; the saved
+    // meal was deleted, so the recipe's reconstructed servings absorb it.
+    const result = await planInputFromMealprint(
+      "u",
+      plan([meal({ recipeId: RECIPE, kcal: 600 })]),
+      "Day",
+      candidates([{ kind: "recipe", id: RECIPE, kcal: 400 }]),
+    );
+    expect(result.ok && result.input.meals[0].items).toEqual([
+      { recipeId: RECIPE, servings: 1.5, sortOrder: 0 },
     ]);
   });
 
