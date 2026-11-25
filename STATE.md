@@ -16,7 +16,7 @@ Design G part 2 (C3.1, Assign with no start date). Backend only, additive.
 - **Entry points:** coach `POST /trainers/me/programs/:id/assign` with no
   `startDate` (with one = dated, unchanged for 1.2.0); the `programme` set-up
   section (`programs/programmeSetupHandler.ts`, one line in `HANDLERS`);
-  `POST /users/me/program-assignments` ("Me", trainer role, own programmes only:
+  `POST /users/me/program-assignments` ("Me", trainer role + active coach plan (PER-146), own programmes only:
   design G's "or public" deferred pending Brad after Inspector Brad #564; re-send returns
   the first row). Mounted via `programs/programsAthleteRoutes.ts` (TS2589).
 - **Reads:** `scheduleMode`, `nextAssignmentId`, `weekOfProgramme {week, of}` on

@@ -50,6 +50,13 @@ vi.mock("../../notifications/push/notificationDispatcher", () => ({
     dispatchExisting = vi.fn(async () => {});
   },
 }));
+// The coach-plan check itself has its own suite (PER-146): here a coach's plan
+// is either active or lapsed.
+const coachPlans = vi.hoisted(() => ({ lapsed: new Set<string>() }));
+vi.mock("../../entitlement/coachSubscriptionGuard", async (original) => ({
+  ...(await original<object>()),
+  hasActiveCoachSubscription: async (id: string) => !coachPlans.lapsed.has(id),
+}));
 vi.mock("../../trainers/seats/trainerSeats", async (original) => ({
   ...(await original<object>()),
   evaluateTrainerJoinSeat: async () => ({ allowed: true }),
@@ -835,6 +842,28 @@ describe("POST /users/me/program-assignments (Me)", () => {
     expect((await me("", program)).status).toBe(401);
     const none = await db.select().from(schema.programAssignments);
     expect(none).toEqual([]);
+  });
+
+  it("needs an active coach plan: lapsed is 403 coach_subscription_required, active is 201", async () => {
+    // Inspector Brad, #564: "Me" is the coach's own planning, which comes
+    // with the coach subscription (PER-146).
+    const program = await makeProgram(COACH_A);
+    coachPlans.lapsed.add(COACH_A);
+    try {
+      const refused = await me(COACH_A, program);
+      expect(refused.status).toBe(403);
+      expect(refused.json).toMatchObject({
+        code: "coach_subscription_required",
+      });
+      expect(await db.select().from(schema.programAssignments)).toEqual([]);
+      // The athlete programme read in the same sub-app stays open.
+      expect((await http("GET", `/programs/${program}`, COACH_A)).status).toBe(
+        404,
+      );
+    } finally {
+      coachPlans.lapsed.delete(COACH_A);
+    }
+    expect((await me(COACH_A, program)).status).toBe(201);
   });
 });
 

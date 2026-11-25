@@ -8,6 +8,11 @@ import {
 } from "@persistence/api-utils/auth/supabaseAuth";
 import { todayIso } from "../trainers/programs/shared";
 import { assignProgrammeInSequence } from "./assignProgrammeInSequence";
+import {
+  COACH_SUBSCRIPTION_REQUIRED,
+  COACH_SUBSCRIPTION_REQUIRED_MESSAGE,
+  hasActiveCoachSubscription,
+} from "../entitlement/coachSubscriptionGuard";
 
 /**
  * POST /users/me/program-assignments — "Me" (canvas C2d, design G part 2,
@@ -21,10 +26,15 @@ import { assignProgrammeInSequence } from "./assignProgrammeInSequence";
  *   block their delete, and give you read access to private workouts in it
  *   through the materialised workout assignments (Inspector Brad, #564). No V2
  *   code writes `is_public` on programmes yet.
- * - The caller needs the trainer role ("coaches' own training is free with
- *   every trainer subscription", Brad 28 Oct). There's no athlete planning
- *   capability in the backend yet, so other callers get 403
- *   `planning_not_available` until one ships.
+ * - The caller needs the trainer role AND an active coach subscription:
+ *   "coaches' own training is free with every trainer subscription" (Brad
+ *   28 Oct), and since PER-146 a coach whose plan has lapsed is refused the
+ *   coach platform. Without the role: 403 `planning_not_available` (there's
+ *   no athlete planning capability in the backend yet). With the role but no
+ *   active coach plan: 403 `coach_subscription_required`, the same answer as
+ *   the coach workspace routes. Checked here rather than with the scoped
+ *   `coachSubscriptionGuard`, because this sub-app also carries the
+ *   athlete's `GET /programs/:id`, which must stay open.
  * - There's no fake self-relationship: the assignment's assigner and client
  *   are both the caller.
  * - Safe to re-send (offline queue): when the caller already has this
@@ -49,6 +59,13 @@ export const myProgramAssignmentsCreateHandler = new Elysia()
         return {
           code: "planning_not_available",
           message: "Planning your own programme isn't available on your plan",
+        };
+      }
+      if (!(await hasActiveCoachSubscription(userId))) {
+        ctx.set.status = 403;
+        return {
+          code: COACH_SUBSCRIPTION_REQUIRED,
+          message: COACH_SUBSCRIPTION_REQUIRED_MESSAGE,
         };
       }
 
