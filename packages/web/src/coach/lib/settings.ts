@@ -1,3 +1,4 @@
+import { CLIENT_SETTINGS_LIMITS } from "@persistence/form-limits";
 import type { ClientSettings, SettingsPatch } from "../api/types";
 
 /** C3.9 settings changes, kept pure for the container's optimistic update. */
@@ -5,7 +6,9 @@ import type { ClientSettings, SettingsPatch } from "../api/types";
 export const DEFAULT_SESSIONS_PER_WEEK = 3;
 
 export function clampSessions(n: number): number {
-  return Math.min(14, Math.max(1, Math.round(n)));
+  const { sessionsPerWeekMin: min, sessionsPerWeekMax: max } =
+    CLIENT_SETTINGS_LIMITS;
+  return Math.min(max, Math.max(min, Math.round(n)));
 }
 
 /** Turning training tracking on needs a target; start at three a week. */

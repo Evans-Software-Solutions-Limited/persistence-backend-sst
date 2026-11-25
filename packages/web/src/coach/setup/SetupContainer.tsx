@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useForm } from "react-hook-form";
 import {
   Navigate,
   useNavigate,
@@ -27,7 +28,13 @@ import {
   sameItems,
   stillEditable,
 } from "../lib/draft";
+import { applyServerErrors, firstMessage } from "@/lib/form";
 import { clockTime, firstName, initials } from "../lib/people";
+import {
+  setupResolver,
+  setupServerFields,
+  type SetupFormValues,
+} from "../lib/setupForm";
 import {
   SECTION_TITLE,
   WEB_SECTIONS,
@@ -158,6 +165,21 @@ export function SetupContainer() {
       ? (sectionParam as SetupSection)
       : visible[0];
 
+  // The open section is a react-hook-form (PER-147): it checks the section's
+  // items against that section's schema before a save. The drafts above stay
+  // the source of the values, so leaving by any link can still save them; a
+  // change to the items resets the form, which clears its errors as before.
+  const form = useForm<SetupFormValues>({
+    resolver: setupResolver,
+    values: {
+      section: current,
+      items:
+        drafts[current]?.items ??
+        (detailQ.data ? itemsOf(detailQ.data, current) : []),
+    },
+  });
+  const formError = firstMessage(form.formState.errors) ?? null;
+
   const detail = detailQ.data;
   if (detailQ.isPending) return <Loading />;
   if (!detail) {
@@ -206,11 +228,7 @@ export function SetupContainer() {
       dropDraft(current);
       return true;
     }
-    const problem = draftError(current, items);
-    if (problem) {
-      setError(problem);
-      return false;
-    }
+    if (!(await form.trigger())) return false;
     setSaving(true);
     setError(null);
     try {
@@ -278,6 +296,9 @@ export function SetupContainer() {
         setError(NOT_EDITABLE);
         return false;
       }
+      if (applyServerErrors(e, form.setError, setupServerFields(current))) {
+        return false;
+      }
       setError(
         isCoachApiError(e) && e.offline
           ? "You're offline. Your changes save when you're back online."
@@ -337,7 +358,7 @@ export function SetupContainer() {
         <TargetsEditor
           key={`targets-${detail.revision}`}
           {...editorProps}
-          error={error && error.startsWith("Enter calories") ? error : null}
+          error={formError}
         />
       );
       break;
@@ -393,7 +414,7 @@ export function SetupContainer() {
         count={checklistCount(detail, visible)}
         offlineAsOf={online ? null : clockTime(detailQ.dataUpdatedAt)}
         notice={notice ?? (editable ? null : NOT_EDITABLE)}
-        error={error}
+        error={error ?? formError}
         toast={toast}
         saving={saving}
         dirty={dirty}
@@ -408,6 +429,7 @@ export function SetupContainer() {
         onCancel={() => {
           dropDraft(current);
           setError(null);
+          form.clearErrors();
         }}
         onBack={() => void go(editing ? base : `${base}/who`)}
         onSkip={() => void go(`${base}/invite`)}

@@ -28,6 +28,8 @@ export interface FormEditorProps {
   questions: FormQuestion[];
   selected: number;
   problems: Map<number, string>;
+  /** The form's schema refuses it (no name, no questions, a problem). */
+  invalid: boolean;
   dirty: boolean;
   busy: boolean;
   offline: boolean;
@@ -47,12 +49,7 @@ export interface FormEditorProps {
 
 export function FormEditor(p: FormEditorProps) {
   const q = p.questions[p.selected];
-  const canSave =
-    p.dirty &&
-    !p.busy &&
-    p.title.trim().length > 0 &&
-    p.questions.length > 0 &&
-    p.problems.size === 0;
+  const canSave = p.dirty && !p.busy && !p.invalid;
   return (
     <>
       <BackLink to="/coach/library/forms" label="Forms" />

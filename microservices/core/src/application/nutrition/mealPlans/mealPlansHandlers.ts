@@ -1,3 +1,4 @@
+import { MEAL_PLAN_LIMITS } from "@persistence/form-limits";
 import Elysia, { t } from "elysia";
 import {
   getAuthUser,
@@ -65,14 +66,14 @@ const itemSchema = t.Object({
 });
 
 const mealSchema = t.Object({
-  name: t.String({ maxLength: 80 }),
+  name: t.String({ maxLength: MEAL_PLAN_LIMITS.mealNameMax }),
   logSlot,
   sortOrder: t.Optional(t.Integer({ minimum: 0 })),
   items: t.Array(itemSchema, { maxItems: MAX_ITEMS_PER_MEAL }),
 });
 
 export const planBodyFields = {
-  name: t.String({ maxLength: 200 }),
+  name: t.String({ maxLength: MEAL_PLAN_LIMITS.nameMax }),
   notes: t.Optional(t.Nullable(t.String({ maxLength: 2000 }))),
   meals: t.Array(mealSchema, { maxItems: MAX_PLAN_MEALS }),
 };
