@@ -7,6 +7,7 @@ import {
   within,
 } from "@testing-library/react";
 import { endSession, loadSession, saveSession } from "../api/coachAuth";
+import { COACH_SUBSCRIPTION_REQUIRED, coachFetch } from "../api/coachApi";
 import { ClientsListContainer } from "../clients/ClientsListContainer";
 import { CoachLayout } from "../shell/CoachLayout";
 import { CoachCallback, CoachSignInView } from "../shell/CoachSignIn";
@@ -81,7 +82,9 @@ describe("CoachLayout", () => {
     ).toBeTruthy();
   });
 
-  it("explains when the account isn't a coach", async () => {
+  // PER-146: the coach platform is only for coaches with an active coach
+  // subscription. Everyone else goes to the coach plans page.
+  it("sends an athlete (no coach role) to coach plans", async () => {
     signIn();
     const api = fakeApi({
       profile: vi.fn().mockResolvedValue({
@@ -96,11 +99,77 @@ describe("CoachLayout", () => {
       path: "/coach/clients",
       api,
     });
-    expect(
-      await screen.findByText("This account isn't a coach account"),
-    ).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
-    await waitFor(() => expect(currentPath()).toBe("/coach/login"));
+    await waitFor(() =>
+      expect(currentPath()).toBe("/pricing?for=coaches&from=coach"),
+    );
+    expect(screen.queryByText("Ellie Hart")).toBeNull();
+    expect(screen.queryByText("This account isn't a coach account")).toBeNull();
+  });
+
+  it("sends a coach without a coach subscription to coach plans, without showing the workspace", async () => {
+    signIn();
+    const api = fakeApi({
+      roster: vi
+        .fn()
+        .mockRejectedValue(
+          apiError(403, { code: COACH_SUBSCRIPTION_REQUIRED, message: "x" }),
+        ),
+    });
+    renderCoach(<CoachLayout />, {
+      route: "/coach/clients",
+      path: "/coach/clients",
+      api,
+    });
+    await waitFor(() =>
+      expect(currentPath()).toBe("/pricing?for=coaches&from=coach"),
+    );
+    expect(screen.queryByRole("navigation", { name: "Main" })).toBeNull();
+  });
+
+  it("keeps the workspace on other roster errors (only the subscription code redirects)", async () => {
+    signIn();
+    renderCoach(<CoachLayout />, {
+      route: "/coach/clients",
+      path: "/coach/clients",
+      api: fakeApi({
+        roster: vi
+          .fn()
+          .mockRejectedValue(apiError(403, { message: "Forbidden" })),
+      }),
+    });
+    expect(await screen.findByText("Ellie Hart")).toBeTruthy();
+    expect(currentPath()).toBe("/coach/clients");
+  });
+
+  it("a subscription that lapses mid-session sends the coach to coach plans on the next refused call", async () => {
+    signIn();
+    const { queryClient } = renderCoach(<CoachLayout />, {
+      route: "/coach/clients",
+      path: "/coach/clients",
+      api: fakeApi(),
+    });
+    expect(await screen.findByText("Ellie Hart")).toBeTruthy();
+    expect(queryClient.getQueryData(["coach", "profile"])).toBeTruthy();
+
+    // A real call refused by the API, as coachFetch sees it.
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({ code: COACH_SUBSCRIPTION_REQUIRED, message: "x" }),
+          { status: 403 },
+        ),
+    );
+    await act(async () => {
+      await expect(
+        coachFetch("/trainers/me/clients", {}, fetchImpl),
+      ).rejects.toMatchObject({ status: 403 });
+    });
+    await waitFor(() =>
+      expect(currentPath()).toBe("/pricing?for=coaches&from=coach"),
+    );
+    expect(queryClient.getQueryData(["coach", "profile"])).toBeUndefined();
+    // Still signed in: buying a plan in the app and coming back just works.
+    expect(loadSession()).not.toBeNull();
   });
 
   it("returns to sign in when the API says signed out, and offers retry otherwise", async () => {
