@@ -3703,6 +3703,10 @@
   flex-shrink: 0;
   color: var(--m-text-3);
 }
+/* PER-146: why someone sent from /coach is on the coach plans page. */
+.mkt .catalog-note.coach-access-note {
+  margin: 0 0 22px;
+}
 .mkt .catalog-note b {
   color: var(--m-text);
 }

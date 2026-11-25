@@ -1,3 +1,4 @@
+import { COACH_SIGN_IN_PATH } from "@/lib/coachPlans";
 import { Link } from "react-router";
 import { COMPANY, COMPANY_URL } from "./config";
 import { SectionLink } from "./SectionLink";
@@ -32,6 +33,8 @@ export function MarketingFooter() {
             <SectionLink hash="mealprint">Mealprint</SectionLink>
             <SectionLink hash="coach">For coaches</SectionLink>
             <Link to="/pricing">Pricing</Link>
+            {/* A full page load, so no marketing script carries into /coach. */}
+            <a href={COACH_SIGN_IN_PATH}>Coach sign in</a>
           </div>
           <div className="footer-col">
             <h4>Company</h4>
