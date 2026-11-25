@@ -54,6 +54,8 @@ export type AthleteUpcomingWorkout = {
   dueDate: string | null;
   assignedByType: "personal_trainer" | "physiotherapist" | null;
   assignedByName: string | null;
+  /** PER-112: position in a `sequence` programme's order; omitted otherwise. */
+  sequenceIndex?: number;
 };
 
 /**
@@ -197,6 +199,9 @@ export class CoachingAggregateRepository {
                 dueDate: workout.dueDate,
                 assignedByType,
                 assignedByName: trainer?.name ?? null,
+                ...(workout.sequenceIndex !== undefined
+                  ? { sequenceIndex: workout.sequenceIndex }
+                  : {}),
               }),
             ),
             habits: habits

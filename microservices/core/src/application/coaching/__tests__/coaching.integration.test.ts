@@ -1657,7 +1657,7 @@ describe("invited profiles", () => {
       );
     // meal_plan went live with PER-118 (its own suite covers it).
     for (const section of [
-      "programme",
+      // programme is live since PER-112 (designG.sequence suite covers it).
       // starter_form and repeating_form are live since PER-116.
       "resource",
     ]) {
