@@ -1,5 +1,31 @@
 # Project memory · persistence-backend-sst
 
+### 2026-11-25 — Android push: Firebase config per variant ([PER-149](https://linear.app/evans-software-solutions/issue/PER-149); branch `claude/per-149-android-push`)
+
+Native change approved by Brad on PER-149 (25 Nov). Needs a new Android
+build; no build started by an agent. No new package, no Firebase JS SDK.
+
+- `packages/mobile/app.config.ts` sets `android.googleServicesFile` per
+  variant: staging → `firebase/google-services.staging.json`; production and
+  play-testing (same package) → `firebase/google-services.production.json`;
+  dev → none. `GOOGLE_SERVICES_JSON` (EAS file env var) overrides. Files are
+  meant to be committed (client identifiers, not secrets); Brad adds them, none
+  are in the repo yet.
+- Missing file: an Android EAS build (`EAS_BUILD_PLATFORM=android`) throws a
+  clear error; everything else (iOS builds, `expo start`, `eas update`, jest)
+  only warns.
+- Registration path checked: POST_NOTIFICATIONS is in the expo-notifications
+  manifest and requested via `requestPermissionsAsync`; the "default" channel
+  is created in `app/_layout.tsx` and matches the backend's `channelId`;
+  `getExpoPushTokenAsync` passes the EAS projectId; the hook registers with
+  `platform: "android"`; the tap handler is platform-neutral. No code fix was
+  needed. Not fixed (reported): `addPushTokenListener` registers raw native
+  tokens next to Expo tokens (prod: 53 active raw iOS rows).
+- Tests: `__tests__/app.config.test.ts` (per-variant file, override, missing
+  file warn/throw), Android cases in `usePushNotifications.test.tsx` and
+  `expo-notifications.adapter.test.ts`. Brad's steps:
+  `docs/android-push-setup.md`.
+
 ### 2026-11-24 — Tooling: TypeScript 7, Oxlint (tsrs type-aware), Vitest 5, Vite 8 ([PER-148](https://linear.app/evans-software-solutions/issue/PER-148); branch `claude/brave-dirac-h9ianz`)
 
 Cuts check time, which was the cause of CI and local timeouts. No CI caching

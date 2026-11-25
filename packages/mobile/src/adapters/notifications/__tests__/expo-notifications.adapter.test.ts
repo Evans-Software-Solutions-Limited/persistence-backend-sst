@@ -148,6 +148,37 @@ it("gets the Expo push token using the configured project", async () => {
   });
 });
 
+it("on Android, gets the Expo push token with the EAS project id (PER-149)", async () => {
+  Object.defineProperty(Platform, "OS", {
+    value: "android",
+    configurable: true,
+  });
+  await expect(adapter.getDevicePushToken()).resolves.toEqual({
+    ok: true,
+    value: "ExponentPushToken[stub]",
+  });
+  expect(Notifications.getExpoPushTokenAsync).toHaveBeenCalledWith({
+    projectId: "project-id",
+  });
+});
+
+it("on Android without Firebase config, reports token_failed instead of throwing (PER-149)", async () => {
+  Object.defineProperty(Platform, "OS", {
+    value: "android",
+    configurable: true,
+  });
+  // The error a build without google-services.json raises on Android.
+  const message =
+    "Default FirebaseApp is not initialized in this process com.bradleyevans96.persistence. Make sure to call FirebaseApp.initializeApp(Context) first.";
+  jest
+    .mocked(Notifications.getExpoPushTokenAsync)
+    .mockRejectedValueOnce(new Error(message));
+  await expect(adapter.getDevicePushToken()).resolves.toEqual({
+    ok: false,
+    error: { kind: "notification", code: "token_failed", message },
+  });
+});
+
 it.each([new Error("token failure"), "token failure"])(
   "maps token errors",
   async (error) => {
