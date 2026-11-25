@@ -132,6 +132,52 @@ describe("Pricing", () => {
     expect(screen.getAllByText("Loadout + Mealprint included")).toHaveLength(3);
   });
 
+  // PER-146: the coach plans page.
+  it("opens the Coaches tab directly from ?for=coaches", () => {
+    renderPage(<Pricing />, { route: "/pricing?for=coaches" });
+    expect(
+      screen
+        .getByRole("tab", { name: "Coaches" })
+        .getAttribute("aria-selected"),
+    ).toBe("true");
+    expect(screen.getByTestId("pricing-tier-individual_trainer")).toBeDefined();
+    // Only someone sent from /coach gets the explanation.
+    expect(screen.queryByText(/coach platform needs a coach plan/i)).toBeNull();
+  });
+
+  it("explains the coach plan to someone sent from the coach platform", () => {
+    renderPage(<Pricing />, { route: "/pricing?for=coaches&from=coach" });
+    const note = screen.getByRole("status");
+    expect(note.textContent).toContain("The coach platform needs a coach plan");
+    expect(note.textContent).toContain("App Store or Google Play");
+    expect(
+      within(note)
+        .getByRole("link", { name: "sign in again" })
+        .getAttribute("href"),
+    ).toBe("/coach/login");
+    // The line belongs to the coach plans; it goes with the other tabs.
+    fireEvent.click(screen.getByRole("tab", { name: "Individuals" }));
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("keeps Individuals as the default for any other ?for", () => {
+    renderPage(<Pricing />, { route: "/pricing?for=nonsense" });
+    expect(
+      screen
+        .getByRole("tab", { name: "Individuals" })
+        .getAttribute("aria-selected"),
+    ).toBe("true");
+  });
+
+  it("links Coach sign in from the nav and the footer", () => {
+    renderPage(<Pricing />);
+    const links = screen.getAllByRole("link", { name: "Coach sign in" });
+    expect(links).toHaveLength(2);
+    for (const link of links) {
+      expect(link.getAttribute("href")).toBe("/coach/login");
+    }
+  });
+
   it("renders web-only organisation tiers with live web calls to action", () => {
     renderPage(<Pricing />);
     fireEvent.click(screen.getByRole("tab", { name: "Organisations" }));

@@ -12,6 +12,7 @@ import { recordDataSharingConsent } from "./recordDataSharingConsent";
 import { CONSENT_VERSION } from "./consent";
 import { closeFormsOnEnd } from "../coaching/forms/generators";
 import { removePlanAssignmentsForRelationship } from "../repositories/nutritionPlanRepository";
+import { removeResourceAssignmentsForRelationship } from "../coaching/resources/resourceRepository";
 
 export interface EndCoachClientRelationshipArgs {
   trainerId: string;
@@ -208,6 +209,12 @@ export async function endCoachClientRelationship({
     // relationship become `removed`, so a revived relationship doesn't make
     // them readable again. The plans stay in the coach's library.
     await removePlanAssignmentsForRelationship(tx, row.id, trainerId);
+
+    // 3e — Design I (PER-122): this coach's resource assignments for this
+    // relationship are removed, so the athlete loses them and a revived
+    // relationship doesn't bring them back. The resources stay in the
+    // coach's library.
+    await removeResourceAssignmentsForRelationship(tx, row.id, trainerId);
 
     await auditTrainerAction({
       trainerId,

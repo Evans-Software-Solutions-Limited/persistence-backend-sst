@@ -23,7 +23,7 @@ export function PerProfile({ screen: Screen }: { screen: ComponentType }) {
 
 /**
  * The web coach workspace (PER-124), mounted at `/coach/*` and loaded as its
- * own chunk. Not linked from the marketing site.
+ * own chunk. The marketing nav and footer link to its sign-in (PER-146).
  */
 export default function CoachApp() {
   return (

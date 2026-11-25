@@ -107,6 +107,9 @@ const BASE_TABLES = [
   schema.clientAiSummaries,
   schema.nutritionPlans,
   schema.nutritionPlanAssignments,
+  // PER-122: offboarding also removes this coach's resource assignments.
+  schema.coachResources,
+  schema.coachResourceAssignments,
   schema.bodyMeasurements,
   schema.clientDataAccessLog,
 ];
