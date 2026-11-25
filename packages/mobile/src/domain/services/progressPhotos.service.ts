@@ -45,18 +45,31 @@ function byNewest(
 /**
  * Adopt a full `GET /users/me/progress-photos`. Sets this phone is still
  * deleting (a queued DELETE) stay out, so a read that lands before the
- * delete syncs can't bring them back. The prompt answers recorded on this
- * phone are kept.
+ * delete syncs can't bring them back. Cached sets updated after the read's
+ * `asOf` stay in. The prompt answers recorded on this phone are kept.
  */
 export function mergeProgressPhotosResponse(
   prev: ProgressPhotosCache | null,
   res: ProgressPhotosResponse,
   deletingIds: ReadonlySet<string>,
 ): ProgressPhotosCache {
+  const fromServer = res.sets.filter(
+    (s) => s.status === "ready" && !deletingIds.has(s.id),
+  );
+  // A set that finished uploading after this read began isn't in it yet:
+  // keep it rather than wipe it until the next read (Inspector Brad, #567).
+  const serverIds = new Set(res.sets.map((s) => s.id));
+  const newerThanRead = res.asOf
+    ? (prev?.sets ?? []).filter(
+        (s) =>
+          !serverIds.has(s.id) &&
+          !deletingIds.has(s.id) &&
+          (res.deletedIds ?? []).indexOf(s.id) === -1 &&
+          Date.parse(s.updatedAt) > Date.parse(res.asOf),
+      )
+    : [];
   return {
-    sets: res.sets
-      .filter((s) => s.status === "ready" && !deletingIds.has(s.id))
-      .sort(byNewest),
+    sets: [...fromServer, ...newerThanRead].sort(byNewest),
     photoSharing: res.photoSharing,
     asOf: res.asOf,
     sharingPromptAnsweredFor: prev?.sharingPromptAnsweredFor ?? [],

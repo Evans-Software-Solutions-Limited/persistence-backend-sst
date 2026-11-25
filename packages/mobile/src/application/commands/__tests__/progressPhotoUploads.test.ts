@@ -193,6 +193,36 @@ describe("processProgressPhotoUploads", () => {
     expect(t.row(saved.id)?.failed).toBe("rejected");
   });
 
+  it("retries a 401 or 403 from create and complete (an expired session isn't a refusal)", async () => {
+    const t = setup();
+    const saved = t.save();
+    t.api.progressPhotoFailures.create.push(status(401), status(403));
+    t.api.progressPhotoFailures.complete.push(status(401), status(403));
+    for (const wait of [0, 5_000, 30_000, 120_000]) {
+      t.advance(wait);
+      await expect(t.run()).resolves.toMatchObject({ retrying: 1 });
+      expect(t.row(saved.id)?.failed).toBeNull();
+    }
+    expect(t.row(saved.id)?.attempts).toBe(4);
+    t.advance(600_000);
+    await expect(t.run()).resolves.toMatchObject({ uploaded: 1 });
+  });
+
+  it("a delete by the phone id after the set uploaded deletes the server copy", async () => {
+    const t = setup();
+    const saved = t.save();
+    await t.run();
+    expect(t.storage.getCachedProgressPhotos(USER)?.sets).toHaveLength(1);
+    // The viewer's confirm still holds the phone id.
+    deleteProgressPhotoSetCommand(t.storage, USER, saved.id);
+    expect(t.storage.getCachedProgressPhotos(USER)?.sets).toEqual([]);
+    expect(t.storage.getPendingMutations()[0]).toMatchObject({
+      entityId: "set-1",
+      method: "DELETE",
+      endpoint: "/users/me/progress-photos/set-1",
+    });
+  });
+
   it("retries a 429 and a 408", async () => {
     const t = setup();
     const saved = t.save();

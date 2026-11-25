@@ -3,7 +3,10 @@ import { Alert } from "react-native";
 import { renderWithTheme } from "../../../../../__tests__/test-utils";
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
-import { savePendingProgressPhotosCommand } from "@/application/commands/progressPhotos.command";
+import {
+  recordUploadedPhotoSet,
+  savePendingProgressPhotosCommand,
+} from "@/application/commands/progressPhotos.command";
 import type { AuthSession } from "@/domain/ports/auth.port";
 import type {
   PendingProgressPhoto,
@@ -400,6 +403,20 @@ describe("ProgressPhotoViewerContainer (Y3c)", () => {
       alert.mock.calls[1]![2]!.find((b) => b.text === "Delete")!.onPress!(),
     );
     expect(mockBack).toHaveBeenCalled();
+  });
+
+  it("keeps showing a phone set that uploaded while open, under its server id", async () => {
+    const { api, render } = setup();
+    api.progressPhotoSets = [
+      serverSet("s1", "2026-10-25", 82.4),
+      serverSet("s2", "2026-10-11", 81.9),
+    ];
+    recordUploadedPhotoSet("local-xyz", "s2");
+    mockParams.setId = "local-xyz";
+    const s = render(<ProgressPhotoViewerContainer />);
+    await waitFor(() =>
+      expect(s.getByText("Front · 11 Oct 2026")).toBeTruthy(),
+    );
   });
 
   it("renders an empty viewer with no photos", async () => {

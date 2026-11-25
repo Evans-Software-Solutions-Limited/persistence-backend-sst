@@ -1,7 +1,10 @@
 import { useCallback, useState } from "react";
 import { Alert } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { deleteProgressPhotoSetCommand } from "@/application/commands/progressPhotos.command";
+import {
+  deleteProgressPhotoSetCommand,
+  resolvePhotoSetId,
+} from "@/application/commands/progressPhotos.command";
 import type { ProgressPhotoPose } from "@/domain/models/progressPhotos";
 import {
   photoDateLabel,
@@ -70,7 +73,9 @@ export function ProgressPhotoViewerContainer() {
   const [open, setOpen] = useState(false);
 
   const sets = photos.sets;
-  const set = sets.find((s) => s.id === setId) ?? sets[0] ?? null;
+  // A phone set that uploaded while open keeps showing under its server id.
+  const currentId = setId ? resolvePhotoSetId(setId) : null;
+  const set = sets.find((s) => s.id === currentId) ?? sets[0] ?? null;
   const latest = sets[0] ?? null;
 
   const reloadAll = photos.reloadAll;

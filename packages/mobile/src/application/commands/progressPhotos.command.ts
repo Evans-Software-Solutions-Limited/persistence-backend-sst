@@ -106,6 +106,27 @@ export function enqueueProgressPhotoSetDelete(
   });
 }
 
+/**
+ * Phone id → server id for sets this app session uploaded. The upload step
+ * removes the `pending_progress_photos` row once a set completes, but a
+ * screen opened before that (the viewer, a delete confirm) still holds the
+ * phone id; this keeps it pointing at the uploaded set (Inspector Brad, #567).
+ * Lives as long as the app process, which outlives any such screen.
+ */
+const uploadedPhotoSetIds = new Map<string, string>();
+
+export function recordUploadedPhotoSet(
+  localId: string,
+  serverId: string,
+): void {
+  uploadedPhotoSetIds.set(localId, serverId);
+}
+
+/** The id to use for a set now: its server id once a phone set uploaded. */
+export function resolvePhotoSetId(id: string): string {
+  return uploadedPhotoSetIds.get(id) ?? id;
+}
+
 /** Delete a set from the gallery, offline-safe. */
 export function deleteProgressPhotoSetCommand(
   storage: StoragePort,
@@ -115,8 +136,10 @@ export function deleteProgressPhotoSetCommand(
   if (isLocalPhotoSetId(setId)) {
     const row = storage.getPendingProgressPhotoSet(setId);
     storage.deletePendingProgressPhotoSet(setId);
-    if (!row?.serverSetId) return;
-    setId = row.serverSetId;
+    // Uploaded while the confirm was open: delete the server copy.
+    const serverId = row?.serverSetId ?? uploadedPhotoSetIds.get(setId);
+    if (!serverId) return;
+    setId = serverId;
   }
   storage.cacheProgressPhotos(
     userId,

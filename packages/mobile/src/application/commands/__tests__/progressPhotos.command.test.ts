@@ -10,6 +10,8 @@ import {
   deletingProgressPhotoSetIds,
   grantPhotoSharingCommand,
   isLocalPhotoSetId,
+  recordUploadedPhotoSet,
+  resolvePhotoSetId,
   PHOTO_SHARING_ENDPOINT,
   PHOTO_SHARING_ENTITY,
   PROGRESS_PHOTO_SET_ENTITY,
@@ -137,6 +139,23 @@ describe("deleteProgressPhotoSetCommand", () => {
     expect(storage.getPendingProgressPhotoSets(USER)).toEqual([]);
     expect(storage.getPendingMutations()[0]).toMatchObject({
       entityId: "s9",
+      method: "DELETE",
+    });
+  });
+
+  it("follows a phone id to its server set once the set has uploaded", () => {
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheProgressPhotos(USER, {
+      ...EMPTY_PROGRESS_PHOTOS,
+      sets: [serverSet("s7")],
+    });
+    expect(resolvePhotoSetId("local-abc")).toBe("local-abc");
+    recordUploadedPhotoSet("local-abc", "s7");
+    expect(resolvePhotoSetId("local-abc")).toBe("s7");
+    deleteProgressPhotoSetCommand(storage, USER, "local-abc");
+    expect(storage.getCachedProgressPhotos(USER)?.sets).toEqual([]);
+    expect(storage.getPendingMutations()[0]).toMatchObject({
+      entityId: "s7",
       method: "DELETE",
     });
   });

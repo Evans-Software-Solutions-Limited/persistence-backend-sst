@@ -1,9 +1,8 @@
 import { act, renderHook, waitFor } from "@testing-library/react-native";
 import type { ReactNode } from "react";
-import { AppState } from "react-native";
+import { Alert, AppState } from "react-native";
 import * as ImageManipulator from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
-import { Alert } from "react-native";
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
 import { savePendingProgressPhotosCommand } from "@/application/commands/progressPhotos.command";

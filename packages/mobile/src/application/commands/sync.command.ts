@@ -45,7 +45,10 @@ import {
   nextUploadDelayMs,
   withSet,
 } from "@/domain/services/progressPhotos.service";
-import { enqueueProgressPhotoSetDelete } from "./progressPhotos.command";
+import {
+  enqueueProgressPhotoSetDelete,
+  recordUploadedPhotoSet,
+} from "./progressPhotos.command";
 import { readLocalFile } from "@/shared/utils/localFile";
 
 /** A non-OK HTTP response from a sync POST/PUT/DELETE, carrying the status so
@@ -1955,10 +1958,15 @@ function markFailed(
   return "failed";
 }
 
-/** No answer, a server error, or a status worth asking again about. */
+/**
+ * No answer, a server error, or a status worth asking again about: the same
+ * line as the JSON queue (`isPermanentClientError`), so an expired session
+ * (401) or a 403/402 retries instead of stranding the set (Inspector Brad,
+ * #567).
+ */
 function isRetryableApiError(error: ApiError): boolean {
   if (error.status === undefined) return true;
-  return error.status >= 500 || error.status === 408 || error.status === 429;
+  return !isPermanentClientError(error.status);
 }
 
 /**
@@ -2058,6 +2066,9 @@ async function uploadPendingPhotoSet(
     userId,
     withSet(storage.getCachedProgressPhotos(userId), done.value),
   );
+  // Keep the phone id → server id link so a delete (or a viewer) still
+  // holding the phone id reaches the uploaded set (Inspector Brad, #567).
+  recordUploadedPhotoSet(id, serverSetId);
   storage.deletePendingProgressPhotoSet(id);
   return "uploaded";
 }

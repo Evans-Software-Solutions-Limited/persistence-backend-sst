@@ -119,6 +119,39 @@ describe("mergeProgressPhotosResponse", () => {
     expect(merged.asOf).toBe("2026-11-25T10:00:00.000Z");
   });
 
+  it("keeps cached sets that finished after the read began", () => {
+    const prev = withSet(
+      withSet(
+        withSet(
+          withSet(null, set("old", "2026-10-01")),
+          set("new", "2026-11-25", { updatedAt: "2026-11-25T10:00:05.000Z" }),
+        ),
+        set("gone", "2026-11-24", { updatedAt: "2026-11-25T10:00:06.000Z" }),
+      ),
+      set("deleting", "2026-11-23", { updatedAt: "2026-11-25T10:00:07.000Z" }),
+    );
+    const res = {
+      sets: [set("b", "2026-10-25")],
+      deletedIds: ["gone"],
+      photoSharing: sharing(false),
+      asOf: "2026-11-25T10:00:00.000Z",
+    };
+    // "old" predates the read, so its absence means it's gone.
+    expect(
+      mergeProgressPhotosResponse(prev, res, new Set(["deleting"])).sets.map(
+        (s) => s.id,
+      ),
+    ).toEqual(["new", "b"]);
+    // Without an asOf nothing is kept from before.
+    expect(
+      mergeProgressPhotosResponse(
+        prev,
+        { ...res, asOf: "" },
+        new Set(),
+      ).sets.map((s) => s.id),
+    ).toEqual(["b"]);
+  });
+
   it("starts with no answers without a previous cache", () => {
     const merged = mergeProgressPhotosResponse(
       null,
