@@ -109,13 +109,33 @@ export class ExpoNotificationsAdapter implements NotificationsPort {
     }
   }
 
+  /**
+   * Expo's `addPushTokenListener` hands back the raw native token (APNs on
+   * iOS, FCM on Android), which the backend's Expo push path can't deliver
+   * to. Registering it left junk `user_devices` rows (PER-149). So on each
+   * native token event this re-fetches the Expo push token and emits that.
+   *
+   * Loop guard: `getExpoPushTokenAsync` calls `getDevicePushTokenAsync`,
+   * which fires this same native event again. Re-fetch only when the native
+   * token differs from the last one seen, so the echo is ignored and a real
+   * rotation still gets through.
+   */
   addPushTokenListener(listener: (token: string) => void): () => void {
+    let active = true;
+    let lastNativeToken: string | null = null;
     const sub = Notifications.addPushTokenListener((token) => {
-      listener(
-        typeof token.data === "string" ? token.data : String(token.data),
-      );
+      const nativeToken =
+        typeof token.data === "string" ? token.data : String(token.data);
+      if (nativeToken === lastNativeToken) return;
+      lastNativeToken = nativeToken;
+      void this.getDevicePushToken().then((expoToken) => {
+        if (active && expoToken.ok) listener(expoToken.value);
+      });
     });
-    return () => sub.remove();
+    return () => {
+      active = false;
+      sub.remove();
+    };
   }
 
   addNotificationReceivedListener(listener: () => void): () => void {

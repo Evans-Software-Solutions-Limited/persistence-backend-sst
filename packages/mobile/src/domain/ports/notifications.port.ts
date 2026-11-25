@@ -35,7 +35,8 @@ export interface NotificationsPort {
 
   /**
    * Subscribe to device push-token rotation (Expo emits a new token when
-   * the OS rotates it). The listener receives the new token string. Used
+   * the OS rotates it). The listener receives the new **Expo** push token
+   * (`ExponentPushToken[…]`), never the raw APNs/FCM token (PER-149). Used
    * by `usePushNotifications` (09.2) to re-register with the backend.
    * Returns an unsubscribe function.
    */

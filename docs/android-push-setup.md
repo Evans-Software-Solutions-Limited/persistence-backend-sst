@@ -138,17 +138,28 @@ Play internal track.
 5. **1.2.0 phone.** An Android phone still on 1.2.0 gets no push and no
    `user_devices` row until it updates. That's expected: the fix is in the
    native build.
+6. **No raw tokens.** After the staging deploy has run migration
+   `20261125160203_user_devices_drop_non_expo_tokens.sql`, and after signing
+   in on the new build (iOS and Android), this returns 0 rows:
+   `select platform, device_token from user_devices where device_token not like 'ExponentPushToken[%]' and device_token not like 'ExpoPushToken[%]';`
 
 If step 2 fails, look in the device logs for `[push]` warnings. A
 `Default FirebaseApp is not initialized` error means the build didn't get the
 right `google-services.json`.
 
-## Known, not fixed here
+## Raw native tokens (fixed in the same PR)
 
-The app also registers the raw native push token (APNs on iOS, FCM on Android)
-alongside the Expo token, because `addPushTokenListener` in
-`packages/mobile/src/ui/hooks/usePushNotifications.tsx` hands back native
-tokens. Production has 53 active iOS rows like this next to 56 Expo-token
-rows. Expo push cannot deliver to those tokens, but the Expo-token row still gets the push, so the extra rows do not stop delivery.
-Android will get the same extra rows. This is reported on PER-149 for a
-separate decision.
+Before this change the app also registered the raw native push token (APNs on
+iOS, FCM on Android) next to the Expo token, because Expo's
+`addPushTokenListener` hands back native tokens. Production had 64 such iOS
+rows (53 active) next to 56 Expo-token rows. The Expo push path can't deliver
+to them. Now:
+
+- **App:** the token listener fetches the Expo token again and registers that,
+  never the raw token (`expo-notifications.adapter.ts`).
+- **Backend:** `POST /devices/register` answers 200 to a non-Expo token but
+  doesn't store it, so 1.2.0 phones that still send one see no error.
+- **Clean-up:** migration `20261125160203_user_devices_drop_non_expo_tokens.sql`
+  deletes the existing raw-token rows. It keeps every Expo token
+  (`ExponentPushToken[…]`, `ExpoPushToken[…]`, legacy UUID). Its rollback is a
+  documented no-op, because deleted junk tokens can't be restored.

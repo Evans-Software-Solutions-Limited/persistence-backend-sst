@@ -252,22 +252,90 @@ it.each([-5, 3])(
     );
   },
 );
-it.each(["token", 123])(
-  "normalizes rotated tokens and unsubscribes",
-  (data) => {
+describe("addPushTokenListener (PER-149: never emit the raw native token)", () => {
+  const flush = async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  };
+  const nativeCallback = () =>
+    jest.mocked(Notifications.addPushTokenListener).mock.calls[0][0];
+
+  it.each([
+    ["ios", "a1b2c3d4e5f6"],
+    ["android", "fcm-registration-token"],
+    ["ios", 123],
+  ] as const)(
+    "on a %s native token event (%s), re-fetches and emits the Expo token",
+    async (type, data) => {
+      jest.mocked(Notifications.getExpoPushTokenAsync).mockResolvedValueOnce({
+        data: "ExponentPushToken[rotated]",
+        type: "expo",
+      });
+      const listener = jest.fn();
+      const unsubscribe = adapter.addPushTokenListener(listener);
+      nativeCallback()({
+        data,
+        type,
+      } as unknown as Notifications.DevicePushToken);
+      await flush();
+      expect(Notifications.getExpoPushTokenAsync).toHaveBeenCalledWith({
+        projectId: "project-id",
+      });
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect(listener).toHaveBeenCalledWith("ExponentPushToken[rotated]");
+      expect(listener).not.toHaveBeenCalledWith(String(data));
+      unsubscribe();
+      expect(
+        jest.mocked(Notifications.addPushTokenListener).mock.results[0].value
+          .remove,
+      ).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it("ignores the echo of the same native token (no re-fetch loop)", async () => {
+    const listener = jest.fn();
+    adapter.addPushTokenListener(listener);
+    const cb = nativeCallback();
+    cb({ data: "native-1", type: "ios" } as Notifications.DevicePushToken);
+    // The Expo token fetch re-fires the same native token.
+    cb({ data: "native-1", type: "ios" } as Notifications.DevicePushToken);
+    await flush();
+    expect(Notifications.getExpoPushTokenAsync).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    // A genuinely rotated native token is fetched again.
+    cb({ data: "native-2", type: "ios" } as Notifications.DevicePushToken);
+    await flush();
+    expect(Notifications.getExpoPushTokenAsync).toHaveBeenCalledTimes(2);
+    expect(listener).toHaveBeenCalledTimes(2);
+  });
+
+  it("emits nothing when the Expo token fetch fails", async () => {
+    jest
+      .mocked(Notifications.getExpoPushTokenAsync)
+      .mockRejectedValueOnce(new Error("offline"));
+    const listener = jest.fn();
+    adapter.addPushTokenListener(listener);
+    nativeCallback()({
+      data: "native-1",
+      type: "android",
+    } as Notifications.DevicePushToken);
+    await flush();
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it("emits nothing once unsubscribed, even if the fetch resolves later", async () => {
     const listener = jest.fn();
     const unsubscribe = adapter.addPushTokenListener(listener);
-    const [[callback]] = jest.mocked(Notifications.addPushTokenListener).mock
-      .calls;
-    callback({ data, type: "ios" } as Notifications.DevicePushToken);
-    expect(listener).toHaveBeenCalledWith(String(data));
+    nativeCallback()({
+      data: "native-1",
+      type: "ios",
+    } as Notifications.DevicePushToken);
     unsubscribe();
-    expect(
-      jest.mocked(Notifications.addPushTokenListener).mock.results[0].value
-        .remove,
-    ).toHaveBeenCalledTimes(1);
-  },
-);
+    await flush();
+    expect(listener).not.toHaveBeenCalled();
+  });
+});
 it("forwards received notifications and unsubscribes", () => {
   const listener = jest.fn();
   const unsubscribe = adapter.addNotificationReceivedListener(listener);

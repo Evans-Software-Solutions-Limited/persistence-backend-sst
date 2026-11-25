@@ -19,8 +19,21 @@ build; no build started by an agent. No new package, no Firebase JS SDK.
   is created in `app/_layout.tsx` and matches the backend's `channelId`;
   `getExpoPushTokenAsync` passes the EAS projectId; the hook registers with
   `platform: "android"`; the tap handler is platform-neutral. No code fix was
-  needed. Not fixed (reported): `addPushTokenListener` registers raw native
-  tokens next to Expo tokens (prod: 53 active raw iOS rows).
+  needed for Android itself.
+- Raw-token fix (Brad, 25 Nov: in this ticket). Expo's `addPushTokenListener`
+  hands back the raw APNs/FCM token, which the app was registering (prod: 64
+  raw iOS rows, 53 active, next to 56 Expo rows).
+  - `ExpoNotificationsAdapter.addPushTokenListener` now fetches the Expo token
+    again and emits that. It guards the echo: `getExpoPushTokenAsync` fires
+    the native event again, so it re-fetches only when the native token
+    changes.
+  - Core `POST /devices/register` returns 200
+    `{ data: { id: null, registered: false } }` for a non-Expo token without
+    storing it (1.2.0 phones). It uses `isExpoPushToken` in `expoPushClient.ts`
+    (same rule as expo-server-sdk).
+  - Migration `20261125160203_user_devices_drop_non_expo_tokens.sql` deletes
+    the non-Expo rows. A read-only count on prod: 64 would go, 0 Expo-like
+    rows hit. The rollback is a documented no-op. Not run anywhere.
 - Tests: `__tests__/app.config.test.ts` (per-variant file, override, missing
   file warn/throw), Android cases in `usePushNotifications.test.tsx` and
   `expo-notifications.adapter.test.ts`. Brad's steps:

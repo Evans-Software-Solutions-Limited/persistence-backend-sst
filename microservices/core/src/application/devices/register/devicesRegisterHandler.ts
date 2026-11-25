@@ -1,5 +1,6 @@
 import Elysia, { t } from "elysia";
 import { UserDeviceService } from "../../repositories/userDeviceService";
+import { isExpoPushToken } from "../../notifications/push/expoPushClient";
 import {
   getAuthUser,
   requireAuth,
@@ -39,6 +40,14 @@ export const devicesRegisterHandler = new Elysia()
       if (trimmedToken.length === 0) {
         ctx.set.status = 400;
         return { error: "deviceToken must not be empty" };
+      }
+
+      // PER-149: 1.2.0 phones also POST the raw native token (APNs/FCM)
+      // from their token listener. The Expo push path can't deliver to it,
+      // so it isn't stored. Answer 200 so old phones don't retry or log.
+      // `registered: false` tells newer clients nothing was saved.
+      if (!isExpoPushToken(trimmedToken)) {
+        return { data: { id: null, registered: false as const } };
       }
 
       const device = await ctx.UserDeviceRepository.register(userId, {
