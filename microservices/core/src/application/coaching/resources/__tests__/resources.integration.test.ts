@@ -82,6 +82,9 @@ const dialect = new PgDialect();
 const BASE_TABLES = [
   schema.profiles,
   schema.ptClientRelationships,
+  // PER-123: offboarding also cancels this relationship's future bookings.
+  schema.coachSessions,
+  schema.coachSessionAttendees,
   schema.dataSharingConsents,
   schema.trainerClientNotes,
   schema.nutritionTargets,
@@ -171,6 +174,8 @@ const COACH_E = randomUUID();
 const COACH_D = randomUUID(); // coaches nobody
 
 const TRUNCATE = [
+  "coach_session_attendees",
+  "coach_sessions",
   "coach_resource_assignments",
   "coach_resources",
   "private_media_purges",
