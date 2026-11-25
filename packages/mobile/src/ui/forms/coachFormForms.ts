@@ -62,11 +62,9 @@ const questionSchema = Type.Object({
       {
         minItems: MIN_OPTIONS,
         maxItems: MAX_OPTIONS,
-        uniqueItems: true,
         errorMessage: {
           ArrayMinItems: `Question ${N} needs ${MIN_OPTIONS}–${MAX_OPTIONS} options.`,
           ArrayMaxItems: `Question ${N} needs ${MIN_OPTIONS}–${MAX_OPTIONS} options.`,
-          ArrayUniqueItems: `Question ${N} has the same option twice.`,
         },
       },
     ),
@@ -101,6 +99,7 @@ export const formEditorSchema = Type.Object({
 });
 
 export const RANGE_PROBLEM = `Question ${N}: the lowest value is above the highest.`;
+export const REPEAT_PROBLEM = `Question ${N} has the same option twice.`;
 
 export function prepareFormEditor(v: FormEditorValues) {
   return {
@@ -116,6 +115,19 @@ export const formEditorResolver = schemaResolver<FormEditorValues>(
     refine: (v: ReturnType<typeof prepareFormEditor>) => {
       const out: Record<string, string> = {};
       v.questions.forEach((q, i) => {
+        // Repeated options are checked here, not with `uniqueItems`: in the
+        // app react-hook-form passes `names: []`, so a schema error on the
+        // list would replace the per-option "has an empty option" errors.
+        // A blank option is named first, so repeats only count without one
+        // (Inspector Brad, #561).
+        const opts = q.options ?? [];
+        if (
+          opts.length > 0 &&
+          opts.every((o) => o !== "") &&
+          new Set(opts).size !== opts.length
+        ) {
+          out[`questions.${i}.options`] = REPEAT_PROBLEM;
+        }
         if (q.min !== undefined && q.max !== undefined && q.min > q.max) {
           out[`questions.${i}.max`] = RANGE_PROBLEM;
         }

@@ -17,7 +17,13 @@ import {
   trimmed,
 } from "..";
 
-const opts = { fields: {}, shouldUseNativeValidation: false } as const;
+// As react-hook-form calls it in the app: nothing registered, so `names` is
+// empty (Inspector Brad, #561).
+const opts = {
+  fields: {},
+  names: [] as never[],
+  shouldUseNativeValidation: false,
+};
 
 describe("schemaResolver (PER-147)", () => {
   const schema = Type.Object({

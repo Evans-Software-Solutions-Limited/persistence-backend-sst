@@ -31,7 +31,13 @@ import {
 } from "../ruleForms";
 
 /** Each mobile form's rules (PER-147), through its react-hook-form resolver. */
-const opts = { fields: {}, shouldUseNativeValidation: false } as const;
+// As react-hook-form calls it in the app: nothing registered, so `names` is
+// empty (Inspector Brad, #561).
+const opts = {
+  fields: {},
+  names: [] as never[],
+  shouldUseNativeValidation: false,
+};
 async function errorsOf<V extends FieldValues>(
   resolver: Resolver<V>,
   values: V,
@@ -182,6 +188,13 @@ describe("coach forms (C10b, C10h, C10j, C3.3)", () => {
       "Question 1 needs 2–12 options.",
     );
     expect(await problem([{ ...choice, options: ["a", " "] }])).toBe(
+      "Question 1 has an empty option.",
+    );
+    // Blank and repeated together: the blank is named (Inspector Brad, #561).
+    expect(await problem([{ ...choice, options: ["a", "a", " "] }])).toBe(
+      "Question 1 has an empty option.",
+    );
+    expect(await problem([{ ...choice, options: [" ", " "] }])).toBe(
       "Question 1 has an empty option.",
     );
     expect(await problem([{ ...choice, options: ["a", "a"] }])).toBe(
