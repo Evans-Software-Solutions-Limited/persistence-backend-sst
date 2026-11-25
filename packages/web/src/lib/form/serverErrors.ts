@@ -123,8 +123,14 @@ export function applyServerErrors<V extends FieldValues>(
       const key = parts.slice(0, n).join(".");
       const entry = map[key];
       if (!entry) continue;
-      const index = parts[n] ?? "";
-      const field = entry.field.replace("{n}", index) as Path<V>;
+      const index = parts[n];
+      // A `{n}` field needs the item's index. An error about the whole list
+      // ("/questions") has none: leave it unmapped, so the caller's banner
+      // shows instead of an error on a field that doesn't exist.
+      if (entry.field.includes("{n}") && !(index && /^\d+$/.test(index))) {
+        break;
+      }
+      const field = entry.field.replace("{n}", index ?? "") as Path<V>;
       if (!done.has(field)) {
         done.add(field);
         setError(field, {
