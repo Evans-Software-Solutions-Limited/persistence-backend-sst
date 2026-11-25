@@ -1,3 +1,4 @@
+import { COACH_FORM_LIMITS } from "@persistence/form-limits";
 import { and, desc, eq, gt, isNotNull, isNull, or, sql } from "drizzle-orm";
 import {
   coachFormVersions,
@@ -69,7 +70,7 @@ export function listAsOf(now = new Date()): string {
   return new Date(now.getTime() - AS_OF_MARGIN_MS).toISOString();
 }
 
-export const TITLE_MAX = 120;
+export const TITLE_MAX = COACH_FORM_LIMITS.titleMax;
 export const DESCRIPTION_MAX = 1000;
 
 export function cleanTitle(raw: string): string | null {

@@ -29,6 +29,7 @@
         "@elysiajs/openapi": "^1.4.14",
         "@persistence/api-utils": "workspace:*",
         "@persistence/db": "workspace:*",
+        "@persistence/form-limits": "workspace:*",
         "@persistence/subscription-catalog": "workspace:*",
         "@persistence/training-metrics": "workspace:*",
         "@sentry/aws-serverless": "^10.65.0",
@@ -94,6 +95,15 @@
         "@types/node": "^22",
         "drizzle-kit": "^0.31.0",
         "typescript": "^7.0.2",
+      },
+    },
+    "packages/form-limits": {
+      "name": "@persistence/form-limits",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@tsconfig/node22": "^22",
+        "typescript": "^7.0.2",
+        "vitest": "5.1.1",
       },
     },
     "packages/mobile": {
@@ -1018,6 +1028,8 @@
     "@persistence/core": ["@persistence/core@workspace:microservices/core"],
 
     "@persistence/db": ["@persistence/db@workspace:packages/db"],
+
+    "@persistence/form-limits": ["@persistence/form-limits@workspace:packages/form-limits"],
 
     "@persistence/mobile": ["@persistence/mobile@workspace:packages/mobile"],
 

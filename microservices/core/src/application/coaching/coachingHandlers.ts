@@ -1,3 +1,4 @@
+import { CLIENT_SETTINGS_LIMITS } from "@persistence/form-limits";
 import Elysia, { t } from "elysia";
 import {
   getAuthUser,
@@ -88,7 +89,13 @@ export const clientSettingsHandler = authed()
         trackTraining: t.Optional(t.Boolean()),
         trackCalories: t.Optional(t.Boolean()),
         sessionsPerWeek: t.Optional(
-          t.Union([t.Integer({ minimum: 1, maximum: 14 }), t.Null()]),
+          t.Union([
+            t.Integer({
+              minimum: CLIENT_SETTINGS_LIMITS.sessionsPerWeekMin,
+              maximum: CLIENT_SETTINGS_LIMITS.sessionsPerWeekMax,
+            }),
+            t.Null(),
+          ]),
         ),
         features: t.Optional(t.Record(t.String(), t.Unknown())),
         alertMode: t.Optional(
