@@ -79,6 +79,8 @@ describe("ProgressPhotosGalleryPresenter (Y3)", () => {
     );
     expect(s.getByText("Add today's photos")).toBeTruthy();
     expect(s.queryAllByTestId("image")).toHaveLength(0);
+    expect(s.getByTestId("photo-gallery-empty")).toBeTruthy();
+    expect(s.getByLabelText("No progress photos yet")).toBeTruthy();
   });
 });
 

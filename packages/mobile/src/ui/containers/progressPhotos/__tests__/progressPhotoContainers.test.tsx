@@ -197,7 +197,9 @@ describe("AddProgressPhotosContainer (Y3b)", () => {
     });
     const [row] = storage.getPendingProgressPhotoSets(USER);
     expect(row?.photos.map((p) => p.pose)).toEqual(["front", "side", "back"]);
-    expect(mockUploads).toHaveBeenCalledWith(storage, api, USER);
+    // The upload worker picks the set up; Save itself sends nothing.
+    expect(mockUploads).not.toHaveBeenCalled();
+    expect(api.progressPhotoCalls).toEqual(["list"]);
     expect(mockBack).toHaveBeenCalled();
   });
 
@@ -308,28 +310,6 @@ describe("AddProgressPhotosContainer (Y3b)", () => {
       "We couldn't save your photos. Please try again.",
     );
     expect(mockBack).not.toHaveBeenCalled();
-    expect(mockUploads).not.toHaveBeenCalled();
-  });
-
-  it("logs an upload pass that fails after saving", async () => {
-    const { render } = setup();
-    mockCapture.mockImplementation(async (pose: ProgressPhotoPose) =>
-      photo(pose),
-    );
-    mockUploads.mockRejectedValueOnce(new Error("boom"));
-    const s = render(<AddProgressPhotosContainer />);
-    for (const pose of ["front", "side", "back"] as const) {
-      await act(async () => {
-        fireEvent.press(s.getByTestId(`add-photo-slot-${pose}`));
-      });
-    }
-    await act(async () => {
-      fireEvent.press(s.getByTestId("add-photos-save"));
-    });
-    expect(console.warn).toHaveBeenCalledWith(
-      "[AddProgressPhotos] upload pass failed:",
-      expect.any(Error),
-    );
   });
 });
 

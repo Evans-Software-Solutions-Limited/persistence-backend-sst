@@ -216,7 +216,7 @@ describe("YouPresenter — trained athlete (canvas Y1–Y1c)", () => {
     expect(s.getByText("1 pending request")).toBeTruthy();
   });
 
-  it("PER-137: an empty gallery row adds photos", () => {
+  it("PER-137: an empty gallery shows grey blocks and an add button", () => {
     const onAddPhotos = jest.fn();
     const s = render({
       ...trainedProps(),
@@ -224,6 +224,8 @@ describe("YouPresenter — trained athlete (canvas Y1–Y1c)", () => {
       onAddPhotos,
     });
     expect(s.getByText("Gallery")).toBeTruthy();
+    expect(s.getByTestId("you-gallery-empty")).toBeTruthy();
+    expect(s.getByText("Add today's photos")).toBeTruthy();
     fireEvent.press(s.getByTestId("you-gallery-add"));
     expect(onAddPhotos).toHaveBeenCalled();
     // Without a handler the link isn't drawn.

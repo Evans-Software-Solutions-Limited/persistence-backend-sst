@@ -6,7 +6,6 @@ import {
   grantPhotoSharingCommand,
   savePendingProgressPhotosCommand,
 } from "@/application/commands/progressPhotos.command";
-import { processProgressPhotoUploads } from "@/application/commands/sync.command";
 import {
   PROGRESS_PHOTO_POSES,
   type PendingProgressPhoto,
@@ -40,12 +39,12 @@ export const PHOTO_SHARING_COPY_FALLBACK =
 /**
  * Y3b Add photos — `/(app)/progress-photos-add` (PER-137). Each slot takes
  * one pose with the phone's camera or library; Save keeps the set on the
- * phone and starts the upload step, so it works offline. Athletes with a
+ * phone; the upload worker sends it once online. Athletes with a
  * coach who can't see their photos yet get the one-time sharing prompt.
  */
 export function AddProgressPhotosContainer() {
   const router = useRouter();
-  const { storage, api } = useAdapters();
+  const { storage } = useAdapters();
   const { session } = useAuth();
   const userId = session?.userId ?? null;
   const { capture } = useProgressPhotoCapture();
@@ -138,22 +137,10 @@ export function AddProgressPhotosContainer() {
       );
       return;
     }
-    void processProgressPhotoUploads(storage, api, userId).catch((err) =>
-      console.warn("[AddProgressPhotos] upload pass failed:", err),
-    );
+    // The upload worker sees the new set and uploads it once online.
     router.back();
     askToShare(userId);
-  }, [
-    canSave,
-    saving,
-    userId,
-    storage,
-    api,
-    today,
-    photos,
-    router,
-    askToShare,
-  ]);
+  }, [canSave, saving, userId, storage, today, photos, router, askToShare]);
 
   return (
     <AddProgressPhotosPresenter

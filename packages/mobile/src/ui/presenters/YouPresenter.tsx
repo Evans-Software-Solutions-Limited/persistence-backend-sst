@@ -20,6 +20,8 @@ import type { BodyMapShading } from "@/domain/services/youPage";
 import type { ApiError } from "@/shared/errors";
 import { color } from "@/ui/theme/tokens";
 import {
+  AddPhotosButton,
+  EmptyPhotoRow,
   PhotoRow,
   type PhotoPoseLabel,
   type PhotoTileView,
@@ -52,8 +54,8 @@ import {
  *   `GET /users/me/coaching`; a row opens that coach in the Coach tab.
  *   Coach requests stay under the list (Brad, 23 Nov).
  * - `gallery` — APP-F1 (PER-137): the latest set's three photos ("Gallery ·
- *   25 Oct", See all → Y3; a tile → Y3c). With no photos yet the row reads
- *   "Gallery" with an "Add photos" link (not on the canvas). Null hides it.
+ *   25 Oct", See all → Y3; a tile → Y3c). With no photos yet: "Gallery",
+ *   three empty grey blocks and "Add today's photos". Null hides it.
  */
 
 export type YouCoach = {
@@ -457,18 +459,15 @@ function GalleryRow(p: {
   if (!setId || !dateLabel || photos.length === 0) {
     return (
       <View testID="you-gallery">
-        <SectionHead
-          title="Gallery"
-          link={
-            p.onAddPhotos
-              ? {
-                  label: "Add photos",
-                  onPress: p.onAddPhotos,
-                  testID: "you-gallery-add",
-                }
-              : undefined
-          }
-        />
+        <SectionHead title="Gallery" />
+        <EmptyPhotoRow testID="you-gallery-empty" />
+        {p.onAddPhotos && (
+          <AddPhotosButton
+            onPress={p.onAddPhotos}
+            marginTop={10}
+            testID="you-gallery-add"
+          />
+        )}
       </View>
     );
   }

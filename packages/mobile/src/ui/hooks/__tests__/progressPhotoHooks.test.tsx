@@ -52,7 +52,7 @@ jest.mock("@/lib/nativePermissionQueue", () => ({
 
 const USER = "athlete-1";
 
-function setup(signedIn = true) {
+function setup(signedIn = true, connected: () => boolean = () => true) {
   const api = new InMemoryApiAdapter();
   const storage = new InMemoryStorageAdapter();
   const session: AuthSession = {
@@ -72,7 +72,7 @@ function setup(signedIn = true) {
   } as unknown as Adapters["auth"];
   const netListeners: ((c: boolean) => void)[] = [];
   const netInfo = {
-    isConnected: jest.fn(async () => true),
+    isConnected: jest.fn(async () => connected()),
     subscribe: jest.fn((cb: (c: boolean) => void) => {
       netListeners.push(cb);
       return () => {
@@ -261,6 +261,25 @@ describe("useProgressPhotoUploadWorker", () => {
     });
     await act(async () => {});
     expect(mockUploads).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("useProgressPhotoUploadWorker offline", () => {
+  it("uploads nothing while offline, then runs on reconnect", async () => {
+    let online = false;
+    const { storage, wrapper, netListeners } = setup(true, () => online);
+    savePendingProgressPhotosCommand(storage, USER, {
+      takenOn: "2026-11-25",
+      photos: [photo("front"), photo("side"), photo("back")],
+    });
+    renderHook(() => useProgressPhotoUploadWorker(), { wrapper });
+    await act(async () => {});
+    expect(mockUploads).not.toHaveBeenCalled();
+    online = true;
+    await act(async () => {
+      netListeners[0]!(true);
+    });
+    expect(mockUploads).toHaveBeenCalledTimes(1);
   });
 });
 

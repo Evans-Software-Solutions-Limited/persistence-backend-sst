@@ -2,6 +2,8 @@ import { Pressable } from "react-native";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { Text, View } from "@tamagui/core";
+import { IconCamera } from "@/ui/components/icons";
+import { color } from "@/ui/theme/tokens";
 
 /**
  * PER-137: canvas `.photo3` / `.pt` — three photo tiles in a row, each on
@@ -109,5 +111,77 @@ export function PhotoRow(p: {
         />
       ))}
     </View>
+  );
+}
+
+/**
+ * Canvas empty state (Brad, 25 Nov): the set's three grey blocks with their
+ * pose chips and no photos, shown until the first set is saved.
+ */
+export function EmptyPhotoRow(p: { marginTop?: number; testID?: string }) {
+  return (
+    <View
+      flexDirection="row"
+      gap={6}
+      marginTop={p.marginTop ?? 10}
+      testID={p.testID}
+      accessible
+      accessibilityLabel="No progress photos yet"
+    >
+      {(["Front", "Side", "Back"] as const).map((pose) => (
+        <View
+          key={pose}
+          flex={1}
+          height={120}
+          borderRadius={12}
+          overflow="hidden"
+        >
+          <LinearGradient
+            colors={["#2A2E3B", "#1A1D29"]}
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+            }}
+          />
+          <PoseChip label={pose} />
+        </View>
+      ))}
+    </View>
+  );
+}
+
+/** Canvas Y3 `.btn`: the cyan "Add today's photos" button. */
+export function AddPhotosButton(p: {
+  onPress(): void;
+  marginTop?: number;
+  testID?: string;
+}) {
+  return (
+    <Pressable onPress={p.onPress} accessibilityRole="button" testID={p.testID}>
+      <View
+        height={52}
+        marginTop={p.marginTop}
+        borderRadius={14}
+        backgroundColor="$primary"
+        flexDirection="row"
+        alignItems="center"
+        justifyContent="center"
+        gap={8}
+      >
+        <IconCamera size={16} color={color.$primaryInk} />
+        <Text
+          fontFamily="$display"
+          fontWeight="600"
+          fontSize={15}
+          lineHeight={18}
+          color="$primaryInk"
+        >
+          {"Add today's photos"}
+        </Text>
+      </View>
+    </Pressable>
   );
 }

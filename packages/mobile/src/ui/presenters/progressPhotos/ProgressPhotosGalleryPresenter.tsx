@@ -1,11 +1,17 @@
-import { Pressable, RefreshControl, ScrollView } from "react-native";
+import { RefreshControl, ScrollView } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text, View } from "@tamagui/core";
 import { ScreenGlow } from "@/ui/components/foundation/ScreenGlow";
 import { IconCamera, IconChevronL } from "@/ui/components/icons";
 import { color } from "@/ui/theme/tokens";
 import { IconButton, TopBar } from "../you/youKit";
-import { PhotoRow, type PhotoPoseLabel, type PhotoTileView } from "./PhotoTile";
+import {
+  AddPhotosButton,
+  EmptyPhotoRow,
+  PhotoRow,
+  type PhotoPoseLabel,
+  type PhotoTileView,
+} from "./PhotoTile";
 
 /**
  * <ProgressPhotosGalleryPresenter> — canvas Y3 Gallery (PER-137): back,
@@ -80,32 +86,7 @@ export function ProgressPhotosGalleryPresenter(
           />
         }
       >
-        <Pressable
-          onPress={p.onAdd}
-          accessibilityRole="button"
-          testID="photo-gallery-add"
-        >
-          <View
-            height={52}
-            borderRadius={14}
-            backgroundColor="$primary"
-            flexDirection="row"
-            alignItems="center"
-            justifyContent="center"
-            gap={8}
-          >
-            <IconCamera size={16} color={color.$primaryInk} />
-            <Text
-              fontFamily="$display"
-              fontWeight="600"
-              fontSize={15}
-              lineHeight={18}
-              color="$primaryInk"
-            >
-              {"Add today's photos"}
-            </Text>
-          </View>
-        </Pressable>
+        <AddPhotosButton onPress={p.onAdd} testID="photo-gallery-add" />
 
         {p.pendingWarning && (
           <Text
@@ -118,6 +99,10 @@ export function ProgressPhotosGalleryPresenter(
           >
             {p.pendingWarning}
           </Text>
+        )}
+
+        {p.sets.length === 0 && (
+          <EmptyPhotoRow marginTop={18} testID="photo-gallery-empty" />
         )}
 
         {p.sets.map((set) => (

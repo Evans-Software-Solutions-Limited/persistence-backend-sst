@@ -1,20 +1,17 @@
 import { useCallback } from "react";
 import { Alert } from "react-native";
 import * as ImageManipulator from "expo-image-manipulator";
-import * as ImagePicker from "expo-image-picker";
 import type {
   PendingProgressPhoto,
   ProgressPhotoPose,
 } from "@/domain/models/progressPhotos";
-import { runNativePermissionRequest } from "@/lib/nativePermissionQueue";
 import { resizeToLongEdge } from "@/shared/utils/image";
 import { readLocalFile } from "@/shared/utils/localFile";
+import { chooseImageSource, pickImage } from "./imagePicker";
 
 /** Design F: every photo is a JPEG with a long edge of at most 2048 px. */
 export const PROGRESS_PHOTO_MAX_EDGE = 2048;
 export const PROGRESS_PHOTO_JPEG_QUALITY = 0.85;
-
-type Source = "camera" | "library";
 
 const POSE_NAME: Record<ProgressPhotoPose, string> = {
   front: "Front",
@@ -54,38 +51,20 @@ export async function prepareProgressPhoto(
   };
 }
 
-function askSource(pose: ProgressPhotoPose): Promise<Source | null> {
-  return new Promise((resolve) => {
-    Alert.alert(
-      `${POSE_NAME[pose]} photo`,
-      undefined,
-      [
-        { text: "Camera", onPress: () => resolve("camera") },
-        { text: "Photo Library", onPress: () => resolve("library") },
-        { text: "Cancel", style: "cancel", onPress: () => resolve(null) },
-      ],
-      { cancelable: true, onDismiss: () => resolve(null) },
-    );
-  });
-}
-
 /**
- * PER-137 (Y3b): take one pose with the phone's own camera, or pick it from
- * the library (`expo-image-picker`, in 1.2.0), then convert it. Resolves
- * null when the athlete cancels or refuses permission.
+ * PER-137 (Y3b): take one pose through the app's photo-picking flow (the
+ * same Camera / Photo Library alert and system picker as the profile
+ * picture, `imagePicker.ts`), then convert it. Resolves null when the
+ * athlete cancels or refuses permission.
  */
 export function useProgressPhotoCapture(): {
   capture(pose: ProgressPhotoPose): Promise<PendingProgressPhoto | null>;
 } {
   const capture = useCallback(async (pose: ProgressPhotoPose) => {
-    const source = await askSource(pose);
+    const source = await chooseImageSource(`${POSE_NAME[pose]} photo`);
     if (!source) return null;
-    const permission = await runNativePermissionRequest(() =>
-      source === "camera"
-        ? ImagePicker.requestCameraPermissionsAsync()
-        : ImagePicker.requestMediaLibraryPermissionsAsync(),
-    );
-    if (!permission.granted) {
+    const picked = await pickImage(source);
+    if (picked.status === "denied") {
       Alert.alert(
         "Permission required",
         source === "camera"
@@ -94,17 +73,8 @@ export function useProgressPhotoCapture(): {
       );
       return null;
     }
-    const options: ImagePicker.ImagePickerOptions = {
-      mediaTypes: ["images"],
-      quality: 1,
-    };
-    const picked =
-      source === "camera"
-        ? await ImagePicker.launchCameraAsync(options)
-        : await ImagePicker.launchImageLibraryAsync(options);
-    const asset = picked.canceled ? null : picked.assets?.[0];
-    if (!asset?.uri) return null;
-    return prepareProgressPhoto(pose, asset);
+    if (picked.status === "cancelled") return null;
+    return prepareProgressPhoto(pose, picked.asset);
   }, []);
   return { capture };
 }

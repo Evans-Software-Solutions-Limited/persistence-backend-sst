@@ -11,9 +11,10 @@ export const PHOTO_UPLOAD_MIN_WAIT_MS = 1_000;
 /**
  * PER-137 (APP-F1): keeps the progress photo upload step running while the
  * athlete is signed in — the files' counterpart of `useSyncWorker`, which
- * only drains the JSON queue. Runs a pass on mount, when a set is saved
- * (the pending table changes), on foreground, on reconnect, and when the
- * earliest back-off window opens. Mounted once, beside `useSyncWorker`.
+ * only drains the JSON queue. Runs a pass, only while online, on mount,
+ * when a set is saved (the pending table changes), on foreground, on
+ * reconnect, and when the earliest back-off window opens. Mounted once,
+ * beside `useSyncWorker`.
  */
 export function useProgressPhotoUploadWorker(): void {
   const { storage, api, netInfo } = useAdapters();
@@ -42,6 +43,10 @@ export function useProgressPhotoUploadWorker(): void {
 
     const run = async () => {
       if (cancelled) return;
+      // Upload only with a connection (Brad, 25 Nov): offline, the files
+      // just wait on the phone, and reconnecting starts the next pass.
+      const online = await netInfo.isConnected().catch(() => true);
+      if (cancelled || !online) return;
       try {
         await processProgressPhotoUploads(storage, api, userId);
       } catch (err) {
