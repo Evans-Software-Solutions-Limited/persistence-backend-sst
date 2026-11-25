@@ -49,7 +49,7 @@ describe("updateProfileCommand", () => {
 
   beforeEach(() => {
     storage = new InMemoryStorageAdapter();
-    storage.initialize();
+    void storage.initialize();
     storage.cacheProfilePage(USER, makePayload());
   });
 
@@ -302,7 +302,7 @@ describe("updateProfileCommand", () => {
 
   it("enqueues even when no profile-page row is cached yet (no optimistic write)", () => {
     const fresh = new InMemoryStorageAdapter();
-    fresh.initialize();
+    void fresh.initialize();
     const result = updateProfileCommand(
       { storage: fresh, userId: USER },
       { fullName: "New Name" },

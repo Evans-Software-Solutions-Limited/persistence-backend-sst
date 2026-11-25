@@ -107,10 +107,12 @@ vi.mock("../../../services/recipeExtraction", async () => {
 });
 
 vi.mock("../../../../repositories/aiUsageLogRepository", () => ({
-  AiUsageLogRepository: vi.fn().mockImplementation(() => ({
-    record: usageLogRecordMock,
-    countForUserToday: usageLogCountMock,
-  })),
+  AiUsageLogRepository: vi.fn().mockImplementation(function () {
+    return {
+      record: usageLogRecordMock,
+      countForUserToday: usageLogCountMock,
+    };
+  }),
 }));
 
 function authedRequest(body: unknown) {

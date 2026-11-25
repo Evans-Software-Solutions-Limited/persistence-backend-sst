@@ -11,19 +11,19 @@ const loadBootstrapMock = vi.hoisted(() =>
 );
 vi.mock("../loadBootstrap", () => ({ loadBootstrap: loadBootstrapMock }));
 vi.mock("../../repositories/subscriptionRepository", () => ({
-  SubscriptionRepository: vi
-    .fn()
-    .mockImplementation(() => ({ findForUser: vi.fn() })),
+  SubscriptionRepository: vi.fn().mockImplementation(function () {
+    return { findForUser: vi.fn() };
+  }),
 }));
 vi.mock("../../repositories/subscriptionTiersRepository", () => ({
-  SubscriptionTiersRepository: vi
-    .fn()
-    .mockImplementation(() => ({ listActive: vi.fn() })),
+  SubscriptionTiersRepository: vi.fn().mockImplementation(function () {
+    return { listActive: vi.fn() };
+  }),
 }));
 vi.mock("../../founding/foundingGrantService", () => ({
-  FoundingGrantService: vi
-    .fn()
-    .mockImplementation(() => ({ applyPendingForUser: vi.fn() })),
+  FoundingGrantService: vi.fn().mockImplementation(function () {
+    return { applyPendingForUser: vi.fn() };
+  }),
 }));
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getAuthUser: vi.fn(async (h: string | undefined) =>

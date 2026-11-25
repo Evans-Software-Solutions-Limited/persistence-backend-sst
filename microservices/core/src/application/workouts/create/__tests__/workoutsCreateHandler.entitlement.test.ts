@@ -32,7 +32,9 @@ const workoutRepositoryMocks = {
 };
 
 vi.mock("../../../repositories/workoutRepository", () => ({
-  WorkoutRepository: vi.fn().mockImplementation(() => workoutRepositoryMocks),
+  WorkoutRepository: vi.fn().mockImplementation(function () {
+    return workoutRepositoryMocks;
+  }),
 }));
 
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({

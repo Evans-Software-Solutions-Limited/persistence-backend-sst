@@ -491,6 +491,16 @@ describe("answers", () => {
     expect(formatAnswer(q("long_text"), "")).toBe("—");
   });
 
+  it("shows malformed choice answers as JSON, not [object Object]", () => {
+    expect(formatAnswer(q("single_choice"), { label: "A" })).toBe(
+      '{"label":"A"}',
+    );
+    expect(formatAnswer(q("multiple_choice"), ["A", { label: "B" }])).toBe(
+      'A, {"label":"B"}',
+    );
+    expect(formatAnswer(q("multiple_choice"), [1, true])).toBe("1, true");
+  });
+
   it("arrows for numbers and scales that changed", () => {
     expect(trendArrow(q("scale"), 4, 3)).toBe("↑");
     expect(trendArrow(q("number"), 6.5, 7)).toBe("↓");

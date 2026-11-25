@@ -31,13 +31,21 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
 }));
 
 vi.mock("../../../repositories/profileRepository", () => ({
-  ProfileRepository: vi.fn().mockImplementation(() => profileRepositoryMocks),
+  ProfileRepository: vi.fn().mockImplementation(function () {
+    return profileRepositoryMocks;
+  }),
 }));
 
 vi.mock("@aws-sdk/client-s3", () => ({
-  S3Client: vi.fn().mockImplementation(() => ({ send: s3SendMock })),
-  PutObjectCommand: vi.fn((args) => ({ __cmd: "Put", ...args })),
-  DeleteObjectCommand: vi.fn((args) => ({ __cmd: "Delete", ...args })),
+  S3Client: vi.fn().mockImplementation(function () {
+    return { send: s3SendMock };
+  }),
+  PutObjectCommand: vi.fn(function (args) {
+    return { __cmd: "Put", ...args };
+  }),
+  DeleteObjectCommand: vi.fn(function (args) {
+    return { __cmd: "Delete", ...args };
+  }),
 }));
 
 vi.mock("sst", () => ({

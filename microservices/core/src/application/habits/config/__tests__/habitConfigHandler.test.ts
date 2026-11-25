@@ -15,12 +15,14 @@ const nutritionTargetRepoMock = {
 };
 
 vi.mock("../../../repositories/habitConfigRepository", () => ({
-  HabitConfigRepository: vi.fn().mockImplementation(() => repoMock),
+  HabitConfigRepository: vi.fn().mockImplementation(function () {
+    return repoMock;
+  }),
 }));
 vi.mock("../../../repositories/nutritionTargetRepository", () => ({
-  NutritionTargetRepository: vi
-    .fn()
-    .mockImplementation(() => nutritionTargetRepoMock),
+  NutritionTargetRepository: vi.fn().mockImplementation(function () {
+    return nutritionTargetRepoMock;
+  }),
 }));
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getAuthUser: vi.fn(async (authHeader: string | undefined) =>

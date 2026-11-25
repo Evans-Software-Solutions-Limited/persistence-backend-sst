@@ -15,7 +15,9 @@ vi.mock("../../../relationships/auditTrainerAction", () => ({
 
 const repoDelete = vi.fn();
 vi.mock("../../../repositories/noteRepository", () => ({
-  NoteRepository: vi.fn(() => ({ delete: repoDelete })),
+  NoteRepository: vi.fn(function () {
+    return { delete: repoDelete };
+  }),
 }));
 
 import { getDb } from "@persistence/db/client";

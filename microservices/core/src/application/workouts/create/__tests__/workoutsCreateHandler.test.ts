@@ -56,7 +56,9 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
 }));
 
 vi.mock("../../../repositories/workoutRepository", () => ({
-  WorkoutRepository: vi.fn().mockImplementation(() => workoutRepositoryMocks),
+  WorkoutRepository: vi.fn().mockImplementation(function () {
+    return workoutRepositoryMocks;
+  }),
 }));
 
 // Mock the entitlement helper so the handler tests don't hit live DB.

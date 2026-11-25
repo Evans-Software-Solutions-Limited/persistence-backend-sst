@@ -144,7 +144,7 @@ export function checklistSummary(
         ? (lib.plans.get(items[0].refId ?? "")?.name ?? "1 plan")
         : plural(items.length, "plan", "plans");
     case "welcome_message":
-      return `“${truncate(String(items[0].config.text ?? ""), 25)}”`;
+      return `“${truncate(String((items[0].config.text as string | undefined) ?? ""), 25)}”`;
     default:
       return plural(items.length, "item", "items");
   }
@@ -180,7 +180,7 @@ export function overviewSummary(
         .map((i) => lib.plans.get(i.refId ?? "")?.name ?? "Meal plan")
         .join(" · ");
     case "welcome_message":
-      return `“${truncate(String(items[0].config.text ?? ""), 48)}”`;
+      return `“${truncate(String((items[0].config.text as string | undefined) ?? ""), 48)}”`;
     default:
       return plural(items.length, "item", "items");
   }

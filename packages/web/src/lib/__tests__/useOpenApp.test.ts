@@ -34,7 +34,7 @@ it.each(["iPhone", "iPad"])(
     expect(result.current.storeHref).toBe(appStore.url);
     act(() => result.current.onClick(click()));
     expect(assign).not.toHaveBeenCalled();
-    act(() => vi.advanceTimersByTime(2500));
+    void act(() => vi.advanceTimersByTime(2500));
     expect(assign).toHaveBeenCalledExactlyOnceWith(appStore.url);
   },
 );
@@ -70,7 +70,7 @@ it.each(["visibilitychange", "pagehide"])(
       document.dispatchEvent(new Event(event));
       vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
     } else window.dispatchEvent(new Event(event));
-    act(() => vi.advanceTimersByTime(5000));
+    void act(() => vi.advanceTimersByTime(5000));
     expect(assign).not.toHaveBeenCalled();
   },
 );
@@ -79,7 +79,7 @@ it("ignores visible visibility events and retains the missing-app fallback", () 
   const { result } = renderHook(useOpenApp);
   act(() => result.current.onClick(click()));
   document.dispatchEvent(new Event("visibilitychange"));
-  act(() => vi.advanceTimersByTime(2500));
+  void act(() => vi.advanceTimersByTime(2500));
   expect(assign).toHaveBeenCalledOnce();
 });
 
@@ -87,7 +87,7 @@ it("does not redirect a hidden document even if no event was delivered", () => {
   const { result } = renderHook(useOpenApp);
   act(() => result.current.onClick(click()));
   vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
-  act(() => vi.advanceTimersByTime(2500));
+  void act(() => vi.advanceTimersByTime(2500));
   expect(assign).not.toHaveBeenCalled();
 });
 
@@ -110,10 +110,10 @@ it.each([
 it("replaces the pending fallback on repeat clicks and cleans up on unmount", () => {
   const { result, unmount } = renderHook(useOpenApp);
   act(() => result.current.onClick(click()));
-  act(() => vi.advanceTimersByTime(1000));
+  void act(() => vi.advanceTimersByTime(1000));
   act(() => result.current.onClick(click()));
   expect(vi.getTimerCount()).toBe(1);
-  act(() => vi.advanceTimersByTime(1500));
+  void act(() => vi.advanceTimersByTime(1500));
   expect(assign).not.toHaveBeenCalled();
   unmount();
   expect(vi.getTimerCount()).toBe(0);

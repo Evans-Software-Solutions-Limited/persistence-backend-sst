@@ -8,8 +8,8 @@
     "android": "SENTRY_DISABLE_AUTO_UPLOAD=true expo run:android",
     "ios": "SENTRY_DISABLE_AUTO_UPLOAD=true expo run:ios",
     "web": "expo start --web",
-    "lint": "expo lint",
-    "typecheck": "tsc --noEmit",
+    "lint": "oxlint src app",
+    "typecheck": "node node_modules/typescript-7/bin/tsc --noEmit",
     "test": "jest --passWithNoTests",
     "test:unit": "jest --passWithNoTests --coverage",
     "build": "echo 'Mobile build handled by EAS'"
@@ -97,10 +97,11 @@
     "@types/react": "~19.2.10",
     "babel-preset-expo": "~55.0.8",
     "eslint": "^9.0.0",
-    "eslint-config-expo": "~55.0.0",
+    "eslint-plugin-expo": "1.0.3",
     "jest": "^29.7.0",
     "jest-expo": "~55.0.16",
-    "typescript": "~5.9.2"
+    "typescript": "~5.9.2",
+    "typescript-7": "npm:typescript@7.0.2"
   },
   "jest": {
     "preset": "jest-expo",

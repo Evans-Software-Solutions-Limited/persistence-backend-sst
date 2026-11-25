@@ -26,7 +26,9 @@ const { restore } = vi.hoisted(() => ({
 }));
 
 vi.mock("../../accountRepository", () => ({
-  AccountRepository: vi.fn(() => ({ restore })),
+  AccountRepository: vi.fn(function () {
+    return { restore };
+  }),
 }));
 
 import { accountRestoreHandler } from "../accountRestoreHandler";

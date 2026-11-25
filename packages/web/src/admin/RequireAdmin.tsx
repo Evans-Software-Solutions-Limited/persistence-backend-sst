@@ -17,7 +17,7 @@ export function RequireAdmin({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    void (async () => {
       const token = await getAccessToken();
       if (cancelled) return;
       if (!token) return setState("none");

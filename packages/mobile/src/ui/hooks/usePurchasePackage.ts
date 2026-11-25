@@ -24,20 +24,21 @@ export function usePurchasePackage() {
   return useMutation<ActiveEntitlement[], PurchasesError, string>({
     mutationFn: async (packageId) => {
       if (purchases === null) {
-        throw {
+        const notConfigured: PurchasesError = {
           kind: "not_configured",
           code: null,
           message: "Purchases are unavailable on this device.",
-        } satisfies PurchasesError;
+        };
+        throw notConfigured;
       }
       const result = await purchases.purchase(packageId);
       if (!result.ok) throw result.error;
       return result.value;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["user-subscription"] });
-      queryClient.invalidateQueries({ queryKey: ["user-profile"] });
-      queryClient.invalidateQueries({ queryKey: ["profile-data"] });
+      void queryClient.invalidateQueries({ queryKey: ["user-subscription"] });
+      void queryClient.invalidateQueries({ queryKey: ["user-profile"] });
+      void queryClient.invalidateQueries({ queryKey: ["profile-data"] });
     },
   });
 }

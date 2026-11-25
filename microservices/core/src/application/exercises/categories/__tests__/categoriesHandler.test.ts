@@ -2,11 +2,13 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { categoriesHandler } from "../categoriesHandler";
 
 vi.mock("../../../repositories/exerciseRepository", () => ({
-  ExerciseRepository: vi.fn().mockImplementation(() => ({
-    getCategories: vi
-      .fn()
-      .mockResolvedValue(["strength", "cardio", "flexibility", "balance"]),
-  })),
+  ExerciseRepository: vi.fn().mockImplementation(function () {
+    return {
+      getCategories: vi
+        .fn()
+        .mockResolvedValue(["strength", "cardio", "flexibility", "balance"]),
+    };
+  }),
 }));
 
 describe("CategoriesHandler", () => {

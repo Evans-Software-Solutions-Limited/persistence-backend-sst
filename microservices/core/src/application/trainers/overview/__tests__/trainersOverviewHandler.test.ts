@@ -24,7 +24,9 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
 }));
 
 vi.mock("../../../repositories/trainerRepository", () => ({
-  TrainerRepository: vi.fn().mockImplementation(() => mocks),
+  TrainerRepository: vi.fn().mockImplementation(function () {
+    return mocks;
+  }),
   InviteError: class InviteError extends Error {},
 }));
 

@@ -315,7 +315,9 @@ describe("coach API client", () => {
     const server = (api: Response[], auth: () => Promise<Response>) =>
       vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
         void init;
-        return String(url).includes("/auth/v1/token") ? auth() : api.shift()!;
+        return String(url as string).includes("/auth/v1/token")
+          ? auth()
+          : api.shift()!;
       });
 
     it("refreshes and retries once with the new token", async () => {
@@ -326,7 +328,7 @@ describe("coach API client", () => {
       );
       expect(await coachFetch("/x", {}, f)).toEqual({ data: "ok" });
       const apiCalls = f.mock.calls.filter(([u]) =>
-        String(u).startsWith("https://api.test"),
+        String(u as string).startsWith("https://api.test"),
       );
       expect(apiCalls).toHaveLength(2);
       expect(apiCalls[1][1]?.headers).toMatchObject({
@@ -422,11 +424,12 @@ describe("coach API client", () => {
       const fresh = jwt({ exp: future() + 60 });
       let calls = 0;
       const f = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
-        if (String(url).includes("/auth/v1/token")) {
+        if (String(url as string).includes("/auth/v1/token")) {
           await new Promise((r) => setTimeout(r, 5));
           return res(200, { access_token: fresh, refresh_token: "r2" });
         }
-        const bearer = (init?.headers as Record<string, string>).Authorization;
+        const bearer = (init?.headers as Record<string, string> | undefined)
+          ?.Authorization;
         calls += 1;
         return bearer === `Bearer ${fresh}`
           ? res(200, { data: calls })
@@ -438,7 +441,9 @@ describe("coach API client", () => {
       ]);
       expect(results).toHaveLength(2);
       expect(
-        f.mock.calls.filter(([u]) => String(u).includes("/auth/v1/token")),
+        f.mock.calls.filter(([u]) =>
+          String(u as string).includes("/auth/v1/token"),
+        ),
       ).toHaveLength(1);
       expect(loadSession()?.refreshToken).toBe("r2");
     });
@@ -474,8 +479,10 @@ describe("coach API client", () => {
       });
       const stored = jwt({ exp: future() + 60 });
       const f = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
-        if (String(url).includes("/auth/v1/token")) return res(500, {});
-        const bearer = (init?.headers as Record<string, string>).Authorization;
+        if (String(url as string).includes("/auth/v1/token"))
+          return res(500, {});
+        const bearer = (init?.headers as Record<string, string> | undefined)
+          ?.Authorization;
         if (bearer === `Bearer ${sent}`) {
           // While this request was out, another call refreshed.
           saveSession({
@@ -490,7 +497,9 @@ describe("coach API client", () => {
       });
       expect(await coachFetch("/x", {}, f)).toEqual({ data: "ok" });
       expect(
-        f.mock.calls.filter(([u]) => String(u).includes("/auth/v1/token")),
+        f.mock.calls.filter(([u]) =>
+          String(u as string).includes("/auth/v1/token"),
+        ),
       ).toHaveLength(0);
       expect(loadSession()?.refreshToken).toBe("r2");
     });
@@ -616,7 +625,8 @@ describe("coach API client", () => {
       "GET /trainers/me/declaration",
       "POST /trainers/me/declaration",
     ]);
-    const body = (i: number) => JSON.parse(String(calls[i].init.body));
+    const body = (i: number) =>
+      JSON.parse(String(calls[i].init.body as string));
     expect(calls[2].init.headers).toMatchObject({ "Idempotency-Key": "k1" });
     expect(body(4)).toEqual({ goal: "g", expectedRevision: 2 });
     expect(body(5)).toEqual({
@@ -691,7 +701,8 @@ describe("coach API client", () => {
       "POST /trainers/me/clients/c1/form-responses/r1/review",
       "POST /trainers/me/clients/c1/form-responses/r1/review",
     ]);
-    const body = (i: number) => JSON.parse(String(calls[i].init.body));
+    const body = (i: number) =>
+      JSON.parse(String(calls[i].init.body as string));
     expect(body(1)).toEqual({ fromTemplateKey: "parq" });
     expect(calls[1].init.headers).toMatchObject({ "Idempotency-Key": "k1" });
     expect(calls[3].init.headers).toMatchObject({ "Idempotency-Key": "k2" });

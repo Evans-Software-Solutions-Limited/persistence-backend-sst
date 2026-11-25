@@ -20,10 +20,14 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
 }));
 
 vi.mock("../../../../repositories/nutritionEntryRepository", () => ({
-  NutritionEntryRepository: vi.fn().mockImplementation(() => entryMocks),
+  NutritionEntryRepository: vi.fn().mockImplementation(function () {
+    return entryMocks;
+  }),
 }));
 vi.mock("../../../../repositories/userMealRepository", () => ({
-  UserMealRepository: vi.fn().mockImplementation(() => userMealMocks),
+  UserMealRepository: vi.fn().mockImplementation(function () {
+    return userMealMocks;
+  }),
 }));
 
 describe("nutritionEntriesListHandler", () => {

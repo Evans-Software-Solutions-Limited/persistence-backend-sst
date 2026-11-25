@@ -6,9 +6,9 @@ const subscriptionTiersRepositoryMocks = {
 };
 
 vi.mock("../../../repositories/subscriptionTiersRepository", () => ({
-  SubscriptionTiersRepository: vi
-    .fn()
-    .mockImplementation(() => subscriptionTiersRepositoryMocks),
+  SubscriptionTiersRepository: vi.fn().mockImplementation(function () {
+    return subscriptionTiersRepositoryMocks;
+  }),
 }));
 
 const seatsForPool = vi.fn(async (pool: "consumer" | "coach") => ({
@@ -17,7 +17,9 @@ const seatsForPool = vi.fn(async (pool: "consumer" | "coach") => ({
   cap: pool === "consumer" ? 200 : 20,
 }));
 vi.mock("../../../repositories/foundingGrantRepository", () => ({
-  FoundingGrantRepository: vi.fn().mockImplementation(() => ({ seatsForPool })),
+  FoundingGrantRepository: vi.fn().mockImplementation(function () {
+    return { seatsForPool };
+  }),
 }));
 
 // Web checkouts in flight hold pool places too (2026-09-05 amendment), so the
@@ -27,9 +29,9 @@ const countHeldInPool = vi.fn(async (_db: unknown, pool: string) =>
   pool === "consumer" ? 2 : 0,
 );
 vi.mock("../../../repositories/foundingCheckoutRepository", () => ({
-  FoundingCheckoutRepository: vi
-    .fn()
-    .mockImplementation(() => ({ countHeldInPool })),
+  FoundingCheckoutRepository: vi.fn().mockImplementation(function () {
+    return { countHeldInPool };
+  }),
 }));
 vi.mock("@persistence/db/client", () => ({ getDb: vi.fn(() => ({})) }));
 

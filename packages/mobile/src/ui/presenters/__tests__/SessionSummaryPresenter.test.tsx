@@ -422,8 +422,8 @@ describe("navigation", () => {
         selected()[0]!.replace("summary-dot-", "summary-page-"),
       );
       fireEvent(page, "pressIn");
-      act(() => pager.props.onScrollStart());
-      act(() => pager.props.onSnapToItem(to));
+      void act(() => pager.props.onScrollStart());
+      void act(() => pager.props.onSnapToItem(to));
       fireEvent.press(page);
     };
     swipe(1);
@@ -446,9 +446,9 @@ describe("navigation", () => {
         .map((d) => d.props.testID);
     const pager = q.UNSAFE_getByType(Carousel as never);
     fireEvent.press(q.getByTestId("summary-dot-exercises"));
-    act(() => pager.props.onScrollStart());
-    act(() => pager.props.onSnapToItem(1));
-    act(() => pager.props.onScrollEnd());
+    void act(() => pager.props.onScrollStart());
+    void act(() => pager.props.onSnapToItem(1));
+    void act(() => pager.props.onScrollEnd());
     expect(selected()).toEqual(["summary-dot-muscles"]);
     fireEvent.press(q.getByTestId("summary-page-muscles"));
     expect(selected()).toEqual(["summary-dot-exercises"]);

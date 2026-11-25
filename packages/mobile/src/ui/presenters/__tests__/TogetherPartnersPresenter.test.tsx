@@ -73,7 +73,7 @@ it("uses deliberate request decisions and actual partner profile actions", () =>
   fireEvent.press(r.getByText("Review Push"));
   expect(p.onOffer).toHaveBeenCalledWith(offer);
   fireEvent.press(r.getByLabelText("Go back"));
-  act(() =>
+  void act(() =>
     r.UNSAFE_getByType(ScrollView).props.refreshControl.props.onRefresh(),
   );
   expect(p.onRefresh).toHaveBeenCalled();

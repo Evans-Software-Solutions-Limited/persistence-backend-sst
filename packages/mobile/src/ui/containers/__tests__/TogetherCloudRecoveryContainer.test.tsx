@@ -354,7 +354,7 @@ it("blocks old account callbacks and duplicate save callbacks independently of d
   mockUser = null;
   r.rerender(<TogetherCloudRecoveryContainer />);
   await act(async () => resolve());
-  act(() => old.onSave());
+  void act(() => old.onSave());
   expect(h.cloud.finish).toHaveBeenCalledTimes(1);
   expect(r.getByText(/unavailable/)).toBeTruthy();
 });

@@ -71,7 +71,7 @@ describe("useReferenceListBootstrap", () => {
   beforeEach(() => {
     api = new InMemoryApiAdapter();
     storage = new InMemoryStorageAdapter();
-    storage.initialize();
+    void storage.initialize();
     netInfo = new InMemoryNetInfoAdapter(true);
   });
 

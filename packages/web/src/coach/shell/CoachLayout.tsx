@@ -25,7 +25,7 @@ export function CoachLayout() {
 
   useEffect(() => {
     let cancelled = false;
-    getAccessToken().then((token) => {
+    void getAccessToken().then((token) => {
       if (!cancelled) setSession(token ? "ok" : "none");
     });
     return () => {
@@ -40,7 +40,7 @@ export function CoachLayout() {
     () =>
       onSignedOut(() => {
         queryClient.removeQueries({ queryKey: coachKeys.all });
-        navigate("/coach/login", {
+        void navigate("/coach/login", {
           replace: true,
           state: { from: location.pathname },
         });
@@ -67,7 +67,7 @@ export function CoachLayout() {
       onSignOut={async () => {
         await signOut();
         queryClient.removeQueries({ queryKey: coachKeys.all });
-        navigate("/coach/login", { replace: true });
+        void navigate("/coach/login", { replace: true });
       }}
     />
   );

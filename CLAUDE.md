@@ -142,7 +142,7 @@ Core data model:
 ```bash
 bun run prettier:check  # format check
 bun run typecheck       # TypeScript
-bun run lint           # ESLint
+bun run lint           # Oxlint (type-aware via tsrs)
 bun run build          # build all packages
 bun run test:unit      # Vitest (90% coverage required)
 ```

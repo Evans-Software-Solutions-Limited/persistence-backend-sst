@@ -3,8 +3,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const s3SendMock = vi.fn();
 
 vi.mock("@aws-sdk/client-s3", () => ({
-  S3Client: vi.fn().mockImplementation(() => ({ send: s3SendMock })),
-  DeleteObjectCommand: vi.fn((args) => ({ __cmd: "Delete", ...args })),
+  S3Client: vi.fn().mockImplementation(function () {
+    return { send: s3SendMock };
+  }),
+  DeleteObjectCommand: vi.fn(function (args) {
+    return { __cmd: "Delete", ...args };
+  }),
 }));
 
 vi.mock("sst", () => ({

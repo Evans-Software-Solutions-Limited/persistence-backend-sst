@@ -8,7 +8,9 @@ const { findStripeSubscriptionIdsForUser, stripeCancelMock } = vi.hoisted(
 );
 
 vi.mock("../../repositories/subscriptionRepository", () => ({
-  SubscriptionRepository: vi.fn(() => ({ findStripeSubscriptionIdsForUser })),
+  SubscriptionRepository: vi.fn(function () {
+    return { findStripeSubscriptionIdsForUser };
+  }),
 }));
 vi.mock("../../stripe/stripeClient", () => ({
   getStripe: () => ({ subscriptions: { cancel: stripeCancelMock } }),

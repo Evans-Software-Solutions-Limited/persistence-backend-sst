@@ -24,7 +24,9 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
 }));
 
 vi.mock("../../../repositories/goalRepository", () => ({
-  GoalRepository: vi.fn().mockImplementation(() => mocks),
+  GoalRepository: vi.fn().mockImplementation(function () {
+    return mocks;
+  }),
 }));
 
 describe("GoalsGetHandler", () => {

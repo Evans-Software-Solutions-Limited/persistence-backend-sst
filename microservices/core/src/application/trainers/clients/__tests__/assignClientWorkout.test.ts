@@ -15,7 +15,9 @@ vi.mock("../../../relationships/auditTrainerAction", () => ({
 
 const repoCreateAdHoc = vi.fn();
 vi.mock("../../../repositories/programAssignmentRepository", () => ({
-  ProgramAssignmentRepository: vi.fn(() => ({ createAdHoc: repoCreateAdHoc })),
+  ProgramAssignmentRepository: vi.fn(function () {
+    return { createAdHoc: repoCreateAdHoc };
+  }),
 }));
 
 vi.mock("../../programs/shared", () => ({

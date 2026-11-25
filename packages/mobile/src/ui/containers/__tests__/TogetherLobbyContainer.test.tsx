@@ -224,7 +224,7 @@ it("dismissing the root sheet preserves admission; explicit Leave terminates it"
       .getByTestId("workout-header")
       .findAllByProps({ testID: "together-lobby-content" }),
   ).toHaveLength(0);
-  act(() => mockSheet.mock.calls.at(-1)![0].onClose());
+  void act(() => mockSheet.mock.calls.at(-1)![0].onClose());
   expect(h.lobby.cancel).not.toHaveBeenCalled();
   fireEvent.press(r.getByText("Open"));
   fireEvent.press(r.getByText("Leave lobby · keep my workout"));
@@ -562,7 +562,7 @@ it("offers only Nearby and Online, never a transport picker, and switches to rem
   expect(mockCloud).toHaveBeenCalledWith(
     expect.objectContaining({ cloud, accountId: "a" }),
   );
-  act(() => mockCloud.mock.calls.at(-1)![0].onLocal());
+  void act(() => mockCloud.mock.calls.at(-1)![0].onLocal());
   expect(r.getByText("Start")).toBeTruthy();
 });
 it("late cancellation cannot switch another account to the remote flow", async () => {
@@ -1116,16 +1116,16 @@ it("workout row opens settings and the leave sheet while self selection restores
   expect(row().status).toBe("In sync · 2 training");
   // The cog opens row 4's sharing sheet; Done closes it.
   expect(shareProps(r).visible).toBe(false);
-  act(() => row().onSettings());
+  void act(() => row().onSettings());
   expect(shareProps(r).visible).toBe(true);
   act(() => shareProps(r).onDone());
   expect(shareProps(r).visible).toBe(false);
-  act(() => row().onSelect("b"));
+  void act(() => row().onSelect("b"));
   expect(r.UNSAFE_getByType(TogetherPartnerPresenter)).toBeTruthy();
-  act(() => row().onSelect("a"));
+  void act(() => row().onSelect("a"));
   expect(r.UNSAFE_queryByType(TogetherPartnerPresenter)).toBeNull();
   // Leave opens row 3's sheet, not the settings.
-  act(() => row().onEnd());
+  void act(() => row().onEnd());
   expect(r.getByText("Leave the host’s session?")).toBeTruthy();
 });
 
@@ -1314,7 +1314,7 @@ it("consumes a detail host intent once and does not restart after an error or ca
       ),
     ).toBeTruthy(),
   );
-  act(() => mockSheet.mock.calls.at(-1)![0].onClose());
+  void act(() => mockSheet.mock.calls.at(-1)![0].onClose());
   h.publish({ phase: "idle" });
   expect(h.lobby.host).toHaveBeenCalledTimes(1);
 });
@@ -1337,7 +1337,7 @@ it.each(["ready", "cancel", "account"])(
     const r = renderWithTheme(render("me"));
     expect(h.lobby.host).not.toHaveBeenCalled();
     if (outcome === "cancel")
-      act(() => mockSheet.mock.calls.at(-1)![0].onClose());
+      void act(() => mockSheet.mock.calls.at(-1)![0].onClose());
     if (outcome === "account") {
       r.rerender(render("other"));
       r.rerender(render("me"));
@@ -1511,9 +1511,9 @@ it("starts and promotes the detail workout before showing the actual invitation,
   h.publish({ members: [{ userId: "a", host: true }] });
   const row = () => r.UNSAFE_getByType(TogetherWorkoutRow).props;
   expect(row().status).toBe("Waiting for people · 1 of 4");
-  act(() => row().onInvite());
+  void act(() => row().onInvite());
   expect(r.getByText("Invite people")).toBeTruthy();
-  act(() => row().onSettings());
+  void act(() => row().onSettings());
   expect(shareProps(r).visible).toBe(true);
   expect(
     r.getByText(
@@ -1546,7 +1546,7 @@ it.each(["hosting-fails", "promotion-fails", "cancelled"])(
         .mockRejectedValue(new Error("workout-unsupported"));
     const r = mountShared(h, { initialHostAudience: "invite-only" });
     if (outcome === "cancelled") {
-      act(() => mockSheet.mock.calls.at(-1)![0].onClose());
+      void act(() => mockSheet.mock.calls.at(-1)![0].onClose());
       await act(async () => release());
     } else await act(async () => {});
     expect(r.queryByText("Invite people")).toBeNull();
@@ -1666,7 +1666,7 @@ it.each(["button", "swipe"])(
     h.publish({ phase: "preparing" });
     if (mode === "button")
       fireEvent.press(r.getByText("Cancel · keep my workout"));
-    else act(() => mockSheet.mock.calls.at(-1)![0].onClose());
+    else void act(() => mockSheet.mock.calls.at(-1)![0].onClose());
     await waitFor(() => expect(h.lobby.cancel).toHaveBeenCalledTimes(1));
     h.publish({ phase: "hosting", role: "host", invitation: "signed" });
     await act(async () => finishHost());
@@ -1912,7 +1912,7 @@ describe("leaving and ending (canvas row 3)", () => {
       ],
     });
     h.update("active");
-    act(() => leaveRow(r).onEnd());
+    void act(() => leaveRow(r).onEnd());
     expect(r.getByText("Leave Brad’s session?")).toBeTruthy();
     expect(
       r.getByText(
@@ -1924,7 +1924,7 @@ describe("leaving and ending (canvas row 3)", () => {
     fireEvent.press(r.getByTestId("together-leave-stay"));
     expect(r.queryByText("Leave Brad’s session?")).toBeNull();
     expect(h.shared.close).not.toHaveBeenCalled();
-    act(() => leaveRow(r).onEnd());
+    void act(() => leaveRow(r).onEnd());
     await act(async () =>
       fireEvent.press(r.getByTestId("together-leave-confirm")),
     );
@@ -1960,7 +1960,7 @@ describe("leaving and ending (canvas row 3)", () => {
     });
     h.update("active");
     expect(leaveRow(r).endLabel).toBe("End");
-    act(() => leaveRow(r).onEnd());
+    void act(() => leaveRow(r).onEnd());
     expect(r.getByText("End the live session?")).toBeTruthy();
     expect(
       r.getByText(
@@ -1990,7 +1990,7 @@ describe("leaving and ending (canvas row 3)", () => {
       ],
     });
     h.update("active");
-    act(() => leaveRow(r).onEnd());
+    void act(() => leaveRow(r).onEnd());
     expect(
       r.getByText("Your workout carries on here. Mia keeps training."),
     ).toBeTruthy();
@@ -2101,7 +2101,7 @@ describe("leaving and ending (canvas row 3)", () => {
       "Libby",
       "Mia",
     ]);
-    act(() => leaveRow(r).onEnd());
+    void act(() => leaveRow(r).onEnd());
     expect(
       r.getByText(
         "Everyone keeps their own workout and carries on solo. Nobody new can join.",
@@ -2262,7 +2262,7 @@ describe("leaving and ending (canvas row 3)", () => {
     await waitFor(() =>
       expect(h.shared.requestDelegatedSet).toHaveBeenCalled(),
     );
-    act(() => leaveRow(r).onEnd());
+    void act(() => leaveRow(r).onEnd());
     expect(
       r.getByText(
         "1 set hasn’t reached Mia yet. If you leave now, it won’t be sent.",

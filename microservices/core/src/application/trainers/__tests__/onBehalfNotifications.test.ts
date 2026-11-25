@@ -7,7 +7,9 @@ vi.mock("@persistence/db/client", () => ({
 
 const dispatch = vi.fn();
 vi.mock("../../notifications/push/notificationDispatcher", () => ({
-  NotificationDispatcher: vi.fn(() => ({ createAndDispatch: dispatch })),
+  NotificationDispatcher: vi.fn(function () {
+    return { createAndDispatch: dispatch };
+  }),
 }));
 
 import { getDb } from "@persistence/db/client";

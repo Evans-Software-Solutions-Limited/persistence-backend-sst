@@ -38,9 +38,9 @@ vi.mock("../../../repositories/exerciseRepository", async (importOriginal) => {
     >();
   return {
     ...actual,
-    ExerciseRepository: vi
-      .fn()
-      .mockImplementation(() => exerciseRepositoryMocks),
+    ExerciseRepository: vi.fn().mockImplementation(function () {
+      return exerciseRepositoryMocks;
+    }),
   };
 });
 

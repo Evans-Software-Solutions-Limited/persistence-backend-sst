@@ -66,12 +66,14 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getUser: vi.fn((ctx) => ctx.user || { sub: "user-1" }),
 }));
 vi.mock("../../../repositories/subscriptionRepository", () => ({
-  SubscriptionRepository: vi
-    .fn()
-    .mockImplementation(() => subscriptionRepositoryMocks),
+  SubscriptionRepository: vi.fn().mockImplementation(function () {
+    return subscriptionRepositoryMocks;
+  }),
 }));
 vi.mock("../../../repositories/profileRepository", () => ({
-  ProfileRepository: vi.fn().mockImplementation(() => profileRepositoryMocks),
+  ProfileRepository: vi.fn().mockImplementation(function () {
+    return profileRepositoryMocks;
+  }),
 }));
 vi.mock("../../../stripe/stripeClient", () => ({
   getStripe: () => stripeMock,

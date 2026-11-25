@@ -21,16 +21,24 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getUser: vi.fn((ctx) => ctx.user || { sub: "test-user-id" }),
 }));
 vi.mock("../../../repositories/nutritionEntryRepository", () => ({
-  NutritionEntryRepository: vi.fn().mockImplementation(() => entryMocks),
+  NutritionEntryRepository: vi.fn().mockImplementation(function () {
+    return entryMocks;
+  }),
 }));
 vi.mock("../../../repositories/nutritionTargetRepository", () => ({
-  NutritionTargetRepository: vi.fn().mockImplementation(() => targetMocks),
+  NutritionTargetRepository: vi.fn().mockImplementation(function () {
+    return targetMocks;
+  }),
 }));
 vi.mock("../../../repositories/waterLogRepository", () => ({
-  WaterLogRepository: vi.fn().mockImplementation(() => waterMocks),
+  WaterLogRepository: vi.fn().mockImplementation(function () {
+    return waterMocks;
+  }),
 }));
 vi.mock("../../../repositories/userMealRepository", () => ({
-  UserMealRepository: vi.fn().mockImplementation(() => userMealMocks),
+  UserMealRepository: vi.fn().mockImplementation(function () {
+    return userMealMocks;
+  }),
 }));
 
 function entry(

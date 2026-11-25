@@ -7,7 +7,9 @@ import {
 function defaultAccountRepo() {
   return {
     listPendingPurge: vi.fn(async () => [] as string[]),
-    purgeUserData: vi.fn(async () => true),
+    purgeUserData: vi.fn<(userId: string) => Promise<boolean>>(
+      async () => true,
+    ),
   };
 }
 type MockAccountRepo = ReturnType<typeof defaultAccountRepo>;

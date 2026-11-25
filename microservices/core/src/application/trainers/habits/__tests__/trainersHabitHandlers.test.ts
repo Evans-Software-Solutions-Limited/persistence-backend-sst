@@ -15,13 +15,19 @@ const assertMock = vi.fn();
 const auditClientDataReadMock = vi.fn(async () => undefined);
 
 vi.mock("../../../repositories/habitConfigRepository", () => ({
-  HabitConfigRepository: vi.fn(() => configRepoMock),
+  HabitConfigRepository: vi.fn(function () {
+    return configRepoMock;
+  }),
 }));
 vi.mock("../../../repositories/nutritionTargetRepository", () => ({
-  NutritionTargetRepository: vi.fn(() => nutritionTargetRepoMock),
+  NutritionTargetRepository: vi.fn(function () {
+    return nutritionTargetRepoMock;
+  }),
 }));
 vi.mock("../../../repositories/habitRepository", () => ({
-  HabitRepository: vi.fn(() => habitRepoMock),
+  HabitRepository: vi.fn(function () {
+    return habitRepoMock;
+  }),
 }));
 vi.mock("../configureClientHabit", () => ({
   configureClientHabitOnBehalf: (...a: unknown[]) => configureMock(...a),

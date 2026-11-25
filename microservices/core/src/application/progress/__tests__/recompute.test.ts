@@ -8,7 +8,9 @@ const repoMock = {
 };
 
 vi.mock("../../repositories/volumeRepository", () => ({
-  VolumeRepository: vi.fn().mockImplementation(() => repoMock),
+  VolumeRepository: vi.fn().mockImplementation(function () {
+    return repoMock;
+  }),
 }));
 
 import { recomputeUserVolume, safeRecomputeVolume } from "../recompute";

@@ -378,7 +378,9 @@ export async function buildAcceptPreview(
       count: inSection.length,
     });
     if (section === "welcome_message") {
-      preview.welcomeMessage = String(inSection[0]!.config.text ?? "");
+      preview.welcomeMessage = String(
+        (inSection[0]!.config.text as string | undefined) ?? "",
+      );
     }
     const extra = await HANDLERS[section]?.preview?.(db, inSection);
     if (extra?.programmes) preview.programmes.push(...extra.programmes);

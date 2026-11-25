@@ -28,12 +28,12 @@ describe("Geoapify server adapter", () => {
         center: { latitude: 51.5, longitude: -0.1 },
       },
     ]);
-    const search = new URL(String(fetcher.mock.calls[0][0]));
+    const search = new URL(String(fetcher.mock.calls[0][0] as string));
     expect(search.pathname).toBe("/v1/geocode/search");
     expect(search.searchParams.get("text")).toBe("Gym");
     fetcher.mockResolvedValue(response([feature]));
     await repo.find("actor", { latitude: 51.5, longitude: -0.1 });
-    const near = new URL(String(fetcher.mock.calls[1][0]));
+    const near = new URL(String(fetcher.mock.calls[1][0] as string));
     expect(near.pathname).toBe("/v2/places");
     expect(near.searchParams.get("filter")).toBe("circle:-0.1,51.5,5000");
   });
@@ -46,7 +46,9 @@ describe("Geoapify server adapter", () => {
     expect(first.nextCursor).toBeTruthy();
     await repo.find("actor", { q: "Gym", limit: 1, cursor: first.nextCursor! });
     expect(
-      new URL(String(fetcher.mock.calls[1][0])).searchParams.get("offset"),
+      new URL(String(fetcher.mock.calls[1][0] as string)).searchParams.get(
+        "offset",
+      ),
     ).toBeNull();
     await expect(
       repo.find("other", { q: "Gym", limit: 1, cursor: first.nextCursor! }),
@@ -109,7 +111,7 @@ it("resolves selected provider IDs to authoritative display metadata with bounde
     label: "Gym, London",
     center: { latitude: 51.5, longitude: -0.1 },
   });
-  const url = new URL(String(fetcher.mock.calls[0][0]));
+  const url = new URL(String(fetcher.mock.calls[0][0] as string));
   expect(url.pathname).toBe("/v2/place-details");
   expect(url.searchParams.get("id")).toBe("venue1");
   expect(url.searchParams.get("features")).toBe("details");

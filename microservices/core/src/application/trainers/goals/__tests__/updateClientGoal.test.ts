@@ -8,7 +8,9 @@ vi.mock("../../../relationships/assertTrainerCanActForClient", () => ({
 const repoGetById = vi.fn();
 const repoUpdate = vi.fn();
 vi.mock("../../../repositories/goalRepository", () => ({
-  GoalRepository: vi.fn(() => ({ getById: repoGetById, update: repoUpdate })),
+  GoalRepository: vi.fn(function () {
+    return { getById: repoGetById, update: repoUpdate };
+  }),
 }));
 
 import { assertTrainerCanActForClient } from "../../../relationships/assertTrainerCanActForClient";

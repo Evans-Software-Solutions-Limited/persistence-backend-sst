@@ -33,8 +33,8 @@ export function InvitedClientContainer() {
   const online = useOnline();
   const detailQ = useClientProfile(profileId);
   const library = useLibrary();
-  const actions = useInviteActions((id) =>
-    navigate(`/coach/clients/invited/${id}/invite`),
+  const actions = useInviteActions(
+    (id) => void navigate(`/coach/clients/invited/${id}/invite`),
   );
   const [notesDraft, setNotesDraft] = useState<string | null>(null);
   // What the notes were, and the revision, when Edit was pressed: a refetch
@@ -211,7 +211,7 @@ export function InvitedClientContainer() {
         onConfirmCancel={async () => {
           if (await actions.cancel(detail.id)) {
             setConfirmCancel(false);
-            navigate("/coach/clients");
+            void navigate("/coach/clients");
           }
         }}
       />

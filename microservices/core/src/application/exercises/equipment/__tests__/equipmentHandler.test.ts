@@ -13,7 +13,9 @@ const exerciseRepositoryMocks = {
 };
 
 vi.mock("../../../repositories/exerciseRepository", () => ({
-  ExerciseRepository: vi.fn().mockImplementation(() => exerciseRepositoryMocks),
+  ExerciseRepository: vi.fn().mockImplementation(function () {
+    return exerciseRepositoryMocks;
+  }),
 }));
 
 describe("EquipmentHandler", () => {

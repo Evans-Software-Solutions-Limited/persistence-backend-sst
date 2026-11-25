@@ -49,7 +49,7 @@ describe("preferences.query", () => {
     it("re-applies un-flushed optimistic toggles on top of the server map (#10)", async () => {
       const api = new InMemoryApiAdapter();
       const storage = new InMemoryStorageAdapter();
-      storage.initialize();
+      void storage.initialize();
       // Server still has the old value; the user has optimistically toggled
       // goal_milestone OFF (queued, not flushed).
       api.notificationPreferences = {

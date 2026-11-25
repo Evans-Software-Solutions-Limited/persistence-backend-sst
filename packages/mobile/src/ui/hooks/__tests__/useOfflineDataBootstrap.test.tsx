@@ -65,7 +65,7 @@ function makeAdapters(
 ) {
   const api = new InMemoryApiAdapter();
   const storage = new InMemoryStorageAdapter();
-  storage.initialize();
+  void storage.initialize();
   const netInfo = new InMemoryNetInfoAdapter(connected);
   const auth = {
     ...new InMemoryAuthAdapter(),

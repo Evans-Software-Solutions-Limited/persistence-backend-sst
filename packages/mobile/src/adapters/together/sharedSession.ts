@@ -1538,7 +1538,9 @@ export class TogetherSharedSession implements TogetherSharedPort {
       failure = error;
     }
     this.notify();
-    if (failure) throw failure;
+    // Re-throw the caught value as-is (the truthiness check narrows `unknown`
+    // to `{}`; restore the declared type so it reads as a rethrow).
+    if (failure) throw failure as unknown;
   }
 
   dispose() {

@@ -533,7 +533,7 @@ describe("useCachedResource — bus-driven reload must not blank the screen", ()
 
   it("adopts a real value written by someone else", () => {
     const storage = new InMemoryStorageAdapter();
-    storage.initialize();
+    void storage.initialize();
     writeCache(storage, 1);
     const adapters = makeAdapters(new InMemoryApiAdapter(), storage);
 
@@ -559,7 +559,7 @@ describe("useCachedResource — bus-driven reload must not blank the screen", ()
     // The fetcher FAILS here deliberately, to isolate "the invalidation itself
     // must not blank the screen" from "a successful refetch replaces the data".
     const storage = new InMemoryStorageAdapter();
-    storage.initialize();
+    void storage.initialize();
     writeCache(storage, 5);
     const adapters = makeAdapters(new InMemoryApiAdapter(), storage);
 
@@ -589,7 +589,7 @@ describe("useCachedResource — bus-driven reload must not blank the screen", ()
     // The other half: an invalidation must actually cause a REFETCH, not just
     // preserve stale data — otherwise `invalidateHome()` would stop working.
     const storage = new InMemoryStorageAdapter();
-    storage.initialize();
+    void storage.initialize();
     writeCache(storage, 5);
     const adapters = makeAdapters(new InMemoryApiAdapter(), storage);
 
@@ -612,7 +612,7 @@ describe("useCachedResource — bus-driven reload must not blank the screen", ()
 
   it("ignores writes to tables it did not declare", () => {
     const storage = new InMemoryStorageAdapter();
-    storage.initialize();
+    void storage.initialize();
     writeCache(storage, 1);
     const adapters = makeAdapters(new InMemoryApiAdapter(), storage);
 
@@ -628,7 +628,7 @@ describe("useCachedResource — bus-driven reload must not blank the screen", ()
 
   it("registers no subscription when `tables` is omitted", () => {
     const storage = new InMemoryStorageAdapter();
-    storage.initialize();
+    void storage.initialize();
     const adapters = makeAdapters(new InMemoryApiAdapter(), storage);
 
     renderHook(() => useCachedResource(scalarConfig(async () => ok(1))), {
@@ -738,7 +738,7 @@ describe("useCachedResource — `enabled` gate (launch fan-out reduction)", () =
 
   it("a bus-driven invalidation while disabled marks staleness but does NOT spend a request", async () => {
     const storage = new InMemoryStorageAdapter();
-    storage.initialize();
+    void storage.initialize();
     writeCache(storage, 5);
     const adapters = makeAdapters(new InMemoryApiAdapter(), storage);
     const fetcher = jest.fn(async () => ok(99));
@@ -788,7 +788,7 @@ describe("useCachedResource — `enabled` gate (launch fan-out reduction)", () =
   // the row).
   it("an invalidation mid-fetch while ENABLED does not strand isRefreshing or swallow the error", async () => {
     const storage = new InMemoryStorageAdapter();
-    storage.initialize();
+    void storage.initialize();
     writeCache(storage, 5);
     const adapters = makeAdapters(new InMemoryApiAdapter(), storage);
     let settle: ((r: Result<number, ApiError>) => void) | null = null;
@@ -838,7 +838,7 @@ describe("useCachedResource — `enabled` gate (launch fan-out reduction)", () =
     // OWN gate) never re-reads storage and would report "not stale" even
     // after the row was deleted.
     const storage = new InMemoryStorageAdapter();
-    storage.initialize();
+    void storage.initialize();
     writeCache(storage, 5);
     const adapters = makeAdapters(new InMemoryApiAdapter(), storage);
     const fetcher = jest.fn(async () => ok(99));

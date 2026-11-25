@@ -21,7 +21,7 @@ it("cancels without discarding and clears the confirmation before confirming exa
   const retained = r.UNSAFE_getByType(EndConfirmDialogPresenter).props.onEnd;
   fireEvent.press(r.getByText("Discard"));
   expect(onConfirm).toHaveBeenCalledTimes(1);
-  act(() => retained());
+  void act(() => retained());
   expect(onConfirm).toHaveBeenCalledTimes(1);
 });
 it("ignores cleanup from an older owner and allows backdrop cancellation", () => {

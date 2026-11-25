@@ -40,13 +40,17 @@ const {
 });
 
 vi.mock("../../accountRepository", () => ({
-  AccountRepository: vi.fn(() => ({ softDelete })),
+  AccountRepository: vi.fn(function () {
+    return { softDelete };
+  }),
 }));
 vi.mock("../../supabaseAdminClient", () => ({
   getSupabaseAdminConfig,
 }));
 vi.mock("../../../repositories/subscriptionRepository", () => ({
-  SubscriptionRepository: vi.fn(() => ({ findStripeSubscriptionIdsForUser })),
+  SubscriptionRepository: vi.fn(function () {
+    return { findStripeSubscriptionIdsForUser };
+  }),
 }));
 vi.mock("../../../stripe/stripeClient", () => ({
   getStripe: () => ({ subscriptions: { cancel: stripeCancelMock } }),

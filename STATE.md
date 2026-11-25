@@ -1,5 +1,89 @@
 # Project memory · persistence-backend-sst
 
+### 2026-11-24 — Tooling: TypeScript 7, Oxlint (tsrs type-aware), Vitest 5, Vite 8 ([PER-148](https://linear.app/evans-software-solutions/issue/PER-148); branch `claude/brave-dirac-h9ianz`)
+
+Cuts check time, which was the cause of CI and local timeouts. No CI caching
+was added (Brad: CI should always run cold). No runtime, app or native change.
+
+- **TypeScript 7.0.2** in every workspace. TS 7 has no automatic `@types`
+  loading and no `baseUrl`, so `packages/db` and `packages/mobile` list
+  `types`, and `packages/web` drops `baseUrl` (`paths` now resolve from the
+  tsconfig). `noUncheckedSideEffectImports` is on by default, so the web
+  fontsource imports name `index.css` explicitly (same file).
+- **Mobile keeps `typescript@~5.9`** as its `typescript` module because
+  Expo's config loader (`@expo/require-utils`, used by `expo start`/EAS for
+  `app.config.ts`) calls `ts.transpileModule`, which the TS 7 package does not
+  export. Mobile typechecks with TS 7 through the `typescript-7` npm alias
+  (`node node_modules/typescript-7/bin/tsc`). Drop the alias once Expo
+  supports TS 7.
+- **ESLint → Oxlint 1.95** (`oxlint` + `tsrs` at the root). Each package's
+  `eslint.config.js` was converted with `@oxlint/migrate` into `.oxlintrc.json`
+  (same rules). typescript-eslint (≤ 8.74) does not load under TS 7, so ESLint
+  could not stay. Mobile: `oxlint src app` (the folders `expo lint` covered);
+  `eslint-plugin-expo` and the custom `eslint-rules/no-raw-hex-colors.js` run as
+  Oxlint JS plugins; its override exemptions are an `off` override because
+  Oxlint has no `ignores` inside overrides. `eslint` stays in mobile only for
+  the rule's `RuleTester` unit test.
+- **Type-aware (tsrs):** core, other-service, api-utils, seed and web set
+  `options.typeAware` with `no-floating-promises`, `no-misused-promises` and
+  `await-thenable` as errors. Backend was clean apart from two
+  `await-thenable` cases in `progressPhotos.integration.test.ts` (narrowing of
+  a callback-assigned `let`; now restated). Web: `no-misused-promises` has
+  `checksVoidReturn.attributes: false` (async JSX handlers; React ignores the
+  return); the 23 floating promises (mostly react-router `navigate()`) get
+  `void` (no runtime change); test `fetcher` mocks are typed to return
+  `Promise<Response>`. Mobile has the same rules too: 145 floating promises
+  (in-memory `storage.initialize()`, which completes synchronously, `act()`,
+  `invalidateQueries()`, Supabase auto-refresh, `AsyncStorage.setItem`) get
+  `void`; `checksVoidReturn.properties` is off for `Alert` button `onPress`
+  handlers; `await-thenable` is off in mobile tests only, where awaiting a
+  void-typed presenter callback is how a test waits for the container's
+  async work. Gotcha: root `typescript/*` rules are silently ignored unless
+  `typescript` is in the root `plugins` list.
+- **More type-aware rules, every package:** `switch-exhaustiveness-check`
+  (`considerDefaultExhaustiveForUnions`: an explicit `default:` counts),
+  `only-throw-error` and `prefer-promise-reject-errors` (rethrowing a caught
+  `unknown` allowed; off in tests, which throw strings on purpose; mobile
+  allows its Result error types `ApiError`/`StorageError`/`AuthError`/
+  `ValidationError`/`TogetherOfflineApiError`/`PurchasesError`, which hooks
+  throw into TanStack Query), and `no-base-to-string`. Real fixes: new
+  `errorMessage()` helper (core `src/shared/errorMessage.ts`, copied to mobile
+  `src/shared/errors/`) so non-`Error` rejections log their message/JSON
+  instead of "[object Object]" (errorHandler, the three "already cancelled"
+  checks, mobile requestLog); coach form answers render malformed objects as
+  JSON (web `forms.ts`, mobile `coachForms.service.ts`); web admin voucher form
+  fields read via `field()` (a missing field was the string "null"); mobile
+  `cloudSchema` checks `audience` is a string. Elsewhere `String(x as …)`
+  states schema-validated or stored types. `db`, `training-metrics`,
+  `subscription-catalog` and `scripts` now lint too (clean).
+- **Vitest 2.1.9 / 4.0.18 → 5.1.1** everywhere it is used (core,
+  other-service, scripts, api-utils, subscription-catalog, training-metrics,
+  web). Since Vitest 4 a mock called with `new` needs a constructible
+  implementation, so 265 class mocks (`Repo: vi.fn(() => mocks)`,
+  `.mockImplementation(() => …)`) became `function () { return …; }` — same
+  objects, no assertion changed. Vitest 5 also types mocks more strictly
+  (`MockInstance<typeof console.warn>` for spies; `vi.fn<(userId: string) =>
+  Promise<boolean>>` in `accountPurgeCron.test.ts`). `clearMocks` is now on by
+  default; no test depended on history carried between tests.
+- **Vite 7.3 → 8.3.8** in web (Rolldown), with `@vitejs/plugin-react-swc`
+  4.3.3, `vite-plugin-pwa` 1.3.0 (kept on 1.x; the plugin is due for removal),
+  `tailwindcss`/`@tailwindcss/vite` 4.3.5. `vite.config.ts` uses
+  `import.meta.dirname`. Same 40 output files and 1.5 MB as Vite 7.
+- Oxlint also found 3 `no-unsafe-optional-chaining` cases ESLint missed (core
+  `sessionRepository.test.ts`, web `coach/__tests__/api.test.ts`), now fixed,
+  and 7 non-blocking `import/no-named-as-default-member` warnings in mobile.
+- **Measured** (4 cores, `--force --concurrency=1`): typecheck 79s → 17s,
+  lint 63s → 6s; mobile typecheck 21.5s → 2.8s; core lint 9.8s → 0.1s
+  (1.7s type-aware); web `vite build` 4.59s → 0.75s; web tests 68s → 59s.
+- **Verified:** prettier, typecheck, lint, build (all packages, uncached).
+  Unit tests on Vitest 5: core 435 files / 6,357 tests (434 / 6,352 on Vitest 2,
+  plus the new errorMessage tests),
+  web 99 / 1,978, scripts 245, api-utils 27, training-metrics 54,
+  subscription-catalog 14 — all pass. Core coverage 97.56 / 93.12 / 97.9 /
+  98.06 (was 98.52 / 94.94 / 98.35 / 98.52 on Vitest 2: v4+ counts branches
+  more precisely; still above the 90% thresholds). Mobile (Jest, untouched): 9,677 pass,
+  34 fail in the two suites already known to fail (see the PER-129 entry).
+
 ### 2026-11-24 — APP-C1 iPhone: K-layout coach shell, Library → Forms, send sheet, editor, Check-ins tab ([PER-129](https://linear.app/evans-software-solutions/issue/PER-129); branch `bradleysimmsevans/per-129-app-c1-iphone`)
 
 Mobile half of PER-129 (PR 2 of 2; stacked on PR 1, #555, which has the

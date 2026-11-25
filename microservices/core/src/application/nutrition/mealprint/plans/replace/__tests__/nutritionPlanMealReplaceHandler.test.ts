@@ -35,7 +35,9 @@ vi.mock("../../../../../repositories/mealPlanRepository", async () => {
   >("../../../../../repositories/mealPlanRepository");
   return {
     ...actual,
-    MealPlanRepository: vi.fn().mockImplementation(() => planMocks),
+    MealPlanRepository: vi.fn().mockImplementation(function () {
+      return planMocks;
+    }),
   };
 });
 vi.mock(
@@ -46,14 +48,16 @@ vi.mock(
     >("../../../../../repositories/mealprintCandidateRepository");
     return {
       ...actual,
-      MealprintCandidateRepository: vi
-        .fn()
-        .mockImplementation(() => candidateMocks),
+      MealprintCandidateRepository: vi.fn().mockImplementation(function () {
+        return candidateMocks;
+      }),
     };
   },
 );
 vi.mock("../../../../../repositories/nutritionPreferenceRepository", () => ({
-  NutritionPreferenceRepository: vi.fn().mockImplementation(() => prefMocks),
+  NutritionPreferenceRepository: vi.fn().mockImplementation(function () {
+    return prefMocks;
+  }),
 }));
 vi.mock("../../../../../entitlement/assertEntitlement", async () => {
   const actual = await vi.importActual<

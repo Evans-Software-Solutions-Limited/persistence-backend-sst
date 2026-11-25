@@ -47,18 +47,22 @@ const seatsForPoolMock = vi.fn(async (pool: "consumer" | "coach") => ({
   cap: pool === "consumer" ? 200 : 20,
 }));
 vi.mock("../../founding/foundingGrantService", () => ({
-  FoundingGrantService: vi.fn().mockImplementation(() => ({
-    grant: grantMock,
-    revoke: revokeMock,
-    extend: extendMock,
-    resendInvite: resendMock,
-  })),
+  FoundingGrantService: vi.fn().mockImplementation(function () {
+    return {
+      grant: grantMock,
+      revoke: revokeMock,
+      extend: extendMock,
+      resendInvite: resendMock,
+    };
+  }),
 }));
 vi.mock("../../repositories/foundingGrantRepository", () => ({
-  FoundingGrantRepository: vi.fn().mockImplementation(() => ({
-    list: listMock,
-    seatsForPool: seatsForPoolMock,
-  })),
+  FoundingGrantRepository: vi.fn().mockImplementation(function () {
+    return {
+      list: listMock,
+      seatsForPool: seatsForPoolMock,
+    };
+  }),
 }));
 
 function req(path: string, init: RequestInit & { auth?: string } = {}) {

@@ -193,7 +193,7 @@ describe("CoachWorkoutLibraryContainer", () => {
       .spyOn(api, "getWorkouts")
       .mockResolvedValue(ok({ workouts: [], total: 0, quota: null }));
     const storage = new InMemoryStorageAdapter();
-    storage.initialize();
+    void storage.initialize();
     storage.cacheWorkoutsList("user-1", "mine", [], { used: 3, limit: 3 });
 
     const { findByTestId } = renderWithTheme(
@@ -216,7 +216,7 @@ describe("CoachWorkoutLibraryContainer", () => {
       .spyOn(api, "getWorkouts")
       .mockResolvedValue(ok({ workouts: [], total: 0, quota: null }));
     const storage = new InMemoryStorageAdapter();
-    storage.initialize();
+    void storage.initialize();
     // `limit: null` is an explicitly unlimited tier — premium, premium_plus,
     // or any rung of the coach ladder.
     storage.cacheWorkoutsList("user-1", "mine", [], { used: 40, limit: null });

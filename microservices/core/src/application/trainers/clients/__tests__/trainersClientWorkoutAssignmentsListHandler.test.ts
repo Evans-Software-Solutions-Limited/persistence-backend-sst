@@ -27,9 +27,11 @@ vi.mock("../../../relationships/assertTrainerCanActForClient", () => ({
 
 const listOpen = vi.fn();
 vi.mock("../../../repositories/programAssignmentRepository", () => ({
-  ProgramAssignmentRepository: vi.fn(() => ({
-    listOpenAssignmentsForClient: listOpen,
-  })),
+  ProgramAssignmentRepository: vi.fn(function () {
+    return {
+      listOpenAssignmentsForClient: listOpen,
+    };
+  }),
 }));
 
 import { assertTrainerCanActForClient } from "../../../relationships/assertTrainerCanActForClient";

@@ -72,28 +72,44 @@ const safeReconcileWorkoutStreakMock = vi.hoisted(() =>
 );
 
 vi.mock("../../repositories/volumeRepository", () => ({
-  VolumeRepository: vi.fn().mockImplementation(() => volMock),
+  VolumeRepository: vi.fn().mockImplementation(function () {
+    return volMock;
+  }),
 }));
 vi.mock("../../repositories/homeReadRepository", () => ({
-  HomeReadRepository: vi.fn().mockImplementation(() => homeMock),
+  HomeReadRepository: vi.fn().mockImplementation(function () {
+    return homeMock;
+  }),
 }));
 vi.mock("../../repositories/habitRepository", () => ({
-  HabitRepository: vi.fn().mockImplementation(() => habitMock),
+  HabitRepository: vi.fn().mockImplementation(function () {
+    return habitMock;
+  }),
 }));
 vi.mock("../../repositories/habitConfigRepository", () => ({
-  HabitConfigRepository: vi.fn().mockImplementation(() => habitConfigMock),
+  HabitConfigRepository: vi.fn().mockImplementation(function () {
+    return habitConfigMock;
+  }),
 }));
 vi.mock("../../repositories/streakRepository", () => ({
-  StreakRepository: vi.fn().mockImplementation(() => streakMock),
+  StreakRepository: vi.fn().mockImplementation(function () {
+    return streakMock;
+  }),
 }));
 vi.mock("../../repositories/nutritionEntryRepository", () => ({
-  NutritionEntryRepository: vi.fn().mockImplementation(() => nutEntryMock),
+  NutritionEntryRepository: vi.fn().mockImplementation(function () {
+    return nutEntryMock;
+  }),
 }));
 vi.mock("../../repositories/nutritionTargetRepository", () => ({
-  NutritionTargetRepository: vi.fn().mockImplementation(() => nutTargetMock),
+  NutritionTargetRepository: vi.fn().mockImplementation(function () {
+    return nutTargetMock;
+  }),
 }));
 vi.mock("../../repositories/sleepRepository", () => ({
-  SleepRepository: vi.fn().mockImplementation(() => sleepMock),
+  SleepRepository: vi.fn().mockImplementation(function () {
+    return sleepMock;
+  }),
 }));
 vi.mock("../../streaks/evaluate", () => ({
   safeReconcileWorkoutStreak: safeReconcileWorkoutStreakMock,

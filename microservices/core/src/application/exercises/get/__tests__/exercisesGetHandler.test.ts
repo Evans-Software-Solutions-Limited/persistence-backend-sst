@@ -1,21 +1,23 @@
 import { exercisesGetHandler } from "../exercisesGetHandler";
 
 vi.mock("../../../repositories/exerciseRepository", () => ({
-  ExerciseRepository: vi.fn().mockImplementation(() => ({
-    getById: vi.fn().mockImplementation((id: string) => {
-      if (id === "1" || id === "valid-uuid-1234") {
-        return Promise.resolve({
-          id,
-          name: "Push-ups",
-          description: "Basic push-up exercise",
-          muscleGroup: "chest",
-          difficultyLevel: "beginner",
-          isPublic: true,
-        });
-      }
-      return Promise.resolve(null);
-    }),
-  })),
+  ExerciseRepository: vi.fn().mockImplementation(function () {
+    return {
+      getById: vi.fn().mockImplementation((id: string) => {
+        if (id === "1" || id === "valid-uuid-1234") {
+          return Promise.resolve({
+            id,
+            name: "Push-ups",
+            description: "Basic push-up exercise",
+            muscleGroup: "chest",
+            difficultyLevel: "beginner",
+            isPublic: true,
+          });
+        }
+        return Promise.resolve(null);
+      }),
+    };
+  }),
 }));
 
 describe("ExercisesGetHandler", () => {

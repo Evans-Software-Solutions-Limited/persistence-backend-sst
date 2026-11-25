@@ -35,9 +35,9 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
 }));
 
 vi.mock("../../../repositories/subscriptionRepository", () => ({
-  SubscriptionRepository: vi
-    .fn()
-    .mockImplementation(() => subscriptionRepositoryMocks),
+  SubscriptionRepository: vi.fn().mockImplementation(function () {
+    return subscriptionRepositoryMocks;
+  }),
 }));
 
 vi.mock("../../../stripe/stripeClient", () => ({

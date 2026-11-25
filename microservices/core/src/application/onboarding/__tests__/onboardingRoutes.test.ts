@@ -6,7 +6,12 @@ vi.mock("../../repositories/onboardingStateRepository", async () => {
   const actual = await vi.importActual<any>(
     "../../repositories/onboardingStateRepository",
   );
-  return { ...actual, OnboardingStateRepository: vi.fn(() => repository) };
+  return {
+    ...actual,
+    OnboardingStateRepository: vi.fn(function () {
+      return repository;
+    }),
+  };
 });
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getAuthUser: vi.fn(async (header?: string) =>

@@ -21,6 +21,9 @@ export function fail<E>(error: E): Failure<E> {
  */
 export function unwrap<T, E>(result: Result<T, E>): T {
   if (result.ok) return result.value;
+  // Re-throws whatever error type the Result carries (generic `E`); callers
+  // that unwrap rely on getting that typed error back, not an Error wrapper.
+  // eslint-disable-next-line typescript/only-throw-error
   throw result.error;
 }
 

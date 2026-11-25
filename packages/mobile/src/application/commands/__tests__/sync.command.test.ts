@@ -76,7 +76,7 @@ describe("processSyncQueue", () => {
 
   beforeEach(() => {
     storage = new InMemoryStorageAdapter();
-    storage.initialize();
+    void storage.initialize();
     auth = new InMemoryAuthAdapter();
     mockFetch.mockReset();
     jest.mocked(captureSyncFailure).mockClear();
@@ -2444,7 +2444,7 @@ describe("unrecordable empty session records (PER-83)", () => {
 
   beforeEach(() => {
     storage = new InMemoryStorageAdapter();
-    storage.initialize();
+    void storage.initialize();
     auth = new InMemoryAuthAdapter();
     mockFetch.mockReset();
   });

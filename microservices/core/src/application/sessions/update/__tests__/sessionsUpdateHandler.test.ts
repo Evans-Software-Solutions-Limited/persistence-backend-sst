@@ -25,11 +25,15 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
 }));
 
 vi.mock("../../../repositories/sessionRepository", () => ({
-  SessionRepository: vi.fn().mockImplementation(() => sessionMocks),
+  SessionRepository: vi.fn().mockImplementation(function () {
+    return sessionMocks;
+  }),
 }));
 
 vi.mock("../../../repositories/personalRecordsRepository", () => ({
-  PersonalRecordsRepository: vi.fn().mockImplementation(() => prMocks),
+  PersonalRecordsRepository: vi.fn().mockImplementation(function () {
+    return prMocks;
+  }),
 }));
 
 // PER-117: the coach-event hook (its own behaviour is tested on PGlite in

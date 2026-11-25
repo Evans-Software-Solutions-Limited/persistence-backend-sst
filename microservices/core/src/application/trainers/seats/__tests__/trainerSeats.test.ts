@@ -12,7 +12,9 @@ import { getDb } from "@persistence/db/client";
 // can be asserted without touching push infra.
 const createAndDispatch = vi.fn(async () => ({}));
 vi.mock("../../../notifications/push/notificationDispatcher", () => ({
-  NotificationDispatcher: vi.fn(() => ({ createAndDispatch })),
+  NotificationDispatcher: vi.fn(function () {
+    return { createAndDispatch };
+  }),
 }));
 
 /**

@@ -51,9 +51,9 @@ vi.mock("../../../entitlement/assertEntitlement", () => ({
   assertEntitlement: entitlement,
 }));
 vi.mock("../../../repositories/aiUsageLogRepository", () => ({
-  AiUsageLogRepository: vi
-    .fn()
-    .mockImplementation(() => ({ reserveForUserToday: reserve })),
+  AiUsageLogRepository: vi.fn().mockImplementation(function () {
+    return { reserveForUserToday: reserve };
+  }),
 }));
 vi.mock("../../services/aiRecipeFromText", async (orig) => ({
   ...(await orig<typeof import("../../services/aiRecipeFromText")>()),

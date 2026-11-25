@@ -4,7 +4,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const getSummary = vi.fn();
 const EXERCISE_ID = "11111111-1111-4111-8111-111111111111";
 vi.mock("../../../repositories/exercisePerformanceRepository", () => ({
-  ExercisePerformanceRepository: vi.fn(() => ({ getSummary })),
+  ExercisePerformanceRepository: vi.fn(function () {
+    return { getSummary };
+  }),
 }));
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getAuthUser: vi.fn(async (header?: string) =>

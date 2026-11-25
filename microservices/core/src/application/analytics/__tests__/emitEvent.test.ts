@@ -3,7 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const insertMock = vi.fn();
 
 vi.mock("../../repositories/analyticsEventRepository", () => ({
-  AnalyticsEventRepository: vi.fn(() => ({ insert: insertMock })),
+  AnalyticsEventRepository: vi.fn(function () {
+    return { insert: insertMock };
+  }),
 }));
 
 import { emitEvent } from "../emitEvent";

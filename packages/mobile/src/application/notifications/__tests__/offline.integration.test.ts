@@ -35,7 +35,7 @@ describe("notifications offline integration (09.7)", () => {
 
   beforeEach(() => {
     storage = new InMemoryStorageAdapter();
-    storage.initialize();
+    void storage.initialize();
     auth = new InMemoryAuthAdapter();
     mockFetch.mockReset();
   });

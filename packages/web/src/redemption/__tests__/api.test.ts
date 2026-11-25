@@ -1,7 +1,10 @@
-import { beforeEach, afterEach, expect, it, vi } from "vitest";
+import { beforeEach, afterEach, expect, it, vi, type Mock } from "vitest";
 import { voucherApi } from "../api";
 import { saveSession, loadSession } from "../auth";
-let fetcher: ReturnType<typeof vi.fn>;
+// Call arguments stay untyped (assertions read them freely); the return
+// type is what makes async implementations type-check as fetch-like.
+// eslint-disable-next-line typescript/no-explicit-any -- assertions read call args freely
+let fetcher: Mock<(...args: any[]) => Promise<Response>>;
 beforeEach(() => {
   sessionStorage.clear();
   saveSession({

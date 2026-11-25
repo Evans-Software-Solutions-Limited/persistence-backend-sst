@@ -1,4 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+  type MockInstance,
+} from "vitest";
 import type Stripe from "stripe";
 
 const findByExternalIdMock = vi.fn();
@@ -6,10 +14,12 @@ const updateByIdMock = vi.fn();
 const ledgerRecordMock = vi.fn();
 
 vi.mock("../../../repositories/subscriptionRepository", () => ({
-  SubscriptionRepository: vi.fn().mockImplementation(() => ({
-    findByExternalId: findByExternalIdMock,
-    updateById: updateByIdMock,
-  })),
+  SubscriptionRepository: vi.fn().mockImplementation(function () {
+    return {
+      findByExternalId: findByExternalIdMock,
+      updateById: updateByIdMock,
+    };
+  }),
 }));
 
 vi.mock(
@@ -17,7 +27,9 @@ vi.mock(
   () => ({
     SubscriptionStatusTransitionsRepository: vi
       .fn()
-      .mockImplementation(() => ({ record: ledgerRecordMock })),
+      .mockImplementation(function () {
+        return { record: ledgerRecordMock };
+      }),
   }),
 );
 
@@ -57,7 +69,7 @@ function activeEvent(): Stripe.Event {
 }
 
 describe("handleSubscriptionUpdated — state machine (spec 17 / Phase D)", () => {
-  let warnSpy: ReturnType<typeof vi.spyOn>;
+  let warnSpy: MockInstance<typeof console.warn>;
   beforeEach(() => {
     vi.clearAllMocks();
     updateByIdMock.mockResolvedValue({ id: "us_test" });

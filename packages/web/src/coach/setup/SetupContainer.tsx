@@ -294,7 +294,7 @@ export function SetupContainer() {
   const go = async (path: string) => {
     if (await saveCurrent()) {
       setNotice(null);
-      navigate(path);
+      void navigate(path);
     }
   };
 

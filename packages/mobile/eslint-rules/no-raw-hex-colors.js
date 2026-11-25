@@ -14,7 +14,7 @@
 // `<View backgroundColor="#22d3ee">` that should use `$primary`.
 //
 // File scope (theme/** + __tests__/** exclusions) is applied in
-// eslint.config.js.
+// .oxlintrc.json (Oxlint runs this file as a JS plugin).
 
 const HEX_COLOR = /^#(?:[0-9A-Fa-f]{3,4}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$/;
 

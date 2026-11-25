@@ -30,7 +30,9 @@ vi.mock("../../../../../repositories/mealPlanRepository", async () => {
   >("../../../../../repositories/mealPlanRepository");
   return {
     ...actual,
-    MealPlanRepository: vi.fn().mockImplementation(() => planMocks),
+    MealPlanRepository: vi.fn().mockImplementation(function () {
+      return planMocks;
+    }),
   };
 });
 vi.mock("../../../../../entitlement/assertEntitlement", async () => {

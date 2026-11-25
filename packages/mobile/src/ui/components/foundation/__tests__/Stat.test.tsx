@@ -22,7 +22,9 @@ describe("Stat", () => {
     const value = getByTestId("stat-value");
     expect(JSON.stringify(value.props)).toContain("tabular-nums");
     const flat = flatten(value.props.style);
-    expect(String(flat.fontFamily ?? "")).toMatch(/mono/i);
+    expect(String((flat.fontFamily as string | undefined) ?? "")).toMatch(
+      /mono/i,
+    );
   });
 
   it("renders value, unit, label, and sub", () => {

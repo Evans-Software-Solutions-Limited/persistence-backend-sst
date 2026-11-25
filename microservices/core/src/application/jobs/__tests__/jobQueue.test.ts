@@ -3,10 +3,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 const sendMock = vi.fn();
 
 vi.mock("@aws-sdk/client-sqs", () => ({
-  SQSClient: vi.fn().mockImplementation(() => ({ send: sendMock })),
-  SendMessageCommand: vi.fn().mockImplementation((input: unknown) => ({
-    input,
-  })),
+  SQSClient: vi.fn().mockImplementation(function () {
+    return { send: sendMock };
+  }),
+  SendMessageCommand: vi.fn().mockImplementation(function (input: unknown) {
+    return {
+      input,
+    };
+  }),
 }));
 
 import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";

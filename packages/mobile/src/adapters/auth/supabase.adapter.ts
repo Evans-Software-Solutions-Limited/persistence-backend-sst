@@ -212,9 +212,9 @@ export class SupabaseAuthAdapter implements AuthPort {
     // Keep the session alive when the app is foregrounded
     this.appStateSubscription = AppState.addEventListener("change", (state) => {
       if (state === "active") {
-        this.client.auth.startAutoRefresh();
+        void this.client.auth.startAutoRefresh();
       } else {
-        this.client.auth.stopAutoRefresh();
+        void this.client.auth.stopAutoRefresh();
       }
     });
   }

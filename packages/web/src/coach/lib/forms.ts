@@ -534,17 +534,29 @@ export function responseLine(r: FormResponse): string {
   return r.replyText ? "Reviewed · you replied" : "Reviewed";
 }
 
+/** Answer JSON as text: an unexpected object shows its JSON, not "[object Object]". */
+function answerText(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (
+    typeof value === "number" ||
+    typeof value === "boolean" ||
+    typeof value === "bigint"
+  )
+    return String(value);
+  return JSON.stringify(value) ?? "";
+}
+
 /** An answer as the coach reads it. Unanswered → "". */
 export function formatAnswer(q: FormQuestion, value: unknown): string {
   if (value === undefined || value === null) return "";
   switch (q.type) {
     case "scale":
-      return `${String(value)} / 5`;
+      return `${answerText(value)} / 5`;
     case "number": {
       const n =
         typeof value === "number"
           ? value.toLocaleString("en-GB")
-          : String(value);
+          : answerText(value);
       return q.unit ? `${n} ${q.unit}` : n;
     }
     case "yes_no": {
@@ -559,14 +571,14 @@ export function formatAnswer(q: FormQuestion, value: unknown): string {
       return value ? "Yes" : "No";
     }
     case "multiple_choice":
-      return Array.isArray(value) ? value.join(", ") : String(value);
+      return Array.isArray(value) ? value.join(", ") : answerText(value);
     case "short_text":
     case "long_text":
-      return `“${String(value)}”`;
+      return `“${answerText(value)}”`;
     case "photo":
       return "Photo";
     default:
-      return String(value);
+      return answerText(value);
   }
 }
 

@@ -27,6 +27,12 @@ import {
   type IssuedVouchers,
 } from "../issuedVouchers";
 
+/** A text field's value; a missing field or file input reads as "". */
+function field(form: FormData, name: string): string {
+  const value = form.get(name);
+  return typeof value === "string" ? value : "";
+}
+
 export function NewVoucherBatch({
   onCreated,
 }: {
@@ -39,11 +45,11 @@ export function NewVoucherBatch({
     setError(null);
     const form = new FormData(e.currentTarget);
     try {
-      const domains = parseDomains(String(form.get("domains")));
+      const domains = parseDomains(field(form, "domains"));
       const quantity = Number(form.get("quantity"));
       const months = Number(form.get("months"));
-      const deadline = String(form.get("redeemBy"));
-      const raw = String(form.get("emails"));
+      const deadline = field(form, "redeemBy");
+      const raw = field(form, "emails");
       const emails = raw.trim()
         ? raw
             .replace(/\r/g, "")
@@ -71,8 +77,8 @@ export function NewVoucherBatch({
       if (deadline && new Date(deadline).getTime() <= Date.now())
         throw new Error("Redemption deadline must be in the future.");
       const input: CreateVoucherBatch = {
-        businessName: String(form.get("businessName")).trim(),
-        reference: String(form.get("reference")).trim() || undefined,
+        businessName: field(form, "businessName").trim(),
+        reference: field(form, "reference").trim() || undefined,
         quantity,
         months,
         tierName: form.get("tierName") as CreateVoucherBatch["tierName"],

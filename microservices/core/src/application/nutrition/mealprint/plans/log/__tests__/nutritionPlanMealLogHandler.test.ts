@@ -29,16 +29,20 @@ vi.mock("../../../../../repositories/mealPlanRepository", async () => {
   >("../../../../../repositories/mealPlanRepository");
   return {
     ...actual,
-    MealPlanRepository: vi.fn().mockImplementation(() => planMocks),
+    MealPlanRepository: vi.fn().mockImplementation(function () {
+      return planMocks;
+    }),
   };
 });
 vi.mock("../../../../../repositories/nutritionEntryRepository", () => ({
-  NutritionEntryRepository: vi.fn().mockImplementation(() => entryMocks),
+  NutritionEntryRepository: vi.fn().mockImplementation(function () {
+    return entryMocks;
+  }),
 }));
 vi.mock("../../../../../repositories/mealprintCandidateRepository", () => ({
-  MealprintCandidateRepository: vi
-    .fn()
-    .mockImplementation(() => candidateMocks),
+  MealprintCandidateRepository: vi.fn().mockImplementation(function () {
+    return candidateMocks;
+  }),
 }));
 vi.mock("../../../../../entitlement/assertEntitlement", async () => {
   const actual = await vi.importActual<

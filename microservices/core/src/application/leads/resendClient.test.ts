@@ -263,7 +263,7 @@ it("sends HTML alongside the required plain-text alternative", async () => {
     text: "Your access",
     html: "<p>Your access</p>",
   });
-  const body = JSON.parse(String(fetchMock.mock.calls[0]![1]!.body));
+  const body = JSON.parse(String(fetchMock.mock.calls[0]![1]!.body as string));
   expect(body).toMatchObject({
     text: "Your access",
     html: "<p>Your access</p>",

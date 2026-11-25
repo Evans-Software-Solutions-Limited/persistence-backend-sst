@@ -52,10 +52,14 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
 }));
 
 vi.mock("../../../repositories/exerciseRepository", () => ({
-  ExerciseRepository: vi.fn().mockImplementation(() => exerciseRepo),
+  ExerciseRepository: vi.fn().mockImplementation(function () {
+    return exerciseRepo;
+  }),
 }));
 vi.mock("../../../repositories/savedGymRepository", () => ({
-  SavedGymRepository: vi.fn().mockImplementation(() => savedGymRepo),
+  SavedGymRepository: vi.fn().mockImplementation(function () {
+    return savedGymRepo;
+  }),
 }));
 
 async function call(query: string, authed = true) {

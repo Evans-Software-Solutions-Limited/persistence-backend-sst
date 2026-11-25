@@ -18,6 +18,8 @@ export const measurementsCreateHandler = new Elysia()
     async (ctx) => {
       const { sub: userId } = getUser(ctx);
       const body = ctx.body as Record<string, unknown>;
+      // Numeric fields below are validated by the route schema as
+      // `string | number`, hence the `as string | number` before `String()`.
 
       // Optional client-supplied reading time (HealthKit→server push imports
       // readings taken in the past — stamping NOW would put them on the wrong
@@ -44,23 +46,40 @@ export const measurementsCreateHandler = new Elysia()
       const measurement = await ctx.MeasurementRepository.create(userId, {
         ...(measuredAt !== undefined ? { measuredAt } : {}),
         weightKg:
-          body.weightKg !== undefined ? String(body.weightKg) : undefined,
+          body.weightKg !== undefined
+            ? String(body.weightKg as string | number)
+            : undefined,
         bodyFatPercentage:
           body.bodyFatPercentage !== undefined
-            ? String(body.bodyFatPercentage)
+            ? String(body.bodyFatPercentage as string | number)
             : undefined,
-        chestCm: body.chestCm !== undefined ? String(body.chestCm) : undefined,
-        waistCm: body.waistCm !== undefined ? String(body.waistCm) : undefined,
-        hipsCm: body.hipsCm !== undefined ? String(body.hipsCm) : undefined,
+        chestCm:
+          body.chestCm !== undefined
+            ? String(body.chestCm as string | number)
+            : undefined,
+        waistCm:
+          body.waistCm !== undefined
+            ? String(body.waistCm as string | number)
+            : undefined,
+        hipsCm:
+          body.hipsCm !== undefined
+            ? String(body.hipsCm as string | number)
+            : undefined,
         leftArmCm:
-          body.leftArmCm !== undefined ? String(body.leftArmCm) : undefined,
+          body.leftArmCm !== undefined
+            ? String(body.leftArmCm as string | number)
+            : undefined,
         rightArmCm:
-          body.rightArmCm !== undefined ? String(body.rightArmCm) : undefined,
+          body.rightArmCm !== undefined
+            ? String(body.rightArmCm as string | number)
+            : undefined,
         leftThighCm:
-          body.leftThighCm !== undefined ? String(body.leftThighCm) : undefined,
+          body.leftThighCm !== undefined
+            ? String(body.leftThighCm as string | number)
+            : undefined,
         rightThighCm:
           body.rightThighCm !== undefined
-            ? String(body.rightThighCm)
+            ? String(body.rightThighCm as string | number)
             : undefined,
         notes: body.notes as string | undefined,
       });

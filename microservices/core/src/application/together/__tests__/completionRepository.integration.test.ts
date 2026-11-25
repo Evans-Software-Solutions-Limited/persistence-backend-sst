@@ -86,7 +86,7 @@ function ddl(table: PgTable) {
               ? "'{}'"
               : typeof c.default === "object"
                 ? `'${JSON.stringify(c.default)}'`
-                : String(c.default));
+                : String(c.default as number | boolean | bigint));
     }
     return `"${c.name}" ${type}${c.notNull ? " not null" : ""}${c.primary ? " primary key" : ""}${def}`;
   });

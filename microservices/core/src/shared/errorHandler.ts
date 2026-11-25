@@ -2,6 +2,7 @@ import Elysia from "elysia";
 import { EntitlementError } from "../application/entitlement/assertEntitlement";
 import { captureServerError } from "./sentry";
 import { TogetherError } from "../application/together/shared";
+import { errorMessage } from "./errorMessage";
 
 /**
  * Global error-logging + response-shape plugin for the core Elysia app.
@@ -147,7 +148,7 @@ export const coreErrorHandler = new Elysia({
     const path = new URL(request.url).pathname;
     const requestId = request.headers.get("x-amz-request-id") ?? undefined;
 
-    const message = error instanceof Error ? error.message : String(error);
+    const message = errorMessage(error);
     const stack = error instanceof Error ? error.stack : undefined;
     const causeChain = collectCauseChain(error);
     const causeSummaries = causeChain.map(summarizeCause);

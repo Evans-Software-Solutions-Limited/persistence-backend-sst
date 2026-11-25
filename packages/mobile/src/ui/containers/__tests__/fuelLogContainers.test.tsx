@@ -167,7 +167,7 @@ function setup() {
   const api = new InMemoryApiAdapter();
   api.userMeals = MEALS;
   const storage = new InMemoryStorageAdapter();
-  storage.initialize();
+  void storage.initialize();
   storage.cacheUserMeals(USER, MEALS);
   const session: AuthSession = {
     accessToken: "t",

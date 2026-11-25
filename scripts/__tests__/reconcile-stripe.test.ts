@@ -809,11 +809,13 @@ describe("reconcile() applied/failed counters (Inspector Brad PR #70 sweep #5)",
     const subOk = buildPremiumSubscription({ id: "sub_ok" });
     const subFails = buildPremiumSubscription({ id: "sub_fails" });
 
-    stripeConstructorMock.mockImplementation(() => ({
-      subscriptions: {
-        list: () => makeAsyncIterable([subOk, subFails]),
-      },
-    }));
+    stripeConstructorMock.mockImplementation(function () {
+      return {
+        subscriptions: {
+          list: () => makeAsyncIterable([subOk, subFails]),
+        },
+      };
+    });
 
     // findByExternalId returns a local row for both → both routed to
     // UPDATE branch in buildOp. (subscriptionTiers price lookup is the
@@ -890,11 +892,13 @@ describe("reconcile() applied/failed counters (Inspector Brad PR #70 sweep #5)",
 
   it("does NOT increment applied or failed on dry-run mode (no DB writes attempted)", async () => {
     const sub = buildPremiumSubscription();
-    stripeConstructorMock.mockImplementation(() => ({
-      subscriptions: {
-        list: () => makeAsyncIterable([sub]),
-      },
-    }));
+    stripeConstructorMock.mockImplementation(function () {
+      return {
+        subscriptions: {
+          list: () => makeAsyncIterable([sub]),
+        },
+      };
+    });
 
     const select = vi
       .fn()
@@ -938,11 +942,13 @@ describe("reconcile() applied/failed counters (Inspector Brad PR #70 sweep #5)",
       id: "sub_skip",
       metadata: {}, // missing user id
     });
-    stripeConstructorMock.mockImplementation(() => ({
-      subscriptions: {
-        list: () => makeAsyncIterable([sub]),
-      },
-    }));
+    stripeConstructorMock.mockImplementation(function () {
+      return {
+        subscriptions: {
+          list: () => makeAsyncIterable([sub]),
+        },
+      };
+    });
 
     const select = vi.fn().mockReturnValue({
       from: () => ({

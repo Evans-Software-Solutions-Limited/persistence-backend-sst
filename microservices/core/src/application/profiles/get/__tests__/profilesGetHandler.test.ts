@@ -29,7 +29,9 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
 }));
 
 vi.mock("../../../repositories/profileRepository", () => ({
-  ProfileRepository: vi.fn().mockImplementation(() => profileRepositoryMocks),
+  ProfileRepository: vi.fn().mockImplementation(function () {
+    return profileRepositoryMocks;
+  }),
 }));
 
 describe("ProfilesGetHandler", () => {

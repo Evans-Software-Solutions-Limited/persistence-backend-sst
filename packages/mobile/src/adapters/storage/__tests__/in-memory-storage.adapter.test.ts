@@ -42,7 +42,7 @@ describe("InMemoryStorageAdapter", () => {
 
   beforeEach(() => {
     storage = new InMemoryStorageAdapter();
-    storage.initialize();
+    void storage.initialize();
   });
 
   describe("sync queue", () => {
@@ -2060,7 +2060,7 @@ describe("InMemoryStorageAdapter", () => {
     it("no fingerprint arg skips the check entirely (regression guard for ~63 existing no-arg callers)", () => {
       storage.cacheExercises([buildExercise({ id: "e1" })]);
 
-      storage.initialize();
+      void storage.initialize();
 
       expect(storage.getCachedExercises()).toHaveLength(1);
       expect(storage.backendChanged()).toBe(false);
@@ -2069,7 +2069,7 @@ describe("InMemoryStorageAdapter", () => {
     it("empty-string fingerprint is treated as absent and skips the check", () => {
       storage.cacheExercises([buildExercise({ id: "e1" })]);
 
-      storage.initialize("");
+      void storage.initialize("");
 
       expect(storage.getCachedExercises()).toHaveLength(1);
       expect(storage.backendChanged()).toBe(false);
@@ -2081,7 +2081,7 @@ describe("InMemoryStorageAdapter", () => {
       // fingerprinting: no stamp yet, but stale data may be present.
       storage.cacheExercises([buildExercise({ id: "e1" })]);
 
-      storage.initialize("https://proj-a.supabase.co");
+      void storage.initialize("https://proj-a.supabase.co");
 
       expect(storage.getCachedExercises()).toHaveLength(0);
       expect(storage.backendChanged()).toBe(true);
@@ -2089,37 +2089,37 @@ describe("InMemoryStorageAdapter", () => {
       // The stamp is now written — a follow-up init with the SAME
       // fingerprint doesn't wipe again.
       storage.cacheExercises([buildExercise({ id: "e2" })]);
-      storage.initialize("https://proj-a.supabase.co");
+      void storage.initialize("https://proj-a.supabase.co");
       expect(storage.getCachedExercises()).toHaveLength(1);
       expect(storage.backendChanged()).toBe(false);
     });
 
     it("stored fingerprint differs from the new one: wipes, flags the change, and updates the stamp", () => {
-      storage.initialize("https://proj-a.supabase.co");
+      void storage.initialize("https://proj-a.supabase.co");
       storage.cacheExercises([buildExercise({ id: "e1" })]);
       // First call already stamped + wiped (absent → wipe); reset the flag
       // by re-initializing with the same value so the assertions below are
       // scoped to the DIFFERS branch only.
-      storage.initialize("https://proj-a.supabase.co");
+      void storage.initialize("https://proj-a.supabase.co");
       expect(storage.backendChanged()).toBe(false);
 
-      storage.initialize("https://proj-b.supabase.co");
+      void storage.initialize("https://proj-b.supabase.co");
 
       expect(storage.getCachedExercises()).toHaveLength(0);
       expect(storage.backendChanged()).toBe(true);
 
       // Stamp updated to proj-b — a follow-up init with proj-b no longer wipes.
       storage.cacheExercises([buildExercise({ id: "e2" })]);
-      storage.initialize("https://proj-b.supabase.co");
+      void storage.initialize("https://proj-b.supabase.co");
       expect(storage.getCachedExercises()).toHaveLength(1);
       expect(storage.backendChanged()).toBe(false);
     });
 
     it("stored fingerprint equals the new one: no wipe, backendChanged stays false", () => {
-      storage.initialize("https://proj-a.supabase.co");
+      void storage.initialize("https://proj-a.supabase.co");
       storage.cacheExercises([buildExercise({ id: "e1" })]);
 
-      storage.initialize("https://proj-a.supabase.co");
+      void storage.initialize("https://proj-a.supabase.co");
 
       expect(storage.getCachedExercises()).toHaveLength(1);
       expect(storage.backendChanged()).toBe(false);
@@ -2127,12 +2127,12 @@ describe("InMemoryStorageAdapter", () => {
 
     it("backendChanged() resets to false at the start of every initialize() call", () => {
       // First call: absent → wipe → true.
-      storage.initialize("https://proj-a.supabase.co");
+      void storage.initialize("https://proj-a.supabase.co");
       expect(storage.backendChanged()).toBe(true);
 
       // Second call with a no-op no-arg initialize must NOT keep reporting
       // the previous call's `true` — it re-evaluates (and skips) each time.
-      storage.initialize();
+      void storage.initialize();
       expect(storage.backendChanged()).toBe(false);
     });
   });

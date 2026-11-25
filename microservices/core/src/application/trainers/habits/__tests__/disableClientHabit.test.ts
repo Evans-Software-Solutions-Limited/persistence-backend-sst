@@ -12,10 +12,12 @@ vi.mock("../../../relationships/auditTrainerAction", () => ({
 const repoDisable = vi.fn();
 const repoGetAssigner = vi.fn();
 vi.mock("../../../repositories/habitConfigRepository", () => ({
-  HabitConfigRepository: vi.fn(() => ({
-    disable: repoDisable,
-    getAssigner: repoGetAssigner,
-  })),
+  HabitConfigRepository: vi.fn(function () {
+    return {
+      disable: repoDisable,
+      getAssigner: repoGetAssigner,
+    };
+  }),
 }));
 
 import { getDb } from "@persistence/db/client";

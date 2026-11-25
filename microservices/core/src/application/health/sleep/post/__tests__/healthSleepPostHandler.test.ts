@@ -18,7 +18,9 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getUser: vi.fn((ctx) => ctx.user || { sub: "test-user-id" }),
 }));
 vi.mock("../../../../repositories/sleepRepository", () => ({
-  SleepRepository: vi.fn().mockImplementation(() => sleepMocks),
+  SleepRepository: vi.fn().mockImplementation(function () {
+    return sleepMocks;
+  }),
 }));
 
 function post(body: unknown, auth = true) {

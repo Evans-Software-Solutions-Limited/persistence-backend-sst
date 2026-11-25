@@ -20,10 +20,14 @@ vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getUser: vi.fn((ctx) => ctx.user || { sub: "test-user-id" }),
 }));
 vi.mock("../../../repositories/recipeRepository", () => ({
-  RecipeRepository: vi.fn().mockImplementation(() => recipeMocks),
+  RecipeRepository: vi.fn().mockImplementation(function () {
+    return recipeMocks;
+  }),
 }));
 vi.mock("../../../repositories/foodRepository", () => ({
-  FoodRepository: vi.fn().mockImplementation(() => foodMocks),
+  FoodRepository: vi.fn().mockImplementation(function () {
+    return foodMocks;
+  }),
 }));
 
 function post(body: unknown, auth = true) {

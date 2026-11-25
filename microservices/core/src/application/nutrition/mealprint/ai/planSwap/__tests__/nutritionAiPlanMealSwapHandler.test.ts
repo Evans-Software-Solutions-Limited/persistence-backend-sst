@@ -54,15 +54,19 @@ vi.mock("../../../../../entitlement/assertEntitlement", async () => {
   return { ...actual, assertEntitlement: assertEntitlementMock };
 });
 vi.mock("../../../../../repositories/aiUsageLogRepository", () => ({
-  AiUsageLogRepository: vi.fn().mockImplementation(() => usageMocks),
+  AiUsageLogRepository: vi.fn().mockImplementation(function () {
+    return usageMocks;
+  }),
 }));
 vi.mock("../../../../../repositories/nutritionTargetRepository", () => ({
-  NutritionTargetRepository: vi
-    .fn()
-    .mockImplementation(() => ({ get: vi.fn() })),
+  NutritionTargetRepository: vi.fn().mockImplementation(function () {
+    return { get: vi.fn() };
+  }),
 }));
 vi.mock("../../../../../repositories/nutritionPreferenceRepository", () => ({
-  NutritionPreferenceRepository: vi.fn().mockImplementation(() => prefMocks),
+  NutritionPreferenceRepository: vi.fn().mockImplementation(function () {
+    return prefMocks;
+  }),
 }));
 vi.mock(
   "../../../../../repositories/mealprintCandidateRepository",
@@ -72,9 +76,9 @@ vi.mock(
     >("../../../../../repositories/mealprintCandidateRepository");
     return {
       ...actual,
-      MealprintCandidateRepository: vi
-        .fn()
-        .mockImplementation(() => candidateMocks),
+      MealprintCandidateRepository: vi.fn().mockImplementation(function () {
+        return candidateMocks;
+      }),
     };
   },
 );

@@ -26,7 +26,9 @@ vi.mock("../../../../repositories/nutritionPreferenceRepository", async () => {
   >("../../../../repositories/nutritionPreferenceRepository");
   return {
     ...actual,
-    NutritionPreferenceRepository: vi.fn().mockImplementation(() => prefMocks),
+    NutritionPreferenceRepository: vi.fn().mockImplementation(function () {
+      return prefMocks;
+    }),
   };
 });
 vi.mock("../../../../entitlement/assertEntitlement", async () => {

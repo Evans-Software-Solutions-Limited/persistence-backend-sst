@@ -13,8 +13,8 @@ export function ClientsListContainer() {
   const online = useOnline();
   const navigate = useNavigate();
   // Resend only makes a new code; the invite page is where it is shared.
-  const invite = useInviteActions((id) =>
-    navigate(`/coach/clients/invited/${id}/invite`),
+  const invite = useInviteActions(
+    (id) => void navigate(`/coach/clients/invited/${id}/invite`),
   );
 
   if (roster.isPending) return <Loading />;

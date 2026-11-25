@@ -27,10 +27,14 @@ const streakMock = vi.hoisted(() => ({
 }));
 
 vi.mock("../../repositories/habitRepository", () => ({
-  HabitRepository: vi.fn().mockImplementation(() => habitMock),
+  HabitRepository: vi.fn().mockImplementation(function () {
+    return habitMock;
+  }),
 }));
 vi.mock("../../repositories/streakRepository", () => ({
-  StreakRepository: vi.fn().mockImplementation(() => streakMock),
+  StreakRepository: vi.fn().mockImplementation(function () {
+    return streakMock;
+  }),
 }));
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getAuthUser: vi.fn(async (authHeader: string | undefined) =>

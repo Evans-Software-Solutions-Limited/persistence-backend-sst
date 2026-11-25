@@ -23,11 +23,13 @@ const repoMarkDoneMock = vi.fn();
 const repoMarkFailedMock = vi.fn();
 
 vi.mock("../../repositories/stripeWebhookEventsRepository", () => ({
-  StripeWebhookEventsRepository: vi.fn().mockImplementation(() => ({
-    claim: repoClaimMock,
-    markDone: repoMarkDoneMock,
-    markFailed: repoMarkFailedMock,
-  })),
+  StripeWebhookEventsRepository: vi.fn().mockImplementation(function () {
+    return {
+      claim: repoClaimMock,
+      markDone: repoMarkDoneMock,
+      markFailed: repoMarkFailedMock,
+    };
+  }),
 }));
 
 // Dispatch table — mock so tests can swap in throwing / spying handlers

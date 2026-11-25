@@ -21,20 +21,21 @@ export function useRestorePurchases() {
   return useMutation<ActiveEntitlement[], PurchasesError, void>({
     mutationFn: async () => {
       if (purchases === null) {
-        throw {
+        const notConfigured: PurchasesError = {
           kind: "not_configured",
           code: null,
           message: "Purchases are unavailable on this device.",
-        } satisfies PurchasesError;
+        };
+        throw notConfigured;
       }
       const result = await purchases.restore();
       if (!result.ok) throw result.error;
       return result.value;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["user-subscription"] });
-      queryClient.invalidateQueries({ queryKey: ["user-profile"] });
-      queryClient.invalidateQueries({ queryKey: ["profile-data"] });
+      void queryClient.invalidateQueries({ queryKey: ["user-subscription"] });
+      void queryClient.invalidateQueries({ queryKey: ["user-profile"] });
+      void queryClient.invalidateQueries({ queryKey: ["profile-data"] });
     },
   });
 }
