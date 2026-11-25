@@ -3,17 +3,27 @@ import { Navigate, Outlet, useLocation, useNavigate } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import "../coach.css";
 import { getAccessToken, onSignedOut, signOut } from "../api/coachAuth";
-import { isCoachApiError } from "../api/coachApi";
+import {
+  isCoachApiError,
+  isCoachSubscriptionRequired,
+  onCoachSubscriptionRequired,
+} from "../api/coachApi";
 import { COACH_ROLES } from "../api/types";
+import { COACH_PLANS_REDIRECT } from "@/lib/coachPlans";
 import { coachKeys, useCoachProfile, useRoster } from "../hooks/coachQueries";
 import { initials } from "../lib/people";
 import { LoadError, Loading } from "../ui/parts";
 import { CoachShell } from "./CoachShell";
 
 /**
- * Container for every signed-in coach page: session → profile → role, then
- * the rail with the page in it. The API enforces the real rule on each call;
- * this only decides what to show.
+ * Container for every signed-in coach page: session → profile → role →
+ * coach subscription, then the rail with the page in it. The API enforces the
+ * real rule on each call; this only decides what to show.
+ *
+ * PER-146: without a coach role, or when the API refuses the roster with
+ * `coach_subscription_required`, the coach goes to the coach plans page
+ * (`/pricing`, Coaches tab). A subscription that lapses mid-session sends
+ * them there on the next refused call.
  */
 export function CoachLayout() {
   const location = useLocation();
@@ -46,6 +56,17 @@ export function CoachLayout() {
         });
       }),
     [queryClient, navigate, location.pathname],
+  );
+
+  // Any coach call refused for want of a coach subscription (e.g. it lapsed
+  // mid-session) leaves for the coach plans page and drops cached coach data.
+  useEffect(
+    () =>
+      onCoachSubscriptionRequired(() => {
+        queryClient.removeQueries({ queryKey: coachKeys.all });
+        void navigate(COACH_PLANS_REDIRECT, { replace: true });
+      }),
+    [queryClient, navigate],
   );
 
   if (session === "checking") {
@@ -116,23 +137,21 @@ function SignedIn({ onSignOut }: { onSignOut: () => void }) {
       </div>
     );
   }
-  if (!isCoach) {
+  if (
+    !isCoach ||
+    isCoachSubscriptionRequired(roster.error ?? roster.failureReason)
+  ) {
+    return <Navigate to={COACH_PLANS_REDIRECT} replace />;
+  }
+  // The roster is the first call the API checks the coach subscription on:
+  // wait for its FIRST attempt so a coach without one never sees the
+  // workspace flash up. Any other failure shows the shell straight away
+  // (the roster keeps retrying in the background), as before.
+  if (roster.isPending && roster.failureCount === 0) {
     return (
       <div className="persistence-coach">
-        <div
-          className="center-page"
-          style={{ flexDirection: "column", gap: 12, textAlign: "center" }}
-        >
-          <h1 className="h1" style={{ fontSize: 26, lineHeight: "32px" }}>
-            This account isn't a coach account
-          </h1>
-          <p className="sub" style={{ maxWidth: 420 }}>
-            The coach workspace is for personal trainers and physiotherapists.
-            Sign in with the account you coach from.
-          </p>
-          <button type="button" className="btn sm ghost" onClick={onSignOut}>
-            Sign out
-          </button>
+        <div className="center-page">
+          <Loading />
         </div>
       </div>
     );
