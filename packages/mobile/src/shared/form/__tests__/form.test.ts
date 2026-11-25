@@ -218,6 +218,43 @@ describe("server errors", () => {
     expect(applyServerErrors(err(422, {}), setError, {})).toBe(false);
   });
 
+  it("an error about the whole list isn't put on a `{n}` field (Inspector Brad, #566)", () => {
+    const setError = jest.fn();
+    const map = {
+      questions: { field: "questions.{n}.prompt", message: "Check it." },
+    } as never;
+    // "/questions" (e.g. "1–40 questions") names no question.
+    expect(
+      applyServerErrors(
+        err(422, { validation: [{ path: "/questions", message: "x" }] }),
+        setError,
+        map,
+      ),
+    ).toBe(false);
+    // Nor does a key that isn't an index.
+    expect(
+      applyServerErrors(
+        err(422, { validation: [{ path: "/questions/abc", message: "x" }] }),
+        setError,
+        map,
+      ),
+    ).toBe(false);
+    expect(setError).not.toHaveBeenCalled();
+    // With an index it still lands on that question.
+    expect(
+      applyServerErrors(
+        err(422, { errors: [{ at: 0, message: "x" }] }),
+        setError,
+        map,
+        { errorsAt: "questions" },
+      ),
+    ).toBe(true);
+    expect(setError).toHaveBeenCalledWith("questions.0.prompt", {
+      type: "server",
+      message: "Check it.",
+    });
+  });
+
   it("reads the mobile adapter's raw response ({ status, json })", () => {
     expect(
       serverFieldIssues({
