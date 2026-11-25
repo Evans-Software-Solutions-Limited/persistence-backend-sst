@@ -19,7 +19,13 @@ import type { EffectiveRule } from "../lib/schedule";
  * Each form's react-hook-form rules (PER-147): the same messages as before
  * the move, from the TypeBox schema through the resolver.
  */
-const opts = { fields: {}, shouldUseNativeValidation: false } as const;
+// As react-hook-form calls it in the app: no registered fields, so `names`
+// is empty (Inspector Brad, #561).
+const opts = {
+  fields: {},
+  names: [] as string[],
+  shouldUseNativeValidation: false,
+} as const;
 async function errorsOf<V extends FieldValues>(
   resolver: Resolver<V>,
   values: V,
@@ -70,6 +76,35 @@ describe("Who (C11a)", () => {
         "goal",
       ),
     ).toBe("Keep the goal under 200 characters.");
+  });
+});
+
+describe("Who: the name as the API limits it (joined, 1–80)", () => {
+  it("reopens a saved name whatever its split, and limits the whole", async () => {
+    // A saved 70-character name reopens with every later word in Last name.
+    const last =
+      "de la Cruz Fernández-Rodríguez y Montenegro Villaseñor Ortega";
+    expect(last.length).toBeGreaterThan(40);
+    expect(
+      await errorsOf(whoResolver, { ...EMPTY, first: "María", last }),
+    ).toEqual({});
+    // One long first word is a name, not a missing one.
+    expect(
+      await errorsOf(whoResolver, { ...EMPTY, first: "x".repeat(45) }),
+    ).toEqual({});
+    const long = await errorsOf(whoResolver, {
+      ...EMPTY,
+      first: "Lena",
+      last: "y".repeat(80),
+    });
+    expect(messageAt(long, "last")).toBe("Keep the name to 80 characters.");
+    expect(messageAt(long, "first")).toBeUndefined();
+    expect(
+      messageAt(
+        await errorsOf(whoResolver, { ...EMPTY, first: "z".repeat(81) }),
+        "first",
+      ),
+    ).toBe("Keep the name to 80 characters.");
   });
 });
 
@@ -209,9 +244,9 @@ describe("Settings (C3.9) and reply (C3.3)", () => {
     features: { messages: true },
   };
 
-  it("sessions a week are 1 to 14 while training is tracked", async () => {
+  it("sessions a week are 1 to 14, or none (as the API allows)", async () => {
     expect(await errorsOf(settingsResolver, settings as never)).toEqual({});
-    for (const sessionsPerWeek of [0, 15, null]) {
+    for (const sessionsPerWeek of [0, 15, 2.5]) {
       expect(
         messageAt(
           await errorsOf(settingsResolver, {
@@ -222,13 +257,17 @@ describe("Settings (C3.9) and reply (C3.3)", () => {
         ),
       ).toBe("Choose 1 to 14 sessions a week.");
     }
-    expect(
-      await errorsOf(settingsResolver, {
-        ...settings,
-        trackTraining: false,
-        sessionsPerWeek: null,
-      } as never),
-    ).toEqual({});
+    // Training on with no target yet (a set-up with a programme, accepted)
+    // is valid, so the client's other switches still save.
+    for (const trackTraining of [true, false]) {
+      expect(
+        await errorsOf(settingsResolver, {
+          ...settings,
+          trackTraining,
+          sessionsPerWeek: null,
+        } as never),
+      ).toEqual({});
+    }
   });
 
   it("a reply has words and fits 2,000 characters", async () => {

@@ -131,13 +131,17 @@ describe("questions (C10b)", () => {
           // A blank option is named before a repeated one.
           q({ type: "single_choice", options: [" ", " "] }),
           q({ type: "single_choice", options: Array(13).fill("o") }),
+          // Blank and repeated together: the blank is named (Inspector Brad).
+          q({ type: "multiple_choice", options: ["a", "a", " "] }),
+          // A blank list that's too short: the count is named.
+          q({ type: "single_choice", options: [" "] }),
         ],
       },
       undefined,
-      { fields: {}, shouldUseNativeValidation: false },
+      { fields: {}, names: [] as string[], shouldUseNativeValidation: false },
     );
     const problems = problemsFrom(result.errors);
-    expect([...problems.keys()]).toEqual([0, 1, 2, 3, 4, 5, 6, 8, 9]);
+    expect([...problems.keys()]).toEqual([0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11]);
     expect(problems.get(0)).toBe("Write the question.");
     expect(problems.get(1)).toBe("Keep the question under 300 characters.");
     expect(problems.get(2)).toBe("Keep the help text under 300 characters.");
@@ -149,10 +153,16 @@ describe("questions (C10b)", () => {
     );
     expect(problems.get(8)).toBe("Fill in every option.");
     expect(problems.get(9)).toBe("Give 2 to 12 options.");
+    expect(problems.get(10)).toBe("Fill in every option.");
+    expect(problems.get(11)).toBe("Give 2 to 12 options.");
   });
 
   it("refuses a form with no name or no questions; passes a good one", async () => {
-    const opts = { fields: {}, shouldUseNativeValidation: false } as const;
+    const opts = {
+      fields: {},
+      names: [] as string[],
+      shouldUseNativeValidation: false,
+    } as const;
     const empty = await formEditorResolver(
       { title: "  ", questions: [] },
       undefined,

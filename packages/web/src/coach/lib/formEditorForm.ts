@@ -27,6 +27,7 @@ export interface FormEditorValues {
 
 const OPTIONS_COUNT = `Give 2 to ${MAX_OPTIONS} options.`;
 export const RANGE_MESSAGE = "The lowest number must not be above the highest.";
+export const UNIQUE_MESSAGE = "Options must be different.";
 
 const questionSchema = Type.Object({
   id: Type.String({ pattern: "^[A-Za-z0-9_-]{1,64}$" }),
@@ -51,11 +52,9 @@ const questionSchema = Type.Object({
       {
         minItems: 2,
         maxItems: MAX_OPTIONS,
-        uniqueItems: true,
         errorMessage: {
           ArrayMinItems: OPTIONS_COUNT,
           ArrayMaxItems: OPTIONS_COUNT,
-          ArrayUniqueItems: "Options must be different.",
         },
       },
     ),
@@ -82,6 +81,18 @@ export const formEditorResolver = schemaResolver<FormEditorValues>(
     refine: (v: FormEditorValues) => {
       const out: Record<string, string> = {};
       v.questions.forEach((q, i) => {
+        // Repeated options are checked here, not with `uniqueItems`: in the
+        // app react-hook-form passes `names: []`, so a schema error on the
+        // list would replace the per-option "Fill in every option." errors.
+        // A blank option is named first, so repeats only count without one.
+        const opts = q.options ?? [];
+        if (
+          opts.length > 0 &&
+          opts.every((o) => o !== "") &&
+          new Set(opts).size !== opts.length
+        ) {
+          out[`questions.${i}.options`] = UNIQUE_MESSAGE;
+        }
         if (
           q.type === "number" &&
           q.min !== undefined &&

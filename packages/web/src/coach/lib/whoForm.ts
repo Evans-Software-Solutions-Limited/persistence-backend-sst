@@ -28,22 +28,22 @@ export function valuesFrom(p: ClientProfile): WhoValues {
 /**
  * The Who rules (PER-147), checked on trimmed values through react-hook-form.
  * Limits match the API's profile route (`displayName` 1–80, contact email
- * 320, phone 40, goal 200, notes 4000); the inputs' own `maxLength` keeps a
- * coach inside them. The patterns are `parseContact`'s.
+ * 320, phone 40, goal 200, notes 4000). The name is checked as the API sees
+ * it, first and last joined, not per box: a saved name reopens with every
+ * later word in Last name (`splitName`), which can pass the box's typing
+ * limit and must still save. The patterns are `parseContact`'s.
  */
 const EMAIL = String.raw`^[^\s@]+@[^\s@]+\.[^\s@]+$`;
 const PHONE = String.raw`^\+?[0-9 ()-]{6,}$`;
+export const NAME_MAX = 80;
 export const CONTACT_MESSAGE = "Enter an email address or a mobile number.";
+export const NAME_MESSAGE = `Keep the name to ${NAME_MAX} characters.`;
 const GOAL_MESSAGE = "Keep the goal under 200 characters.";
 const NOTES_MESSAGE = "Keep the notes under 4,000 characters.";
 
 export const whoSchema = Type.Object({
-  first: Type.String({
-    minLength: 1,
-    maxLength: 40,
-    errorMessage: "Add a first name.",
-  }),
-  last: Type.String({ maxLength: 40 }),
+  first: Type.String({ minLength: 1, errorMessage: "Add a first name." }),
+  last: Type.String(),
   contact: Type.Union(
     [
       Type.String({ maxLength: 0 }),
@@ -58,11 +58,17 @@ export const whoSchema = Type.Object({
 
 export const whoResolver = schemaResolver<WhoValues>(whoSchema, {
   prepare: trimmed,
+  // The joined name is what the API limits; the message goes on the box
+  // that made it too long (Last name when there is one).
+  refine: (v: WhoValues) =>
+    joinName(v.first, v.last).length > NAME_MAX
+      ? { [v.last ? "last" : "first"]: NAME_MESSAGE }
+      : {},
 });
 
 /** Where the API's 422 field errors land on this form. */
 export const WHO_SERVER_FIELDS: ServerFieldMap<WhoValues> = {
-  displayName: { field: "first", message: "Check the name and try again." },
+  displayName: { field: "first", message: NAME_MESSAGE },
   contactEmail: { field: "contact", message: CONTACT_MESSAGE },
   contactPhone: { field: "contact", message: CONTACT_MESSAGE },
   goal: { field: "goal", message: GOAL_MESSAGE },

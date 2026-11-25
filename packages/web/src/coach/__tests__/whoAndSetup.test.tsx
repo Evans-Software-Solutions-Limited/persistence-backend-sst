@@ -178,6 +178,40 @@ describe("Add client · 1 Who (C11a)", () => {
     );
   });
 
+  it("reopens a long saved name (over 40 in Last name) and still saves", async () => {
+    // splitName puts every later word into Last name; the API allows 80.
+    const displayName =
+      "María de la Cruz Fernández-Rodríguez y Montenegro Villaseñor";
+    const api = fakeApi({
+      profileDetail: vi
+        .fn()
+        .mockResolvedValue({ ...detail(), displayName, revision: 3 }),
+      patchProfile: vi.fn().mockResolvedValue({
+        ...detail(),
+        displayName,
+        goal: "Run 5k",
+        revision: 4,
+      }),
+    });
+    renderCoach(<WhoContainer />, {
+      route: `/coach/clients/invited/${PROFILE_ID}/who`,
+      path: "/coach/clients/invited/:profileId/who",
+      api,
+    });
+    const goal = await screen.findByLabelText("Goal, optional");
+    expect(
+      (screen.getByLabelText("Last name") as HTMLInputElement).value.length,
+    ).toBeGreaterThan(40);
+    fireEvent.change(goal, { target: { value: "Run 5k" } });
+    fireEvent.click(screen.getByRole("button", { name: "Next: set up" }));
+    await waitFor(() => expect(currentPath()).toBe(at()));
+    expect(api.patchProfile).toHaveBeenCalledWith(
+      PROFILE_ID,
+      { goal: "Run 5k" },
+      3,
+    );
+  });
+
   it("unchanged: no write; 409: shows the other device's version", async () => {
     const latest = { ...detail(), goal: "From the phone", revision: 5 };
     const api = fakeApi({

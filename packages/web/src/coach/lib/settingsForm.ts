@@ -6,7 +6,7 @@ import type { AlertMode, ClientSettings, FeatureKey } from "../api/types";
  * C3.9 client settings as a react-hook-form (PER-147). Each switch saves on
  * its own, so the form checks the whole set after each change and only a
  * valid change is sent. Limits are the API's settings route: 1–14 sessions a
- * week (or none while training isn't tracked) and the three alert modes.
+ * week, or none, and the three alert modes.
  */
 
 export interface SettingsFormValues {
@@ -34,15 +34,14 @@ export const settingsSchema = Type.Object({
   features: Type.Record(Type.String(), Type.Boolean()),
 });
 
-export const settingsResolver = schemaResolver<SettingsFormValues>(
-  settingsSchema,
-  {
-    refine: (v: SettingsFormValues) =>
-      v.trackTraining && v.sessionsPerWeek === null
-        ? { sessionsPerWeek: SESSIONS_MESSAGE }
-        : {},
-  },
-);
+/**
+ * No cross-field rule: the API accepts training on with no target yet (an
+ * accepted set-up with a programme writes exactly that), so such a client's
+ * other switches must still save. Turning training on gives it a target of
+ * three (`trainingPatch`).
+ */
+export const settingsResolver =
+  schemaResolver<SettingsFormValues>(settingsSchema);
 
 export function settingsValues(s: ClientSettings): SettingsFormValues {
   return {
