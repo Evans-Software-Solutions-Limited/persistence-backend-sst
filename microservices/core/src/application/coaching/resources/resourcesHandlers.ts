@@ -140,10 +140,7 @@ export const coachResourcesHandler = trainerOnly()
       }
       let file: { mediaId: string; mime: string; bytes: number } | null = null;
       if (checked.value.mediaId) {
-        const check = await checkResourceFile(
-          trainerId,
-          checked.value.mediaId,
-        );
+        const check = await checkResourceFile(trainerId, checked.value.mediaId);
         if (!check.ok) {
           ctx.set.status = 422;
           return fileProblem(check);

@@ -356,7 +356,10 @@ export async function patchResource(
       .for("update");
     const current = rows[0];
     if (!current) return { ok: false, reason: "not_found" };
-    if (expectedRevision !== undefined && expectedRevision !== current.revision) {
+    if (
+      expectedRevision !== undefined &&
+      expectedRevision !== current.revision
+    ) {
       return {
         ok: false,
         reason: "revision_conflict",
