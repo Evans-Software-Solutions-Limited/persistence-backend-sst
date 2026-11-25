@@ -41,9 +41,12 @@ import { MAX_ITEM_SERVINGS } from "../../repositories/nutritionPlanRepository";
  * Food servings are converted from Mealprint's serving (the pack serving
  * when declared) to the `foods` row's `serving_size` units the plan uses.
  *
- * A meal whose sources were all deleted since (the FKs are SET NULL) keeps
- * its frozen macros as a one-off item named after the meal: never dropped.
- * A source that still exists but no longer resolves (another owner, or
+ * Nothing deleted since accept is dropped (the recipe and saved-meal FKs are
+ * SET NULL). A meal whose sources were all deleted keeps its frozen macros
+ * as a one-off item named after the meal. A meal whose recipe or saved meal
+ * was deleted but whose foods remain keeps the foods, plus the deleted part
+ * as a one-off: the frozen macros minus the foods' (only when that residual
+ * is clearly positive, so rounding noise never adds an item). A source that still exists but no longer resolves (another owner, or
  * quarantined nutrition) makes the whole save `unavailable`, as logging the
  * meal would (`plan_meal_nutrition_unavailable`).
  */
@@ -52,6 +55,16 @@ import { MAX_ITEM_SERVINGS } from "../../repositories/nutritionPlanRepository";
 export const MEALPRINT_PLAN_DEFAULT_NAME = "Mealprint";
 
 const MEAL_NAME_MAX = 40;
+
+/**
+ * A deleted backing is assumed only when the meal's frozen kcal exceeds its
+ * foods' by more than this (absolute and share of the meal), so rounding or a
+ * small food-row edit never invents an extra item.
+ */
+const RESIDUAL_MIN_KCAL = 10;
+const RESIDUAL_MIN_SHARE = 0.02;
+
+type Macros = { kcal: number; proteinG: number; carbsG: number; fatG: number };
 
 export type FromMealprintResult =
   | { ok: true; input: PlanInput }
@@ -130,14 +143,17 @@ export async function planInputFromMealprint(
 function toPlanMeal(
   meal: MealPlanMealDTO,
   index: number,
-  byKey: Map<string, { kcal: number }>,
+  byKey: Map<string, Macros>,
   scaleByFood: Map<string, number>,
 ): PlanMealInput {
   const items: PlanItemInput[] = [];
-  let foodKcal = 0;
+  const foods: Macros = { kcal: 0, proteinG: 0, carbsG: 0, fatG: 0 };
   for (const item of meal.items ?? []) {
     const candidate = byKey.get(`food:${item.foodId}`)!;
-    foodKcal += candidate.kcal * item.servings;
+    foods.kcal += candidate.kcal * item.servings;
+    foods.proteinG += candidate.proteinG * item.servings;
+    foods.carbsG += candidate.carbsG * item.servings;
+    foods.fatG += candidate.fatG * item.servings;
     const servings = usableServings(
       item.servings * (scaleByFood.get(item.foodId) ?? 1),
     );
@@ -150,7 +166,7 @@ function toPlanMeal(
     const perMultiplier = (recipe?.kcal ?? 0) + (saved?.kcal ?? 0);
     const multiplier =
       usableServings(
-        perMultiplier > 0 ? (meal.kcal - foodKcal) / perMultiplier : 1,
+        perMultiplier > 0 ? (meal.kcal - foods.kcal) / perMultiplier : 1,
       ) ?? 1;
     // Backing first, as Mealprint lists it: the dish, then extra foods.
     const backing: PlanItemInput[] = [];
@@ -161,6 +177,29 @@ function toPlanMeal(
   }
 
   const name = cut(meal.label, MEAL_NAME_MAX) || defaultMealName(meal.logSlot);
+  const residualKcal = meal.kcal - foods.kcal;
+  if (
+    !recipe &&
+    !saved &&
+    items.length > 0 &&
+    residualKcal > Math.max(RESIDUAL_MIN_KCAL, meal.kcal * RESIDUAL_MIN_SHARE)
+  ) {
+    // The recipe or saved meal was deleted since accept (SET NULL) but its
+    // foods remain: keep the deleted part's frozen macros as a one-off, so
+    // the dish isn't silently dropped.
+    const rest = (total: number, part: number) =>
+      Math.max(0, Math.round((total - part) * 10) / 10);
+    items.unshift({
+      custom: {
+        name: cut(meal.label, 200) || name,
+        kcal: rest(meal.kcal, foods.kcal),
+        proteinG: rest(meal.proteinG, foods.proteinG),
+        carbsG: rest(meal.carbsG, foods.carbsG),
+        fatG: rest(meal.fatG, foods.fatG),
+      },
+      servings: 1,
+    });
+  }
   if (items.length === 0) {
     // Every source was deleted since accept: keep the frozen macros.
     items.push({
