@@ -73,6 +73,7 @@ import { CoachingAggregateRepository } from "../../repositories/coachingAggregat
 import { endCoachClientRelationship } from "../../relationships/endCoachClientRelationship";
 import { currentDeclarationVersion } from "../../coaching/declaration";
 import { programmeEndingJob } from "../../coaching/scheduler/jobs/coachChecks";
+import { PAGE_SIZES } from "../../coaching/scheduler/jobs/pageSizes";
 import { NotificationDispatcher } from "../../notifications/push/notificationDispatcher";
 import { assignProgrammeInSequence } from "../assignProgrammeInSequence";
 
@@ -230,8 +231,7 @@ async function makeProgram(
     id,
     name: opts.name ?? "Block 1",
     createdBy: owner,
-    durationWeeks:
-      opts.durationWeeks === undefined ? 2 : opts.durationWeeks,
+    durationWeeks: opts.durationWeeks === undefined ? 2 : opts.durationWeeks,
     daysPerWeek: opts.daysPerWeek ?? 3,
     isPublic: opts.isPublic ?? false,
   });
@@ -261,7 +261,9 @@ async function workoutsOf(programAssignmentId: string) {
       trainerId: schema.workoutAssignments.trainerId,
     })
     .from(schema.workoutAssignments)
-    .where(eq(schema.workoutAssignments.programAssignmentId, programAssignmentId))
+    .where(
+      eq(schema.workoutAssignments.programAssignmentId, programAssignmentId),
+    )
     .orderBy(
       asc(schema.workoutAssignments.occurrenceIndex),
       asc(schema.workoutAssignments.dueDate),
@@ -523,7 +525,9 @@ describe("Next", () => {
     await complete(ATHLETE_C, W_A);
     training = await home.getTodaysTraining(ATHLETE_C, today());
     expect(
-      training.filter((t) => t.sequenceIndex !== undefined).map((t) => t.assignmentId),
+      training
+        .filter((t) => t.sequenceIndex !== undefined)
+        .map((t) => t.assignmentId),
     ).toEqual([rows[1]!.id]);
 
     const dashboard = await new DashboardRepository().getRecentWorkouts(
@@ -542,8 +546,10 @@ describe("Next", () => {
     const execute = db.execute.bind(db);
     const spy = vi
       .spyOn(db, "execute")
-      .mockImplementation((async (query: Parameters<typeof execute>[0]) =>
-        (await execute(query)).rows) as unknown as typeof db.execute);
+      .mockImplementation(
+        (async (query: Parameters<typeof execute>[0]) =>
+          (await execute(query)).rows) as unknown as typeof db.execute,
+      );
     const open = await repo.listOpenAssignmentsForClient(COACH_A, ATHLETE_C);
     expect(open.map((o) => o.sequenceIndex)).toEqual([0, 1, 2]);
     const aggregate = await new CoachingAggregateRepository().get(
@@ -577,7 +583,11 @@ describe("Next", () => {
     expect((await http("GET", `/programs/${program}`, ATHLETE_E)).status).toBe(
       404,
     );
-    const coach = await http("GET", `/trainers/me/programs/${program}`, COACH_A);
+    const coach = await http(
+      "GET",
+      `/trainers/me/programs/${program}`,
+      COACH_A,
+    );
     expect(coach.json.data.assignments[0]).toMatchObject({
       id: assignment.id,
       scheduleMode: "sequence",
@@ -693,7 +703,10 @@ describe("POST /users/me/program-assignments (Me)", () => {
       COACH_A,
       today(),
     );
-    expect(card).toMatchObject({ programId: program, scheduleMode: "sequence" });
+    expect(card).toMatchObject({
+      programId: program,
+      scheduleMode: "sequence",
+    });
   });
 
   it("a re-sent request returns the first row, not a duplicate", async () => {
@@ -921,6 +934,32 @@ describe("programme_ending for sequence programmes", () => {
       dedupeKey: expect.stringMatching(/:sequence$/),
     });
     expect(fired[0]!.payload).toMatchObject({ remaining: 2, endDate: null });
+  });
+
+  it("pages through every ending programme in one run", async () => {
+    const saved = PAGE_SIZES.endingProgrammes;
+    PAGE_SIZES.endingProgrammes = 1;
+    try {
+      await db.insert(schema.ptClientRelationships).values({
+        trainerId: COACH_A,
+        clientId: ATHLETE_E,
+        status: "active",
+      });
+      const program = await makeProgram(COACH_A, {
+        durationWeeks: 1,
+        daysPerWeek: 2,
+        cycle: [W_A, W_B],
+      });
+      await assignNoDate(program, ATHLETE_C);
+      await assignNoDate(program, ATHLETE_E);
+      const result = await programmeEndingJob.run({
+        now: new Date(),
+        dispatcher: new NotificationDispatcher(),
+      });
+      expect(result).toEqual({ checked: 2, events: 2 });
+    } finally {
+      PAGE_SIZES.endingProgrammes = saved;
+    }
   });
 });
 

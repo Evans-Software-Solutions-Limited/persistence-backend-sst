@@ -64,14 +64,12 @@ export async function loadSequenceProgress(
     )
     .groupBy(workoutAssignments.programAssignmentId);
   for (const r of rows) {
-    if (!r.programAssignmentId) continue;
-    out.set(r.programAssignmentId, {
-      nextAssignmentId: r.nextAssignmentId ?? null,
+    // The WHERE clause makes programAssignmentId non-null on every row.
+    out.set(r.programAssignmentId as string, {
+      nextAssignmentId: r.nextAssignmentId,
       nextSequenceIndex:
-        r.nextSequenceIndex === null || r.nextSequenceIndex === undefined
-          ? null
-          : Number(r.nextSequenceIndex),
-      sequenceCount: Number(r.sequenceCount) || 0,
+        r.nextSequenceIndex === null ? null : Number(r.nextSequenceIndex),
+      sequenceCount: Number(r.sequenceCount),
     });
   }
   return out;

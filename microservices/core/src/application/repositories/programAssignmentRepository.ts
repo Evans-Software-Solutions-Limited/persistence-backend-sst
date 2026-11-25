@@ -331,20 +331,18 @@ export class ProgramAssignmentRepository {
         .returning();
       if (updated.length === 0) return "not_found";
 
-      await tx
-        .delete(workoutAssignments)
-        .where(
-          and(
-            eq(workoutAssignments.programAssignmentId, assignmentId),
-            eq(workoutAssignments.status, "assigned"),
-            // A sequence programme's workouts are undated: every untouched
-            // one goes (programme occurrences are only undated in sequence).
-            or(
-              gt(workoutAssignments.dueDate, today),
-              isNull(workoutAssignments.dueDate),
-            ),
+      await tx.delete(workoutAssignments).where(
+        and(
+          eq(workoutAssignments.programAssignmentId, assignmentId),
+          eq(workoutAssignments.status, "assigned"),
+          // A sequence programme's workouts are undated: every untouched
+          // one goes (programme occurrences are only undated in sequence).
+          or(
+            gt(workoutAssignments.dueDate, today),
+            isNull(workoutAssignments.dueDate),
           ),
-        );
+        ),
+      );
 
       return "unassigned";
     });
@@ -934,7 +932,7 @@ export class ProgramAssignmentRepository {
         isProgrammeOccurrence: row.programAssignmentId !== null,
         occurrenceIndex: row.occurrenceIndex ?? null,
         isSwapped: row.swappedFromWorkoutId !== null,
-        ...(row.sequenceIndex !== null && row.sequenceIndex !== undefined
+        ...(row.sequenceIndex != null
           ? { sequenceIndex: Number(row.sequenceIndex) }
           : {}),
       });

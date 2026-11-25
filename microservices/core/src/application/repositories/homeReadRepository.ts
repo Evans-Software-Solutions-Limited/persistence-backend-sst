@@ -186,7 +186,7 @@ export class HomeReadRepository {
       dueDate: r.dueDate ?? null,
       assignedByType: mapTrainerRoleToAssignedByType(r.trainerRole),
       assignedByName: r.trainerName ?? null,
-      ...(r.sequenceIndex !== null && r.sequenceIndex !== undefined
+      ...(typeof r.sequenceIndex === "number"
         ? { sequenceIndex: r.sequenceIndex }
         : {}),
     }));
