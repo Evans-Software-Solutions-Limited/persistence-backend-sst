@@ -8,6 +8,7 @@ import openapi from "@elysiajs/openapi";
 
 import { captureFatal, initSentry, wrapLambda } from "./shared/sentry";
 import { coreErrorHandler } from "./shared/errorHandler";
+import { coachWorkspaceGuard } from "./application/entitlement/coachSubscriptionGuard";
 import { fatalCorsHeaders } from "./shared/fatalCors";
 import { exercisesListHandler } from "./application/exercises/list/exercisesListHandler";
 import { exercisesSearchHandler } from "./application/exercises/search/exercisesSearchHandler";
@@ -133,6 +134,10 @@ initSentry();
 
 const app = new Elysia()
   .use(coreErrorHandler)
+  // PER-146: every coach workspace route (/trainers/me/…) needs an active
+  // coach subscription (403 coach_subscription_required). Global, so it must
+  // stay ahead of every route it guards.
+  .use(coachWorkspaceGuard)
   .use(openapi())
   .get("/health", () => ({ status: "ok" }))
   .use(exercisesListHandler)

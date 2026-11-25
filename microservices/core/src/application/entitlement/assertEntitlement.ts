@@ -1374,7 +1374,7 @@ export const __entitlementUpgradeSetsForTest = {
  */
 type Db = ReturnType<typeof getDb>;
 
-interface TierMeta {
+export interface TierMeta {
   tierName: string;
   workoutLimit: number | null;
   aiAccess: boolean;
@@ -1388,7 +1388,7 @@ interface TierMeta {
  * — caller treats that as "fall back to free" or throws if free itself
  * is missing.
  */
-async function loadTier(
+export async function loadTier(
   db: Pick<Db, "select">,
   tierName: string,
 ): Promise<TierMeta | null> {

@@ -35,6 +35,67 @@ Design G part 2 (C3.1, Assign with no start date). Backend only, additive.
 - Tests: `programs/__tests__/designG.sequence.integration.test.ts` (PGlite, real
   migration) and `scheduling.sequence.test.ts`; `scheduling.test.ts` unchanged.
 
+### 2026-11-25 — Coach platform access: coach subscription required ([PER-146](https://linear.app/evans-software-solutions/issue/PER-146); branch `claude/per-146-coach-platform-access`)
+
+The coach workspace is only for coaches with an active coach subscription
+(Brad, 24 Nov). No migration, no native change, no mobile change.
+
+- **Backend:** `application/entitlement/coachSubscriptionGuard.ts`.
+  `coachWorkspaceGuard` is mounted once at the top of `src/api.ts` as a global
+  `onBeforeHandle`; it refuses every coach workspace route (route pattern
+  `/trainers/me` / `/trainers/me/*`, plus legacy `/clients/:clientId/measurements`
+  and `/clients/:clientId/body-trend`) with `403 { code:
+  "coach_subscription_required" }` unless the caller's effective tier is a coach
+  tier. "Coach tier" reuses `resolveTrainerClientsEntitlement().isTrainerTier`
+  (catalog `is_trainer_tier`, lapse/cancel/scheduled-change rules shared with the
+  seat cap); founding/admin grants count. No valid JWT → steps aside, the route's
+  own 401 answers. New `/trainers/me/*` routes (e.g. PER-122) are covered with no
+  code; a coach group outside that prefix adds `.use(coachSubscriptionGuard)`.
+- **1.2.0 effect:** coaches without an active coach subscription now get 403 on
+  the coach screens' calls; paying coaches are unchanged. Route list in the PR.
+- **Web:** `CoachLayout` sends non-coach roles and a roster refused with the code
+  to `/pricing?for=coaches&from=coach` (replaces the "isn't a coach account"
+  dead end); `coachFetch` notifies `onCoachSubscriptionRequired` on any refused
+  call, so a mid-session lapse redirects too. Pricing opens the Coaches tab on
+  `?for=coaches` and explains the coach plan when `from=coach`. Marketing nav and
+  footer gain "Coach sign in" (`/coach/login`, full page load).
+- **Tests:** `coachSubscriptionGuard.test.ts` (PGlite, real resolver: active,
+  founding, lapsed, cancelled, athlete, no sub, signed out, mid-session lapse,
+  nested sub-apps, sibling groups); web `shellAndList`, `api`, `Pricing`.
+
+### 2026-11-25 — BE-I1 coach resources: library, assignment, opened ([PER-122](https://linear.app/evans-software-solutions/issue/PER-122); branch `claude/per-122-coach-resources`)
+
+Backend design I, resources part (C3.7, C5b, athlete resources). Additive; no
+existing route changes. Migration `20261125101829_coach_resources.sql`
+(rollback in `supabase/rollbacks/`): `coach_resources` (file via
+`private_media` purpose `resource`, or https link; CHECKs pin kind/url/media),
+`coach_resource_assignments` (live-unique `(resource_id, relationship_id)
+WHERE removed_at IS NULL`). Drizzle in `packages/db/src/coachResourcesSchema.ts`
+(re-exported from `schema.ts`, like PER-121).
+
+- Code: `microservices/core/src/application/coaching/resources/`
+  (repository, handlers, `resource` set-up handler). Mounted as
+  `coachResourcesRoutes` in `coachingRoutes.ts`; `api.ts` untouched.
+- Routes: `GET/POST /trainers/me/resources`, `PATCH/DELETE
+  /trainers/me/resources/:id`, `POST /trainers/me/resources/assign`,
+  `GET /trainers/me/clients/:clientId/resources`, `DELETE
+  /trainers/me/clients/:clientId/resources/:assignmentId`, `GET
+  /users/me/resources?since=`, `POST /users/me/resources/:assignmentId/opened`.
+  Files are checked with design F's `finaliseMedia` on save; athletes get a
+  15-minute signed link. Archiving a resource hides its assignments from
+  clients (`deletedIds`).
+- Offboarding step 3e removes this coach's assignments on the relationship
+  (`removeResourceAssignmentsForRelationship`), so a revived relationship
+  doesn't bring them back. Set-up section `resource` is live.
+- ⚠ PER-146's coach-subscription guard must be applied to
+  `coachResourcesHandler` (the coach group) once both are merged.
+- Not done (out of brief): `/users/me/coaching` `resources` count stays 0;
+  the C3.9 `resources` switch is not enforced server-side; unused ready
+  resource uploads are not purged.
+- Tests: `resources.integration.test.ts` (PGlite, real migrations; design I
+  tests 1, 2, 5, set-up, migration twice/rollback). Other offboarding suites
+  now create the two tables.
+
 ### 2026-11-24 — Tooling: TypeScript 7, Oxlint (tsrs type-aware), Vitest 5, Vite 8 ([PER-148](https://linear.app/evans-software-solutions/issue/PER-148); branch `claude/brave-dirac-h9ianz`)
 
 Cuts check time, which was the cause of CI and local timeouts. No CI caching

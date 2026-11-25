@@ -154,6 +154,9 @@ const BASE_TABLES = [
   // PER-118: the offboarding teardown and the meal_plan set-up section read these.
   schema.nutritionPlans,
   schema.nutritionPlanAssignments,
+  // PER-122: offboarding also removes this coach's resource assignments.
+  schema.coachResources,
+  schema.coachResourceAssignments,
 ];
 
 function ddl(table: PgTable): string {
@@ -1655,11 +1658,11 @@ describe("invited profiles", () => {
         COACH_A,
         { items },
       );
-    // meal_plan went live with PER-118 (its own suite covers it).
+    // meal_plan went live with PER-118 and resource with PER-122 (their own
+    // suites cover them).
     for (const section of [
       // programme is live since PER-112 (designG.sequence suite covers it).
       // starter_form and repeating_form are live since PER-116.
-      "resource",
     ]) {
       const res = await put(section, [{ sortOrder: 0, config: {} }]);
       expect(res.status).toBe(422);
@@ -1847,6 +1850,12 @@ describe("fallbacks", () => {
       validate: async (_db, _t, item) => ({ ok: true, item }),
       materialise,
     });
+    // `resource` went live with PER-122: unplug it so its rows stand in for
+    // a section with no live handler.
+    const restoreResource = registerSetupSectionHandler(
+      "resource",
+      undefined as unknown as SetupSectionHandler,
+    );
     try {
       const profile = await newProfile(COACH_A, { privateNotes: null });
       await http(
@@ -1880,6 +1889,7 @@ describe("fallbacks", () => {
         sessionsPerWeek: null,
       });
     } finally {
+      restoreResource();
       restore();
     }
   });
