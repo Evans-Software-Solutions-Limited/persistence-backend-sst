@@ -18,6 +18,7 @@
 
 import * as Notifications from "expo-notifications";
 import Constants from "expo-constants";
+import { AppState } from "react-native";
 import { resolveNotificationRoute } from "@/application/notifications/deep-link";
 import { runNativePermissionRequest } from "@/lib/nativePermissionQueue";
 import type {
@@ -27,6 +28,14 @@ import type {
   NotificationResponseInfo,
 } from "@/domain/ports/notifications.port";
 import { fail, ok, type Result } from "@/shared/errors";
+
+/**
+ * Back-off for retrying a failed Expo token fetch after a native token
+ * rotation (PER-149): 30 s, 2 min, 10 min, then only on app foreground.
+ */
+export const TOKEN_RETRY_DELAYS_MS: readonly number[] = [
+  30_000, 120_000, 600_000,
+];
 
 /** Pull `data.deepLink` off a notification response, or null. */
 function extractDeepLink(
@@ -116,25 +125,86 @@ export class ExpoNotificationsAdapter implements NotificationsPort {
    * native token event this re-fetches the Expo push token and emits that.
    *
    * Loop guard: `getExpoPushTokenAsync` calls `getDevicePushTokenAsync`,
-   * which fires this same native event again. Re-fetch only when the native
-   * token differs from the last one seen, so the echo is ignored and a real
-   * rotation still gets through.
+   * which fires this same native event again. A native token is only
+   * recorded as handled after its Expo fetch succeeds. While a fetch for it
+   * is running, or after one failed, the echo of the same native token is
+   * ignored. A failed fetch is retried on a back-off timer
+   * (`TOKEN_RETRY_DELAYS_MS`, then no more timers) and whenever the app
+   * comes back to the foreground, never straight from the echo, so a
+   * persistent failure (offline, Expo endpoint down) can't loop. A
+   * different native token cancels any pending retry and is fetched at once.
    */
   addPushTokenListener(listener: (token: string) => void): () => void {
     let active = true;
-    let lastNativeToken: string | null = null;
+    let handledNativeToken: string | null = null;
+    let inFlightNativeToken: string | null = null;
+    let failedNativeToken: string | null = null;
+    let retryAttempt = 0;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const clearRetry = () => {
+      if (retryTimer !== null) clearTimeout(retryTimer);
+      retryTimer = null;
+    };
+
+    const fetchFor = (nativeToken: string): void => {
+      clearRetry();
+      inFlightNativeToken = nativeToken;
+      failedNativeToken = null;
+      void this.getDevicePushToken().then((expoToken) => {
+        // A newer native token took over while this one was in flight.
+        if (inFlightNativeToken !== nativeToken) return;
+        inFlightNativeToken = null;
+        if (!active) return;
+        if (expoToken.ok) {
+          handledNativeToken = nativeToken;
+          retryAttempt = 0;
+          listener(expoToken.value);
+          return;
+        }
+        failedNativeToken = nativeToken;
+        const delay = TOKEN_RETRY_DELAYS_MS[retryAttempt];
+        retryAttempt += 1;
+        if (delay !== undefined) {
+          retryTimer = setTimeout(() => {
+            retryTimer = null;
+            if (active && failedNativeToken === nativeToken) {
+              fetchFor(nativeToken);
+            }
+          }, delay);
+        }
+      });
+    };
+
     const sub = Notifications.addPushTokenListener((token) => {
       const nativeToken =
         typeof token.data === "string" ? token.data : String(token.data);
-      if (nativeToken === lastNativeToken) return;
-      lastNativeToken = nativeToken;
-      void this.getDevicePushToken().then((expoToken) => {
-        if (active && expoToken.ok) listener(expoToken.value);
-      });
+      if (
+        nativeToken === handledNativeToken ||
+        nativeToken === inFlightNativeToken ||
+        nativeToken === failedNativeToken
+      ) {
+        return;
+      }
+      retryAttempt = 0;
+      fetchFor(nativeToken);
     });
+
+    const appStateSub = AppState.addEventListener("change", (state) => {
+      if (
+        state === "active" &&
+        failedNativeToken !== null &&
+        inFlightNativeToken === null
+      ) {
+        fetchFor(failedNativeToken);
+      }
+    });
+
     return () => {
       active = false;
+      clearRetry();
       sub.remove();
+      appStateSub.remove();
     };
   }
 

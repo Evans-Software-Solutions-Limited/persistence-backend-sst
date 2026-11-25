@@ -34,6 +34,17 @@ build; no build started by an agent. No new package, no Firebase JS SDK.
   - Migration `20261125160203_user_devices_drop_non_expo_tokens.sql` deletes
     the non-Expo rows. A read-only count on prod: 64 would go, 0 Expo-like
     rows hit. The rollback is a documented no-op. Not run anywhere.
+  - Inspector Brad follow-ups:
+    - Deploy-window rows: `db push` runs before `sst deploy`, so the old
+      Lambda can still write raw rows. On a raw-token register the handler
+      now also calls `UserDeviceRepository.deleteForUserAndToken(userId,
+      token)`, scoped to the caller. It's best-effort and the response stays
+      200.
+    - Stale Expo token: the adapter records a native token as handled only
+      after its Expo fetch succeeds. A failure retries on back-off
+      (`TOKEN_RETRY_DELAYS_MS` 30 s, 2 min, 10 min) and on app foreground.
+      The native echo of an in-flight or failed token is ignored, so there's
+      no loop.
 - Tests: `__tests__/app.config.test.ts` (per-variant file, override, missing
   file warn/throw), Android cases in `usePushNotifications.test.tsx` and
   `expo-notifications.adapter.test.ts`. Brad's steps:

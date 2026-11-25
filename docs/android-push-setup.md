@@ -156,9 +156,15 @@ rows (53 active) next to 56 Expo-token rows. The Expo push path can't deliver
 to them. Now:
 
 - **App:** the token listener fetches the Expo token again and registers that,
-  never the raw token (`expo-notifications.adapter.ts`).
+  never the raw token (`expo-notifications.adapter.ts`). If that fetch fails
+  (offline, Expo down), it retries after 30 s, 2 min and 10 min, then each
+  time the app comes back to the foreground. It never loops.
 - **Backend:** `POST /devices/register` answers 200 to a non-Expo token but
-  doesn't store it, so 1.2.0 phones that still send one see no error.
+  doesn't store it, so 1.2.0 phones that still send one see no error. It also
+  deletes any row the caller already has for that exact token. The deploy
+  runs `supabase db push` before `sst deploy`, so the old Lambda can still
+  write raw rows after the migration. Those rows go the next time that phone
+  registers.
 - **Clean-up:** migration `20261125160203_user_devices_drop_non_expo_tokens.sql`
   deletes the existing raw-token rows. It keeps every Expo token
   (`ExponentPushToken[…]`, `ExpoPushToken[…]`, legacy UUID). Its rollback is a

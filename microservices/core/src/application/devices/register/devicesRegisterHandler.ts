@@ -46,7 +46,20 @@ export const devicesRegisterHandler = new Elysia()
       // from their token listener. The Expo push path can't deliver to it,
       // so it isn't stored. Answer 200 so old phones don't retry or log.
       // `registered: false` tells newer clients nothing was saved.
+      // Self-healing: the clean-up migration runs before `sst deploy`, so the
+      // old Lambda can still write raw rows in between. Delete any row this
+      // user already has for the token, so those go on the next register.
       if (!isExpoPushToken(trimmedToken)) {
+        try {
+          await ctx.UserDeviceRepository.deleteForUserAndToken(
+            userId,
+            trimmedToken,
+          );
+        } catch (err) {
+          // Best-effort clean-up; the next register retries it. Old phones
+          // still get their 200.
+          console.warn("[devices/register] raw-token clean-up failed:", err);
+        }
         return { data: { id: null, registered: false as const } };
       }
 

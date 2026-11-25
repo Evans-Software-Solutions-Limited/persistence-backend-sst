@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const mocks = { register: vi.fn() };
+const mocks = { register: vi.fn(), deleteForUserAndToken: vi.fn() };
 
 vi.mock("@persistence/api-utils/auth/supabaseAuth", () => ({
   getAuthUser: vi.fn(async (authHeader: string | undefined) => {
@@ -176,8 +176,78 @@ describe("DevicesRegisterHandler", () => {
         data: { id: null, registered: false },
       });
       expect(mocks.register).not.toHaveBeenCalled();
+      expect(mocks.deleteForUserAndToken).toHaveBeenCalledWith(
+        "test-user-id",
+        deviceToken,
+      );
     },
   );
+
+  it("PER-149: a raw-token register deletes the caller's existing raw row, not another user's", async () => {
+    // Rows the old Lambda wrote in the deploy window (after the clean-up
+    // migration ran) must go the next time that phone registers.
+    const RAW =
+      "a3f1c2d4e5b60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90";
+    let rows = [
+      { userId: "test-user-id", deviceToken: RAW },
+      { userId: "other-user-id", deviceToken: RAW },
+      { userId: "test-user-id", deviceToken: "ExponentPushToken[keep]" },
+    ];
+    mocks.deleteForUserAndToken.mockImplementation(
+      async (userId: string, token: string) => {
+        rows = rows.filter(
+          (r) => !(r.userId === userId && r.deviceToken === token),
+        );
+      },
+    );
+    const { devicesRegisterHandler } =
+      await import("../devicesRegisterHandler");
+    const response = await devicesRegisterHandler.handle(
+      new Request("http://localhost/devices/register", {
+        method: "POST",
+        headers: {
+          authorization: "Bearer token",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ deviceToken: ` ${RAW}\n`, platform: "ios" }),
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      data: { id: null, registered: false },
+    });
+    expect(rows).toEqual([
+      { userId: "other-user-id", deviceToken: RAW },
+      { userId: "test-user-id", deviceToken: "ExponentPushToken[keep]" },
+    ]);
+    expect(mocks.register).not.toHaveBeenCalled();
+  });
+
+  it("PER-149: still answers 200 when the raw-row clean-up fails", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    mocks.deleteForUserAndToken.mockRejectedValueOnce(new Error("db down"));
+    const { devicesRegisterHandler } =
+      await import("../devicesRegisterHandler");
+    const response = await devicesRegisterHandler.handle(
+      new Request("http://localhost/devices/register", {
+        method: "POST",
+        headers: {
+          authorization: "Bearer token",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          deviceToken: "raw-fcm-token",
+          platform: "android",
+        }),
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      data: { id: null, registered: false },
+    });
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
 
   it.each([
     "ExponentPushToken[abc123]",
@@ -202,6 +272,7 @@ describe("DevicesRegisterHandler", () => {
       platform: "android",
       deviceInfo: undefined,
     });
+    expect(mocks.deleteForUserAndToken).not.toHaveBeenCalled();
   });
 
   it("rejects invalid platform via the schema validator", async () => {
