@@ -63,10 +63,30 @@ export function setStreamClientForTests(
   client: StreamChatClient | null | undefined,
 ): void {
   clientOverride = client;
+  channelTypeReady = null;
 }
 
 export function getStreamClient(): StreamChatClient | null {
   return clientOverride !== undefined ? clientOverride : streamClientFromEnv();
+}
+
+/**
+ * The `coaching` channel type (with its member-only grants) is ensured once
+ * per Lambda container, on first use rather than at import, before any
+ * channel is created in it. A failure is not remembered, so the next
+ * provisioning (or scheduler tick) tries again.
+ */
+let channelTypeReady: Promise<void> | null = null;
+export function ensureCoachingChannelType(
+  client: StreamChatClient,
+): Promise<void> {
+  if (!channelTypeReady) {
+    channelTypeReady = client.ensureChannelType().catch((err: unknown) => {
+      channelTypeReady = null;
+      throw err;
+    });
+  }
+  return channelTypeReady;
 }
 
 interface Party {
@@ -205,6 +225,7 @@ export async function provisionChatChannel(
     .onConflictDoNothing();
 
   try {
+    await ensureCoachingChannelType(client);
     await client.upsertUsers([streamUserFor(trainer), streamUserFor(athlete)]);
     await client.getOrCreateChannel(channelId, rel.trainerId, [
       rel.trainerId,
@@ -306,6 +327,67 @@ export async function freezeChatChannel(
     .set({ state: "frozen", frozenAt: row.frozenAt ?? now, updatedAt: now })
     .where(eq(chatChannels.relationshipId, relationshipId));
   return "frozen";
+}
+
+export type EraseResult = "not_configured" | "restored" | "erased";
+
+/**
+ * Account purge (Inspector Brad, #570): `chat_channels` cascades away with the
+ * deleted user's relationships, so nothing else would ever freeze their
+ * channels or remove them from Stream. Before the profile purge, for each of
+ * the user's channels: remove the user and freeze it (the other party keeps a
+ * read-only thread of their own messages); then hard-delete the Stream user
+ * with all their messages.
+ *
+ * Idempotent (every step can be repeated, and a channel or user Stream never
+ * had counts as done) and NOT best-effort: it throws on a Stream failure, so
+ * the purge stops for this user and the next sweep retries. A no-op when chat
+ * isn't configured or the user never had a channel; skipped when the account
+ * was restored in the meantime.
+ */
+export async function eraseChatUser(userId: string): Promise<EraseResult> {
+  const client = getStreamClient();
+  if (!client) return "not_configured";
+  const db = getDb();
+  const profile = await db
+    .select({ deletedAt: profiles.deletedAt })
+    .from(profiles)
+    .where(eq(profiles.id, userId))
+    .limit(1);
+  if (profile[0] && profile[0].deletedAt === null) return "restored";
+
+  const channels = await db
+    .select()
+    .from(chatChannels)
+    .where(
+      or(eq(chatChannels.trainerId, userId), eq(chatChannels.clientId, userId)),
+    );
+  if (channels.length === 0) return "erased";
+
+  const now = new Date();
+  for (const channel of channels) {
+    try {
+      await client.removeMembers(channel.streamChannelId, [userId]);
+      await client.setFrozen(channel.streamChannelId, true);
+    } catch (err) {
+      if (!isNotFound(err)) throw err;
+    }
+    await db
+      .update(chatChannels)
+      .set({
+        state: "frozen",
+        frozenAt: channel.frozenAt ?? now,
+        updatedAt: now,
+      })
+      .where(eq(chatChannels.relationshipId, channel.relationshipId));
+  }
+  const deleted = await client.deleteUserHard(userId);
+  if (deleted === "pending") {
+    console.warn(
+      `[chat] Stream is still deleting user ${userId}; the task finishes on Stream's side`,
+    );
+  }
+  return "erased";
 }
 
 /** Provisioning for a hook after a commit. Never throws. */

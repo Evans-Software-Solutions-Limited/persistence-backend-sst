@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  COACHING_GRANTS,
+  STREAM_CHANNEL_TYPE,
   getStreamConfig,
   isNotFound,
   STREAM_API_BASE,
@@ -89,6 +91,7 @@ describe("StreamChatClient", () => {
   it("creates, updates members, freezes and messages a channel", async () => {
     const stream = new FakeStream();
     const client = new StreamChatClient(config, stream.fetch);
+    await client.ensureChannelType();
     await client.upsertUsers([{ id: "coach" }, { id: "athlete" }]);
     await client.getOrCreateChannel("coach-1", "coach", ["coach", "athlete"]);
     await client.getOrCreateChannel("coach-1", "coach", ["coach", "athlete"]);
@@ -122,6 +125,7 @@ describe("StreamChatClient", () => {
   it("other message errors still throw", async () => {
     const stream = new FakeStream();
     const client = new StreamChatClient(config, stream.fetch);
+    await client.ensureChannelType();
     await expect(
       client.sendMessage("nope", { id: "m", text: "t", userId: "u" }),
     ).rejects.toSatisfy((e: unknown) => isNotFound(e));
@@ -166,6 +170,113 @@ describe("StreamChatClient", () => {
     await expect(weird.removeMembers("c", ["u"])).rejects.toMatchObject({
       message: expect.stringContaining("boom"),
     });
+  });
+
+  it("ensures the coaching channel type: members read and write; nobody but the server creates channels or changes members", async () => {
+    const stream = new FakeStream();
+    const client = new StreamChatClient(config, stream.fetch);
+    expect(STREAM_CHANNEL_TYPE).toBe("coaching");
+    // A channel can't be made in a type that doesn't exist yet.
+    await client.upsertUsers([{ id: "coach" }]);
+    await expect(
+      client.getOrCreateChannel("coach-1", "coach", ["coach"]),
+    ).rejects.toMatchObject({ status: 400 });
+
+    await client.ensureChannelType();
+    await client.ensureChannelType(); // idempotent: exists → grants set again
+    const grants = stream.channelTypes.get("coaching")!.grants;
+    expect(grants).toEqual(COACHING_GRANTS);
+    for (const role of ["user", "guest", "anonymous"]) {
+      expect(grants[role]).toEqual([]);
+    }
+    const member = grants.channel_member!;
+    expect(member).toEqual(
+      expect.arrayContaining(["read-channel", "create-message"]),
+    );
+    for (const forbidden of [
+      "create-channel",
+      "update-channel",
+      "update-channel-members",
+      "delete-channel",
+      "remove-own-channel-membership",
+      "update-channel-frozen",
+    ]) {
+      expect(member).not.toContain(forbidden);
+    }
+    const creates = stream.calls.filter((c) => c.path === "/channeltypes");
+    expect(creates[0]!.body).toMatchObject({ name: "coaching" });
+  });
+
+  it("a failed channel type create (other than 'already exists') throws", async () => {
+    const stream = new FakeStream();
+    stream.failOn(/POST \/channeltypes/);
+    const client = new StreamChatClient(config, stream.fetch);
+    await expect(client.ensureChannelType()).rejects.toMatchObject({
+      status: 503,
+    });
+  });
+
+  it("hard-deletes a user with their messages and waits for the task", async () => {
+    const stream = new FakeStream();
+    const client = new StreamChatClient(config, stream.fetch);
+    await client.ensureChannelType();
+    await client.upsertUsers([{ id: "coach" }, { id: "athlete" }]);
+    await client.getOrCreateChannel("coach-1", "coach", ["coach", "athlete"]);
+    await client.sendMessage("coach-1", {
+      id: "a1",
+      text: "x",
+      userId: "athlete",
+    });
+    await client.sendMessage("coach-1", {
+      id: "c1",
+      text: "y",
+      userId: "coach",
+    });
+    expect(await client.deleteUserHard("athlete")).toBe("deleted");
+    const del = stream.calls.find((c) => c.path === "/users/delete")!;
+    expect(del.body).toEqual({
+      user_ids: ["athlete"],
+      user: "hard",
+      messages: "hard",
+      conversations: "keep",
+    });
+    expect(stream.channels.get("coach-1")!.messages.map((m) => m.id)).toEqual([
+      "c1",
+    ]);
+    // Again: Stream no longer has the user, which counts as done.
+    expect(await client.deleteUserHard("athlete")).toBe("not_found");
+  });
+
+  it("a failed delete task throws; one still running is reported pending", async () => {
+    const stream = new FakeStream();
+    const client = new StreamChatClient(config, stream.fetch);
+    const sleep = async () => {};
+    await client.upsertUsers([{ id: "u1" }, { id: "u2" }]);
+    stream.taskStatus = "failed";
+    await expect(client.deleteUserHard("u1", { sleep })).rejects.toThrow(
+      /task task-1 failed: boom/,
+    );
+    stream.taskStatus = "running";
+    expect(await client.deleteUserHard("u2", { sleep, polls: 2 })).toBe(
+      "pending",
+    );
+    stream.failOn(/POST \/users\/delete/);
+    await expect(client.deleteUserHard("u3")).rejects.toMatchObject({
+      status: 503,
+    });
+  });
+
+  it("a delete with no task id counts as done; a failed task without detail still throws", async () => {
+    const replies = [
+      { ok: true, status: 201, text: async () => "{}" },
+      { ok: true, status: 201, text: async () => '{"task_id":"t"}' },
+      { ok: true, status: 200, text: async () => '{"status":"failed"}' },
+    ];
+    const client = new StreamChatClient(config, async () => replies.shift()!);
+    expect(await client.deleteUserHard("u")).toBe("deleted");
+    await expect(
+      client.deleteUserHard("u", { sleep: async () => {} }),
+    ).rejects.toThrow(/failed: unknown/);
   });
 
   it("isNotFound recognises a 404 and Stream's code 16 only", () => {

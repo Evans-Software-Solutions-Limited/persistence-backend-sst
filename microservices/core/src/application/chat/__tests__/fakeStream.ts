@@ -59,6 +59,12 @@ export class FakeStream {
   users = new Map<string, { id: string; name?: string; image?: string }>();
   channels = new Map<string, FakeChannel>();
   calls: FakeCall[] = [];
+  /** Channel types and the grants per role set on each. */
+  channelTypes = new Map<string, { grants: Record<string, string[]> }>();
+  /** Hard-deleted users (`POST /users/delete`). */
+  deletedUsers: string[] = [];
+  /** Status the user-delete task reports (`completed` by default). */
+  taskStatus: "completed" | "failed" | "running" = "completed";
   /** Every call fails with a 500 while true. */
   down = false;
   /** Fail calls whose "METHOD path" matches, `times` times (default always). */
@@ -71,6 +77,9 @@ export class FakeStream {
   reset(): void {
     this.users.clear();
     this.channels.clear();
+    this.channelTypes.clear();
+    this.deletedUsers = [];
+    this.taskStatus = "completed";
     this.calls = [];
     this.down = false;
     this.failures = [];
@@ -115,12 +124,56 @@ export class FakeStream {
       }
       return reply(201, { users: body.users });
     }
-    const m = /^\/channels\/messaging\/([^/]+)(\/query|\/message)?$/.exec(path);
+    if (method === "POST" && path === "/channeltypes") {
+      const name = body.name as string;
+      if (this.channelTypes.has(name)) {
+        return reply(400, {
+          code: 4,
+          message: `channel type ${name} already exists`,
+        });
+      }
+      this.channelTypes.set(name, { grants: {} });
+      return reply(201, { name });
+    }
+    const typeMatch = /^\/channeltypes\/([^/]+)$/.exec(path);
+    if (method === "PUT" && typeMatch) {
+      const type = this.channelTypes.get(typeMatch[1]!);
+      if (!type) return reply(404, { code: 16, message: "no such type" });
+      Object.assign(type.grants, body.grants as Record<string, string[]>);
+      return reply(201, {});
+    }
+    if (method === "POST" && path === "/users/delete") {
+      const ids = body.user_ids as string[];
+      if (!ids.some((u) => this.users.has(u))) {
+        return reply(404, { code: 16, message: "user does not exist" });
+      }
+      for (const u of ids) {
+        this.users.delete(u);
+        this.deletedUsers.push(u);
+        for (const ch of this.channels.values()) {
+          ch.members.delete(u);
+          ch.messages = ch.messages.filter((x) => x.userId !== u);
+        }
+      }
+      return reply(201, { task_id: "task-1" });
+    }
+    if (method === "GET" && path.startsWith("/tasks/")) {
+      return reply(200, {
+        status: this.taskStatus,
+        ...(this.taskStatus === "failed"
+          ? { error: { description: "boom" } }
+          : {}),
+      });
+    }
+    const m = /^\/channels\/([^/]+)\/([^/]+)(\/query|\/message)?$/.exec(path);
     if (!m) return reply(404, { code: 16, message: "unknown route" });
-    const id = decodeURIComponent(m[1]!);
+    if (!this.channelTypes.has(m[1]!)) {
+      return reply(400, { code: 4, message: `channel type ${m[1]} unknown` });
+    }
+    const id = decodeURIComponent(m[2]!);
     const channel = this.channels.get(id);
 
-    if (m[2] === "/query") {
+    if (m[3] === "/query") {
       if (!channel) {
         const data = body.data as { created_by_id: string; members: string[] };
         for (const member of data.members) {
@@ -140,7 +193,7 @@ export class FakeStream {
     if (!channel) {
       return reply(404, { code: 16, message: `channel ${id} does not exist` });
     }
-    if (m[2] === "/message") {
+    if (m[3] === "/message") {
       const msg = body.message as { id: string; text: string; user_id: string };
       if (channel.frozen) {
         return reply(403, { code: 17, message: "channel is frozen" });

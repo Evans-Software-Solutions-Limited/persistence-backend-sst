@@ -16,7 +16,52 @@ import { signHs256Jwt } from "@persistence/api-utils/jwt";
  */
 
 export const STREAM_API_BASE = "https://chat.stream-io-api.com";
-export const STREAM_CHANNEL_TYPE = "messaging";
+/**
+ * Our own channel type (Inspector Brad, #570). Stream's default `messaging`
+ * type lets any user with a token create channels and choose their members,
+ * so a token would open chat outside a coaching relationship (and an
+ * offboarded athlete could start a new channel with the coach). `coaching`
+ * grants members only reading and writing in their channel: creating
+ * channels and changing members is server-only (`ensureChannelType`).
+ */
+export const STREAM_CHANNEL_TYPE = "coaching";
+
+/**
+ * What a member may do in a `coaching` channel. Nothing else: no
+ * `create-channel`, `update-channel`, `update-channel-members`,
+ * `delete-channel` or `remove-own-channel-membership`. A frozen channel
+ * refuses new messages even with these grants (freezing on offboarding).
+ */
+export const COACHING_MEMBER_GRANTS = [
+  "read-channel",
+  "read-channel-members",
+  "create-message",
+  "update-message-owner",
+  "delete-message-owner",
+  "create-reaction",
+  "delete-reaction-owner",
+  "create-attachment",
+  "upload-attachment",
+  "delete-attachment-owner",
+  "create-mention",
+  "add-links",
+  "flag-message",
+  "mute-channel",
+  "send-custom-event",
+] as const;
+
+/**
+ * Grants per role on the `coaching` type. Roles listed here are replaced;
+ * `user`, `guest` and `anonymous` get nothing on this type, so a token alone
+ * can't create, read or join a coaching channel. Server-side calls are not
+ * subject to grants.
+ */
+export const COACHING_GRANTS: Record<string, readonly string[]> = {
+  channel_member: COACHING_MEMBER_GRANTS,
+  user: [],
+  guest: [],
+  anonymous: [],
+};
 /** Stream user tokens last 24 hours (design E: `POST /chat/token`). */
 export const USER_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 8_000;
@@ -97,6 +142,87 @@ export class StreamChatClient {
       { issuedAt, expiresAt },
     );
     return { token, expiresAt };
+  }
+
+  /**
+   * Make sure the `coaching` channel type exists with our grants. Idempotent:
+   * an existing type is left in place and its grants are set again.
+   */
+  async ensureChannelType(): Promise<void> {
+    try {
+      await this.request("POST", "/channeltypes", {
+        name: STREAM_CHANNEL_TYPE,
+        typing_events: true,
+        read_events: true,
+        connect_events: true,
+        reactions: true,
+        replies: true,
+        uploads: true,
+        url_enrichment: true,
+        push_notifications: true,
+        mutes: true,
+      });
+    } catch (err) {
+      if (
+        !(
+          err instanceof StreamApiError &&
+          err.status === 400 &&
+          /already exists/i.test(err.message)
+        )
+      ) {
+        throw err;
+      }
+    }
+    await this.request("PUT", `/channeltypes/${STREAM_CHANNEL_TYPE}`, {
+      grants: COACHING_GRANTS,
+    });
+  }
+
+  /**
+   * Erase a user from Stream (account deletion): the user and all their
+   * messages are hard-deleted; the other party's own messages stay
+   * (`conversations: keep`). Stream runs it as a task, which is polled until
+   * it finishes. A failed task throws (the caller retries); one still running
+   * after the polls is left to finish on Stream's side. A user Stream never
+   * had counts as erased.
+   */
+  async deleteUserHard(
+    userId: string,
+    options: { polls?: number; sleep?: (ms: number) => Promise<void> } = {},
+  ): Promise<"deleted" | "pending" | "not_found"> {
+    const polls = options.polls ?? 10;
+    const sleep =
+      options.sleep ??
+      ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+    let taskId: string | null;
+    try {
+      const res = (await this.request("POST", "/users/delete", {
+        user_ids: [userId],
+        user: "hard",
+        messages: "hard",
+        conversations: "keep",
+      })) as { task_id?: unknown } | null;
+      taskId = typeof res?.task_id === "string" ? res.task_id : null;
+    } catch (err) {
+      if (isNotFound(err)) return "not_found";
+      throw err;
+    }
+    if (!taskId) return "deleted";
+    for (let i = 0; i < polls; i++) {
+      const task = (await this.request(
+        "GET",
+        `/tasks/${encodeURIComponent(taskId)}`,
+      )) as { status?: unknown; error?: { description?: unknown } } | null;
+      if (task?.status === "completed") return "deleted";
+      if (task?.status === "failed") {
+        throw new StreamApiError(
+          `Stream user delete task ${taskId} failed: ${typeof task.error?.description === "string" ? task.error.description : "unknown"}`,
+          500,
+        );
+      }
+      await sleep(1000);
+    }
+    return "pending";
   }
 
   /** Create or update users (`name`/`image` replace what Stream holds). */
@@ -185,9 +311,9 @@ export class StreamChatClient {
   }
 
   private async request(
-    method: "POST" | "PATCH",
+    method: "GET" | "POST" | "PUT" | "PATCH",
     path: string,
-    body: unknown,
+    body?: unknown,
   ): Promise<unknown> {
     const serverToken = await signHs256Jwt(
       { server: true },
@@ -203,7 +329,7 @@ export class StreamChatClient {
           "stream-auth-type": "jwt",
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(body),
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
     } catch (err) {

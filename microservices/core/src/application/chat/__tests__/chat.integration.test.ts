@@ -83,6 +83,7 @@ import { chatChannelsJob } from "../../coaching/scheduler/jobs/chatChannels";
 import { NotificationDispatcher } from "../../notifications/push/notificationDispatcher";
 import {
   channelIdFor,
+  eraseChatUser,
   freezeChatChannel,
   provisionChatChannel,
   reconcileChatChannels,
@@ -90,7 +91,8 @@ import {
   safeProvisionChatChannel,
   setStreamClientForTests,
 } from "../chatChannels";
-import { StreamChatClient } from "../streamClient";
+import { COACHING_GRANTS, StreamChatClient } from "../streamClient";
+import { accountPurgeCron } from "../../account/purge/accountPurgeCron";
 import {
   handleStreamWebhook,
   isValidStreamSignature,
@@ -311,8 +313,8 @@ const messageNew = (
   extra: Record<string, unknown> = {},
 ) => ({
   type: "message.new",
-  cid: `messaging:${channelIdFor(relationshipId)}`,
-  channel_type: "messaging",
+  cid: `coaching:${channelIdFor(relationshipId)}`,
+  channel_type: "coaching",
   channel_id: channelIdFor(relationshipId),
   message: {
     id: messageId,
@@ -401,7 +403,7 @@ describe("design E test 2: channel provisioning", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       relationshipId: REL_CA,
-      streamChannelType: "messaging",
+      streamChannelType: "coaching",
       streamChannelId: `coach-${REL_CA}`,
       trainerId: COACH_C,
       clientId: ATHLETE_A,
@@ -692,9 +694,9 @@ describe("design E test 3: ending coaching removes the client and freezes the ch
   });
 
   it("a channel never created in Stream is simply marked frozen", async () => {
-    stream.down = true;
+    stream.failOn(/\/users$/, 1); // provisioning stops before the channel
     await safeProvisionChatChannel(REL_CA);
-    stream.down = false;
+    expect(stream.channels.size).toBe(0);
     await db
       .update(schema.ptClientRelationships)
       .set({ status: "terminated" })
@@ -940,12 +942,12 @@ describe("design E test 4: the Stream webhook", () => {
       messageNew(REL_CA, COACH_C),
       messageNew(REL_CA, ATHLETE_A, randomUUID(), { type: "system" }),
       { ...messageNew(REL_CA, ATHLETE_A), type: "message.read" },
-      { ...messageNew(REL_CA, ATHLETE_A), channel_type: "livestream" },
+      { ...messageNew(REL_CA, ATHLETE_A), channel_type: "messaging" },
       {
         ...messageNew(REL_CA, ATHLETE_A),
         channel_id: `coach-${randomUUID()}`,
       },
-      { type: "message.new", channel_type: "messaging" },
+      { type: "message.new", channel_type: "coaching" },
     ];
     for (const event of ignored) {
       const res = await webhook(event);
@@ -993,6 +995,163 @@ describe("design E test 4: the Stream webhook", () => {
     ).toBe(false);
     expect(isValidStreamSignature(body, null, TEST_STREAM_SECRET)).toBe(false);
     expect(isValidStreamSignature(body, "", TEST_STREAM_SECRET)).toBe(false);
+  });
+});
+
+// ─── The `coaching` channel type (Inspector Brad, #570) ─────────────────────
+
+describe("the coaching channel type", () => {
+  it("is ensured with member-only grants before the first channel, once per container", async () => {
+    await reconcileChatChannels();
+    expect(stream.channelTypes.get("coaching")!.grants).toEqual(
+      COACHING_GRANTS,
+    );
+    // Two channels provisioned, one ensure.
+    expect(stream.calls.filter((c) => c.path === "/channeltypes").length).toBe(
+      1,
+    );
+    expect(
+      stream.calls.filter((c) => c.path.startsWith("/channels/coaching/"))
+        .length,
+    ).toBeGreaterThan(0);
+    expect(
+      stream.calls.some((c) => c.path.startsWith("/channels/messaging/")),
+    ).toBe(false);
+    expect((await channelRow(REL_CA))!.streamChannelType).toBe("coaching");
+  });
+
+  it("a failed ensure isn't remembered: the next provisioning tries again", async () => {
+    stream.failOn(/PUT \/channeltypes\/coaching/, 1);
+    await safeProvisionChatChannel(REL_CA);
+    expect((await channelRow(REL_CA))!.state).toBe("pending");
+    expect(await provisionChatChannel(REL_CA)).toBe("provisioned");
+    expect(stream.channelTypes.get("coaching")!.grants.user).toEqual([]);
+  });
+});
+
+// ─── Account purge erases the user from Stream (Inspector Brad, #570) ───────
+
+describe("account purge: erasing a deleted user from Stream chat", () => {
+  const softDelete = (id: string) =>
+    db
+      .update(schema.profiles)
+      .set({ deletedAt: new Date(Date.now() - 31 * 86_400_000) })
+      .where(eq(schema.profiles.id, id));
+
+  beforeEach(async () => {
+    await reconcileChatChannels();
+    const client = new StreamChatClient(
+      { apiKey: TEST_STREAM_KEY, apiSecret: TEST_STREAM_SECRET },
+      stream.fetch,
+    );
+    await client.sendMessage(channelIdFor(REL_CA), {
+      id: "from-lena",
+      text: "hi coach",
+      userId: ATHLETE_A,
+    });
+    await client.sendMessage(channelIdFor(REL_CA), {
+      id: "from-ellie",
+      text: "hi Lena",
+      userId: COACH_C,
+    });
+  });
+
+  it("an athlete's channels are frozen without them, and their Stream user and messages are hard-deleted", async () => {
+    await softDelete(ATHLETE_A);
+    expect(await eraseChatUser(ATHLETE_A)).toBe("erased");
+    for (const rel of [REL_CA, REL_EA]) {
+      const ch = stream.channels.get(channelIdFor(rel))!;
+      expect(ch.frozen).toBe(true);
+      expect(ch.members.has(ATHLETE_A)).toBe(false);
+      expect((await channelRow(rel))!.state).toBe("frozen");
+    }
+    expect(stream.deletedUsers).toEqual([ATHLETE_A]);
+    // The coach keeps their own messages, read-only; Lena's are gone.
+    expect(
+      stream.channels.get(channelIdFor(REL_CA))!.messages.map((m) => m.id),
+    ).toEqual(["from-ellie"]);
+    // Re-running (a retried sweep) is fine.
+    expect(await eraseChatUser(ATHLETE_A)).toBe("erased");
+  });
+
+  it("a coach's deletion freezes only their channels", async () => {
+    await softDelete(COACH_C);
+    expect(await eraseChatUser(COACH_C)).toBe("erased");
+    expect(stream.channels.get(channelIdFor(REL_CA))!.frozen).toBe(true);
+    expect(stream.channels.get(channelIdFor(REL_EA))!.frozen).toBe(false);
+    expect(stream.deletedUsers).toEqual([COACH_C]);
+  });
+
+  it("runs inside the purge before the SQL purge; a Stream failure stops the purge for a retry", async () => {
+    await softDelete(ATHLETE_A);
+    const purged: string[] = [];
+    const run = () =>
+      accountPurgeCron({
+        accountRepo: {
+          listPendingPurge: async () => [ATHLETE_A],
+          // Like the real purge: the relationships (and so chat_channels)
+          // go with the user.
+          purgeUserData: async (userId: string) => {
+            await db
+              .delete(schema.ptClientRelationships)
+              .where(eq(schema.ptClientRelationships.clientId, userId));
+            purged.push(userId);
+            return true;
+          },
+        },
+        cancelStripeSubscriptions: async () => {},
+        deleteAuthUser: async () => {},
+        deleteAvatar: async () => {},
+        queuePrivateMediaPurge: async () => {},
+        eraseChatUser,
+        now: new Date(),
+      });
+    stream.failOn(/POST \/users\/delete/, 1);
+    expect(await run()).toMatchObject({ failed: 1, purged: 0 });
+    expect(purged).toEqual([]);
+    expect(await channelRow(REL_CA)).toBeDefined();
+
+    expect(await run()).toMatchObject({ failed: 0, purged: 1 });
+    expect(stream.deletedUsers).toEqual([ATHLETE_A]);
+    expect(await channelRow(REL_CA)).toBeUndefined();
+  });
+
+  it("skips a restored account, a user with no channels, and an unconfigured stage", async () => {
+    stream.calls = [];
+    expect(await eraseChatUser(ATHLETE_A)).toBe("restored"); // never deleted
+    await softDelete(STRANGER);
+    expect(await eraseChatUser(STRANGER)).toBe("erased");
+    expect(stream.calls).toEqual([]);
+    setStreamClientForTests(null);
+    await softDelete(ATHLETE_A);
+    expect(await eraseChatUser(ATHLETE_A)).toBe("not_configured");
+    expect((await channelRow(REL_CA))!.state).toBe("active");
+  });
+
+  it("a channel Stream doesn't have is still marked frozen", async () => {
+    stream.channels.delete(channelIdFor(REL_EA));
+    await softDelete(ATHLETE_A);
+    expect(await eraseChatUser(ATHLETE_A)).toBe("erased");
+    expect((await channelRow(REL_EA))!.state).toBe("frozen");
+  });
+
+  it("a Stream failure on a channel throws", async () => {
+    await softDelete(ATHLETE_A);
+    stream.failOn(/PATCH/);
+    await expect(eraseChatUser(ATHLETE_A)).rejects.toThrow(/503/);
+  });
+
+  it("a delete task still running is accepted (Stream finishes it)", async () => {
+    await softDelete(ATHLETE_A);
+    stream.taskStatus = "running";
+    vi.useFakeTimers({ toFake: ["setTimeout"] });
+    try {
+      const pending = eraseChatUser(ATHLETE_A);
+      await vi.runAllTimersAsync();
+      expect(await pending).toBe("erased");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

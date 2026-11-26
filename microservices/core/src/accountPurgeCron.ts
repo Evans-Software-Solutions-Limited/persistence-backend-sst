@@ -15,6 +15,7 @@ import { AiJobRepository } from "./application/jobs/aiJobRepository";
 import { dataRetentionSweep } from "./application/retention/dataRetentionSweep";
 import { DataRetentionRepository } from "./application/retention/dataRetentionRepository";
 import { ClientProfileRepository } from "./application/coaching/clientProfileRepository";
+import { eraseChatUser } from "./application/chat/chatChannels";
 
 /**
  * Nightly account-purge sweep — scheduled via `sst.aws.Cron` in
@@ -43,6 +44,7 @@ async function baseHandler(): Promise<{
     deleteAuthUser: deleteAuthUserWithRetry,
     deleteAvatar: deleteUserAvatar,
     queuePrivateMediaPurge,
+    eraseChatUser,
     now,
   });
   console.log(`[account-purge-cron:summary] ${JSON.stringify(summary)}`);

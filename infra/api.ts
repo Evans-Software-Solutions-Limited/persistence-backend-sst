@@ -475,6 +475,11 @@ export const accountPurgeCron = new sst.aws.Cron("account-purge-sweep", {
       STRIPE_SECRET_KEY: stripeSecretKey.value,
       // Sentry crash reporting (optional; empty DSN = disabled).
       SENTRY_DSN: sentryDsn.value,
+      // PER-120: the purge erases the user from Stream chat (their channels
+      // frozen, the Stream user and messages hard-deleted). Optional; empty =
+      // chat not configured and the step no-ops.
+      STREAM_API_KEY: streamApiKey.value,
+      STREAM_API_SECRET: streamApiSecret.value,
     },
   },
 });

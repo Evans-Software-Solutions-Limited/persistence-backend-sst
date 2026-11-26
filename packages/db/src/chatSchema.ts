@@ -22,9 +22,9 @@ export const chatChannels = pgTable(
       .primaryKey()
       .references(() => ptClientRelationships.id, { onDelete: "cascade" }),
     streamChannelType: text("stream_channel_type")
-      .$type<"messaging">()
+      .$type<"coaching">()
       .notNull()
-      .default("messaging"),
+      .default("coaching"),
     streamChannelId: text("stream_channel_id").notNull(),
     trainerId: uuid("trainer_id").notNull(),
     clientId: uuid("client_id").notNull(),

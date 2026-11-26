@@ -80,6 +80,8 @@ async function runPurgeNight(deps: { accountRepo: AccountPurgeCronRepo }) {
     },
     deleteAvatar: async () => {},
     queuePrivateMediaPurge,
+    // PER-120: Stream chat has its own suite (chat.integration.test.ts).
+    eraseChatUser: async () => {},
     now: new Date(),
   });
   return { ...summary, drained: await drainPrivateMediaPurges() };

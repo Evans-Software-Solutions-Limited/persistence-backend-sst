@@ -6,7 +6,7 @@ Backend design E (C3.6, C6). Additive; no existing route changes, no native
 change, no new dependency (native `fetch` + HS256 via `jose` in api-utils).
 Migration `20261125162525_chat_channels.sql` (rollback in
 `supabase/rollbacks/`): `chat_channels` (PK `relationship_id` → relationships
-CASCADE, `messaging` / `coach-<relationshipId>`, state
+CASCADE, `coaching` / `coach-<relationshipId>`, state
 `pending|active|frozen`, `frozen_at`). Drizzle in
 `packages/db/src/chatSchema.ts` (re-exported from `schema.ts`).
 
@@ -37,6 +37,20 @@ CASCADE, `messaging` / `coach-<relationshipId>`, state
   without an `active` channel (also backfills pre-chat relationships once keys
   are set; a revived relationship re-adds the client and unfreezes) and freezes
   `active` channels whose relationship ended.
+- **Own channel type `coaching`** (Inspector Brad, #570): Stream's default
+  `messaging` type lets any token holder create channels and pick members.
+  `ensureChannelType` (once per container, on first provisioning, retried on
+  failure) creates `coaching` and sets grants: `channel_member` read/write only
+  (`COACHING_MEMBER_GRANTS`), `user`/`guest`/`anonymous` nothing. Channel
+  creation and membership are server-only. **PER-136 must use channel type
+  `coaching`.** Grant ids are from Stream's permission reference; confirm on
+  staging that members can send, react, upload and see typing.
+- **Account purge** (Inspector Brad, #570): `accountPurgeCron` step 1c
+  `eraseChatUser` runs BEFORE the SQL purge (chat rows cascade with it):
+  removes the user from each of their channels and freezes them, then
+  `POST /users/delete` (user, messages hard; conversations keep) and polls the
+  task. Not swallowed (a failure retries the account next sweep); skipped when
+  restored, no-op without channels or keys. The purge cron gets the Stream env.
 - Not done (out of brief): Stream user re-upsert on profile edit (it happens on
   the next token instead); moderation (PER-21); coach Stream-device push config
   (app, PER-136).
