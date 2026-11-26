@@ -1,3 +1,4 @@
+import { USER_MEAL_LIMITS } from "@persistence/form-limits";
 import Elysia, { t } from "elysia";
 import { UserMealService } from "../../../repositories/userMealService";
 import { normaliseIdempotencyKey } from "../../../shared/idempotencyKey";
@@ -9,7 +10,7 @@ import {
 } from "@persistence/api-utils/auth/supabaseAuth";
 
 /** Generous for "as many meals as the user wants", bounded for the payload. */
-export const MAX_USER_MEALS = 30;
+export const MAX_USER_MEALS = USER_MEAL_LIMITS.maxMeals;
 
 /**
  * PUT /nutrition/user-meals — `{ meals: [{ id?, clientRequestId?, name,
@@ -74,7 +75,10 @@ export const nutritionUserMealsPutHandler = new Elysia()
           t.Object({
             id: t.Optional(t.String()),
             clientRequestId: t.Optional(t.String({ maxLength: 200 })),
-            name: t.String({ minLength: 1, maxLength: 80 }),
+            name: t.String({
+              minLength: 1,
+              maxLength: USER_MEAL_LIMITS.nameMax,
+            }),
             logSlot: t.Union([
               t.Literal("breakfast"),
               t.Literal("lunch"),

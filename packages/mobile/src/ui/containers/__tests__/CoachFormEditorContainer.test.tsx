@@ -29,9 +29,9 @@ describe("CoachFormEditorContainer (C10b on iPhone)", () => {
 
     // Can't save without a title.
     fireEvent.press(view.getByTestId("form-editor-save"));
-    expect(view.getByTestId("form-editor-problem").props.children).toBe(
-      "Give the form a title.",
-    );
+    expect(
+      (await view.findByTestId("form-editor-problem")).props.children,
+    ).toBe("Give the form a title.");
     fireEvent.changeText(
       view.getByTestId("form-editor-title"),
       "Weekly check-in",
@@ -219,12 +219,13 @@ describe("CoachFormEditorContainer (C10b on iPhone)", () => {
     );
   });
 
-  it("blocks a save with an empty question and back leaves", () => {
+  it("blocks a save with an empty question and back leaves", async () => {
     const h = setupCoachForms();
     const view = h.render(<CoachFormEditorContainer />);
     fireEvent.changeText(view.getByTestId("form-editor-title"), "Form");
     fireEvent.press(view.getByTestId("form-editor-save"));
-    expect(view.getByText("Question 1 needs a question.")).toBeTruthy();
+    // react-hook-form checks the schema asynchronously (PER-147).
+    expect(await view.findByText("Question 1 needs a question.")).toBeTruthy();
     expect(queued(h)).toHaveLength(0);
     fireEvent.press(view.getByTestId("form-editor-back"));
     expect(mockRouter.back).toHaveBeenCalled();

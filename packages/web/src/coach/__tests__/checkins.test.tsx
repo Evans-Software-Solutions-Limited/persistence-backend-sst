@@ -100,6 +100,32 @@ describe("Client → Check-ins (C3.3a)", () => {
     ).toBeNull();
   });
 
+  it("a 422 on the reply shows under the form's own words (PER-147)", async () => {
+    const reviewResponse = vi.fn().mockRejectedValue(
+      apiError(422, {
+        code: "VALIDATION",
+        validation: [{ path: "/replyText", message: "too long" }],
+      }),
+    );
+    open(fakeApi({ reviewResponse }));
+    const cmp = await screen.findByRole("region", { name: "Weekly check-in" });
+    fireEvent.click(
+      within(cmp).getByRole("button", { name: "Review and reply" }),
+    );
+    fireEvent.change(within(cmp).getByLabelText("Reply to Sam"), {
+      target: { value: "Well done" },
+    });
+    fireEvent.click(
+      within(cmp).getByRole("button", { name: "Send reply and mark reviewed" }),
+    );
+    expect(
+      await screen.findByText("Keep the reply under 2,000 characters."),
+    ).toBeTruthy();
+    expect(
+      (within(cmp).getByLabelText("Reply to Sam") as HTMLTextAreaElement).value,
+    ).toBe("Well done");
+  });
+
   it("Mark reviewed, and Review and reply", async () => {
     const reviewResponse = vi
       .fn()
@@ -382,7 +408,9 @@ describe("Set it up for one client (C10j)", () => {
       ),
     ).toBeTruthy();
     fireEvent.click(within(panel).getByRole("button", { name: "Save" }));
-    expect(await within(panel).findByText(/weekday must be/)).toBeTruthy();
+    expect(
+      await within(panel).findByText("Choose a day to send it."),
+    ).toBeTruthy();
     fireEvent.click(within(panel).getByRole("button", { name: "Save" }));
     expect(
       await within(panel).findByText("We couldn't save that. Try again."),

@@ -1,3 +1,4 @@
+import { CLIENT_PROFILE_LIMITS } from "@persistence/form-limits";
 import Elysia, { t } from "elysia";
 import {
   getAuthUser,
@@ -66,10 +67,10 @@ const nullableText = (maxLength: number) =>
   t.Optional(t.Union([t.String({ maxLength }), t.Null()]));
 
 const profileFields = {
-  contactEmail: nullableText(320),
-  contactPhone: nullableText(40),
-  goal: nullableText(200),
-  privateNotes: nullableText(4000),
+  contactEmail: nullableText(CLIENT_PROFILE_LIMITS.contactEmailMax),
+  contactPhone: nullableText(CLIENT_PROFILE_LIMITS.contactPhoneMax),
+  goal: nullableText(CLIENT_PROFILE_LIMITS.goalMax),
+  privateNotes: nullableText(CLIENT_PROFILE_LIMITS.privateNotesMax),
 };
 
 const idParams = t.Object({ id: t.String() });
@@ -109,7 +110,10 @@ export const clientProfilesHandler = new Elysia()
     },
     {
       body: t.Object({
-        displayName: t.String({ minLength: 1, maxLength: 80 }),
+        displayName: t.String({
+          minLength: 1,
+          maxLength: CLIENT_PROFILE_LIMITS.displayNameMax,
+        }),
         ...profileFields,
       }),
     },
@@ -181,7 +185,12 @@ export const clientProfilesHandler = new Elysia()
     {
       params: idParams,
       body: t.Object({
-        displayName: t.Optional(t.String({ minLength: 1, maxLength: 80 })),
+        displayName: t.Optional(
+          t.String({
+            minLength: 1,
+            maxLength: CLIENT_PROFILE_LIMITS.displayNameMax,
+          }),
+        ),
         ...profileFields,
         expectedRevision: t.Optional(t.Integer({ minimum: 1 })),
       }),

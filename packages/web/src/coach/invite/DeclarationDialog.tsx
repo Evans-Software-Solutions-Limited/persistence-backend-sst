@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { Type } from "@sinclair/typebox";
+import { useForm } from "react-hook-form";
+import { schemaResolver } from "@/lib/form";
 import {
   DECLARATION_CONFIRM_LABEL,
   DECLARATION_FOOTNOTE,
@@ -7,6 +9,16 @@ import {
   DECLARATION_TITLE,
 } from "../lib/declaration";
 import { Dialog, Notice } from "../ui/parts";
+
+/** The one rule: the box is ticked (PER-147). */
+const declarationSchema = Type.Object({
+  confirmed: Type.Literal(true, {
+    errorMessage: "Tick the box to confirm.",
+  }),
+});
+const declarationResolver = schemaResolver<{ confirmed: boolean }>(
+  declarationSchema,
+);
 
 /** The coach declaration prompt shown before the first invite (D6b). */
 export function DeclarationDialog({
@@ -20,7 +32,11 @@ export function DeclarationDialog({
   onConfirm: () => void;
   onClose: () => void;
 }) {
-  const [ticked, setTicked] = useState(false);
+  const form = useForm<{ confirmed: boolean }>({
+    resolver: declarationResolver,
+    defaultValues: { confirmed: false },
+  });
+  const ticked = form.watch("confirmed");
   return (
     <Dialog title={DECLARATION_TITLE} onClose={onClose}>
       <p className="sub" style={{ margin: 0, color: "var(--ink-2)" }}>
@@ -56,7 +72,9 @@ export function DeclarationDialog({
         <input
           type="checkbox"
           checked={ticked}
-          onChange={(e) => setTicked(e.target.checked)}
+          onChange={(e) =>
+            form.setValue("confirmed", e.target.checked, { shouldDirty: true })
+          }
           style={{ width: 20, height: 20, accentColor: "var(--violet)" }}
         />
         {DECLARATION_CONFIRM_LABEL}
@@ -70,7 +88,7 @@ export function DeclarationDialog({
           type="button"
           className="btn v sm"
           disabled={!ticked || busy}
-          onClick={onConfirm}
+          onClick={() => void form.handleSubmit(() => onConfirm())()}
         >
           {busy ? "Confirming…" : "Confirm and continue"}
         </button>

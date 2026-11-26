@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { useForm } from "react-hook-form";
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { isCoachApiError, newIdempotencyKey } from "../api/coachApi";
@@ -17,10 +18,25 @@ import {
   ruleBody,
   ruleOf,
 } from "../lib/forms";
+import { applyServerErrors, firstMessage } from "@/lib/form";
 import { clockTime } from "../lib/people";
-import type { EffectiveRule } from "../lib/schedule";
+import {
+  SEND_SERVER_FIELDS,
+  sendResolver,
+  type SendFormValues,
+} from "../lib/ruleForm";
 import { LoadError, Loading } from "../ui/parts";
 import { FormPreview, FormsLibrary, SendDialog } from "./FormsLibrary";
+
+/** The words a 422 `invalid_schedule` message names its field by. */
+const SEND_FIELD_WORDS = [
+  "clientIds",
+  "weekday",
+  "timeLocal",
+  "dueAfterHours",
+  "reminders",
+  "afterHours",
+] as const;
 
 /** What the send dialog is doing: a new rule, or changing an existing one. */
 type Sending =
@@ -74,10 +90,29 @@ export function FormsLibraryContainer() {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Send dialog state.
-  const [draftRule, setDraftRule] = useState<EffectiveRule | null>(null);
-  const [all, setAll] = useState(false);
-  const [picked, setPicked] = useState<string[]>([]);
+  // The send dialog is a react-hook-form (PER-147). `start` is what it opens
+  // with; a new `opening` number resets the form even when the values match
+  // the last time it was open.
+  const [start, setStart] = useState<
+    (SendFormValues & { opening: number }) | null
+  >(null);
+  const openings = useRef(0);
+  const sendForm = useForm<SendFormValues>({
+    resolver: sendResolver,
+    values: start ?? undefined,
+  });
+  const sendValues = sendForm.watch() as Partial<SendFormValues> & {
+    opening?: number;
+  };
+  // Until the form has taken this opening's values, the dialog waits.
+  const draftRule =
+    start && sendValues.opening === start.opening
+      ? (sendValues.rule ?? null)
+      : null;
+  const all = sendValues.all ?? false;
+  const picked = sendValues.clientIds ?? [];
+  const setPicked = (next: string[]) =>
+    sendForm.setValue("clientIds", next, { shouldDirty: true });
   const [busy, setBusy] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [opened, setOpened] = useState<string | null>(null);
@@ -129,23 +164,28 @@ export function FormsLibraryContainer() {
   if (sending && sendKey !== opened) {
     setOpened(sendKey);
     setSendError(null);
+    openings.current += 1;
     if (sending.kind === "change") {
       const s = sending.schedule;
-      setDraftRule(ruleOf(s));
-      setAll(s.audience === "all_clients");
-      // Paused clients stay on the rule: a target missing from `clientIds`
-      // is excluded and loses its open requests (Inspector Brad, #555).
-      setPicked(
-        (s.clients ?? [])
+      setStart({
+        opening: openings.current,
+        rule: ruleOf(s),
+        all: s.audience === "all_clients",
+        // Paused clients stay on the rule: a target missing from `clientIds`
+        // is excluded and loses its open requests (Inspector Brad, #555).
+        clientIds: (s.clients ?? [])
           .filter((c) => c.status !== "excluded")
           .map((c) => c.clientId),
-      );
+      });
     } else {
-      setDraftRule(defaultRule(search.get("when") ?? "weekly"));
-      setAll(false);
       // "+ Add form" on a client's Check-ins tab sends to that client.
       const forClient = search.get("client");
-      setPicked(forClient ? [forClient] : []);
+      setStart({
+        opening: openings.current,
+        rule: defaultRule(search.get("when") ?? "weekly"),
+        all: false,
+        clientIds: forClient ? [forClient] : [],
+      });
     }
   }
   if (!sending && opened !== null) setOpened(null);
@@ -174,16 +214,17 @@ export function FormsLibraryContainer() {
       ? navigate(`/coach/clients/${backTo}/check-ins`)
       : go(routeFormId ? `/${routeFormId}` : "");
 
-  async function submit() {
-    if (!sending || !draftRule) return;
+  async function submit(valid: SendFormValues) {
+    if (!sending) return;
+    const draftRule = valid.rule;
     setBusy(true);
     setSendError(null);
     setNotice(null);
     const audience: "all_clients" | "selected" =
-      all || draftRule.trigger === "on_join" ? "all_clients" : "selected";
+      valid.all || draftRule.trigger === "on_join" ? "all_clients" : "selected";
     const body = {
       audience,
-      ...(audience === "selected" ? { clientIds: picked } : {}),
+      ...(audience === "selected" ? { clientIds: valid.clientIds } : {}),
       ...ruleBody(draftRule),
     };
     try {
@@ -222,7 +263,11 @@ export function FormsLibraryContainer() {
         void queryClient.invalidateQueries({ queryKey: coachKeys.schedules });
         setNotice(EDITED_ELSEWHERE);
         void close();
-      } else {
+      } else if (
+        !applyServerErrors(e, sendForm.setError, SEND_SERVER_FIELDS, {
+          fieldsInMessage: SEND_FIELD_WORDS,
+        })
+      ) {
         setSendError(
           errorText(
             e,
@@ -298,13 +343,15 @@ export function FormsLibraryContainer() {
           selected={active.filter((c) => picked.includes(c.id))}
           candidates={active.filter((c) => !picked.includes(c.id))}
           busy={busy}
-          error={sendError}
-          onRule={setDraftRule}
-          onAll={setAll}
-          onAdd={(id) => setPicked((p) => [...p, id])}
-          onRemove={(id) => setPicked((p) => p.filter((x) => x !== id))}
+          error={sendError ?? firstMessage(sendForm.formState.errors) ?? null}
+          onRule={(rule) =>
+            sendForm.setValue("rule", rule, { shouldDirty: true })
+          }
+          onAll={(v) => sendForm.setValue("all", v, { shouldDirty: true })}
+          onAdd={(id) => setPicked([...picked, id])}
+          onRemove={(id) => setPicked(picked.filter((x) => x !== id))}
           onCancel={close}
-          onSubmit={() => void submit()}
+          onSubmit={() => void sendForm.handleSubmit(submit)()}
         />
       )}
       {previewForm && (

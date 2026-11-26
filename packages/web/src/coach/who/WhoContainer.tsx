@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { useForm } from "react-hook-form";
 import { useNavigate, useParams } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { isCoachApiError, newIdempotencyKey } from "../api/coachApi";
@@ -9,8 +10,16 @@ import {
   useCoachApi,
   useOnline,
 } from "../hooks/coachQueries";
+import { applyServerErrors, applyValues, fieldMessages } from "@/lib/form";
 import { CONFLICT_NOTICE, stillEditable } from "../lib/draft";
-import { EMPTY, changedFields, toInput, valuesFrom } from "../lib/whoForm";
+import {
+  EMPTY,
+  WHO_SERVER_FIELDS,
+  changedFields,
+  toInput,
+  valuesFrom,
+  whoResolver,
+} from "../lib/whoForm";
 import { LoadError, Loading } from "../ui/parts";
 import { WhoStepView, type WhoValues } from "./WhoStep";
 
@@ -42,36 +51,36 @@ function WhoForm({ existing: loaded }: { existing: ClientProfile | null }) {
   // must not move it: edits are compared with, and the revision sent from,
   // what the coach started from, so another device's change still gives 409.
   const [existing, setExisting] = useState(loaded);
-  const [values, setValues] = useState<WhoValues>(
-    loaded ? valuesFrom(loaded) : EMPTY,
-  );
-  const [errors, setErrors] = useState<
-    Partial<Record<keyof WhoValues, string>>
-  >({});
+  // react-hook-form owns the values and the rules (PER-147). Errors show
+  // after Next and stay until the next press, as before.
+  const form = useForm<WhoValues>({
+    resolver: whoResolver,
+    defaultValues: loaded ? valuesFrom(loaded) : EMPTY,
+  });
+  const values = form.watch();
+  const errors = fieldMessages(form.formState.errors, [
+    "first",
+    "last",
+    "contact",
+    "goal",
+    "notes",
+  ]);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function next() {
-    const parsed = toInput(values);
-    if (!parsed.ok) {
-      setErrors(parsed.errors);
-      return;
-    }
-    setErrors({});
+  async function next(valid: WhoValues) {
+    const input = toInput(valid);
     setError(null);
     setBusy(true);
     try {
       if (!existing) {
-        const created = await api.createProfile(
-          parsed.input,
-          createKey.current,
-        );
+        const created = await api.createProfile(input, createKey.current);
         void queryClient.invalidateQueries({ queryKey: coachKeys.roster });
         void navigate(`/coach/clients/invited/${created.id}/setup`);
         return;
       }
-      const patch = changedFields(existing, parsed.input);
+      const patch = changedFields(existing, input);
       if (Object.keys(patch).length > 0) {
         let updated: ClientProfile;
         // When a resend happens, the server's 409 copy (newer invite code and
@@ -122,10 +131,10 @@ function WhoForm({ existing: loaded }: { existing: ClientProfile | null }) {
             latest,
           );
           setExisting(latest);
-          setValues(valuesFrom(latest));
+          form.reset(valuesFrom(latest));
         }
         setNotice(CONFLICT_NOTICE);
-      } else {
+      } else if (!applyServerErrors(e, form.setError, WHO_SERVER_FIELDS)) {
         setError(
           isCoachApiError(e) && e.offline
             ? "You're offline. Adding a client needs a connection."
@@ -143,7 +152,7 @@ function WhoForm({ existing: loaded }: { existing: ClientProfile | null }) {
     <WhoStepView
       values={values}
       errors={errors}
-      onChange={setValues}
+      onChange={(next) => applyValues(form, next)}
       busy={busy}
       offline={!online}
       notice={notice}
@@ -153,7 +162,7 @@ function WhoForm({ existing: loaded }: { existing: ClientProfile | null }) {
           existing ? `/coach/clients/invited/${existing.id}` : "/coach/clients",
         )
       }
-      onNext={() => void next()}
+      onNext={() => void form.handleSubmit(next)()}
     />
   );
 }

@@ -1,3 +1,4 @@
+import { FORM_SCHEDULE_LIMITS } from "@persistence/form-limits";
 import { and, desc, eq, inArray, ne, notInArray, sql } from "drizzle-orm";
 import {
   coachFormRequests,
@@ -29,10 +30,10 @@ export type Trigger = (typeof TRIGGERS)[number];
 export const AUDIENCES = ["all_clients", "selected"] as const;
 export type Audience = (typeof AUDIENCES)[number];
 
-export const MAX_REMINDERS = 5;
-export const MAX_REMINDER_HOURS = 720;
-export const MAX_DUE_HOURS = 2160;
-export const MAX_SELECTED_CLIENTS = 500;
+export const MAX_REMINDERS = FORM_SCHEDULE_LIMITS.maxReminders;
+export const MAX_REMINDER_HOURS = FORM_SCHEDULE_LIMITS.maxReminderHours;
+export const MAX_DUE_HOURS = FORM_SCHEDULE_LIMITS.maxDueHours;
+export const MAX_SELECTED_CLIENTS = FORM_SCHEDULE_LIMITS.maxSelectedClients;
 const TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)(:([0-5]\d))?$/;
 
 export interface Rule {
