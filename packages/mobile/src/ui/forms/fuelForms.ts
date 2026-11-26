@@ -8,9 +8,8 @@ import {
 
 /**
  * Fuel forms on react-hook-form (PER-147). A meal name is 1–40 characters
- * once trimmed: what `user_meals` stores (`user_meals_name_len_chk`). The
- * route's schema (`USER_MEAL_LIMITS.nameMax`, shared) allows 80, but the
- * database refuses more than 40, so the form keeps the stored limit. A quick
+ * once trimmed: the shared `USER_MEAL_LIMITS.storedNameMax`, which the server
+ * enforces (400 `invalid_user_meal_name`) and `user_meals` stores. A quick
  * entry has 1–10,000 kcal and macros of 0 or more.
  */
 

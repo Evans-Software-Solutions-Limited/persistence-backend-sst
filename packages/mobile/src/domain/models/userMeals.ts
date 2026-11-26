@@ -42,6 +42,6 @@ export type UserMealPutRow = {
 };
 
 /** The longest name the server stores (Design D: 1–40). */
-export const USER_MEAL_NAME_MAX = 40;
+export const USER_MEAL_NAME_MAX = USER_MEAL_LIMITS.storedNameMax;
 /** The server's list cap (`MAX_USER_MEALS`). */
 export const USER_MEALS_MAX = USER_MEAL_LIMITS.maxMeals;
