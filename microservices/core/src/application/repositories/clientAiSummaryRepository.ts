@@ -1,6 +1,8 @@
 import { and, desc, eq } from "drizzle-orm";
 import { clientAiSummaries } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
+import type { WeekOfProgramme } from "../programs/scheduling";
+import type { SummaryAreaLine } from "../trainers/services/weeklySummary";
 
 /**
  * The endpoint key the per-coach daily ceiling counts against
@@ -38,6 +40,21 @@ export type ClientAiSummaryRow = {
   model: string;
   refreshCount: number;
   generatedAt: string; // ISO
+  /** PER-115 summary by area; all null on rows written before it. */
+  headline: string | null;
+  areas: SummaryAreaLine[] | null;
+  ask: string | null;
+  weekOfProgramme: WeekOfProgramme | null;
+};
+
+/** The summary-by-area columns a generation writes (PER-115). */
+export type ClientAiSummaryContent = {
+  summary: string;
+  model: string;
+  headline: string;
+  areas: SummaryAreaLine[];
+  ask: string;
+  weekOfProgramme: WeekOfProgramme | null;
 };
 
 /**
@@ -72,6 +89,10 @@ export class ClientAiSummaryRepository {
         model: clientAiSummaries.model,
         refreshCount: clientAiSummaries.refreshCount,
         generatedAt: clientAiSummaries.generatedAt,
+        headline: clientAiSummaries.headline,
+        areas: clientAiSummaries.areas,
+        ask: clientAiSummaries.ask,
+        weekOfProgramme: clientAiSummaries.weekOfProgramme,
       })
       .from(clientAiSummaries)
       .where(
@@ -94,6 +115,10 @@ export class ClientAiSummaryRepository {
         r.generatedAt instanceof Date
           ? r.generatedAt.toISOString()
           : String(r.generatedAt),
+      headline: r.headline ?? null,
+      areas: (r.areas as SummaryAreaLine[] | null) ?? null,
+      ask: r.ask ?? null,
+      weekOfProgramme: r.weekOfProgramme ?? null,
     };
   }
 
@@ -105,13 +130,13 @@ export class ClientAiSummaryRepository {
    * `true` when THIS call wrote the row, `false` when another concurrent open
    * already had — the handler then returns that winner's cached row.
    */
-  async insertInitial(input: {
-    trainerId: string;
-    clientId: string;
-    coversDate: string;
-    summary: string;
-    model: string;
-  }): Promise<boolean> {
+  async insertInitial(
+    input: {
+      trainerId: string;
+      clientId: string;
+      coversDate: string;
+    } & ClientAiSummaryContent,
+  ): Promise<boolean> {
     const db = getDb();
     const inserted = await db
       .insert(clientAiSummaries)
@@ -121,6 +146,10 @@ export class ClientAiSummaryRepository {
         coversDate: input.coversDate,
         summary: input.summary,
         model: input.model,
+        headline: input.headline,
+        areas: input.areas,
+        ask: input.ask,
+        weekOfProgramme: input.weekOfProgramme,
         refreshCount: 0,
       })
       .onConflictDoNothing({
@@ -139,19 +168,23 @@ export class ClientAiSummaryRepository {
    * and restamp generated_at. Scoped to (trainer, client, coversDate) so it can
    * never touch another day or another coach's row.
    */
-  async updateRefresh(input: {
-    trainerId: string;
-    clientId: string;
-    coversDate: string;
-    summary: string;
-    model: string;
-  }): Promise<void> {
+  async updateRefresh(
+    input: {
+      trainerId: string;
+      clientId: string;
+      coversDate: string;
+    } & ClientAiSummaryContent,
+  ): Promise<void> {
     const db = getDb();
     await db
       .update(clientAiSummaries)
       .set({
         summary: input.summary,
         model: input.model,
+        headline: input.headline,
+        areas: input.areas,
+        ask: input.ask,
+        weekOfProgramme: input.weekOfProgramme,
         refreshCount: 1,
         generatedAt: new Date(),
       })

@@ -92,10 +92,11 @@ describe("design F test 6: photos never reach AI", () => {
         "application/nutrition/services/aiBedrockClient.ts",
       ]),
     );
-    // The summary's evidence (Client Detail modules a–f) is in the closure.
+    // The summary's evidence (PER-115: adherence, programme week, form
+    // answers, plan meals) is in the closure.
     const reached = [...closure(aiModules)].map((f) => relative(SRC, f));
     expect(reached).toContain(
-      "application/repositories/clientDetailRepository.ts",
+      "application/trainers/services/weeklySummaryEvidenceRepository.ts",
     );
   });
 

@@ -1292,6 +1292,19 @@ export const clientAiSummaries = pgTable(
     generatedAt: timestamp("generated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // PER-115 (design B migration 3): the summary by area. Nullable — rows
+    // written before it have only `summary`, which is still written for
+    // 1.2.0 bundles (the headline and area lines joined).
+    headline: text("headline"),
+    areas:
+      jsonb("areas").$type<
+        { area: string; status: "good" | "check" | "info"; text: string }[]
+      >(),
+    ask: text("ask"),
+    weekOfProgramme: jsonb("week_of_programme").$type<{
+      week: number;
+      of: number | null;
+    }>(),
   },
   (t) => [
     uniqueIndex("client_ai_summaries_trainer_client_date_key").on(

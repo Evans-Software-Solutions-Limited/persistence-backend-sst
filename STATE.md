@@ -1,5 +1,42 @@
 # Project memory · persistence-backend-sst
 
+### 2026-11-26 — BE-B2: AI weekly summary by area, with the first-week rule ([PER-115](https://linear.app/evans-software-solutions/issue/PER-115); branch `claude/per-115-ai-weekly-summary`)
+
+Design B D4. Backend only, additive, no `/v2`.
+
+- **Migration** `20261126120402_client_ai_summary_areas.sql` (+ rollback):
+  nullable `client_ai_summaries.headline`, `areas` jsonb, `ask`,
+  `week_of_programme` jsonb. Mirrored in schema.ts. `summary` still written
+  (headline + area lines joined) for 1.2.0 bundles.
+- **Route** `POST /trainers/me/clients/:clientId/ai-summary`: now gated by
+  `resolveCoachScope`. `data` gains `state: 'ready'|'firstWeek'`,
+  `firstSummaryOn?`, `headline`, `areas[]`, `ask`, `weekOfProgramme`.
+  First week (until the Monday after the first full Mon–Sun week from
+  `activated_at`, client tz; null `activated_at` = no wait): `summary: null`,
+  no AI call, no quota check, no data read. No area with evidence → no AI call,
+  `summary: null`. Parse/provider failure → 503 `{error:'ai_unavailable', facts}`.
+  Cache key and once-a-day refresh unchanged.
+- **Evidence** (`trainers/services/weeklySummaryEvidenceRepository.ts`, pure
+  rules in `weeklySummary.ts`): `clientAdherenceReport` 7d counts (tracked
+  areas), PER-112 `weekOfProgramme` (this coach's live programme), latest 3
+  form responses from this coach's current cycle in the last 7 days (photo
+  questions dropped; only when `features.checkIns`), plan meals logged from
+  this coach's live plans over the last 7 completed days (only when
+  `features.nutrition`). No photos, notes or food rows. The old modules a–f
+  input (PRs, volume, goal, habits) is no longer sent. Compact JSON prompt.
+- **Output:** forced tool `{headline, areas[], ask}`, `area` enum limited to
+  areas with evidence; `parseWeeklySummary` is strict (unknown area/status,
+  empty or > 400 chars = failure), drops areas without evidence and repeats.
+- **Photo guard:** the evidence code must not import `coaching/forms/*`
+  (they import media code); `media/__tests__/noAiPhotos.test.ts` now points at
+  the new evidence module.
+- **Not changed:** the client detail GET `aiSummary` module still returns only
+  the 1.2.0 fields (D3 lists the POST only).
+- Tests: `weeklySummary.test.ts`, `weeklySummary.integration.test.ts` (PGlite,
+  real migrations; D6 test 6 first week Mon/Wed/Sun with zero SDK calls; 1.2.0
+  contract fixture `fixtures/contract-1.2.0-ai-summary.json`; two-coach
+  scoping; migration forward ×2/down/up), handler and adapter suites updated.
+
 ### 2026-11-25 — BE-G1b: programmes in order with Next, no dates ([PER-112](https://linear.app/evans-software-solutions/issue/PER-112); branch `claude/per-112-programmes-next`)
 
 Design G part 2 (C3.1, Assign with no start date). Backend only, additive.
