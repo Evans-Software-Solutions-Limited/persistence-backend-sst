@@ -1,4 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useForm } from "react-hook-form";
+import {
+  newPlanAccepts,
+  newPlanResolver,
+  type NewPlanContext,
+  type NewPlanValues,
+} from "@/ui/forms/planForms";
 import { router, useLocalSearchParams, type Href } from "expo-router";
 import { localIdFactory } from "@/application/commands/localId";
 import type { FuelToday } from "@/domain/models/nutrition";
@@ -93,7 +100,6 @@ export function NewPlanContainer() {
 
   const initialFrom = startFromParam(params.from);
   const [step, setStep] = useState<Step>("start");
-  const [name, setName] = useState("");
   const [unticked, setUnticked] = useState<ReadonlySet<string>>(new Set());
   const [from, setFrom] = useState<StartFrom>(initialFrom);
   const [day, setDay] = useState<string | null>(null);
@@ -149,13 +155,22 @@ export function NewPlanContainer() {
     return tooManyMealsWithFood(dayPlan, ticked, userMeals.meals);
   }, [from, dayFuel, userId, userMeals.meals, ticked]);
 
+  // New plan is a react-hook-form (PER-147). The rules that depend on the
+  // screen (meals ticked, the day or plan picked) are its context.
+  const formContext: NewPlanContext = {
+    from,
+    meals: ticked.length,
+    dayReady: dayFuel !== null && !dayTooBig,
+    planReady: sourcePlan !== null,
+  };
+  const form = useForm<NewPlanValues>({
+    resolver: newPlanResolver,
+    defaultValues: { name: "" },
+    context: formContext,
+  });
+  const name = form.watch("name");
   const cleanName = cleanPlanName(name);
-  const canContinue =
-    from === "mealprint" ||
-    (cleanName !== null &&
-      ticked.length > 0 &&
-      (from !== "day" || (dayFuel !== null && !dayTooBig)) &&
-      (from !== "plan" || sourcePlan !== null));
+  const canContinue = newPlanAccepts({ name }, formContext);
 
   const onContinue = useCallback(() => {
     if (from === "mealprint") {
@@ -289,7 +304,7 @@ export function NewPlanContainer() {
       <NewPlanPresenter
         onBack={leave}
         name={name}
-        onName={setName}
+        onName={(v) => form.setValue("name", v, { shouldDirty: true })}
         targetValue={
           target && target.dailyKcal > 0
             ? `${fmt(target.dailyKcal)} kcal`
@@ -308,7 +323,7 @@ export function NewPlanContainer() {
           from === "mealprint" ? "Continue in Mealprint" : "Start building"
         }
         canContinue={canContinue}
-        onContinue={onContinue}
+        onContinue={() => void form.handleSubmit(onContinue)()}
         calendarVisible={calendar}
         calendarDay={day ?? addDaysISO(today, -1)}
         maxDay={today}

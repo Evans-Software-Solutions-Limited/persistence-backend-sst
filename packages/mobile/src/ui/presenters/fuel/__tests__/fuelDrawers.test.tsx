@@ -1,4 +1,4 @@
-import { act, fireEvent } from "@testing-library/react-native";
+import { act, fireEvent, waitFor } from "@testing-library/react-native";
 import { renderWithTheme } from "../../../../../__tests__/test-utils";
 import { reorderableTestApi } from "../../../../../__tests__/reorderable-test-api";
 import {
@@ -45,33 +45,39 @@ describe("YourMealsSheetPresenter (N1b)", () => {
     expect(queryByText(/Days on a plan/)).toBeNull();
   });
 
-  it("renames a meal inline", () => {
+  it("renames a meal inline", async () => {
     const { getByTestId, props } = render();
     fireEvent.press(getByTestId("your-meal-rename-b"));
     const input = getByTestId("your-meal-rename-input-b");
-    fireEvent.changeText(input, "Pre-gym");
+    fireEvent.changeText(input, " Pre-gym ");
     fireEvent(input, "submitEditing");
-    expect(props.onRename).toHaveBeenCalledWith("b", "Pre-gym");
+    // react-hook-form submits asynchronously (PER-147).
+    await waitFor(() =>
+      expect(props.onRename).toHaveBeenCalledWith("b", "Pre-gym"),
+    );
   });
 
-  it("does nothing when a rename is unchanged or blank", () => {
+  it("does nothing when a rename is unchanged or blank", async () => {
     const { getByTestId, props } = render();
     fireEvent.press(getByTestId("your-meal-rename-b"));
     fireEvent(getByTestId("your-meal-rename-input-b"), "submitEditing");
+    await act(async () => {});
     fireEvent.press(getByTestId("your-meal-rename-c"));
     const input = getByTestId("your-meal-rename-input-c");
     fireEvent.changeText(input, "  ");
+    // A blank name is refused by the schema, which cancels the rename.
     fireEvent(input, "blur");
+    await act(async () => {});
     expect(props.onRename).not.toHaveBeenCalled();
   });
 
-  it("adds a meal", () => {
+  it("adds a meal", async () => {
     const { getByTestId, props } = render();
     fireEvent.press(getByTestId("your-meals-sheet-add"));
     const input = getByTestId("your-meals-sheet-new-name");
     fireEvent.changeText(input, "Supper");
     fireEvent(input, "submitEditing");
-    expect(props.onAdd).toHaveBeenCalledWith("Supper");
+    await waitFor(() => expect(props.onAdd).toHaveBeenCalledWith("Supper"));
   });
 
   it("reorders by drag and by Move up / Move down", () => {

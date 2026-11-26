@@ -1,4 +1,4 @@
-import { act, fireEvent } from "@testing-library/react-native";
+import { act, fireEvent, waitFor } from "@testing-library/react-native";
 import { renderWithTheme } from "../../../../../../__tests__/test-utils";
 import { reorderableTestApi } from "../../../../../../__tests__/reorderable-test-api";
 import type { TargetComparison } from "@/domain/services/nutritionPlans.service";
@@ -230,7 +230,7 @@ describe("PlanMealsSheetPresenter (N28b)", () => {
     };
   };
 
-  it("ticks, renames, adds, reorders and closes", () => {
+  it("ticks, renames, adds, reorders and closes", async () => {
     const { getByTestId, getByText, props } = render();
     expect(
       getByText(
@@ -247,19 +247,23 @@ describe("PlanMealsSheetPresenter (N28b)", () => {
     const input = getByTestId("plan-meal-rename-input-b");
     fireEvent.changeText(input, "Pre-gym");
     fireEvent(input, "submitEditing");
-    expect(props.onRename).toHaveBeenCalledWith("b", "Pre-gym");
+    // react-hook-form submits asynchronously (PER-147).
+    await waitFor(() =>
+      expect(props.onRename).toHaveBeenCalledWith("b", "Pre-gym"),
+    );
 
     fireEvent.press(getByTestId("plan-meal-rename-a"));
     const blank = getByTestId("plan-meal-rename-input-a");
     fireEvent.changeText(blank, " ");
     fireEvent(blank, "blur");
+    await act(async () => {});
     expect(props.onRename).toHaveBeenCalledTimes(1);
 
     fireEvent.press(getByTestId("plan-meals-sheet-add"));
     const add = getByTestId("plan-meals-sheet-new-name");
     fireEvent.changeText(add, "Supper");
     fireEvent(add, "submitEditing");
-    expect(props.onAdd).toHaveBeenCalledWith("Supper");
+    await waitFor(() => expect(props.onAdd).toHaveBeenCalledWith("Supper"));
 
     act(() => {
       reorderableTestApi.dragStart("a");
@@ -443,16 +447,19 @@ describe("PlanOptionsSheetPresenter (N34)", () => {
     expect(props.onClose).toHaveBeenCalled();
   });
 
-  it("renames", () => {
+  it("renames", async () => {
     const { getByTestId, props } = render({ view: "rename" });
     const input = getByTestId("plan-options-name");
     fireEvent.changeText(input, "  ");
     fireEvent.press(getByTestId("plan-options-rename-save"));
     fireEvent(input, "submitEditing");
+    await act(async () => {});
     expect(props.onRename).not.toHaveBeenCalled();
     fireEvent.changeText(input, " Easy day ");
     fireEvent(input, "submitEditing");
     fireEvent.press(getByTestId("plan-options-rename-save"));
+    // react-hook-form submits asynchronously (PER-147).
+    await waitFor(() => expect(props.onRename).toHaveBeenCalledTimes(2));
     expect(props.onRename).toHaveBeenCalledWith("Easy day");
     expect(props.onRename).toHaveBeenCalledTimes(2);
   });

@@ -1,3 +1,4 @@
+import { CLIENT_SETTINGS_LIMITS } from "@persistence/form-limits";
 import type { AlertMode, ClientSettings, FeatureKey } from "../api/types";
 import { Dialog, Notice, OfflineBanner, Toggle } from "../ui/parts";
 
@@ -23,8 +24,8 @@ const ALERTS: { mode: AlertMode; label: string }[] = [
   { mode: "everything", label: "Boost: every event" },
 ];
 
-const SESSIONS_MIN = 1;
-const SESSIONS_MAX = 14;
+const SESSIONS_MIN = CLIENT_SETTINGS_LIMITS.sessionsPerWeekMin;
+const SESSIONS_MAX = CLIENT_SETTINGS_LIMITS.sessionsPerWeekMax;
 
 export interface ClientSettingsViewProps {
   clientFirst: string;

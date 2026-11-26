@@ -462,7 +462,6 @@ export type QuickLogDraft = {
   macroKcal: number | null;
   /** Calories typed and macros disagree by more than 20 kcal. */
   mismatch: boolean;
-  canLog: boolean;
 };
 
 function num(value: string): number | null {
@@ -472,7 +471,10 @@ function num(value: string): number | null {
   return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
-/** Parse the Quick log form. Calories are required (> 0, ≤ 10,000). */
+/**
+ * Parse the Quick log form's text into numbers. Whether it can be logged is
+ * the form's schema (`ui/forms/fuelForms.ts`, PER-147): calories > 0, ≤ 10,000.
+ */
 export function quickLogDraft(values: QuickLogValues): QuickLogDraft {
   const kcal = num(values.kcal);
   const p = num(values.protein);
@@ -492,6 +494,5 @@ export function quickLogDraft(values: QuickLogValues): QuickLogDraft {
     macroKcal,
     mismatch:
       kcal !== null && macroKcal !== null && Math.abs(macroKcal - kcal) > 20,
-    canLog: kcal !== null && kcal > 0 && kcal <= 10_000,
   };
 }

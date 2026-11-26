@@ -1,0 +1,19 @@
+{
+  "name": "@persistence/form-limits",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test:unit": "vitest run",
+    "lint": "oxlint"
+  },
+  "devDependencies": {
+    "@tsconfig/node22": "^22",
+    "typescript": "^7.0.2",
+    "vitest": "5.1.1"
+  }
+}
