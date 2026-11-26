@@ -118,3 +118,9 @@ export const COACH_CLIENT_FORMS_TABLES = ["cached_coach_client_forms"] as const;
 export const COACH_FORM_RESPONSES_TABLES = [
   "cached_coach_form_responses",
 ] as const;
+/** PER-137 progress photos: the gallery cache. */
+export const PROGRESS_PHOTO_TABLES = ["cached_progress_photos"] as const;
+/** PER-137 sets saved on this phone and waiting to upload. */
+export const PENDING_PROGRESS_PHOTO_TABLES = [
+  "pending_progress_photos",
+] as const;
