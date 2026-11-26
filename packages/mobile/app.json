@@ -3,7 +3,7 @@
     "name": "Persistence",
     "slug": "persistence",
     "version": "1.2.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "scheme": "persistencemobile",
     "userInterfaceStyle": "automatic",
     "ios": {
@@ -102,7 +102,13 @@
           "cameraPermission": "Persistence uses the camera to scan Together lobby QR codes and food barcodes, snap photos of your meals for AI food logging, and photograph your gym so Loadout can read the equipment."
         }
       ],
-      "@sentry/react-native"
+      "@sentry/react-native",
+      [
+        "expo-screen-orientation",
+        {
+          "initialOrientation": "PORTRAIT_UP"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
