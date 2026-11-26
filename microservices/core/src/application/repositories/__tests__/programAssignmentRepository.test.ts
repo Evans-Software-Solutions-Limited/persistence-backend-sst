@@ -442,6 +442,10 @@ describe("ProgramAssignmentRepository", () => {
         endDate: "2026-07-23",
         startDate: "2026-06-26",
         assignedByName: "Bradley Evans",
+        // PER-112: a dated programme reads its calendar week, with no Next.
+        scheduleMode: "dated",
+        nextAssignmentId: null,
+        weekOfProgramme: { week: 2, of: 4 },
       });
     });
 
