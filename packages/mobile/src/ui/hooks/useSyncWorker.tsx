@@ -4,6 +4,7 @@ import {
   isMutationEligible,
   processSyncQueue,
 } from "@/application/commands/sync.command";
+import { FORM_RESPONSE_ENTITY } from "@/application/commands/athleteForms.command";
 import { getApiBaseUrl } from "@/adapters/api";
 import { SYNC_QUEUE_TABLES } from "@/adapters/storage";
 import type { StoragePort } from "@/domain/ports/storage.port";
@@ -224,7 +225,15 @@ export function useSyncWorker(): void {
             (e.endpoint.endsWith("/sessions/record") ||
               (e.operation === "create" &&
                 e.idempotencyKey !== null &&
-                (e.endpoint === "/workouts" || e.endpoint === "/exercises"))),
+                (e.endpoint === "/workouts" ||
+                  e.endpoint === "/exercises" ||
+                  // PER-130: an athlete's form response sent offline. The
+                  // server returns the stored response for the same
+                  // Idempotency-Key, under the request's row lock and
+                  // before its closed check (`submitResponse`), so a
+                  // replay of one that landed is a 201, never a second
+                  // response or a 409 (Inspector Brad, #571).
+                  e.entityType === FORM_RESPONSE_ENTITY))),
         );
         // ⚠ Resurrect the PAIR, not just the create. A create and a follow-up
         // delete/edit against its `local-…` id climb the ladder in lockstep and

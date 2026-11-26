@@ -7,6 +7,7 @@ import { InMemoryAuthAdapter } from "@/adapters/auth/__tests__/in-memory-auth.ad
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
 import { InMemoryNetInfoAdapter } from "@/adapters/netInfo/__tests__/InMemoryNetInfoAdapter";
 import type { AuthSession } from "@/domain/ports/auth.port";
+import { liveFormResponseIds } from "@/application/commands/athleteForms.command";
 import { ok } from "@/shared/errors";
 import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
@@ -720,6 +721,128 @@ describe("useSyncWorker", () => {
       const terminal = storage.getFailedExhaustedEntries();
       expect(terminal).toHaveLength(1);
       expect(terminal[0].status).toBe("permanently_failed");
+    });
+
+    it("PER-130: revives an athlete's form response exhausted offline, and it sends once (Inspector Brad, #571)", async () => {
+      // A form sent offline climbs the 12-deferral + 3-retry ladder and dies;
+      // the server dedups a replay on its Idempotency-Key (submitResponse
+      // reads the stored response under the row lock, before the closed
+      // check), so it's safe to revive on reconnect.
+      const storage = new InMemoryStorageAdapter();
+      void storage.initialize();
+      storage.enqueueMutation({
+        entityType: "form_response",
+        entityId: "user-1:req-1",
+        operation: "create",
+        payload: { answers: { energy: 4 } },
+        endpoint: "/users/me/form-requests/req-1/response",
+        method: "POST",
+      });
+      const id = storage.getPendingMutations().slice(-1)[0].id;
+      storage.markMutationFailed(id, "e1");
+      storage.markMutationFailed(id, "e2");
+      storage.markMutationFailed(id, "e3");
+      expect(liveFormResponseIds(storage, "user-1").size).toBe(0);
+
+      // The send is held open, so the revived row can be seen live.
+      let release: (v: unknown) => void = () => {};
+      mockFetch.mockImplementation(
+        (url: string) =>
+          new Promise((resolve) => {
+            if (!url.includes("/form-requests/")) {
+              resolve({ ok: true, json: async () => ({}) });
+              return;
+            }
+            release = resolve;
+          }),
+      );
+      const auth = new InMemoryAuthAdapter();
+      const netInfo = new InMemoryNetInfoAdapter(true);
+      const adapters = makeAdapters(storage, auth, session, netInfo);
+      renderHook(() => useSyncWorker(), { wrapper: wrap(adapters) });
+      await settleMount();
+      mockFetch.mockClear();
+
+      act(() => netInfo.setConnected(false));
+      act(() => netInfo.setConnected(true));
+      act(() => {
+        jest.advanceTimersByTime(SYNC_RECONNECT_DEBOUNCE_MS);
+      });
+
+      // Revived and live again: the form shows as waiting.
+      await waitFor(() =>
+        expect(liveFormResponseIds(storage, "user-1").has("req-1")).toBe(true),
+      );
+      await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(1));
+      expect(mockFetch.mock.calls[0][0]).toBe(
+        "https://api.test/users/me/form-requests/req-1/response",
+      );
+      expect(
+        mockFetch.mock.calls[0][1].headers["Idempotency-Key"],
+      ).toBeTruthy();
+
+      await act(async () => {
+        release({
+          ok: true,
+          status: 201,
+          json: async () => ({ data: { id: "r" } }),
+          text: async () => "{}",
+        });
+      });
+      await waitFor(() =>
+        expect(storage.getUncompletedMutations()).toEqual([]),
+      );
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it("PER-130: never revives a form response refused for good (400) or one the athlete discarded", async () => {
+      const storage = new InMemoryStorageAdapter();
+      void storage.initialize();
+      const add = (req: string) => {
+        storage.enqueueMutation({
+          entityType: "form_response",
+          entityId: `user-1:${req}`,
+          operation: "create",
+          payload: { answers: {} },
+          endpoint: `/users/me/form-requests/${req}/response`,
+          method: "POST",
+        });
+        return storage.getPendingMutations().slice(-1)[0].id;
+      };
+      const refused = add("req-400");
+      storage.markMutationPermanentlyFailed(refused, "HTTP 400: bad");
+      const discarded = add("req-gone");
+      storage.markMutationFailed(discarded, "e1");
+      storage.markMutationFailed(discarded, "e2");
+      storage.markMutationFailed(discarded, "e3");
+      storage.discardEntries([discarded]);
+
+      const resetSpy = jest.spyOn(storage, "resetFailedEntries");
+      mockFetch.mockResolvedValue({ ok: true, json: async () => ({}) });
+      const auth = new InMemoryAuthAdapter();
+      const netInfo = new InMemoryNetInfoAdapter(true);
+      const adapters = makeAdapters(storage, auth, session, netInfo);
+      renderHook(() => useSyncWorker(), { wrapper: wrap(adapters) });
+      await settleMount();
+      mockFetch.mockClear();
+      resetSpy.mockClear();
+
+      act(() => netInfo.setConnected(false));
+      act(() => netInfo.setConnected(true));
+      act(() => {
+        jest.advanceTimersByTime(SYNC_RECONNECT_DEBOUNCE_MS);
+      });
+      await settleMount();
+
+      for (const call of resetSpy.mock.calls) {
+        expect(call[0]).not.toContain(refused);
+        expect(call[0]).not.toContain(discarded);
+      }
+      expect(mockFetch).not.toHaveBeenCalled();
+      expect(liveFormResponseIds(storage, "user-1").size).toBe(0);
+      expect(storage.getFailedExhaustedEntries().map((e) => e.status)).toEqual([
+        "permanently_failed",
+      ]);
     });
 
     it("does NOT re-arm a RESOLUTION deferral, which connectivity says nothing about", async () => {

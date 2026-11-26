@@ -386,6 +386,29 @@ describe("a send that can no longer go comes back to fill in (Inspector Brad, #5
     });
   });
 
+  it("offline long enough to exhaust it; revived on reconnect it's waiting again and sends once", async () => {
+    server.offline = true;
+    for (let i = 0; i < 20; i++) await drain();
+    expect(liveFormResponseIds(storage, USER).size).toBe(0);
+    expect(seen()).toMatchObject({
+      waiting: false,
+      toFill: ["req-1", "req-2"],
+    });
+
+    // What useSyncWorker's reconnect resurrect does for a keyed form_response.
+    const dead = storage.getFailedExhaustedEntries();
+    expect(dead.map((e) => e.status)).toEqual(["failed"]);
+    storage.resetFailedEntries(dead.map((e) => e.id));
+    expect(seen()).toMatchObject({ waiting: true, toFill: ["req-2"] });
+
+    server.offline = false;
+    const before = server.calls.length;
+    await drain();
+    expect(server.calls.length).toBe(before + 1);
+    expect(server.responses.get("req-1")?.answers).toEqual({ energy: 4 });
+    expect(local("req-1")?.sentAt).not.toBeNull();
+  });
+
   it("403 until retries run out", async () => {
     server.forceStatus = 403;
     for (let i = 0; i < 4; i++) await drain();
