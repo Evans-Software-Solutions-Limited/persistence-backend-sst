@@ -68,6 +68,11 @@ vi.mock("../../entitlement/assertEntitlement", async (original) => ({
 vi.mock("sst", () => ({
   Resource: { CoachPrivateMedia: { name: "private-media-test" } },
 }));
+// The bucket side of the post-purge erasure has its own suite (PER-121).
+vi.mock("../../media/privateMediaStore", async (original) => ({
+  ...(await original<object>()),
+  deleteAllUserMedia: vi.fn(async () => 0),
+}));
 
 import Elysia from "elysia";
 import { coreErrorHandler } from "../../../shared/errorHandler";
@@ -93,6 +98,12 @@ import {
 } from "../chatChannels";
 import { COACHING_GRANTS, StreamChatClient } from "../streamClient";
 import { accountPurgeCron } from "../../account/purge/accountPurgeCron";
+import { eraseAfterPurge } from "../../account/purge/eraseAfterPurge";
+import {
+  drainPrivateMediaPurges,
+  queuePrivateMediaPurge,
+} from "../../media/privateMediaPurge";
+import { deleteAllUserMedia } from "../../media/privateMediaStore";
 import {
   handleStreamWebhook,
   isValidStreamSignature,
@@ -1031,14 +1042,57 @@ describe("the coaching channel type", () => {
 
 // ─── Account purge erases the user from Stream (Inspector Brad, #570) ───────
 
-describe("account purge: erasing a deleted user from Stream chat", () => {
+describe("account purge: erasing a deleted user from Stream chat, only after the purge commits", () => {
   const softDelete = (id: string) =>
     db
       .update(schema.profiles)
       .set({ deletedAt: new Date(Date.now() - 31 * 86_400_000) })
       .where(eq(schema.profiles.id, id));
 
+  /** The real purge row ops: the user's relationships and profile go. */
+  async function purgeRows(userId: string): Promise<boolean> {
+    const [row] = await db
+      .select({ deletedAt: schema.profiles.deletedAt })
+      .from(schema.profiles)
+      .where(eq(schema.profiles.id, userId));
+    if (!row || row.deletedAt === null) return false; // restored
+    await db
+      .delete(schema.ptClientRelationships)
+      .where(eq(schema.ptClientRelationships.clientId, userId));
+    await db
+      .delete(schema.ptClientRelationships)
+      .where(eq(schema.ptClientRelationships.trainerId, userId));
+    await db.delete(schema.profiles).where(eq(schema.profiles.id, userId));
+    return true;
+  }
+
+  /** One nightly run: the sweep, then the drain (as the cron runs them). */
+  async function night(
+    userId: string,
+    beforePurge: () => Promise<void> = async () => {},
+  ) {
+    const swept = await accountPurgeCron({
+      accountRepo: {
+        listPendingPurge: async () => [userId],
+        purgeUserData: async (id: string) => {
+          await beforePurge();
+          return purgeRows(id);
+        },
+      },
+      cancelStripeSubscriptions: async () => {},
+      deleteAuthUser: async () => {},
+      deleteAvatar: async () => {},
+      queuePrivateMediaPurge,
+      now: new Date(),
+    });
+    const drained = await drainPrivateMediaPurges(eraseAfterPurge);
+    return { swept, drained };
+  }
+
+  const queued = () => db.select().from(schema.privateMediaPurges);
+
   beforeEach(async () => {
+    vi.mocked(deleteAllUserMedia).mockClear();
     await reconcileChatChannels();
     const client = new StreamChatClient(
       { apiKey: TEST_STREAM_KEY, apiSecret: TEST_STREAM_SECRET },
@@ -1056,93 +1110,131 @@ describe("account purge: erasing a deleted user from Stream chat", () => {
     });
   });
 
-  it("an athlete's channels are frozen without them, and their Stream user and messages are hard-deleted", async () => {
+  it("a normal purge erases the athlete from Stream after the commit: channels frozen without them, user and messages hard-deleted", async () => {
     await softDelete(ATHLETE_A);
-    expect(await eraseChatUser(ATHLETE_A)).toBe("erased");
+    const { swept, drained } = await night(ATHLETE_A, async () => {
+      // Nothing irreversible has happened in Stream before the purge.
+      expect(stream.deletedUsers).toEqual([]);
+      expect(stream.channels.get(channelIdFor(REL_CA))!.frozen).toBe(false);
+    });
+    expect(swept).toMatchObject({ purged: 1, failed: 0 });
+    expect(drained).toMatchObject({ deleted: 1, failed: 0 });
     for (const rel of [REL_CA, REL_EA]) {
       const ch = stream.channels.get(channelIdFor(rel))!;
       expect(ch.frozen).toBe(true);
       expect(ch.members.has(ATHLETE_A)).toBe(false);
-      expect((await channelRow(rel))!.state).toBe("frozen");
+      expect(await channelRow(rel)).toBeUndefined(); // cascaded with the purge
     }
     expect(stream.deletedUsers).toEqual([ATHLETE_A]);
     // The coach keeps their own messages, read-only; Lena's are gone.
     expect(
       stream.channels.get(channelIdFor(REL_CA))!.messages.map((m) => m.id),
     ).toEqual(["from-ellie"]);
-    // Re-running (a retried sweep) is fine.
-    expect(await eraseChatUser(ATHLETE_A)).toBe("erased");
+    expect(deleteAllUserMedia).toHaveBeenCalledWith(ATHLETE_A);
+    expect(await queued()).toEqual([]);
   });
 
-  it("a coach's deletion freezes only their channels", async () => {
-    await softDelete(COACH_C);
+  it("an account restored in the window keeps everything in Stream, and nothing stays queued", async () => {
+    await softDelete(ATHLETE_A);
+    stream.calls = [];
+    const { swept, drained } = await night(ATHLETE_A, async () => {
+      // Restore lands between the queue step and the purge's lock.
+      await db
+        .update(schema.profiles)
+        .set({ deletedAt: null })
+        .where(eq(schema.profiles.id, ATHLETE_A));
+    });
+    expect(swept).toMatchObject({ restored: 1, purged: 0 });
+    expect(drained).toMatchObject({ restored: 1, deleted: 0 });
+    expect(stream.calls).toEqual([]);
+    expect(stream.deletedUsers).toEqual([]);
+    const ch = stream.channels.get(channelIdFor(REL_CA))!;
+    expect(ch.frozen).toBe(false);
+    expect(ch.members.has(ATHLETE_A)).toBe(true);
+    expect(ch.messages).toHaveLength(2);
+    expect((await channelRow(REL_CA))!.state).toBe("active");
+    expect(deleteAllUserMedia).not.toHaveBeenCalled();
+    expect(await queued()).toEqual([]);
+  });
+
+  it("a Stream failure keeps the account queued, and the next night finishes it", async () => {
+    await softDelete(ATHLETE_A);
+    stream.failOn(/POST \/users\/delete/, 1);
+    const first = await night(ATHLETE_A);
+    expect(first.swept).toMatchObject({ purged: 1 });
+    expect(first.drained).toMatchObject({ failed: 1, deleted: 0 });
+    expect((await queued()).map((q) => q.userId)).toEqual([ATHLETE_A]);
+    expect(stream.deletedUsers).toEqual([]);
+
+    // Next night: the account is no longer pending; the drain retries it.
+    const drained = await drainPrivateMediaPurges(eraseAfterPurge);
+    expect(drained).toMatchObject({ deleted: 1, failed: 0 });
+    expect(stream.deletedUsers).toEqual([ATHLETE_A]);
+    expect(await queued()).toEqual([]);
+  });
+
+  it("a coach's erasure freezes only their channels", async () => {
     expect(await eraseChatUser(COACH_C)).toBe("erased");
     expect(stream.channels.get(channelIdFor(REL_CA))!.frozen).toBe(true);
     expect(stream.channels.get(channelIdFor(REL_EA))!.frozen).toBe(false);
     expect(stream.deletedUsers).toEqual([COACH_C]);
   });
 
-  it("runs inside the purge before the SQL purge; a Stream failure stops the purge for a retry", async () => {
-    await softDelete(ATHLETE_A);
-    const purged: string[] = [];
-    const run = () =>
-      accountPurgeCron({
-        accountRepo: {
-          listPendingPurge: async () => [ATHLETE_A],
-          // Like the real purge: the relationships (and so chat_channels)
-          // go with the user.
-          purgeUserData: async (userId: string) => {
-            await db
-              .delete(schema.ptClientRelationships)
-              .where(eq(schema.ptClientRelationships.clientId, userId));
-            purged.push(userId);
-            return true;
-          },
-        },
-        cancelStripeSubscriptions: async () => {},
-        deleteAuthUser: async () => {},
-        deleteAvatar: async () => {},
-        queuePrivateMediaPurge: async () => {},
-        eraseChatUser,
-        now: new Date(),
-      });
-    stream.failOn(/POST \/users\/delete/, 1);
-    expect(await run()).toMatchObject({ failed: 1, purged: 0 });
-    expect(purged).toEqual([]);
-    expect(await channelRow(REL_CA)).toBeDefined();
-
-    expect(await run()).toMatchObject({ failed: 0, purged: 1 });
-    expect(stream.deletedUsers).toEqual([ATHLETE_A]);
-    expect(await channelRow(REL_CA)).toBeUndefined();
-  });
-
-  it("skips a restored account, a user with no channels, and an unconfigured stage", async () => {
-    stream.calls = [];
-    expect(await eraseChatUser(ATHLETE_A)).toBe("restored"); // never deleted
-    await softDelete(STRANGER);
-    expect(await eraseChatUser(STRANGER)).toBe("erased");
-    expect(stream.calls).toEqual([]);
-    setStreamClientForTests(null);
-    await softDelete(ATHLETE_A);
-    expect(await eraseChatUser(ATHLETE_A)).toBe("not_configured");
-    expect((await channelRow(REL_CA))!.state).toBe("active");
-  });
-
-  it("a channel Stream doesn't have is still marked frozen", async () => {
-    stream.channels.delete(channelIdFor(REL_EA));
-    await softDelete(ATHLETE_A);
+  it("is idempotent: a user Stream no longer has counts as erased", async () => {
     expect(await eraseChatUser(ATHLETE_A)).toBe("erased");
-    expect((await channelRow(REL_EA))!.state).toBe("frozen");
+    stream.calls = [];
+    expect(await eraseChatUser(ATHLETE_A)).toBe("erased");
+    expect(stream.calls.map((c) => c.path)).toEqual([
+      "/channels",
+      "/users/delete",
+    ]);
   });
 
-  it("a Stream failure on a channel throws", async () => {
-    await softDelete(ATHLETE_A);
+  it("pages through many channels", async () => {
+    const client = new StreamChatClient(
+      { apiKey: TEST_STREAM_KEY, apiSecret: TEST_STREAM_SECRET },
+      stream.fetch,
+    );
+    for (let i = 0; i < 35; i++) {
+      await client.getOrCreateChannel(`coach-extra-${i}`, COACH_C, [
+        COACH_C,
+        ATHLETE_A,
+      ]);
+    }
+    expect((await client.coachingChannelsOf(ATHLETE_A)).length).toBe(37);
+  });
+
+  it("a channel Stream can't find is skipped; another channel failure throws", async () => {
+    const original = stream.fetch;
+    stream.fetch = async (input, init) =>
+      String(input).includes(channelIdFor(REL_EA)) && init.method === "POST"
+        ? {
+            ok: false,
+            status: 404,
+            text: async () => '{"code":16,"message":"gone"}',
+          }
+        : original(input, init);
+    configure();
+    expect(await eraseChatUser(ATHLETE_A)).toBe("erased");
+    stream.fetch = original;
+    configure();
+    expect(stream.deletedUsers).toEqual([ATHLETE_A]);
+  });
+
+  it("any other Stream failure on a channel throws (the row stays queued)", async () => {
     stream.failOn(/PATCH/);
     await expect(eraseChatUser(ATHLETE_A)).rejects.toThrow(/503/);
+    expect(stream.deletedUsers).toEqual([]);
+  });
+
+  it("does nothing on a stage without Stream keys", async () => {
+    setStreamClientForTests(null);
+    stream.calls = [];
+    expect(await eraseChatUser(ATHLETE_A)).toBe("not_configured");
+    expect(stream.calls).toEqual([]);
   });
 
   it("a delete task still running is accepted (Stream finishes it)", async () => {
-    await softDelete(ATHLETE_A);
     stream.taskStatus = "running";
     vi.useFakeTimers({ toFake: ["setTimeout"] });
     try {

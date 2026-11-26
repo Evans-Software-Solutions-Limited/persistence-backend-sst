@@ -15,7 +15,7 @@ import { AiJobRepository } from "./application/jobs/aiJobRepository";
 import { dataRetentionSweep } from "./application/retention/dataRetentionSweep";
 import { DataRetentionRepository } from "./application/retention/dataRetentionRepository";
 import { ClientProfileRepository } from "./application/coaching/clientProfileRepository";
-import { eraseChatUser } from "./application/chat/chatChannels";
+import { eraseAfterPurge } from "./application/account/purge/eraseAfterPurge";
 
 /**
  * Nightly account-purge sweep — scheduled via `sst.aws.Cron` in
@@ -44,7 +44,6 @@ async function baseHandler(): Promise<{
     deleteAuthUser: deleteAuthUserWithRetry,
     deleteAvatar: deleteUserAvatar,
     queuePrivateMediaPurge,
-    eraseChatUser,
     now,
   });
   console.log(`[account-purge-cron:summary] ${JSON.stringify(summary)}`);
@@ -117,7 +116,9 @@ async function baseHandler(): Promise<{
   // PER-121: delete the bucket objects of accounts the purge above (or an
   // earlier night) actually removed. Restored accounts keep theirs.
   try {
-    const drained = await drainPrivateMediaPurges();
+    // PER-120: each purged account's queued row also erases it from Stream
+    // chat (after the purge, never for a restored account).
+    const drained = await drainPrivateMediaPurges(eraseAfterPurge);
     console.log(`[private-media-purge:summary] ${JSON.stringify(drained)}`);
     if (drained.failed > 0) {
       captureFatal(

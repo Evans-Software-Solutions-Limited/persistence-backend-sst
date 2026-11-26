@@ -7,8 +7,9 @@
  * to do synchronously.
  *
  * Per-user order (brief Part D): safety-net Stripe cancel → queue the
- * private media delete (PER-121) → erase the user from Stream chat
- * (PER-120) → SQL purge (the corrected
+ * private media delete (PER-121; the same queued row also carries the Stream
+ * chat erasure, PER-120, so nothing irreversible happens before the purge
+ * commits) → SQL purge (the corrected
  * `ACCOUNT_DELETION_STEPS` plan, Part A) → Supabase auth-user delete →
  * best-effort avatar S3 cleanup (Part B). One user's failure is
  * isolated — logged and counted, never aborts the batch — mirroring
@@ -45,13 +46,6 @@ export interface AccountPurgeCronDeps {
    * `drainPrivateMediaPurges`, and only once the profile is gone: deleting
    * them here would lose a restored account's photos (Inspector Brad, #553). */
   queuePrivateMediaPurge: (userId: string) => Promise<void>;
-  /** PER-120 (design E): remove the user from their Stream chat channels,
-   * freeze them, and hard-delete the Stream user with their messages
-   * (`eraseChatUser`). Runs BEFORE the SQL purge, because `chat_channels`
-   * cascades away with it and nothing could find the channels afterwards.
-   * NOT swallowed: a Stream failure retries the whole account next sweep.
-   * A no-op when chat isn't configured. */
-  eraseChatUser: (userId: string) => Promise<unknown>;
   now: Date;
 }
 
@@ -98,10 +92,6 @@ export async function accountPurgeCron(
       // 1b. PER-121: queue the user's private media. A failure throws to
       //     the per-user catch below, so the account is retried next sweep.
       await deps.queuePrivateMediaPurge(userId);
-
-      // 1c. PER-120: erase the user from Stream chat. A failure throws to the
-      //     per-user catch below, so the account is retried next sweep.
-      await deps.eraseChatUser(userId);
 
       // 2. The compliance-critical step: SQL purge via the corrected plan.
       //    A failure here is NOT swallowed — it's the one step that must

@@ -42,6 +42,15 @@ export function verifyHs256(
   return claims;
 }
 
+/** Stream's built-in types, with the `user` role able to create channels. */
+const BUILT_IN_DEFAULT_GRANTS = (): Record<string, string[]> => ({
+  user: ["create-channel", "read-channel", "update-channel-members"],
+  guest: ["read-channel"],
+  anonymous: ["read-channel"],
+  channel_member: ["read-channel", "create-message"],
+});
+const BUILT_INS = ["messaging", "team", "livestream", "gaming", "commerce"];
+
 export interface FakeChannel {
   createdBy: string;
   members: Set<string>;
@@ -60,7 +69,9 @@ export class FakeStream {
   channels = new Map<string, FakeChannel>();
   calls: FakeCall[] = [];
   /** Channel types and the grants per role set on each. */
-  channelTypes = new Map<string, { grants: Record<string, string[]> }>();
+  channelTypes = new Map<string, { grants: Record<string, string[]> }>(
+    BUILT_INS.map((t) => [t, { grants: BUILT_IN_DEFAULT_GRANTS() }]),
+  );
   /** Hard-deleted users (`POST /users/delete`). */
   deletedUsers: string[] = [];
   /** Status the user-delete task reports (`completed` by default). */
@@ -78,6 +89,9 @@ export class FakeStream {
     this.users.clear();
     this.channels.clear();
     this.channelTypes.clear();
+    for (const t of BUILT_INS) {
+      this.channelTypes.set(t, { grants: BUILT_IN_DEFAULT_GRANTS() });
+    }
     this.deletedUsers = [];
     this.taskStatus = "completed";
     this.calls = [];
@@ -141,6 +155,18 @@ export class FakeStream {
       if (!type) return reply(404, { code: 16, message: "no such type" });
       Object.assign(type.grants, body.grants as Record<string, string[]>);
       return reply(201, {});
+    }
+    if (method === "POST" && path === "/channels") {
+      const filter = body.filter_conditions as {
+        type: string;
+        members: { $in: string[] };
+      };
+      const limit = body.limit as number;
+      const offset = body.offset as number;
+      const matches = [...this.channels.entries()]
+        .filter(([, c]) => c.members.has(filter.members.$in[0]!))
+        .map(([id]) => ({ channel: { id, type: filter.type } }));
+      return reply(201, { channels: matches.slice(offset, offset + limit) });
     }
     if (method === "POST" && path === "/users/delete") {
       const ids = body.user_ids as string[];

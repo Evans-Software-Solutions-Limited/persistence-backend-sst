@@ -329,57 +329,36 @@ export async function freezeChatChannel(
   return "frozen";
 }
 
-export type EraseResult = "not_configured" | "restored" | "erased";
+export type EraseResult = "not_configured" | "erased";
 
 /**
- * Account purge (Inspector Brad, #570): `chat_channels` cascades away with the
- * deleted user's relationships, so nothing else would ever freeze their
- * channels or remove them from Stream. Before the profile purge, for each of
- * the user's channels: remove the user and freeze it (the other party keeps a
- * read-only thread of their own messages); then hard-delete the Stream user
- * with all their messages.
+ * Account purge (Inspector Brad, #570): erase a PURGED user from Stream.
+ * Their `chat_channels` rows are already gone (they cascade with the purge),
+ * so the channels are found in Stream itself: the user is removed from each
+ * `coaching` channel they're a member of and it is frozen (the other party
+ * keeps a read-only thread of their own messages); then the Stream user is
+ * hard-deleted with all their messages.
  *
- * Idempotent (every step can be repeated, and a channel or user Stream never
- * had counts as done) and NOT best-effort: it throws on a Stream failure, so
- * the purge stops for this user and the next sweep retries. A no-op when chat
- * isn't configured or the user never had a channel; skipped when the account
- * was restored in the meantime.
+ * ⚠ Irreversible, so it runs only AFTER the purge has committed: the nightly
+ * private-media drain calls it for users whose profile is gone, through the
+ * same durable queue (`private_media_purges`, PER-121). A restored account is
+ * dropped from the queue and never reaches Stream (see
+ * `account/purge/eraseAfterPurge.ts`).
+ *
+ * Idempotent (a channel or user Stream no longer has counts as done) and it
+ * throws on a Stream failure, so the queued row stays and the next night
+ * retries. A no-op when chat isn't configured.
  */
 export async function eraseChatUser(userId: string): Promise<EraseResult> {
   const client = getStreamClient();
   if (!client) return "not_configured";
-  const db = getDb();
-  const profile = await db
-    .select({ deletedAt: profiles.deletedAt })
-    .from(profiles)
-    .where(eq(profiles.id, userId))
-    .limit(1);
-  if (profile[0] && profile[0].deletedAt === null) return "restored";
-
-  const channels = await db
-    .select()
-    .from(chatChannels)
-    .where(
-      or(eq(chatChannels.trainerId, userId), eq(chatChannels.clientId, userId)),
-    );
-  if (channels.length === 0) return "erased";
-
-  const now = new Date();
-  for (const channel of channels) {
+  for (const channelId of await client.coachingChannelsOf(userId)) {
     try {
-      await client.removeMembers(channel.streamChannelId, [userId]);
-      await client.setFrozen(channel.streamChannelId, true);
+      await client.removeMembers(channelId, [userId]);
+      await client.setFrozen(channelId, true);
     } catch (err) {
       if (!isNotFound(err)) throw err;
     }
-    await db
-      .update(chatChannels)
-      .set({
-        state: "frozen",
-        frozenAt: channel.frozenAt ?? now,
-        updatedAt: now,
-      })
-      .where(eq(chatChannels.relationshipId, channel.relationshipId));
   }
   const deleted = await client.deleteUserHard(userId);
   if (deleted === "pending") {

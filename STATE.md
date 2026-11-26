@@ -45,12 +45,20 @@ CASCADE, `coaching` / `coach-<relationshipId>`, state
   creation and membership are server-only. **PER-136 must use channel type
   `coaching`.** Grant ids are from Stream's permission reference; confirm on
   staging that members can send, react, upload and see typing.
-- **Account purge** (Inspector Brad, #570): `accountPurgeCron` step 1c
-  `eraseChatUser` runs BEFORE the SQL purge (chat rows cascade with it):
-  removes the user from each of their channels and freezes them, then
-  `POST /users/delete` (user, messages hard; conversations keep) and polls the
-  task. Not swallowed (a failure retries the account next sweep); skipped when
-  restored, no-op without channels or keys. The purge cron gets the Stream env.
+- **Account purge** (Inspector Brad, #570, two rounds): nothing irreversible
+  before the purge commits. Stream erasure rides PER-121's existing durable
+  queue: the sweep queues every account in `private_media_purges` before
+  `purgeUserData`; `drainPrivateMediaPurges(eraseAfterPurge)`
+  (`account/purge/eraseAfterPurge.ts`: bucket objects, then `eraseChatUser`)
+  runs only once the profile is gone, drops the row untouched for a restored
+  account, and keeps it on failure (next night retries). `eraseChatUser` finds
+  the user's `coaching` channels in Stream itself (rows cascaded), removes them
+  and freezes each, then `POST /users/delete` (user + messages hard,
+  conversations keep). No new table. The purge cron gets the Stream env.
+- **Built-in types locked too** (round 2): `ensureChannelType` also strips
+  `user`/`guest`/`anonymous` grants on `messaging`, `team`, `livestream`,
+  `gaming`, `commerce` (a missing type is skipped). PER-136 queries channels
+  with `type: "coaching"`.
 - Not done (out of brief): Stream user re-upsert on profile edit (it happens on
   the next token instead); moderation (PER-21); coach Stream-device push config
   (app, PER-136).

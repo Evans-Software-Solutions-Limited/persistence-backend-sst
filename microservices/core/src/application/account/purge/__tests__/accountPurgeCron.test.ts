@@ -28,7 +28,6 @@ function buildDeps(
     deleteAuthUser?: AccountPurgeCronDeps["deleteAuthUser"];
     deleteAvatar?: AccountPurgeCronDeps["deleteAvatar"];
     queuePrivateMediaPurge?: AccountPurgeCronDeps["queuePrivateMediaPurge"];
-    eraseChatUser?: AccountPurgeCronDeps["eraseChatUser"];
     now?: Date;
   } = {},
 ) {
@@ -38,7 +37,6 @@ function buildDeps(
     deleteAuthUser: vi.fn(async () => undefined),
     deleteAvatar: vi.fn(async () => undefined),
     queuePrivateMediaPurge: vi.fn(async () => undefined),
-    eraseChatUser: vi.fn(async () => undefined),
     now: new Date("2026-08-12T00:00:00.000Z"),
     ...overrides,
   } satisfies AccountPurgeCronDeps & { accountRepo: MockAccountRepo };
@@ -54,7 +52,7 @@ describe("accountPurgeCron", () => {
     expect(deps.accountRepo.purgeUserData).not.toHaveBeenCalled();
   });
 
-  it("runs the full per-user pipeline in order: cancel → queue private media → erase chat → purge → auth-delete → avatar", async () => {
+  it("runs the full per-user pipeline in order: cancel → queue private media → purge → auth-delete → avatar", async () => {
     const order: string[] = [];
     const deps = buildDeps({
       accountRepo: {
@@ -76,9 +74,6 @@ describe("accountPurgeCron", () => {
       queuePrivateMediaPurge: vi.fn(async () => {
         order.push("queue-private-media");
       }),
-      eraseChatUser: vi.fn(async () => {
-        order.push("erase-chat");
-      }),
     });
 
     const summary = await accountPurgeCron(deps);
@@ -86,13 +81,11 @@ describe("accountPurgeCron", () => {
     expect(order).toEqual([
       "cancel",
       "queue-private-media",
-      "erase-chat",
       "purge",
       "auth-delete",
       "avatar",
     ]);
     expect(deps.queuePrivateMediaPurge).toHaveBeenCalledWith("user-1");
-    expect(deps.eraseChatUser).toHaveBeenCalledWith("user-1");
     expect(summary).toEqual({ pending: 1, purged: 1, restored: 0, failed: 0 });
     expect(deps.accountRepo.purgeUserData).toHaveBeenCalledWith("user-1");
     expect(deps.deleteAuthUser).toHaveBeenCalledWith("user-1");
@@ -195,25 +188,6 @@ describe("accountPurgeCron", () => {
     expect(summary).toEqual({ pending: 2, purged: 1, restored: 0, failed: 1 });
     expect(deps.accountRepo.purgeUserData).toHaveBeenCalledTimes(1);
     expect(deps.accountRepo.purgeUserData).toHaveBeenCalledWith("user-2");
-  });
-
-  it("PER-120: a Stream chat erase failure leaves the account unpurged, to retry next sweep", async () => {
-    const deps = buildDeps({
-      accountRepo: {
-        listPendingPurge: vi.fn(async () => ["user-1", "user-2"]),
-        purgeUserData: vi.fn(async () => true),
-      },
-      eraseChatUser: vi.fn(async (userId: string) => {
-        if (userId === "user-1") throw new Error("Stream unavailable");
-      }),
-    });
-
-    const summary = await accountPurgeCron(deps);
-
-    expect(summary).toEqual({ pending: 2, purged: 1, restored: 0, failed: 1 });
-    expect(deps.accountRepo.purgeUserData).toHaveBeenCalledTimes(1);
-    expect(deps.accountRepo.purgeUserData).toHaveBeenCalledWith("user-2");
-    expect(deps.deleteAuthUser).not.toHaveBeenCalledWith("user-1");
   });
 
   it("an account restored mid-sweep is skipped: no auth-user or avatar delete (Inspector Brad, #553)", async () => {

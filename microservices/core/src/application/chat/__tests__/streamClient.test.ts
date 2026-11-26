@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  BUILT_IN_CHANNEL_TYPES,
   COACHING_GRANTS,
+  LOCKED_TYPE_GRANTS,
   STREAM_CHANNEL_TYPE,
   getStreamConfig,
   isNotFound,
@@ -205,6 +207,46 @@ describe("StreamChatClient", () => {
     }
     const creates = stream.calls.filter((c) => c.path === "/channeltypes");
     expect(creates[0]!.body).toMatchObject({ name: "coaching" });
+  });
+
+  it("strips user, guest and anonymous grants from every built-in type, so no type lets a token create channels", async () => {
+    const stream = new FakeStream();
+    const client = new StreamChatClient(config, stream.fetch);
+    expect(stream.channelTypes.get("messaging")!.grants.user).toContain(
+      "create-channel",
+    );
+    await client.ensureChannelType();
+    expect([...BUILT_IN_CHANNEL_TYPES]).toEqual([
+      "messaging",
+      "team",
+      "livestream",
+      "gaming",
+      "commerce",
+    ]);
+    for (const type of [...BUILT_IN_CHANNEL_TYPES, STREAM_CHANNEL_TYPE]) {
+      const grants = stream.channelTypes.get(type)!.grants;
+      for (const role of ["user", "guest", "anonymous"]) {
+        expect(grants[role], `${type}/${role}`).toEqual([]);
+      }
+    }
+    // Other roles on built-in types are left alone.
+    expect(stream.channelTypes.get("team")!.grants.channel_member).toEqual([
+      "read-channel",
+      "create-message",
+    ]);
+    expect(LOCKED_TYPE_GRANTS).toEqual({ user: [], guest: [], anonymous: [] });
+  });
+
+  it("a built-in type the app doesn't have is skipped; other failures throw", async () => {
+    const stream = new FakeStream();
+    stream.channelTypes.delete("gaming");
+    const client = new StreamChatClient(config, stream.fetch);
+    await client.ensureChannelType();
+    expect(stream.channelTypes.get("commerce")!.grants.user).toEqual([]);
+    stream.failOn(/PUT \/channeltypes\/livestream/);
+    await expect(client.ensureChannelType()).rejects.toMatchObject({
+      status: 503,
+    });
   });
 
   it("a failed channel type create (other than 'already exists') throws", async () => {

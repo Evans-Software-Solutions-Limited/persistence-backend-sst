@@ -62,6 +62,28 @@ export const COACHING_GRANTS: Record<string, readonly string[]> = {
   guest: [],
   anonymous: [],
 };
+
+/**
+ * Stream's built-in channel types (Inspector Brad, #570 round 2). Their
+ * default grants let the `user` role create channels with anyone, so a token
+ * holder could still chat outside a coaching relationship on one of them.
+ * The app only ever uses `coaching`, so `ensureChannelType` strips every
+ * grant from `user`, `guest` and `anonymous` on these types too.
+ */
+export const BUILT_IN_CHANNEL_TYPES = [
+  "messaging",
+  "team",
+  "livestream",
+  "gaming",
+  "commerce",
+] as const;
+
+export const LOCKED_TYPE_GRANTS: Record<string, readonly string[]> = {
+  user: [],
+  guest: [],
+  anonymous: [],
+};
+
 /** Stream user tokens last 24 hours (design E: `POST /chat/token`). */
 export const USER_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 8_000;
@@ -176,6 +198,43 @@ export class StreamChatClient {
     await this.request("PUT", `/channeltypes/${STREAM_CHANNEL_TYPE}`, {
       grants: COACHING_GRANTS,
     });
+    for (const type of BUILT_IN_CHANNEL_TYPES) {
+      try {
+        await this.request("PUT", `/channeltypes/${type}`, {
+          grants: LOCKED_TYPE_GRANTS,
+        });
+      } catch (err) {
+        // A built-in type the app doesn't have can't be used either.
+        if (!isNotFound(err)) throw err;
+      }
+    }
+  }
+
+  /**
+   * The ids of the `coaching` channels a user is a member of (server-side
+   * query, so it works after our own rows are gone). Paged until exhausted.
+   */
+  async coachingChannelsOf(userId: string): Promise<string[]> {
+    const ids: string[] = [];
+    const limit = 30;
+    for (let offset = 0; ; offset += limit) {
+      const res = (await this.request("POST", "/channels", {
+        filter_conditions: {
+          type: STREAM_CHANNEL_TYPE,
+          members: { $in: [userId] },
+        },
+        limit,
+        offset,
+        state: false,
+        watch: false,
+        presence: false,
+      })) as { channels?: { channel?: { id?: unknown } }[] } | null;
+      const page = res?.channels ?? [];
+      for (const c of page) {
+        if (typeof c.channel?.id === "string") ids.push(c.channel.id);
+      }
+      if (page.length < limit) return ids;
+    }
   }
 
   /**
