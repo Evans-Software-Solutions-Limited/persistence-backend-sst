@@ -286,6 +286,8 @@ const share = (athlete: string) =>
 beforeAll(async () => {
   pg = await baseDatabase();
   await pg.exec(await read(MIGRATIONS, MIGRATION));
+  // PER-150: the nightly media purge checks `coach_resources.media_id`.
+  await pg.exec(await read(MIGRATIONS, "20261125101829_coach_resources.sql"));
   db = drizzle(pg, { schema });
   holder.db = db;
 });

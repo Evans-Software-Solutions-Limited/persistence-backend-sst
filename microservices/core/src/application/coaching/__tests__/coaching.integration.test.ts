@@ -363,6 +363,11 @@ beforeAll(async () => {
   await pg.exec(
     await read(MIGRATIONS, "20261123120117_coach_events_notifications.sql"),
   );
+  // PER-150: /users/me/coaching counts resource assignments.
+  await pg.exec(
+    await read(MIGRATIONS, "20261123230832_progress_photos_private_media.sql"),
+  );
+  await pg.exec(await read(MIGRATIONS, "20261125101829_coach_resources.sql"));
   db = drizzle(pg, { schema });
   holder.db = db;
 });

@@ -1,6 +1,7 @@
-import { and, eq, inArray, isNull, lt, or } from "drizzle-orm";
+import { and, eq, inArray, isNull, lt, notExists, or } from "drizzle-orm";
 import {
   coachFormRequests,
+  coachResources,
   coachFormResponses,
   privateMedia,
   type PrivateMedia,
@@ -451,20 +452,42 @@ export async function coachFormAnswerView(
 /** Pending uploads older than this are removed; so are unused form photos. */
 export const STALE_UPLOAD_MS = 2 * 24 * 60 * 60 * 1000;
 export const UNUSED_FORM_PHOTO_MS = 7 * 24 * 60 * 60 * 1000;
+/**
+ * A coach's `resource` upload that no library resource points at is removed
+ * after this (PER-150). The same 7 days as form photos: the phone uploads
+ * online but the save, or a queued edit swapping the file, can wait in the
+ * offline queue; a week is far past that and costs little storage.
+ */
+export const UNUSED_RESOURCE_UPLOAD_MS = UNUSED_FORM_PHOTO_MS;
 
 /**
- * Nightly: delete uploads that were never completed (2 days), and form
- * photos that were uploaded but never sent in a response (7 days). Resource
- * files are left to BE-I1. Returns how many were removed.
+ * Nightly: delete uploads that were never completed (2 days), form photos
+ * that were uploaded but never sent in a response (7 days), and coach
+ * resource uploads that no library resource uses (7 days: never saved, or
+ * replaced by a newer file). A file of an archived resource is still in use
+ * and stays. Returns how many were removed.
  */
 export async function purgeStaleMedia(now = new Date()): Promise<number> {
   const pendingCutoff = new Date(now.getTime() - STALE_UPLOAD_MS);
   const unusedCutoff = new Date(now.getTime() - UNUSED_FORM_PHOTO_MS);
+  const unusedResourceCutoff = new Date(
+    now.getTime() - UNUSED_RESOURCE_UPLOAD_MS,
+  );
   // Rows first, objects second, in one transaction: a submit attaching one
   // of these photos waits on the row lock and then finds it gone, so no
   // response can point at a deleted object; an S3 failure rolls the rows
   // back so the next night retries (Inspector Brad, #553).
   return getDb().transaction(async (tx) => {
+    // A save racing this sweep for a week-old upload never points at a
+    // deleted object: `coach_resources.media_id` is ON DELETE SET NULL, so it
+    // either loses its file (the athlete sees no link) or its insert fails the
+    // foreign key and the retry answers 422 `media_not_found`.
+    const unusedByResources = notExists(
+      tx
+        .select({ id: coachResources.id })
+        .from(coachResources)
+        .where(eq(coachResources.mediaId, privateMedia.id)),
+    );
     const stale = tx
       .select({ id: privateMedia.id })
       .from(privateMedia)
@@ -479,6 +502,11 @@ export async function purgeStaleMedia(now = new Date()): Promise<number> {
             and(
               eq(privateMedia.purpose, "form_answer"),
               lt(privateMedia.createdAt, unusedCutoff),
+            ),
+            and(
+              eq(privateMedia.purpose, "resource"),
+              lt(privateMedia.createdAt, unusedResourceCutoff),
+              unusedByResources,
             ),
           ),
         ),
