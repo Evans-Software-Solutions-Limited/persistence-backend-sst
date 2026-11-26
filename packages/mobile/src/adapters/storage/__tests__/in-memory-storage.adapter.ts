@@ -84,6 +84,10 @@ import {
   swapIdInClientForms,
   swapIdInQueueRow,
 } from "../coachFormsQueueSwap";
+import type {
+  PendingProgressPhotoSet,
+  ProgressPhotosCache,
+} from "@/domain/models/progressPhotos";
 
 /**
  * In-memory storage adapter for testing.
@@ -1763,6 +1767,8 @@ export class InMemoryStorageAdapter implements StoragePort {
     this.mealsCache.clear();
     this.userMealsCache.clear();
     this.clearCoachFormsForTest();
+    this.progressPhotosCache.clear();
+    this.pendingProgressPhotos.clear();
     this.nextId = 1;
   }
 
@@ -2128,6 +2134,48 @@ export class InMemoryStorageAdapter implements StoragePort {
     this.coachClientForms.clear();
     this.coachFormResponses.clear();
     this.coachFormConflicts.clear();
+  }
+
+  // -- PER-137 (APP-F1): progress photos --
+  private progressPhotosCache: Map<string, ProgressPhotosCache> = new Map();
+  private pendingProgressPhotos: Map<string, PendingProgressPhotoSet> =
+    new Map();
+  getCachedProgressPhotos(userId: string): ProgressPhotosCache | null {
+    const value = this.progressPhotosCache.get(userId);
+    return value
+      ? (JSON.parse(JSON.stringify(value)) as ProgressPhotosCache)
+      : null;
+  }
+  cacheProgressPhotos(userId: string, value: ProgressPhotosCache): void {
+    this.progressPhotosCache.set(
+      userId,
+      JSON.parse(JSON.stringify(value)) as ProgressPhotosCache,
+    );
+  }
+  getPendingProgressPhotoSets(userId: string): PendingProgressPhotoSet[] {
+    return [...this.pendingProgressPhotos.values()]
+      .filter((p) => p.userId === userId)
+      .sort((a, b) =>
+        a.createdAt === b.createdAt
+          ? a.id.localeCompare(b.id)
+          : a.createdAt.localeCompare(b.createdAt),
+      )
+      .map((p) => JSON.parse(JSON.stringify(p)) as PendingProgressPhotoSet);
+  }
+  getPendingProgressPhotoSet(id: string): PendingProgressPhotoSet | null {
+    const value = this.pendingProgressPhotos.get(id);
+    return value
+      ? (JSON.parse(JSON.stringify(value)) as PendingProgressPhotoSet)
+      : null;
+  }
+  savePendingProgressPhotoSet(value: PendingProgressPhotoSet): void {
+    this.pendingProgressPhotos.set(
+      value.id,
+      JSON.parse(JSON.stringify(value)) as PendingProgressPhotoSet,
+    );
+  }
+  deletePendingProgressPhotoSet(id: string): void {
+    this.pendingProgressPhotos.delete(id);
   }
 }
 

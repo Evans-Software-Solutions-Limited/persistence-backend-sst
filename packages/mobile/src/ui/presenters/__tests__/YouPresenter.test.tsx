@@ -216,12 +216,57 @@ describe("YouPresenter — trained athlete (canvas Y1–Y1c)", () => {
     expect(s.getByText("1 pending request")).toBeTruthy();
   });
 
-  it("shows a gallery seam once APP-F1 supplies one", () => {
+  it("PER-137: an empty gallery shows grey blocks and an add button", () => {
+    const onAddPhotos = jest.fn();
     const s = render({
       ...trainedProps(),
-      gallery: { dateLabel: "25 Oct", photos: [] },
+      gallery: { setId: null, dateLabel: null, photos: [] },
+      onAddPhotos,
+    });
+    expect(s.getByText("Gallery")).toBeTruthy();
+    expect(s.getByTestId("you-gallery-empty")).toBeTruthy();
+    expect(s.getByText("Add today's photos")).toBeTruthy();
+    fireEvent.press(s.getByTestId("you-gallery-add"));
+    expect(onAddPhotos).toHaveBeenCalled();
+    // Without a handler the link isn't drawn.
+    s.rerender(
+      <YouPresenter
+        {...trainedProps()}
+        gallery={{ setId: null, dateLabel: null, photos: [] }}
+      />,
+    );
+    expect(s.queryByTestId("you-gallery-add")).toBeNull();
+  });
+
+  it("PER-137: the latest set's three photos open the gallery and viewer", () => {
+    const onOpenGallery = jest.fn();
+    const onOpenGalleryPhoto = jest.fn();
+    const photos = (["Front", "Side", "Back"] as const).map((pose) => ({
+      pose,
+      uri: `https://view.test/${pose}.jpg`,
+      cacheKey: `s1-${pose}`,
+    }));
+    const s = render({
+      ...trainedProps(),
+      gallery: { setId: "s1", dateLabel: "25 Oct", photos },
+      onOpenGallery,
+      onOpenGalleryPhoto,
     });
     expect(s.getByText("Gallery · 25 Oct")).toBeTruthy();
+    expect(s.getByLabelText("Side photo, 25 Oct. Open")).toBeTruthy();
+    fireEvent.press(s.getByTestId("you-gallery-all"));
+    expect(onOpenGallery).toHaveBeenCalled();
+    fireEvent.press(s.getByTestId("you-gallery-tiles-Back"));
+    expect(onOpenGalleryPhoto).toHaveBeenCalledWith("s1", "Back");
+    // No handlers: no link, and a tile press is harmless.
+    s.rerender(
+      <YouPresenter
+        {...trainedProps()}
+        gallery={{ setId: "s1", dateLabel: "25 Oct", photos }}
+      />,
+    );
+    expect(s.queryByTestId("you-gallery-all")).toBeNull();
+    fireEvent.press(s.getByTestId("you-gallery-tiles-Front"));
   });
 });
 

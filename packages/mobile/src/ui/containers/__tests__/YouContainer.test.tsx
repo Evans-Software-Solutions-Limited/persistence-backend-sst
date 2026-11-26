@@ -201,8 +201,50 @@ describe("YouContainer", () => {
     await act(async () => {
       p.onRefresh();
     });
-    // No gallery until APP-F1.
-    expect(p.gallery).toBeNull();
+    // PER-137: no photos yet → an empty gallery row that adds photos.
+    expect(p.gallery).toEqual({ setId: null, dateLabel: null, photos: [] });
+    act(() => p.onAddPhotos!());
+    expect(mockPush).toHaveBeenLastCalledWith("/(app)/progress-photos-add");
+    act(() => p.onOpenGallery!());
+    expect(mockPush).toHaveBeenLastCalledWith("/(app)/progress-photos");
+    act(() => p.onOpenGalleryPhoto!("set 1", "Side"));
+    expect(mockPush).toHaveBeenLastCalledWith(
+      "/(app)/progress-photo-viewer?setId=set%201&pose=side",
+    );
+  });
+
+  it("PER-137: shows the latest set of progress photos", async () => {
+    const { adapters, api } = makeAdapters();
+    api.progressPhotoSets = [
+      {
+        id: "s1",
+        takenOn: "2026-10-25",
+        source: "self",
+        status: "ready",
+        createdAt: "2026-10-25T09:00:00.000Z",
+        updatedAt: "2026-10-25T09:00:00.000Z",
+        photos: (["front", "side", "back"] as const).map((pose) => ({
+          id: `s1-${pose}`,
+          pose,
+          bytes: 10,
+          width: null,
+          height: null,
+          url: `https://view.test/${pose}.jpg`,
+          expiresAt: "2026-10-25T09:15:00.000Z",
+        })),
+        weight: null,
+        bodyFat: null,
+      },
+    ];
+    renderYou(adapters);
+    await waitFor(() => expect(mockProbe.last?.gallery?.setId).toBe("s1"));
+    const g = mockProbe.last!.gallery!;
+    expect(g.dateLabel).toBe("25 Oct");
+    expect(g.photos.map((x) => [x.pose, x.cacheKey])).toEqual([
+      ["Front", "s1-front"],
+      ["Side", "s1-side"],
+      ["Back", "s1-back"],
+    ]);
   });
 
   it("new user: an empty week, no Rest group and no lifts", async () => {

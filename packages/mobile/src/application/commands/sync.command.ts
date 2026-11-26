@@ -10,7 +10,7 @@ import {
   isAutoResolvableSyncEntry,
   type EntitlementVerdict,
 } from "@/domain/ports/sync.types";
-import type { HabitConfigEntry } from "@/domain/ports/api.port";
+import type { ApiPort, HabitConfigEntry } from "@/domain/ports/api.port";
 import { habitConfigFromEntry } from "@/domain/models/habit-config";
 import { normalizePreferences } from "@/domain/models/notification-preferences";
 import type { MealprintPreferences } from "@/domain/models/mealprint";
@@ -39,6 +39,17 @@ import {
   applyCoachFormsSyncSuccess,
   COACH_FORMS_ENTITIES,
 } from "./coachForms.command";
+import type { ApiError } from "@/shared/errors/result";
+import type { PendingProgressPhotoSet } from "@/domain/models/progressPhotos";
+import {
+  nextUploadDelayMs,
+  withSet,
+} from "@/domain/services/progressPhotos.service";
+import {
+  enqueueProgressPhotoSetDelete,
+  recordUploadedPhotoSet,
+} from "./progressPhotos.command";
+import { readLocalFile } from "@/shared/utils/localFile";
 
 /** A non-OK HTTP response from a sync POST/PUT/DELETE, carrying the status so
  * the drain can classify permanent vs transient failures. */
@@ -1822,4 +1833,242 @@ async function drainNutritionEntryBatch(
     outcome.failed++;
   });
   return outcome;
+}
+
+// -- PER-137 (APP-F1): progress photo upload step -----------------------------
+
+export type ProgressPhotoUploadDeps = {
+  /** Reads a photo kept on the phone. Tests inject a fake. */
+  readFile?: (uri: string) => Promise<Blob>;
+  now?: () => number;
+};
+
+export type ProgressPhotoUploadResult = {
+  uploaded: number;
+  retrying: number;
+  failed: number;
+};
+
+/** One upload pass at a time; a second caller shares the running one. */
+let progressPhotoPass: Promise<ProgressPhotoUploadResult> | null = null;
+
+/**
+ * Upload the progress photo sets kept on this phone (`pending_progress_photos`),
+ * oldest first: create (same `Idempotency-Key` on every try, so a retry gets
+ * the same set and fresh links) → PUT each photo straight to storage →
+ * complete. Separate from `processSyncQueue` because files don't fit the JSON
+ * queue (backend design F, "Offline").
+ *
+ * - A transport failure, 5xx, 408/429, an upload refused by storage (an
+ *   expired link) or an incomplete `complete` retries with back-off and never
+ *   gives up: the photos stay on the phone.
+ * - Any other 4xx from the API marks the set `rejected`; a photo file that's
+ *   gone from the phone marks it `file_missing`. Both stop retrying and show
+ *   in the gallery, where the athlete can delete the set.
+ * - A set the athlete deletes mid-upload is deleted on the server too.
+ */
+export function processProgressPhotoUploads(
+  storage: StoragePort,
+  api: ApiPort,
+  userId: string,
+  deps: ProgressPhotoUploadDeps = {},
+): Promise<ProgressPhotoUploadResult> {
+  if (progressPhotoPass) return progressPhotoPass;
+  progressPhotoPass = runProgressPhotoPass(storage, api, userId, deps).finally(
+    () => {
+      progressPhotoPass = null;
+    },
+  );
+  return progressPhotoPass;
+}
+
+async function runProgressPhotoPass(
+  storage: StoragePort,
+  api: ApiPort,
+  userId: string,
+  deps: ProgressPhotoUploadDeps,
+): Promise<ProgressPhotoUploadResult> {
+  const now = deps.now ?? Date.now;
+  const readFile = deps.readFile ?? readLocalFile;
+  const result: ProgressPhotoUploadResult = {
+    uploaded: 0,
+    retrying: 0,
+    failed: 0,
+  };
+  for (const snapshot of storage.getPendingProgressPhotoSets(userId)) {
+    if (snapshot.failed) continue;
+    if (Date.parse(snapshot.nextAttemptAt) > now()) continue;
+    try {
+      const outcome = await uploadPendingPhotoSet(
+        storage,
+        api,
+        userId,
+        snapshot.id,
+        readFile,
+        now,
+      );
+      if (outcome) result[outcome]++;
+    } catch (err) {
+      // Our own code threw (never an API answer): retry later like a blip.
+      const row = storage.getPendingProgressPhotoSet(snapshot.id);
+      if (row) {
+        scheduleRetry(
+          storage,
+          row,
+          err instanceof Error ? err.message : "Upload failed",
+          now,
+        );
+      }
+      result.retrying++;
+    }
+  }
+  return result;
+}
+
+type UploadOutcome = keyof ProgressPhotoUploadResult | null;
+
+function scheduleRetry(
+  storage: StoragePort,
+  row: PendingProgressPhotoSet,
+  message: string,
+  now: () => number,
+): "retrying" {
+  const attempts = row.attempts + 1;
+  storage.savePendingProgressPhotoSet({
+    ...row,
+    attempts,
+    lastError: message,
+    nextAttemptAt: new Date(now() + nextUploadDelayMs(attempts)).toISOString(),
+  });
+  return "retrying";
+}
+
+function markFailed(
+  storage: StoragePort,
+  row: PendingProgressPhotoSet,
+  failed: NonNullable<PendingProgressPhotoSet["failed"]>,
+  message: string,
+): "failed" {
+  storage.savePendingProgressPhotoSet({
+    ...row,
+    attempts: row.attempts + 1,
+    lastError: message,
+    failed,
+  });
+  return "failed";
+}
+
+/**
+ * No answer, a server error, or a status worth asking again about: the same
+ * line as the JSON queue (`isPermanentClientError`), so an expired session
+ * (401) or a 403/402 retries instead of stranding the set (Inspector Brad,
+ * #567).
+ */
+function isRetryableApiError(error: ApiError): boolean {
+  if (error.status === undefined) return true;
+  return !isPermanentClientError(error.status);
+}
+
+/**
+ * One set through create → uploads → complete. Returns null when the set
+ * went away (deleted on the phone or the server) instead of finishing.
+ */
+async function uploadPendingPhotoSet(
+  storage: StoragePort,
+  api: ApiPort,
+  userId: string,
+  id: string,
+  readFile: (uri: string) => Promise<Blob>,
+  now: () => number,
+): Promise<UploadOutcome> {
+  let row = storage.getPendingProgressPhotoSet(id);
+  if (!row) return null;
+
+  // Read every file first: one that's gone can never upload.
+  const files = new Map<string, Blob>();
+  for (const photo of row.photos) {
+    try {
+      files.set(photo.pose, await readFile(photo.uri));
+    } catch (err) {
+      return markFailed(
+        storage,
+        row,
+        "file_missing",
+        err instanceof Error ? err.message : "Photo file missing",
+      );
+    }
+  }
+
+  const created = await api.createProgressPhotoSet(
+    {
+      takenOn: row.takenOn,
+      poses: row.photos.map((p) => ({
+        pose: p.pose,
+        bytes: p.bytes,
+        width: p.width,
+        height: p.height,
+      })),
+    },
+    row.clientRequestId,
+  );
+  row = storage.getPendingProgressPhotoSet(id);
+  if (!created.ok) {
+    if (!row) return null;
+    // 409 `set_deleted`: this set was already deleted on the server.
+    if (created.error.status === 409) {
+      storage.deletePendingProgressPhotoSet(id);
+      return null;
+    }
+    return isRetryableApiError(created.error)
+      ? scheduleRetry(storage, row, created.error.message, now)
+      : markFailed(storage, row, "rejected", created.error.message);
+  }
+  const serverSetId = created.value.set.id;
+  if (!row) {
+    // Deleted on the phone while the create was out.
+    enqueueProgressPhotoSetDelete(storage, serverSetId);
+    return null;
+  }
+  if (row.serverSetId !== serverSetId) {
+    row = { ...row, serverSetId };
+    storage.savePendingProgressPhotoSet(row);
+  }
+
+  for (const upload of created.value.uploads) {
+    const file = files.get(upload.pose);
+    if (!file) continue;
+    const put = await api.uploadProgressPhoto(upload, file);
+    if (!put.ok) {
+      const current = storage.getPendingProgressPhotoSet(id);
+      // Storage refuses an expired link with a 4xx: the next try's create
+      // returns fresh links, so every upload failure is retried.
+      return current
+        ? scheduleRetry(storage, current, put.error.message, now)
+        : null;
+    }
+  }
+
+  const done = await api.completeProgressPhotoSet(serverSetId);
+  const current = storage.getPendingProgressPhotoSet(id);
+  // Deleted on the phone meanwhile: its server delete is already queued.
+  if (!current) return null;
+  if (!done.ok) {
+    if (done.error.status === 404) {
+      storage.deletePendingProgressPhotoSet(id);
+      return null;
+    }
+    // 422 `upload_incomplete` means a pose needs uploading again.
+    return isRetryableApiError(done.error) || done.error.status === 422
+      ? scheduleRetry(storage, current, done.error.message, now)
+      : markFailed(storage, current, "rejected", done.error.message);
+  }
+  storage.cacheProgressPhotos(
+    userId,
+    withSet(storage.getCachedProgressPhotos(userId), done.value),
+  );
+  // Keep the phone id → server id link so a delete (or a viewer) still
+  // holding the phone id reaches the uploaded set (Inspector Brad, #567).
+  recordUploadedPhotoSet(id, serverSetId);
+  storage.deletePendingProgressPhotoSet(id);
+  return "uploaded";
 }
