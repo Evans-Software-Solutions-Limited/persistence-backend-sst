@@ -243,6 +243,7 @@ function editor(over: Partial<FormEditorProps>) {
     questions: [],
     selected: 0,
     problems: new Map(),
+    invalid: false,
     dirty: false,
     busy: false,
     offline: false,
@@ -323,6 +324,7 @@ describe("FormEditor edges", () => {
     editor({
       questions: [{ id: "a", type: "short_text", prompt: "", required: false }],
       problems: new Map([[0, "Write the question."]]),
+      invalid: true,
     });
     const row = screen.getByRole("button", { name: "Question 1: untitled" });
     expect(within(row).getByText("Write the question.")).toBeTruthy();

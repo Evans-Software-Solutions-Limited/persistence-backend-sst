@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useForm } from "react-hook-form";
 import { Navigate, useNavigate, useParams } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { isCoachApiError } from "../api/coachApi";
@@ -18,6 +19,13 @@ import {
   trainingPatch,
   untouchedBy,
 } from "../lib/settings";
+import {
+  SETTINGS_SERVER_FIELDS,
+  settingsResolver,
+  settingsValues,
+  type SettingsFormValues,
+} from "../lib/settingsForm";
+import { applyServerErrors, applyValues, firstMessage } from "@/lib/form";
 import { ClientSettingsView } from "../settings/ClientSettings";
 import { CheckinsContainer } from "../checkins/CheckinsContainer";
 import { Avatar, BackLink, LoadError, Loading } from "../ui/parts";
@@ -123,6 +131,22 @@ function ClientSettingsPage({ client }: { client: RosterClient }) {
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [ending, setEnding] = useState(false);
   const clientFirst = firstName(client.name);
+  // The settings as a react-hook-form (PER-147): each change is checked
+  // against the schema before it saves. The query's data (with its
+  // optimistic update and rollback) stays what the screen shows.
+  const form = useForm<SettingsFormValues>({
+    resolver: settingsResolver,
+    values: settingsQ.data ? settingsValues(settingsQ.data) : undefined,
+    resetOptions: { keepErrors: true },
+  });
+
+  async function change(patch: SettingsPatch) {
+    const before = settingsQ.data;
+    if (!before) return;
+    applyValues(form, settingsValues(applyPatch(before, patch)));
+    if (!(await form.trigger())) return;
+    await save(patch);
+  }
 
   async function save(patch: SettingsPatch) {
     const before = settingsQ.data;
@@ -154,6 +178,7 @@ function ClientSettingsPage({ client }: { client: RosterClient }) {
         setNotice(CONFLICT_NOTICE);
       } else {
         queryClient.setQueryData(key, before);
+        if (applyServerErrors(e, form.setError, SETTINGS_SERVER_FIELDS)) return;
         setError(
           isCoachApiError(e) && e.offline
             ? "You're offline. Settings change when you're back online."
@@ -187,16 +212,16 @@ function ClientSettingsPage({ client }: { client: RosterClient }) {
           busy={busy}
           offlineAsOf={online ? null : clockTime(settingsQ.dataUpdatedAt)}
           notice={notice}
-          error={error}
+          error={error ?? firstMessage(form.formState.errors) ?? null}
           confirmEnd={confirmEnd}
           ending={ending}
           onTrackTraining={(on) =>
-            void save(trainingPatch(settingsQ.data!, on))
+            void change(trainingPatch(settingsQ.data!, on))
           }
-          onTrackCalories={(on) => void save({ trackCalories: on })}
-          onSessions={(n) => void save({ sessionsPerWeek: clampSessions(n) })}
-          onFeature={(k, on) => void save({ features: { [k]: on } })}
-          onAlert={(mode) => void save({ alertMode: mode })}
+          onTrackCalories={(on) => void change({ trackCalories: on })}
+          onSessions={(n) => void change({ sessionsPerWeek: clampSessions(n) })}
+          onFeature={(k, on) => void change({ features: { [k]: on } })}
+          onAlert={(mode) => void change({ alertMode: mode })}
           onAskEnd={() => setConfirmEnd(true)}
           onKeep={() => setConfirmEnd(false)}
           onConfirmEnd={async () => {

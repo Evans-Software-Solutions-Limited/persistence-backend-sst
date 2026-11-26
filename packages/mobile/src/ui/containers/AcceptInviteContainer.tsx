@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useForm } from "react-hook-form";
 import { Alert, Linking } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useAcceptInviteCode } from "@/ui/hooks/useTrainerInviteCodes";
@@ -15,6 +16,12 @@ import {
   type InvitePreview,
 } from "@/domain/models/myCoaching";
 import type { AcceptInviteCodeApiError } from "@/domain/models/trainerInviteCode";
+import {
+  inviteCodeResolver,
+  inviteConsentResolver,
+  type InviteCodeValues,
+  type InviteConsentValues,
+} from "@/ui/forms/inviteForms";
 import { AcceptInvitePresenter } from "@/ui/presenters/AcceptInvitePresenter";
 import { InvitePreviewPresenter } from "@/ui/presenters/InvitePreviewPresenter";
 import { coachInitials } from "@/ui/presenters/coaching/coachingKit";
@@ -48,11 +55,21 @@ export function AcceptInviteContainer() {
   // when we land on it; no fetch on mount.
   const myCoaches = useMyCoaches({ enabled: false });
 
-  const [code, setCode] = useState(() => (params.code ?? "").toUpperCase());
-  const [errorMessage, setErrorMessage] = useState("");
+  // Join and Accept are react-hook-forms (PER-147). A refused lookup lands on
+  // the code field; the consent tick must be ticked.
+  const codeForm = useForm<InviteCodeValues>({
+    resolver: inviteCodeResolver,
+    defaultValues: { code: (params.code ?? "").toUpperCase() },
+  });
+  const code = codeForm.watch("code");
+  const errorMessage = codeForm.formState.errors.code?.message ?? "";
+  const consentForm = useForm<InviteConsentValues>({
+    resolver: inviteConsentResolver,
+    defaultValues: { agreed: false },
+  });
+  const agreed = consentForm.watch("agreed");
   const [isLooking, setIsLooking] = useState(false);
   const [preview, setPreview] = useState<InvitePreview | null>(null);
-  const [agreed, setAgreed] = useState(false);
   const [acceptError, setAcceptError] = useState("");
   const [expired, setExpired] = useState(false);
   // Accepted, still loading the coach before leaving: keep Accept disabled so
@@ -70,29 +87,40 @@ export function AcceptInviteContainer() {
     else router.replace("/(app)/(tabs)/you");
   }, [router]);
 
-  const handleSubmit = useCallback(async () => {
-    const trimmed = code.trim();
-    if (trimmed === "" || !online) return;
-    setErrorMessage("");
-    setIsLooking(true);
-    const result = await api.getInvitePreview(trimmed);
-    setIsLooking(false);
-    if (result.ok) {
-      setPreview(result.value);
-      setAgreed(false);
-      setAcceptError("");
-      setExpired(false);
-      return;
-    }
-    setErrorMessage(previewErrorCopy(result.error));
-  }, [api, code, online]);
+  const lookUp = useCallback(
+    async ({ code: typed }: InviteCodeValues) => {
+      if (!online) return;
+      setIsLooking(true);
+      const result = await api.getInvitePreview(typed.trim());
+      setIsLooking(false);
+      if (result.ok) {
+        setPreview(result.value);
+        // The tick resets for every preview.
+        consentForm.reset({ agreed: false });
+        setAcceptError("");
+        setExpired(false);
+        return;
+      }
+      codeForm.setError("code", {
+        type: "server",
+        message: previewErrorCopy(result.error),
+      });
+    },
+    [api, online, codeForm, consentForm],
+  );
 
   const onCancelPreview = useCallback(() => {
     setPreview(null);
     onBack();
   }, [onBack]);
 
-  const onToggleAgree = useCallback(() => setAgreed((v) => !v), []);
+  const onToggleAgree = useCallback(
+    () =>
+      consentForm.setValue("agreed", !consentForm.getValues("agreed"), {
+        shouldDirty: true,
+      }),
+    [consentForm],
+  );
 
   const onOpenPrivacyPolicy = useCallback(() => {
     // Best-effort: a Linking failure must not block the consent flow.
@@ -100,7 +128,7 @@ export function AcceptInviteContainer() {
   }, []);
 
   const handleAccept = useCallback(async () => {
-    if (!preview || !agreed || !online) return;
+    if (!preview || !online) return;
     if (isPastExpiry(preview)) {
       setExpired(true);
       return;
@@ -155,7 +183,6 @@ export function AcceptInviteContainer() {
     );
   }, [
     preview,
-    agreed,
     online,
     accept,
     code,
@@ -180,7 +207,7 @@ export function AcceptInviteContainer() {
         isExpired={expired}
         errorMessage={acceptError}
         onToggleAgree={onToggleAgree}
-        onAccept={() => void handleAccept()}
+        onAccept={() => void consentForm.handleSubmit(handleAccept)()}
         onCancel={onCancelPreview}
         onOpenPrivacyPolicy={onOpenPrivacyPolicy}
       />
@@ -190,10 +217,10 @@ export function AcceptInviteContainer() {
   return (
     <AcceptInvitePresenter
       code={code}
-      onCodeChange={setCode}
+      onCodeChange={(v) => codeForm.setValue("code", v, { shouldDirty: true })}
       isSubmitting={isLooking}
       errorMessage={errorMessage}
-      onSubmit={() => void handleSubmit()}
+      onSubmit={() => void codeForm.handleSubmit(lookUp)()}
       onBack={onBack}
       isOffline={!online}
     />

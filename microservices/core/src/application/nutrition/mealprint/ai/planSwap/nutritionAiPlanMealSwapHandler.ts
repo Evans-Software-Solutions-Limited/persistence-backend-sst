@@ -1,5 +1,5 @@
 import { AI_BUDGET_EXHAUSTED_BODY, hasAiBudget } from "../../../../ai/aiBudget";
-import { notWantedMealsSchema } from "../mealContext";
+import { notWantedMealsSchema, type NotWantedMeal } from "../mealContext";
 
 import Elysia, { t } from "elysia";
 import {
@@ -39,6 +39,8 @@ import {
   minUsefulPlanTokens,
   planMaxTokens,
   PLAN_TIMEOUT_MS,
+  type ComposedPlanMeal,
+  type PlanLogSlot,
 } from "../planModel";
 import { assessCompositionPortion, maxMealKcal } from "../portionPolicy";
 
@@ -75,6 +77,13 @@ const DEFAULT_MAX_SERVING_FRACTION = 1;
  *   1. auth → 401  ·  2. meal_ai → 402  ·  3. ceiling → 429
  *   4. remaining budget usable → 200 empty  ·  5. candidates → 200 empty
  *   6. compose ONE meal → recompute + avoidance re-run → response
+ *
+ * PER-119 (Design D): optional `count: 1 | 3`. Absent is the 1.2.0 response
+ * byte for byte (`data.meal`, no `options`). With `count`, `data.options[]`
+ * is added and `options[0]` is `data.meal`; `count: 3` asks ONE model call for
+ * 3 alternatives, verifies each on its own, and drops any that fail, repeat
+ * or match `notWantedMeals` (never padded, so it can return fewer than 3).
+ * One call counts once against the daily swap ceiling.
  */
 export const nutritionAiPlanMealSwapHandler = new Elysia()
   .derive(async ({ headers }) => ({
@@ -120,7 +129,10 @@ export const nutritionAiPlanMealSwapHandler = new Elysia()
 
         // The target the NEW meal aims at = the day target minus what is held.
         // Clamped at zero: a day already at target leaves nothing to compose.
-        const { dayTarget, heldTotals, logSlot, steer } = ctx.body;
+        const { dayTarget, heldTotals, logSlot, steer, count } = ctx.body;
+        // PER-119: `count` absent is the 1.2.0 contract (one `meal`, no
+        // `options`). `count: 1 | 3` adds `options[]`, first === `meal`.
+        const optionCount = count ?? 1;
         const remaining = {
           kcal: Math.max(0, dayTarget.kcal - heldTotals.kcal),
           proteinG: Math.max(0, dayTarget.proteinG - heldTotals.proteinG),
@@ -135,6 +147,7 @@ export const nutritionAiPlanMealSwapHandler = new Elysia()
           const body = {
             data: {
               meal: null,
+              ...(count === undefined ? {} : { options: [] }),
               emptyReason,
               labelCheckRequired: true,
             },
@@ -232,10 +245,12 @@ export const nutritionAiPlanMealSwapHandler = new Elysia()
         );
         // Reuse the day composer with mealsPerDay = 1: one meal, fitting the
         // remaining budget. The prompt's "compose exactly 1 meal" is the swap.
+        // `count: 3` (PER-119) asks the same call for 3 alternatives instead.
         const result = await composeDayPlan(
           {
             target: remaining,
             mealsPerDay: 1,
+            ...(optionCount > 1 ? { alternatives: optionCount } : {}),
             maxMealKcal: mealKcalCeiling,
             maxSnackKcal: mealKcalCeiling,
             steer: steer ?? null,
@@ -254,76 +269,76 @@ export const nutritionAiPlanMealSwapHandler = new Elysia()
           { timeoutMs: attemptMs },
         );
 
-        const chosen = result.meals[0];
-        if (!chosen) {
-          throw new AiUnreadableError("ai_no_meal: swap produced no meal");
-        }
-
         // Recompute from DB rows + avoidance re-run (defence in depth).
         const byId = new Map<string, MealprintCandidate>(
           assembly.candidates.map((candidate) => [candidate.id, candidate]),
         );
+        const verify = (chosen: ComposedPlanMeal) =>
+          verifySwapMeal(chosen, {
+            byId,
+            preferences,
+            logSlot,
+            kcalCeiling: mealKcalCeiling,
+          });
 
-        const portionFailure = assessCompositionPortion({
-          items: chosen.items,
-          candidates: byId,
-          kcalCeiling: mealKcalCeiling,
-        });
-        if (portionFailure) {
+        // 1.2.0 contract (no `count`) and `count: 1`: ONE meal, and any
+        // verification failure is a 422 — exactly as before PER-119.
+        if (optionCount === 1) {
+          const chosen = result.meals[0];
+          if (!chosen) {
+            throw new AiUnreadableError("ai_no_meal: swap produced no meal");
+          }
+          const meal = verify(chosen);
+          if (!meal.ok) throw new AiUnreadableError(meal.error);
+          const body =
+            count === undefined
+              ? {
+                  data: {
+                    meal: meal.meal,
+                    emptyReason: null,
+                    labelCheckRequired: true,
+                  },
+                }
+              : {
+                  data: {
+                    meal: meal.meal,
+                    options: [meal.meal],
+                    emptyReason: null,
+                    labelCheckRequired: true,
+                  },
+                };
+          console.info(
+            `[mealprint-swap] done user=${userId} model=${result.usage.modelId} kcal=${meal.meal.kcal}`,
+          );
+          responseSizeBytes = Buffer.byteLength(JSON.stringify(body));
+          return body;
+        }
+
+        // `count: 3` — each option is verified on its own. One that fails is
+        // DROPPED (it is an alternative, not a hole in the day), as are
+        // repeats and anything the person already turned down this session.
+        // Never padded: fewer than 3 safe, distinct options returns fewer.
+        const options = selectSwapOptions(
+          result.meals,
+          verify,
+          ctx.body.notWantedMeals ?? [],
+          optionCount,
+        );
+        if (options.length === 0) {
           throw new AiUnreadableError(
-            `ai_implausible_portion: ${portionFailure.detail}`,
+            "ai_no_meal: no swap option passed verification",
           );
         }
-        let kcal = 0;
-        let proteinG = 0;
-        let carbsG = 0;
-        let fatG = 0;
-        let containsUnverified = false;
-        const items = chosen.items.map((item) => {
-          const candidate = byId.get(item.candidateId)!;
-          kcal += candidate.kcal * item.servings;
-          proteinG += candidate.proteinG * item.servings;
-          carbsG += candidate.carbsG * item.servings;
-          fatG += candidate.fatG * item.servings;
-          const avoidance = assessAvoidance(candidate, preferences);
-          if (!avoidance.allowed) {
-            throw new AiUnreadableError("ai_avoidance_violation: meal item");
-          }
-          if (avoidance.unverified) containsUnverified = true;
-          return {
-            candidateId: item.candidateId,
-            kind: candidate.kind,
-            servings: item.servings,
-            name: candidate.name,
-            kcal: candidate.kcal,
-            proteinG: candidate.proteinG,
-            carbsG: candidate.carbsG,
-            fatG: candidate.fatG,
-          };
-        });
-
-        const round = (n: number) => Math.round(n * 10) / 10;
         const body = {
           data: {
-            meal: {
-              name: chosen.name,
-              reason: chosen.reason,
-              // The swap keeps the SLOT the client asked to fill — the model's
-              // own logSlot choice is irrelevant when replacing a specific meal.
-              logSlot,
-              items,
-              kcal: round(kcal),
-              proteinG: round(proteinG),
-              carbsG: round(carbsG),
-              fatG: round(fatG),
-              containsUnverified,
-            },
+            meal: options[0],
+            options,
             emptyReason: null,
             labelCheckRequired: true,
           },
         };
         console.info(
-          `[mealprint-swap] done user=${userId} model=${result.usage.modelId} kcal=${round(kcal)}`,
+          `[mealprint-swap] done user=${userId} model=${result.usage.modelId} options=${options.length}/${optionCount}`,
         );
         responseSizeBytes = Buffer.byteLength(JSON.stringify(body));
         return body;
@@ -392,6 +407,158 @@ export const nutritionAiPlanMealSwapHandler = new Elysia()
         steer: t.Optional(t.String({ maxLength: 200 })),
         notWantedMeals: notWantedMealsSchema,
         originalRequest: t.Optional(t.String({ maxLength: 200 })),
+        // PER-119 (Design D): how many options to return. Absent → the 1.2.0
+        // response (a single `meal`); 1 or 3 → `options[]` as well, with
+        // `options[0]` equal to `meal`. "Show 3 others" sends the shown
+        // options in `notWantedMeals`; free-text feedback uses `steer`.
+        count: t.Optional(t.Union([t.Literal(1), t.Literal(3)])),
       }),
     },
   );
+
+export type SwapMeal = {
+  name: string;
+  reason: string;
+  logSlot: PlanLogSlot;
+  items: Array<{
+    candidateId: string;
+    kind: MealprintCandidate["kind"];
+    servings: number;
+    name: string;
+    kcal: number;
+    proteinG: number;
+    carbsG: number;
+    fatG: number;
+  }>;
+  kcal: number;
+  proteinG: number;
+  carbsG: number;
+  fatG: number;
+  containsUnverified: boolean;
+};
+
+type VerifyResult = { ok: true; meal: SwapMeal } | { ok: false; error: string };
+
+/**
+ * Stage 3 for ONE swapped meal: portion policy, every macro recomputed from
+ * the candidate rows, and the avoidance re-run per item. The swap keeps the
+ * SLOT the client asked to fill — the model's own logSlot is irrelevant when
+ * replacing a specific meal.
+ */
+export function verifySwapMeal(
+  chosen: ComposedPlanMeal,
+  opts: {
+    byId: Map<string, MealprintCandidate>;
+    preferences: Parameters<typeof assessAvoidance>[1];
+    logSlot: PlanLogSlot;
+    kcalCeiling: number;
+  },
+): VerifyResult {
+  const portionFailure = assessCompositionPortion({
+    items: chosen.items,
+    candidates: opts.byId,
+    kcalCeiling: opts.kcalCeiling,
+  });
+  if (portionFailure) {
+    return {
+      ok: false,
+      error: `ai_implausible_portion: ${portionFailure.detail}`,
+    };
+  }
+  let kcal = 0;
+  let proteinG = 0;
+  let carbsG = 0;
+  let fatG = 0;
+  let containsUnverified = false;
+  const items: SwapMeal["items"] = [];
+  for (const item of chosen.items) {
+    const candidate = opts.byId.get(item.candidateId)!;
+    const avoidance = assessAvoidance(candidate, opts.preferences);
+    if (!avoidance.allowed) {
+      return { ok: false, error: "ai_avoidance_violation: meal item" };
+    }
+    if (avoidance.unverified) containsUnverified = true;
+    kcal += candidate.kcal * item.servings;
+    proteinG += candidate.proteinG * item.servings;
+    carbsG += candidate.carbsG * item.servings;
+    fatG += candidate.fatG * item.servings;
+    items.push({
+      candidateId: item.candidateId,
+      kind: candidate.kind,
+      servings: item.servings,
+      name: candidate.name,
+      kcal: candidate.kcal,
+      proteinG: candidate.proteinG,
+      carbsG: candidate.carbsG,
+      fatG: candidate.fatG,
+    });
+  }
+  const round = (n: number) => Math.round(n * 10) / 10;
+  return {
+    ok: true,
+    meal: {
+      name: chosen.name,
+      reason: chosen.reason,
+      logSlot: opts.logSlot,
+      items,
+      kcal: round(kcal),
+      proteinG: round(proteinG),
+      carbsG: round(carbsG),
+      fatG: round(fatG),
+      containsUnverified,
+    },
+  };
+}
+
+const normalise = (text: string) =>
+  text
+    .toLocaleLowerCase("en-GB")
+    .replace(/&/g, " and ")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+
+/**
+ * Two meals are the same when they use the same foods, ignoring amounts.
+ * Keyed on food NAMES so it also matches `notWantedMeals[].ingredients`.
+ */
+const foodsKey = (names: readonly string[]) =>
+  [...new Set(names.map(normalise))].sort().join("|");
+
+/**
+ * `count: 3` — verified, distinct options in the model's order. Drops an
+ * option that fails verification, repeats an earlier option's name or foods,
+ * or matches the name or foods of a meal the person turned down
+ * (`notWantedMeals`: the current meal and any options already shown).
+ */
+export function selectSwapOptions(
+  meals: readonly ComposedPlanMeal[],
+  verify: (meal: ComposedPlanMeal) => VerifyResult,
+  notWanted: readonly NotWantedMeal[],
+  max: number,
+): SwapMeal[] {
+  const seenNames = new Set(notWanted.map((meal) => normalise(meal.name)));
+  const seenItems = new Set(
+    notWanted
+      .filter((meal) => meal.ingredients.length > 0)
+      .map((meal) => foodsKey(meal.ingredients)),
+  );
+  const options: SwapMeal[] = [];
+  for (const chosen of meals) {
+    if (options.length >= max) break;
+    const verified = verify(chosen);
+    if (!verified.ok) {
+      console.warn(`[mealprint-swap] dropped option: ${verified.error}`);
+      continue;
+    }
+    const name = normalise(verified.meal.name);
+    const key = foodsKey(verified.meal.items.map((item) => item.name));
+    if (seenNames.has(name) || seenItems.has(key)) {
+      console.warn("[mealprint-swap] dropped option: repeat");
+      continue;
+    }
+    seenNames.add(name);
+    seenItems.add(key);
+    options.push(verified.meal);
+  }
+  return options;
+}

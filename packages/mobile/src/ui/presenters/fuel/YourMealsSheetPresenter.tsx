@@ -1,10 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useForm } from "react-hook-form";
 import { Pressable, TextInput, View as RNView } from "react-native";
 import { Text, View } from "@tamagui/core";
 import { BottomSheet, Btn } from "@/ui/components/foundation";
 import { ReorderableList } from "@/ui/components/workouts/ReorderableList";
 import { ExerciseReorderHandle } from "@/ui/components/workouts/ExerciseReorderHandle";
 import { USER_MEAL_NAME_MAX } from "@/domain/models/userMeals";
+import { mealNameResolver, type MealNameValues } from "@/ui/forms/fuelForms";
 
 /**
  * <YourMealsSheetPresenter> — canvas N1b "Your meals" (PER-132, signed off 18
@@ -53,16 +55,28 @@ function NameInput({
   onCancel: () => void;
   testID: string;
 }) {
-  const [value, setValue] = useState(initial);
+  // A react-hook-form (PER-147): a name the schema refuses (blank) cancels,
+  // as before; a good one is saved trimmed.
+  const form = useForm<MealNameValues>({
+    resolver: mealNameResolver,
+    defaultValues: { name: initial },
+  });
+  const value = form.watch("name");
+  // Return then blur both submit; the submit is async, so only the first
+  // one counts.
+  const done = useRef(false);
   const submit = () => {
-    const trimmed = value.trim();
-    if (trimmed.length === 0) onCancel();
-    else onSubmit(trimmed);
+    if (done.current) return;
+    done.current = true;
+    void form.handleSubmit(
+      ({ name }) => onSubmit(name.trim()),
+      () => onCancel(),
+    )();
   };
   return (
     <TextInput
       value={value}
-      onChangeText={setValue}
+      onChangeText={(v) => form.setValue("name", v, { shouldDirty: true })}
       onSubmitEditing={submit}
       onBlur={submit}
       autoFocus

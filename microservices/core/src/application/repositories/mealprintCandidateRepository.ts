@@ -590,6 +590,29 @@ export class MealprintCandidateRepository {
   }
 }
 
+/**
+ * A Mealprint food "serving" in `foods` units. `serving_quantity` is the real
+ * pack serving when OFF has it; otherwise the stored `serving_size` (100 for
+ * every OFF row). Macros are per-`serving_size` grams, so the scale factor is
+ * quantity / serving_size: one Mealprint serving = `scale` × the row's macros.
+ */
+export function foodServingScale(row: {
+  servingSize: string;
+  servingQuantity: string | null;
+}): { hasDeclaredServing: boolean; quantity: number; scale: number } {
+  const servingSize = Number(row.servingSize) || 100;
+  const hasDeclaredServing =
+    row.servingQuantity != null &&
+    Number.isFinite(Number(row.servingQuantity)) &&
+    Number(row.servingQuantity) > 0;
+  const quantity = hasDeclaredServing
+    ? Number(row.servingQuantity)
+    : servingSize;
+  const scale =
+    Number.isFinite(quantity) && quantity > 0 ? quantity / servingSize : 1;
+  return { hasDeclaredServing, quantity, scale };
+}
+
 /** Per-100g `foods` row → per-serving candidate. */
 function toFoodCandidate(
   row: {
@@ -608,19 +631,7 @@ function toFoodCandidate(
   },
   isOwn: boolean,
 ): MealprintCandidate {
-  // `serving_quantity` is the real pack serving when OFF has it; otherwise the
-  // stored `serving_size` (100 for every OFF row). Macros are per-`serving_size`
-  // grams, so the scale factor is quantity / serving_size.
-  const servingSize = Number(row.servingSize) || 100;
-  const hasDeclaredServing =
-    row.servingQuantity != null &&
-    Number.isFinite(Number(row.servingQuantity)) &&
-    Number(row.servingQuantity) > 0;
-  const quantity = hasDeclaredServing
-    ? Number(row.servingQuantity)
-    : servingSize;
-  const scale =
-    Number.isFinite(quantity) && quantity > 0 ? quantity / servingSize : 1;
+  const { hasDeclaredServing, quantity, scale } = foodServingScale(row);
 
   return {
     kind: "food",

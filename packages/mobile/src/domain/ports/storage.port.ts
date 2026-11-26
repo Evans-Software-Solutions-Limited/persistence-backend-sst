@@ -67,6 +67,10 @@ import type {
   FormResponse,
   FormSchedule,
 } from "@/domain/models/coachForms";
+import type {
+  PendingProgressPhotoSet,
+  ProgressPhotosCache,
+} from "@/domain/models/progressPhotos";
 
 /**
  * One row in the recent-sets cache. Keyed by (userId, exerciseId,
@@ -1333,6 +1337,20 @@ export interface StoragePort {
   // -- Lifecycle --
   /** Clear all user data (sync queue, cached entities, metadata). Called on sign-out. */
   clearAll(): void;
+
+  // -- PER-137 (APP-F1): progress photos --
+  /** The gallery (`cached_progress_photos`), or null before the first read. */
+  getCachedProgressPhotos(userId: string): ProgressPhotosCache | null;
+  cacheProgressPhotos(userId: string, value: ProgressPhotosCache): void;
+  /**
+   * Sets saved on this phone and not uploaded yet
+   * (`pending_progress_photos`), oldest first.
+   */
+  getPendingProgressPhotoSets(userId: string): PendingProgressPhotoSet[];
+  getPendingProgressPhotoSet(id: string): PendingProgressPhotoSet | null;
+  /** Insert or replace by `id`. */
+  savePendingProgressPhotoSet(value: PendingProgressPhotoSet): void;
+  deletePendingProgressPhotoSet(id: string): void;
 }
 
 /**

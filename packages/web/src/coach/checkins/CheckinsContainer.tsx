@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useForm } from "react-hook-form";
 import { useNavigate } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { isCoachApiError } from "../api/coachApi";
@@ -14,12 +15,25 @@ import {
   useCoachApi,
   useOnline,
 } from "../hooks/coachQueries";
+import { applyServerErrors, applyValues, firstMessage } from "@/lib/form";
 import { clientOverride, clientRule, defaultRule } from "../lib/forms";
 import { clockTime, firstName } from "../lib/people";
+import { replyResolver, type ReplyValues } from "../lib/replyForm";
+import { RULE_SERVER_FIELDS, clientRuleResolver } from "../lib/ruleForm";
 import type { EffectiveRule } from "../lib/schedule";
 import { LoadError, Loading } from "../ui/parts";
 import { AddFormDialog, CheckinsTab } from "./CheckinsTab";
 import { ClientFormPanel } from "./ClientFormPanel";
+
+const REPLY_LONG = "Keep the reply under 2,000 characters.";
+/** The words a 422 `invalid_schedule` message names its field by. */
+const RULE_FIELD_WORDS = [
+  "weekday",
+  "timeLocal",
+  "dueAfterHours",
+  "reminders",
+  "afterHours",
+] as const;
 
 function failure(e: unknown, offline: string, fallback: string): string {
   if (isCoachApiError(e) && e.offline) return offline;
@@ -68,11 +82,17 @@ export function CheckinsContainer({ client }: { client: RosterClient }) {
   const [shownId, setShownId] = useState<string | null>(null);
   const [compareId, setCompareId] = useState<string | null>(null);
   const [panelFor, setPanelFor] = useState<string | null>(null);
-  const [draft, setDraft] = useState<EffectiveRule | null>(null);
+  // The one-client rule (C10j) and the reply are react-hook-forms (PER-147).
+  const ruleForm = useForm<EffectiveRule>({ resolver: clientRuleResolver });
+  const draft = ruleForm.watch();
+  const replyForm = useForm<ReplyValues>({
+    resolver: replyResolver,
+    defaultValues: { reply: "" },
+  });
+  const reply = replyForm.watch("reply");
   const [confirmStop, setConfirmStop] = useState(false);
   const [adding, setAdding] = useState(false);
   const [replyOpen, setReplyOpen] = useState(false);
-  const [reply, setReply] = useState("");
   const [busy, setBusy] = useState(false);
   const [panelError, setPanelError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -132,8 +152,16 @@ export function CheckinsContainer({ client }: { client: RosterClient }) {
     try {
       putResponse(await api.reviewResponse(client.id, shown.id, replyText));
       setReplyOpen(false);
-      setReply("");
+      replyForm.reset({ reply: "" });
     } catch (e) {
+      if (
+        replyText !== undefined &&
+        applyServerErrors(e, replyForm.setError, {
+          replyText: { field: "reply", message: REPLY_LONG },
+        })
+      ) {
+        return;
+      }
       setError(
         failure(
           e,
@@ -150,6 +178,7 @@ export function CheckinsContainer({ client }: { client: RosterClient }) {
   async function setup(
     inputs: ClientSetupInput | ClientSetupInput[],
     done: string,
+    fromRuleForm = false,
   ) {
     if (!panelEntry) return;
     setBusy(true);
@@ -187,6 +216,14 @@ export function CheckinsContainer({ client }: { client: RosterClient }) {
           queryKey: coachKeys.clientForms(client.id),
         });
       }
+      if (
+        fromRuleForm &&
+        applyServerErrors(e, ruleForm.setError, RULE_SERVER_FIELDS, {
+          fieldsInMessage: RULE_FIELD_WORDS,
+        })
+      ) {
+        return;
+      }
       setPanelError(
         failure(
           e,
@@ -221,14 +258,16 @@ export function CheckinsContainer({ client }: { client: RosterClient }) {
         busy={busy}
         offlineAsOf={online ? null : clockTime(entriesQ.dataUpdatedAt)}
         notice={notice}
-        error={error}
+        error={error ?? firstMessage(replyForm.formState.errors) ?? null}
         onOpenForm={(id) => {
           setFormId(id);
           setShownId(null);
           setCompareId(null);
           const entry = entries.find((e) => e.form.id === id);
           setPanelFor(id);
-          setDraft(entry?.rule ? clientRule(entry.rule) : null);
+          ruleForm.reset(
+            entry?.rule ? clientRule(entry.rule) : defaultRule("once"),
+          );
           setConfirmStop(false);
           setPanelError(null);
           setNotice(null);
@@ -244,39 +283,44 @@ export function CheckinsContainer({ client }: { client: RosterClient }) {
         onAddForm={() => setAdding(true)}
         onReplyOpen={(open) => {
           setReplyOpen(open);
-          setReply(open ? (shown?.replyText ?? "") : "");
+          replyForm.reset({ reply: open ? (shown?.replyText ?? "") : "" });
         }}
-        onReply={setReply}
-        onSendReply={() => void review(reply.trim())}
+        onReply={(v) => replyForm.setValue("reply", v, { shouldDirty: true })}
+        onSendReply={() =>
+          void replyForm.handleSubmit((v) => review(v.reply.trim()))()
+        }
         onMarkReviewed={() => void review()}
       />
       {panelEntry && (
         <ClientFormPanel
           clientFirst={clientFirst}
           entry={panelEntry}
-          rule={draft ?? defaultRule("once")}
+          rule={draft}
           confirmStop={confirmStop}
           busy={busy}
-          error={panelError}
-          onRule={setDraft}
+          error={panelError ?? firstMessage(ruleForm.formState.errors) ?? null}
+          onRule={(next) => applyValues(ruleForm, next)}
           onClose={() => setPanelFor(null)}
           onSave={() =>
-            void setup(
-              {
-                // Save writes only the edited rule, so it keeps that rule's
-                // own pause (Inspector Brad, #555 sweep 4).
-                status:
-                  panelEntry.rule!.clientStatus === "paused"
-                    ? "paused"
-                    : "active",
-                // One rule at a time: without scheduleId the server applies
-                // the override to every live rule of the form (Inspector
-                // Brad, #555).
-                scheduleId: panelEntry.rule!.scheduleId,
-                override: clientOverride(panelEntry.rule!, draft!),
-              },
-              `${panelEntry.form.title} is set up for ${clientFirst}.`,
-            )
+            void ruleForm.handleSubmit((rule) =>
+              setup(
+                {
+                  // Save writes only the edited rule, so it keeps that rule's
+                  // own pause (Inspector Brad, #555 sweep 4).
+                  status:
+                    panelEntry.rule!.clientStatus === "paused"
+                      ? "paused"
+                      : "active",
+                  // One rule at a time: without scheduleId the server applies
+                  // the override to every live rule of the form (Inspector
+                  // Brad, #555).
+                  scheduleId: panelEntry.rule!.scheduleId,
+                  override: clientOverride(panelEntry.rule!, rule),
+                },
+                `${panelEntry.form.title} is set up for ${clientFirst}.`,
+                true,
+              ),
+            )()
           }
           onPause={() =>
             void setup(

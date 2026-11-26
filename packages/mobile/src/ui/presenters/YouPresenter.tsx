@@ -20,6 +20,13 @@ import type { BodyMapShading } from "@/domain/services/youPage";
 import type { ApiError } from "@/shared/errors";
 import { color } from "@/ui/theme/tokens";
 import {
+  AddPhotosButton,
+  EmptyPhotoRow,
+  PhotoRow,
+  type PhotoPoseLabel,
+  type PhotoTileView,
+} from "./progressPhotos/PhotoTile";
+import {
   Eyebrow,
   IconButton,
   LiftRow,
@@ -46,7 +53,9 @@ import {
  * - `coaches` — APP-A3 (PER-126): several coaches from the cached
  *   `GET /users/me/coaching`; a row opens that coach in the Coach tab.
  *   Coach requests stay under the list (Brad, 23 Nov).
- * - `gallery` — APP-F1 (PER-137). Null until then, and the row is hidden.
+ * - `gallery` — APP-F1 (PER-137): the latest set's three photos ("Gallery ·
+ *   25 Oct", See all → Y3; a tile → Y3c). With no photos yet: "Gallery",
+ *   three empty grey blocks and "Add today's photos". Null hides it.
  */
 
 export type YouCoach = {
@@ -68,9 +77,11 @@ export type YouBadge = {
 };
 
 export type YouGallery = {
-  /** "25 Oct" */
-  dateLabel: string;
-  photos: { pose: "Front" | "Side" | "Back"; uri: string }[];
+  /** The latest set, or null with no photos yet. */
+  setId: string | null;
+  /** "25 Oct", or null with no photos yet. */
+  dateLabel: string | null;
+  photos: PhotoTileView[];
 };
 
 export type YouMuscles = {
@@ -127,6 +138,9 @@ export type YouPresenterProps = {
   onOpenBodyFat(): void;
   onOpenHistory(): void;
   onOpenRecap(): void;
+  onOpenGallery?: () => void;
+  onOpenGalleryPhoto?: (setId: string, pose: PhotoPoseLabel) => void;
+  onAddPhotos?: () => void;
   scrollRef?: RefObject<ScrollView | null>;
 };
 
@@ -205,7 +219,14 @@ export function YouPresenter(p: YouPresenterProps) {
       >
         <Coaching {...p} />
 
-        {p.gallery && <GalleryRow gallery={p.gallery} />}
+        {p.gallery && (
+          <GalleryRow
+            gallery={p.gallery}
+            onOpenGallery={p.onOpenGallery}
+            onOpenPhoto={p.onOpenGalleryPhoto}
+            onAddPhotos={p.onAddPhotos}
+          />
+        )}
 
         <SectionHead
           title="Badges"
@@ -428,10 +449,48 @@ function Chip(p: { label: string; onPress(): void; testID?: string }) {
   );
 }
 
-function GalleryRow({ gallery }: { gallery: YouGallery }) {
+function GalleryRow(p: {
+  gallery: YouGallery;
+  onOpenGallery?: () => void;
+  onOpenPhoto?: (setId: string, pose: PhotoPoseLabel) => void;
+  onAddPhotos?: () => void;
+}) {
+  const { setId, dateLabel, photos } = p.gallery;
+  if (!setId || !dateLabel || photos.length === 0) {
+    return (
+      <View testID="you-gallery">
+        <SectionHead title="Gallery" />
+        <EmptyPhotoRow testID="you-gallery-empty" />
+        {p.onAddPhotos && (
+          <AddPhotosButton
+            onPress={p.onAddPhotos}
+            marginTop={10}
+            testID="you-gallery-add"
+          />
+        )}
+      </View>
+    );
+  }
   return (
     <View testID="you-gallery">
-      <SectionHead title={`Gallery · ${gallery.dateLabel}`} />
+      <SectionHead
+        title={`Gallery · ${dateLabel}`}
+        link={
+          p.onOpenGallery
+            ? {
+                label: "See all",
+                onPress: p.onOpenGallery,
+                testID: "you-gallery-all",
+              }
+            : undefined
+        }
+      />
+      <PhotoRow
+        photos={photos}
+        dateLabel={dateLabel}
+        onOpen={(pose) => p.onOpenPhoto?.(setId, pose)}
+        testID="you-gallery-tiles"
+      />
     </View>
   );
 }

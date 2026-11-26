@@ -115,6 +115,43 @@ describe("Add client · 1 Who (C11a)", () => {
     ).toBeTruthy();
   });
 
+  it("a server 422 lands on the field it names (PER-147)", async () => {
+    const api = fakeApi({
+      createProfile: vi
+        .fn()
+        .mockRejectedValueOnce(
+          apiError(422, {
+            code: "VALIDATION",
+            validation: [{ path: "/contactEmail", message: "Expected email" }],
+          }),
+        )
+        .mockRejectedValueOnce(apiError(422, { code: "VALIDATION" })),
+    });
+    renderCoach(<WhoContainer />, {
+      route: "/coach/clients/new",
+      path: "/coach/clients/new",
+      api,
+    });
+    fireEvent.change(screen.getByLabelText("First name"), {
+      target: { value: "Lena" },
+    });
+    fireEvent.change(screen.getByLabelText("Email or mobile"), {
+      target: { value: "lena@example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Next: set up" }));
+    const message = await screen.findByText(
+      "Enter an email address or a mobile number.",
+    );
+    expect(message.id).toBe("who-contact-err");
+    // A refusal naming no field still shows as before, in the banner; the
+    // next press clears the field error.
+    fireEvent.click(screen.getByRole("button", { name: "Next: set up" }));
+    expect(await screen.findByText("Request failed (422)")).toBeTruthy();
+    expect(
+      screen.queryByText("Enter an email address or a mobile number."),
+    ).toBeNull();
+  });
+
   it("going Back edits only what changed, with the revision", async () => {
     const api = fakeApi({
       patchProfile: vi
@@ -131,6 +168,40 @@ describe("Add client · 1 Who (C11a)", () => {
     expect(
       (screen.getByLabelText("First name") as HTMLInputElement).value,
     ).toBe("Lena");
+    fireEvent.change(goal, { target: { value: "Run 5k" } });
+    fireEvent.click(screen.getByRole("button", { name: "Next: set up" }));
+    await waitFor(() => expect(currentPath()).toBe(at()));
+    expect(api.patchProfile).toHaveBeenCalledWith(
+      PROFILE_ID,
+      { goal: "Run 5k" },
+      3,
+    );
+  });
+
+  it("reopens a long saved name (over 40 in Last name) and still saves", async () => {
+    // splitName puts every later word into Last name; the API allows 80.
+    const displayName =
+      "María de la Cruz Fernández-Rodríguez y Montenegro Villaseñor";
+    const api = fakeApi({
+      profileDetail: vi
+        .fn()
+        .mockResolvedValue({ ...detail(), displayName, revision: 3 }),
+      patchProfile: vi.fn().mockResolvedValue({
+        ...detail(),
+        displayName,
+        goal: "Run 5k",
+        revision: 4,
+      }),
+    });
+    renderCoach(<WhoContainer />, {
+      route: `/coach/clients/invited/${PROFILE_ID}/who`,
+      path: "/coach/clients/invited/:profileId/who",
+      api,
+    });
+    const goal = await screen.findByLabelText("Goal, optional");
+    expect(
+      (screen.getByLabelText("Last name") as HTMLInputElement).value.length,
+    ).toBeGreaterThan(40);
     fireEvent.change(goal, { target: { value: "Run 5k" } });
     fireEvent.click(screen.getByRole("button", { name: "Next: set up" }));
     await waitFor(() => expect(currentPath()).toBe(at()));
@@ -697,6 +768,30 @@ describe("Add client · 2 Set up (C11b)", () => {
     expect(
       await screen.findByText(/already accepted or the invite was cancelled/),
     ).toBeTruthy();
+  });
+
+  it("a 422 on the welcome message shows the form's message (PER-147)", async () => {
+    const api = fakeApi({
+      replaceSection: vi.fn().mockRejectedValue(
+        apiError(422, {
+          code: "VALIDATION",
+          validation: [{ path: "/items/0/config/text", message: "too long" }],
+        }),
+      ),
+    });
+    renderCoach(<SetupContainer />, {
+      route: at("welcome_message"),
+      path: SETUP,
+      api,
+    });
+    fireEvent.change(await screen.findByLabelText("Message"), {
+      target: { value: "Hi" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Next: invite" }));
+    expect(
+      await screen.findByText("Keep the message under 1,000 characters."),
+    ).toBeTruthy();
+    expect(currentPath()).toBe(at("welcome_message"));
   });
 
   it("reports other save failures", async () => {

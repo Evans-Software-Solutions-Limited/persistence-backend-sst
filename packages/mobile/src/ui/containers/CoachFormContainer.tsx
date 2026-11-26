@@ -1,4 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useForm } from "react-hook-form";
+import {
+  sendSheetAccepts,
+  sendSheetResolver,
+  type SendSheetValues,
+} from "@/ui/forms/ruleForms";
 import { useLocalSearchParams, useRouter } from "expo-router";
 
 import {
@@ -119,19 +125,12 @@ export function initialSheet(
   };
 }
 
-/** Whether the sheet can save: someone to send to and a complete rule. */
+/**
+ * Whether the sheet can save: someone to send to and a complete rule. The
+ * rules are the send sheet's schema (`ui/forms/ruleForms.ts`, PER-147).
+ */
 export function canSendSheet(sheet: SheetState): boolean {
-  if (audienceFor(sheet.trigger, sheet.audience) !== sheet.audience) {
-    return false;
-  }
-  if (sheet.audience === "selected" && sheet.selectedIds.length === 0) {
-    return false;
-  }
-  if (sheet.trigger === "weekly") {
-    return !!sheet.rule.weekday && !!sheet.rule.timeLocal;
-  }
-  if (sheet.trigger === "daily") return !!sheet.rule.timeLocal;
-  return true;
+  return sendSheetAccepts(sheet);
 }
 
 function isTrigger(v: unknown): v is FormTrigger {
@@ -172,6 +171,12 @@ export function CoachFormContainer() {
   });
   const online = useOnlineStatus();
   const [sheet, setSheet] = useState<SheetState | null>(null);
+  // The send sheet is a react-hook-form (PER-147) over the sheet's state;
+  // Send goes through its resolver.
+  const sendForm = useForm<SendSheetValues>({
+    resolver: sendSheetResolver,
+    values: sheet ?? undefined,
+  });
   const clients = useGetTrainerClients(sheet !== null);
 
   const form = library.data?.forms.find((f) => f.id === id) ?? null;
@@ -322,7 +327,7 @@ export function CoachFormContainer() {
           onRule={(rule) => setSheet({ ...sheet, rule })}
           sendCount={sendCount}
           canSend={canSendSheet(sheet)}
-          onSend={() => void onSend()}
+          onSend={() => void sendForm.handleSubmit(onSend)()}
           offline={!online}
           conflict={
             sheet.scheduleId !== null &&
