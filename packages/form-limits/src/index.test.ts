@@ -55,6 +55,12 @@ describe("form limits", () => {
       storedNameMax: 40,
       maxMeals: 30,
     });
-    expect(MEAL_PLAN_LIMITS).toEqual({ nameMax: 200, mealNameMax: 80 });
+    expect(MEAL_PLAN_LIMITS).toEqual({
+      nameMax: 200,
+      mealNameMax: 80,
+      storedNameMax: 80,
+      storedMealNameMax: 40,
+      noteMax: 500,
+    });
   });
 });

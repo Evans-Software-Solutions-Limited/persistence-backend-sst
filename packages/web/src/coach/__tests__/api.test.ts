@@ -717,6 +717,64 @@ describe("coach API client", () => {
     expect(body(13)).toEqual({ replyText: "Nice" });
   });
 
+  it("PER-135 meal-plan routes: method, path, body and keys", async () => {
+    const calls: { url: string; init: RequestInit }[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init: RequestInit) => {
+        calls.push({ url, init });
+        if (url.endsWith("/trainers/me/meal-plans") && !init?.method) {
+          return res(200, { data: { plans: ["p"] } });
+        }
+        if (init?.method === "DELETE") {
+          return new Response(null, { status: 204 });
+        }
+        return res(200, { data: "ok" });
+      }),
+    );
+    const input = { name: "Cut", meals: [] };
+    expect(await coachApi.libraryPlans()).toEqual(["p"]);
+    expect(await coachApi.createPlan(input, "k1")).toBe("ok");
+    await coachApi.replacePlan("p/1", input, 3);
+    await coachApi.archivePlan("p/1");
+    await coachApi.clientMealPlans("c1");
+    await coachApi.assignPlan("c1", "p1", "Note", "k2");
+    await coachApi.patchAssignmentNote("c1", "a1", null);
+    await coachApi.removeAssignment("c1", "a1");
+    await coachApi.shareRecipe("c1", "r1");
+    await coachApi.recipes();
+    await coachApi.savedMeals();
+    await coachApi.searchFoods("oats & milk");
+    await coachApi.clientAdherence("c1");
+    const seen = calls.map(
+      (c) =>
+        `${c.init?.method ?? "GET"} ${c.url.replace("https://api.test", "")}`,
+    );
+    expect(seen).toEqual([
+      "GET /trainers/me/meal-plans",
+      "POST /trainers/me/meal-plans",
+      "PUT /trainers/me/meal-plans/p%2F1",
+      "DELETE /trainers/me/meal-plans/p%2F1",
+      "GET /trainers/me/clients/c1/meal-plans",
+      "POST /trainers/me/clients/c1/meal-plans",
+      "PATCH /trainers/me/clients/c1/meal-plans/a1",
+      "DELETE /trainers/me/clients/c1/meal-plans/a1",
+      "POST /trainers/me/clients/c1/recipes/r1/share",
+      "GET /recipes",
+      "GET /meals",
+      "GET /foods?query=oats+%26+milk",
+      "GET /trainers/me/clients/c1/adherence?window=7d",
+    ]);
+    const body = (i: number) =>
+      JSON.parse(String(calls[i].init.body as string));
+    expect(calls[1].init.headers).toMatchObject({ "Idempotency-Key": "k1" });
+    expect(body(1)).toEqual(input);
+    expect(body(2)).toEqual({ ...input, expectedRevision: 3 });
+    expect(calls[5].init.headers).toMatchObject({ "Idempotency-Key": "k2" });
+    expect(body(5)).toEqual({ planId: "p1", note: "Note" });
+    expect(body(6)).toEqual({ note: null });
+  });
+
   it("templates: none when the server leaves them out", async () => {
     vi.stubGlobal(
       "fetch",

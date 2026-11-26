@@ -21,6 +21,14 @@ import type {
   Roster,
 } from "../api/types";
 import { CoachApiContext } from "../hooks/coachQueries";
+import {
+  ADHERENCE,
+  CLIENT_MEAL_PLANS,
+  FOODS,
+  LIBRARY_PLANS,
+  RECIPES,
+  SAVED_MEALS,
+} from "./mealPlanFixtures";
 
 /** Shared fixtures and a fake API for the coach container tests. */
 
@@ -368,6 +376,20 @@ export function fakeApi(over: Partial<FakeApi> = {}): FakeApi {
       acceptedVersion: "2026-11-v1",
       acceptedAt: "2026-11-23T00:00:00.000Z",
     }),
+    // PER-135: meal-plan library and the Nutrition tab.
+    libraryPlans: vi.fn().mockResolvedValue(LIBRARY_PLANS),
+    createPlan: vi.fn(),
+    replacePlan: vi.fn(),
+    archivePlan: vi.fn().mockResolvedValue(undefined),
+    clientMealPlans: vi.fn().mockResolvedValue(CLIENT_MEAL_PLANS),
+    assignPlan: vi.fn(),
+    patchAssignmentNote: vi.fn(),
+    removeAssignment: vi.fn().mockResolvedValue(undefined),
+    shareRecipe: vi.fn(),
+    recipes: vi.fn().mockResolvedValue(RECIPES),
+    savedMeals: vi.fn().mockResolvedValue(SAVED_MEALS),
+    searchFoods: vi.fn().mockResolvedValue(FOODS),
+    clientAdherence: vi.fn().mockResolvedValue(ADHERENCE),
     ...over,
   };
   return api;

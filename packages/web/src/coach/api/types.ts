@@ -359,3 +359,172 @@ export interface DeclarationStatus {
   acceptedVersion: string | null;
   acceptedAt: string | null;
 }
+
+// ─── Coach meal plans, full (PER-135; nutrition/mealPlans/*) ────────────────
+
+export type LogSlot = "breakfast" | "lunch" | "snack" | "dinner";
+
+/** One item of a plan as the server returns it (macros = the item's, servings applied). */
+export interface PlanItem extends Macros {
+  id: string;
+  kind: "food" | "recipe" | "meal" | "custom";
+  foodId: string | null;
+  recipeId: string | null;
+  mealId: string | null;
+  name: string;
+  servings: number;
+  sortOrder: number;
+  food: {
+    name: string;
+    brand: string | null;
+    servingSize: number;
+    servingUnit: string;
+    perServing: Macros;
+  } | null;
+  recipe: {
+    name: string;
+    photoUrl: string | null;
+    servings: number;
+    perServing: Macros;
+  } | null;
+  meal: { name: string; photoUrl: string | null; perServing: Macros } | null;
+  custom: ({ name: string } & Macros) | null;
+}
+
+export interface PlanMeal {
+  id: string;
+  name: string;
+  logSlot: LogSlot;
+  sortOrder: number;
+  totals: Macros;
+  items: PlanItem[];
+}
+
+/** `GET /trainers/me/meal-plans` → `plans[]`, and the plan routes' `data`. */
+export interface LibraryPlan {
+  id: string;
+  ownerId: string;
+  name: string;
+  notes: string | null;
+  source: string;
+  revision: number;
+  createdAt: string;
+  updatedAt: string;
+  totals: Macros;
+  meals: PlanMeal[];
+}
+
+/** The body of `POST` / `PUT /trainers/me/meal-plans[/:id]`. */
+export interface PlanInput {
+  name: string;
+  notes?: string | null;
+  meals: {
+    name: string;
+    logSlot: LogSlot;
+    sortOrder: number;
+    items: {
+      foodId?: string;
+      recipeId?: string;
+      mealId?: string;
+      custom?: { name: string } & Macros;
+      servings: number;
+      sortOrder: number;
+    }[];
+  }[];
+}
+
+export type AssignmentStatus = "sent" | "added" | "dismissed" | "removed";
+
+export interface PlanAssignment {
+  id: string;
+  planId: string;
+  note: string | null;
+  status: AssignmentStatus;
+  seenRevision: number;
+  sentAt: string;
+  addedAt: string | null;
+  updatedAt: string;
+}
+
+/** `GET /trainers/me/clients/:clientId/meal-plans` → `assignments[]`. */
+export interface ClientPlanAssignment extends PlanAssignment {
+  plan: LibraryPlan;
+  updatedSinceSeen: boolean;
+  /** Distinct days with food logged from this plan. */
+  usedDays: number;
+  /** Plan meals (entries) logged from this plan in the last 7 days. */
+  loggedThisWeek: number;
+}
+
+export interface ClientTarget {
+  dailyKcal: number;
+  proteinG: number;
+  carbsG: number;
+  fatG: number;
+  setByUserId: string | null;
+}
+
+export interface ClientMealPlans {
+  assignments: ClientPlanAssignment[];
+  target: ClientTarget | null;
+  asOf: string;
+}
+
+/** `GET /foods?query=` (macros per serving). */
+export interface FoodResult {
+  id: string;
+  name: string;
+  brand: string | null;
+  kcal: number;
+  proteinG: number;
+  carbsG: number;
+  fatG: number;
+  servingSize: number;
+  servingUnit: string;
+}
+
+/** `GET /recipes` (cards, no ingredients). Totals are for the whole recipe. */
+export interface CoachRecipe {
+  id: string;
+  name: string;
+  photoUrl: string | null;
+  servings: number;
+  source: string;
+  sourceUrl: string | null;
+  totalKcal: number | null;
+  totalProteinG: number | null;
+  totalCarbsG: number | null;
+  totalFatG: number | null;
+}
+
+/** `GET /meals` (cards, no items). */
+export interface CoachSavedMeal {
+  id: string;
+  name: string;
+  photoUrl: string | null;
+  totalKcal: number;
+  totalProteinG: number;
+  totalCarbsG: number;
+  totalFatG: number;
+}
+
+/** `GET /trainers/me/clients/:clientId/adherence` → `calories` (PER-114). */
+export interface CalorieAdherence {
+  from: string;
+  to: string;
+  daysOnTarget: number;
+  daysCounted: number;
+  daysNotLogged: number;
+}
+
+export interface ClientAdherence {
+  asOf: string;
+  calories?: CalorieAdherence;
+}
+
+/** `POST …/recipes/:recipeId/share`. */
+export interface RecipeShare {
+  recipeId: string;
+  sourceRecipeId: string;
+  created: boolean;
+}

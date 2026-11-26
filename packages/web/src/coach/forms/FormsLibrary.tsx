@@ -35,24 +35,44 @@ import {
 import { Avatar, Dialog, Notice, OfflineBanner } from "../ui/parts";
 import { RuleFields } from "./RuleFields";
 
-/** The Library sub-nav (C10a): only Forms is on the web so far. */
-export function LibraryTabs() {
+/** Library sections built on the web, by tab label (C10a). */
+const LIVE_LIBRARY_TABS: Record<string, string> = {
+  "Meal plans": "/coach/library/meal-plans", // PER-135 (C1)
+};
+
+/** The Library sub-nav (C10a). Tabs not on the web yet are shown but inert. */
+export function LibraryTabs({ current = "Forms" }: { current?: string }) {
   const later = ["Workouts", "Programmes", "Meal plans", "Resources"];
   return (
     <div className="tabs" role="tablist" aria-label="Library">
-      {later.map((t) => (
-        <span
-          key={t}
-          role="tab"
-          aria-selected={false}
-          aria-disabled="true"
-          aria-label={`${t}, not on the web yet`}
-          title="Not on the web yet"
-        >
-          {t}
-        </span>
-      ))}
-      <Link role="tab" aria-selected={true} to="/coach/library/forms">
+      {later.map((t) =>
+        LIVE_LIBRARY_TABS[t] ? (
+          <Link
+            key={t}
+            role="tab"
+            aria-selected={current === t}
+            to={LIVE_LIBRARY_TABS[t]}
+          >
+            {t}
+          </Link>
+        ) : (
+          <span
+            key={t}
+            role="tab"
+            aria-selected={false}
+            aria-disabled="true"
+            aria-label={`${t}, not on the web yet`}
+            title="Not on the web yet"
+          >
+            {t}
+          </span>
+        ),
+      )}
+      <Link
+        role="tab"
+        aria-selected={current === "Forms"}
+        to="/coach/library/forms"
+      >
         Forms
       </Link>
     </div>
