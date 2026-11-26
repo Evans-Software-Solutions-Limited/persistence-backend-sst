@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useForm } from "react-hook-form";
 import * as Haptics from "expo-haptics";
 import { useFuelSheets } from "@/state/fuel-sheets";
 import { useLogEntry } from "@/ui/hooks/useLogEntry";
@@ -14,14 +15,11 @@ import {
   QuickLogSheetPresenter,
   type QuickLogField,
 } from "@/ui/presenters/fuel/QuickLogSheetPresenter";
-
-const EMPTY: QuickLogValues = {
-  name: "",
-  kcal: "",
-  protein: "",
-  carbs: "",
-  fat: "",
-};
+import {
+  EMPTY_QUICK_LOG as EMPTY,
+  quickLogAccepts,
+  quickLogResolver,
+} from "@/ui/forms/fuelForms";
 
 /**
  * <QuickLogSheetContainer> — root-mounted N2e Quick log (PER-132): a one-off
@@ -39,12 +37,18 @@ export function QuickLogSheetContainer() {
   const { meals } = useUserMeals(visible);
   const logEntry = useLogEntry();
 
-  const [values, setValues] = useState<QuickLogValues>(EMPTY);
+  // react-hook-form holds what's typed (PER-147); Log is on while the schema
+  // accepts it, and logging goes through the resolver.
+  const form = useForm<QuickLogValues>({
+    resolver: quickLogResolver,
+    defaultValues: EMPTY,
+  });
+  const values = form.watch();
   const [mealKey, setMealKey] = useState<string>("");
 
   useEffect(() => {
     if (!visible) return;
-    setValues(EMPTY);
+    form.reset(EMPTY);
     setMealKey(
       userMealId ??
         meals.find((m) => m.logSlot === slot)?.id ??
@@ -63,7 +67,7 @@ export function QuickLogSheetContainer() {
   }, [visible, close]);
 
   const onLog = useCallback(async () => {
-    if (!draft.canLog || draft.kcal === null || !meal) return;
+    if (draft.kcal === null || !meal) return;
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     await logEntry.mutate({
       ...logTargetForUserMeal(meal),
@@ -85,7 +89,7 @@ export function QuickLogSheetContainer() {
       onClose={onClose}
       values={values}
       onChange={(field: QuickLogField, value: string) =>
-        setValues((v) => ({ ...v, [field]: value }))
+        form.setValue(field, value, { shouldDirty: true })
       }
       meals={meals.map((m) => ({ key: m.id, label: m.name }))}
       selectedMealKey={meal?.id ?? ""}
@@ -101,8 +105,8 @@ export function QuickLogSheetContainer() {
           : ""
       }
       mealLabel={meal?.name ?? ""}
-      canLog={draft.canLog && meal !== undefined}
-      onLog={() => void onLog()}
+      canLog={quickLogAccepts(values) && meal !== undefined}
+      onLog={() => void form.handleSubmit(onLog)()}
     />
   );
 }

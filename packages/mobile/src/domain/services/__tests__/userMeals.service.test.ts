@@ -421,15 +421,14 @@ describe("quick log draft (N2e)", () => {
     fat: f,
   });
 
-  it("needs calories; name and macros are optional", () => {
-    expect(quickLogDraft(v("")).canLog).toBe(false);
-    expect(quickLogDraft(v("0")).canLog).toBe(false);
-    expect(quickLogDraft(v("10001")).canLog).toBe(false);
+  it("parses calories; name and macros are optional", () => {
+    // Whether it can be logged is the form's schema (fuelForms.test.ts).
+    expect(quickLogDraft(v("")).kcal).toBeNull();
+    expect(quickLogDraft(v("0")).kcal).toBe(0);
     expect(quickLogDraft(v("abc")).kcal).toBeNull();
     const d = quickLogDraft(v("450", "", "", "", "  "));
     expect(d).toMatchObject({
       kcal: 450,
-      canLog: true,
       name: null,
       macroKcal: null,
       mismatch: false,

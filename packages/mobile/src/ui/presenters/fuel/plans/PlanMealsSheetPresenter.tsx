@@ -1,4 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useForm } from "react-hook-form";
+import { mealNameResolver, type MealNameValues } from "@/ui/forms/fuelForms";
 import { Pressable, TextInput, View as RNView } from "react-native";
 import { Text, View } from "@tamagui/core";
 import { BottomSheet, Btn } from "@/ui/components/foundation";
@@ -55,16 +57,27 @@ function NameInput({
   onCancel: () => void;
   testID: string;
 }) {
-  const [value, setValue] = useState(initial);
+  // A react-hook-form (PER-147), the same rules as Your meals: a blank name
+  // cancels, a good one is saved trimmed. Return then blur both submit; the
+  // submit is async, so only the first one counts.
+  const form = useForm<MealNameValues>({
+    resolver: mealNameResolver,
+    defaultValues: { name: initial },
+  });
+  const value = form.watch("name");
+  const done = useRef(false);
   const submit = () => {
-    const trimmed = value.trim();
-    if (trimmed.length === 0) onCancel();
-    else onSubmit(trimmed);
+    if (done.current) return;
+    done.current = true;
+    void form.handleSubmit(
+      ({ name }) => onSubmit(name.trim()),
+      () => onCancel(),
+    )();
   };
   return (
     <TextInput
       value={value}
-      onChangeText={setValue}
+      onChangeText={(v) => form.setValue("name", v, { shouldDirty: true })}
       onSubmitEditing={submit}
       onBlur={submit}
       autoFocus

@@ -1,4 +1,14 @@
 import { useCallback, useMemo, useState } from "react";
+import { useForm } from "react-hook-form";
+import {
+  amountAccepts,
+  amountResolver,
+  planSaveAccepts,
+  planSaveResolver,
+  type AmountContext,
+  type AmountValues,
+  type PlanSaveContext,
+} from "@/ui/forms/planForms";
 import { router, type Href } from "expo-router";
 import { localIdFactory } from "@/application/commands/localId";
 import type { NutritionPlan } from "@/domain/models/nutritionPlans";
@@ -181,6 +191,31 @@ export function PlanBuilderContainer({
     [pastDayMeal, draft, userId, storage, userMeals.meals, lookups, addItems],
   );
 
+  // Save and the amount sheet are react-hook-forms (PER-147); what they
+  // depend on (the plan's foods, a full meal) is their context.
+  const saveContext: PlanSaveContext = {
+    mode,
+    items: draft && !planIsEmpty(draft) ? 1 : 0,
+  };
+  const saveForm = useForm<Record<string, never>>({
+    resolver: planSaveResolver,
+    context: saveContext,
+  });
+  // Moving into a full meal isn't possible (Inspector Brad, #554).
+  const amountContext: AmountContext = {
+    blocked:
+      !!draft &&
+      !!amount &&
+      amount.toMealId !== amount.mealId &&
+      isPlanMealFull(draft, amount.toMealId),
+  };
+  const amountValues: AmountValues = { amount: amount?.text ?? "" };
+  const amountForm = useForm<AmountValues>({
+    resolver: amountResolver,
+    values: amountValues,
+    context: amountContext,
+  });
+
   if (!draft) return null;
 
   const comparison = compareWithTarget(draft.totals, target);
@@ -197,12 +232,6 @@ export function PlanBuilderContainer({
   const toMeal = amount
     ? draft.meals.find((m) => m.id === amount.toMealId)
     : undefined;
-  // Moving into a full meal isn't possible (Inspector Brad, #554).
-  const moveBlocked =
-    !!amount &&
-    amount.toMealId !== amount.mealId &&
-    isPlanMealFull(draft, amount.toMealId);
-
   const original = findPlan(plans.cache, draft.id);
 
   return (
@@ -249,9 +278,9 @@ export function PlanBuilderContainer({
               ? "Add something to save"
               : "Save plan"
         }
-        canSave={mode === "edit" || !empty}
+        canSave={planSaveAccepts(saveContext)}
         saving={saving}
-        onSave={() => void onSave()}
+        onSave={() => void saveForm.handleSubmit(onSave)()}
       />
 
       <PlanMealsSheetContainer
@@ -304,16 +333,18 @@ export function PlanBuilderContainer({
         onMeal={(id) => amount && setAmount({ ...amount, toMealId: id })}
         kcal={preview?.kcal ?? 0}
         macros={preview ? macroShares(preview) : []}
-        canSave={typed !== null && !moveBlocked}
-        onSave={() => {
-          if (!amount || !amountItem || typed === null || moveBlocked) return;
-          moveItem(
-            amount.mealId,
-            amount.toMealId,
-            withServings(amountItem, typed),
-          );
-          setAmount(null);
-        }}
+        canSave={amountAccepts(amountValues, amountContext)}
+        onSave={() =>
+          void amountForm.handleSubmit(() => {
+            if (!amount || !amountItem || typed === null) return;
+            moveItem(
+              amount.mealId,
+              amount.toMealId,
+              withServings(amountItem, typed),
+            );
+            setAmount(null);
+          })()
+        }
         onRemove={() => {
           if (!amount) return;
           removeDraftItem(amount.mealId, amount.itemId);

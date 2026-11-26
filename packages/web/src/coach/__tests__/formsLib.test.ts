@@ -17,7 +17,6 @@ import {
   nextSend,
   prefillFor,
   questionLine,
-  questionProblems,
   reminderWords,
   responseLine,
   responseTitle,
@@ -32,6 +31,7 @@ import {
   withTrigger,
   withType,
 } from "../lib/forms";
+import { formEditorResolver, problemsFrom } from "../lib/formEditorForm";
 import { FORMS, SCHEDULES, response } from "./helpers";
 
 const q = (over: Partial<FormQuestion>): FormQuestion => ({
@@ -115,21 +115,67 @@ describe("questions (C10b)", () => {
     expect(prefillFor("short_text")).toEqual([]);
   });
 
-  it("finds what the server would refuse", () => {
-    const problems = questionProblems([
-      q({ prompt: " " }),
-      q({ prompt: "x".repeat(301) }),
-      q({ help: "x".repeat(301) }),
-      q({ type: "single_choice", options: ["a"] }),
-      q({ type: "multiple_choice", options: ["a", " "] }),
-      q({ type: "single_choice", options: ["a", "a"] }),
-      q({ type: "number", min: 5, max: 1 }),
-      q({ type: "number", min: 1, max: 5 }),
-    ]);
-    expect([...problems.keys()]).toEqual([0, 1, 2, 3, 4, 5, 6]);
-    expect(problems.get(3)).toMatch(/2 to 12/);
-    expect(problems.get(4)).toMatch(/every option/);
-    expect(problems.get(5)).toMatch(/different/);
+  it("finds what the server would refuse (the editor's resolver)", async () => {
+    const result = await formEditorResolver(
+      {
+        title: "Weekly",
+        questions: [
+          q({ prompt: " " }),
+          q({ prompt: "x".repeat(301) }),
+          q({ help: "x".repeat(301) }),
+          q({ type: "single_choice", options: ["a"] }),
+          q({ type: "multiple_choice", options: ["a", " "] }),
+          q({ type: "single_choice", options: ["a", " a"] }),
+          q({ type: "number", min: 5, max: 1 }),
+          q({ type: "number", min: 1, max: 5 }),
+          // A blank option is named before a repeated one.
+          q({ type: "single_choice", options: [" ", " "] }),
+          q({ type: "single_choice", options: Array(13).fill("o") }),
+          // Blank and repeated together: the blank is named (Inspector Brad).
+          q({ type: "multiple_choice", options: ["a", "a", " "] }),
+          // A blank list that's too short: the count is named.
+          q({ type: "single_choice", options: [" "] }),
+        ],
+      },
+      undefined,
+      { fields: {}, names: [] as string[], shouldUseNativeValidation: false },
+    );
+    const problems = problemsFrom(result.errors);
+    expect([...problems.keys()]).toEqual([0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11]);
+    expect(problems.get(0)).toBe("Write the question.");
+    expect(problems.get(1)).toBe("Keep the question under 300 characters.");
+    expect(problems.get(2)).toBe("Keep the help text under 300 characters.");
+    expect(problems.get(3)).toBe("Give 2 to 12 options.");
+    expect(problems.get(4)).toBe("Fill in every option.");
+    expect(problems.get(5)).toBe("Options must be different.");
+    expect(problems.get(6)).toBe(
+      "The lowest number must not be above the highest.",
+    );
+    expect(problems.get(8)).toBe("Fill in every option.");
+    expect(problems.get(9)).toBe("Give 2 to 12 options.");
+    expect(problems.get(10)).toBe("Fill in every option.");
+    expect(problems.get(11)).toBe("Give 2 to 12 options.");
+  });
+
+  it("refuses a form with no name or no questions; passes a good one", async () => {
+    const opts = {
+      fields: {},
+      names: [] as string[],
+      shouldUseNativeValidation: false,
+    } as const;
+    const empty = await formEditorResolver(
+      { title: "  ", questions: [] },
+      undefined,
+      opts,
+    );
+    expect(Object.keys(empty.errors).sort()).toEqual(["questions", "title"]);
+    expect(problemsFrom(empty.errors).size).toBe(0);
+    const good = await formEditorResolver(
+      { title: "Weekly", questions: [q({})] },
+      undefined,
+      opts,
+    );
+    expect(good.errors).toEqual({});
   });
 
   it("cleans questions for the API and compares them", () => {

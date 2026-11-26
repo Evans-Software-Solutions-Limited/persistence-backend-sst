@@ -1,3 +1,4 @@
+import { USER_MEAL_LIMITS } from "@persistence/form-limits";
 /**
  * "Your meals" (PER-132, Design D N1b) — the person's own named meals, as many
  * as they like. Each maps to one of the four old slots (`logSlot`) so 1.2.0
@@ -43,4 +44,4 @@ export type UserMealPutRow = {
 /** The longest name the server stores (Design D: 1–40). */
 export const USER_MEAL_NAME_MAX = 40;
 /** The server's list cap (`MAX_USER_MEALS`). */
-export const USER_MEALS_MAX = 30;
+export const USER_MEALS_MAX = USER_MEAL_LIMITS.maxMeals;
