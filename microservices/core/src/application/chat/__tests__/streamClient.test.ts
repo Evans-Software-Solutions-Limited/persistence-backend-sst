@@ -299,9 +299,19 @@ describe("StreamChatClient", () => {
       /task task-1 failed: boom/,
     );
     stream.taskStatus = "running";
-    expect(await client.deleteUserHard("u2", { sleep, polls: 2 })).toBe(
-      "pending",
-    );
+    const slept: number[] = [];
+    expect(
+      await client.deleteUserHard("u2", {
+        sleep: async (ms) => {
+          slept.push(ms);
+        },
+      }),
+    ).toBe("pending");
+    // Two polls by default: one straight away, one a second later.
+    expect(slept).toEqual([1000]);
+    expect(
+      stream.calls.filter((c) => c.path.startsWith("/tasks/")),
+    ).toHaveLength(3);
     stream.failOn(/POST \/users\/delete/);
     await expect(client.deleteUserHard("u3")).rejects.toMatchObject({
       status: 503,

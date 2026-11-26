@@ -240,16 +240,16 @@ export class StreamChatClient {
   /**
    * Erase a user from Stream (account deletion): the user and all their
    * messages are hard-deleted; the other party's own messages stay
-   * (`conversations: keep`). Stream runs it as a task, which is polled until
-   * it finishes. A failed task throws (the caller retries); one still running
-   * after the polls is left to finish on Stream's side. A user Stream never
-   * had counts as erased.
+   * (`conversations: keep`). Stream runs it as a task, polled `polls` times
+   * (the first straight away, then a second apart). A failed task throws; one
+   * still running after the polls is reported `pending` (the caller keeps it
+   * queued: next time, a user Stream no longer has is `not_found`, i.e. done).
    */
   async deleteUserHard(
     userId: string,
     options: { polls?: number; sleep?: (ms: number) => Promise<void> } = {},
   ): Promise<"deleted" | "pending" | "not_found"> {
-    const polls = options.polls ?? 10;
+    const polls = options.polls ?? 2;
     const sleep =
       options.sleep ??
       ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
@@ -268,6 +268,7 @@ export class StreamChatClient {
     }
     if (!taskId) return "deleted";
     for (let i = 0; i < polls; i++) {
+      if (i > 0) await sleep(1000);
       const task = (await this.request(
         "GET",
         `/tasks/${encodeURIComponent(taskId)}`,
@@ -279,7 +280,6 @@ export class StreamChatClient {
           500,
         );
       }
-      await sleep(1000);
     }
     return "pending";
   }

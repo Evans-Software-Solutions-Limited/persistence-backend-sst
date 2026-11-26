@@ -95,10 +95,16 @@ import {
   safeFreezeChatChannel,
   safeProvisionChatChannel,
   setStreamClientForTests,
+  StreamDeletePendingError,
 } from "../chatChannels";
 import { COACHING_GRANTS, StreamChatClient } from "../streamClient";
 import { accountPurgeCron } from "../../account/purge/accountPurgeCron";
-import { eraseAfterPurge } from "../../account/purge/eraseAfterPurge";
+import {
+  ERASE_DEADLINE_MS,
+  eraseAfterPurge,
+  MAX_CHAT_ERASURES_PER_RUN,
+  MAX_CHAT_FAILURES_PER_RUN,
+} from "../../account/purge/eraseAfterPurge";
 import {
   drainPrivateMediaPurges,
   queuePrivateMediaPurge,
@@ -1085,7 +1091,9 @@ describe("account purge: erasing a deleted user from Stream chat, only after the
       queuePrivateMediaPurge,
       now: new Date(),
     });
-    const drained = await drainPrivateMediaPurges(eraseAfterPurge);
+    const drained = await drainPrivateMediaPurges(
+      eraseAfterPurge({ startedAt: new Date() }),
+    );
     return { swept, drained };
   }
 
@@ -1167,7 +1175,9 @@ describe("account purge: erasing a deleted user from Stream chat, only after the
     expect(stream.deletedUsers).toEqual([]);
 
     // Next night: the account is no longer pending; the drain retries it.
-    const drained = await drainPrivateMediaPurges(eraseAfterPurge);
+    const drained = await drainPrivateMediaPurges(
+      eraseAfterPurge({ startedAt: new Date() }),
+    );
     expect(drained).toMatchObject({ deleted: 1, failed: 0 });
     expect(stream.deletedUsers).toEqual([ATHLETE_A]);
     expect(await queued()).toEqual([]);
@@ -1234,16 +1244,168 @@ describe("account purge: erasing a deleted user from Stream chat, only after the
     expect(stream.calls).toEqual([]);
   });
 
-  it("a delete task still running is accepted (Stream finishes it)", async () => {
+  it("a delete task still running keeps the row queued; next night Stream no longer has the user, which is done", async () => {
+    await softDelete(ATHLETE_A);
     stream.taskStatus = "running";
     vi.useFakeTimers({ toFake: ["setTimeout"] });
     try {
-      const pending = eraseChatUser(ATHLETE_A);
+      const run = night(ATHLETE_A);
       await vi.runAllTimersAsync();
-      expect(await pending).toBe("erased");
+      const { drained } = await run;
+      // Deferred, not failed: no alarm, and the row stays.
+      expect(drained).toMatchObject({ deleted: 0, waiting: 1, failed: 0 });
     } finally {
       vi.useRealTimers();
     }
+    expect((await queued()).map((q) => q.userId)).toEqual([ATHLETE_A]);
+    await expect(eraseChatUser(ATHLETE_A)).resolves.toBe("erased");
+    stream.taskStatus = "completed";
+    const next = await drainPrivateMediaPurges(
+      eraseAfterPurge({ startedAt: new Date() }),
+    );
+    expect(next).toMatchObject({ deleted: 1, waiting: 0 });
+    expect(await queued()).toEqual([]);
+  });
+
+  it("eraseChatUser throws StreamDeletePendingError while Stream is still deleting", async () => {
+    stream.taskStatus = "running";
+    vi.useFakeTimers({ toFake: ["setTimeout"] });
+    try {
+      const pending = eraseChatUser(ATHLETE_A).catch((e: unknown) => e);
+      await vi.runAllTimersAsync();
+      expect(await pending).toBeInstanceOf(StreamDeletePendingError);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+// ─── The drain is bounded (Inspector Brad, #570 round 3) ────────────────────
+
+describe("post-purge erasure budget", () => {
+  /** Two purged accounts queued (profiles gone, as after the purge). */
+  async function purgedPair(): Promise<string[]> {
+    const ids = [randomUUID(), randomUUID()];
+    const client = new StreamChatClient(
+      { apiKey: TEST_STREAM_KEY, apiSecret: TEST_STREAM_SECRET },
+      stream.fetch,
+    );
+    await client.upsertUsers(ids.map((id) => ({ id })));
+    for (const id of ids) await queuePrivateMediaPurge(id);
+    return ids;
+  }
+  const queuedIds = async () =>
+    (await db.select().from(schema.privateMediaPurges)).map((q) => q.userId);
+
+  beforeEach(() => vi.mocked(deleteAllUserMedia).mockClear());
+
+  it("past the deadline, nothing is started and every row stays queued", async () => {
+    const ids = await purgedPair();
+    stream.calls = [];
+    const drained = await drainPrivateMediaPurges(
+      eraseAfterPurge({
+        startedAt: new Date(Date.now() - 121_000),
+      }),
+    );
+    expect(drained).toMatchObject({ deleted: 0, waiting: 2, failed: 0 });
+    expect(stream.calls).toEqual([]);
+    expect(deleteAllUserMedia).not.toHaveBeenCalled();
+    expect((await queuedIds()).sort()).toEqual([...ids].sort());
+  });
+
+  it("stops at the per-run cap; the rest wait for the next night", async () => {
+    await purgedPair();
+    const drained = await drainPrivateMediaPurges(
+      eraseAfterPurge({ startedAt: new Date(), maxChatErasures: 1 }),
+    );
+    expect(drained).toMatchObject({ deleted: 1, waiting: 1 });
+    expect(stream.deletedUsers).toHaveLength(1);
+    expect(await queuedIds()).toHaveLength(1);
+  });
+
+  it("while Stream is failing, stops after the first failure instead of trying every row", async () => {
+    await purgedPair();
+    stream.down = true;
+    stream.calls = [];
+    const drained = await drainPrivateMediaPurges(
+      eraseAfterPurge({ startedAt: new Date(), maxChatFailures: 1 }),
+    );
+    expect(drained).toMatchObject({ failed: 1, waiting: 1, deleted: 0 });
+    expect(stream.calls).toHaveLength(1); // one attempt, then it stops
+    expect(await queuedIds()).toHaveLength(2);
+  });
+
+  it("the defaults are 120 s, 20 erasures and 2 failures per run", () => {
+    expect(ERASE_DEADLINE_MS).toBe(120_000);
+    expect(MAX_CHAT_ERASURES_PER_RUN).toBe(20);
+    expect(MAX_CHAT_FAILURES_PER_RUN).toBe(2);
+  });
+
+  it("without Stream keys a row is bucket-only and never deferred, as before", async () => {
+    await purgedPair();
+    setStreamClientForTests(null);
+    const drained = await drainPrivateMediaPurges(
+      eraseAfterPurge({
+        startedAt: new Date(Date.now() - 600_000),
+        maxChatErasures: 0,
+      }),
+    );
+    expect(drained).toMatchObject({ deleted: 2, waiting: 0 });
+    expect(deleteAllUserMedia).toHaveBeenCalledTimes(2);
+    expect(await queuedIds()).toEqual([]);
+  });
+});
+
+// ─── Channel types are locked down on the token route and every tick ────────
+
+describe("locking the channel types down (Inspector Brad, #570 round 3)", () => {
+  it("POST /chat/token ensures the types before issuing a token", async () => {
+    await provisionChatChannel(REL_CA);
+    // A fresh container: types not yet ensured, and a stage still unlocked.
+    configure();
+    stream.channelTypes.get("messaging")!.grants.user = ["create-channel"];
+    const res = await http("POST", "/chat/token", COACH_C);
+    expect(res.status).toBe(200);
+    expect(stream.channelTypes.get("messaging")!.grants.user).toEqual([]);
+  });
+
+  it("fails closed: no token while the types can't be locked down", async () => {
+    await provisionChatChannel(REL_CA);
+    configure();
+    stream.failOn(/PUT \/channeltypes\/messaging/);
+    const res = await http("POST", "/chat/token", COACH_C);
+    expect(res.status).toBe(503);
+    expect(res.json.code).toBe("chat_unavailable");
+    expect(res.json.data).toBeUndefined();
+  });
+
+  it("each scheduler tick ensures them, even with nothing to provision", async () => {
+    await reconcileChatChannels();
+    configure();
+    stream.channelTypes.get("team")!.grants.user = ["create-channel"];
+    expect(await reconcileChatChannels()).toMatchObject({
+      ensureFailed: 0,
+      provisioned: 0,
+    });
+    expect(stream.channelTypes.get("team")!.grants.user).toEqual([]);
+  });
+
+  it("a failed ensure skips provisioning that tick, but freezing still runs", async () => {
+    await provisionChatChannel(REL_CA);
+    await db
+      .update(schema.ptClientRelationships)
+      .set({ status: "terminated" })
+      .where(eq(schema.ptClientRelationships.id, REL_CA));
+    configure();
+    stream.failOn(/PUT \/channeltypes\/coaching/);
+    const summary = await reconcileChatChannels();
+    expect(summary).toMatchObject({
+      ensureFailed: 1,
+      provisioned: 0,
+      provisionFailed: 0,
+      frozen: 1,
+    });
+    expect(await channelRow(REL_EA)).toBeUndefined();
   });
 });
 

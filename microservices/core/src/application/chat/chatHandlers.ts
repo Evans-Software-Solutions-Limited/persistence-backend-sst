@@ -8,6 +8,7 @@ import { eq } from "drizzle-orm";
 import { profiles } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
 import {
+  ensureCoachingChannelType,
   getStreamClient,
   listChannelsFor,
   streamUserFor,
@@ -25,7 +26,9 @@ import {
  *
  * Error codes: 503 `chat_not_configured` (no Stream keys on this stage),
  * 403 `chat_not_available` (no active or frozen channel of the caller's),
- * 502 `chat_unavailable` (Stream refused the user upsert).
+ * 503 `chat_unavailable` (the channel types couldn't be locked down: no
+ * token is issued until they are), 502 `chat_unavailable` (Stream refused the
+ * user upsert).
  */
 
 export const CHAT_NOT_CONFIGURED = {
@@ -68,6 +71,18 @@ export const chatRoutes = new Elysia()
         .from(profiles)
         .where(eq(profiles.id, userId))
         .limit(1);
+      try {
+        // Fail closed: no token until the channel types are locked down (a
+        // token on an unlocked type could open a chat with anyone).
+        await ensureCoachingChannelType(client);
+      } catch (err) {
+        console.error("[chat] channel type ensure failed", err);
+        ctx.set.status = 503;
+        return {
+          code: "chat_unavailable",
+          message: "Messages are unavailable right now. Try again shortly.",
+        };
+      }
       try {
         // Design E: upsert the Stream user when a token is requested, so a
         // changed name or avatar reaches Stream by the next token.

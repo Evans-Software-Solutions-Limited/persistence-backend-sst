@@ -67,7 +67,12 @@ export async function drainPrivateMediaPurges(
       if (profile) {
         summary.restored += 1;
       } else {
-        await deleteMedia(userId);
+        // PER-120: the account's erasure was deferred to a later night
+        // (its time budget ran out): keep the row, like a waiting one.
+        if ((await deleteMedia(userId)) === "deferred") {
+          summary.waiting += 1;
+          continue;
+        }
         summary.deleted += 1;
       }
       await getDb()

@@ -361,12 +361,20 @@ export async function eraseChatUser(userId: string): Promise<EraseResult> {
     }
   }
   const deleted = await client.deleteUserHard(userId);
-  if (deleted === "pending") {
-    console.warn(
-      `[chat] Stream is still deleting user ${userId}; the task finishes on Stream's side`,
-    );
-  }
+  if (deleted === "pending") throw new StreamDeletePendingError(userId);
   return "erased";
+}
+
+/**
+ * Stream accepted the user delete but hasn't finished it. Not a failure: the
+ * queued row stays and the next night re-submits it; a user Stream no longer
+ * has then counts as done (Inspector Brad, #570).
+ */
+export class StreamDeletePendingError extends Error {
+  constructor(userId: string) {
+    super(`Stream is still deleting user ${userId}`);
+    this.name = "StreamDeletePendingError";
+  }
 }
 
 /** Provisioning for a hook after a commit. Never throws. */
@@ -401,6 +409,8 @@ export const RECONCILE_BATCH = 50;
 
 export interface ReconcileSummary {
   notConfigured: number;
+  /** The channel type ensure failed this tick: provisioning was skipped. */
+  ensureFailed: number;
   provisioned: number;
   provisionFailed: number;
   frozen: number;
@@ -419,43 +429,58 @@ export async function reconcileChatChannels(
 ): Promise<ReconcileSummary> {
   const summary: ReconcileSummary = {
     notConfigured: 0,
+    ensureFailed: 0,
     provisioned: 0,
     provisionFailed: 0,
     frozen: 0,
     freezeFailed: 0,
   };
-  if (!getStreamClient()) {
+  const client = getStreamClient();
+  if (!client) {
     summary.notConfigured = 1;
     return summary;
+  }
+  // Every tick (memoised per container), so a deploy locks the channel
+  // types down even before any new channel is provisioned. If it fails,
+  // provisioning waits for the next tick; freezing still runs.
+  let typesReady = true;
+  try {
+    await ensureCoachingChannelType(client);
+  } catch (err) {
+    typesReady = false;
+    summary.ensureFailed = 1;
+    console.error("[chat] channel type ensure failed", err);
   }
   const db = getDb();
   const trainer = aliasedTable(profiles, "chat_trainer");
   const athlete = aliasedTable(profiles, "chat_athlete");
 
-  const toProvision = await db
-    .select({ id: ptClientRelationships.id })
-    .from(ptClientRelationships)
-    .innerJoin(trainer, eq(trainer.id, ptClientRelationships.trainerId))
-    .innerJoin(athlete, eq(athlete.id, ptClientRelationships.clientId))
-    .leftJoin(
-      chatChannels,
-      eq(chatChannels.relationshipId, ptClientRelationships.id),
-    )
-    .where(
-      and(
-        eq(ptClientRelationships.status, "active"),
-        eq(ptClientRelationships.isAiTrainer, false),
-        isNull(trainer.deletedAt),
-        isNull(athlete.deletedAt),
-        or(
-          isNull(chatChannels.relationshipId),
-          ne(chatChannels.state, "active"),
-        ),
-      ),
-    )
-    // Never-tried first, then the longest-waiting retries.
-    .orderBy(sql`${chatChannels.updatedAt} asc nulls first`)
-    .limit(limit);
+  const toProvision = !typesReady
+    ? []
+    : await db
+        .select({ id: ptClientRelationships.id })
+        .from(ptClientRelationships)
+        .innerJoin(trainer, eq(trainer.id, ptClientRelationships.trainerId))
+        .innerJoin(athlete, eq(athlete.id, ptClientRelationships.clientId))
+        .leftJoin(
+          chatChannels,
+          eq(chatChannels.relationshipId, ptClientRelationships.id),
+        )
+        .where(
+          and(
+            eq(ptClientRelationships.status, "active"),
+            eq(ptClientRelationships.isAiTrainer, false),
+            isNull(trainer.deletedAt),
+            isNull(athlete.deletedAt),
+            or(
+              isNull(chatChannels.relationshipId),
+              ne(chatChannels.state, "active"),
+            ),
+          ),
+        )
+        // Never-tried first, then the longest-waiting retries.
+        .orderBy(sql`${chatChannels.updatedAt} asc nulls first`)
+        .limit(limit);
   for (const { id } of toProvision) {
     try {
       const result = await provisionChatChannel(id, now);

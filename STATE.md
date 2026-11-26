@@ -55,6 +55,16 @@ CASCADE, `coaching` / `coach-<relationshipId>`, state
   the user's `coaching` channels in Stream itself (rows cascaded), removes them
   and freezes each, then `POST /users/delete` (user + messages hard,
   conversations keep). No new table. The purge cron gets the Stream env.
+- **Bounded drain** (round 3): `eraseAfterPurge({startedAt})` starts no chat
+  erasure after 120 s of the run, past 20 per run, or after 2 Stream failures;
+  those rows return `"deferred"` (kept, counted as `waiting`) untouched.
+  Without keys a row is bucket-only as on main. A Stream delete task still
+  running throws `StreamDeletePendingError` → deferred (row kept; next night a
+  missing user counts as done). Task polling is 2 (no sleep before the first).
+- **Ensure on token + every tick** (round 3): `POST /chat/token` runs the
+  memoised ensure first and fails closed (503 `chat_unavailable`, no token);
+  `reconcileChatChannels` ensures at the start of each tick (failure skips
+  provisioning, freezing still runs), so a deploy locks existing stages.
 - **Built-in types locked too** (round 2): `ensureChannelType` also strips
   `user`/`guest`/`anonymous` grants on `messaging`, `team`, `livestream`,
   `gaming`, `commerce` (a missing type is skipped). PER-136 queries channels

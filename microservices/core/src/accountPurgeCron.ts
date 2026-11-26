@@ -118,7 +118,11 @@ async function baseHandler(): Promise<{
   try {
     // PER-120: each purged account's queued row also erases it from Stream
     // chat (after the purge, never for a restored account).
-    const drained = await drainPrivateMediaPurges(eraseAfterPurge);
+    // Bounded (deadline, cap, early stop on Stream failures), so a Stream
+    // outage can't push this run past its timeout; the rest stay queued.
+    const drained = await drainPrivateMediaPurges(
+      eraseAfterPurge({ startedAt: now }),
+    );
     console.log(`[private-media-purge:summary] ${JSON.stringify(drained)}`);
     if (drained.failed > 0) {
       captureFatal(
