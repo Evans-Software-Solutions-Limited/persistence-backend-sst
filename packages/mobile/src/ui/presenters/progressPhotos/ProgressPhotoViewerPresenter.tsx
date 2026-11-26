@@ -1,4 +1,4 @@
-import { Pressable, ScrollView } from "react-native";
+import { Pressable, ScrollView, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Text, View } from "@tamagui/core";
@@ -13,14 +13,18 @@ import { IconButton } from "../you/youKit";
 import { PhotoImage, type PhotoPoseLabel } from "./PhotoTile";
 
 /**
- * <ProgressPhotoViewerPresenter> — canvas Y3c photo viewer, built in
- * PORTRAIT (the app is portrait-locked; build fix on PER-72). The photo
- * fills the screen; the top bar holds Close, one dropdown for pose and date
- * ("Front · 25 Oct 2026"), and Add photos, with that date's weight, body fat
- * and change vs the latest photos beneath it (the canvas's landscape bar
- * doesn't fit one portrait row). The dropdown holds the pose switch and
- * every date with photos. Delete (not drawn on the canvas) sits beside Add.
- * Pure.
+ * <ProgressPhotoViewerPresenter> — canvas Y3c photo viewer, LANDSCAPE
+ * (Brad, 26 Nov: landscape only, for this page; the container turns the
+ * screen). The photo fills the screen; one bar across the top, as on the
+ * canvas: Close, one dropdown for pose and date ("Front · 25 Oct 2026"),
+ * that date's weight, body fat and change vs the latest photos, then
+ * Delete (Brad approved, not drawn) and Add photos. The dropdown holds the
+ * pose switch and every date with photos.
+ *
+ * The one-row bar only fits a landscape screen. When the screen is still
+ * portrait (a 1.2.0 binary over the air, iPad multitasking, or a lock that
+ * failed) the numbers drop to a second row so Delete and Add stay on screen
+ * (Inspector Brad, #573). Pure.
  */
 
 export type ViewerDateOption = {
@@ -55,7 +59,40 @@ export function ProgressPhotoViewerPresenter(
   p: ProgressPhotoViewerPresenterProps,
 ) {
   const insets = useSafeAreaInsets();
-  const barTop = insets.top + 8;
+  const { width, height } = useWindowDimensions();
+  const landscape = width > height;
+  // Canvas bar: 18pt top, 28pt sides, clear of the notch in landscape;
+  // the portrait fallback keeps the earlier 8pt top and 16pt sides.
+  const barTop = insets.top + (landscape ? 18 : 8);
+  const barLeft = landscape ? Math.max(insets.left, 28) : 16;
+  const barRight = landscape ? Math.max(insets.right, 28) : 16;
+  const stats = (
+    <View
+      flexDirection="row"
+      gap={22}
+      marginLeft={landscape ? 8 : 4}
+      marginTop={landscape ? 0 : 14}
+      testID={landscape ? "photo-viewer-stats" : "photo-viewer-stats-row2"}
+    >
+      {p.data.map((d) => (
+        <View key={d.label} testID={`photo-viewer-data-${d.label}`}>
+          <Text fontFamily="$mono" fontWeight="600" fontSize={16} color="$text">
+            {d.value}
+          </Text>
+          <Text
+            fontFamily="$display"
+            fontWeight="600"
+            fontSize={10}
+            letterSpacing={1.4}
+            textTransform="uppercase"
+            color="$text3"
+          >
+            {d.label}
+          </Text>
+        </View>
+      ))}
+    </View>
+  );
   return (
     <View flex={1} backgroundColor="$bg" testID="photo-viewer-screen">
       <View
@@ -86,11 +123,12 @@ export function ProgressPhotoViewerPresenter(
           right: 0,
           top: 0,
           paddingTop: barTop,
-          paddingHorizontal: 16,
-          paddingBottom: 28,
+          paddingLeft: barLeft,
+          paddingRight: barRight,
+          paddingBottom: 24,
         }}
       >
-        <View flexDirection="row" alignItems="center" gap={10}>
+        <View flexDirection="row" alignItems="center" gap={landscape ? 14 : 10}>
           <IconButton
             label="Close"
             onPress={p.onClose}
@@ -130,6 +168,7 @@ export function ProgressPhotoViewerPresenter(
               <IconChevronD size={16} color={color.$text} />
             </View>
           </Pressable>
+          {landscape && stats}
           <View flex={1} />
           <IconButton
             label="Delete these photos"
@@ -146,40 +185,16 @@ export function ProgressPhotoViewerPresenter(
             <IconCamera size={20} color={color.$primary} />
           </IconButton>
         </View>
-        <View flexDirection="row" gap={22} marginTop={14} marginLeft={4}>
-          {p.data.map((d) => (
-            <View key={d.label} testID={`photo-viewer-data-${d.label}`}>
-              <Text
-                fontFamily="$mono"
-                fontWeight="600"
-                fontSize={16}
-                color="$text"
-              >
-                {d.value}
-              </Text>
-              <Text
-                fontFamily="$display"
-                fontWeight="600"
-                fontSize={10}
-                letterSpacing={1.4}
-                textTransform="uppercase"
-                color="$text3"
-              >
-                {d.label}
-              </Text>
-            </View>
-          ))}
-        </View>
+        {!landscape && stats}
       </LinearGradient>
 
       {p.open && (
         <View
           position="absolute"
           top={barTop + 52}
-          left={70}
-          right={16}
-          maxWidth={300}
-          maxHeight={420}
+          left={barLeft + 58}
+          width={300}
+          maxHeight={260}
           borderRadius={16}
           backgroundColor="$surface"
           borderWidth={1}

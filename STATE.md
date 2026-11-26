@@ -29,6 +29,52 @@ No native change, no backend behaviour change.
   POST/PATCH; the update command mirrors the server's preservation rule
   (`setTargetsAfterUpdate`). No new SQLite table.
 
+### 2026-11-26 — PER-137 follow-up: landscape-only photo viewer, final photo-sharing copy ([PER-137](https://linear.app/evans-software-solutions/issue/PER-137); branch `claude/per-137-landscape-viewer`)
+
+- **Native change (Brad approved, 26 Nov; needs the new store build):**
+  `expo-screen-orientation@~55.0.16` (not in 1.2.0), `app.json`
+  `orientation: "default"` and the plugin with `initialOrientation:
+  "PORTRAIT_UP"` (commit 498f05d).
+- `src/lib/screenOrientation.ts`: `lockPortrait` / `lockLandscape`, guarded
+  with `requireOptionalNativeModule("ExpoScreenOrientation")`. On a 1.2.0
+  binary (OTA) they're no-ops, and the binary stays portrait natively.
+- The root layout locks portrait at start. The Y3c viewer locks landscape on
+  focus and portrait on blur/unmount, and its layout is the canvas's single
+  landscape bar (Close, pose · date, weight / body fat / vs latest, Delete,
+  Add). iPadOS ignores orientation locks with multitasking on.
+- `PHOTO_SHARING_COPY` is Brad's approved wording (placeholder prefix
+  dropped); `PHOTO_SHARING_CONSENT_VERSION` → `photos-v1`. The version is
+  only stamped on new grants. Grants are matched on action, source and
+  coaching cycle, so `photos-v0-placeholder` grants still count (integration
+  test).
+
+### 2026-11-25 — Coach resources follow-ups ([PER-150](https://linear.app/evans-software-solutions/issue/PER-150); branch `claude/per-150-resources-follow-ups`)
+
+Follow-ups to PER-122. Backend only; no migration, no route added or removed,
+no native change.
+
+- **Count:** `/users/me/coaching` `resources` is now the per-coach count of
+  what `GET /users/me/resources` shows (`countAthleteResources`). The list,
+  the opened stamp and the count share one rule, `visibleToAthlete()` in
+  `coaching/resources/resourceRepository.ts`.
+- **C3.9 switch:** enforced like `photos_off`. With a coach's `resources`
+  switch off for a client (stored `false`; missing = on), the athlete's list,
+  `?since=` delta (reports them in `deletedIds`; settings `updated_at` is a
+  delta trigger, so switching on brings them back), opened stamp (404) and
+  count leave that coach out; `POST /trainers/me/resources/assign` answers
+  403 `resources_off` with `clientIds` and assigns nothing. Assignments are
+  kept, not removed. Other coaches of the same athlete are unaffected. The
+  coach still sees the client's list and can remove items (Brad, 26 Nov:
+  option a).
+- **Purge:** the nightly `purgeStaleMedia` (account purge cron, no new
+  schedule) also deletes `resource` uploads no `coach_resources` row points
+  at once 7 days old (never saved, or replaced by a newer file), rows then
+  objects in one transaction. Archived resources keep their files.
+- **Tests:** `resources.integration.test.ts` PER-150 blocks (PGlite, real
+  migrations); `coaching.integration` and `progressPhotos.integration` now
+  apply the resources migration. Core suite 437 files / 6412 tests pass;
+  lines 98.1%, branches 93.25%.
+
 ### 2026-11-25 — BE-G1b: programmes in order with Next, no dates ([PER-112](https://linear.app/evans-software-solutions/issue/PER-112); branch `claude/per-112-programmes-next`)
 
 Design G part 2 (C3.1, Assign with no start date). Backend only, additive.
