@@ -117,6 +117,18 @@ function cleanText(raw: string | null | undefined): string | null | undefined {
   return text === "" ? null : text;
 }
 
+/**
+ * A video link, trimmed, with its scheme lower-cased: phones capitalise
+ * "Https://", and the database CHECK (`LIKE 'https://%'`) is case-sensitive
+ * (Inspector Brad, #568). The API then checks it case-sensitively too.
+ */
+function cleanVideoUrl(
+  raw: string | null | undefined,
+): string | null | undefined {
+  const url = cleanText(raw);
+  return url ? url.replace(/^https:/i, "https:") : url;
+}
+
 function invalid(set: { status?: number | string }, message: string) {
   set.status = 422;
   return { code: "invalid_session", message };
@@ -171,8 +183,8 @@ async function checkFields(
   | { ok: true; attendees?: AttendeeRef[] }
   | { ok: false; response: Record<string, unknown> }
 > {
-  const videoUrl = cleanText(body.videoUrl);
-  if (videoUrl && !/^https:\/\/\S+$/i.test(videoUrl)) {
+  const videoUrl = cleanVideoUrl(body.videoUrl);
+  if (videoUrl && !/^https:\/\/\S+$/.test(videoUrl)) {
     return {
       ok: false,
       response: invalid(set, "videoUrl must be an https link"),
@@ -274,7 +286,7 @@ export const coachSessionsHandler = trainerOnly()
           startsAt: toMinute(startsAt),
           durationMin: body.durationMin,
           location: cleanText(body.location) ?? null,
-          videoUrl: cleanText(body.videoUrl) ?? null,
+          videoUrl: cleanVideoUrl(body.videoUrl) ?? null,
           workoutId: body.workoutId ?? null,
           notes: cleanText(body.notes) ?? null,
           reminderMinutes: body.reminderMinutes ?? null,
@@ -329,7 +341,7 @@ export const coachSessionsHandler = trainerOnly()
       if (body.location !== undefined)
         patch.location = cleanText(body.location)!;
       if (body.videoUrl !== undefined)
-        patch.videoUrl = cleanText(body.videoUrl)!;
+        patch.videoUrl = cleanVideoUrl(body.videoUrl)!;
       if (body.workoutId !== undefined) patch.workoutId = body.workoutId;
       if (body.notes !== undefined) patch.notes = cleanText(body.notes)!;
       if (body.reminderMinutes !== undefined) {

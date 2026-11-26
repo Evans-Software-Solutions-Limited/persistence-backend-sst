@@ -718,6 +718,38 @@ describe("booking rules", () => {
     expect(date2.status).toBe(422);
   });
 
+  it("accepts a capitalised https scheme and stores it lower-case (Inspector Brad, #568)", async () => {
+    const created = await http("POST", "/trainers/me/sessions", COACH_A, {
+      kind: "video",
+      durationMin: 30,
+      startsAt: FUTURE,
+      videoUrl: "  Https://meet.example.com/Room-1 ",
+    });
+    expect(created.status).toBe(201);
+    expect(created.json.data.videoUrl).toBe("https://meet.example.com/Room-1");
+    const id = created.json.data.id;
+    const patched = await http(
+      "PATCH",
+      `/trainers/me/sessions/${id}`,
+      COACH_A,
+      {
+        videoUrl: "HTTPS://meet.example.com/Room-2",
+      },
+    );
+    expect(patched.status).toBe(200);
+    expect(patched.json.data.videoUrl).toBe("https://meet.example.com/Room-2");
+    expect((await sessionRows())[0]!.videoUrl).toBe(
+      "https://meet.example.com/Room-2",
+    );
+    for (const videoUrl of ["http://meet.example.com", "Http://x.test"]) {
+      const bad = await http("PATCH", `/trainers/me/sessions/${id}`, COACH_A, {
+        videoUrl,
+      });
+      expect(bad.status).toBe(422);
+      expect(bad.json.code).toBe("invalid_session");
+    }
+  });
+
   it("adds and removes attendees with an edit, announcing booked and cancelled", async () => {
     const { data } = await book(COACH_A, {
       startsAt: FUTURE,
