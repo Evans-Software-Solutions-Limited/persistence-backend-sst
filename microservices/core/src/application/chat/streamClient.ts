@@ -38,13 +38,14 @@ export function getStreamConfig(
 
 /** A failed Stream call. `code` is Stream's own error code when it sent one. */
 export class StreamApiError extends Error {
-  constructor(
-    message: string,
-    readonly status: number,
-    readonly code: number | null = null,
-  ) {
+  readonly status: number;
+  readonly code: number | null;
+
+  constructor(message: string, status: number, code: number | null = null) {
     super(message);
     this.name = "StreamApiError";
+    this.status = status;
+    this.code = code;
   }
 }
 
@@ -67,10 +68,16 @@ export type FetchLike = (
 ) => Promise<Pick<Response, "ok" | "status" | "text">>;
 
 export class StreamChatClient {
+  private readonly config: StreamConfig;
+  private readonly fetchImpl: FetchLike;
+
   constructor(
-    private readonly config: StreamConfig,
-    private readonly fetchImpl: FetchLike = (input, init) => fetch(input, init),
-  ) {}
+    config: StreamConfig,
+    fetchImpl: FetchLike = (input, init) => fetch(input, init),
+  ) {
+    this.config = config;
+    this.fetchImpl = fetchImpl;
+  }
 
   get apiKey(): string {
     return this.config.apiKey;
