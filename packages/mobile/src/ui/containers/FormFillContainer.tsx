@@ -7,7 +7,10 @@ import type {
   AthleteFormRequest,
   LocalFormState,
 } from "@/domain/models/athleteForms";
-import { nextJoiningForm } from "@/domain/services/athleteForms.service";
+import {
+  isWaiting,
+  nextJoiningForm,
+} from "@/domain/services/athleteForms.service";
 import { applyServerErrors, messageAt } from "@/shared/form";
 import {
   answerDefaults,
@@ -61,15 +64,21 @@ export function FormFillContainer() {
     else router.replace("/(app)/(tabs)/coach");
   }, [router]);
 
-  if (!request || local?.closed) {
+  // Sent from this phone and still able to send: read-only, so it can't be
+  // sent a second time (Inspector Brad, #571). Once its queue row dies the
+  // hook shows it as a draft again and it's fillable.
+  const waiting = isWaiting(local);
+  if (!request || local?.closed || waiting) {
     return (
       <FormFillPresenter
         state={
           local?.closed
             ? "closed"
-            : forms.data === null && forms.error === null
-              ? "loading"
-              : "missing"
+            : waiting
+              ? "waiting"
+              : forms.data === null && forms.error === null
+                ? "loading"
+                : "missing"
         }
         formTitle={local?.title ?? ""}
         step={0}

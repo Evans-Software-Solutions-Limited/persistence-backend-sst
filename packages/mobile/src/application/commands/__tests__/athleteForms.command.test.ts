@@ -12,6 +12,7 @@ import {
   applyFormResponseSynced,
   ensureSubmitKeysCommand,
   formResponseEndpoint,
+  liveFormResponseIds,
   localStateFor,
   markJoinIntroSeenCommand,
   pruneFormLocals,
@@ -30,6 +31,11 @@ import type {
 } from "@/domain/models/athleteForms";
 import type { SyncQueueEntry } from "@/domain/ports/storage.port";
 import { fail, ok } from "@/shared/errors";
+import {
+  coachFormsView,
+  isWaiting,
+  withLiveQueue,
+} from "@/domain/services/athleteForms.service";
 
 jest.mock("@/lib/sentry", () => ({ captureSyncFailure: jest.fn() }));
 
@@ -72,6 +78,8 @@ class FakeServer {
   invalid = new Set<string>();
   calls: { url: string; key?: string; body: unknown }[] = [];
   offline = false;
+  /** Answer every response POST with this status (no body code). */
+  forceStatus: number | null = null;
 
   fetch = async (
     url: string,
@@ -88,6 +96,9 @@ class FakeServer {
       text: async () => JSON.stringify(json),
       json: async () => json,
     });
+    if (this.forceStatus !== null) {
+      return reply(this.forceStatus, { message: "nope" });
+    }
     const stored = this.responses.get(id);
     if (stored && stored.key === key) return reply(201, { data: { id: "r" } });
     if (this.closed.has(id) || stored) {
@@ -331,6 +342,166 @@ describe("queue hooks", () => {
   });
 });
 
+describe("a send that can no longer go comes back to fill in (Inspector Brad, #571)", () => {
+  /** What the Coach tab sees for req-1 right now. */
+  const seen = () => {
+    const locals = withLiveQueue(
+      storage.getLocalFormStates(USER),
+      liveFormResponseIds(storage, USER),
+    );
+    const view = coachFormsView({
+      requests: storage.getCachedFormRequests(USER)!.requests,
+      locals,
+      coachId: "coach-ellie",
+      now: NOW,
+    });
+    return {
+      waiting: isWaiting(locals.find((l) => l.requestId === "req-1")),
+      toFill: view.toFill.map((c) => c.requestId),
+      started: view.toFill.find((c) => c.requestId === "req-1")?.started,
+    };
+  };
+
+  beforeEach(() => {
+    queueFormResponseCommand(
+      deps(),
+      request("req-1"),
+      { q0: 4 },
+      { energy: 4 },
+    );
+    expect(seen()).toMatchObject({ waiting: true, toFill: ["req-2"] });
+  });
+
+  it("retries used up (5xx three times)", async () => {
+    server.forceStatus = 500;
+    await drain();
+    await drain();
+    await drain();
+    await drain();
+    expect(liveFormResponseIds(storage, USER).size).toBe(0);
+    expect(seen()).toEqual({
+      waiting: false,
+      toFill: ["req-1", "req-2"],
+      started: true,
+    });
+  });
+
+  it("403 until retries run out", async () => {
+    server.forceStatus = 403;
+    for (let i = 0; i < 4; i++) await drain();
+    expect(seen()).toMatchObject({
+      waiting: false,
+      toFill: ["req-1", "req-2"],
+    });
+  });
+
+  it("refused for good (400 → permanently failed)", async () => {
+    server.forceStatus = 400;
+    await drain();
+    expect(liveFormResponseIds(storage, USER).size).toBe(0);
+    expect(seen()).toMatchObject({
+      waiting: false,
+      toFill: ["req-1", "req-2"],
+    });
+  });
+
+  it("discarded on the sync-failed screen", () => {
+    storage.discardEntries(queued().map((e) => e.id));
+    expect(seen()).toMatchObject({
+      waiting: false,
+      toFill: ["req-1", "req-2"],
+      started: true,
+    });
+  });
+
+  it("sending it again drops the dead row and sends once", async () => {
+    server.forceStatus = 400;
+    await drain();
+    server.forceStatus = null;
+    queueFormResponseCommand(
+      deps(),
+      request("req-1"),
+      { q0: 5 },
+      { energy: 5 },
+    );
+    expect(queued()).toHaveLength(1);
+    expect(seen().waiting).toBe(true);
+    await drain();
+    expect(server.responses.get("req-1")?.answers).toEqual({ energy: 5 });
+    expect(local("req-1")?.sentAt).not.toBeNull();
+  });
+
+  it("prune forgets a dead send once the server no longer lists it", () => {
+    storage.discardEntries(queued().map((e) => e.id));
+    pruneFormLocals(storage, USER, [request("req-2")], NOW);
+    expect(local("req-1")).toBeUndefined();
+  });
+
+  it("prune keeps a send that can still go", () => {
+    pruneFormLocals(storage, USER, [], NOW);
+    expect(local("req-1")).toBeDefined();
+  });
+});
+
+describe("a 409 never marks a sent form 'no longer needed' (Inspector Brad, #571)", () => {
+  const entry = {
+    id: 1,
+    entityType: FORM_RESPONSE_ENTITY,
+    entityId: `${USER}:req-1`,
+  } as SyncQueueEntry;
+
+  it("already sent: stays sent", () => {
+    recordFormSentCommand(deps(), request("req-1"), { q0: 4 });
+    expect(
+      applyFormResponseRefusal(
+        storage,
+        entry,
+        409,
+        '{"code":"request_closed","reason":"cancelled"}',
+      ),
+    ).toBe(true);
+    expect(local("req-1")).toMatchObject({ closed: false });
+    expect(local("req-1")?.sentAt).not.toBeNull();
+    recordFormClosedCommand(deps(), request("req-1"));
+    expect(local("req-1")?.closed).toBe(false);
+  });
+
+  it("'completed' for this phone's own submission counts as sent", () => {
+    queueFormResponseCommand(deps(), request("req-1"), {}, { energy: 4 });
+    applyFormResponseRefusal(
+      storage,
+      entry,
+      409,
+      '{"code":"request_closed","reason":"completed"}',
+      NOW,
+    );
+    expect(local("req-1")).toMatchObject({
+      closed: false,
+      sentAt: NOW.toISOString(),
+    });
+  });
+
+  it("'cancelled' still says no longer needed", () => {
+    queueFormResponseCommand(deps(), request("req-1"), {}, { energy: 4 });
+    applyFormResponseRefusal(
+      storage,
+      entry,
+      409,
+      '{"code":"request_closed","reason":"cancelled"}',
+    );
+    expect(local("req-1")?.closed).toBe(true);
+  });
+
+  it("end to end: a second send after the first landed doesn't close it", async () => {
+    // The first send landed but its reply was lost; the server has it.
+    queueFormResponseCommand(deps(), request("req-1"), {}, { energy: 4 });
+    server.responses.set("req-1", { key: "other-key", answers: { energy: 4 } });
+    await drain();
+    expect(local("req-1")).toMatchObject({ closed: false });
+    expect(local("req-1")?.sentAt).not.toBeNull();
+  });
+});
+
 describe("recorded outcomes and housekeeping", () => {
   it("sent and closed both leave the cached list", () => {
     recordFormSentCommand(deps(), request("req-1"), { q0: 4 });
@@ -366,6 +537,15 @@ describe("recorded outcomes and housekeeping", () => {
     put("waiting", {
       submittedAt: "2026-11-01T00:00:00Z",
       updatedAt: "2026-11-01T00:00:00Z",
+    });
+    // Its queue row can still send.
+    storage.enqueueMutation({
+      entityType: FORM_RESPONSE_ENTITY,
+      entityId: `${USER}:waiting`,
+      operation: "create",
+      payload: { answers: {} },
+      endpoint: formResponseEndpoint("waiting"),
+      method: "POST",
     });
     put("orphan-draft", { updatedAt: "2026-11-25T00:00:00Z" });
     put("req-1", { updatedAt: "2026-11-01T00:00:00Z" });

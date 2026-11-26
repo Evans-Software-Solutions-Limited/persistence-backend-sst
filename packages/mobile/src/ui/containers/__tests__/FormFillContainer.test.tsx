@@ -113,11 +113,12 @@ function setup(opts: {
   locals?: LocalFormState[];
   online?: boolean;
   noCache?: boolean;
+  storage?: InMemoryStorageAdapter;
 }) {
   const api = new InMemoryApiAdapter();
   const requests = opts.requests ?? [request("req-1")];
   api.formRequests = { requests, asOf: "a" };
-  const storage = new InMemoryStorageAdapter();
+  const storage = opts.storage ?? new InMemoryStorageAdapter();
   if (!opts.noCache) storage.cacheFormRequests(USER, { requests, asOf: "a" });
   for (const l of opts.locals ?? []) storage.saveLocalFormState(USER, l);
   const netInfo = new InMemoryNetInfoAdapter(opts.online ?? true);
@@ -412,6 +413,47 @@ describe("FormFillContainer (C4f)", () => {
     await act(async () => {});
     fireEvent.press(noBack.getByTestId("form-fill-close"));
     expect(mockRouter.replace).toHaveBeenCalledWith("/(app)/(tabs)/coach");
+  });
+
+  it("a form waiting to send opens read-only, with no Send (Inspector Brad, #571)", async () => {
+    // Offline, so the mount-time refresh can't drain the row.
+    fetchMock.mockImplementation(async () => {
+      throw new TypeError("Network request failed");
+    });
+    const utils = setup({
+      locals: [
+        localState({ answers: { q0: 4 }, submittedAt: "2026-11-26T08:12:00Z" }),
+      ],
+    });
+    utils.storage.enqueueMutation({
+      entityType: "form_response",
+      entityId: `${USER}:req-1`,
+      operation: "create",
+      payload: { answers: { energy: 4 } },
+      endpoint: "/users/me/form-requests/req-1/response",
+      method: "POST",
+    });
+    utils.unmount();
+    // Remount with the live row in place.
+    const again = setup({ storage: utils.storage });
+    await act(async () => {});
+    expect(again.getByTestId("form-fill-waiting")).toBeTruthy();
+    expect(again.getByText("Waiting to send")).toBeTruthy();
+    expect(again.queryByTestId("form-fill-next")).toBeNull();
+  });
+
+  it("once its queue row is dead, it's fillable again with its answers", async () => {
+    const utils = setup({
+      locals: [
+        localState({ answers: { q0: 4 }, submittedAt: "2026-11-26T08:12:00Z" }),
+      ],
+    });
+    await act(async () => {});
+    expect(utils.queryByTestId("form-fill-waiting")).toBeNull();
+    expect(utils.getByText("Weekly check-in · 1 of 2")).toBeTruthy();
+    expect(
+      utils.getByTestId("form-fill-answer-scale-4").props.accessibilityState,
+    ).toMatchObject({ selected: true });
   });
 
   it("nothing cached yet: waits for the list (loading), then shows the form", async () => {

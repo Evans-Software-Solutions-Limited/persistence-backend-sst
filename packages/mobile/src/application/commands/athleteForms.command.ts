@@ -157,6 +157,13 @@ export function queueFormResponseCommand(
     rejected: null,
   }));
   const entityId = `${deps.userId}:${request.id}`;
+  // A dead row from an earlier send (retries used up, refused for good)
+  // goes, so a later Retry on it can't send the form a second time.
+  const dead = deps.storage
+    .getQueuedEntriesForEntity(FORM_RESPONSE_ENTITY, entityId)
+    .filter((e) => e.status !== "completed" && !isAutoResolvableSyncEntry(e))
+    .map((e) => e.id);
+  if (dead.length > 0) deps.storage.discardEntries(dead);
   // Sent again before an earlier send left the phone: one request, newest
   // answers (the same Idempotency-Key).
   const unsent = liveEntries(deps.storage, entityId).find(
@@ -197,11 +204,36 @@ export function recordFormClosedCommand(
   deps: AthleteFormsDeps,
   request: AthleteFormRequest,
 ): void {
-  update(deps, request, (s, now) => ({
-    closed: true,
-    submittedAt: s.submittedAt ?? now,
-  }));
+  // A form this phone already sent stays "Sent" (Inspector Brad, #571).
+  update(deps, request, (s, now) =>
+    s.sentAt !== null
+      ? {}
+      : { closed: true, submittedAt: s.submittedAt ?? now },
+  );
   removeCachedRequest(deps.storage, deps.userId, request.id);
+}
+
+/**
+ * Requests whose queued response can still reach the server. A row that
+ * used up its retries, was refused for good, or was discarded on the
+ * sync-failed screen is not here.
+ */
+export function liveFormResponseIds(
+  storage: StoragePort,
+  userId: string,
+): Set<string> {
+  const prefix = `${userId}:`;
+  const out = new Set<string>();
+  for (const e of storage.getUncompletedMutations()) {
+    if (
+      e.entityType === FORM_RESPONSE_ENTITY &&
+      e.entityId?.startsWith(prefix) &&
+      isAutoResolvableSyncEntry(e)
+    ) {
+      out.add(e.entityId.slice(prefix.length));
+    }
+  }
+  return out;
 }
 
 // ── Queue replay ─────────────────────────────────────────────────────────────
@@ -281,7 +313,25 @@ export function applyFormResponseRefusal(
     (status === 409 && body?.code === "request_closed") ||
     (status === 404 && body?.code === "request_not_found")
   ) {
-    patchLocal(storage, id.userId, id.requestId, { closed: true }, at);
+    // Never "no longer needed" over a send that reached the server: a form
+    // already sent stays sent, and "completed" for this phone's own
+    // submission means an earlier send of it landed (Inspector Brad, #571).
+    const local = storage
+      .getLocalFormStates(id.userId)
+      .find((l) => l.requestId === id.requestId);
+    if (!local?.sentAt) {
+      const ours =
+        status === 409 &&
+        body?.reason === "completed" &&
+        local?.submittedAt != null;
+      patchLocal(
+        storage,
+        id.userId,
+        id.requestId,
+        ours ? { sentAt: at, rejected: null } : { closed: true },
+        at,
+      );
+    }
     removeCachedRequest(storage, id.userId, id.requestId);
     return true;
   }
@@ -314,9 +364,13 @@ export function pruneFormLocals(
   now: Date = new Date(),
 ): void {
   const open = new Set(requests.map((r) => r.id));
+  const live = liveFormResponseIds(storage, userId);
   for (const local of storage.getLocalFormStates(userId)) {
     const done = local.closed || local.sentAt !== null;
-    const waiting = local.submittedAt !== null && !done;
+    // Waiting only while its queue row can still send (Inspector Brad,
+    // #571); a form whose row died counts as an unsent draft.
+    const waiting =
+      local.submittedAt !== null && !done && live.has(local.requestId);
     if (waiting) continue;
     const stale = done
       ? now.getTime() - new Date(local.updatedAt).getTime() > KEEP_DONE_MS

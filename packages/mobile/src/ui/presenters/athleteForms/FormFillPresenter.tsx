@@ -24,7 +24,7 @@ import { QuestionInput } from "./QuestionInput";
  */
 
 export type FormFillPresenterProps = {
-  state: "loading" | "form" | "closed" | "missing";
+  state: "loading" | "form" | "closed" | "waiting" | "missing";
   formTitle: string;
   step: number;
   total: number;
@@ -106,6 +106,12 @@ export function FormFillPresenter(p: FormFillPresenterProps) {
       <TopBar saved={p.state === "form" && p.saved} onClose={p.onClose} />
       {p.state === "loading" ? (
         <View flex={1} testID="form-fill-loading" />
+      ) : p.state === "waiting" ? (
+        <Message
+          title="Waiting to send"
+          onClose={p.onClose}
+          testID="form-fill-waiting"
+        />
       ) : p.state === "closed" ? (
         <Message
           title={NO_LONGER_NEEDED}

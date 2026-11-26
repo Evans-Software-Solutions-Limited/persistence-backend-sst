@@ -67,7 +67,20 @@ function setup(opts: {
   api.myCoaching = { coaches: opts.server, asOf: "2026-11-23T09:00:00Z" };
   api.formRequests = { requests: opts.requests ?? [], asOf: "a" };
   const storage = new InMemoryStorageAdapter();
-  for (const l of opts.locals ?? []) storage.saveLocalFormState("athlete-1", l);
+  for (const l of opts.locals ?? []) {
+    storage.saveLocalFormState("athlete-1", l);
+    // A form waiting to send has a live queue row (its response).
+    if (l.submittedAt && !l.sentAt) {
+      storage.enqueueMutation({
+        entityType: "form_response",
+        entityId: `athlete-1:${l.requestId}`,
+        operation: "create",
+        payload: { answers: {} },
+        endpoint: `/users/me/form-requests/${l.requestId}/response`,
+        method: "POST",
+      });
+    }
+  }
   const netInfo = new InMemoryNetInfoAdapter(opts.online ?? true);
   if (opts.cached) {
     storage.cacheMyCoaches("athlete-1", {

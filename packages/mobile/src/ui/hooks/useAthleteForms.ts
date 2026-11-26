@@ -5,8 +5,11 @@ import { getApiBaseUrl } from "@/adapters/api";
 import {
   FORM_LOCAL_TABLES,
   FORM_REQUESTS_TABLES,
+  SYNC_QUEUE_TABLES,
 } from "@/adapters/storage/tables";
+import { withLiveQueue } from "@/domain/services/athleteForms.service";
 import {
+  liveFormResponseIds,
   markJoinIntroSeenCommand,
   pruneFormLocals,
   queueFormResponseCommand,
@@ -69,8 +72,15 @@ export function useAthleteForms(opts?: {
     enabled: opts?.enabled,
   });
 
+  // A send whose queue row has died counts as a draft again (#571).
   const read = useCallback(
-    () => (userId ? storage.getLocalFormStates(userId) : []),
+    () =>
+      userId
+        ? withLiveQueue(
+            storage.getLocalFormStates(userId),
+            liveFormResponseIds(storage, userId),
+          )
+        : [],
     [storage, userId],
   );
   const [locals, setLocals] = useState<LocalFormState[]>(read);
@@ -78,7 +88,12 @@ export function useAthleteForms(opts?: {
     const reload = () => setLocals(read());
     reload();
     reloaders.add(reload);
-    const unsubscribe = storage.subscribe(FORM_LOCAL_TABLES, reload);
+    // The queue too: a send that dies (or is discarded) makes the form
+    // fillable again.
+    const unsubscribe = storage.subscribe(
+      [...FORM_LOCAL_TABLES, ...SYNC_QUEUE_TABLES],
+      reload,
+    );
     return () => {
       reloaders.delete(reload);
       unsubscribe();

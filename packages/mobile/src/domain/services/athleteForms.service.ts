@@ -169,6 +169,32 @@ export type CoachFormsView = {
   waitingTitles: string[];
 };
 
+/**
+ * The local states as the screens see them. A form "waiting to send" whose
+ * queue row can no longer send (retries used up, refused for good,
+ * discarded on the sync-failed screen) is a draft again: it goes back to
+ * "To fill in" with its answers (Inspector Brad, #571).
+ */
+export function withLiveQueue(
+  locals: readonly LocalFormState[],
+  liveIds: ReadonlySet<string>,
+): LocalFormState[] {
+  return locals.map((l) =>
+    isWaiting(l) && !liveIds.has(l.requestId) ? { ...l, submittedAt: null } : l,
+  );
+}
+
+/** Sent from this phone, not yet on the server, not closed. */
+export function isWaiting(local: LocalFormState | undefined): boolean {
+  return (
+    !!local &&
+    local.submittedAt !== null &&
+    local.sentAt === null &&
+    !local.closed &&
+    !local.rejected
+  );
+}
+
 /** A local state that has left the to-fill list. */
 function isSubmitted(local: LocalFormState | undefined): boolean {
   return (
