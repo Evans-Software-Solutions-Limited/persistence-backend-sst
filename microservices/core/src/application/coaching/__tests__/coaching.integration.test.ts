@@ -142,6 +142,9 @@ const dialect = new PgDialect();
 const BASE_TABLES = [
   schema.profiles,
   schema.ptClientRelationships,
+  // PER-123: offboarding also cancels this relationship's future bookings.
+  schema.coachSessions,
+  schema.coachSessionAttendees,
   schema.dataSharingConsents,
   schema.trainerClientNotes,
   schema.nutritionTargets,
@@ -363,6 +366,11 @@ beforeAll(async () => {
   await pg.exec(
     await read(MIGRATIONS, "20261123120117_coach_events_notifications.sql"),
   );
+  // PER-150: /users/me/coaching counts resource assignments.
+  await pg.exec(
+    await read(MIGRATIONS, "20261123230832_progress_photos_private_media.sql"),
+  );
+  await pg.exec(await read(MIGRATIONS, "20261125101829_coach_resources.sql"));
   db = drizzle(pg, { schema });
   holder.db = db;
 });
@@ -1658,15 +1666,22 @@ describe("invited profiles", () => {
         COACH_A,
         { items },
       );
-    // meal_plan went live with PER-118 and resource with PER-122 (their own
-    // suites cover them).
-    for (const section of [
-      "programme",
-      // starter_form and repeating_form are live since PER-116.
-    ]) {
-      const res = await put(section, [{ sortOrder: 0, config: {} }]);
+    // Every section is live now (their own suites cover them), so a section
+    // with no handler is simulated by unplugging one: it answers 422
+    // section_unavailable and writes nothing (the revision below stays 2).
+    const restoreResource = registerSetupSectionHandler(
+      "resource",
+      undefined as unknown as SetupSectionHandler,
+    );
+    try {
+      const res = await put("resource", [{ sortOrder: 0, config: {} }]);
       expect(res.status).toBe(422);
-      expect(res.json).toMatchObject({ code: "section_unavailable", section });
+      expect(res.json).toMatchObject({
+        code: "section_unavailable",
+        section: "resource",
+      });
+    } finally {
+      restoreResource();
     }
     const cases: [string, unknown[]][] = [
       ["bogus", []],

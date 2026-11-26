@@ -49,6 +49,9 @@ import {
 import type { RemoteMuscleVolume } from "@/domain/models/trainingReads";
 import { useYouRemote } from "@/ui/hooks/useYouRemote";
 import { buildMilestoneTiers } from "./buildMilestoneTiers";
+import { useProgressPhotos } from "@/ui/hooks/useProgressPhotos";
+import { photoDateLabel } from "@/domain/services/progressPhotos.service";
+import { photoTiles } from "./progressPhotos/progressPhotoViews";
 
 // Re-exported so existing callers/tests keep working (the mapping lives in
 // its own module, shared with <AchievementsContainer>).
@@ -394,6 +397,22 @@ export function YouContainer({
   const refreshRelationships = relationships.refresh;
   const refreshMyCoaches = myCoaches.refresh;
   const reloadLog = log.reload;
+  // PER-137 (APP-F1): the latest set of progress photos.
+  const photos = useProgressPhotos();
+  const latestPhotos = photos.sets[0] ?? null;
+  const gallery = useMemo(
+    () =>
+      latestPhotos
+        ? {
+            setId: latestPhotos.id,
+            dateLabel: photoDateLabel(latestPhotos.takenOn),
+            photos: photoTiles(latestPhotos),
+          }
+        : { setId: null, dateLabel: null, photos: [] },
+    [latestPhotos],
+  );
+  const refreshPhotos = photos.refresh;
+  const reloadPhotos = photos.reloadAll;
   const onRefresh = useCallback(() => {
     reloadLog();
     void Promise.all([
@@ -402,6 +421,7 @@ export function YouContainer({
       refreshHealth(),
       refreshRelationships(),
       refreshMyCoaches(),
+      refreshPhotos(),
     ]);
   }, [
     reloadLog,
@@ -410,6 +430,7 @@ export function YouContainer({
     refreshHealth,
     refreshRelationships,
     refreshMyCoaches,
+    refreshPhotos,
   ]);
 
   // Tab screens stay mounted, so re-read on focus: the training log and body
@@ -421,12 +442,16 @@ export function YouContainer({
       void refreshRelationships({ silent: true });
       void refreshMyCoaches({ silent: true });
       void refreshAchievements({ silent: true });
+      reloadPhotos();
+      void refreshPhotos({ silent: true });
     }, [
       reloadLog,
       reloadBody,
       refreshRelationships,
       refreshMyCoaches,
       refreshAchievements,
+      reloadPhotos,
+      refreshPhotos,
     ]),
   );
 
@@ -437,7 +462,7 @@ export function YouContainer({
       coaches={coaches}
       pendingRequestCount={pendingRequestCount}
       myPendingCoachRequests={myPendingCoachRequests}
-      gallery={null}
+      gallery={gallery}
       badges={badges}
       muscles={week.muscles}
       lastSevenDays={totalsStrip(week.totals, weightUnit)}
@@ -471,6 +496,13 @@ export function YouContainer({
       onOpenBodyFat={() => push("/(app)/body-fat-history")}
       onOpenHistory={() => push("/(app)/history")}
       onOpenRecap={() => push("/(app)/recap")}
+      onOpenGallery={() => push("/(app)/progress-photos")}
+      onOpenGalleryPhoto={(setId, pose) =>
+        push(
+          `/(app)/progress-photo-viewer?setId=${encodeURIComponent(setId)}&pose=${pose.toLowerCase()}`,
+        )
+      }
+      onAddPhotos={() => push("/(app)/progress-photos-add")}
     />
   );
 }

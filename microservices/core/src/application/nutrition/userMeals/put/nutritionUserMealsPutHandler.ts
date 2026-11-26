@@ -39,7 +39,7 @@ export const nutritionUserMealsPutHandler = new Elysia()
       for (const meal of ctx.body.meals) {
         // NUL stripped first: Postgres `text` rejects it (a 500 otherwise).
         const name = stripNul(meal.name).trim();
-        if (name.length === 0 || name.length > 40) {
+        if (name.length === 0 || name.length > USER_MEAL_LIMITS.storedNameMax) {
           ctx.set.status = 400;
           return { error: "invalid_user_meal_name" };
         }

@@ -66,6 +66,7 @@ import { coachingRoutes } from "../../../coachingRoutes";
 import { trainersAcceptInviteCodeHandler } from "../../../trainers/invite-codes/trainersAcceptInviteCodeHandler";
 import { endCoachClientRelationship } from "../../../relationships/endCoachClientRelationship";
 import { setS3ClientForTests } from "../../../media/privateMediaStore";
+import { purgeStaleMedia } from "../../../media/privateMediaRepository";
 import { FakeBucket } from "../../../media/__tests__/fakeS3";
 import { currentDeclarationVersion } from "../../declaration";
 import { availableSections } from "../../setupSections";
@@ -82,6 +83,9 @@ const dialect = new PgDialect();
 const BASE_TABLES = [
   schema.profiles,
   schema.ptClientRelationships,
+  // PER-123: offboarding also cancels this relationship's future bookings.
+  schema.coachSessions,
+  schema.coachSessionAttendees,
   schema.dataSharingConsents,
   schema.trainerClientNotes,
   schema.nutritionTargets,
@@ -171,6 +175,8 @@ const COACH_E = randomUUID();
 const COACH_D = randomUUID(); // coaches nobody
 
 const TRUNCATE = [
+  "coach_session_attendees",
+  "coach_sessions",
   "coach_resource_assignments",
   "coach_resources",
   "private_media_purges",
@@ -1146,6 +1152,311 @@ describe("Inspector Brad #563", () => {
     ).toEqual({ ok: false, endedClientIds: [ATHLETE_A] });
     const ok = await bulkAssign(COACH_C, resources, [target(ATHLETE_B)], null);
     expect(ok).toMatchObject({ ok: true, created: 1 });
+  });
+});
+
+// ─── PER-150: follow-ups ────────────────────────────────────────────────────
+
+const coaching = async (athlete: string) => {
+  const res = await http("GET", "/users/me/coaching", athlete);
+  expect(res.status).toBe(200);
+  return res.json.data.coaches as Json[];
+};
+
+const resourcesSwitch = async (coach: string, client: string, on: boolean) => {
+  const res = await http(
+    "PATCH",
+    `/trainers/me/clients/${client}/settings`,
+    coach,
+    { features: { resources: on } },
+  );
+  expect(res.status).toBe(200);
+  expect(res.json.data.features.resources).toBe(on);
+};
+
+describe("PER-150: /users/me/coaching counts the athlete's visible resources", () => {
+  it("counts per coach by the same rule as GET /users/me/resources", async () => {
+    const [c1, c2, c3] = [
+      await link(COACH_C, "One"),
+      await link(COACH_C, "Two"),
+      await file(COACH_C, "Three"),
+    ];
+    const fromE = await link(COACH_E, "E's link");
+    await assign(COACH_C, [c1.id, c2.id, c3.id], [ATHLETE_A]);
+    await assign(COACH_E, [fromE.id], [ATHLETE_A]);
+    await assign(COACH_C, [c1.id], [ATHLETE_B]);
+
+    const count = async (athlete: string) =>
+      Object.fromEntries(
+        (await coaching(athlete)).map((c) => [c.trainerId, c.resources]),
+      );
+    expect(await count(ATHLETE_A)).toEqual({ [COACH_C]: 3, [COACH_E]: 1 });
+    expect(await count(ATHLETE_B)).toEqual({ [COACH_C]: 1 });
+
+    // Removed from this client, and removed from the library: both drop out.
+    const assignmentOfTwo = (
+      await clientList(COACH_C, ATHLETE_A)
+    ).json.data.resources.find(
+      (r: Json) => r.resource.title === "Two",
+    ).assignmentId;
+    await http(
+      "DELETE",
+      `/trainers/me/clients/${ATHLETE_A}/resources/${assignmentOfTwo}`,
+      COACH_C,
+    );
+    await http("DELETE", `/trainers/me/resources/${c3.id}`, COACH_C);
+    expect(await count(ATHLETE_A)).toEqual({ [COACH_C]: 1, [COACH_E]: 1 });
+    expect(
+      (await mine(ATHLETE_A)).json.data.resources.filter(
+        (r: Json) => r.coach.id === COACH_C,
+      ),
+    ).toHaveLength(1);
+    // Opening doesn't change the count (it's what they have, not what's new).
+    const one = (await mine(ATHLETE_A)).json.data.resources.find(
+      (r: Json) => r.title === "One",
+    );
+    await opened(ATHLETE_A, one.assignmentId);
+    expect((await count(ATHLETE_A))[COACH_C]).toBe(1);
+
+    // Coaching with E ends: E's entry goes, C's count is untouched.
+    await end(COACH_E, ATHLETE_A);
+    expect(await count(ATHLETE_A)).toEqual({ [COACH_C]: 1 });
+    // An athlete with no coaches.
+    expect(await coaching(ATHLETE_F)).toEqual([]);
+  });
+
+  it("a coach with nothing assigned counts 0, and the entry keeps its PER-108 shape", async () => {
+    const [entry] = await coaching(ATHLETE_B);
+    expect(Object.keys(entry).sort()).toEqual(
+      [
+        "avatarUrl",
+        "due",
+        "features",
+        "name",
+        "newPlans",
+        "relationshipId",
+        "resources",
+        "since",
+        "trainerId",
+      ].sort(),
+    );
+    expect(entry.resources).toBe(0);
+  });
+});
+
+describe("PER-150: the C3.9 resources switch is enforced on the server", () => {
+  it("while off, the athlete's list, opened stamp and count leave that coach out; on again brings them back", async () => {
+    const fromC = await link(COACH_C, "C's link");
+    const fileC = await file(COACH_C, "C's file");
+    const fromE = await link(COACH_E, "E's link");
+    await assign(COACH_C, [fromC.id, fileC.id], [ATHLETE_A]);
+    await assign(COACH_E, [fromE.id], [ATHLETE_A]);
+    const before = await mine(ATHLETE_A);
+    const cIds = before.json.data.resources
+      .filter((r: Json) => r.coach.id === COACH_C)
+      .map((r: Json) => r.assignmentId)
+      .sort();
+    expect(cIds).toHaveLength(2);
+    const asOf = before.json.data.asOf;
+
+    await resourcesSwitch(COACH_C, ATHLETE_A, false);
+
+    const off = await mine(ATHLETE_A);
+    expect(off.json.data.resources.map((r: Json) => r.title)).toEqual([
+      "E's link",
+    ]);
+    for (const id of cIds) {
+      const stamp = await opened(ATHLETE_A, id);
+      expect(stamp.status).toBe(404);
+      expect(stamp.json.code).toBe("assignment_not_found");
+    }
+    const [row] = await db
+      .select()
+      .from(schema.coachResourceAssignments)
+      .where(eq(schema.coachResourceAssignments.id, cIds[0]));
+    expect(row!.openedAt).toBeNull();
+    // The offline cache drops them through ?since=.
+    const delta = await mine(ATHLETE_A, `?since=${encodeURIComponent(asOf)}`);
+    expect([...delta.json.data.deletedIds].sort()).toEqual(cIds);
+    expect(delta.json.data.resources.map((r: Json) => r.title)).toEqual([
+      "E's link",
+    ]);
+    // A later delta neither re-sends C's file nor repeats its deletion.
+    const offAsOf = new Date(Date.now() + 60_000).toISOString();
+    const quiet = await mine(
+      ATHLETE_A,
+      `?since=${encodeURIComponent(offAsOf)}`,
+    );
+    expect(quiet.json.data).toMatchObject({ resources: [], deletedIds: [] });
+    const coaches = Object.fromEntries(
+      (await coaching(ATHLETE_A)).map((c) => [c.trainerId, c]),
+    );
+    expect(coaches[COACH_C]).toMatchObject({
+      features: { resources: false },
+      resources: 0,
+    });
+    expect(coaches[COACH_E].resources).toBe(1);
+    // The assignments themselves are kept, not removed.
+    expect(
+      (await clientList(COACH_C, ATHLETE_A)).json.data.resources,
+    ).toHaveLength(2);
+
+    // Switching it back on: the next delta brings them back, links fresh.
+    const offList = (await mine(ATHLETE_A)).json.data.asOf;
+    await resourcesSwitch(COACH_C, ATHLETE_A, true);
+    const back = await mine(ATHLETE_A, `?since=${encodeURIComponent(offList)}`);
+    expect(
+      back.json.data.resources
+        .filter((r: Json) => r.coach.id === COACH_C)
+        .map((r: Json) => r.assignmentId)
+        .sort(),
+    ).toEqual(cIds);
+    const backFile = back.json.data.resources.find(
+      (r: Json) => r.title === "C's file",
+    );
+    expect(backFile.url).toContain("X-Amz-Signature");
+    expect((await opened(ATHLETE_A, cIds[0])).status).toBe(200);
+    expect(
+      (await coaching(ATHLETE_A)).find((c) => c.trainerId === COACH_C)
+        .resources,
+    ).toBe(2);
+  });
+
+  it("only the coach who switched it off is affected", async () => {
+    const fromE = await link(COACH_E, "E's link");
+    await assign(COACH_E, [fromE.id], [ATHLETE_A]);
+    await resourcesSwitch(COACH_C, ATHLETE_A, false);
+    expect(
+      (await mine(ATHLETE_A)).json.data.resources.map((r: Json) => r.title),
+    ).toEqual(["E's link"]);
+    expect((await assign(COACH_E, [fromE.id], [ATHLETE_A])).status).toBe(200);
+    // Another of C's clients is unaffected too.
+    const fromC = await link(COACH_C);
+    expect((await assign(COACH_C, [fromC.id], [ATHLETE_B])).status).toBe(201);
+    expect((await mine(ATHLETE_B)).json.data.resources).toHaveLength(1);
+  });
+
+  it("the coach can't assign to that client while it's off: 403 resources_off, and nothing is assigned", async () => {
+    const res = await link(COACH_C);
+    await resourcesSwitch(COACH_C, ATHLETE_A, false);
+    const refused = await assign(COACH_C, [res.id], [ATHLETE_A, ATHLETE_B]);
+    expect(refused.status).toBe(403);
+    expect(refused.json).toEqual({
+      code: "resources_off",
+      message: "Resources are switched off for this client",
+      clientIds: [ATHLETE_A],
+    });
+    expect(await db.select().from(schema.coachResourceAssignments)).toEqual([]);
+    // Someone who isn't the caller's client is still reported first.
+    const notYours = await assign(COACH_C, [res.id], [ATHLETE_A, ATHLETE_F]);
+    expect(notYours.status).toBe(403);
+    expect(notYours.json).toMatchObject({
+      code: "not_your_client",
+      clientIds: [ATHLETE_F],
+    });
+    // On again: assigning works.
+    await resourcesSwitch(COACH_C, ATHLETE_A, true);
+    expect((await assign(COACH_C, [res.id], [ATHLETE_A])).status).toBe(201);
+  });
+
+  it("other switches and settings changes don't hide resources", async () => {
+    const res = await link(COACH_C);
+    await assign(COACH_C, [res.id], [ATHLETE_A]);
+    await http("PATCH", `/trainers/me/clients/${ATHLETE_A}/settings`, COACH_C, {
+      features: { photos: false, messages: false },
+      alertMode: "mute",
+    });
+    expect((await mine(ATHLETE_A)).json.data.resources).toHaveLength(1);
+    expect((await assign(COACH_C, [res.id], [ATHLETE_A])).status).toBe(200);
+  });
+});
+
+describe("PER-150: unused resource uploads are purged", () => {
+  const ageMedia = (ids: string[], days: number) =>
+    pg.exec(
+      `update private_media set created_at = now() - interval '${days} days' where id in (${ids
+        .map((id) => `'${id}'`)
+        .join(",")})`,
+    );
+
+  /** A finished upload the coach never saved as a resource. */
+  async function unusedUpload(coach: string) {
+    const media = await upload(coach);
+    // The coach's own preview completes it, as the Add sheet does.
+    expect(
+      (await http("GET", `/users/me/media/${media.mediaId}`, coach)).status,
+    ).toBe(200);
+    return media.mediaId as string;
+  }
+
+  it("removes week-old uploads no resource uses, with their objects, and keeps the rest", async () => {
+    const unused = await unusedUpload(COACH_C);
+    const fresh = await unusedUpload(COACH_C);
+    const neverPut = (await upload(COACH_C, "application/pdf", 10, false))
+      .mediaId as string;
+    const saved = await file(COACH_C, "Saved");
+    const archived = await file(COACH_C, "Archived");
+    await http("DELETE", `/trainers/me/resources/${archived.id}`, COACH_C);
+    const swapped = await file(COACH_C, "Swapped");
+    const oldFile = swapped.mediaId as string;
+    const newFile = await upload(COACH_C, "image/png", 777);
+    expect(
+      (
+        await http("PATCH", `/trainers/me/resources/${swapped.id}`, COACH_C, {
+          mediaId: newFile.mediaId,
+        })
+      ).status,
+    ).toBe(200);
+    await ageMedia(
+      [
+        unused,
+        neverPut,
+        saved.mediaId,
+        archived.mediaId,
+        oldFile,
+        newFile.mediaId,
+      ],
+      8,
+    );
+    await ageMedia([fresh], 6);
+
+    expect(await purgeStaleMedia()).toBe(3);
+    const left = (await db.select().from(schema.privateMedia))
+      .map((m) => m.id)
+      .sort();
+    expect(left).toEqual(
+      [fresh, saved.mediaId, archived.mediaId, newFile.mediaId].sort(),
+    );
+    expect(bucket.keys(`resources/${COACH_C}/${unused}/`)).toEqual([]);
+    expect(bucket.keys(`resources/${COACH_C}/${oldFile}/`)).toEqual([]);
+    expect(bucket.keys(`resources/${COACH_C}/${fresh}/`)).toHaveLength(1);
+    expect(bucket.keys(`resources/${COACH_C}/${saved.mediaId}/`)).toHaveLength(
+      1,
+    );
+    // Saved resources, archived ones included, keep their files.
+    const resources = await db.select().from(schema.coachResources);
+    expect(resources.every((r) => r.mediaId !== null)).toBe(true);
+    // Idempotent: nothing more to do.
+    expect(await purgeStaleMedia()).toBe(0);
+  });
+
+  it("the athlete still gets a working link for a saved file after the purge", async () => {
+    const saved = await file(COACH_C, "Saved");
+    await assign(COACH_C, [saved.id], [ATHLETE_A]);
+    await ageMedia([saved.mediaId], 30);
+    expect(await purgeStaleMedia()).toBe(0);
+    const [res] = (await mine(ATHLETE_A)).json.data.resources;
+    expect(res.url).toContain("X-Amz-Signature");
+  });
+
+  it("each coach's uploads are judged on their own: E's unused one goes, C's saved one stays", async () => {
+    const unusedOfE = await unusedUpload(COACH_E);
+    const savedOfC = await file(COACH_C, "C's own");
+    await ageMedia([unusedOfE, savedOfC.mediaId], 8);
+    expect(await purgeStaleMedia()).toBe(1);
+    expect(
+      (await db.select().from(schema.privateMedia)).map((m) => m.id),
+    ).toEqual([savedOfC.mediaId]);
   });
 });
 

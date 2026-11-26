@@ -223,6 +223,14 @@ import type {
   FormResponsesPage,
   FormSchedule,
 } from "@/domain/models/coachForms";
+import type {
+  CreatedProgressPhotoSet,
+  CreateProgressPhotoSetInput,
+  PhotoSharingStatus,
+  ProgressPhotoSet,
+  ProgressPhotosResponse,
+  ProgressPhotoUpload,
+} from "@/domain/models/progressPhotos";
 
 /**
  * In-memory API adapter for testing.
@@ -3949,5 +3957,148 @@ export class InMemoryApiAdapter implements ApiPort {
       ),
       nextCursor: null,
     });
+  }
+
+  // -- PER-137 (APP-F1): progress photos — a small fake of BE-F1 --
+  progressPhotoSets: ProgressPhotoSet[] = [];
+  photoSharing: PhotoSharingStatus = {
+    needsPrompt: false,
+    coaches: [],
+    consentVersion: "photos-v1",
+    copy: "Share your progress photos with your coaches.",
+  };
+  /** Scripted failures, consumed one per call, per method. */
+  progressPhotoFailures: {
+    list: ApiError[];
+    create: ApiError[];
+    upload: ApiError[];
+    complete: ApiError[];
+  } = { list: [], create: [], upload: [], complete: [] };
+  progressPhotoCalls: string[] = [];
+  /** Idempotency key → set id, like the server's `client_request_id`. */
+  private progressPhotoKeys = new Map<string, string>();
+  /** `setId:pose` uploaded. */
+  progressPhotoUploaded = new Set<string>();
+  private nextProgressPhotoId = 1;
+
+  async getProgressPhotos(): Promise<Result<ProgressPhotosResponse, ApiError>> {
+    this.progressPhotoCalls.push("list");
+    const failure = this.progressPhotoFailures.list.shift();
+    if (failure) return fail(failure);
+    return this.mayFail(
+      JSON.parse(
+        JSON.stringify({
+          sets: this.progressPhotoSets.filter((s) => s.status === "ready"),
+          photoSharing: this.photoSharing,
+          asOf: "2026-11-25T10:00:00.000Z",
+        }),
+      ) as ProgressPhotosResponse,
+    );
+  }
+
+  private photoUploadsFor(set: ProgressPhotoSet): ProgressPhotoUpload[] {
+    return set.photos
+      .filter((p) => !this.progressPhotoUploaded.has(`${set.id}:${p.pose}`))
+      .map((p) => ({
+        pose: p.pose,
+        url: `https://bucket.test/${set.id}/${p.pose}.jpg?sig=1`,
+        method: "PUT" as const,
+        headers: {
+          "Content-Type": "image/jpeg",
+          "Content-Length": String(p.bytes),
+        },
+        expiresAt: "2026-11-25T10:10:00.000Z",
+      }));
+  }
+
+  async createProgressPhotoSet(
+    input: CreateProgressPhotoSetInput,
+    idempotencyKey: string,
+  ): Promise<Result<CreatedProgressPhotoSet, ApiError>> {
+    this.progressPhotoCalls.push(`create:${idempotencyKey}`);
+    const failure = this.progressPhotoFailures.create.shift();
+    if (failure) return fail(failure);
+    const existing = this.progressPhotoKeys.get(idempotencyKey);
+    let set = this.progressPhotoSets.find((s) => s.id === existing);
+    if (existing && !set) {
+      return fail<ApiError>({
+        kind: "api",
+        code: "unknown",
+        status: 409,
+        message: "That photo set was deleted",
+      });
+    }
+    if (!set) {
+      const id = `set-${this.nextProgressPhotoId++}`;
+      const now = "2026-11-25T10:00:00.000Z";
+      set = {
+        id,
+        takenOn: input.takenOn,
+        source: "self",
+        status: "pending",
+        createdAt: now,
+        updatedAt: now,
+        photos: input.poses.map((p) => ({
+          id: `${id}-${p.pose}`,
+          pose: p.pose,
+          bytes: p.bytes,
+          width: p.width ?? null,
+          height: p.height ?? null,
+          url: `https://view.test/${id}/${p.pose}.jpg`,
+          expiresAt: "2026-11-25T10:15:00.000Z",
+        })),
+        weight: null,
+        bodyFat: null,
+      };
+      this.progressPhotoSets.push(set);
+      this.progressPhotoKeys.set(idempotencyKey, id);
+    }
+    return ok(
+      JSON.parse(
+        JSON.stringify({ set, uploads: this.photoUploadsFor(set) }),
+      ) as CreatedProgressPhotoSet,
+    );
+  }
+
+  async uploadProgressPhoto(
+    upload: ProgressPhotoUpload,
+    body: Blob,
+  ): Promise<Result<void, ApiError>> {
+    this.progressPhotoCalls.push(`upload:${upload.pose}:${body.size}`);
+    const failure = this.progressPhotoFailures.upload.shift();
+    if (failure) return fail(failure);
+    const match =
+      /^https:\/\/bucket\.test\/([^/]+)\/(front|side|back)\.jpg/.exec(
+        upload.url,
+      );
+    if (match) this.progressPhotoUploaded.add(`${match[1]}:${match[2]}`);
+    return ok(undefined);
+  }
+
+  async completeProgressPhotoSet(
+    setId: string,
+  ): Promise<Result<ProgressPhotoSet, ApiError>> {
+    this.progressPhotoCalls.push(`complete:${setId}`);
+    const failure = this.progressPhotoFailures.complete.shift();
+    if (failure) return fail(failure);
+    const set = this.progressPhotoSets.find((s) => s.id === setId);
+    if (!set) {
+      return fail<ApiError>({
+        kind: "api",
+        code: "not_found",
+        status: 404,
+        message: "Photo set not found",
+      });
+    }
+    if (this.photoUploadsFor(set).length > 0) {
+      return fail<ApiError>({
+        kind: "api",
+        code: "unknown",
+        status: 422,
+        message: "Some photos haven't finished uploading",
+      });
+    }
+    set.status = "ready";
+    return ok(JSON.parse(JSON.stringify(set)) as ProgressPhotoSet);
   }
 }

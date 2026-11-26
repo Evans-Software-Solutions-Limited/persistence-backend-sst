@@ -96,6 +96,9 @@ const dialect = new PgDialect();
 const BASE_TABLES = [
   schema.profiles,
   schema.ptClientRelationships,
+  // PER-123: offboarding also cancels this relationship's future bookings.
+  schema.coachSessions,
+  schema.coachSessionAttendees,
   schema.dataSharingConsents,
   schema.trainerClientNotes,
   schema.nutritionTargets,
@@ -286,6 +289,8 @@ const share = (athlete: string) =>
 beforeAll(async () => {
   pg = await baseDatabase();
   await pg.exec(await read(MIGRATIONS, MIGRATION));
+  // PER-150: the nightly media purge checks `coach_resources.media_id`.
+  await pg.exec(await read(MIGRATIONS, "20261125101829_coach_resources.sql"));
   db = drizzle(pg, { schema });
   holder.db = db;
 });
@@ -1091,6 +1096,34 @@ describe("the one-time photo-sharing consent", () => {
     // The gallery list carries the same status for the app's prompt.
     const list = await http("GET", "/users/me/progress-photos", ATHLETE_A);
     expect(list.json.data.photoSharing.needsPrompt).toBe(false);
+  });
+
+  it("serves Brad's final wording at photos-v1; a grant stamped with the old version still counts", async () => {
+    expect(PHOTO_SHARING_CONSENT_VERSION).toBe("photos-v1");
+    expect(PHOTO_SHARING_COPY).toBe(
+      "Share your progress photos with your coaches. Only your current coaches can see them, and they lose access when coaching ends.",
+    );
+    // Grants written while the wording was a placeholder (photos-v0) must
+    // not force anyone to confirm again.
+    for (const trainerId of [COACH_C, COACH_E]) {
+      await db.insert(schema.dataSharingConsents).values({
+        trainerId,
+        clientId: ATHLETE_A,
+        action: "grant",
+        consentVersion: "photos-v0-placeholder",
+        source: "photo_sharing_prompt",
+      });
+    }
+    const status = await http(
+      "GET",
+      "/users/me/progress-photos/sharing",
+      ATHLETE_A,
+    );
+    expect(status.json.data.needsPrompt).toBe(false);
+    expect((await gallery(COACH_C, ATHLETE_A)).status).toBe(200);
+    // Confirming again writes nothing new.
+    await share(ATHLETE_A);
+    expect(await db.select().from(schema.dataSharingConsents)).toHaveLength(2);
   });
 
   it("an athlete with no coaches has nothing to confirm; AI coaches are never offered", async () => {

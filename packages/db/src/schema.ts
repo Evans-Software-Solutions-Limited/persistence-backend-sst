@@ -212,6 +212,10 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   "coach_event",
   "form_request",
   "form_reminder",
+  // Design I (PER-123) — an athlete's coach booking: booked, moved, cancelled
+  // or its reminder (`data.action`). Added in
+  // 20261125123634_coach_sessions_calendar.sql.
+  "coach_session",
 ]);
 
 // M4 (06-progress-goals) — streak engine period types. cross-cuts § 3.1.
@@ -1347,6 +1351,11 @@ export const workoutAssignments = pgTable(
     ),
     /** 0-based occurrence number within its programme assignment; NULL ad-hoc. */
     occurrenceIndex: integer("occurrence_index"),
+    // PER-112 (design G part 2): 0-based position in programme order for a
+    // `sequence` programme assignment (no due date; Next = the lowest not yet
+    // completed). NULL for dated occurrences and ad-hoc rows.
+    // Migration: 20261125101831_programme_sequence_mode.sql.
+    sequenceIndex: integer("sequence_index"),
     showInPlan: boolean("show_in_plan").notNull().default(true),
     showInLibrary: boolean("show_in_library").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
@@ -1358,6 +1367,9 @@ export const workoutAssignments = pgTable(
       .on(t.programAssignmentId, t.occurrenceIndex)
       .where(sql`${t.programAssignmentId} is not null`),
     index("workout_assignments_client_due_idx").on(t.clientId, t.dueDate),
+    index("workout_assignments_program_sequence_idx")
+      .on(t.programAssignmentId, t.sequenceIndex)
+      .where(sql`${t.sequenceIndex} is not null`),
   ],
 );
 
@@ -1402,6 +1414,9 @@ export const programWorkouts = pgTable(
   ],
 );
 
+/** How a programme assignment's workouts are laid out (design G part 2). */
+export type ProgramScheduleMode = "dated" | "sequence";
+
 // One row per programme→client assignment. end_date stored at assign time
 // (NULL = indefinite). At most one LIVE (assigned/started) row per
 // (programme, client) — enforced by a partial unique index in SQL; Drizzle's
@@ -1430,6 +1445,14 @@ export const programAssignments = pgTable(
     // Programme-level defaults copied onto materialised occurrences (D3).
     showInPlan: boolean("show_in_plan").notNull().default(true),
     showInLibrary: boolean("show_in_library").notNull().default(true),
+    // PER-112 (design G part 2): 'dated' (default; every pre-existing row)
+    // or 'sequence' (no dates: workouts in programme order with Next).
+    // start_date is still filled with the assignment date for old readers.
+    // Migration: 20261125101831_programme_sequence_mode.sql.
+    scheduleMode: text("schedule_mode")
+      .$type<ProgramScheduleMode>()
+      .notNull()
+      .default("dated"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
   },
@@ -4194,6 +4217,8 @@ export const businessVoucherRateLimits = pgTable(
 export * from "./togetherSharedSchema";
 export * from "./togetherSchema";
 export * from "./socialSchema";
+// PER-123 (design I): coach calendar sessions and attendees.
+export * from "./coachSessionsSchema";
 
 export * from "./togetherOfflineSchema";
 // PER-121 (design F): progress photos and private media.

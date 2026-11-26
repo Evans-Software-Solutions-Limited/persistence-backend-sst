@@ -36,6 +36,7 @@ import { useNotificationDeepLink } from "../../src/ui/hooks/useNotificationDeepL
 import { useOfflineDataBootstrap } from "../../src/ui/hooks/useOfflineDataBootstrap";
 import { useSyncWorker } from "../../src/ui/hooks/useSyncWorker";
 import { colorPalette } from "../../src/ui/theme";
+import { useProgressPhotoUploadWorker } from "@/ui/hooks/useProgressPhotoUploadWorker";
 
 /**
  * Routing structure — please preserve when refactoring:
@@ -68,6 +69,9 @@ export default function AppLayout() {
   // signed-in surface and unmounts cleanly on sign-out (auth boundary
   // unmounts this tree).
   useSyncWorker();
+  // PER-137: upload progress photos kept on the phone (files don't ride
+  // the JSON sync queue).
+  useProgressPhotoUploadWorker();
   // M10.6: on a tier upgrade that satisfies blocked entries' verdict,
   // unblock them and flush. Runs alongside the sync worker — they
   // don't interact directly, but `useAutoRetryOnUpgrade` triggers its
@@ -372,6 +376,19 @@ export default function AppLayout() {
         <Stack.Screen
           name="fuel/preferences"
           options={{ headerShown: false }}
+        />
+        {/*
+          PER-137 progress photos: Y3 Gallery and Y3b Add photos (own top
+          bars), and the Y3c viewer full screen, portrait.
+        */}
+        <Stack.Screen name="progress-photos" options={{ headerShown: false }} />
+        <Stack.Screen
+          name="progress-photos-add"
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="progress-photo-viewer"
+          options={{ presentation: "fullScreenModal", headerShown: false }}
         />
       </Stack>
       {/*

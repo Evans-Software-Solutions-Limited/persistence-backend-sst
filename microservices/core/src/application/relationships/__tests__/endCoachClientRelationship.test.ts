@@ -37,6 +37,15 @@ vi.mock("../../coaching/forms/generators", () => ({
   closeFormsOnEnd: (...args: unknown[]) => closeFormsOnEnd(...(args as [])),
 }));
 
+// PER-123: cancelling this relationship's future bookings (step 4b) runs on
+// PGlite in coaching/sessions/__tests__/coachSessions.integration.test.ts.
+// Mocked here so the queue below stays the relationship/assignment writes.
+const cancelBookingsForRelationship = vi.fn(async () => 0);
+vi.mock("../../coaching/sessions/sessionRepository", () => ({
+  cancelBookingsForRelationship: (...args: unknown[]) =>
+    cancelBookingsForRelationship(...(args as [])),
+}));
+
 /**
  * Thenable query-builder mock (one queue entry == one awaited query),
  * extended from trainersRespondToClientRequestHandler.test.ts's `executor`
@@ -130,6 +139,8 @@ describe("endCoachClientRelationship", () => {
       clientId: "client-1",
       relationshipId: "rel-1",
     });
+    // PER-123: this relationship's future bookings are cancelled in the tx.
+    expect(cancelBookingsForRelationship).toHaveBeenCalledWith(ex, "rel-1");
 
     expect(auditTrainerAction).toHaveBeenCalledTimes(1);
     expect(auditTrainerAction).toHaveBeenCalledWith(

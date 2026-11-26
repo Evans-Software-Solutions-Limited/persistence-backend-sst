@@ -138,3 +138,101 @@ export function buildOccurrences(params: {
   }
   return out;
 }
+
+// ─── Sequence mode (PER-112, design G part 2) ────────────────────────────────
+//
+// A `sequence` programme assignment has NO dates: its workouts are created
+// once, with `due_date = NULL` and `sequence_index` = the position in
+// programme order. Programme order is the occurrence order above (week, then
+// the slot within the week, which is the cycle position), so sequence index k
+// is occurrence k and runs `cycle[k mod cycle.length]`. Next = the lowest
+// sequence index not yet completed.
+
+/** How a programme assignment lays out its workouts. */
+export type ScheduleMode = "dated" | "sequence";
+
+/** How many weeks of workouts an INDEFINITE sequence programme keeps open. */
+export const INDEFINITE_SEQUENCE_WEEKS = INDEFINITE_HORIZON_DAYS / 7;
+
+/** One workout of a sequence programme assignment. */
+export interface SequenceStep {
+  sequenceIndex: number;
+  workoutId: string;
+}
+
+/**
+ * Build the workouts of a sequence assignment.
+ *
+ * Finite (`durationWeeks` set): every workout from `fromIndex` up to
+ * `durationWeeks × daysPerWeek`, the same count as a dated assignment.
+ *
+ * Indefinite (`durationWeeks` null): enough to keep
+ * `INDEFINITE_SEQUENCE_WEEKS × daysPerWeek` workouts open, given `openCount`
+ * already open. It's the dateless twin of the dated 28-day horizon.
+ */
+export function buildSequence(params: {
+  daysPerWeek: number;
+  /** workoutIds ordered by position — the cycle. */
+  cycle: string[];
+  durationWeeks: number | null;
+  fromIndex: number;
+  /** Workouts already open (indefinite top-up only). */
+  openCount?: number;
+}): SequenceStep[] {
+  const { daysPerWeek, cycle, durationWeeks } = params;
+  if (cycle.length === 0) return [];
+  const from = Math.max(params.fromIndex, 0);
+  const end =
+    durationWeeks !== null
+      ? durationWeeks * daysPerWeek
+      : from +
+        Math.max(
+          INDEFINITE_SEQUENCE_WEEKS * daysPerWeek - (params.openCount ?? 0),
+          0,
+        );
+  const out: SequenceStep[] = [];
+  for (let k = from; k < end; k++) {
+    out.push({ sequenceIndex: k, workoutId: cycle[k % cycle.length] });
+  }
+  return out;
+}
+
+/** `weekOfProgramme` read field: where the athlete is, and out of how many. */
+export interface WeekOfProgramme {
+  /** 1-based. */
+  week: number;
+  /** Programme length in weeks; null = indefinite. */
+  of: number | null;
+}
+
+/**
+ * The one place `weekOfProgramme` is worked out, for every read that returns
+ * it (Home card, coach active programme, athlete programme detail) and for the
+ * AI weekly summary (PER-115).
+ *
+ * - `dated`: the calendar week since `startDate` (same as `currentWeek`).
+ * - `sequence`: the week the Next workout belongs to,
+ *   `floor(position / daysPerWeek) + 1`, where position is Next's sequence
+ *   index, or the number of workouts created when every one is done. Clamped
+ *   to the programme length, so a finished 8-week programme reads 8 of 8.
+ */
+export function weekOfProgramme(params: {
+  scheduleMode: ScheduleMode;
+  startDate: string;
+  today: string;
+  durationWeeks: number | null;
+  daysPerWeek: number;
+  /** Lowest open sequence index (sequence only); null when none is open. */
+  nextSequenceIndex: number | null;
+  /** Workouts created so far for the assignment (sequence only). */
+  sequenceCount: number;
+}): WeekOfProgramme {
+  const of = params.durationWeeks;
+  if (params.scheduleMode !== "sequence") {
+    return { week: currentWeek(params.startDate, params.today, of), of };
+  }
+  const position = params.nextSequenceIndex ?? params.sequenceCount;
+  const perWeek = Math.max(params.daysPerWeek, 1);
+  const week = Math.floor(Math.max(position, 0) / perWeek) + 1;
+  return { week: of === null ? week : Math.max(Math.min(week, of), 1), of };
+}

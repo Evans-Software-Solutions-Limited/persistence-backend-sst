@@ -1,5 +1,17 @@
-import { and, asc, desc, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
 import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  gt,
+  inArray,
+  isNull,
+  or,
+  sql,
+} from "drizzle-orm";
+import {
+  coachClientSettings,
   coachResourceAssignments,
   coachResources,
   privateMedia,
@@ -14,6 +26,7 @@ import type { DbOrTx } from "../../repositories/personalRecordsRepository";
 import { stripNul } from "../../shared/stripNul";
 import { finaliseMedia } from "../../media/privateMediaRepository";
 import { presignView, type ViewLink } from "../../media/privateMediaStore";
+import { resolveFeatures } from "../clientSettings";
 
 /**
  * The coach resources library and its assignments (PER-122, BE-I1, backend
@@ -23,7 +36,8 @@ import { presignView, type ViewLink } from "../../media/privateMediaStore";
  * also to the caller's own relationship with the client, so coach A never
  * sees or changes coach B's resources or assignments for the same athlete.
  * Athlete reads are scoped to `client_id = caller` and only return
- * assignments on an ACTIVE relationship whose coach account isn't deleted.
+ * assignments on an ACTIVE relationship whose coach account isn't deleted,
+ * while that coach has the client's C3.9 `resources` switch on (PER-150).
  */
 
 export const TITLE_MAX = 120;
@@ -642,10 +656,83 @@ export async function removeResourceAssignmentsForRelationship(
 // ─── Athlete ─────────────────────────────────────────────────────────────────
 
 /**
+ * The assignment's coach's C3.9 settings row for this client. LEFT JOINed: a
+ * relationship with no settings row yet has every switch on.
+ */
+const settingsOfAssignment = and(
+  eq(
+    coachClientSettings.relationshipId,
+    coachResourceAssignments.relationshipId,
+  ),
+  eq(coachClientSettings.trainerId, coachResourceAssignments.trainerId),
+);
+
+/**
+ * The client's C3.9 `resources` switch for that coach is on (PER-150). Off
+ * only when stored as `false`; a missing row or key means on, exactly as
+ * `resolveFeatures` reads it. Needs `settingsOfAssignment` joined.
+ */
+const resourcesSwitchOn = sql`(${coachClientSettings.features} -> 'resources') IS DISTINCT FROM 'false'::jsonb`;
+
+/**
+ * The athlete's visibility rule, shared by the list, the opened stamp and
+ * the `/users/me/coaching` count: the caller's own live assignment of a live
+ * resource, on an ACTIVE relationship with that coach, whose account isn't
+ * deleted, with the client's `resources` switch on for that coach. Needs
+ * resources, relationships, the coach's profile and `settingsOfAssignment`
+ * joined.
+ */
+function visibleToAthlete(clientId: string) {
+  return and(
+    eq(coachResourceAssignments.clientId, clientId),
+    isNull(coachResourceAssignments.removedAt),
+    isNull(coachResources.archivedAt),
+    eq(coachResources.trainerId, coachResourceAssignments.trainerId),
+    eq(ptClientRelationships.status, "active"),
+    eq(ptClientRelationships.trainerId, coachResourceAssignments.trainerId),
+    eq(ptClientRelationships.clientId, clientId),
+    isNull(profiles.deletedAt),
+    resourcesSwitchOn,
+  );
+}
+
+/**
+ * `GET /users/me/coaching`'s `resources` (PER-150): how many resources each
+ * coach has given the caller that `GET /users/me/resources` would show now,
+ * by relationship id. Relationships with none are absent.
+ */
+export async function countAthleteResources(
+  clientId: string,
+): Promise<Map<string, number>> {
+  const rows = await getDb()
+    .select({
+      relationshipId: coachResourceAssignments.relationshipId,
+      n: count(),
+    })
+    .from(coachResourceAssignments)
+    .innerJoin(
+      coachResources,
+      eq(coachResources.id, coachResourceAssignments.resourceId),
+    )
+    .innerJoin(
+      ptClientRelationships,
+      eq(ptClientRelationships.id, coachResourceAssignments.relationshipId),
+    )
+    .innerJoin(profiles, eq(profiles.id, coachResourceAssignments.trainerId))
+    .leftJoin(coachClientSettings, settingsOfAssignment)
+    .where(visibleToAthlete(clientId))
+    .groupBy(coachResourceAssignments.relationshipId);
+  return new Map(rows.map((r) => [r.relationshipId, Number(r.n)]));
+}
+
+/**
  * `GET /users/me/resources`: from every active coach, newest first, with the
  * coach's name and a short-lived link for files. With `since`, only what
  * changed, and `deletedIds` (assignment ids) for anything no longer visible:
- * removed, archived, coaching ended, or the coach's account deleted.
+ * removed, archived, coaching ended, the coach's account deleted, or the
+ * coach switched the client's Resources off (C3.9, PER-150). Switching it
+ * back on brings them back on the next delta (the settings row's
+ * `updated_at` moves).
  */
 export async function listAthleteResources(
   clientId: string,
@@ -666,6 +753,7 @@ export async function listAthleteResources(
       mediaKey: privateMedia.s3Key,
       mediaStatus: privateMedia.status,
       mediaOwner: privateMedia.ownerId,
+      features: coachClientSettings.features,
     })
     .from(coachResourceAssignments)
     .innerJoin(
@@ -678,6 +766,7 @@ export async function listAthleteResources(
     )
     .innerJoin(profiles, eq(profiles.id, coachResourceAssignments.trainerId))
     .leftJoin(privateMedia, eq(privateMedia.id, coachResources.mediaId))
+    .leftJoin(coachClientSettings, settingsOfAssignment)
     .where(
       since
         ? and(
@@ -690,6 +779,8 @@ export async function listAthleteResources(
               gt(ptClientRelationships.updatedAt, since),
               // Soft-delete and restore of the coach only touch profiles.
               gt(profiles.updatedAt, since),
+              // The C3.9 switches live on the settings row.
+              gt(coachClientSettings.updatedAt, since),
               // Every visible FILE comes back on each delta too: its signed
               // link lasts 15 minutes, so an offline-first cache would
               // otherwise keep a dead URL (Inspector Brad, #563). Links
@@ -700,15 +791,11 @@ export async function listAthleteResources(
                 isNull(coachResources.archivedAt),
                 eq(ptClientRelationships.status, "active"),
                 isNull(profiles.deletedAt),
+                resourcesSwitchOn,
               ),
             ),
           )
-        : and(
-            eq(coachResourceAssignments.clientId, clientId),
-            isNull(coachResourceAssignments.removedAt),
-            isNull(coachResources.archivedAt),
-            eq(ptClientRelationships.status, "active"),
-          ),
+        : visibleToAthlete(clientId),
     )
     .orderBy(
       desc(coachResourceAssignments.assignedAt),
@@ -723,7 +810,8 @@ export async function listAthleteResources(
       row.relStatus === "active" &&
       row.relTrainer === row.a.trainerId &&
       row.relClient === clientId &&
-      row.coachDeletedAt === null,
+      row.coachDeletedAt === null &&
+      resolveFeatures(row.features).resources,
   );
   const visibleIds = new Set(visible.map((row) => row.a.id));
   const deletedIds = since
@@ -765,7 +853,8 @@ export async function listAthleteResources(
 /**
  * `POST /users/me/resources/:assignmentId/opened`: stamps `opened_at` the
  * first time; later calls keep the first stamp. Null when the assignment
- * isn't one the caller can see.
+ * isn't one the caller can see (including while that coach has the client's
+ * Resources switched off, PER-150).
  */
 export async function markOpened(
   clientId: string,
@@ -785,15 +874,11 @@ export async function markOpened(
         eq(ptClientRelationships.id, coachResourceAssignments.relationshipId),
       )
       .innerJoin(profiles, eq(profiles.id, coachResourceAssignments.trainerId))
+      .leftJoin(coachClientSettings, settingsOfAssignment)
       .where(
         and(
           eq(coachResourceAssignments.id, assignmentId),
-          eq(coachResourceAssignments.clientId, clientId),
-          isNull(coachResourceAssignments.removedAt),
-          isNull(coachResources.archivedAt),
-          eq(ptClientRelationships.status, "active"),
-          eq(ptClientRelationships.clientId, clientId),
-          isNull(profiles.deletedAt),
+          visibleToAthlete(clientId),
         ),
       )
       .limit(1)

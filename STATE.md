@@ -50,6 +50,171 @@ build; no build started by an agent. No new package, no Firebase JS SDK.
   `expo-notifications.adapter.test.ts`. Brad's steps:
   `docs/android-push-setup.md`.
 
+### 2026-11-25 — BE-I2: coach calendar, bookings and session reminders ([PER-123](https://linear.app/evans-software-solutions/issue/PER-123); branch `claude/per-123-coach-calendar`)
+
+Backend design I, calendar part (C4). Additive; nothing existing changes for
+1.2.0. Migration `20261125123634_coach_sessions_calendar.sql` (sessions half
+of migration 10; PER-122 owns the resources half) with a rollback.
+
+- **Tables:** `coach_sessions` (one row per occurrence; weekly repeats are up
+  to 26 rows sharing `series_id`; `revision`, `client_request_id` unique per
+  trainer, `cancelled_at`, `reminder_minutes`, `workout_id` SET NULL) and
+  `coach_session_attendees` (PK `(session_id, relationship_id)`, status
+  invited/accepted/declined/cancelled, `reminded_at`). Drizzle in
+  `packages/db/src/coachSessionsSchema.ts`, re-exported from `schema.ts`.
+- **Push type:** `notification_type` `coach_session` (`ADD VALUE IF NOT
+  EXISTS`), `data.action` = booked | moved | cancelled | reminder, plus
+  `sessionId`, `startsAt`, `seriesId` (Brad, 25 Nov: one athlete type). Off
+  the `/notifications/preferences` list so that contract is unchanged.
+- **Routes** (`coaching/sessions/sessionsHandlers.ts`, mounted in
+  `coachingRoutes.ts`): `GET /trainers/me/calendar?from=&to=` (≤ 62 days;
+  `{sessions, formsDue, from, to, asOf}`), `POST /trainers/me/sessions`
+  (`repeat: {frequency:'weekly', count ≤ 26}`, `Idempotency-Key`; returns
+  `{data: first, series}`), `PATCH/DELETE /trainers/me/sessions/:id?scope=this|series`
+  (`expectedRevision?` → 409 `revision_conflict`; `series` = this occurrence
+  and the later live ones; a move shifts each the same way in the coach's
+  local time), `GET /users/me/coach-sessions?from=&to=` (default next 62
+  days; own booking only, no notes or other attendees), `POST
+  /users/me/coach-sessions/:id/respond`. `GET /trainers/me/today`'s
+  `schedule` is now today's live bookings in the coach's zone.
+- **Events:** create/move/cancel writes one `session_booked` coach event per
+  attendee, `noPush` (feed only); an athlete's accept/decline writes none
+  (Brad, 25 Nov).
+- **Reminders:** `sessionRemindersJob` appended to `COACH_SCHEDULER_JOBS`
+  (15-minute `coachSchedulerCron`, no new infra): claim `reminded_at` then
+  push, once per booked attendee from `starts_at − reminder_minutes` until
+  the start; a move or reminder change clears `reminded_at`.
+- **Offboarding:** step 4b in `endCoachClientRelationship` cancels the
+  relationship's bookings on sessions that haven't started (sessions stay).
+- **Tests:** `coaching/sessions/__tests__/coachSessions.integration.test.ts`
+  (design I tests 1, 3, 4 on PGlite with the real migrations) and
+  `sessionTimes.test.ts`. The other PGlite suites that run offboarding or the
+  scheduler create the two tables in `BASE_TABLES`.
+- **Not done here:** the coach-subscription guard for these `/trainers/me/*`
+  routes comes from PER-146 (#565). App side is PER-144.
+
+### 2026-11-26 — PER-137 follow-up: landscape-only photo viewer, final photo-sharing copy ([PER-137](https://linear.app/evans-software-solutions/issue/PER-137); branch `claude/per-137-landscape-viewer`)
+
+- **Native change (Brad approved, 26 Nov; needs the new store build):**
+  `expo-screen-orientation@~55.0.16` (not in 1.2.0), `app.json`
+  `orientation: "default"` and the plugin with `initialOrientation:
+  "PORTRAIT_UP"` (commit 498f05d).
+- `src/lib/screenOrientation.ts`: `lockPortrait` / `lockLandscape`, guarded
+  with `requireOptionalNativeModule("ExpoScreenOrientation")`. On a 1.2.0
+  binary (OTA) they're no-ops, and the binary stays portrait natively.
+- The root layout locks portrait at start. The Y3c viewer locks landscape on
+  focus and portrait on blur/unmount, and its layout is the canvas's single
+  landscape bar (Close, pose · date, weight / body fat / vs latest, Delete,
+  Add). iPadOS ignores orientation locks with multitasking on.
+- `PHOTO_SHARING_COPY` is Brad's approved wording (placeholder prefix
+  dropped); `PHOTO_SHARING_CONSENT_VERSION` → `photos-v1`. The version is
+  only stamped on new grants. Grants are matched on action, source and
+  coaching cycle, so `photos-v0-placeholder` grants still count (integration
+  test).
+
+### 2026-11-25 — Coach resources follow-ups ([PER-150](https://linear.app/evans-software-solutions/issue/PER-150); branch `claude/per-150-resources-follow-ups`)
+
+Follow-ups to PER-122. Backend only; no migration, no route added or removed,
+no native change.
+
+- **Count:** `/users/me/coaching` `resources` is now the per-coach count of
+  what `GET /users/me/resources` shows (`countAthleteResources`). The list,
+  the opened stamp and the count share one rule, `visibleToAthlete()` in
+  `coaching/resources/resourceRepository.ts`.
+- **C3.9 switch:** enforced like `photos_off`. With a coach's `resources`
+  switch off for a client (stored `false`; missing = on), the athlete's list,
+  `?since=` delta (reports them in `deletedIds`; settings `updated_at` is a
+  delta trigger, so switching on brings them back), opened stamp (404) and
+  count leave that coach out; `POST /trainers/me/resources/assign` answers
+  403 `resources_off` with `clientIds` and assigns nothing. Assignments are
+  kept, not removed. Other coaches of the same athlete are unaffected. The
+  coach still sees the client's list and can remove items (Brad, 26 Nov:
+  option a).
+- **Purge:** the nightly `purgeStaleMedia` (account purge cron, no new
+  schedule) also deletes `resource` uploads no `coach_resources` row points
+  at once 7 days old (never saved, or replaced by a newer file), rows then
+  objects in one transaction. Archived resources keep their files.
+- **Tests:** `resources.integration.test.ts` PER-150 blocks (PGlite, real
+  migrations); `coaching.integration` and `progressPhotos.integration` now
+  apply the resources migration. Core suite 437 files / 6412 tests pass;
+  lines 98.1%, branches 93.25%.
+
+### 2026-11-25 — BE-G1b: programmes in order with Next, no dates ([PER-112](https://linear.app/evans-software-solutions/issue/PER-112); branch `claude/per-112-programmes-next`)
+
+Design G part 2 (C3.1, Assign with no start date). Backend only, additive.
+
+- **Migration** `20261125101831_programme_sequence_mode.sql` (+ rollback):
+  `program_assignments.schedule_mode` (`dated` default / `sequence`, CHECK),
+  `workout_assignments.sequence_index` + partial index. Mirrored in schema.ts.
+- **Sequence assignments** (`assignProgrammeInSequence`, the one helper):
+  `start_date` = assignment date, `end_date` NULL, every workout created once
+  with `due_date` NULL and `sequence_index` (= `occurrence_index` = cycle
+  position k). Indefinite ones keep 4 weeks × days/week open, topped up in
+  `ensureMaterializedForClient`. Next = lowest open `sequence_index`;
+  completing any workout links its lowest open occurrence (out of order is fine).
+- **Entry points:** coach `POST /trainers/me/programs/:id/assign` with no
+  `startDate` (with one = dated, unchanged for 1.2.0); the `programme` set-up
+  section (`programs/programmeSetupHandler.ts`, one line in `HANDLERS`);
+  `POST /users/me/program-assignments` ("Me", trainer role + active coach plan (PER-146), own programmes only:
+  design G's "or public" deferred pending Brad after Inspector Brad #564; re-send returns
+  the first row). Mounted via `programs/programsAthleteRoutes.ts` (TS2589).
+- **Reads:** `scheduleMode`, `nextAssignmentId`, `weekOfProgramme {week, of}` on
+  the Home card / coach active programme / relationship aggregate, athlete
+  `GET /programs/:id` and coach programme detail assignments; optional
+  `sequenceIndex` on Today's training, coach open assignments, upcomingWorkouts.
+  **`weekOfProgramme` for PER-115:** `programmeOrderFieldsFor` /
+  `weekOfProgramme` in `programs/sequenceProgress.ts` + `scheduling.ts`.
+- **1.2.0 safety:** Home Today's training and dashboard show only Next of a
+  sequence programme (`isNextOrNotSequenced`), else the whole undated plan would
+  appear. `week` keeps its calendar meaning. Unassign also prunes undated
+  untouched rows. `programme_ending` fires for finite sequence programmes at ≤ 2
+  left (dedupe `programme_ending:<id>:sequence`).
+- **Open:** "athlete planning capability" for "Me" doesn't exist in code; non-
+  trainers get 403 `planning_not_available` (question for Brad).
+- Tests: `programs/__tests__/designG.sequence.integration.test.ts` (PGlite, real
+  migration) and `scheduling.sequence.test.ts`; `scheduling.test.ts` unchanged.
+
+### 2026-11-25 — APP-F1 athlete progress photos: gallery, phone-camera capture, portrait viewer, offline uploads ([PER-137](https://linear.app/evans-software-solutions/issue/PER-137); branch `claude/per-137-athlete-photos`)
+
+Mobile only, over the air on 1.2.0, no native change. Uses BE-F1 (#553).
+
+- **Screens:** Y1 You page gallery row (latest set; "See all"; with no
+  photos: three empty grey blocks + "Add today's photos", Brad 25 Nov), Y3
+  Gallery (`/(app)/progress-photos`, same grey blocks when empty), Y3b Add
+  photos (`/(app)/progress-photos-add`), Y3c viewer
+  (`/(app)/progress-photo-viewer?setId=&pose=`, full screen, still portrait:
+  Brad wants it landscape-only, which needs `expo-screen-orientation` — not
+  in 1.2.0 — and is pending). Delete is a trash button with a confirm (Brad
+  approved).
+- **Capture:** the app's shared picking flow (`ui/hooks/imagePicker.ts`,
+  extracted from `useAvatarUpload`, which now uses it too: Camera / Photo
+  Library alert → permission → system picker) → `expo-image-manipulator`
+  JPEG, long edge ≤ 2048 px (`resizeToLongEdge`), size measured for the
+  pinned upload.
+- **Offline:** a saved set is a `pending_progress_photos` row (new SQLite
+  table, one JSON payload per set). `processProgressPhotoUploads` (end of
+  `sync.command.ts`) runs create (same `Idempotency-Key` every try) → PUT
+  each photo to the presigned link → complete, with back-off 5 s → 1 h and no
+  give-up on transport/5xx/408/429/upload errors; other API 4xx → `rejected`,
+  a gone file → `file_missing` (both stop, shown "Couldn't upload").
+  `useProgressPhotoUploadWorker` (mounted beside `useSyncWorker`) runs it
+  only while online: on mount, save, foreground, reconnect and when the next
+  retry is due. No `expo-file-system` (Brad, 25 Nov).
+  Delete and the sharing grant use the JSON sync queue.
+- **`expo-file-system`:** in the 1.2.0 binary (55.0.22, a dependency of
+  `expo`), but not importable without adding it to
+  `packages/mobile/package.json` (out of bounds while PER-147 edits it). So
+  the design's fallback is used: unsent photos stay where the manipulator
+  wrote them (the cache directory) and the gallery warns they could be lost.
+  Files are read with RN `fetch(file://…).blob()`.
+- **Gallery cache:** `cached_progress_photos` (full read each time; links
+  last 15 min); images cached by `expo-image` with `cacheKey` = photo id.
+- **Sharing prompt:** after Save, if `photoSharing.needsPrompt` and the
+  athlete hasn't answered for those coaches on this phone; body is the
+  server's `copy` (`PHOTO_SHARING_COPY` placeholder from PER-121).
+- **Copy:** Brad approved the drafted wording (25 Nov). `PHOTO_SHARING_COPY`
+  (backend, PER-121) is still the placeholder text.
+
 ### 2026-11-25 — Mobile forms on react-hook-form + TypeBox ([PER-147](https://linear.app/evans-software-solutions/issue/PER-147), 2 of 2; branch `claude/per-147-rhf-mobile`)
 
 Every mobile form added since 1.2.0 validates through `react-hook-form` with

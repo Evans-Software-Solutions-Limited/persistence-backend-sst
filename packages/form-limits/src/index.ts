@@ -66,9 +66,15 @@ export const FORM_SCHEDULE_LIMITS = {
 /** A coach's reply to a check-in (C3.3). */
 export const FORM_REPLY_MAX = 2000;
 
-/** Your meals (N1b): `PUT /nutrition/user-meals`. */
+/**
+ * Your meals (N1b): `PUT /nutrition/user-meals`. `nameMax` is the route
+ * schema's raw-length guard; `storedNameMax` is the real limit the handler
+ * enforces after trimming (400 `invalid_user_meal_name`) and that the
+ * `user_meals_name_len_chk` database check (1–40) stores.
+ */
 export const USER_MEAL_LIMITS = {
   nameMax: 80,
+  storedNameMax: 40,
   maxMeals: 30,
 } as const;
 
