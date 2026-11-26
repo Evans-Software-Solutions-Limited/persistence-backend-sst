@@ -1,4 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
+import { useForm } from "react-hook-form";
+import {
+  firstFormProblem,
+  formEditorResolver,
+  type FormEditorValues,
+} from "@/ui/forms/coachFormForms";
 import { useLocalSearchParams, useRouter } from "expo-router";
 
 import {
@@ -7,7 +13,6 @@ import {
   type Question,
 } from "@/domain/models/coachForms";
 import {
-  draftProblem,
   duplicateQuestion,
   moveQuestion,
   newQuestion,
@@ -57,9 +62,18 @@ export function CoachFormEditorContainer() {
   const conflictKey = id ? formConflictKey(id) : null;
   const conflict = conflicts.some((c) => c.key === conflictKey);
 
-  const [draft, setDraft] = useState<Draft>(() => draftFrom(form));
+  // react-hook-form holds the draft (PER-147). Save checks the schema and
+  // shows its first problem, which stays until the next Save, as before.
+  const editor = useForm<FormEditorValues>({
+    resolver: formEditorResolver,
+    defaultValues: draftFrom(form),
+  });
+  const draft = editor.watch() as Draft;
+  const setField = <K extends keyof Draft>(key: K, value: Draft[K]) =>
+    editor.setValue(key, value as never, { shouldDirty: true });
+  const { reset } = editor;
   const [openIndex, setOpenIndex] = useState<number | null>(id ? null : 0);
-  const [problem, setProblem] = useState<string | null>(null);
+  const problem = firstFormProblem(editor.formState.errors);
   const [saving, setSaving] = useState(false);
 
   // An edit opened before the library was read, or one whose server copy
@@ -71,51 +85,51 @@ export function CoachFormEditorContainer() {
     if (!form) return;
     const key = `${form.id}:${form.revision}:${conflict}`;
     if (key === loadedFrom) return;
-    if (loadedFrom === null || conflict) setDraft(draftFrom(form));
+    if (loadedFrom === null || conflict) reset(draftFrom(form));
     setLoadedFrom(key);
-  }, [form, conflict, loadedFrom]);
+  }, [form, conflict, loadedFrom, reset]);
 
   const setQuestions = (questions: Question[]) =>
-    setDraft((d) => ({ ...d, questions }));
+    setField("questions", questions);
 
-  const onSave = useCallback(async () => {
-    const payload = {
-      ...(id ? { id } : {}),
-      title: draft.title,
-      description: draft.description,
-      questions: draft.questions,
-    };
-    const issue = draftProblem(payload);
-    setProblem(issue);
-    if (issue) return;
-    // Saving over the server copy acknowledges the conflict; a new 409 from
-    // this save records a fresh one.
-    if (conflictKey) dismiss(conflictKey);
-    setSaving(true);
-    const saved = await actions.saveForm(payload);
-    setSaving(false);
-    if (!saved) return;
-    if (id) {
-      router.back();
-      return;
-    }
-    router.replace({
-      pathname: "/(app)/coach-forms/[id]",
-      params: {
-        id: resolveCoachFormsId(saved.id),
-        send: "1",
-        ...(params.trigger ? { trigger: params.trigger } : {}),
-      },
-    } as never);
-  }, [id, draft, actions, conflictKey, dismiss, router, params.trigger]);
+  const onSave = useCallback(
+    async (valid: FormEditorValues) => {
+      const payload = {
+        ...(id ? { id } : {}),
+        title: valid.title,
+        description: valid.description,
+        questions: valid.questions,
+      };
+      // Saving over the server copy acknowledges the conflict; a new 409 from
+      // this save records a fresh one.
+      if (conflictKey) dismiss(conflictKey);
+      setSaving(true);
+      const saved = await actions.saveForm(payload);
+      setSaving(false);
+      if (!saved) return;
+      if (id) {
+        router.back();
+        return;
+      }
+      router.replace({
+        pathname: "/(app)/coach-forms/[id]",
+        params: {
+          id: resolveCoachFormsId(saved.id),
+          send: "1",
+          ...(params.trigger ? { trigger: params.trigger } : {}),
+        },
+      } as never);
+    },
+    [id, actions, conflictKey, dismiss, router, params.trigger],
+  );
 
   return (
     <FormEditorPresenter
       isNew={!id}
       title={draft.title}
-      onTitle={(title) => setDraft((d) => ({ ...d, title }))}
+      onTitle={(title) => setField("title", title)}
       description={draft.description}
-      onDescription={(description) => setDraft((d) => ({ ...d, description }))}
+      onDescription={(description) => setField("description", description)}
       meta={
         form?.version
           ? `${plural(draft.questions.length, "question")} · version ${form.version.version}`
@@ -154,7 +168,7 @@ export function CoachFormEditorContainer() {
       }}
       problem={problem}
       saving={saving}
-      onSave={() => void onSave()}
+      onSave={() => void editor.handleSubmit(onSave)()}
       onBack={() => router.back()}
       offline={!online}
       conflict={conflict}

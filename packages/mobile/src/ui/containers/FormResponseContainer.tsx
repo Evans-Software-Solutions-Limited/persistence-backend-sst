@@ -1,4 +1,6 @@
 import { useMemo, useState } from "react";
+import { useForm } from "react-hook-form";
+import { replyResolver, type ReplyValues } from "@/ui/forms/coachFormForms";
 import { useLocalSearchParams, useRouter } from "expo-router";
 
 import {
@@ -50,12 +52,17 @@ export function FormResponseContainer() {
         ? previousResponse(list, response)
         : null
       : (earlier.find((r) => r.id === picked) ?? null);
-  const [reply, setReply] = useState("");
+  // The reply is a react-hook-form (PER-147); sending goes through it.
+  const replyForm = useForm<ReplyValues>({
+    resolver: replyResolver,
+    defaultValues: { reply: "" },
+  });
+  const reply = replyForm.watch("reply");
 
   const review = async (text?: string) => {
     if (!clientId || !response) return;
     await actions.review(clientId, response.id, text);
-    if (text !== undefined) setReply("");
+    if (text !== undefined) replyForm.reset({ reply: "" });
     responses.reload();
   };
 
@@ -79,11 +86,11 @@ export function FormResponseContainer() {
       onCompare={setPicked}
       compareLabel={compare ? shortDate(compare.submittedAt) : null}
       reply={reply}
-      onReply={setReply}
+      onReply={(v) => replyForm.setValue("reply", v, { shouldDirty: true })}
       existingReply={response?.replyText ?? null}
       canMarkReviewed={response !== null && response.reviewedAt === null}
       onMarkReviewed={() => void review()}
-      onSendReply={() => void review(reply)}
+      onSendReply={() => void replyForm.handleSubmit((v) => review(v.reply))()}
       offline={!online}
       onBack={() => router.back()}
     />

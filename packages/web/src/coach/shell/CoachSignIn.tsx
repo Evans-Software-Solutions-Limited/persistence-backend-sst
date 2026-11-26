@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { Type } from "@sinclair/typebox";
+import { useForm } from "react-hook-form";
 import { useLocation, useNavigate } from "react-router";
+import { messageAt, schemaResolver, trimmed } from "@/lib/form";
 import "../coach.css";
 import {
   parseCallbackHash,
@@ -93,30 +96,47 @@ export function CoachSignInView({
   );
 }
 
+/** The email must look like one (PER-147); the browser checks it too. */
+const signInSchema = Type.Object({
+  email: Type.String({
+    pattern: String.raw`^[^\s@]+@[^\s@]+\.[^\s@]+$`,
+    maxLength: 320,
+    errorMessage: "Enter the email of the account you coach from.",
+  }),
+});
+const signInResolver = schemaResolver<{ email: string }>(signInSchema, {
+  prepare: trimmed,
+});
+
 export function CoachSignIn() {
-  const [email, setEmail] = useState("");
+  const form = useForm<{ email: string }>({
+    resolver: signInResolver,
+    defaultValues: { email: "" },
+  });
+  const email = form.watch("email");
   const [state, setState] = useState<"idle" | "sending" | "sent">("idle");
   const [error, setError] = useState<string | null>(null);
+  const submit = form.handleSubmit(async ({ email: typed }) => {
+    setState("sending");
+    setError(null);
+    try {
+      await sendMagicLink(
+        typed.trim(),
+        `${window.location.origin}/coach/callback`,
+      );
+      setState("sent");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Sign-in failed");
+      setState("idle");
+    }
+  });
   return (
     <CoachSignInView
       email={email}
-      onEmail={setEmail}
+      onEmail={(v) => form.setValue("email", v, { shouldDirty: true })}
       state={state}
-      error={error}
-      onSubmit={async () => {
-        setState("sending");
-        setError(null);
-        try {
-          await sendMagicLink(
-            email.trim(),
-            `${window.location.origin}/coach/callback`,
-          );
-          setState("sent");
-        } catch (e) {
-          setError(e instanceof Error ? e.message : "Sign-in failed");
-          setState("idle");
-        }
-      }}
+      error={error ?? messageAt(form.formState.errors, "email") ?? null}
+      onSubmit={() => void submit()}
     />
   );
 }

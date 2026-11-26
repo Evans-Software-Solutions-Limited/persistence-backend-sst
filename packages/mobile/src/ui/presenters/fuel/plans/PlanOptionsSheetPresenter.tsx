@@ -1,4 +1,10 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
+import { useForm } from "react-hook-form";
+import {
+  planNameAccepts,
+  planNameResolver,
+  type PlanNameValues,
+} from "@/ui/forms/planForms";
 import { Pressable, TextInput } from "react-native";
 import { Text, View } from "@tamagui/core";
 import { Copy } from "lucide-react-native";
@@ -103,11 +109,20 @@ export function PlanOptionsSheetPresenter({
   onDelete,
   testID = "plan-options",
 }: PlanOptionsSheetProps) {
-  const [draftName, setDraftName] = useState(planName);
+  // Rename is a react-hook-form (PER-147): Save is on while the schema
+  // accepts the name, and saving goes through the resolver.
+  const form = useForm<PlanNameValues>({
+    resolver: planNameResolver,
+    defaultValues: { name: planName },
+  });
+  const draftName = form.watch("name");
+  const { reset } = form;
   useEffect(() => {
-    if (view === "rename") setDraftName(planName);
-  }, [view, planName]);
-  const canRename = draftName.trim().length > 0;
+    if (view === "rename") reset({ name: planName });
+  }, [view, planName, reset]);
+  const canRename = planNameAccepts({ name: draftName });
+  const rename = () =>
+    void form.handleSubmit(({ name }) => onRename(name.trim()))();
 
   return (
     <>
@@ -122,8 +137,10 @@ export function PlanOptionsSheetPresenter({
             <SheetTitle>Rename</SheetTitle>
             <TextInput
               value={draftName}
-              onChangeText={setDraftName}
-              onSubmitEditing={() => canRename && onRename(draftName.trim())}
+              onChangeText={(v) =>
+                form.setValue("name", v, { shouldDirty: true })
+              }
+              onSubmitEditing={rename}
               autoFocus
               maxLength={PLAN_NAME_MAX}
               returnKeyType="done"
@@ -147,7 +164,7 @@ export function PlanOptionsSheetPresenter({
               size="lg"
               full
               disabled={!canRename}
-              onPress={() => onRename(draftName.trim())}
+              onPress={rename}
               testID={`${testID}-rename-save`}
             >
               Save

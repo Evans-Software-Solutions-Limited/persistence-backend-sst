@@ -1,4 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useForm } from "react-hook-form";
+import {
+  clientRuleAccepts,
+  clientRuleResolver,
+  type ClientRuleValues,
+} from "@/ui/forms/ruleForms";
 import { useRouter } from "expo-router";
 
 import type {
@@ -147,6 +153,15 @@ export function ClientCheckInsContainer(p: {
   });
   const online = useOnlineStatus();
   const [setup, setSetup] = useState<SetupState | null>(null);
+  // The C10j set-up is a react-hook-form (PER-147) over the sheet's rule;
+  // Save goes through its resolver.
+  const ruleValues: ClientRuleValues | undefined = setup
+    ? { trigger: setup.trigger, rule: setup.rule }
+    : undefined;
+  const ruleForm = useForm<ClientRuleValues>({
+    resolver: clientRuleResolver,
+    values: ruleValues,
+  });
   const [picking, setPicking] = useState(false);
   const library = useCoachFormsLibrary({ enabled: picking });
   const firstName = p.clientName?.trim().split(/\s+/)[0] || "this client";
@@ -249,13 +264,10 @@ export function ClientCheckInsContainer(p: {
           rule={setup.rule}
           onRule={(rule) => setSetup({ ...setup, rule })}
           paused={setupPaused(setup.form)}
-          canSave={
-            setup.trigger === "weekly"
-              ? !!setup.rule.weekday && !!setup.rule.timeLocal
-              : setup.trigger === "daily"
-                ? !!setup.rule.timeLocal
-                : true
-          }
+          canSave={clientRuleAccepts({
+            trigger: setup.trigger,
+            rule: setup.rule,
+          })}
           offline={!online}
           onPause={() =>
             void runSetup(setup.form.form.id, setupPauseInputs(setup.form))
@@ -265,7 +277,9 @@ export function ClientCheckInsContainer(p: {
             void runSetup(setup.form.form.id, [{ status: "excluded" }])
           }
           onSave={() =>
-            void runSetup(setup.form.form.id, [setupSaveInput(setup)])
+            void ruleForm.handleSubmit(() =>
+              runSetup(setup.form.form.id, [setupSaveInput(setup)]),
+            )()
           }
         />
       ) : null}

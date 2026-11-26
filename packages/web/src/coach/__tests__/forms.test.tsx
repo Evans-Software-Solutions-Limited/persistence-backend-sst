@@ -350,8 +350,10 @@ describe("Send a form (C10c)", () => {
     fireEvent.click(
       within(dlg).getByRole("button", { name: "Send to all clients" }),
     );
+    // The server's 422 lands on the field it names, in the form's words
+    // (PER-147).
     expect(
-      await within(dlg).findByText(/weekly rules need weekday/),
+      await within(dlg).findByText("Choose a day to send it."),
     ).toBeTruthy();
     fireEvent.click(within(dlg).getByRole("button", { name: "Cancel" }));
     expect(currentPath()).toBe("/coach/library/forms/f-life");
@@ -549,9 +551,10 @@ describe("Build and edit a form (C10b)", () => {
     fireEvent.change(screen.getByLabelText("Form name"), {
       target: { value: "T" },
     });
-    expect(screen.getAllByText("Write the question.").length).toBeGreaterThan(
-      0,
-    );
+    // react-hook-form checks the schema asynchronously (PER-147).
+    expect(
+      (await screen.findAllByText("Write the question.")).length,
+    ).toBeGreaterThan(0);
     expect(
       (screen.getByRole("button", { name: "Save form" }) as HTMLButtonElement)
         .disabled,
@@ -692,6 +695,43 @@ describe("Build and edit a form (C10b)", () => {
     save();
     expect(await screen.findByText(/Edited on another device/)).toBeTruthy();
     await waitFor(() => expect(api.forms).toHaveBeenCalledTimes(2));
+  });
+
+  it("a 422 names the refused question in the list (PER-147)", async () => {
+    const api = fakeApi({
+      forms: vi.fn().mockResolvedValue([editable]),
+      patchForm: vi.fn().mockRejectedValue(
+        apiError(422, {
+          code: "invalid_questions",
+          errors: [
+            { at: 0, message: "prompt must be 1–300 characters" },
+            { at: -1, message: "duplicate ids" },
+          ],
+        }),
+      ),
+    });
+    renderCoach(<FormEditorContainer />, {
+      route: "/coach/library/forms/f-weekly/edit",
+      path: EDIT,
+      api,
+    });
+    fireEvent.change(await screen.findByLabelText("Form name"), {
+      target: { value: "Renamed" },
+    });
+    await waitFor(() =>
+      expect(
+        (
+          screen.getByRole("button", {
+            name: "Save changes",
+          }) as HTMLButtonElement
+        ).disabled,
+      ).toBe(false),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    expect(await screen.findByText(/Some questions aren't valid/)).toBeTruthy();
+    expect(
+      (await screen.findAllByText("Check this question and try again.")).length,
+    ).toBeGreaterThan(0);
   });
 
   it("an unknown form says so; offline too", async () => {
