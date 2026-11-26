@@ -50,7 +50,11 @@ describe("form limits", () => {
       maxSelectedClients: 500,
     });
     expect(FORM_REPLY_MAX).toBe(2000);
-    expect(USER_MEAL_LIMITS).toEqual({ nameMax: 80, maxMeals: 30 });
+    expect(USER_MEAL_LIMITS).toEqual({
+      nameMax: 80,
+      storedNameMax: 40,
+      maxMeals: 30,
+    });
     expect(MEAL_PLAN_LIMITS).toEqual({ nameMax: 200, mealNameMax: 80 });
   });
 });
