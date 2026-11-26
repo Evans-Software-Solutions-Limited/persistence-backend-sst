@@ -196,6 +196,7 @@ describe("ProgressPhotoViewerPresenter (Y3c, portrait)", () => {
     );
     expect(s.getByLabelText("Front photo, 25 Oct 2026, 82.4 kg")).toBeTruthy();
     expect(s.getByText("14.8%")).toBeTruthy();
+    expect(s.getByTestId("photo-viewer-stats")).toBeTruthy();
     expect(s.getByText("Latest")).toBeTruthy();
     expect(s.queryByTestId("photo-viewer-listbox")).toBeNull();
 
