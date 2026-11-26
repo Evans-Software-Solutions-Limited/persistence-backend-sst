@@ -122,9 +122,11 @@ export const inviteExpiryJob: SchedulerJob = {
 
 /**
  * Programmes with an end date in the next 7 days, assigned by a coach who
- * still coaches the client. Programmes without dates (design G) never end, so
- * they never raise this.
+ * still coaches the client. Programmes without dates (design G, `sequence`)
+ * have no end date: a finite one raises this instead when two or fewer of its
+ * workouts remain (PER-112), once per assignment.
  */
+export const SEQUENCE_ENDING_REMAINING = 2;
 export const programmeEndingJob: SchedulerJob = {
   name: "programme_ending",
   cadence: "daily",
@@ -203,10 +205,92 @@ export const programmeEndingJob: SchedulerJob = {
       }
       if (rows.length < PAGE_SIZES.endingProgrammes) break;
     }
+    checked += await announceSequenceEndings(db, now, events);
     await deliverCoachEvents(events, dispatcher);
     return { checked, events: events.length };
   },
 };
+
+/**
+ * PER-112 (design G part 2): finite `sequence` programmes with two or fewer
+ * workouts left, assigned by a coach who still coaches the client. Pages like
+ * the dated query; announced rows drop out through their dedupe key.
+ */
+async function announceSequenceEndings(
+  db: ReturnType<typeof getDb>,
+  now: Date,
+  events: string[],
+): Promise<number> {
+  let checked = 0;
+  const remaining = sql<number>`(select count(*)::int from workout_assignments wa_left where wa_left.program_assignment_id = ${programAssignments.id} and wa_left.status in ('assigned', 'started'))`;
+  for (;;) {
+    const rows = await db
+      .select({
+        assignmentId: programAssignments.id,
+        programId: programAssignments.programId,
+        programName: workoutPrograms.name,
+        clientId: programAssignments.clientId,
+        trainerId: ptClientRelationships.trainerId,
+        relationshipId: ptClientRelationships.id,
+        remaining,
+      })
+      .from(programAssignments)
+      .innerJoin(
+        workoutPrograms,
+        eq(workoutPrograms.id, programAssignments.programId),
+      )
+      .innerJoin(
+        ptClientRelationships,
+        and(
+          eq(ptClientRelationships.trainerId, programAssignments.assignedBy),
+          eq(ptClientRelationships.clientId, programAssignments.clientId),
+          eq(ptClientRelationships.status, "active"),
+          eq(ptClientRelationships.isAiTrainer, false),
+        ),
+      )
+      .where(
+        and(
+          eq(programAssignments.scheduleMode, "sequence"),
+          inArray(programAssignments.status, ["assigned", "started"]),
+          isNotNull(workoutPrograms.durationWeeks),
+          sql`${remaining} between 1 and ${SEQUENCE_ENDING_REMAINING}`,
+          sql`not exists (
+            select 1 from ${coachEvents}
+            where ${coachEvents.trainerId} = ${ptClientRelationships.trainerId}
+              and ${coachEvents.dedupeKey} = 'programme_ending:' || ${programAssignments.id} || ':sequence'
+          )`,
+        ),
+      )
+      .orderBy(asc(programAssignments.id))
+      .limit(PAGE_SIZES.endingProgrammes);
+    checked += rows.length;
+    for (const r of rows) {
+      const id = await recordCoachEvent(
+        db,
+        {
+          trainerId: r.trainerId,
+          clientId: r.clientId,
+          relationshipId: r.relationshipId,
+          kind: "programme_ending",
+          entityType: "program_assignment",
+          entityId: r.assignmentId,
+          payload: {
+            assignmentId: r.assignmentId,
+            programId: r.programId,
+            programName: r.programName,
+            endDate: null,
+            remaining: Number(r.remaining),
+          },
+          dedupeKey: `programme_ending:${r.assignmentId}:sequence`,
+        },
+        now,
+      );
+      if (id) events.push(id);
+    }
+    if (rows.length < PAGE_SIZES.endingProgrammes) break;
+  }
+  return checked;
+}
 
 /**
  * Clients behind their sessions-per-week target over the last 7 days, using

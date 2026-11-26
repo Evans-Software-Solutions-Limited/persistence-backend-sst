@@ -20,6 +20,7 @@ import {
 } from "../relationships/auditTrainerAction";
 import { CLIENT_BRIEF_DEEP_LINK } from "../trainers/briefs/sendClientBrief";
 import { mealPlanSetupHandler } from "../nutrition/mealPlans/mealPlanSetupHandler";
+import { programmeSetupHandler } from "../programs/programmeSetupHandler";
 import { resourceSetupHandler } from "./resources/resourceSetupSection";
 
 /**
@@ -328,6 +329,7 @@ const HANDLERS: Partial<Record<SetupSection, SetupSectionHandler>> = {
   nutrition_target: nutritionTargetHandler,
   welcome_message: welcomeMessageHandler,
   meal_plan: mealPlanSetupHandler, // PER-118
+  programme: programmeSetupHandler, // PER-112
   resource: resourceSetupHandler, // PER-122
 };
 

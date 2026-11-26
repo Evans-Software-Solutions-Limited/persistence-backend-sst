@@ -9,6 +9,10 @@ import {
 import { getDb, type Db } from "@persistence/db/client";
 import { initialsFromName } from "./trainerRepository";
 import { currentWeek } from "../programs/scheduling";
+import {
+  programmeOrderFieldsFor,
+  type ProgrammeOrderFields,
+} from "../programs/sequenceProgress";
 
 type DbOrTx = Db | Parameters<Parameters<Db["transaction"]>[0]>[0];
 
@@ -39,7 +43,11 @@ export interface ProgramWorkoutEntry {
   estimatedDurationMinutes: number | null;
 }
 
-export interface ProgramAssignmentEntry {
+/**
+ * PER-112 adds `scheduleMode`, `nextAssignmentId` and `weekOfProgramme`
+ * (design G part 2). `currentWeek` keeps its calendar meaning.
+ */
+export interface ProgramAssignmentEntry extends ProgrammeOrderFields {
   id: string;
   clientId: string;
   clientName: string;
@@ -61,9 +69,10 @@ export interface ProgramDetail extends ProgramSummary {
  * Athlete-facing programme detail (specs/19-programs — athlete read).
  * Metadata + ordered cycle + the athlete's OWN assignment context (status +
  * current week). Deliberately OMITS `assignments` — that's other clients'
- * data and must never leak to an athlete.
+ * data and must never leak to an athlete. PER-112 adds `scheduleMode`,
+ * `nextAssignmentId` and `weekOfProgramme`; `week` stays calendar-based.
  */
-export interface AthleteProgramDetail {
+export interface AthleteProgramDetail extends ProgrammeOrderFields {
   id: string;
   name: string;
   description: string | null;
@@ -177,9 +186,11 @@ export class ProgramRepository {
     // latest start date / status for the week computation).
     const assignmentRows = await db
       .select({
+        id: programAssignments.id,
         startDate: programAssignments.startDate,
         endDate: programAssignments.endDate,
         status: programAssignments.status,
+        scheduleMode: programAssignments.scheduleMode,
       })
       .from(programAssignments)
       .where(
@@ -216,6 +227,21 @@ export class ProgramRepository {
       .where(eq(programWorkouts.programId, id))
       .orderBy(asc(programWorkouts.position));
 
+    const assignmentId = assignment.id ?? "";
+    const order = await programmeOrderFieldsFor(
+      db,
+      [
+        {
+          id: assignmentId,
+          scheduleMode: assignment.scheduleMode,
+          startDate: assignment.startDate,
+          durationWeeks: program.durationWeeks,
+          daysPerWeek: program.daysPerWeek,
+        },
+      ],
+      today,
+    );
+
     return {
       id: program.id,
       name: program.name,
@@ -223,6 +249,7 @@ export class ProgramRepository {
       durationWeeks: program.durationWeeks,
       daysPerWeek: program.daysPerWeek,
       workoutCount: structure.length,
+      ...order.get(assignmentId)!,
       status: assignment.status,
       startDate: assignment.startDate,
       endDate: assignment.endDate,
@@ -437,12 +464,23 @@ export class ProgramRepository {
           startDate: programAssignments.startDate,
           endDate: programAssignments.endDate,
           status: programAssignments.status,
+          scheduleMode: programAssignments.scheduleMode,
         })
         .from(programAssignments)
         .leftJoin(profiles, eq(profiles.id, programAssignments.clientId))
         .where(eq(programAssignments.programId, id))
         .orderBy(asc(programAssignments.createdAt)),
     ]);
+
+    const order = await programmeOrderFieldsFor(
+      db,
+      assignments.map((a) => ({
+        ...a,
+        durationWeeks: program.durationWeeks,
+        daysPerWeek: program.daysPerWeek,
+      })),
+      today,
+    );
 
     return {
       id: program.id,
@@ -473,6 +511,7 @@ export class ProgramRepository {
         endDate: a.endDate,
         status: a.status,
         currentWeek: currentWeek(a.startDate, today, program.durationWeeks),
+        ...order.get(a.id)!,
       })),
     };
   }
