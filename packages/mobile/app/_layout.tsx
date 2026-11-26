@@ -42,6 +42,7 @@ import { useOptionalOnboarding } from "../src/ui/state/OnboardingProvider";
 import { shouldAutoShowOnboarding } from "../src/ui/state/onboardingEligibility";
 import { type Href } from "expo-router";
 import { color } from "../src/ui/theme/tokens";
+import { lockPortrait } from "@/lib/screenOrientation";
 
 // Initialise Sentry at module load, before the app renders. No-op when
 // `EXPO_PUBLIC_SENTRY_DSN` is unset (fail-safe — DSN-less builds run
@@ -494,6 +495,13 @@ function RootLayout() {
       vibrationPattern: [0, 250, 250, 250],
       lightColor: "#0C111A",
     });
+  }, []);
+
+  // PER-137: the native shell now allows landscape (for the progress photo
+  // viewer only), so lock the app to portrait as soon as it starts. A no-op
+  // on a 1.2.0 binary, which is portrait-locked natively.
+  useEffect(() => {
+    void lockPortrait();
   }, []);
 
   // `GestureHandlerRootView` is required by react-native-gesture-handler

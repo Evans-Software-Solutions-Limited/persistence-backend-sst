@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import { Alert } from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { lockLandscape, lockPortrait } from "@/lib/screenOrientation";
 import {
   deleteProgressPhotoSetCommand,
   resolvePhotoSetId,
@@ -52,9 +53,11 @@ export function viewerData(
 }
 
 /**
- * Y3c photo viewer — `/(app)/progress-photo-viewer?setId=&pose=` (PER-137),
- * portrait. One dropdown switches pose and date; delete removes the whole
- * set (offline-safe) after a confirm.
+ * Y3c photo viewer — `/(app)/progress-photo-viewer?setId=&pose=` (PER-137).
+ * Landscape only, for this page (Brad, 26 Nov): it turns the screen
+ * landscape while focused and back to portrait on blur or unmount (a no-op
+ * on a 1.2.0 binary). One dropdown switches pose and date; delete removes
+ * the whole set (offline-safe) after a confirm.
  */
 export function ProgressPhotoViewerContainer() {
   const router = useRouter();
@@ -71,6 +74,15 @@ export function ProgressPhotoViewerContainer() {
     poseFromLabel(params.pose),
   );
   const [open, setOpen] = useState(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      void lockLandscape();
+      return () => {
+        void lockPortrait();
+      };
+    }, []),
+  );
 
   const sets = photos.sets;
   // A phone set that uploaded while open keeps showing under its server id.
