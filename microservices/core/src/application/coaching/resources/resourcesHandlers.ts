@@ -44,10 +44,14 @@ import {
  * only touch the caller's own rows on that relationship. Athlete routes only
  * touch the caller's own assignments.
  *
- * ⚠ PER-146 (coach platform access) adds a coach-subscription guard to coach
- * workspace routes. `coachResourcesHandler` is one self-contained group so
- * that guard can be applied to it in one line; the athlete routes stay
- * unguarded (clients need no subscription, PER-12).
+ * C3.9 `resources` switch (PER-150), enforced like `photos_off`: while a
+ * coach has it off for a client, assigning to that client is refused with
+ * 403 `resources_off`, and the athlete's list, opened stamp and
+ * `/users/me/coaching` count leave that coach's resources out.
+ *
+ * The coach routes (`/trainers/me/*`) are behind PER-146's global coach
+ * subscription guard in `api.ts`; the athlete routes stay unguarded (clients
+ * need no subscription, PER-12).
  */
 
 const authed = () =>
@@ -264,15 +268,18 @@ export const coachResourcesHandler = trainerOnly()
       }
       const targets: AssignTarget[] = [];
       const refused: string[] = [];
+      const switchedOff: string[] = [];
       for (const clientId of clientIds) {
         const scope = await resolveCoachScope(trainerId, clientId);
-        if (scope.allowed) {
+        if (!scope.allowed) {
+          refused.push(clientId);
+        } else if (!scope.scope.settings.features.resources) {
+          switchedOff.push(clientId);
+        } else {
           targets.push({
             clientId,
             relationshipId: scope.scope.relationshipId,
           });
-        } else {
-          refused.push(clientId);
         }
       }
       if (refused.length > 0) {
@@ -282,6 +289,17 @@ export const coachResourcesHandler = trainerOnly()
           code: "not_your_client",
           message: "You can only act for your active clients",
           clientIds: refused,
+        };
+      }
+      if (switchedOff.length > 0) {
+        // C3.9 (PER-150): nothing is assigned while any target has Resources
+        // off. A switch flipped after this check can't leak anything: the
+        // athlete's reads filter on the switch too.
+        ctx.set.status = 403;
+        return {
+          code: "resources_off",
+          message: "Resources are switched off for this client",
+          clientIds: switchedOff,
         };
       }
       const result = await bulkAssign(

@@ -6,15 +6,17 @@ import {
 } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
 import { resolveFeatures, type Features } from "./clientSettings";
+import { countAthleteResources } from "./resources/resourceRepository";
 
 /**
  * `GET /users/me/coaching` (PER-108, design A D3): the athlete's coaches, one
  * entry per ACTIVE relationship, with what each has sent. Feeds the Coach tab
  * chips (C2e–f) and You → Coaching (Y1).
  *
- * Scoped to the caller as the CLIENT. The counts for areas that aren't built
- * yet are 0 until their tickets land: forms due (BE-C1, PER-116), new plans
- * (BE-D2, PER-118), resources (BE-I1, PER-122).
+ * Scoped to the caller as the CLIENT. `resources` counts that coach's
+ * resources `GET /users/me/resources` shows the caller now, by the same rule
+ * (PER-150), so it is 0 while the coach has the client's Resources switched
+ * off. Forms due and new plans are still 0 here.
  */
 export interface MyCoach {
   relationshipId: string;
@@ -62,6 +64,11 @@ export async function listMyCoaches(
     )
     .orderBy(asc(ptClientRelationships.activatedAt));
 
+  const resources =
+    rows.length > 0
+      ? await countAthleteResources(userId)
+      : new Map<string, number>();
+
   return {
     asOf,
     coaches: rows.map((r) => ({
@@ -73,7 +80,7 @@ export async function listMyCoaches(
       features: resolveFeatures(r.features),
       due: { forms: 0 },
       newPlans: 0,
-      resources: 0,
+      resources: resources.get(r.relationshipId) ?? 0,
     })),
   };
 }
