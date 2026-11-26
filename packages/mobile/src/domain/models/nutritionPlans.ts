@@ -1,3 +1,4 @@
+import { MEAL_PLAN_LIMITS } from "@persistence/form-limits";
 /**
  * List meal plans (PER-133, Design D, canvas N2 / N5 / N23).
  *
@@ -201,7 +202,7 @@ export type PlansShoppingCache = {
 export const PLAN_MEALS_MAX = 20;
 export const PLAN_ITEMS_PER_MEAL_MAX = 50;
 export const PLAN_ITEM_SERVINGS_MAX = 100;
-export const PLAN_NAME_MAX = 200;
+export const PLAN_NAME_MAX = MEAL_PLAN_LIMITS.nameMax;
 export const PLAN_MEAL_NAME_MAX = 40;
 
 export function emptyPlansCache(): NutritionPlansCache {

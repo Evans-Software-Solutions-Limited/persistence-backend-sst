@@ -1,3 +1,4 @@
+import { COACH_FORM_LIMITS } from "@persistence/form-limits";
 import { stripNul } from "../../shared/stripNul";
 import { photoAnswerMediaId } from "../../media/privateMediaRepository";
 
@@ -21,18 +22,19 @@ export const QUESTION_TYPES = [
 ] as const;
 export type QuestionType = (typeof QUESTION_TYPES)[number];
 
-export const MAX_QUESTIONS = 40;
-export const MAX_PROMPT = 300;
-export const MIN_OPTIONS = 2;
-export const MAX_OPTIONS = 12;
-export const MAX_OPTION_LENGTH = 100;
-export const MAX_UNIT_LENGTH = 20;
+// Shared with the web and mobile form editors (PER-147).
+export const MAX_QUESTIONS = COACH_FORM_LIMITS.maxQuestions;
+export const MAX_PROMPT = COACH_FORM_LIMITS.promptMax;
+export const MIN_OPTIONS = COACH_FORM_LIMITS.minOptions;
+export const MAX_OPTIONS = COACH_FORM_LIMITS.maxOptions;
+export const MAX_OPTION_LENGTH = COACH_FORM_LIMITS.optionMax;
+export const MAX_UNIT_LENGTH = COACH_FORM_LIMITS.unitMax;
 export const MAX_SHORT_TEXT = 500;
 export const MAX_LONG_TEXT = 5000;
 export const SCALE_MIN = 1;
 export const SCALE_MAX = 5;
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
-export const MAX_HELP = 300;
+export const MAX_HELP = COACH_FORM_LIMITS.helpMax;
 export const MAX_DETAILS = 500;
 
 /**

@@ -1,3 +1,4 @@
+import { CLIENT_SETUP_LIMITS } from "@persistence/form-limits";
 import { and, eq } from "drizzle-orm";
 import {
   nutritionTargets,
@@ -135,8 +136,8 @@ export interface SetupSectionHandler {
 // ─── nutrition_target ────────────────────────────────────────────────────────
 
 const MACRO_KEYS = ["dailyKcal", "proteinG", "carbsG", "fatG"] as const;
-const MAX_KCAL = 20_000;
-const MAX_MACRO_G = 2_000;
+const MAX_KCAL = CLIENT_SETUP_LIMITS.maxKcal;
+const MAX_MACRO_G = CLIENT_SETUP_LIMITS.maxMacroG;
 
 function finiteNonNegative(value: unknown, max: number): number | null {
   return typeof value === "number" &&
@@ -249,7 +250,7 @@ const nutritionTargetHandler: SetupSectionHandler = {
 
 // ─── welcome_message ─────────────────────────────────────────────────────────
 
-export const WELCOME_MESSAGE_MAX_LENGTH = 1000;
+export const WELCOME_MESSAGE_MAX_LENGTH = CLIENT_SETUP_LIMITS.welcomeMessageMax;
 
 const welcomeMessageHandler: SetupSectionHandler = {
   maxItems: 1,

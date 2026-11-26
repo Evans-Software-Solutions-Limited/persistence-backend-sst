@@ -45,6 +45,111 @@ CASCADE, `messaging` / `coach-<relationshipId>`, state
   migration twice/rollback), `streamClient.test.ts`, api-utils
   `signHs256.test.ts`.
 
+### 2026-11-25 — Mobile forms on react-hook-form + TypeBox ([PER-147](https://linear.app/evans-software-solutions/issue/PER-147), 2 of 2; branch `claude/per-147-rhf-mobile`)
+
+Every mobile form added since 1.2.0 validates through `react-hook-form` with
+a TypeBox schema resolver. Same copy, layout and offline queueing; no native
+change (`react-hook-form`, `@hookform/resolvers` v6 and `@sinclair/typebox`
+0.34 are pure JS). Web is PR 1 of 2 (`packages/web/src/lib/form`, same API).
+
+- **Pattern (PER-130 builds on it):** `src/shared/form/` (`schemaResolver`
+  with `prepare(values, context)` and `refine`, `schemaAccepts` for a button
+  that is off until valid, `applyServerErrors` reading `{ status, body }` or
+  the adapter's raw `{ status, json }`). Schemas live in `src/ui/forms/*.ts`;
+  containers own `useForm` and submit with `handleSubmit`. Rules that depend
+  on screen state (meals ticked, a full meal) go in through RHF `context`.
+- **Forms:** invite code + C11j consent tick, Your meals rename/add and the
+  plan's meals sheet, Quick log and a plan's quick item, New plan, builder
+  Save, item amount (add and edit), plan rename, coach form editor, send
+  sheet (C10h), one-client set-up (C10j), check-in reply.
+- **Removed hand-rolled checks:** `draftProblem` (coachForms.service, now the
+  editor schema + `firstFormProblem`, same lines and order) and
+  `QuickLogDraft.canLog`. `canSendSheet` stays as a name, backed by the
+  schema.
+- Submits are async now; NameInputs guard against return-then-blur
+  submitting twice. Queued saves still report 409s through the queue's
+  conflict state.
+- **Shared limits (Brad, 25 Nov):** `@persistence/form-limits` (same commit
+  as web #561: package + core routes). Mobile's coach-form, schedule, reply,
+  user-meal count and plan-name constants now come from it. Meal names stay
+  at 40: `user_meals_name_len_chk` stores 1–40 although the route's schema
+  says 80 (left unchanged; flagged to Brad).
+
+### 2026-11-25 — Web forms on react-hook-form + TypeBox ([PER-147](https://linear.app/evans-software-solutions/issue/PER-147), 1 of 2; branch `claude/per-147-rhf-web`)
+
+Every web form added since 1.2.0 validates through `react-hook-form` with a
+TypeBox schema resolver. Same copy, layout and save behaviour; no backend or
+native change. Mobile is PR 2 of 2.
+
+- **Shared helpers:** `packages/web/src/lib/form/`. `schemaResolver(schema,
+  { prepare, refine })` wraps `@hookform/resolvers/typebox` (v6, which uses
+  `@sinclair/typebox` 0.34, the same TypeBox Elysia uses; v7 moved to `typebox`
+  1.x). Copy comes from `errorMessage` on the schema (one string, or one per
+  `ValueErrorType` name), via a TypeBox error function installed on import.
+  `prepare` checks trimmed values (the server trims); `refine` adds
+  cross-field rules (weekly needs a day, min ≤ max). `applyServerErrors` puts
+  422/409 field errors (`validation[].path`, `errors[].at`, `field`, or a field
+  named in the message) onto mapped fields with the form's copy, else returns
+  false and the old banner shows.
+- **Forms:** Who, set-up sections (one form per open section; drafts still
+  drive the unmount save, whose check is now the same schema via
+  `setupProblem`), declaration tick, C3.9 settings (each change is checked
+  before it saves), form editor (live problems from RHF errors;
+  `questionProblems` removed), send dialog, one-client rule (C10j), check-in
+  reply, coach sign in. Schemas live in `coach/lib/*Form.ts`.
+- **Shared limits (Brad, 25 Nov):** new dependency-free package
+  `@persistence/form-limits` (plain constants). The Elysia routes (client
+  profiles, set-up, C3.9, coach forms, send rules, reply, user meals, meal
+  plans) and the web form schemas both import it. Same values as before,
+  pinned in the package test and core `coaching/__tests__/formLimits.test.ts`;
+  no API behaviour change. Mobile (#566) carries the identical commit.
+- **New copy** (approved by Brad, 25 Nov) appears only where the server
+  refuses what the form allowed (e.g. "Choose a day to send it.").
+
+### 2026-11-25 — BE-D3: Mealprint 3 swap options, Your meals in generation, save a day as a plan ([PER-119](https://linear.app/evans-software-solutions/issue/PER-119); branch `claude/per-119-mealprint-swaps`)
+
+Design D "Mealprint (PER-41)" section. Additive only; no migration, no
+schema change, no native change. `nutritionRoutes.ts` untouched.
+
+- **`POST /nutrition/ai/plan-meal-swap` `count?: 1 | 3`.** Absent = the
+  1.2.0 body exactly (`data.meal`, no `options`; pinned by a recorded-shape
+  test). With `count`, `data.options[]` is added, `options[0]` deep-equals
+  `data.meal`, and the empty bodies carry `options: []`. `count: 3` is ONE
+  model call (`composeDayPlan` with `alternatives: 3`, a separate prompt:
+  each option fits the remaining target alone, options must differ). Each
+  option is verified on its own (`verifySwapMeal`: portion policy, macros
+  recomputed, avoidance re-run) and a failing one is dropped, as is a repeat
+  (same normalised name or same food names) or a match for `notWantedMeals`
+  by name or by ingredient set (`selectSwapOptions`). Never padded: it can
+  return 1–2 options; none left → 422 `ai_unreadable`. `count` 1 and absent
+  keep the old 422-on-any-failure behaviour. One call = one swap against the
+  10/day ceiling. The `meal_plan_swap` cost profile in
+  `subscription-catalog/aiCosts.ts` still assumes ~300 output tokens (not
+  changed: outside the brief).
+- **`POST /nutrition/ai/plan-generate` `meals?: [{name (1–40), logSlot}]`
+  (2–6)** replaces `mealsPerDay` (meals.length wins). The names go into the
+  prompt as bounded JSON data; each composed meal fills the requested meal
+  at its model-output `position` (new `ComposedPlanMeal.position`, kept
+  when a non-member meal is dropped), takes that meal's slot and gets
+  `label` = its name (only when `meals` was sent) for `POST /nutrition/plans`.
+- **`POST /nutrition/meal-plans {fromMealprintPlanId, name?}`** (body is a
+  union with the manual `{name, meals}`): `fromMealprint.ts` turns the
+  owner's dated `meal_plans` row into a list plan (`source: 'mealprint'`,
+  `sourcePlanId` = dated plan; the dated plan is only read). Default name
+  `Mealprint`. Food servings convert from Mealprint's pack serving to the
+  row's `serving_size` units (`foodServingScale`, now exported from
+  `mealprintCandidateRepository`); recipe/saved-meal servings are recovered
+  as `(meal.kcal − foods) / (recipe per serving + meal kcal)`; a row whose
+  sources were all deleted keeps its frozen macros as a one-off item. A
+  source that no longer resolves → 409 `plan_meal_nutrition_unavailable`
+  with `items`; another user's or unknown dated plan → 404
+  `mealprint_plan_not_found`; `manual_meal_plans` capability and
+  `Idempotency-Key` as for manual create.
+- Tests: `planSwapOptions.test.ts` (real composer + assembly + avoidance,
+  fake Bedrock client; no provider calls), generate `meals` cases,
+  `planModel` prompt modes, `fromMealprint.test.ts`, and a PGlite block in
+  `mealPlans.integration.test.ts`.
+
 ### 2026-11-25 — Coach platform access: coach subscription required ([PER-146](https://linear.app/evans-software-solutions/issue/PER-146); branch `claude/per-146-coach-platform-access`)
 
 The coach workspace is only for coaches with an active coach subscription

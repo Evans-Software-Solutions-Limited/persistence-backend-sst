@@ -1,3 +1,4 @@
+import { FORM_REPLY_MAX } from "@persistence/form-limits";
 import {
   and,
   asc,
@@ -526,7 +527,7 @@ export async function listCoachResponses(
   };
 }
 
-export const REPLY_MAX = 2000;
+export const REPLY_MAX = FORM_REPLY_MAX;
 
 /** Mark reviewed (first review time kept); `replyText` replaces the reply. */
 export async function reviewResponse(

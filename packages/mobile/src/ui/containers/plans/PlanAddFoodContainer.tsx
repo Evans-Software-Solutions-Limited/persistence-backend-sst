@@ -1,4 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useForm } from "react-hook-form";
+import {
+  EMPTY_QUICK_LOG,
+  quickLogAccepts,
+  quickLogResolver,
+} from "@/ui/forms/fuelForms";
+import {
+  amountAccepts,
+  amountResolver,
+  type AmountContext,
+  type AmountValues,
+} from "@/ui/forms/planForms";
+import type { QuickLogValues } from "@/domain/services/userMeals.service";
 import { router, useLocalSearchParams } from "expo-router";
 import { localIdFactory } from "@/application/commands/localId";
 import type {
@@ -55,13 +68,7 @@ import {
 /** How many earlier days History looks back over (cached days only). */
 export const HISTORY_DAYS = 14;
 
-const EMPTY_QUICK: Record<PlanQuickField, string> = {
-  name: "",
-  kcal: "",
-  protein: "",
-  carbs: "",
-  fat: "",
-};
+const EMPTY_QUICK: Record<PlanQuickField, string> = EMPTY_QUICK_LOG;
 
 const EMPTY_TEXT: Record<PlanAddTab, string> = {
   all: "Nothing logged on earlier days yet.",
@@ -113,7 +120,12 @@ export function PlanAddFoodContainer() {
     toMealId: string;
   } | null>(null);
   const [quickOpen, setQuickOpen] = useState(false);
-  const [quick, setQuick] = useState(EMPTY_QUICK);
+  // The quick item is a react-hook-form (PER-147), the same rules as Quick log.
+  const quickForm = useForm<QuickLogValues>({
+    resolver: quickLogResolver,
+    defaultValues: EMPTY_QUICK,
+  });
+  const quick = quickForm.watch();
 
   const search = useSearchFoods(query);
 
@@ -207,6 +219,24 @@ export function PlanAddFoodContainer() {
     },
     [sources, lookups],
   );
+
+  // The amount sheet is a react-hook-form (PER-147); a full meal is context.
+  const amountTarget =
+    amount && draft
+      ? (draft.meals.find((m) => m.id === amount.toMealId) ??
+        draft.meals.find((m) => m.id === mealId) ??
+        draft.meals[0])
+      : undefined;
+  const amountContext: AmountContext = {
+    blocked:
+      !!draft && !!amountTarget && isPlanMealFull(draft, amountTarget.id),
+  };
+  const amountValues: AmountValues = { amount: amount?.text ?? "" };
+  const amountForm = useForm<AmountValues>({
+    resolver: amountResolver,
+    values: amountValues,
+    context: amountContext,
+  });
 
   if (!draft) return null;
   const meal = draft.meals.find((m) => m.id === mealId) ?? draft.meals[0];
@@ -365,14 +395,15 @@ export function PlanAddFoodContainer() {
         onMeal={(id) => amount && setAmount({ ...amount, toMealId: id })}
         kcal={preview?.kcal ?? 0}
         macros={preview ? macroShares(preview) : []}
-        canSave={typed !== null && !isPlanMealFull(draft, toMeal.id)}
-        onSave={() => {
-          if (!amount || !base || typed === null) return;
-          if (isPlanMealFull(draft, toMeal.id)) return;
-          addItems(toMeal.id, [withServings(base, typed)]);
-          setAmount(null);
-          router.back();
-        }}
+        canSave={amountAccepts(amountValues, amountContext)}
+        onSave={() =>
+          void amountForm.handleSubmit(() => {
+            if (!amount || !base || typed === null) return;
+            addItems(toMeal.id, [withServings(base, typed)]);
+            setAmount(null);
+            router.back();
+          })()
+        }
         onRemove={() => setAmount(null)}
       />
 
@@ -380,7 +411,9 @@ export function PlanAddFoodContainer() {
         visible={quickOpen}
         onClose={() => setQuickOpen(false)}
         values={quick}
-        onChange={(field, value) => setQuick((v) => ({ ...v, [field]: value }))}
+        onChange={(field, value) =>
+          quickForm.setValue(field, value, { shouldDirty: true })
+        }
         mealName={meal.name}
         kcalLabel={q.kcal !== null && q.kcal > 0 ? fmt(q.kcal) : ""}
         warning={
@@ -389,22 +422,28 @@ export function PlanAddFoodContainer() {
             ? `Your macros add up to ${fmt(q.macroKcal)} kcal. We'll add the ${fmt(q.kcal)} you typed.`
             : null)
         }
-        canAdd={q.canLog && !isPlanMealFull(draft, meal.id)}
-        onAdd={() => {
-          if (!q.canLog || q.kcal === null) return;
-          if (isPlanMealFull(draft, meal.id)) return;
-          addItems(meal.id, [
-            planItemCustom(`local-${localIdFactory()}`, q.name ?? "Quick log", {
-              kcal: q.kcal,
-              proteinG: q.proteinG,
-              carbsG: q.carbsG,
-              fatG: q.fatG,
-            }),
-          ]);
-          setQuickOpen(false);
-          setQuick(EMPTY_QUICK);
-          router.back();
-        }}
+        canAdd={quickLogAccepts(quick) && !isPlanMealFull(draft, meal.id)}
+        onAdd={() =>
+          void quickForm.handleSubmit(() => {
+            if (q.kcal === null) return;
+            if (isPlanMealFull(draft, meal.id)) return;
+            addItems(meal.id, [
+              planItemCustom(
+                `local-${localIdFactory()}`,
+                q.name ?? "Quick log",
+                {
+                  kcal: q.kcal,
+                  proteinG: q.proteinG,
+                  carbsG: q.carbsG,
+                  fatG: q.fatG,
+                },
+              ),
+            ]);
+            setQuickOpen(false);
+            quickForm.reset(EMPTY_QUICK);
+            router.back();
+          })()
+        }
       />
     </>
   );

@@ -466,6 +466,82 @@ describe("Client settings (C3.9)", () => {
     expect(screen.queryByText("Training plan")).toBeNull();
   });
 
+  it("a 422 on sessions a week rolls back and says why (PER-147)", async () => {
+    const api = fakeApi({
+      settings: vi.fn().mockResolvedValue({
+        ...settings(),
+        trackTraining: true,
+        sessionsPerWeek: 3,
+      }),
+      patchSettings: vi.fn().mockRejectedValue(
+        apiError(422, {
+          code: "VALIDATION",
+          validation: [{ path: "/sessionsPerWeek", message: "max 14" }],
+        }),
+      ),
+    });
+    renderCoach(<ClientPage />, { route: PAGE, path: PATH, api });
+    fireEvent.click(
+      await screen.findByRole("button", { name: "More sessions" }),
+    );
+    expect(
+      await screen.findByText("Choose 1 to 14 sessions a week."),
+    ).toBeTruthy();
+    expect(api.patchSettings).toHaveBeenCalledWith(
+      CLIENT_ID,
+      { sessionsPerWeek: 4 },
+      4,
+    );
+    await waitFor(() => expect(screen.getByText("3")).toBeTruthy());
+  });
+
+  it("training on with no target yet: the other switches still save", async () => {
+    // acceptPersonalCode writes trackTraining true + sessionsPerWeek null
+    // when the set-up has a programme; the API accepts it.
+    const api = fakeApi({
+      settings: vi.fn().mockResolvedValue({
+        ...settings(),
+        trackTraining: true,
+        sessionsPerWeek: null,
+      }),
+      patchSettings: vi.fn().mockImplementation(async (_c, patch) => ({
+        ...settings(),
+        trackTraining: true,
+        sessionsPerWeek: null,
+        ...patch,
+        revision: 5,
+      })),
+    });
+    renderCoach(<ClientPage />, { route: PAGE, path: PATH, api });
+    fireEvent.click(await screen.findByRole("switch", { name: "Calories" }));
+    await waitFor(() =>
+      expect(api.patchSettings).toHaveBeenCalledWith(
+        CLIENT_ID,
+        { trackCalories: false },
+        4,
+      ),
+    );
+    fireEvent.click(
+      await screen.findByRole("switch", { name: "Progress photos" }),
+    );
+    await waitFor(() =>
+      expect(api.patchSettings).toHaveBeenLastCalledWith(
+        CLIENT_ID,
+        { features: { photos: false } },
+        5,
+      ),
+    );
+    fireEvent.click(await screen.findByRole("radio", { name: "Mute all" }));
+    await waitFor(() =>
+      expect(api.patchSettings).toHaveBeenLastCalledWith(
+        CLIENT_ID,
+        { alertMode: "mute" },
+        5,
+      ),
+    );
+    expect(screen.queryByText("Choose 1 to 14 sessions a week.")).toBeNull();
+  });
+
   it("each switch saves with the revision", async () => {
     const api = fakeApi({
       patchSettings: vi.fn().mockImplementation(async (_c, patch) => ({

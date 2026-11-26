@@ -1,3 +1,8 @@
+import {
+  COACH_FORM_LIMITS,
+  FORM_REPLY_MAX,
+  FORM_SCHEDULE_LIMITS,
+} from "@persistence/form-limits";
 /**
  * PER-129 (APP-C1): coach forms (C10), send rules and the Check-ins tab
  * (C3.3). Shapes mirror the backend DTOs in
@@ -27,17 +32,18 @@ export const PREFILL_SOURCES = {
 } as const satisfies Record<string, QuestionType>;
 export type PrefillSource = keyof typeof PREFILL_SOURCES;
 
-export const MAX_QUESTIONS = 40;
-export const MAX_PROMPT = 300;
-export const MAX_HELP = 300;
-export const MIN_OPTIONS = 2;
-export const MAX_OPTIONS = 12;
-export const MAX_UNIT = 20;
-export const TITLE_MAX = 120;
-export const MAX_REMINDERS = 5;
-export const MAX_REMINDER_HOURS = 720;
-export const MAX_DUE_HOURS = 2160;
-export const REPLY_MAX = 2000;
+// The API's limits, shared with it (@persistence/form-limits, PER-147).
+export const MAX_QUESTIONS = COACH_FORM_LIMITS.maxQuestions;
+export const MAX_PROMPT = COACH_FORM_LIMITS.promptMax;
+export const MAX_HELP = COACH_FORM_LIMITS.helpMax;
+export const MIN_OPTIONS = COACH_FORM_LIMITS.minOptions;
+export const MAX_OPTIONS = COACH_FORM_LIMITS.maxOptions;
+export const MAX_UNIT = COACH_FORM_LIMITS.unitMax;
+export const TITLE_MAX = COACH_FORM_LIMITS.titleMax;
+export const MAX_REMINDERS = FORM_SCHEDULE_LIMITS.maxReminders;
+export const MAX_REMINDER_HOURS = FORM_SCHEDULE_LIMITS.maxReminderHours;
+export const MAX_DUE_HOURS = FORM_SCHEDULE_LIMITS.maxDueHours;
+export const REPLY_MAX = FORM_REPLY_MAX;
 
 export type Question = {
   id: string;
