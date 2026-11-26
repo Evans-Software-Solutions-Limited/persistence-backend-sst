@@ -34,6 +34,49 @@ Uses the merged BE-C1 athlete routes (#543) and BE-F1 uploads (#553).
   athlete endpoint), "Filled for you" prefill. `formPhotoPicker.ts` uses
   PER-137's shared `imagePicker.ts` (merged main in after #567).
 
+### 2026-11-25 — BE-I2: coach calendar, bookings and session reminders ([PER-123](https://linear.app/evans-software-solutions/issue/PER-123); branch `claude/per-123-coach-calendar`)
+
+Backend design I, calendar part (C4). Additive; nothing existing changes for
+1.2.0. Migration `20261125123634_coach_sessions_calendar.sql` (sessions half
+of migration 10; PER-122 owns the resources half) with a rollback.
+
+- **Tables:** `coach_sessions` (one row per occurrence; weekly repeats are up
+  to 26 rows sharing `series_id`; `revision`, `client_request_id` unique per
+  trainer, `cancelled_at`, `reminder_minutes`, `workout_id` SET NULL) and
+  `coach_session_attendees` (PK `(session_id, relationship_id)`, status
+  invited/accepted/declined/cancelled, `reminded_at`). Drizzle in
+  `packages/db/src/coachSessionsSchema.ts`, re-exported from `schema.ts`.
+- **Push type:** `notification_type` `coach_session` (`ADD VALUE IF NOT
+  EXISTS`), `data.action` = booked | moved | cancelled | reminder, plus
+  `sessionId`, `startsAt`, `seriesId` (Brad, 25 Nov: one athlete type). Off
+  the `/notifications/preferences` list so that contract is unchanged.
+- **Routes** (`coaching/sessions/sessionsHandlers.ts`, mounted in
+  `coachingRoutes.ts`): `GET /trainers/me/calendar?from=&to=` (≤ 62 days;
+  `{sessions, formsDue, from, to, asOf}`), `POST /trainers/me/sessions`
+  (`repeat: {frequency:'weekly', count ≤ 26}`, `Idempotency-Key`; returns
+  `{data: first, series}`), `PATCH/DELETE /trainers/me/sessions/:id?scope=this|series`
+  (`expectedRevision?` → 409 `revision_conflict`; `series` = this occurrence
+  and the later live ones; a move shifts each the same way in the coach's
+  local time), `GET /users/me/coach-sessions?from=&to=` (default next 62
+  days; own booking only, no notes or other attendees), `POST
+  /users/me/coach-sessions/:id/respond`. `GET /trainers/me/today`'s
+  `schedule` is now today's live bookings in the coach's zone.
+- **Events:** create/move/cancel writes one `session_booked` coach event per
+  attendee, `noPush` (feed only); an athlete's accept/decline writes none
+  (Brad, 25 Nov).
+- **Reminders:** `sessionRemindersJob` appended to `COACH_SCHEDULER_JOBS`
+  (15-minute `coachSchedulerCron`, no new infra): claim `reminded_at` then
+  push, once per booked attendee from `starts_at − reminder_minutes` until
+  the start; a move or reminder change clears `reminded_at`.
+- **Offboarding:** step 4b in `endCoachClientRelationship` cancels the
+  relationship's bookings on sessions that haven't started (sessions stay).
+- **Tests:** `coaching/sessions/__tests__/coachSessions.integration.test.ts`
+  (design I tests 1, 3, 4 on PGlite with the real migrations) and
+  `sessionTimes.test.ts`. The other PGlite suites that run offboarding or the
+  scheduler create the two tables in `BASE_TABLES`.
+- **Not done here:** the coach-subscription guard for these `/trainers/me/*`
+  routes comes from PER-146 (#565). App side is PER-144.
+
 ### 2026-11-26 — PER-137 follow-up: landscape-only photo viewer, final photo-sharing copy ([PER-137](https://linear.app/evans-software-solutions/issue/PER-137); branch `claude/per-137-landscape-viewer`)
 
 - **Native change (Brad approved, 26 Nov; needs the new store build):**
