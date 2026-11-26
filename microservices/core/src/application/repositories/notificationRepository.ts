@@ -87,7 +87,12 @@ export type NotificationType =
   // preferences is unchanged); 1.2.0 renders them with the generic row.
   | "coach_event"
   | "form_request"
-  | "form_reminder";
+  | "form_reminder"
+  // Design I (PER-123) — an athlete's coach booking: booked, moved, cancelled
+  // or its reminder (`data.action`). DB enum extended in
+  // 20261125123634_coach_sessions_calendar.sql. Off the preferences list for
+  // the same reason (so /notifications/preferences is unchanged).
+  | "coach_session";
 
 export const NOTIFICATION_TYPES: readonly NotificationType[] = [
   "workout_assigned",

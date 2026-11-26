@@ -20,6 +20,7 @@ import {
   todayQueue,
 } from "./feedRepository";
 import { isCoachEventKind, type CoachEventKind } from "./kinds";
+import { todaySchedule } from "../sessions/sessionRepository";
 
 /**
  * PER-117 (BE-C2, design C D4): the coach's notifications feed, read marks,
@@ -128,16 +129,18 @@ export const coachNotificationsRoutes = trainerOnly()
   .get("/trainers/me/today", async (ctx) => {
     const trainerId = getUser(ctx).sub;
     const asOf = listAsOf();
-    const [today, strip] = await Promise.all([
+    const [today, strip, schedule] = await Promise.all([
       todayQueue(trainerId),
       overviewAdherenceByArea(trainerId),
+      todaySchedule(trainerId),
     ]);
     return {
       data: {
         queue: today.queue,
         counts: today.counts,
-        // Design I (BE-I2, PER-123) fills this with the day's bookings.
-        schedule: [],
+        // Design I (PER-123): today's bookings in the coach's time zone, not
+        // cancelled, by start time (the calendar's session shape).
+        schedule,
         strip,
       },
       asOf,
