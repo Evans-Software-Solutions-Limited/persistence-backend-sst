@@ -96,6 +96,10 @@ import {
   swapIdInClientForms,
   swapIdInQueueRow,
 } from "./coachFormsQueueSwap";
+import type {
+  PendingProgressPhotoSet,
+  ProgressPhotosCache,
+} from "@/domain/models/progressPhotos";
 
 const DB_NAME = "persistence.db";
 
@@ -972,6 +976,21 @@ ${indentSyncQueueDdl(8)}
         entity_key TEXT NOT NULL,
         at TEXT NOT NULL,
         PRIMARY KEY (user_id, entity_key)
+      );
+      -- PER-137 progress photos: the gallery (one payload per user) and the
+      -- sets saved on this phone that haven't uploaded yet (the upload step's
+      -- own queue; files don't fit the JSON sync_queue). New TABLEs, so
+      -- CREATE TABLE IF NOT EXISTS covers upgrading installs too.
+      CREATE TABLE IF NOT EXISTS cached_progress_photos (
+        user_id TEXT PRIMARY KEY,
+        payload TEXT NOT NULL,
+        synced_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS pending_progress_photos (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        created_at TEXT NOT NULL
       );
 
       CREATE INDEX IF NOT EXISTS idx_sync_queue_status ON sync_queue(status, created_at);
@@ -4482,7 +4501,53 @@ ${indentSyncQueueDdl(12)}
       DELETE FROM cached_coach_client_forms;
       DELETE FROM cached_coach_form_responses;
       DELETE FROM coach_form_conflicts;
+      DELETE FROM cached_progress_photos;
+      DELETE FROM pending_progress_photos;
     `);
+  }
+
+  // -- PER-137 (APP-F1): progress photos --
+
+  getCachedProgressPhotos(userId: string): ProgressPhotosCache | null {
+    return this.readBlob<ProgressPhotosCache>("cached_progress_photos", userId);
+  }
+
+  cacheProgressPhotos(userId: string, value: ProgressPhotosCache): void {
+    this.writeBlob("cached_progress_photos", userId, value);
+  }
+
+  getPendingProgressPhotoSets(userId: string): PendingProgressPhotoSet[] {
+    const rows = this.getDb().getAllSync(
+      `SELECT payload FROM pending_progress_photos WHERE user_id = ?
+       ORDER BY created_at ASC, id ASC`,
+      [userId],
+    ) as { payload: string }[];
+    return rows.map((r) => JSON.parse(r.payload) as PendingProgressPhotoSet);
+  }
+
+  getPendingProgressPhotoSet(id: string): PendingProgressPhotoSet | null {
+    const rows = this.getDb().getAllSync(
+      `SELECT payload FROM pending_progress_photos WHERE id = ?`,
+      [id],
+    ) as { payload: string }[];
+    return rows[0]
+      ? (JSON.parse(rows[0].payload) as PendingProgressPhotoSet)
+      : null;
+  }
+
+  savePendingProgressPhotoSet(value: PendingProgressPhotoSet): void {
+    this.getDb().runSync(
+      `INSERT INTO pending_progress_photos (id, user_id, payload, created_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET payload = excluded.payload`,
+      [value.id, value.userId, JSON.stringify(value), value.createdAt],
+    );
+  }
+
+  deletePendingProgressPhotoSet(id: string): void {
+    this.getDb().runSync(`DELETE FROM pending_progress_photos WHERE id = ?`, [
+      id,
+    ]);
   }
 }
 

@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 import { Alert } from "react-native";
 import * as ImageManipulator from "expo-image-manipulator";
-import * as ImagePicker from "expo-image-picker";
+import { pickImage, type ImageSource } from "./imagePicker";
 import { useAdapters } from "./useAdapters";
 import { useAuth } from "./useAuth";
 
@@ -37,7 +37,7 @@ export type AvatarUploadState = {
   showAvatarSheet: () => void;
 };
 
-type PickerSource = "camera" | "library";
+type PickerSource = ImageSource;
 
 export function useAvatarUpload(
   currentAvatarUrl: string | null,
@@ -92,12 +92,12 @@ export function useAvatarUpload(
 
   const handlePickerSource = useCallback(
     async (source: PickerSource) => {
-      const permission =
-        source === "camera"
-          ? await ImagePicker.requestCameraPermissionsAsync()
-          : await ImagePicker.requestMediaLibraryPermissionsAsync();
+      const picked = await pickImage(source, {
+        allowsEditing: true,
+        aspect: [1, 1],
+      });
 
-      if (!permission.granted) {
+      if (picked.status === "denied") {
         Alert.alert(
           "Permission required",
           source === "camera"
@@ -106,27 +106,9 @@ export function useAvatarUpload(
         );
         return;
       }
+      if (picked.status === "cancelled") return;
 
-      const pickerResult =
-        source === "camera"
-          ? await ImagePicker.launchCameraAsync({
-              mediaTypes: ["images"],
-              allowsEditing: true,
-              aspect: [1, 1],
-              quality: 1,
-            })
-          : await ImagePicker.launchImageLibraryAsync({
-              mediaTypes: ["images"],
-              allowsEditing: true,
-              aspect: [1, 1],
-              quality: 1,
-            });
-
-      if (pickerResult.canceled) return;
-      const asset = pickerResult.assets?.[0];
-      if (!asset?.uri) return;
-
-      await uploadFromUri(asset.uri);
+      await uploadFromUri(picked.asset.uri);
     },
     [uploadFromUri],
   );

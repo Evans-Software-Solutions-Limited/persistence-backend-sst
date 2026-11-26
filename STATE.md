@@ -43,6 +43,47 @@ of migration 10; PER-122 owns the resources half) with a rollback.
 - **Not done here:** the coach-subscription guard for these `/trainers/me/*`
   routes comes from PER-146 (#565). App side is PER-144.
 
+### 2026-11-25 — APP-F1 athlete progress photos: gallery, phone-camera capture, portrait viewer, offline uploads ([PER-137](https://linear.app/evans-software-solutions/issue/PER-137); branch `claude/per-137-athlete-photos`)
+
+Mobile only, over the air on 1.2.0, no native change. Uses BE-F1 (#553).
+
+- **Screens:** Y1 You page gallery row (latest set; "See all"; with no
+  photos: three empty grey blocks + "Add today's photos", Brad 25 Nov), Y3
+  Gallery (`/(app)/progress-photos`, same grey blocks when empty), Y3b Add
+  photos (`/(app)/progress-photos-add`), Y3c viewer
+  (`/(app)/progress-photo-viewer?setId=&pose=`, full screen, still portrait:
+  Brad wants it landscape-only, which needs `expo-screen-orientation` — not
+  in 1.2.0 — and is pending). Delete is a trash button with a confirm (Brad
+  approved).
+- **Capture:** the app's shared picking flow (`ui/hooks/imagePicker.ts`,
+  extracted from `useAvatarUpload`, which now uses it too: Camera / Photo
+  Library alert → permission → system picker) → `expo-image-manipulator`
+  JPEG, long edge ≤ 2048 px (`resizeToLongEdge`), size measured for the
+  pinned upload.
+- **Offline:** a saved set is a `pending_progress_photos` row (new SQLite
+  table, one JSON payload per set). `processProgressPhotoUploads` (end of
+  `sync.command.ts`) runs create (same `Idempotency-Key` every try) → PUT
+  each photo to the presigned link → complete, with back-off 5 s → 1 h and no
+  give-up on transport/5xx/408/429/upload errors; other API 4xx → `rejected`,
+  a gone file → `file_missing` (both stop, shown "Couldn't upload").
+  `useProgressPhotoUploadWorker` (mounted beside `useSyncWorker`) runs it
+  only while online: on mount, save, foreground, reconnect and when the next
+  retry is due. No `expo-file-system` (Brad, 25 Nov).
+  Delete and the sharing grant use the JSON sync queue.
+- **`expo-file-system`:** in the 1.2.0 binary (55.0.22, a dependency of
+  `expo`), but not importable without adding it to
+  `packages/mobile/package.json` (out of bounds while PER-147 edits it). So
+  the design's fallback is used: unsent photos stay where the manipulator
+  wrote them (the cache directory) and the gallery warns they could be lost.
+  Files are read with RN `fetch(file://…).blob()`.
+- **Gallery cache:** `cached_progress_photos` (full read each time; links
+  last 15 min); images cached by `expo-image` with `cacheKey` = photo id.
+- **Sharing prompt:** after Save, if `photoSharing.needsPrompt` and the
+  athlete hasn't answered for those coaches on this phone; body is the
+  server's `copy` (`PHOTO_SHARING_COPY` placeholder from PER-121).
+- **Copy:** Brad approved the drafted wording (25 Nov). `PHOTO_SHARING_COPY`
+  (backend, PER-121) is still the placeholder text.
+
 ### 2026-11-25 — Mobile forms on react-hook-form + TypeBox ([PER-147](https://linear.app/evans-software-solutions/issue/PER-147), 2 of 2; branch `claude/per-147-rhf-mobile`)
 
 Every mobile form added since 1.2.0 validates through `react-hook-form` with
