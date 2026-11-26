@@ -43,6 +43,41 @@ of migration 10; PER-122 owns the resources half) with a rollback.
 - **Not done here:** the coach-subscription guard for these `/trainers/me/*`
   routes comes from PER-146 (#565). App side is PER-144.
 
+### 2026-11-25 — BE-G1b: programmes in order with Next, no dates ([PER-112](https://linear.app/evans-software-solutions/issue/PER-112); branch `claude/per-112-programmes-next`)
+
+Design G part 2 (C3.1, Assign with no start date). Backend only, additive.
+
+- **Migration** `20261125101831_programme_sequence_mode.sql` (+ rollback):
+  `program_assignments.schedule_mode` (`dated` default / `sequence`, CHECK),
+  `workout_assignments.sequence_index` + partial index. Mirrored in schema.ts.
+- **Sequence assignments** (`assignProgrammeInSequence`, the one helper):
+  `start_date` = assignment date, `end_date` NULL, every workout created once
+  with `due_date` NULL and `sequence_index` (= `occurrence_index` = cycle
+  position k). Indefinite ones keep 4 weeks × days/week open, topped up in
+  `ensureMaterializedForClient`. Next = lowest open `sequence_index`;
+  completing any workout links its lowest open occurrence (out of order is fine).
+- **Entry points:** coach `POST /trainers/me/programs/:id/assign` with no
+  `startDate` (with one = dated, unchanged for 1.2.0); the `programme` set-up
+  section (`programs/programmeSetupHandler.ts`, one line in `HANDLERS`);
+  `POST /users/me/program-assignments` ("Me", trainer role + active coach plan (PER-146), own programmes only:
+  design G's "or public" deferred pending Brad after Inspector Brad #564; re-send returns
+  the first row). Mounted via `programs/programsAthleteRoutes.ts` (TS2589).
+- **Reads:** `scheduleMode`, `nextAssignmentId`, `weekOfProgramme {week, of}` on
+  the Home card / coach active programme / relationship aggregate, athlete
+  `GET /programs/:id` and coach programme detail assignments; optional
+  `sequenceIndex` on Today's training, coach open assignments, upcomingWorkouts.
+  **`weekOfProgramme` for PER-115:** `programmeOrderFieldsFor` /
+  `weekOfProgramme` in `programs/sequenceProgress.ts` + `scheduling.ts`.
+- **1.2.0 safety:** Home Today's training and dashboard show only Next of a
+  sequence programme (`isNextOrNotSequenced`), else the whole undated plan would
+  appear. `week` keeps its calendar meaning. Unassign also prunes undated
+  untouched rows. `programme_ending` fires for finite sequence programmes at ≤ 2
+  left (dedupe `programme_ending:<id>:sequence`).
+- **Open:** "athlete planning capability" for "Me" doesn't exist in code; non-
+  trainers get 403 `planning_not_available` (question for Brad).
+- Tests: `programs/__tests__/designG.sequence.integration.test.ts` (PGlite, real
+  migration) and `scheduling.sequence.test.ts`; `scheduling.test.ts` unchanged.
+
 ### 2026-11-25 — APP-F1 athlete progress photos: gallery, phone-camera capture, portrait viewer, offline uploads ([PER-137](https://linear.app/evans-software-solutions/issue/PER-137); branch `claude/per-137-athlete-photos`)
 
 Mobile only, over the air on 1.2.0, no native change. Uses BE-F1 (#553).

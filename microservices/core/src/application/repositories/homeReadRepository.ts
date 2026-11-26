@@ -13,6 +13,7 @@ import {
 } from "@persistence/db";
 import { getDb } from "@persistence/db/client";
 import { localDateISO } from "../streaks/period";
+import { isNextOrNotSequenced } from "../programs/sequenceProgress";
 import {
   ProgramAssignmentRepository,
   type ActiveProgrammeSummary,
@@ -70,6 +71,11 @@ export interface TodaysTrainingItem {
    * distinct assigner (self-assigned) or the trainer profile has no name.
    */
   assignedByName: string | null;
+  /**
+   * PER-112: this is Next of a `sequence` programme, at this position in
+   * programme order. Omitted for dated and ad-hoc rows.
+   */
+  sequenceIndex?: number;
 }
 
 /**
@@ -146,6 +152,7 @@ export class HomeReadRepository {
         name: workouts.name,
         estimatedDurationMinutes: workouts.estimatedDurationMinutes,
         dueDate: workoutAssignments.dueDate,
+        sequenceIndex: workoutAssignments.sequenceIndex,
         trainerRole: profiles.role,
         trainerName: profiles.fullName,
       })
@@ -161,9 +168,14 @@ export class HomeReadRepository {
             isNull(workoutAssignments.dueDate),
             lte(workoutAssignments.dueDate, today),
           ),
+          // PER-112: a sequence programme (all undated) shows only Next.
+          isNextOrNotSequenced,
         ),
       )
-      .orderBy(sql`${workoutAssignments.dueDate} asc nulls last`)
+      .orderBy(
+        sql`${workoutAssignments.dueDate} asc nulls last`,
+        sql`${workoutAssignments.sequenceIndex} asc nulls last`,
+      )
       .limit(limit);
 
     return rows.map((r) => ({
@@ -174,6 +186,9 @@ export class HomeReadRepository {
       dueDate: r.dueDate ?? null,
       assignedByType: mapTrainerRoleToAssignedByType(r.trainerRole),
       assignedByName: r.trainerName ?? null,
+      ...(typeof r.sequenceIndex === "number"
+        ? { sequenceIndex: r.sequenceIndex }
+        : {}),
     }));
   }
 
