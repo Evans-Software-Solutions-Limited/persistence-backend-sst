@@ -9,6 +9,7 @@ import {
 import { hasActiveRelationship } from "../relationships/activeRelationshipGuard";
 import { ISO_DATE_PATTERN, todayIso } from "./shared";
 import { emitTrainerOnBehalfNotification } from "../onBehalfNotifications";
+import { assignProgrammeInSequence } from "../../programs/assignProgrammeInSequence";
 
 /**
  * POST /trainers/me/programs/:id/assign — assign a programme to an active
@@ -28,6 +29,11 @@ import { emitTrainerOnBehalfNotification } from "../onBehalfNotifications";
  * (migration 20260722120000) — this handler now emits exactly ONE
  * `workout_assigned` notification per programme assignment, post-commit,
  * best-effort, mirroring `assignClientWorkoutOnBehalf`.
+ *
+ * PER-112 (design G part 2): `startDate` is optional. Without it ("Assign
+ * with no start date", the new apps) the programme is assigned in
+ * `sequence` mode: no dates, workouts in programme order with Next. With it
+ * (1.2.0 coach bundles) the assignment is dated exactly as before.
  */
 export const trainersProgramsAssignHandler = new Elysia()
   .derive(async ({ headers }) => ({
@@ -53,17 +59,28 @@ export const trainersProgramsAssignHandler = new Elysia()
         };
       }
 
-      const result = await ctx.ProgramAssignmentRepository.assign(
-        userId,
-        ctx.params.id,
-        {
-          clientId: ctx.body.clientId,
-          startDate: ctx.body.startDate,
-          showInPlan: ctx.body.showInPlan,
-          showInLibrary: ctx.body.showInLibrary,
-        },
-        todayIso(),
-      );
+      const result =
+        ctx.body.startDate === undefined
+          ? await assignProgrammeInSequence({
+              assignerId: userId,
+              clientId: ctx.body.clientId,
+              programId: ctx.params.id,
+              today: todayIso(),
+              showInPlan: ctx.body.showInPlan,
+              showInLibrary: ctx.body.showInLibrary,
+              repository: ctx.ProgramAssignmentRepository,
+            })
+          : await ctx.ProgramAssignmentRepository.assign(
+              userId,
+              ctx.params.id,
+              {
+                clientId: ctx.body.clientId,
+                startDate: ctx.body.startDate,
+                showInPlan: ctx.body.showInPlan,
+                showInLibrary: ctx.body.showInLibrary,
+              },
+              todayIso(),
+            );
 
       if ("error" in result) {
         if (result.error === "not_found") {
@@ -109,7 +126,8 @@ export const trainersProgramsAssignHandler = new Elysia()
       params: t.Object({ id: t.String({ minLength: 1 }) }),
       body: t.Object({
         clientId: t.String({ minLength: 1 }),
-        startDate: t.String({ pattern: ISO_DATE_PATTERN }),
+        // Optional since PER-112: absent = sequence mode (no dates).
+        startDate: t.Optional(t.String({ pattern: ISO_DATE_PATTERN })),
         showInPlan: t.Optional(t.Boolean()),
         showInLibrary: t.Optional(t.Boolean()),
       }),

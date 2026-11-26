@@ -1,4 +1,14 @@
-import { and, asc, eq, gt, inArray, isNotNull, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  gt,
+  inArray,
+  isNotNull,
+  isNull,
+  or,
+  sql,
+} from "drizzle-orm";
 import {
   profiles,
   programAssignments,
@@ -15,15 +25,27 @@ import {
   INDEFINITE_HORIZON_DAYS,
   addDays,
   buildOccurrences,
+  buildSequence,
   currentWeek,
   endDateFor,
+  type ScheduleMode,
 } from "../programs/scheduling";
+import {
+  programmeOrderFieldsFor,
+  type ProgrammeOrderFields,
+} from "../programs/sequenceProgress";
 import { LIVE_ASSIGNMENT_STATUSES } from "./programRepository";
 
 export interface AssignProgramInput {
   clientId: string;
-  /** YYYY-MM-DD */
-  startDate: string;
+  /**
+   * YYYY-MM-DD. Required for `dated`; ignored for `sequence`, which stores
+   * the assignment date (`today`) so the NOT NULL column and old readers stay
+   * valid (design G part 2).
+   */
+  startDate?: string;
+  /** Default `dated` (today's behaviour). */
+  scheduleMode?: ScheduleMode;
   showInPlan?: boolean;
   showInLibrary?: boolean;
 }
@@ -53,10 +75,19 @@ export interface CoachClientAssignment {
   occurrenceIndex: number | null;
   /** True = a coach has swapped this occurrence off its programmed workout. */
   isSwapped: boolean;
+  /**
+   * PER-112: position in programme order for a `sequence` programme's
+   * workout (Next = the lowest open one). Omitted for dated and ad-hoc rows.
+   */
+  sequenceIndex?: number;
 }
 
-/** Wire shape for the athlete Home "Your programme" card (STORY-005). */
-export interface ActiveProgrammeSummary {
+/**
+ * Wire shape for the athlete Home "Your programme" card (STORY-005).
+ * PER-112 adds `scheduleMode`, `nextAssignmentId` and `weekOfProgramme`
+ * (design G part 2); `week` keeps its calendar meaning for old bundles.
+ */
+export interface ActiveProgrammeSummary extends ProgrammeOrderFields {
   assignmentId: string;
   programId: string;
   name: string;
@@ -94,9 +125,14 @@ export class ProgramAssignmentRepository {
     programId: string,
     input: AssignProgramInput,
     today: string,
+    // Optional transaction handle: the design A set-up accept materialises a
+    // programme inside its own transaction (PER-112).
+    outerTx?: DbOrTx,
   ): Promise<AssignProgramResult> {
-    const db = getDb();
-    return db.transaction(async (tx) => {
+    const mode: ScheduleMode = input.scheduleMode ?? "dated";
+    const startDate = mode === "sequence" ? today : input.startDate;
+    if (!startDate) throw new Error("startDate is required for dated assign");
+    const run = async (tx: DbOrTx): Promise<AssignProgramResult> => {
       const programRows = await tx
         .select({
           id: workoutPrograms.id,
@@ -147,11 +183,19 @@ export class ProgramAssignmentRepository {
             programId,
             clientId: input.clientId,
             assignedBy: trainerId,
-            startDate: input.startDate,
-            endDate: endDateFor(input.startDate, program.durationWeeks),
+            startDate,
+            // No dates on a sequence programme, so no end date either (old
+            // bundles read null as "Ongoing").
+            endDate:
+              mode === "sequence"
+                ? null
+                : endDateFor(startDate, program.durationWeeks),
             status: "assigned",
             showInPlan,
             showInLibrary,
+            ...(mode === "sequence"
+              ? { scheduleMode: "sequence" as const }
+              : {}),
           })
           .returning();
         assignment = inserted[0];
@@ -164,8 +208,34 @@ export class ProgramAssignmentRepository {
         throw e;
       }
 
+      if (mode === "sequence") {
+        // Created once, undated, in programme order (design G part 2).
+        const steps = buildSequence({
+          daysPerWeek: program.daysPerWeek,
+          cycle: cycleRows.map((r) => r.workoutId),
+          durationWeeks: program.durationWeeks,
+          fromIndex: 0,
+        });
+        await tx.insert(workoutAssignments).values(
+          steps.map((step) => ({
+            trainerId,
+            clientId: input.clientId,
+            workoutId: step.workoutId,
+            assignedDate: today,
+            dueDate: null,
+            status: "assigned" as const,
+            programAssignmentId: assignment.id,
+            occurrenceIndex: step.sequenceIndex,
+            sequenceIndex: step.sequenceIndex,
+            showInPlan,
+            showInLibrary,
+          })),
+        );
+        return { assignment };
+      }
+
       const occurrences = buildOccurrences({
-        startDate: input.startDate,
+        startDate,
         daysPerWeek: program.daysPerWeek,
         cycle: cycleRows.map((r) => r.workoutId),
         durationWeeks: program.durationWeeks,
@@ -194,7 +264,31 @@ export class ProgramAssignmentRepository {
       }
 
       return { assignment };
-    });
+    };
+    if (outerTx) return run(outerTx);
+    return getDb().transaction(run);
+  }
+
+  /**
+   * The client's LIVE assignment of a programme (any assigner), or null. The
+   * "Me" route uses it to answer a re-sent request with the first row.
+   */
+  async getLiveAssignment(
+    clientId: string,
+    programId: string,
+  ): Promise<ProgramAssignment | null> {
+    const rows = await getDb()
+      .select()
+      .from(programAssignments)
+      .where(
+        and(
+          eq(programAssignments.programId, programId),
+          eq(programAssignments.clientId, clientId),
+          inArray(programAssignments.status, [...LIVE_ASSIGNMENT_STATUSES]),
+        ),
+      )
+      .limit(1);
+    return rows[0] ?? null;
   }
 
   /**
@@ -227,15 +321,18 @@ export class ProgramAssignmentRepository {
         .returning();
       if (updated.length === 0) return "not_found";
 
-      await tx
-        .delete(workoutAssignments)
-        .where(
-          and(
-            eq(workoutAssignments.programAssignmentId, assignmentId),
-            eq(workoutAssignments.status, "assigned"),
+      await tx.delete(workoutAssignments).where(
+        and(
+          eq(workoutAssignments.programAssignmentId, assignmentId),
+          eq(workoutAssignments.status, "assigned"),
+          // A sequence programme's workouts are undated: every untouched
+          // one goes (programme occurrences are only undated in sequence).
+          or(
             gt(workoutAssignments.dueDate, today),
+            isNull(workoutAssignments.dueDate),
           ),
-        );
+        ),
+      );
 
       return "unassigned";
     });
@@ -264,9 +361,12 @@ export class ProgramAssignmentRepository {
         showInPlan: programAssignments.showInPlan,
         showInLibrary: programAssignments.showInLibrary,
         daysPerWeek: workoutPrograms.daysPerWeek,
+        scheduleMode: programAssignments.scheduleMode,
         maxIndex: sql<
           number | null
         >`(select max(${workoutAssignments.occurrenceIndex}) from ${workoutAssignments} where ${workoutAssignments.programAssignmentId} = ${programAssignments.id})`,
+        // Open workouts, for the sequence top-up (PER-112).
+        openCount: sql<number>`(select count(*)::int from ${workoutAssignments} where ${workoutAssignments.programAssignmentId} = ${programAssignments.id} and ${workoutAssignments.status} in ('assigned', 'started'))`,
       })
       .from(programAssignments)
       .innerJoin(
@@ -303,6 +403,37 @@ export class ProgramAssignmentRepository {
         .where(eq(programWorkouts.programId, a.programId))
         .orderBy(asc(programWorkouts.position));
       if (cycleRows.length === 0) continue;
+
+      if (a.scheduleMode === "sequence") {
+        // Undated: keep INDEFINITE_SEQUENCE_WEEKS of workouts open, in order.
+        const steps = buildSequence({
+          daysPerWeek: a.daysPerWeek,
+          cycle: cycleRows.map((r) => r.workoutId),
+          durationWeeks: null,
+          fromIndex: (a.maxIndex ?? -1) + 1,
+          openCount: Number(a.openCount) || 0,
+        });
+        if (steps.length === 0) continue;
+        await db
+          .insert(workoutAssignments)
+          .values(
+            steps.map((step) => ({
+              trainerId: assignedBy,
+              clientId,
+              workoutId: step.workoutId,
+              assignedDate: today,
+              dueDate: null,
+              status: "assigned" as const,
+              programAssignmentId: a.id,
+              occurrenceIndex: step.sequenceIndex,
+              sequenceIndex: step.sequenceIndex,
+              showInPlan: a.showInPlan,
+              showInLibrary: a.showInLibrary,
+            })),
+          )
+          .onConflictDoNothing();
+        continue;
+      }
 
       const occurrences = buildOccurrences({
         startDate: a.startDate,
@@ -351,6 +482,8 @@ export class ProgramAssignmentRepository {
         programId: programAssignments.programId,
         name: workoutPrograms.name,
         durationWeeks: workoutPrograms.durationWeeks,
+        daysPerWeek: workoutPrograms.daysPerWeek,
+        scheduleMode: programAssignments.scheduleMode,
         startDate: programAssignments.startDate,
         endDate: programAssignments.endDate,
         assignedByName: profiles.fullName,
@@ -373,6 +506,11 @@ export class ProgramAssignmentRepository {
     const row = rows[0];
     if (!row) return null;
 
+    const order = await programmeOrderFieldsFor(
+      db,
+      [{ ...row, id: row.assignmentId }],
+      today,
+    );
     return {
       assignmentId: row.assignmentId,
       programId: row.programId,
@@ -382,6 +520,7 @@ export class ProgramAssignmentRepository {
       endDate: row.endDate,
       startDate: row.startDate,
       assignedByName: row.assignedByName ?? null,
+      ...order.get(row.assignmentId)!,
     };
   }
 
@@ -415,6 +554,8 @@ export class ProgramAssignmentRepository {
         ${programAssignments.programId} AS "programId",
         ${workoutPrograms.name} AS "name",
         ${workoutPrograms.durationWeeks} AS "durationWeeks",
+        ${workoutPrograms.daysPerWeek} AS "daysPerWeek",
+        ${programAssignments.scheduleMode} AS "scheduleMode",
         ${programAssignments.startDate} AS "startDate",
         ${programAssignments.endDate} AS "endDate",
         ${profiles.fullName} AS "assignedByName"
@@ -436,11 +577,18 @@ export class ProgramAssignmentRepository {
       programId: string;
       name: string;
       durationWeeks: number | null;
+      daysPerWeek: number;
+      scheduleMode: string | null;
       startDate: string;
       endDate: string | null;
       assignedByName: string | null;
     }>;
 
+    const order = await programmeOrderFieldsFor(
+      db,
+      rows.map((r) => ({ ...r, id: r.assignmentId })),
+      today,
+    );
     const summaries = new Map<string, ActiveProgrammeSummary>();
     for (const row of rows) {
       summaries.set(row.assignedBy, {
@@ -452,6 +600,7 @@ export class ProgramAssignmentRepository {
         endDate: row.endDate,
         startDate: row.startDate,
         assignedByName: row.assignedByName ?? null,
+        ...order.get(row.assignmentId)!,
       });
     }
     return summaries;
@@ -488,8 +637,25 @@ export class ProgramAssignmentRepository {
           inArray(workoutAssignments.status, [...LIVE_ASSIGNMENT_STATUSES]),
         ),
       )
-      // Earliest due first; ad-hoc rows without a due date go last.
-      .orderBy(sql`${workoutAssignments.dueDate} asc nulls last`)
+      // 1. dated rows due today or earlier (earliest first);
+      // 2. a sequence programme's rows, in programme order (PER-112): Next
+      //    before a dated row that isn't due yet, so doing Next can't
+      //    complete a future dated occurrence of the same workout instead
+      //    (Inspector Brad, #564);
+      // 3. future dated rows (earliest first);
+      // 4. undated ad-hoc rows.
+      // With no sequence rows this is exactly the old `due_date asc nulls
+      // last` order.
+      .orderBy(
+        sql`case
+          when ${workoutAssignments.dueDate} is not null and ${workoutAssignments.dueDate} <= ${new Date().toISOString().slice(0, 10)} then 0
+          when ${workoutAssignments.sequenceIndex} is not null then 1
+          when ${workoutAssignments.dueDate} is not null then 2
+          else 3
+        end`,
+        sql`${workoutAssignments.dueDate} asc nulls last`,
+        sql`${workoutAssignments.sequenceIndex} asc nulls last`,
+      )
       .limit(1);
     const target = candidates[0];
     if (!target) return;
@@ -712,9 +878,11 @@ export class ProgramAssignmentRepository {
           ${workoutAssignments.programAssignmentId} AS "programAssignmentId",
           ${workoutAssignments.occurrenceIndex} AS "occurrenceIndex",
           ${workoutAssignments.swappedFromWorkoutId} AS "swappedFromWorkoutId",
+          ${workoutAssignments.sequenceIndex} AS "sequenceIndex",
           row_number() OVER (
             PARTITION BY ${workoutAssignments.trainerId}
             ORDER BY ${workoutAssignments.dueDate} ASC NULLS LAST,
+                     ${workoutAssignments.sequenceIndex} ASC NULLS LAST,
                      ${workoutAssignments.id} ASC
           ) AS relationship_rank
         FROM ${workoutAssignments}
@@ -735,7 +903,8 @@ export class ProgramAssignmentRepository {
         "status",
         "programAssignmentId",
         "occurrenceIndex",
-        "swappedFromWorkoutId"
+        "swappedFromWorkoutId",
+        "sequenceIndex"
       FROM ranked_assignments
       WHERE relationship_rank <= ${limitPerTrainer}
       ORDER BY "trainerId", relationship_rank
@@ -750,6 +919,7 @@ export class ProgramAssignmentRepository {
       programAssignmentId: string | null;
       occurrenceIndex: number | null;
       swappedFromWorkoutId: string | null;
+      sequenceIndex?: number | null;
     }>;
 
     const assignments = new Map<string, CoachClientAssignment[]>();
@@ -765,6 +935,9 @@ export class ProgramAssignmentRepository {
         isProgrammeOccurrence: row.programAssignmentId !== null,
         occurrenceIndex: row.occurrenceIndex ?? null,
         isSwapped: row.swappedFromWorkoutId !== null,
+        ...(row.sequenceIndex != null
+          ? { sequenceIndex: Number(row.sequenceIndex) }
+          : {}),
       });
       assignments.set(row.trainerId, trainerAssignments);
     }
