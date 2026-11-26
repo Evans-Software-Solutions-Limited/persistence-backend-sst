@@ -66,6 +66,10 @@ import type {
   Recipe,
 } from "@/domain/models/nutrition";
 import type { MyCoaching } from "@/domain/models/myCoaching";
+import type {
+  AthleteFormRequests,
+  LocalFormState,
+} from "@/domain/models/athleteForms";
 import type { UserMeal } from "@/domain/models/userMeals";
 import type {
   NutritionPlansCache,
@@ -1252,6 +1256,45 @@ export class InMemoryStorageAdapter implements StoragePort {
     });
   }
 
+  // PER-130: cached_form_requests + form_request_local.
+  private formRequests = new Map<string, AthleteFormRequests>();
+  private formLocals = new Map<string, Map<string, LocalFormState>>();
+
+  getCachedFormRequests(userId: string): AthleteFormRequests | null {
+    const hit = this.formRequests.get(userId);
+    return hit
+      ? (JSON.parse(JSON.stringify(hit)) as AthleteFormRequests)
+      : null;
+  }
+
+  cacheFormRequests(userId: string, value: AthleteFormRequests): void {
+    this.formRequests.set(
+      userId,
+      JSON.parse(JSON.stringify(value)) as AthleteFormRequests,
+    );
+  }
+
+  getLocalFormStates(userId: string): LocalFormState[] {
+    const hit = this.formLocals.get(userId);
+    if (!hit) return [];
+    return [...hit.values()]
+      .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt))
+      .map((l) => JSON.parse(JSON.stringify(l)) as LocalFormState);
+  }
+
+  saveLocalFormState(userId: string, state: LocalFormState): void {
+    const hit = this.formLocals.get(userId) ?? new Map();
+    hit.set(
+      state.requestId,
+      JSON.parse(JSON.stringify(state)) as LocalFormState,
+    );
+    this.formLocals.set(userId, hit);
+  }
+
+  removeLocalFormState(userId: string, requestId: string): void {
+    this.formLocals.get(userId)?.delete(requestId);
+  }
+
   cacheActiveSession(userId: string, session: WorkoutSession): void {
     this.activeSessions.set(userId, cloneSession(session));
     // Inspector Brad PR #62 (high severity, belt-and-braces): drop a
@@ -1732,6 +1775,8 @@ export class InMemoryStorageAdapter implements StoragePort {
     this.trainingLogSince.clear();
     this.youRemote.clear();
     this.myCoaches.clear();
+    this.formRequests.clear();
+    this.formLocals.clear();
     this.trainingLogIds.clear();
     this.trainingLogRecords.clear();
     this.metadata.clear();

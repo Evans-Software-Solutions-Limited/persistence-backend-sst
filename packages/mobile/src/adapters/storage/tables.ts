@@ -118,3 +118,7 @@ export const COACH_CLIENT_FORMS_TABLES = ["cached_coach_client_forms"] as const;
 export const COACH_FORM_RESPONSES_TABLES = [
   "cached_coach_form_responses",
 ] as const;
+/** PER-130 the athlete's due forms, with their questions. */
+export const FORM_REQUESTS_TABLES = ["cached_form_requests"] as const;
+/** PER-130 each due form's draft and send state on this phone. */
+export const FORM_LOCAL_TABLES = ["form_request_local"] as const;

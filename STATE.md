@@ -1,5 +1,39 @@
 # Project memory · persistence-backend-sst
 
+### 2026-11-26 — APP-C2: athlete due forms, offline filling, joining forms ([PER-130](https://linear.app/evans-software-solutions/issue/PER-130); branch `claude/per-130-athlete-forms`)
+
+Mobile only, over the air on 1.2.0: no backend, migration or native change.
+Uses the merged BE-C1 athlete routes (#543) and BE-F1 uploads (#553).
+
+- **Cache:** `cached_form_requests` (one payload per user, `GET
+  /users/me/form-requests` with questions) and `form_request_local` (per
+  request: draft answers + step, submitted/sent/closed, a 422 body, keys,
+  C10q seen). New tables, `CREATE TABLE IF NOT EXISTS`. Done/closed rows
+  are pruned after 14 days; drafts of requests the server no longer lists
+  go on the next read; a form waiting to send is never pruned.
+- **Send:** no photos → queued `form_response` (`athleteForms.command.ts`;
+  the queue's `Idempotency-Key`). Photos → needs a connection: upload each
+  (`POST /users/me/media/uploads`, presigned PUT; key per field+file, media
+  id saved into the draft) then `POST …/response` straight away with a kept
+  key, so 422s land on the questions. `sync.command.ts`: success marks it
+  sent; 409 `request_closed` / 404 → "This check-in is no longer needed";
+  422 → back to To fill in with the errors stored for when it reopens.
+  `requestRaw` now sends `Idempotency-Key` when given.
+- **Form:** react-hook-form + TypeBox (`src/ui/forms/formAnswerForms.ts`),
+  schema built from the request's questions, fields `q0…` by index, required
+  as a `refine` rule, 422 `errors[].at` (question id) mapped with
+  `applyServerErrors`.
+- **Screens:** Coach tab forms section (C10p/r; replaces the PER-130
+  placeholder), `/forms/[id]` fill-in (C4f), `/forms/joining` (C10q, opened
+  once per coach while untouched). Tab badge = local count once read
+  (`/users/me/coaching` `due.forms` is still 0 on the server). In-app
+  notification rows for `form_request`/`form_reminder` open the form.
+- **Not built (flagged on the PR):** push taps (no deep link in the push
+  data; needs a backend `deepLink` or an adapter change after #569), coach
+  replies / past responses in "Done", "paused" and expired-missed rows (no
+  athlete endpoint), "Filled for you" prefill. Photo picker mirrors
+  PER-137's `imagePicker.ts` (#567 not merged) in `formPhotoPicker.ts`.
+
 ### 2026-11-25 — Mobile forms on react-hook-form + TypeBox ([PER-147](https://linear.app/evans-software-solutions/issue/PER-147), 2 of 2; branch `claude/per-147-rhf-mobile`)
 
 Every mobile form added since 1.2.0 validates through `react-hook-form` with

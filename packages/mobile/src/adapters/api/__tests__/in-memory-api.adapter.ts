@@ -211,6 +211,11 @@ import type {
   RemoteRecap,
 } from "@/domain/models/trainingReads";
 import type { InvitePreview, MyCoaching } from "@/domain/models/myCoaching";
+import type {
+  AthleteFormRequests,
+  FormAnswerUpload,
+  FormResponseSubmit,
+} from "@/domain/models/athleteForms";
 import type { UserMeal, UserMealsResponse } from "@/domain/models/userMeals";
 import type {
   NutritionPlansResponse,
@@ -2693,6 +2698,81 @@ export class InMemoryApiAdapter implements ApiPort {
         this.leaveCoachCalls.every((id) => id !== c.relationshipId),
       ),
     });
+  }
+
+  // -- PER-130 (APP-C2): the athlete's coach forms --
+
+  /** Fixture for `getMyFormRequests`. */
+  public formRequests: AthleteFormRequests = {
+    requests: [],
+    asOf: "2026-11-26T09:00:00Z",
+  };
+  public getMyFormRequestsCalls = 0;
+
+  async getMyFormRequests(): Promise<Result<AthleteFormRequests, ApiError>> {
+    this.getMyFormRequestsCalls += 1;
+    return this.mayFail<AthleteFormRequests>(
+      JSON.parse(JSON.stringify(this.formRequests)) as AthleteFormRequests,
+    );
+  }
+
+  /** Answers for `submitFormResponse`, in order; then 201. */
+  public submitFormResponseResults: Result<FormResponseSubmit, ApiError>[] = [];
+  public submitFormResponseCalls: {
+    requestId: string;
+    answers: Record<string, unknown>;
+    idempotencyKey: string;
+  }[] = [];
+
+  async submitFormResponse(
+    requestId: string,
+    answers: Record<string, unknown>,
+    idempotencyKey: string,
+  ): Promise<Result<FormResponseSubmit, ApiError>> {
+    this.submitFormResponseCalls.push({ requestId, answers, idempotencyKey });
+    return (
+      this.submitFormResponseResults.shift() ??
+      ok({ status: 201, json: { data: { id: `resp-${requestId}` } } })
+    );
+  }
+
+  /** Answers for `createFormAnswerUpload`, in order; then a fresh upload. */
+  public formUploadResults: Result<FormAnswerUpload, ApiError>[] = [];
+  public createFormAnswerUploadCalls: {
+    bytes: number;
+    idempotencyKey: string;
+  }[] = [];
+
+  async createFormAnswerUpload(
+    bytes: number,
+    idempotencyKey: string,
+  ): Promise<Result<FormAnswerUpload, ApiError>> {
+    this.createFormAnswerUploadCalls.push({ bytes, idempotencyKey });
+    const n = this.createFormAnswerUploadCalls.length;
+    return (
+      this.formUploadResults.shift() ??
+      ok({
+        mediaId: `media-${n}`,
+        status: "pending",
+        upload: {
+          url: `https://bucket.example/${n}`,
+          method: "PUT",
+          headers: { "Content-Type": "image/jpeg" },
+          expiresAt: "2026-11-26T10:00:00Z",
+        },
+      })
+    );
+  }
+
+  public putPresignedUploadResults: Result<void, ApiError>[] = [];
+  public putPresignedUploadCalls: { url: string; size: number }[] = [];
+
+  async putPresignedUpload(
+    upload: NonNullable<FormAnswerUpload["upload"]>,
+    body: Blob,
+  ): Promise<Result<void, ApiError>> {
+    this.putPresignedUploadCalls.push({ url: upload.url, size: body.size });
+    return this.putPresignedUploadResults.shift() ?? ok(undefined);
   }
 
   /** Previews by upper-case code; an unknown code answers 404 `invalid_code`. */

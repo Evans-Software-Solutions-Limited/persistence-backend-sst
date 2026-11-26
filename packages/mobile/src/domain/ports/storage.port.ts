@@ -60,6 +60,10 @@ import type {
 } from "@/domain/models/nutritionPlans";
 import type { UserMeal } from "@/domain/models/userMeals";
 import type {
+  AthleteFormRequests,
+  LocalFormState,
+} from "@/domain/models/athleteForms";
+import type {
   ClientForm,
   CoachFormConflict,
   CoachFormStats,
@@ -899,6 +903,21 @@ export interface StoragePort {
   cacheMyCoaches(userId: string, value: MyCoaching): void;
   /** Drop one coach after leaving them, so their chip goes straight away. */
   removeCachedMyCoach(userId: string, relationshipId: string): void;
+
+  /**
+   * PER-130 (APP-C2): the athlete's due forms with their questions
+   * (`GET /users/me/form-requests`) in `cached_form_requests`, so they can
+   * be filled in offline. Null until the first successful read.
+   */
+  getCachedFormRequests(userId: string): AthleteFormRequests | null;
+  cacheFormRequests(userId: string, value: AthleteFormRequests): void;
+  /**
+   * PER-130: each request's draft and send state on this phone
+   * (`form_request_local`, one row per request).
+   */
+  getLocalFormStates(userId: string): LocalFormState[];
+  saveLocalFormState(userId: string, state: LocalFormState): void;
+  removeLocalFormState(userId: string, requestId: string): void;
 
   /**
    * Write-through the entire session as a full upsert. Replaces the
