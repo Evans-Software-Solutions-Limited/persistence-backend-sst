@@ -54,6 +54,15 @@ const mockCapture = jest.fn();
 jest.mock("@/ui/hooks/useProgressPhotoCapture", () => ({
   useProgressPhotoCapture: () => ({ capture: mockCapture }),
 }));
+const mockOrientation: string[] = [];
+jest.mock("@/lib/screenOrientation", () => ({
+  lockLandscape: async () => {
+    mockOrientation.push("landscape");
+  },
+  lockPortrait: async () => {
+    mockOrientation.push("portrait");
+  },
+}));
 
 const USER = "athlete-1";
 
@@ -247,7 +256,7 @@ describe("AddProgressPhotosContainer (Y3b)", () => {
     });
     expect(alert).toHaveBeenCalledWith(
       "Share progress photos with your coaches",
-      expect.stringContaining("[Placeholder: Brad to write]"),
+      "Share your progress photos with your coaches. Only your current coaches can see them, and they lose access when coaching ends.",
       expect.any(Array),
       { cancelable: false },
     );
@@ -397,6 +406,16 @@ describe("ProgressPhotoViewerContainer (Y3c)", () => {
     await waitFor(() =>
       expect(s.getByText("Front · 11 Oct 2026")).toBeTruthy(),
     );
+  });
+
+  it("turns landscape while open and back to portrait on leaving", async () => {
+    mockOrientation.length = 0;
+    const { render } = setup();
+    const s = render(<ProgressPhotoViewerContainer />);
+    expect(mockOrientation).toEqual(["landscape"]);
+    s.unmount();
+    expect(mockOrientation).toEqual(["landscape", "portrait"]);
+    await act(async () => {});
   });
 
   it("renders an empty viewer with no photos", async () => {

@@ -29,12 +29,12 @@ import { POSE_LABEL, weightLabel } from "./progressPhotoViews";
 /** The prompt's title: the ticket's name for it. */
 export const PHOTO_SHARING_TITLE = "Share progress photos with your coaches";
 /**
- * ⚠ PLACEHOLDER, mirrors `PHOTO_SHARING_COPY` (PER-121). The app shows the
- * wording the backend serves; this is only used if a cached status has none.
- * Brad writes the final wording.
+ * Mirrors `PHOTO_SHARING_COPY` (backend, approved by Brad on 26 Nov 2026).
+ * The app shows the wording the backend serves; this is only used if a
+ * cached status has none.
  */
 export const PHOTO_SHARING_COPY_FALLBACK =
-  "[Placeholder: Brad to write] Share your progress photos with your coaches. Only your current coaches can see them, and they lose access when coaching ends.";
+  "Share your progress photos with your coaches. Only your current coaches can see them, and they lose access when coaching ends.";
 
 /**
  * Y3b Add photos — `/(app)/progress-photos-add` (PER-137). Each slot takes

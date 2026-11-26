@@ -1098,6 +1098,34 @@ describe("the one-time photo-sharing consent", () => {
     expect(list.json.data.photoSharing.needsPrompt).toBe(false);
   });
 
+  it("serves Brad's final wording at photos-v1; a grant stamped with the old version still counts", async () => {
+    expect(PHOTO_SHARING_CONSENT_VERSION).toBe("photos-v1");
+    expect(PHOTO_SHARING_COPY).toBe(
+      "Share your progress photos with your coaches. Only your current coaches can see them, and they lose access when coaching ends.",
+    );
+    // Grants written while the wording was a placeholder (photos-v0) must
+    // not force anyone to confirm again.
+    for (const trainerId of [COACH_C, COACH_E]) {
+      await db.insert(schema.dataSharingConsents).values({
+        trainerId,
+        clientId: ATHLETE_A,
+        action: "grant",
+        consentVersion: "photos-v0-placeholder",
+        source: "photo_sharing_prompt",
+      });
+    }
+    const status = await http(
+      "GET",
+      "/users/me/progress-photos/sharing",
+      ATHLETE_A,
+    );
+    expect(status.json.data.needsPrompt).toBe(false);
+    expect((await gallery(COACH_C, ATHLETE_A)).status).toBe(200);
+    // Confirming again writes nothing new.
+    await share(ATHLETE_A);
+    expect(await db.select().from(schema.dataSharingConsents)).toHaveLength(2);
+  });
+
   it("an athlete with no coaches has nothing to confirm; AI coaches are never offered", async () => {
     await db.insert(schema.ptClientRelationships).values({
       trainerId: COACH_D,
