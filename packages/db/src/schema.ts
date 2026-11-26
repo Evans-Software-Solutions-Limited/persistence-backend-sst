@@ -212,6 +212,10 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   "coach_event",
   "form_request",
   "form_reminder",
+  // Design I (PER-123) — an athlete's coach booking: booked, moved, cancelled
+  // or its reminder (`data.action`). Added in
+  // 20261125123634_coach_sessions_calendar.sql.
+  "coach_session",
 ]);
 
 // M4 (06-progress-goals) — streak engine period types. cross-cuts § 3.1.
@@ -4213,6 +4217,8 @@ export const businessVoucherRateLimits = pgTable(
 export * from "./togetherSharedSchema";
 export * from "./togetherSchema";
 export * from "./socialSchema";
+// PER-123 (design I): coach calendar sessions and attendees.
+export * from "./coachSessionsSchema";
 
 export * from "./togetherOfflineSchema";
 // PER-121 (design F): progress photos and private media.

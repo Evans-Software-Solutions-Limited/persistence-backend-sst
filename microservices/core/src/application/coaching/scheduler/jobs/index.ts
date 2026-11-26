@@ -8,6 +8,7 @@ import {
 } from "./coachChecks";
 import { formPeriodsJob } from "./formPeriods";
 import { formPushesJob, missedFormsJob } from "./formRequests";
+import { sessionRemindersJob } from "./sessionReminders";
 
 /**
  * Every job `coachSchedulerCron` runs, in order (PER-117, design C D2).
@@ -31,4 +32,7 @@ export const COACH_SCHEDULER_JOBS: readonly SchedulerJob[] = [
   // PER-120 (design E): chat channel provisioning and freeze retries. Writes
   // no coach events, so it runs after coachPushesJob.
   chatChannelsJob,
+  // PER-123 (design I): athlete session reminders. Writes no coach events, so
+  // it runs after coachPushesJob.
+  sessionRemindersJob,
 ];

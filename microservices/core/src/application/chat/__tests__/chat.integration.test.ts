@@ -133,6 +133,9 @@ const dialect = new PgDialect();
 const BASE_TABLES = [
   schema.profiles,
   schema.ptClientRelationships,
+  // PER-123: offboarding also cancels this relationship's future bookings.
+  schema.coachSessions,
+  schema.coachSessionAttendees,
   schema.dataSharingConsents,
   schema.trainerClientNotes,
   schema.nutritionTargets,
@@ -461,8 +464,13 @@ describe("design E test 2: channel provisioning", () => {
     expect((await channelRow(REL_EA))!.state).toBe("active");
   });
 
-  it("runs as the coach scheduler's last job, claimed once per tick", async () => {
-    expect(COACH_SCHEDULER_JOBS.at(-1)).toBe(chatChannelsJob);
+  it("runs after the coach pushes job, claimed once per tick", async () => {
+    // It writes no coach events, so it runs after coachPushesJob. PER-123's
+    // session reminders job (also no coach events) runs after it.
+    const names = COACH_SCHEDULER_JOBS.map((j) => j.name);
+    expect(names.indexOf("chat_channels")).toBeGreaterThan(
+      names.indexOf("coach_pushes"),
+    );
     const now = new Date();
     const first = await runCoachScheduler([chatChannelsJob], {
       now,
