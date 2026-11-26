@@ -29,18 +29,21 @@ import { recordDataSharingConsent } from "../relationships/recordDataSharingCons
 export const PHOTO_SHARING_SOURCE = "photo_sharing_prompt" as const;
 
 /**
- * Stamped on every photo-sharing grant. Bump it when Brad's final wording
- * replaces the placeholder below.
+ * Stamped on every photo-sharing grant, recording which wording the athlete
+ * agreed to. It is a record only: `grantedTrainers` matches grants on
+ * action, source and coaching cycle, never on this version, so a grant
+ * stamped with an older version (e.g. `photos-v0-placeholder`) still counts
+ * and nobody is asked again when it changes.
+ * v1 (26 Nov 2026): Brad's approved wording below (PER-137).
  */
-export const PHOTO_SHARING_CONSENT_VERSION = "photos-v0-placeholder";
+export const PHOTO_SHARING_CONSENT_VERSION = "photos-v1";
 
 /**
- * ⚠ PLACEHOLDER. Brad writes the photos line for the consent copy before
- * release (PER-121, design F "Consent"). The app shows this text in the
- * one-time prompt until then.
+ * The one-time prompt's wording, approved by Brad on 26 Nov 2026 (PER-137,
+ * design F "Consent"). The app shows the text this API serves.
  */
 export const PHOTO_SHARING_COPY =
-  "[Placeholder: Brad to write] Share your progress photos with your coaches. Only your current coaches can see them, and they lose access when coaching ends.";
+  "Share your progress photos with your coaches. Only your current coaches can see them, and they lose access when coaching ends.";
 
 export interface PhotoSharingCoach {
   trainerId: string;

@@ -1,5 +1,24 @@
 # Project memory · persistence-backend-sst
 
+### 2026-11-26 — PER-137 follow-up: landscape-only photo viewer, final photo-sharing copy ([PER-137](https://linear.app/evans-software-solutions/issue/PER-137); branch `claude/per-137-landscape-viewer`)
+
+- **Native change (Brad approved, 26 Nov; needs the new store build):**
+  `expo-screen-orientation@~55.0.16` (not in 1.2.0), `app.json`
+  `orientation: "default"` and the plugin with `initialOrientation:
+  "PORTRAIT_UP"` (commit 498f05d).
+- `src/lib/screenOrientation.ts`: `lockPortrait` / `lockLandscape`, guarded
+  with `requireOptionalNativeModule("ExpoScreenOrientation")`. On a 1.2.0
+  binary (OTA) they're no-ops, and the binary stays portrait natively.
+- The root layout locks portrait at start. The Y3c viewer locks landscape on
+  focus and portrait on blur/unmount, and its layout is the canvas's single
+  landscape bar (Close, pose · date, weight / body fat / vs latest, Delete,
+  Add). iPadOS ignores orientation locks with multitasking on.
+- `PHOTO_SHARING_COPY` is Brad's approved wording (placeholder prefix
+  dropped); `PHOTO_SHARING_CONSENT_VERSION` → `photos-v1`. The version is
+  only stamped on new grants. Grants are matched on action, source and
+  coaching cycle, so `photos-v0-placeholder` grants still count (integration
+  test).
+
 ### 2026-11-25 — Coach resources follow-ups ([PER-150](https://linear.app/evans-software-solutions/issue/PER-150); branch `claude/per-150-resources-follow-ups`)
 
 Follow-ups to PER-122. Backend only; no migration, no route added or removed,

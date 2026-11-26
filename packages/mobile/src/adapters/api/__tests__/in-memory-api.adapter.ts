@@ -3964,7 +3964,7 @@ export class InMemoryApiAdapter implements ApiPort {
   photoSharing: PhotoSharingStatus = {
     needsPrompt: false,
     coaches: [],
-    consentVersion: "photos-v0-placeholder",
+    consentVersion: "photos-v1",
     copy: "Share your progress photos with your coaches.",
   };
   /** Scripted failures, consumed one per call, per method. */
