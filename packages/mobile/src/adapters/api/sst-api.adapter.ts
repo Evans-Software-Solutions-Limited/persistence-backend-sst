@@ -264,6 +264,13 @@ import type {
   FormResponsesPage,
   FormSchedule,
 } from "@/domain/models/coachForms";
+import type {
+  CreatedProgressPhotoSet,
+  CreateProgressPhotoSetInput,
+  ProgressPhotoSet,
+  ProgressPhotosResponse,
+  ProgressPhotoUpload,
+} from "@/domain/models/progressPhotos";
 
 type ApiSuccessResponse<T> = { data: T };
 type ApiErrorResponse = { error: string };
@@ -3244,6 +3251,68 @@ export class SSTApiAdapter implements ApiPort {
       responses: result.value.data ?? [],
       nextCursor: result.value.nextCursor ?? null,
     });
+  }
+
+  // -- PER-137 (APP-F1): progress photos (BE-F1) --
+
+  async getProgressPhotos(): Promise<Result<ProgressPhotosResponse, ApiError>> {
+    return this.requestEnvelope<ProgressPhotosResponse>(
+      "/users/me/progress-photos",
+    );
+  }
+
+  async createProgressPhotoSet(
+    input: CreateProgressPhotoSetInput,
+    idempotencyKey: string,
+  ): Promise<Result<CreatedProgressPhotoSet, ApiError>> {
+    return this.requestEnvelope<CreatedProgressPhotoSet>(
+      "/users/me/progress-photos",
+      { method: "POST", body: input, idempotencyKey, timeoutMs: 20_000 },
+    );
+  }
+
+  async completeProgressPhotoSet(
+    setId: string,
+  ): Promise<Result<ProgressPhotoSet, ApiError>> {
+    return this.requestEnvelope<ProgressPhotoSet>(
+      `/users/me/progress-photos/${encodeURIComponent(setId)}/complete`,
+      { method: "POST", timeoutMs: 20_000 },
+    );
+  }
+
+  /**
+   * PUT straight to the private bucket. No auth header: the presigned link
+   * is the credential, and its signature pins the key, type and size, so
+   * the headers the server returned are sent exactly as given.
+   */
+  async uploadProgressPhoto(
+    upload: ProgressPhotoUpload,
+    body: Blob,
+  ): Promise<Result<void, ApiError>> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 120_000);
+    try {
+      const response = await fetch(upload.url, {
+        method: upload.method,
+        headers: upload.headers,
+        body,
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        return fail(
+          mapHttpErrorToApiError(response.status, response.statusText, null),
+        );
+      }
+      return ok(undefined);
+    } catch (err) {
+      return fail({
+        kind: "api",
+        code: controller.signal.aborted ? "timeout" : "network",
+        message: err instanceof Error ? err.message : "Network error",
+      });
+    } finally {
+      clearTimeout(timer);
+    }
   }
 }
 

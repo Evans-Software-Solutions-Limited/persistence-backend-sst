@@ -18,6 +18,15 @@ jest.mock("expo-image-picker", () => ({
   launchImageLibraryAsync: jest.fn(),
 }));
 
+// The shared picker asks for permission through the native permission
+// queue (it waits for an active app on iOS); run requests straight through
+// and record that they went via the queue.
+const mockPermissionQueue = jest.fn((fn: () => Promise<unknown>) => fn());
+jest.mock("@/lib/nativePermissionQueue", () => ({
+  runNativePermissionRequest: (fn: () => Promise<unknown>) =>
+    mockPermissionQueue(fn),
+}));
+
 jest.mock("expo-image-manipulator", () => ({
   manipulateAsync: jest.fn(),
   SaveFormat: { JPEG: "jpeg" },
@@ -172,6 +181,8 @@ describe("useAvatarUpload", () => {
     await waitFor(() => {
       expect(result.current.cacheKey).toBe(1);
     });
+    // The camera permission prompt went through the shared native queue.
+    expect(mockPermissionQueue).toHaveBeenCalled();
     expect(mockedManipulator.manipulateAsync).toHaveBeenCalledWith(
       "file:///picked.jpg",
       [{ resize: { width: 512, height: 512 } }],

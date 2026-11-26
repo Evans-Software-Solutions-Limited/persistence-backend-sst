@@ -171,6 +171,13 @@ import type {
   FormResponsesPage,
   FormSchedule,
 } from "@/domain/models/coachForms";
+import type {
+  CreatedProgressPhotoSet,
+  CreateProgressPhotoSetInput,
+  ProgressPhotoSet,
+  ProgressPhotosResponse,
+  ProgressPhotoUpload,
+} from "@/domain/models/progressPhotos";
 
 /**
  * Port for remote SST API operations.
@@ -1789,6 +1796,32 @@ export interface ApiPort extends ReferralsPort {
     clientId: string,
     opts?: { formId?: string; cursor?: string; limit?: number },
   ): Promise<Result<FormResponsesPage, ApiError>>;
+
+  // -- PER-137 (APP-F1): progress photos, athlete side (BE-F1) --
+  //
+  // Deleting a set and the photo-sharing grant go through the offline queue
+  // (`progressPhotos.command.ts`). Uploads run in their own step
+  // (`processProgressPhotoUploads`), because files don't fit the JSON queue.
+
+  /** `GET /users/me/progress-photos`: ready sets with view links. */
+  getProgressPhotos(): Promise<Result<ProgressPhotosResponse, ApiError>>;
+  /**
+   * `POST /users/me/progress-photos` with `Idempotency-Key`: a retry with
+   * the same key returns the same set, with fresh links for poses not done.
+   */
+  createProgressPhotoSet(
+    input: CreateProgressPhotoSetInput,
+    idempotencyKey: string,
+  ): Promise<Result<CreatedProgressPhotoSet, ApiError>>;
+  /** `POST /users/me/progress-photos/:setId/complete`. Idempotent. */
+  completeProgressPhotoSet(
+    setId: string,
+  ): Promise<Result<ProgressPhotoSet, ApiError>>;
+  /** PUT one photo straight to storage with the link's exact headers. */
+  uploadProgressPhoto(
+    upload: ProgressPhotoUpload,
+    body: Blob,
+  ): Promise<Result<void, ApiError>>;
 }
 
 /**

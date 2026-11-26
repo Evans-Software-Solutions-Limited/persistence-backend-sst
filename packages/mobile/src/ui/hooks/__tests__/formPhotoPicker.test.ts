@@ -1,106 +1,56 @@
 import { Alert } from "react-native";
-import * as ImagePicker from "expo-image-picker";
-import {
-  chooseImageSource,
-  pickFormPhoto,
-  pickImage,
-} from "../formPhotoPicker";
+import { chooseImageSource, pickImage } from "../imagePicker";
+import { pickFormPhoto } from "../formPhotoPicker";
 
-jest.mock("expo-image-picker", () => ({
-  requestCameraPermissionsAsync: jest.fn(),
-  requestMediaLibraryPermissionsAsync: jest.fn(),
-  launchCameraAsync: jest.fn(),
-  launchImageLibraryAsync: jest.fn(),
+jest.mock("../imagePicker", () => ({
+  chooseImageSource: jest.fn(),
+  pickImage: jest.fn(),
 }));
 
-// The shared queue runs one native permission prompt at a time; here, now.
-jest.mock("@/lib/nativePermissionQueue", () => ({
-  runNativePermissionRequest: <T>(fn: () => Promise<T>) => fn(),
-}));
-
-const picker = ImagePicker as jest.Mocked<typeof ImagePicker>;
-type Button = { text: string; onPress?: () => void };
-type AlertOpts = { onDismiss?: () => void };
-
-/** Answer the next Alert by tapping the button with this text. */
-function tap(text: string | "dismiss") {
-  jest.spyOn(Alert, "alert").mockImplementationOnce((_t, _m, buttons, opts) => {
-    if (text === "dismiss")
-      return (opts as AlertOpts | undefined)?.onDismiss?.();
-    (buttons as Button[]).find((b) => b.text === text)?.onPress?.();
-  });
-}
-
-const granted = { granted: true } as never;
-const denied = { granted: false } as never;
+const choose = chooseImageSource as jest.Mock;
+const pick = pickImage as jest.Mock;
 
 beforeEach(() => {
   jest.restoreAllMocks();
-  picker.requestCameraPermissionsAsync.mockResolvedValue(granted);
-  picker.requestMediaLibraryPermissionsAsync.mockResolvedValue(granted);
-  picker.launchCameraAsync.mockResolvedValue({
-    canceled: false,
-    assets: [{ uri: "file://camera.jpg" }],
-  } as never);
-  picker.launchImageLibraryAsync.mockResolvedValue({
-    canceled: false,
-    assets: [{ uri: "file://library.jpg" }],
-  } as never);
+  choose.mockReset();
+  pick.mockReset();
 });
 
-describe("formPhotoPicker (the phone's own camera, PER-130)", () => {
-  it("the source alert: Camera, Photo Library, Cancel, dismiss", async () => {
-    tap("Camera");
-    await expect(chooseImageSource("Add a photo")).resolves.toBe("camera");
-    tap("Photo Library");
-    await expect(chooseImageSource("Add a photo")).resolves.toBe("library");
-    tap("Cancel");
-    await expect(chooseImageSource("Add a photo")).resolves.toBeNull();
-    tap("dismiss");
-    await expect(chooseImageSource("Add a photo")).resolves.toBeNull();
+describe("pickFormPhoto (the shared picker, PER-130)", () => {
+  it("returns the picked photo's file", async () => {
+    choose.mockResolvedValue("camera");
+    pick.mockResolvedValue({
+      status: "picked",
+      asset: { uri: "file://a.jpg" },
+    });
+    await expect(pickFormPhoto()).resolves.toBe("file://a.jpg");
+    expect(choose).toHaveBeenCalledWith("Add a photo");
+    expect(pick).toHaveBeenCalledWith("camera");
   });
 
-  it("asks permission, then opens the camera or the library", async () => {
-    await expect(pickImage("camera")).resolves.toEqual({
-      status: "picked",
-      uri: "file://camera.jpg",
-    });
-    await expect(pickImage("library")).resolves.toEqual({
-      status: "picked",
-      uri: "file://library.jpg",
-    });
-    picker.launchCameraAsync.mockResolvedValueOnce({ canceled: true } as never);
-    await expect(pickImage("camera")).resolves.toEqual({ status: "cancelled" });
-    picker.requestCameraPermissionsAsync.mockResolvedValueOnce(denied);
-    await expect(pickImage("camera")).resolves.toEqual({ status: "denied" });
+  it("nothing when the alert or the picker is cancelled", async () => {
+    choose.mockResolvedValueOnce(null);
+    await expect(pickFormPhoto()).resolves.toBeNull();
+    expect(pick).not.toHaveBeenCalled();
+    choose.mockResolvedValueOnce("library");
+    pick.mockResolvedValueOnce({ status: "cancelled" });
+    await expect(pickFormPhoto()).resolves.toBeNull();
   });
 
-  it("the whole flow: a photo, nothing, or the permission message", async () => {
-    tap("Camera");
-    await expect(pickFormPhoto()).resolves.toBe("file://camera.jpg");
-
-    tap("Cancel");
-    await expect(pickFormPhoto()).resolves.toBeNull();
-
-    picker.requestMediaLibraryPermissionsAsync.mockResolvedValueOnce(denied);
-    tap("Photo Library");
-    const shown = jest.spyOn(Alert, "alert");
-    await expect(pickFormPhoto()).resolves.toBeNull();
-    expect(shown).toHaveBeenLastCalledWith(
-      "Permission required",
-      "We need photo-library access to choose this photo.",
-    );
-
-    picker.requestCameraPermissionsAsync.mockResolvedValueOnce(denied);
-    tap("Camera");
+  it("explains a refused permission, for camera and library", async () => {
+    const shown = jest.spyOn(Alert, "alert").mockImplementation(() => {});
+    pick.mockResolvedValue({ status: "denied" });
+    choose.mockResolvedValueOnce("camera");
     await expect(pickFormPhoto()).resolves.toBeNull();
     expect(shown).toHaveBeenLastCalledWith(
       "Permission required",
       "We need camera access to take this photo.",
     );
-
-    picker.launchCameraAsync.mockResolvedValueOnce({ canceled: true } as never);
-    tap("Camera");
+    choose.mockResolvedValueOnce("library");
     await expect(pickFormPhoto()).resolves.toBeNull();
+    expect(shown).toHaveBeenLastCalledWith(
+      "Permission required",
+      "We need photo-library access to choose this photo.",
+    );
   });
 });
