@@ -18,6 +18,11 @@ import {
 import { WELCOME_MESSAGE_MAX_LENGTH } from "../setupSections";
 import { MAX_USER_MEALS } from "../../nutrition/userMeals/put/nutritionUserMealsPutHandler";
 import { planBodyFields } from "../../nutrition/mealPlans/mealPlansHandlers";
+import {
+  MAX_SET_TARGETS,
+  MAX_SET_TARGET_REPS,
+  setTargetsInputSchema,
+} from "../../workouts/shared/setTargets";
 
 /**
  * PER-147: the routes now read their limits from `@persistence/form-limits`,
@@ -55,5 +60,20 @@ describe("API limits shared with the app forms (PER-147)", () => {
         }
       ).properties.name.maxLength,
     ).toBe(80);
+  });
+
+  it("reps per set: 1 to 20 sets, 1 to 100 reps (PER-139)", () => {
+    expect(MAX_SET_TARGETS).toBe(20);
+    expect(MAX_SET_TARGET_REPS).toBe(100);
+    const list = (
+      setTargetsInputSchema as unknown as {
+        anyOf: {
+          maxItems?: number;
+          items?: { properties: { reps: { maximum: number } } };
+        }[];
+      }
+    ).anyOf[0];
+    expect(list.maxItems).toBe(20);
+    expect(list.items?.properties.reps.maximum).toBe(100);
   });
 });

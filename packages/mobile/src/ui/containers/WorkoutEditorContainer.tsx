@@ -1,6 +1,7 @@
 import { router, useLocalSearchParams } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert } from "react-native";
+import { useForm } from "react-hook-form";
 import { updateWorkoutCommand } from "@/application/commands/update-workout.command";
 import type {
   UpdateWorkoutInput,
@@ -9,10 +10,17 @@ import type {
 } from "@/domain/models/workout";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
+import { useLastTimeHints } from "@/ui/hooks/useLastTimeHints";
+import { setRepsOf } from "@/domain/services/setTargets.service";
+import {
+  workoutSaveErrors,
+  workoutSaveResolver,
+} from "@/ui/forms/workoutForms";
 import { useWorkoutLibrary } from "@/ui/hooks/useWorkoutLibrary";
 import { useWorkout } from "@/ui/hooks/useWorkout";
 import {
   EMPTY_FORM_STATE,
+  sameSetReps,
   useWorkoutForm,
   type WorkoutFormExercise,
   type WorkoutFormState,
@@ -58,6 +66,21 @@ export function WorkoutEditorContainer() {
     [],
   );
   const form = useWorkoutForm(EMPTY_FORM_STATE, generateId);
+  // Save is a react-hook-form (PER-139, the PER-147 pattern): the plan in
+  // the reducer is its context, checked by the workout save schema.
+  const saveForm = useForm<Record<string, never>>({
+    resolver: workoutSaveResolver,
+    context: form.state,
+  });
+  const saveErrors = useMemo(() => workoutSaveErrors(form.state), [form.state]);
+  const lastTimeHints = useLastTimeHints(
+    form.state.exercises.map((ex) => ex.exercise_id),
+  );
+  // The loaded plan starts collapsed ("3 sets · 12, 10, 10"); exercises
+  // added while editing start open.
+  const [collapsedByDefault, setCollapsedByDefault] = useState<
+    ReadonlySet<string>
+  >(() => new Set());
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hasAttemptedSubmit, setHasAttemptedSubmit] = useState(false);
@@ -78,6 +101,7 @@ export function WorkoutEditorContainer() {
     hydratedForRef.current = key;
     const hydrated = toFormState(detail.workout);
     hydratedExercisesRef.current = hydrated.exercises;
+    setCollapsedByDefault(new Set(hydrated.exercises.map((ex) => ex.id)));
     form.reset(hydrated);
     // Depend on form.reset directly — `form` itself rebuilds every
     // render but its method refs are stable.
@@ -106,13 +130,8 @@ export function WorkoutEditorContainer() {
     [form.addSuperset],
   );
 
-  const onSubmit = useCallback(() => {
+  const save = useCallback(() => {
     if (!workoutId) return;
-    setHasAttemptedSubmit(true);
-    setSubmitError(null);
-
-    if (form.state.name.trim().length === 0) return;
-    if (form.state.exercises.length === 0) return;
     if (!userId) {
       setSubmitError("Sign in to save changes");
       return;
@@ -150,6 +169,13 @@ export function WorkoutEditorContainer() {
     form.state,
     markWorkoutsChanged,
   ]);
+
+  const onSubmit = useCallback(() => {
+    if (!workoutId) return;
+    setHasAttemptedSubmit(true);
+    setSubmitError(null);
+    void saveForm.handleSubmit(save)();
+  }, [workoutId, saveForm, save]);
 
   const onCancel = useCallback(() => {
     if (!form.isDirty) {
@@ -215,6 +241,13 @@ export function WorkoutEditorContainer() {
       onAddSuperset={onAddSuperset}
       onRemoveExercise={form.removeExercise}
       onExerciseConfigChange={form.setExerciseField}
+      onSetReps={form.setSetReps}
+      onAddSet={form.addSet}
+      onRemoveSet={form.removeSet}
+      onSameRepsForAll={form.sameRepsForAll}
+      lastTimeHints={lastTimeHints}
+      collapsedByDefault={collapsedByDefault}
+      saveErrors={saveErrors}
       onMoveExercise={form.moveExercise}
       onReorderExercise={form.reorderExercise}
       onSubmit={onSubmit}
@@ -245,6 +278,8 @@ function toFormExercise(ex: WorkoutExercise): WorkoutFormExercise {
     target_reps_max: ex.targetRepsMax,
     rest_seconds: ex.restSeconds ?? 60,
     superset_group: ex.supersetGroup,
+    // Per-set reps (PER-139). None = the old range, left exactly as saved.
+    set_reps: setRepsOf(ex),
   };
 }
 
@@ -266,7 +301,8 @@ function planChanged(
       ex.target_sets !== prev.target_sets ||
       ex.target_reps_min !== prev.target_reps_min ||
       ex.target_reps_max !== prev.target_reps_max ||
-      ex.rest_seconds !== prev.rest_seconds
+      ex.rest_seconds !== prev.rest_seconds ||
+      !sameSetReps(ex.set_reps, prev.set_reps)
     );
   });
 }
@@ -304,6 +340,12 @@ function toUpdateWorkoutInput(
             targetRepsMin: ex.target_reps_min,
             targetRepsMax: ex.target_reps_max,
             restSeconds: ex.rest_seconds,
+            // Per-set reps (PER-139). An exercise still on the old range is
+            // sent without `setTargets`, so the server's keep-the-stored-rows
+            // rule applies, as for a 1.2.0 phone.
+            ...(ex.set_reps
+              ? { setTargets: ex.set_reps.map((reps) => ({ reps })) }
+              : {}),
           })),
         }
       : {}),

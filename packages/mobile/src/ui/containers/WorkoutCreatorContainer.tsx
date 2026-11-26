@@ -1,10 +1,17 @@
 import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { Alert } from "react-native";
+import { useForm } from "react-hook-form";
 import { createWorkoutCommand } from "@/application/commands/create-workout.command";
 import type { CreateWorkoutInput } from "@/domain/models/workout";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
+import { useLastTimeHints } from "@/ui/hooks/useLastTimeHints";
+import { applyServerErrors, messageAt } from "@/shared/form";
+import {
+  workoutSaveErrors,
+  workoutSaveResolver,
+} from "@/ui/forms/workoutForms";
 import { useWorkoutLibrary } from "@/ui/hooks/useWorkoutLibrary";
 import {
   EMPTY_FORM_STATE,
@@ -60,6 +67,15 @@ export function WorkoutCreatorContainer() {
     [isCoachContext],
   );
   const form = useWorkoutForm(initialFormState, generateId);
+  // Save is a react-hook-form (PER-139, the PER-147 pattern): the plan in
+  // the reducer is its context, checked by the workout save schema.
+  const saveForm = useForm<Record<string, never>>({
+    resolver: workoutSaveResolver,
+    context: form.state,
+  });
+  const lastTimeHints = useLastTimeHints(
+    form.state.exercises.map((ex) => ex.exercise_id),
+  );
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hasAttemptedSubmit, setHasAttemptedSubmit] = useState(false);
@@ -90,12 +106,7 @@ export function WorkoutCreatorContainer() {
     [form.addSuperset],
   );
 
-  const onSubmit = useCallback(() => {
-    setHasAttemptedSubmit(true);
-    setSubmitError(null);
-
-    if (form.state.name.trim().length === 0) return;
-    if (form.state.exercises.length === 0) return;
+  const save = useCallback(() => {
     if (!userId) {
       setSubmitError("Sign in to save workouts");
       return;
@@ -112,7 +123,17 @@ export function WorkoutCreatorContainer() {
         try {
           const created = await api.createWorkout(input);
           if (!created.ok) {
-            setSubmitError(created.error.message ?? "Failed to create workout");
+            // The server has the final say: a name it refuses goes on the
+            // name field; anything else shows the banner as before.
+            if (
+              !applyServerErrors(created.error, saveForm.setError, {
+                name: { field: "name" as never },
+              })
+            ) {
+              setSubmitError(
+                created.error.message ?? "Failed to create workout",
+              );
+            }
             return;
           }
           // This path is online-only and writes NOTHING to the local cache, so
@@ -183,7 +204,25 @@ export function WorkoutCreatorContainer() {
     assignClientId,
     form.state,
     markWorkoutsChanged,
+    saveForm.setError,
   ]);
+
+  const onSubmit = useCallback(() => {
+    setHasAttemptedSubmit(true);
+    setSubmitError(null);
+    void saveForm.handleSubmit(save)();
+  }, [saveForm, save]);
+
+  // The schema's messages for what's on screen now, plus a server refusal.
+  const schemaErrors = useMemo(
+    () => workoutSaveErrors(form.state),
+    [form.state],
+  );
+  const serverName = messageAt(saveForm.formState.errors, "name");
+  const saveErrors =
+    serverName && saveForm.formState.errors.name?.type === "server"
+      ? { ...schemaErrors, name: schemaErrors.name ?? serverName }
+      : schemaErrors;
 
   const onCancel = useCallback(() => {
     if (!form.isDirty) {
@@ -222,6 +261,12 @@ export function WorkoutCreatorContainer() {
       onAddSuperset={onAddSuperset}
       onRemoveExercise={form.removeExercise}
       onExerciseConfigChange={form.setExerciseField}
+      onSetReps={form.setSetReps}
+      onAddSet={form.addSet}
+      onRemoveSet={form.removeSet}
+      onSameRepsForAll={form.sameRepsForAll}
+      lastTimeHints={lastTimeHints}
+      saveErrors={saveErrors}
       onMoveExercise={form.moveExercise}
       onReorderExercise={form.reorderExercise}
       onSubmit={onSubmit}
@@ -247,6 +292,10 @@ function toCreateWorkoutInput(state: WorkoutFormState): CreateWorkoutInput {
       targetRepsMin: ex.target_reps_min,
       targetRepsMax: ex.target_reps_max,
       restSeconds: ex.rest_seconds,
+      // Per-set reps (PER-139); the old columns above are derived from them.
+      ...(ex.set_reps
+        ? { setTargets: ex.set_reps.map((reps) => ({ reps })) }
+        : {}),
     })),
   };
 }

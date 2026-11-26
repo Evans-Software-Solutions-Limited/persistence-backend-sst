@@ -45,6 +45,7 @@ const buildWorkoutExercise = (
   targetDurationSeconds: null,
   restSeconds: overrides.restSeconds ?? 60,
   notes: null,
+  ...(overrides.setTargets ? { setTargets: overrides.setTargets } : {}),
   exercise: overrides.exercise ?? {
     id: "ex-1",
     name: "Bench Press",
@@ -315,17 +316,29 @@ describe("WorkoutEditorContainer", () => {
       expect(getByTestId("workout-name-input").props.value).toBe("Push Day"),
     );
 
-    // Change the first exercise's sets — a real plan edit. The stepper commits
-    // on blur (see ExerciseConfigCard), so type-then-blur is the real gesture.
-    fireEvent.changeText(getAllById("sets-input")[0], "5");
-    fireEvent(getAllById("sets-input")[0], "blur");
+    // The loaded plan starts collapsed, reading as it did before PER-139.
+    expect(getAllById("set-summary")[0].props.children).toBe(
+      "3 sets · 8–12 reps",
+    );
+    // Add a set — a real plan edit. An exercise on the old range keeps its
+    // range (no per-set reps until a set's reps change).
+    fireEvent.press(getAllById("toggle-button")[0]);
+    expect(getAllById("set-0-reps")[0].props.children).toBe("8–12");
+    fireEvent.press(getAllById("add-set")[0]);
     fireEvent.press(getByTestId("save-workout-button"));
     await waitFor(() => expect(mockRouterBack).toHaveBeenCalledTimes(1));
 
-    const payload = JSON.parse(
-      storage.getPendingMutations()[0].payload,
-    ) as Record<string, unknown>;
+    const payload = JSON.parse(storage.getPendingMutations()[0].payload) as {
+      exercises: Record<string, unknown>[];
+      estimatedDurationMinutes?: number;
+    };
     expect(Array.isArray(payload.exercises)).toBe(true);
+    expect(payload.exercises[0]).toMatchObject({
+      targetSets: 4,
+      targetRepsMin: 8,
+      targetRepsMax: 12,
+    });
+    expect(payload.exercises[0]).not.toHaveProperty("setTargets");
     // Still omitted — the server derives it from the plan it just received.
     expect(payload.estimatedDurationMinutes).toBeUndefined();
   });
@@ -544,7 +557,56 @@ describe("WorkoutEditorContainer", () => {
     );
   }, 30_000);
 
-  it("surfaces command validation failure as submitError", async () => {
+  it("set editor (PER-139): a 10/8/8 workout loads, edits and saves per set", async () => {
+    const api = new InMemoryApiAdapter();
+    const cached = buildWorkout({
+      exercises: [
+        buildWorkoutExercise({
+          targetSets: 3,
+          targetRepsMin: 8,
+          targetRepsMax: 10,
+          setTargets: [{ reps: 10 }, { reps: 8 }, { reps: 8 }],
+        }),
+      ],
+    });
+    jest.spyOn(api, "getWorkout").mockResolvedValue(ok(cached));
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheWorkoutDetail("user-1", cached);
+
+    const { findByText, getByTestId } = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <WorkoutEditorContainer />),
+    );
+    expect(await findByText("Edit Workout")).toBeTruthy();
+    await waitFor(() =>
+      expect(getByTestId("set-summary").props.children).toBe(
+        "3 sets · 10, 8, 8",
+      ),
+    );
+    fireEvent.press(getByTestId("exercise-header"));
+    expect(getByTestId("set-0-reps").props.children).toBe("10");
+    expect(getByTestId("set-2-reps").props.children).toBe("8");
+
+    fireEvent.press(getByTestId("set-2-dec")); // 10, 8, 7
+    fireEvent.press(getByTestId("save-workout-button"));
+    await waitFor(() => expect(mockRouterBack).toHaveBeenCalledTimes(1));
+
+    const payload = JSON.parse(storage.getPendingMutations()[0].payload) as {
+      exercises: Record<string, unknown>[];
+    };
+    expect(payload.exercises[0]).toMatchObject({
+      setTargets: [{ reps: 10 }, { reps: 8 }, { reps: 7 }],
+      targetSets: 3,
+      targetRepsMin: 7,
+      targetRepsMax: 10,
+    });
+    // The cached copy (offline display) carries the new per-set reps.
+    expect(
+      storage.getCachedWorkoutDetail("user-1", "w-1")?.workout.exercises[0]
+        .setTargets,
+    ).toEqual([{ reps: 10 }, { reps: 8 }, { reps: 7 }]);
+  });
+
+  it("set editor: changing a set's reps turns an old range into per-set reps", async () => {
     const api = new InMemoryApiAdapter();
     jest.spyOn(api, "getWorkout").mockResolvedValue(ok(buildWorkout()));
     const storage = new InMemoryStorageAdapter();
@@ -557,15 +619,60 @@ describe("WorkoutEditorContainer", () => {
     await waitFor(() =>
       expect(getByTestId("workout-name-input").props.value).toBe("Push Day"),
     );
+    fireEvent.press(getByTestId("toggle-button"));
+    // 8–12 steps from its top: set 2 becomes 11, the others 12.
+    fireEvent.press(getByTestId("set-1-dec"));
+    expect(getByTestId("set-0-reps").props.children).toBe("12");
+    expect(getByTestId("set-1-reps").props.children).toBe("11");
+    fireEvent.press(getByTestId("save-workout-button"));
+    await waitFor(() => expect(mockRouterBack).toHaveBeenCalledTimes(1));
 
-    // targetRepsMin > targetRepsMax — passes container pre-check, fails
-    // `updateWorkoutCommand`'s lightweight validation.
-    fireEvent.changeText(getByTestId("reps-min-input"), "20");
-    fireEvent(getByTestId("reps-min-input"), "blur");
+    const payload = JSON.parse(storage.getPendingMutations()[0].payload) as {
+      exercises: Record<string, unknown>[];
+    };
+    expect(payload.exercises[0]).toMatchObject({
+      setTargets: [{ reps: 12 }, { reps: 11 }, { reps: 12 }],
+      targetSets: 3,
+      targetRepsMin: 11,
+      targetRepsMax: 12,
+    });
+  });
+
+  it("Save is refused by the schema when an exercise has more than 20 sets", async () => {
+    const api = new InMemoryApiAdapter();
+    const cached = buildWorkout({
+      exercises: [buildWorkoutExercise({ targetSets: 25 })],
+    });
+    jest.spyOn(api, "getWorkout").mockResolvedValue(ok(cached));
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheWorkoutDetail("user-1", cached);
+
+    const { findByText, getByTestId, queryByText } = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <WorkoutEditorContainer />),
+    );
+    expect(await findByText("Edit Workout")).toBeTruthy();
+    await waitFor(() =>
+      expect(getByTestId("workout-name-input").props.value).toBe("Push Day"),
+    );
+    fireEvent.press(getByTestId("toggle-button"));
+    // An old 25-set range can't add more, and saves as it is until edited.
+    expect(getByTestId("add-set").props.accessibilityState).toMatchObject({
+      disabled: true,
+    });
+    fireEvent.press(getByTestId("set-0-inc"));
     fireEvent.press(getByTestId("save-workout-button"));
 
-    expect(await findByText("Min reps cannot exceed max reps")).toBeTruthy();
+    expect(await findByText("Use 1 to 20 sets.")).toBeTruthy();
     expect(mockRouterBack).not.toHaveBeenCalled();
+    expect(storage.getPendingMutations()).toHaveLength(0);
+
+    // Removing sets down to 20 clears it, and Save goes through.
+    for (let i = 0; i < 5; i += 1) {
+      fireEvent.press(getByTestId("set-0-remove"));
+    }
+    await waitFor(() => expect(queryByText("Use 1 to 20 sets.")).toBeNull());
+    fireEvent.press(getByTestId("save-workout-button"));
+    await waitFor(() => expect(mockRouterBack).toHaveBeenCalledTimes(1));
   });
 
   it("dirty cancel + Discard tap invokes router.back", async () => {

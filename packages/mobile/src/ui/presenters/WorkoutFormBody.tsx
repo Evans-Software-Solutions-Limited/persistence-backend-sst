@@ -24,6 +24,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AddExercisePopover } from "@/ui/components/workouts/AddExercisePopover";
 import { ExerciseConfigCard } from "@/ui/components/workouts/ExerciseConfigCard";
 import { buildSupersetLetterMap } from "@/ui/presenters/supersetLetters";
+import {
+  workoutSaveErrors,
+  type WorkoutSaveErrors,
+} from "@/ui/forms/workoutForms";
 import type {
   WorkoutFormExercise,
   WorkoutFormState,
@@ -106,7 +110,36 @@ const VISIBILITY_ICON: Record<
   public: IconUser,
 };
 
-export type WorkoutFormBodyProps = {
+/**
+ * The set editor (PER-139, canvas C5f) — shared by Create and Edit workout
+ * (and the coach through `?ctx=coach`). Optional so a caller that doesn't
+ * wire it still renders the cards.
+ */
+export type WorkoutSetEditorProps = {
+  readonly onSetReps?: (
+    exerciseId: string,
+    setIndex: number,
+    reps: number,
+  ) => void;
+  readonly onAddSet?: (exerciseId: string) => void;
+  readonly onRemoveSet?: (exerciseId: string, setIndex: number) => void;
+  readonly onSameRepsForAll?: (exerciseId: string) => void;
+  /** "Last time 92.5 kg × 8, 6, 6, 5", keyed by library `exercise_id`. */
+  readonly lastTimeHints?: Readonly<Record<string, string>>;
+  /**
+   * Form exercise ids that start collapsed (the editor's loaded plan reads
+   * "3 sets · 12, 10, 10"); everything else, e.g. a newly added exercise,
+   * starts open.
+   */
+  readonly collapsedByDefault?: ReadonlySet<string>;
+  /**
+   * Save's schema messages (react-hook-form, `ui/forms/workoutForms.ts`),
+   * shown once Save has been tried.
+   */
+  readonly saveErrors?: WorkoutSaveErrors;
+};
+
+export type WorkoutFormBodyProps = WorkoutSetEditorProps & {
   readonly formState: WorkoutFormState;
   readonly isSubmitting: boolean;
   readonly hasAttemptedSubmit: boolean;
@@ -174,9 +207,24 @@ export function WorkoutFormBody({
   backTestID,
   saveLabel,
   ownerToggleSub,
+  onSetReps,
+  onAddSet,
+  onRemoveSet,
+  onSameRepsForAll,
+  lastTimeHints,
+  collapsedByDefault,
+  saveErrors,
 }: WorkoutFormBodyProps) {
   const insets = useSafeAreaInsets();
   const exercises = formState.exercises;
+  /** Cards the user has opened or closed; the rest follow `collapsedByDefault`. */
+  const [expandedOverrides, setExpandedOverrides] = useState<
+    Record<string, boolean>
+  >({});
+  const isExpanded = (id: string) =>
+    expandedOverrides[id] ?? !collapsedByDefault?.has(id);
+  const toggleExpanded = (id: string) =>
+    setExpandedOverrides((prev) => ({ ...prev, [id]: !isExpanded(id) }));
   /**
    * Reorder mode (PER-67, Brad 10 Nov 2026): the Reorder button beside the
    * Exercises heading swaps the cards for compact rows with drag handles;
@@ -212,10 +260,10 @@ export function WorkoutFormBody({
       );
     }
   }
-  const nameError =
-    hasAttemptedSubmit && formState.name.trim().length === 0
-      ? "Workout name is required"
-      : null;
+  // Save's schema messages (react-hook-form's schema), once Save has been
+  // tried; worked out here when the container doesn't pass them.
+  const errors = saveErrors ?? workoutSaveErrors(formState);
+  const nameError = hasAttemptedSubmit ? (errors.name ?? null) : null;
 
   // Only Private/Friends are user-selectable (v1 — see VISIBILITY_OPTIONS).
   // When editing an already-public workout, append a disabled read-only
@@ -282,6 +330,22 @@ export function WorkoutFormBody({
                       : undefined
                   }
                   supersetLeadExercise={supersetExercises[0]}
+                  expanded={isExpanded(exercise.id)}
+                  onToggleExpanded={() => toggleExpanded(exercise.id)}
+                  onSetReps={(setIndex, reps) =>
+                    onSetReps?.(exercise.id, setIndex, reps)
+                  }
+                  onAddSet={() => onAddSet?.(exercise.id)}
+                  onRemoveSet={(setIndex) =>
+                    onRemoveSet?.(exercise.id, setIndex)
+                  }
+                  onSameRepsForAll={() => onSameRepsForAll?.(exercise.id)}
+                  lastTimeHint={lastTimeHints?.[exercise.exercise_id] ?? null}
+                  error={
+                    hasAttemptedSubmit
+                      ? (errors.byExercise[index] ?? null)
+                      : null
+                  }
                 />
               </View>
             );
@@ -533,7 +597,7 @@ export function WorkoutFormBody({
         color={hasAttemptedSubmit ? "$error" : "$text"}
       >
         {hasAttemptedSubmit
-          ? "Please add at least one exercise"
+          ? (errors.exercises ?? "No exercises added")
           : "No exercises added"}
       </Text>
       <Text fontFamily="$body" fontSize={13} color="$text3" textAlign="center">
