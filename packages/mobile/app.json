@@ -108,7 +108,8 @@
         {
           "initialOrientation": "PORTRAIT_UP"
         }
-      ]
+      ],
+      "./plugins/withAndroidPortraitActivity"
     ],
     "experiments": {
       "typedRoutes": true

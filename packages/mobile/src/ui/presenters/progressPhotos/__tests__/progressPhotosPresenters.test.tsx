@@ -13,6 +13,13 @@ import {
   type ProgressPhotoViewerPresenterProps,
 } from "../ProgressPhotoViewerPresenter";
 
+// The viewer picks its bar layout from the window's shape.
+const mockWindow = { width: 390, height: 844 };
+jest.mock("react-native/Libraries/Utilities/useWindowDimensions", () => ({
+  __esModule: true,
+  default: () => ({ ...mockWindow, scale: 3, fontScale: 1 }),
+}));
+
 const tiles = (id: string) =>
   (["Front", "Side", "Back"] as const).map((pose) => ({
     pose,
@@ -196,7 +203,10 @@ describe("ProgressPhotoViewerPresenter (Y3c, portrait)", () => {
     );
     expect(s.getByLabelText("Front photo, 25 Oct 2026, 82.4 kg")).toBeTruthy();
     expect(s.getByText("14.8%")).toBeTruthy();
-    expect(s.getByTestId("photo-viewer-stats")).toBeTruthy();
+    // Still portrait (1.2.0, iPad multitasking, a failed lock): the numbers
+    // sit on a second row so Delete and Add stay on screen.
+    expect(s.getByTestId("photo-viewer-stats-row2")).toBeTruthy();
+    expect(s.queryByTestId("photo-viewer-stats")).toBeNull();
     expect(s.getByText("Latest")).toBeTruthy();
     expect(s.queryByTestId("photo-viewer-listbox")).toBeNull();
 
@@ -208,6 +218,25 @@ describe("ProgressPhotoViewerPresenter (Y3c, portrait)", () => {
     expect(p.onClose).toHaveBeenCalled();
     expect(p.onAdd).toHaveBeenCalled();
     expect(p.onDelete).toHaveBeenCalled();
+  });
+
+  it("in landscape puts the numbers on the same bar as the dropdown, as on the canvas", () => {
+    mockWindow.width = 844;
+    mockWindow.height = 390;
+    try {
+      const p = props();
+      const s = renderWithTheme(<ProgressPhotoViewerPresenter {...p} />);
+      expect(s.getByTestId("photo-viewer-stats")).toBeTruthy();
+      expect(s.queryByTestId("photo-viewer-stats-row2")).toBeNull();
+      expect(s.getByText("14.8%")).toBeTruthy();
+      fireEvent.press(s.getByTestId("photo-viewer-delete"));
+      fireEvent.press(s.getByTestId("photo-viewer-add"));
+      expect(p.onDelete).toHaveBeenCalled();
+      expect(p.onAdd).toHaveBeenCalled();
+    } finally {
+      mockWindow.width = 390;
+      mockWindow.height = 844;
+    }
   });
 
   it("the open dropdown switches pose and date", () => {
