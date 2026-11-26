@@ -15,6 +15,7 @@ import { getDb } from "@persistence/db/client";
 import { SYSTEM_USER_ID } from "./exerciseRepository";
 import { hasLapsed } from "../entitlement/assertEntitlement";
 import { ProgramAssignmentRepository } from "./programAssignmentRepository";
+import { isNextOrNotSequenced } from "../programs/sequenceProgress";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -524,9 +525,14 @@ export class DashboardRepository {
             eq(workoutAssignments.clientId, userId),
             eq(workoutAssignments.status, "assigned"),
             eq(workoutAssignments.showInPlan, true),
+            // PER-112: a sequence programme (all undated) shows only Next.
+            isNextOrNotSequenced,
           ),
         )
-        .orderBy(sql`${workoutAssignments.dueDate} asc nulls last`)
+        .orderBy(
+          sql`${workoutAssignments.dueDate} asc nulls last`,
+          sql`${workoutAssignments.sequenceIndex} asc nulls last`,
+        )
         .limit(limit),
       // 3. Default templates — system-authored or public library entries.
       db
