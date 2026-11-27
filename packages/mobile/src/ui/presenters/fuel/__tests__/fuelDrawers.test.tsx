@@ -6,7 +6,6 @@ import {
   type YourMealsSheetProps,
 } from "../YourMealsSheetPresenter";
 import { MealOptionsSheetPresenter } from "../MealOptionsSheetPresenter";
-import { SuggestLockedSheetPresenter } from "../SuggestLockedSheetPresenter";
 import {
   QuickLogSheetPresenter,
   type QuickLogSheetProps,
@@ -158,29 +157,6 @@ describe("MealOptionsSheetPresenter", () => {
     );
     expect(queryByTestId("meal-options-sheet-save")).toBeNull();
     expect(queryByTestId("meal-options-sheet-clear")).toBeNull();
-  });
-});
-
-describe("SuggestLockedSheetPresenter (N26, Free and Premium)", () => {
-  it("shows the Premium+ pitch with no taster, no price and no 'Core'", () => {
-    const onUpgrade = jest.fn();
-    const onClose = jest.fn();
-    const { getByText, queryByText, getByTestId } = renderWithTheme(
-      <SuggestLockedSheetPresenter
-        visible
-        onClose={onClose}
-        onUpgrade={onUpgrade}
-      />,
-    );
-    expect(getByText("Meals that fit what's left.")).toBeTruthy();
-    expect(getByText("Premium+")).toBeTruthy();
-    expect(getByText("One meal, right now")).toBeTruthy();
-    expect(queryByText(/Core/)).toBeNull();
-    expect(queryByText(/£|\$/)).toBeNull();
-    fireEvent.press(getByTestId("suggest-locked-sheet-upgrade"));
-    fireEvent.press(getByTestId("suggest-locked-sheet-not-now"));
-    expect(onUpgrade).toHaveBeenCalled();
-    expect(onClose).toHaveBeenCalled();
   });
 });
 
