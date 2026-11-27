@@ -233,6 +233,11 @@ import type {
   WaterToday,
 } from "@/domain/models/nutrition";
 import type { InvitePreview, MyCoaching } from "@/domain/models/myCoaching";
+import type {
+  AthleteFormRequests,
+  FormAnswerUpload,
+  FormResponseSubmit,
+} from "@/domain/models/athleteForms";
 import {
   ok,
   fail,
@@ -2588,6 +2593,74 @@ export class SSTApiAdapter implements ApiPort {
     return this.requestEnvelope<MyCoaching>("/users/me/coaching");
   }
 
+  // -- PER-130 (APP-C2): the athlete's coach forms --
+
+  async getMyFormRequests(): Promise<Result<AthleteFormRequests, ApiError>> {
+    return this.requestEnvelope<AthleteFormRequests>("/users/me/form-requests");
+  }
+
+  async submitFormResponse(
+    requestId: string,
+    answers: Record<string, unknown>,
+    idempotencyKey: string,
+  ): Promise<Result<FormResponseSubmit, ApiError>> {
+    return this.requestRaw<unknown>(
+      `/users/me/form-requests/${encodeURIComponent(requestId)}/response`,
+      {
+        method: "POST",
+        body: { answers },
+        idempotencyKey,
+        timeoutMs: 20_000,
+      },
+    );
+  }
+
+  async createFormAnswerUpload(
+    bytes: number,
+    idempotencyKey: string,
+  ): Promise<Result<FormAnswerUpload, ApiError>> {
+    return this.requestEnvelope<FormAnswerUpload>("/users/me/media/uploads", {
+      method: "POST",
+      body: { purpose: "form_answer", contentType: "image/jpeg", bytes },
+      idempotencyKey,
+      timeoutMs: 20_000,
+    });
+  }
+
+  /**
+   * PUT straight to the private bucket. No auth header: the presigned link
+   * is the credential, and its signature pins the key, type and size.
+   */
+  async putPresignedUpload(
+    upload: NonNullable<FormAnswerUpload["upload"]>,
+    body: Blob,
+  ): Promise<Result<void, ApiError>> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 120_000);
+    try {
+      const response = await fetch(upload.url, {
+        method: upload.method,
+        headers: upload.headers,
+        body,
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        return fail(
+          mapHttpErrorToApiError(response.status, response.statusText, null),
+        );
+      }
+      return ok(undefined);
+    } catch (err) {
+      return fail({
+        kind: "api",
+        code: controller.signal.aborted ? "timeout" : "network",
+        message: err instanceof Error ? err.message : "Network error",
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   async getInvitePreview(
     code: string,
   ): Promise<Result<InvitePreview, AcceptInviteCodeApiError>> {
@@ -2913,6 +2986,10 @@ export class SSTApiAdapter implements ApiPort {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };
+    // PER-130: honoured here too, as in `request()`.
+    if (options.idempotencyKey !== undefined) {
+      headers["Idempotency-Key"] = options.idempotencyKey;
+    }
     // Per-request abort wiring, mirroring `request()`. Added for the Loadout
     // model-backed calls, which need the full API Gateway window AND the domain
     // `code` off the body — before this, `timeoutMs` was silently dropped here, so

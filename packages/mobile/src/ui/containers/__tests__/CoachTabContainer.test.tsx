@@ -4,6 +4,11 @@ import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-s
 import type { AuthSession } from "@/domain/ports/auth.port";
 import type { MyCoach } from "@/domain/models/myCoaching";
 import { ok } from "@/shared/errors";
+import { InMemoryNetInfoAdapter } from "@/adapters/netInfo/__tests__/InMemoryNetInfoAdapter";
+import type {
+  AthleteFormRequest,
+  LocalFormState,
+} from "@/domain/models/athleteForms";
 import type { Adapters } from "@/shared/types";
 import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
@@ -13,15 +18,15 @@ import {
 } from "@/ui/containers/CoachTabContainer";
 
 const mockParams: { coachId?: string; nav?: string } = {};
-const mockFocus: { cb: (() => void) | null } = { cb: null };
+const mockFocus: { cb: (() => void | (() => void)) | null } = { cb: null };
+const mockPush = jest.fn();
 jest.mock("expo-router", () => ({
+  useRouter: () => ({ push: mockPush }),
   useLocalSearchParams: () => mockParams,
-  useFocusEffect: (cb: () => void) => {
+  useFocusEffect: (cb: () => void | (() => void)) => {
     const React = jest.requireActual("react") as typeof import("react");
     mockFocus.cb = cb;
-    React.useEffect(() => {
-      cb();
-    }, [cb]);
+    React.useEffect(() => cb(), [cb]);
   },
 }));
 
@@ -51,10 +56,32 @@ function coach(id: string, name: string, since: string | null): MyCoach {
 const ELLIE = coach("rel-ellie", "Ellie Hart", "2026-08-04T09:00:00Z");
 const MARCUS = coach("rel-marcus", "Marcus Lee", "2026-09-12T09:00:00Z");
 
-function setup(opts: { server: MyCoach[]; cached?: MyCoach[] | null }) {
+function setup(opts: {
+  server: MyCoach[];
+  cached?: MyCoach[] | null;
+  requests?: AthleteFormRequest[];
+  locals?: LocalFormState[];
+  online?: boolean;
+}) {
   const api = new InMemoryApiAdapter();
   api.myCoaching = { coaches: opts.server, asOf: "2026-11-23T09:00:00Z" };
+  api.formRequests = { requests: opts.requests ?? [], asOf: "a" };
   const storage = new InMemoryStorageAdapter();
+  for (const l of opts.locals ?? []) {
+    storage.saveLocalFormState("athlete-1", l);
+    // A form waiting to send has a live queue row (its response).
+    if (l.submittedAt && !l.sentAt) {
+      storage.enqueueMutation({
+        entityType: "form_response",
+        entityId: `athlete-1:${l.requestId}`,
+        operation: "create",
+        payload: { answers: {} },
+        endpoint: `/users/me/form-requests/${l.requestId}/response`,
+        method: "POST",
+      });
+    }
+  }
+  const netInfo = new InMemoryNetInfoAdapter(opts.online ?? true);
   if (opts.cached) {
     storage.cacheMyCoaches("athlete-1", {
       coaches: opts.cached,
@@ -82,7 +109,7 @@ function setup(opts: { server: MyCoach[]; cached?: MyCoach[] | null }) {
     storage,
     health: {} as Adapters["health"],
     notifications: {} as Adapters["notifications"],
-    netInfo: {} as Adapters["netInfo"],
+    netInfo,
   };
   const tree = () => (
     <AdapterProvider adapters={adapters}>
@@ -92,7 +119,7 @@ function setup(opts: { server: MyCoach[]; cached?: MyCoach[] | null }) {
   const utils = renderWithTheme(tree());
   /** Re-render as a new navigation to the (still mounted) tab would. */
   const renavigate = () => utils.rerender(tree());
-  return { api, storage, renavigate, ...utils };
+  return { api, storage, netInfo, renavigate, ...utils };
 }
 
 describe("CoachTabContainer", () => {
@@ -210,11 +237,12 @@ describe("CoachTabContainer", () => {
   it("marks every not-yet-built C2e section as in development", async () => {
     const utils = setup({ server: [ELLIE] });
     await act(async () => {});
-    for (const key of ["forms", "messages", "plan", "resources"]) {
+    for (const key of ["messages", "plan", "resources"]) {
       expect(utils.getByTestId(`coach-tab-dev-${key}`)).toBeTruthy();
     }
     expect(utils.getByText("Your plan from Ellie")).toBeTruthy();
-    expect(utils.getAllByText(/In development/).length).toBe(4);
+    expect(utils.getAllByText(/In development/).length).toBe(3);
+    expect(utils.queryByTestId("coach-tab-dev-forms")).toBeNull();
   });
 
   it("pull to refresh re-reads the coaches", async () => {
@@ -225,6 +253,146 @@ describe("CoachTabContainer", () => {
       utils.getByTestId("coach-tab").props.refreshControl.props.onRefresh();
     });
     expect(utils.api.getMyCoachingCalls).toBe(before + 1);
+  });
+});
+
+function formRequest(
+  id: string,
+  extra: Partial<AthleteFormRequest> = {},
+): AthleteFormRequest {
+  return {
+    id,
+    formId: `f-${id}`,
+    title: `Form ${id}`,
+    description: null,
+    coach: { id: "t-rel-ellie", name: "Ellie Hart" },
+    trigger: "weekly",
+    periodKey: "p",
+    sentAt: "2026-11-23T09:00:00Z",
+    dueAt: null,
+    closesAt: null,
+    status: "pending",
+    late: false,
+    version: {
+      id: "v",
+      version: 1,
+      questions: [{ id: "e", type: "scale", prompt: "Energy", required: true }],
+    },
+    ...extra,
+  };
+}
+
+function waiting(id: string): LocalFormState {
+  return {
+    requestId: id,
+    title: `Form ${id}`,
+    coachId: "t-rel-ellie",
+    trigger: "daily",
+    answers: { q0: 3 },
+    step: 0,
+    updatedAt: new Date().toISOString(),
+    submittedAt: new Date().toISOString(),
+    sentAt: null,
+    closed: false,
+    rejected: null,
+    submitKey: null,
+    uploadKeys: {},
+    introSeen: true,
+  };
+}
+
+describe("CoachTabContainer — forms (PER-130, C10p/q/r)", () => {
+  beforeEach(() => {
+    delete mockParams.coachId;
+    delete mockParams.nav;
+    mockPush.mockClear();
+  });
+
+  it("due forms lead the tab for the selected coach; Fill in opens the form", async () => {
+    const utils = setup({
+      server: [ELLIE, MARCUS],
+      requests: [
+        formRequest("a"),
+        formRequest("m", { coach: { id: "t-rel-marcus", name: "Marcus" } }),
+      ],
+    });
+    await act(async () => {});
+    expect(utils.getByTestId("coach-forms-to-fill")).toBeTruthy();
+    expect(utils.getByText("Form a")).toBeTruthy();
+    expect(utils.queryByText("Form m")).toBeNull();
+    expect(utils.getByText("No due date")).toBeTruthy();
+
+    fireEvent.press(utils.getByTestId("coach-form-fill-a"));
+    expect(mockPush).toHaveBeenCalledWith({
+      pathname: "/(app)/forms/[id]",
+      params: { id: "a" },
+    });
+
+    fireEvent.press(utils.getByTestId("coach-tab-chip-rel-marcus"));
+    expect(utils.getByText("Form m")).toBeTruthy();
+    expect(utils.queryByText("Form a")).toBeNull();
+  });
+
+  it("offline: a form sent from this phone waits, with the C10r note", async () => {
+    const utils = setup({
+      server: [ELLIE],
+      online: false,
+      requests: [formRequest("a"), formRequest("d")],
+      locals: [waiting("d")],
+    });
+    await act(async () => {});
+    expect(utils.getByTestId("coach-forms-offline")).toBeTruthy();
+    expect(
+      utils.getByText(
+        "You’re offline. Form d is saved on this phone and sends when you’re back.",
+      ),
+    ).toBeTruthy();
+    expect(utils.getByText("Waiting")).toBeTruthy();
+    expect(utils.getByText(/^Waiting to send · saved/)).toBeTruthy();
+    expect(utils.queryByTestId("coach-form-card-d")).toBeNull();
+  });
+
+  it("online with nothing waiting: no offline note", async () => {
+    const utils = setup({ server: [ELLIE], requests: [formRequest("a")] });
+    await act(async () => {});
+    expect(utils.queryByTestId("coach-forms-offline")).toBeNull();
+  });
+
+  it("opens the joining forms page once, while they're untouched (C10q)", async () => {
+    const utils = setup({
+      server: [ELLIE],
+      requests: [formRequest("j", { trigger: "on_join" })],
+    });
+    await act(async () => {});
+    expect(mockPush).toHaveBeenCalledWith({
+      pathname: "/(app)/forms/joining",
+      params: { coachId: "t-rel-ellie" },
+    });
+    expect(mockPush).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      mockFocus.cb?.();
+    });
+    expect(mockPush).toHaveBeenCalledTimes(1);
+  });
+
+  it("doesn't open it once seen", async () => {
+    setup({
+      server: [ELLIE],
+      requests: [formRequest("j", { trigger: "on_join" })],
+      locals: [{ ...waiting("j"), submittedAt: null, answers: {} }],
+    });
+    await act(async () => {});
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it("pull to refresh also re-reads the forms", async () => {
+    const utils = setup({ server: [ELLIE] });
+    await act(async () => {});
+    const before = utils.api.getMyFormRequestsCalls;
+    await act(async () => {
+      utils.getByTestId("coach-tab").props.refreshControl.props.onRefresh();
+    });
+    expect(utils.api.getMyFormRequestsCalls).toBe(before + 1);
   });
 });
 
