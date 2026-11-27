@@ -61,6 +61,10 @@ CASCADE, `coaching` / `coach-<relationshipId>`, state
   Without keys a row is bucket-only as on main. A Stream delete task still
   running throws `StreamDeletePendingError` → deferred (row kept; next night a
   missing user counts as done). Task polling is 2 (no sleep before the first).
+- **Freeze retry covers pending rows** (round 6): the tick freezes every row
+  not yet `frozen` whose relationship ended, so a half-provisioned `pending`
+  channel (created in Stream, a later step failed) can't stay writable; one
+  Stream never created is just marked frozen.
 - **Scheduler job time-bounded** (round 5): `reconcileChatChannels` starts
   no Stream work 90 s after the tick start or after 2 Stream failures (ensure
   included); the rest is `deferred` (in the job summary) and stays pending, so

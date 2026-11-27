@@ -432,7 +432,8 @@ export interface ReconcileBudget {
 /**
  * The scheduler's retry (design E: "retries from `pending`"): channels whose
  * relationship is active but which aren't `active` (or don't exist yet), and
- * `active` channels whose relationship has ended. A failure is logged and
+ * channels not yet `frozen` (`active` or `pending`) whose relationship has
+ * ended. A failure is logged and
  * retried next tick.
  *
  * **Bounded in time, not just count** (Inspector Brad, #570 round 5): the
@@ -535,7 +536,12 @@ export async function reconcileChatChannels(
     )
     .where(
       and(
-        eq(chatChannels.state, "active"),
+        // Any row not yet frozen, `pending` included: a half-provisioned
+        // channel (created in Stream with both members, then a later step
+        // failed) must be frozen too, or the athlete keeps writing after
+        // coaching ends (Inspector Brad, #570). A channel Stream never had
+        // is simply marked frozen by `freezeChatChannel`.
+        ne(chatChannels.state, "frozen"),
         ne(ptClientRelationships.status, "active"),
       ),
     )

@@ -733,6 +733,65 @@ describe("design E test 3: ending coaching removes the client and freezes the ch
     expect((await channelRow(REL_CA))!.state).toBe("frozen");
   });
 
+  it("a pending half-provisioned channel on an ended relationship is frozen by the next tick", async () => {
+    // A set-up welcome message, so provisioning has a step after the channel.
+    const [profile] = await db
+      .insert(schema.coachClientProfiles)
+      .values({
+        trainerId: COACH_C,
+        displayName: "Lena",
+        status: "active",
+        clientId: ATHLETE_A,
+        relationshipId: REL_CA,
+      })
+      .returning();
+    await db.insert(schema.coachClientSetupItems).values({
+      profileId: profile!.id,
+      section: "welcome_message",
+      config: { text: "Welcome!" },
+      sortOrder: 0,
+    });
+    // The welcome message fails after the channel was created, both members
+    // in, unfrozen: the row stays pending.
+    stream.failOn(/\/message$/);
+    await safeProvisionChatChannel(REL_CA);
+    expect((await channelRow(REL_CA))!.state).toBe("pending");
+    const ch = stream.channels.get(channelIdFor(REL_CA))!;
+    expect(ch.members.has(ATHLETE_A)).toBe(true);
+    expect(ch.frozen).toBe(false);
+
+    // Coaching ends and the immediate freeze fails too.
+    stream.down = true;
+    expect((await end(COACH_C, ATHLETE_A)).ok).toBe(true);
+    expect((await channelRow(REL_CA))!.state).toBe("pending");
+    stream.down = false;
+
+    const summary = await reconcileChatChannels();
+    expect(summary).toMatchObject({ frozen: 1, freezeFailed: 0 });
+    expect(ch.frozen).toBe(true);
+    expect(ch.members.has(ATHLETE_A)).toBe(false);
+    expect((await channelRow(REL_CA))!.state).toBe("frozen");
+  });
+
+  it("a pending row whose channel Stream never created is frozen by the tick without an error", async () => {
+    stream.failOn(/\/users$/, 1); // provisioning stops before the channel
+    await safeProvisionChatChannel(REL_CA);
+    expect(stream.channels.has(channelIdFor(REL_CA))).toBe(false);
+    await db
+      .update(schema.ptClientRelationships)
+      .set({ status: "terminated" })
+      .where(eq(schema.ptClientRelationships.id, REL_CA));
+    const summary = await reconcileChatChannels();
+    expect(summary).toMatchObject({ frozen: 1, freezeFailed: 0 });
+    expect((await channelRow(REL_CA))!.state).toBe("frozen");
+    // A frozen row is never picked up again.
+    stream.calls = [];
+    expect(await reconcileChatChannels()).toMatchObject({ frozen: 0 });
+    expect(
+      stream.calls.some((c) => c.path.includes(channelIdFor(REL_CA))),
+    ).toBe(false);
+  });
+
   it("freezing refuses an active relationship and a missing channel", async () => {
     await provisionChatChannel(REL_CA);
     expect(await freezeChatChannel(REL_CA)).toBe("still_active");
