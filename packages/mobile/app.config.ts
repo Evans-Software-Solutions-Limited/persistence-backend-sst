@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import path from "node:path";
 import type { ConfigContext, ExpoConfig } from "expo/config";
 
 /**
@@ -31,6 +33,65 @@ const VARIANTS = {
     scheme: "persistencemobile-dev",
   },
 } as const;
+
+/**
+ * Firebase Android config (`google-services.json`) per variant (PER-149).
+ *
+ * Android delivers every push, Expo push included, through Firebase Cloud
+ * Messaging, so a build without this file can never get a push token. The
+ * file holds client identifiers (project number, app id, an Android API key
+ * that ships inside every APK anyway), not server secrets, so it is
+ * committed per variant at the paths below. Staging has its own Firebase
+ * Android app; play-testing shares the store app's package, so it shares the
+ * store app's file. The development variant (`.dev`) has no Firebase app and
+ * so no push.
+ *
+ * `GOOGLE_SERVICES_JSON` (an EAS "file" environment variable, which EAS
+ * exposes to the build as a file path) overrides the committed file when
+ * set. Setup steps: docs/android-push-setup.md.
+ */
+export const GOOGLE_SERVICES_FILES: Partial<
+  Record<keyof typeof VARIANTS, string>
+> = {
+  production: "./firebase/google-services.production.json",
+  "play-testing": "./firebase/google-services.production.json",
+  staging: "./firebase/google-services.staging.json",
+};
+
+export interface GoogleServicesResolution {
+  /** Value for `android.googleServicesFile`, or undefined to leave it out. */
+  file: string | undefined;
+  /** Why `file` is undefined when a Firebase file was expected. */
+  missing?: string;
+}
+
+/**
+ * Pick the `google-services.json` for a variant. The file-existence check is
+ * injected so the per-variant choice is unit-testable without real files.
+ */
+export function resolveGoogleServicesFile(
+  variantKey: keyof typeof VARIANTS,
+  env: Record<string, string | undefined>,
+  fileExists: (file: string) => boolean,
+): GoogleServicesResolution {
+  const override = env.GOOGLE_SERVICES_JSON?.trim();
+  if (override) {
+    return fileExists(override)
+      ? { file: override }
+      : {
+          file: undefined,
+          missing: `GOOGLE_SERVICES_JSON points at "${override}", which does not exist.`,
+        };
+  }
+  const committed = GOOGLE_SERVICES_FILES[variantKey];
+  if (committed === undefined) return { file: undefined };
+  return fileExists(committed)
+    ? { file: committed }
+    : {
+        file: undefined,
+        missing: `packages/mobile/${committed.slice(2)} is missing for the "${variantKey}" variant.`,
+      };
+}
 
 /**
  * iOS App Privacy manifest (`PrivacyInfo.xcprivacy`). Expo generates the file
@@ -144,6 +205,26 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     : rawVariant === "play-testing"
       ? "staging"
       : (rawVariant as "staging" | "development");
+  const variantKey: keyof typeof VARIANTS = isProduction
+    ? "production"
+    : (rawVariant as keyof typeof VARIANTS);
+  const googleServices = resolveGoogleServicesFile(
+    variantKey,
+    process.env,
+    (file) => existsSync(path.resolve(__dirname, file)),
+  );
+  if (googleServices.missing !== undefined) {
+    const message = `[app.config] Android push is off for this build: ${googleServices.missing} Without google-services.json Android cannot get a push token (PER-149). See docs/android-push-setup.md.`;
+    // An Android EAS build without Firebase ships an app that can never
+    // receive a push, which is the bug PER-149 fixes, so that build fails
+    // loudly. Every other config read (iOS builds, `expo start`,
+    // `eas update`, tests) only warns, so iOS keeps building before the
+    // Firebase files exist.
+    if (process.env.EAS_BUILD_PLATFORM === "android") {
+      throw new Error(message);
+    }
+    console.warn(message);
+  }
   const metaAppId = process.env.EXPO_PUBLIC_META_APP_ID?.trim() ?? "";
   const metaClientToken =
     process.env.EXPO_PUBLIC_META_CLIENT_TOKEN?.trim() ?? "";
@@ -186,7 +267,13 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         ? IOS_META_PRIVACY_MANIFESTS
         : IOS_PRIVACY_MANIFESTS,
     },
-    android: { ...config.android, package: variant.bundleId },
+    android: {
+      ...config.android,
+      package: variant.bundleId,
+      ...(googleServices.file !== undefined
+        ? { googleServicesFile: googleServices.file }
+        : {}),
+    },
     // EAS Update (OTA JS updates). Shared across all variants — the single EAS
     // project (`extra.eas.projectId`) serves them all; the per-profile
     // `channel` in eas.json routes each build to its own update branch
