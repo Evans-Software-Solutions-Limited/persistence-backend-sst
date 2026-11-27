@@ -18,6 +18,8 @@ import {
 import { useMealprintPreferences } from "@/ui/hooks/useMealprintPreferences";
 import { useSetMealprintPreferences } from "@/ui/hooks/useSetMealprintPreferences";
 import { useFuelSheets } from "@/state/fuel-sheets";
+import { activeUserMeals } from "@/domain/services/userMeals.service";
+import { useUserMeals } from "@/ui/hooks/useUserMeals";
 import {
   MealprintPreferencesPresenter,
   type MealprintPreferencesMode,
@@ -96,6 +98,9 @@ export function MealprintPreferencesContainer({
   const preferences = useMealprintPreferences(true);
   const setPreferences = useSetMealprintPreferences();
   const notifyFuelMutated = useFuelSheets((s) => s.notifyMutated);
+  // PER-134 (canvas N25): the Meals row shows Your meals.
+  const userMeals = useUserMeals();
+  const yourMeals = activeUserMeals(userMeals.meals);
 
   const [dietaryPatterns, setDietaryPatterns] = useState<DietaryPattern[]>([]);
   const [avoidAllergens, setAvoidAllergens] = useState<AllergenKey[]>([]);
@@ -492,6 +497,9 @@ export function MealprintPreferencesContainer({
       onRemoveLikedFood={onRemoveLikedFood}
       mealsPerDay={mealsPerDay}
       onMealsPerDayChange={onMealsPerDayChange}
+      mealsText={yourMeals.map((m) => m.name).join(", ")}
+      mealCount={yourMeals.length}
+      onEditMeals={() => useFuelSheets.getState().openYourMeals()}
       effortLevel={effortLevel}
       onEffortLevelChange={onEffortLevelChange}
       onSave={onSave}

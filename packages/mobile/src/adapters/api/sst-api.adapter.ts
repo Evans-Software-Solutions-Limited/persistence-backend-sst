@@ -254,6 +254,7 @@ import type {
 } from "@/domain/models/trainingReads";
 import type { UserMealsResponse } from "@/domain/models/userMeals";
 import type {
+  NutritionPlan,
   NutritionPlansResponse,
   PlansShoppingList,
 } from "@/domain/models/nutritionPlans";
@@ -3318,6 +3319,18 @@ export class SSTApiAdapter implements ApiPort {
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  // PER-134 (APP-D3): save a Mealprint day as a list plan (BE-D3).
+  async savePlanFromMealprint(
+    input: { fromMealprintPlanId: string; name?: string },
+    idempotencyKey: string,
+  ): Promise<Result<NutritionPlan, ApiError>> {
+    return this.requestEnvelope<NutritionPlan>("/nutrition/meal-plans", {
+      method: "POST",
+      body: input,
+      idempotencyKey,
+    });
   }
 
   // -- PER-135: coach meal plans on a client --

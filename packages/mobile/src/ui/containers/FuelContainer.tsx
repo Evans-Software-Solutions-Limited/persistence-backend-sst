@@ -19,6 +19,7 @@ import { useMealprintGate } from "@/ui/hooks/useMealprintGate";
 import { useGetActiveMealPlan } from "@/ui/hooks/useGetActiveMealPlan";
 import { useLogPlanMeal } from "@/ui/hooks/useLogPlanMeal";
 import { useFuelSheets } from "@/state/fuel-sheets";
+import { usePlanSheets } from "@/state/plan-sheets";
 import { localDayISO, preferredVolumeUnit } from "@/shared/utils";
 import {
   defaultMealSlot,
@@ -439,6 +440,13 @@ export function FuelContainer() {
   // Log · Plan · Meals (canvas N1). PER-133: Plan is the meal plans tab
   // (N6–N10) and Meals the saved meals and recipes library (N11–N12).
   const [section, setSection] = useState<FuelSection>("log");
+  // PER-134: Mealprint's View in Plan / View in Log pick the section.
+  const requestedSection = usePlanSheets((s) => s.fuelSection);
+  useEffect(() => {
+    if (requestedSection === null) return;
+    setSection(requestedSection);
+    usePlanSheets.getState().showFuelSection(null);
+  }, [requestedSection]);
   const plans = useNutritionPlans(section === "plan");
   const onSection = useCallback((next: FuelSection) => setSection(next), []);
 

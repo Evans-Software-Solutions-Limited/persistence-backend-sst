@@ -24,6 +24,8 @@ export type PlanGenerateFailure = {
   readonly message: string;
   readonly retryable: boolean;
   readonly entitlementDenied: boolean;
+  /** PER-134: the HTTP status, so Mealprint can pick its state screen (N27). */
+  readonly status?: number;
 };
 
 export type UsePlanGenerate = {
@@ -91,7 +93,10 @@ export function usePlanGenerate(): UsePlanGenerate {
       try {
         const response = await api.generatePlan(input);
         if (!response.ok) {
-          setFailure(classify(response.error.status));
+          setFailure({
+            ...classify(response.error.status),
+            status: response.error.status,
+          });
           setStage("error");
           return;
         }
