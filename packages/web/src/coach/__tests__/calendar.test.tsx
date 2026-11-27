@@ -514,6 +514,56 @@ describe("Inspector Brad fixes (#581)", () => {
     });
   });
 
+  async function openFromClient(cal: FakeCalendarApi) {
+    renderCoach(withCalendar(<ClientPage />, cal), {
+      route: `/coach/clients/${CLIENT_ID}/settings`,
+      path: "/coach/clients/:clientId/:tab?",
+      api: fakeApi({ settings: vi.fn().mockResolvedValue(settings()) }),
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Schedule" }));
+    return screen.getByRole("dialog", { name: "Schedule with Sam" });
+  }
+
+  it("a bad video link left behind doesn't block In person, and comes back on Video", async () => {
+    const cal = fakeCalendarApi();
+    const dlg = await openFromClient(cal);
+    fireEvent.click(within(dlg).getByRole("tab", { name: "Video call" }));
+    fireEvent.change(within(dlg).getByLabelText("Video link"), {
+      target: { value: "zoom.us/j/123" },
+    });
+    fireEvent.click(within(dlg).getByRole("tab", { name: "In person" }));
+    fireEvent.click(within(dlg).getByRole("tab", { name: "Video call" }));
+    expect(
+      (within(dlg).getByLabelText("Video link") as HTMLInputElement).value,
+    ).toBe("zoom.us/j/123");
+    fireEvent.click(within(dlg).getByRole("tab", { name: "In person" }));
+    fireEvent.click(within(dlg).getByRole("button", { name: "Schedule" }));
+    await waitFor(() => expect(cal.create).toHaveBeenCalled());
+    expect(cal.create.mock.calls[0]![0]).toMatchObject({
+      kind: "in_person",
+      videoUrl: null,
+    });
+  });
+
+  it("a long place left behind doesn't block a video call", async () => {
+    const cal = fakeCalendarApi();
+    const dlg = await openFromClient(cal);
+    fireEvent.change(within(dlg).getByLabelText("Where"), {
+      target: { value: "x".repeat(201) },
+    });
+    fireEvent.click(within(dlg).getByRole("tab", { name: "Video call" }));
+    fireEvent.change(within(dlg).getByLabelText("Video link"), {
+      target: { value: "https://meet.example/x" },
+    });
+    fireEvent.click(within(dlg).getByRole("button", { name: "Schedule" }));
+    await waitFor(() => expect(cal.create).toHaveBeenCalled());
+    expect(cal.create.mock.calls[0]![0]).toMatchObject({
+      kind: "video",
+      location: null,
+      videoUrl: "https://meet.example/x",
+    });
+  });
+
   it("waits for the workout list on Edit, then shows the linked workout", async () => {
     let resolve: (v: unknown) => void = () => {};
     const cal = fakeCalendarApi({

@@ -91,8 +91,12 @@ export const scheduleSchema = Type.Object({
 /** The server trims text before it checks it. */
 const prepare = (v: ScheduleValues): ScheduleValues => ({
   ...v,
-  location: v.location.trim(),
-  videoUrl: v.videoUrl.trim().replace(/^https:/i, "https:"),
+  // Only the place field for this kind is checked (and sent, see
+  // placeFields). A hidden field's leftover value can't block Schedule; the
+  // form keeps the raw values, so switching back shows what was typed.
+  location: v.kind === "in_person" ? v.location.trim() : "",
+  videoUrl:
+    v.kind === "video" ? v.videoUrl.trim().replace(/^https:/i, "https:") : "",
   notes: v.notes.trim(),
 });
 
