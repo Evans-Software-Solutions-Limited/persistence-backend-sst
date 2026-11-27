@@ -825,6 +825,42 @@ describe("sendFormNowCommand (photos need a connection)", () => {
     ).toBe(1);
   });
 
+  it("409 'completed' means this athlete's response is already there: sent, not closed (Inspector Brad, #571)", async () => {
+    api.submitFormResponseResults.push(
+      ok({
+        status: 409,
+        json: { code: "request_closed", reason: "completed" },
+      }),
+    );
+    const { outcome } = await sendFormNowCommand(
+      sendDeps(),
+      photoRequest,
+      draft,
+      photos,
+      toApi,
+    );
+    expect(outcome).toEqual({ kind: "sent" });
+    expect(local("req-p")).toMatchObject({
+      closed: false,
+      sentAt: NOW.toISOString(),
+    });
+    expect(local("req-p")?.answers.q1).toBe("");
+  });
+
+  it("409 'cancelled' still closes it", async () => {
+    api.submitFormResponseResults.push(
+      ok({
+        status: 409,
+        json: { code: "request_closed", reason: "cancelled" },
+      }),
+    );
+    expect(
+      (await sendFormNowCommand(sendDeps(), photoRequest, draft, photos, toApi))
+        .outcome,
+    ).toEqual({ kind: "closed" });
+    expect(local("req-p")).toMatchObject({ closed: true, sentAt: null });
+  });
+
   it("409 request_closed and 404 → closed; 422 → invalid; other → failed", async () => {
     api.submitFormResponseResults.push(
       ok({ status: 409, json: { code: "request_closed" } }),

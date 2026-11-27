@@ -504,6 +504,18 @@ export async function sendFormNowCommand(
     recordFormSentCommand(deps, request, values);
     return { outcome: { kind: "sent" }, draft: values };
   }
+  // 409 "completed": this athlete's own response is already on the server
+  // (an earlier send landed, e.g. a dead row an edit retired). It's sent,
+  // not "no longer needed"; the server keeps that first response, so this
+  // send's answers (photos included) aren't saved (Inspector Brad, #571).
+  const reason =
+    typeof json === "object" && json !== null
+      ? (json as { reason?: unknown }).reason
+      : undefined;
+  if (status === 409 && code === "request_closed" && reason === "completed") {
+    recordFormSentCommand(deps, request, values);
+    return { outcome: { kind: "sent" }, draft: values };
+  }
   if (
     (status === 409 && code === "request_closed") ||
     (status === 404 && code === "request_not_found")
