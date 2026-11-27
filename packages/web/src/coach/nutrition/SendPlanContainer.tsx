@@ -122,7 +122,12 @@ export function SendPlanContainer({
       busy={busy}
       offline={!online}
       error={error}
-      onClient={setClientId}
+      onClient={(id) => {
+        // A new client is a new send: a retry must never replay the key of
+        // a send to someone else.
+        if (id !== clientId) key.current = newIdempotencyKey();
+        setClientId(id);
+      }}
       onNote={(text) =>
         form.setValue("note", text, { shouldDirty: true, shouldValidate: true })
       }

@@ -171,11 +171,19 @@ export function PlanEditorContainer() {
     const m = messageAt(errors, `meals.${i}.name`);
     if (m) mealErrors[i] = m;
   });
+  const itemErrors: Record<string, string> = {};
+  values.meals.forEach((m, i) =>
+    m.items.forEach((_, j) => {
+      const e = messageAt(errors, `meals.${i}.items.${j}.servings`);
+      if (e) itemErrors[`${i}.${j}`] = e;
+    }),
+  );
   const formError =
     messageAt(errors, "meals") ??
     values.meals
       .map((_, i) => messageAt(errors, `meals.${i}.items`))
       .find(Boolean) ??
+    Object.values(itemErrors)[0] ??
     null;
 
   function setMeals(next: PlanEditorValues["meals"]) {
@@ -343,6 +351,7 @@ export function PlanEditorContainer() {
         openMeal={openMeal}
         nameError={messageAt(errors, "name") ?? null}
         mealErrors={mealErrors}
+        itemErrors={itemErrors}
         formError={formError}
         dirty={dirty}
         busy={busy}

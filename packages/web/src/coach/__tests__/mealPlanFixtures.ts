@@ -146,7 +146,8 @@ export const CLIENT_MEAL_PLANS: ClientMealPlans = {
       planId: "plan-rest",
       plan: LIBRARY_PLANS[1]!,
       status: "sent",
-      seenRevision: 0,
+      // The server sets seenRevision to the plan's revision on send.
+      seenRevision: 3,
       sentAt: new Date(Date.now() - 2 * 86_400_000).toISOString(),
       addedAt: null,
       usedDays: 0,

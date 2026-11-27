@@ -246,6 +246,11 @@ export function CoachPlanEditorContainer() {
       }
       name={values.name}
       nameError={messageAt(form.formState.errors, "name") ?? null}
+      mealsError={
+        messageAt(form.formState.errors, "meals") ??
+        messageAt(form.formState.errors, "meals.root") ??
+        null
+      }
       comparison={compareWithTarget(draft.totals, target)}
       planned={draft.totals}
       macros={macrosVsTarget(draft.totals, target)}

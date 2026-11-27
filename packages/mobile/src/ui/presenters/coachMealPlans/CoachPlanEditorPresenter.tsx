@@ -43,6 +43,8 @@ export type CoachPlanEditorProps = {
   clientLine: string | null;
   name: string;
   nameError: string | null;
+  /** The whole meal list (e.g. the last meal removed: "A plan has 1 to 20 meals."). */
+  mealsError: string | null;
   comparison: TargetComparison;
   planned: { proteinG: number; carbsG: number; fatG: number };
   macros: readonly MacroVsTarget[];
@@ -309,6 +311,17 @@ export function CoachPlanEditorPresenter(p: CoachPlanEditorProps) {
               ) : null}
             </View>
           ))}
+          {p.mealsError ? (
+            <Text
+              fontFamily="$body"
+              fontSize={12}
+              color="$error"
+              accessibilityRole="alert"
+              testID="coach-plan-meals-error"
+            >
+              {p.mealsError}
+            </Text>
+          ) : null}
           <Btn
             variant="outline"
             tone="trainer"

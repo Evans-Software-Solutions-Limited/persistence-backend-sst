@@ -33,6 +33,7 @@ import {
   PLAN_NAME_MESSAGE,
   MEAL_NAME_MESSAGE,
   NOTE_MESSAGE,
+  PORTION_MESSAGE,
 } from "../lib/planForm";
 import {
   CLIENT_MEAL_PLANS,
@@ -86,13 +87,13 @@ describe("meal plan copy", () => {
       assignmentStatus(
         assignment({
           status: "sent",
-          seenRevision: 0,
+          seenRevision: 3,
           sentAt: "2026-11-24T09:00:00",
         }),
         "Sam",
         NOW,
       ),
-    ).toEqual({ text: "Sent 2 days ago · not opened", tone: "warn" });
+    ).toEqual({ text: "Sent 2 days ago", tone: "warn" });
     expect(
       assignmentStatus(
         assignment({
@@ -103,7 +104,7 @@ describe("meal plan copy", () => {
         "Sam",
         NOW,
       ).text,
-    ).toBe("Sent today · opened");
+    ).toBe("Sent today");
   });
 
   it("sums plan meals logged this week and words calorie adherence", () => {
@@ -252,6 +253,9 @@ describe("the editor model", () => {
     expect(stepPortion(1, 1)).toBe(1.25);
     expect(stepPortion(0.25, -1)).toBe(0.25);
     expect(stepPortion(100, 1)).toBe(100);
+    // A phone-built portion under the quarter step isn't pushed up.
+    expect(stepPortion(0.1, -1)).toBe(0.1);
+    expect(stepPortion(0.1, 1)).toBe(0.35);
     expect(portionText(1.25)).toBe("×1.25");
     const item = foodItem(FOODS[0]!);
     expect(servingText(item)).toBe("100 g");
@@ -353,6 +357,25 @@ describe("plan forms", () => {
     ).toBe(MEAL_NAME_MESSAGE);
     const ok = await planEditorResolver(editorValues(libraryPlan()), ctx, opts);
     expect(ok.errors).toEqual({});
+  });
+
+  it("portions follow the server: more than 0, up to 100 (#577 review)", async () => {
+    const at = (servings: number) => {
+      const v = editorValues(libraryPlan());
+      v.meals[0]!.items[0]!.servings = servings;
+      return planEditorResolver(v, ctx, opts);
+    };
+    expect((await at(0.1)).errors).toEqual({});
+    expect((await at(100)).errors).toEqual({});
+    for (const bad of [0, 100.5]) {
+      const r = await at(bad);
+      const items = (
+        r.errors.meals as unknown as {
+          items: { servings: { message: string } }[];
+        }[]
+      )[0]!.items;
+      expect(items[0]!.servings.message).toBe(PORTION_MESSAGE);
+    }
   });
 
   it("a note is optional and up to 500 characters", async () => {

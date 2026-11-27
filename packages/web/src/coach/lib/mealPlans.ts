@@ -80,10 +80,7 @@ export function sentWords(iso: string, now: number = Date.now()): string {
  * `tone` picks the pill colour (ok = green, warn = amber, idle = grey).
  */
 export function assignmentStatus(
-  a: Pick<
-    ClientPlanAssignment,
-    "status" | "seenRevision" | "sentAt" | "usedDays"
-  >,
+  a: Pick<ClientPlanAssignment, "status" | "sentAt" | "usedDays">,
   clientFirst: string,
   now: number = Date.now(),
 ): { text: string; tone: "ok" | "warn" | "idle" } {
@@ -99,10 +96,9 @@ export function assignmentStatus(
   if (a.status === "dismissed") {
     return { text: `${clientFirst} chose Not now`, tone: "idle" };
   }
-  return {
-    text: `${sentWords(a.sentAt, now)} · ${a.seenRevision > 0 ? "opened" : "not opened"}`,
-    tone: "warn",
-  };
+  // The API has no "opened" signal: the server sets seenRevision to the
+  // plan's revision when it's sent, so only the send time is shown.
+  return { text: sentWords(a.sentAt, now), tone: "warn" };
 }
 
 /** "Plan meals logged this week: 19" across the client's plans. */
@@ -283,6 +279,7 @@ export function servingText(item: EditorItem): string {
 }
 
 export function stepPortion(servings: number, by: 1 | -1): number {
+  if (by < 0 && servings <= PORTION_MIN) return servings;
   const next = Math.round((servings + by * PORTION_STEP) * 100) / 100;
   return Math.min(PORTION_MAX, Math.max(PORTION_MIN, next));
 }

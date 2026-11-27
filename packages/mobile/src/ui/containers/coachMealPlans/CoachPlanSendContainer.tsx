@@ -127,7 +127,14 @@ export function CoachPlanSendContainer(p: {
         selectedId={picked?.id ?? null}
         onPick={(id) => {
           const c = active.find((x) => x.id === id);
-          if (c) setPicked({ id: c.id, name: c.name });
+          if (c) {
+            // A new client is a new send: a retry must never replay the key
+            // of a send to someone else.
+            if (c.id !== picked?.id) {
+              key.current = `plan-send-${localIdFactory()}`;
+            }
+            setPicked({ id: c.id, name: c.name });
+          }
           setPicking(false);
         }}
         onClose={() => setPicking(false)}

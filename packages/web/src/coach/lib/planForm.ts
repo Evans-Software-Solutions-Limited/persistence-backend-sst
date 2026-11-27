@@ -5,7 +5,6 @@ import {
   PLAN_ITEMS_PER_MEAL_MAX,
   PLAN_MEALS_MAX,
   PORTION_MAX,
-  PORTION_MIN,
   type PlanEditorValues,
 } from "./mealPlans";
 
@@ -24,6 +23,7 @@ export const PLAN_NAME_MESSAGE = `Give the plan a name of up to ${PLAN_NAME_MAX}
 export const MEAL_NAME_MESSAGE = `Give each meal a name of up to ${PLAN_MEAL_NAME_MAX} characters.`;
 export const MEALS_MESSAGE = `A plan has 1 to ${PLAN_MEALS_MAX} meals.`;
 export const ITEMS_MESSAGE = `A meal holds up to ${PLAN_ITEMS_PER_MEAL_MAX} foods.`;
+export const PORTION_MESSAGE = `Portions must be more than 0 and up to ${PORTION_MAX}.`;
 export const NOTE_MESSAGE = `Keep the note under ${PLAN_NOTE_MAX} characters.`;
 
 const macros = Type.Object({
@@ -55,10 +55,12 @@ export const planEditorSchema = Type.Object({
           serving: Type.String(),
           source: Type.Object({ kind: Type.String() }),
           perServing: macros,
+          // The server's rule (servings > 0, up to 100): a plan built on the
+          // phone may hold less than the steppers' quarter step.
           servings: Type.Number({
-            minimum: PORTION_MIN,
+            exclusiveMinimum: 0,
             maximum: PORTION_MAX,
-            errorMessage: `Portions go from ${PORTION_MIN} to ${PORTION_MAX}.`,
+            errorMessage: PORTION_MESSAGE,
           }),
         }),
         { maxItems: PLAN_ITEMS_PER_MEAL_MAX, errorMessage: ITEMS_MESSAGE },

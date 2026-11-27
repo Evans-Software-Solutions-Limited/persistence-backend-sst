@@ -18,6 +18,7 @@ import {
   planItemFromRecipe,
 } from "@/domain/services/nutritionPlans.service";
 import { usePlanDraft } from "@/state/plan-draft";
+import { AdapterProvider } from "@/ui/hooks/useAdapters";
 import { COACH, setupCoachForms } from "../../__tests__/coachFormsTestKit";
 import { FOOD, MEAL, RECIPE } from "../../plans/__tests__/planFixtures";
 import { ClientNutritionContainer } from "../ClientNutritionContainer";
@@ -29,13 +30,19 @@ import {
   stepPortion,
 } from "../CoachPlanEditorContainer";
 
-const mockRouter = { push: jest.fn(), back: jest.fn(), replace: jest.fn() };
+const mockRouter = {
+  push: jest.fn(),
+  back: jest.fn(),
+  replace: jest.fn(),
+  setParams: jest.fn(),
+};
 let mockParams: Record<string, string> = {};
 jest.mock("expo-router", () => ({
   router: {
     push: (...a: unknown[]) => mockRouter.push(...a),
     back: (...a: unknown[]) => mockRouter.back(...a),
     replace: (...a: unknown[]) => mockRouter.replace(...a),
+    setParams: (...a: unknown[]) => mockRouter.setParams(...a),
   },
   useRouter: () => mockRouter,
   useLocalSearchParams: () => mockParams,
@@ -49,7 +56,8 @@ const mockPlans = {
     conflictPlanIds: [],
   } as NutritionPlansCache,
   isLoading: false,
-  create: jest.fn(async (p: NutritionPlan) => ({ ...p, id: "plan-new" })),
+  // As createPlanCommand: the plan keeps its local id until the create syncs.
+  create: jest.fn(async (p: NutritionPlan) => p),
   save: jest.fn(async (p: NutritionPlan) => p),
   remove: jest.fn(async () => {}),
   clearConflict: jest.fn(),
@@ -70,6 +78,7 @@ jest.mock("@/ui/hooks/useGetTrainerClients", () => ({
     data: [
       { id: "c1", name: "Sam Patel", status: "active" },
       { id: "c2", name: "Old Client", status: "ended" },
+      { id: "c3", name: "Ana Lee", status: "active" },
     ],
   }),
 }));
@@ -149,7 +158,8 @@ function seedClient(h: ReturnType<typeof setupCoachForms>) {
         planId: REST.id,
         plan: REST,
         status: "sent",
-        seenRevision: 0,
+        // The server sets seenRevision to the plan's revision on send.
+        seenRevision: 3,
         sentAt: new Date(Date.now() - 2 * 86_400_000).toISOString(),
         usedDays: 0,
         loggedThisWeek: 7,
@@ -245,6 +255,49 @@ describe("Library → Meals (C2, iPhone)", () => {
   });
 });
 
+describe("#577 review fixes (iPhone)", () => {
+  it("choosing another client starts a new send key; the same client keeps it", async () => {
+    const h = setupCoachForms();
+    h.api.coachMealPlanFailures.assign.push(
+      { kind: "api", code: "server", status: 500, message: "x" },
+      { kind: "api", code: "server", status: 500, message: "x" },
+    );
+    const view = h.render(<CoachMealPlansLibraryContainer />);
+    fireEvent.press(view.getByTestId("coach-meals-row-plan-train"));
+    fireEvent.press(view.getByTestId("plan-action-send"));
+    const choose = (id: string) => {
+      fireEvent.press(view.getByTestId("send-plan-client"));
+      fireEvent.press(view.getByTestId(`plan-pick-${id}`));
+    };
+    choose("c1");
+    fireEvent.press(view.getByTestId("send-plan-submit"));
+    expect(await view.findByTestId("send-plan-error")).toBeTruthy();
+    choose("c1");
+    fireEvent.press(view.getByTestId("send-plan-submit"));
+    await waitFor(() => expect(h.api.coachMealPlanCalls).toHaveLength(2));
+    choose("c3");
+    fireEvent.press(view.getByTestId("send-plan-submit"));
+    expect(await view.findByText("Sent to Ana")).toBeTruthy();
+    const keys = h.api.coachMealPlanCalls.map((c) => c.split(":").at(-1));
+    expect(keys[0]).toBe(keys[1]);
+    expect(keys[2]).not.toBe(keys[0]);
+    expect(h.api.coachMealPlanCalls[2]).toMatch(/^assign:c3:/);
+  });
+
+  it("a plan with no meals left says so instead of a silent Save", async () => {
+    const h = setupCoachForms();
+    const empty = { ...TRAIN, id: "plan-empty", meals: [] };
+    mockPlans.cache = { ...mockPlans.cache, mine: [empty] };
+    mockParams = { id: "plan-empty" };
+    const view = h.render(<CoachPlanEditorContainer />);
+    fireEvent.changeText(view.getByTestId("coach-plan-name"), "Empty");
+    fireEvent.press(view.getByTestId("coach-plan-save"));
+    expect(await view.findByTestId("coach-plan-meals-error")).toBeTruthy();
+    expect(view.getByText("A plan has 1 to 20 meals.")).toBeTruthy();
+    expect(mockPlans.save).not.toHaveBeenCalled();
+  });
+});
+
 describe("Edit a plan (C3, iPhone)", () => {
   it("helpers: quarter portions within limits, serving labels", () => {
     expect(stepPortion(1, 1)).toBe(1.25);
@@ -336,10 +389,12 @@ describe("Edit a plan (C3, iPhone)", () => {
     fireEvent.changeText(view.getByTestId("coach-plan-name"), "Cut · 1,900");
     fireEvent.press(view.getByTestId("coach-plan-save"));
     await waitFor(() => expect(mockPlans.create).toHaveBeenCalled());
-    expect(mockPlans.create.mock.calls[0]![0].name).toBe("Cut · 1,900");
+    const created = mockPlans.create.mock.calls[0]![0];
+    expect(created.name).toBe("Cut · 1,900");
+    expect(created.id).toMatch(/^local-/);
     expect(mockRouter.replace).toHaveBeenCalledWith({
       pathname: "/(app)/clients/[id]",
-      params: { id: "c1", tab: "nutrition", send: "plan-new" },
+      params: { id: "c1", tab: "nutrition", send: created.id },
     });
   });
 
@@ -384,7 +439,9 @@ describe("Client → Nutrition (C3.2b, iPhone)", () => {
     expect(
       view.getByText("Set by you · plans are measured against it"),
     ).toBeTruthy();
-    expect(view.getByText("Sent 2 days ago · not opened")).toBeTruthy();
+    // No opened / not opened: the API has no "opened" signal.
+    expect(view.getByText("Sent 2 days ago")).toBeTruthy();
+    expect(view.queryByText(/opened/)).toBeNull();
     expect(view.getByText("Plan meals logged this week: 19")).toBeTruthy();
     expect(view.getByText("5 of 7 days on target · 1 not logged")).toBeTruthy();
     fireEvent.press(view.getByTestId("client-plan-asg-train"));
@@ -533,6 +590,65 @@ describe("Client → Nutrition (C3.2b, iPhone)", () => {
     mockParams = { send: REST.id };
     const v2 = open(h);
     expect(await v2.findByText("Send to Sam")).toBeTruthy();
+    // Handled once, then cleared so a remount doesn't reopen Send.
+    expect(mockRouter.setParams).toHaveBeenCalledWith({ send: "" });
+  });
+
+  it("#577: Send for a plan built on the phone waits for its sync, then follows the server id", async () => {
+    const h = setupCoachForms();
+    seedClient(h);
+    const local = { ...plan("local-abc", "Cut · 1,900") };
+    mockPlans.cache = { ...mockPlans.cache, mine: [TRAIN, REST, local] };
+    mockParams = { send: "local-abc" };
+    const view = open(h);
+    expect(
+      await view.findByTestId("client-nutrition-send-waiting"),
+    ).toBeTruthy();
+    expect(view.queryByText("Send to Sam")).toBeNull();
+    expect(mockRouter.setParams).toHaveBeenCalledWith({ send: "" });
+    // A local plan can't be picked from + Add either.
+    fireEvent.press(view.getByTestId("client-nutrition-plans-add"));
+    expect(view.getByText("Waiting to sync")).toBeTruthy();
+    fireEvent.press(view.getByTestId("plan-pick-local-abc"));
+    expect(view.queryByText("Send to Sam")).toBeNull();
+    // The create syncs: the alias points the local id at the server plan.
+    const synced = { ...local, id: "plan-cut" };
+    mockPlans.cache = {
+      ...mockPlans.cache,
+      mine: [TRAIN, REST, synced],
+      aliases: { "local-abc": "plan-cut" },
+    };
+    mockParams = {};
+    view.rerender(
+      <AdapterProvider adapters={h.adapters}>
+        <ClientNutritionContainer clientId="c1" clientName="Sam Patel" />
+      </AdapterProvider>,
+    );
+    expect(await view.findByText("Send to Sam")).toBeTruthy();
+    expect(view.queryByTestId("client-nutrition-send-waiting")).toBeNull();
+    fireEvent.press(view.getByTestId("send-plan-submit"));
+    await waitFor(() =>
+      expect(
+        h.api.coachMealPlanCalls.some((c) =>
+          c.startsWith("assign:c1:plan-cut:"),
+        ),
+      ).toBe(true),
+    );
+  });
+
+  it("#577: dismissing the waiting note cancels the pending Send", async () => {
+    const h = setupCoachForms();
+    seedClient(h);
+    mockPlans.cache = {
+      ...mockPlans.cache,
+      mine: [TRAIN, REST, plan("local-xyz", "Cut")],
+    };
+    mockParams = { send: "local-xyz" };
+    const view = open(h);
+    fireEvent.press(
+      await view.findByTestId("client-nutrition-send-waiting-dismiss"),
+    );
+    expect(view.queryByTestId("client-nutrition-send-waiting")).toBeNull();
   });
 
   it("shares a recipe with the client", async () => {

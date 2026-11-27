@@ -27,6 +27,8 @@ export interface PlanEditorProps {
   openMeal: number;
   nameError: string | null;
   mealErrors: Record<number, string>;
+  /** Keyed "meal.item": a portion the API would refuse. */
+  itemErrors: Record<string, string>;
   formError: string | null;
   dirty: boolean;
   busy: boolean;
@@ -233,6 +235,11 @@ export function PlanEditor(p: PlanEditorProps) {
                         >
                           <IconTrash size={14} />
                         </button>
+                        {p.itemErrors[`${mi}.${ii}`] && (
+                          <span className="err" role="alert">
+                            {p.itemErrors[`${mi}.${ii}`]}
+                          </span>
+                        )}
                       </div>
                     ))}
                     <button

@@ -60,13 +60,16 @@ describe("coach meal plans copy (PER-135)", () => {
       assignmentStatus({ ...base, status: "dismissed" }, "Sam", NOW),
     ).toEqual({ text: "Sam chose Not now", tone: "paused" });
     expect(assignmentStatus({ ...base, status: "sent" }, "Sam", NOW)).toEqual({
-      text: "Sent 2 days ago · opened",
+      text: "Sent 2 days ago",
       tone: "waiting",
     });
     expect(
-      assignmentStatus({ ...base, status: "sent", seenRevision: 0 }, "Sam", NOW)
-        .text,
-    ).toBe("Sent 2 days ago · not opened");
+      assignmentStatus(
+        { ...base, status: "sent", sentAt: "2026-10-21T09:00:00" },
+        "Sam",
+        NOW,
+      ).text,
+    ).toBe("Sent 21 Oct");
   });
 
   it("usage, adherence, who set the target, names", () => {

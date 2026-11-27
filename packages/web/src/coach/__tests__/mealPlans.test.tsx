@@ -11,6 +11,7 @@ import { MealPlansLibraryContainer } from "../nutrition/MealPlansLibraryContaine
 import { PlanEditorContainer } from "../nutrition/PlanEditorContainer";
 import {
   CLIENT_ID,
+  ROSTER,
   apiError,
   currentPath,
   fakeApi,
@@ -516,6 +517,107 @@ describe("Edit a plan (C3) and Add to a meal (C4)", () => {
   });
 });
 
+describe("#577 review fixes (web)", () => {
+  it("a portion under 0.25 from the phone saves; one the API refuses shows by the item", async () => {
+    const small = libraryPlan({
+      meals: [
+        {
+          ...libraryPlan().meals[0]!,
+          items: [{ ...libraryPlan().meals[0]!.items[0]!, servings: 0.1 }],
+        },
+      ],
+    });
+    const replacePlan = vi.fn().mockResolvedValue(small);
+    openEditor(
+      "/coach/library/meal-plans/plan-train/edit",
+      fakeApi({
+        libraryPlans: vi.fn().mockResolvedValue([small]),
+        replacePlan,
+      }),
+    );
+    expect(await screen.findByText("80 g × 0.1")).toBeTruthy();
+    // Less keeps 0.1 (never jumps up to the quarter step).
+    fireEvent.click(screen.getByRole("button", { name: "Less Porridge oats" }));
+    expect(screen.getByText("80 g × 0.1")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Plan name"), {
+      target: { value: "Small" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save plan" }));
+    await waitFor(() => expect(replacePlan).toHaveBeenCalled());
+    expect(replacePlan.mock.calls[0]![1].meals[0].items[0].servings).toBe(0.1);
+    cleanup();
+
+    const zero = libraryPlan({
+      meals: [
+        {
+          ...libraryPlan().meals[0]!,
+          items: [{ ...libraryPlan().meals[0]!.items[0]!, servings: 0 }],
+        },
+      ],
+    });
+    const refused = vi.fn();
+    openEditor(
+      "/coach/library/meal-plans/plan-train/edit",
+      fakeApi({
+        libraryPlans: vi.fn().mockResolvedValue([zero]),
+        replacePlan: refused,
+      }),
+    );
+    fireEvent.change(await screen.findByLabelText("Plan name"), {
+      target: { value: "Zero" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save plan" }));
+    expect(
+      (
+        await screen.findAllByText(
+          "Portions must be more than 0 and up to 100.",
+        )
+      ).length,
+    ).toBe(2);
+    expect(refused).not.toHaveBeenCalled();
+  });
+
+  it("choosing another client starts a new send key; the same client keeps it", async () => {
+    const ana = { ...ROSTER.data[0]!, id: "c-ana", name: "Ana Lee" };
+    const assignPlan = vi
+      .fn()
+      .mockRejectedValueOnce(apiError(500, { message: "Boom" }))
+      .mockRejectedValueOnce(apiError(500, { message: "Boom" }))
+      .mockResolvedValueOnce({});
+    openLibrary(
+      fakeApi({
+        roster: vi
+          .fn()
+          .mockResolvedValue({ ...ROSTER, data: [...ROSTER.data, ana] }),
+        assignPlan,
+      }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Send Lean bulk · Training day to a client",
+      }),
+    );
+    const dlg = screen.getByRole("dialog");
+    const pick = (id: string) =>
+      fireEvent.change(within(dlg).getByLabelText("Send to"), {
+        target: { value: id },
+      });
+    pick(CLIENT_ID);
+    fireEvent.click(within(dlg).getByRole("button", { name: "Send to Sam" }));
+    expect(await within(dlg).findByText("Boom")).toBeTruthy();
+    pick(CLIENT_ID);
+    fireEvent.click(within(dlg).getByRole("button", { name: "Send to Sam" }));
+    await waitFor(() => expect(assignPlan).toHaveBeenCalledTimes(2));
+    pick("c-ana");
+    fireEvent.click(within(dlg).getByRole("button", { name: "Send to Ana" }));
+    await waitFor(() => expect(assignPlan).toHaveBeenCalledTimes(3));
+    const keys = assignPlan.mock.calls.map((c) => c[3]);
+    expect(keys[0]).toBe(keys[1]);
+    expect(keys[2]).not.toBe(keys[0]);
+    expect(assignPlan.mock.calls[2]![0]).toBe("c-ana");
+  });
+});
+
 describe("Client → Nutrition (C3.2)", () => {
   it("shows the target, each plan's status, usage and calorie adherence", async () => {
     openTab();
@@ -530,7 +632,9 @@ describe("Client → Nutrition (C3.2)", () => {
     expect(screen.getByText("2,500 kcal")).toBeTruthy();
     expect(await screen.findByText(/Set by you/)).toBeTruthy();
     expect(screen.getByText("In Sam’s plans · used 9 days")).toBeTruthy();
-    expect(screen.getByText("Sent 2 days ago · not opened")).toBeTruthy();
+    // No opened / not opened: the API has no "opened" signal.
+    expect(screen.getByText("Sent 2 days ago")).toBeTruthy();
+    expect(screen.queryByText(/opened/)).toBeNull();
     expect(screen.getByText("Plan meals logged this week: 19")).toBeTruthy();
     expect(
       await screen.findByText("5 of 7 days on target · 1 not logged"),

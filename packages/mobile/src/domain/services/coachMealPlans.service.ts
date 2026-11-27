@@ -48,10 +48,7 @@ export function daysAgo(iso: string, now: number): string {
 
 /** What the client has done with a plan; `tone` picks the pill. */
 export function assignmentStatus(
-  a: Pick<
-    CoachPlanAssignment,
-    "status" | "seenRevision" | "sentAt" | "usedDays"
-  >,
+  a: Pick<CoachPlanAssignment, "status" | "sentAt" | "usedDays">,
   clientFirst: string,
   now: number,
 ): { text: string; tone: "done" | "waiting" | "paused" } {
@@ -67,10 +64,9 @@ export function assignmentStatus(
   if (a.status === "dismissed") {
     return { text: `${clientFirst} chose Not now`, tone: "paused" };
   }
-  return {
-    text: `Sent ${daysAgo(a.sentAt, now)} · ${a.seenRevision > 0 ? "opened" : "not opened"}`,
-    tone: "waiting",
-  };
+  // The API has no "opened" signal: the server sets seenRevision to the
+  // plan's revision when it's sent, so only the send time is shown.
+  return { text: `Sent ${daysAgo(a.sentAt, now)}`, tone: "waiting" };
 }
 
 export function loggedThisWeek(list: readonly CoachPlanAssignment[]): number {

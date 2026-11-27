@@ -12,7 +12,10 @@ import {
   plannedLine,
   targetSetBy,
 } from "@/domain/services/coachMealPlans.service";
-import { visibleMyPlans } from "@/domain/services/nutritionPlans.service";
+import {
+  resolvePlanId,
+  visibleMyPlans,
+} from "@/domain/services/nutritionPlans.service";
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { useCoachClientMealPlans } from "@/ui/hooks/useCoachClientMealPlans";
@@ -29,6 +32,11 @@ import { Note } from "@/ui/presenters/coachForms/kit";
 import { PlanOpenedSheetPresenter } from "@/ui/presenters/coachMealPlans/PlanOpenedSheetPresenter";
 import { CoachPlanSendContainer } from "./CoachPlanSendContainer";
 import { CoachRecipeShareContainer } from "./CoachRecipeShareContainer";
+
+export const WAITING_TO_SYNC = "Waiting to sync";
+export const SEND_WAITING =
+  "This plan is waiting to sync. Send opens once it's saved.";
+const isLocalPlanId = (id: string) => id.startsWith("local-");
 
 const clock = (ms: number) => {
   const d = new Date(ms);
@@ -68,15 +76,26 @@ export function ClientNutritionContainer(p: {
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
+  // `?send=` is handled once, then cleared, so a remount doesn't reopen Send.
   useEffect(() => {
-    if (typeof params.send === "string" && params.send) setSendId(params.send);
+    if (typeof params.send === "string" && params.send) {
+      setSendId(params.send);
+      router.setParams({ send: "" } as never);
+    }
   }, [params.send]);
 
   const assignments = state.data?.assignments ?? null;
   const find = (id: string | null) =>
     assignments?.find((a) => a.id === id) ?? null;
   const mine = visibleMyPlans(library.cache);
-  const sendPlan = mine.find((x) => x.id === sendId) ?? null;
+  // A plan built on this phone keeps its local id until its create syncs:
+  // follow the alias to the server id, and wait while it's still local.
+  const resolvedSend = sendId ? resolvePlanId(library.cache, sendId) : null;
+  const sendWaiting = !!resolvedSend && isLocalPlanId(resolvedSend);
+  const sendPlan =
+    resolvedSend && !sendWaiting
+      ? (mine.find((x) => x.id === resolvedSend) ?? null)
+      : null;
   const target = state.data?.target ?? null;
   const opened = find(openId);
   const menu = find(menuId);
@@ -161,6 +180,14 @@ export function ClientNutritionContainer(p: {
           void state.reload();
         }}
       />
+      {sendWaiting ? (
+        <Note
+          onDismiss={() => setSendId(null)}
+          testID="client-nutrition-send-waiting"
+        >
+          {SEND_WAITING}
+        </Note>
+      ) : null}
       {toast ? (
         <ClientNutritionToast text={toast} onDone={() => setToast(null)} />
       ) : null}
@@ -241,7 +268,10 @@ export function ClientNutritionContainer(p: {
               ? `Already with ${first}`
               : `${x.meals.length} ${x.meals.length === 1 ? "meal" : "meals"}`,
             right: kcalText(x.totals.kcal),
-            disabled: sent || x.id.startsWith("local-"),
+            ...(isLocalPlanId(x.id) && !sent
+              ? { subtitle: WAITING_TO_SYNC }
+              : {}),
+            disabled: sent || isLocalPlanId(x.id),
           };
         })}
         empty="Your library has no plans yet."
