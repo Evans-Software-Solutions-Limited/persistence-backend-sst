@@ -1351,6 +1351,18 @@ export interface StoragePort {
   /** Insert or replace by `id`. */
   savePendingProgressPhotoSet(value: PendingProgressPhotoSet): void;
   deletePendingProgressPhotoSet(id: string): void;
+
+  // -- PER-139 (APP-G1): last time's weights in the set editor --
+  /**
+   * The `recent_sets` rows for these exercises, with `recordedAt`. Rows are
+   * upserted per set number and never deleted, so one exercise's rows can
+   * come from different sessions; callers that need one session keep only
+   * the newest `recordedAt` (see `latestSessionSets`).
+   */
+  getRecentSetRows(
+    userId: string,
+    exerciseIds: readonly string[],
+  ): RecentSetEntry[];
 }
 
 /**

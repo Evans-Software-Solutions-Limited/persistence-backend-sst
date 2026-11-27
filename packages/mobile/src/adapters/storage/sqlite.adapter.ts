@@ -4549,6 +4549,36 @@ ${indentSyncQueueDdl(12)}
       id,
     ]);
   }
+
+  // -- PER-139 (APP-G1): last time's weights in the set editor --
+
+  getRecentSetRows(
+    userId: string,
+    exerciseIds: readonly string[],
+  ): RecentSetEntry[] {
+    if (exerciseIds.length === 0) return [];
+    const placeholders = exerciseIds.map(() => "?").join(",");
+    const rows = this.getDb().getAllSync<{
+      exercise_id: string;
+      set_number: number;
+      weight_kg: number;
+      reps: number;
+      recorded_at: string;
+    }>(
+      `SELECT exercise_id, set_number, weight_kg, reps, recorded_at
+       FROM recent_sets
+       WHERE user_id = ? AND exercise_id IN (${placeholders})
+       ORDER BY exercise_id, set_number`,
+      [userId, ...exerciseIds],
+    );
+    return rows.map((row) => ({
+      exerciseId: row.exercise_id,
+      setNumber: row.set_number,
+      weightKg: row.weight_kg,
+      reps: row.reps,
+      recordedAt: row.recorded_at,
+    }));
+  }
 }
 
 /** Raw `cached_notifications` row as stored (snake_case columns). */

@@ -6,6 +6,7 @@ import {
   FORM_REPLY_MAX,
   FORM_SCHEDULE_LIMITS,
   MEAL_PLAN_LIMITS,
+  SET_TARGET_LIMITS,
   USER_MEAL_LIMITS,
 } from "./index";
 
@@ -56,5 +57,7 @@ describe("form limits", () => {
       maxMeals: 30,
     });
     expect(MEAL_PLAN_LIMITS).toEqual({ nameMax: 200, mealNameMax: 80 });
+    // PER-139: the set limits core enforced since PER-111.
+    expect(SET_TARGET_LIMITS).toEqual({ maxSets: 20, maxReps: 100 });
   });
 });
