@@ -76,11 +76,12 @@ export function ClientNutritionContainer(p: {
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
-  // `?send=` is handled once, then cleared, so a remount doesn't reopen Send.
+  // `?send=` stays in the route until that Send is finished with (sent,
+  // closed or the waiting note dismissed): a remount (pull to refresh, the
+  // header loader) picks a pending "waiting to sync" Send back up.
   useEffect(() => {
     if (typeof params.send === "string" && params.send) {
       setSendId(params.send);
-      router.setParams({ send: "" } as never);
     }
   }, [params.send]);
 
@@ -103,8 +104,16 @@ export function ClientNutritionContainer(p: {
   const removeFor = find(removeId);
   const now = Date.now();
 
-  function done(message: string) {
+  /** The pending Send is finished with: forget it here and in the route. */
+  function finishSend() {
     setSendId(null);
+    if (typeof params.send === "string" && params.send) {
+      router.setParams({ send: "" } as never);
+    }
+  }
+
+  function done(message: string) {
+    finishSend();
     setNoteId(null);
     setSharing(false);
     setToast(message);
@@ -181,10 +190,7 @@ export function ClientNutritionContainer(p: {
         }}
       />
       {sendWaiting ? (
-        <Note
-          onDismiss={() => setSendId(null)}
-          testID="client-nutrition-send-waiting"
-        >
+        <Note onDismiss={finishSend} testID="client-nutrition-send-waiting">
           {SEND_WAITING}
         </Note>
       ) : null}
@@ -296,7 +302,7 @@ export function ClientNutritionContainer(p: {
           client={client}
           target={target}
           onDone={done}
-          onClose={() => setSendId(null)}
+          onClose={finishSend}
         />
       ) : null}
       {noteFor ? (

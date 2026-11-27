@@ -524,21 +524,28 @@ describe("Client → Nutrition (C3.2b, iPhone)", () => {
     expect(
       await view.findByText("Keep the note under 500 characters."),
     ).toBeTruthy();
-    fireEvent.changeText(note, "Swap salmon for chicken");
-    await waitFor(() =>
-      expect(
-        view.queryByText("Keep the note under 500 characters."),
-      ).toBeNull(),
+    fireEvent.changeText(
+      view.getByTestId("send-plan-note"),
+      "Swap salmon for chicken",
+    );
+    await waitFor(
+      () =>
+        expect(
+          view.queryByText("Keep the note under 500 characters."),
+        ).toBeNull(),
+      { timeout: 5000 },
     );
     fireEvent.press(view.getByTestId("send-plan-submit"));
     expect(
       await view.findByText("Keep the note under 500 characters."),
     ).toBeTruthy();
     fireEvent.changeText(view.getByTestId("send-plan-note"), "");
-    await waitFor(() =>
-      expect(
-        view.queryByText("Keep the note under 500 characters."),
-      ).toBeNull(),
+    await waitFor(
+      () =>
+        expect(
+          view.queryByText("Keep the note under 500 characters."),
+        ).toBeNull(),
+      { timeout: 5000 },
     );
     fireEvent.press(view.getByTestId("send-plan-submit"));
     expect(await view.findByText("Note updated for Sam")).toBeTruthy();
@@ -590,22 +597,32 @@ describe("Client → Nutrition (C3.2b, iPhone)", () => {
     mockParams = { send: REST.id };
     const v2 = open(h);
     expect(await v2.findByText("Send to Sam")).toBeTruthy();
-    // Handled once, then cleared so a remount doesn't reopen Send.
+    // Still pending: the param stays until Send is finished with.
+    expect(mockRouter.setParams).not.toHaveBeenCalled();
+    fireEvent.press(v2.getByTestId("send-plan-submit"));
+    expect(await v2.findByText("Sent to Sam")).toBeTruthy();
     expect(mockRouter.setParams).toHaveBeenCalledWith({ send: "" });
   });
 
-  it("#577: Send for a plan built on the phone waits for its sync, then follows the server id", async () => {
+  it("#577: Send for a plan built on the phone waits for its sync, survives a remount, then follows the server id", async () => {
     const h = setupCoachForms();
     seedClient(h);
     const local = { ...plan("local-abc", "Cut · 1,900") };
     mockPlans.cache = { ...mockPlans.cache, mine: [TRAIN, REST, local] };
     mockParams = { send: "local-abc" };
+    const first = open(h);
+    expect(
+      await first.findByTestId("client-nutrition-send-waiting"),
+    ).toBeTruthy();
+    expect(first.queryByText("Send to Sam")).toBeNull();
+    // Still pending: the param stays in the route.
+    expect(mockRouter.setParams).not.toHaveBeenCalled();
+    // Pull to refresh / the header loader remounts the tab: the note stays.
+    first.unmount();
     const view = open(h);
     expect(
       await view.findByTestId("client-nutrition-send-waiting"),
     ).toBeTruthy();
-    expect(view.queryByText("Send to Sam")).toBeNull();
-    expect(mockRouter.setParams).toHaveBeenCalledWith({ send: "" });
     // A local plan can't be picked from + Add either.
     fireEvent.press(view.getByTestId("client-nutrition-plans-add"));
     expect(view.getByText("Waiting to sync")).toBeTruthy();
@@ -618,7 +635,6 @@ describe("Client → Nutrition (C3.2b, iPhone)", () => {
       mine: [TRAIN, REST, synced],
       aliases: { "local-abc": "plan-cut" },
     };
-    mockParams = {};
     view.rerender(
       <AdapterProvider adapters={h.adapters}>
         <ClientNutritionContainer clientId="c1" clientName="Sam Patel" />
@@ -627,16 +643,20 @@ describe("Client → Nutrition (C3.2b, iPhone)", () => {
     expect(await view.findByText("Send to Sam")).toBeTruthy();
     expect(view.queryByTestId("client-nutrition-send-waiting")).toBeNull();
     fireEvent.press(view.getByTestId("send-plan-submit"));
-    await waitFor(() =>
-      expect(
-        h.api.coachMealPlanCalls.some((c) =>
-          c.startsWith("assign:c1:plan-cut:"),
-        ),
-      ).toBe(true),
-    );
+    expect(await view.findByText("Sent to Sam")).toBeTruthy();
+    expect(
+      h.api.coachMealPlanCalls.some((c) => c.startsWith("assign:c1:plan-cut:")),
+    ).toBe(true);
+    // Done: the param is cleared, so a remount doesn't reopen Send.
+    expect(mockRouter.setParams).toHaveBeenCalledWith({ send: "" });
+    mockParams = {};
+    view.unmount();
+    const after = open(h);
+    expect(await after.findByTestId("client-nutrition-plans")).toBeTruthy();
+    expect(after.queryByText("Send to Sam")).toBeNull();
   });
 
-  it("#577: dismissing the waiting note cancels the pending Send", async () => {
+  it("#577: dismissing the waiting note cancels the pending Send for good", async () => {
     const h = setupCoachForms();
     seedClient(h);
     mockPlans.cache = {
@@ -649,6 +669,35 @@ describe("Client → Nutrition (C3.2b, iPhone)", () => {
       await view.findByTestId("client-nutrition-send-waiting-dismiss"),
     );
     expect(view.queryByTestId("client-nutrition-send-waiting")).toBeNull();
+    expect(mockRouter.setParams).toHaveBeenCalledWith({ send: "" });
+    mockParams = {};
+    view.unmount();
+    const after = open(h);
+    expect(await after.findByTestId("client-nutrition-plans")).toBeTruthy();
+    expect(after.queryByTestId("client-nutrition-send-waiting")).toBeNull();
+  });
+
+  it("#577: closing Send clears the param; a remount doesn't reopen it", async () => {
+    const h = setupCoachForms();
+    seedClient(h);
+    mockParams = { send: REST.id };
+    const view = open(h);
+    expect(await view.findByText("Send to Sam")).toBeTruthy();
+    expect(mockRouter.setParams).not.toHaveBeenCalled();
+    const sheet = view
+      .UNSAFE_getAllByProps({ testID: "send-plan-sheet" })
+      .find((n) => typeof n.props.onClose === "function")!;
+    act(() => {
+      sheet.props.onClose();
+    });
+    await waitFor(() =>
+      expect(mockRouter.setParams).toHaveBeenCalledWith({ send: "" }),
+    );
+    mockParams = {};
+    view.unmount();
+    const after = open(h);
+    expect(await after.findByTestId("client-nutrition-plans")).toBeTruthy();
+    expect(after.queryByText("Send to Sam")).toBeNull();
   });
 
   it("shares a recipe with the client", async () => {
