@@ -41,6 +41,73 @@ backend, migration, native or app-version change.
   "Shared with" / "Opens" columns or "Also in" / "Replace file", no
   Collections chip.
 
+### 2026-11-26 — APP-C2: athlete due forms, offline filling, joining forms ([PER-130](https://linear.app/evans-software-solutions/issue/PER-130); branch `claude/per-130-athlete-forms`)
+
+Mobile only, over the air on 1.2.0: no backend, migration or native change.
+Uses the merged BE-C1 athlete routes (#543) and BE-F1 uploads (#553).
+
+- **Cache:** `cached_form_requests` (one payload per user, `GET
+  /users/me/form-requests` with questions) and `form_request_local` (per
+  request: draft answers + step, submitted/sent/closed, a 422 body, keys,
+  C10q seen). New tables, `CREATE TABLE IF NOT EXISTS`. Done/closed rows
+  are pruned after 14 days; drafts of requests the server no longer lists
+  go on the next read; a form waiting to send is never pruned.
+- **Send:** no photos → queued `form_response` (`athleteForms.command.ts`;
+  the queue's `Idempotency-Key`). Photos → needs a connection: upload each
+  (`POST /users/me/media/uploads`, presigned PUT; key per field+file, media
+  id saved into the draft) then `POST …/response` straight away with a kept
+  key, so 422s land on the questions. `sync.command.ts`: success marks it
+  sent; 409 `request_closed` / 404 → "This check-in is no longer needed";
+  422 → back to To fill in with the errors stored for when it reopens.
+  `requestRaw` now sends `Idempotency-Key` when given.
+- **Form:** react-hook-form + TypeBox (`src/ui/forms/formAnswerForms.ts`),
+  schema built from the request's questions, fields `q0…` by index, required
+  as a `refine` rule, 422 `errors[].at` (question id) mapped with
+  `applyServerErrors`.
+- **Screens:** Coach tab forms section (C10p/r; replaces the PER-130
+  placeholder), `/forms/[id]` fill-in (C4f), `/forms/joining` (C10q, opened
+  once per coach while untouched). Tab badge = local count once read
+  (`/users/me/coaching` `due.forms` is still 0 on the server). In-app
+  notification rows for `form_request`/`form_reminder` open the form.
+- **Not built (flagged on the PR):** push taps (no deep link in the push
+  data; needs a backend `deepLink` or an adapter change after #569), coach
+  replies / past responses in "Done", "paused" and expired-missed rows (no
+  athlete endpoint), "Filled for you" prefill. `formPhotoPicker.ts` uses
+  PER-137's shared `imagePicker.ts` (merged main in after #567).
+
+### 2026-11-26 — APP-G1 set editor with reps per set + active workout pre-fill, mobile only ([PER-139](https://linear.app/evans-software-solutions/issue/PER-139); branch `claude/per-139-set-editor`)
+
+Mobile only (Brad, 26 Nov: the web builder is PER-152). Uses BE-G1a (#552).
+No native change, no backend behaviour change.
+
+- **Set editor (C5f):** `ExerciseConfigCard` in Create / Edit workout (and
+  the coach via `?ctx=coach`): Set 1…n each with − reps +, Add set, "Same
+  reps for all", Rest − m:ss +; collapsed card reads "3 sets · 12, 10, 10".
+  Last time's weights are a hint from the `recent_sets` cache
+  (`useLastTimeHints`, offline), built only from each exercise's newest
+  `recorded_at` rows (`latestSessionSets` via the new port method
+  `getRecentSetRows`; the cache keeps older sessions' higher set numbers),
+  and hidden in coach context (`?ctx=coach` / create-and-assign), where
+  they'd be the coach's own lifts (Inspector Brad on #575). Additions not on the canvas: a × to remove
+  a set, a chevron to collapse/expand, Rest steppers (±15 s).
+- **Form state:** `useWorkoutForm` gains `set_reps: number[] | null` (null
+  = old range, sent without `setTargets` so the server's keep-the-rows rule
+  applies; changing a set's reps converts it, stepping from the range top).
+  New exercises start 3 × 10. Set count stays shared across a superset.
+- **Save on react-hook-form** (`ui/forms/workoutForms.ts`, PER-147 pattern,
+  reducer state as `context`): name, ≥1 exercise, 1–20 sets, 1–100 reps.
+  Limits from `@persistence/form-limits` `SET_TARGET_LIMITS` (appended);
+  core's `MAX_SET_TARGETS` / `MAX_SET_TARGET_REPS` now read it, pinned at
+  20 / 100 in both packages' tests (no behaviour change).
+- **Reads:** workout page "3 sets · 10, 8, 8 reps"; active workout caption
+  and superset badge the same; `createSessionFromWorkout` pre-fills each
+  set's reps (lifts only — plyometric/cardio keep empty sets, since reps
+  alone would count them as logged). Without `setTargets` everything reads
+  as before.
+- **Offline:** `setTargets` rides in the cached workout JSON and the queued
+  POST/PATCH; the update command mirrors the server's preservation rule
+  (`setTargetsAfterUpdate`). No new SQLite table.
+
 ### 2026-11-25 — Android push: Firebase config per variant ([PER-149](https://linear.app/evans-software-solutions/issue/PER-149); branch `claude/per-149-android-push`)
 
 Native change approved by Brad on PER-149 (25 Nov). Needs a new Android

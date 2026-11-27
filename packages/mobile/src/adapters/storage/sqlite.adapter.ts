@@ -39,6 +39,10 @@ import type { Achievement } from "@/domain/models/achievement";
 import type { Goal } from "@/domain/models/goal";
 import type { HabitCompletion } from "@/domain/models/habit-completion";
 import type { MyCoaching } from "@/domain/models/myCoaching";
+import type {
+  AthleteFormRequests,
+  LocalFormState,
+} from "@/domain/models/athleteForms";
 import type { HabitConfig } from "@/domain/models/habit-config";
 import type {
   ReferenceEntry,
@@ -996,6 +1000,21 @@ ${indentSyncQueueDdl(8)}
         user_id TEXT NOT NULL,
         payload TEXT NOT NULL,
         created_at TEXT NOT NULL
+      );
+      -- PER-130 the athlete's due forms (with questions, for offline
+      -- fill-in) and each request's draft / send state on this phone.
+      -- New TABLEs, so CREATE TABLE IF NOT EXISTS covers upgrades too.
+      CREATE TABLE IF NOT EXISTS cached_form_requests (
+        user_id TEXT PRIMARY KEY,
+        payload TEXT NOT NULL,
+        synced_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS form_request_local (
+        user_id TEXT NOT NULL,
+        request_id TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (user_id, request_id)
       );
       -- PER-143 coach resources: the coach's library, each client's
       -- Resources tab and the athlete's resources. New TABLEs, so CREATE
@@ -3492,6 +3511,45 @@ ${indentSyncQueueDdl(12)}
     });
   }
 
+  getCachedFormRequests(userId: string): AthleteFormRequests | null {
+    const row = this.getDb().getFirstSync(
+      `SELECT payload FROM cached_form_requests WHERE user_id = ?`,
+      [userId],
+    ) as { payload: string } | null;
+    return row ? (JSON.parse(row.payload) as AthleteFormRequests) : null;
+  }
+
+  cacheFormRequests(userId: string, value: AthleteFormRequests): void {
+    this.getDb().runSync(
+      `INSERT INTO cached_form_requests (user_id, payload, synced_at) VALUES (?, ?, ?)
+       ON CONFLICT(user_id) DO UPDATE SET payload = excluded.payload, synced_at = excluded.synced_at`,
+      [userId, JSON.stringify(value), new Date().toISOString()],
+    );
+  }
+
+  getLocalFormStates(userId: string): LocalFormState[] {
+    const rows = this.getDb().getAllSync(
+      `SELECT payload FROM form_request_local WHERE user_id = ? ORDER BY updated_at`,
+      [userId],
+    ) as { payload: string }[];
+    return rows.map((r) => JSON.parse(r.payload) as LocalFormState);
+  }
+
+  saveLocalFormState(userId: string, state: LocalFormState): void {
+    this.getDb().runSync(
+      `INSERT INTO form_request_local (user_id, request_id, payload, updated_at) VALUES (?, ?, ?, ?)
+       ON CONFLICT(user_id, request_id) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at`,
+      [userId, state.requestId, JSON.stringify(state), state.updatedAt],
+    );
+  }
+
+  removeLocalFormState(userId: string, requestId: string): void {
+    this.getDb().runSync(
+      `DELETE FROM form_request_local WHERE user_id = ? AND request_id = ?`,
+      [userId, requestId],
+    );
+  }
+
   cacheActiveSession(userId: string, session: WorkoutSession): void {
     const db = this.getDb();
     const now = new Date().toISOString();
@@ -4528,6 +4586,9 @@ ${indentSyncQueueDdl(12)}
       DELETE FROM coach_form_conflicts;
       DELETE FROM cached_progress_photos;
       DELETE FROM pending_progress_photos;
+      DELETE FROM cached_form_requests;
+      DELETE FROM form_request_local;
+
       DELETE FROM cached_coach_resources;
       DELETE FROM cached_coach_client_resources;
       DELETE FROM cached_my_resources;
@@ -4576,6 +4637,36 @@ ${indentSyncQueueDdl(12)}
     this.getDb().runSync(`DELETE FROM pending_progress_photos WHERE id = ?`, [
       id,
     ]);
+  }
+
+  // -- PER-139 (APP-G1): last time's weights in the set editor --
+
+  getRecentSetRows(
+    userId: string,
+    exerciseIds: readonly string[],
+  ): RecentSetEntry[] {
+    if (exerciseIds.length === 0) return [];
+    const placeholders = exerciseIds.map(() => "?").join(",");
+    const rows = this.getDb().getAllSync<{
+      exercise_id: string;
+      set_number: number;
+      weight_kg: number;
+      reps: number;
+      recorded_at: string;
+    }>(
+      `SELECT exercise_id, set_number, weight_kg, reps, recorded_at
+       FROM recent_sets
+       WHERE user_id = ? AND exercise_id IN (${placeholders})
+       ORDER BY exercise_id, set_number`,
+      [userId, ...exerciseIds],
+    );
+    return rows.map((row) => ({
+      exerciseId: row.exercise_id,
+      setNumber: row.set_number,
+      weightKg: row.weight_kg,
+      reps: row.reps,
+      recordedAt: row.recorded_at,
+    }));
   }
 
   // -- PER-143 (APP-I1): coach resources --

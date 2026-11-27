@@ -15,6 +15,7 @@ import type {
 } from "@/domain/models/workout";
 import type { StoragePort } from "@/domain/ports/storage.port";
 import { calculateEstimatedDuration } from "@/domain/services/workout.service";
+import { setTargetsAfterUpdate } from "@/domain/services/setTargets.service";
 import { fail, ok, type Result, type ValidationError } from "@/shared/errors";
 
 export type UpdateWorkoutCommandDeps = {
@@ -73,9 +74,15 @@ export function updateWorkoutCommand(
   // reasoning as create-workout.command. Without this, a session
   // started right after an edit renders the exercise UUID in the name
   // column.
+  // Per-set reps (PER-139): what the server will store for each exercise,
+  // including its keep-the-stored-rows rule when `setTargets` isn't sent.
+  const keptSetTargets = input.exercises
+    ? setTargetsAfterUpdate(input.exercises, cached.workout.exercises)
+    : [];
   const exercises: WorkoutExercise[] = input.exercises
     ? input.exercises.map((ex, idx) => {
         const cachedExercise = deps.storage.getCachedExercise(ex.exerciseId);
+        const setTargets = keptSetTargets[idx];
         return {
           id: `local-${deps.generateId()}-${idx}`,
           exerciseId: ex.exerciseId,
@@ -87,6 +94,7 @@ export function updateWorkoutCommand(
           targetDurationSeconds: ex.targetDurationSeconds ?? null,
           restSeconds: ex.restSeconds ?? 90,
           notes: ex.notes ?? null,
+          ...(setTargets ? { setTargets } : {}),
           exercise: cachedExercise
             ? {
                 id: cachedExercise.id,

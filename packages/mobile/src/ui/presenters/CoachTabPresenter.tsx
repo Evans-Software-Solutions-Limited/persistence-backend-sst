@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Pressable, RefreshControl, ScrollView } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text, View } from "@tamagui/core";
@@ -15,21 +16,22 @@ import { CoachTabResources } from "./coachResources/CoachTabResources";
  * there are two or more (Brad, 23 Nov — one coach looks exactly like C2e).
  * Tapping a chip shows that coach.
  *
- * Resources (PER-143) is live. The other C2e sections (forms due, messages,
- * plan) belong to other tickets. Until each lands it shows as a marked placeholder (Brad, 23 Nov:
- * "make it clear not there until in development"); the release ships only
- * once the platform is complete.
+ * Due forms lead the tab (C10p, PER-130), passed in as `forms`; Resources
+ * (PER-143) closes it, as on C2e. The other C2e sections (messages, plan)
+ * belong to other tickets. Until each lands it shows as a marked placeholder
+ * (Brad, 23 Nov: "make it clear not there until in development"); the
+ * release ships only once the platform is complete.
  */
 
 export type CoachTabCoach = {
   id: string;
+  /** The coach's user id (form requests name their coach by it). */
+  trainerId: string;
   name: string;
   firstName: string;
   initials: string;
   /** "Coaching you since August" / "Your coach from today". */
   subtitle: string;
-  /** The coach's user id (PER-143: picks their resources). */
-  trainerId?: string;
 };
 
 export type CoachTabPresenterProps = {
@@ -40,6 +42,8 @@ export type CoachTabPresenterProps = {
   isRefreshing: boolean;
   onSelect(id: string): void;
   onRefresh(): void;
+  /** C10p/r: the selected coach's forms (to fill in, done), PER-130. */
+  forms?: ReactNode;
   /** PER-143: the selected coach's resources (null while none is cached). */
   resources?: AthleteResource[] | null;
   onOpenResource?(assignmentId: string): void;
@@ -48,12 +52,6 @@ export type CoachTabPresenterProps = {
 /** Placeholders for C2e sections still being built, in canvas order. */
 export function inDevelopmentSections(firstName: string) {
   return [
-    {
-      key: "forms",
-      eyebrow: null,
-      title: "Forms and check-ins to fill in",
-      ticket: "PER-130",
-    },
     {
       key: "messages",
       eyebrow: null,
@@ -146,6 +144,8 @@ export function CoachTabPresenter(p: CoachTabPresenterProps) {
             </Text>
           </View>
         </View>
+
+        {p.forms}
 
         <View marginTop={18}>
           {inDevelopmentSections(coach.firstName).map((s) => (

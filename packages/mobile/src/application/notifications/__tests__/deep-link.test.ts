@@ -220,3 +220,13 @@ it.each([null, "persistencemobile-staging://profile", "/(app)/(tabs)/you"])(
     );
   },
 );
+
+it.each(["form_request", "form_reminder"])(
+  "PER-130: a %s opens that form; without its id it falls back as before",
+  (type) => {
+    expect(resolveNotificationRoute(null, type, "req 1")).toBe(
+      "/(app)/forms/req%201",
+    );
+    expect(resolveNotificationRoute(null, type, null)).toBe("/(app)/(tabs)");
+  },
+);

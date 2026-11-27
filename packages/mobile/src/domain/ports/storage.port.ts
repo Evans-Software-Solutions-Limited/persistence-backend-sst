@@ -60,6 +60,10 @@ import type {
 } from "@/domain/models/nutritionPlans";
 import type { UserMeal } from "@/domain/models/userMeals";
 import type {
+  AthleteFormRequests,
+  LocalFormState,
+} from "@/domain/models/athleteForms";
+import type {
   ClientForm,
   CoachFormConflict,
   CoachFormStats,
@@ -910,6 +914,21 @@ export interface StoragePort {
   removeCachedMyCoach(userId: string, relationshipId: string): void;
 
   /**
+   * PER-130 (APP-C2): the athlete's due forms with their questions
+   * (`GET /users/me/form-requests`) in `cached_form_requests`, so they can
+   * be filled in offline. Null until the first successful read.
+   */
+  getCachedFormRequests(userId: string): AthleteFormRequests | null;
+  cacheFormRequests(userId: string, value: AthleteFormRequests): void;
+  /**
+   * PER-130: each request's draft and send state on this phone
+   * (`form_request_local`, one row per request).
+   */
+  getLocalFormStates(userId: string): LocalFormState[];
+  saveLocalFormState(userId: string, state: LocalFormState): void;
+  removeLocalFormState(userId: string, requestId: string): void;
+
+  /**
    * Write-through the entire session as a full upsert. Replaces the
    * three nested tables atomically per EXECUTION_PLAN § 3.4 — the
    * storage layer never sees partial sortOrder updates. Idempotent.
@@ -1356,6 +1375,18 @@ export interface StoragePort {
   /** Insert or replace by `id`. */
   savePendingProgressPhotoSet(value: PendingProgressPhotoSet): void;
   deletePendingProgressPhotoSet(id: string): void;
+
+  // -- PER-139 (APP-G1): last time's weights in the set editor --
+  /**
+   * The `recent_sets` rows for these exercises, with `recordedAt`. Rows are
+   * upserted per set number and never deleted, so one exercise's rows can
+   * come from different sessions; callers that need one session keep only
+   * the newest `recordedAt` (see `latestSessionSets`).
+   */
+  getRecentSetRows(
+    userId: string,
+    exerciseIds: readonly string[],
+  ): RecentSetEntry[];
 
   // -- PER-143 (APP-I1): coach resources --
   /** The coach's library (`cached_coach_resources`), or null before a read. */

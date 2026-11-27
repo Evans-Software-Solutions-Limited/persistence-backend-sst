@@ -73,6 +73,11 @@ export function createWorkoutCommand(
       targetDurationSeconds: ex.targetDurationSeconds ?? null,
       restSeconds: ex.restSeconds ?? 90,
       notes: ex.notes ?? null,
+      // Per-set reps (PER-139) ride in the cached JSON, as the server's read
+      // returns them; the queued POST already carries them in `sanitized`.
+      ...(ex.setTargets && ex.setTargets.length > 0
+        ? { setTargets: ex.setTargets.map((s) => ({ reps: s.reps })) }
+        : {}),
       exercise: cached
         ? {
             id: cached.id,

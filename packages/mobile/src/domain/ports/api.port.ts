@@ -74,6 +74,11 @@ import type {
   WorkoutQuota,
 } from "@/domain/models/workout";
 import type { InvitePreview, MyCoaching } from "@/domain/models/myCoaching";
+import type {
+  AthleteFormRequests,
+  FormAnswerUpload,
+  FormResponseSubmit,
+} from "@/domain/models/athleteForms";
 import type { Result, ApiError } from "@/shared/errors";
 import type { ReferralsPort } from "@/domain/ports/referrals.port";
 import type { PaginatedResult, PaginationParams } from "@/shared/types";
@@ -1500,6 +1505,35 @@ export interface ApiPort extends ReferralsPort {
    * `cached_my_coaches` so both work offline.
    */
   getMyCoaching(): Promise<Result<MyCoaching, ApiError>>;
+
+  // -- PER-130 (APP-C2): the athlete's coach forms (BE-C1, BE-F1) --
+  //
+  // Sending a form without photos goes through the offline queue
+  // (`athleteForms.command.ts`); a form with photos uploads them and sends
+  // straight away, with these.
+
+  /** `GET /users/me/form-requests`: pending and missed (still open) forms. */
+  getMyFormRequests(): Promise<Result<AthleteFormRequests, ApiError>>;
+  /**
+   * `POST /users/me/form-requests/:id/response` with `Idempotency-Key`. The
+   * raw status and body, so the caller can tell 201 from 409
+   * `request_closed` and map 422 `invalid_answers` onto the questions.
+   */
+  submitFormResponse(
+    requestId: string,
+    answers: Record<string, unknown>,
+    idempotencyKey: string,
+  ): Promise<Result<FormResponseSubmit, ApiError>>;
+  /** `POST /users/me/media/uploads` (`form_answer`, JPEG) with `Idempotency-Key`. */
+  createFormAnswerUpload(
+    bytes: number,
+    idempotencyKey: string,
+  ): Promise<Result<FormAnswerUpload, ApiError>>;
+  /** PUT a file to its presigned link, with exactly the headers given. */
+  putPresignedUpload(
+    upload: NonNullable<FormAnswerUpload["upload"]>,
+    body: Blob,
+  ): Promise<Result<void, ApiError>>;
 
   /**
    * PER-126: what a code leads to before consenting
