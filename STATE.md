@@ -10,6 +10,7 @@
 - Rail: Today and Notifications are live links with counts (`shell/places.ts` picks the active place). `renderCoach` provides a quiet fake notifications API.
 - Tests: `__tests__/notifications.test.tsx`, `__tests__/notificationsScreens.test.tsx`.
 - Inspector Brad #578 fixes (27 Nov): quiet-hours times save on blur, never disabled mid-save, and saves run one at a time with the revision the last one returned; programme end dates (`YYYY-MM-DD`) parse on the local calendar (`calendarDate`); Mark all read sends the loaded unread ids, not `{all: true}`; Today's filter falls back to All when its chip disappears.
+- Inspector Brad #578, second pass (27 Nov): the settings form resets to the server copy whenever it changes (save, refetch, 409), keeping only the time field being typed in, so nothing stays dirty or gets re-sent stale. Mark all read sends ids when every unread event is loaded, else `{all: true}` (over-200 case; server `asOf` bound is Brad's call).
 
 ### 2026-11-26 — APP-C2: athlete due forms, offline filling, joining forms ([PER-130](https://linear.app/evans-software-solutions/issue/PER-130); branch `claude/per-130-athlete-forms`)
 

@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { useQueryClient } from "@tanstack/react-query";
 import { applyValues, fieldMessages } from "@/lib/form";
@@ -25,6 +25,8 @@ import type {
 import { NotificationSettingsView } from "./NotificationSettingsView";
 import "./notifications.css";
 
+type TimeField = "quietFrom" | "quietUntil";
+
 /**
  * Container for C6b (PER-131): `GET/PUT /trainers/me/notification-settings`.
  * Every change is checked by the form's resolver, then saved with the
@@ -46,10 +48,25 @@ export function NotificationSettingsContainer() {
 
   const form = useForm<NotificationSettingsValues>({
     resolver: notificationSettingsResolver,
-    values: q.data ? settingsToValues(q.data) : undefined,
-    // A save that lands while the coach is typing a time keeps what they typed.
-    resetOptions: { keepErrors: true, keepDirtyValues: true },
   });
+
+  /** The time field the coach is typing in, if any. */
+  const focused = useRef<TimeField | null>(null);
+
+  /**
+   * Show the server's copy whenever it changes (a save landing, a refetch, a
+   * 409's current copy), so nothing stays dirty and a stale value is never
+   * sent later (Inspector Brad, #578). Only the time field the coach is
+   * typing in keeps what they've typed; it saves when they leave it.
+   */
+  const data = q.data;
+  useEffect(() => {
+    if (!data) return;
+    const next = settingsToValues(data);
+    const typing = focused.current;
+    if (typing) next[typing] = form.getValues(typing);
+    form.reset(next, { keepErrors: true });
+  }, [data, form]);
 
   const queue = useRef<Promise<void>>(Promise.resolve());
   const pending = useRef(0);
@@ -90,7 +107,7 @@ export function NotificationSettingsContainer() {
         return;
       }
       // Put the form back to what's saved, keeping a field error if any.
-      applyValues(form, settingsToValues(before));
+      form.reset(settingsToValues(before), { keepErrors: true });
       const onField = quietServerError(e);
       if (onField) {
         form.setError(onField.field, {
@@ -178,11 +195,15 @@ export function NotificationSettingsContainer() {
           quietInput,
         );
       }}
+      onQuietTimeFocus={(field) => {
+        focused.current = field;
+      }}
       onQuietTime={(field, value) => {
         applyValues(form, { ...form.getValues(), [field]: value });
         form.clearErrors(field);
       }}
       onQuietTimeDone={() => {
+        focused.current = null;
         const v = form.getValues();
         const saved = s.quietHours;
         if (

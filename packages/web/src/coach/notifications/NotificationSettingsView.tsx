@@ -30,6 +30,8 @@ export interface NotificationSettingsViewProps {
   onQuietEnabled: (on: boolean) => void;
   /** Typing in a time field: updates the form, saves nothing. */
   onQuietTime: (field: "quietFrom" | "quietUntil", value: string) => void;
+  /** Entering a time field (the coach is typing in it). */
+  onQuietTimeFocus: (field: "quietFrom" | "quietUntil") => void;
   /** Leaving a time field: checks and saves it (Inspector Brad, #578). */
   onQuietTimeDone: () => void;
 }
@@ -41,6 +43,7 @@ function TimeField({
   error,
   disabled,
   onChange,
+  onFocus,
   onBlur,
 }: {
   id: string;
@@ -49,6 +52,7 @@ function TimeField({
   error?: string;
   disabled: boolean;
   onChange: (v: string) => void;
+  onFocus: () => void;
   onBlur: () => void;
 }) {
   return (
@@ -65,6 +69,7 @@ function TimeField({
         aria-invalid={error ? true : undefined}
         aria-describedby={error ? `${id}-err` : undefined}
         onChange={(e) => onChange(e.target.value)}
+        onFocus={onFocus}
         onBlur={onBlur}
       />
       {error && (
@@ -148,6 +153,7 @@ export function NotificationSettingsView(p: NotificationSettingsViewProps) {
                   error={p.errors.quietFrom}
                   disabled={offline}
                   onChange={(v) => p.onQuietTime("quietFrom", v)}
+                  onFocus={() => p.onQuietTimeFocus("quietFrom")}
                   onBlur={p.onQuietTimeDone}
                 />
                 <TimeField
@@ -157,6 +163,7 @@ export function NotificationSettingsView(p: NotificationSettingsViewProps) {
                   error={p.errors.quietUntil}
                   disabled={offline}
                   onChange={(v) => p.onQuietTime("quietUntil", v)}
+                  onFocus={() => p.onQuietTimeFocus("quietUntil")}
                   onBlur={p.onQuietTimeDone}
                 />
               </div>

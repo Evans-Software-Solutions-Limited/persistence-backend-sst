@@ -62,6 +62,7 @@ export function NotificationsContainer({
 
   const at = now();
   const events = feed.data.data;
+  const unreadTotal = feed.data.unreadCount;
   const shown = filterFeed(events, { type, who });
   const counts = unreadByType(events);
   const rowOf = (e: CoachEvent) => ({
@@ -83,7 +84,7 @@ export function NotificationsContainer({
     return { ...rowOf(e), name: w.name, initials: w.initials };
   });
 
-  async function markRead(ids: string[], key: string) {
+  async function markRead(ids: string[] | "all", key: string) {
     setError(null);
     setBusy(key);
     try {
@@ -93,14 +94,15 @@ export function NotificationsContainer({
         if (!old) return old;
         let changed = 0;
         const data = old.data.map((e) => {
-          if (e.readAt || !ids.includes(e.id)) return e;
+          if (e.readAt || (ids !== "all" && !ids.includes(e.id))) return e;
           changed += 1;
           return { ...e, readAt: stamp };
         });
         return {
           ...old,
           data,
-          unreadCount: Math.max(0, old.unreadCount - changed),
+          unreadCount:
+            ids === "all" ? 0 : Math.max(0, old.unreadCount - changed),
         };
       });
       void queryClient.invalidateQueries({ queryKey: notificationKeys.today });
@@ -138,7 +140,7 @@ export function NotificationsContainer({
       quiet={allGroups.filter((g) => g.unread === 0)}
       showQuiet={showQuiet}
       latest={latest}
-      unreadTotal={feed.data.unreadCount}
+      unreadTotal={unreadTotal}
       busy={busy}
       offlineAsOf={offlineAsOf}
       error={error}
@@ -147,10 +149,14 @@ export function NotificationsContainer({
       onMode={setMode}
       onShowQuiet={() => setShowQuiet(true)}
       onMarkAll={() => {
-        // Only what the coach can see: `{all: true}` would also mark events
-        // newer than this page (Inspector Brad, #578). The route takes 500.
+        // Trade-off (Inspector Brad, #578): when every unread event is on
+        // screen, send their ids, so an event that arrives meanwhile stays
+        // unread. When some are older than the 200 loaded, ids alone could
+        // never clear them (the badge would stick), so send `{all: true}` and
+        // accept that an event arriving in that moment is marked read too.
         const ids = events.filter((e) => !e.readAt).map((e) => e.id);
-        if (ids.length > 0) void markRead(ids, "all");
+        if (unreadTotal > ids.length) void markRead("all", "all");
+        else if (ids.length > 0) void markRead(ids, "all");
       }}
       onMarkGroup={(key) => {
         const ids = shown

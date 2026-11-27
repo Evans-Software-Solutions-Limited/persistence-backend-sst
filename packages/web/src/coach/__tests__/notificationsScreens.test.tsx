@@ -596,6 +596,7 @@ describe("Inspector Brad #578", () => {
     await waitFor(() => expect(n.putSettings).toHaveBeenCalledTimes(1));
     const until = screen.getByLabelText("Until") as HTMLInputElement;
     expect(until.disabled).toBe(false);
+    fireEvent.focus(until);
     fireEvent.change(until, { target: { value: "06:30" } });
     finish(notificationSettings({ revision: 3 }));
     await waitFor(() =>
@@ -623,7 +624,7 @@ describe("Inspector Brad #578", () => {
     expect(screen.queryByText(/Updated on another device/)).toBeNull();
   });
 
-  it("Mark all read sends nothing when nothing loaded is unread", async () => {
+  it("Mark all read falls back to all: true when unread events aren't all loaded", async () => {
     const n = fakeNotificationsApi({
       feed: vi.fn().mockResolvedValue(
         feedPage({
@@ -645,7 +646,58 @@ describe("Inspector Brad #578", () => {
     fireEvent.click(
       await screen.findByRole("button", { name: "Mark all read" }),
     );
-    expect(n.markRead).not.toHaveBeenCalled();
+    // Older unread events past the 200 loaded could never be cleared by ids.
+    await waitFor(() => expect(n.markRead).toHaveBeenCalledWith("all"));
+    await waitFor(() =>
+      expect(
+        (
+          screen.getByRole("button", {
+            name: "Mark all read",
+          }) as HTMLButtonElement
+        ).disabled,
+      ).toBe(true),
+    );
+  });
+
+  it("after a save, a newer copy from another device replaces the form; leaving a field unchanged sends nothing", async () => {
+    const mine = notificationSettings({
+      revision: 3,
+      quietHours: { enabled: true, from: "21:30", until: "07:00" },
+    });
+    const theirs = notificationSettings({
+      revision: 4,
+      quietHours: { enabled: true, from: "22:00", until: "06:00" },
+    });
+    const settings = vi
+      .fn()
+      .mockResolvedValueOnce(
+        notificationSettings({
+          quietHours: { enabled: true, from: "21:00", until: "07:00" },
+        }),
+      )
+      .mockResolvedValue(theirs);
+    const n = fakeNotificationsApi({
+      settings,
+      putSettings: vi.fn().mockResolvedValue(mine),
+    });
+    const { queryClient } = renderSettings(n);
+    const from = (await screen.findByLabelText("From")) as HTMLInputElement;
+    fireEvent.focus(from);
+    fireEvent.change(from, { target: { value: "21:30" } });
+    fireEvent.blur(from);
+    await waitFor(() => expect(n.putSettings).toHaveBeenCalledTimes(1));
+    // Another device changes both times; a refetch (e.g. on focus) brings it.
+    await queryClient.refetchQueries();
+    await waitFor(() => expect(from.value).toBe("22:00"));
+    const until = screen.getByLabelText("Until") as HTMLInputElement;
+    expect(until.value).toBe("06:00");
+    // Tabbing through both fields without changing them sends nothing.
+    fireEvent.focus(from);
+    fireEvent.blur(from);
+    fireEvent.focus(until);
+    fireEvent.blur(until);
+    await waitFor(() => expect(until.value).toBe("06:00"));
+    expect(n.putSettings).toHaveBeenCalledTimes(1);
   });
 
   it("when a chip's count drops to 0, Today falls back to All", async () => {
