@@ -515,6 +515,30 @@ describe("trainersMeGenerateClientAiSummaryHandler", () => {
     expect(recordMock).not.toHaveBeenCalled();
   });
 
+  it("a manual refresh with no evidence keeps today's cached summary instead of blanking it", async () => {
+    getForDayMock.mockResolvedValue({ ...CACHED_ROW, refreshCount: 0 });
+    loadEvidenceMock.mockResolvedValue({});
+    const app = await buildApp();
+    const res = await app.handle(authedRequest({ manual: true }));
+    expect(res.status).toBe(200);
+    expect((await json(res)).data).toEqual({
+      state: "ready",
+      summary: "Cached summary text.",
+      coversDate: expect.any(String),
+      generatedAt: CACHED_ROW.generatedAt,
+      // Nothing was spent, so the one refresh is still offered.
+      canManualRefresh: true,
+      headline: "Cached headline.",
+      areas: CACHED_ROW.areas,
+      ask: "Cached ask.",
+      weekOfProgramme: { week: 2, of: 8 },
+    });
+    expect(generateSummaryMock).not.toHaveBeenCalled();
+    expect(updateRefreshMock).not.toHaveBeenCalled();
+    expect(insertInitialMock).not.toHaveBeenCalled();
+    expect(recordMock).not.toHaveBeenCalled();
+  });
+
   it("a relationship with no activated_at has no first-week wait", async () => {
     SCOPE.activatedAt = null;
     const app = await buildApp();

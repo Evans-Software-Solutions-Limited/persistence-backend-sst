@@ -230,6 +230,19 @@ export const trainersMeGenerateClientAiSummaryHandler = new Elysia()
         // programme week, form answers and plan meals. No photos, no notes.
         evidence = await loadWeeklySummaryEvidence(scope, tz, now);
         const allowed = availableAreas(evidence);
+        if (allowed.length === 0 && existing) {
+          // A manual refresh with nothing to regenerate from: keep today's
+          // summary rather than blank it (the next open would show it again).
+          // No inference ran, so the one refresh is still unspent.
+          return {
+            data: readyModule(
+              existing,
+              coversDate,
+              existing.refreshCount < 1 &&
+                usedToday < AI_COACH_SUMMARY_DAILY_LIMIT,
+            ),
+          };
+        }
         if (allowed.length === 0) {
           // Nothing tracked and nothing logged: there is nothing to summarise,
           // so no AI call and no cache row. `summary: null` is the 1.2.0
