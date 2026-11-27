@@ -104,6 +104,24 @@ jest.mock("../../src/ui/hooks/useMyCoaches", () => ({
   useMyCoaches: (opts?: { enabled?: boolean }) => mockUseMyCoaches(opts),
 }));
 
+// PER-130: the athlete's due forms (null until read → the server's count).
+type MockForms = {
+  data: object | null;
+  requests: { id: string }[];
+  locals: {
+    requestId: string;
+    closed: boolean;
+    submittedAt: string | null;
+    rejected: unknown;
+  }[];
+};
+const mockForms: { value: MockForms } = {
+  value: { data: null, requests: [], locals: [] },
+};
+jest.mock("../../src/ui/hooks/useAthleteForms", () => ({
+  useAthleteForms: () => mockForms.value,
+}));
+
 // eslint-disable-next-line import/first
 import { fireEvent, render, within } from "@testing-library/react-native";
 // eslint-disable-next-line import/first
@@ -307,6 +325,29 @@ describe("TabsLayout — Coach tab (PER-126, C2e)", () => {
     ];
     const { getByTestId } = renderLayout();
     expect(within(getByTestId("nav-tab-bar")).getByText("3")).toBeTruthy();
+  });
+
+  it("once the forms are read, the badge counts those still to fill in on this phone (PER-130)", () => {
+    mockCoaches.list = [{ relationshipId: "r1", due: { forms: 0 } }];
+    mockForms.value = {
+      data: {},
+      requests: [{ id: "a" }, { id: "b" }, { id: "c" }],
+      // "c" was sent offline: it no longer counts.
+      locals: [
+        {
+          requestId: "c",
+          closed: false,
+          submittedAt: "2026-11-26T08:00:00Z",
+          rejected: null,
+        },
+      ],
+    };
+    try {
+      const { getByTestId } = renderLayout();
+      expect(within(getByTestId("nav-tab-bar")).getByText("2")).toBeTruthy();
+    } finally {
+      mockForms.value = { data: null, requests: [], locals: [] };
+    }
   });
 });
 
