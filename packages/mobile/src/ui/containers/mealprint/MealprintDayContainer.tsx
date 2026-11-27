@@ -644,16 +644,6 @@ export function MealprintDayContainer({
     );
   }
 
-  if (step === "generating" || generate.stage === "generating") {
-    return (
-      <MealprintWorkingPresenter
-        body="Filling your meals to your target and preferences. This takes a few seconds."
-        onBack={onClose}
-        onCancel={onClose}
-      />
-    );
-  }
-
   if (generate.stage === "error" && generate.failure) {
     if (generate.failure.entitlementDenied) {
       return <MealprintLockedPresenter onBack={onClose} onUpgrade={gate.onUpgrade} />;
@@ -672,6 +662,16 @@ export function MealprintDayContainer({
           } else backToHome();
         }}
         onSecondary={onClose}
+      />
+    );
+  }
+
+  if (step === "generating" || generate.stage === "generating") {
+    return (
+      <MealprintWorkingPresenter
+        body="Filling your meals to your target and preferences. This takes a few seconds."
+        onBack={onClose}
+        onCancel={onClose}
       />
     );
   }
