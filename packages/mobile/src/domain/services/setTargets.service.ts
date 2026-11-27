@@ -14,6 +14,7 @@ import type {
   WorkoutExercise,
   WorkoutExerciseInput,
 } from "@/domain/models/workout";
+import type { RecentSetEntry } from "@/domain/ports/storage.port";
 import { weightInUnit, type WeightUnit } from "@/shared/utils";
 
 /** Sets and reps the API accepts (`@persistence/form-limits`). */
@@ -123,6 +124,38 @@ export function setTargetsAfterUpdate(
       ? candidate.map((s) => ({ reps: s.reps }))
       : undefined;
   });
+}
+
+/**
+ * One session's sets per exercise, for the "Last time" hint. `recent_sets`
+ * is upserted per set number and never pruned, so after 5 sets one day and
+ * 3 the next, sets 4–5 still hold the older session. Keep only the rows
+ * with the newest `recordedAt` for each exercise (rows of one session share
+ * its completion time). The active workout's per-row Previous column reads
+ * the cache as before and is unaffected.
+ */
+export function latestSessionSets(
+  rows: readonly RecentSetEntry[],
+): Record<string, Record<number, { weightKg: number; reps: number }>> {
+  const newest = new Map<string, number>();
+  for (const row of rows) {
+    const at = Date.parse(row.recordedAt);
+    if (!Number.isFinite(at)) continue;
+    const seen = newest.get(row.exerciseId);
+    if (seen === undefined || at > seen) newest.set(row.exerciseId, at);
+  }
+  const out: Record<
+    string,
+    Record<number, { weightKg: number; reps: number }>
+  > = {};
+  for (const row of rows) {
+    if (Date.parse(row.recordedAt) !== newest.get(row.exerciseId)) continue;
+    (out[row.exerciseId] ??= {})[row.setNumber] = {
+      weightKg: row.weightKg,
+      reps: row.reps,
+    };
+  }
+  return out;
 }
 
 /** Weight shown in the user's unit, without trailing zeros: "92.5 kg". */

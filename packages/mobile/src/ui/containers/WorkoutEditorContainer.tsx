@@ -73,8 +73,12 @@ export function WorkoutEditorContainer() {
     context: form.state,
   });
   const saveErrors = useMemo(() => workoutSaveErrors(form.state), [form.state]);
+  // Last time's weights are the signed-in user's own lifts, so they're
+  // hidden while a coach builds for a client (`?ctx=coach`, create-and-assign):
+  // the phone has no client-scoped source.
   const lastTimeHints = useLastTimeHints(
     form.state.exercises.map((ex) => ex.exercise_id),
+    !isCoachContext,
   );
   // The loaded plan starts collapsed ("3 sets · 12, 10, 10"); exercises
   // added while editing start open.

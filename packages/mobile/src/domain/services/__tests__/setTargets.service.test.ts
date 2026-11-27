@@ -8,6 +8,7 @@ import {
   clampReps,
   deriveFromSetReps,
   lastTimeHint,
+  latestSessionSets,
   prescriptionSummary,
   rangeLabel,
   setCountLabel,
@@ -147,6 +148,53 @@ describe("setTargets.service (PER-139)", () => {
         [{ reps: 10 }, { reps: 8 }, { reps: 8 }],
         [{ reps: 8 }, { reps: 9 }, { reps: 10 }],
       ]);
+    });
+  });
+
+  describe("latestSessionSets", () => {
+    const row = (
+      exerciseId: string,
+      setNumber: number,
+      reps: number,
+      recordedAt: string,
+    ) => ({ exerciseId, setNumber, weightKg: 50, reps, recordedAt });
+
+    it("keeps only the newest session's rows per exercise (older extra set numbers excluded)", () => {
+      const monday = "2026-11-23T18:00:00.000Z";
+      const tuesday = "2026-11-24T18:00:00.000Z";
+      expect(
+        latestSessionSets([
+          row("ex-1", 1, 8, tuesday),
+          row("ex-1", 2, 6, tuesday),
+          row("ex-1", 3, 6, tuesday),
+          row("ex-1", 4, 10, monday),
+          row("ex-1", 5, 10, monday),
+          row("ex-2", 1, 12, monday),
+          row("ex-2", 2, 9, "not a date"),
+        ]),
+      ).toEqual({
+        "ex-1": {
+          1: { weightKg: 50, reps: 8 },
+          2: { weightKg: 50, reps: 6 },
+          3: { weightKg: 50, reps: 6 },
+        },
+        "ex-2": { 1: { weightKg: 50, reps: 12 } },
+      });
+    });
+
+    it("matches the same instant written in another ISO form", () => {
+      expect(
+        latestSessionSets([
+          row("ex-1", 1, 8, "2026-11-24T18:00:00Z"),
+          row("ex-1", 2, 6, "2026-11-24T18:00:00.000Z"),
+        ]),
+      ).toEqual({
+        "ex-1": {
+          1: { weightKg: 50, reps: 8 },
+          2: { weightKg: 50, reps: 6 },
+        },
+      });
+      expect(latestSessionSets([])).toEqual({});
     });
   });
 

@@ -9,7 +9,11 @@ No native change, no backend behaviour change.
   the coach via `?ctx=coach`): Set 1…n each with − reps +, Add set, "Same
   reps for all", Rest − m:ss +; collapsed card reads "3 sets · 12, 10, 10".
   Last time's weights are a hint from the `recent_sets` cache
-  (`useLastTimeHints`, offline). Additions not on the canvas: a × to remove
+  (`useLastTimeHints`, offline), built only from each exercise's newest
+  `recorded_at` rows (`latestSessionSets` via the new port method
+  `getRecentSetRows`; the cache keeps older sessions' higher set numbers),
+  and hidden in coach context (`?ctx=coach` / create-and-assign), where
+  they'd be the coach's own lifts (Inspector Brad on #575). Additions not on the canvas: a × to remove
   a set, a chevron to collapse/expand, Rest steppers (±15 s).
 - **Form state:** `useWorkoutForm` gains `set_reps: number[] | null` (null
   = old range, sent without `setTargets` so the server's keep-the-rows rule

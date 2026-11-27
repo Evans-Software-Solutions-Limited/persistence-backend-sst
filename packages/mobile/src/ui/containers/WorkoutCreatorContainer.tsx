@@ -73,8 +73,12 @@ export function WorkoutCreatorContainer() {
     resolver: workoutSaveResolver,
     context: form.state,
   });
+  // Last time's weights are the signed-in user's own lifts, so they're
+  // hidden while a coach builds for a client (`?ctx=coach`, create-and-assign):
+  // the phone has no client-scoped source.
   const lastTimeHints = useLastTimeHints(
     form.state.exercises.map((ex) => ex.exercise_id),
+    !isCoachContext,
   );
 
   const [isSubmitting, setIsSubmitting] = useState(false);

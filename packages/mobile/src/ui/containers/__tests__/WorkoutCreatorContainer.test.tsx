@@ -281,31 +281,85 @@ describe("WorkoutCreatorContainer", () => {
     });
   }, 30_000);
 
-  it("shows last time's weights as a hint under the exercise", async () => {
+  /** 5 sets on Monday, then 3 on Tuesday: sets 4–5 are still Monday's rows. */
+  const seedTwoSessions = (storage: InMemoryStorageAdapter) => {
+    const monday = "2026-11-23T18:00:00.000Z";
+    const tuesday = "2026-11-24T18:00:00.000Z";
+    storage.upsertRecentSets(
+      "user-1",
+      [1, 2, 3, 4, 5].map((setNumber) => ({
+        exerciseId: "ex-1",
+        setNumber,
+        weightKg: 80,
+        reps: 10,
+        recordedAt: monday,
+      })),
+    );
+    storage.upsertRecentSets(
+      "user-1",
+      [8, 6, 6].map((reps, i) => ({
+        exerciseId: "ex-1",
+        setNumber: i + 1,
+        weightKg: 92.5,
+        reps,
+        recordedAt: tuesday,
+      })),
+    );
+  };
+
+  const addBench = async (
+    utils: ReturnType<typeof renderWithTheme>,
+  ): Promise<void> => {
+    expect(await utils.findByText("Create Workout")).toBeTruthy();
+    fireEvent.press(utils.getByTestId("add-exercise-button"));
+    fireEvent.press(await utils.findByText("Bench"));
+    await act(async () => {
+      fireEvent.press(utils.getByTestId("add-exercises-button"));
+    });
+    await waitFor(() => expect(utils.getByText("Bench")).toBeTruthy());
+  };
+
+  it("shows last time's weights from the newest session only", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
     storage.cacheExercises([buildExercise({ id: "ex-1", name: "Bench" })]);
-    jest.spyOn(storage, "getRecentSetsByExercise").mockReturnValue({
-      "ex-1": {
-        1: { weightKg: 92.5, reps: 8 },
-        2: { weightKg: 92.5, reps: 6 },
-      },
-    });
+    seedTwoSessions(storage);
 
-    const { findByText, getByTestId, getByText } = renderWithTheme(
+    const utils = renderWithTheme(
       withAdapters(makeAdapters(api, storage), <WorkoutCreatorContainer />),
     );
-    expect(await findByText("Create Workout")).toBeTruthy();
-    fireEvent.press(getByTestId("add-exercise-button"));
-    fireEvent.press(await findByText("Bench"));
-    await act(async () => {
-      fireEvent.press(getByTestId("add-exercises-button"));
-    });
-    await waitFor(() => expect(getByText("Bench")).toBeTruthy());
-    expect(getByTestId("last-time-hint").props.children).toBe(
-      "Last time 92.5 kg × 8, 6",
+    await addBench(utils);
+    // Monday's sets 4–5 (80 kg × 10) are left out.
+    expect(utils.getByTestId("last-time-hint").props.children).toBe(
+      "Last time 92.5 kg × 8, 6, 6",
     );
   }, 30_000);
+
+  it.each([
+    ["the iPhone coach builder (?ctx=coach)", { ctx: "coach" }],
+    [
+      "create-and-assign for a client",
+      { ctx: "coach", assignClientId: "client-1" },
+    ],
+    ["create-and-assign without ctx", { assignClientId: "client-1" }],
+  ])(
+    "hides last time's weights in %s (they'd be the coach's own lifts)",
+    async (_label, params) => {
+      mockUseLocalSearchParams.mockReturnValue(params);
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      storage.cacheExercises([buildExercise({ id: "ex-1", name: "Bench" })]);
+      seedTwoSessions(storage);
+
+      const utils = renderWithTheme(
+        withAdapters(makeAdapters(api, storage), <WorkoutCreatorContainer />),
+      );
+      await addBench(utils);
+      expect(utils.getByTestId("set-row-0")).toBeTruthy();
+      expect(utils.queryByTestId("last-time-hint")).toBeNull();
+    },
+    30_000,
+  );
 
   it("dirty cancel + Discard tap invokes router.back", async () => {
     const api = new InMemoryApiAdapter();
