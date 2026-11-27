@@ -6,7 +6,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { render } from "@testing-library/react";
+import { act, render } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import CoachApp from "../CoachApp";
@@ -36,6 +36,12 @@ import {
 } from "./calendarFixtures";
 
 const CAL = "/coach/today/calendar";
+
+/** The edit sheet, once its workout list has loaded. */
+async function editSheet() {
+  const workout = await screen.findByLabelText("Workout");
+  return workout.closest("[role=dialog]") as HTMLElement;
+}
 
 function renderCalendar(cal: FakeCalendarApi, route = CAL) {
   return renderCoach(withCalendar(<CalendarContainer now={NOW} />, cal), {
@@ -297,7 +303,7 @@ describe("Calendar (C4a)", () => {
     });
     expect(typeof key).toBe("string");
     expect(await screen.findByText("2 sessions scheduled")).toBeTruthy();
-    expect(currentPath()).toContain("week=2026-11-30");
+    await waitFor(() => expect(currentPath()).toContain("week=2026-11-30"));
   });
 
   it("books your own training with no clients or reminder", async () => {
@@ -336,7 +342,7 @@ describe("Calendar (C4a)", () => {
     renderCalendar(cal);
     fireEvent.click(await screen.findByRole("button", { name: /Sam Patel/ }));
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    const dlg = screen.getByRole("dialog", { name: "Edit session" });
+    const dlg = await editSheet();
     expect(within(dlg).getByText("Sam Patel")).toBeTruthy();
     // Nothing changed: Save just closes.
     fireEvent.click(within(dlg).getByRole("button", { name: "Save" }));
@@ -346,7 +352,7 @@ describe("Calendar (C4a)", () => {
     expect(cal.update).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    const again = screen.getByRole("dialog", { name: "Edit session" });
+    const again = await editSheet();
     fireEvent.change(within(again).getByLabelText("Time"), {
       target: { value: "09:30" },
     });
@@ -391,7 +397,7 @@ describe("Schedule sheet details", () => {
     renderCalendar(cal);
     fireEvent.click(await screen.findByRole("button", { name: /Sam Patel/ }));
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    let dlg = screen.getByRole("dialog", { name: "Edit session" });
+    let dlg = await editSheet();
     expect(within(dlg).getByRole("option", { name: "50 min" })).toBeTruthy();
     fireEvent.click(
       within(dlg).getByRole("button", { name: "This and later" }),
@@ -482,6 +488,145 @@ describe("Schedule from Client Detail (C4c)", () => {
     ).toBeTruthy();
     fireEvent.keyDown(dlg, { key: "Escape" });
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
+describe("Inspector Brad fixes (#581)", () => {
+  it("drops ticked clients when switching to Your training, then books", async () => {
+    const cal = fakeCalendarApi({
+      range: vi.fn().mockResolvedValue(range({ sessions: [] })),
+    });
+    renderCalendar(cal);
+    fireEvent.click(await screen.findByRole("button", { name: "Schedule" }));
+    const dlg = screen.getByRole("dialog");
+    fireEvent.click(
+      await within(dlg).findByRole("checkbox", { name: "Sam Patel" }),
+    );
+    fireEvent.click(within(dlg).getByRole("tab", { name: "Your training" }));
+    fireEvent.change(within(dlg).getByLabelText("Date"), {
+      target: { value: "2099-01-05" },
+    });
+    fireEvent.click(within(dlg).getByRole("button", { name: "Schedule" }));
+    await waitFor(() => expect(cal.create).toHaveBeenCalled());
+    expect(cal.create.mock.calls[0]![0]).toMatchObject({
+      kind: "own_training",
+      clientIds: [],
+    });
+  });
+
+  it("waits for the workout list on Edit, then shows the linked workout", async () => {
+    let resolve: (v: unknown) => void = () => {};
+    const cal = fakeCalendarApi({
+      range: vi.fn().mockResolvedValue(range()),
+      workouts: vi.fn(
+        () =>
+          new Promise((r) => {
+            resolve = r;
+          }),
+      ),
+    });
+    renderCalendar(cal);
+    fireEvent.click(await screen.findByRole("button", { name: /Sam Patel/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect(screen.getByText("Loading…")).toBeTruthy();
+    await act(async () => {
+      resolve([
+        { id: "w1", name: "Upper B" },
+        { id: "w2", name: "Lower A" },
+      ]);
+    });
+    const dlg = await editSheet();
+    expect(
+      (within(dlg).getByLabelText("Workout") as HTMLSelectElement).value,
+    ).toBe("w1");
+  });
+
+  it("keeps a workout outside the list and an odd reminder; None removes the workout", async () => {
+    const s = session({
+      workout: { id: "w-old", name: "Old circuit" },
+      reminderMinutes: 45,
+    });
+    const cal = fakeCalendarApi({
+      range: vi.fn().mockResolvedValue(range({ sessions: [s] })),
+    });
+    renderCalendar(cal);
+    fireEvent.click(await screen.findByRole("button", { name: /Sam Patel/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const dlg = await editSheet();
+    const workout = within(dlg).getByLabelText("Workout") as HTMLSelectElement;
+    expect(workout.value).toBe("w-old");
+    expect(
+      within(dlg).getByRole("option", { name: "Old circuit" }),
+    ).toBeTruthy();
+    const reminder = within(dlg).getByLabelText(
+      "Sam gets",
+    ) as HTMLSelectElement;
+    expect(reminder.value).toBe("45");
+    expect(
+      within(dlg).getByRole("option", {
+        name: "Invite + reminder 45 min before",
+      }),
+    ).toBeTruthy();
+    fireEvent.change(workout, { target: { value: "" } });
+    fireEvent.click(within(dlg).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(cal.update).toHaveBeenCalled());
+    expect(cal.update.mock.calls[0]![1]).toEqual({
+      expectedRevision: 1,
+      workoutId: null,
+    });
+  });
+
+  it("hides Edit and Cancel once a session starts, as the clock moves", async () => {
+    vi.useFakeTimers({
+      shouldAdvanceTime: true,
+      now: new Date(2026, 10, 25, 6, 59, 30),
+    });
+    try {
+      const cal = fakeCalendarApi();
+      renderCoach(withCalendar(<CalendarContainer />, cal), {
+        route: CAL,
+        path: "/coach/today/calendar",
+        api: fakeApi(),
+      });
+      fireEvent.click(await screen.findByRole("button", { name: /Sam Patel/ }));
+      expect(screen.getByRole("button", { name: "Edit" })).toBeTruthy();
+      await act(async () => {
+        vi.advanceTimersByTime(60_000);
+      });
+      expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
+      expect(
+        screen.queryByRole("button", { name: "Cancel session" }),
+      ).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("offers Schedule only for an active client", async () => {
+    renderCoach(withCalendar(<ClientPage />, fakeCalendarApi()), {
+      route: "/coach/clients/p-1/settings",
+      path: "/coach/clients/:clientId/:tab?",
+      api: fakeApi({
+        roster: vi.fn().mockResolvedValue({
+          data: [
+            {
+              id: "p-1",
+              name: "Pat Pending",
+              initials: "PP",
+              avatarUrl: null,
+              status: "pending",
+              programLabel: null,
+              lastSeenAt: null,
+            },
+          ],
+          invited: [],
+        }),
+      }),
+    });
+    expect(
+      await screen.findByText(/isn't one of your active clients/),
+    ).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Schedule" })).toBeNull();
   });
 });
 

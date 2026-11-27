@@ -112,7 +112,7 @@ function ClientHeader({ client }: { client: RosterClient }) {
         )}
       </div>
       {/* PER-144: header calendar button (C4c). */}
-      <ScheduleFromClient client={client} />
+      {client.status === "active" && <ScheduleFromClient client={client} />}
     </header>
   );
 }

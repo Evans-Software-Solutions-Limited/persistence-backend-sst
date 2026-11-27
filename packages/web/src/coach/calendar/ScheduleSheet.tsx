@@ -36,6 +36,8 @@ export interface ScheduleSheetProps {
   /** Read-only list of who is booked, on Edit. */
   bookedNames: string[];
   workouts: WorkoutOption[];
+  /** The session's own workout on Edit, offered even if not in the list. */
+  linkedWorkout?: WorkoutOption | null;
   /** Edit of a repeating session: this one, or this and later. */
   scope: SessionScope | null;
   onScope: (s: SessionScope) => void;
@@ -53,6 +55,7 @@ export function ScheduleSheet({
   clients,
   bookedNames,
   workouts,
+  linkedWorkout = null,
   scope,
   onScope,
   busy,
@@ -96,12 +99,18 @@ export function ScheduleSheet({
               type="button"
               role="tab"
               aria-selected={kind === k}
-              onClick={() =>
+              onClick={() => {
                 setValue("kind", k, {
                   shouldDirty: true,
                   shouldValidate: false,
-                })
-              }
+                });
+                // Your training books no one: drop clients ticked in the
+                // hidden Who list, or their error would block Schedule.
+                if (k === "own_training" && clientIds.length > 0) {
+                  setValue("clientIds", [], { shouldDirty: true });
+                  form.clearErrors("clientIds");
+                }
+              }}
             >
               {KIND_LABEL[k]}
             </button>
@@ -210,7 +219,7 @@ export function ScheduleSheet({
             {...register("workoutId")}
           >
             <option value="">None</option>
-            {workouts.map((w) => (
+            {workoutChoices(workouts, linkedWorkout).map((w) => (
               <option key={w.id} value={w.id}>
                 {w.name}
               </option>
@@ -272,7 +281,7 @@ export function ScheduleSheet({
               aria-label={gets}
               {...register("reminderMinutes", { valueAsNumber: true })}
             >
-              {REMINDER_OPTIONS.map((m) => (
+              {reminderChoices(values.reminderMinutes).map((m) => (
                 <option key={m} value={m}>
                   {m === 0
                     ? "Invite only"
@@ -299,6 +308,23 @@ export function ScheduleSheet({
       </form>
     </Dialog>
   );
+}
+
+/** The coach's workouts, plus the session's own when the list lacks it. */
+function workoutChoices(
+  workouts: WorkoutOption[],
+  linked: WorkoutOption | null,
+): WorkoutOption[] {
+  return linked && !workouts.some((w) => w.id === linked.id)
+    ? [linked, ...workouts]
+    : workouts;
+}
+
+/** The usual reminders, plus the session's own when it isn't one of them. */
+function reminderChoices(current: number): number[] {
+  return REMINDER_OPTIONS.includes(current) || !Number.isFinite(current)
+    ? REMINDER_OPTIONS
+    : [...REMINDER_OPTIONS, current].sort((a, b) => a - b);
 }
 
 /** The usual lengths, plus the session's own when it isn't one of them. */

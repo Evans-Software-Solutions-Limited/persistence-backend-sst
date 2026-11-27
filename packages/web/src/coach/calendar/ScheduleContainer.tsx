@@ -3,6 +3,7 @@ import { useForm } from "react-hook-form";
 import { useQueryClient } from "@tanstack/react-query";
 import { isCoachApiError, newIdempotencyKey } from "../api/coachApi";
 import { writeError } from "./writeError";
+import { Dialog, Loading } from "../ui/parts";
 import { useCalendarApi } from "./api";
 import { refreshSchedule, useWorkoutOptions } from "./queries";
 import {
@@ -122,6 +123,16 @@ export function ScheduleContainer({
     }
   });
 
+  // The workout select is uncontrolled: on Edit it must mount with its
+  // options, or it shows "None" and the linked workout is lost.
+  if (editing && workouts.isPending) {
+    return (
+      <Dialog title="Edit session" onClose={onClose}>
+        <Loading />
+      </Dialog>
+    );
+  }
+
   return (
     <ScheduleSheet
       form={form}
@@ -137,6 +148,7 @@ export function ScheduleContainer({
           : []
       }
       workouts={workouts.data ?? []}
+      linkedWorkout={editing?.workout ?? null}
       scope={scope}
       onScope={setScope}
       busy={busy}

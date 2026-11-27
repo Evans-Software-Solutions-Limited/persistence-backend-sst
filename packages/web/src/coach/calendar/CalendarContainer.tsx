@@ -19,6 +19,7 @@ import { FormsDueDialog, SessionDialog } from "./SessionDialogs";
 import type { CoachSession, SessionScope } from "./types";
 
 const TOAST_MS = 3_000;
+const CLOCK_MS = 60_000;
 
 /**
  * Today → Calendar on the web (C4a, PER-144), at `/coach/today/calendar`.
@@ -27,8 +28,13 @@ const TOAST_MS = 3_000;
  * the schedule sheet, and cancelling.
  */
 export function CalendarContainer({ now: fixedNow }: { now?: Date }) {
-  // The clock is read once per visit; tests pass a fixed one.
-  const [now] = useState(() => fixedNow ?? new Date());
+  // The clock moves on each minute, so Edit and Cancel leave a session once
+  // it starts. Tests pass a fixed start.
+  const [now, setNow] = useState(() => fixedNow ?? new Date());
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), CLOCK_MS);
+    return () => clearInterval(t);
+  }, []);
   const [params, setParams] = useSearchParams();
   const start = weekStart(parseDay(params.get("week")) ?? now);
   const from = start.toISOString();
