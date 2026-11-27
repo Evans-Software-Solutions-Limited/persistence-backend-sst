@@ -409,6 +409,122 @@ describe("a send that can no longer go comes back to fill in (Inspector Brad, #5
     expect(local("req-1")?.sentAt).not.toBeNull();
   });
 
+  /** Offline until the row is dead, then what the reconnect does. */
+  const killOffline = async () => {
+    server.offline = true;
+    for (let i = 0; i < 20; i++) await drain();
+    expect(storage.getFailedExhaustedEntries()).toHaveLength(1);
+  };
+  const reconnect = async () => {
+    storage.resetFailedEntries(
+      storage
+        .getFailedExhaustedEntries()
+        .filter((e) => e.status === "failed")
+        .map((e) => e.id),
+    );
+    server.offline = false;
+    await drain();
+  };
+
+  it("edited after its row died: the old answers are never sent, it's a draft with the edits", async () => {
+    await killOffline();
+    saveFormDraftCommand(deps(), request("req-1"), { q0: 2 }, 0);
+    expect(storage.getFailedExhaustedEntries()).toEqual([]);
+    expect(local("req-1")).toMatchObject({
+      answers: { q0: 2 },
+      submittedAt: null,
+    });
+    const before = server.calls.length;
+    await reconnect();
+    expect(server.calls.length).toBe(before);
+    expect(server.responses.has("req-1")).toBe(false);
+    expect(seen()).toMatchObject({
+      waiting: false,
+      toFill: ["req-1", "req-2"],
+      started: true,
+    });
+    // Sending the edits sends them, once.
+    queueFormResponseCommand(
+      deps(),
+      request("req-1"),
+      { q0: 2 },
+      { energy: 2 },
+    );
+    await drain();
+    expect(server.responses.get("req-1")?.answers).toEqual({ energy: 2 });
+  });
+
+  it("an untouched dead row (same answers saved) is still revived and sent once", async () => {
+    await killOffline();
+    saveFormDraftCommand(deps(), request("req-1"), { q0: 4 }, 1);
+    expect(storage.getFailedExhaustedEntries()).toHaveLength(1);
+    expect(local("req-1")?.submittedAt).not.toBeNull();
+    const before = server.calls.length;
+    await reconnect();
+    expect(server.calls.length).toBe(before + 1);
+    expect(server.responses.get("req-1")?.answers).toEqual({ energy: 4 });
+    expect(local("req-1")?.sentAt).not.toBeNull();
+  });
+
+  it("an edit while the row is still live keeps the row (the screen is read-only then)", () => {
+    saveFormDraftCommand(deps(), request("req-1"), { q0: 1 }, 0);
+    expect(queued()).toHaveLength(1);
+    expect(local("req-1")?.submittedAt).not.toBeNull();
+  });
+
+  it("the photo send discards a dead or revived row and sends once, with the new answers", async () => {
+    const api = new InMemoryApiAdapter();
+    const send = () =>
+      sendFormNowCommand(
+        {
+          ...deps(),
+          api,
+          readPhoto: async () => ({ size: 9 }) as Blob,
+          newKey: () => "k",
+        },
+        request("req-1"),
+        { q0: 5 },
+        [],
+        () => ({ energy: 5 }),
+      );
+
+    await killOffline();
+    // Revived on reconnect but not sent yet: still only one send.
+    storage.resetFailedEntries(
+      storage.getFailedExhaustedEntries().map((e) => e.id),
+    );
+    expect((await send()).outcome).toEqual({ kind: "sent" });
+    expect(api.submitFormResponseCalls.map((c) => c.answers)).toEqual([
+      { energy: 5 },
+    ]);
+    expect(storage.getUncompletedMutations()).toEqual([]);
+    server.offline = false;
+    const before = server.calls.length;
+    await drain();
+    expect(server.calls.length).toBe(before);
+  });
+
+  it("the photo send waits while a queued send is already on its way", async () => {
+    const api = new InMemoryApiAdapter();
+    const id = queued()[0]!.id;
+    storage.markMutationInFlight(id);
+    const result = await sendFormNowCommand(
+      {
+        ...deps(),
+        api,
+        readPhoto: async () => ({ size: 9 }) as Blob,
+        newKey: () => "k",
+      },
+      request("req-1"),
+      { q0: 5 },
+      [],
+      () => ({ energy: 5 }),
+    );
+    expect(result.outcome).toEqual({ kind: "failed", reason: "network" });
+    expect(api.submitFormResponseCalls).toEqual([]);
+    expect(storage.getMutationById(id)?.status).toBe("in_flight");
+  });
+
   it("403 until retries run out", async () => {
     server.forceStatus = 403;
     for (let i = 0; i < 4; i++) await drain();

@@ -187,6 +187,7 @@ function FormFill(p: {
   const saveDraft = actions.saveDraft;
   const snapshot = JSON.stringify(values);
   const initial = useRef({ snapshot, step });
+  const savedOnce = useRef(false);
   useEffect(() => {
     if (sendingRef.current) return;
     if (
@@ -195,10 +196,17 @@ function FormFill(p: {
     ) {
       return;
     }
-    const timer = setTimeout(() => {
-      saveDraft(request, rhf.getValues(), step);
-      setSaved(true);
-    }, SAVE_DELAY_MS);
+    // The first change saves at once: on a send whose queue row died, that
+    // save is what retires the row before a reconnect could revive it
+    // with the old answers (Inspector Brad, #571).
+    const timer = setTimeout(
+      () => {
+        savedOnce.current = true;
+        saveDraft(request, rhf.getValues(), step);
+        setSaved(true);
+      },
+      savedOnce.current ? SAVE_DELAY_MS : 0,
+    );
     return () => clearTimeout(timer);
   }, [snapshot, step, request, rhf, saveDraft]);
 

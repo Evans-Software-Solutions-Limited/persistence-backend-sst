@@ -95,7 +95,36 @@ export function saveFormDraftCommand(
   answers: Record<string, AnswerValue>,
   step: number,
 ): LocalFormState {
-  return update(deps, request, () => ({ answers, step }));
+  return update(deps, request, (s) => {
+    // Editing a send whose queue row died (retries used up) makes it a
+    // draft for real: the dead row goes, so a reconnect can't revive and
+    // send the old answers (Inspector Brad, #571). An untouched dead send
+    // keeps its row and is still revived.
+    if (
+      s.submittedAt !== null &&
+      s.sentAt === null &&
+      !s.closed &&
+      JSON.stringify(s.answers) !== JSON.stringify(answers) &&
+      discardDeadRows(deps.storage, `${deps.userId}:${request.id}`)
+    ) {
+      return { answers, step, submittedAt: null };
+    }
+    return { answers, step };
+  });
+}
+
+/**
+ * Drop this request's queue rows that can no longer send on their own
+ * (retries used up, refused for good). Returns false, dropping nothing,
+ * while a live row still exists.
+ */
+function discardDeadRows(storage: StoragePort, entityId: string): boolean {
+  const rows = storage
+    .getQueuedEntriesForEntity(FORM_RESPONSE_ENTITY, entityId)
+    .filter((e) => e.status !== "completed");
+  if (rows.some(isAutoResolvableSyncEntry)) return false;
+  if (rows.length > 0) storage.discardEntries(rows.map((e) => e.id));
+  return true;
 }
 
 /** Keys for a form sent straight away, kept so a retry can't duplicate. */
@@ -411,6 +440,21 @@ export async function sendFormNowCommand(
   ) => Record<string, unknown>,
 ): Promise<{ outcome: SendNowOutcome; draft: Record<string, AnswerValue> }> {
   const keyFor = (p: { field: string; uri: string }) => `${p.field}|${p.uri}`;
+  // One send per form: a queued row for it (dead, or revived on reconnect
+  // but not yet sent) goes before this one; one already on its way means
+  // try again in a moment (Inspector Brad, #571).
+  const queuedRows = deps.storage
+    .getQueuedEntriesForEntity(
+      FORM_RESPONSE_ENTITY,
+      `${deps.userId}:${request.id}`,
+    )
+    .filter((e) => e.status !== "completed");
+  if (queuedRows.some((e) => e.status === "in_flight")) {
+    return { outcome: { kind: "failed", reason: "network" }, draft };
+  }
+  if (queuedRows.length > 0) {
+    deps.storage.discardEntries(queuedRows.map((e) => e.id));
+  }
   const keys = ensureSubmitKeysCommand(
     deps,
     request,

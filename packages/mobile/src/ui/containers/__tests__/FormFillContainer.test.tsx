@@ -454,6 +454,16 @@ describe("FormFillContainer (C4f)", () => {
     expect(
       utils.getByTestId("form-fill-answer-scale-4").props.accessibilityState,
     ).toMatchObject({ selected: true });
+
+    // The first edit saves at once and makes it a real draft (#571).
+    fireEvent.press(utils.getByTestId("form-fill-answer-scale-2"));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(utils.local()).toMatchObject({
+      answers: { q0: 2 },
+      submittedAt: null,
+    });
   });
 
   it("nothing cached yet: waits for the list (loading), then shows the form", async () => {
