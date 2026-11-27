@@ -217,7 +217,12 @@ export function CoachPlanEditorContainer() {
       return;
     }
     clear();
-    if (isNew && clientId) {
+    if (isNew && clientId && router.canGoBack()) {
+      // Back to the client page this editor was opened from (never a second
+      // copy on top of it), then ask it to open Send for the new plan.
+      router.back();
+      router.setParams({ tab: "nutrition", send: saved.id } as never);
+    } else if (isNew && clientId) {
       router.replace({
         pathname: "/(app)/clients/[id]",
         params: { id: clientId, tab: "nutrition", send: saved.id },

@@ -71,7 +71,11 @@ export function ClientNutritionContainer(p: {
   const [removeId, setRemoveId] = useState<string | null>(null);
   const [removing, setRemoving] = useState(false);
   const [picking, setPicking] = useState(false);
-  const [sendId, setSendId] = useState<string | null>(null);
+  // Two kinds of Send: the route's `?send=` (a plan just built for this
+  // client, maybe still waiting to sync) and one picked from + Add. They're
+  // kept apart so finishing one never cancels the other.
+  const [routeSendId, setRouteSendId] = useState<string | null>(null);
+  const [pickedSendId, setPickedSendId] = useState<string | null>(null);
   const [sharing, setSharing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -81,7 +85,7 @@ export function ClientNutritionContainer(p: {
   // header loader) picks a pending "waiting to sync" Send back up.
   useEffect(() => {
     if (typeof params.send === "string" && params.send) {
-      setSendId(params.send);
+      setRouteSendId(params.send);
     }
   }, [params.send]);
 
@@ -91,12 +95,18 @@ export function ClientNutritionContainer(p: {
   const mine = visibleMyPlans(library.cache);
   // A plan built on this phone keeps its local id until its create syncs:
   // follow the alias to the server id, and wait while it's still local.
-  const resolvedSend = sendId ? resolvePlanId(library.cache, sendId) : null;
-  const sendWaiting = !!resolvedSend && isLocalPlanId(resolvedSend);
-  const sendPlan =
-    resolvedSend && !sendWaiting
+  const resolvedSend = routeSendId
+    ? resolvePlanId(library.cache, routeSendId)
+    : null;
+  const routeWaiting = !!resolvedSend && isLocalPlanId(resolvedSend);
+  const routePlan =
+    resolvedSend && !routeWaiting
       ? (mine.find((x) => x.id === resolvedSend) ?? null)
       : null;
+  const pickedPlan = pickedSendId
+    ? (mine.find((x) => x.id === resolvePlanId(library.cache, pickedSendId)) ??
+      null)
+    : null;
   const target = state.data?.target ?? null;
   const opened = find(openId);
   const menu = find(menuId);
@@ -104,20 +114,24 @@ export function ClientNutritionContainer(p: {
   const removeFor = find(removeId);
   const now = Date.now();
 
-  /** The pending Send is finished with: forget it here and in the route. */
-  function finishSend() {
-    setSendId(null);
+  /** The route's Send is finished with: forget it here and in the route. */
+  function finishRouteSend() {
+    setRouteSendId(null);
     if (typeof params.send === "string" && params.send) {
       router.setParams({ send: "" } as never);
     }
   }
 
-  function done(message: string) {
-    finishSend();
-    setNoteId(null);
-    setSharing(false);
+  function showDone(message: string) {
     setToast(message);
     void state.reload();
+  }
+
+  /** The note and recipe sheets: never touch a pending Send. */
+  function done(message: string) {
+    setNoteId(null);
+    setSharing(false);
+    showDone(message);
   }
 
   const editPlan = (planId: string) =>
@@ -189,8 +203,11 @@ export function ClientNutritionContainer(p: {
           void state.reload();
         }}
       />
-      {sendWaiting ? (
-        <Note onDismiss={finishSend} testID="client-nutrition-send-waiting">
+      {routeWaiting && !pickedPlan ? (
+        <Note
+          onDismiss={finishRouteSend}
+          testID="client-nutrition-send-waiting"
+        >
           {SEND_WAITING}
         </Note>
       ) : null}
@@ -290,19 +307,36 @@ export function ClientNutritionContainer(p: {
         }}
         onPick={(id) => {
           setPicking(false);
-          setSendId(id);
+          setPickedSendId(id);
         }}
         onClose={() => setPicking(false)}
         testID="client-plan-picker"
       />
-      {sendPlan ? (
+      {pickedPlan ? (
         <CoachPlanSendContainer
+          key={`picked-${pickedPlan.id}`}
           mode="send"
-          plan={sendPlan}
+          plan={pickedPlan}
           client={client}
           target={target}
-          onDone={done}
-          onClose={finishSend}
+          onDone={(m) => {
+            setPickedSendId(null);
+            showDone(m);
+          }}
+          onClose={() => setPickedSendId(null)}
+        />
+      ) : routePlan ? (
+        <CoachPlanSendContainer
+          key={`route-${routePlan.id}`}
+          mode="send"
+          plan={routePlan}
+          client={client}
+          target={target}
+          onDone={(m) => {
+            finishRouteSend();
+            showDone(m);
+          }}
+          onClose={finishRouteSend}
         />
       ) : null}
       {noteFor ? (

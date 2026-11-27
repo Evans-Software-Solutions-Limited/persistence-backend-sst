@@ -35,6 +35,7 @@ const mockRouter = {
   back: jest.fn(),
   replace: jest.fn(),
   setParams: jest.fn(),
+  canGoBack: jest.fn(() => false),
 };
 let mockParams: Record<string, string> = {};
 jest.mock("expo-router", () => ({
@@ -43,6 +44,7 @@ jest.mock("expo-router", () => ({
     back: (...a: unknown[]) => mockRouter.back(...a),
     replace: (...a: unknown[]) => mockRouter.replace(...a),
     setParams: (...a: unknown[]) => mockRouter.setParams(...a),
+    canGoBack: () => mockRouter.canGoBack(),
   },
   useRouter: () => mockRouter,
   useLocalSearchParams: () => mockParams,
@@ -132,7 +134,8 @@ const TARGET = {
 
 beforeEach(() => {
   mockParams = {};
-  Object.values(mockRouter).forEach((f) => f.mockClear());
+  Object.values(mockRouter).forEach((f) => f.mockReset());
+  mockRouter.canGoBack.mockImplementation(() => false);
   mockPlans.cache = {
     mine: [TRAIN, REST],
     fromCoaches: [],
@@ -392,10 +395,45 @@ describe("Edit a plan (C3, iPhone)", () => {
     const created = mockPlans.create.mock.calls[0]![0];
     expect(created.name).toBe("Cut · 1,900");
     expect(created.id).toMatch(/^local-/);
+    // Opened without a page behind it (a deep link): replace with the client.
     expect(mockRouter.replace).toHaveBeenCalledWith({
       pathname: "/(app)/clients/[id]",
       params: { id: "c1", tab: "nutrition", send: created.id },
     });
+  });
+
+  it("#577: from the client page, Save goes back to that page and sets send on it (no second copy)", async () => {
+    // A small stack: the client page, then this editor on top.
+    const stack: { route: string; params: Record<string, string> }[] = [
+      { route: "/(app)/clients/[id]", params: { id: "c1", tab: "nutrition" } },
+      {
+        route: "/(app)/coach-meal-plans/edit",
+        params: { client: "c1", clientName: "Sam Patel" },
+      },
+    ];
+    mockRouter.canGoBack.mockImplementation(() => stack.length > 1);
+    mockRouter.back.mockImplementation(() => void stack.pop());
+    mockRouter.setParams.mockImplementation((p: Record<string, string>) => {
+      Object.assign(stack.at(-1)!.params, p);
+    });
+    mockRouter.replace.mockImplementation((href: { pathname: string }) => {
+      stack[stack.length - 1] = { route: href.pathname, params: {} };
+    });
+    const h = setupCoachForms();
+    mockParams = { client: "c1", clientName: "Sam Patel" };
+    const view = h.render(<CoachPlanEditorContainer />);
+    fireEvent.changeText(view.getByTestId("coach-plan-name"), "Cut");
+    fireEvent.press(view.getByTestId("coach-plan-save"));
+    await waitFor(() => expect(mockRouter.back).toHaveBeenCalled());
+    const created = mockPlans.create.mock.calls[0]![0];
+    expect(mockRouter.replace).not.toHaveBeenCalled();
+    expect(mockRouter.push).not.toHaveBeenCalled();
+    expect(stack).toEqual([
+      {
+        route: "/(app)/clients/[id]",
+        params: { id: "c1", tab: "nutrition", send: created.id },
+      },
+    ]);
   });
 
   it("a failed save says so; conflict and offline notices; Back clears", async () => {
@@ -675,6 +713,72 @@ describe("Client → Nutrition (C3.2b, iPhone)", () => {
     const after = open(h);
     expect(await after.findByTestId("client-nutrition-plans")).toBeTruthy();
     expect(after.queryByTestId("client-nutrition-send-waiting")).toBeNull();
+  });
+
+  it("#577: changing a note or sharing a recipe keeps a pending Send pending", async () => {
+    const h = setupCoachForms();
+    seedClient(h);
+    mockPlans.cache = {
+      ...mockPlans.cache,
+      mine: [TRAIN, REST, plan("local-pend", "Cut")],
+    };
+    mockParams = { send: "local-pend" };
+    const view = open(h);
+    expect(
+      await view.findByTestId("client-nutrition-send-waiting"),
+    ).toBeTruthy();
+    // Change a note.
+    fireEvent.press(view.getByTestId("client-plan-more-asg-train"));
+    fireEvent.press(view.getByTestId("plan-action-note"));
+    fireEvent.changeText(view.getByTestId("send-plan-note"), "New note");
+    fireEvent.press(view.getByTestId("send-plan-submit"));
+    expect(await view.findByText("Note updated for Sam")).toBeTruthy();
+    expect(view.getByTestId("client-nutrition-send-waiting")).toBeTruthy();
+    // Share a recipe.
+    fireEvent.press(view.getByTestId("client-nutrition-share"));
+    fireEvent.press(view.getByTestId(`plan-pick-${RECIPE.id}`));
+    expect(
+      await view.findByText(`${RECIPE.name} shared with Sam`),
+    ).toBeTruthy();
+    expect(view.getByTestId("client-nutrition-send-waiting")).toBeTruthy();
+    expect(mockRouter.setParams).not.toHaveBeenCalled();
+  });
+
+  it("#577: a Send picked from + Add doesn't clobber a pending ?send=", async () => {
+    const h = setupCoachForms();
+    seedClient(h);
+    const cut = plan("plan-cut", "Cut · 1,900");
+    mockPlans.cache = {
+      ...mockPlans.cache,
+      mine: [TRAIN, REST, cut, plan("local-pend", "Pending")],
+    };
+    mockParams = { send: "local-pend" };
+    const view = open(h);
+    expect(
+      await view.findByTestId("client-nutrition-send-waiting"),
+    ).toBeTruthy();
+    fireEvent.press(view.getByTestId("client-nutrition-plans-add"));
+    fireEvent.press(view.getByTestId("plan-pick-plan-cut"));
+    expect(view.getByTestId("send-plan-submit")).toBeTruthy();
+    expect(view.queryByTestId("client-nutrition-send-waiting")).toBeNull();
+    // Close the picked Send: the pending one is still there, param kept.
+    const sheet = view
+      .UNSAFE_getAllByProps({ testID: "send-plan-sheet" })
+      .find((n) => typeof n.props.onClose === "function")!;
+    act(() => {
+      sheet.props.onClose();
+    });
+    expect(
+      await view.findByTestId("client-nutrition-send-waiting"),
+    ).toBeTruthy();
+    expect(mockRouter.setParams).not.toHaveBeenCalled();
+    // Pick and send one: the pending Send still stays.
+    fireEvent.press(view.getByTestId("client-nutrition-plans-add"));
+    fireEvent.press(view.getByTestId("plan-pick-plan-cut"));
+    fireEvent.press(view.getByTestId("send-plan-submit"));
+    expect(await view.findByText("Sent to Sam")).toBeTruthy();
+    expect(view.getByTestId("client-nutrition-send-waiting")).toBeTruthy();
+    expect(mockRouter.setParams).not.toHaveBeenCalled();
   });
 
   it("#577: closing Send clears the param; a remount doesn't reopen it", async () => {
