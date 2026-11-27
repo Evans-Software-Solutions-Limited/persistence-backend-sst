@@ -67,9 +67,10 @@ export default function CoachApp() {
           path="library/forms/:formId/:action?"
           element={<FormsLibraryContainer />}
         />
-        {/* PER-144: Today → Calendar (C4a). */}
-        <Route path="today/calendar" element={<CalendarContainer />} />
         <Route path="*" element={<Navigate to="clients" replace />} />
+        {/* PER-144: Today → Calendar (C4a). Routes rank by how specific
+            they are, so this still wins over the catch-all above. */}
+        <Route path="today/calendar" element={<CalendarContainer />} />
       </Route>
     </Routes>
   );
