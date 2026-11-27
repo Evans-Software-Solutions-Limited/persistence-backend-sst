@@ -1,6 +1,9 @@
 import * as Notifications from "expo-notifications";
 import { AppState, Platform } from "react-native";
-import { ExpoNotificationsAdapter } from "../expo-notifications.adapter";
+import {
+  ExpoNotificationsAdapter,
+  TOKEN_RETRY_DELAYS_MS,
+} from "../expo-notifications.adapter";
 import { runNativePermissionRequest } from "@/lib/nativePermissionQueue";
 
 jest.mock("expo-notifications", () => ({
@@ -148,6 +151,37 @@ it("gets the Expo push token using the configured project", async () => {
   });
 });
 
+it("on Android, gets the Expo push token with the EAS project id (PER-149)", async () => {
+  Object.defineProperty(Platform, "OS", {
+    value: "android",
+    configurable: true,
+  });
+  await expect(adapter.getDevicePushToken()).resolves.toEqual({
+    ok: true,
+    value: "ExponentPushToken[stub]",
+  });
+  expect(Notifications.getExpoPushTokenAsync).toHaveBeenCalledWith({
+    projectId: "project-id",
+  });
+});
+
+it("on Android without Firebase config, reports token_failed instead of throwing (PER-149)", async () => {
+  Object.defineProperty(Platform, "OS", {
+    value: "android",
+    configurable: true,
+  });
+  // The error a build without google-services.json raises on Android.
+  const message =
+    "Default FirebaseApp is not initialized in this process com.bradleyevans96.persistence. Make sure to call FirebaseApp.initializeApp(Context) first.";
+  jest
+    .mocked(Notifications.getExpoPushTokenAsync)
+    .mockRejectedValueOnce(new Error(message));
+  await expect(adapter.getDevicePushToken()).resolves.toEqual({
+    ok: false,
+    error: { kind: "notification", code: "token_failed", message },
+  });
+});
+
 it.each([new Error("token failure"), "token failure"])(
   "maps token errors",
   async (error) => {
@@ -221,22 +255,247 @@ it.each([-5, 3])(
     );
   },
 );
-it.each(["token", 123])(
-  "normalizes rotated tokens and unsubscribes",
-  (data) => {
+describe("addPushTokenListener (PER-149: never emit the raw native token)", () => {
+  const flush = async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  };
+  const nativeCallback = () =>
+    jest.mocked(Notifications.addPushTokenListener).mock.calls[0][0];
+
+  it.each([
+    ["ios", "a1b2c3d4e5f6"],
+    ["android", "fcm-registration-token"],
+    ["ios", 123],
+  ] as const)(
+    "on a %s native token event (%s), re-fetches and emits the Expo token",
+    async (type, data) => {
+      jest.mocked(Notifications.getExpoPushTokenAsync).mockResolvedValueOnce({
+        data: "ExponentPushToken[rotated]",
+        type: "expo",
+      });
+      const listener = jest.fn();
+      const unsubscribe = adapter.addPushTokenListener(listener);
+      nativeCallback()({
+        data,
+        type,
+      } as unknown as Notifications.DevicePushToken);
+      await flush();
+      expect(Notifications.getExpoPushTokenAsync).toHaveBeenCalledWith({
+        projectId: "project-id",
+      });
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect(listener).toHaveBeenCalledWith("ExponentPushToken[rotated]");
+      expect(listener).not.toHaveBeenCalledWith(String(data));
+      unsubscribe();
+      expect(
+        jest.mocked(Notifications.addPushTokenListener).mock.results[0].value
+          .remove,
+      ).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it("ignores the echo of the same native token (no re-fetch loop)", async () => {
+    const listener = jest.fn();
+    adapter.addPushTokenListener(listener);
+    const cb = nativeCallback();
+    cb({ data: "native-1", type: "ios" } as Notifications.DevicePushToken);
+    // The Expo token fetch re-fires the same native token.
+    cb({ data: "native-1", type: "ios" } as Notifications.DevicePushToken);
+    await flush();
+    expect(Notifications.getExpoPushTokenAsync).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    // A genuinely rotated native token is fetched again.
+    cb({ data: "native-2", type: "ios" } as Notifications.DevicePushToken);
+    await flush();
+    expect(Notifications.getExpoPushTokenAsync).toHaveBeenCalledTimes(2);
+    expect(listener).toHaveBeenCalledTimes(2);
+  });
+
+  it("emits nothing when the Expo token fetch fails", async () => {
+    jest
+      .mocked(Notifications.getExpoPushTokenAsync)
+      .mockRejectedValueOnce(new Error("offline"));
+    const listener = jest.fn();
+    adapter.addPushTokenListener(listener);
+    nativeCallback()({
+      data: "native-1",
+      type: "android",
+    } as Notifications.DevicePushToken);
+    await flush();
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it("emits nothing once unsubscribed, even if the fetch resolves later", async () => {
     const listener = jest.fn();
     const unsubscribe = adapter.addPushTokenListener(listener);
-    const [[callback]] = jest.mocked(Notifications.addPushTokenListener).mock
-      .calls;
-    callback({ data, type: "ios" } as Notifications.DevicePushToken);
-    expect(listener).toHaveBeenCalledWith(String(data));
+    nativeCallback()({
+      data: "native-1",
+      type: "ios",
+    } as Notifications.DevicePushToken);
     unsubscribe();
-    expect(
-      jest.mocked(Notifications.addPushTokenListener).mock.results[0].value
-        .remove,
-    ).toHaveBeenCalledTimes(1);
-  },
-);
+    await flush();
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  describe("failed Expo fetch after a rotation", () => {
+    const fail = () =>
+      jest
+        .mocked(Notifications.getExpoPushTokenAsync)
+        .mockRejectedValueOnce(new Error("offline"));
+    const native = (data: string) =>
+      nativeCallback()({ data, type: "ios" } as Notifications.DevicePushToken);
+    let foreground: ((state: string) => void) | undefined;
+    let appStateRemove: jest.Mock;
+
+    beforeEach(() => {
+      appStateRemove = jest.fn();
+      jest
+        .spyOn(AppState, "addEventListener")
+        .mockImplementation((_type, handler) => {
+          foreground = handler as (state: string) => void;
+          return { remove: appStateRemove } as never;
+        });
+    });
+
+    afterEach(() => {
+      jest.mocked(AppState.addEventListener).mockRestore();
+      foreground = undefined;
+    });
+
+    it("is retried after the back-off and succeeds", async () => {
+      fail();
+      jest.mocked(Notifications.getExpoPushTokenAsync).mockResolvedValueOnce({
+        data: "ExponentPushToken[after-retry]",
+        type: "expo",
+      });
+      const listener = jest.fn();
+      adapter.addPushTokenListener(listener);
+      native("native-2");
+      await flush();
+      expect(listener).not.toHaveBeenCalled();
+
+      // The native echo of the failed token does not trigger a fetch.
+      native("native-2");
+      await flush();
+      expect(Notifications.getExpoPushTokenAsync).toHaveBeenCalledTimes(1);
+
+      jest.advanceTimersByTime(TOKEN_RETRY_DELAYS_MS[0]);
+      await flush();
+      expect(Notifications.getExpoPushTokenAsync).toHaveBeenCalledTimes(2);
+      expect(listener).toHaveBeenCalledWith("ExponentPushToken[after-retry]");
+
+      // Handled now: later echoes stay quiet.
+      native("native-2");
+      await flush();
+      expect(Notifications.getExpoPushTokenAsync).toHaveBeenCalledTimes(2);
+    });
+
+    it("is retried when the app returns to the foreground", async () => {
+      fail();
+      const listener = jest.fn();
+      adapter.addPushTokenListener(listener);
+      native("native-2");
+      await flush();
+      expect(listener).not.toHaveBeenCalled();
+
+      foreground?.("background");
+      await flush();
+      expect(Notifications.getExpoPushTokenAsync).toHaveBeenCalledTimes(1);
+
+      foreground?.("active");
+      await flush();
+      expect(Notifications.getExpoPushTokenAsync).toHaveBeenCalledTimes(2);
+      expect(listener).toHaveBeenCalledWith("ExponentPushToken[stub]");
+    });
+
+    it("a persistent failure does not loop: bounded timer retries, then only on foreground", async () => {
+      jest
+        .mocked(Notifications.getExpoPushTokenAsync)
+        .mockRejectedValue(new Error("Expo endpoint down"));
+      const listener = jest.fn();
+      const unsubscribe = adapter.addPushTokenListener(listener);
+      native("native-2");
+      await flush();
+      for (const delay of TOKEN_RETRY_DELAYS_MS) {
+        native("native-2"); // echo after each failure: ignored
+        jest.advanceTimersByTime(delay);
+        await flush();
+      }
+      const afterTimers = TOKEN_RETRY_DELAYS_MS.length + 1;
+      expect(Notifications.getExpoPushTokenAsync).toHaveBeenCalledTimes(
+        afterTimers,
+      );
+
+      // No more timers, however long we wait.
+      jest.advanceTimersByTime(24 * 60 * 60 * 1000);
+      native("native-2");
+      await flush();
+      expect(Notifications.getExpoPushTokenAsync).toHaveBeenCalledTimes(
+        afterTimers,
+      );
+
+      // One fetch per foreground, still no loop.
+      foreground?.("active");
+      await flush();
+      expect(Notifications.getExpoPushTokenAsync).toHaveBeenCalledTimes(
+        afterTimers + 1,
+      );
+      expect(listener).not.toHaveBeenCalled();
+
+      unsubscribe();
+      expect(appStateRemove).toHaveBeenCalledTimes(1);
+      jest.mocked(Notifications.getExpoPushTokenAsync).mockReset();
+      jest.mocked(Notifications.getExpoPushTokenAsync).mockResolvedValue({
+        data: "ExponentPushToken[stub]",
+        type: "expo",
+      });
+    });
+
+    it("a new native token cancels the pending retry and is fetched at once", async () => {
+      fail();
+      jest.mocked(Notifications.getExpoPushTokenAsync).mockResolvedValueOnce({
+        data: "ExponentPushToken[native-3]",
+        type: "expo",
+      });
+      const listener = jest.fn();
+      adapter.addPushTokenListener(listener);
+      native("native-2");
+      await flush();
+      native("native-3");
+      await flush();
+      expect(listener).toHaveBeenCalledWith("ExponentPushToken[native-3]");
+
+      jest.advanceTimersByTime(TOKEN_RETRY_DELAYS_MS[0]);
+      await flush();
+      expect(Notifications.getExpoPushTokenAsync).toHaveBeenCalledTimes(2);
+    });
+
+    it("ignores a stale result when a newer native token arrives mid-fetch", async () => {
+      let resolveFirst: (v: Notifications.ExpoPushToken) => void = () => {};
+      jest.mocked(Notifications.getExpoPushTokenAsync).mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveFirst = resolve;
+          }),
+      );
+      jest.mocked(Notifications.getExpoPushTokenAsync).mockResolvedValueOnce({
+        data: "ExponentPushToken[newer]",
+        type: "expo",
+      });
+      const listener = jest.fn();
+      adapter.addPushTokenListener(listener);
+      native("native-2");
+      native("native-3");
+      await flush();
+      resolveFirst({ data: "ExponentPushToken[stale]", type: "expo" });
+      await flush();
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect(listener).toHaveBeenCalledWith("ExponentPushToken[newer]");
+    });
+  });
+});
 it("forwards received notifications and unsubscribes", () => {
   const listener = jest.fn();
   const unsubscribe = adapter.addNotificationReceivedListener(listener);

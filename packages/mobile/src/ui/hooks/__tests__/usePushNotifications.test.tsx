@@ -164,6 +164,57 @@ describe("usePushNotifications", () => {
     }
   });
 
+  it("Android 13+ first launch: prompts for POST_NOTIFICATIONS, then registers the Expo token as android (PER-149)", async () => {
+    const original = Platform.OS;
+    Platform.OS = "android";
+    try {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      const notifications = new StubPushNotifications();
+      notifications.status = "not_determined";
+      notifications.requestResult = "granted";
+      notifications.token = "ExponentPushToken[android-device]";
+      const adapters = makeAdapters(api, storage, notifications, SESSION);
+
+      renderHook(() => usePushNotifications(true), {
+        wrapper: wrapperFor(adapters),
+      });
+
+      await waitFor(() => expect(api.registeredDevices).toHaveLength(1));
+      expect(notifications.requestCalls).toBe(1);
+      expect(api.registeredDevices[0]).toEqual({
+        token: "ExponentPushToken[android-device]",
+        platform: "android",
+      });
+    } finally {
+      Platform.OS = original;
+    }
+  });
+
+  it("Android with notifications blocked registers nothing and never re-prompts (PER-149)", async () => {
+    const original = Platform.OS;
+    Platform.OS = "android";
+    try {
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      const notifications = new StubPushNotifications();
+      notifications.status = "denied";
+      const adapters = makeAdapters(api, storage, notifications, SESSION);
+
+      renderHook(() => usePushNotifications(true), {
+        wrapper: wrapperFor(adapters),
+      });
+
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(notifications.requestCalls).toBe(0);
+      expect(api.registeredDevices).toHaveLength(0);
+    } finally {
+      Platform.OS = original;
+    }
+  });
+
   it("registers nothing when permission is denied", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();

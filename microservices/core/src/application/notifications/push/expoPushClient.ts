@@ -150,3 +150,28 @@ export async function sendExpoPushMessages(
 
   return tickets;
 }
+
+/**
+ * Legacy Expo push token shape: a bare UUID. Expo's own `expo-server-sdk`
+ * still accepts it, so it counts as a real token here.
+ */
+const LEGACY_EXPO_TOKEN_RE =
+  /^[a-z\d]{8}-[a-z\d]{4}-[a-z\d]{4}-[a-z\d]{4}-[a-z\d]{12}$/i;
+
+/**
+ * Whether `token` is an Expo push token, the only kind the Expo Push API can
+ * deliver to. Same rule as `expo-server-sdk`'s `Expo.isExpoPushToken`:
+ * `ExponentPushToken[…]`, `ExpoPushToken[…]`, or the legacy bare UUID. A raw
+ * APNs token (64 hex chars) or FCM registration token is not one (PER-149).
+ *
+ * Keep in step with the WHERE clause of
+ * `supabase/migrations/20261125160203_user_devices_drop_non_expo_tokens.sql`.
+ */
+export function isExpoPushToken(token: string): boolean {
+  return (
+    ((token.startsWith("ExponentPushToken[") ||
+      token.startsWith("ExpoPushToken[")) &&
+      token.endsWith("]")) ||
+    LEGACY_EXPO_TOKEN_RE.test(token)
+  );
+}
