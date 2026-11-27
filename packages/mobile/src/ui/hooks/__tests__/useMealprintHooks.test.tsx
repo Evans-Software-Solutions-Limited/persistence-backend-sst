@@ -772,7 +772,7 @@ describe("useMealprintEntry", () => {
     expect(latest().needsSetup).toBe(true);
   });
 
-  it("opens the SUGGEST SHEET once preferences have been saved", async () => {
+  it("opens Mealprint One meal once preferences have been saved", async () => {
     const api = new InMemoryApiAdapter();
     api.mySubscription = subscription("premium_plus");
     const storage = new InMemoryStorageAdapter();
@@ -787,17 +787,20 @@ describe("useMealprintEntry", () => {
       expect(latest().state).toBe("unlocked");
     });
     act(() => latest().onPress());
-    expect(useFuelSheets.getState().sheet).toBe("mealprintSuggest");
-    expect(mockRouterPush).not.toHaveBeenCalled();
+    expect(mockRouterPush).toHaveBeenCalledWith(
+      "/(app)/fuel/mealprint?mode=meal",
+    );
   });
 
-  it("onPlanMyDay opens the plan config sheet", async () => {
+  it("onPlanMyDay opens Mealprint Whole day", async () => {
     const api = new InMemoryApiAdapter();
     api.mySubscription = subscription("premium_plus");
     const { latest } = harness(api, useMealprintEntry);
     await waitFor(() => expect(latest().state).toBe("unlocked"));
     act(() => latest().onPlanMyDay());
-    expect(useFuelSheets.getState().sheet).toBe("mealprintPlan");
+    expect(mockRouterPush).toHaveBeenCalledWith(
+      "/(app)/fuel/mealprint?mode=day",
+    );
   });
 
   it("onEditPreferences pushes the preferences EDITOR route directly (amendment 2026-08 § C)", async () => {

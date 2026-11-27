@@ -20,6 +20,13 @@ export interface PlanSheetsState {
   openSwitch: () => void;
   openCoachPlan: (planId: string, auto?: boolean) => void;
   close: () => void;
+  /**
+   * PER-134: the Fuel section a pushed screen wants shown when the person
+   * comes back (Mealprint's View in Plan / View in Log). Fuel switches to it
+   * and clears it.
+   */
+  fuelSection: "log" | "plan" | null;
+  showFuelSection: (section: "log" | "plan" | null) => void;
 }
 
 export const usePlanSheets = create<PlanSheetsState>((set) => ({
@@ -39,4 +46,6 @@ export const usePlanSheets = create<PlanSheetsState>((set) => ({
           : s.autoShown,
     })),
   close: () => set({ sheet: null }),
+  fuelSection: null,
+  showFuelSection: (section) => set({ fuelSection: section }),
 }));

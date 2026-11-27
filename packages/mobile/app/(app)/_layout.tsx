@@ -17,12 +17,9 @@ import { ProfileDrawerContainer } from "../../src/ui/containers/ProfileDrawerCon
 import { QuickAddSheetContainer } from "../../src/ui/containers/QuickAddSheetContainer";
 import { ScanBarcodeSheetContainer } from "../../src/ui/containers/ScanBarcodeSheetContainer";
 import { SnapAISheetContainer } from "../../src/ui/containers/SnapAISheetContainer";
-import { MealprintSuggestSheetContainer } from "../../src/ui/containers/MealprintSuggestSheetContainer";
-import { MealprintPlanSheetContainer } from "../../src/ui/containers/MealprintPlanSheetContainer";
 import { YourMealsSheetContainer } from "../../src/ui/containers/YourMealsSheetContainer";
 import { MealOptionsSheetContainer } from "../../src/ui/containers/MealOptionsSheetContainer";
 import { QuickLogSheetContainer } from "../../src/ui/containers/QuickLogSheetContainer";
-import { SuggestLockedSheetContainer } from "../../src/ui/containers/SuggestLockedSheetContainer";
 import { PlanSheetsContainer } from "../../src/ui/containers/PlanSheetsContainer";
 import { DiscardWorkoutConfirmationContainer } from "../../src/ui/containers/DiscardWorkoutConfirmationContainer";
 import { ExerciseFiltersProvider } from "../../src/ui/hooks/useExerciseFilters";
@@ -347,6 +344,8 @@ export default function AppLayout() {
           name="fuel/plans-shopping"
           options={{ headerShown: false }}
         />
+        {/* PER-134: Mealprint (N15–N27), one full-screen page. */}
+        <Stack.Screen name="fuel/mealprint" options={{ headerShown: false }} />
         {/*
           fuel/targets (M9 PR3) owns its own <HeaderBar> (Cancel/Save) —
           native header off, matching every other custom-chrome screen.
@@ -503,37 +502,13 @@ export default function AppLayout() {
       <ScanBarcodeSheetContainer />
       <SnapAISheetContainer />
       {/*
-        Mealprint suggest sheet (spec-26 T-1.5) — the fourth member of the same
-        family, opened by the Fuel Mealprint card via
-        useFuelSheets().openMealprintSuggest.
-
-        ⚠ Root-mounting means ALWAYS mounted, and closing is not unmounting — so
-        every data path inside it is gated on its own `visible` flag. That is the
-        launch fan-out lesson (PR #341): seven root sheets fetching on mount
-        produced ~28 requests inside 100 ms against a 10-concurrency Lambda quota.
-
-        Spec: specs/26-mealprint-meal-planning/design.md § 4 item 3
-      */}
-      <MealprintSuggestSheetContainer />
-      {/*
-        Mealprint plan sheet (spec-26 Phase 2, T-2.6) — "Plan my day":
-        config → generating → draft review → accept, all one root-mounted
-        sheet, opened by the Fuel Mealprint card via
-        useFuelSheets().openMealprintPlan. Same launch-fan-out discipline as
-        the suggest sheet above — every data path is gated on its own
-        `visible` flag.
-
-        Spec: specs/26-mealprint-meal-planning/design.md § 4 item 4
-      */}
-      <MealprintPlanSheetContainer />
-      {/*
         PER-132 Log drawers — Your meals (N1b), a meal's ⋯ menu, Quick log
-        (N2e) and the locked Suggest page (N26). Same root-mounted family.
+        (N2e). Same root-mounted family. PER-134: Mealprint and its locked
+        page (N26) are the fuel/mealprint route now.
       */}
       <YourMealsSheetContainer />
       <MealOptionsSheetContainer />
       <QuickLogSheetContainer />
-      <SuggestLockedSheetContainer />
       {/* PER-133 Plan tab sheets: N7 Your plans and C6 a plan from a coach. */}
       <PlanSheetsContainer />
       {/*

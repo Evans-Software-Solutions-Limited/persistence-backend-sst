@@ -168,9 +168,20 @@ export function addNotWantedMeals(
 export type PlanGenerateInput = {
   readonly planDate: string;
   readonly mealsPerDay?: number;
+  /**
+   * PER-134 (BE-D3): the person's own meals ("Your meals", 2–6) in place of
+   * `mealsPerDay`. Each returned meal then carries that meal's `label`.
+   */
+  readonly meals?: readonly PlanGenerateMealSlot[];
   readonly effortLevel?: EffortLevel;
   readonly steer?: string;
   readonly notWantedMeals?: readonly NotWantedMeal[];
+};
+
+/** One of Your meals, as `plan-generate` takes it (BE-D3). */
+export type PlanGenerateMealSlot = {
+  readonly name: string;
+  readonly logSlot: LogSlot;
 };
 
 export type PlanGeneratedItem = {
@@ -217,6 +228,11 @@ export type PlanGeneratedMeal = {
   readonly flaggedUnsafe: boolean;
   /** Server-detected AI portion issue; swap is required before acceptance. */
   readonly flaggedPortion?: boolean;
+  /**
+   * PER-134 (BE-D3): the person's meal name ("Breakfast", "Pre-workout") when
+   * the plan was generated from Your meals. Absent on a `mealsPerDay` plan.
+   */
+  readonly label?: string;
 };
 
 export type PlanGenerateEmptyReason = "no_targets" | "no_candidates";
@@ -274,6 +290,8 @@ export type PlanSwapInput = {
   readonly steer?: string;
   readonly notWantedMeals?: readonly NotWantedMeal[];
   readonly originalRequest?: string;
+  /** PER-134 (BE-D3): 3 asks for up to three options in `options`. */
+  readonly count?: 1 | 3;
 };
 
 export type PlanSwapMeal = {
@@ -292,6 +310,11 @@ export type PlanSwapEmptyReason = "budget_exhausted" | "no_candidates";
 
 export type PlanSwapResult = {
   readonly meal: PlanSwapMeal | null;
+  /**
+   * PER-134 (BE-D3): only when the request sent `count`. `options[0]` equals
+   * `meal`; there can be fewer than three, and none on an empty answer.
+   */
+  readonly options?: readonly PlanSwapMeal[];
   readonly emptyReason: PlanSwapEmptyReason | null;
   readonly labelCheckRequired: boolean;
 };
@@ -519,7 +542,8 @@ export function planAcceptMealInputFromGenerated(
   const primary = recipeItem ?? mealItem;
 
   return {
-    label: meal.name,
+    // PER-134: a day built from Your meals keeps the person's meal name.
+    label: ("label" in meal && meal.label) || meal.name,
     logSlot: meal.logSlot,
     ...(recipeItem ? { recipeId: recipeItem.candidateId } : {}),
     ...(mealItem ? { mealId: mealItem.candidateId } : {}),

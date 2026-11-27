@@ -58,7 +58,20 @@ import {
  * for. A lone id keeps "is THIS card swapping" a simple equality check.
  */
 
-export type PlanFlowStep = "config" | "generating" | "draft" | "saved" | null;
+export type PlanFlowStep =
+  | "config"
+  | "generating"
+  | "draft"
+  | "saved"
+  // PER-134: N22, the day was logged into today.
+  | "logged"
+  | null;
+
+/** PER-134: what a swapped meal was before, for Undo swap (N19). */
+export type SwappedFrom = {
+  readonly meal: PlanGeneratedMeal;
+  readonly flagged: boolean;
+};
 
 export type PlanFlowEmptyReason = "no_targets" | "no_candidates";
 
@@ -76,6 +89,13 @@ export interface PlanFlowState {
   swappingId: string | null;
   /** The plan `acceptPlan()` returned, rendered on the `saved` step. */
   acceptedPlan: MealPlan | null;
+  /**
+   * PER-134: each swapped meal's original (the first one, so Undo swap goes
+   * back to what Mealprint first offered), keyed by draft `localId`.
+   */
+  swappedFrom: Readonly<Record<string, SwappedFrom>>;
+  /** PER-134: each meal's portion (0.25–2), keyed by `localId`; 1 if unset. */
+  portions: Readonly<Record<string, number>>;
   /**
    * Bumped after a successful accept, so the Fuel card / meal log re-read
    * their cache without this store holding a reference to them (mirrors
@@ -107,6 +127,12 @@ export interface PlanFlowState {
   /** Accept 400 `unresolvable_items` — flag the affected meal(s), stay on `draft`. */
   markUnresolvable: (unresolvableItems: readonly string[]) => void;
   accepted: (plan: MealPlan) => void;
+  /** PER-134: Undo swap — the meal goes back to its original. */
+  undoSwap: (localId: string) => void;
+  /** PER-134: set one meal's portion (the caller checks the bounds). */
+  setPortion: (localId: string, portion: number) => void;
+  /** PER-134: "Log all today" finished (N22). */
+  logged: () => void;
   reset: () => void;
 }
 
@@ -118,6 +144,8 @@ const CLOSED = {
   flaggedIds: new Set<string>(),
   swappingId: null,
   acceptedPlan: null,
+  swappedFrom: {},
+  portions: {},
 } as const;
 
 export const usePlanFlow = create<PlanFlowState>((set, get) => ({
@@ -156,6 +184,8 @@ export const usePlanFlow = create<PlanFlowState>((set, get) => ({
       return {
         draft: removePlanDraftMeal(state.draft, localId),
         flaggedIds: nextFlagged,
+        swappedFrom: without(state.swappedFrom, localId),
+        portions: without(state.portions, localId),
       };
     }),
 
@@ -173,6 +203,8 @@ export const usePlanFlow = create<PlanFlowState>((set, get) => ({
   swapApplied: (localId, meal) =>
     set((state) => {
       if (state.draft === null) return { swappingId: null };
+      const current = state.draft.meals.find((m) => m.localId === localId);
+      if (current === undefined) return { swappingId: null };
       const newFlagged = new Set(state.flaggedIds);
       // A fresh swap is never itself server-flagged (see `PlanSwapMeal`); clear
       // this meal's flag whichever kind it was (server-flagged or
@@ -182,11 +214,26 @@ export const usePlanFlow = create<PlanFlowState>((set, get) => ({
         ...meal,
         flaggedUnsafe: false,
         flaggedPortion: false,
+        // PER-134: a swap stays in the same one of Your meals.
+        ...(current.meal.label !== undefined
+          ? { label: current.meal.label }
+          : {}),
       };
       return {
         draft: replacePlanDraftMeal(state.draft, localId, nextMeal),
         flaggedIds: newFlagged,
         swappingId: null,
+        swappedFrom:
+          localId in state.swappedFrom
+            ? state.swappedFrom
+            : {
+                ...state.swappedFrom,
+                [localId]: {
+                  meal: current.meal,
+                  flagged: state.flaggedIds.has(localId),
+                },
+              },
+        portions: without(state.portions, localId),
       };
     }),
 
@@ -209,5 +256,35 @@ export const usePlanFlow = create<PlanFlowState>((set, get) => ({
       rev: state.rev + 1,
     })),
 
+  undoSwap: (localId) =>
+    set((state) => {
+      const from = state.swappedFrom[localId];
+      if (state.draft === null || from === undefined) return {};
+      const flaggedIds = new Set(state.flaggedIds);
+      if (from.flagged) flaggedIds.add(localId);
+      else flaggedIds.delete(localId);
+      return {
+        draft: replacePlanDraftMeal(state.draft, localId, from.meal),
+        swappedFrom: without(state.swappedFrom, localId),
+        portions: without(state.portions, localId),
+        flaggedIds,
+      };
+    }),
+
+  setPortion: (localId, portion) =>
+    set((state) => ({ portions: { ...state.portions, [localId]: portion } })),
+
+  logged: () => set((state) => ({ step: "logged", rev: state.rev + 1 })),
+
   reset: () => set({ ...CLOSED }),
 }));
+
+/** A copy of `record` without `key`. */
+function without<T>(
+  record: Readonly<Record<string, T>>,
+  key: string,
+): Record<string, T> {
+  const next = { ...record };
+  delete next[key];
+  return next;
+}
