@@ -377,13 +377,9 @@ describe("ClientsContainer", () => {
     );
   });
 
-  it("opens the AddClient sheet from the header + (registering an invalidate + refresh)", async () => {
+  it("PER-125: the header + opens Add client (C11f)", async () => {
     const { adapters, api } = makeAdapters(makeTrainerSub());
     api.trainerClients = makeTrainerClients();
-    const invalidateSpy = jest.spyOn(
-      adapters.storage,
-      "invalidateTrainerClients",
-    );
     render(
       <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
         <ClientsContainer />
@@ -393,21 +389,48 @@ describe("ClientsContainer", () => {
       expect(screen.getByTestId("clients-invite-btn")).toBeTruthy(),
     );
     fireEvent.press(screen.getByTestId("clients-invite-btn"));
-    const state = useAddClientSheet.getState();
-    expect(state.open).toBe(true);
-    expect(typeof state.onInvited).toBe("function");
-
-    // Firing the registered callback invalidates the SQLite roster slot
-    // (QA-14b — so a cache-first re-read can't serve back the stale list)
-    // BEFORE re-pulling the roster (slot/flag refresh).
-    const before = api.getTrainerClientsCalls;
-    await act(async () => {
-      state.onInvited?.();
+    expect(mockPush).toHaveBeenCalledWith({
+      pathname: "/(app)/coach-clients/add",
     });
-    expect(invalidateSpy).toHaveBeenCalledWith("u-1");
-    await waitFor(() =>
-      expect(api.getTrainerClientsCalls).toBeGreaterThan(before),
+    expect(useAddClientSheet.getState().open).toBe(false);
+  });
+
+  it("PER-125: invited clients show above the roster and open C11i", async () => {
+    const { adapters, api } = makeAdapters(makeTrainerSub());
+    api.trainerClients = makeTrainerClients();
+    api.invitedProfiles = [
+      {
+        id: "p-lena",
+        displayName: "Lena Ortiz",
+        contactEmail: null,
+        contactPhone: null,
+        goal: "First pull-up",
+        privateNotes: null,
+        status: "invited",
+        clientId: null,
+        relationshipId: null,
+        acceptedAt: null,
+        cancelledAt: null,
+        revision: 2,
+        createdAt: "2026-11-26T09:00:00Z",
+        updatedAt: "2026-11-26T09:00:00Z",
+      },
+    ];
+    render(
+      <Wrapper adapters={adapters} queryClient={makeQueryClient()}>
+        <ClientsContainer />
+      </Wrapper>,
     );
+    await waitFor(() =>
+      expect(screen.getByTestId("invited-section")).toBeTruthy(),
+    );
+    expect(screen.getByText("Invited · 1")).toBeTruthy();
+    expect(screen.getByText("First pull-up")).toBeTruthy();
+    fireEvent.press(screen.getByTestId("invited-list-row-p-lena"));
+    expect(mockPush).toHaveBeenCalledWith({
+      pathname: "/(app)/coach-clients/[profileId]",
+      params: { profileId: "p-lena" },
+    });
   });
 
   it("at the client-slot cap: warns, shows the slots line, and disables invite", async () => {
@@ -426,9 +449,11 @@ describe("ClientsContainer", () => {
       expect(screen.getByTestId("clients-no-seats-warning")).toBeTruthy(),
     );
     expect(screen.getByText("5 of 5 client slots used")).toBeTruthy();
-    // Invite affordance is disabled → pressing it does not open the sheet.
+    // Invite affordance is disabled → pressing it does not open Add client.
     fireEvent.press(screen.getByTestId("clients-invite-btn"));
-    expect(useAddClientSheet.getState().open).toBe(false);
+    expect(mockPush).not.toHaveBeenCalledWith({
+      pathname: "/(app)/coach-clients/add",
+    });
     // "Change subscription" routes to selection, pre-selecting the next tier
     // up (individual_trainer → coach, spec-29 Phase 2 coach ladder).
     fireEvent.press(screen.getByTestId("clients-no-seats-upgrade"));

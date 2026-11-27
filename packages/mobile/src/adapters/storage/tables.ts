@@ -128,3 +128,11 @@ export const PENDING_PROGRESS_PHOTO_TABLES = [
 export const FORM_REQUESTS_TABLES = ["cached_form_requests"] as const;
 /** PER-130 each due form's draft and send state on this phone. */
 export const FORM_LOCAL_TABLES = ["form_request_local"] as const;
+/** PER-125 the coach's invited clients (profile, set-up and code). */
+export const COACH_CLIENT_PROFILES_TABLES = [
+  "cached_coach_client_profiles",
+] as const;
+/** PER-125 C3.9 settings, per client. */
+export const COACH_CLIENT_SETTINGS_TABLES = [
+  "cached_coach_client_settings",
+] as const;

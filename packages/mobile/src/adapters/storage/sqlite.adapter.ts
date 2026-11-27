@@ -100,6 +100,16 @@ import {
   swapIdInClientForms,
   swapIdInQueueRow,
 } from "./coachFormsQueueSwap";
+import {
+  COACH_CLIENT_QUEUE_ENTITIES,
+  COACH_CLIENT_SETUP_QUEUE_ENTITY,
+  swapIdInRow,
+  swapText,
+} from "./coachClientProfilesSwap";
+import type {
+  CachedClientProfile,
+  CachedClientSettings,
+} from "@/domain/models/coachClientProfiles";
 import type {
   PendingProgressPhotoSet,
   ProgressPhotosCache,
@@ -1010,6 +1020,23 @@ ${indentSyncQueueDdl(8)}
         payload TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         PRIMARY KEY (user_id, request_id)
+      );
+      -- PER-125 the coach's invited clients (profile + set-up + code, one
+      -- row per profile) and C3.9 settings (one row per client). New
+      -- TABLEs, so CREATE TABLE IF NOT EXISTS covers upgrading installs too.
+      CREATE TABLE IF NOT EXISTS cached_coach_client_profiles (
+        user_id TEXT NOT NULL,
+        profile_id TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        synced_at TEXT NOT NULL,
+        PRIMARY KEY (user_id, profile_id)
+      );
+      CREATE TABLE IF NOT EXISTS cached_coach_client_settings (
+        user_id TEXT NOT NULL,
+        client_id TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        synced_at TEXT NOT NULL,
+        PRIMARY KEY (user_id, client_id)
       );
 
       CREATE INDEX IF NOT EXISTS idx_sync_queue_status ON sync_queue(status, created_at);
@@ -4269,6 +4296,7 @@ ${indentSyncQueueDdl(12)}
           localId,
         ],
       );
+      this.remapCoachClientSetupRefs(localId, serverId);
     });
   }
 
@@ -4487,6 +4515,7 @@ ${indentSyncQueueDdl(12)}
       }
       this.swapCoachClientFormsId(userId, localId, serverId, "form");
       this.swapCoachFormsQueueId(localId, serverId, "formId");
+      this.remapCoachClientSetupRefs(localId, serverId);
     });
   }
 
@@ -4509,6 +4538,7 @@ ${indentSyncQueueDdl(12)}
       }
       this.swapCoachClientFormsId(userId, localId, serverId, "schedule");
       this.swapCoachFormsQueueId(localId, serverId, "scheduleId");
+      this.remapCoachClientSetupRefs(localId, serverId);
     });
   }
 
@@ -4563,6 +4593,8 @@ ${indentSyncQueueDdl(12)}
       DELETE FROM pending_progress_photos;
       DELETE FROM cached_form_requests;
       DELETE FROM form_request_local;
+      DELETE FROM cached_coach_client_profiles;
+      DELETE FROM cached_coach_client_settings;
     `);
   }
 
@@ -4638,6 +4670,141 @@ ${indentSyncQueueDdl(12)}
       reps: row.reps,
       recordedAt: row.recorded_at,
     }));
+  }
+
+  // -- PER-125 (APP-A2): invited clients and C3.9 settings --
+
+  getCachedCoachClientProfiles(userId: string): CachedClientProfile[] {
+    const rows = this.getDb().getAllSync(
+      `SELECT payload FROM cached_coach_client_profiles WHERE user_id = ?`,
+      [userId],
+    ) as { payload: string }[];
+    return rows.map((r) => JSON.parse(r.payload) as CachedClientProfile);
+  }
+
+  getCachedCoachClientProfile(
+    userId: string,
+    profileId: string,
+  ): CachedClientProfile | null {
+    const row = this.getDb().getFirstSync(
+      `SELECT payload FROM cached_coach_client_profiles WHERE user_id = ? AND profile_id = ?`,
+      [userId, profileId],
+    ) as { payload: string } | null;
+    return row ? (JSON.parse(row.payload) as CachedClientProfile) : null;
+  }
+
+  cacheCoachClientProfile(userId: string, profile: CachedClientProfile): void {
+    this.getDb().runSync(
+      `INSERT INTO cached_coach_client_profiles (user_id, profile_id, payload, synced_at) VALUES (?, ?, ?, ?)
+       ON CONFLICT(user_id, profile_id) DO UPDATE SET payload = excluded.payload, synced_at = excluded.synced_at`,
+      [userId, profile.id, JSON.stringify(profile), new Date().toISOString()],
+    );
+  }
+
+  removeCachedCoachClientProfile(userId: string, profileId: string): void {
+    this.getDb().runSync(
+      `DELETE FROM cached_coach_client_profiles WHERE user_id = ? AND profile_id = ?`,
+      [userId, profileId],
+    );
+  }
+
+  getCachedCoachClientSettings(
+    userId: string,
+    clientId: string,
+  ): CachedClientSettings | null {
+    return this.readClientBlob<CachedClientSettings>(
+      "cached_coach_client_settings",
+      userId,
+      clientId,
+    );
+  }
+
+  cacheCoachClientSettings(
+    userId: string,
+    clientId: string,
+    value: CachedClientSettings,
+  ): void {
+    this.writeClientBlob(
+      "cached_coach_client_settings",
+      userId,
+      clientId,
+      value,
+    );
+  }
+
+  swapLocalCoachClientProfileId(
+    userId: string,
+    localId: string,
+    serverId: string,
+  ): void {
+    if (localId === serverId) return;
+    const db = this.getDb();
+    db.withTransactionSync(() => {
+      const cached = this.getCachedCoachClientProfile(userId, localId);
+      if (cached) {
+        this.removeCachedCoachClientProfile(userId, localId);
+        this.cacheCoachClientProfile(userId, {
+          ...(this.getCachedCoachClientProfile(userId, serverId) ?? cached),
+          id: serverId,
+        });
+      }
+      this.swapCoachClientQueueRows(
+        COACH_CLIENT_QUEUE_ENTITIES,
+        localId,
+        serverId,
+      );
+    });
+  }
+
+  remapCoachClientSetupRefs(localId: string, serverId: string): void {
+    if (localId === serverId) return;
+    const db = this.getDb();
+    const rows = db.getAllSync(
+      `SELECT user_id, profile_id, payload FROM cached_coach_client_profiles`,
+    ) as { user_id: string; profile_id: string; payload: string }[];
+    for (const r of rows) {
+      if (!r.payload.includes(localId)) continue;
+      db.runSync(
+        `UPDATE cached_coach_client_profiles SET payload = ? WHERE user_id = ? AND profile_id = ?`,
+        [swapText(r.payload, localId, serverId), r.user_id, r.profile_id],
+      );
+    }
+    this.swapCoachClientQueueRows(
+      [COACH_CLIENT_SETUP_QUEUE_ENTITY],
+      localId,
+      serverId,
+    );
+  }
+
+  private swapCoachClientQueueRows(
+    entityTypes: readonly string[],
+    localId: string,
+    serverId: string,
+  ): void {
+    const db = this.getDb();
+    const placeholders = entityTypes.map(() => "?").join(", ");
+    const rows = db.getAllSync(
+      `SELECT id, entity_id, endpoint, payload FROM sync_queue
+       WHERE entity_type IN (${placeholders}) AND status != 'completed'`,
+      [...entityTypes],
+    ) as {
+      id: number;
+      entity_id: string | null;
+      endpoint: string;
+      payload: string;
+    }[];
+    for (const r of rows) {
+      const next = swapIdInRow(
+        { entityId: r.entity_id, endpoint: r.endpoint, payload: r.payload },
+        localId,
+        serverId,
+      );
+      if (!next) continue;
+      db.runSync(
+        `UPDATE sync_queue SET entity_id = ?, endpoint = ?, payload = ? WHERE id = ?`,
+        [next.entityId, next.endpoint, next.payload, r.id],
+      );
+    }
   }
 }
 

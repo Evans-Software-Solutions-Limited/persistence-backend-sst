@@ -1,5 +1,48 @@
 # Project memory · persistence-backend-sst
 
+### 2026-11-27 — APP-A2: iPhone add client (C11f–s), invited client (C11i), C3.9 settings, offline caches ([PER-125](https://linear.app/evans-software-solutions/issue/PER-125); branch `claude/per-125-iphone-add-client`)
+
+Mobile only, over the air on 1.2.0: no backend, migration or native change.
+Uses the merged BE-A1 routes (#540, PER-108); web reference was #549.
+
+- **Caches:** `cached_coach_client_profiles` (one row per profile: profile +
+  set-up + code, plus `conflictAt`) and `cached_coach_client_settings` (per
+  client, plus `conflictAt`). New tables, `CREATE TABLE IF NOT EXISTS`,
+  cleared on sign-out.
+- **Queue** (`coachClientProfiles.command.ts`): `coach_client_profile`
+  (POST keyed / PATCH + `expectedRevision` / DELETE), `coach_client_setup`
+  (PUT per section, the unsent row for a section takes the newer items) and
+  `coach_client_settings` (PATCH, unsent changes merge). Every profile or
+  set-up write moves the revision on, so later queued writes are rebased
+  from the revision just sent (or 0 = not created yet) to the server's.
+  409 `revision_conflict` → the cache takes `current`, queued writes for it
+  are dropped, the screens say "Updated on another device"; 409
+  `profile_not_editable` → queued writes dropped, status taken. A profile
+  made offline swaps its `local-…` id everywhere on sync
+  (`swapLocalCoachClientProfileId`); a set-up item naming a form, send rule
+  or plan made offline is rewritten by `remapCoachClientSetupRefs`, called
+  from `swapLocalCoachFormId`, `swapLocalCoachFormScheduleId` and
+  `swapLocalNutritionPlanId`. `sync.command.ts` gained one 409 block and one
+  success block (appended after PER-129's / PER-130's).
+- **Online only** (`useInviteActions`): issue/resend (stable
+  `Idempotency-Key` per profile until it succeeds), cancel, copy-from, and
+  the coach declaration (asked before the first invite or on a 403
+  `declaration_required`; DRAFT wording copied from web, same version).
+- **Screens** (`app/(app)/coach-clients/*`, containers/presenters under
+  `coachClients/`): C11f Who (react-hook-form + TypeBox, same rules as web),
+  C11g checklist (Copy from a client, Preview), C11l–r one page per section
+  (react-hook-form over the section's items; Back saves only a real change,
+  Cancel drops), C11s preview (built from the phone's set-up, works
+  offline), C11h invite (code, QR, Share invite, Copy code), C11i invited
+  client (only Overview open; Resend, Copy link, Cancel invite), C3.9 in
+  the client page's Settings tab. Clients tab: `+` opens C11f; an Invited
+  section above the roster.
+- **Reads added to ApiPort** (appended): invited list, detail, issue/cancel
+  invite, copy-from, declaration get/accept, settings, and the coach's meal
+  plans (`/trainers/me/meal-plans`) and resources (`/trainers/me/resources`)
+  for the C11p/q pickers — PER-135 (#577) and PER-143 (#580) add their own
+  readers of those two routes; fold them together once both merge.
+
 ### 2026-11-27 — APP-D3: athlete Mealprint redesign N15–N27 ([PER-134](https://linear.app/evans-software-solutions/issue/PER-134); branch `claude/per-134-mealprint-redesign`)
 
 Mobile only. Uses BE-D3 (PER-119, #562). No backend, migration, native or

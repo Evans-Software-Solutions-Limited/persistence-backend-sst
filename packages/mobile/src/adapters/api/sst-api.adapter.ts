@@ -91,6 +91,7 @@ import {
 } from "@/domain/ports/api.port";
 import type {
   ApiPort,
+  CoachClientApiError,
   InviteApiError,
   LoadoutApiError,
   MealprintApiError,
@@ -272,6 +273,15 @@ import type {
   ProgressPhotosResponse,
   ProgressPhotoUpload,
 } from "@/domain/models/progressPhotos";
+import type {
+  ClientProfileDetail,
+  ClientProfileList,
+  ClientSettings,
+  CoachDeclarationStatus,
+  IssuedInvite,
+  SetupMealPlan,
+  SetupResource,
+} from "@/domain/models/coachClientProfiles";
 
 type ApiSuccessResponse<T> = { data: T };
 type ApiErrorResponse = { error: string };
@@ -3326,6 +3336,138 @@ export class SSTApiAdapter implements ApiPort {
       body: input,
       idempotencyKey,
     });
+  }
+
+  // -- PER-125 (APP-A2): invited clients and C3.9 settings, coach (BE-A1) --
+
+  /** A `{ data }` call whose refusals keep the server's `code`. */
+  private async requestCoachClient<T>(
+    path: string,
+    options: RequestOptions,
+    fallback: string,
+  ): Promise<Result<T, CoachClientApiError>> {
+    const result = await this.requestRaw<{
+      data?: T;
+      code?: unknown;
+      message?: unknown;
+    } | null>(path, options);
+    if (!result.ok) return fail<CoachClientApiError>(result.error);
+    const { status, json } = result.value;
+    if (status >= 200 && status < 300) {
+      return ok((json?.data ?? undefined) as T);
+    }
+    const message = typeof json?.message === "string" ? json.message : fallback;
+    const base = mapHttpErrorToApiError(status, message, json);
+    return fail<CoachClientApiError>(
+      typeof json?.code === "string"
+        ? { ...base, serverCode: json.code }
+        : base,
+    );
+  }
+
+  async getInvitedClientProfiles(): Promise<
+    Result<ClientProfileList, ApiError>
+  > {
+    const result = await this.request<ClientProfileList>(
+      "/trainers/me/client-profiles",
+      { params: { status: "invited" } },
+    );
+    if (!result.ok) return result;
+    return ok({
+      data: result.value.data ?? [],
+      deletedIds: result.value.deletedIds ?? [],
+      asOf: result.value.asOf,
+    });
+  }
+
+  async getClientProfile(
+    id: string,
+  ): Promise<Result<ClientProfileDetail, ApiError>> {
+    return this.requestEnvelope<ClientProfileDetail>(
+      `/trainers/me/client-profiles/${encodeURIComponent(id)}`,
+    );
+  }
+
+  async issueClientInvite(
+    id: string,
+    idempotencyKey: string,
+  ): Promise<Result<IssuedInvite, CoachClientApiError>> {
+    return this.requestCoachClient<IssuedInvite>(
+      `/trainers/me/client-profiles/${encodeURIComponent(id)}/invite`,
+      { method: "POST", idempotencyKey },
+      "Couldn't send the invite",
+    );
+  }
+
+  async cancelClientInvite(
+    id: string,
+  ): Promise<Result<void, CoachClientApiError>> {
+    const result = await this.requestCoachClient<unknown>(
+      `/trainers/me/client-profiles/${encodeURIComponent(id)}/invite`,
+      { method: "DELETE" },
+      "Couldn't cancel the invite",
+    );
+    return result.ok ? ok(undefined) : result;
+  }
+
+  async copyClientSetup(
+    id: string,
+    sourceClientId: string,
+  ): Promise<Result<ClientProfileDetail, CoachClientApiError>> {
+    return this.requestCoachClient<ClientProfileDetail>(
+      `/trainers/me/client-profiles/${encodeURIComponent(id)}/setup/copy-from`,
+      { method: "POST", body: { sourceClientId } },
+      "Couldn't copy the set-up",
+    );
+  }
+
+  async getCoachDeclaration(): Promise<
+    Result<CoachDeclarationStatus, ApiError>
+  > {
+    return this.requestEnvelope<CoachDeclarationStatus>(
+      "/trainers/me/declaration",
+    );
+  }
+
+  async acceptCoachDeclaration(
+    statementVersion: string,
+    statementTextHash: string | null,
+    idempotencyKey: string,
+  ): Promise<Result<CoachDeclarationStatus, CoachClientApiError>> {
+    return this.requestCoachClient<CoachDeclarationStatus>(
+      "/trainers/me/declaration",
+      {
+        method: "POST",
+        idempotencyKey,
+        body: {
+          statementVersion,
+          ...(statementTextHash ? { statementTextHash } : {}),
+        },
+      },
+      "Couldn't save the declaration",
+    );
+  }
+
+  async getClientSettings(
+    clientId: string,
+  ): Promise<Result<ClientSettings, ApiError>> {
+    return this.requestEnvelope<ClientSettings>(
+      `/trainers/me/clients/${encodeURIComponent(clientId)}/settings`,
+    );
+  }
+
+  async getSetupMealPlans(): Promise<Result<SetupMealPlan[], ApiError>> {
+    const result = await this.requestEnvelope<{ plans?: SetupMealPlan[] }>(
+      "/trainers/me/meal-plans",
+    );
+    return result.ok ? ok(result.value.plans ?? []) : result;
+  }
+
+  async getSetupResources(): Promise<Result<SetupResource[], ApiError>> {
+    const result = await this.requestEnvelope<{
+      resources?: SetupResource[];
+    }>("/trainers/me/resources");
+    return result.ok ? ok(result.value.resources ?? []) : result;
   }
 }
 

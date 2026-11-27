@@ -17,6 +17,7 @@ function sqliteAdapter(): { adapter: StoragePort; db: DatabaseSync } {
     CREATE TABLE cached_nutrition_plans (user_id TEXT PRIMARY KEY, payload TEXT NOT NULL, synced_at TEXT NOT NULL);
     CREATE TABLE cached_plans_shopping (user_id TEXT PRIMARY KEY, payload TEXT NOT NULL, synced_at TEXT NOT NULL);
     CREATE TABLE sync_queue (id INTEGER PRIMARY KEY, entity_type TEXT, entity_id TEXT, endpoint TEXT, payload TEXT, status TEXT);
+    CREATE TABLE cached_coach_client_profiles (user_id TEXT NOT NULL, profile_id TEXT NOT NULL, payload TEXT NOT NULL, synced_at TEXT NOT NULL, PRIMARY KEY (user_id, profile_id));
   `);
   type P = (string | number | null)[];
   const adapter = new SQLiteStorageAdapter();

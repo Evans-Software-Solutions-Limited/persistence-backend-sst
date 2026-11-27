@@ -39,6 +39,11 @@ import {
   applyCoachFormsSyncSuccess,
   COACH_FORMS_ENTITIES,
 } from "./coachForms.command";
+import {
+  applyCoachClientConflict,
+  applyCoachClientSyncSuccess,
+  COACH_CLIENT_ENTITIES,
+} from "./coachClientProfiles.command";
 import type { ApiError } from "@/shared/errors/result";
 import type { PendingProgressPhotoSet } from "@/domain/models/progressPhotos";
 import {
@@ -1052,6 +1057,17 @@ export async function processSyncQueue(
           failed++;
           continue;
         }
+        // PER-125: an invited client or C3.9 settings changed on another
+        // device (or the client accepted). The cache takes the server copy,
+        // the queued writes are dropped and the screens say so.
+        if (
+          response.status === 409 &&
+          COACH_CLIENT_ENTITIES.includes(entry.entityType) &&
+          applyCoachClientConflict(storage, entry, body)
+        ) {
+          failed++;
+          continue;
+        }
         throw new SyncHttpError(
           response.status,
           `HTTP ${response.status}: ${body}`,
@@ -1444,6 +1460,24 @@ export async function processSyncQueue(
       // PER-130: an athlete's queued form response reached the server.
       if (entry.entityType === FORM_RESPONSE_ENTITY) {
         applyFormResponseSynced(storage, entry);
+      }
+
+      // PER-125: an invited-client or settings write synced. Take the
+      // server's copy, swap an offline profile's `local-…` id and rebase later
+      // queued writes. Non-fatal: the request already succeeded.
+      if (COACH_CLIENT_ENTITIES.includes(entry.entityType)) {
+        try {
+          const body =
+            entry.method === "DELETE"
+              ? {}
+              : ((await response.json()) as { data?: unknown });
+          applyCoachClientSyncSuccess(storage, entry, body.data ?? null);
+        } catch (err) {
+          console.warn(
+            "[sync] coach client write succeeded but response capture failed; the next read reconciles:",
+            err,
+          );
+        }
       }
 
       storage.markMutationCompleted(entry.id);

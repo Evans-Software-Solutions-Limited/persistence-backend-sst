@@ -79,6 +79,15 @@ import type {
   FormAnswerUpload,
   FormResponseSubmit,
 } from "@/domain/models/athleteForms";
+import type {
+  ClientProfileDetail,
+  ClientProfileList,
+  ClientSettings,
+  CoachDeclarationStatus,
+  IssuedInvite,
+  SetupMealPlan,
+  SetupResource,
+} from "@/domain/models/coachClientProfiles";
 import type { Result, ApiError } from "@/shared/errors";
 import type { ReferralsPort } from "@/domain/ports/referrals.port";
 import type { PaginatedResult, PaginationParams } from "@/shared/types";
@@ -1837,7 +1846,52 @@ export interface ApiPort extends ReferralsPort {
     input: { fromMealprintPlanId: string; name?: string },
     idempotencyKey: string,
   ): Promise<Result<NutritionPlan, ApiError>>;
+
+  // -- PER-125 (APP-A2): invited clients and C3.9 settings, coach (BE-A1) --
+  //
+  // Profile, set-up and settings writes go through the offline queue
+  // (`coachClientProfiles.command.ts`). Issuing, resending or cancelling a
+  // code, copy-from and the declaration need a connection (design A D6).
+
+  /** `GET /trainers/me/client-profiles?status=invited`. */
+  getInvitedClientProfiles(): Promise<Result<ClientProfileList, ApiError>>;
+  /** `GET /trainers/me/client-profiles/:id`: profile, set-up and code. */
+  getClientProfile(id: string): Promise<Result<ClientProfileDetail, ApiError>>;
+  /**
+   * `POST …/:id/invite` with `Idempotency-Key`: issues the code, or on
+   * resend expires the old one and issues a new one (7 days).
+   */
+  issueClientInvite(
+    id: string,
+    idempotencyKey: string,
+  ): Promise<Result<IssuedInvite, CoachClientApiError>>;
+  /** `DELETE …/:id/invite`: expires the code, status `cancelled`. */
+  cancelClientInvite(id: string): Promise<Result<void, CoachClientApiError>>;
+  /** `POST …/:id/setup/copy-from` from one of the coach's active clients. */
+  copyClientSetup(
+    id: string,
+    sourceClientId: string,
+  ): Promise<Result<ClientProfileDetail, CoachClientApiError>>;
+  /** `GET /trainers/me/declaration`. */
+  getCoachDeclaration(): Promise<Result<CoachDeclarationStatus, ApiError>>;
+  /** `POST /trainers/me/declaration`, idempotent. */
+  acceptCoachDeclaration(
+    statementVersion: string,
+    statementTextHash: string | null,
+    idempotencyKey: string,
+  ): Promise<Result<CoachDeclarationStatus, CoachClientApiError>>;
+  /** `GET /trainers/me/clients/:clientId/settings` (defaults when none). */
+  getClientSettings(
+    clientId: string,
+  ): Promise<Result<ClientSettings, ApiError>>;
+  /** `GET /trainers/me/meal-plans`: the coach's plans for C11p. */
+  getSetupMealPlans(): Promise<Result<SetupMealPlan[], ApiError>>;
+  /** `GET /trainers/me/resources`: the coach's library for C11q. */
+  getSetupResources(): Promise<Result<SetupResource[], ApiError>>;
 }
+
+/** An invited-client call refused with the server's own `code`. */
+export type CoachClientApiError = ApiError & { serverCode?: string };
 
 /**
  * Every `code` the Loadout handlers actually put on the wire.

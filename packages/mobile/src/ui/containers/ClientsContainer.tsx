@@ -27,7 +27,11 @@ import { useMySubscription } from "@/ui/hooks/useMySubscription";
 import { useGetTrainerClients } from "@/ui/hooks/useGetTrainerClients";
 import { useRespondToClientRequest } from "@/ui/hooks/useTrainerInviteCodes";
 import { useModeSwitch } from "@/ui/hooks/useModeSwitch";
-import { useAddClientSheet } from "@/state/add-client-sheet";
+import { useInvitedClients } from "@/ui/hooks/useCoachClientProfiles";
+import { profileInitials } from "@/domain/services/coachClientProfiles.service";
+import { InvitedListPresenter } from "@/ui/presenters/coachClients/InvitedListPresenter";
+import { inviteLine } from "@/ui/containers/coachClients/InvitedClientContainer";
+import { coachClientRoutes } from "@/ui/containers/coachClients/routes";
 import { color } from "@/ui/theme/tokens";
 import {
   ClientsListPresenter,
@@ -48,10 +52,10 @@ import {
  *  - Allowed → the live roster: cache-first `useGetTrainerClients()` wired into
  *    <ClientsListPresenter> with local search + segmented-filter state.
  *
- * The header `+` opens the existing root-mounted AddClient sheet
- * (`useAddClientSheet`, shipped in #123); a successful invite refreshes the
- * roster via the registered `onInvited` callback. Row press pushes the (stub)
- * per-client detail route — Client Detail proper is the next slice (10.9.3).
+ * The header `+` opens Add client (PER-125, canvas C11f: Who · Set up ·
+ * Invite); invited clients show in their own section above the roster and
+ * open the invited client (C11i). Row press pushes the per-client detail
+ * route.
  *
  * Coach Mode Phase 8 (invite/QR): a `clientId` search param (from the
  * redeem-notification deep link `persistencemobile://clients?clientId=…`)
@@ -73,7 +77,6 @@ export function ClientsContainer() {
   const subQuery = useMySubscription();
   const gate = useFeatureGate("trainer_clients");
   const roster = useGetTrainerClients();
-  const openSheet = useAddClientSheet((s) => s.openSheet);
   const { switchMode } = useModeSwitch();
   const respondToClient = useRespondToClientRequest();
 
@@ -152,12 +155,23 @@ export function ClientsContainer() {
     void refreshRoster();
   }, [storage, userId, refreshRoster]);
 
+  // PER-125 (C11f): + opens Add client (Who · Set up · Invite). The new
+  // client shows in the Invited section straight away (offline too).
   const onInvite = useCallback(() => {
-    // Register the roster refresh so a successful invite re-pulls the list.
-    openSheet(() => {
-      invalidateAndRefresh();
-    });
-  }, [openSheet, invalidateAndRefresh]);
+    router.push(coachClientRoutes.add());
+  }, []);
+  const invited = useInvitedClients({ enabled: gate.allowed });
+  const invitedSection = (
+    <InvitedListPresenter
+      rows={(invited.data ?? []).map((p) => ({
+        id: p.id,
+        name: p.displayName,
+        initials: profileInitials(p.displayName),
+        line: p.goal ?? inviteLine(p.invite, p.status),
+      }))}
+      onOpen={(profileId) => router.push(coachClientRoutes.invited(profileId))}
+    />
+  );
 
   // "Change subscription" from the at-cap warning → subscription selection,
   // pre-selecting the next trainer tier up when there is one.
@@ -303,6 +317,7 @@ export function ClientsContainer() {
       onAcceptClient={onAcceptClient}
       onDeclineClient={onDeclineClient}
       pendingActionIds={pendingActionIds}
+      invitedSection={invitedSection}
     />
   );
 }

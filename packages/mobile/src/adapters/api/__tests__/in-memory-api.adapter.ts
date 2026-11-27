@@ -237,6 +237,17 @@ import type {
   ProgressPhotosResponse,
   ProgressPhotoUpload,
 } from "@/domain/models/progressPhotos";
+import type {
+  ClientProfile,
+  ClientProfileDetail,
+  ClientProfileList,
+  ClientSettings,
+  CoachDeclarationStatus,
+  IssuedInvite,
+  SetupMealPlan,
+  SetupResource,
+} from "@/domain/models/coachClientProfiles";
+import type { CoachClientApiError } from "@/domain/ports/api.port";
 
 /**
  * In-memory API adapter for testing.
@@ -4215,5 +4226,168 @@ export class InMemoryApiAdapter implements ApiPort {
       totals: { kcal: 0, proteinG: 0, carbsG: 0, fatG: 0 },
     };
     return ok(plan);
+  }
+
+  // -- PER-125 (APP-A2): invited clients and C3.9 settings --
+  public invitedProfiles: ClientProfile[] = [];
+  public clientProfiles: Record<string, ClientProfileDetail> = {};
+  public clientSettings: Record<string, ClientSettings> = {};
+  public setupMealPlans: SetupMealPlan[] = [];
+  public setupResources: SetupResource[] = [];
+  public declaration: CoachDeclarationStatus = {
+    currentVersion: "2026-11-v1",
+    acceptedVersion: "2026-11-v1",
+    acceptedAt: "2026-11-20T09:00:00Z",
+  };
+  /** The next refusal per online action (status + server code). */
+  public coachClientFailures: Partial<
+    Record<"issue" | "cancel" | "copy" | "declaration", CoachClientApiError>
+  > = {};
+  public coachClientCalls: string[] = [];
+  private nextClientInviteCode = 1;
+
+  private refuse(
+    action: "issue" | "cancel" | "copy" | "declaration",
+  ): CoachClientApiError | null {
+    const failure = this.coachClientFailures[action];
+    if (!failure) return null;
+    delete this.coachClientFailures[action];
+    return failure;
+  }
+
+  private static copyOf<T>(value: T): T {
+    return JSON.parse(JSON.stringify(value)) as T;
+  }
+
+  async getInvitedClientProfiles(): Promise<
+    Result<ClientProfileList, ApiError>
+  > {
+    this.coachClientCalls.push("list");
+    return this.mayFail({
+      data: InMemoryApiAdapter.copyOf(this.invitedProfiles),
+      deletedIds: [],
+      asOf: "2026-11-27T09:00:00Z",
+    });
+  }
+
+  async getClientProfile(
+    id: string,
+  ): Promise<Result<ClientProfileDetail, ApiError>> {
+    this.coachClientCalls.push(`detail:${id}`);
+    if (this.shouldFail) return fail(this.failError);
+    const hit = this.clientProfiles[id];
+    if (!hit) {
+      return fail<ApiError>({
+        kind: "api",
+        code: "not_found",
+        status: 404,
+        message: "Client profile not found",
+      });
+    }
+    return ok(InMemoryApiAdapter.copyOf(hit));
+  }
+
+  async issueClientInvite(
+    id: string,
+    idempotencyKey: string,
+  ): Promise<Result<IssuedInvite, CoachClientApiError>> {
+    this.coachClientCalls.push(`issue:${id}:${idempotencyKey}`);
+    const refused = this.refuse("issue");
+    if (refused) return fail(refused);
+    const code = `LN4Q8${this.nextClientInviteCode++}`;
+    const invite: IssuedInvite = {
+      code,
+      link: `https://persistence.app/invite/${code}`,
+      expiresAt: new Date(Date.now() + 7 * 86_400_000).toISOString(),
+    };
+    const profile = this.clientProfiles[id];
+    if (profile) profile.invite = { ...invite, status: "active" };
+    return ok(invite);
+  }
+
+  async cancelClientInvite(
+    id: string,
+  ): Promise<Result<void, CoachClientApiError>> {
+    this.coachClientCalls.push(`cancel:${id}`);
+    const refused = this.refuse("cancel");
+    if (refused) return fail(refused);
+    const profile = this.clientProfiles[id];
+    if (profile) {
+      profile.status = "cancelled";
+      if (profile.invite) profile.invite.status = "expired";
+    }
+    return ok(undefined);
+  }
+
+  async copyClientSetup(
+    id: string,
+    sourceClientId: string,
+  ): Promise<Result<ClientProfileDetail, CoachClientApiError>> {
+    this.coachClientCalls.push(`copy:${id}:${sourceClientId}`);
+    const refused = this.refuse("copy");
+    if (refused) return fail(refused);
+    const hit = this.clientProfiles[id];
+    if (!hit) {
+      return fail<CoachClientApiError>({
+        kind: "api",
+        code: "not_found",
+        status: 404,
+        message: "Client profile not found",
+        serverCode: "not_found",
+      });
+    }
+    return ok(InMemoryApiAdapter.copyOf(hit));
+  }
+
+  async getCoachDeclaration(): Promise<
+    Result<CoachDeclarationStatus, ApiError>
+  > {
+    this.coachClientCalls.push("declaration");
+    return this.mayFail({ ...this.declaration });
+  }
+
+  async acceptCoachDeclaration(
+    statementVersion: string,
+    statementTextHash: string | null,
+    idempotencyKey: string,
+  ): Promise<Result<CoachDeclarationStatus, CoachClientApiError>> {
+    this.coachClientCalls.push(
+      `accept-declaration:${statementVersion}:${statementTextHash ? "hash" : "none"}:${idempotencyKey ? "key" : ""}`,
+    );
+    const refused = this.refuse("declaration");
+    if (refused) return fail(refused);
+    this.declaration = {
+      ...this.declaration,
+      acceptedVersion: statementVersion,
+      acceptedAt: "2026-11-27T09:00:00Z",
+    };
+    return ok({ ...this.declaration });
+  }
+
+  async getClientSettings(
+    clientId: string,
+  ): Promise<Result<ClientSettings, ApiError>> {
+    this.coachClientCalls.push(`settings:${clientId}`);
+    if (this.shouldFail) return fail(this.failError);
+    const hit = this.clientSettings[clientId];
+    if (!hit) {
+      return fail<ApiError>({
+        kind: "api",
+        code: "not_found",
+        status: 404,
+        message: "Not found",
+      });
+    }
+    return ok(InMemoryApiAdapter.copyOf(hit));
+  }
+
+  async getSetupMealPlans(): Promise<Result<SetupMealPlan[], ApiError>> {
+    this.coachClientCalls.push("meal-plans");
+    return this.mayFail(InMemoryApiAdapter.copyOf(this.setupMealPlans));
+  }
+
+  async getSetupResources(): Promise<Result<SetupResource[], ApiError>> {
+    this.coachClientCalls.push("resources");
+    return this.mayFail(InMemoryApiAdapter.copyOf(this.setupResources));
   }
 }

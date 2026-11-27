@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Pressable, RefreshControl, ScrollView } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text, View } from "@tamagui/core";
@@ -93,6 +93,8 @@ export type ClientsListPresenterProps = {
   /** Injected clock for deterministic relative-time tests. */
   now?: number;
   testID?: string;
+  /** PER-125: the coach's invited clients, shown above the roster (C11e). */
+  invitedSection?: ReactNode;
 };
 
 /** Filter the roster by segment status then case-insensitive name match. */
@@ -417,6 +419,8 @@ export function ClientsListPresenter(props: ClientsListPresenterProps) {
               testID="clients-legend"
             />
           ) : null}
+
+          {props.invitedSection ?? null}
 
           {/* Client list. */}
           {!hasAnyClients ? (

@@ -72,6 +72,10 @@ import type {
   FormSchedule,
 } from "@/domain/models/coachForms";
 import type {
+  CachedClientProfile,
+  CachedClientSettings,
+} from "@/domain/models/coachClientProfiles";
+import type {
   PendingProgressPhotoSet,
   ProgressPhotosCache,
 } from "@/domain/models/progressPhotos";
@@ -1382,6 +1386,46 @@ export interface StoragePort {
     userId: string,
     exerciseIds: readonly string[],
   ): RecentSetEntry[];
+
+  // -- PER-125 (APP-A2): invited clients and C3.9 settings --
+  /**
+   * The coach's invited client profiles, each with its set-up and code, in
+   * `cached_coach_client_profiles` (one row per profile). Profiles made
+   * offline sit here under `local-…` ids.
+   */
+  getCachedCoachClientProfiles(userId: string): CachedClientProfile[];
+  getCachedCoachClientProfile(
+    userId: string,
+    profileId: string,
+  ): CachedClientProfile | null;
+  cacheCoachClientProfile(userId: string, profile: CachedClientProfile): void;
+  removeCachedCoachClientProfile(userId: string, profileId: string): void;
+  /** One client's C3.9 settings (`cached_coach_client_settings`). */
+  getCachedCoachClientSettings(
+    userId: string,
+    clientId: string,
+  ): CachedClientSettings | null;
+  cacheCoachClientSettings(
+    userId: string,
+    clientId: string,
+    value: CachedClientSettings,
+  ): void;
+  /**
+   * A profile made offline got its server id: rewrite it in the cache and in
+   * queued profile, set-up and settings rows (entity id, endpoint, payload).
+   */
+  swapLocalCoachClientProfileId(
+    userId: string,
+    localId: string,
+    serverId: string,
+  ): void;
+  /**
+   * A form, send rule or plan made offline got its server id: rewrite it in
+   * cached set-up items and queued set-up rows (`items[].refId`). Called by
+   * `swapLocalCoachFormId`, `swapLocalCoachFormScheduleId` and
+   * `swapLocalNutritionPlanId`.
+   */
+  remapCoachClientSetupRefs(localId: string, serverId: string): void;
 }
 
 /**

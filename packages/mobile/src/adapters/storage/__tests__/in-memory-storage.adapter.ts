@@ -88,6 +88,16 @@ import {
   swapIdInClientForms,
   swapIdInQueueRow,
 } from "../coachFormsQueueSwap";
+import {
+  COACH_CLIENT_QUEUE_ENTITIES,
+  COACH_CLIENT_SETUP_QUEUE_ENTITY,
+  swapIdInRow,
+  swapText,
+} from "../coachClientProfilesSwap";
+import type {
+  CachedClientProfile,
+  CachedClientSettings,
+} from "@/domain/models/coachClientProfiles";
 import type {
   PendingProgressPhotoSet,
   ProgressPhotosCache,
@@ -1759,6 +1769,7 @@ export class InMemoryStorageAdapter implements StoragePort {
         e.payload = e.payload.split(localId).join(serverId);
       if (e.entityId === localId) e.entityId = serverId;
     }
+    this.remapCoachClientSetupRefs(localId, serverId);
   }
   getCachedPlansShopping(userId: string): PlansShoppingCache | null {
     const v = this.plansShoppingCache.get(userId);
@@ -1773,6 +1784,8 @@ export class InMemoryStorageAdapter implements StoragePort {
 
   clearAll(): void {
     this.queue = [];
+    this.coachClientProfiles.clear();
+    this.coachClientSettings.clear();
     this.nutritionPlansCache.clear();
     this.plansShoppingCache.clear();
     this.trainingLog.clear();
@@ -2152,6 +2165,7 @@ export class InMemoryStorageAdapter implements StoragePort {
     }
     this.swapCoachClientFormsId(userId, localId, serverId, "form");
     this.swapCoachFormsQueueId(localId, serverId, "formId");
+    this.remapCoachClientSetupRefs(localId, serverId);
   }
   swapLocalCoachFormScheduleId(
     userId: string,
@@ -2170,6 +2184,7 @@ export class InMemoryStorageAdapter implements StoragePort {
     }
     this.swapCoachClientFormsId(userId, localId, serverId, "schedule");
     this.swapCoachFormsQueueId(localId, serverId, "scheduleId");
+    this.remapCoachClientSetupRefs(localId, serverId);
   }
   /** Test-only: drop every PER-129 cache (clearAll calls it too). */
   clearCoachFormsForTest(): void {
@@ -2237,6 +2252,105 @@ export class InMemoryStorageAdapter implements StoragePort {
           a.exerciseId.localeCompare(b.exerciseId) || a.setNumber - b.setNumber,
       )
       .map((row) => ({ ...row }));
+  }
+
+  // -- PER-125 (APP-A2): invited clients and C3.9 settings --
+  private coachClientProfiles: Map<string, CachedClientProfile> = new Map();
+  private coachClientSettings: Map<string, CachedClientSettings> = new Map();
+  getCachedCoachClientProfiles(userId: string): CachedClientProfile[] {
+    return [...this.coachClientProfiles.entries()]
+      .filter(([key]) => key.startsWith(`${userId}|`))
+      .map(([, v]) => InMemoryStorageAdapter.copy(v));
+  }
+  getCachedCoachClientProfile(
+    userId: string,
+    profileId: string,
+  ): CachedClientProfile | null {
+    const hit = this.coachClientProfiles.get(`${userId}|${profileId}`);
+    return hit ? InMemoryStorageAdapter.copy(hit) : null;
+  }
+  cacheCoachClientProfile(userId: string, profile: CachedClientProfile): void {
+    this.coachClientProfiles.set(
+      `${userId}|${profile.id}`,
+      InMemoryStorageAdapter.copy(profile),
+    );
+    // The SQLite adapter's change listener fires on every write; mirror it
+    // so screens re-read after an optimistic write, as on a phone.
+    this.emitChange("cached_coach_client_profiles");
+  }
+  removeCachedCoachClientProfile(userId: string, profileId: string): void {
+    this.coachClientProfiles.delete(`${userId}|${profileId}`);
+    this.emitChange("cached_coach_client_profiles");
+  }
+  getCachedCoachClientSettings(
+    userId: string,
+    clientId: string,
+  ): CachedClientSettings | null {
+    const hit = this.coachClientSettings.get(`${userId}|${clientId}`);
+    return hit ? InMemoryStorageAdapter.copy(hit) : null;
+  }
+  cacheCoachClientSettings(
+    userId: string,
+    clientId: string,
+    value: CachedClientSettings,
+  ): void {
+    this.coachClientSettings.set(
+      `${userId}|${clientId}`,
+      InMemoryStorageAdapter.copy(value),
+    );
+    this.emitChange("cached_coach_client_settings");
+  }
+  swapLocalCoachClientProfileId(
+    userId: string,
+    localId: string,
+    serverId: string,
+  ): void {
+    if (localId === serverId) return;
+    const cached = this.getCachedCoachClientProfile(userId, localId);
+    if (cached) {
+      this.coachClientProfiles.delete(`${userId}|${localId}`);
+      this.cacheCoachClientProfile(userId, {
+        ...(this.getCachedCoachClientProfile(userId, serverId) ?? cached),
+        id: serverId,
+      });
+    }
+    this.swapCoachClientQueueRows(
+      COACH_CLIENT_QUEUE_ENTITIES,
+      localId,
+      serverId,
+    );
+  }
+  remapCoachClientSetupRefs(localId: string, serverId: string): void {
+    if (localId === serverId) return;
+    for (const [key, profile] of this.coachClientProfiles) {
+      const json = JSON.stringify(profile);
+      if (!json.includes(localId)) continue;
+      this.coachClientProfiles.set(
+        key,
+        JSON.parse(swapText(json, localId, serverId)) as CachedClientProfile,
+      );
+    }
+    this.swapCoachClientQueueRows(
+      [COACH_CLIENT_SETUP_QUEUE_ENTITY],
+      localId,
+      serverId,
+    );
+  }
+  private swapCoachClientQueueRows(
+    entityTypes: readonly string[],
+    localId: string,
+    serverId: string,
+  ): void {
+    for (const e of this.queue) {
+      if (!entityTypes.includes(e.entityType) || e.status === "completed") {
+        continue;
+      }
+      const next = swapIdInRow(e, localId, serverId);
+      if (!next) continue;
+      e.entityId = next.entityId;
+      e.endpoint = next.endpoint;
+      e.payload = next.payload;
+    }
   }
 }
 

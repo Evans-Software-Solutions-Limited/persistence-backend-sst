@@ -23,6 +23,7 @@ function sqliteAdapter(): { adapter: StoragePort; db: DatabaseSync } {
     CREATE TABLE cached_coach_form_responses (user_id TEXT NOT NULL, client_id TEXT NOT NULL, payload TEXT NOT NULL, synced_at TEXT NOT NULL, PRIMARY KEY (user_id, client_id));
     CREATE TABLE coach_form_conflicts (user_id TEXT NOT NULL, entity_key TEXT NOT NULL, at TEXT NOT NULL, PRIMARY KEY (user_id, entity_key));
     CREATE TABLE sync_queue (id INTEGER PRIMARY KEY, entity_type TEXT, entity_id TEXT, endpoint TEXT, payload TEXT, status TEXT);
+    CREATE TABLE cached_coach_client_profiles (user_id TEXT NOT NULL, profile_id TEXT NOT NULL, payload TEXT NOT NULL, synced_at TEXT NOT NULL, PRIMARY KEY (user_id, profile_id));
   `);
   type P = (string | number | null)[];
   const adapter = new SQLiteStorageAdapter();

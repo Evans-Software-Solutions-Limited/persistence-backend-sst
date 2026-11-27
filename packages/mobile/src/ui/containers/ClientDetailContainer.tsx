@@ -39,6 +39,8 @@ import {
 } from "@/ui/presenters/coachForms/ClientTabStrip";
 import { InDevelopment } from "@/ui/presenters/coachForms/kit";
 import { ClientCheckInsContainer } from "@/ui/containers/ClientCheckInsContainer";
+import { ClientSettingsContainer } from "@/ui/containers/coachClients/ClientSettingsContainer";
+import { firstName } from "@/domain/services/coachClientProfiles.service";
 
 /** PER-129: placeholder tabs whose feature has its own ticket. */
 const TAB_TICKETS: Partial<Record<ClientTab, string>> = {
@@ -472,6 +474,14 @@ export function ClientDetailContainer() {
             clientId={id}
             clientName={detail.data?.client.name ?? name ?? null}
             refreshKey={tabRefreshKey}
+          />
+        ) : tab === "settings" ? (
+          <ClientSettingsContainer
+            clientId={id}
+            clientFirst={firstName(detail.data?.client.name ?? name ?? "")}
+            refreshKey={tabRefreshKey}
+            ending={false}
+            onEndCoaching={onRemoveClient}
           />
         ) : (
           <View paddingHorizontal={20}>
