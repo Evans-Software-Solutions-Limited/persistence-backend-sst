@@ -4,8 +4,8 @@ import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { useNutritionPlans } from "@/ui/hooks/useNutritionPlans";
 import { useMealprintGate } from "@/ui/hooks/useMealprintGate";
+import { openMealprint } from "@/ui/hooks/openMealprint";
 import { useManualMealPlansGate } from "@/ui/hooks/useManualMealPlansGate";
-import { useFuelSheets } from "@/state/fuel-sheets";
 import { usePlanSheets } from "@/state/plan-sheets";
 import type { NutritionPlansCache } from "@/domain/models/nutritionPlans";
 import {
@@ -132,9 +132,7 @@ export function PlanSheetsContainer() {
         onMealprint={() => {
           close();
           if (!mealprintGate.isResolved) return;
-          if (mealprintGate.allowed)
-            useFuelSheets.getState().openMealprintPlan();
-          else useFuelSheets.getState().openSuggestLocked();
+          openMealprint("day");
         }}
       />
       {coach ? (

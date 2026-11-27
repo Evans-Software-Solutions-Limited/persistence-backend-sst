@@ -26,11 +26,9 @@ export type FuelSheet =
   | "scan"
   | "quickAdd"
   | "snap"
-  | "mealprintSuggest"
-  | "mealprintPlan"
-  // PER-132: N2e Quick log (the empty form) and the N26 locked Suggest page.
+  // PER-132: N2e Quick log (the empty form). PER-134: Mealprint and its
+  // locked page are a full-screen route now (`openMealprint`), not sheets.
   | "quickLog"
-  | "suggestLocked"
   // PER-132: N1b Your meals, and a meal's ⋯ options.
   | "yourMeals"
   | "mealOptions"
@@ -65,42 +63,12 @@ export interface FuelSheetsState {
   openSnap: (slot?: MealSlot, userMealId?: string | null) => void;
   /** PER-132: N2e Quick log, the empty name/calories/macros form. */
   openQuickLog: (slot?: MealSlot, userMealId?: string | null) => void;
-  /** PER-132: the locked Mealprint page (N26) for Free and Premium. */
-  openSuggestLocked: () => void;
   /** PER-132: N1b Your meals. */
   openYourMeals: () => void;
   /** PER-132: a meal's ⋯ menu, for the meal with this key. */
   openMealOptions: (mealKey: string) => void;
   /** The meal whose ⋯ menu is open. */
   optionsMealKey: string | null;
-  /**
-   * spec-26 T-1.5 — open the Mealprint suggest sheet.
-   *
-   * ⚠ Takes NO slot, unlike its three siblings, and that is deliberate. The other
-   * flows are "log this into that meal" and inherit the row the user tapped;
-   * Mealprint answers "what should I eat?" against the whole day's remaining
-   * budget, and the slot is only chosen at the draft-confirm step once there is
-   * something to log. Accepting one here would imply the suggestion was scoped to
-   * that meal, which it is not.
-   *
-   * Gate-checked by the caller (`useMealprintEntry`) before this is called — the
-   * store does not re-check, matching `openSnap`.
-   *
-   * PER-132 (Brad, 18 Nov): Add to a meal → Suggest opens this preset to that
-   * meal. The suggestion still answers against the whole day's remaining
-   * budget; the target only pre-selects where the chosen idea is logged.
-   */
-  openMealprintSuggest: (slot?: MealSlot, userMealId?: string | null) => void;
-  /**
-   * spec-26 Phase 2 — open the "Plan my day" sheet (config → generating →
-   * draft review → accept, all one root-mounted sheet — see
-   * `MealprintPlanSheetContainer`). Takes no slot, same reasoning as
-   * `openMealprintSuggest`: a day plan targets the whole day's remaining
-   * budget, not one meal slot.
-   *
-   * Gate-checked by the caller (`useMealprintEntry`) before this is called.
-   */
-  openMealprintPlan: () => void;
   /** Set the active day (QA-20). <FuelContainer> calls this on every day
    * change; Home's quick "Log meal" calls it with today() right before
    * opening Quick-add so it can never inherit a stale day left over from a
@@ -156,18 +124,10 @@ export const useFuelSheets = create<FuelSheetsState>((set) => ({
       slot,
       userMealId: keptMeal(s, slot, userMealId),
     })),
-  openSuggestLocked: () => set({ sheet: "suggestLocked" }),
   optionsMealKey: null,
   openYourMeals: () => set({ sheet: "yourMeals" }),
   openMealOptions: (mealKey) =>
     set({ sheet: "mealOptions", optionsMealKey: mealKey }),
-  openMealprintSuggest: (slot, userMealId = null) =>
-    set((s) => ({
-      sheet: "mealprintSuggest",
-      slot: slot ?? s.slot,
-      userMealId,
-    })),
-  openMealprintPlan: () => set({ sheet: "mealprintPlan" }),
   setDate: (date) => set({ date }),
   close: () => set({ sheet: null, userMealId: null }),
   notifyMutated: () => set((s) => ({ rev: s.rev + 1 })),
