@@ -228,6 +228,7 @@ export function NotificationsListContainer() {
         resolveAndPrimeNotificationRoute(
           notification.deepLink,
           notification.type,
+          notification.relatedEntityId,
         ) as never,
       );
     },
