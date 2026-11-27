@@ -1,5 +1,46 @@
 # Project memory · persistence-backend-sst
 
+### 2026-11-27 — Coach resources screens, web + iPhone + athlete ([PER-143](https://linear.app/evans-software-solutions/issue/PER-143); branch `claude/per-143-resources`)
+
+App only, on the merged BE-I1 routes (PER-122 #563, PER-150 #574). No
+backend, migration, native or app-version change.
+
+- **Web** (`packages/web/src/coach/resources/`): client tab C3.7a at
+  `/coach/clients/:id/resources` (list with Opened / Not opened, Remove,
+  "Add resources for {name}" picker: search, multi-select, Upload new, Link,
+  "Add N for {name}"); Library → Resources C5b at `/coach/library/resources`
+  (search, All · Files · Links, detail panel, Share with several clients,
+  Delete = removed from every client). Upload = presigned
+  `POST /trainers/me/media/uploads` → PUT → `POST /trainers/me/resources`.
+  Link and Upload are react-hook-form + TypeBox (`lib/resources.ts`), 422s
+  mapped onto fields. 403 `resources_off` shown in words; the tab also reads
+  C3.9 settings and says up front when Resources is off (remove still works).
+- **iPhone coach** (`packages/mobile/src/ui/{containers,presenters}/coachResources/`):
+  C3.7b tab (replaces the placeholder), C3.7c Add resources sheet, Link sheet
+  and photo-name sheet (RHF), Library → Resources segment with Share and
+  Delete. Upload uses the shared `imagePicker.ts` flow + JPEG conversion,
+  online only, no expo-file-system, no document picker (PDF upload is web
+  only).
+- **Athlete**: Coach tab "Resources" section (replaces the placeholder),
+  filtered to the selected coach, opens links / short-lived file links via
+  `Linking`; expired file links are re-fetched (needs a connection).
+- **Offline** (`application/commands/coachResources.command.ts`): caches
+  `cached_coach_resources`, `cached_coach_client_resources`,
+  `cached_my_resources`. Queued: link create (keyed), assign, opened stamp.
+  An offline link's `local-…` id is swapped in the library, client tabs and
+  queued assigns on sync (`applyCoachResourcesSyncSuccess`, hooked in
+  `sync.command.ts`). Online link/assign go direct so 422 / 403 show at once;
+  a queued assign later refused with `resources_off` shows a dismissable note.
+- Shared-file touches (appended): mobile ports/adapters/in-memory doubles,
+  `tables.ts`, `sync.command.ts`, sqlite schema; `requestRaw` now sends an
+  `Idempotency-Key` when given. Web `coachApi`, `helpers.tsx`, `coach.css`,
+  `icons.tsx`, `ClientPage` WEB_TABS, `FormsLibrary` LibraryTabs (Resources
+  link).
+- Differences from the canvas (API has no data for them): no "Opened 3
+  times" counts (opened stamped once), no Video type / durations, no C5b
+  "Shared with" / "Opens" columns or "Also in" / "Replace file", no
+  Collections chip.
+
 ### 2026-11-25 — Android push: Firebase config per variant ([PER-149](https://linear.app/evans-software-solutions/issue/PER-149); branch `claude/per-149-android-push`)
 
 Native change approved by Brad on PER-149 (25 Nov). Needs a new Android

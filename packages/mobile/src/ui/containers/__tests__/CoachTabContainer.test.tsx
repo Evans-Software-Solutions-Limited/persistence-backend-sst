@@ -1,6 +1,7 @@
 import { act, fireEvent } from "@testing-library/react-native";
 import { InMemoryApiAdapter } from "@/adapters/api/__tests__/in-memory-api.adapter";
 import { InMemoryStorageAdapter } from "@/adapters/storage/__tests__/in-memory-storage.adapter";
+import { InMemoryNetInfoAdapter } from "@/adapters/netInfo/__tests__/InMemoryNetInfoAdapter";
 import type { AuthSession } from "@/domain/ports/auth.port";
 import type { MyCoach } from "@/domain/models/myCoaching";
 import { ok } from "@/shared/errors";
@@ -82,7 +83,8 @@ function setup(opts: { server: MyCoach[]; cached?: MyCoach[] | null }) {
     storage,
     health: {} as Adapters["health"],
     notifications: {} as Adapters["notifications"],
-    netInfo: {} as Adapters["netInfo"],
+    // PER-143: opening a resource reads the connection.
+    netInfo: new InMemoryNetInfoAdapter(true) as unknown as Adapters["netInfo"],
   };
   const tree = () => (
     <AdapterProvider adapters={adapters}>

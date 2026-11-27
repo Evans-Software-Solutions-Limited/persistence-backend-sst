@@ -17,16 +17,13 @@ import type { ResourceKind } from "@/domain/models/coachResources";
  * `.pl`, `.box` and search field styles, in the app's tokens.
  */
 
-const MUTED = "#8A8A98";
-const VIOLET = "#A78BFA";
-
 /** The row icon: link, image or document. */
 export function ResourceGlyph(p: {
   kind: ResourceKind;
   mime: string | null;
   color?: string;
 }) {
-  const color = p.color ?? MUTED;
+  const color = p.color ?? "#8A8A98";
   if (p.kind === "link") return <IconLink size={20} color={color} />;
   if (p.mime?.startsWith("image/")) {
     return <ImageGlyph size={20} color={color} />;
@@ -138,8 +135,8 @@ export function TickBox(p: { checked: boolean }) {
       height={24}
       borderRadius={7}
       borderWidth={1.5}
-      borderColor={p.checked ? VIOLET : "rgba(255,255,255,0.24)"}
-      backgroundColor={p.checked ? VIOLET : "transparent"}
+      borderColor={p.checked ? "$accentTrainer" : "$border3"}
+      backgroundColor={p.checked ? "$accentTrainer" : "transparent"}
       alignItems="center"
       justifyContent="center"
     >
@@ -163,11 +160,11 @@ export function SearchField(p: {
       height={44}
       paddingHorizontal={14}
       borderRadius={12}
-      backgroundColor="#1A1D29"
+      backgroundColor="$surface2"
       borderWidth={1}
       borderColor="rgba(255,255,255,0.10)"
     >
-      <IconSearch size={16} color={MUTED} />
+      <IconSearch size={16} color="#8A8A98" />
       <TextInput
         value={p.value}
         onChangeText={p.onChangeText}
@@ -213,7 +210,7 @@ export function SmallButton(p: {
         alignItems="center"
         gap={6}
         opacity={p.disabled ? 0.45 : 1}
-        backgroundColor={p.filled ? VIOLET : "transparent"}
+        backgroundColor={p.filled ? "$accentTrainer" : "transparent"}
         borderWidth={p.filled ? 0 : 1}
         borderColor="$border3"
       >

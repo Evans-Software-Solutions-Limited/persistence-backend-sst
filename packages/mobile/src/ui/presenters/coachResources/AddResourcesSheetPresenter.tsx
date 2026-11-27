@@ -78,7 +78,9 @@ export function AddResourcesSheetPresenter(p: AddResourcesSheetPresenterProps) {
       />
       {p.offline ? (
         <Note testID="add-resources-offline">
-          Uploading needs a connection. Shares and links send when you're back.
+          {
+            "Uploading needs a connection. Shares and links send when you're back."
+          }
         </Note>
       ) : null}
       {p.error ? <Note testID="add-resources-error">{p.error}</Note> : null}

@@ -33,8 +33,9 @@ export function ClientResourcesTabPresenter(
     <View paddingHorizontal={20} testID="client-resources">
       {p.offline ? (
         <Note testID="client-resources-offline">
-          You're offline. Shares and links are saved on this phone and send when
-          you're back. Uploads need a connection.
+          {
+            "You're offline. Shares and links are saved on this phone and send when you're back. Uploads need a connection."
+          }
         </Note>
       ) : null}
       {p.refused ? (

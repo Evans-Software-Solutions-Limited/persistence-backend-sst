@@ -116,8 +116,9 @@ export function ResourcesLibraryPresenter(p: {
       </View>
       {p.offline ? (
         <Note testID="resources-library-offline">
-          You're offline. Links are saved on this phone and send when you're
-          back. Uploading, sharing and deleting need a connection.
+          {
+            "You're offline. Links are saved on this phone and send when you're back. Uploading, sharing and deleting need a connection."
+          }
         </Note>
       ) : null}
       {p.notice ? (

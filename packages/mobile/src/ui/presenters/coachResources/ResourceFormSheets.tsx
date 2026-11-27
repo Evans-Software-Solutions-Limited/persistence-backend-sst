@@ -55,8 +55,9 @@ export function LinkResourceSheetPresenter(p: {
     >
       {p.offline ? (
         <Note testID="link-resource-offline">
-          You're offline. The link is saved on this phone and sends when you're
-          back.
+          {
+            "You're offline. The link is saved on this phone and sends when you're back."
+          }
         </Note>
       ) : null}
       {p.error ? <Note testID="link-resource-error">{p.error}</Note> : null}
