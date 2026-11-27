@@ -590,14 +590,9 @@ describe("NewPlanContainer (N28 → N29 → N33)", () => {
     expect(probe.newPlan!.ctaLabel).toBe("Continue in Mealprint");
     expect(probe.newPlan!.canContinue).toBe(true);
     await act(async () => probe.newPlan!.onContinue());
-    expect(useFuelSheets.getState().sheet).toBe("mealprintPlan");
-    expect(mockBack).toHaveBeenCalled();
-
-    mockMealprintGate.allowed = false;
-    render(<NewPlanContainer />);
-    act(() => probe.newPlan!.onOption("mealprint"));
-    await act(async () => probe.newPlan!.onContinue());
-    expect(useFuelSheets.getState().sheet).toBe("suggestLocked");
+    // PER-134: Mealprint Whole day takes over (it shows the locked page
+    // itself without Premium+).
+    expect(mockReplace).toHaveBeenCalledWith("/(app)/fuel/mealprint?mode=day");
   });
 });
 

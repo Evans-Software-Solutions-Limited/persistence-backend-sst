@@ -382,3 +382,88 @@ describe("usePlanFlow — accepted", () => {
     expect(get().rev).toBe(startRev + 1);
   });
 });
+
+describe("usePlanFlow — PER-134 builder (N19/N20)", () => {
+  const swapMeal: PlanSwapMeal = {
+    name: "Turkey chilli",
+    reason: "warm",
+    logSlot: "dinner",
+    items: [],
+    kcal: 650,
+    proteinG: 50,
+    carbsG: 70,
+    fatG: 15,
+    containsUnverified: false,
+  };
+
+  function flaggedDraft() {
+    get().open("2026-11-26");
+    get().draftReady(
+      result({
+        meals: [{ ...result().meals[0]!, label: "Dinner", flaggedUnsafe: true }],
+      }),
+    );
+    return get().draft!.meals[0]!.localId;
+  }
+
+  it("a swap keeps the meal's label and remembers the first original for Undo", () => {
+    const id = flaggedDraft();
+    get().setPortion(id, 1.5);
+    get().swapApplied(id, swapMeal);
+    expect(get().draft!.meals[0]!.meal).toMatchObject({
+      name: "Turkey chilli",
+      label: "Dinner",
+    });
+    expect(get().flaggedIds.has(id)).toBe(false);
+    expect(get().portions[id]).toBeUndefined();
+    get().swapApplied(id, { ...swapMeal, name: "Second swap" });
+    expect(get().swappedFrom[id]!.meal.name).toBe("Chicken & rice bowl");
+    expect(get().swappedFrom[id]!.flagged).toBe(true);
+  });
+
+  it("Undo swap restores the original and its flag", () => {
+    const id = flaggedDraft();
+    get().swapApplied(id, swapMeal);
+    get().undoSwap(id);
+    expect(get().draft!.meals[0]!.meal.name).toBe("Chicken & rice bowl");
+    expect(get().flaggedIds.has(id)).toBe(true);
+    expect(get().swappedFrom[id]).toBeUndefined();
+    const before = get().draft;
+    get().undoSwap(id);
+    expect(get().draft).toBe(before);
+  });
+
+  it("Undo of an unflagged meal leaves it unflagged", () => {
+    get().open("2026-11-26");
+    get().draftReady(result());
+    const id = get().draft!.meals[0]!.localId;
+    get().swapApplied(id, swapMeal);
+    get().undoSwap(id);
+    expect(get().flaggedIds.has(id)).toBe(false);
+  });
+
+  it("removing a meal forgets its portion and swap", () => {
+    const id = flaggedDraft();
+    get().swapApplied(id, swapMeal);
+    get().setPortion(id, 2);
+    get().removeMeal(id);
+    expect(get().portions[id]).toBeUndefined();
+    expect(get().swappedFrom[id]).toBeUndefined();
+  });
+
+  it("a swap for a meal that's gone only clears the busy flag", () => {
+    get().open("2026-11-26");
+    get().draftReady(result());
+    get().beginSwap("missing");
+    get().swapApplied("missing", swapMeal);
+    expect(get().swappingId).toBeNull();
+    expect(get().draft!.meals[0]!.meal.name).toBe("Chicken & rice bowl");
+  });
+
+  it("logged moves to N22", () => {
+    const before = get().rev;
+    get().logged();
+    expect(get().step).toBe("logged");
+    expect(get().rev).toBe(before + 1);
+  });
+});

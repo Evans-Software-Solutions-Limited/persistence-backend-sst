@@ -9,6 +9,11 @@ import {
 } from "@/ui/hooks/useNutritionPlans";
 import { useUserMeals } from "@/ui/hooks/useUserMeals";
 import { useMealprintGate } from "@/ui/hooks/useMealprintGate";
+import {
+  openMealprint,
+  type MealprintMode,
+  type MealprintTarget,
+} from "@/ui/hooks/openMealprint";
 import { useManualMealPlansGate } from "@/ui/hooks/useManualMealPlansGate";
 import { useFuelSheets } from "@/state/fuel-sheets";
 import { usePlanSheets } from "@/state/plan-sheets";
@@ -224,11 +229,11 @@ export function PlanTabContainer({
     [plans, userMeals.meals, notifyMutated],
   );
 
+  // PER-134: one Mealprint page; it shows the locked page (N26) itself.
   const openMealprintFor = useCallback(
-    (open: () => void) => {
+    (mode: MealprintMode, target?: MealprintTarget) => {
       if (!mealprintGate.isResolved) return;
-      if (mealprintGate.allowed) open();
-      else useFuelSheets.getState().openSuggestLocked();
+      openMealprint(mode, target);
     },
     [mealprintGate],
   );
@@ -294,9 +299,7 @@ export function PlanTabContainer({
       }}
       onFillWithMealprint={() => {
         const gap = ref ? firstEmptyMeal(ref.plan) : null;
-        openMealprintFor(() =>
-          useFuelSheets.getState().openMealprintSuggest(gap?.logSlot),
-        );
+        openMealprintFor("meal", { slot: gap?.logSlot });
       }}
       onShoppingList={() => {
         if (!ref) return;
@@ -310,9 +313,7 @@ export function PlanTabContainer({
       }}
       onBuildOwn={() => onBuildOwn()}
       onStartFromDay={() => onBuildOwn("?from=day")}
-      onMealprintBuild={() =>
-        openMealprintFor(() => useFuelSheets.getState().openMealprintPlan())
-      }
+      onMealprintBuild={() => openMealprintFor("day")}
     />
   );
 }

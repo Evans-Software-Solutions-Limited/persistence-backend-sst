@@ -3,6 +3,7 @@ import { router, type Href } from "expo-router";
 import type { UserMeal } from "@/domain/models/userMeals";
 import { isSyntheticUserMealId } from "@/domain/services/userMeals.service";
 import { useFuelSheets } from "@/state/fuel-sheets";
+import { openMealprint } from "./openMealprint";
 import { useMealprintGate } from "./useMealprintGate";
 import { useMealprintPreferences } from "./useMealprintPreferences";
 import { useNutritionAiGate } from "./useNutritionAiGate";
@@ -40,8 +41,6 @@ export function useMealQuickActions(
   const openSnap = useFuelSheets((s) => s.openSnap);
   const openQuickAdd = useFuelSheets((s) => s.openQuickAdd);
   const openQuickLog = useFuelSheets((s) => s.openQuickLog);
-  const openSuggest = useFuelSheets((s) => s.openMealprintSuggest);
-  const openSuggestLocked = useFuelSheets((s) => s.openSuggestLocked);
 
   const slot = meal?.logSlot ?? "breakfast";
   const userMealId = meal && !isSyntheticUserMealId(meal.id) ? meal.id : null;
@@ -57,21 +56,16 @@ export function useMealQuickActions(
     preferences.data === null || preferences.data.isDefault === true;
   const onSuggest = useCallback(() => {
     if (!mealprintGate.isResolved) return;
-    if (!mealprintGate.allowed) {
-      openSuggestLocked();
-      return;
-    }
-    if (needsSetup) {
+    // PER-134: the Mealprint page shows the locked page (N26) itself.
+    if (mealprintGate.allowed && needsSetup) {
       router.push("/(app)/fuel/preferences?mode=wizard" as Href);
       return;
     }
-    openSuggest(slot, userMealId);
+    openMealprint("meal", { slot, userMealId });
   }, [
     mealprintGate.isResolved,
     mealprintGate.allowed,
     needsSetup,
-    openSuggestLocked,
-    openSuggest,
     slot,
     userMealId,
   ]);

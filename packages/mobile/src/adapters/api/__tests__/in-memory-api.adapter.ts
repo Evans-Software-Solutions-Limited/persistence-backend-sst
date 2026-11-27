@@ -213,6 +213,7 @@ import type {
 import type { InvitePreview, MyCoaching } from "@/domain/models/myCoaching";
 import type { UserMeal, UserMealsResponse } from "@/domain/models/userMeals";
 import type {
+  NutritionPlan,
   NutritionPlansResponse,
   PlansShoppingList,
 } from "@/domain/models/nutritionPlans";
@@ -4100,5 +4101,39 @@ export class InMemoryApiAdapter implements ApiPort {
     }
     set.status = "ready";
     return ok(JSON.parse(JSON.stringify(set)) as ProgressPhotoSet);
+  }
+
+  // -- PER-134 (APP-D3): Mealprint "Save as a plan" --
+
+  /** Every save-from-Mealprint call, with its Idempotency-Key. */
+  public mealprintSaves: {
+    input: { fromMealprintPlanId: string; name?: string };
+    key: string;
+  }[] = [];
+  /** Queue failures for the next save-from-Mealprint calls. */
+  public mealprintSaveFailures: ApiError[] = [];
+
+  async savePlanFromMealprint(
+    input: { fromMealprintPlanId: string; name?: string },
+    idempotencyKey: string,
+  ): Promise<Result<NutritionPlan, ApiError>> {
+    this.mealprintSaves.push({ input, key: idempotencyKey });
+    const failure = this.mealprintSaveFailures.shift();
+    if (failure) return fail(failure);
+    const plan: NutritionPlan = {
+      id: `plan-from-${input.fromMealprintPlanId}`,
+      ownerId: "user-1",
+      name: input.name ?? "Mealprint",
+      notes: null,
+      source: "mealprint",
+      sourcePlanId: input.fromMealprintPlanId,
+      revision: 1,
+      archivedAt: null,
+      createdAt: "2026-11-26T10:00:00.000Z",
+      updatedAt: "2026-11-26T10:00:00.000Z",
+      meals: [],
+      totals: { kcal: 0, proteinG: 0, carbsG: 0, fatG: 0 },
+    };
+    return ok(plan);
   }
 }
