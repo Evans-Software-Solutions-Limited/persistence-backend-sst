@@ -258,16 +258,7 @@ export async function provisionChatChannel(
       });
     }
   } catch (err) {
-    // Rotates this row to the back of the scheduler's retry queue.
-    await db
-      .update(chatChannels)
-      .set({ updatedAt: now })
-      .where(
-        and(
-          eq(chatChannels.relationshipId, relationshipId),
-          ne(chatChannels.state, "active"),
-        ),
-      );
+    await markRetryPending(relationshipId, now);
     throw err;
   }
 
@@ -289,10 +280,41 @@ export async function provisionChatChannel(
     .returning({ relationshipId: chatChannels.relationshipId });
   if (updated.length === 0) {
     // Coaching ended while Stream was being called: freeze it again now.
-    await freezeChatChannel(relationshipId, now);
+    try {
+      await freezeChatChannel(relationshipId, now);
+    } catch (err) {
+      await markRetryPending(relationshipId, now);
+      throw err;
+    }
     return "ended_meanwhile";
   }
   return "provisioned";
+}
+
+/**
+ * Provisioning stopped partway (Inspector Brad, #570). Stream may already
+ * have reopened the channel, even when the call that failed was applied, and
+ * a concurrent freeze may have written `frozen` meanwhile. So the row is set
+ * to `pending` (unless provisioning finished it): the next tick then
+ * finishes provisioning while coaching is active, or the freeze retry
+ * closes it again once coaching has ended. Freezing is idempotent and keeps
+ * `frozen_at`; a channel Stream never had still ends up `frozen` with
+ * `frozen_at` NULL when that retry gets its 404. `updated_at` also moves the
+ * row to the back of the retry queue.
+ */
+async function markRetryPending(
+  relationshipId: string,
+  now: Date,
+): Promise<void> {
+  await getDb()
+    .update(chatChannels)
+    .set({ state: "pending", updatedAt: now })
+    .where(
+      and(
+        eq(chatChannels.relationshipId, relationshipId),
+        ne(chatChannels.state, "active"),
+      ),
+    );
 }
 
 export type FreezeResult =

@@ -535,6 +535,80 @@ describe("design E test 2: channel provisioning", () => {
     expect(ch.frozen).toBe(true);
     expect([...ch.members]).toEqual([COACH_C]);
   });
+
+  it("a concurrent freeze between the flip and the reopen, then a reopen that throws though Stream applied it: pending, and the next tick freezes it", async () => {
+    await provisionChatChannel(REL_CA);
+    await end(COACH_C, ATHLETE_A);
+    await db
+      .update(schema.ptClientRelationships)
+      .set({ status: "active" })
+      .where(eq(schema.ptClientRelationships.id, REL_CA));
+    const concurrentFrozenAt = new Date("2026-11-27T10:00:00Z");
+    const original = stream.fetch;
+    stream.fetch = async (input, init) => {
+      if ((init.body as string).includes('frozen":false')) {
+        // Coaching ends again and its freeze writes `frozen` meanwhile…
+        await db
+          .update(schema.ptClientRelationships)
+          .set({ status: "terminated" })
+          .where(eq(schema.ptClientRelationships.id, REL_CA));
+        await db
+          .update(schema.chatChannels)
+          .set({ state: "frozen", frozenAt: concurrentFrozenAt })
+          .where(eq(schema.chatChannels.relationshipId, REL_CA));
+        // …then Stream applies the unfreeze but the response is an error.
+        await original(input, init);
+        return { ok: false, status: 503, text: async () => "{}" };
+      }
+      return original(input, init);
+    };
+    configure();
+    await expect(provisionChatChannel(REL_CA)).rejects.toThrow(/503/);
+    stream.fetch = original;
+    configure();
+    const ch = stream.channels.get(channelIdFor(REL_CA))!;
+    expect(ch.frozen).toBe(false); // open in Stream
+    expect(ch.members.has(ATHLETE_A)).toBe(true);
+    expect((await channelRow(REL_CA))!.state).toBe("pending");
+
+    expect(await reconcileChatChannels()).toMatchObject({ frozen: 1 });
+    expect(ch.frozen).toBe(true);
+    expect(ch.members.has(ATHLETE_A)).toBe(false);
+    expect(await channelRow(REL_CA)).toMatchObject({
+      state: "frozen",
+      frozenAt: concurrentFrozenAt, // kept by the idempotent freeze
+    });
+  });
+
+  it("when the ended_meanwhile freeze throws, the row is pending and the next tick freezes it", async () => {
+    const original = stream.fetch;
+    stream.fetch = async (input, init) => {
+      if ((init.body as string).includes('frozen":false')) {
+        await db
+          .update(schema.ptClientRelationships)
+          .set({ status: "terminated" })
+          .where(eq(schema.ptClientRelationships.id, REL_CA));
+        // The ended_meanwhile freeze's member removal will fail.
+        stream.failOn(
+          new RegExp(`POST /channels/coaching/${channelIdFor(REL_CA)}$`),
+          1,
+        );
+      }
+      return original(input, init);
+    };
+    configure();
+    await expect(provisionChatChannel(REL_CA)).rejects.toThrow(/503/);
+    stream.fetch = original;
+    configure();
+    const ch = stream.channels.get(channelIdFor(REL_CA))!;
+    expect(ch.frozen).toBe(false);
+    expect((await channelRow(REL_CA))!.state).toBe("pending");
+
+    expect(await reconcileChatChannels()).toMatchObject({ frozen: 1 });
+    expect(ch.frozen).toBe(true);
+    expect(ch.members.has(ATHLETE_A)).toBe(false);
+    expect((await channelRow(REL_CA))!.state).toBe("frozen");
+  });
 });
 
 // ─── Provisioning hooks on the accept paths, and the welcome message ────────

@@ -61,6 +61,12 @@ CASCADE, `coaching` / `coach-<relationshipId>`, state
   Without keys a row is bucket-only as on main. A Stream delete task still
   running throws `StreamDeletePendingError` → deferred (row kept; next night a
   missing user counts as done). Task polling is 2 (no sleep before the first).
+- **Failed provisioning always leaves `pending`** (round 9): the provisioning
+  catch and the ended_meanwhile freeze failure set the row to `pending`
+  (unless `active`), so a concurrent freeze that wrote `frozen` mid-reopen
+  can't hide an open channel; the tick re-provisions or re-freezes
+  (idempotent, keeps `frozen_at`; a never-had channel still ends `frozen`
+  with `frozen_at` NULL).
 - **Revival goes through `pending`** (round 8): provisioning moves a
   `frozen` row to `pending` (`frozen_at` NULL) before any Stream call, so a
   revive that fails after reopening the channel leaves a row the freeze
