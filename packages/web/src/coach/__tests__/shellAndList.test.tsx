@@ -78,8 +78,9 @@ describe("CoachLayout", () => {
     const nav = screen.getByRole("navigation", { name: "Main" });
     const clients = within(nav).getByRole("link", { name: /Clients/ });
     await waitFor(() => expect(clients.textContent).toContain("1"));
+    // PER-131 built Today; Messages is still to come on the web.
     expect(
-      within(nav).getByText("Today").closest("[aria-disabled]"),
+      within(nav).getByText("Messages").closest("[aria-disabled]"),
     ).toBeTruthy();
   });
 

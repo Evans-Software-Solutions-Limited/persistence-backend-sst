@@ -14,6 +14,8 @@ import { coachKeys, useCoachProfile, useRoster } from "../hooks/coachQueries";
 import { initials } from "../lib/people";
 import { LoadError, Loading } from "../ui/parts";
 import { CoachShell } from "./CoachShell";
+import { placeFor } from "./places";
+import { useFeed, useToday } from "../notifications/queries";
 
 /**
  * Container for every signed-in coach page: session → profile → role →
@@ -99,6 +101,10 @@ function SignedIn({ onSignOut }: { onSignOut: () => void }) {
   const profile = useCoachProfile();
   const isCoach = !!profile.data && COACH_ROLES.has(profile.data.role);
   const roster = useRoster();
+  // PER-131: the rail's Today and Notifications counts.
+  // Only once the roster shows the coach may use the workspace.
+  const today = useToday(!!roster.data);
+  const feed = useFeed(!!roster.data);
 
   if (profile.isPending) {
     return (
@@ -160,9 +166,9 @@ function SignedIn({ onSignOut }: { onSignOut: () => void }) {
   const name = profile.data!.fullName ?? "Coach";
   return (
     <CoachShell
-      active={
-        location.pathname.startsWith("/coach/library") ? "library" : "clients"
-      }
+      active={placeFor(location.pathname)}
+      todayCount={today.data ? today.data.counts.total : null}
+      unreadCount={feed.data ? feed.data.unreadCount : null}
       coachName={name}
       coachInitials={initials(name)}
       activeCount={
