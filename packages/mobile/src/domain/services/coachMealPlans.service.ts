@@ -3,10 +3,7 @@ import type {
   CoachClientTarget,
   CoachPlanAssignment,
 } from "@/domain/models/coachMealPlans";
-import type {
-  NutritionPlan,
-  PlanMacros,
-} from "@/domain/models/nutritionPlans";
+import type { NutritionPlan, PlanMacros } from "@/domain/models/nutritionPlans";
 import type { NutritionTarget } from "@/domain/models/nutrition";
 
 /**

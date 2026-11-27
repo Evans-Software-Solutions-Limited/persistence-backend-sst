@@ -52,7 +52,7 @@ export function SendPlanSheetPresenter(p: SendPlanSheetProps) {
       title={send ? "Send meal plan" : "Change the note"}
       eyebrow="Meal plan"
       accent="trainer"
-      height="content"
+      height="tall"
       testID="send-plan-sheet"
       footer={
         <View paddingHorizontal={20} paddingTop={6}>
@@ -175,13 +175,6 @@ export function ActionsSheetPresenter(p: {
       accent="trainer"
       height="content"
       testID={p.testID ?? "plan-actions-sheet"}
-      footer={
-        <View paddingHorizontal={20} paddingTop={6}>
-          <Btn variant="ghost" size="lg" full onPress={p.onClose}>
-            Cancel
-          </Btn>
-        </View>
-      }
     >
       <View paddingHorizontal={20}>
         {p.actions.map((a) => (
@@ -217,6 +210,11 @@ export function ActionsSheetPresenter(p: {
             </View>
           </Pressable>
         ))}
+        <View marginTop={10}>
+          <Btn variant="ghost" size="lg" full onPress={p.onClose}>
+            Cancel
+          </Btn>
+        </View>
       </View>
     </BottomSheet>
   );
@@ -240,29 +238,27 @@ export function ConfirmSheetPresenter(p: {
       title={p.title}
       height="content"
       testID={p.testID ?? "plan-confirm-sheet"}
-      footer={
-        <View paddingHorizontal={20} paddingTop={6} gap={8}>
-          <Btn
-            variant="filled"
-            tone="error"
-            size="lg"
-            full
-            disabled={p.busy}
-            onPress={p.onConfirm}
-            testID="plan-confirm"
-          >
-            {p.busy ? `${p.confirmLabel}…` : p.confirmLabel}
-          </Btn>
-          <Btn variant="ghost" size="lg" full onPress={p.onClose}>
-            Cancel
-          </Btn>
-        </View>
-      }
     >
       <View paddingHorizontal={20}>
         <Text fontFamily="$body" fontSize={14} lineHeight={20} color="$text2">
           {p.body}
         </Text>
+      </View>
+      <View paddingHorizontal={20} paddingTop={16} gap={8}>
+        <Btn
+          variant="filled"
+          tone="error"
+          size="lg"
+          full
+          disabled={p.busy}
+          onPress={p.onConfirm}
+          testID="plan-confirm"
+        >
+          {p.busy ? `${p.confirmLabel}…` : p.confirmLabel}
+        </Btn>
+        <Btn variant="ghost" size="lg" full onPress={p.onClose}>
+          Cancel
+        </Btn>
       </View>
     </BottomSheet>
   );
@@ -283,6 +279,7 @@ export function PickerSheetPresenter(p: {
   options: readonly PickOption[] | null;
   empty: string;
   selectedId?: string | null;
+  error?: string | null;
   footerLabel?: string;
   onFooter?: () => void;
   onPick: (id: string) => void;
@@ -316,6 +313,7 @@ export function PickerSheetPresenter(p: {
       }
     >
       <View paddingHorizontal={20}>
+        {p.error ? <Note testID="plan-picker-error">{p.error}</Note> : null}
         {p.options === null ? (
           <Text fontFamily="$body" fontSize={13} color="$text3">
             Loading…

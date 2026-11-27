@@ -4155,7 +4155,9 @@ export class InMemoryApiAdapter implements ApiPort {
     assignmentId: string,
     note: string | null,
   ): Promise<Result<void, ApiError>> {
-    this.coachMealPlanCalls.push(`note:${clientId}:${assignmentId}:${note ?? ""}`);
+    this.coachMealPlanCalls.push(
+      `note:${clientId}:${assignmentId}:${note ?? ""}`,
+    );
     const failure = this.coachMealPlanFailures.note.shift();
     return failure ? fail(failure) : ok(undefined);
   }

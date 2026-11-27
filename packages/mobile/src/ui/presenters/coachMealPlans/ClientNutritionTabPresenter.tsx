@@ -70,8 +70,8 @@ export function ClientNutritionTabPresenter(p: ClientNutritionTabProps) {
             color="$text3"
             testID="client-nutrition-no-target"
           >
-            {p.clientFirst} has no calorie target yet. Plans show what’s
-            planned until there is one.
+            {p.clientFirst} has no calorie target yet. Plans show what’s planned
+            until there is one.
           </Text>
         )}
       </View>

@@ -15,6 +15,7 @@ import {
 } from "@/ui/hooks/useCoachForms";
 import { useOnlineStatus } from "@/ui/hooks/useOnlineStatus";
 import { CoachLibraryHubContainer } from "@/ui/containers/CoachLibraryHubContainer";
+import { CoachMealPlansLibraryContainer } from "@/ui/containers/coachMealPlans/CoachMealPlansLibraryContainer";
 import {
   CoachLibraryPresenter,
   isLibrarySegment,
@@ -108,6 +109,8 @@ export function CoachLibraryContainer() {
         <CoachFormsLibraryContainer />
       ) : segment === "programmes" ? (
         <CoachLibraryHubContainer embedded />
+      ) : segment === "meals" ? (
+        <CoachMealPlansLibraryContainer />
       ) : (
         <ScrollView contentContainerStyle={{ paddingHorizontal: 20 }}>
           <InDevelopment

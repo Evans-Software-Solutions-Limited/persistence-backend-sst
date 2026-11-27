@@ -23,16 +23,18 @@ export type CoachClientMealPlansState = {
  */
 export function useCoachClientMealPlans(
   clientId: string,
+  enabled = true,
 ): CoachClientMealPlansState {
   const { api } = useAdapters();
   const [data, setData] = useState<CoachClientMealPlans | null>(null);
   const [calories, setCalories] = useState<CoachCalorieAdherence | null>(null);
-  const [isLoading, setLoading] = useState(true);
+  const [isLoading, setLoading] = useState(enabled);
   const [error, setError] = useState<ApiError | null>(null);
   const [readAt, setReadAt] = useState<number | null>(null);
   const alive = useRef(true);
 
   const reload = useCallback(async () => {
+    if (!enabled) return;
     const [plans, adherence] = await Promise.all([
       api.getCoachClientMealPlans(clientId),
       api.getCoachClientCalorieAdherence(clientId),
@@ -47,7 +49,7 @@ export function useCoachClientMealPlans(
     }
     if (adherence.ok) setCalories(adherence.value);
     setLoading(false);
-  }, [api, clientId]);
+  }, [api, clientId, enabled]);
 
   useEffect(() => {
     alive.current = true;
