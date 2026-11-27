@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { saveSession } from "../api/coachAuth";
 import { NotificationsContainer } from "../notifications/NotificationsContainer";
 import { NotificationSettingsContainer } from "../notifications/NotificationSettingsContainer";
@@ -22,6 +28,10 @@ import {
   notificationSettings,
   todayPayload,
 } from "./notificationsFixtures";
+
+/** Real focus moves, so `document.activeElement` follows (round 3, #578). */
+const focusOn = (el: HTMLElement) => act(() => el.focus());
+const blurOff = (el: HTMLElement) => act(() => el.blur());
 
 beforeEach(() => {
   localStorage.clear();
@@ -284,8 +294,9 @@ describe("NotificationSettingsContainer", () => {
     });
     renderSettings(n);
     const until = await screen.findByLabelText("Until");
+    focusOn(until);
     fireEvent.change(until, { target: { value: "21:00" } });
-    fireEvent.blur(until);
+    blurOff(until);
     expect(
       await screen.findByText("Start and end need to be different times."),
     ).toBeTruthy();
@@ -355,8 +366,9 @@ describe("NotificationSettingsContainer", () => {
     });
     renderSettings(n);
     const from = await screen.findByLabelText("From");
+    focusOn(from);
     fireEvent.change(from, { target: { value: "22:00" } });
-    fireEvent.blur(from);
+    blurOff(from);
     expect(
       await screen.findByText("Start and end need to be different times."),
     ).toBeTruthy();
@@ -556,20 +568,21 @@ describe("Inspector Brad #578", () => {
     });
     renderSettings(n);
     const from = (await screen.findByLabelText("From")) as HTMLInputElement;
+    focusOn(from);
     fireEvent.change(from, { target: { value: "02:00" } });
     fireEvent.change(from, { target: { value: "21:00" } });
     fireEvent.change(from, { target: { value: "21:30" } });
     expect(n.putSettings).not.toHaveBeenCalled();
     expect(from.disabled).toBe(false);
     expect(from.value).toBe("21:30");
-    fireEvent.blur(from);
+    blurOff(from);
     await waitFor(() => expect(n.putSettings).toHaveBeenCalledTimes(1));
     expect(n.putSettings).toHaveBeenCalledWith({
       quietHours: { enabled: true, from: "21:30", until: "07:00" },
       expectedRevision: 2,
     });
     // Leaving the field again with nothing changed saves nothing.
-    fireEvent.blur(from);
+    blurOff(from);
     await waitFor(() => expect(from.value).toBe("21:30"));
     expect(n.putSettings).toHaveBeenCalledTimes(1);
   });
@@ -596,7 +609,7 @@ describe("Inspector Brad #578", () => {
     await waitFor(() => expect(n.putSettings).toHaveBeenCalledTimes(1));
     const until = screen.getByLabelText("Until") as HTMLInputElement;
     expect(until.disabled).toBe(false);
-    fireEvent.focus(until);
+    focusOn(until);
     fireEvent.change(until, { target: { value: "06:30" } });
     finish(notificationSettings({ revision: 3 }));
     await waitFor(() =>
@@ -682,9 +695,9 @@ describe("Inspector Brad #578", () => {
     });
     const { queryClient } = renderSettings(n);
     const from = (await screen.findByLabelText("From")) as HTMLInputElement;
-    fireEvent.focus(from);
+    focusOn(from);
     fireEvent.change(from, { target: { value: "21:30" } });
-    fireEvent.blur(from);
+    blurOff(from);
     await waitFor(() => expect(n.putSettings).toHaveBeenCalledTimes(1));
     // Another device changes both times; a refetch (e.g. on focus) brings it.
     await queryClient.refetchQueries();
@@ -692,12 +705,140 @@ describe("Inspector Brad #578", () => {
     const until = screen.getByLabelText("Until") as HTMLInputElement;
     expect(until.value).toBe("06:00");
     // Tabbing through both fields without changing them sends nothing.
-    fireEvent.focus(from);
-    fireEvent.blur(from);
-    fireEvent.focus(until);
-    fireEvent.blur(until);
+    focusOn(from);
+    blurOff(from);
+    focusOn(until);
+    blurOff(until);
     await waitFor(() => expect(until.value).toBe("06:00"));
     expect(n.putSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it("a channel change saves even with a bad quiet-hours time on screen", async () => {
+    const n = fakeNotificationsApi({
+      settings: vi.fn().mockResolvedValue(
+        notificationSettings({
+          quietHours: { enabled: true, from: "21:00", until: "07:00" },
+        }),
+      ),
+      putSettings: vi
+        .fn()
+        .mockResolvedValue(notificationSettings({ revision: 3 })),
+    });
+    renderSettings(n);
+    const until = await screen.findByLabelText("Until");
+    focusOn(until);
+    fireEvent.change(until, { target: { value: "21:00" } });
+    blurOff(until);
+    expect(
+      await screen.findByText("Start and end need to be different times."),
+    ).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("New record"), {
+      target: { value: "off" },
+    });
+    await waitFor(() =>
+      expect(n.putSettings).toHaveBeenCalledWith({
+        channels: { record_hit: "off" },
+        expectedRevision: 2,
+      }),
+    );
+  });
+
+  it("a focused time field that unmounts follows the server again", async () => {
+    const on = notificationSettings({
+      quietHours: { enabled: true, from: "21:00", until: "07:00" },
+    });
+    const settings = vi
+      .fn()
+      .mockResolvedValueOnce(on)
+      // Another device turns quiet hours off, then on with new times.
+      .mockResolvedValueOnce(
+        notificationSettings({
+          revision: 3,
+          quietHours: { enabled: false, from: "21:00", until: "07:00" },
+        }),
+      )
+      .mockResolvedValue(
+        notificationSettings({
+          revision: 4,
+          quietHours: { enabled: true, from: "22:30", until: "06:00" },
+        }),
+      );
+    const { queryClient } = renderSettings(fakeNotificationsApi({ settings }));
+    const from = await screen.findByLabelText("From");
+    focusOn(from);
+    fireEvent.change(from, { target: { value: "20:00" } });
+    await queryClient.refetchQueries();
+    await waitFor(() => expect(screen.queryByLabelText("From")).toBeNull());
+    await queryClient.refetchQueries();
+    expect(
+      ((await screen.findByLabelText("From")) as HTMLInputElement).value,
+    ).toBe("22:30");
+  });
+
+  it("a failed save leaves the time being typed in the other field alone", async () => {
+    let fail: (e: unknown) => void = () => undefined;
+    const n = fakeNotificationsApi({
+      settings: vi.fn().mockResolvedValue(
+        notificationSettings({
+          quietHours: { enabled: true, from: "21:00", until: "07:00" },
+        }),
+      ),
+      putSettings: vi.fn(
+        () =>
+          new Promise((_, reject) => {
+            fail = reject;
+          }),
+      ),
+    });
+    renderSettings(n);
+    const from = await screen.findByLabelText("From");
+    focusOn(from);
+    fireEvent.change(from, { target: { value: "22:00" } });
+    blurOff(from);
+    await waitFor(() => expect(n.putSettings).toHaveBeenCalledTimes(1));
+    const until = screen.getByLabelText("Until") as HTMLInputElement;
+    focusOn(until);
+    fireEvent.change(until, { target: { value: "06:15" } });
+    await act(async () => fail(apiError(500, null)));
+    expect(
+      await screen.findByText("We couldn't save that change."),
+    ).toBeTruthy();
+    expect(until.value).toBe("06:15");
+    expect((screen.getByLabelText("From") as HTMLInputElement).value).toBe(
+      "21:00",
+    );
+  });
+
+  it("a 409 while typing keeps the typed time and shows the server's other values", async () => {
+    const current = notificationSettings({
+      revision: 7,
+      channels: { ...notificationSettings().channels, record_hit: "off" },
+      quietHours: { enabled: true, from: "21:00", until: "07:00" },
+    });
+    const n = fakeNotificationsApi({
+      settings: vi.fn().mockResolvedValue(
+        notificationSettings({
+          quietHours: { enabled: true, from: "21:00", until: "07:00" },
+        }),
+      ),
+      putSettings: vi
+        .fn()
+        .mockRejectedValue(
+          apiError(409, { code: "revision_conflict", current }),
+        ),
+    });
+    renderSettings(n);
+    const until = (await screen.findByLabelText("Until")) as HTMLInputElement;
+    focusOn(until);
+    fireEvent.change(until, { target: { value: "05:45" } });
+    fireEvent.change(screen.getByLabelText("Workout completed"), {
+      target: { value: "push" },
+    });
+    expect(await screen.findByText(/Updated on another device/)).toBeTruthy();
+    expect(
+      (screen.getByLabelText("New record") as HTMLSelectElement).value,
+    ).toBe("off");
+    expect(until.value).toBe("05:45");
   });
 
   it("when a chip's count drops to 0, Today falls back to All", async () => {

@@ -11,6 +11,7 @@
 - Tests: `__tests__/notifications.test.tsx`, `__tests__/notificationsScreens.test.tsx`.
 - Inspector Brad #578 fixes (27 Nov): quiet-hours times save on blur, never disabled mid-save, and saves run one at a time with the revision the last one returned; programme end dates (`YYYY-MM-DD`) parse on the local calendar (`calendarDate`); Mark all read sends the loaded unread ids, not `{all: true}`; Today's filter falls back to All when its chip disappears.
 - Inspector Brad #578, second pass (27 Nov): the settings form resets to the server copy whenever it changes (save, refetch, 409), keeping only the time field being typed in, so nothing stays dirty or gets re-sent stale. Mark all read sends ids when every unread event is loaded, else `{all: true}` (over-200 case; server `asOf` bound is Brad's call).
+- Inspector Brad #578, round 3 (27 Nov): a channel change validates and saves only `channels`; the field "being typed in" is the focused ref only while its input is `document.activeElement` (an unmounted field follows the server again); the error-path reset keeps that field, and a 409 relies on the cache-driven reset.
 
 ### 2026-11-27 — APP-D3: athlete Mealprint redesign N15–N27 ([PER-134](https://linear.app/evans-software-solutions/issue/PER-134); branch `claude/per-134-mealprint-redesign`)
 

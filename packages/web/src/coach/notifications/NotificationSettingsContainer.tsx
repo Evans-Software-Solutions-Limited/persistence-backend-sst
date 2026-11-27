@@ -27,6 +27,18 @@ import "./notifications.css";
 
 type TimeField = "quietFrom" | "quietUntil";
 
+/** The inputs' ids in the view, to tell which one has focus. */
+const TIME_INPUT_IDS: Record<TimeField, string> = {
+  quietFrom: "quiet-from",
+  quietUntil: "quiet-until",
+};
+
+const QUIET_FIELDS: (keyof NotificationSettingsValues)[] = [
+  "quietEnabled",
+  "quietFrom",
+  "quietUntil",
+];
+
 /**
  * Container for C6b (PER-131): `GET/PUT /trainers/me/notification-settings`.
  * Every change is checked by the form's resolver, then saved with the
@@ -54,6 +66,28 @@ export function NotificationSettingsContainer() {
   const focused = useRef<TimeField | null>(null);
 
   /**
+   * The field the coach is still typing in: only while its input really has
+   * focus. A field that unmounted while focused (quiet hours turned off here
+   * or on another device) no longer counts (Inspector Brad, #578).
+   */
+  function typingField(): TimeField | null {
+    const f = focused.current;
+    if (f && document.activeElement?.id !== TIME_INPUT_IDS[f]) {
+      focused.current = null;
+      return null;
+    }
+    return f;
+  }
+
+  /** Reset to a server copy, keeping only the time field being typed in. */
+  function resetTo(settings: NotificationSettings) {
+    const next = settingsToValues(settings);
+    const typing = typingField();
+    if (typing) next[typing] = form.getValues(typing);
+    form.reset(next, { keepErrors: true });
+  }
+
+  /**
    * Show the server's copy whenever it changes (a save landing, a refetch, a
    * 409's current copy), so nothing stays dirty and a stale value is never
    * sent later (Inspector Brad, #578). Only the time field the coach is
@@ -61,12 +95,10 @@ export function NotificationSettingsContainer() {
    */
   const data = q.data;
   useEffect(() => {
-    if (!data) return;
-    const next = settingsToValues(data);
-    const typing = focused.current;
-    if (typing) next[typing] = form.getValues(typing);
-    form.reset(next, { keepErrors: true });
-  }, [data, form]);
+    if (data) resetTo(data);
+    // resetTo reads refs and the stable form; only the data matters here.
+    // oxlint-disable-next-line react/exhaustive-deps
+  }, [data]);
 
   const queue = useRef<Promise<void>>(Promise.resolve());
   const pending = useRef(0);
@@ -100,14 +132,14 @@ export function NotificationSettingsContainer() {
     } catch (e) {
       if (isCoachApiError(e) && e.code === "revision_conflict") {
         const latest = e.body?.current as NotificationSettings | undefined;
+        // The effect shows `latest` (keeping a field being typed in).
         queryClient.setQueryData(notificationKeys.settings, latest ?? before);
-        form.reset(settingsToValues(latest ?? before));
         if (!latest) void q.refetch();
         setNotice(CONFLICT_NOTICE);
         return;
       }
       // Put the form back to what's saved, keeping a field error if any.
-      form.reset(settingsToValues(before), { keepErrors: true });
+      resetTo(before);
       const onField = quietServerError(e);
       if (onField) {
         form.setError(onField.field, {
@@ -124,14 +156,20 @@ export function NotificationSettingsContainer() {
     }
   }
 
+  /**
+   * Check and save one part of the form. A channel change checks only the
+   * channels, so a bad quiet-hours time on screen never blocks it
+   * (Inspector Brad, #578).
+   */
   async function change(
     next: Partial<NotificationSettingsValues>,
     input: (v: NotificationSettingsValues) => NotificationSettingsInput,
+    fields: (keyof NotificationSettingsValues)[],
   ) {
     const values = { ...form.getValues(), ...next };
     applyValues(form, values);
-    form.clearErrors();
-    if (!(await form.trigger())) return;
+    form.clearErrors(fields);
+    if (!(await form.trigger(fields))) return;
     await save(input(values));
   }
 
@@ -178,9 +216,11 @@ export function NotificationSettingsContainer() {
       notice={notice}
       error={error}
       onChannel={(kind, channel) =>
-        void change({ channels: { ...channels, [kind]: channel } }, () => ({
-          channels: { [kind]: channel },
-        }))
+        void change(
+          { channels: { ...channels, [kind]: channel } },
+          () => ({ channels: { [kind]: channel } }),
+          ["channels"],
+        )
       }
       onQuietEnabled={(on) => {
         const v = form.getValues();
@@ -193,6 +233,7 @@ export function NotificationSettingsContainer() {
               }
             : { quietEnabled: false },
           quietInput,
+          QUIET_FIELDS,
         );
       }}
       onQuietTimeFocus={(field) => {
@@ -212,7 +253,7 @@ export function NotificationSettingsContainer() {
         ) {
           return;
         }
-        void change({}, quietInput);
+        void change({}, quietInput, QUIET_FIELDS);
       }}
     />
   );
