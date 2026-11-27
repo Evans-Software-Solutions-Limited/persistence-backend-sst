@@ -94,6 +94,9 @@ export function ActiveSupersetRow(props: ActiveSupersetRowProps) {
     DEFAULT_TEMPLATE;
 
   const repRange = useMemo(() => {
+    // Reps per set (PER-139): "10, 8, 8 reps" from the lead's targets.
+    const perSet = leadTemplate.targetSetReps;
+    if (perSet && perSet.length > 0) return `${perSet.join(", ")} reps`;
     const min = leadTemplate.targetRepsMin;
     const max = leadTemplate.targetRepsMax;
     if (min == null || max == null) return null;
