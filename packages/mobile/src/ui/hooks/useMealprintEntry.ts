@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { router, type Href } from "expo-router";
-import { useFuelSheets } from "@/state/fuel-sheets";
 import {
   computePlanAdherence,
   nextUnloggedPlanMeal,
@@ -12,6 +11,7 @@ import type {
 } from "@/ui/presenters/mealprint/MealprintEntryCard";
 import { useMealprintGate } from "./useMealprintGate";
 import { useMealprintPreferences } from "./useMealprintPreferences";
+import { openMealprint } from "./openMealprint";
 
 /**
  * useMealprintEntry — everything the Fuel Mealprint card needs, in one hook.
@@ -90,8 +90,6 @@ export function useMealprintEntry(
   const gate = useMealprintGate();
   // Cache-only — see the docstring. Do NOT pass `true` here.
   const preferences = useMealprintPreferences();
-  const openMealprintSuggest = useFuelSheets((s) => s.openMealprintSuggest);
-  const openMealprintPlan = useFuelSheets((s) => s.openMealprintPlan);
 
   const [stalled, setStalled] = useState(false);
   /** Bumped by the retry so the timer effect re-runs while `isResolved` is unchanged. */
@@ -144,19 +142,13 @@ export function useMealprintEntry(
       router.push("/(app)/fuel/preferences?mode=wizard" as Href);
       return;
     }
-    openMealprintSuggest();
-  }, [
-    gate.isResolved,
-    gate.allowed,
-    planProgress,
-    needsSetup,
-    openMealprintSuggest,
-  ]);
+    openMealprint("meal");
+  }, [gate.isResolved, gate.allowed, planProgress, needsSetup]);
 
   const onPlanMyDay = useCallback(() => {
     if (!gate.allowed) return;
-    openMealprintPlan();
-  }, [gate.allowed, openMealprintPlan]);
+    openMealprint("day");
+  }, [gate.allowed]);
 
   const onEditPreferences = useCallback(() => {
     if (!gate.allowed) return;

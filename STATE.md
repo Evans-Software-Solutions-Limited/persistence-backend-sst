@@ -41,6 +41,51 @@ backend, migration, native or app-version change.
   "Shared with" / "Opens" columns or "Also in" / "Replace file", no
   Collections chip.
 
+### 2026-11-27 — APP-D3: athlete Mealprint redesign N15–N27 ([PER-134](https://linear.app/evans-software-solutions/issue/PER-134); branch `claude/per-134-mealprint-redesign`)
+
+Mobile only. Uses BE-D3 (PER-119, #562). No backend, migration, native or
+version change. Ships in the next store release, reviewed on staging.
+
+- **One page:** route `/(app)/fuel/mealprint?mode=meal|day&slot=&userMealId=`
+  (`ui/containers/mealprint/*`, `openMealprint` / `mealprintHref`). It is the
+  locked page (N26) without Premium+. The root sheets
+  `MealprintSuggestSheet*`, `MealprintPlanSheet*` and `SuggestLockedSheet*`
+  are gone, and so are `useFuelSheets` `openMealprintSuggest` /
+  `openMealprintPlan` / `openSuggestLocked`. Every entry point (Log Suggest,
+  Add to a meal Suggest, Plan gap row, Plan empty state, Your plans sheet,
+  New plan → Let Mealprint fill it) pushes the route.
+- **One meal (N15 → N16 → N17 → N18):** `useMealSuggest` unchanged. Log to
+  any of Your meals; the ticked items are logged through `logEntryCommand`
+  and drained once (batch replay).
+- **Whole day (N15 → N19/N20):** plan-generate sends Your meals (`meals`,
+  first six; fewer than two → `mealsPerDay`). Swap asks `count: 3`; "Show 3
+  others" adds the shown options to `notWantedMeals`; feedback + steer chips
+  go in `steer`. `usePlanFlow` gained `swappedFrom` (Undo swap), `portions`
+  (0.25–2, capped so every item stays in the server's 0.25–2 servings band)
+  and a `logged` step; a swap keeps the meal's `label`.
+- **Save as a plan (N21):** accept (dated plan, labels = Your meals) →
+  `ApiPort.savePlanFromMealprint` (`POST /nutrition/meal-plans
+{fromMealprintPlanId}`, key `mealprint-save-<datedId>`) → plan into the
+  Mine cache → the dated plan is archived so nothing shows as "today's plan"
+  in Log. No weekdays. Name editable on N21 (react-hook-form, plan name
+  schema; saved through `savePlanCommand`). A 409 `active_plan_exists` offers
+  "Replace it".
+- **Log all today (N22):** `planLogAll` (skips meals that already have food
+  today), `logAllTodayCommand`, one drain → one `/nutrition/entries/batch`.
+  Undo deletes by id, or by content after the id swapped to the server's
+  (`resolveLoggedEntryIds`).
+- **Preferences (N24–25):** legal copy moved under the allergens; Meals shows
+  Your meals (Edit opens the Your meals sheet) instead of the meals-a-day
+  stepper (value still saved unchanged); cooking is a radio list.
+- **Forms:** N15 steer and N20 feedback use react-hook-form + TypeBox
+  (`ui/forms/mealprintForms.ts`).
+- **Fuel:** `usePlanSheets.fuelSection` lets View in Plan / View in Log pick
+  the Fuel section on return.
+- **Tests:** service, command (real in-memory storage, Undo after id swap),
+  plan-flow, presenters (one per state, caveat on every AI screen), and
+  containers against the in-memory API.
+- **Not verified:** nothing on a device or against staging.
+
 ### 2026-11-26 — APP-C2: athlete due forms, offline filling, joining forms ([PER-130](https://linear.app/evans-software-solutions/issue/PER-130); branch `claude/per-130-athlete-forms`)
 
 Mobile only, over the air on 1.2.0: no backend, migration or native change.
@@ -146,8 +191,7 @@ build; no build started by an agent. No new package, no Firebase JS SDK.
     - Deploy-window rows: `db push` runs before `sst deploy`, so the old
       Lambda can still write raw rows. On a raw-token register the handler
       now also calls `UserDeviceRepository.deleteForUserAndToken(userId,
-      token)`, scoped to the caller. It's best-effort and the response stays
-      200.
+token)`, scoped to the caller. It's best-effort and the response stays 200.
     - Stale Expo token: the adapter records a native token as handled only
       after its Expo fetch succeeds. A failure retries on back-off
       (`TOKEN_RETRY_DELAYS_MS` 30 s, 2 min, 10 min) and on app foreground.
@@ -171,7 +215,7 @@ of migration 10; PER-122 owns the resources half) with a rollback.
   invited/accepted/declined/cancelled, `reminded_at`). Drizzle in
   `packages/db/src/coachSessionsSchema.ts`, re-exported from `schema.ts`.
 - **Push type:** `notification_type` `coach_session` (`ADD VALUE IF NOT
-  EXISTS`), `data.action` = booked | moved | cancelled | reminder, plus
+EXISTS`), `data.action` = booked | moved | cancelled | reminder, plus
   `sessionId`, `startsAt`, `seriesId` (Brad, 25 Nov: one athlete type). Off
   the `/notifications/preferences` list so that contract is unchanged.
 - **Routes** (`coaching/sessions/sessionsHandlers.ts`, mounted in
@@ -183,7 +227,7 @@ of migration 10; PER-122 owns the resources half) with a rollback.
   and the later live ones; a move shifts each the same way in the coach's
   local time), `GET /users/me/coach-sessions?from=&to=` (default next 62
   days; own booking only, no notes or other attendees), `POST
-  /users/me/coach-sessions/:id/respond`. `GET /trainers/me/today`'s
+/users/me/coach-sessions/:id/respond`. `GET /trainers/me/today`'s
   `schedule` is now today's live bookings in the coach's zone.
 - **Events:** create/move/cancel writes one `session_booked` coach event per
   attendee, `noPush` (feed only); an athlete's accept/decline writes none
@@ -206,7 +250,7 @@ of migration 10; PER-122 owns the resources half) with a rollback.
 - **Native change (Brad approved, 26 Nov; needs the new store build):**
   `expo-screen-orientation@~55.0.16` (not in 1.2.0), `app.json`
   `orientation: "default"` and the plugin with `initialOrientation:
-  "PORTRAIT_UP"` (commit 498f05d).
+"PORTRAIT_UP"` (commit 498f05d).
 - `src/lib/screenOrientation.ts`: `lockPortrait` / `lockLandscape`, guarded
   with `requireOptionalNativeModule("ExpoScreenOrientation")`. On a 1.2.0
   binary (OTA) they're no-ops, and the binary stays portrait natively.
@@ -360,7 +404,7 @@ TypeBox schema resolver. Same copy, layout and save behaviour; no backend or
 native change. Mobile is PR 2 of 2.
 
 - **Shared helpers:** `packages/web/src/lib/form/`. `schemaResolver(schema,
-  { prepare, refine })` wraps `@hookform/resolvers/typebox` (v6, which uses
+{ prepare, refine })` wraps `@hookform/resolvers/typebox` (v6, which uses
   `@sinclair/typebox` 0.34, the same TypeBox Elysia uses; v7 moved to `typebox`
   1.x). Copy comes from `errorMessage` on the schema (one string, or one per
   `ValueErrorType` name), via a TypeBox error function installed on import.
@@ -438,7 +482,7 @@ The coach workspace is only for coaches with an active coach subscription
   `onBeforeHandle`; it refuses every coach workspace route (route pattern
   `/trainers/me` / `/trainers/me/*`, plus legacy `/clients/:clientId/measurements`
   and `/clients/:clientId/body-trend`) with `403 { code:
-  "coach_subscription_required" }` unless the caller's effective tier is a coach
+"coach_subscription_required" }` unless the caller's effective tier is a coach
   tier. "Coach tier" reuses `resolveTrainerClientsEntitlement().isTrainerTier`
   (catalog `is_trainer_tier`, lapse/cancel/scheduled-change rules shared with the
   seat cap); founding/admin grants count. No valid JWT → steps aside, the route's
@@ -470,10 +514,10 @@ WHERE removed_at IS NULL`). Drizzle in `packages/db/src/coachResourcesSchema.ts`
   (repository, handlers, `resource` set-up handler). Mounted as
   `coachResourcesRoutes` in `coachingRoutes.ts`; `api.ts` untouched.
 - Routes: `GET/POST /trainers/me/resources`, `PATCH/DELETE
-  /trainers/me/resources/:id`, `POST /trainers/me/resources/assign`,
+/trainers/me/resources/:id`, `POST /trainers/me/resources/assign`,
   `GET /trainers/me/clients/:clientId/resources`, `DELETE
-  /trainers/me/clients/:clientId/resources/:assignmentId`, `GET
-  /users/me/resources?since=`, `POST /users/me/resources/:assignmentId/opened`.
+/trainers/me/clients/:clientId/resources/:assignmentId`, `GET
+/users/me/resources?since=`, `POST /users/me/resources/:assignmentId/opened`.
   Files are checked with design F's `finaliseMedia` on save; athletes get a
   15-minute signed link. Archiving a resource hides its assignments from
   clients (`deletedIds`).
@@ -552,7 +596,7 @@ was added (Brad: CI should always run cold). No runtime, app or native change.
   `.mockImplementation(() => …)`) became `function () { return …; }` — same
   objects, no assertion changed. Vitest 5 also types mocks more strictly
   (`MockInstance<typeof console.warn>` for spies; `vi.fn<(userId: string) =>
-  Promise<boolean>>` in `accountPurgeCron.test.ts`). `clearMocks` is now on by
+Promise<boolean>>` in `accountPurgeCron.test.ts`). `clearMocks` is now on by
   default; no test depended on history carried between tests.
 - **Vite 7.3 → 8.3.8** in web (Rolldown), with `@vitejs/plugin-react-swc`
   4.3.3, `vite-plugin-pwa` 1.3.0 (kept on 1.x; the plugin is due for removal),

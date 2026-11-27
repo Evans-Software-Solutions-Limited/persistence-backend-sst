@@ -58,6 +58,8 @@ export type MealSuggestFailure = {
   readonly retryable: boolean;
   /** True only for 402, so the caller can surface the upgrade sheet instead. */
   readonly entitlementDenied: boolean;
+  /** PER-134: the HTTP status, so Mealprint can pick its state screen (N27). */
+  readonly status?: number;
 };
 
 export type UseMealSuggest = {
@@ -140,7 +142,10 @@ export function useMealSuggest(): UseMealSuggest {
       try {
         const response = await api.suggestMeals(input);
         if (!response.ok) {
-          setFailure(classify(response.error.status));
+          setFailure({
+            ...classify(response.error.status),
+            status: response.error.status,
+          });
           setStage("error");
           return;
         }

@@ -160,6 +160,7 @@ import type {
   WaterToday,
 } from "@/domain/models/nutrition";
 import type {
+  NutritionPlan,
   NutritionPlansResponse,
   PlansShoppingList,
 } from "@/domain/models/nutritionPlans";
@@ -1832,6 +1833,20 @@ export interface ApiPort extends ReferralsPort {
     upload: ProgressPhotoUpload,
     body: Blob,
   ): Promise<Result<void, ApiError>>;
+
+  // -- PER-134 (APP-D3): Mealprint "Save as a plan" (BE-D3) --
+
+  /**
+   * `POST /nutrition/meal-plans {fromMealprintPlanId, name?}` with
+   * `Idempotency-Key`: a list plan (no days) copied from an accepted
+   * Mealprint day. Online only, like the rest of Mealprint. 403
+   * `manual_meal_plans`, 404 `mealprint_plan_not_found`, 409
+   * `plan_meal_nutrition_unavailable`.
+   */
+  savePlanFromMealprint(
+    input: { fromMealprintPlanId: string; name?: string },
+    idempotencyKey: string,
+  ): Promise<Result<NutritionPlan, ApiError>>;
 
   // -- PER-143 (APP-I1): coach resources (BE-I1) --
   //
