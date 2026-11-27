@@ -1,3 +1,4 @@
+import { SET_TARGET_LIMITS } from "@persistence/form-limits";
 import { t } from "elysia";
 
 /**
@@ -12,8 +13,10 @@ import { t } from "elysia";
  * DERIVED values: the number of sets and the lowest / highest reps.
  */
 
-export const MAX_SET_TARGETS = 20;
-export const MAX_SET_TARGET_REPS = 100;
+// Shared with the mobile set editor (@persistence/form-limits, PER-139).
+// Pinned at 20 / 100 in `coaching/__tests__/formLimits.test.ts`.
+export const MAX_SET_TARGETS = SET_TARGET_LIMITS.maxSets;
+export const MAX_SET_TARGET_REPS = SET_TARGET_LIMITS.maxReps;
 
 export interface SetTarget {
   reps: number;

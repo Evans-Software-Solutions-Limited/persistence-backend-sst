@@ -47,6 +47,9 @@ export function buildTemplateMap({
           targetSets: template.targetSets ?? undefined,
           targetRepsMin: template.targetRepsMin,
           targetRepsMax: template.targetRepsMax,
+          ...(template.setTargets && template.setTargets.length > 0
+            ? { targetSetReps: template.setTargets.map((s) => s.reps) }
+            : {}),
           targetDurationSeconds: template.targetDurationSeconds ?? undefined,
           restSeconds: template.restSeconds ?? defaultRestSeconds,
         }
