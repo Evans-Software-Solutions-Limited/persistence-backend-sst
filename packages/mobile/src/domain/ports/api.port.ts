@@ -91,6 +91,11 @@ import type {
 } from "@/domain/models/progress";
 import type { CoachOverview } from "@/domain/models/coachOverview";
 import type {
+  CoachCalorieAdherence,
+  CoachClientMealPlans,
+  CoachRecipeShare,
+} from "@/domain/models/coachMealPlans";
+import type {
   AiSummaryModule,
   ClientDetail,
   ClientDetailNote,
@@ -1788,6 +1793,43 @@ export interface ApiPort extends ReferralsPort {
     upload: ProgressPhotoUpload,
     body: Blob,
   ): Promise<Result<void, ApiError>>;
+
+  // -- PER-135 (APP-D4): coach meal plans on a client (BE-D2) --
+  //
+  // Library edits go through the plans queue (`nutritionPlans.command.ts`);
+  // these client actions need a connection.
+
+  /** `GET /trainers/me/clients/:clientId/meal-plans`: plans, usage, target. */
+  getCoachClientMealPlans(
+    clientId: string,
+  ): Promise<Result<CoachClientMealPlans, ApiError>>;
+  /** `POST …/meal-plans` with `Idempotency-Key`: send a plan with a note. */
+  assignCoachMealPlan(
+    clientId: string,
+    planId: string,
+    note: string | null,
+    idempotencyKey: string,
+  ): Promise<Result<void, ApiError>>;
+  /** `PATCH …/meal-plans/:assignmentId`: change the note. */
+  updateCoachPlanNote(
+    clientId: string,
+    assignmentId: string,
+    note: string | null,
+  ): Promise<Result<void, ApiError>>;
+  /** `DELETE …/meal-plans/:assignmentId`: the client stops seeing it. */
+  removeCoachPlanAssignment(
+    clientId: string,
+    assignmentId: string,
+  ): Promise<Result<void, ApiError>>;
+  /** `POST …/recipes/:recipeId/share`: the client gets their own copy. */
+  shareCoachRecipe(
+    clientId: string,
+    recipeId: string,
+  ): Promise<Result<CoachRecipeShare, ApiError>>;
+  /** `GET …/adherence?window=7d` → calories, when the coach tracks them. */
+  getCoachClientCalorieAdherence(
+    clientId: string,
+  ): Promise<Result<CoachCalorieAdherence | null, ApiError>>;
 }
 
 /**
