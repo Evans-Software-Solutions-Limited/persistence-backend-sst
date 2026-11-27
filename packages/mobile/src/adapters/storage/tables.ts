@@ -124,3 +124,7 @@ export const PROGRESS_PHOTO_TABLES = ["cached_progress_photos"] as const;
 export const PENDING_PROGRESS_PHOTO_TABLES = [
   "pending_progress_photos",
 ] as const;
+/** PER-130 the athlete's due forms, with their questions. */
+export const FORM_REQUESTS_TABLES = ["cached_form_requests"] as const;
+/** PER-130 each due form's draft and send state on this phone. */
+export const FORM_LOCAL_TABLES = ["form_request_local"] as const;

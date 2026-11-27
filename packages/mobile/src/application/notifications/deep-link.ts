@@ -112,8 +112,18 @@ function resolveSchemeLink(rest: string): string {
 export function resolveNotificationRoute(
   deepLink: string | null | undefined,
   notificationType?: string | null,
+  relatedEntityId?: string | null,
 ): string {
   if (notificationType === "friend_request") return "/(app)/together/partners";
+  // PER-130 (C10o): a form sent or a reminder opens that form (C4f). The
+  // push carries no deep link; the request id is the related entity.
+  if (
+    (notificationType === "form_request" ||
+      notificationType === "form_reminder") &&
+    relatedEntityId
+  ) {
+    return `/(app)/forms/${encodeURIComponent(relatedEntityId)}`;
+  }
   if (!deepLink) return HOME_ROUTE;
   const trimmed = deepLink.trim();
   if (trimmed === "") return HOME_ROUTE;

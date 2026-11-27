@@ -50,6 +50,11 @@ import {
   recordUploadedPhotoSet,
 } from "./progressPhotos.command";
 import { readLocalFile } from "@/shared/utils/localFile";
+import {
+  applyFormResponseRefusal,
+  applyFormResponseSynced,
+  FORM_RESPONSE_ENTITY,
+} from "./athleteForms.command";
 
 /** A non-OK HTTP response from a sync POST/PUT/DELETE, carrying the status so
  * the drain can classify permanent vs transient failures. */
@@ -1436,6 +1441,11 @@ export async function processSyncQueue(
         }
       }
 
+      // PER-130: an athlete's queued form response reached the server.
+      if (entry.entityType === FORM_RESPONSE_ENTITY) {
+        applyFormResponseSynced(storage, entry);
+      }
+
       storage.markMutationCompleted(entry.id);
       succeeded++;
     } catch (err) {
@@ -1446,6 +1456,24 @@ export async function processSyncQueue(
       if (
         err instanceof SyncHttpError &&
         applyNutritionPlanConflict(
+          storage,
+          entry,
+          err.status,
+          message.slice(message.indexOf(": ") + 2),
+        )
+      ) {
+        storage.markMutationCompleted(entry.id);
+        succeeded++;
+        continue;
+      }
+
+      // PER-130: a queued form response the server refused for good — 409
+      // `request_closed` ("This check-in is no longer needed") or 422
+      // `invalid_answers` (back to the form, errors on its questions). It is
+      // resolved here and never retried.
+      if (
+        err instanceof SyncHttpError &&
+        applyFormResponseRefusal(
           storage,
           entry,
           err.status,
