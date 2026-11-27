@@ -1,6 +1,9 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import type { ConfigContext, ExpoConfig } from "expo/config";
 
-import getConfig from "../app.config";
+import getConfig, { resolveGoogleServicesFile } from "../app.config";
 
 /**
  * `app.config.ts` extends `app.json` via the `({ config })` dynamic-config
@@ -40,7 +43,15 @@ describe("app.config.ts", () => {
   const originalMetaAppId = process.env.EXPO_PUBLIC_META_APP_ID;
   const originalMetaClientToken = process.env.EXPO_PUBLIC_META_CLIENT_TOKEN;
 
+  // The Firebase files are not committed yet, so every config read here warns
+  // that Android push is off (covered in the PER-149 block below).
+  let warnSpy: jest.SpyInstance;
+  beforeEach(() => {
+    warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+  });
+
   afterEach(() => {
+    warnSpy.mockRestore();
     if (originalVariant === undefined) {
       delete process.env.APP_VARIANT;
     } else {
@@ -172,5 +183,129 @@ describe("app.config.ts", () => {
         ]),
       }),
     );
+  });
+});
+
+describe("app.config.ts: Firebase google-services.json per variant (PER-149)", () => {
+  const ENV_KEYS = [
+    "APP_VARIANT",
+    "GOOGLE_SERVICES_JSON",
+    "EAS_BUILD_PLATFORM",
+  ] as const;
+  const saved = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
+  let warn: jest.SpyInstance;
+  let tmpDir: string;
+
+  beforeEach(() => {
+    for (const k of ENV_KEYS) delete process.env[k];
+    warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "per149-"));
+  });
+
+  afterEach(() => {
+    warn.mockRestore();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    for (const k of ENV_KEYS) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+  });
+
+  const always = () => true;
+
+  it("maps each EAS variant to its committed file; play-testing shares production's", () => {
+    expect(resolveGoogleServicesFile("staging", {}, always)).toEqual({
+      file: "./firebase/google-services.staging.json",
+    });
+    expect(resolveGoogleServicesFile("production", {}, always)).toEqual({
+      file: "./firebase/google-services.production.json",
+    });
+    expect(resolveGoogleServicesFile("play-testing", {}, always)).toEqual({
+      file: "./firebase/google-services.production.json",
+    });
+  });
+
+  it("the development variant has no Firebase app and expects no file", () => {
+    expect(resolveGoogleServicesFile("development", {}, always)).toEqual({
+      file: undefined,
+    });
+  });
+
+  it("reports the missing committed file instead of pointing at it", () => {
+    const result = resolveGoogleServicesFile("staging", {}, () => false);
+    expect(result.file).toBeUndefined();
+    expect(result.missing).toContain(
+      "packages/mobile/firebase/google-services.staging.json",
+    );
+  });
+
+  it("GOOGLE_SERVICES_JSON (EAS file env var) overrides the committed file", () => {
+    const seen: string[] = [];
+    const result = resolveGoogleServicesFile(
+      "production",
+      { GOOGLE_SERVICES_JSON: " /eas/tmp/google-services.json " },
+      (file) => {
+        seen.push(file);
+        return true;
+      },
+    );
+    expect(result).toEqual({ file: "/eas/tmp/google-services.json" });
+    expect(seen).toEqual(["/eas/tmp/google-services.json"]);
+  });
+
+  it("reports a GOOGLE_SERVICES_JSON path that does not exist", () => {
+    const result = resolveGoogleServicesFile(
+      "staging",
+      { GOOGLE_SERVICES_JSON: "/nope.json" },
+      () => false,
+    );
+    expect(result.file).toBeUndefined();
+    expect(result.missing).toContain("/nope.json");
+  });
+
+  it("sets android.googleServicesFile when the file exists", () => {
+    const file = path.join(tmpDir, "google-services.json");
+    fs.writeFileSync(file, "{}");
+    process.env.APP_VARIANT = "staging";
+    process.env.GOOGLE_SERVICES_JSON = file;
+    const result = invoke();
+    expect(result.android?.googleServicesFile).toBe(file);
+    expect(result.android?.package).toBe(
+      "com.bradleyevans96.persistence.staging",
+    );
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("leaves googleServicesFile out and warns when the file is missing (iOS, dev and tests keep working)", () => {
+    process.env.APP_VARIANT = "staging";
+    process.env.GOOGLE_SERVICES_JSON = path.join(tmpDir, "absent.json");
+    const result = invoke();
+    expect(result.android).not.toHaveProperty("googleServicesFile");
+    expect(result.android?.adaptiveIcon?.backgroundColor).toBe("#0C111A");
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("docs/android-push-setup.md"),
+    );
+  });
+
+  it("fails an Android EAS build loudly when the file is missing", () => {
+    process.env.APP_VARIANT = "production";
+    process.env.GOOGLE_SERVICES_JSON = path.join(tmpDir, "absent.json");
+    process.env.EAS_BUILD_PLATFORM = "android";
+    expect(() => invoke()).toThrow(/Android push is off for this build/);
+  });
+
+  it("does not fail an iOS EAS build when the Android file is missing", () => {
+    process.env.APP_VARIANT = "production";
+    process.env.GOOGLE_SERVICES_JSON = path.join(tmpDir, "absent.json");
+    process.env.EAS_BUILD_PLATFORM = "ios";
+    expect(() => invoke()).not.toThrow();
+  });
+
+  it("an Android dev-variant EAS build needs no file", () => {
+    process.env.APP_VARIANT = "development";
+    process.env.EAS_BUILD_PLATFORM = "android";
+    const result = invoke();
+    expect(result.android).not.toHaveProperty("googleServicesFile");
+    expect(warn).not.toHaveBeenCalled();
   });
 });

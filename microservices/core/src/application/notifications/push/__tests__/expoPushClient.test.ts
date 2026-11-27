@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   sendExpoPushMessages,
   getExpoAccessToken,
+  isExpoPushToken,
   EXPO_PUSH_BATCH_SIZE,
   type ExpoPushMessage,
 } from "../expoPushClient";
@@ -21,6 +22,30 @@ function jsonResponse(body: unknown, ok = true, status = 200): Response {
 function msg(to: string): ExpoPushMessage {
   return { to, title: "T", body: "B" };
 }
+
+describe("isExpoPushToken (PER-149)", () => {
+  it.each([
+    "ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]",
+    "ExpoPushToken[xxxxxxxxxxxxxxxxxxxxxx]",
+    "3F2504E0-4F89-11D3-9A0C-0305E82C3301",
+    "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+  ])("accepts %s", (token) => {
+    expect(isExpoPushToken(token)).toBe(true);
+  });
+
+  it.each([
+    // Raw APNs device token (64 hex chars).
+    "a3f1c2d4e5b60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90",
+    // Raw FCM registration token.
+    "dGVzdC1mY20tdG9rZW4:APA91bH-example_FCM-registration-token",
+    "ExponentPushToken[abc",
+    "exponentpushtoken[abc]",
+    " ExponentPushToken[abc]",
+    "",
+  ])("rejects %j", (token) => {
+    expect(isExpoPushToken(token)).toBe(false);
+  });
+});
 
 describe("getExpoAccessToken", () => {
   const original = process.env.EXPO_ACCESS_TOKEN;
