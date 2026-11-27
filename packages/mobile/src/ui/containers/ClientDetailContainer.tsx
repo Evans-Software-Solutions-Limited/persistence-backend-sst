@@ -39,6 +39,7 @@ import {
 } from "@/ui/presenters/coachForms/ClientTabStrip";
 import { InDevelopment } from "@/ui/presenters/coachForms/kit";
 import { ClientCheckInsContainer } from "@/ui/containers/ClientCheckInsContainer";
+import { ClientNutritionContainer } from "@/ui/containers/coachMealPlans/ClientNutritionContainer";
 
 /** PER-129: placeholder tabs whose feature has its own ticket. */
 const TAB_TICKETS: Partial<Record<ClientTab, string>> = {
@@ -472,6 +473,12 @@ export function ClientDetailContainer() {
             clientId={id}
             clientName={detail.data?.client.name ?? name ?? null}
             refreshKey={tabRefreshKey}
+          />
+        ) : tab === "nutrition" ? (
+          <ClientNutritionContainer
+            key={`${id}-${tabRefreshKey}`}
+            clientId={id}
+            clientName={detail.data?.client.name ?? name ?? null}
           />
         ) : (
           <View paddingHorizontal={20}>

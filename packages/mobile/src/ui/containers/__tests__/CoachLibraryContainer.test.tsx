@@ -26,6 +26,18 @@ jest.mock("@/ui/containers/CoachLibraryHubContainer", () => {
     ),
   };
 });
+// PER-135: Library → Meals has its own suite (coachMealPlans.test.tsx).
+jest.mock(
+  "@/ui/containers/coachMealPlans/CoachMealPlansLibraryContainer",
+  () => {
+    const { Text } = jest.requireActual("react-native");
+    return {
+      CoachMealPlansLibraryContainer: () => (
+        <Text testID="meal-plans-library">meals</Text>
+      ),
+    };
+  },
+);
 
 beforeEach(() => {
   mockPush.mockClear();
@@ -119,13 +131,15 @@ describe("CoachLibraryContainer (K shell Library tab, C10g)", () => {
     });
   });
 
-  it("Programmes is the existing hub; the others are In development", () => {
+  it("Programmes is the existing hub; Meals is the meal-plan library (PER-135); the others are In development", () => {
     const h = setupCoachForms();
     const view = h.render(<CoachLibraryContainer />);
     fireEvent.press(view.getByTestId("coach-library-segment-programmes"));
     expect(view.getByTestId("programmes-hub").props.children).toBe("embedded");
     expect(view.queryByTestId("coach-library-new-form")).toBeNull();
-    for (const s of ["workouts", "meals", "resources"]) {
+    fireEvent.press(view.getByTestId("coach-library-segment-meals"));
+    expect(view.getByTestId("meal-plans-library")).toBeTruthy();
+    for (const s of ["workouts", "resources"]) {
       fireEvent.press(view.getByTestId(`coach-library-segment-${s}`));
       expect(view.getByTestId(`coach-library-placeholder-${s}`)).toBeTruthy();
     }

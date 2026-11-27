@@ -28,6 +28,15 @@ import type {
   SettingsPatch,
   SetupItem,
   SetupSection,
+  ClientAdherence,
+  ClientMealPlans,
+  CoachRecipe,
+  CoachSavedMeal,
+  FoodResult,
+  LibraryPlan,
+  PlanAssignment,
+  PlanInput,
+  RecipeShare,
 } from "./types";
 
 /**
@@ -471,6 +480,104 @@ export const coachApi = {
           { statementVersion, statementTextHash },
           { "Idempotency-Key": idempotencyKey },
         ),
+      )
+    ).data,
+
+  // ─── PER-135: meal-plan library (C1) and the Nutrition tab (C3.2) ─────────
+
+  libraryPlans: async () =>
+    (
+      await coachFetch<Data<{ plans: LibraryPlan[] }>>(
+        "/trainers/me/meal-plans",
+      )
+    ).data.plans,
+
+  createPlan: async (input: PlanInput, idempotencyKey: string) =>
+    (
+      await coachFetch<Data<LibraryPlan>>(
+        "/trainers/me/meal-plans",
+        json("POST", input, { "Idempotency-Key": idempotencyKey }),
+      )
+    ).data,
+
+  replacePlan: async (id: string, input: PlanInput, expectedRevision: number) =>
+    (
+      await coachFetch<Data<LibraryPlan>>(
+        `/trainers/me/meal-plans/${encodeURIComponent(id)}`,
+        json("PUT", { ...input, expectedRevision }),
+      )
+    ).data,
+
+  archivePlan: async (id: string) => {
+    await coachFetch<null>(
+      `/trainers/me/meal-plans/${encodeURIComponent(id)}`,
+      json("DELETE"),
+    );
+  },
+
+  clientMealPlans: async (clientId: string) =>
+    (
+      await coachFetch<Data<ClientMealPlans>>(
+        `/trainers/me/clients/${encodeURIComponent(clientId)}/meal-plans`,
+      )
+    ).data,
+
+  assignPlan: async (
+    clientId: string,
+    planId: string,
+    note: string | null,
+    idempotencyKey: string,
+  ) =>
+    (
+      await coachFetch<Data<PlanAssignment>>(
+        `/trainers/me/clients/${encodeURIComponent(clientId)}/meal-plans`,
+        json("POST", { planId, note }, { "Idempotency-Key": idempotencyKey }),
+      )
+    ).data,
+
+  patchAssignmentNote: async (
+    clientId: string,
+    assignmentId: string,
+    note: string | null,
+  ) =>
+    (
+      await coachFetch<Data<PlanAssignment>>(
+        `/trainers/me/clients/${encodeURIComponent(clientId)}/meal-plans/${encodeURIComponent(assignmentId)}`,
+        json("PATCH", { note }),
+      )
+    ).data,
+
+  removeAssignment: async (clientId: string, assignmentId: string) => {
+    await coachFetch<null>(
+      `/trainers/me/clients/${encodeURIComponent(clientId)}/meal-plans/${encodeURIComponent(assignmentId)}`,
+      json("DELETE"),
+    );
+  },
+
+  shareRecipe: async (clientId: string, recipeId: string) =>
+    (
+      await coachFetch<Data<RecipeShare>>(
+        `/trainers/me/clients/${encodeURIComponent(clientId)}/recipes/${encodeURIComponent(recipeId)}/share`,
+        json("POST"),
+      )
+    ).data,
+
+  recipes: async () => (await coachFetch<Data<CoachRecipe[]>>("/recipes")).data,
+
+  savedMeals: async () =>
+    (await coachFetch<Data<CoachSavedMeal[]>>("/meals")).data,
+
+  searchFoods: async (query: string) =>
+    (
+      await coachFetch<Data<FoodResult[]>>(
+        `/foods?${new URLSearchParams({ query })}`,
+      )
+    ).data,
+
+  clientAdherence: async (clientId: string) =>
+    (
+      await coachFetch<Data<ClientAdherence>>(
+        `/trainers/me/clients/${encodeURIComponent(clientId)}/adherence?window=7d`,
       )
     ).data,
 };

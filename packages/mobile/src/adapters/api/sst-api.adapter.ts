@@ -272,6 +272,11 @@ import type {
   ProgressPhotosResponse,
   ProgressPhotoUpload,
 } from "@/domain/models/progressPhotos";
+import type {
+  CoachCalorieAdherence,
+  CoachClientMealPlans,
+  CoachRecipeShare,
+} from "@/domain/models/coachMealPlans";
 
 type ApiSuccessResponse<T> = { data: T };
 type ApiErrorResponse = { error: string };
@@ -3326,6 +3331,88 @@ export class SSTApiAdapter implements ApiPort {
       body: input,
       idempotencyKey,
     });
+  }
+
+  // -- PER-135: coach meal plans on a client --
+
+  async getCoachClientMealPlans(
+    clientId: string,
+  ): Promise<Result<CoachClientMealPlans, ApiError>> {
+    return this.requestEnvelope<CoachClientMealPlans>(
+      `/trainers/me/clients/${encodeURIComponent(clientId)}/meal-plans`,
+    );
+  }
+
+  async assignCoachMealPlan(
+    clientId: string,
+    planId: string,
+    note: string | null,
+    idempotencyKey: string,
+  ): Promise<Result<void, ApiError>> {
+    const result = await this.request<unknown>(
+      `/trainers/me/clients/${encodeURIComponent(clientId)}/meal-plans`,
+      { method: "POST", body: { planId, note }, idempotencyKey },
+    );
+    return result.ok ? ok(undefined) : result;
+  }
+
+  async updateCoachPlanNote(
+    clientId: string,
+    assignmentId: string,
+    note: string | null,
+  ): Promise<Result<void, ApiError>> {
+    const result = await this.request<unknown>(
+      `/trainers/me/clients/${encodeURIComponent(clientId)}/meal-plans/${encodeURIComponent(assignmentId)}`,
+      { method: "PATCH", body: { note } },
+    );
+    return result.ok ? ok(undefined) : result;
+  }
+
+  async removeCoachPlanAssignment(
+    clientId: string,
+    assignmentId: string,
+  ): Promise<Result<void, ApiError>> {
+    const result = await this.request<unknown>(
+      `/trainers/me/clients/${encodeURIComponent(clientId)}/meal-plans/${encodeURIComponent(assignmentId)}`,
+      { method: "DELETE" },
+    );
+    return result.ok ? ok(undefined) : result;
+  }
+
+  async shareCoachRecipe(
+    clientId: string,
+    recipeId: string,
+  ): Promise<Result<CoachRecipeShare, ApiError>> {
+    const result = await this.requestEnvelope<CoachRecipeShare>(
+      `/trainers/me/clients/${encodeURIComponent(clientId)}/recipes/${encodeURIComponent(recipeId)}/share`,
+      { method: "POST" },
+    );
+    if (!result.ok) return result;
+    return ok({
+      recipeId: result.value.recipeId,
+      created: !!result.value.created,
+    });
+  }
+
+  async getCoachClientCalorieAdherence(
+    clientId: string,
+  ): Promise<Result<CoachCalorieAdherence | null, ApiError>> {
+    const result = await this.requestEnvelope<{
+      calories?: CoachCalorieAdherence;
+    }>(`/trainers/me/clients/${encodeURIComponent(clientId)}/adherence`, {
+      params: { window: "7d" },
+    });
+    if (!result.ok) return result;
+    const c = result.value.calories;
+    return ok(
+      c
+        ? {
+            daysOnTarget: c.daysOnTarget,
+            daysCounted: c.daysCounted,
+            daysNotLogged: c.daysNotLogged,
+          }
+        : null,
+    );
   }
 }
 

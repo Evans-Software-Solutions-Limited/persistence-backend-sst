@@ -1,5 +1,44 @@
 # Project memory · persistence-backend-sst
 
+### 2026-11-27 — APP-D4: coach meal-plan library, edit plan, send to client, Nutrition tab ([PER-135](https://linear.app/evans-software-solutions/issue/PER-135); branch `claude/per-135-coach-meal-plans`)
+
+Web + iPhone, over the merged PER-118 routes (and PER-114's adherence read).
+No backend route, migration, native change or local-DB schema change.
+
+- **Shared limits:** `MEAL_PLAN_LIMITS` gains `storedNameMax` 80,
+  `storedMealNameMax` 40 and `noteMax` 500 (what the API already enforced
+  after trimming); pinned in `form-limits/src/index.test.ts`. Core untouched.
+- **Web** (`packages/web/src/coach/nutrition/`, `lib/mealPlans.ts`,
+  `lib/planForm.ts`): Library → Meal plans (C2: Plans / Recipes / Meals,
+  delete, send, share a recipe), editor at `/coach/library/meal-plans/new`
+  and `/:planId/edit[?client=]` (C3: wheel + Target · Planned · To plan vs
+  the client's own target, portion steppers ×0.25, add / rename / remove
+  meals, full replace with `expectedRevision`, 409 → server copy + notice),
+  Add to a meal dialog (C4: foods search, your recipes, saved meals), Send /
+  Change the note (C5, `Idempotency-Key` per dialog), client Nutrition tab
+  `/coach/clients/:id/nutrition` (C3.2: target, plans with status + usage,
+  ⋯ Edit / Change the note / Remove, calorie line from PER-114, `?send=`
+  after building a plan for the client). `nutrition` appended to
+  `WEB_TABS`; Library sub-nav links Meal plans. Offline: banners, edits kept
+  on screen, writes wait (no web queue, same as the forms editor).
+- **iPhone** (`src/ui/{containers,presenters}/coachMealPlans/`): the coach
+  library IS the coach's own plans, so it reuses the PER-133 plans cache and
+  queue (`useNutritionPlans` create / save / remove, revision-checked, 409
+  conflict notice) and the plan draft + `fuel/plan-add` page for C4. Library
+  → Meals segment, editor route `/(app)/coach-meal-plans/edit`, client
+  Nutrition tab (C3.2b) with the plan-opened sheet (C3.2c), send / note /
+  remove / share sheets. Port methods appended: `getCoachClientMealPlans`,
+  `assignCoachMealPlan`, `updateCoachPlanNote`, `removeCoachPlanAssignment`,
+  `shareCoachRecipe`, `getCoachClientCalorieAdherence` (online only; last
+  read stays on screen offline, no cache table).
+- **Differences from the canvas** (17 Nov decisions win): no per-plan
+  targets ("Days without a plan" card is the client's target card); no
+  "can't receive plans yet" state; no "Send a nudge" (no backend); the C3.2
+  per-day "What Sam ate" list is PER-127's, so only the calorie summary line
+  shows here; library rows don't say "With N clients" (no API field); no
+  "Import a recipe from a link" on the web library; pronouns use the name.
+- **Not verified:** no device run, nothing against staging.
+
 ### 2026-11-27 — APP-D3: athlete Mealprint redesign N15–N27 ([PER-134](https://linear.app/evans-software-solutions/issue/PER-134); branch `claude/per-134-mealprint-redesign`)
 
 Mobile only. Uses BE-D3 (PER-119, #562). No backend, migration, native or

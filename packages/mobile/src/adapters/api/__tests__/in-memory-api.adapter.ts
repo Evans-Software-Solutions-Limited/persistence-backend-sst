@@ -237,6 +237,11 @@ import type {
   ProgressPhotosResponse,
   ProgressPhotoUpload,
 } from "@/domain/models/progressPhotos";
+import type {
+  CoachCalorieAdherence,
+  CoachClientMealPlans,
+  CoachRecipeShare,
+} from "@/domain/models/coachMealPlans";
 
 /**
  * In-memory API adapter for testing.
@@ -4215,5 +4220,95 @@ export class InMemoryApiAdapter implements ApiPort {
       totals: { kcal: 0, proteinG: 0, carbsG: 0, fatG: 0 },
     };
     return ok(plan);
+  }
+
+  // -- PER-135: coach meal plans on a client --
+
+  coachClientMealPlans: Record<string, CoachClientMealPlans> = {};
+  coachCalorieAdherence: Record<string, CoachCalorieAdherence | null> = {};
+  /** Every coach meal-plan call, e.g. `assign:c1:p1:Note:key`. */
+  coachMealPlanCalls: string[] = [];
+  /** Queued failures, consumed one per call of that kind. */
+  coachMealPlanFailures: {
+    read: ApiError[];
+    assign: ApiError[];
+    note: ApiError[];
+    remove: ApiError[];
+    share: ApiError[];
+  } = { read: [], assign: [], note: [], remove: [], share: [] };
+  private coachSharedRecipes = new Set<string>();
+
+  async getCoachClientMealPlans(
+    clientId: string,
+  ): Promise<Result<CoachClientMealPlans, ApiError>> {
+    this.coachMealPlanCalls.push(`read:${clientId}`);
+    const failure = this.coachMealPlanFailures.read.shift();
+    if (failure) return fail(failure);
+    const value = this.coachClientMealPlans[clientId] ?? {
+      assignments: [],
+      target: null,
+      asOf: "2026-11-26T10:00:00.000Z",
+    };
+    return ok(JSON.parse(JSON.stringify(value)) as CoachClientMealPlans);
+  }
+
+  async assignCoachMealPlan(
+    clientId: string,
+    planId: string,
+    note: string | null,
+    idempotencyKey: string,
+  ): Promise<Result<void, ApiError>> {
+    this.coachMealPlanCalls.push(
+      `assign:${clientId}:${planId}:${note ?? ""}:${idempotencyKey}`,
+    );
+    const failure = this.coachMealPlanFailures.assign.shift();
+    return failure ? fail(failure) : ok(undefined);
+  }
+
+  async updateCoachPlanNote(
+    clientId: string,
+    assignmentId: string,
+    note: string | null,
+  ): Promise<Result<void, ApiError>> {
+    this.coachMealPlanCalls.push(
+      `note:${clientId}:${assignmentId}:${note ?? ""}`,
+    );
+    const failure = this.coachMealPlanFailures.note.shift();
+    return failure ? fail(failure) : ok(undefined);
+  }
+
+  async removeCoachPlanAssignment(
+    clientId: string,
+    assignmentId: string,
+  ): Promise<Result<void, ApiError>> {
+    this.coachMealPlanCalls.push(`remove:${clientId}:${assignmentId}`);
+    const failure = this.coachMealPlanFailures.remove.shift();
+    if (failure) return fail(failure);
+    const current = this.coachClientMealPlans[clientId];
+    if (current) {
+      current.assignments = current.assignments.filter(
+        (a) => a.id !== assignmentId,
+      );
+    }
+    return ok(undefined);
+  }
+
+  async shareCoachRecipe(
+    clientId: string,
+    recipeId: string,
+  ): Promise<Result<CoachRecipeShare, ApiError>> {
+    this.coachMealPlanCalls.push(`share:${clientId}:${recipeId}`);
+    const failure = this.coachMealPlanFailures.share.shift();
+    if (failure) return fail(failure);
+    const key = `${clientId}:${recipeId}`;
+    const created = !this.coachSharedRecipes.has(key);
+    this.coachSharedRecipes.add(key);
+    return ok({ recipeId: `copy-${recipeId}`, created });
+  }
+
+  async getCoachClientCalorieAdherence(
+    clientId: string,
+  ): Promise<Result<CoachCalorieAdherence | null, ApiError>> {
+    return ok(this.coachCalorieAdherence[clientId] ?? null);
   }
 }

@@ -78,10 +78,20 @@ export const USER_MEAL_LIMITS = {
   maxMeals: 30,
 } as const;
 
-/** Meal plans (N5, N29–N34): plan create/update routes. */
+/**
+ * Meal plans (N5, N29–N34, coach C1): plan create/update routes.
+ * `nameMax` / `mealNameMax` are the route schema's raw-length guards; the
+ * `stored…` values are what `resolvePlanInput` keeps after trimming (longer
+ * → 400 `invalid_plan_name` / `invalid_meal_name`). `noteMax` is a coach's
+ * note on a sent plan, which the server trims to this length
+ * (`assignments.ts` `MAX_NOTE_LENGTH`).
+ */
 export const MEAL_PLAN_LIMITS = {
   nameMax: 200,
   mealNameMax: 80,
+  storedNameMax: 80,
+  storedMealNameMax: 40,
+  noteMax: 500,
 } as const;
 
 /**

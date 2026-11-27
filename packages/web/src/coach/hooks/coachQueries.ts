@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, type QueryClient } from "@tanstack/react-query";
 import { coachApi, type CoachApi } from "../api/coachApi";
 
 /**
@@ -35,6 +35,15 @@ export const coachKeys = {
   responses: (clientId: string) => ["coach", "responses", clientId] as const,
   settings: (clientId: string) => ["coach", "settings", clientId] as const,
   declaration: ["coach", "declaration"] as const,
+  // PER-135: the full meal-plan library, a client's plans, recipes, meals.
+  libraryPlans: ["coach", "library-plans"] as const,
+  clientMealPlans: (clientId: string) =>
+    ["coach", "client-meal-plans", clientId] as const,
+  clientAdherence: (clientId: string) =>
+    ["coach", "client-adherence", clientId] as const,
+  recipes: ["coach", "recipes"] as const,
+  savedMeals: ["coach", "saved-meals"] as const,
+  foodSearch: (query: string) => ["coach", "food-search", query] as const,
 };
 
 /** `navigator.onLine`, kept live by the browser's online/offline events. */
@@ -111,4 +120,15 @@ export function useLibrary() {
     schedules: schedules.data,
     plans: plans.data,
   };
+}
+
+/** PER-135: every query that shows the coach's plans, refreshed after a change. */
+export async function refreshMealPlans(queryClient: QueryClient) {
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: coachKeys.libraryPlans }),
+    queryClient.invalidateQueries({ queryKey: coachKeys.mealPlans }),
+    queryClient.invalidateQueries({
+      queryKey: ["coach", "client-meal-plans"],
+    }),
+  ]);
 }

@@ -6,6 +6,8 @@ import { FormEditorContainer } from "./forms/FormEditorContainer";
 import { FormsLibraryContainer } from "./forms/FormsLibraryContainer";
 import { InviteContainer } from "./invite/InviteContainer";
 import { InvitedClientContainer } from "./invited/InvitedClientContainer";
+import { MealPlansLibraryContainer } from "./nutrition/MealPlansLibraryContainer";
+import { PlanEditorContainer } from "./nutrition/PlanEditorContainer";
 import { SetupContainer } from "./setup/SetupContainer";
 import { CoachLayout } from "./shell/CoachLayout";
 import { CoachCallback, CoachSignIn } from "./shell/CoachSignIn";
@@ -65,6 +67,19 @@ export default function CoachApp() {
         <Route
           path="library/forms/:formId/:action?"
           element={<FormsLibraryContainer />}
+        />
+        {/* PER-135: Library → Meal plans (C1). */}
+        <Route
+          path="library/meal-plans"
+          element={<MealPlansLibraryContainer />}
+        />
+        <Route
+          path="library/meal-plans/new"
+          element={<PlanEditorContainer />}
+        />
+        <Route
+          path="library/meal-plans/:planId/edit"
+          element={<PlanEditorContainer key="edit" />}
         />
         <Route path="*" element={<Navigate to="clients" replace />} />
       </Route>
