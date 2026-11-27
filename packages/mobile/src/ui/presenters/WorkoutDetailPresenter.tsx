@@ -27,6 +27,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LoadoutEntryCard } from "@/ui/presenters/loadout/LoadoutEntryCard";
 import { SavedSetupsSection } from "@/ui/presenters/loadout/SavedSetupsSection";
+import { setCountLabel, setRepsOf } from "@/domain/services/setTargets.service";
 
 /**
  * Pure presenter for the workout-detail SCREEN, ported 1:1 from the v3
@@ -146,6 +147,11 @@ function buildPlan(exercises: readonly WorkoutExercise[]): PlanBlock[] {
 }
 
 function repsLabel(ex: WorkoutExercise): string {
+  // Reps per set (PER-139): "3 sets · 10, 8, 8 reps". Without them the
+  // original "3 sets × 8–10 reps" line is unchanged.
+  const perSet = setRepsOf(ex);
+  if (perSet)
+    return `${setCountLabel(perSet.length)} · ${perSet.join(", ")} reps`;
   const sets = ex.targetSets ?? 0;
   const reps =
     ex.targetRepsMin === ex.targetRepsMax

@@ -63,6 +63,36 @@ describe("SessionExerciseCard", () => {
     expect(getByTestId("set-logger-set-1")).toBeTruthy();
   });
 
+  it("captions reps per set (PER-139): 3 sets · 10, 8, 8 reps", () => {
+    const { getByText, rerender, queryByText } = renderWithTheme(
+      <SessionExerciseCard
+        exercise={buildExercise()}
+        previousSetsBySetNumber={{}}
+        restSeconds={60}
+        targetSets={3}
+        targetRepsMin={8}
+        targetRepsMax={10}
+        targetSetReps={[10, 8, 8]}
+        {...baseHandlers}
+      />,
+    );
+    expect(getByText("3 sets · 10, 8, 8 reps")).toBeTruthy();
+    // Without per-set targets the range caption is unchanged.
+    rerender(
+      <SessionExerciseCard
+        exercise={buildExercise()}
+        previousSetsBySetNumber={{}}
+        restSeconds={60}
+        targetSets={3}
+        targetRepsMin={8}
+        targetRepsMax={10}
+        {...baseHandlers}
+      />,
+    );
+    expect(getByText("3 sets × 8-10 reps")).toBeTruthy();
+    expect(queryByText(/10, 8, 8/)).toBeNull();
+  });
+
   it("renders the column-header strip (SET / PREV / REPS / KG)", () => {
     const { getByText } = renderWithTheme(
       <SessionExerciseCard

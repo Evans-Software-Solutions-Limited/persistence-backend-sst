@@ -84,6 +84,23 @@ describe("ActiveSupersetRow", () => {
     expect(getByText("SUPERSET OF 1 SET - 8-12 REPS")).toBeTruthy();
   });
 
+  it("shows the lead's reps per set when it has them (PER-139)", () => {
+    const props = {
+      ...baseProps,
+      templateByExercise: {
+        ...baseProps.templateByExercise,
+        "se-A": {
+          restSeconds: 90,
+          targetRepsMin: 8,
+          targetRepsMax: 10,
+          targetSetReps: [10, 8, 8],
+        },
+      },
+    };
+    const { getByText } = renderWithTheme(<ActiveSupersetRow {...props} />);
+    expect(getByText("SUPERSET OF 1 SET - 10, 8, 8 REPS")).toBeTruthy();
+  });
+
   it("pluralises sets correctly when peers carry more than one set", () => {
     const props = {
       ...baseProps,

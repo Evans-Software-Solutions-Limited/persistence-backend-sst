@@ -101,6 +101,33 @@ describe("buildTemplateMap", () => {
     });
   });
 
+  it("threads reps per set as targetSetReps (PER-139)", () => {
+    const workout = buildWorkoutWith({
+      exercises: [
+        {
+          id: "we-1",
+          exerciseId: "ex-bench",
+          sortOrder: 0,
+          supersetGroup: null,
+          targetSets: 3,
+          targetRepsMin: 8,
+          targetRepsMax: 10,
+          targetDurationSeconds: null,
+          restSeconds: 75,
+          notes: null,
+          setTargets: [{ reps: 10 }, { reps: 8 }, { reps: 8 }],
+          exercise: null,
+        },
+      ],
+    });
+    const result = buildTemplateMap({
+      sessionExercises: [buildSessionExercise()],
+      workout,
+      defaultRestSeconds: 90,
+    });
+    expect(result["se-1"]?.targetSetReps).toEqual([10, 8, 8]);
+  });
+
   it("coerces null targetSets / null restSeconds → undefined / defaultRestSeconds", () => {
     const workout = buildWorkoutWith({
       exercises: [

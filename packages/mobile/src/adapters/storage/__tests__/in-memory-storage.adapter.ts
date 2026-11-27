@@ -2222,6 +2222,22 @@ export class InMemoryStorageAdapter implements StoragePort {
   deletePendingProgressPhotoSet(id: string): void {
     this.pendingProgressPhotos.delete(id);
   }
+
+  // -- PER-139 (APP-G1): last time's weights in the set editor --
+
+  getRecentSetRows(
+    userId: string,
+    exerciseIds: readonly string[],
+  ): RecentSetEntry[] {
+    const wanted = new Set(exerciseIds);
+    return (this.recentSets.get(userId) ?? [])
+      .filter((row) => wanted.has(row.exerciseId))
+      .sort(
+        (a, b) =>
+          a.exerciseId.localeCompare(b.exerciseId) || a.setNumber - b.setNumber,
+      )
+      .map((row) => ({ ...row }));
+  }
 }
 
 /**
