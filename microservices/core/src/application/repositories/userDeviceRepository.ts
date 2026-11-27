@@ -217,4 +217,30 @@ export class UserDeviceRepository {
         ),
       );
   }
+
+  /**
+   * Delete the caller's row for one token. Used by `POST /devices/register`
+   * when a 1.2.0 phone sends a raw APNs/FCM token (PER-149): the token is
+   * never stored, and any row for it that already exists for this user is
+   * removed. That covers rows written by the old Lambda in the deploy window
+   * after the clean-up migration ran (`supabase db push` runs before
+   * `sst deploy`), so they go away the next time that phone registers.
+   *
+   * Scoped to `(user_id, device_token)`, so it never touches another user's
+   * row. Idempotent: an absent row is a no-op.
+   */
+  async deleteForUserAndToken(
+    userId: string,
+    deviceToken: string,
+  ): Promise<void> {
+    const db = getDb();
+    await db
+      .delete(userDevices)
+      .where(
+        and(
+          eq(userDevices.userId, userId),
+          eq(userDevices.deviceToken, deviceToken),
+        ),
+      );
+  }
 }
