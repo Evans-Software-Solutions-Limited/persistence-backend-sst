@@ -489,11 +489,15 @@ describe("MealprintPreferencesContainer — caps and the signed-out path", () =>
     // surface while this screen is open does: `seededRef` is already armed, so
     // `commit` proceeds and `mutate` answers null. Navigating back then would claim
     // a save that never happened.
-    let emit: ((s: AuthSession | null) => void) | null = null;
+    // Every subscriber hears the sign-out (the screen also reads Your meals,
+    // PER-134, which has its own auth subscription).
+    const listeners: ((s: AuthSession | null) => void)[] = [];
+    const emit = (session: AuthSession | null) =>
+      listeners.forEach((cb) => cb(session));
     (
       adapters.auth as unknown as { onAuthStateChange: jest.Mock }
     ).onAuthStateChange = jest.fn((cb: (s: AuthSession | null) => void) => {
-      emit = cb;
+      listeners.push(cb);
       cb(SESSION);
       return () => {};
     });
@@ -508,7 +512,7 @@ describe("MealprintPreferencesContainer — caps and the signed-out path", () =>
     expect(mockProbe.last?.loadFailed).toBe(false);
 
     await act(async () => {
-      emit?.(null);
+      emit(null);
     });
     await act(async () => {
       mockProbe.last!.onSave();

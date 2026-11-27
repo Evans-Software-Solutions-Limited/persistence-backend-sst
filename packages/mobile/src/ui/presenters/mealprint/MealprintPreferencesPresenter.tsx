@@ -57,15 +57,10 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text, View } from "@tamagui/core";
 
-import { Btn, Card, HeaderBar, Segmented } from "@/ui/components/foundation";
+import { Btn, HeaderBar } from "@/ui/components/foundation";
+import { EffortRadio } from "./MealprintHomePresenter";
 import { toneHex } from "@/ui/components/foundation/tones";
-import {
-  IconAlert,
-  IconCheck,
-  IconMinus,
-  IconPlus,
-  IconX,
-} from "@/ui/components/icons";
+import { IconAlert, IconCheck, IconX } from "@/ui/components/icons";
 import { PLogoDrawLoader } from "@/ui/components/PLogoDrawLoader";
 import {
   ALLERGEN_LABELS,
@@ -73,14 +68,10 @@ import {
   DIETARY_PATTERNS,
   DIETARY_PATTERN_LABELS,
   EFFORT_LEVELS,
-  EFFORT_LEVEL_BLURBS,
-  EFFORT_LEVEL_LABELS,
   LABEL_CHECK_COPY,
   MAX_FREE_TEXT_ITEMS,
   MAX_FREE_TEXT_LENGTH,
-  MAX_MEALS_PER_DAY,
   MEDICAL_SCOPE_COPY,
-  MIN_MEALS_PER_DAY,
   partialEnforcementCopy,
   type AllergenKey,
   type DietaryPattern,
@@ -142,8 +133,19 @@ export type MealprintPreferencesProps = {
   readonly onAddLikedFood: () => void;
   readonly onRemoveLikedFood: (value: string) => void;
 
+  /**
+   * Kept so the container can save it unchanged. PER-134 (canvas N25): the
+   * screen shows Your meals instead of a meals-a-day stepper, because a
+   * Mealprint day now uses Your meals; meals a day is only the fallback when
+   * someone has fewer than two meals.
+   */
   readonly mealsPerDay: number;
   readonly onMealsPerDayChange: (value: number) => void;
+  /** PER-134: "Breakfast, Lunch, Dinner, Snacks" (Your meals). */
+  readonly mealsText: string;
+  readonly mealCount: number;
+  /** Opens the Your meals sheet. */
+  readonly onEditMeals: () => void;
 
   readonly effortLevel: EffortLevel;
   readonly onEffortLevelChange: (value: EffortLevel) => void;
@@ -190,8 +192,9 @@ export function MealprintPreferencesPresenter({
   onLikedFoodDraftChange,
   onAddLikedFood,
   onRemoveLikedFood,
-  mealsPerDay,
-  onMealsPerDayChange,
+  mealsText,
+  mealCount,
+  onEditMeals,
   effortLevel,
   onEffortLevelChange,
   onSave,
@@ -450,6 +453,12 @@ export function MealprintPreferencesPresenter({
             </View>
           </Section>
 
+          {/* AC 1.5 / locked decision 10 + amendment 2026-08 § C. Rendered
+            unconditionally in BOTH modes, right under the allergens (canvas
+            N24). See the file docstring for why this diverges from AC 1.2's
+            literal "adding a chip shows it" wording. */}
+          <PersistentDisclaimer />
+
           {/* ── Dislikes ────────────────────────────────────────────────── */}
           <FreeTextSection
             title="Foods you'd rather not eat"
@@ -480,49 +489,45 @@ export function MealprintPreferencesPresenter({
             idPrefix="mealprint-like"
           />
 
-          {/* ── Meals per day ───────────────────────────────────────────── */}
-          <Section
-            title="Meals a day"
-            sub={`${MIN_MEALS_PER_DAY}–${MAX_MEALS_PER_DAY}`}
-            testID="mealprint-preferences-meals"
-          >
-            <Card pad={14} radius={12}>
+          {/* ── Meals (PER-134, canvas N25): Your meals ─────────────────── */}
+          <Section title="Meals" testID="mealprint-preferences-meals">
+            <Pressable
+              onPress={onEditMeals}
+              accessibilityRole="button"
+              accessibilityLabel={`Uses your ${mealCount} meals: ${mealsText}. Edit`}
+              testID="mealprint-meals-edit"
+            >
               <View
                 flexDirection="row"
                 alignItems="center"
-                justifyContent="space-between"
+                gap={12}
+                paddingBottom={10}
+                borderBottomWidth={1}
+                borderColor="$border"
               >
-                <StepperButton
-                  kind="dec"
-                  disabled={mealsPerDay <= MIN_MEALS_PER_DAY}
-                  onPress={() =>
-                    onMealsPerDayChange(
-                      Math.max(MIN_MEALS_PER_DAY, mealsPerDay - 1),
-                    )
-                  }
-                  testID="mealprint-meals-dec"
-                />
+                <View flex={1} gap={2}>
+                  <Text
+                    fontFamily="$body"
+                    fontSize={15}
+                    fontWeight="500"
+                    color="$text"
+                  >
+                    {`Uses your ${mealCount} ${mealCount === 1 ? "meal" : "meals"}`}
+                  </Text>
+                  <Text fontFamily="$body" fontSize={12} color="$text3">
+                    {mealsText}
+                  </Text>
+                </View>
                 <Text
-                  fontFamily="$mono"
+                  fontFamily="$body"
+                  fontSize={13}
                   fontWeight="600"
-                  fontSize={28}
-                  color="$text"
-                  testID="mealprint-meals-value"
+                  color="$primary"
                 >
-                  {mealsPerDay}
+                  Edit
                 </Text>
-                <StepperButton
-                  kind="inc"
-                  disabled={mealsPerDay >= MAX_MEALS_PER_DAY}
-                  onPress={() =>
-                    onMealsPerDayChange(
-                      Math.min(MAX_MEALS_PER_DAY, mealsPerDay + 1),
-                    )
-                  }
-                  testID="mealprint-meals-inc"
-                />
               </View>
-            </Card>
+            </Pressable>
           </Section>
 
           {/* ── Effort ──────────────────────────────────────────────────── */}
@@ -530,30 +535,23 @@ export function MealprintPreferencesPresenter({
             title="How much cooking"
             testID="mealprint-preferences-effort"
           >
-            <Segmented
+            {/* PER-134 (canvas N25): a radio list with each level's line. */}
+            <View
+              accessibilityRole="radiogroup"
+              accessibilityLabel="How much cooking"
               testID="mealprint-effort"
-              accent="gold"
-              full
-              options={EFFORT_LEVELS.map((level) => ({
-                value: level,
-                label: EFFORT_LEVEL_LABELS[level],
-              }))}
-              value={effortLevel}
-              onChange={(value) => onEffortLevelChange(value as EffortLevel)}
-            />
-            <Text fontFamily="$body" fontSize={12} color="$text3">
-              {EFFORT_LEVEL_BLURBS[effortLevel]}
-            </Text>
+            >
+              {EFFORT_LEVELS.map((level) => (
+                <EffortRadio
+                  key={level}
+                  level={level}
+                  selected={effortLevel === level}
+                  onPress={() => onEffortLevelChange(level)}
+                  testID={`mealprint-effort-option-${level}`}
+                />
+              ))}
+            </View>
           </Section>
-
-          {/* AC 1.5 / locked decision 10 + amendment 2026-08 § C. Rendered
-            unconditionally in BOTH modes — the AC asks for the wizard footer,
-            and a disclaimer that vanishes the moment the screen becomes an
-            editor, or the moment no allergen chip is active, would be a
-            strange place to stop saying either line. See the file docstring
-            for why this diverges from AC 1.2's literal "adding a chip shows
-            it" wording. */}
-          <PersistentDisclaimer />
         </ScrollView>
 
         {/* ⚠ PINNED, not the last row of the scroll. This form is seven sections
@@ -979,46 +977,5 @@ function FreeTextSection({
         </Text>
       ) : null}
     </Section>
-  );
-}
-
-function StepperButton({
-  kind,
-  disabled,
-  onPress,
-  testID,
-}: {
-  kind: "inc" | "dec";
-  disabled: boolean;
-  onPress: () => void;
-  testID: string;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={disabled}
-      testID={testID}
-      accessibilityRole="button"
-      accessibilityLabel={kind === "inc" ? "One more meal" : "One fewer meal"}
-      accessibilityState={{ disabled }}
-      style={{ opacity: disabled ? 0.35 : 1 }}
-    >
-      <View
-        width={44}
-        height={44}
-        borderRadius={12}
-        backgroundColor="$surface3"
-        borderWidth={1}
-        borderColor="$border2"
-        alignItems="center"
-        justifyContent="center"
-      >
-        {kind === "inc" ? (
-          <IconPlus size={18} color={PRIMARY.base} />
-        ) : (
-          <IconMinus size={18} color={PRIMARY.base} />
-        )}
-      </View>
-    </Pressable>
   );
 }
