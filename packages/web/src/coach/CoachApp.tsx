@@ -10,6 +10,9 @@ import { SetupContainer } from "./setup/SetupContainer";
 import { CoachLayout } from "./shell/CoachLayout";
 import { CoachCallback, CoachSignIn } from "./shell/CoachSignIn";
 import { WhoContainer } from "./who/WhoContainer";
+import { NotificationSettingsContainer } from "./notifications/NotificationSettingsContainer";
+import { NotificationsContainer } from "./notifications/NotificationsContainer";
+import { TodayContainer } from "./notifications/TodayContainer";
 
 /**
  * Remount a screen for each client profile. A route that only changes
@@ -65,6 +68,13 @@ export default function CoachApp() {
         <Route
           path="library/forms/:formId/:action?"
           element={<FormsLibraryContainer />}
+        />
+        {/* PER-131: Today (C2a), Notifications (C10e) and settings (C6b). */}
+        <Route path="today" element={<TodayContainer />} />
+        <Route path="notifications" element={<NotificationsContainer />} />
+        <Route
+          path="notifications/settings"
+          element={<NotificationSettingsContainer />}
         />
         <Route path="*" element={<Navigate to="clients" replace />} />
       </Route>

@@ -21,6 +21,14 @@ import type {
   Roster,
 } from "../api/types";
 import { CoachApiContext } from "../hooks/coachQueries";
+import {
+  NotificationsApiContext,
+  type NotificationsApi,
+} from "../notifications/api";
+import {
+  fakeNotificationsApi,
+  type FakeNotificationsApi,
+} from "./notificationsFixtures";
 
 /** Shared fixtures and a fake API for the coach container tests. */
 
@@ -391,6 +399,7 @@ export function renderCoach(
     route,
     path,
     api,
+    notifications = fakeNotificationsApi(),
     queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     }),
@@ -398,6 +407,8 @@ export function renderCoach(
     route: string;
     path: string;
     api: FakeApi;
+    /** PER-131: the notifications routes (a quiet fake by default). */
+    notifications?: FakeNotificationsApi;
     queryClient?: QueryClient;
   },
 ) {
@@ -405,15 +416,19 @@ export function renderCoach(
   const utils = render(
     <QueryClientProvider client={queryClient}>
       <CoachApiContext.Provider value={api as unknown as CoachApi}>
-        <MemoryRouter initialEntries={[route]}>
-          <div className="persistence-coach">
-            <Routes>
-              <Route path={path} element={ui} />
-              <Route path="*" element={<p>elsewhere</p>} />
-            </Routes>
-          </div>
-          <LocationSpy />
-        </MemoryRouter>
+        <NotificationsApiContext.Provider
+          value={notifications as unknown as NotificationsApi}
+        >
+          <MemoryRouter initialEntries={[route]}>
+            <div className="persistence-coach">
+              <Routes>
+                <Route path={path} element={ui} />
+                <Route path="*" element={<p>elsewhere</p>} />
+              </Routes>
+            </div>
+            <LocationSpy />
+          </MemoryRouter>
+        </NotificationsApiContext.Provider>
       </CoachApiContext.Provider>
     </QueryClientProvider>,
   );

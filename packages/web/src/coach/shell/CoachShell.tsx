@@ -11,19 +11,22 @@ import {
 import { Avatar } from "../ui/parts";
 
 /**
- * The K-layout rail (canvas C11a/C3.9/C8). Clients and Library (forms,
- * PER-129) are on the web so far;
+ * The K-layout rail (canvas C11a/C3.9/C8). Today and Notifications
+ * (PER-131), Clients and Library (forms, PER-129) are on the web so far;
  * the other places keep their slot so the rail matches the canvas, and say so
  * rather than link to an empty page.
  */
 export interface CoachShellProps {
-  /** Which place is open (PER-129 adds Library). */
-  active?: "clients" | "library";
+  /** Which place is open (PER-129 adds Library, PER-131 Today and Notifications). */
+  active?: "clients" | "library" | "today" | "notifications";
   coachName: string;
   coachInitials: string;
   activeCount: number | null;
   onSignOut: () => void;
   children: ReactNode;
+  /** PER-131: items in Today's queue, and unread notifications. */
+  todayCount?: number | null;
+  unreadCount?: number | null;
 }
 
 const LATER = "Not on the web yet";
@@ -45,6 +48,8 @@ export function CoachShell({
   activeCount,
   onSignOut,
   children,
+  todayCount = null,
+  unreadCount = null,
 }: CoachShellProps) {
   return (
     <div className="persistence-coach">
@@ -59,8 +64,31 @@ export function CoachShell({
           </span>
         </div>
         <nav aria-label="Main" style={{ display: "contents" }}>
-          <Later icon={<IconToday />} label="Today" />
-          <Later icon={<IconBell />} label="Notifications" />
+          <Link
+            to="/coach/today"
+            className="coach-nav-item"
+            aria-current={active === "today" ? "page" : undefined}
+          >
+            <IconToday />
+            <span style={{ flex: 1 }}>Today</span>
+            {todayCount !== null && todayCount > 0 && (
+              <span className="count mono">{todayCount}</span>
+            )}
+          </Link>
+          <Link
+            to="/coach/notifications"
+            className="coach-nav-item"
+            aria-current={active === "notifications" ? "page" : undefined}
+          >
+            <IconBell />
+            <span style={{ flex: 1 }}>Notifications</span>
+            {unreadCount !== null && unreadCount > 0 && (
+              <span className="count mono">
+                {unreadCount}
+                <span className="sr-only"> unread</span>
+              </span>
+            )}
+          </Link>
           <Link
             to="/coach/clients"
             className="coach-nav-item"

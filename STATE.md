@@ -1,5 +1,15 @@
 # Project memory · persistence-backend-sst
 
+### 2026-11-27 — APP-C3 web: coach Today, Notifications and notification settings ([PER-131](https://linear.app/evans-software-solutions/issue/PER-131), 1 of 2; branch `claude/per-131-coach-notifications`)
+
+- **Web only.** The iPhone part waits for Brad's answer on where the Notifications entry goes (ticket asks to confirm; question posted on PER-131, 26 Nov).
+- New folder `packages/web/src/coach/notifications/` (own api/context, types, queries, pure `lib.ts`, CSS) so the shared `coachApi.ts`/`types.ts`/`coach.css` are untouched.
+  - `/coach/today` (C2a): strip (Need you, Active clients, per-area Training and Calories, never blended), queue with chips and one action per row, today's schedule from `GET /trainers/me/today`. Review → client Check-ins tab and Resend → invited page also mark the item actioned; actions whose tool isn't on the web yet (message, plan next, check in) are a plain Done.
+  - `/coach/notifications` (C10e): latest 200 events, type chips with unread counts, client filter, By client / Latest, per-client and all read marks, quiet clients collapsed.
+  - `/coach/notifications/settings` (C6b): react-hook-form + TypeBox (`settingsForm.ts`), one dropdown per server event kind, email hidden while `emailAvailable` is false, quiet hours with the coach's time zone; 409 loads the server copy, 400 lands on the time field.
+- Rail: Today and Notifications are live links with counts (`shell/places.ts` picks the active place). `renderCoach` provides a quiet fake notifications API.
+- Tests: `__tests__/notifications.test.tsx`, `__tests__/notificationsScreens.test.tsx`.
+
 ### 2026-11-25 — Android push: Firebase config per variant ([PER-149](https://linear.app/evans-software-solutions/issue/PER-149); branch `claude/per-149-android-push`)
 
 Native change approved by Brad on PER-149 (25 Nov). Needs a new Android
