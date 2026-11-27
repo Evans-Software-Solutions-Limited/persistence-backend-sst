@@ -234,7 +234,19 @@ export function MealprintDayContainer({
   }, [userId, storage, auth, notifyMutated]);
   const discardRef = useRef(discardDated);
   discardRef.current = discardDated;
-  useEffect(() => () => discardRef.current(), []);
+  /**
+   * False once the screen is gone. A Save that was still in flight then
+   * archives the day it accepted itself, since the unmount cleanup ran before
+   * there was anything to archive (Inspector Brad, #579).
+   */
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      discardRef.current();
+    };
+  }, []);
 
   const { reset: resetGenerate } = generate;
   const { reset: resetSwap } = swap;
@@ -453,12 +465,19 @@ export function MealprintDayContainer({
         (await runAccept(planDraftToAcceptInput(effective)));
       if (!dated) return null;
       datedRef.current = dated;
+      // The person left while the day was being accepted: don't save a plan
+      // nobody is waiting for, and don't leave the day behind.
+      if (!mountedRef.current) {
+        discardDated();
+        return null;
+      }
       const res = await api.savePlanFromMealprint(
         { fromMealprintPlanId: dated.id },
         `mealprint-save-${dated.id}`,
       );
       if (!res.ok) {
-        setSaveError(saveErrorMessage(res.error.status));
+        if (!mountedRef.current) discardDated();
+        else setSaveError(saveErrorMessage(res.error.status));
         return null;
       }
       adoptSavedMealprintPlanCommand(storage, userId, res.value);

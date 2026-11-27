@@ -1316,6 +1316,88 @@ describe("Mealprint Whole day — the accepted day never lingers (Inspector Brad
   });
 });
 
+describe("Mealprint Whole day — leaving mid-save (Inspector Brad #579, round 2)", () => {
+  /** Hold a call until `release()`; returns the release function. */
+  function hold<T extends (...a: never[]) => Promise<unknown>>(
+    obj: Record<string, unknown>,
+    key: string,
+  ): () => void {
+    const real = obj[key] as T;
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    obj[key] = async (...a: Parameters<T>) => {
+      await gate;
+      return real.apply(obj, a);
+    };
+    return release;
+  }
+  const queuedArchives = (storage: InMemoryStorageAdapter) =>
+    storage
+      .getPendingMutations()
+      .filter((m) => m.entityType === MEALPRINT_DAY_ARCHIVE_ENTITY);
+
+  it("left while the day was being accepted: no save, nothing cached, archive queued", async () => {
+    const { api, storage, view } = await generateDay([
+      genMeal("Oats", "Breakfast", "breakfast"),
+    ]);
+    const release = hold(
+      api as unknown as Record<string, unknown>,
+      "acceptPlan",
+    );
+    let saving!: Promise<void>;
+    act(() => {
+      saving = Promise.resolve(mockProbe.day!.onSave());
+    });
+    await act(async () => view.unmount());
+    expect(queuedArchives(storage)).toHaveLength(0);
+    // Accept resolves after the screen is gone (and caches the day).
+    await act(async () => {
+      release();
+      await saving;
+    });
+    await waitFor(() => expect(queuedArchives(storage)).toHaveLength(1));
+    expect(storage.getCachedActiveMealPlan(USER, TODAY)).toBeNull();
+    expect(api.mealprintSaves).toHaveLength(0);
+    expect(queuedArchives(storage)[0]!.endpoint).toBe(
+      "/nutrition/plans/plan-1",
+    );
+  });
+
+  it("left while saving and the save failed: nothing cached, archive queued", async () => {
+    const { api, storage, view } = await generateDay([
+      genMeal("Oats", "Breakfast", "breakfast"),
+    ]);
+    api.mealprintSaveFailures.push({
+      kind: "api",
+      code: "server",
+      status: 409,
+      message: "plan_meal_nutrition_unavailable",
+    });
+    const release = hold(
+      api as unknown as Record<string, unknown>,
+      "savePlanFromMealprint",
+    );
+    let saving!: Promise<void>;
+    act(() => {
+      saving = Promise.resolve(mockProbe.day!.onSave());
+    });
+    await waitFor(() => expect(api.acceptPlanCalls).toHaveLength(1));
+    await waitFor(() =>
+      expect(storage.getCachedActiveMealPlan(USER, TODAY)?.id).toBe("plan-1"),
+    );
+    await act(async () => view.unmount());
+    await act(async () => {
+      release();
+      await saving;
+    });
+    await waitFor(() => expect(api.mealprintSaves).toHaveLength(1));
+    await waitFor(() =>
+      expect(storage.getCachedActiveMealPlan(USER, TODAY)).toBeNull(),
+    );
+    expect(queuedArchives(storage)).toHaveLength(1);
+  });
+});
+
 describe("Mealprint Whole day — what each swap leaves out (Inspector Brad #579)", () => {
   it("swapping several meals in a row never fills the list; Show 3 others still leaves out what that meal showed", async () => {
     const slots = [
