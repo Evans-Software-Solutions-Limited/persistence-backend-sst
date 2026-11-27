@@ -1,3 +1,4 @@
+import type { MealPlan } from "@/domain/models/mealprint";
 import type { LogEntryInput, NutritionEntry } from "@/domain/models/nutrition";
 import type { NutritionPlan } from "@/domain/models/nutritionPlans";
 import type { StoragePort } from "@/domain/ports/storage.port";
@@ -27,6 +28,45 @@ export function adoptSavedMealprintPlanCommand(
   storage.cacheNutritionPlans(userId, {
     ...cache,
     mine: [...cache.mine.filter((p) => p.id !== plan.id), plan],
+  });
+}
+
+/** Queue entity for archiving an accepted Mealprint day (PER-134). */
+export const MEALPRINT_DAY_ARCHIVE_ENTITY = "meal_plan_archive";
+
+/**
+ * Archive an accepted (dated) Mealprint day. "Save as a plan" accepts the day
+ * only to copy it into a list plan; afterwards, or when the save never
+ * finishes (a failed save then Back, Log all, or an edit), the dated day must
+ * not stay active, or Log shows it as "today's plan" and the next Save hits
+ * `active_plan_exists`. It leaves the phone's cache at once and the
+ * `PATCH /nutrition/plans/:id {status: "archived"}` goes through the sync
+ * queue, so it still lands if the phone is offline. Archiving twice is
+ * harmless, and a second call for the same day is not queued again.
+ */
+export function archiveMealprintDayCommand(
+  storage: StoragePort,
+  userId: string,
+  plan: Pick<MealPlan, "id" | "planDate">,
+): void {
+  const cached = storage.getCachedActiveMealPlan(userId, plan.planDate);
+  if (cached === null || cached.id === plan.id) {
+    storage.removeCachedMealPlan(userId, plan.planDate);
+  }
+  const queued = storage
+    .getUncompletedMutations()
+    .some(
+      (e) =>
+        e.entityType === MEALPRINT_DAY_ARCHIVE_ENTITY && e.entityId === plan.id,
+    );
+  if (queued) return;
+  storage.enqueueMutation({
+    entityType: MEALPRINT_DAY_ARCHIVE_ENTITY,
+    entityId: plan.id,
+    operation: "update",
+    payload: { status: "archived" },
+    endpoint: `/nutrition/plans/${plan.id}`,
+    method: "PATCH",
   });
 }
 

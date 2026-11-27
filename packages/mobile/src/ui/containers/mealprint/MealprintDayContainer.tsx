@@ -5,6 +5,7 @@ import { getApiBaseUrl } from "@/adapters/api";
 import { localIdFactory } from "@/application/commands/localId";
 import {
   adoptSavedMealprintPlanCommand,
+  archiveMealprintDayCommand,
   dayEntryIds,
   logAllTodayCommand,
   undoLogAllCommand,
@@ -205,9 +206,35 @@ export function MealprintDayContainer({
   const [logResult, setLogResult] = useState<LogResult | null>(null);
   const [undoing, setUndoing] = useState(false);
   const [undone, setUndone] = useState(false);
-  const notWantedRef = useRef<NotWantedMeal[]>([]);
+  /**
+   * Meals already shown, per meal, for "Show 3 others". Kept per meal and
+   * started afresh each time a meal's swap panel opens, so swapping several
+   * meals in a row never fills the server's 20-meal list (Inspector Brad,
+   * #579).
+   */
+  const notWantedByMeal = useRef<Record<string, NotWantedMeal[]>>({});
   /** The accepted (dated) day, kept so a failed save can be retried. */
   const datedRef = useRef<MealPlan | null>(null);
+  const savedRef = useRef(false);
+
+  /**
+   * Archive the accepted day when it's no longer on its way to a plan (an
+   * edit, Log all, or leaving after a failed save), so it never shows as
+   * "today's plan" in Log or blocks the next Save (Inspector Brad, #579).
+   */
+  const discardDated = useCallback(() => {
+    const dated = datedRef.current;
+    datedRef.current = null;
+    if (dated === null || savedRef.current || userId === null) return;
+    archiveMealprintDayCommand(storage, userId, dated);
+    notifyMutated();
+    void processSyncQueue(storage, auth, getApiBaseUrl()).catch((err) =>
+      console.error("[Mealprint] queue flush failed:", err),
+    );
+  }, [userId, storage, auth, notifyMutated]);
+  const discardRef = useRef(discardDated);
+  discardRef.current = discardDated;
+  useEffect(() => () => discardRef.current(), []);
 
   const { reset: resetGenerate } = generate;
   const { reset: resetSwap } = swap;
@@ -227,8 +254,8 @@ export function MealprintDayContainer({
   const onGenerate = useCallback(() => {
     void steerForm.handleSubmit((values) => {
       if (!online) return;
-      notWantedRef.current = [];
-      datedRef.current = null;
+      notWantedByMeal.current = {};
+      discardDated();
       flowGenerating();
       const meals = mealsForGenerate(userMeals.meals);
       const steer = values.steer.trim();
@@ -247,6 +274,7 @@ export function MealprintDayContainer({
   }, [
     steerForm,
     online,
+    discardDated,
     flowGenerating,
     userMeals.meals,
     generate,
@@ -272,10 +300,7 @@ export function MealprintDayContainer({
   // An edit after the day was accepted (a save that then failed) makes that
   // accepted copy stale: archive it and accept the new day next time.
   useEffect(() => {
-    const dated = datedRef.current;
-    if (dated === null || savedPlan !== null) return;
-    datedRef.current = null;
-    void api.patchPlan(dated.id, { status: "archived" });
+    if (datedRef.current !== null && savedPlan === null) discardDated();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draft, portions]);
 
@@ -293,14 +318,14 @@ export function MealprintDayContainer({
       const current = effective.meals.find((m) => m.localId === localId);
       if (!current) return;
       const history = addNotWantedMeals(
-        notWantedRef.current,
+        notWantedByMeal.current[localId] ?? [],
         notWantedFrom([current.meal, ...alsoExclude]),
       );
       if (!history) {
         setSwapError(MEAL_SEARCH_FULL_MESSAGE);
         return;
       }
-      notWantedRef.current = history;
+      notWantedByMeal.current[localId] = history;
       setSwapError(null);
       const original = steerForm.getValues("steer").trim();
       void runSwap({
@@ -351,6 +376,8 @@ export function MealprintDayContainer({
       closeSwap();
       setOpenId(null);
       setSwapId(localId);
+      // A fresh panel starts a fresh "already shown" list for this meal.
+      notWantedByMeal.current[localId] = [];
       requestOptions(localId, undefined, []);
     },
     [swap.stage, swapId, closeSwap, requestOptions],
@@ -398,13 +425,7 @@ export function MealprintDayContainer({
 
   const onRemove = useCallback(
     (localId: string) => {
-      const removed = draft?.meals.find((m) => m.localId === localId)?.meal;
-      if (!removed) return;
-      const history = addNotWantedMeals(
-        notWantedRef.current,
-        notWantedFrom([removed]),
-      );
-      if (history) notWantedRef.current = history;
+      if (!draft?.meals.some((m) => m.localId === localId)) return;
       setOpenId(null);
       flowRemoveMeal(localId);
     },
@@ -443,10 +464,8 @@ export function MealprintDayContainer({
       adoptSavedMealprintPlanCommand(storage, userId, res.value);
       // The dated day was only the way to the plan. Archive it so it never
       // shows as a plan for today in Log.
-      void api.patchPlan(dated.id, { status: "archived" }).then((r) => {
-        if (r.ok) storage.removeCachedMealPlan(userId, dated.planDate);
-        notifyMutated();
-      });
+      discardDated();
+      savedRef.current = true;
       setSavedPlan(res.value);
       nameForm.reset({ name: res.value.name });
       flowAccepted(dated);
@@ -462,7 +481,7 @@ export function MealprintDayContainer({
     runAccept,
     api,
     storage,
-    notifyMutated,
+    discardDated,
     nameForm,
     flowAccepted,
   ]);
@@ -529,6 +548,8 @@ export function MealprintDayContainer({
     notifyMutated();
     setLogResult({ rows: plan.rows, logged, before });
     flowLogged();
+    // A day accepted for a save that then failed is not a plan for today.
+    discardDated();
     try {
       await processSyncQueue(storage, auth, getApiBaseUrl());
     } catch (err) {
@@ -542,6 +563,7 @@ export function MealprintDayContainer({
     userMeals.meals,
     notifyMutated,
     flowLogged,
+    discardDated,
     auth,
   ]);
 

@@ -6,7 +6,9 @@ import {
 } from "@/domain/models/nutritionPlans";
 import { flattenFuelEntries } from "@/domain/services/nutrition.service";
 import {
+  MEALPRINT_DAY_ARCHIVE_ENTITY,
   adoptSavedMealprintPlanCommand,
+  archiveMealprintDayCommand,
   dayEntryIds,
   logAllTodayCommand,
   undoLogAllCommand,
@@ -132,5 +134,54 @@ describe("Log all today and Undo", () => {
   it("Undo with no cached day removes nothing", () => {
     const storage = setup();
     expect(undoLogAllCommand(deps(storage), DAY, new Set(), [])).toBe(0);
+  });
+});
+
+describe("archiveMealprintDayCommand (Inspector Brad #579)", () => {
+  const dated = (id: string) => ({
+    id,
+    userId: USER,
+    status: "active" as const,
+    planDate: DAY,
+    groupId: null,
+    mealsPerDay: 1,
+    effortLevel: "balanced" as const,
+    targetKcal: 2500,
+    targetProteinG: 180,
+    targetCarbsG: 300,
+    targetFatG: 60,
+    source: "ai",
+    createdByUserId: null,
+    createdAt: null,
+    acceptedAt: null,
+    meals: [],
+  });
+  const archives = (storage: InMemoryStorageAdapter) =>
+    storage
+      .getPendingMutations()
+      .filter((m) => m.entityType === MEALPRINT_DAY_ARCHIVE_ENTITY);
+
+  it("drops the cached day and queues one PATCH, however often it's called", () => {
+    const storage = setup();
+    storage.cacheMealPlan(USER, dated("p1"));
+    archiveMealprintDayCommand(storage, USER, dated("p1"));
+    archiveMealprintDayCommand(storage, USER, dated("p1"));
+    expect(storage.getCachedActiveMealPlan(USER, DAY)).toBeNull();
+    expect(archives(storage)).toHaveLength(1);
+    expect(archives(storage)[0]).toMatchObject({
+      method: "PATCH",
+      endpoint: "/nutrition/plans/p1",
+    });
+    expect(JSON.parse(archives(storage)[0]!.payload)).toEqual({
+      status: "archived",
+    });
+  });
+
+  it("leaves a different plan cached for that day alone", () => {
+    const storage = setup();
+    storage.cacheMealPlan(USER, dated("other"));
+    archiveMealprintDayCommand(storage, USER, dated("p1"));
+    expect(storage.getCachedActiveMealPlan(USER, DAY)!.id).toBe("other");
+    expect(archives(storage)).toHaveLength(1);
   });
 });

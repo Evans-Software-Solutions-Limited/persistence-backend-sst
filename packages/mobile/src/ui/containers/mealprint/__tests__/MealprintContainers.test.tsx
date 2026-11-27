@@ -19,6 +19,7 @@ import type {
 import type { UserMeal } from "@/domain/models/userMeals";
 import type { AuthSession } from "@/domain/ports/auth.port";
 import { flattenFuelEntries } from "@/domain/services/nutrition.service";
+import { MEALPRINT_DAY_ARCHIVE_ENTITY } from "@/application/commands/mealprintDay.command";
 import { ok } from "@/shared/errors";
 import type { Adapters } from "@/shared/types";
 import { localDayISO } from "@/shared/utils";
@@ -136,7 +137,11 @@ jest.mock("expo-haptics", () => ({
   notificationAsync: jest.fn(),
   NotificationFeedbackType: { Success: "s" },
 }));
-const mockSync = jest.fn(async () => undefined);
+/** Set by a test to send queued Mealprint-day archives to the fake server. */
+let mockDrain: (() => Promise<void>) | null = null;
+const mockSync = jest.fn(async () => {
+  if (mockDrain) await mockDrain();
+});
 jest.mock("@/application/commands/sync.command", () => ({
   ...jest.requireActual("@/application/commands/sync.command"),
   processSyncQueue: () => mockSync(),
@@ -341,6 +346,30 @@ function setup() {
   return { api, storage, view };
 }
 
+/** Queued archives of the accepted day, sent the way the sync queue would. */
+function sendArchives(
+  api: InMemoryApiAdapter,
+  storage: InMemoryStorageAdapter,
+) {
+  mockDrain = async () => {
+    for (const e of storage.getPendingMutations()) {
+      if (e.entityType !== MEALPRINT_DAY_ARCHIVE_ENTITY) continue;
+      await api.patchPlan(e.entityId!, { status: "archived" });
+      storage.markMutationCompleted(e.id);
+    }
+  };
+}
+
+/** No active dated day left for today: not cached, not on the server. */
+function noTodaysPlan(
+  api: InMemoryApiAdapter,
+  storage: InMemoryStorageAdapter,
+  id: string,
+) {
+  expect(storage.getCachedActiveMealPlan(USER, TODAY)).toBeNull();
+  expect(api.plans.get(id)!.status).toBe("archived");
+}
+
 beforeEach(() => {
   for (const k of Object.keys(mockProbe)) {
     (mockProbe as Record<string, unknown>)[k] = null;
@@ -349,6 +378,7 @@ beforeEach(() => {
   mockBack.mockClear();
   mockReplace.mockClear();
   mockSync.mockClear();
+  mockDrain = null;
   mockGate.allowed = true;
   mockGate.isResolved = true;
   mockGate.onUpgrade.mockClear();
@@ -824,9 +854,14 @@ describe("Mealprint Whole day — Save as a plan (N21)", () => {
         key: "mealprint-save-plan-1",
       },
     ]);
-    await waitFor(() =>
-      expect(api.plans.get("plan-1")!.status).toBe("archived"),
-    );
+    // The archive is queued; the cached dated day is gone at once.
+    expect(storage.getCachedActiveMealPlan(USER, TODAY)).toBeNull();
+    expect(
+      storage
+        .getPendingMutations()
+        .filter((m) => m.entityType === MEALPRINT_DAY_ARCHIVE_ENTITY)
+        .map((m) => [m.method, m.endpoint]),
+    ).toEqual([["PATCH", "/nutrition/plans/plan-1"]]);
     expect(
       storage.getCachedNutritionPlans(USER)!.mine.map((p) => p.id),
     ).toEqual(["plan-from-plan-1"]);
@@ -916,10 +951,11 @@ describe("Mealprint Whole day — Save as a plan (N21)", () => {
     ]);
   });
 
-  it("an edit after a failed save drops the stale accepted day", async () => {
-    const { api } = await generateDay([
+  it("an edit after a failed save drops the stale accepted day, cached and on the server", async () => {
+    const { api, storage } = await generateDay([
       genMeal("Oats", "Breakfast", "breakfast"),
     ]);
+    sendArchives(api, storage);
     api.mealprintSaveFailures.push({
       kind: "api",
       code: "network",
@@ -927,10 +963,9 @@ describe("Mealprint Whole day — Save as a plan (N21)", () => {
     });
     await act(async () => mockProbe.day!.onSave());
     await waitFor(() => expect(mockProbe.day!.errorMessage).toBeTruthy());
+    expect(storage.getCachedActiveMealPlan(USER, TODAY)!.id).toBe("plan-1");
     act(() => mockProbe.day!.onMore(idOf("Breakfast")));
-    await waitFor(() =>
-      expect(api.plans.get("plan-1")!.status).toBe("archived"),
-    );
+    await waitFor(() => noTodaysPlan(api, storage, "plan-1"));
     await act(async () => mockProbe.day!.onSave());
     await waitFor(() => expect(mockProbe.screen).toBe("saved"));
     expect(api.acceptPlanCalls).toHaveLength(2);
@@ -1207,5 +1242,133 @@ describe("Mealprint — the edges", () => {
     expect(mockProbe.review!.added).toBe(true);
     expect(spy).toHaveBeenCalled();
     spy.mockRestore();
+  });
+});
+
+describe("Mealprint Whole day — the accepted day never lingers (Inspector Brad #579)", () => {
+  const failSave = (api: InMemoryApiAdapter) =>
+    api.mealprintSaveFailures.push({
+      kind: "api",
+      code: "server",
+      status: 409,
+      message: "plan_meal_nutrition_unavailable",
+    });
+
+  it("a failed save then leaving archives it, cached and on the server", async () => {
+    const { api, storage, view } = await generateDay([
+      genMeal("Oats", "Breakfast", "breakfast"),
+    ]);
+    sendArchives(api, storage);
+    failSave(api);
+    await act(async () => mockProbe.day!.onSave());
+    await waitFor(() => expect(mockProbe.day!.errorMessage).toBeTruthy());
+    expect(storage.getCachedActiveMealPlan(USER, TODAY)!.id).toBe("plan-1");
+    await act(async () => view.unmount());
+    await waitFor(() => noTodaysPlan(api, storage, "plan-1"));
+  });
+
+  it("offline, leaving still takes it off the phone and queues the archive", async () => {
+    const { api, storage, view } = await generateDay([
+      genMeal("Oats", "Breakfast", "breakfast"),
+    ]);
+    failSave(api);
+    await act(async () => mockProbe.day!.onSave());
+    await waitFor(() => expect(mockProbe.day!.errorMessage).toBeTruthy());
+    await act(async () => view.unmount());
+    expect(storage.getCachedActiveMealPlan(USER, TODAY)).toBeNull();
+    expect(
+      storage
+        .getPendingMutations()
+        .filter((m) => m.entityType === MEALPRINT_DAY_ARCHIVE_ENTITY),
+    ).toHaveLength(1);
+    expect(api.plans.get("plan-1")!.status).toBe("active");
+    // When the queue drains later, it lands.
+    sendArchives(api, storage);
+    await mockDrain!();
+    noTodaysPlan(api, storage, "plan-1");
+  });
+
+  it("Log all after a failed save archives it too", async () => {
+    const { api, storage } = await generateDay([
+      genMeal("Oats", "Breakfast", "breakfast"),
+    ]);
+    sendArchives(api, storage);
+    failSave(api);
+    await act(async () => mockProbe.day!.onSave());
+    await waitFor(() => expect(mockProbe.day!.errorMessage).toBeTruthy());
+    await act(async () => mockProbe.day!.onLogAll());
+    await waitFor(() => expect(mockProbe.screen).toBe("logged"));
+    await waitFor(() => noTodaysPlan(api, storage, "plan-1"));
+  });
+
+  it("leaving after a successful save doesn't archive anything twice", async () => {
+    const { storage, view } = await generateDay([
+      genMeal("Oats", "Breakfast", "breakfast"),
+    ]);
+    await act(async () => mockProbe.day!.onSave());
+    await waitFor(() => expect(mockProbe.screen).toBe("saved"));
+    await act(async () => view.unmount());
+    expect(
+      storage
+        .getPendingMutations()
+        .filter((m) => m.entityType === MEALPRINT_DAY_ARCHIVE_ENTITY),
+    ).toHaveLength(1);
+  });
+});
+
+describe("Mealprint Whole day — what each swap leaves out (Inspector Brad #579)", () => {
+  it("swapping several meals in a row never fills the list; Show 3 others still leaves out what that meal showed", async () => {
+    const slots = [
+      ["Oats", "Breakfast", "breakfast"],
+      ["Bagel", "Pre-workout", "snack"],
+      ["Bowl", "Lunch", "lunch"],
+      ["Stew", "Dinner", "dinner"],
+    ] as const;
+    const { api } = await generateDay(
+      slots.map(([n, l, s]) => genMeal(n, l, s)),
+    );
+    let round = 0;
+    const nextOptions = () => {
+      round += 1;
+      const opts = [1, 2, 3].map((i) => swapMeal(`R${round}-${i}`, 600));
+      api.planSwapResult = {
+        meal: opts[0]!,
+        options: opts,
+        emptyReason: null,
+        labelCheckRequired: true,
+      };
+      return opts;
+    };
+    // Two rounds on each of four meals, picking each time: 8 swaps, 24+
+    // meals shown in all, far past the server's 20.
+    for (let pass = 0; pass < 2; pass++) {
+      for (const [, label] of slots) {
+        nextOptions();
+        const before = api.swapPlanMealCalls.length;
+        await act(async () => mockProbe.day!.onSwap(idOf(label)));
+        await waitFor(() =>
+          expect(api.swapPlanMealCalls).toHaveLength(before + 1),
+        );
+        await waitFor(() => expect(mockProbe.day!.swap?.loading).toBe(false));
+        expect(mockProbe.day!.swap!.error).toBeNull();
+        expect(
+          api.swapPlanMealCalls[before]!.notWantedMeals!.length,
+        ).toBeLessThanOrEqual(1);
+        act(() => mockProbe.day!.swap!.onPick(0));
+      }
+    }
+
+    // Within one meal's panel, Show 3 others still leaves out its options.
+    const shown = nextOptions();
+    const start = api.swapPlanMealCalls.length;
+    await act(async () => mockProbe.day!.onSwap(idOf("Lunch")));
+    await waitFor(() => expect(mockProbe.day!.swap?.options).toHaveLength(3));
+    nextOptions();
+    await act(async () => mockProbe.day!.swap!.onMore());
+    await waitFor(() => expect(api.swapPlanMealCalls).toHaveLength(start + 2));
+    const excluded = api.swapPlanMealCalls[start + 1]!.notWantedMeals!.map(
+      (m) => m.name,
+    );
+    for (const o of shown) expect(excluded).toContain(o.name);
   });
 });
