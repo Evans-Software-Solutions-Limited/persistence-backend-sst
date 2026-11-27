@@ -125,13 +125,16 @@ describe("CoachLibraryContainer (K shell Library tab, C10g)", () => {
     fireEvent.press(view.getByTestId("coach-library-segment-programmes"));
     expect(view.getByTestId("programmes-hub").props.children).toBe("embedded");
     expect(view.queryByTestId("coach-library-new-form")).toBeNull();
-    for (const s of ["workouts", "meals", "resources"]) {
+    for (const s of ["workouts", "meals"]) {
       fireEvent.press(view.getByTestId(`coach-library-segment-${s}`));
       expect(view.getByTestId(`coach-library-placeholder-${s}`)).toBeTruthy();
     }
+    // PER-143: Resources is live.
+    fireEvent.press(view.getByTestId("coach-library-segment-resources"));
+    expect(view.getByTestId("resources-library")).toBeTruthy();
     expect(
-      view.getByText("In development (PER-122). Not in this build yet."),
-    ).toBeTruthy();
+      view.queryByTestId("coach-library-placeholder-resources"),
+    ).toBeNull();
   });
 
   it("?segment= (the old Programs tab's redirect) picks the segment", () => {

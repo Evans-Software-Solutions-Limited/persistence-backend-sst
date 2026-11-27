@@ -128,3 +128,11 @@ export const PENDING_PROGRESS_PHOTO_TABLES = [
 export const FORM_REQUESTS_TABLES = ["cached_form_requests"] as const;
 /** PER-130 each due form's draft and send state on this phone. */
 export const FORM_LOCAL_TABLES = ["form_request_local"] as const;
+/** PER-143 the coach's resources library. */
+export const COACH_RESOURCES_TABLES = ["cached_coach_resources"] as const;
+/** PER-143 a client's Resources tab. */
+export const COACH_CLIENT_RESOURCES_TABLES = [
+  "cached_coach_client_resources",
+] as const;
+/** PER-143 the athlete's resources (Coach tab). */
+export const MY_RESOURCES_TABLES = ["cached_my_resources"] as const;

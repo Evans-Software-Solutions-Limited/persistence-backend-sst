@@ -16,6 +16,9 @@ import {
 } from "@/ui/presenters/CoachTabPresenter";
 import { CoachFormsSection } from "@/ui/presenters/athleteForms/CoachFormsSection";
 import { coachInitials } from "@/ui/presenters/coaching/coachingKit";
+import { resourcesFromCoach } from "@/domain/services/coachResources.service";
+import { useMyResources } from "@/ui/hooks/useCoachResources";
+import { useOpenResource } from "@/ui/containers/coachResources/useOpenResource";
 
 const MONTHS = [
   "January",
@@ -98,13 +101,25 @@ export function CoachTabContainer() {
 
   const refresh = my.refresh;
   const refreshForms = forms.refresh;
+  // PER-143: the selected coach's resources, cache-first.
+  const resources = useMyResources();
+  const openResource = useOpenResource(resources);
+  const refreshResources = resources.refresh;
   useFocusEffect(
     useCallback(() => {
       setFocused(true);
       void refresh({ silent: true });
       void refreshForms({ silent: true });
+      void refreshResources({ silent: true });
       return () => setFocused(false);
-    }, [refresh, refreshForms]),
+    }, [refresh, refreshForms, refreshResources]),
+  );
+  const coachResources = useMemo(
+    () =>
+      resources.data && selected
+        ? resourcesFromCoach(resources.data, selected.trainerId)
+        : null,
+    [resources.data, selected],
   );
 
   const view = useMemo(
@@ -152,6 +167,7 @@ export function CoachTabContainer() {
       onRefresh={() => {
         void refresh();
         void refreshForms({ silent: true });
+        void refreshResources();
       }}
       forms={
         view ? (
@@ -173,6 +189,8 @@ export function CoachTabContainer() {
           />
         ) : null
       }
+      resources={coachResources}
+      onOpenResource={(id) => void openResource(id)}
     />
   );
 }

@@ -6,6 +6,7 @@ import { FormEditorContainer } from "./forms/FormEditorContainer";
 import { FormsLibraryContainer } from "./forms/FormsLibraryContainer";
 import { InviteContainer } from "./invite/InviteContainer";
 import { InvitedClientContainer } from "./invited/InvitedClientContainer";
+import { ResourcesLibraryContainer } from "./resources/ResourcesLibraryContainer";
 import { SetupContainer } from "./setup/SetupContainer";
 import { CoachLayout } from "./shell/CoachLayout";
 import { CoachCallback, CoachSignIn } from "./shell/CoachSignIn";
@@ -65,6 +66,11 @@ export default function CoachApp() {
         <Route
           path="library/forms/:formId/:action?"
           element={<FormsLibraryContainer />}
+        />
+        {/* PER-143: Library → Resources (C5b). */}
+        <Route
+          path="library/resources"
+          element={<ResourcesLibraryContainer />}
         />
         <Route path="*" element={<Navigate to="clients" replace />} />
       </Route>

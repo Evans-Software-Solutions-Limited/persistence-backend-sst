@@ -35,6 +35,9 @@ export const coachKeys = {
   responses: (clientId: string) => ["coach", "responses", clientId] as const,
   settings: (clientId: string) => ["coach", "settings", clientId] as const,
   declaration: ["coach", "declaration"] as const,
+  resources: ["coach", "resources"] as const,
+  clientResources: (clientId: string) =>
+    ["coach", "client-resources", clientId] as const,
 };
 
 /** `navigator.onLine`, kept live by the browser's online/offline events. */

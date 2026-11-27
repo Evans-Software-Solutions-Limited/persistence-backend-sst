@@ -35,9 +35,13 @@ import {
 import { Avatar, Dialog, Notice, OfflineBanner } from "../ui/parts";
 import { RuleFields } from "./RuleFields";
 
-/** The Library sub-nav (C10a): only Forms is on the web so far. */
-export function LibraryTabs() {
-  const later = ["Workouts", "Programmes", "Meal plans", "Resources"];
+/** The Library sub-nav (C10a): Forms and Resources (PER-143) are on the web. */
+export function LibraryTabs({
+  current = "forms",
+}: {
+  current?: "forms" | "resources";
+}) {
+  const later = ["Workouts", "Programmes", "Meal plans"];
   return (
     <div className="tabs" role="tablist" aria-label="Library">
       {later.map((t) => (
@@ -52,8 +56,19 @@ export function LibraryTabs() {
           {t}
         </span>
       ))}
-      <Link role="tab" aria-selected={true} to="/coach/library/forms">
+      <Link
+        role="tab"
+        aria-selected={current === "forms"}
+        to="/coach/library/forms"
+      >
         Forms
+      </Link>
+      <Link
+        role="tab"
+        aria-selected={current === "resources"}
+        to="/coach/library/resources"
+      >
+        Resources
       </Link>
     </div>
   );

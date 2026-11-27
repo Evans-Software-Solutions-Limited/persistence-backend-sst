@@ -179,6 +179,16 @@ import type {
   ProgressPhotosResponse,
   ProgressPhotoUpload,
 } from "@/domain/models/progressPhotos";
+import type {
+  AssignRefusal,
+  AssignResultData,
+  AthleteResource,
+  ClientResource,
+  CoachResource,
+  NewResourceInput,
+  ResourceMediaUpload,
+  ResourceSaveError,
+} from "@/domain/models/coachResources";
 
 /**
  * Port for remote SST API operations.
@@ -1837,6 +1847,52 @@ export interface ApiPort extends ReferralsPort {
     input: { fromMealprintPlanId: string; name?: string },
     idempotencyKey: string,
   ): Promise<Result<NutritionPlan, ApiError>>;
+
+  // -- PER-143 (APP-I1): coach resources (BE-I1) --
+  //
+  // Link creates, assigns made offline and the athlete's opened stamps go
+  // through the offline queue (`coachResources.command.ts`). Uploads need a
+  // connection: create the upload, PUT the file, then create the resource.
+
+  /** `GET /trainers/me/resources`: the coach's library, newest first. */
+  getCoachResources(): Promise<Result<CoachResource[], ApiError>>;
+  /** `POST /trainers/me/resources` with `Idempotency-Key`. */
+  createCoachResource(
+    input: NewResourceInput,
+    idempotencyKey: string,
+  ): Promise<Result<CoachResource, ResourceSaveError>>;
+  /** `DELETE /trainers/me/resources/:id`: also removes it from every client. */
+  archiveCoachResource(resourceId: string): Promise<Result<void, ApiError>>;
+  /**
+   * `POST /trainers/me/resources/assign`. A refusal keeps the server's
+   * reason: 403 `resources_off` (C3.9 switch) or `not_your_client`, 404.
+   */
+  assignCoachResources(
+    resourceIds: string[],
+    clientIds: string[],
+  ): Promise<Result<AssignResultData, AssignRefusal>>;
+  /** `GET /trainers/me/clients/:clientId/resources`, with `openedAt`. */
+  getCoachClientResources(
+    clientId: string,
+  ): Promise<Result<ClientResource[], ApiError>>;
+  /** `DELETE /trainers/me/clients/:clientId/resources/:assignmentId`. */
+  removeCoachClientResource(
+    clientId: string,
+    assignmentId: string,
+  ): Promise<Result<void, ApiError>>;
+  /** `POST /trainers/me/media/uploads` `{ purpose: "resource" }`. */
+  createCoachResourceUpload(
+    contentType: string,
+    bytes: number,
+    idempotencyKey: string,
+  ): Promise<Result<ResourceMediaUpload, ApiError>>;
+  /** PUT the file straight to storage with the link's exact headers. */
+  putCoachResourceFile(
+    upload: NonNullable<ResourceMediaUpload["upload"]>,
+    body: Blob,
+  ): Promise<Result<void, ApiError>>;
+  /** `GET /users/me/resources`: the athlete's, from every active coach. */
+  getMyResources(): Promise<Result<AthleteResource[], ApiError>>;
 }
 
 /**

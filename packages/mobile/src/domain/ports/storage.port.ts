@@ -75,6 +75,11 @@ import type {
   PendingProgressPhotoSet,
   ProgressPhotosCache,
 } from "@/domain/models/progressPhotos";
+import type {
+  AthleteResource,
+  ClientResource,
+  CoachResource,
+} from "@/domain/models/coachResources";
 
 /**
  * One row in the recent-sets cache. Keyed by (userId, exerciseId,
@@ -1382,6 +1387,28 @@ export interface StoragePort {
     userId: string,
     exerciseIds: readonly string[],
   ): RecentSetEntry[];
+
+  // -- PER-143 (APP-I1): coach resources --
+  /** The coach's library (`cached_coach_resources`), or null before a read. */
+  getCachedCoachResources(userId: string): CoachResource[] | null;
+  cacheCoachResources(userId: string, value: CoachResource[]): void;
+  /** One client's Resources tab (`cached_coach_client_resources`). */
+  getCachedCoachClientResources(
+    userId: string,
+    clientId: string,
+  ): ClientResource[] | null;
+  cacheCoachClientResources(
+    userId: string,
+    clientId: string,
+    value: ClientResource[],
+  ): void;
+  /** Every client's cached tab, for swapping an offline link's id. */
+  getAllCachedCoachClientResources(
+    userId: string,
+  ): { clientId: string; value: ClientResource[] }[];
+  /** The athlete's resources (`cached_my_resources`). */
+  getCachedMyResources(userId: string): AthleteResource[] | null;
+  cacheMyResources(userId: string, value: AthleteResource[]): void;
 }
 
 /**
@@ -1401,6 +1428,12 @@ export type EnqueueMutationInput = {
   payload: unknown;
   endpoint: string;
   method: string;
+  /**
+   * PER-143: the key an online attempt already sent, so a write that may have
+   * reached the server (a timeout) replays under the same key instead of
+   * creating a second row. Omitted → the queue stamps a fresh key.
+   */
+  idempotencyKey?: string;
 };
 
 export type SyncQueueEntry = {

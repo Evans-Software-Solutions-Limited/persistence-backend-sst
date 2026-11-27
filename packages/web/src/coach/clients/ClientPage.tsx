@@ -28,6 +28,7 @@ import {
 import { applyServerErrors, applyValues, firstMessage } from "@/lib/form";
 import { ClientSettingsView } from "../settings/ClientSettings";
 import { CheckinsContainer } from "../checkins/CheckinsContainer";
+import { ClientResourcesContainer } from "../resources/ClientResourcesContainer";
 import { Avatar, BackLink, LoadError, Loading } from "../ui/parts";
 import { ClientTabs, type ClientTab } from "./ClientTabs";
 
@@ -35,6 +36,7 @@ import { ClientTabs, type ClientTab } from "./ClientTabs";
 const WEB_TABS: Record<string, ClientTab> = {
   "check-ins": "Check-ins", // PER-129 (C3.3)
   settings: "Settings", // PER-124 (C3.9)
+  resources: "Resources", // PER-143 (C3.7)
 };
 const OPEN_TABS: ClientTab[] = Object.values(WEB_TABS);
 const segmentOf = (tab: ClientTab) =>
@@ -84,6 +86,8 @@ export function ClientPage() {
       />
       {selected === "Check-ins" ? (
         <CheckinsContainer key={client.id} client={client} />
+      ) : selected === "Resources" ? (
+        <ClientResourcesContainer key={client.id} client={client} />
       ) : (
         <ClientSettingsPage client={client} />
       )}
