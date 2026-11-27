@@ -72,6 +72,10 @@ import { useDrawer } from "../../src/state/drawer";
 jest.mock("../../src/ui/hooks/useMyCoaches", () => ({
   useMyCoaches: () => ({ coaches: [] }),
 }));
+// PER-130: the Coach tab badge's due forms (none read here).
+jest.mock("../../src/ui/hooks/useAthleteForms", () => ({
+  useAthleteForms: () => ({ data: null, requests: [], locals: [] }),
+}));
 // eslint-disable-next-line import/first
 import { useUserMode } from "../../src/state/user-mode";
 // eslint-disable-next-line import/first
