@@ -61,6 +61,11 @@ CASCADE, `coaching` / `coach-<relationshipId>`, state
   Without keys a row is bucket-only as on main. A Stream delete task still
   running throws `StreamDeletePendingError` → deferred (row kept; next night a
   missing user counts as done). Task polling is 2 (no sleep before the first).
+- **Bucket outside the budget** (round 4): `eraseAfterPurge` always runs
+  `deleteAllUserMedia` first (no budget, as on main); only the Stream step is
+  budgeted/deferred. The drain moves a FAILED row to the back (`queued_at` =
+  now) so rows that keep failing can't starve the queue; deferred rows keep
+  their place.
 - **Ensure on token + every tick** (round 3): `POST /chat/token` runs the
   memoised ensure first and fails closed (503 `chat_unavailable`, no token);
   `reconcileChatChannels` ensures at the start of each tick (failure skips

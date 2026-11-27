@@ -1307,7 +1307,7 @@ describe("post-purge erasure budget", () => {
 
   beforeEach(() => vi.mocked(deleteAllUserMedia).mockClear());
 
-  it("past the deadline, nothing is started and every row stays queued", async () => {
+  it("past the deadline, no Stream erasure starts and every row stays queued, but every bucket is still deleted", async () => {
     const ids = await purgedPair();
     stream.calls = [];
     const drained = await drainPrivateMediaPurges(
@@ -1317,8 +1317,68 @@ describe("post-purge erasure budget", () => {
     );
     expect(drained).toMatchObject({ deleted: 0, waiting: 2, failed: 0 });
     expect(stream.calls).toEqual([]);
-    expect(deleteAllUserMedia).not.toHaveBeenCalled();
+    // The bucket delete has no budget (PER-121 as before).
+    expect(
+      vi
+        .mocked(deleteAllUserMedia)
+        .mock.calls.map((c) => c[0])
+        .sort(),
+    ).toEqual([...ids].sort());
     expect((await queuedIds()).sort()).toEqual([...ids].sort());
+  });
+
+  it("with the Stream budget used up, the bucket is still deleted for every row", async () => {
+    const ids = await purgedPair();
+    const drained = await drainPrivateMediaPurges(
+      eraseAfterPurge({ startedAt: new Date(), maxChatErasures: 0 }),
+    );
+    expect(drained).toMatchObject({ waiting: 2, deleted: 0 });
+    expect(deleteAllUserMedia).toHaveBeenCalledTimes(2);
+    expect(stream.deletedUsers).toEqual([]);
+    expect((await queuedIds()).sort()).toEqual([...ids].sort());
+  });
+
+  it("two rows whose Stream erasure always fails don't starve the rows behind them", async () => {
+    const [bad1, bad2] = await purgedPair();
+    // Queued first, so they head the queue.
+    await db
+      .update(schema.privateMediaPurges)
+      .set({ queuedAt: new Date(Date.now() - 3_600_000) });
+    const fresh = [randomUUID(), randomUUID()];
+    const client = new StreamChatClient(
+      { apiKey: TEST_STREAM_KEY, apiSecret: TEST_STREAM_SECRET },
+      stream.fetch,
+    );
+    await client.upsertUsers(fresh.map((id) => ({ id })));
+    for (const id of fresh) await queuePrivateMediaPurge(id);
+    const failing = new RegExp(`/users/delete`);
+    const original = stream.fetch;
+    stream.fetch = async (input, init) =>
+      failing.test(String(input)) &&
+      [bad1, bad2].some((b) => (init.body as string).includes(b!))
+        ? { ok: false, status: 500, text: async () => '{"message":"boom"}' }
+        : original(input, init);
+    configure();
+
+    // Night 1: the two bad rows use up the failure budget; the fresh rows
+    // still get their bucket deleted, and every kept row moves behind.
+    const night1 = await drainPrivateMediaPurges(
+      eraseAfterPurge({ startedAt: new Date() }),
+    );
+    expect(night1).toMatchObject({ failed: 2, waiting: 2, deleted: 0 });
+    expect(deleteAllUserMedia).toHaveBeenCalledTimes(4);
+
+    // Night 2: the fresh rows now head the queue and are erased in Stream;
+    // the bad rows fail again behind them.
+    vi.mocked(deleteAllUserMedia).mockClear();
+    const night2 = await drainPrivateMediaPurges(
+      eraseAfterPurge({ startedAt: new Date() }),
+    );
+    expect(night2).toMatchObject({ deleted: 2, failed: 2, waiting: 0 });
+    expect(stream.deletedUsers.sort()).toEqual([...fresh].sort());
+    expect((await queuedIds()).sort()).toEqual([bad1, bad2].sort());
+    expect(deleteAllUserMedia).toHaveBeenCalledTimes(4);
+    stream.fetch = original;
   });
 
   it("stops at the per-run cap; the rest wait for the next night", async () => {
@@ -1340,6 +1400,7 @@ describe("post-purge erasure budget", () => {
     );
     expect(drained).toMatchObject({ failed: 1, waiting: 1, deleted: 0 });
     expect(stream.calls).toHaveLength(1); // one attempt, then it stops
+    expect(deleteAllUserMedia).toHaveBeenCalledTimes(2); // buckets still go
     expect(await queuedIds()).toHaveLength(2);
   });
 

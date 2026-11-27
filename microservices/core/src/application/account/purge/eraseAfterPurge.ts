@@ -23,12 +23,14 @@ import {
  * `"deferred"`, so a later night finishes it (each step is idempotent). No
  * new queue table.
  *
- * **Bounded** (Inspector Brad, #570 round 3): the drain shares the purge
+ * **Bounded** (Inspector Brad, #570 rounds 3–4): the drain shares the purge
  * cron's 300 s Lambda with other sweeps, and Stream calls can be slow or
- * failing. Chat erasures stop being started once `deadlineMs` of the run has
- * passed, after `maxChatErasures` in one run, or after `maxChatFailures`
- * failures (a Stream outage), and the remaining rows are deferred untouched.
- * Without Stream keys the row is bucket-only, exactly as before.
+ * failing. The budget applies to the STREAM step only: chat erasures stop
+ * being started once `deadlineMs` of the run has passed, after
+ * `maxChatErasures` in one run, or after `maxChatFailures` failures (a
+ * Stream outage), and those rows are deferred. The bucket delete always
+ * runs. A failed row is moved behind the others by the drain, so rows that
+ * keep failing can't starve the queue; deferred rows keep their place.
  */
 
 export interface EraseAfterPurgeOptions {
@@ -58,10 +60,11 @@ export function eraseAfterPurge(
   let failures = 0;
 
   return async (userId) => {
-    if (!getStreamClient()) {
-      await deleteAllUserMedia(userId);
-      return "done";
-    }
+    // PER-121's bucket delete always runs first, with no budget, exactly as
+    // before chat existed: it is idempotent, so a row deferred for its Stream
+    // step only repeats a cheap no-op next night (Inspector Brad, #570).
+    await deleteAllUserMedia(userId);
+    if (!getStreamClient()) return "done";
     if (
       clock() >= deadline ||
       started >= maxErasures ||
@@ -70,7 +73,6 @@ export function eraseAfterPurge(
       return "deferred";
     }
     started += 1;
-    await deleteAllUserMedia(userId);
     try {
       await eraseChatUser(userId);
     } catch (err) {
