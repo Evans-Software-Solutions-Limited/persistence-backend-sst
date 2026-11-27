@@ -61,6 +61,11 @@ CASCADE, `coaching` / `coach-<relationshipId>`, state
   Without keys a row is bucket-only as on main. A Stream delete task still
   running throws `StreamDeletePendingError` → deferred (row kept; next night a
   missing user counts as done). Task polling is 2 (no sleep before the first).
+- **Scheduler job time-bounded** (round 5): `reconcileChatChannels` starts
+  no Stream work 90 s after the tick start or after 2 Stream failures (ensure
+  included); the rest is `deferred` (in the job summary) and stays pending, so
+  `sessionRemindersJob` (after it) always gets time. No channel is created in
+  a tick whose ensure failed or wasn't reached.
 - **Bucket outside the budget** (round 4): `eraseAfterPurge` always runs
   `deleteAllUserMedia` first (no budget, as on main); only the Stream step is
   budgeted/deferred. The drain moves a FAILED row to the back (`queued_at` =

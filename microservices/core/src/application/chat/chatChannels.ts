@@ -406,6 +406,10 @@ export async function safeFreezeChatChannel(
 }
 
 export const RECONCILE_BATCH = 50;
+/** Stop starting Stream work this long after the tick started. */
+export const RECONCILE_DEADLINE_MS = 90_000;
+/** Stop after this many Stream failures in one tick (an outage). */
+export const RECONCILE_MAX_FAILURES = 2;
 
 export interface ReconcileSummary {
   notConfigured: number;
@@ -415,17 +419,33 @@ export interface ReconcileSummary {
   provisionFailed: number;
   frozen: number;
   freezeFailed: number;
+  /** Not started this tick (deadline or failure stop): next tick. */
+  deferred: number;
+}
+
+export interface ReconcileBudget {
+  deadlineMs?: number;
+  maxFailures?: number;
+  clock?: () => number;
 }
 
 /**
  * The scheduler's retry (design E: "retries from `pending`"): channels whose
  * relationship is active but which aren't `active` (or don't exist yet), and
- * `active` channels whose relationship has ended. Bounded per tick; a failure
- * is logged and retried next tick, and never stops the others.
+ * `active` channels whose relationship has ended. A failure is logged and
+ * retried next tick.
+ *
+ * **Bounded in time, not just count** (Inspector Brad, #570 round 5): the
+ * scheduler Lambda has 300 s and `sessionRemindersJob` runs after this job.
+ * No new Stream work starts once `deadlineMs` has passed since the tick
+ * started (`now`), or after `maxFailures` Stream failures in the tick (a
+ * hanging or failing Stream). What's left is counted as `deferred` and stays
+ * pending for the next tick, so the jobs after this one always get time.
  */
 export async function reconcileChatChannels(
   now: Date = new Date(),
   limit: number = RECONCILE_BATCH,
+  budget: ReconcileBudget = {},
 ): Promise<ReconcileSummary> {
   const summary: ReconcileSummary = {
     notConfigured: 0,
@@ -434,58 +454,73 @@ export async function reconcileChatChannels(
     provisionFailed: 0,
     frozen: 0,
     freezeFailed: 0,
+    deferred: 0,
   };
   const client = getStreamClient();
   if (!client) {
     summary.notConfigured = 1;
     return summary;
   }
+  const deadline = now.getTime() + (budget.deadlineMs ?? RECONCILE_DEADLINE_MS);
+  const maxFailures = budget.maxFailures ?? RECONCILE_MAX_FAILURES;
+  const clock = budget.clock ?? Date.now;
+  let failures = 0;
+  const outOfBudget = () => clock() >= deadline || failures >= maxFailures;
+
   // Every tick (memoised per container), so a deploy locks the channel
   // types down even before any new channel is provisioned. If it fails,
   // provisioning waits for the next tick; freezing still runs.
-  let typesReady = true;
-  try {
-    await ensureCoachingChannelType(client);
-  } catch (err) {
-    typesReady = false;
-    summary.ensureFailed = 1;
-    console.error("[chat] channel type ensure failed", err);
+  let typesReady = false;
+  if (!outOfBudget()) {
+    try {
+      await ensureCoachingChannelType(client);
+      typesReady = true;
+    } catch (err) {
+      failures += 1;
+      summary.ensureFailed = 1;
+      console.error("[chat] channel type ensure failed", err);
+    }
   }
   const db = getDb();
   const trainer = aliasedTable(profiles, "chat_trainer");
   const athlete = aliasedTable(profiles, "chat_athlete");
 
-  const toProvision = !typesReady
-    ? []
-    : await db
-        .select({ id: ptClientRelationships.id })
-        .from(ptClientRelationships)
-        .innerJoin(trainer, eq(trainer.id, ptClientRelationships.trainerId))
-        .innerJoin(athlete, eq(athlete.id, ptClientRelationships.clientId))
-        .leftJoin(
-          chatChannels,
-          eq(chatChannels.relationshipId, ptClientRelationships.id),
-        )
-        .where(
-          and(
-            eq(ptClientRelationships.status, "active"),
-            eq(ptClientRelationships.isAiTrainer, false),
-            isNull(trainer.deletedAt),
-            isNull(athlete.deletedAt),
-            or(
-              isNull(chatChannels.relationshipId),
-              ne(chatChannels.state, "active"),
-            ),
-          ),
-        )
-        // Never-tried first, then the longest-waiting retries.
-        .orderBy(sql`${chatChannels.updatedAt} asc nulls first`)
-        .limit(limit);
+  const toProvision = await db
+    .select({ id: ptClientRelationships.id })
+    .from(ptClientRelationships)
+    .innerJoin(trainer, eq(trainer.id, ptClientRelationships.trainerId))
+    .innerJoin(athlete, eq(athlete.id, ptClientRelationships.clientId))
+    .leftJoin(
+      chatChannels,
+      eq(chatChannels.relationshipId, ptClientRelationships.id),
+    )
+    .where(
+      and(
+        eq(ptClientRelationships.status, "active"),
+        eq(ptClientRelationships.isAiTrainer, false),
+        isNull(trainer.deletedAt),
+        isNull(athlete.deletedAt),
+        or(
+          isNull(chatChannels.relationshipId),
+          ne(chatChannels.state, "active"),
+        ),
+      ),
+    )
+    // Never-tried first, then the longest-waiting retries.
+    .orderBy(sql`${chatChannels.updatedAt} asc nulls first`)
+    .limit(limit);
   for (const { id } of toProvision) {
+    // Without the locked-down types (ensure failed or not reached), no
+    // channel is created this tick.
+    if (!typesReady || outOfBudget()) {
+      summary.deferred += 1;
+      continue;
+    }
     try {
       const result = await provisionChatChannel(id, now);
       if (result === "provisioned") summary.provisioned += 1;
     } catch (err) {
+      failures += 1;
       summary.provisionFailed += 1;
       console.error(`[chat] provisioning ${id} failed`, err);
     }
@@ -507,9 +542,14 @@ export async function reconcileChatChannels(
     .orderBy(asc(chatChannels.updatedAt))
     .limit(limit);
   for (const { id } of toFreeze) {
+    if (outOfBudget()) {
+      summary.deferred += 1;
+      continue;
+    }
     try {
       if ((await freezeChatChannel(id, now)) === "frozen") summary.frozen += 1;
     } catch (err) {
+      failures += 1;
       summary.freezeFailed += 1;
       console.error(`[chat] freezing ${id} failed`, err);
     }

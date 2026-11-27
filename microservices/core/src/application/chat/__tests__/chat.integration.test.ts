@@ -85,6 +85,7 @@ import { currentDeclarationVersion } from "../../coaching/declaration";
 import { runCoachScheduler } from "../../coaching/scheduler/coachScheduler";
 import { COACH_SCHEDULER_JOBS } from "../../coaching/scheduler/jobs";
 import { chatChannelsJob } from "../../coaching/scheduler/jobs/chatChannels";
+import { sessionRemindersJob } from "../../coaching/scheduler/jobs/sessionReminders";
 import { NotificationDispatcher } from "../../notifications/push/notificationDispatcher";
 import {
   channelIdFor,
@@ -92,6 +93,8 @@ import {
   freezeChatChannel,
   provisionChatChannel,
   reconcileChatChannels,
+  RECONCILE_DEADLINE_MS,
+  RECONCILE_MAX_FAILURES,
   safeFreezeChatChannel,
   safeProvisionChatChannel,
   setStreamClientForTests,
@@ -1422,6 +1425,120 @@ describe("post-purge erasure budget", () => {
     expect(drained).toMatchObject({ deleted: 2, waiting: 0 });
     expect(deleteAllUserMedia).toHaveBeenCalledTimes(2);
     expect(await queuedIds()).toEqual([]);
+  });
+});
+
+// ─── The scheduler job is time-bounded (Inspector Brad, #570 round 5) ──────
+
+describe("chat_channels is bounded in time, so the jobs after it still run", () => {
+  /** Extra active relationships, so a tick has more than two to do. */
+  async function moreClients(n: number): Promise<string[]> {
+    const ids: string[] = [];
+    for (let i = 0; i < n; i++) {
+      const id = randomUUID();
+      await db
+        .insert(schema.profiles)
+        .values({ id, fullName: `Client ${i}`, role: "user" });
+      const [rel] = await db
+        .insert(schema.ptClientRelationships)
+        .values({ trainerId: COACH_C, clientId: id, status: "active" })
+        .returning();
+      ids.push(rel!.id);
+    }
+    return ids;
+  }
+
+  it("the defaults are 90 s and 2 failures per tick", () => {
+    expect(RECONCILE_DEADLINE_MS).toBe(90_000);
+    expect(RECONCILE_MAX_FAILURES).toBe(2);
+  });
+
+  it("past the deadline nothing new starts, the rest stays pending, and the next job still runs", async () => {
+    stream.calls = [];
+    const later = vi.fn(async () => ({ ran: 1 }));
+    const tickStart = new Date(Date.now() - 91_000); // 91 s into the tick
+    const result = await runCoachScheduler(
+      [chatChannelsJob, { name: "after_chat", cadence: "tick", run: later }],
+      { now: tickStart, dispatcher: new NotificationDispatcher() },
+    );
+    expect(result.jobs.chat_channels).toMatchObject({
+      status: "ran",
+      summary: { provisioned: 0, deferred: 2 },
+    });
+    expect(stream.calls).toEqual([]);
+    expect(await channelRow(REL_CA)).toBeUndefined(); // next tick
+    expect(later).toHaveBeenCalledTimes(1);
+    expect(result.jobs.after_chat).toMatchObject({ status: "ran" });
+  });
+
+  it("with Stream failing, it stops after 2 failures and defers the rest", async () => {
+    await moreClients(3); // 5 to provision in all
+    await reconcileChatChannels(); // types ensured once for this container
+    await db.delete(schema.chatChannels);
+    stream.calls = [];
+    stream.failOn(/POST \/users$/);
+    const summary = await reconcileChatChannels();
+    expect(summary).toMatchObject({
+      provisionFailed: 2,
+      provisioned: 0,
+      deferred: 3,
+    });
+    expect(stream.calls.filter((c) => c.path === "/users").length).toBe(2);
+  });
+
+  it("a failed ensure counts toward the stop; freezing stops after the second failure", async () => {
+    const extra = await moreClients(2);
+    await reconcileChatChannels();
+    for (const rel of [REL_CA, REL_EA, ...extra]) {
+      await db
+        .update(schema.ptClientRelationships)
+        .set({ status: "terminated" })
+        .where(eq(schema.ptClientRelationships.id, rel));
+    }
+    configure(); // a fresh container: the ensure runs (and fails) again
+    stream.down = true;
+    const summary = await reconcileChatChannels();
+    expect(summary).toMatchObject({
+      ensureFailed: 1,
+      freezeFailed: 1,
+      frozen: 0,
+      deferred: 3,
+    });
+  });
+
+  it("a full tick with a hanging Stream still runs sessionRemindersJob", async () => {
+    await moreClients(5);
+    // Each Stream call "hangs" until its 8 s timeout (simulated clock).
+    const original = stream.fetch;
+    stream.fetch = async (input, init) => {
+      vi.setSystemTime(Date.now() + 8_000);
+      return {
+        ok: false,
+        status: 0,
+        text: async () => "",
+        ...(await original(input, init).then(() => ({}))),
+      };
+    };
+    configure();
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const tickStart = new Date();
+      const result = await runCoachScheduler(
+        [chatChannelsJob, sessionRemindersJob],
+        { now: tickStart, dispatcher: new NotificationDispatcher() },
+      );
+      expect(result.jobs.chat_channels).toMatchObject({ status: "ran" });
+      const chat = (
+        result.jobs.chat_channels as { summary: Record<string, number> }
+      ).summary;
+      expect(chat.deferred).toBeGreaterThan(0);
+      // Well inside the Lambda's 300 s: the budget stopped the chat job.
+      expect(Date.now() - tickStart.getTime()).toBeLessThan(120_000);
+      expect(result.jobs.session_reminders).toMatchObject({ status: "ran" });
+    } finally {
+      vi.useRealTimers();
+      stream.fetch = original;
+    }
   });
 });
 
