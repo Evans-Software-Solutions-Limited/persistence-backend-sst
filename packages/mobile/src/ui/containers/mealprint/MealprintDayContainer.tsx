@@ -114,7 +114,9 @@ const EFFORT_DEFAULT = DEFAULT_MEALPRINT_PREFERENCES.effortLevel;
 const NO_REPLACEMENT = "No replacement matched. Try different feedback.";
 
 /** The state screen for a failed plan-generate call. */
-export function generateFailureState(status: number | undefined): MealprintState {
+export function generateFailureState(
+  status: number | undefined,
+): MealprintState {
   if (status === 429) return "cap";
   if (status === 422) return "none";
   return "down";
@@ -218,8 +220,7 @@ export function MealprintDayContainer({
     return () => flowReset();
   }, [today, flowOpen, flowReset, resetGenerate, resetSwap, resetAccept]);
 
-  const effort =
-    effortLevel ?? preferences.data?.effortLevel ?? EFFORT_DEFAULT;
+  const effort = effortLevel ?? preferences.data?.effortLevel ?? EFFORT_DEFAULT;
 
   // -- Generate --------------------------------------------------------------
 
@@ -319,8 +320,7 @@ export function MealprintDayContainer({
   useEffect(() => {
     if (swap.stage === "ready") {
       const result = swap.result;
-      const options =
-        result?.options ?? (result?.meal ? [result.meal] : []);
+      const options = result?.options ?? (result?.meal ? [result.meal] : []);
       setSwapOptions(options);
       if (options.length === 0) setSwapError(NO_REPLACEMENT);
       resetSwapCall();
@@ -428,7 +428,8 @@ export function MealprintDayContainer({
     setSaveError(null);
     try {
       const dated =
-        datedRef.current ?? (await runAccept(planDraftToAcceptInput(effective)));
+        datedRef.current ??
+        (await runAccept(planDraftToAcceptInput(effective)));
       if (!dated) return null;
       datedRef.current = dated;
       const res = await api.savePlanFromMealprint(
@@ -611,7 +612,9 @@ export function MealprintDayContainer({
     return (
       <MealprintSavedPresenter
         name={nameForm.watch("name")}
-        onName={(name) => nameForm.setValue("name", name, { shouldValidate: true })}
+        onName={(name) =>
+          nameForm.setValue("name", name, { shouldValidate: true })
+        }
         onNameDone={onNameDone}
         nameError={firstMessage(nameForm.formState.errors) ?? null}
         mealCount={savedPlan.meals.length || (effective?.meals.length ?? 0)}
@@ -646,7 +649,9 @@ export function MealprintDayContainer({
 
   if (generate.stage === "error" && generate.failure) {
     if (generate.failure.entitlementDenied) {
-      return <MealprintLockedPresenter onBack={onClose} onUpgrade={gate.onUpgrade} />;
+      return (
+        <MealprintLockedPresenter onBack={onClose} onUpgrade={gate.onUpgrade} />
+      );
     }
     const state = online
       ? generateFailureState(generate.failure.status)

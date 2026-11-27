@@ -74,7 +74,9 @@ export function MealprintContainer() {
   }
 
   if (!gate.allowed) {
-    return <MealprintLockedPresenter onBack={onClose} onUpgrade={gate.onUpgrade} />;
+    return (
+      <MealprintLockedPresenter onBack={onClose} onUpgrade={gate.onUpgrade} />
+    );
   }
 
   return tab === "meal" ? (

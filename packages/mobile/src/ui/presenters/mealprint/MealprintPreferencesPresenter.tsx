@@ -60,11 +60,7 @@ import { Text, View } from "@tamagui/core";
 import { Btn, HeaderBar } from "@/ui/components/foundation";
 import { EffortRadio } from "./MealprintHomePresenter";
 import { toneHex } from "@/ui/components/foundation/tones";
-import {
-  IconAlert,
-  IconCheck,
-  IconX,
-} from "@/ui/components/icons";
+import { IconAlert, IconCheck, IconX } from "@/ui/components/icons";
 import { PLogoDrawLoader } from "@/ui/components/PLogoDrawLoader";
 import {
   ALLERGEN_LABELS,
@@ -556,7 +552,6 @@ export function MealprintPreferencesPresenter({
               ))}
             </View>
           </Section>
-
         </ScrollView>
 
         {/* ⚠ PINNED, not the last row of the scroll. This form is seven sections

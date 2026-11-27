@@ -234,7 +234,13 @@ describe("Log all today (N22)", () => {
         kcal: 350,
         skipped: true,
       },
-      { localId: "b", mealName: "Lunch", dish: "Bowl", kcal: 350, skipped: false },
+      {
+        localId: "b",
+        mealName: "Lunch",
+        dish: "Bowl",
+        kcal: 350,
+        skipped: false,
+      },
     ]);
     expect(plan.inputs).toEqual([
       {
@@ -275,7 +281,10 @@ describe("Log all today (N22)", () => {
     ]);
     const plan = planLogAll(d, [], [], "t");
     expect(plan.rows[0]!.mealName).toBe("Brunch");
-    expect(plan.inputs[0]).toMatchObject({ mealId: "meal-9", mealSlot: "dinner" });
+    expect(plan.inputs[0]).toMatchObject({
+      mealId: "meal-9",
+      mealSlot: "dinner",
+    });
     expect(plan.inputs[0]!.userMealId).toBeUndefined();
   });
 

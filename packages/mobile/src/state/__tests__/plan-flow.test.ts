@@ -400,7 +400,9 @@ describe("usePlanFlow — PER-134 builder (N19/N20)", () => {
     get().open("2026-11-26");
     get().draftReady(
       result({
-        meals: [{ ...result().meals[0]!, label: "Dinner", flaggedUnsafe: true }],
+        meals: [
+          { ...result().meals[0]!, label: "Dinner", flaggedUnsafe: true },
+        ],
       }),
     );
     return get().draft!.meals[0]!.localId;

@@ -33,7 +33,10 @@ import {
 import { useAdapters } from "@/ui/hooks/useAdapters";
 import { useAuth } from "@/ui/hooks/useAuth";
 import { useGetFuelToday } from "@/ui/hooks/useGetFuelToday";
-import { useMealSuggest, type MealSuggestFailure } from "@/ui/hooks/useMealSuggest";
+import {
+  useMealSuggest,
+  type MealSuggestFailure,
+} from "@/ui/hooks/useMealSuggest";
 import { useMealprintGate } from "@/ui/hooks/useMealprintGate";
 import { useMealprintPreferences } from "@/ui/hooks/useMealprintPreferences";
 import { useOnlineStatus } from "@/ui/hooks/useOnlineStatus";
@@ -368,7 +371,9 @@ export function MealprintOneMealContainer({
 
   if (suggest.stage === "error" && suggest.failure) {
     if (suggest.failure.entitlementDenied) {
-      return <MealprintLockedPresenter onBack={onClose} onUpgrade={gate.onUpgrade} />;
+      return (
+        <MealprintLockedPresenter onBack={onClose} onUpgrade={gate.onUpgrade} />
+      );
     }
     const state = online ? suggestFailureState(suggest.failure) : "offline";
     return (
@@ -452,9 +457,7 @@ export function MealprintOneMealContainer({
         onShape: setShape,
       }}
       steer={steer}
-      onSteer={(text) =>
-        form.setValue("steer", text, { shouldValidate: true })
-      }
+      onSteer={(text) => form.setValue("steer", text, { shouldValidate: true })}
       steerError={steerError}
       notice={searchError}
       onSubmit={onSubmit}

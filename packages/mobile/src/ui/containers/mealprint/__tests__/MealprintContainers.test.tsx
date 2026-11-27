@@ -12,7 +12,10 @@ import type {
   PlanGeneratedMeal,
   PlanSwapMeal,
 } from "@/domain/models/mealprint";
-import type { NutritionEntry, NutritionTarget } from "@/domain/models/nutrition";
+import type {
+  NutritionEntry,
+  NutritionTarget,
+} from "@/domain/models/nutrition";
 import type { UserMeal } from "@/domain/models/userMeals";
 import type { AuthSession } from "@/domain/ports/auth.port";
 import { flattenFuelEntries } from "@/domain/services/nutrition.service";
@@ -35,7 +38,10 @@ import type { MealprintReviewProps } from "@/ui/presenters/mealprint/MealprintRe
 import type { MealprintStateProps } from "@/ui/presenters/mealprint/MealprintStatePresenter";
 import type { MealprintWorkingProps } from "@/ui/presenters/mealprint/MealprintWorkingPresenter";
 import { MealprintContainer } from "../MealprintContainer";
-import { generateFailureState, saveErrorMessage } from "../MealprintDayContainer";
+import {
+  generateFailureState,
+  saveErrorMessage,
+} from "../MealprintDayContainer";
 import { suggestFailureState } from "../MealprintOneMealContainer";
 
 type Probe = {
@@ -75,7 +81,8 @@ jest.mock("@/ui/presenters/mealprint/MealprintHomePresenter", () => ({
     mockProbeAs("home", `home-${p.tab}`)(p),
 }));
 jest.mock("@/ui/presenters/mealprint/MealprintIdeasPresenter", () => ({
-  MealprintIdeasPresenter: (p: MealprintIdeasProps) => mockProbeAs("ideas", "ideas")(p),
+  MealprintIdeasPresenter: (p: MealprintIdeasProps) =>
+    mockProbeAs("ideas", "ideas")(p),
 }));
 jest.mock("@/ui/presenters/mealprint/MealprintReviewPresenter", () => ({
   MealprintReviewPresenter: (p: MealprintReviewProps) =>
@@ -85,7 +92,8 @@ jest.mock("@/ui/presenters/mealprint/MealprintDayPresenter", () => ({
   MealprintDayPresenter: (p: MealprintDayProps) => mockProbeAs("day", "day")(p),
 }));
 jest.mock("@/ui/presenters/mealprint/MealprintDoneScreens", () => ({
-  MealprintSavedPresenter: (p: MealprintSavedProps) => mockProbeAs("saved", "saved")(p),
+  MealprintSavedPresenter: (p: MealprintSavedProps) =>
+    mockProbeAs("saved", "saved")(p),
   MealprintLoggedPresenter: (p: MealprintLoggedProps) =>
     mockProbeAs("logged", "logged")(p),
 }));
@@ -268,7 +276,10 @@ const swapMeal = (name: string, kcal: number): PlanSwapMeal => ({
   containsUnverified: false,
 });
 
-const entry = (id: string, over: Partial<NutritionEntry> = {}): NutritionEntry => ({
+const entry = (
+  id: string,
+  over: Partial<NutritionEntry> = {},
+): NutritionEntry => ({
   id,
   userId: USER,
   foodId: "food-x",
@@ -436,9 +447,9 @@ describe("Mealprint One meal (N15 → N17 → N18)", () => {
     // Show me something else excludes what was shown.
     await act(async () => mockProbe.ideas!.onMore());
     await waitFor(() => expect(api.suggestMealsCalls).toHaveLength(2));
-    expect(api.suggestMealsCalls[1]!.notWantedMeals!.map((m) => m.name)).toEqual(
-      ["Bowl", "Wrap"],
-    );
+    expect(
+      api.suggestMealsCalls[1]!.notWantedMeals!.map((m) => m.name),
+    ).toEqual(["Bowl", "Wrap"]);
     await waitFor(() => expect(mockProbe.screen).toBe("ideas"));
 
     act(() => mockProbe.ideas!.onSelect(0));
@@ -484,7 +495,9 @@ describe("Mealprint One meal (N15 → N17 → N18)", () => {
     act(() => mockProbe.review!.onBackToIdeas());
     expect(mockProbe.screen).toBe("ideas");
     act(() => mockProbe.ideas!.onPreferences());
-    expect(mockPush).toHaveBeenCalledWith("/(app)/fuel/preferences?mode=editor");
+    expect(mockPush).toHaveBeenCalledWith(
+      "/(app)/fuel/preferences?mode=editor",
+    );
     act(() => mockProbe.ideas!.onBack());
     expect(mockProbe.screen).toBe("home-meal");
   });
@@ -639,7 +652,11 @@ describe("Mealprint Whole day (N15 → N19/N20)", () => {
     ]);
     api.planSwapResult = {
       meal: swapMeal("Chilli", 612),
-      options: [swapMeal("Chilli", 612), swapMeal("Cod", 540), swapMeal("Tikka", 700)],
+      options: [
+        swapMeal("Chilli", 612),
+        swapMeal("Cod", 540),
+        swapMeal("Tikka", 700),
+      ],
       emptyReason: null,
       labelCheckRequired: true,
     };
@@ -660,7 +677,9 @@ describe("Mealprint Whole day (N15 → N19/N20)", () => {
       delta: "−60 kcal",
       deltaQuiet: false,
     });
-    expect(mockProbe.day!.blockedLabel).toBe("Pick a replacement or keep the meal");
+    expect(mockProbe.day!.blockedLabel).toBe(
+      "Pick a replacement or keep the meal",
+    );
 
     await act(async () => mockProbe.day!.swap!.onMore());
     await waitFor(() => expect(api.swapPlanMealCalls).toHaveLength(2));
@@ -681,7 +700,11 @@ describe("Mealprint Whole day (N15 → N19/N20)", () => {
     act(() => mockProbe.day!.swap!.onPick(1));
     expect(mockProbe.day!.swap).toBeNull();
     const swapped = mockProbe.day!.meals.find((m) => m.localId === lunch)!;
-    expect(swapped).toMatchObject({ name: "Cod", swapped: true, slot: "Lunch" });
+    expect(swapped).toMatchObject({
+      name: "Cod",
+      swapped: true,
+      slot: "Lunch",
+    });
 
     act(() => mockProbe.day!.onUndo(lunch));
     expect(mockProbe.day!.meals.find((m) => m.localId === lunch)!.name).toBe(
@@ -731,7 +754,9 @@ describe("Mealprint Whole day (N15 → N19/N20)", () => {
       genMeal("Oats", "Breakfast", "breakfast"),
       genMeal("Bowl", "Lunch", "lunch", { flaggedUnsafe: true }),
     ]);
-    expect(mockProbe.day!.blockedLabel).toBe("Swap the flagged meal to continue");
+    expect(mockProbe.day!.blockedLabel).toBe(
+      "Swap the flagged meal to continue",
+    );
     expect(mockProbe.day!.swap).toBeNull();
     const oats = idOf("Breakfast");
     act(() => mockProbe.day!.onTapMeal(oats));
@@ -794,12 +819,17 @@ describe("Mealprint Whole day — Save as a plan (N21)", () => {
       "Lunch",
     ]);
     expect(api.mealprintSaves).toEqual([
-      { input: { fromMealprintPlanId: "plan-1" }, key: "mealprint-save-plan-1" },
+      {
+        input: { fromMealprintPlanId: "plan-1" },
+        key: "mealprint-save-plan-1",
+      },
     ]);
-    await waitFor(() => expect(api.plans.get("plan-1")!.status).toBe("archived"));
-    expect(storage.getCachedNutritionPlans(USER)!.mine.map((p) => p.id)).toEqual([
-      "plan-from-plan-1",
-    ]);
+    await waitFor(() =>
+      expect(api.plans.get("plan-1")!.status).toBe("archived"),
+    );
+    expect(
+      storage.getCachedNutritionPlans(USER)!.mine.map((p) => p.id),
+    ).toEqual(["plan-from-plan-1"]);
     expect(mockProbe.saved).toMatchObject({ name: "Mealprint", mealCount: 2 });
 
     // Rename on the saved screen queues an edit of the plan.
@@ -809,7 +839,9 @@ describe("Mealprint Whole day — Save as a plan (N21)", () => {
     expect(
       storage
         .getPendingMutations()
-        .some((m) => m.method === "PUT" && m.endpoint.includes("plan-from-plan-1")),
+        .some(
+          (m) => m.method === "PUT" && m.endpoint.includes("plan-from-plan-1"),
+        ),
     ).toBe(true);
     expect(storage.getCachedNutritionPlans(USER)!.mine[0]!.name).toBe(
       "Training day",
@@ -841,7 +873,9 @@ describe("Mealprint Whole day — Save as a plan (N21)", () => {
     expect(api.mealprintSaves).toHaveLength(1);
     await waitFor(() => expect(mockProbe.saved!.inShoppingList).toBe(true));
     expect(
-      storage.getCachedPlansShopping(USER)!.list!.plans.map((p) => p.nutritionPlanId),
+      storage
+        .getCachedPlansShopping(USER)!
+        .list!.plans.map((p) => p.nutritionPlanId),
     ).toEqual(["plan-from-plan-1"]);
     act(() => mockProbe.saved!.onShoppingList());
     expect(mockPush).toHaveBeenCalledWith("/(app)/fuel/plans-shopping");
@@ -860,7 +894,9 @@ describe("Mealprint Whole day — Save as a plan (N21)", () => {
   });
 
   it("a failed save keeps the accepted day and retries with the same key", async () => {
-    const { api } = await generateDay([genMeal("Oats", "Breakfast", "breakfast")]);
+    const { api } = await generateDay([
+      genMeal("Oats", "Breakfast", "breakfast"),
+    ]);
     api.mealprintSaveFailures.push({
       kind: "api",
       code: "server",
@@ -892,14 +928,18 @@ describe("Mealprint Whole day — Save as a plan (N21)", () => {
     await act(async () => mockProbe.day!.onSave());
     await waitFor(() => expect(mockProbe.day!.errorMessage).toBeTruthy());
     act(() => mockProbe.day!.onMore(idOf("Breakfast")));
-    await waitFor(() => expect(api.plans.get("plan-1")!.status).toBe("archived"));
+    await waitFor(() =>
+      expect(api.plans.get("plan-1")!.status).toBe("archived"),
+    );
     await act(async () => mockProbe.day!.onSave());
     await waitFor(() => expect(mockProbe.screen).toBe("saved"));
     expect(api.acceptPlanCalls).toHaveLength(2);
   });
 
   it("today already has a Mealprint plan: Replace it archives that one and saves", async () => {
-    const { api } = await generateDay([genMeal("Oats", "Breakfast", "breakfast")]);
+    const { api } = await generateDay([
+      genMeal("Oats", "Breakfast", "breakfast"),
+    ]);
     const old = {
       id: "old-plan",
       userId: USER,
@@ -946,7 +986,9 @@ describe("Mealprint Whole day — Save as a plan (N21)", () => {
     ["avoidance_violation", /preferences changed/],
     ["portion_violation", /too large/],
   ] as const)("an accept failure (%s) is explained", async (code, text) => {
-    const { api } = await generateDay([genMeal("Oats", "Breakfast", "breakfast")]);
+    const { api } = await generateDay([
+      genMeal("Oats", "Breakfast", "breakfast"),
+    ]);
     api.nextAcceptPlanError = {
       kind: "api",
       code: "server",
@@ -1020,7 +1062,9 @@ describe("Mealprint Whole day — Log all today (N22)", () => {
   });
 
   it("when every meal already has food there's nothing to log", async () => {
-    const { storage } = await openDay([genMeal("Oats", "Breakfast", "breakfast")]);
+    const { storage } = await openDay([
+      genMeal("Oats", "Breakfast", "breakfast"),
+    ]);
     storage.cacheFuelToday(USER, TODAY, {
       date: TODAY,
       targets: null,
@@ -1046,5 +1090,122 @@ describe("Mealprint Whole day — Log all today (N22)", () => {
     act(() => mockProbe.day!.onTapMeal(idOf("Breakfast")));
     expect(mockProbe.day!.busy).toBe(true);
     expect(mockProbe.day!.errorMessage).toMatch(/offline/);
+  });
+
+  it("a failed drain after Log all and Undo is logged, not shown", async () => {
+    const spy = jest.spyOn(console, "error").mockImplementation(() => {});
+    await generateDay([genMeal("Bowl", "Lunch", "lunch")]);
+    mockSync.mockRejectedValueOnce(new Error("offline"));
+    await act(async () => mockProbe.day!.onLogAll());
+    await waitFor(() => expect(mockProbe.screen).toBe("logged"));
+    mockSync.mockRejectedValueOnce(new Error("offline"));
+    await act(async () => mockProbe.logged!.onUndo());
+    expect(mockProbe.logged!.undone).toBe(true);
+    expect(spy).toHaveBeenCalledTimes(2);
+    spy.mockRestore();
+  });
+});
+
+describe("Mealprint — the edges", () => {
+  it("Whole day: preferences, closing the cooking sheet, a chip off again, and the daily limit", async () => {
+    const { api } = await openDay([genMeal("Bowl", "Lunch", "lunch")]);
+    act(() => mockProbe.home!.onPreferences());
+    expect(mockPush).toHaveBeenCalledWith(
+      "/(app)/fuel/preferences?mode=editor",
+    );
+    act(() => mockProbe.home!.day!.onOpenEffort());
+    act(() => mockProbe.home!.day!.onCloseEffort());
+    expect(mockProbe.home!.day!.effortSheetOpen).toBe(false);
+
+    await act(async () => mockProbe.home!.onSubmit());
+    await waitFor(() => expect(mockProbe.screen).toBe("day"));
+    api.planSwapResult = {
+      meal: swapMeal("Chilli", 600),
+      options: [swapMeal("Chilli", 600)],
+      emptyReason: null,
+      labelCheckRequired: true,
+    };
+    await act(async () => mockProbe.day!.onSwap(idOf("Lunch")));
+    await waitFor(() => expect(mockProbe.day!.swap?.options).toHaveLength(1));
+    act(() => mockProbe.day!.swap!.onChip("Lighter"));
+    act(() => mockProbe.day!.swap!.onChip("Lighter"));
+    expect(mockProbe.day!.swap!.chips.every((c) => !c.on)).toBe(true);
+    // Tapping a meal while a swap is open does nothing.
+    act(() => mockProbe.day!.onTapMeal(idOf("Lunch")));
+    expect(mockProbe.day!.openId).toBeNull();
+    act(() => mockProbe.day!.swap!.onClose());
+
+    act(() => mockProbe.day!.onBack());
+    expect(mockBack).toHaveBeenCalled();
+  });
+
+  it("Whole day: a 429 shows the daily limit and its button goes back", async () => {
+    const { api } = await openDay([]);
+    api.nextPlanGenerateError = { status: 429, message: "x" };
+    await act(async () => mockProbe.home!.onSubmit());
+    await waitFor(() => expect(mockProbe.screen).toBe("state-cap"));
+    act(() => mockProbe.state!.onPrimary());
+    await waitFor(() => expect(mockProbe.screen).toBe("home-day"));
+  });
+
+  it("Whole day: the swap search fills up at 20 meals left out", async () => {
+    const { api } = await generateDay([genMeal("Bowl", "Lunch", "lunch")]);
+    const many = Array.from({ length: 10 }, (_, i) => swapMeal(`M${i}`, 600));
+    api.planSwapResult = {
+      meal: many[0]!,
+      options: many,
+      emptyReason: null,
+      labelCheckRequired: true,
+    };
+    await act(async () => mockProbe.day!.onSwap(idOf("Lunch")));
+    await waitFor(() => expect(mockProbe.day!.swap?.options).toHaveLength(10));
+    await act(async () => mockProbe.day!.swap!.onMore());
+    await waitFor(() => expect(mockProbe.day!.swap!.options).toHaveLength(10));
+    api.planSwapResult = {
+      ...api.planSwapResult,
+      options: Array.from({ length: 10 }, (_, i) => swapMeal(`N${i}`, 600)),
+    };
+    await act(async () => mockProbe.day!.swap!.onMore());
+    await waitFor(() =>
+      expect(mockProbe.day!.swap!.options[0]!.name).toBe("N0"),
+    );
+    await act(async () => mockProbe.day!.swap!.onMore());
+    await waitFor(() =>
+      expect(mockProbe.day!.swap!.error).toMatch(/replacement limit/),
+    );
+  });
+
+  it("One meal: the search fills up; Log to sheet closes; a failed drain is only logged", async () => {
+    const spy = jest.spyOn(console, "error").mockImplementation(() => {});
+    mockParams = { mode: "meal" };
+    const { api } = setup();
+    api.mealSuggestResult = {
+      ...api.mealSuggestResult,
+      suggestions: Array.from({ length: 11 }, (_, i) => idea(`I${i}`)),
+      emptyReason: null,
+    };
+    await waitFor(() => expect(mockProbe.screen).toBe("home-meal"));
+    await act(async () => mockProbe.home!.onSubmit());
+    await waitFor(() => expect(mockProbe.screen).toBe("ideas"));
+    api.mealSuggestResult = {
+      ...api.mealSuggestResult,
+      suggestions: Array.from({ length: 11 }, (_, i) => idea(`J${i}`)),
+    };
+    await act(async () => mockProbe.ideas!.onMore());
+    await waitFor(() => expect(api.suggestMealsCalls).toHaveLength(2));
+    await waitFor(() => expect(mockProbe.ideas?.ideas[0]?.name).toBe("J0"));
+    await act(async () => mockProbe.ideas!.onMore());
+    await waitFor(() => expect(mockProbe.ideas!.notice).toMatch(/limit/));
+    expect(api.suggestMealsCalls).toHaveLength(2);
+
+    act(() => mockProbe.ideas!.onSelect(0));
+    act(() => mockProbe.review!.onOpenLogTo());
+    act(() => mockProbe.review!.onCloseLogTo());
+    expect(mockProbe.review!.logToOpen).toBe(false);
+    mockSync.mockRejectedValueOnce(new Error("offline"));
+    await act(async () => mockProbe.review!.onLog());
+    expect(mockProbe.review!.added).toBe(true);
+    expect(spy).toHaveBeenCalled();
+    spy.mockRestore();
   });
 });

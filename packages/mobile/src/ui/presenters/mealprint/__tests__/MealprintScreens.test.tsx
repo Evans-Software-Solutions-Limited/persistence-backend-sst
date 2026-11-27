@@ -198,7 +198,11 @@ describe("MealprintWorkingPresenter (N16)", () => {
     const onCancel = jest.fn();
     const onBack = jest.fn();
     const { getByText, getByTestId } = renderWithTheme(
-      <MealprintWorkingPresenter body="Fitting…" onBack={onBack} onCancel={onCancel} />,
+      <MealprintWorkingPresenter
+        body="Fitting…"
+        onBack={onBack}
+        onCancel={onCancel}
+      />,
     );
     expect(getByText("Working out what fits…")).toBeTruthy();
     fireEvent.press(getByTestId("mealprint-working-cancel"));
@@ -570,7 +574,9 @@ describe("MealprintDayPresenter (N19/N20)", () => {
         })}
       />,
     );
-    expect(getByText("You already have a Mealprint plan for today.")).toBeTruthy();
+    expect(
+      getByText("You already have a Mealprint plan for today."),
+    ).toBeTruthy();
     fireEvent.press(getByTestId("mealprint-day-error-action"));
     expect(onPress).toHaveBeenCalled();
   });

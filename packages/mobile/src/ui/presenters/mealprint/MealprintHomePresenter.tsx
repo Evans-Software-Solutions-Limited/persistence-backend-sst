@@ -186,7 +186,9 @@ export function ChoiceChip({
     <Pressable
       onPress={onPress}
       accessibilityRole={role}
-      accessibilityState={role === "radio" ? { checked: selected } : { selected }}
+      accessibilityState={
+        role === "radio" ? { checked: selected } : { selected }
+      }
       testID={testID}
     >
       <View
@@ -194,7 +196,9 @@ export function ChoiceChip({
         paddingHorizontal={height < 36 ? 11 : 14}
         borderRadius={9999}
         borderWidth={1}
-        borderColor={selected ? "rgba(34,211,238,0.5)" : "rgba(255,255,255,0.12)"}
+        borderColor={
+          selected ? "rgba(34,211,238,0.5)" : "rgba(255,255,255,0.12)"
+        }
         backgroundColor={selected ? "rgba(34,211,238,0.14)" : "transparent"}
         justifyContent="center"
       >
@@ -513,25 +517,28 @@ export function MealprintHomePresenter(p: MealprintHomeProps) {
       ) : null}
 
       {day ? (
-      <BottomSheet
-        visible={day.effortSheetOpen}
-        onClose={day.onCloseEffort}
-        height="content"
-        testID={`${testID}-effort-sheet`}
-      >
-        <View accessibilityRole="radiogroup" accessibilityLabel="How much cooking">
-          <SheetTitle>How much cooking</SheetTitle>
-          {EFFORT_LEVELS.map((level) => (
-            <EffortRadio
-              key={level}
-              level={level}
-              selected={day.effortLevel === level}
-              onPress={() => day.onPickEffort(level)}
-              testID={`${testID}-effort-${level}`}
-            />
-          ))}
-        </View>
-      </BottomSheet>
+        <BottomSheet
+          visible={day.effortSheetOpen}
+          onClose={day.onCloseEffort}
+          height="content"
+          testID={`${testID}-effort-sheet`}
+        >
+          <View
+            accessibilityRole="radiogroup"
+            accessibilityLabel="How much cooking"
+          >
+            <SheetTitle>How much cooking</SheetTitle>
+            {EFFORT_LEVELS.map((level) => (
+              <EffortRadio
+                key={level}
+                level={level}
+                selected={day.effortLevel === level}
+                onPress={() => day.onPickEffort(level)}
+                testID={`${testID}-effort-${level}`}
+              />
+            ))}
+          </View>
+        </BottomSheet>
       ) : null}
     </MealprintPage>
   );

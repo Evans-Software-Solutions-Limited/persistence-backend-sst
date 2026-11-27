@@ -7,10 +7,7 @@ import {
   IconSettings,
   IconSparkles,
 } from "@/ui/components/icons";
-import {
-  BackBtn,
-  RoundIconBtn,
-} from "@/ui/presenters/fuel/plans/PlanChrome";
+import { BackBtn, RoundIconBtn } from "@/ui/presenters/fuel/plans/PlanChrome";
 import {
   AiCaveats,
   MACRO_COLOURS,
@@ -97,17 +94,17 @@ export function MealprintIdeasPresenter({
             </Text>
           ) : null}
           <Btn
-          variant="outline"
-          tone="primary"
-          size="lg"
-          full
-          icon={<RefreshCw size={16} color="#F4F4F8" />}
-          disabled={moreDisabled}
-          onPress={onMore}
-          testID={`${testID}-more`}
-        >
-          Show me something else
-        </Btn>
+            variant="outline"
+            tone="primary"
+            size="lg"
+            full
+            icon={<RefreshCw size={16} color="#F4F4F8" />}
+            disabled={moreDisabled}
+            onPress={onMore}
+            testID={`${testID}-more`}
+          >
+            Show me something else
+          </Btn>
         </>
       }
     >

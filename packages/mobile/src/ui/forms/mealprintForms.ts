@@ -1,5 +1,5 @@
 import { Type } from "@sinclair/typebox";
-import { schemaAccepts, schemaResolver, trimmed } from "@/shared/form";
+import { schemaResolver, trimmed } from "@/shared/form";
 import { MAX_STEER_LENGTH } from "@/domain/models/mealprint";
 
 /**
@@ -25,10 +25,6 @@ export const mealprintSteerResolver = schemaResolver<MealprintSteerValues>(
   mealprintSteerSchema,
   { prepare: trimmed },
 );
-
-export function mealprintSteerAccepts(v: MealprintSteerValues): boolean {
-  return schemaAccepts(mealprintSteerSchema, trimmed(v));
-}
 
 export interface SwapFeedbackValues {
   feedback: string;

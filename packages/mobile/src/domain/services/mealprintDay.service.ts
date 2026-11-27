@@ -306,7 +306,9 @@ export function preferencesLine(
 export function mealItemsLine(meal: Pick<PlanGeneratedMeal, "items">): string {
   return meal.items
     .map((item) =>
-      item.servings === 1 ? item.name : `${item.name} ×${round2(item.servings)}`,
+      item.servings === 1
+        ? item.name
+        : `${item.name} ×${round2(item.servings)}`,
     )
     .join(" · ");
 }

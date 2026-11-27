@@ -2,11 +2,7 @@ import { Pressable } from "react-native";
 import { Text, View } from "@tamagui/core";
 import { Utensils } from "lucide-react-native";
 import { BottomSheet, Btn } from "@/ui/components/foundation";
-import {
-  IconCheck,
-  IconChevronD,
-  IconChevronL,
-} from "@/ui/components/icons";
+import { IconCheck, IconChevronD, IconChevronL } from "@/ui/components/icons";
 import { SheetTitle } from "@/ui/presenters/fuel/plans/PlanChrome";
 import {
   AiCaveats,

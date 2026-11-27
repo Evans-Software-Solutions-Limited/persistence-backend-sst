@@ -383,7 +383,8 @@ function SwapPanel({ panel, testID }: { panel: SwapPanelVM; testID: string }) {
 export function MealprintDayPresenter(p: MealprintDayProps) {
   const testID = p.testID ?? "mealprint-day";
   const swappingId = p.swap?.localId ?? null;
-  const pct = p.target.kcal > 0 ? Math.min(1, p.totals.kcal / p.target.kcal) : 0;
+  const pct =
+    p.target.kcal > 0 ? Math.min(1, p.totals.kcal / p.target.kcal) : 0;
 
   return (
     <MealprintPage
@@ -567,7 +568,9 @@ export function MealprintDayPresenter(p: MealprintDayProps) {
                           {m.slot}
                         </Text>
                         {m.flagged ? <Pill label="CHECK" tone="amber" /> : null}
-                        {m.swapped ? <Pill label="SWAPPED" tone="cyan" /> : null}
+                        {m.swapped ? (
+                          <Pill label="SWAPPED" tone="cyan" />
+                        ) : null}
                       </View>
                       <Text
                         fontFamily="$body"
@@ -622,7 +625,9 @@ export function MealprintDayPresenter(p: MealprintDayProps) {
                   >
                     <IconSwap
                       size={18}
-                      color={swapping ? "#22D3EE" : m.flagged ? AMBER : "#C2C2CE"}
+                      color={
+                        swapping ? "#22D3EE" : m.flagged ? AMBER : "#C2C2CE"
+                      }
                     />
                   </View>
                 </Pressable>
