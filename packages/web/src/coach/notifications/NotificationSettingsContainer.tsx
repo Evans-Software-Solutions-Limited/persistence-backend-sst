@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { useQueryClient } from "@tanstack/react-query";
 import { applyValues, fieldMessages } from "@/lib/form";
@@ -30,6 +30,10 @@ import "./notifications.css";
  * Every change is checked by the form's resolver, then saved with the
  * settings' revision. A 409 loads the server's copy and says so; a 400 about
  * quiet hours lands on the time field.
+ *
+ * Saves run one at a time, each with the revision the previous one returned,
+ * so two quick changes never conflict with each other. Time fields save when
+ * the coach leaves the field, not on each keystroke (Inspector Brad, #578).
  */
 export function NotificationSettingsContainer() {
   const api = useNotificationsApi();
@@ -43,13 +47,31 @@ export function NotificationSettingsContainer() {
   const form = useForm<NotificationSettingsValues>({
     resolver: notificationSettingsResolver,
     values: q.data ? settingsToValues(q.data) : undefined,
-    resetOptions: { keepErrors: true },
+    // A save that lands while the coach is typing a time keeps what they typed.
+    resetOptions: { keepErrors: true, keepDirtyValues: true },
   });
 
-  async function save(input: NotificationSettingsInput) {
-    const before = q.data;
-    if (!before) return;
+  const queue = useRef<Promise<void>>(Promise.resolve());
+  const pending = useRef(0);
+
+  /** Queue a save behind any save already in flight. */
+  function save(input: NotificationSettingsInput): Promise<void> {
+    pending.current += 1;
     setBusy(true);
+    const run = queue.current.then(() => saveNow(input));
+    queue.current = run.finally(() => {
+      pending.current -= 1;
+      if (pending.current === 0) setBusy(false);
+    });
+    return queue.current;
+  }
+
+  async function saveNow(input: NotificationSettingsInput) {
+    // The newest copy: a save that just finished has put its revision here.
+    const before = queryClient.getQueryData<NotificationSettings>(
+      notificationKeys.settings,
+    );
+    if (!before) return;
     setError(null);
     setNotice(null);
     try {
@@ -62,6 +84,7 @@ export function NotificationSettingsContainer() {
       if (isCoachApiError(e) && e.code === "revision_conflict") {
         const latest = e.body?.current as NotificationSettings | undefined;
         queryClient.setQueryData(notificationKeys.settings, latest ?? before);
+        form.reset(settingsToValues(latest ?? before));
         if (!latest) void q.refetch();
         setNotice(CONFLICT_NOTICE);
         return;
@@ -81,8 +104,6 @@ export function NotificationSettingsContainer() {
           ? "You're offline. Settings change when you're back online."
           : "We couldn't save that change.",
       );
-    } finally {
-      setBusy(false);
     }
   }
 
@@ -157,9 +178,21 @@ export function NotificationSettingsContainer() {
           quietInput,
         );
       }}
-      onQuietTime={(field, value) =>
-        void change({ [field]: value }, quietInput)
-      }
+      onQuietTime={(field, value) => {
+        applyValues(form, { ...form.getValues(), [field]: value });
+        form.clearErrors(field);
+      }}
+      onQuietTimeDone={() => {
+        const v = form.getValues();
+        const saved = s.quietHours;
+        if (
+          v.quietFrom === (saved.from ?? "") &&
+          v.quietUntil === (saved.until ?? "")
+        ) {
+          return;
+        }
+        void change({}, quietInput);
+      }}
     />
   );
 }

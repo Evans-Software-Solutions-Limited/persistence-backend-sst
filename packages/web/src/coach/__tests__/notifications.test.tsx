@@ -3,6 +3,7 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { saveSession } from "../api/coachAuth";
 import { notificationsApi } from "../notifications/api";
 import {
+  calendarDate,
   channelOptions,
   dayTime,
   describeEvent,
@@ -347,6 +348,43 @@ describe("Today helpers", () => {
     expect(
       describeToday(todayItem({ client: null, facts: {} })).action.kind,
     ).toBe("done");
+  });
+
+  it("a programme's end date stays on its calendar day west of UTC", () => {
+    const before = process.env.TZ;
+    process.env.TZ = "America/New_York";
+    try {
+      const d = calendarDate("2026-11-30");
+      expect([
+        d.getFullYear(),
+        d.getMonth(),
+        d.getDate(),
+        d.getHours(),
+      ]).toEqual([2026, 10, 30, 0]);
+      expect(
+        describeToday(
+          todayItem({
+            kind: "programme_ending",
+            facts: { endDate: "2026-11-30" },
+          }),
+        ).label,
+      ).toBe("Programme ends 30 Nov");
+      expect(
+        describeEvent(
+          event({
+            kind: "programme_ending",
+            payload: { endDate: "2026-11-30" },
+          }),
+          NOW,
+        ).detail,
+      ).toContain("ends 30 Nov");
+      expect(calendarDate("2026-11-30T12:00:00Z").toISOString()).toBe(
+        "2026-11-30T12:00:00.000Z",
+      );
+    } finally {
+      if (before === undefined) delete process.env.TZ;
+      else process.env.TZ = before;
+    }
   });
 
   it("filter chips show only kinds with items", () => {

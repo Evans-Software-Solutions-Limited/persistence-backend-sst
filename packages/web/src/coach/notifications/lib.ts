@@ -42,6 +42,18 @@ const pad = (n: number) => String(n).padStart(2, "0");
 export const clock = (d: Date) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 const dayMonth = (d: Date) => `${d.getDate()} ${MONTHS[d.getMonth()]}`;
 
+/**
+ * A programme's end date is a calendar day ("2026-11-30"). `new Date()` reads
+ * that as UTC midnight, a day early west of UTC, so build it from its parts
+ * on the viewer's clock (Inspector Brad, #578). A full timestamp parses as is.
+ */
+export function calendarDate(value: string): Date {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  return m
+    ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
+    : new Date(value);
+}
+
 function startOfDay(d: Date): number {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 }
@@ -279,7 +291,7 @@ export function describeEvent(e: CoachEvent, now: Date): EventView {
         title: `${str(p.programName) ?? "Programme"} ends soon`,
         detail: join(
           when,
-          end && `ends ${dayMonth(new Date(end))}`,
+          end && `ends ${dayMonth(calendarDate(end))}`,
           left !== null && `${left} workout${left === 1 ? "" : "s"} left`,
         ),
         tone: "info",
@@ -481,7 +493,7 @@ export function describeToday(item: TodayItem): TodayRowView {
       const end = str(f.endDate);
       const left = num(f.remaining);
       label = end
-        ? `Programme ends ${dayMonth(new Date(end))}`
+        ? `Programme ends ${dayMonth(calendarDate(end))}`
         : "Programme ends soon";
       facts = [
         str(f.programName),

@@ -86,7 +86,12 @@ export function TodayContainer({
     );
   }
 
-  const rows: TodayRow[] = filterToday(data.queue, filter).map((item) => {
+  const filters = todayFilterCounts(data.counts.byKind, data.counts.total);
+  // A chip whose count drops to 0 disappears: fall back to All rather than
+  // show "All clear" over a queue that still has items (Inspector Brad, #578).
+  const shown = filters.some((f) => f.id === filter) ? filter : "all";
+  if (shown !== filter) setFilter(shown);
+  const rows: TodayRow[] = filterToday(data.queue, shown).map((item) => {
     const who = whoOf(item.client, item.facts);
     return {
       ...describeToday(item),
@@ -110,8 +115,8 @@ export function TodayContainer({
     <TodayView
       dateLabel={longDate(at)}
       cells={stripCells(data.counts.total, active, data.strip)}
-      filters={todayFilterCounts(data.counts.byKind, data.counts.total)}
-      filter={filter}
+      filters={filters}
+      filter={shown}
       rows={rows}
       schedule={scheduleRows(data.schedule, at)}
       busyId={busyId}

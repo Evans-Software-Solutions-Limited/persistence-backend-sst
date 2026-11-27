@@ -117,7 +117,8 @@ describe("NotificationsContainer", () => {
       screen.getByRole("button", { name: "Show 2 clients with nothing new" }),
     ).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Mark all read" }));
-    await waitFor(() => expect(n.markRead).toHaveBeenLastCalledWith("all"));
+    // Only the unread events on screen, never `{all: true}` (Inspector Brad, #578).
+    await waitFor(() => expect(n.markRead).toHaveBeenLastCalledWith(["e-3"]));
     await waitFor(() =>
       expect(
         (
@@ -282,9 +283,9 @@ describe("NotificationSettingsContainer", () => {
       ),
     });
     renderSettings(n);
-    fireEvent.change(await screen.findByLabelText("Until"), {
-      target: { value: "21:00" },
-    });
+    const until = await screen.findByLabelText("Until");
+    fireEvent.change(until, { target: { value: "21:00" } });
+    fireEvent.blur(until);
     expect(
       await screen.findByText("Start and end need to be different times."),
     ).toBeTruthy();
@@ -353,9 +354,9 @@ describe("NotificationSettingsContainer", () => {
       ),
     });
     renderSettings(n);
-    fireEvent.change(await screen.findByLabelText("From"), {
-      target: { value: "22:00" },
-    });
+    const from = await screen.findByLabelText("From");
+    fireEvent.change(from, { target: { value: "22:00" } });
+    fireEvent.blur(from);
     expect(
       await screen.findByText("Start and end need to be different times."),
     ).toBeTruthy();
@@ -533,5 +534,142 @@ describe("Today on the real clock", () => {
     });
     expect(await screen.findByText("Need you")).toBeTruthy();
     expect(screen.queryByText("Active clients")).toBeNull();
+  });
+});
+
+// ─── Inspector Brad, #578 ────────────────────────────────────────────────────
+
+describe("Inspector Brad #578", () => {
+  it("typing a time saves once, with the final value, when the field is left", async () => {
+    const n = fakeNotificationsApi({
+      settings: vi.fn().mockResolvedValue(
+        notificationSettings({
+          quietHours: { enabled: true, from: "21:00", until: "07:00" },
+        }),
+      ),
+      putSettings: vi.fn().mockResolvedValue(
+        notificationSettings({
+          revision: 3,
+          quietHours: { enabled: true, from: "21:30", until: "07:00" },
+        }),
+      ),
+    });
+    renderSettings(n);
+    const from = (await screen.findByLabelText("From")) as HTMLInputElement;
+    fireEvent.change(from, { target: { value: "02:00" } });
+    fireEvent.change(from, { target: { value: "21:00" } });
+    fireEvent.change(from, { target: { value: "21:30" } });
+    expect(n.putSettings).not.toHaveBeenCalled();
+    expect(from.disabled).toBe(false);
+    expect(from.value).toBe("21:30");
+    fireEvent.blur(from);
+    await waitFor(() => expect(n.putSettings).toHaveBeenCalledTimes(1));
+    expect(n.putSettings).toHaveBeenCalledWith({
+      quietHours: { enabled: true, from: "21:30", until: "07:00" },
+      expectedRevision: 2,
+    });
+    // Leaving the field again with nothing changed saves nothing.
+    fireEvent.blur(from);
+    await waitFor(() => expect(from.value).toBe("21:30"));
+    expect(n.putSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it("a time field stays editable while a save is in flight", async () => {
+    let finish: (v: unknown) => void = () => undefined;
+    const n = fakeNotificationsApi({
+      settings: vi.fn().mockResolvedValue(
+        notificationSettings({
+          quietHours: { enabled: true, from: "21:00", until: "07:00" },
+        }),
+      ),
+      putSettings: vi.fn(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          }),
+      ),
+    });
+    renderSettings(n);
+    fireEvent.change(await screen.findByLabelText("New record"), {
+      target: { value: "off" },
+    });
+    await waitFor(() => expect(n.putSettings).toHaveBeenCalledTimes(1));
+    const until = screen.getByLabelText("Until") as HTMLInputElement;
+    expect(until.disabled).toBe(false);
+    fireEvent.change(until, { target: { value: "06:30" } });
+    finish(notificationSettings({ revision: 3 }));
+    await waitFor(() =>
+      expect(
+        (screen.getByLabelText("New record") as HTMLSelectElement).disabled,
+      ).toBe(false),
+    );
+    // The time typed during the save is still there.
+    expect(until.value).toBe("06:30");
+  });
+
+  it("two quick changes save in turn with the returned revision, no conflict", async () => {
+    const putSettings = vi
+      .fn()
+      .mockResolvedValueOnce(notificationSettings({ revision: 3 }))
+      .mockResolvedValueOnce(notificationSettings({ revision: 4 }));
+    renderSettings(fakeNotificationsApi({ putSettings }));
+    const record = await screen.findByLabelText("New record");
+    const workout = screen.getByLabelText("Workout completed");
+    fireEvent.change(record, { target: { value: "off" } });
+    fireEvent.change(workout, { target: { value: "push" } });
+    await waitFor(() => expect(putSettings).toHaveBeenCalledTimes(2));
+    expect(putSettings.mock.calls[0]![0].expectedRevision).toBe(2);
+    expect(putSettings.mock.calls[1]![0].expectedRevision).toBe(3);
+    expect(screen.queryByText(/Updated on another device/)).toBeNull();
+  });
+
+  it("Mark all read sends nothing when nothing loaded is unread", async () => {
+    const n = fakeNotificationsApi({
+      feed: vi.fn().mockResolvedValue(
+        feedPage({
+          data: feedPage().data.map((e) => ({
+            ...e,
+            readAt: NOW.toISOString(),
+          })),
+          // Newer events past this page are still unread on the server.
+          unreadCount: 4,
+        }),
+      ),
+    });
+    renderCoach(<NotificationsContainer />, {
+      route: "/coach/notifications",
+      path: "/coach/notifications",
+      api: fakeApi(),
+      notifications: n,
+    });
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Mark all read" }),
+    );
+    expect(n.markRead).not.toHaveBeenCalled();
+  });
+
+  it("when a chip's count drops to 0, Today falls back to All", async () => {
+    const n = fakeNotificationsApi({
+      today: vi.fn().mockResolvedValue(todayPayload()),
+    });
+    renderCoach(<TodayContainer now={() => NOW} />, {
+      route: "/coach/today",
+      path: "/coach/today",
+      api: fakeApi(),
+      notifications: n,
+    });
+    fireEvent.click(await screen.findByRole("button", { name: /Flags/ }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /Mark done: Tom Reid/ }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: /Flags/ })).toBeNull(),
+    );
+    expect(screen.queryByText("All clear")).toBeNull();
+    const queue = screen.getByRole("list", { name: "Queue" });
+    expect(within(queue).getAllByRole("listitem")).toHaveLength(2);
+    expect(
+      screen.getByRole("button", { name: /^All/ }).getAttribute("aria-pressed"),
+    ).toBe("true");
   });
 });

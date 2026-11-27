@@ -28,7 +28,10 @@ export interface NotificationSettingsViewProps {
   error: string | null;
   onChannel: (kind: string, channel: Channel) => void;
   onQuietEnabled: (on: boolean) => void;
+  /** Typing in a time field: updates the form, saves nothing. */
   onQuietTime: (field: "quietFrom" | "quietUntil", value: string) => void;
+  /** Leaving a time field: checks and saves it (Inspector Brad, #578). */
+  onQuietTimeDone: () => void;
 }
 
 function TimeField({
@@ -38,6 +41,7 @@ function TimeField({
   error,
   disabled,
   onChange,
+  onBlur,
 }: {
   id: string;
   label: string;
@@ -45,6 +49,7 @@ function TimeField({
   error?: string;
   disabled: boolean;
   onChange: (v: string) => void;
+  onBlur: () => void;
 }) {
   return (
     <div>
@@ -60,6 +65,7 @@ function TimeField({
         aria-invalid={error ? true : undefined}
         aria-describedby={error ? `${id}-err` : undefined}
         onChange={(e) => onChange(e.target.value)}
+        onBlur={onBlur}
       />
       {error && (
         <span id={`${id}-err`} className="err">
@@ -140,16 +146,18 @@ export function NotificationSettingsView(p: NotificationSettingsViewProps) {
                   label="From"
                   value={p.quietFrom}
                   error={p.errors.quietFrom}
-                  disabled={off}
+                  disabled={offline}
                   onChange={(v) => p.onQuietTime("quietFrom", v)}
+                  onBlur={p.onQuietTimeDone}
                 />
                 <TimeField
                   id="quiet-until"
                   label="Until"
                   value={p.quietUntil}
                   error={p.errors.quietUntil}
-                  disabled={off}
+                  disabled={offline}
                   onChange={(v) => p.onQuietTime("quietUntil", v)}
+                  onBlur={p.onQuietTimeDone}
                 />
               </div>
             )}

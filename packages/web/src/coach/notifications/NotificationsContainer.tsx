@@ -83,7 +83,7 @@ export function NotificationsContainer({
     return { ...rowOf(e), name: w.name, initials: w.initials };
   });
 
-  async function markRead(ids: string[] | "all", key: string) {
+  async function markRead(ids: string[], key: string) {
     setError(null);
     setBusy(key);
     try {
@@ -93,15 +93,14 @@ export function NotificationsContainer({
         if (!old) return old;
         let changed = 0;
         const data = old.data.map((e) => {
-          if (e.readAt || (ids !== "all" && !ids.includes(e.id))) return e;
+          if (e.readAt || !ids.includes(e.id)) return e;
           changed += 1;
           return { ...e, readAt: stamp };
         });
         return {
           ...old,
           data,
-          unreadCount:
-            ids === "all" ? 0 : Math.max(0, old.unreadCount - changed),
+          unreadCount: Math.max(0, old.unreadCount - changed),
         };
       });
       void queryClient.invalidateQueries({ queryKey: notificationKeys.today });
@@ -147,7 +146,12 @@ export function NotificationsContainer({
       onWho={setWho}
       onMode={setMode}
       onShowQuiet={() => setShowQuiet(true)}
-      onMarkAll={() => void markRead("all", "all")}
+      onMarkAll={() => {
+        // Only what the coach can see: `{all: true}` would also mark events
+        // newer than this page (Inspector Brad, #578). The route takes 500.
+        const ids = events.filter((e) => !e.readAt).map((e) => e.id);
+        if (ids.length > 0) void markRead(ids, "all");
+      }}
       onMarkGroup={(key) => {
         const ids = shown
           .filter((e) => !e.readAt && whoOf(e.client, e.payload).key === key)

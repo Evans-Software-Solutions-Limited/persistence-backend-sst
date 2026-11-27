@@ -9,6 +9,7 @@
   - `/coach/notifications/settings` (C6b): react-hook-form + TypeBox (`settingsForm.ts`), one dropdown per server event kind, email hidden while `emailAvailable` is false, quiet hours with the coach's time zone; 409 loads the server copy, 400 lands on the time field.
 - Rail: Today and Notifications are live links with counts (`shell/places.ts` picks the active place). `renderCoach` provides a quiet fake notifications API.
 - Tests: `__tests__/notifications.test.tsx`, `__tests__/notificationsScreens.test.tsx`.
+- Inspector Brad #578 fixes (27 Nov): quiet-hours times save on blur, never disabled mid-save, and saves run one at a time with the revision the last one returned; programme end dates (`YYYY-MM-DD`) parse on the local calendar (`calendarDate`); Mark all read sends the loaded unread ids, not `{all: true}`; Today's filter falls back to All when its chip disappears.
 
 ### 2026-11-26 — APP-G1 set editor with reps per set + active workout pre-fill, mobile only ([PER-139](https://linear.app/evans-software-solutions/issue/PER-139); branch `claude/per-139-set-editor`)
 
