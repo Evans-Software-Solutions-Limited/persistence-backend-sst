@@ -25,20 +25,17 @@ import type { AddToMealProps } from "@/ui/presenters/fuel/AddToMealPresenter";
 import type { YourMealsSheetProps } from "@/ui/presenters/fuel/YourMealsSheetPresenter";
 import type { MealOptionsSheetProps } from "@/ui/presenters/fuel/MealOptionsSheetPresenter";
 import type { QuickLogSheetProps } from "@/ui/presenters/fuel/QuickLogSheetPresenter";
-import type { SuggestLockedSheetProps } from "@/ui/presenters/fuel/SuggestLockedSheetPresenter";
 import { AddToMealContainer, earlierDayLabel } from "../AddToMealContainer";
 import { YourMealsSheetContainer } from "../YourMealsSheetContainer";
 import { MealOptionsSheetContainer } from "../MealOptionsSheetContainer";
 import { QuickLogSheetContainer } from "../QuickLogSheetContainer";
-import { SuggestLockedSheetContainer } from "../SuggestLockedSheetContainer";
 
 const probe: {
   add: AddToMealProps | null;
   your: YourMealsSheetProps | null;
   options: MealOptionsSheetProps | null;
   quick: QuickLogSheetProps | null;
-  locked: SuggestLockedSheetProps | null;
-} = { add: null, your: null, options: null, quick: null, locked: null };
+} = { add: null, your: null, options: null, quick: null };
 
 jest.mock("@/ui/presenters/fuel/AddToMealPresenter", () => ({
   AddToMealPresenter: (p: AddToMealProps) => {
@@ -61,12 +58,6 @@ jest.mock("@/ui/presenters/fuel/MealOptionsSheetPresenter", () => ({
 jest.mock("@/ui/presenters/fuel/QuickLogSheetPresenter", () => ({
   QuickLogSheetPresenter: (p: QuickLogSheetProps) => {
     probe.quick = p;
-    return null;
-  },
-}));
-jest.mock("@/ui/presenters/fuel/SuggestLockedSheetPresenter", () => ({
-  SuggestLockedSheetPresenter: (p: SuggestLockedSheetProps) => {
-    probe.locked = p;
     return null;
   },
 }));
@@ -218,14 +209,16 @@ beforeEach(() => {
 describe("useMealQuickActions — the five quick buttons for one meal", () => {
   const meal = MEALS[1]!;
 
-  it("Suggest opens the locked page for Free and Premium (PER-132)", () => {
+  it("Suggest opens Mealprint, which is the locked page for Free and Premium (PER-134)", () => {
     const { Wrapper } = setup();
     const { result } = renderHook(() => useMealQuickActions(meal), {
       wrapper: Wrapper,
     });
     expect(result.current.suggestLocked).toBe(true);
     act(() => result.current.onSuggest());
-    expect(useFuelSheets.getState().sheet).toBe("suggestLocked");
+    expect(mockPush).toHaveBeenCalledWith(
+      "/(app)/fuel/mealprint?mode=meal&slot=snack&userMealId=um-pre",
+    );
   });
 
   it("Suggest waits while the plan is unresolved", () => {
@@ -236,7 +229,7 @@ describe("useMealQuickActions — the five quick buttons for one meal", () => {
     });
     expect(result.current.suggestLocked).toBe(false);
     act(() => result.current.onSuggest());
-    expect(useFuelSheets.getState().sheet).toBeNull();
+    expect(mockPush).not.toHaveBeenCalled();
   });
 
   it("Premium+ goes to the preferences wizard first, then One meal preset to the meal", () => {
@@ -256,11 +249,9 @@ describe("useMealQuickActions — the five quick buttons for one meal", () => {
     });
     rerender({});
     act(() => hook2.result.current.onSuggest());
-    expect(useFuelSheets.getState()).toMatchObject({
-      sheet: "mealprintSuggest",
-      slot: "snack",
-      userMealId: "um-pre",
-    });
+    expect(mockPush).toHaveBeenLastCalledWith(
+      "/(app)/fuel/mealprint?mode=meal&slot=snack&userMealId=um-pre",
+    );
   });
 
   it("each other button opens its drawer aimed at the meal", () => {
@@ -716,22 +707,6 @@ describe("QuickLogSheetContainer (N2e)", () => {
     await act(async () => probe.quick!.onLog()); // nothing typed: no-op
     expect(useFuelSheets.getState().sheet).toBe("quickLog");
     act(() => probe.quick!.onClose());
-    expect(useFuelSheets.getState().sheet).toBeNull();
-  });
-});
-
-describe("SuggestLockedSheetContainer", () => {
-  it("shows for Free/Premium and sends See Premium+ to the paywall", () => {
-    const { Wrapper } = setup();
-    render(<SuggestLockedSheetContainer />, { wrapper: Wrapper });
-    expect(probe.locked!.visible).toBe(false);
-    act(() => useFuelSheets.getState().openSuggestLocked());
-    expect(probe.locked!.visible).toBe(true);
-    act(() => probe.locked!.onUpgrade());
-    expect(mockGate.onUpgrade).toHaveBeenCalled();
-    expect(useFuelSheets.getState().sheet).toBeNull();
-    act(() => useFuelSheets.getState().openSuggestLocked());
-    act(() => probe.locked!.onClose());
     expect(useFuelSheets.getState().sheet).toBeNull();
   });
 });
