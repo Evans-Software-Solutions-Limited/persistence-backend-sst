@@ -1,5 +1,6 @@
 import type { ComponentType } from "react";
 import { Navigate, Route, Routes, useParams } from "react-router";
+import { CalendarContainer } from "./calendar/CalendarContainer";
 import { ClientPage } from "./clients/ClientPage";
 import { ClientsListContainer } from "./clients/ClientsListContainer";
 import { FormEditorContainer } from "./forms/FormEditorContainer";
@@ -67,6 +68,9 @@ export default function CoachApp() {
           element={<FormsLibraryContainer />}
         />
         <Route path="*" element={<Navigate to="clients" replace />} />
+        {/* PER-144: Today → Calendar (C4a). Routes rank by how specific
+            they are, so this still wins over the catch-all above. */}
+        <Route path="today/calendar" element={<CalendarContainer />} />
       </Route>
     </Routes>
   );

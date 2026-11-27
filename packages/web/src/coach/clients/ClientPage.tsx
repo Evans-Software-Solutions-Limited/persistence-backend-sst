@@ -26,6 +26,7 @@ import {
   type SettingsFormValues,
 } from "../lib/settingsForm";
 import { applyServerErrors, applyValues, firstMessage } from "@/lib/form";
+import { ScheduleFromClient } from "../calendar/ScheduleFromClient";
 import { ClientSettingsView } from "../settings/ClientSettings";
 import { CheckinsContainer } from "../checkins/CheckinsContainer";
 import { Avatar, BackLink, LoadError, Loading } from "../ui/parts";
@@ -110,6 +111,8 @@ function ClientHeader({ client }: { client: RosterClient }) {
           <span style={{ fontSize: 12.5, color: "var(--muted)" }}>{sub}</span>
         )}
       </div>
+      {/* PER-144: header calendar button (C4c). */}
+      {client.status === "active" && <ScheduleFromClient client={client} />}
     </header>
   );
 }

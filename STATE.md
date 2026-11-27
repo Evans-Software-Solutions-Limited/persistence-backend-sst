@@ -1,5 +1,37 @@
 # Project memory · persistence-backend-sst
 
+### 2026-11-27 — APP-I2 part 1: web coach calendar and schedule sheet ([PER-144](https://linear.app/evans-software-solutions/issue/PER-144); branch `claude/per-144-coach-calendar`)
+
+Web only (part 1 of 2; the iPhone and athlete screens follow). Uses BE-I2
+(#568). No backend, mobile, native or migration change.
+
+- **Calendar (C4a)** at `/coach/today/calendar`: a week grid (Mon–Sun,
+  `?week=YYYY-MM-DD`), the five-colour key, sessions laid side by side when
+  they overlap, forms due grouped per day and form ("Weekly check-in due ·
+  11 clients", opens who and links their Check-ins tab), cancelled sessions
+  faded, a now line, empty / failed / offline states. Queue | Calendar tabs;
+  Queue links to PER-131's `/coach/today` (not on main until #578 merges).
+- **Session dialog:** kind, when, where / video link, workout, weekly,
+  reminder, notes, each attendee's answer. Edit and Cancel for sessions that
+  haven't started; a repeating session cancels "this one" or "this and
+  later" (`?scope=series`).
+- **Schedule sheet (C4c)**, react-hook-form + TypeBox
+  (`calendar/scheduleForm.ts`): kind tabs, date, time, length, where or video
+  link, workout (`GET /workouts?type=mine`), weekly repeat (up to 26), and
+  "Sam gets: Invite + reminder …". From Client Detail's header (new
+  Schedule button, `ScheduleFromClient`) it books that client only; from
+  the calendar it adds a client picker and Your training. Edits send only
+  changed fields with `expectedRevision`; 422 `invalid_session` / 404
+  `workout_not_found` land on fields; 409 `revision_conflict` reloads and
+  says so. `Idempotency-Key` per sheet.
+- **Shared files:** all new code in `packages/web/src/coach/calendar/` with
+  its own API context, queries and CSS. `CoachApp.tsx` gets one route before
+  the catch-all; `ClientPage.tsx` one import and one line in the header.
+  After a write it invalidates the calendar and `["coach","notifications",
+  "today"]` (PER-131's Today key) by literal key.
+- **Tests:** `calendarLib.test.ts`, `calendar.test.tsx` (new files ≈98%
+  lines).
+
 ### 2026-11-27 — APP-D3: athlete Mealprint redesign N15–N27 ([PER-134](https://linear.app/evans-software-solutions/issue/PER-134); branch `claude/per-134-mealprint-redesign`)
 
 Mobile only. Uses BE-D3 (PER-119, #562). No backend, migration, native or
