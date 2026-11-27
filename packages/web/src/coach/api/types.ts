@@ -359,3 +359,52 @@ export interface DeclarationStatus {
   acceptedVersion: string | null;
   acceptedAt: string | null;
 }
+
+// ─── Resources (coaching/resources/resourcesHandlers.ts, PER-122) ───────────
+
+export type ResourceKind = "file" | "link";
+
+/** A library resource (C5b). Files have `mediaId`/`mime`/`bytes`, links `url`. */
+export interface CoachResource {
+  id: string;
+  kind: ResourceKind;
+  title: string;
+  url: string | null;
+  mediaId: string | null;
+  mime: string | null;
+  bytes: number | null;
+  revision: number;
+  archivedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** One resource on a client's Resources tab (C3.7), with opened / not opened. */
+export interface ClientResource {
+  assignmentId: string;
+  clientId: string;
+  resource: CoachResource;
+  assignedAt: string;
+  openedAt: string | null;
+}
+
+export interface NewResourceInput {
+  kind: ResourceKind;
+  title: string;
+  url?: string | null;
+  mediaId?: string | null;
+}
+
+/** `POST /trainers/me/media/uploads` (design F): a presigned PUT. */
+export interface MediaUpload {
+  mediaId: string;
+  contentType: string;
+  bytes: number;
+  status: "pending" | "ready";
+  upload: {
+    url: string;
+    method: "PUT";
+    headers: Record<string, string>;
+    expiresAt: string;
+  } | null;
+}

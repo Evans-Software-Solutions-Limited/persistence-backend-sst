@@ -7,6 +7,9 @@ import {
   type CoachTabCoach,
 } from "@/ui/presenters/CoachTabPresenter";
 import { coachInitials } from "@/ui/presenters/coaching/coachingKit";
+import { resourcesFromCoach } from "@/domain/services/coachResources.service";
+import { useMyResources } from "@/ui/hooks/useCoachResources";
+import { useOpenResource } from "@/ui/containers/coachResources/useOpenResource";
 
 const MONTHS = [
   "January",
@@ -44,6 +47,7 @@ export function toCoachTabCoach(c: MyCoach, now: Date): CoachTabCoach {
     firstName: firstName(c.name),
     initials: coachInitials(c.name) || "?",
     subtitle: coachingSince(c.since, now),
+    trainerId: c.trainerId,
   };
 }
 
@@ -79,10 +83,22 @@ export function CoachTabContainer() {
   const selected = coaches.find((c) => c.id === wanted) ?? coaches[0] ?? null;
 
   const refresh = my.refresh;
+  // PER-143: the selected coach's resources, cache-first.
+  const resources = useMyResources();
+  const openResource = useOpenResource(resources);
+  const refreshResources = resources.refresh;
   useFocusEffect(
     useCallback(() => {
       void refresh({ silent: true });
-    }, [refresh]),
+      void refreshResources({ silent: true });
+    }, [refresh, refreshResources]),
+  );
+  const coachResources = useMemo(
+    () =>
+      resources.data && selected?.trainerId
+        ? resourcesFromCoach(resources.data, selected.trainerId)
+        : null,
+    [resources.data, selected?.trainerId],
   );
 
   return (
@@ -92,7 +108,12 @@ export function CoachTabContainer() {
       isLoading={my.data === null}
       isRefreshing={my.isRefreshing}
       onSelect={(id) => setPicked({ id, param: navKey })}
-      onRefresh={() => void refresh()}
+      onRefresh={() => {
+        void refresh();
+        void refreshResources();
+      }}
+      resources={coachResources}
+      onOpenResource={(id) => void openResource(id)}
     />
   );
 }

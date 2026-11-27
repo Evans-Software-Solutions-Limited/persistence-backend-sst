@@ -266,6 +266,15 @@ import type {
   ProgressPhotosResponse,
   ProgressPhotoUpload,
 } from "@/domain/models/progressPhotos";
+import type {
+  AssignRefusal,
+  AthleteResource,
+  ClientResource,
+  CoachResource,
+  NewResourceInput,
+  ResourceMediaUpload,
+  ResourceSaveError,
+} from "@/domain/models/coachResources";
 
 type ApiSuccessResponse<T> = { data: T };
 type ApiErrorResponse = { error: string };
@@ -2912,6 +2921,10 @@ export class SSTApiAdapter implements ApiPort {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };
+    // PER-143: a keyed create that also needs the refusal's body.
+    if (options.idempotencyKey !== undefined) {
+      headers["Idempotency-Key"] = options.idempotencyKey;
+    }
     // Per-request abort wiring, mirroring `request()`. Added for the Loadout
     // model-backed calls, which need the full API Gateway window AND the domain
     // `code` off the body — before this, `timeoutMs` was silently dropped here, so
@@ -3236,6 +3249,161 @@ export class SSTApiAdapter implements ApiPort {
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  // -- PER-143 (APP-I1): coach resources (BE-I1) --
+
+  async getCoachResources(): Promise<Result<CoachResource[], ApiError>> {
+    const result = await this.requestEnvelope<{ resources: CoachResource[] }>(
+      "/trainers/me/resources",
+    );
+    return result.ok ? ok(result.value.resources) : result;
+  }
+
+  /** Raw, so a 422's field errors reach the form (`body.errors`). */
+  async createCoachResource(
+    input: NewResourceInput,
+    idempotencyKey: string,
+  ): Promise<Result<CoachResource, ResourceSaveError>> {
+    const result = await this.requestRaw<{
+      data?: CoachResource;
+      message?: string;
+      error?: string;
+    }>("/trainers/me/resources", {
+      method: "POST",
+      body: input,
+      idempotencyKey,
+      timeoutMs: 20_000,
+    });
+    if (!result.ok) return result;
+    const { status, json } = result.value;
+    if (status >= 200 && status < 300 && json?.data) return ok(json.data);
+    return fail({
+      ...mapHttpErrorToApiError(status, "", json),
+      body: json,
+    });
+  }
+
+  async archiveCoachResource(
+    resourceId: string,
+  ): Promise<Result<void, ApiError>> {
+    return this.request<void>(
+      `/trainers/me/resources/${encodeURIComponent(resourceId)}`,
+      { method: "DELETE" },
+    );
+  }
+
+  /** Raw, so a 403's `code` (`resources_off`) reaches the screen. */
+  async assignCoachResources(
+    resourceIds: string[],
+    clientIds: string[],
+  ): Promise<Result<{ created: number }, AssignRefusal>> {
+    const result = await this.requestRaw<{
+      data?: { created?: number };
+      code?: string;
+      message?: string;
+      clientIds?: string[];
+    }>("/trainers/me/resources/assign", {
+      method: "POST",
+      body: { resourceIds, clientIds },
+      timeoutMs: 20_000,
+    });
+    if (!result.ok) {
+      return fail(
+        result.error.code === "network" || result.error.code === "timeout"
+          ? { kind: "offline" }
+          : { kind: "other", message: result.error.message },
+      );
+    }
+    const { status, json } = result.value;
+    if (status >= 200 && status < 300) {
+      return ok({ created: json?.data?.created ?? 0 });
+    }
+    const ids = Array.isArray(json?.clientIds) ? json.clientIds : [];
+    if (status === 403 && json?.code === "resources_off") {
+      return fail({ kind: "resources_off", clientIds: ids });
+    }
+    if (status === 403 && json?.code === "not_your_client") {
+      return fail({ kind: "not_your_client", clientIds: ids });
+    }
+    if (status === 404) return fail({ kind: "not_found" });
+    return fail({
+      kind: "other",
+      message: json?.message ?? `Request failed (${status})`,
+    });
+  }
+
+  async getCoachClientResources(
+    clientId: string,
+  ): Promise<Result<ClientResource[], ApiError>> {
+    const result = await this.requestEnvelope<{ resources: ClientResource[] }>(
+      `/trainers/me/clients/${encodeURIComponent(clientId)}/resources`,
+    );
+    return result.ok ? ok(result.value.resources) : result;
+  }
+
+  async removeCoachClientResource(
+    clientId: string,
+    assignmentId: string,
+  ): Promise<Result<void, ApiError>> {
+    return this.request<void>(
+      `/trainers/me/clients/${encodeURIComponent(clientId)}/resources/${encodeURIComponent(assignmentId)}`,
+      { method: "DELETE" },
+    );
+  }
+
+  async createCoachResourceUpload(
+    contentType: string,
+    bytes: number,
+    idempotencyKey: string,
+  ): Promise<Result<ResourceMediaUpload, ApiError>> {
+    return this.requestEnvelope<ResourceMediaUpload>(
+      "/trainers/me/media/uploads",
+      {
+        method: "POST",
+        body: { purpose: "resource", contentType, bytes },
+        idempotencyKey,
+        timeoutMs: 20_000,
+      },
+    );
+  }
+
+  /** No auth header: the presigned link is the credential. */
+  async putCoachResourceFile(
+    upload: NonNullable<ResourceMediaUpload["upload"]>,
+    body: Blob,
+  ): Promise<Result<void, ApiError>> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 120_000);
+    try {
+      const response = await fetch(upload.url, {
+        method: upload.method,
+        headers: upload.headers,
+        body,
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        return fail(
+          mapHttpErrorToApiError(response.status, response.statusText, null),
+        );
+      }
+      return ok(undefined);
+    } catch (err) {
+      return fail({
+        kind: "api",
+        code: controller.signal.aborted ? "timeout" : "network",
+        message: err instanceof Error ? err.message : "Network error",
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  async getMyResources(): Promise<Result<AthleteResource[], ApiError>> {
+    const result = await this.requestEnvelope<{
+      resources: AthleteResource[];
+    }>("/users/me/resources");
+    return result.ok ? ok(result.value.resources) : result;
   }
 }
 

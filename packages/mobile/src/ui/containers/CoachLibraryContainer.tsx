@@ -15,6 +15,7 @@ import {
 } from "@/ui/hooks/useCoachForms";
 import { useOnlineStatus } from "@/ui/hooks/useOnlineStatus";
 import { CoachLibraryHubContainer } from "@/ui/containers/CoachLibraryHubContainer";
+import { CoachResourcesLibraryContainer } from "@/ui/containers/coachResources/CoachResourcesLibraryContainer";
 import {
   CoachLibraryPresenter,
   isLibrarySegment,
@@ -79,9 +80,7 @@ export function CoachFormsLibraryContainer() {
   );
 }
 
-const PLACEHOLDER_TICKETS: Partial<Record<string, string>> = {
-  resources: "PER-122",
-};
+const PLACEHOLDER_TICKETS: Partial<Record<string, string>> = {};
 
 /**
  * PER-129 K shell — the coach Library tab. Forms is live (C10g), Programmes
@@ -108,6 +107,8 @@ export function CoachLibraryContainer() {
         <CoachFormsLibraryContainer />
       ) : segment === "programmes" ? (
         <CoachLibraryHubContainer embedded />
+      ) : segment === "resources" ? (
+        <CoachResourcesLibraryContainer />
       ) : (
         <ScrollView contentContainerStyle={{ paddingHorizontal: 20 }}>
           <InDevelopment

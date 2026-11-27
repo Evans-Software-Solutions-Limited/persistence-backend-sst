@@ -39,11 +39,11 @@ import {
 } from "@/ui/presenters/coachForms/ClientTabStrip";
 import { InDevelopment } from "@/ui/presenters/coachForms/kit";
 import { ClientCheckInsContainer } from "@/ui/containers/ClientCheckInsContainer";
+import { ClientResourcesContainer } from "@/ui/containers/coachResources/ClientResourcesContainer";
 
 /** PER-129: placeholder tabs whose feature has its own ticket. */
 const TAB_TICKETS: Partial<Record<ClientTab, string>> = {
   messages: "PER-92",
-  resources: "PER-122",
 };
 
 /**
@@ -469,6 +469,12 @@ export function ClientDetailContainer() {
       tabBody={
         tab === "overview" || !id ? null : tab === "check-ins" ? (
           <ClientCheckInsContainer
+            clientId={id}
+            clientName={detail.data?.client.name ?? name ?? null}
+            refreshKey={tabRefreshKey}
+          />
+        ) : tab === "resources" ? (
+          <ClientResourcesContainer
             clientId={id}
             clientName={detail.data?.client.name ?? name ?? null}
             refreshKey={tabRefreshKey}

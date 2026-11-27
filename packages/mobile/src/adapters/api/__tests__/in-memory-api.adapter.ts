@@ -231,6 +231,15 @@ import type {
   ProgressPhotosResponse,
   ProgressPhotoUpload,
 } from "@/domain/models/progressPhotos";
+import type {
+  AssignRefusal,
+  AthleteResource,
+  ClientResource,
+  CoachResource,
+  NewResourceInput,
+  ResourceMediaUpload,
+  ResourceSaveError,
+} from "@/domain/models/coachResources";
 
 /**
  * In-memory API adapter for testing.
@@ -4100,5 +4109,197 @@ export class InMemoryApiAdapter implements ApiPort {
     }
     set.status = "ready";
     return ok(JSON.parse(JSON.stringify(set)) as ProgressPhotoSet);
+  }
+
+  // -- PER-143 (APP-I1): coach resources --
+
+  coachResources: CoachResource[] = [];
+  coachClientResources = new Map<string, ClientResource[]>();
+  myResources: AthleteResource[] = [];
+  /** Clients whose C3.9 Resources switch is off (assign → 403). */
+  resourcesOffClients = new Set<string>();
+  resourceCalls: string[] = [];
+  resourceFailures: {
+    list: ApiError[];
+    create: ResourceSaveError[];
+    archive: ApiError[];
+    assign: AssignRefusal[];
+    client: ApiError[];
+    remove: ApiError[];
+    upload: ApiError[];
+    put: ApiError[];
+    mine: ApiError[];
+  } = {
+    list: [],
+    create: [],
+    archive: [],
+    assign: [],
+    client: [],
+    remove: [],
+    upload: [],
+    put: [],
+    mine: [],
+  };
+  private resourceKeys = new Map<string, string>();
+
+  async getCoachResources(): Promise<Result<CoachResource[], ApiError>> {
+    this.resourceCalls.push("list");
+    const failure = this.resourceFailures.list.shift();
+    if (failure) return fail(failure);
+    return ok(
+      JSON.parse(
+        JSON.stringify(this.coachResources.filter((r) => !r.archivedAt)),
+      ) as CoachResource[],
+    );
+  }
+
+  async createCoachResource(
+    input: NewResourceInput,
+    idempotencyKey: string,
+  ): Promise<Result<CoachResource, ResourceSaveError>> {
+    this.resourceCalls.push(`create:${input.kind}:${input.title}`);
+    const failure = this.resourceFailures.create.shift();
+    if (failure) return fail(failure);
+    const existing = this.coachResources.find(
+      (r) => r.id === this.resourceKeys.get(idempotencyKey),
+    );
+    if (existing) return ok({ ...existing });
+    const now = new Date().toISOString();
+    const resource: CoachResource = {
+      id: `srv-res-${this.coachResources.length + 1}`,
+      kind: input.kind,
+      title: input.title,
+      url: input.url ?? null,
+      mediaId: input.mediaId ?? null,
+      mime: input.mediaId ? "image/jpeg" : null,
+      bytes: input.mediaId ? 1000 : null,
+      revision: 1,
+      archivedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.coachResources.unshift(resource);
+    this.resourceKeys.set(idempotencyKey, resource.id);
+    return ok({ ...resource });
+  }
+
+  async archiveCoachResource(
+    resourceId: string,
+  ): Promise<Result<void, ApiError>> {
+    this.resourceCalls.push(`archive:${resourceId}`);
+    const failure = this.resourceFailures.archive.shift();
+    if (failure) return fail(failure);
+    this.coachResources = this.coachResources.filter(
+      (r) => r.id !== resourceId,
+    );
+    for (const [clientId, list] of this.coachClientResources) {
+      this.coachClientResources.set(
+        clientId,
+        list.filter((a) => a.resource.id !== resourceId),
+      );
+    }
+    return ok(undefined);
+  }
+
+  async assignCoachResources(
+    resourceIds: string[],
+    clientIds: string[],
+  ): Promise<Result<{ created: number }, AssignRefusal>> {
+    this.resourceCalls.push(
+      `assign:${resourceIds.join(",")}>${clientIds.join(",")}`,
+    );
+    const failure = this.resourceFailures.assign.shift();
+    if (failure) return fail(failure);
+    const off = clientIds.filter((c) => this.resourcesOffClients.has(c));
+    if (off.length > 0) return fail({ kind: "resources_off", clientIds: off });
+    let created = 0;
+    for (const clientId of clientIds) {
+      const list = this.coachClientResources.get(clientId) ?? [];
+      for (const id of resourceIds) {
+        const resource = this.coachResources.find((r) => r.id === id);
+        if (!resource) return fail({ kind: "not_found" });
+        if (list.some((a) => a.resource.id === id)) continue;
+        created++;
+        list.unshift({
+          assignmentId: `srv-as-${clientId}-${id}`,
+          clientId,
+          resource: { ...resource },
+          assignedAt: new Date().toISOString(),
+          openedAt: null,
+        });
+      }
+      this.coachClientResources.set(clientId, list);
+    }
+    return ok({ created });
+  }
+
+  async getCoachClientResources(
+    clientId: string,
+  ): Promise<Result<ClientResource[], ApiError>> {
+    this.resourceCalls.push(`client:${clientId}`);
+    const failure = this.resourceFailures.client.shift();
+    if (failure) return fail(failure);
+    return ok(
+      JSON.parse(
+        JSON.stringify(this.coachClientResources.get(clientId) ?? []),
+      ) as ClientResource[],
+    );
+  }
+
+  async removeCoachClientResource(
+    clientId: string,
+    assignmentId: string,
+  ): Promise<Result<void, ApiError>> {
+    this.resourceCalls.push(`remove:${clientId}:${assignmentId}`);
+    const failure = this.resourceFailures.remove.shift();
+    if (failure) return fail(failure);
+    this.coachClientResources.set(
+      clientId,
+      (this.coachClientResources.get(clientId) ?? []).filter(
+        (a) => a.assignmentId !== assignmentId,
+      ),
+    );
+    return ok(undefined);
+  }
+
+  async createCoachResourceUpload(
+    contentType: string,
+    bytes: number,
+    idempotencyKey: string,
+  ): Promise<Result<ResourceMediaUpload, ApiError>> {
+    this.resourceCalls.push(`upload:${contentType}:${bytes}`);
+    const failure = this.resourceFailures.upload.shift();
+    if (failure) return fail(failure);
+    return ok({
+      mediaId: `media-${idempotencyKey}`,
+      contentType,
+      bytes,
+      status: "pending",
+      upload: {
+        url: `https://bucket.test/resources/${idempotencyKey}`,
+        method: "PUT",
+        headers: { "content-type": contentType },
+        expiresAt: "2099-01-01T00:00:00.000Z",
+      },
+    });
+  }
+
+  async putCoachResourceFile(
+    upload: NonNullable<ResourceMediaUpload["upload"]>,
+    body: Blob,
+  ): Promise<Result<void, ApiError>> {
+    this.resourceCalls.push(`put:${upload.url}:${body.size}`);
+    const failure = this.resourceFailures.put.shift();
+    if (failure) return fail(failure);
+    return ok(undefined);
+  }
+
+  async getMyResources(): Promise<Result<AthleteResource[], ApiError>> {
+    this.resourceCalls.push("mine");
+    const failure = this.resourceFailures.mine.shift();
+    if (failure) return fail(failure);
+    return ok(
+      JSON.parse(JSON.stringify(this.myResources)) as AthleteResource[],
+    );
   }
 }

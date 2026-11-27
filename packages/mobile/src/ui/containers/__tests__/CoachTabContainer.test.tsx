@@ -210,11 +210,14 @@ describe("CoachTabContainer", () => {
   it("marks every not-yet-built C2e section as in development", async () => {
     const utils = setup({ server: [ELLIE] });
     await act(async () => {});
-    for (const key of ["forms", "messages", "plan", "resources"]) {
+    for (const key of ["forms", "messages", "plan"]) {
       expect(utils.getByTestId(`coach-tab-dev-${key}`)).toBeTruthy();
     }
     expect(utils.getByText("Your plan from Ellie")).toBeTruthy();
-    expect(utils.getAllByText(/In development/).length).toBe(4);
+    expect(utils.getAllByText(/In development/).length).toBe(3);
+    // PER-143: Resources is live.
+    expect(utils.queryByTestId("coach-tab-dev-resources")).toBeNull();
+    expect(utils.getByTestId("coach-tab-resources")).toBeTruthy();
   });
 
   it("pull to refresh re-reads the coaches", async () => {

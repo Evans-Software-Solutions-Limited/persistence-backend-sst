@@ -12,8 +12,10 @@ import { CoachApiError, type CoachApi } from "../api/coachApi";
 import type {
   ClientFormEntry,
   ClientProfileDetail,
+  ClientResource,
   ClientSettings,
   CoachForm,
+  CoachResource,
   FormResponse,
   FormSchedule,
   FormStats,
@@ -368,10 +370,77 @@ export function fakeApi(over: Partial<FakeApi> = {}): FakeApi {
       acceptedVersion: "2026-11-v1",
       acceptedAt: "2026-11-23T00:00:00.000Z",
     }),
+    // PER-143 resources.
+    resources: vi.fn().mockResolvedValue(LIBRARY),
+    createResource: vi.fn(),
+    archiveResource: vi.fn().mockResolvedValue(undefined),
+    assignResources: vi.fn().mockResolvedValue({ created: 1 }),
+    clientResources: vi.fn().mockResolvedValue(CLIENT_RESOURCES),
+    removeClientResource: vi.fn().mockResolvedValue(undefined),
+    createResourceUpload: vi.fn(),
+    putUpload: vi.fn().mockResolvedValue(undefined),
     ...over,
   };
   return api;
 }
+
+// ─── PER-143 resources fixtures ──────────────────────────────────────────────
+
+export function resource(over: Partial<CoachResource> = {}): CoachResource {
+  return {
+    id: "res-1",
+    kind: "file",
+    title: "Shopping list · lean bulk",
+    url: null,
+    mediaId: "media-1",
+    mime: "application/pdf",
+    bytes: 2_516_582,
+    revision: 1,
+    archivedAt: null,
+    createdAt: "2026-10-20T09:00:00.000Z",
+    updatedAt: "2026-10-20T09:00:00.000Z",
+    ...over,
+  };
+}
+
+export const LIBRARY: CoachResource[] = [
+  resource(),
+  resource({
+    id: "res-2",
+    kind: "link",
+    title: "Studio booking page",
+    url: "https://www.studio.example/book",
+    mediaId: null,
+    mime: null,
+    bytes: null,
+    createdAt: "2026-10-06T09:00:00.000Z",
+  }),
+  resource({
+    id: "res-3",
+    title: "Hip hinge drill",
+    mime: "image/png",
+    bytes: 860_000,
+    mediaId: "media-3",
+    createdAt: "2026-09-15T09:00:00.000Z",
+  }),
+];
+
+export const CLIENT_RESOURCES: ClientResource[] = [
+  {
+    assignmentId: "as-1",
+    clientId: CLIENT_ID,
+    resource: LIBRARY[0]!,
+    assignedAt: "2026-10-20T10:00:00.000Z",
+    openedAt: "2026-10-21T08:00:00.000Z",
+  },
+  {
+    assignmentId: "as-2",
+    clientId: CLIENT_ID,
+    resource: LIBRARY[1]!,
+    assignedAt: "2026-10-06T10:00:00.000Z",
+    openedAt: null,
+  },
+];
 
 let lastPath = "";
 export const currentPath = () => lastPath;

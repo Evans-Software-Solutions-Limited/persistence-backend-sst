@@ -3,6 +3,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text, View } from "@tamagui/core";
 import { LoadingSpinner } from "@/ui/components/LoadingSpinner";
 import { CoachAvatar, Eyebrow } from "./coaching/coachingKit";
+import type { AthleteResource } from "@/domain/models/coachResources";
+import { CoachTabResources } from "./coachResources/CoachTabResources";
 
 /**
  * <CoachTabPresenter> — the athlete's Coach tab (PER-126): canvas C2e, and
@@ -13,8 +15,8 @@ import { CoachAvatar, Eyebrow } from "./coaching/coachingKit";
  * there are two or more (Brad, 23 Nov — one coach looks exactly like C2e).
  * Tapping a chip shows that coach.
  *
- * The C2e sections (forms due, messages, plan, resources) belong to other
- * tickets. Until each lands it shows as a marked placeholder (Brad, 23 Nov:
+ * Resources (PER-143) is live. The other C2e sections (forms due, messages,
+ * plan) belong to other tickets. Until each lands it shows as a marked placeholder (Brad, 23 Nov:
  * "make it clear not there until in development"); the release ships only
  * once the platform is complete.
  */
@@ -26,6 +28,8 @@ export type CoachTabCoach = {
   initials: string;
   /** "Coaching you since August" / "Your coach from today". */
   subtitle: string;
+  /** The coach's user id (PER-143: picks their resources). */
+  trainerId?: string;
 };
 
 export type CoachTabPresenterProps = {
@@ -36,6 +40,9 @@ export type CoachTabPresenterProps = {
   isRefreshing: boolean;
   onSelect(id: string): void;
   onRefresh(): void;
+  /** PER-143: the selected coach's resources (null while none is cached). */
+  resources?: AthleteResource[] | null;
+  onOpenResource?(assignmentId: string): void;
 };
 
 /** Placeholders for C2e sections still being built, in canvas order. */
@@ -58,12 +65,6 @@ export function inDevelopmentSections(firstName: string) {
       eyebrow: `Your plan from ${firstName}`,
       title: "Programme and meal plans",
       ticket: "PER-140, PER-133",
-    },
-    {
-      key: "resources",
-      eyebrow: "Resources",
-      title: `Videos and files from ${firstName}`,
-      ticket: "PER-122",
     },
   ] as const;
 }
@@ -162,6 +163,14 @@ export function CoachTabPresenter(p: CoachTabPresenterProps) {
             </View>
           ))}
         </View>
+
+        {p.resources !== undefined && (
+          <CoachTabResources
+            firstName={coach.firstName}
+            rows={p.resources}
+            onOpen={p.onOpenResource ?? (() => {})}
+          />
+        )}
       </ScrollView>
     </View>
   );

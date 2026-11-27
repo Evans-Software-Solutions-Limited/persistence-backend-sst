@@ -124,3 +124,11 @@ export const PROGRESS_PHOTO_TABLES = ["cached_progress_photos"] as const;
 export const PENDING_PROGRESS_PHOTO_TABLES = [
   "pending_progress_photos",
 ] as const;
+/** PER-143 the coach's resources library. */
+export const COACH_RESOURCES_TABLES = ["cached_coach_resources"] as const;
+/** PER-143 a client's Resources tab. */
+export const COACH_CLIENT_RESOURCES_TABLES = [
+  "cached_coach_client_resources",
+] as const;
+/** PER-143 the athlete's resources (Coach tab). */
+export const MY_RESOURCES_TABLES = ["cached_my_resources"] as const;

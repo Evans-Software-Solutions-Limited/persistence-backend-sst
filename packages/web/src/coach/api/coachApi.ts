@@ -11,7 +11,9 @@ import type {
   ClientProfileDetail,
   ClientSettings,
   ClientFormEntry,
+  ClientResource,
   ClientSetupInput,
+  CoachResource,
   CoachForm,
   CoachProfile,
   DeclarationStatus,
@@ -21,7 +23,9 @@ import type {
   FormQuestion,
   IssuedInvite,
   MealPlan,
+  MediaUpload,
   NewProfileInput,
+  NewResourceInput,
   NewSchedule,
   SchedulePatch,
   Roster,
@@ -473,6 +477,105 @@ export const coachApi = {
         ),
       )
     ).data,
+
+  // ─── Resources (PER-143: C3.7, C5b) ───────────────────────────────────────
+
+  resources: async () =>
+    (
+      await coachFetch<Data<{ resources: CoachResource[] }>>(
+        "/trainers/me/resources",
+      )
+    ).data.resources,
+
+  createResource: async (input: NewResourceInput, idempotencyKey: string) =>
+    (
+      await coachFetch<Data<CoachResource>>(
+        "/trainers/me/resources",
+        json("POST", input, { "Idempotency-Key": idempotencyKey }),
+      )
+    ).data,
+
+  /** Deleting from the library removes it from every client (Brad, 26 Nov). */
+  archiveResource: async (id: string) => {
+    await coachFetch<null>(
+      `/trainers/me/resources/${encodeURIComponent(id)}`,
+      json("DELETE"),
+    );
+  },
+
+  assignResources: async (
+    resourceIds: string[],
+    clientIds: string[],
+    idempotencyKey: string,
+  ) =>
+    (
+      await coachFetch<Data<{ created: number }>>(
+        "/trainers/me/resources/assign",
+        json(
+          "POST",
+          { resourceIds, clientIds },
+          { "Idempotency-Key": idempotencyKey },
+        ),
+      )
+    ).data,
+
+  clientResources: async (clientId: string) =>
+    (
+      await coachFetch<Data<{ resources: ClientResource[] }>>(
+        `/trainers/me/clients/${encodeURIComponent(clientId)}/resources`,
+      )
+    ).data.resources,
+
+  removeClientResource: async (clientId: string, assignmentId: string) => {
+    await coachFetch<null>(
+      `/trainers/me/clients/${encodeURIComponent(clientId)}/resources/${encodeURIComponent(assignmentId)}`,
+      json("DELETE"),
+    );
+  },
+
+  createResourceUpload: async (
+    contentType: string,
+    bytes: number,
+    idempotencyKey: string,
+  ) =>
+    (
+      await coachFetch<Data<MediaUpload>>(
+        "/trainers/me/media/uploads",
+        json(
+          "POST",
+          { purpose: "resource", contentType, bytes },
+          { "Idempotency-Key": idempotencyKey },
+        ),
+      )
+    ).data,
+
+  /**
+   * PUT the file straight to the private bucket. No auth header: the
+   * presigned link is the credential and pins the type and size, so the
+   * server's headers are sent exactly as given.
+   */
+  putUpload: async (
+    upload: NonNullable<MediaUpload["upload"]>,
+    file: Blob,
+    fetchImpl: typeof fetch = fetch,
+  ) => {
+    let res: Response;
+    try {
+      res = await fetchImpl(upload.url, {
+        method: upload.method,
+        headers: upload.headers,
+        body: file,
+      });
+    } catch {
+      throw new CoachApiError(0, null, true);
+    }
+    if (!res.ok) {
+      throw new CoachApiError(res.status, {
+        code: "upload_failed",
+        message: "The file didn't upload. Try again.",
+      });
+    }
+  },
 };
 
 export type CoachApi = typeof coachApi;

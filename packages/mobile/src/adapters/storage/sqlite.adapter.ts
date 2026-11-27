@@ -100,6 +100,11 @@ import type {
   PendingProgressPhotoSet,
   ProgressPhotosCache,
 } from "@/domain/models/progressPhotos";
+import type {
+  AthleteResource,
+  ClientResource,
+  CoachResource,
+} from "@/domain/models/coachResources";
 
 const DB_NAME = "persistence.db";
 
@@ -991,6 +996,26 @@ ${indentSyncQueueDdl(8)}
         user_id TEXT NOT NULL,
         payload TEXT NOT NULL,
         created_at TEXT NOT NULL
+      );
+      -- PER-143 coach resources: the coach's library, each client's
+      -- Resources tab and the athlete's resources. New TABLEs, so CREATE
+      -- TABLE IF NOT EXISTS covers upgrading installs too.
+      CREATE TABLE IF NOT EXISTS cached_coach_resources (
+        user_id TEXT PRIMARY KEY,
+        payload TEXT NOT NULL,
+        synced_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS cached_coach_client_resources (
+        user_id TEXT NOT NULL,
+        client_id TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        synced_at TEXT NOT NULL,
+        PRIMARY KEY (user_id, client_id)
+      );
+      CREATE TABLE IF NOT EXISTS cached_my_resources (
+        user_id TEXT PRIMARY KEY,
+        payload TEXT NOT NULL,
+        synced_at TEXT NOT NULL
       );
 
       CREATE INDEX IF NOT EXISTS idx_sync_queue_status ON sync_queue(status, created_at);
@@ -4503,6 +4528,9 @@ ${indentSyncQueueDdl(12)}
       DELETE FROM coach_form_conflicts;
       DELETE FROM cached_progress_photos;
       DELETE FROM pending_progress_photos;
+      DELETE FROM cached_coach_resources;
+      DELETE FROM cached_coach_client_resources;
+      DELETE FROM cached_my_resources;
     `);
   }
 
@@ -4548,6 +4576,61 @@ ${indentSyncQueueDdl(12)}
     this.getDb().runSync(`DELETE FROM pending_progress_photos WHERE id = ?`, [
       id,
     ]);
+  }
+
+  // -- PER-143 (APP-I1): coach resources --
+
+  getCachedCoachResources(userId: string): CoachResource[] | null {
+    return this.readBlob<CoachResource[]>("cached_coach_resources", userId);
+  }
+
+  cacheCoachResources(userId: string, value: CoachResource[]): void {
+    this.writeBlob("cached_coach_resources", userId, value);
+  }
+
+  getCachedCoachClientResources(
+    userId: string,
+    clientId: string,
+  ): ClientResource[] | null {
+    return this.readClientBlob<ClientResource[]>(
+      "cached_coach_client_resources",
+      userId,
+      clientId,
+    );
+  }
+
+  cacheCoachClientResources(
+    userId: string,
+    clientId: string,
+    value: ClientResource[],
+  ): void {
+    this.writeClientBlob(
+      "cached_coach_client_resources",
+      userId,
+      clientId,
+      value,
+    );
+  }
+
+  getAllCachedCoachClientResources(
+    userId: string,
+  ): { clientId: string; value: ClientResource[] }[] {
+    const rows = this.getDb().getAllSync(
+      `SELECT client_id, payload FROM cached_coach_client_resources WHERE user_id = ?`,
+      [userId],
+    ) as { client_id: string; payload: string }[];
+    return rows.map((r) => ({
+      clientId: r.client_id,
+      value: JSON.parse(r.payload) as ClientResource[],
+    }));
+  }
+
+  getCachedMyResources(userId: string): AthleteResource[] | null {
+    return this.readBlob<AthleteResource[]>("cached_my_resources", userId);
+  }
+
+  cacheMyResources(userId: string, value: AthleteResource[]): void {
+    this.writeBlob("cached_my_resources", userId, value);
   }
 }
 

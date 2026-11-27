@@ -50,6 +50,10 @@ import {
   recordUploadedPhotoSet,
 } from "./progressPhotos.command";
 import { readLocalFile } from "@/shared/utils/localFile";
+import {
+  applyCoachResourcesSyncSuccess,
+  COACH_RESOURCE_ENTITY,
+} from "./coachResources.command";
 
 /** A non-OK HTTP response from a sync POST/PUT/DELETE, carrying the status so
  * the drain can classify permanent vs transient failures. */
@@ -1431,6 +1435,20 @@ export async function processSyncQueue(
         } catch (err) {
           console.warn(
             "[sync] coach forms write succeeded but response capture failed; the next read reconciles:",
+            err,
+          );
+        }
+      }
+
+      // PER-143: a link made offline synced. Swap its `local-…` id in the
+      // library, the client tabs and any queued assign. Non-fatal.
+      if (entry.entityType === COACH_RESOURCE_ENTITY) {
+        try {
+          const body = (await response.json()) as { data?: unknown };
+          applyCoachResourcesSyncSuccess(storage, entry, body.data ?? null);
+        } catch (err) {
+          console.warn(
+            "[sync] coach resource create succeeded but response capture failed; the next read reconciles:",
             err,
           );
         }

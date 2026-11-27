@@ -88,6 +88,11 @@ import type {
   PendingProgressPhotoSet,
   ProgressPhotosCache,
 } from "@/domain/models/progressPhotos";
+import type {
+  AthleteResource,
+  ClientResource,
+  CoachResource,
+} from "@/domain/models/coachResources";
 
 /**
  * In-memory storage adapter for testing.
@@ -1769,6 +1774,7 @@ export class InMemoryStorageAdapter implements StoragePort {
     this.clearCoachFormsForTest();
     this.progressPhotosCache.clear();
     this.pendingProgressPhotos.clear();
+    this.clearCoachResourcesForTest();
     this.nextId = 1;
   }
 
@@ -2176,6 +2182,59 @@ export class InMemoryStorageAdapter implements StoragePort {
   }
   deletePendingProgressPhotoSet(id: string): void {
     this.pendingProgressPhotos.delete(id);
+  }
+
+  // -- PER-143 (APP-I1): coach resources --
+
+  private coachResourcesCache = new Map<string, string>();
+  private coachClientResourcesCache = new Map<string, string>();
+  private myResourcesCache = new Map<string, string>();
+  getCachedCoachResources(userId: string): CoachResource[] | null {
+    const raw = this.coachResourcesCache.get(userId);
+    return raw ? (JSON.parse(raw) as CoachResource[]) : null;
+  }
+  cacheCoachResources(userId: string, value: CoachResource[]): void {
+    this.coachResourcesCache.set(userId, JSON.stringify(value));
+  }
+  getCachedCoachClientResources(
+    userId: string,
+    clientId: string,
+  ): ClientResource[] | null {
+    const raw = this.coachClientResourcesCache.get(`${userId}|${clientId}`);
+    return raw ? (JSON.parse(raw) as ClientResource[]) : null;
+  }
+  cacheCoachClientResources(
+    userId: string,
+    clientId: string,
+    value: ClientResource[],
+  ): void {
+    this.coachClientResourcesCache.set(
+      `${userId}|${clientId}`,
+      JSON.stringify(value),
+    );
+  }
+  getAllCachedCoachClientResources(
+    userId: string,
+  ): { clientId: string; value: ClientResource[] }[] {
+    return [...this.coachClientResourcesCache.entries()]
+      .filter(([key]) => key.startsWith(`${userId}|`))
+      .map(([key, raw]) => ({
+        clientId: key.slice(userId.length + 1),
+        value: JSON.parse(raw) as ClientResource[],
+      }));
+  }
+  getCachedMyResources(userId: string): AthleteResource[] | null {
+    const raw = this.myResourcesCache.get(userId);
+    return raw ? (JSON.parse(raw) as AthleteResource[]) : null;
+  }
+  cacheMyResources(userId: string, value: AthleteResource[]): void {
+    this.myResourcesCache.set(userId, JSON.stringify(value));
+  }
+  /** Test-only: drop the PER-143 caches. */
+  clearCoachResourcesForTest(): void {
+    this.coachResourcesCache.clear();
+    this.coachClientResourcesCache.clear();
+    this.myResourcesCache.clear();
   }
 }
 
