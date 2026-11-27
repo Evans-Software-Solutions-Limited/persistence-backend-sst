@@ -1,5 +1,110 @@
 # Project memory · persistence-backend-sst
 
+### 2026-11-25 — BE-E1b Stream chat: tokens, channels per relationship, freeze on end, webhook ([PER-120](https://linear.app/evans-software-solutions/issue/PER-120); branch `claude/per-120-stream-chat-backend`)
+
+Backend design E (C3.6, C6). Additive; no existing route changes, no native
+change, no new dependency (native `fetch` + HS256 via `jose` in api-utils).
+Migration `20261125162525_chat_channels.sql` (rollback in
+`supabase/rollbacks/`): `chat_channels` (PK `relationship_id` → relationships
+CASCADE, `coaching` / `coach-<relationshipId>`, state
+`pending|active|frozen`, `frozen_at`). Drizzle in
+`packages/db/src/chatSchema.ts` (re-exported from `schema.ts`).
+
+- **Production gate:** Stream DPA, privacy policy and data region are Brad's
+  to finish before this reaches production. Merging deploys staging only.
+- Code: `microservices/core/src/application/chat/` (`streamClient.ts` REST
+  client + config, `chatChannels.ts` provisioning/freeze/reconcile/list,
+  `chatHandlers.ts`, `streamWebhookHandler.ts`). Keys: optional
+  `StreamApiKey`/`StreamApiSecret` (#560) passed as `STREAM_API_KEY` /
+  `STREAM_API_SECRET` to the API route and the coach-scheduler cron. **Empty =
+  chat not configured:** `POST /chat/token` 503 `chat_not_configured`, webhook
+  503, every hook and the job no-op without touching the DB or Stream.
+- Routes (coach and athlete, explicit auth, not under `/trainers/me`):
+  `POST /chat/token` (24 h token for the caller's own Stream user only; upserts
+  the user; 403 `chat_not_available` without an active/frozen channel; 502
+  `chat_unavailable`), `GET /chat/channels` (coach: active + frozen; athlete:
+  active and relationship active). `POST /chat/stream-webhook` on the raw Hono
+  app (Stream signs with the API secret: hex HMAC-SHA256 `X-Signature`; no new
+  secret). Client `message.new` → `message_received` coach event deduped on the
+  message id (quiet hours/mute/channel via `recordCoachEvent`); text never
+  stored; push "<name> sent you a message".
+- Provisioning after commit on: personal-code accept (`afterCommit`), athlete
+  accepting an invite, coach accepting a request. Posts the set-up welcome
+  message as the first message (`welcome-<setupItemId>`, idempotent). The
+  coach_brief notification is kept for 1.2.0. Offboarding step 5 (after the
+  commit): remove client + freeze. `chat_channels` scheduler job (last in the
+  list) converges both ways, 50 per tick: provisions active relationships
+  without an `active` channel (also backfills pre-chat relationships once keys
+  are set; a revived relationship re-adds the client and unfreezes) and freezes
+  `active` channels whose relationship ended.
+- **Own channel type `coaching`** (Inspector Brad, #570): Stream's default
+  `messaging` type lets any token holder create channels and pick members.
+  `ensureChannelType` (once per container, on first provisioning, retried on
+  failure) creates `coaching` and sets grants: `channel_member` read/write only
+  (`COACHING_MEMBER_GRANTS`), `user`/`guest`/`anonymous` nothing. Channel
+  creation and membership are server-only. **PER-136 must use channel type
+  `coaching`.** Grant ids are from Stream's permission reference; confirm on
+  staging that members can send, react, upload and see typing.
+- **Account purge** (Inspector Brad, #570, two rounds): nothing irreversible
+  before the purge commits. Stream erasure rides PER-121's existing durable
+  queue: the sweep queues every account in `private_media_purges` before
+  `purgeUserData`; `drainPrivateMediaPurges(eraseAfterPurge)`
+  (`account/purge/eraseAfterPurge.ts`: bucket objects, then `eraseChatUser`)
+  runs only once the profile is gone, drops the row untouched for a restored
+  account, and keeps it on failure (next night retries). `eraseChatUser` finds
+  the user's `coaching` channels in Stream itself (rows cascaded), removes them
+  and freezes each, then `POST /users/delete` (user + messages hard,
+  conversations keep). No new table. The purge cron gets the Stream env.
+- **Bounded drain** (round 3): `eraseAfterPurge({startedAt})` starts no chat
+  erasure after 120 s of the run, past 20 per run, or after 2 Stream failures;
+  those rows return `"deferred"` (kept, counted as `waiting`) untouched.
+  Without keys a row is bucket-only as on main. A Stream delete task still
+  running throws `StreamDeletePendingError` → deferred (row kept; next night a
+  missing user counts as done). Task polling is 2 (no sleep before the first).
+- **Failed provisioning always leaves `pending`** (round 9): the provisioning
+  catch and the ended_meanwhile freeze failure set the row to `pending`
+  (unless `active`), so a concurrent freeze that wrote `frozen` mid-reopen
+  can't hide an open channel; the tick re-provisions or re-freezes
+  (idempotent, keeps `frozen_at`; a never-had channel still ends `frozen`
+  with `frozen_at` NULL).
+- **Revival goes through `pending`** (round 8): provisioning moves a
+  `frozen` row to `pending` (`frozen_at` NULL) before any Stream call, so a
+  revive that fails after reopening the channel leaves a row the freeze
+  retry still closes once coaching ends.
+- **Never-created channels hidden** (round 7, no migration): a channel
+  Stream never had is marked `frozen` with `frozen_at` NULL; `frozen_at` is
+  set only when Stream really froze it. `listChannelsFor` (and so the token
+  check) shows the coach frozen rows only with `frozen_at` set.
+- **Freeze retry covers pending rows** (round 6): the tick freezes every row
+  not yet `frozen` whose relationship ended, so a half-provisioned `pending`
+  channel (created in Stream, a later step failed) can't stay writable; one
+  Stream never created is just marked frozen.
+- **Scheduler job time-bounded** (round 5): `reconcileChatChannels` starts
+  no Stream work 90 s after the tick start or after 2 Stream failures (ensure
+  included); the rest is `deferred` (in the job summary) and stays pending, so
+  `sessionRemindersJob` (after it) always gets time. No channel is created in
+  a tick whose ensure failed or wasn't reached.
+- **Bucket outside the budget** (round 4): `eraseAfterPurge` always runs
+  `deleteAllUserMedia` first (no budget, as on main); only the Stream step is
+  budgeted/deferred. The drain moves a FAILED row to the back (`queued_at` =
+  now) so rows that keep failing can't starve the queue; deferred rows keep
+  their place.
+- **Ensure on token + every tick** (round 3): `POST /chat/token` runs the
+  memoised ensure first and fails closed (503 `chat_unavailable`, no token);
+  `reconcileChatChannels` ensures at the start of each tick (failure skips
+  provisioning, freezing still runs), so a deploy locks existing stages.
+- **Built-in types locked too** (round 2): `ensureChannelType` also strips
+  `user`/`guest`/`anonymous` grants on `messaging`, `team`, `livestream`,
+  `gaming`, `commerce` (a missing type is skipped). PER-136 queries channels
+  with `type: "coaching"`.
+- Not done (out of brief): Stream user re-upsert on profile edit (it happens on
+  the next token instead); moderation (PER-21); coach Stream-device push config
+  (app, PER-136).
+- Tests: `chat/__tests__/chat.integration.test.ts` (PGlite, real migrations,
+  fake Stream behind the real client; design E tests 1–4, not-configured,
+  migration twice/rollback), `streamClient.test.ts`, api-utils
+  `signHs256.test.ts`.
+
 ### 2026-11-27 — APP-D3: athlete Mealprint redesign N15–N27 ([PER-134](https://linear.app/evans-software-solutions/issue/PER-134); branch `claude/per-134-mealprint-redesign`)
 
 Mobile only. Uses BE-D3 (PER-119, #562). No backend, migration, native or

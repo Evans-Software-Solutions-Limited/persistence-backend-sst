@@ -1619,7 +1619,12 @@ describe("D7.7 events", () => {
     expect(pushText("training_behind", "Sam", { label: "1 of 3" }).body).toBe(
       "1 of 3",
     );
-    expect(pushText("message_received", "Sam", {}).title).toBe(
+    // PER-120: a chat message; the text itself never goes in the push.
+    expect(pushText("message_received", "Sam", {})).toEqual({
+      title: "Sam sent you a message",
+      body: "Tap to reply.",
+    });
+    expect(pushText("an_unknown_kind", "Sam", {}).title).toBe(
       "Sam: a new update",
     );
   });

@@ -67,7 +67,13 @@ export async function drainPrivateMediaPurges(
       if (profile) {
         summary.restored += 1;
       } else {
-        await deleteMedia(userId);
+        // PER-120: part of the erasure (Stream chat) was deferred to a
+        // later night (budget, or Stream still deleting): keep the row, in
+        // its place, like a waiting one.
+        if ((await deleteMedia(userId)) === "deferred") {
+          summary.waiting += 1;
+          continue;
+        }
         summary.deleted += 1;
       }
       await getDb()
@@ -76,7 +82,21 @@ export async function drainPrivateMediaPurges(
     } catch (err) {
       summary.failed += 1;
       console.error(`[private-media-purge] failed for ${userId}:`, err);
+      await requeueBehind(userId).catch(() => undefined);
     }
   }
   return summary;
+}
+
+/**
+ * A row that failed goes to the back of the queue (`queued_at` = now), so
+ * rows that keep failing can never sit at its head and starve the accounts
+ * behind them (Inspector Brad, #570). Deferred rows weren't at fault and
+ * keep their place.
+ */
+async function requeueBehind(userId: string): Promise<void> {
+  await getDb()
+    .update(privateMediaPurges)
+    .set({ queuedAt: new Date() })
+    .where(eq(privateMediaPurges.userId, userId));
 }

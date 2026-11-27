@@ -23,6 +23,7 @@ import {
   type AcceptPreview,
   type SetupSection,
 } from "./setupSections";
+import { safeProvisionChatChannel } from "../chat/chatChannels";
 
 /**
  * Accepting a PERSONAL invite code inside `POST /trainers/accept-invite-code`
@@ -396,6 +397,11 @@ export async function acceptPersonalCode(
     { trainerId, clientId: userId, relationshipId },
     { noPush: true },
   );
+
+  // PER-120 (design E): the relationship's chat channel, once the accept has
+  // committed (it posts the set-up welcome message as the first message).
+  // Never throws; the coach scheduler retries a failure.
+  afterCommit.push(() => safeProvisionChatChannel(relationshipId));
 
   const clientRows = await tx
     .select({ fullName: profiles.fullName })

@@ -86,6 +86,9 @@ export function pushText(
   payload: PushPayload,
 ): { title: string; body: string } {
   switch (kind) {
+    // PER-120: the message text stays in Stream; the push never carries it.
+    case "message_received":
+      return { title: `${name} sent you a message`, body: "Tap to reply." };
     case "form_completed":
     case "check_in_completed":
       return {

@@ -7,7 +7,9 @@
  * to do synchronously.
  *
  * Per-user order (brief Part D): safety-net Stripe cancel → queue the
- * private media delete (PER-121) → SQL purge (the corrected
+ * private media delete (PER-121; the same queued row also carries the Stream
+ * chat erasure, PER-120, so nothing irreversible happens before the purge
+ * commits) → SQL purge (the corrected
  * `ACCOUNT_DELETION_STEPS` plan, Part A) → Supabase auth-user delete →
  * best-effort avatar S3 cleanup (Part B). One user's failure is
  * isolated — logged and counted, never aborts the batch — mirroring

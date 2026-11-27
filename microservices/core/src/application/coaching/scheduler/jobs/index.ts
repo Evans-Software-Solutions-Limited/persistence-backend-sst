@@ -1,5 +1,6 @@
 import type { SchedulerJob } from "../coachScheduler";
 import { coachPushesJob } from "./coachPushes";
+import { chatChannelsJob } from "./chatChannels";
 import {
   inviteExpiryJob,
   programmeEndingJob,
@@ -28,6 +29,9 @@ export const COACH_SCHEDULER_JOBS: readonly SchedulerJob[] = [
   programmeEndingJob,
   trainingBehindJob,
   coachPushesJob,
+  // PER-120 (design E): chat channel provisioning and freeze retries. Writes
+  // no coach events, so it runs after coachPushesJob.
+  chatChannelsJob,
   // PER-123 (design I): athlete session reminders. Writes no coach events, so
   // it runs after coachPushesJob.
   sessionRemindersJob,

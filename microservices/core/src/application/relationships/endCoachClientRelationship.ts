@@ -14,6 +14,7 @@ import { CONSENT_VERSION } from "./consent";
 import { closeFormsOnEnd } from "../coaching/forms/generators";
 import { removePlanAssignmentsForRelationship } from "../repositories/nutritionPlanRepository";
 import { removeResourceAssignmentsForRelationship } from "../coaching/resources/resourceRepository";
+import { safeFreezeChatChannel } from "../chat/chatChannels";
 
 export interface EndCoachClientRelationshipArgs {
   trainerId: string;
@@ -259,5 +260,13 @@ export async function endCoachClientRelationship({
   });
 
   if (!outcome) return { ok: false, status: 404 };
+
+  // 5 — Design E (PER-120), after the commit: remove the client from this
+  // relationship's Stream channel and freeze it; the coach keeps a read-only
+  // thread. Best-effort (never throws); a failure leaves the channel `active`
+  // and the coach scheduler's chat_channels job retries. A no-op when chat
+  // isn't configured. Another coach's channel with this athlete is untouched.
+  await safeFreezeChatChannel(outcome.relationshipId);
+
   return { ok: true, ...outcome };
 }
