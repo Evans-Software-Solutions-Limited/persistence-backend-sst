@@ -409,8 +409,8 @@ describe("PlanTabContainer", () => {
     expect(usePlanSheets.getState().coachPlanId).toBe("c1");
   });
 
-  it("a waiting coach plan waits while a Fuel sheet (e.g. Mealprint) is open (Inspector Brad #554)", () => {
-    act(() => useFuelSheets.getState().openMealprintPlan());
+  it("a waiting coach plan waits while a Fuel sheet (e.g. Your meals) is open (Inspector Brad #554)", () => {
+    act(() => useFuelSheets.getState().openYourMeals());
     mockPlans.cache = {
       ...emptyPlansCache(),
       fromCoaches: [coach({ status: "sent" })],
@@ -456,24 +456,25 @@ describe("PlanTabContainer", () => {
     expect(mockPush).toHaveBeenCalledWith("/(app)/fuel/plan-new");
     expect(mockPush).toHaveBeenCalledWith("/(app)/fuel/plan-new?from=day");
     act(() => mockProbe.tab!.onMealprintBuild());
-    expect(useFuelSheets.getState().sheet).toBe("mealprintPlan");
+    // PER-134: Mealprint is one page; it shows the locked page itself.
+    expect(mockPush).toHaveBeenCalledWith("/(app)/fuel/mealprint?mode=day");
 
     mockManualAllowed = false;
     mockMealprintAllowed = false;
+    mockPush.mockClear();
     render(<PlanTabContainer active />);
     act(() => mockProbe.tab!.onBuildOwn());
     expect(mockOnUpgrade).toHaveBeenCalled();
     act(() => mockProbe.tab!.onMealprintBuild());
-    expect(useFuelSheets.getState().sheet).toBe("suggestLocked");
+    expect(mockPush).toHaveBeenCalledWith("/(app)/fuel/mealprint?mode=day");
   });
 
   it("Fill with Mealprint opens One meal for the gap's slot", () => {
     render(<PlanTabContainer active />);
     act(() => mockProbe.tab!.onFillWithMealprint());
-    expect(useFuelSheets.getState()).toMatchObject({
-      sheet: "mealprintSuggest",
-      slot: "snack",
-    });
+    expect(mockPush).toHaveBeenCalledWith(
+      "/(app)/fuel/mealprint?mode=meal&slot=snack",
+    );
   });
 });
 
@@ -507,14 +508,15 @@ describe("PlanSheetsContainer", () => {
     act(() => mockProbe.sw!.onNewPlan());
     expect(mockPush).toHaveBeenCalledWith("/(app)/fuel/plan-new");
     act(() => mockProbe.sw!.onMealprint());
-    expect(useFuelSheets.getState().sheet).toBe("mealprintPlan");
+    expect(mockPush).toHaveBeenCalledWith("/(app)/fuel/mealprint?mode=day");
     mockManualAllowed = false;
     mockMealprintAllowed = false;
+    mockPush.mockClear();
     render(<PlanSheetsContainer />);
     act(() => mockProbe.sw!.onNewPlan());
     expect(mockOnUpgrade).toHaveBeenCalled();
     act(() => mockProbe.sw!.onMealprint());
-    expect(useFuelSheets.getState().sheet).toBe("suggestLocked");
+    expect(mockPush).toHaveBeenCalledWith("/(app)/fuel/mealprint?mode=day");
   });
 
   it("C6: Add to my plans selects it; Not now dismisses", () => {

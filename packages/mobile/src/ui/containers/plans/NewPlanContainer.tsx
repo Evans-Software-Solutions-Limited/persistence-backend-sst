@@ -27,7 +27,6 @@ import {
   withPlanMeals,
 } from "@/domain/services/nutritionPlans.service";
 import { addDaysISO, localDayISO } from "@/shared/utils";
-import { useFuelSheets } from "@/state/fuel-sheets";
 import { usePlanDraft } from "@/state/plan-draft";
 import { usePlanSheets } from "@/state/plan-sheets";
 import { useAdapters } from "@/ui/hooks/useAdapters";
@@ -36,7 +35,7 @@ import { useGetMeals } from "@/ui/hooks/useGetMeals";
 import { useGetNutritionTarget } from "@/ui/hooks/useGetNutritionTarget";
 import { useGetRecipes } from "@/ui/hooks/useGetRecipes";
 import { useManualMealPlansGate } from "@/ui/hooks/useManualMealPlansGate";
-import { useMealprintGate } from "@/ui/hooks/useMealprintGate";
+import { mealprintHref } from "@/ui/hooks/openMealprint";
 import {
   useNutritionPlans,
   usePlansShoppingList,
@@ -85,7 +84,6 @@ type Step = "start" | "build" | "saved";
 export function NewPlanContainer() {
   const params = useLocalSearchParams<{ from?: string }>();
   const gate = useManualMealPlansGate();
-  const mealprintGate = useMealprintGate();
   const { storage } = useAdapters();
   const { session } = useAuth();
   const userId = session?.userId ?? null;
@@ -174,12 +172,9 @@ export function NewPlanContainer() {
 
   const onContinue = useCallback(() => {
     if (from === "mealprint") {
-      if (mealprintGate.allowed) {
-        useFuelSheets.getState().openMealprintPlan();
-        router.back();
-      } else {
-        useFuelSheets.getState().openSuggestLocked();
-      }
+      // PER-134: Mealprint Whole day takes over this screen (or shows the
+      // locked page when Mealprint isn't included).
+      router.replace(mealprintHref("day"));
       return;
     }
     if (!cleanName || !userId || (from === "day" && dayTooBig)) return;
@@ -205,7 +200,6 @@ export function NewPlanContainer() {
     setStep("build");
   }, [
     from,
-    mealprintGate.allowed,
     cleanName,
     userId,
     dayTooBig,
