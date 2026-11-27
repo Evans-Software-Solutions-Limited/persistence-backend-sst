@@ -280,6 +280,22 @@ describe("WorkoutDetailPresenter", () => {
     expect(getByText("3 sets × 10 reps")).toBeTruthy();
   });
 
+  it("shows reps per set (PER-139): 3 sets · 10, 8, 8 reps", () => {
+    const workout = buildWorkout({
+      exercises: [
+        buildExercise({
+          targetSets: 3,
+          targetRepsMin: 8,
+          targetRepsMax: 10,
+          setTargets: [{ reps: 10 }, { reps: 8 }, { reps: 8 }],
+        }),
+      ],
+    });
+    const { getByText, queryByText } = renderDetail({ workout });
+    expect(getByText("3 sets · 10, 8, 8 reps")).toBeTruthy();
+    expect(queryByText("3 sets × 8–10 reps")).toBeNull();
+  });
+
   it("shows the owner edit button + note only for the owner", () => {
     const onEdit = jest.fn();
     const { getByTestId, queryByTestId, rerender, props } = renderDetail({

@@ -1,6 +1,9 @@
 import type { WorkoutFormState } from "@/ui/hooks/useWorkoutForm";
 
-import { WorkoutFormBody } from "@/ui/presenters/WorkoutFormBody";
+import {
+  WorkoutFormBody,
+  type WorkoutSetEditorProps,
+} from "@/ui/presenters/WorkoutFormBody";
 
 /**
  * <WorkoutCreatorPresenter> — v3 restyle onto the foundation kit + prototype
@@ -12,7 +15,7 @@ import { WorkoutFormBody } from "@/ui/presenters/WorkoutFormBody";
  * subtitle).
  */
 
-interface WorkoutCreatorPresenterProps {
+interface WorkoutCreatorPresenterProps extends WorkoutSetEditorProps {
   readonly formState: WorkoutFormState;
   readonly isSubmitting: boolean;
   readonly hasAttemptedSubmit: boolean;

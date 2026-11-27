@@ -73,6 +73,8 @@ export type SessionExerciseTemplate = {
   targetSets?: number;
   targetRepsMin?: number;
   targetRepsMax?: number;
+  /** Reps per set from the workout (PER-139): `[10, 8, 8]`. */
+  targetSetReps?: number[];
   targetDurationSeconds?: number;
   restSeconds: number;
 };
@@ -391,6 +393,7 @@ export function ActiveSessionPresenter(props: ActiveSessionPresenterProps) {
           targetSets={template.targetSets}
           targetRepsMin={template.targetRepsMin}
           targetRepsMax={template.targetRepsMax}
+          targetSetReps={template.targetSetReps}
           targetDurationSeconds={template.targetDurationSeconds}
           restSeconds={template.restSeconds}
           onLogSet={() => props.onLogSet(ex.id)}

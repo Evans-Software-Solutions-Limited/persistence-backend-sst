@@ -68,17 +68,32 @@ export function createSessionFromWorkout(
     .sort((a, b) => a.sortOrder - b.sortOrder)
     .map((wx, idx) => {
       const sessionExerciseId = `local-${idFactory()}`;
-      const targetSets = wx.targetSets ?? 0;
+      const category = exerciseCategory(wx.exercise?.category);
+      // Reps per set (PER-139): set n starts at its target reps. Only for
+      // lifts, where a set counts as logged once it also has a weight; a
+      // plyometric set counts on reps alone and cardio logs time, so those
+      // keep today's empty sets. Without per-set targets nothing changes.
+      const targetReps =
+        category === "cardio" || category === "plyometric"
+          ? null
+          : (wx.setTargets?.map((s) => s.reps) ?? null);
+      const targetSets =
+        targetReps && targetReps.length > 0
+          ? targetReps.length
+          : (wx.targetSets ?? 0);
       const sets: ExerciseSet[] = [];
       for (let i = 0; i < targetSets; i++) {
-        sets.push(emptySet(sessionExerciseId, i + 1, idFactory));
+        const set = emptySet(sessionExerciseId, i + 1, idFactory);
+        sets.push(
+          targetReps?.[i] != null ? { ...set, reps: targetReps[i] } : set,
+        );
       }
       return {
         id: sessionExerciseId,
         sessionId,
         exerciseId: wx.exerciseId,
         exerciseName: wx.exercise?.name ?? wx.exerciseId,
-        category: exerciseCategory(wx.exercise?.category),
+        category,
         sortOrder: idx,
         supersetGroup: wx.supersetGroup,
         isSubstituted: false,

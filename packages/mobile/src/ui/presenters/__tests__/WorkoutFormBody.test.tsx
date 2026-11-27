@@ -29,6 +29,7 @@ const formState: WorkoutFormState = {
       target_reps_max: 12,
       rest_seconds: 60,
       superset_group: null,
+      set_reps: null,
     },
     {
       id: "superset-lead",
@@ -40,6 +41,7 @@ const formState: WorkoutFormState = {
       target_reps_max: 12,
       rest_seconds: 60,
       superset_group: 4,
+      set_reps: null,
     },
     {
       id: "superset-peer",
@@ -51,6 +53,7 @@ const formState: WorkoutFormState = {
       target_reps_max: 12,
       rest_seconds: 60,
       superset_group: 4,
+      set_reps: null,
     },
     {
       id: "standalone-d",
@@ -62,6 +65,7 @@ const formState: WorkoutFormState = {
       target_reps_max: 12,
       rest_seconds: 60,
       superset_group: null,
+      set_reps: null,
     },
   ],
 };
