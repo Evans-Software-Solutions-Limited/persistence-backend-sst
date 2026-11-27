@@ -855,6 +855,106 @@ describe("design E test 3: ending coaching removes the client and freezes the ch
       frozenAt: null,
     });
   });
+
+  /** A set-up welcome message for C–A, so a revive has a step after reopen. */
+  async function welcomeFor(rel: string) {
+    const [profile] = await db
+      .insert(schema.coachClientProfiles)
+      .values({
+        trainerId: COACH_C,
+        displayName: "Lena",
+        status: "active",
+        clientId: ATHLETE_A,
+        relationshipId: rel,
+      })
+      .returning();
+    await db.insert(schema.coachClientSetupItems).values({
+      profileId: profile!.id,
+      section: "welcome_message",
+      config: { text: "Welcome back!" },
+      sortOrder: 0,
+    });
+  }
+
+  const setStatus = (status: "active" | "terminated") =>
+    db
+      .update(schema.ptClientRelationships)
+      .set({ status })
+      .where(eq(schema.ptClientRelationships.id, REL_CA));
+
+  it("a revived frozen channel whose welcome fails is pending, so after coaching ends again the tick freezes it", async () => {
+    await provisionChatChannel(REL_CA);
+    await end(COACH_C, ATHLETE_A);
+    expect((await channelRow(REL_CA))!.state).toBe("frozen");
+
+    // Revived: the channel reopens in Stream, then the welcome fails.
+    await setStatus("active");
+    await welcomeFor(REL_CA);
+    stream.failOn(/\/message$/);
+    await safeProvisionChatChannel(REL_CA);
+    const ch = stream.channels.get(channelIdFor(REL_CA))!;
+    expect(ch.frozen).toBe(false);
+    expect(ch.members.has(ATHLETE_A)).toBe(true);
+    expect(await channelRow(REL_CA)).toMatchObject({
+      state: "pending",
+      frozenAt: null,
+    });
+
+    // Coaching ends again and the immediate freeze fails.
+    await setStatus("terminated");
+    stream.down = true;
+    await safeFreezeChatChannel(REL_CA);
+    stream.down = false;
+    expect((await channelRow(REL_CA))!.state).toBe("pending");
+
+    expect(await reconcileChatChannels()).toMatchObject({ frozen: 1 });
+    expect(ch.frozen).toBe(true);
+    expect(ch.members.has(ATHLETE_A)).toBe(false);
+    const row = await channelRow(REL_CA);
+    expect(row!.state).toBe("frozen");
+    expect(row!.frozenAt).toBeInstanceOf(Date);
+  });
+
+  it("a revived never-created channel (frozen_at NULL) behaves the same way", async () => {
+    stream.failOn(/\/users$/, 1);
+    await safeProvisionChatChannel(REL_CA);
+    await setStatus("terminated");
+    await freezeChatChannel(REL_CA);
+    expect(await channelRow(REL_CA)).toMatchObject({
+      state: "frozen",
+      frozenAt: null,
+    });
+
+    await setStatus("active");
+    await welcomeFor(REL_CA);
+    stream.failOn(/\/message$/);
+    await safeProvisionChatChannel(REL_CA);
+    const ch = stream.channels.get(channelIdFor(REL_CA))!;
+    expect(ch.members.has(ATHLETE_A)).toBe(true);
+    expect((await channelRow(REL_CA))!.state).toBe("pending");
+
+    await setStatus("terminated");
+    stream.down = true;
+    await safeFreezeChatChannel(REL_CA);
+    stream.down = false;
+    expect(await reconcileChatChannels()).toMatchObject({ frozen: 1 });
+    expect(ch.frozen).toBe(true);
+    expect(ch.members.has(ATHLETE_A)).toBe(false);
+    expect((await channelRow(REL_CA))!.frozenAt).toBeInstanceOf(Date);
+  });
+
+  it("a revived never-created channel that provisions fully ends up active", async () => {
+    stream.failOn(/\/users$/, 1);
+    await safeProvisionChatChannel(REL_CA);
+    await setStatus("terminated");
+    await freezeChatChannel(REL_CA);
+    await setStatus("active");
+    expect(await provisionChatChannel(REL_CA)).toBe("provisioned");
+    expect(await channelRow(REL_CA)).toMatchObject({
+      state: "active",
+      frozenAt: null,
+    });
+  });
 });
 
 // ─── Design E test 1: tokens, and the channel list ──────────────────────────

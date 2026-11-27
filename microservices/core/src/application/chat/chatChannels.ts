@@ -224,6 +224,20 @@ export async function provisionChatChannel(
       updatedAt: now,
     })
     .onConflictDoNothing();
+  // A revived relationship's row is still `frozen` (really frozen, or never
+  // created with `frozen_at` NULL). Move it to `pending` BEFORE touching
+  // Stream: if a later step fails after the channel was reopened, the row
+  // must say so, or the freeze retry (which skips `frozen`) would never close
+  // it again once coaching ends (Inspector Brad, #570).
+  await db
+    .update(chatChannels)
+    .set({ state: "pending", frozenAt: null, updatedAt: now })
+    .where(
+      and(
+        eq(chatChannels.relationshipId, relationshipId),
+        eq(chatChannels.state, "frozen"),
+      ),
+    );
 
   try {
     await ensureCoachingChannelType(client);
