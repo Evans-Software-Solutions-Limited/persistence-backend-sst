@@ -89,10 +89,15 @@ export function liveResourceEntries(
 
 // ── Coach: a new link ─────────────────────────────────────────────────────────
 
-/** Add a link to the library, offline too. Returns it as cached. */
+/**
+ * Add a link to the library, offline too. Returns it as cached. Pass the
+ * `idempotencyKey` an online attempt already sent (e.g. it timed out after
+ * the server saved it), so the queued replay can't make a second link.
+ */
 export function createLinkResourceCommand(
   deps: CoachResourcesDeps,
   input: { title: string; url: string },
+  idempotencyKey?: string,
 ): CoachResource {
   const { storage, userId } = deps;
   const now = nowIso(deps);
@@ -120,8 +125,30 @@ export function createLinkResourceCommand(
     payload: { kind: "link", title: resource.title, url: resource.url },
     endpoint: RESOURCES_ENDPOINT,
     method: "POST",
+    ...(idempotencyKey ? { idempotencyKey } : {}),
   });
   return resource;
+}
+
+/**
+ * The server's rows for a share it accepted: each replaces this client's row
+ * for the same resource (an optimistic `local-…` one included), so Remove
+ * works straight away with the real assignment id.
+ */
+export function upsertAssignedLocally(
+  deps: CoachResourcesDeps,
+  clientId: string,
+  rows: readonly ClientResource[],
+): void {
+  const { storage, userId } = deps;
+  const mine = rows.filter((r) => r.clientId === clientId);
+  if (mine.length === 0) return;
+  const ids = new Set(mine.map((r) => r.resource.id));
+  const cached = storage.getCachedCoachClientResources(userId, clientId) ?? [];
+  storage.cacheCoachClientResources(userId, clientId, [
+    ...mine,
+    ...cached.filter((a) => !ids.has(a.resource.id)),
+  ]);
 }
 
 /** A resource the server just made (an upload or an online link). */

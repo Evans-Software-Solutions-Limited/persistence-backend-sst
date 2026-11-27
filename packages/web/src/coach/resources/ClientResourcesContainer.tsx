@@ -170,7 +170,9 @@ export function ClientResourcesContainer({ client }: { client: RosterClient }) {
         <LinkDialog
           hint={`Adds to your Library and shares with ${clientFirst}.`}
           onClose={() => setDialog(null)}
-          onSave={async (values) => void (await created(await addLink(values)))}
+          onSave={async (values, keys) =>
+            void (await created(await addLink(values, keys)))
+          }
         />
       )}
       {dialog === "upload" && (
@@ -178,7 +180,9 @@ export function ClientResourcesContainer({ client }: { client: RosterClient }) {
           offline={!online}
           hint={`Adds to your Library and shares with ${clientFirst}.`}
           onClose={() => setDialog(null)}
-          onSave={async (values) => void (await created(await upload(values)))}
+          onSave={async (values, keys) =>
+            void (await created(await upload(values, keys)))
+          }
         />
       )}
     </>

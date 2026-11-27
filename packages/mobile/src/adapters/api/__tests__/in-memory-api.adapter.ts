@@ -238,6 +238,7 @@ import type {
 } from "@/domain/models/progressPhotos";
 import type {
   AssignRefusal,
+  AssignResultData,
   AthleteResource,
   ClientResource,
   CoachResource,
@@ -4199,6 +4200,8 @@ export class InMemoryApiAdapter implements ApiPort {
   /** Clients whose C3.9 Resources switch is off (assign → 403). */
   resourcesOffClients = new Set<string>();
   resourceCalls: string[] = [];
+  /** Idempotency-Key of each `createCoachResource` call, in order. */
+  resourceKeysSent: string[] = [];
   resourceFailures: {
     list: ApiError[];
     create: ResourceSaveError[];
@@ -4238,6 +4241,7 @@ export class InMemoryApiAdapter implements ApiPort {
     idempotencyKey: string,
   ): Promise<Result<CoachResource, ResourceSaveError>> {
     this.resourceCalls.push(`create:${input.kind}:${input.title}`);
+    this.resourceKeysSent.push(idempotencyKey);
     const failure = this.resourceFailures.create.shift();
     if (failure) return fail(failure);
     const existing = this.coachResources.find(
@@ -4284,7 +4288,7 @@ export class InMemoryApiAdapter implements ApiPort {
   async assignCoachResources(
     resourceIds: string[],
     clientIds: string[],
-  ): Promise<Result<{ created: number }, AssignRefusal>> {
+  ): Promise<Result<AssignResultData, AssignRefusal>> {
     this.resourceCalls.push(
       `assign:${resourceIds.join(",")}>${clientIds.join(",")}`,
     );
@@ -4310,7 +4314,15 @@ export class InMemoryApiAdapter implements ApiPort {
       }
       this.coachClientResources.set(clientId, list);
     }
-    return ok({ created });
+    const assignments = clientIds.flatMap((clientId) =>
+      (this.coachClientResources.get(clientId) ?? []).filter((a) =>
+        resourceIds.includes(a.resource.id),
+      ),
+    );
+    return ok({
+      created,
+      assignments: JSON.parse(JSON.stringify(assignments)) as ClientResource[],
+    });
   }
 
   async getCoachClientResources(

@@ -183,14 +183,14 @@ export function ResourcesLibraryContainer() {
       {dialog === "link" && (
         <LinkDialog
           onClose={() => setDialog(null)}
-          onSave={async (values) => added(await addLink(values))}
+          onSave={async (values, keys) => added(await addLink(values, keys))}
         />
       )}
       {dialog === "upload" && (
         <UploadDialog
           offline={!online}
           onClose={() => setDialog(null)}
-          onSave={async (values) => added(await upload(values))}
+          onSave={async (values, keys) => added(await upload(values, keys))}
         />
       )}
       {dialog === "share" && selected && (

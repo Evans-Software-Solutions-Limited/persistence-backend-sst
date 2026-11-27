@@ -273,6 +273,7 @@ import type {
 } from "@/domain/models/progressPhotos";
 import type {
   AssignRefusal,
+  AssignResultData,
   AthleteResource,
   ClientResource,
   CoachResource,
@@ -3370,9 +3371,9 @@ export class SSTApiAdapter implements ApiPort {
   async assignCoachResources(
     resourceIds: string[],
     clientIds: string[],
-  ): Promise<Result<{ created: number }, AssignRefusal>> {
+  ): Promise<Result<AssignResultData, AssignRefusal>> {
     const result = await this.requestRaw<{
-      data?: { created?: number };
+      data?: { created?: number; assignments?: ClientResource[] };
       code?: string;
       message?: string;
       clientIds?: string[];
@@ -3390,7 +3391,10 @@ export class SSTApiAdapter implements ApiPort {
     }
     const { status, json } = result.value;
     if (status >= 200 && status < 300) {
-      return ok({ created: json?.data?.created ?? 0 });
+      return ok({
+        created: json?.data?.created ?? 0,
+        assignments: json?.data?.assignments ?? [],
+      });
     }
     const ids = Array.isArray(json?.clientIds) ? json.clientIds : [];
     if (status === 403 && json?.code === "resources_off") {

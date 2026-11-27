@@ -1346,8 +1346,9 @@ ${indentSyncQueueDdl(12)}
         entry.method,
         // Stamped ONCE, here, and never rewritten — that is the whole property.
         // A key regenerated per attempt would make every retry look like a new
-        // request, which is exactly the duplicate this prevents.
-        newIdempotencyKey(entry),
+        // request, which is exactly the duplicate this prevents. A caller that
+        // already sent the write online passes that attempt's key (PER-143).
+        entry.idempotencyKey ?? newIdempotencyKey(entry),
       ],
     );
   }

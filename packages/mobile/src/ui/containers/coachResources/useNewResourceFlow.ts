@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import type { CoachResource } from "@/domain/models/coachResources";
 import { defaultImageTitle } from "@/domain/services/coachResources.service";
@@ -17,6 +17,10 @@ import {
   useResourceImagePicker,
   type PickedResourceImage,
 } from "@/ui/hooks/useResourceImagePicker";
+
+function newRequestKey(): string {
+  return `res-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
 
 type Actions = Pick<
   ReturnType<typeof useCoachResourceActions>,
@@ -49,6 +53,9 @@ export function useNewResourceFlow(opts: {
   const [picked, setPicked] = useState<PickedResourceImage | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Keys for the picked photo's upload and resource, kept until it saves or
+  // another photo is picked, so Upload again replays the same requests.
+  const keys = useRef<{ upload: string; create: string } | null>(null);
 
   const startLink = useCallback(() => {
     linkForm.reset({ title: "", url: "" });
@@ -61,6 +68,7 @@ export function useNewResourceFlow(opts: {
     const image = await picker.pick();
     if (!image) return;
     setPicked(image);
+    keys.current = { upload: newRequestKey(), create: newRequestKey() };
     nameForm.reset({ title: defaultImageTitle(image.fileName, new Date()) });
     setError(null);
     setSheet("name");
@@ -105,10 +113,12 @@ export function useNewResourceFlow(opts: {
         title,
         contentType: picked.contentType,
         read: () => readLocalFile(picked.uri),
+        ...(keys.current ? { keys: keys.current } : {}),
       });
       if (result.ok) {
         setSheet(null);
         setPicked(null);
+        keys.current = null;
         onCreated(result.resource, false);
         return;
       }

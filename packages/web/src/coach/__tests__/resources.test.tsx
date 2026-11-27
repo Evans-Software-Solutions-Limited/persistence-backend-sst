@@ -361,6 +361,85 @@ describe("Client → Resources (C3.7a)", () => {
     ).toBe(true);
   });
 
+  it("a lost answer then Save again resends the same keys (link and upload)", async () => {
+    const created = resource({ id: "res-k", kind: "link", title: "K" });
+    const api = fakeApi({
+      createResource: vi
+        .fn()
+        .mockRejectedValueOnce(apiError(0, null, true))
+        .mockResolvedValue(created),
+    });
+    openTab(api);
+    fireEvent.click(await screen.findByRole("button", { name: "Link" }));
+    const dialog = screen.getByRole("dialog", { name: "Add a link" });
+    fireEvent.change(within(dialog).getByLabelText("Name"), {
+      target: { value: "K" },
+    });
+    fireEvent.change(within(dialog).getByLabelText("Link"), {
+      target: { value: "https://k.example" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add link" }));
+    expect(await within(dialog).findByText(/You're offline/)).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add link" }));
+    await waitFor(() => expect(api.createResource).toHaveBeenCalledTimes(2));
+    const [first, second] = api.createResource.mock.calls;
+    expect(second![1]).toBe(first![1]);
+    await screen.findByText("Added K for Sam.");
+
+    // Upload: the same upload and create keys for the same file; a new file
+    // gets new ones.
+    const up = fakeApi({
+      createResourceUpload: vi
+        .fn()
+        .mockRejectedValueOnce(apiError(0, null, true))
+        .mockResolvedValue({
+          mediaId: "m",
+          contentType: "application/pdf",
+          bytes: 1200,
+          status: "ready",
+          upload: null,
+        }),
+      createResource: vi.fn().mockResolvedValue(resource({ id: "res-u" })),
+    });
+    cleanup();
+    openTab(up);
+    fireEvent.click(await screen.findByRole("button", { name: "Upload new" }));
+    const box = screen.getByRole("dialog", { name: "Upload a file" });
+    const file = pdf();
+    fireEvent.change(within(box).getByLabelText("File"), {
+      target: { files: [file] },
+    });
+    fireEvent.click(within(box).getByRole("button", { name: "Upload" }));
+    expect(await within(box).findByText(/You're offline/)).toBeTruthy();
+    fireEvent.click(within(box).getByRole("button", { name: "Upload" }));
+    await waitFor(() => expect(up.createResource).toHaveBeenCalledTimes(1));
+    const [u1, u2] = up.createResourceUpload.mock.calls;
+    expect(u2![2]).toBe(u1![2]);
+  });
+
+  it("choosing another file gets new upload keys", async () => {
+    const api = fakeApi({
+      createResourceUpload: vi.fn().mockRejectedValue(apiError(0, null, true)),
+    });
+    openTab(api);
+    fireEvent.click(await screen.findByRole("button", { name: "Upload new" }));
+    const box = screen.getByRole("dialog", { name: "Upload a file" });
+    fireEvent.change(within(box).getByLabelText("File"), {
+      target: { files: [pdf("a.pdf")] },
+    });
+    fireEvent.click(within(box).getByRole("button", { name: "Upload" }));
+    await within(box).findByText(/You're offline/);
+    fireEvent.change(within(box).getByLabelText("File"), {
+      target: { files: [pdf("b.pdf")] },
+    });
+    fireEvent.click(within(box).getByRole("button", { name: "Upload" }));
+    await waitFor(() =>
+      expect(api.createResourceUpload).toHaveBeenCalledTimes(2),
+    );
+    const [a, b] = api.createResourceUpload.mock.calls;
+    expect(b![2]).not.toBe(a![2]);
+  });
+
   it("Upload: a failed upload shows the dialog banner", async () => {
     const api = fakeApi({
       createResourceUpload: vi

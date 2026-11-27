@@ -15,6 +15,7 @@ import {
   type UploadFormValues,
 } from "../lib/resources";
 import { Dialog, Notice } from "../ui/parts";
+import { newResourceKeys, type ResourceKeys } from "./useNewResource";
 
 /**
  * Add link and Upload (C3.7 picker "Upload" / "Link", C5b "Add link" /
@@ -36,11 +37,14 @@ export function LinkDialog({
   onClose,
   hint,
 }: {
-  onSave: (values: LinkFormValues) => Promise<void>;
+  onSave: (values: LinkFormValues, keys: ResourceKeys) => Promise<void>;
   onClose: () => void;
   hint?: string;
 }) {
   const [error, setError] = useState<string | null>(null);
+  // Same keys on every Save while this dialog is open (a retry after a lost
+  // answer must not add the link twice).
+  const [keys] = useState<ResourceKeys>(newResourceKeys);
   const form = useForm<LinkFormValues>({
     resolver: linkResolver,
     defaultValues: { title: "", url: "" },
@@ -50,7 +54,7 @@ export function LinkDialog({
   const submit = form.handleSubmit(async (values) => {
     setError(null);
     try {
-      await onSave(values);
+      await onSave(values, keys);
     } catch (e) {
       if (applyServerErrors(e, form.setError, LINK_SERVER_FIELDS)) return;
       setError(resourceError(e, null, "We couldn't add that link."));
@@ -124,12 +128,14 @@ export function UploadDialog({
   offline,
   hint,
 }: {
-  onSave: (values: UploadFormValues) => Promise<void>;
+  onSave: (values: UploadFormValues, keys: ResourceKeys) => Promise<void>;
   onClose: () => void;
   offline: boolean;
   hint?: string;
 }) {
   const [error, setError] = useState<string | null>(null);
+  // Same keys on every Save for the chosen file; a new file gets new ones.
+  const [keys, setKeys] = useState<ResourceKeys>(newResourceKeys);
   const form = useForm<UploadFormValues>({
     resolver: uploadResolver,
     defaultValues: { title: "", file: null },
@@ -139,7 +145,7 @@ export function UploadDialog({
   const submit = form.handleSubmit(async (values) => {
     setError(null);
     try {
-      await onSave(values);
+      await onSave(values, keys);
     } catch (e) {
       if (applyServerErrors(e, form.setError, UPLOAD_SERVER_FIELDS)) return;
       setError(resourceError(e, null, "We couldn't upload that file."));
@@ -174,6 +180,9 @@ export function UploadDialog({
             aria-describedby="resource-file-hint"
             onChange={(e) => {
               const file = e.target.files?.[0] ?? null;
+              if (file !== form.getValues("file")) {
+                setKeys(newResourceKeys());
+              }
               form.setValue("file", file, { shouldValidate: true });
               if (file && !form.getValues("title").trim()) {
                 form.setValue("title", titleFromFileName(file.name));

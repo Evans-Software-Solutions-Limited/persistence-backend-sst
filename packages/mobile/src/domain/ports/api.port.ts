@@ -180,6 +180,7 @@ import type {
 } from "@/domain/models/progressPhotos";
 import type {
   AssignRefusal,
+  AssignResultData,
   AthleteResource,
   ClientResource,
   CoachResource,
@@ -1854,7 +1855,7 @@ export interface ApiPort extends ReferralsPort {
   assignCoachResources(
     resourceIds: string[],
     clientIds: string[],
-  ): Promise<Result<{ created: number }, AssignRefusal>>;
+  ): Promise<Result<AssignResultData, AssignRefusal>>;
   /** `GET /trainers/me/clients/:clientId/resources`, with `openedAt`. */
   getCoachClientResources(
     clientId: string,

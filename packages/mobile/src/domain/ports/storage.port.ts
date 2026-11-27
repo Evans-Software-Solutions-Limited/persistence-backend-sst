@@ -1428,6 +1428,12 @@ export type EnqueueMutationInput = {
   payload: unknown;
   endpoint: string;
   method: string;
+  /**
+   * PER-143: the key an online attempt already sent, so a write that may have
+   * reached the server (a timeout) replays under the same key instead of
+   * creating a second row. Omitted → the queue stamps a fresh key.
+   */
+  idempotencyKey?: string;
 };
 
 export type SyncQueueEntry = {

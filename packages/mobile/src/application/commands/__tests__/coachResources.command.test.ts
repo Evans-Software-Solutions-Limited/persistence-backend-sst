@@ -23,6 +23,7 @@ import {
   refusedAssigns,
   rememberResource,
   resolveResourceId,
+  upsertAssignedLocally,
 } from "../coachResources.command";
 
 const COACH = "coach-1";
@@ -106,6 +107,37 @@ describe("coachResources.command (PER-143)", () => {
       url: "https://studio.example",
     });
     expect(entry!.idempotencyKey).toBeTruthy();
+  });
+
+  it("a link queued after an online try keeps that try's key", () => {
+    const { storage, deps } = setup();
+    createLinkResourceCommand(
+      deps,
+      { title: "B", url: "https://b.example" },
+      "key-online",
+    );
+    expect(storage.getUncompletedMutations()[0]!.idempotencyKey).toBe(
+      "key-online",
+    );
+  });
+
+  it("the server's share rows replace optimistic ones for the same resource", () => {
+    const { storage, deps } = setup();
+    upsertAssignedLocally(deps, "c1", []);
+    expect(storage.getCachedCoachClientResources(COACH, "c1")).toBeNull();
+    storage.cacheCoachClientResources(COACH, "c1", [
+      assigned(res(), { assignmentId: "local-1" }),
+      assigned(res({ id: "r2" })),
+    ]);
+    upsertAssignedLocally(deps, "c1", [
+      assigned(res(), { assignmentId: "srv-1" }),
+      assigned(res({ id: "r9" }), { clientId: "other" }),
+    ]);
+    expect(
+      storage
+        .getCachedCoachClientResources(COACH, "c1")!
+        .map((a) => a.assignmentId),
+    ).toEqual(["srv-1", "as-r2"]);
   });
 
   it("rememberResource puts a server resource on top once", () => {

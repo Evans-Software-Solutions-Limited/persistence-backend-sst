@@ -6,7 +6,6 @@ import {
   MY_RESOURCES_TABLES,
 } from "@/adapters/storage/tables";
 import {
-  addAssignedLocally,
   COACH_RESOURCE_ASSIGN_ENTITY,
   COACH_RESOURCE_ENTITY,
   createLinkResourceCommand,
@@ -22,6 +21,7 @@ import {
   reconcileMyResources,
   rememberResource,
   resolveResourceId,
+  upsertAssignedLocally,
 } from "@/application/commands/coachResources.command";
 import { processSyncQueue } from "@/application/commands/sync.command";
 import type {
@@ -123,6 +123,11 @@ export type UploadInput = {
   contentType: string;
   /** Reads the picked file (`readLocalFile` in the app). */
   read: () => Promise<Blob>;
+  /**
+   * Keys held for one picked photo, so Upload again after a lost answer
+   * replays the same upload and resource instead of making new ones.
+   */
+  keys?: { upload: string; create: string };
 };
 
 export type UploadResult =
@@ -171,10 +176,14 @@ export function useCoachResourceActions(
       }
       const deps = { storage, userId };
       const value = { title: input.title.trim(), url: input.url.trim() };
+      // One key for this link, online try and queued replay alike: a timeout
+      // can land after the server saved it, and the replay then gets the
+      // same link back instead of a second one (Inspector Brad, #580).
+      const key = newKey();
       if (online) {
         const result = await api.createCoachResource(
           { kind: "link", ...value },
-          newKey(),
+          key,
         );
         if (result.ok) {
           rememberResource(deps, result.value);
@@ -184,7 +193,7 @@ export function useCoachResourceActions(
         if (!isTransport(result.error))
           return { ok: false, error: result.error };
       }
-      const resource = createLinkResourceCommand(deps, value);
+      const resource = createLinkResourceCommand(deps, value, key);
       await drain();
       return { ok: true, resource, queued: true };
     },
@@ -211,7 +220,9 @@ export function useCoachResourceActions(
           [clientId],
         );
         if (result.ok) {
-          addAssignedLocally(deps, clientId, resources);
+          // The server's rows, with real assignment ids, so Remove works
+          // straight away (Inspector Brad, #580).
+          upsertAssignedLocally(deps, clientId, result.value.assignments);
           onLocalWrite.current?.();
           return { ok: true, queued: false };
         }
@@ -246,7 +257,7 @@ export function useCoachResourceActions(
         if (result.ok) {
           for (const clientId of clientIds) {
             if (storage.getCachedCoachClientResources(userId, clientId)) {
-              addAssignedLocally(deps, clientId, [resource]);
+              upsertAssignedLocally(deps, clientId, result.value.assignments);
             }
           }
           onLocalWrite.current?.();
@@ -330,7 +341,7 @@ export function useCoachResourceActions(
       const media = await api.createCoachResourceUpload(
         input.contentType,
         file.size,
-        newKey(),
+        input.keys?.upload ?? newKey(),
       );
       if (!media.ok) return { ok: false, error: media.error };
       if (media.value.upload) {
@@ -343,7 +354,7 @@ export function useCoachResourceActions(
           title: input.title.trim(),
           mediaId: media.value.mediaId,
         },
-        newKey(),
+        input.keys?.create ?? newKey(),
       );
       if (!created.ok) return { ok: false, error: created.error };
       rememberResource({ storage, userId }, created.value);

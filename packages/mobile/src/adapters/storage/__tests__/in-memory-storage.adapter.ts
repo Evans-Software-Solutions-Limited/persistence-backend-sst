@@ -277,7 +277,9 @@ export class InMemoryStorageAdapter implements StoragePort {
       createdAt: new Date().toISOString(),
       entitlementVerdict: null,
       // Mirrors the SQLite adapter: stamped once at enqueue, never rewritten.
-      idempotencyKey: `${entry.entityId ?? `${entry.entityType}:${entry.operation}`}-${this.nextId}`,
+      idempotencyKey:
+        entry.idempotencyKey ??
+        `${entry.entityId ?? `${entry.entityType}:${entry.operation}`}-${this.nextId}`,
       nextAttemptAt: null,
       deferCount: 0,
       dispatchCount: 0,

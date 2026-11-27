@@ -79,6 +79,12 @@ export type ResourceMediaUpload = {
   } | null;
 };
 
+/** A share the server accepted: its rows (with real assignment ids). */
+export type AssignResultData = {
+  created: number;
+  assignments: ClientResource[];
+};
+
 /** A refused create keeps the server's body, so a 422 lands on the form. */
 export type ResourceSaveError = ApiError & { body?: unknown };
 

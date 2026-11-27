@@ -163,6 +163,70 @@ describe("Client → Resources on iPhone (C3.7b/c)", () => {
     ).toContain("r3");
   });
 
+  it("share online, then Remove straight away, uses the server's assignment id", async () => {
+    const { view, api } = setup();
+    await waitFor(() => view.getByTestId("client-resource-as-r1"));
+    fireEvent.press(view.getByTestId("client-resources-add"));
+    await waitFor(() => view.getByTestId("add-resources-row-r3"));
+    fireEvent.press(view.getByTestId("add-resources-row-r3"));
+    await act(async () => {
+      fireEvent.press(view.getByTestId("add-resources-add"));
+    });
+    const row = `client-resource-srv-as-${CLIENT}-r3`;
+    await waitFor(() => expect(view.getByTestId(row)).toBeTruthy());
+    fireEvent.press(view.getByTestId(row));
+    await pressAlert("Remove");
+    expect(api.resourceCalls).toContain(`remove:${CLIENT}:srv-as-${CLIENT}-r3`);
+    expect(view.getByText("Removed Hip hinge drill from Sam.")).toBeTruthy();
+  });
+
+  it("a link create that times out is queued under the same key, so the replay can't add a second link", async () => {
+    const { view, api, storage, server } = setup();
+    api.resourceFailures.create.push({
+      kind: "api",
+      code: "timeout",
+      message: "Request timed out",
+    });
+    server.offline = true;
+    await waitFor(() => view.getByTestId("client-resource-as-r1"));
+    fireEvent.press(view.getByTestId("client-resources-add"));
+    fireEvent.press(view.getByTestId("add-resources-link"));
+    fireEvent.changeText(view.getByTestId("link-resource-title"), "Booking");
+    fireEvent.changeText(
+      view.getByTestId("link-resource-url"),
+      "https://studio.example",
+    );
+    await act(async () => {
+      fireEvent.press(view.getByTestId("link-resource-save"));
+    });
+    const sent = api.resourceKeysSent[0]!;
+    const create = storage
+      .getUncompletedMutations()
+      .find((e) => e.endpoint === "/trainers/me/resources")!;
+    expect(create.idempotencyKey).toBe(sent);
+    // The queued replay carries that key.
+    server.offline = false;
+    for (const e of (
+      storage as unknown as { queue: { nextAttemptAt: string | null }[] }
+    ).queue) {
+      e.nextAttemptAt = null;
+    }
+    const { processSyncQueue } = jest.requireActual(
+      "@/application/commands/sync.command",
+    ) as typeof import("@/application/commands/sync.command");
+    await act(async () => {
+      await processSyncQueue(
+        storage,
+        { getAccessToken: async () => "t" } as never,
+        "https://api.test",
+      );
+    });
+    const replays = server.calls.filter(
+      (c) => c.url.endsWith("/trainers/me/resources") && c.method === "POST",
+    );
+    expect(new Set(replays.map((c) => c.key))).toEqual(new Set([sent]));
+  });
+
   it("search narrows the picker; untick works", async () => {
     const { view } = setup();
     await waitFor(() => view.getByTestId("client-resource-as-r1"));
