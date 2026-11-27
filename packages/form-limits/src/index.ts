@@ -83,3 +83,14 @@ export const MEAL_PLAN_LIMITS = {
   nameMax: 200,
   mealNameMax: 80,
 } as const;
+
+/**
+ * Reps per set (PER-111 / PER-139): `setTargets` on a workout exercise in
+ * workout create and update. Set count 1 to `maxSets`; each set's target
+ * reps 1 to `maxReps`. Read by core's `workouts/shared/setTargets.ts` and
+ * the mobile set editor (`packages/mobile/src/ui/forms/workoutForms.ts`).
+ */
+export const SET_TARGET_LIMITS = {
+  maxSets: 20,
+  maxReps: 100,
+} as const;

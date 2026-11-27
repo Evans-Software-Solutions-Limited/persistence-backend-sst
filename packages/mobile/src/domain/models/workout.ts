@@ -23,6 +23,12 @@ export type WorkoutExerciseRef = {
   thumbnailUrl: string | null;
 };
 
+/**
+ * One set's prescription in a workout (PER-111 / PER-139, design G part 1).
+ * Reps only: a prescription has no weight (canvas C5).
+ */
+export type SetTarget = { reps: number };
+
 export type WorkoutExercise = {
   id: string;
   exerciseId: string;
@@ -35,6 +41,14 @@ export type WorkoutExercise = {
   targetDurationSeconds: number | null;
   restSeconds: number | null;
   notes: string | null;
+  /**
+   * Per-set target reps, set n = `setTargets[n - 1]` (e.g. 10 / 8 / 8). The
+   * server omits it when the exercise only has the old range, and caches
+   * written before PER-139 never have it, so `undefined` means "use
+   * targetSets × targetRepsMin–Max", exactly as before. When present, the
+   * old columns hold the derived values (count, lowest, highest).
+   */
+  setTargets?: SetTarget[];
   /**
    * Joined exercise metadata. Null when the underlying exercise has been
    * deleted (FK cascade leaves the row but with no joinable target).
@@ -116,6 +130,12 @@ export type WorkoutExerciseInput = {
   targetDurationSeconds?: number | null;
   restSeconds?: number | null;
   notes?: string | null;
+  /**
+   * Per-set target reps (1–20 sets, 1–100 reps). Absent on update means "not
+   * sent": the server keeps stored per-set rows when the old columns still
+   * match them (design G's rule for 1.2.0 bundles). `null` drops them.
+   */
+  setTargets?: SetTarget[] | null;
 };
 
 export type CreateWorkoutInput = {

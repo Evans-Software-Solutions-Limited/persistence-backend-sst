@@ -6,7 +6,10 @@ import type { WorkoutFormState } from "@/ui/hooks/useWorkoutForm";
 import { Btn } from "@/ui/components/foundation";
 import { toneHex } from "@/ui/components/foundation/tones";
 import { IconAlert } from "@/ui/components/icons";
-import { WorkoutFormBody } from "@/ui/presenters/WorkoutFormBody";
+import {
+  WorkoutFormBody,
+  type WorkoutSetEditorProps,
+} from "@/ui/presenters/WorkoutFormBody";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 /**
@@ -19,7 +22,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
  * kept: `editor-loading`, `editor-error`, `editor-error-back-button`).
  */
 
-interface WorkoutEditorPresenterProps {
+interface WorkoutEditorPresenterProps extends WorkoutSetEditorProps {
   readonly formState: WorkoutFormState;
   readonly isSubmitting: boolean;
   readonly hasAttemptedSubmit: boolean;
