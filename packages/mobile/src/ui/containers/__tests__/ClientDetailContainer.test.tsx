@@ -1,3 +1,4 @@
+import { ClientPhotosContainer } from "@/ui/containers/coachPhotos/ClientPhotosContainer";
 import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
 import type { ReactElement, ReactNode } from "react";
 import { renderWithTheme } from "../../../../__tests__/test-utils";
@@ -923,12 +924,31 @@ describe("ClientDetailContainer — C3 tab strip (PER-129)", () => {
     expect(
       placeholder.getByText("In development (PER-92). Not in this build yet."),
     ).toBeTruthy();
-    fireEvent.press(strip().getByTestId("client-tab-photos"));
+    fireEvent.press(strip().getByTestId("client-tab-notes"));
     expect(
       renderWithTheme(<>{props().tabBody}</>).getByTestId(
-        "client-tab-placeholder-photos",
+        "client-tab-placeholder-notes",
       ),
     ).toBeTruthy();
+  });
+
+  it("Photos renders the C3.4b tab for this client (PER-138)", async () => {
+    const { adapters, api } = makeAdapters();
+    api.clientDetails["client-1"] = fullDetail();
+    renderWith(adapters);
+    await waitFor(() => expect(props().detail).not.toBeNull());
+    fireEvent.press(strip().getByTestId("client-tab-photos"));
+    const body = props().tabBody as ReactElement<{
+      clientId: string;
+      clientName: string;
+      refreshKey: number;
+    }>;
+    expect(body.type).toBe(ClientPhotosContainer);
+    expect(body.props).toMatchObject({
+      clientId: "client-1",
+      clientName: "Jordan Blake",
+      refreshKey: 0,
+    });
   });
 
   it("Habits opens the existing habits screen", async () => {

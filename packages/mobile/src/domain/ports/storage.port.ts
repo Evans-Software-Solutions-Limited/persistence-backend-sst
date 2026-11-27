@@ -75,6 +75,7 @@ import type {
   PendingProgressPhotoSet,
   ProgressPhotosCache,
 } from "@/domain/models/progressPhotos";
+import type { CoachClientPhotosCache } from "@/domain/models/coachProgressPhotos";
 
 /**
  * One row in the recent-sets cache. Keyed by (userId, exerciseId,
@@ -1382,6 +1383,24 @@ export interface StoragePort {
     userId: string,
     exerciseIds: readonly string[],
   ): RecentSetEntry[];
+
+  // -- PER-138 (APP-F2): a client's progress photos, coach side --
+  /**
+   * The coach's last read of a client's photos
+   * (`cached_coach_client_photos`), or null. Its view links expire after 5
+   * minutes; offline, only images already cached by photo id show.
+   */
+  getCachedCoachClientPhotos(
+    userId: string,
+    clientId: string,
+  ): CoachClientPhotosCache | null;
+  cacheCoachClientPhotos(
+    userId: string,
+    clientId: string,
+    value: CoachClientPhotosCache,
+  ): void;
+  /** Drop it when the server refuses access (switch off, coaching ended). */
+  clearCachedCoachClientPhotos(userId: string, clientId: string): void;
 }
 
 /**

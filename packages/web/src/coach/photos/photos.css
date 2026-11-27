@@ -1,0 +1,182 @@
+/* PER-138: client → Photos (canvas C3.4a). Values from the board. */
+.photos-grid {
+  display: flex;
+  gap: 28px;
+  min-height: 0;
+}
+.photos-sets {
+  width: 470px;
+  flex: none;
+}
+.photos-sets-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+.photo-set {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+  border-radius: 10px;
+}
+.photo-set > span:first-child {
+  font: 600 12px var(--font);
+  color: var(--ink-2);
+}
+.photo-set[aria-pressed="true"] > span:first-child {
+  color: var(--violet-soft);
+}
+.photo-set .thumbs {
+  display: flex;
+  gap: 6px;
+}
+.photo-tile {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(160deg, #2d3243, #1a1d29);
+  border: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--faint);
+  font: 500 10.5px var(--font);
+  flex: none;
+  text-align: center;
+}
+.photo-set[aria-pressed="true"] .photo-tile {
+  border-color: rgba(167, 139, 250, 0.5);
+}
+.photo-tile img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.photos-compare {
+  flex: 1;
+  min-width: 0;
+}
+.photos-compare-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+.pose-tabs {
+  display: flex;
+  gap: 4px;
+}
+.pose-tabs button {
+  height: 32px;
+  padding: 0 12px;
+  border: 0;
+  background: none;
+  font: 600 13px var(--font);
+  color: var(--muted);
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+}
+.pose-tabs button[aria-selected="true"] {
+  color: var(--ink);
+  border-bottom-color: var(--violet);
+}
+.photos-pair {
+  display: flex;
+  gap: 12px;
+}
+.photos-pair select,
+.photos-mode {
+  height: 32px;
+  border-radius: 9999px;
+  border: 1px solid var(--line-2);
+  background: var(--surface);
+  color: var(--ink-2);
+  font: 600 12.5px var(--font);
+  padding: 0 10px;
+  cursor: pointer;
+}
+.photos-dates {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+}
+.photos-dates select {
+  width: 230px;
+}
+.photos-wipe {
+  position: relative;
+  width: 472px;
+  height: 320px;
+  border-radius: 12px;
+  overflow: hidden;
+}
+.photos-wipe .photo-tile {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.photos-wipe .wipe-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--violet);
+  pointer-events: none;
+}
+.photos-wipe input[type="range"] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: ew-resize;
+}
+.photos-strip {
+  margin-top: 12px;
+  width: 472px;
+  max-width: 100%;
+}
+.photos-strip .strip {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.photos-strip .strip b {
+  font-size: 16px;
+}
+.photos-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 520px;
+  padding: 18px 0;
+}
+.photos-empty b {
+  font: 600 15px/20px var(--font);
+}
+@media (max-width: 1100px) {
+  .photos-grid {
+    flex-direction: column;
+  }
+  .photos-sets {
+    width: auto;
+  }
+}
+@media (max-width: 560px) {
+  .photos-pair .photo-tile {
+    width: calc(50% - 6px) !important;
+  }
+  .photos-wipe,
+  .photos-dates select {
+    width: 100%;
+  }
+}

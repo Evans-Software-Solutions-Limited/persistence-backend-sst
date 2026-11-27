@@ -92,6 +92,7 @@ import type {
   PendingProgressPhotoSet,
   ProgressPhotosCache,
 } from "@/domain/models/progressPhotos";
+import type { CoachClientPhotosCache } from "@/domain/models/coachProgressPhotos";
 
 /**
  * In-memory storage adapter for testing.
@@ -1814,6 +1815,7 @@ export class InMemoryStorageAdapter implements StoragePort {
     this.clearCoachFormsForTest();
     this.progressPhotosCache.clear();
     this.pendingProgressPhotos.clear();
+    this.coachClientPhotos.clear();
     this.nextId = 1;
   }
 
@@ -2237,6 +2239,35 @@ export class InMemoryStorageAdapter implements StoragePort {
           a.exerciseId.localeCompare(b.exerciseId) || a.setNumber - b.setNumber,
       )
       .map((row) => ({ ...row }));
+  }
+
+  // -- PER-138 (APP-F2): a client's progress photos, coach side --
+
+  private coachClientPhotos = new Map<string, CoachClientPhotosCache>();
+
+  getCachedCoachClientPhotos(
+    userId: string,
+    clientId: string,
+  ): CoachClientPhotosCache | null {
+    const hit = this.coachClientPhotos.get(`${userId}|${clientId}`);
+    return hit
+      ? (JSON.parse(JSON.stringify(hit)) as CoachClientPhotosCache)
+      : null;
+  }
+
+  cacheCoachClientPhotos(
+    userId: string,
+    clientId: string,
+    value: CoachClientPhotosCache,
+  ): void {
+    this.coachClientPhotos.set(
+      `${userId}|${clientId}`,
+      JSON.parse(JSON.stringify(value)) as CoachClientPhotosCache,
+    );
+  }
+
+  clearCachedCoachClientPhotos(userId: string, clientId: string): void {
+    this.coachClientPhotos.delete(`${userId}|${clientId}`);
   }
 }
 

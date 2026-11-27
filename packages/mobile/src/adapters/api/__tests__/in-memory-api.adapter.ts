@@ -237,6 +237,10 @@ import type {
   ProgressPhotosResponse,
   ProgressPhotoUpload,
 } from "@/domain/models/progressPhotos";
+import type {
+  CoachPhotosApiError,
+  CoachProgressPhotos,
+} from "@/domain/models/coachProgressPhotos";
 
 /**
  * In-memory API adapter for testing.
@@ -4215,5 +4219,29 @@ export class InMemoryApiAdapter implements ApiPort {
       totals: { kcal: 0, proteinG: 0, carbsG: 0, fatG: 0 },
     };
     return ok(plan);
+  }
+
+  // -- PER-138 (APP-F2): a client's progress photos, coach side --
+
+  /** Ready sets per client, as the coach route returns them. */
+  coachClientPhotoSets: Map<string, ProgressPhotoSet[]> = new Map();
+  /** Queued failures for the next coach photo reads (403s carry `denial`). */
+  coachClientPhotoFailures: CoachPhotosApiError[] = [];
+  coachClientPhotoCalls: string[] = [];
+
+  async getCoachClientProgressPhotos(
+    clientId: string,
+  ): Promise<Result<CoachProgressPhotos, CoachPhotosApiError>> {
+    this.coachClientPhotoCalls.push(clientId);
+    const failure = this.coachClientPhotoFailures.shift();
+    if (failure) return fail(failure);
+    const sets = (this.coachClientPhotoSets.get(clientId) ?? []).filter(
+      (s) => s.status === "ready",
+    );
+    return ok(
+      JSON.parse(
+        JSON.stringify({ sets, asOf: "2026-11-27T10:00:00.000Z" }),
+      ) as CoachProgressPhotos,
+    );
   }
 }

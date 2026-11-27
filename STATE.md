@@ -1,5 +1,35 @@
 # Project memory · persistence-backend-sst
 
+### 2026-11-27 — APP-F2: coach client Photos tab and compare, web + iPhone ([PER-138](https://linear.app/evans-software-solutions/issue/PER-138); branch `claude/per-138-coach-photos-tab`)
+
+Web + mobile, over the air on 1.2.0: no backend, migration or native change.
+Reads the merged BE-F1 coach route `GET /trainers/me/clients/:clientId/progress-photos` (#553).
+
+- **Access:** the server decides. Its 403 codes map to states:
+  `photos_off`, `photo_sharing_not_granted` → "not shared",
+  `not_your_client` / `account_deleted` → "coaching ended". A refusal
+  replaces anything already shown, and on mobile drops the cached list.
+- **Links and images:** coach view links last 5 minutes, so both clients
+  read again on every open and every 4 minutes. Images are cached by photo
+  id, never by link: mobile through `PhotoImage` (`expo-image`
+  `cacheKey` = photo id, disk); web through `photos/usePhotoSrc.ts`
+  (fetch → object URL per photo id, 150 kept per session, falls back to
+  the link itself if the fetch fails).
+- **Web (C3.4a):** `coach/photos/` (own API context, lib, CSS, so the
+  shared coach API files are untouched). `ClientPage` gets `photos` at the
+  end of `WEB_TABS`. Sets by date (clicking one compares it with the
+  latest), pose tabs, side by side or wipe (range input), earlier/later
+  date selects, strip (weight kg, body fat %, weeks apart).
+- **Mobile (C3.4b/c):** `ClientDetailContainer` renders
+  `ClientPhotosContainer` for the Photos tab; compare is
+  `/clients/[id]/photos-compare`. New port method
+  `getCoachClientProgressPhotos` (via `requestRaw` so the 403 `code`
+  survives, as `denial`); cache `cached_coach_client_photos` (per coach and
+  client, new table, cleared on sign-out). Wipe = responder drag plus
+  accessibility increment/decrement. Weight in the coach's unit.
+- **Not on the canvas (flagged on the PR):** the five state messages,
+  "Compare needs two dates", the offline note, web wipe/date selects.
+
 ### 2026-11-27 — APP-D3: athlete Mealprint redesign N15–N27 ([PER-134](https://linear.app/evans-software-solutions/issue/PER-134); branch `claude/per-134-mealprint-redesign`)
 
 Mobile only. Uses BE-D3 (PER-119, #562). No backend, migration, native or

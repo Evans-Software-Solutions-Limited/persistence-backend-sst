@@ -104,6 +104,7 @@ import type {
   PendingProgressPhotoSet,
   ProgressPhotosCache,
 } from "@/domain/models/progressPhotos";
+import type { CoachClientPhotosCache } from "@/domain/models/coachProgressPhotos";
 
 const DB_NAME = "persistence.db";
 
@@ -1010,6 +1011,17 @@ ${indentSyncQueueDdl(8)}
         payload TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         PRIMARY KEY (user_id, request_id)
+      );
+      -- PER-138 a client's progress photos, coach side (C3.4): the list
+      -- with its view links, per coach and client. Images are cached by
+      -- photo id by expo-image. New TABLE, so CREATE TABLE IF NOT EXISTS
+      -- covers upgrading installs too.
+      CREATE TABLE IF NOT EXISTS cached_coach_client_photos (
+        user_id TEXT NOT NULL,
+        client_id TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        synced_at TEXT NOT NULL,
+        PRIMARY KEY (user_id, client_id)
       );
 
       CREATE INDEX IF NOT EXISTS idx_sync_queue_status ON sync_queue(status, created_at);
@@ -4563,6 +4575,7 @@ ${indentSyncQueueDdl(12)}
       DELETE FROM pending_progress_photos;
       DELETE FROM cached_form_requests;
       DELETE FROM form_request_local;
+      DELETE FROM cached_coach_client_photos;
     `);
   }
 
@@ -4638,6 +4651,34 @@ ${indentSyncQueueDdl(12)}
       reps: row.reps,
       recordedAt: row.recorded_at,
     }));
+  }
+
+  // -- PER-138 (APP-F2): a client's progress photos, coach side --
+
+  getCachedCoachClientPhotos(
+    userId: string,
+    clientId: string,
+  ): CoachClientPhotosCache | null {
+    return this.readClientBlob<CoachClientPhotosCache>(
+      "cached_coach_client_photos",
+      userId,
+      clientId,
+    );
+  }
+
+  cacheCoachClientPhotos(
+    userId: string,
+    clientId: string,
+    value: CoachClientPhotosCache,
+  ): void {
+    this.writeClientBlob("cached_coach_client_photos", userId, clientId, value);
+  }
+
+  clearCachedCoachClientPhotos(userId: string, clientId: string): void {
+    this.getDb().runSync(
+      `DELETE FROM cached_coach_client_photos WHERE user_id = ? AND client_id = ?`,
+      [userId, clientId],
+    );
   }
 }
 
