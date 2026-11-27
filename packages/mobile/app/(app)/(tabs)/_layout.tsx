@@ -6,6 +6,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useUserMode } from "../../../src/state/user-mode";
 import { useMyCoaches } from "../../../src/ui/hooks/useMyCoaches";
+import { useAthleteForms } from "../../../src/ui/hooks/useAthleteForms";
+import { dueCount } from "../../../src/domain/services/athleteForms.service";
 import { color } from "../../../src/ui/theme";
 import { TabBar, type TabSpec } from "../../../src/ui/components/foundation";
 import {
@@ -216,7 +218,13 @@ export default function TabsLayout() {
   // coach from the cache, and the tab goes with the last one.
   const { coaches } = useMyCoaches({ enabled: mode === "athlete" });
   const showCoachTab = mode === "athlete" && coaches.length > 0;
-  const dueForms = coaches.reduce((n, c) => n + (c.due?.forms ?? 0), 0);
+  // PER-130: the badge counts the forms still to fill in on this phone
+  // (cached, so a form sent offline drops off at once); the server's count
+  // until the list has been read.
+  const forms = useAthleteForms({ enabled: showCoachTab });
+  const dueForms = forms.data
+    ? dueCount(forms.requests, forms.locals)
+    : coaches.reduce((n, c) => n + (c.due?.forms ?? 0), 0);
   const tabs = useMemo(
     () =>
       mode === "coach"

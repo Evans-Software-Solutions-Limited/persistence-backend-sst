@@ -21,8 +21,13 @@ import { useTrainSegment } from "@/ui/hooks/useTrainSegment";
 export function resolveAndPrimeNotificationRoute(
   deepLink: string | null | undefined,
   notificationType?: string | null,
+  relatedEntityId?: string | null,
 ): string {
-  const route = resolveNotificationRoute(deepLink, notificationType);
+  const route = resolveNotificationRoute(
+    deepLink,
+    notificationType,
+    relatedEntityId,
+  );
   if (route === TRAIN_ROUTE) {
     const train = useTrainSegment.getState();
     train.setPendingSegment("Training");
