@@ -1,4 +1,11 @@
 import { AnthropicBedrock } from "@anthropic-ai/bedrock-sdk";
+import {
+  AREA_STATUSES,
+  parseWeeklySummary,
+  type SummaryArea,
+  type WeeklySummary,
+  type WeeklySummaryEvidence,
+} from "./weeklySummary";
 
 /**
  * Claude-on-Bedrock adapter for the coach AI Client Summary (Coach Mode
@@ -11,9 +18,13 @@ import { AnthropicBedrock } from "@anthropic-ai/bedrock-sdk";
  * importing the nutrition module, keeping `trainers/` independent of
  * `nutrition/`.
  *
- * PRIVACY: the caller passes ONLY Client Detail modules a–f (per-day totals +
- * adherence — design.md:605-606). This service never sees the food-level entry
- * log; the prompt is grounded strictly in the structured summary it is handed.
+ * PER-115: the output is the summary by area, `{headline, areas[], ask}`
+ * (design B D4), parsed strictly by `parseWeeklySummary`.
+ *
+ * PRIVACY: the caller passes ONLY `WeeklySummaryEvidence` — adherence counts,
+ * the programme week, latest form answers (photo questions removed) and plan
+ * meals logged. Never photos, never the coach's private notes, never the
+ * food-level entry log. The prompt is grounded strictly in that evidence.
  */
 
 const SUMMARY_MODEL_ID =
@@ -32,42 +43,6 @@ const MAX_TOKENS = 700;
  */
 export const COACH_SUMMARY_MAX_TOKENS = MAX_TOKENS;
 const TOOL_NAME = "report_summary";
-
-/** Structured inputs = Client Detail modules a–f + this-week rollup. */
-export type ClientSummaryInput = {
-  clientName: string;
-  coversDate: string; // YYYY-MM-DD — the concluded client-local day
-  adherence: {
-    overall: number | null; // 28-day completed-vs-target %
-    band: string | null;
-  };
-  prs: { exerciseName: string; type: string; value: number; unit: string }[];
-  volume: { weekKg: number | null };
-  calorieHit: {
-    targetKcal: number | null;
-    daysHit: number;
-    daysLogged: number;
-    todayKcal: number | null;
-  } | null;
-  goal: {
-    title: string;
-    assignedByCoach: boolean;
-    startKg: number | null;
-    nowKg: number | null;
-    targetKg: number | null;
-    pct: number | null;
-  } | null;
-  habits: {
-    collectionStreak: number;
-    collectionSatisfied: boolean;
-    items: { label: string; met: boolean }[];
-  } | null;
-  thisWeek: {
-    workoutsCompleted: number;
-    workoutsPlanned: number | null;
-    prs: number;
-  };
-};
 
 /**
  * Provider unreachable / timed out after the one retry, a refusal, or a
@@ -156,62 +131,83 @@ export function resetDefaultClientForTests(): void {
 
 // ─── Forced tool ─────────────────────────────────────────────────────────────
 
-const REPORT_SUMMARY_TOOL = {
-  name: TOOL_NAME,
-  input_schema: {
-    type: "object",
-    properties: {
-      summary: {
-        type: "string",
-        description:
-          "A short coach-facing summary (2–4 sentences) plus one suggested focus, grounded ONLY in the provided data.",
+/**
+ * The tool schema. `area` is limited to the areas that have evidence, so the
+ * model is never offered an area it has no data for (the parser drops any it
+ * writes anyway).
+ */
+export function reportSummaryTool(allowed: readonly SummaryArea[]) {
+  return {
+    name: TOOL_NAME,
+    input_schema: {
+      type: "object",
+      properties: {
+        headline: {
+          type: "string",
+          description: "One short sentence on the client's week.",
+        },
+        areas: {
+          type: "array",
+          description: "One line per area in the facts, and no others.",
+          items: {
+            type: "object",
+            properties: {
+              area: { type: "string", enum: [...allowed] },
+              status: { type: "string", enum: [...AREA_STATUSES] },
+              text: {
+                type: "string",
+                description: "One short sentence with the numbers.",
+              },
+            },
+            required: ["area", "status", "text"],
+          },
+        },
+        ask: {
+          type: "string",
+          description: "One thing worth raising at the next check-in.",
+        },
       },
+      required: ["headline", "areas", "ask"],
     },
-    required: ["summary"],
-  },
-};
+  };
+}
 
-const INSTRUCTIONS = `You are a strength-and-conditioning coach's assistant. You are given a structured snapshot of ONE client's recent training, nutrition-adherence, goal, and habit data for the concluded day. Write a concise, coach-facing summary the coach can read at a glance before their next check-in.
-
-Rules:
-- 2–4 sentences of summary, then ONE short suggested focus for the coach (prefix it "Focus: ").
-- Ground EVERYTHING strictly in the numbers provided — never invent workouts, foods, weights, or trends that are not in the data.
-- If a section is null/empty, treat it as "no data" — do not speculate.
-- Be specific and quantitative where the data allows (e.g. "hit calories 4/6 logged days", "volume 12,400 kg this week").
-- Neutral, professional tone. No emojis. No markdown headings. Do not address the client directly — you are briefing the coach.
-- This data is per-day totals and adherence only; you do NOT have the client's food log, so never reference individual foods or meals.
-
-Call the report_summary tool with your summary text. Do not respond with plain text.`;
+// Kept short: the facts carry the numbers, the tool schema carries the shape.
+const INSTRUCTIONS = `You brief a fitness coach on one client's last 7 days. Use ONLY the JSON facts below and call report_summary.
+Facts: training = workouts done in the last 7 days vs the weekly target. calories = days within 10% of target over the last 7 completed days; unlogged days are misses. programme = week of the client's programme. checkIns = their latest form answers. mealPlan = meals from the coach's plans logged in the last 7 completed days.
+Status: good = on track, check = worth the coach's attention, info = neutral.
+Never invent numbers, foods, workouts or trends. Refer to the client in the third person. Plain text, no emojis.`;
 
 // ─── Public API ──────────────────────────────────────────────────────────────
 
+/**
+ * One inference for the summary by area. `allowed` must be non-empty (the
+ * route skips the call when no area has evidence). Throws
+ * `ClientSummaryUnavailableError` on provider failure, a refusal, or output
+ * that fails the strict parse.
+ */
 export async function generateClientSummary(
-  input: ClientSummaryInput,
+  evidence: WeeklySummaryEvidence,
+  allowed: readonly SummaryArea[],
   deps: { client?: MinimalBedrockClient } = {},
-): Promise<string> {
+): Promise<WeeklySummary> {
   const client = deps.client ?? getDefaultClient();
 
   const content: ContentBlockParam[] = [
     { type: "text", text: INSTRUCTIONS },
-    {
-      type: "text",
-      text: `Client data for ${input.coversDate}:\n${JSON.stringify(
-        input,
-        null,
-        2,
-      )}`,
-    },
+    // Compact JSON: no indentation, fewer input tokens.
+    { type: "text", text: JSON.stringify(evidence) },
   ];
 
   const response = await createWithRetry(client, {
     model: SUMMARY_MODEL_ID,
     max_tokens: MAX_TOKENS,
     messages: [{ role: "user", content }],
-    tools: [REPORT_SUMMARY_TOOL],
+    tools: [reportSummaryTool(allowed)],
     tool_choice: { type: "tool", name: TOOL_NAME },
   });
 
-  return parseSummaryResponse(response);
+  return parseSummaryResponse(response, allowed);
 }
 
 /** The model id this service resolves to (for the cache's `model` column). */
@@ -279,11 +275,14 @@ function describeError(error: unknown): string {
 }
 
 /**
- * Pull the `report_summary` tool_use block and its non-empty `summary` string.
- * A refusal, a missing tool block, or an empty/invalid summary all raise
- * `ClientSummaryUnavailableError` (→ graceful card fallback at the handler).
+ * Pull the `report_summary` tool_use block and parse it strictly. A refusal,
+ * a missing tool block or any shape error raises
+ * `ClientSummaryUnavailableError` (→ ai_unavailable at the route).
  */
-function parseSummaryResponse(response: MessagesCreateResponse): string {
+function parseSummaryResponse(
+  response: MessagesCreateResponse,
+  allowed: readonly SummaryArea[],
+): WeeklySummary {
   if (response.stop_reason === "refusal") {
     throw new ClientSummaryUnavailableError("ai_summary_refused");
   }
@@ -298,13 +297,9 @@ function parseSummaryResponse(response: MessagesCreateResponse): string {
     );
   }
 
-  const input = toolUseBlock.input;
-  if (typeof input !== "object" || input === null) {
+  const parsed = parseWeeklySummary(toolUseBlock.input, allowed);
+  if (!parsed) {
     throw new ClientSummaryUnavailableError("ai_summary_shape_invalid");
   }
-  const summary = (input as { summary?: unknown }).summary;
-  if (typeof summary !== "string" || summary.trim().length === 0) {
-    throw new ClientSummaryUnavailableError("ai_summary_empty");
-  }
-  return summary.trim();
+  return parsed;
 }

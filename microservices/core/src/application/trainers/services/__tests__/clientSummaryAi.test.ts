@@ -2,41 +2,41 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   generateClientSummary,
+  reportSummaryTool,
   resolveSummaryModelId,
   ClientSummaryUnavailableError,
-  type ClientSummaryInput,
   type MinimalBedrockClient,
   getDefaultClient,
   resetDefaultClientForTests,
 } from "../clientSummaryAi";
+import type { SummaryArea, WeeklySummaryEvidence } from "../weeklySummary";
 
-const INPUT: ClientSummaryInput = {
-  clientName: "Jane Doe",
-  coversDate: "2026-07-07",
-  adherence: { overall: 82, band: "strong" },
-  prs: [{ exerciseName: "Bench", type: "1rm", value: 100, unit: "kg" }],
-  volume: { weekKg: 12400 },
-  calorieHit: { targetKcal: 2000, daysHit: 4, daysLogged: 6, todayKcal: 500 },
-  goal: {
-    title: "Lose weight",
-    assignedByCoach: true,
-    startKg: 90,
-    nowKg: 85,
-    targetKg: 80,
-    pct: 0.5,
+const EVIDENCE: WeeklySummaryEvidence = {
+  training: { done: 3, target: 4, state: "behind" },
+  calories: {
+    daysOnTarget: 4,
+    daysCounted: 7,
+    daysNotLogged: 1,
+    daysOver: 1,
+    daysUnder: 1,
   },
-  habits: {
-    collectionStreak: 3,
-    collectionSatisfied: false,
-    items: [{ label: "Water", met: true }],
-  },
-  thisWeek: { workoutsCompleted: 3, workoutsPlanned: 4, prs: 1 },
+  programme: { week: 3, of: 8 },
+};
+const ALLOWED: SummaryArea[] = ["training", "calories"];
+
+const GOOD = {
+  headline: "  Steady week, one session short.  ",
+  areas: [
+    { area: "training", status: "check", text: "3 of 4 sessions." },
+    { area: "calories", status: "good", text: "4 of 7 days on target." },
+  ],
+  ask: "Ask what got in the way of the fourth session.",
 };
 
-function toolResponse(summary: unknown) {
+function toolResponse(input: unknown) {
   return {
     stop_reason: "tool_use",
-    content: [{ type: "tool_use", name: "report_summary", input: { summary } }],
+    content: [{ type: "tool_use", name: "report_summary", input }],
   };
 }
 
@@ -46,43 +46,54 @@ function fakeClient(
   return { messages: { create } };
 }
 
-describe("generateClientSummary", () => {
-  it("returns the trimmed summary text from the forced tool block", async () => {
-    const create = vi.fn(async () =>
-      toolResponse("  Solid week. Focus: protein.  "),
-    );
-    const out = await generateClientSummary(INPUT, {
-      client: fakeClient(create as any),
-    });
-    expect(out).toBe("Solid week. Focus: protein.");
+const run = (create: unknown, allowed: SummaryArea[] = ALLOWED) =>
+  generateClientSummary(EVIDENCE, allowed, {
+    client: fakeClient(create as any),
   });
 
-  it("forces tool use and passes the resolved model + summary tool", async () => {
-    const create = vi.fn(async () => toolResponse("ok"));
-    await generateClientSummary(INPUT, { client: fakeClient(create as any) });
+describe("generateClientSummary", () => {
+  it("returns the strictly parsed summary by area from the forced tool block", async () => {
+    const create = vi.fn(async () => toolResponse(GOOD));
+    const out = await run(create);
+    expect(out).toEqual({
+      headline: "Steady week, one session short.",
+      areas: [
+        { area: "training", status: "check", text: "3 of 4 sessions." },
+        { area: "calories", status: "good", text: "4 of 7 days on target." },
+      ],
+      ask: "Ask what got in the way of the fourth session.",
+    });
+  });
+
+  it("forces tool use, offers only the areas with evidence, and sends compact facts", async () => {
+    const create = vi.fn(async () => toolResponse(GOOD));
+    await run(create);
     const params = (create as any).mock.calls[0][0];
     expect(params.tool_choice).toEqual({
       type: "tool",
       name: "report_summary",
     });
-    expect(params.tools[0].name).toBe("report_summary");
+    expect(params.tools[0]).toEqual(reportSummaryTool(ALLOWED));
+    expect(
+      params.tools[0].input_schema.properties.areas.items.properties.area.enum,
+    ).toEqual(["training", "calories"]);
     expect(params.model).toBe(resolveSummaryModelId());
-    // The client's structured data is serialised into the prompt (grounding).
-    const userText = params.messages[0].content
-      .map((c: any) => c.text)
-      .join("\n");
-    expect(userText).toContain("Jane Doe");
-    expect(userText).toContain("2026-07-07");
+    const facts = params.messages[0].content[1].text;
+    expect(facts).toBe(JSON.stringify(EVIDENCE)); // no indentation
+    expect(JSON.parse(facts).programme).toEqual({ week: 3, of: 8 });
+  });
+
+  it("drops an area the evidence doesn't cover instead of failing", async () => {
+    const create = vi.fn(async () => toolResponse(GOOD));
+    const out = await run(create, ["calories"]);
+    expect(out.areas.map((a) => a.area)).toEqual(["calories"]);
   });
 
   it("throws ClientSummaryUnavailableError on a refusal", async () => {
-    const create = vi.fn(async () => ({
-      stop_reason: "refusal",
-      content: [],
-    }));
-    await expect(
-      generateClientSummary(INPUT, { client: fakeClient(create as any) }),
-    ).rejects.toBeInstanceOf(ClientSummaryUnavailableError);
+    const create = vi.fn(async () => ({ stop_reason: "refusal", content: [] }));
+    await expect(run(create)).rejects.toBeInstanceOf(
+      ClientSummaryUnavailableError,
+    );
   });
 
   it("throws when the model returns no report_summary tool block", async () => {
@@ -90,37 +101,35 @@ describe("generateClientSummary", () => {
       stop_reason: "end_turn",
       content: [{ type: "text", text: "here is your summary" }],
     }));
-    await expect(
-      generateClientSummary(INPUT, { client: fakeClient(create as any) }),
-    ).rejects.toBeInstanceOf(ClientSummaryUnavailableError);
+    await expect(run(create)).rejects.toBeInstanceOf(
+      ClientSummaryUnavailableError,
+    );
   });
 
-  it("throws when the tool summary is empty / whitespace", async () => {
-    const create = vi.fn(async () => toolResponse("   "));
-    await expect(
-      generateClientSummary(INPUT, { client: fakeClient(create as any) }),
-    ).rejects.toBeInstanceOf(ClientSummaryUnavailableError);
-  });
-
-  it("throws when the tool input is not an object", async () => {
-    const create = vi.fn(async () => ({
-      stop_reason: "tool_use",
-      content: [{ type: "tool_use", name: "report_summary", input: null }],
-    }));
-    await expect(
-      generateClientSummary(INPUT, { client: fakeClient(create as any) }),
-    ).rejects.toBeInstanceOf(ClientSummaryUnavailableError);
-  });
+  it.each([
+    ["the input is not an object", null],
+    ["the old single-paragraph shape", { summary: "Solid week." }],
+    ["an empty headline", { ...GOOD, headline: "   " }],
+    ["a missing ask", { headline: "x", areas: [] }],
+    [
+      "an unknown status",
+      { ...GOOD, areas: [{ area: "training", status: "great", text: "x" }] },
+    ],
+  ])(
+    "throws ai_summary_shape_invalid on %s — never invented text",
+    async (_label, input) => {
+      const create = vi.fn(async () => toolResponse(input));
+      await expect(run(create)).rejects.toThrow("ai_summary_shape_invalid");
+    },
+  );
 
   it("retries once on a 5xx and succeeds on the second attempt", async () => {
     const create = vi
       .fn()
       .mockRejectedValueOnce({ status: 503 })
-      .mockResolvedValueOnce(toolResponse("recovered"));
-    const out = await generateClientSummary(INPUT, {
-      client: fakeClient(create as any),
-    });
-    expect(out).toBe("recovered");
+      .mockResolvedValueOnce(toolResponse(GOOD));
+    const out = await run(create);
+    expect(out.headline).toBe("Steady week, one session short.");
     expect(create).toHaveBeenCalledTimes(2);
   });
 
@@ -129,17 +138,17 @@ describe("generateClientSummary", () => {
       .fn()
       .mockRejectedValueOnce(new Error("socket hang up"))
       .mockRejectedValueOnce(new Error("socket hang up again"));
-    await expect(
-      generateClientSummary(INPUT, { client: fakeClient(create as any) }),
-    ).rejects.toBeInstanceOf(ClientSummaryUnavailableError);
+    await expect(run(create)).rejects.toBeInstanceOf(
+      ClientSummaryUnavailableError,
+    );
     expect(create).toHaveBeenCalledTimes(2);
   });
 
   it("does NOT retry a 4xx client error — fails fast as unavailable", async () => {
     const create = vi.fn().mockRejectedValue({ status: 400 });
-    await expect(
-      generateClientSummary(INPUT, { client: fakeClient(create as any) }),
-    ).rejects.toBeInstanceOf(ClientSummaryUnavailableError);
+    await expect(run(create)).rejects.toBeInstanceOf(
+      ClientSummaryUnavailableError,
+    );
     expect(create).toHaveBeenCalledTimes(1);
   });
 
@@ -180,13 +189,11 @@ describe("clientSummaryAi — retry policy", () => {
       .mockRejectedValueOnce(
         Object.assign(new Error("throttled"), { status: 429 }),
       )
-      .mockResolvedValueOnce(toolResponse("ok"));
+      .mockResolvedValueOnce(toolResponse(GOOD));
 
-    const out = await generateClientSummary(INPUT, {
-      client: fakeClient(create as any),
-    });
+    const out = await run(create);
 
-    expect(out).toBe("ok");
+    expect(out.ask).toBe(GOOD.ask);
     expect(create).toHaveBeenCalledTimes(2);
   });
 
@@ -195,9 +202,9 @@ describe("clientSummaryAi — retry policy", () => {
       .fn()
       .mockRejectedValue(Object.assign(new Error("bad"), { status: 400 }));
 
-    await expect(
-      generateClientSummary(INPUT, { client: fakeClient(create as any) }),
-    ).rejects.toBeInstanceOf(ClientSummaryUnavailableError);
+    await expect(run(create)).rejects.toBeInstanceOf(
+      ClientSummaryUnavailableError,
+    );
     expect(create).toHaveBeenCalledTimes(1);
   });
 });

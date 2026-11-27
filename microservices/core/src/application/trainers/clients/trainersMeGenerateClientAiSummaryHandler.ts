@@ -8,32 +8,75 @@ import {
   requireAuth,
   getUser,
 } from "@persistence/api-utils/auth/supabaseAuth";
-import { assertTrainerCanActForClient } from "../../relationships/assertTrainerCanActForClient";
+import { resolveCoachScope } from "../../relationships/resolveCoachScope";
 import { auditClientDataRead } from "../../relationships/auditClientDataRead";
 import {
   assertEntitlement,
   EntitlementError,
 } from "../../entitlement/assertEntitlement";
-import { ClientDetailRepository } from "../../repositories/clientDetailRepository";
 import { AiUsageLogRepository } from "../../repositories/aiUsageLogRepository";
 import {
   AI_COACH_SUMMARY_DAILY_LIMIT,
   AI_COACH_SUMMARY_ENDPOINT,
   ClientAiSummaryRepository,
+  type ClientAiSummaryRow,
 } from "../../repositories/clientAiSummaryRepository";
 import {
   generateClientSummary,
   resolveSummaryModelId,
   ClientSummaryUnavailableError,
-  type ClientSummaryInput,
 } from "../services/clientSummaryAi";
-import { addDaysISO, localDateISO } from "../../streaks/period";
-import type {
-  AiSummaryModule,
-  ClientDetail,
-} from "../../repositories/clientDetail";
+import {
+  addDays,
+  localDateIn,
+  safeTimeZone,
+} from "../../adherence/computeAdherence";
+import type { AiSummaryModule } from "../../repositories/clientDetail";
+import type { WeekOfProgramme } from "../../programs/scheduling";
+import {
+  availableAreas,
+  firstSummaryOn,
+  isFirstWeek,
+  legacySummaryText,
+  type SummaryAreaLine,
+  type WeeklySummaryEvidence,
+} from "../services/weeklySummary";
+import { loadWeeklySummaryEvidence } from "../services/weeklySummaryEvidenceRepository";
 
-const DEFAULT_TZ = "Europe/London";
+/**
+ * The route's `data` (design B D3/D4). Additive over the 1.2.0
+ * `AiSummaryModule`: `summary` is still filled whenever a summary exists, so
+ * old bundles keep showing a paragraph, and is null in the first week, which
+ * they render as their empty state.
+ */
+export interface WeeklySummaryModule extends AiSummaryModule {
+  state: "ready" | "firstWeek";
+  /** Client-local date of the first summary; only in the first week. */
+  firstSummaryOn?: string;
+  /** null on rows cached before PER-115 and when there's no summary. */
+  headline: string | null;
+  areas: SummaryAreaLine[];
+  ask: string | null;
+  weekOfProgramme: WeekOfProgramme | null;
+}
+
+function readyModule(
+  row: ClientAiSummaryRow,
+  coversDate: string,
+  canManualRefresh: boolean,
+): WeeklySummaryModule {
+  return {
+    state: "ready",
+    summary: row.summary,
+    coversDate,
+    generatedAt: row.generatedAt,
+    canManualRefresh,
+    headline: row.headline,
+    areas: row.areas ?? [],
+    ask: row.ask,
+    weekOfProgramme: row.weekOfProgramme,
+  };
+}
 
 /**
  * POST /trainers/me/clients/:clientId/ai-summary — generate (or return the
@@ -41,9 +84,15 @@ const DEFAULT_TZ = "Europe/London";
  * (specs/10-trainer-features/design.md § Module g, Phase 6). Body `{ manual? }`
  * — a single path for the lazy first generation and the one manual refresh.
  *
- * Gate/exec order (design.md § Module g endpoint):
- *   role → assertTrainerCanActForClient → assertEntitlement(ai_access) →
- *   per-coach daily-ceiling → ROW-STATE → generate (Bedrock) → upsert → usage.
+ * Gate/exec order (design.md § Module g endpoint, PER-115 design B D4):
+ *   role → resolveCoachScope → assertEntitlement(ai_access) → FIRST WEEK →
+ *   per-coach daily-ceiling → ROW-STATE → evidence → generate (Bedrock) →
+ *   upsert → usage.
+ *
+ * First week (PER-115): until the Monday after the client's first complete
+ * Monday-to-Sunday week of coaching, the route answers
+ * `{ state: 'firstWeek', firstSummaryOn, summary: null }` with no AI call, no
+ * quota counted and no data read.
  *
  * Row-state:
  *   - no row for covers_date            → generate (auto), insert refresh_count=0
@@ -52,16 +101,17 @@ const DEFAULT_TZ = "Europe/London";
  *
  * This is a WRITE that spends tokens but writes NO `trainer_actions_audit` row —
  * it is NOT a client-data mutation (nothing on the client's record changes),
- * only a per-coach cache is written. The privacy line holds: generation inputs
- * are Client Detail modules a–f (per-day totals + adherence), NEVER the
- * food-level entry log (design.md:605-606). Mounted as its own handler (a
+ * only a per-coach cache is written. The privacy line holds: the evidence is
+ * adherence counts, the programme week, form answers (no photos) and plan
+ * meals logged — NEVER photos, private notes or the food-level entry log
+ * (design B D4). Mounted as its own handler (a
  * sibling of the aggregate GET) to keep the root Elysia type instantiation
  * under TS's depth ceiling (TS2589).
  *
- * On any Bedrock failure the card degrades to the raw modules a–f
- * (design.md § Failure fallback) — surfaced here as 503 { error: "ai_unavailable" }
- * with NO usage row and NO cache write, so the mobile card simply shows the
- * modules and can retry.
+ * On any Bedrock failure, or output that fails the strict parse, the route
+ * answers 503 { error: "ai_unavailable", facts } (the evidence it gathered)
+ * with NO cache write and never invented text. Usage is recorded because the
+ * model was reached.
  */
 export const trainersMeGenerateClientAiSummaryHandler = new Elysia()
   .derive(async ({ headers }) => ({
@@ -80,22 +130,54 @@ export const trainersMeGenerateClientAiSummaryHandler = new Elysia()
       let didInfer = false;
       let requestSizeBytes: number | null = null;
       let responseSizeBytes: number | null = null;
+      let evidence: WeeklySummaryEvidence | null = null;
 
       const summaryRepo = new ClientAiSummaryRepository();
       const usageRepo = new AiUsageLogRepository();
 
       try {
-        // 1. Role + active relationship (cross-cuts § 1.3, role FIRST).
-        const gate = await assertTrainerCanActForClient(trainerId, clientId);
+        // 1. Role + active relationship (cross-cuts § 1.3, role FIRST), and
+        // this coach's own relationship + settings (several coaches).
+        const gate = await resolveCoachScope(trainerId, clientId);
         if (!gate.allowed) {
           ctx.set.status = gate.status;
           return gate.body;
         }
+        const scope = gate.scope;
 
         // 2. Entitlement — the COACH's ai_access (trainer tiers carry it, M9.5).
         const entitlement = await assertEntitlement(trainerId, "ai_access");
         if (!entitlement.allowed) {
           throw new EntitlementError(entitlement, "ai_access");
+        }
+
+        // 4. covers_date = the CONCLUDED (previous) client-local day.
+        const tz = await resolveClientTz(clientId);
+        const now = new Date();
+        const today = localDateIn(now, tz);
+        const coversDate = addDays(today, -1);
+
+        // First week (design B D4): no summary, no AI call, no quota.
+        const due = firstSummaryOn(
+          scope.activatedAt
+            ? localDateIn(new Date(scope.activatedAt), tz)
+            : null,
+        );
+        if (isFirstWeek(today, due)) {
+          return {
+            data: {
+              state: "firstWeek",
+              firstSummaryOn: due!,
+              summary: null,
+              coversDate,
+              generatedAt: null,
+              canManualRefresh: false,
+              headline: null,
+              areas: [],
+              ask: null,
+              weekOfProgramme: null,
+            } satisfies WeeklySummaryModule,
+          };
         }
 
         // 3. Per-coach daily ceiling (cost backstop). Successful inferences only.
@@ -110,8 +192,8 @@ export const trainersMeGenerateClientAiSummaryHandler = new Elysia()
 
         // Coach read-audit (specs/27-coach-health-data-read-audit) — logged
         // only after the entitlement + daily-ceiling gates pass, i.e. once a
-        // real read is about to happen (a cache hit still reads the Client
-        // Detail modules a–f used to ground the summary). Logging before the
+        // real read is about to happen (a cache hit still returns a summary of
+        // the client's data). Logging before the
         // gates would over-report a "view" for coaches who get a 402/429 and
         // read no data.
         await auditClientDataRead({
@@ -120,10 +202,6 @@ export const trainersMeGenerateClientAiSummaryHandler = new Elysia()
           dataCategory: "ai_summary",
           route: "/trainers/me/clients/:clientId/ai-summary",
         }).catch(() => {});
-
-        // 4. covers_date = the CONCLUDED (previous) client-local day.
-        const tz = await resolveClientTz(clientId);
-        const coversDate = addDaysISO(localDateISO(new Date(), tz), -1);
 
         // 5. Row-state.
         const existing = await summaryRepo.getForDay(
@@ -138,14 +216,7 @@ export const trainersMeGenerateClientAiSummaryHandler = new Elysia()
           const canManualRefresh =
             existing.refreshCount < 1 &&
             usedToday < AI_COACH_SUMMARY_DAILY_LIMIT;
-          return {
-            data: {
-              summary: existing.summary,
-              coversDate,
-              generatedAt: existing.generatedAt,
-              canManualRefresh,
-            } satisfies AiSummaryModule,
-          };
+          return { data: readyModule(existing, coversDate, canManualRefresh) };
         }
 
         // Per-user AI spend budget (spec-29 Phase 1): only the generate branch
@@ -155,18 +226,53 @@ export const trainersMeGenerateClientAiSummaryHandler = new Elysia()
           return AI_BUDGET_EXHAUSTED_BODY;
         }
 
-        // 6. Generate — assemble modules a–f from the SAME aggregate the card
-        // displays (no second data pull; privacy-safe — totals + adherence).
-        const detail = await new ClientDetailRepository().getClientDetail(
-          trainerId,
-          clientId,
-        );
-        const input = buildSummaryInput(detail, coversDate);
-        requestSizeBytes = Buffer.byteLength(JSON.stringify(input));
+        // 6. Evidence (design B D4) — the one adherence calculation, the
+        // programme week, form answers and plan meals. No photos, no notes.
+        evidence = await loadWeeklySummaryEvidence(scope, tz, now);
+        const allowed = availableAreas(evidence);
+        if (allowed.length === 0 && existing) {
+          // A manual refresh with nothing to regenerate from: keep today's
+          // summary rather than blank it (the next open would show it again).
+          // No inference ran, so the one refresh is still unspent.
+          return {
+            data: readyModule(
+              existing,
+              coversDate,
+              existing.refreshCount < 1 &&
+                usedToday < AI_COACH_SUMMARY_DAILY_LIMIT,
+            ),
+          };
+        }
+        if (allowed.length === 0) {
+          // Nothing tracked and nothing logged: there is nothing to summarise,
+          // so no AI call and no cache row. `summary: null` is the 1.2.0
+          // empty state.
+          return {
+            data: {
+              state: "ready",
+              summary: null,
+              coversDate,
+              generatedAt: null,
+              canManualRefresh: false,
+              headline: null,
+              areas: [],
+              ask: null,
+              weekOfProgramme: evidence.programme ?? null,
+            } satisfies WeeklySummaryModule,
+          };
+        }
+        requestSizeBytes = Buffer.byteLength(JSON.stringify(evidence));
 
         didInfer = true;
-        const summary = await generateClientSummary(input);
-        const model = resolveSummaryModelId();
+        const result = await generateClientSummary(evidence, allowed);
+        const content = {
+          summary: legacySummaryText(result),
+          model: resolveSummaryModelId(),
+          headline: result.headline,
+          areas: result.areas,
+          ask: result.ask,
+          weekOfProgramme: evidence.programme ?? null,
+        };
 
         // 7. Upsert.
         if (existing) {
@@ -174,16 +280,14 @@ export const trainersMeGenerateClientAiSummaryHandler = new Elysia()
             trainerId,
             clientId,
             coversDate,
-            summary,
-            model,
+            ...content,
           });
         } else {
           const inserted = await summaryRepo.insertInitial({
             trainerId,
             clientId,
             coversDate,
-            summary,
-            model,
+            ...content,
           });
           if (!inserted) {
             // A concurrent open already wrote today's row (UNIQUE conflict). We
@@ -200,12 +304,7 @@ export const trainersMeGenerateClientAiSummaryHandler = new Elysia()
                 winner.refreshCount < 1 &&
                 usedToday + 1 < AI_COACH_SUMMARY_DAILY_LIMIT;
               return {
-                data: {
-                  summary: winner.summary,
-                  coversDate,
-                  generatedAt: winner.generatedAt,
-                  canManualRefresh,
-                } satisfies AiSummaryModule,
+                data: readyModule(winner, coversDate, canManualRefresh),
               };
             }
           }
@@ -218,19 +317,25 @@ export const trainersMeGenerateClientAiSummaryHandler = new Elysia()
         const canManualRefresh =
           refreshCountAfter < 1 && usedToday + 1 < AI_COACH_SUMMARY_DAILY_LIMIT;
 
-        const module: AiSummaryModule = {
-          summary,
+        const module: WeeklySummaryModule = {
+          state: "ready",
+          summary: content.summary,
           coversDate,
           generatedAt: new Date().toISOString(),
           canManualRefresh,
+          headline: content.headline,
+          areas: content.areas,
+          ask: content.ask,
+          weekOfProgramme: content.weekOfProgramme,
         };
         responseSizeBytes = Buffer.byteLength(JSON.stringify({ data: module }));
         return { data: module };
       } catch (error) {
         if (error instanceof ClientSummaryUnavailableError) {
-          // Graceful degrade — the card falls back to the raw modules a–f.
+          // Graceful degrade: the facts the summary would have used, and
+          // never invented text. `error` is unchanged for 1.2.0 bundles.
           ctx.set.status = 503;
-          return { error: "ai_unavailable" };
+          return { error: "ai_unavailable", facts: evidence };
         }
         // EntitlementError (→ 402) and anything unexpected (→ 500) are mapped by
         // coreErrorHandler. Usage is still recorded below iff an inference ran.
@@ -272,64 +377,5 @@ async function resolveClientTz(clientId: string): Promise<string> {
     .from(profiles)
     .where(eq(profiles.id, clientId))
     .limit(1);
-  return rows[0]?.tz ?? DEFAULT_TZ;
-}
-
-/**
- * Project the Client Detail aggregate down to the modules a–f the summary is
- * grounded in. Deliberately EXCLUDES notes, recent-session names, and anything
- * that isn't a totals/adherence signal — the privacy line (design.md:605-606).
- */
-function buildSummaryInput(
-  detail: ClientDetail,
-  coversDate: string,
-): ClientSummaryInput {
-  return {
-    clientName: detail.client.name,
-    coversDate,
-    adherence: {
-      overall: detail.adherence.overall,
-      band: detail.adherence.band,
-    },
-    prs: detail.prs.map((p) => ({
-      exerciseName: p.exerciseName,
-      type: p.type,
-      value: p.value,
-      unit: p.unit,
-    })),
-    volume: { weekKg: detail.volume.weekKg },
-    calorieHit: detail.calorieHit
-      ? {
-          targetKcal: detail.calorieHit.targetKcal,
-          daysHit: detail.calorieHit.daysHit,
-          daysLogged: detail.calorieHit.daysLogged,
-          todayKcal: detail.calorieHit.todayKcal,
-        }
-      : null,
-    goal: detail.goal
-      ? {
-          title: detail.goal.title,
-          assignedByCoach: detail.goal.assignedByCoach,
-          startKg: detail.goal.weight.startKg,
-          nowKg: detail.goal.weight.nowKg,
-          targetKg: detail.goal.weight.targetKg,
-          pct: detail.goal.pct,
-        }
-      : null,
-    habits: detail.habits
-      ? {
-          collectionStreak: detail.habits.collectionStreak,
-          collectionSatisfied: detail.habits.collectionSatisfied,
-          items: detail.habits.habits.map((h) => ({
-            label: h.label,
-            met: h.met,
-          })),
-        }
-      : null,
-    thisWeek: {
-      workoutsCompleted: detail.thisWeek.workoutsCompleted,
-      workoutsPlanned: detail.thisWeek.workoutsPlanned,
-      prs: detail.thisWeek.prs,
-    },
-  };
+  return safeTimeZone(rows[0]?.tz);
 }

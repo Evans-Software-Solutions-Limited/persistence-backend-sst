@@ -1,0 +1,15 @@
+{
+  "_source": "Recorded from the 1.2.0 store bundle (commit 3bad31e, chore(mobile): app version 1.2.0). packages/mobile/src/domain/models/clientDetail.ts AiSummaryModule, read by sst-api.adapter.ts generateClientAiSummary and rendered by ClientDetailPresenter (summary null = the empty state). PER-115 / design B D6 test 4: every field keeps its type.",
+  "request": {
+    "method": "POST",
+    "path": "/trainers/me/clients/:clientId/ai-summary"
+  },
+  "successEnvelope": "data",
+  "fields": {
+    "summary": "string|null",
+    "coversDate": "string|null",
+    "generatedAt": "string|null",
+    "canManualRefresh": "boolean"
+  },
+  "errorFields": { "error": "string" }
+}

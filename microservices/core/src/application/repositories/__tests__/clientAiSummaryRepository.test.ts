@@ -9,6 +9,10 @@ import {
   ClientAiSummaryRepository,
 } from "../clientAiSummaryRepository";
 
+const AREAS = [
+  { area: "training" as const, status: "good" as const, text: "3 of 4." },
+];
+
 describe("ClientAiSummaryRepository", () => {
   beforeEach(() => vi.clearAllMocks());
 
@@ -47,8 +51,43 @@ describe("ClientAiSummaryRepository", () => {
       model: "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
       refreshCount: 0,
       generatedAt: "2026-07-08T06:00:00.000Z",
+      // A row cached before PER-115 has no summary by area.
+      headline: null,
+      areas: null,
+      ask: null,
+      weekOfProgramme: null,
     });
     expect(where).toHaveBeenCalledTimes(1);
+  });
+
+  it("getForDay returns the summary by area when the row has it (PER-115)", async () => {
+    const limit = vi.fn().mockResolvedValue([
+      {
+        id: "sum-3",
+        summary: "Solid week. 3 of 4.",
+        model: "m",
+        refreshCount: 0,
+        generatedAt: new Date("2026-07-08T06:00:00.000Z"),
+        headline: "Solid week.",
+        areas: AREAS,
+        ask: "Ask about sleep.",
+        weekOfProgramme: { week: 3, of: 8 },
+      },
+    ]);
+    const orderBy = vi.fn().mockReturnValue({ limit });
+    const where = vi.fn().mockReturnValue({ orderBy });
+    const from = vi.fn().mockReturnValue({ where });
+    (getDb as any).mockReturnValue({ select: () => ({ from }) });
+
+    const row = await new ClientAiSummaryRepository().getForDay(
+      "trainer-1",
+      "client-1",
+      "2026-07-07",
+    );
+    expect(row?.headline).toBe("Solid week.");
+    expect(row?.areas).toEqual(AREAS);
+    expect(row?.ask).toBe("Ask about sleep.");
+    expect(row?.weekOfProgramme).toEqual({ week: 3, of: 8 });
   });
 
   it("getForDay returns null when no row exists for the day", async () => {
@@ -100,6 +139,10 @@ describe("ClientAiSummaryRepository", () => {
       coversDate: "2026-07-07",
       summary: "Auto summary.",
       model: "model-x",
+      headline: "Solid week.",
+      areas: AREAS,
+      ask: "Ask about sleep.",
+      weekOfProgramme: { week: 3, of: 8 },
     });
 
     expect(wrote).toBe(true);
@@ -109,6 +152,10 @@ describe("ClientAiSummaryRepository", () => {
       coversDate: "2026-07-07",
       summary: "Auto summary.",
       model: "model-x",
+      headline: "Solid week.",
+      areas: AREAS,
+      ask: "Ask about sleep.",
+      weekOfProgramme: { week: 3, of: 8 },
       refreshCount: 0,
     });
     // Conflict-tolerant on the once-a-day key (concurrent-open race backstop).
@@ -129,6 +176,10 @@ describe("ClientAiSummaryRepository", () => {
       coversDate: "2026-07-07",
       summary: "Auto summary.",
       model: "model-x",
+      headline: "Solid week.",
+      areas: AREAS,
+      ask: "Ask about sleep.",
+      weekOfProgramme: { week: 3, of: 8 },
     });
     expect(wrote).toBe(false);
   });
@@ -146,6 +197,10 @@ describe("ClientAiSummaryRepository", () => {
       coversDate: "2026-07-07",
       summary: "Refreshed summary.",
       model: "model-x",
+      headline: "Solid week.",
+      areas: AREAS,
+      ask: "Ask about sleep.",
+      weekOfProgramme: { week: 3, of: 8 },
     });
 
     expect(update).toHaveBeenCalledTimes(1);
@@ -153,6 +208,11 @@ describe("ClientAiSummaryRepository", () => {
     expect(setArg.summary).toBe("Refreshed summary.");
     expect(setArg.model).toBe("model-x");
     expect(setArg.refreshCount).toBe(1);
+    // PER-115: the summary by area is overwritten with the refresh.
+    expect(setArg.headline).toBe("Solid week.");
+    expect(setArg.areas).toEqual(AREAS);
+    expect(setArg.ask).toBe("Ask about sleep.");
+    expect(setArg.weekOfProgramme).toEqual({ week: 3, of: 8 });
     expect(setArg.generatedAt).toBeInstanceOf(Date);
     expect(where).toHaveBeenCalledTimes(1);
   });
