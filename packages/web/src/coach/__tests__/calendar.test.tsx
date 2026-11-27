@@ -6,6 +6,13 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import { render } from "@testing-library/react";
+import { MemoryRouter, Route, Routes } from "react-router";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import CoachApp from "../CoachApp";
+import { saveSession, sessionFromTokens } from "../api/coachAuth";
+import type { CoachApi } from "../api/coachApi";
+import { CoachApiContext } from "../hooks/coachQueries";
 import { CalendarContainer } from "../calendar/CalendarContainer";
 import { ClientPage } from "../clients/ClientPage";
 import {
@@ -475,5 +482,38 @@ describe("Schedule from Client Detail (C4c)", () => {
     ).toBeTruthy();
     fireEvent.keyDown(dlg, { key: "Escape" });
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
+describe("route", () => {
+  it("opens the calendar at /coach/today/calendar, past the catch-all", async () => {
+    const b = (o: unknown) => btoa(JSON.stringify(o)).replace(/=+$/, "");
+    saveSession(
+      sessionFromTokens(`${b({})}.${b({ exp: 9_999_999_999 })}.s`, "r"),
+    );
+    const cal = fakeCalendarApi();
+    render(
+      <QueryClientProvider
+        client={
+          new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        }
+      >
+        <CoachApiContext.Provider value={fakeApi() as unknown as CoachApi}>
+          <MemoryRouter initialEntries={["/coach/today/calendar"]}>
+            <Routes>
+              <Route
+                path="/coach/*"
+                element={withCalendar(<CoachApp />, cal)}
+              />
+            </Routes>
+          </MemoryRouter>
+        </CoachApiContext.Provider>
+      </QueryClientProvider>,
+    );
+    expect(
+      await screen.findByRole("region", { name: "Calendar" }),
+    ).toBeTruthy();
+    expect(cal.range).toHaveBeenCalled();
+    localStorage.clear();
   });
 });
