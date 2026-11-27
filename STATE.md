@@ -37,6 +37,56 @@ Design B D4. Backend only, additive, no `/v2`.
   contract fixture `fixtures/contract-1.2.0-ai-summary.json`; two-coach
   scoping; migration forward ×2/down/up), handler and adapter suites updated.
 
+### 2026-11-25 — Android push: Firebase config per variant ([PER-149](https://linear.app/evans-software-solutions/issue/PER-149); branch `claude/per-149-android-push`)
+
+Native change approved by Brad on PER-149 (25 Nov). Needs a new Android
+build; no build started by an agent. No new package, no Firebase JS SDK.
+
+- `packages/mobile/app.config.ts` sets `android.googleServicesFile` per
+  variant: staging → `firebase/google-services.staging.json`; production and
+  play-testing (same package) → `firebase/google-services.production.json`;
+  dev → none. `GOOGLE_SERVICES_JSON` (EAS file env var) overrides. Files are
+  meant to be committed (client identifiers, not secrets); Brad adds them, none
+  are in the repo yet.
+- Missing file: an Android EAS build (`EAS_BUILD_PLATFORM=android`) throws a
+  clear error; everything else (iOS builds, `expo start`, `eas update`, jest)
+  only warns.
+- Registration path checked: POST_NOTIFICATIONS is in the expo-notifications
+  manifest and requested via `requestPermissionsAsync`; the "default" channel
+  is created in `app/_layout.tsx` and matches the backend's `channelId`;
+  `getExpoPushTokenAsync` passes the EAS projectId; the hook registers with
+  `platform: "android"`; the tap handler is platform-neutral. No code fix was
+  needed for Android itself.
+- Raw-token fix (Brad, 25 Nov: in this ticket). Expo's `addPushTokenListener`
+  hands back the raw APNs/FCM token, which the app was registering (prod: 64
+  raw iOS rows, 53 active, next to 56 Expo rows).
+  - `ExpoNotificationsAdapter.addPushTokenListener` now fetches the Expo token
+    again and emits that. It guards the echo: `getExpoPushTokenAsync` fires
+    the native event again, so it re-fetches only when the native token
+    changes.
+  - Core `POST /devices/register` returns 200
+    `{ data: { id: null, registered: false } }` for a non-Expo token without
+    storing it (1.2.0 phones). It uses `isExpoPushToken` in `expoPushClient.ts`
+    (same rule as expo-server-sdk).
+  - Migration `20261125160203_user_devices_drop_non_expo_tokens.sql` deletes
+    the non-Expo rows. A read-only count on prod: 64 would go, 0 Expo-like
+    rows hit. The rollback is a documented no-op. Not run anywhere.
+  - Inspector Brad follow-ups:
+    - Deploy-window rows: `db push` runs before `sst deploy`, so the old
+      Lambda can still write raw rows. On a raw-token register the handler
+      now also calls `UserDeviceRepository.deleteForUserAndToken(userId,
+      token)`, scoped to the caller. It's best-effort and the response stays
+      200.
+    - Stale Expo token: the adapter records a native token as handled only
+      after its Expo fetch succeeds. A failure retries on back-off
+      (`TOKEN_RETRY_DELAYS_MS` 30 s, 2 min, 10 min) and on app foreground.
+      The native echo of an in-flight or failed token is ignored, so there's
+      no loop.
+- Tests: `__tests__/app.config.test.ts` (per-variant file, override, missing
+  file warn/throw), Android cases in `usePushNotifications.test.tsx` and
+  `expo-notifications.adapter.test.ts`. Brad's steps:
+  `docs/android-push-setup.md`.
+
 ### 2026-11-25 — BE-I2: coach calendar, bookings and session reminders ([PER-123](https://linear.app/evans-software-solutions/issue/PER-123); branch `claude/per-123-coach-calendar`)
 
 Backend design I, calendar part (C4). Additive; nothing existing changes for

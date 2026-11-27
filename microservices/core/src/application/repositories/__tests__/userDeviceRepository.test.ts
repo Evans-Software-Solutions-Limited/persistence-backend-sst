@@ -295,6 +295,35 @@ describe("UserDeviceRepository.listActiveTokens", () => {
   });
 });
 
+describe("UserDeviceRepository.deleteForUserAndToken (PER-149)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("deletes only the caller's row for that exact token", async () => {
+    const where = vi.fn().mockResolvedValue(undefined);
+    const mockDb = { delete: vi.fn().mockReturnValue({ where }) };
+    (getDb as any).mockReturnValue(mockDb);
+
+    const { UserDeviceRepository } = await import("../userDeviceRepository");
+    const { userDevices } = await import("@persistence/db");
+    const { PgDialect } = await import("drizzle-orm/pg-core");
+    await new UserDeviceRepository().deleteForUserAndToken(
+      "user-1",
+      "a3f1c2d4e5b6",
+    );
+
+    expect(mockDb.delete).toHaveBeenCalledWith(userDevices);
+    const query = new PgDialect().sqlToQuery(where.mock.calls[0][0]);
+    // Scoped to the caller: another user's row with the same token is
+    // never matched.
+    expect(query.sql).toBe(
+      '("user_devices"."user_id" = $1 and "user_devices"."device_token" = $2)',
+    );
+    expect(query.params).toEqual(["user-1", "a3f1c2d4e5b6"]);
+  });
+});
+
 describe("UserDeviceRepository.deactivateToken", () => {
   beforeEach(() => {
     vi.clearAllMocks();
