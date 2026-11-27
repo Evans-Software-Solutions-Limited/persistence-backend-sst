@@ -35,6 +35,8 @@ export const chatChannels = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Set when Stream froze the channel. NULL on a `frozen` row means the
+    // channel was never created in Stream (closed, nothing to read).
     frozenAt: timestamp("frozen_at", { withTimezone: true }),
   },
   (t) => [

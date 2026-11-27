@@ -792,6 +792,40 @@ describe("design E test 3: ending coaching removes the client and freezes the ch
     ).toBe(false);
   });
 
+  it("a never-created channel on an ended relationship isn't listed for the coach and grants no token; a real frozen one still is", async () => {
+    // E's channel really exists in Stream; C's never got created.
+    await provisionChatChannel(REL_EA);
+    stream.failOn(/\/users$/, 1);
+    await safeProvisionChatChannel(REL_CA);
+    expect(stream.channels.has(channelIdFor(REL_CA))).toBe(false);
+    for (const rel of [REL_CA, REL_EA]) {
+      await db
+        .update(schema.ptClientRelationships)
+        .set({ status: "terminated" })
+        .where(eq(schema.ptClientRelationships.id, rel));
+    }
+    expect(await reconcileChatChannels()).toMatchObject({ frozen: 2 });
+    const never = await channelRow(REL_CA);
+    expect(never).toMatchObject({ state: "frozen", frozenAt: null });
+    const real = await channelRow(REL_EA);
+    expect(real!.state).toBe("frozen");
+    expect(real!.frozenAt).toBeInstanceOf(Date);
+
+    // Coach C: nothing to read, so no thread and no token.
+    const listC = await http("GET", "/chat/channels", COACH_C);
+    expect(listC.json.data).toEqual([]);
+    const tokenC = await http("POST", "/chat/token", COACH_C);
+    expect(tokenC.status).toBe(403);
+    expect(tokenC.json.code).toBe("chat_not_available");
+
+    // Coach E: the real frozen thread is still there, read-only.
+    const listE = await http("GET", "/chat/channels", COACH_E);
+    expect(listE.json.data).toEqual([
+      expect.objectContaining({ relationshipId: REL_EA, state: "frozen" }),
+    ]);
+    expect((await http("POST", "/chat/token", COACH_E)).status).toBe(200);
+  });
+
   it("freezing refuses an active relationship and a missing channel", async () => {
     await provisionChatChannel(REL_CA);
     expect(await freezeChatChannel(REL_CA)).toBe("still_active");

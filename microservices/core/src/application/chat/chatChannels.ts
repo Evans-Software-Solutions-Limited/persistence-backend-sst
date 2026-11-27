@@ -5,6 +5,7 @@ import {
   eq,
   exists,
   inArray,
+  isNotNull,
   isNull,
   ne,
   or,
@@ -314,6 +315,7 @@ export async function freezeChatChannel(
     .limit(1);
   if (rel[0]?.status === "active") return "still_active";
 
+  let existsInStream = true;
   try {
     await client.removeMembers(row.streamChannelId, [row.clientId]);
     await client.setFrozen(row.streamChannelId, true);
@@ -321,10 +323,20 @@ export async function freezeChatChannel(
     // Never created in Stream (provisioning never got that far): nothing
     // there to freeze.
     if (!isNotFound(err)) throw err;
+    existsInStream = false;
   }
+  // `frozen_at` is only set when Stream really froze the channel. A channel
+  // Stream never had is `frozen` with `frozen_at` NULL: closed, so the retry
+  // never picks it up again, but there's no thread to read, so the coach's
+  // list and the token check leave it out (Inspector Brad, #570). The row
+  // stays (the ended_meanwhile path and a revival reuse it).
   await db
     .update(chatChannels)
-    .set({ state: "frozen", frozenAt: row.frozenAt ?? now, updatedAt: now })
+    .set({
+      state: "frozen",
+      frozenAt: existsInStream ? (row.frozenAt ?? now) : row.frozenAt,
+      updatedAt: now,
+    })
     .where(eq(chatChannels.relationshipId, relationshipId));
   return "frozen";
 }
@@ -594,7 +606,14 @@ export async function listChannelsFor(
       or(
         and(
           eq(chatChannels.trainerId, userId),
-          inArray(chatChannels.state, ["active", "frozen"]),
+          or(
+            eq(chatChannels.state, "active"),
+            // A frozen thread only if Stream really had (and froze) it.
+            and(
+              eq(chatChannels.state, "frozen"),
+              isNotNull(chatChannels.frozenAt),
+            ),
+          ),
         ),
         and(
           eq(chatChannels.clientId, userId),
