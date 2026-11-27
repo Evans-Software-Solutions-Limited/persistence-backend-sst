@@ -31,6 +31,7 @@ import { color } from "@/ui/theme/tokens";
 import type { ExerciseSet, SessionExercise } from "@/domain/models/session";
 import type { WeightUnit } from "@/shared/utils";
 import { formatDurationInput } from "@/shared/utils/activityUnits";
+import { setCountLabel } from "@/domain/services/setTargets.service";
 
 export type SessionExerciseCardProps = {
   exercise: SessionExercise;
@@ -59,6 +60,11 @@ export type SessionExerciseCardProps = {
   targetSets?: number;
   targetRepsMin?: number;
   targetRepsMax?: number;
+  /**
+   * Reps per set (PER-139). When present the caption reads
+   * "3 sets · 10, 8, 8 reps" instead of the range.
+   */
+  targetSetReps?: number[];
   targetDurationSeconds?: number;
   /** Used to label the START {N}S REST button. */
   restSeconds: number;
@@ -116,8 +122,16 @@ export function SessionExerciseCard(props: SessionExerciseCardProps) {
     trackingMode === "cardio" && props.targetDurationSeconds != null
       ? formatDurationInput(props.targetDurationSeconds)
       : repsLabel;
+  const perSet =
+    trackingMode !== "cardio" &&
+    props.targetSetReps &&
+    props.targetSetReps.length > 0
+      ? props.targetSetReps
+      : null;
   const hasDescription =
-    props.caption != null || (props.targetSets != null && targetLabel != null);
+    props.caption != null ||
+    perSet != null ||
+    (props.targetSets != null && targetLabel != null);
   const hasNotes =
     props.exercise.notes != null && props.exercise.notes.length > 0;
 
@@ -132,7 +146,9 @@ export function SessionExerciseCard(props: SessionExerciseCardProps) {
         <View style={styles.exerciseTitleRow}>
           <Text style={styles.exerciseDescription} numberOfLines={2}>
             {props.caption ??
-              `${props.targetSets} ${props.targetSets === 1 ? "set" : "sets"} × ${targetLabel}`}
+              (perSet
+                ? `${setCountLabel(perSet.length)} · ${perSet.join(", ")} reps`
+                : `${props.targetSets} ${props.targetSets === 1 ? "set" : "sets"} × ${targetLabel}`)}
           </Text>
         </View>
       )}

@@ -37,6 +37,39 @@ Design B D4. Backend only, additive, no `/v2`.
   contract fixture `fixtures/contract-1.2.0-ai-summary.json`; two-coach
   scoping; migration forward ×2/down/up), handler and adapter suites updated.
 
+### 2026-11-26 — APP-G1 set editor with reps per set + active workout pre-fill, mobile only ([PER-139](https://linear.app/evans-software-solutions/issue/PER-139); branch `claude/per-139-set-editor`)
+
+Mobile only (Brad, 26 Nov: the web builder is PER-152). Uses BE-G1a (#552).
+No native change, no backend behaviour change.
+
+- **Set editor (C5f):** `ExerciseConfigCard` in Create / Edit workout (and
+  the coach via `?ctx=coach`): Set 1…n each with − reps +, Add set, "Same
+  reps for all", Rest − m:ss +; collapsed card reads "3 sets · 12, 10, 10".
+  Last time's weights are a hint from the `recent_sets` cache
+  (`useLastTimeHints`, offline), built only from each exercise's newest
+  `recorded_at` rows (`latestSessionSets` via the new port method
+  `getRecentSetRows`; the cache keeps older sessions' higher set numbers),
+  and hidden in coach context (`?ctx=coach` / create-and-assign), where
+  they'd be the coach's own lifts (Inspector Brad on #575). Additions not on the canvas: a × to remove
+  a set, a chevron to collapse/expand, Rest steppers (±15 s).
+- **Form state:** `useWorkoutForm` gains `set_reps: number[] | null` (null
+  = old range, sent without `setTargets` so the server's keep-the-rows rule
+  applies; changing a set's reps converts it, stepping from the range top).
+  New exercises start 3 × 10. Set count stays shared across a superset.
+- **Save on react-hook-form** (`ui/forms/workoutForms.ts`, PER-147 pattern,
+  reducer state as `context`): name, ≥1 exercise, 1–20 sets, 1–100 reps.
+  Limits from `@persistence/form-limits` `SET_TARGET_LIMITS` (appended);
+  core's `MAX_SET_TARGETS` / `MAX_SET_TARGET_REPS` now read it, pinned at
+  20 / 100 in both packages' tests (no behaviour change).
+- **Reads:** workout page "3 sets · 10, 8, 8 reps"; active workout caption
+  and superset badge the same; `createSessionFromWorkout` pre-fills each
+  set's reps (lifts only — plyometric/cardio keep empty sets, since reps
+  alone would count them as logged). Without `setTargets` everything reads
+  as before.
+- **Offline:** `setTargets` rides in the cached workout JSON and the queued
+  POST/PATCH; the update command mirrors the server's preservation rule
+  (`setTargetsAfterUpdate`). No new SQLite table.
+
 ### 2026-11-25 — Android push: Firebase config per variant ([PER-149](https://linear.app/evans-software-solutions/issue/PER-149); branch `claude/per-149-android-push`)
 
 Native change approved by Brad on PER-149 (25 Nov). Needs a new Android

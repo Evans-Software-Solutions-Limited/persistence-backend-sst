@@ -184,34 +184,182 @@ describe("WorkoutCreatorContainer", () => {
     expect(alertSpy.mock.calls[0][0]).toBe("Discard Changes");
   });
 
-  it("surfaces command validation failure as submitError", async () => {
+  it("set editor (PER-139): 10/8/8 is queued as setTargets with the derived range", async () => {
     const api = new InMemoryApiAdapter();
     const storage = new InMemoryStorageAdapter();
     storage.cacheExercises([buildExercise({ id: "ex-1", name: "Bench" })]);
 
-    const { findByText, getByTestId } = renderWithTheme(
+    const { findByText, getByTestId, getByText } = renderWithTheme(
       withAdapters(makeAdapters(api, storage), <WorkoutCreatorContainer />),
     );
 
     expect(await findByText("Create Workout")).toBeTruthy();
     fireEvent.changeText(getByTestId("workout-name-input"), "Push Day");
-
     fireEvent.press(getByTestId("add-exercise-button"));
     fireEvent.press(await findByText("Bench"));
     await act(async () => {
       fireEvent.press(getByTestId("add-exercises-button"));
     });
+    await waitFor(() => expect(getByText("Bench")).toBeTruthy());
 
-    // Drive targetSets to 0 — passes the container pre-check (name OK,
-    // ≥1 exercise) but fails `createWorkoutCommand`'s validation.
-    fireEvent.changeText(getByTestId("sets-input"), "0");
-    fireEvent(getByTestId("sets-input"), "blur");
+    // A new exercise starts open with 3 sets of 10.
+    expect(getByTestId("set-0-reps").props.children).toBe("10");
+    fireEvent.press(getByTestId("set-1-dec"));
+    fireEvent.press(getByTestId("set-1-dec"));
+    fireEvent.press(getByTestId("set-2-dec"));
+    fireEvent.press(getByTestId("set-2-dec"));
+    expect(getByTestId("set-1-reps").props.children).toBe("8");
+    expect(getByTestId("set-2-reps").props.children).toBe("8");
+
+    // Collapsed, it reads "3 sets · 10, 8, 8".
+    fireEvent.press(getByTestId("toggle-button"));
+    expect(getByTestId("set-summary").props.children).toBe("3 sets · 10, 8, 8");
 
     fireEvent.press(getByTestId("save-workout-button"));
+    await waitFor(() => expect(mockRouterBack).toHaveBeenCalledTimes(1));
 
-    expect(await findByText("Sets must be at least 1")).toBeTruthy();
-    expect(mockRouterBack).not.toHaveBeenCalled();
+    const [queued] = storage.getPendingMutations();
+    const payload = JSON.parse(queued!.payload) as {
+      exercises: Record<string, unknown>[];
+    };
+    expect(payload.exercises[0]).toMatchObject({
+      setTargets: [{ reps: 10 }, { reps: 8 }, { reps: 8 }],
+      targetSets: 3,
+      targetRepsMin: 8,
+      targetRepsMax: 10,
+    });
+    // The optimistic cached workout carries them too (offline display).
+    const cached = storage.getCachedWorkoutsList("user-1", "mine");
+    expect(cached?.workouts[0].exercises[0].setTargets).toEqual([
+      { reps: 10 },
+      { reps: 8 },
+      { reps: 8 },
+    ]);
   }, 30_000);
+
+  it("set editor: Add set, remove a set and Same reps for all", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheExercises([buildExercise({ id: "ex-1", name: "Bench" })]);
+
+    const { findByText, getByTestId, getByText, queryByTestId } =
+      renderWithTheme(
+        withAdapters(makeAdapters(api, storage), <WorkoutCreatorContainer />),
+      );
+    expect(await findByText("Create Workout")).toBeTruthy();
+    fireEvent.changeText(getByTestId("workout-name-input"), "Push Day");
+    fireEvent.press(getByTestId("add-exercise-button"));
+    fireEvent.press(await findByText("Bench"));
+    await act(async () => {
+      fireEvent.press(getByTestId("add-exercises-button"));
+    });
+    await waitFor(() => expect(getByText("Bench")).toBeTruthy());
+
+    fireEvent.press(getByTestId("set-0-inc"));
+    fireEvent.press(getByTestId("set-0-inc")); // 12, 10, 10
+    fireEvent.press(getByTestId("add-set")); // 12, 10, 10, 10
+    expect(getByTestId("set-3-reps").props.children).toBe("10");
+    fireEvent.press(getByTestId("set-1-remove")); // 12, 10, 10
+    expect(queryByTestId("set-row-3")).toBeNull();
+    fireEvent.press(getByTestId("same-reps")); // 12, 12, 12
+    expect(getByTestId("set-2-reps").props.children).toBe("12");
+    fireEvent.press(getByTestId("rest-inc"));
+    expect(getByTestId("rest-value").props.children).toBe("1:15");
+
+    fireEvent.press(getByTestId("save-workout-button"));
+    await waitFor(() => expect(mockRouterBack).toHaveBeenCalledTimes(1));
+    const [queued] = storage.getPendingMutations();
+    expect(
+      (JSON.parse(queued!.payload) as { exercises: Record<string, unknown>[] })
+        .exercises[0],
+    ).toMatchObject({
+      setTargets: [{ reps: 12 }, { reps: 12 }, { reps: 12 }],
+      targetSets: 3,
+      targetRepsMin: 12,
+      targetRepsMax: 12,
+      restSeconds: 75,
+    });
+  }, 30_000);
+
+  /** 5 sets on Monday, then 3 on Tuesday: sets 4–5 are still Monday's rows. */
+  const seedTwoSessions = (storage: InMemoryStorageAdapter) => {
+    const monday = "2026-11-23T18:00:00.000Z";
+    const tuesday = "2026-11-24T18:00:00.000Z";
+    storage.upsertRecentSets(
+      "user-1",
+      [1, 2, 3, 4, 5].map((setNumber) => ({
+        exerciseId: "ex-1",
+        setNumber,
+        weightKg: 80,
+        reps: 10,
+        recordedAt: monday,
+      })),
+    );
+    storage.upsertRecentSets(
+      "user-1",
+      [8, 6, 6].map((reps, i) => ({
+        exerciseId: "ex-1",
+        setNumber: i + 1,
+        weightKg: 92.5,
+        reps,
+        recordedAt: tuesday,
+      })),
+    );
+  };
+
+  const addBench = async (
+    utils: ReturnType<typeof renderWithTheme>,
+  ): Promise<void> => {
+    expect(await utils.findByText("Create Workout")).toBeTruthy();
+    fireEvent.press(utils.getByTestId("add-exercise-button"));
+    fireEvent.press(await utils.findByText("Bench"));
+    await act(async () => {
+      fireEvent.press(utils.getByTestId("add-exercises-button"));
+    });
+    await waitFor(() => expect(utils.getByText("Bench")).toBeTruthy());
+  };
+
+  it("shows last time's weights from the newest session only", async () => {
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheExercises([buildExercise({ id: "ex-1", name: "Bench" })]);
+    seedTwoSessions(storage);
+
+    const utils = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <WorkoutCreatorContainer />),
+    );
+    await addBench(utils);
+    // Monday's sets 4–5 (80 kg × 10) are left out.
+    expect(utils.getByTestId("last-time-hint").props.children).toBe(
+      "Last time 92.5 kg × 8, 6, 6",
+    );
+  }, 30_000);
+
+  it.each([
+    ["the iPhone coach builder (?ctx=coach)", { ctx: "coach" }],
+    [
+      "create-and-assign for a client",
+      { ctx: "coach", assignClientId: "client-1" },
+    ],
+    ["create-and-assign without ctx", { assignClientId: "client-1" }],
+  ])(
+    "hides last time's weights in %s (they'd be the coach's own lifts)",
+    async (_label, params) => {
+      mockUseLocalSearchParams.mockReturnValue(params);
+      const api = new InMemoryApiAdapter();
+      const storage = new InMemoryStorageAdapter();
+      storage.cacheExercises([buildExercise({ id: "ex-1", name: "Bench" })]);
+      seedTwoSessions(storage);
+
+      const utils = renderWithTheme(
+        withAdapters(makeAdapters(api, storage), <WorkoutCreatorContainer />),
+      );
+      await addBench(utils);
+      expect(utils.getByTestId("set-row-0")).toBeTruthy();
+      expect(utils.queryByTestId("last-time-hint")).toBeNull();
+    },
+    30_000,
+  );
 
   it("dirty cancel + Discard tap invokes router.back", async () => {
     const api = new InMemoryApiAdapter();
@@ -253,16 +401,23 @@ describe("WorkoutCreatorContainer", () => {
     fireEvent.press(await findByText("Fly"));
     fireEvent.press(getByTestId("add-superset-button"));
 
-    // Both exercises rendered as superset peers — second row should
-    // show the "Inherited from superset" hint twice (sets + rest).
+    // Both exercises rendered as superset peers: the set count and rest
+    // are shared, so only the lead adds sets; the peer reads "Inherited
+    // from superset" and follows the lead's set count.
     await waitFor(() =>
       expect(getByTestId("save-workout-button")).toBeTruthy(),
     );
-    const setsInputs = getAllByTestId("sets-input");
-    expect(setsInputs.length).toBe(2);
-    // Lead row's input is editable; peer's is not.
-    expect(setsInputs[0].props.editable).toBe(true);
-    expect(setsInputs[1].props.editable).toBe(false);
+    const addSet = getAllByTestId("add-set");
+    expect(addSet.length).toBe(2);
+    expect(addSet[0].props.accessibilityState).toMatchObject({
+      disabled: false,
+    });
+    expect(addSet[1].props.accessibilityState).toMatchObject({
+      disabled: true,
+    });
+    expect(await findByText("Inherited from superset")).toBeTruthy();
+    fireEvent.press(addSet[0]);
+    expect(getAllByTestId("set-row-3").length).toBe(2);
   }, 30_000);
 
   it("renders only Private/Friends visibility (no Public) + NO owner toggle in athlete context", async () => {
@@ -336,6 +491,40 @@ describe("WorkoutCreatorContainer", () => {
     const assignedClient = assignSpy.mock.calls[0][0];
     expect(assignedClient).toBe("client-1");
     await waitFor(() => expect(mockRouterBack).toHaveBeenCalled());
+  }, 30_000);
+
+  it("create-and-assign: a name the server refuses goes on the name field", async () => {
+    mockUseLocalSearchParams.mockReturnValue({
+      ctx: "coach",
+      assignClientId: "client-1",
+    });
+    const api = new InMemoryApiAdapter();
+    const storage = new InMemoryStorageAdapter();
+    storage.cacheExercises([buildExercise({ id: "ex-1", name: "Bench" })]);
+    jest.spyOn(api, "createWorkout").mockResolvedValue(
+      fail({
+        kind: "api",
+        code: "unknown",
+        status: 422,
+        message: "Validation failed",
+        body: { validation: [{ path: "/name", message: "Name too long" }] },
+      } as never),
+    );
+
+    const { findByText, getByTestId, getByText, queryByText } = renderWithTheme(
+      withAdapters(makeAdapters(api, storage), <WorkoutCreatorContainer />),
+    );
+    expect(await findByText("Create Workout")).toBeTruthy();
+    fireEvent.changeText(getByTestId("workout-name-input"), "Client Push");
+    fireEvent.press(getByTestId("add-exercise-button"));
+    fireEvent.press(await findByText("Bench"));
+    fireEvent.press(getByTestId("add-exercises-button"));
+    await waitFor(() => expect(getByText("Bench")).toBeTruthy());
+
+    fireEvent.press(getByTestId("save-workout-button"));
+    expect(await findByText("Name too long")).toBeTruthy();
+    expect(queryByText("Validation failed")).toBeNull();
+    expect(mockRouterBack).not.toHaveBeenCalled();
   }, 30_000);
 
   it("create-and-assign: keeps the created workout when assign fails", async () => {
