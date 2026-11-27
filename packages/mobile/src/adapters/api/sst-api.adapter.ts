@@ -271,6 +271,11 @@ import type {
   ProgressPhotosResponse,
   ProgressPhotoUpload,
 } from "@/domain/models/progressPhotos";
+import type {
+  CoachPhotosApiError,
+  CoachProgressPhotos,
+} from "@/domain/models/coachProgressPhotos";
+import { denialFromResponse } from "@/domain/services/coachProgressPhotos.service";
 
 type ApiSuccessResponse<T> = { data: T };
 type ApiErrorResponse = { error: string };
@@ -3313,6 +3318,34 @@ export class SSTApiAdapter implements ApiPort {
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  // -- PER-138 (APP-F2): a client's progress photos, coach side --
+
+  /**
+   * Read through `requestRaw` so a 403's `code` survives: the tab shows a
+   * different state for the photos switch off, photos not shared and
+   * coaching ended, and the server's answer always wins.
+   */
+  async getCoachClientProgressPhotos(
+    clientId: string,
+  ): Promise<Result<CoachProgressPhotos, CoachPhotosApiError>> {
+    const result = await this.requestRaw<{
+      data?: CoachProgressPhotos;
+      code?: unknown;
+      message?: unknown;
+      error?: unknown;
+    }>(`/trainers/me/clients/${encodeURIComponent(clientId)}/progress-photos`);
+    if (!result.ok) return result;
+    const { status, json } = result.value;
+    if (status >= 200 && status < 300 && json?.data) return ok(json.data);
+    const base = mapHttpErrorToApiError(
+      status,
+      status >= 200 && status < 300 ? "Unexpected response" : "",
+      json,
+    );
+    const denial = denialFromResponse(status, json?.code);
+    return fail<CoachPhotosApiError>(denial ? { ...base, denial } : base);
   }
 }
 

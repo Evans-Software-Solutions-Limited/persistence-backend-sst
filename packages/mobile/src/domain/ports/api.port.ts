@@ -178,6 +178,10 @@ import type {
   ProgressPhotosResponse,
   ProgressPhotoUpload,
 } from "@/domain/models/progressPhotos";
+import type {
+  CoachPhotosApiError,
+  CoachProgressPhotos,
+} from "@/domain/models/coachProgressPhotos";
 
 /**
  * Port for remote SST API operations.
@@ -1822,6 +1826,17 @@ export interface ApiPort extends ReferralsPort {
     upload: ProgressPhotoUpload,
     body: Blob,
   ): Promise<Result<void, ApiError>>;
+
+  // -- PER-138 (APP-F2): a client's progress photos, coach side (C3.4) --
+
+  /**
+   * `GET /trainers/me/clients/:clientId/progress-photos`: the client's ready
+   * sets with 5-minute view links. A 403 carries `denial` (switch off, not
+   * shared, coaching ended) so the tab can say which.
+   */
+  getCoachClientProgressPhotos(
+    clientId: string,
+  ): Promise<Result<CoachProgressPhotos, CoachPhotosApiError>>;
 }
 
 /**
